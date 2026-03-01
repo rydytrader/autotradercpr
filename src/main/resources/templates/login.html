@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AutoTrader Login</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script>
+        (function() {
+            const t = localStorage.getItem('traderedge-theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', t);
+        })();
+    </script>
+    <style>
+        :root {
+            --bg-base: #080c14; --bg-card: #111827; --border: rgba(255,255,255,0.06);
+            --accent-blue: #63b3ed; --accent-cyan: #22d3ee; --accent-green: #34d399;
+            --accent-yellow: #fbbf24; --accent-red: #f87171;
+            --text-primary: #f0f4f8; --text-secondary: #8899aa; --text-muted: #4a5568;
+            --navbar-bg: rgba(13,21,37,0.92); --navbar-shadow: none; --card-shadow: none;
+            --icon-shadow: 0 0 18px rgba(99,179,237,0.35), 0 0 6px rgba(34,211,238,0.2);
+            --body-g1: rgba(99,179,237,0.08); --body-g2: rgba(34,211,238,0.05);
+            --font-mono: 'Roboto Mono', monospace; --font-sans: 'Roboto', sans-serif;
+        }
+        [data-theme="light"] {
+            --bg-base: #f0f4f8; --bg-card: #ffffff; --border: rgba(0,0,0,0.08);
+            --accent-blue: #2563eb; --accent-cyan: #0891b2; --accent-green: #16a34a;
+            --accent-yellow: #d97706; --accent-red: #dc2626;
+            --text-primary: #0f172a; --text-secondary: #475569; --text-muted: #94a3b8;
+            --navbar-bg: rgba(255,255,255,0.92); --navbar-shadow: 0 1px 12px rgba(0,0,0,0.06);
+            --card-shadow: 0 4px 24px rgba(0,0,0,0.08);
+            --icon-shadow: 0 4px 14px rgba(37,99,235,0.3);
+            --body-g1: rgba(37,99,235,0.07); --body-g2: rgba(8,145,178,0.05);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background-color: var(--bg-base);
+            background-image:
+                radial-gradient(ellipse 80% 60% at 50% -10%, var(--body-g1) 0%, transparent 60%),
+                radial-gradient(ellipse 40% 30% at 90% 10%, var(--body-g2) 0%, transparent 50%);
+            font-family: var(--font-sans); min-height: 100vh;
+            display: flex; flex-direction: column;
+            transition: background-color 0.3s ease;
+        }
+
+        body::before {
+            content: ''; position: fixed; inset: 0;
+            background-image:
+                linear-gradient(rgba(99,179,237,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(99,179,237,0.03) 1px, transparent 1px);
+            background-size: 40px 40px; pointer-events: none;
+        }
+
+        /* NAVBAR */
+        .navbar {
+            background: var(--navbar-bg); backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border); padding: 0 2rem; height: 68px;
+            position: sticky; top: 0; z-index: 100; flex-shrink: 0;
+            box-shadow: var(--navbar-shadow); transition: background 0.3s, box-shadow 0.3s;
+        }
+        .navbar-inner { display: flex; align-items: center; justify-content: space-between; height: 100%; max-width: 1200px; margin: 0 auto; width: 100%; }
+        .brand { display: flex; align-items: center; gap: 14px; font-family: var(--font-mono); font-weight: 700; }
+        .brand-icon { width: 42px; height: 42px; background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan)); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0; box-shadow: var(--icon-shadow); }
+        .brand-name { font-size: 1.1rem; font-weight: 700; letter-spacing: 0.06em; line-height: 1.2; color: var(--text-primary); }
+        .brand-name span { background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .brand-sub { color: var(--text-muted); font-weight: 400; font-size: 0.72rem; letter-spacing: 0.05em; margin-top: 2px; }
+        .theme-toggle { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; background: rgba(128,128,128,0.08); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 16px; transition: all 0.2s; }
+        .theme-toggle:hover { background: rgba(128,128,128,0.15); border-color: var(--accent-blue); transform: scale(1.05); }
+
+        /* CENTER */
+        .center-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 24px 60px; }
+
+        /* LOGIN CARD */
+        .login-card {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 16px; padding: 40px 36px; width: 420px;
+            position: relative; overflow: hidden;
+            box-shadow: var(--card-shadow);
+            animation: fadeUp 0.4s ease both;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .login-card::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+            background: linear-gradient(90deg, transparent, var(--accent-blue), var(--accent-cyan), transparent);
+        }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+
+        .login-heading { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; text-align: center; margin-bottom: 6px; }
+        .login-desc { font-size: 0.82rem; color: var(--text-secondary); text-align: center; margin-bottom: 28px; }
+        .divider { border: none; border-top: 1px solid var(--border); margin: 0 0 22px; }
+
+        /* RADIO OPTIONS */
+        .radio-group { display: flex; flex-direction: column; gap: 10px; margin-bottom: 22px; }
+
+        .radio-option {
+            display: flex; align-items: center; gap: 14px;
+            padding: 13px 16px; border-radius: 10px;
+            border: 1px solid var(--border); cursor: pointer;
+            transition: all 0.2s ease; background: transparent;
+        }
+        .radio-option:hover { border-color: rgba(99,179,237,0.3); background: rgba(99,179,237,0.04); }
+        .radio-option.selected-live    { border-color: rgba(52,211,153,0.4);  background: rgba(52,211,153,0.06); }
+        .radio-option.selected-sim     { border-color: rgba(251,191,36,0.4);  background: rgba(251,191,36,0.06); }
+
+        /* Hide native radio, use custom */
+        .radio-option input[type="radio"] { display: none; }
+
+        .radio-dot {
+            width: 18px; height: 18px; border-radius: 50%;
+            border: 2px solid var(--text-muted); flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s;
+        }
+        .radio-dot::after {
+            content: ''; width: 8px; height: 8px; border-radius: 50%;
+            background: transparent; transition: background 0.15s;
+        }
+        .selected-live .radio-dot  { border-color: var(--accent-green); }
+        .selected-live .radio-dot::after  { background: var(--accent-green); }
+        .selected-sim  .radio-dot  { border-color: var(--accent-yellow); }
+        .selected-sim  .radio-dot::after  { background: var(--accent-yellow); }
+
+        .radio-text { flex: 1; }
+        .radio-title { font-family: var(--font-mono); font-size: 0.82rem; font-weight: 700; color: var(--text-primary); margin-bottom: 2px; }
+        .radio-sub { font-size: 0.68rem; color: var(--text-muted); }
+        .selected-live .radio-title { color: var(--accent-green); }
+        .selected-sim  .radio-title { color: var(--accent-yellow); }
+
+        /* LOGIN BUTTON */
+        .btn-fyers {
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            width: 100%; padding: 12px 20px;
+            background: rgba(99,179,237,0.08); border: 1px solid rgba(99,179,237,0.25);
+            border-radius: 8px; color: var(--accent-blue);
+            font-family: var(--font-mono); font-size: 0.82rem; font-weight: 700;
+            letter-spacing: 0.06em; text-decoration: none; transition: all 0.2s ease; cursor: pointer;
+        }
+        .btn-fyers:hover { background: rgba(99,179,237,0.15); border-color: rgba(99,179,237,0.5); color: var(--accent-blue); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(99,179,237,0.15); }
+        .btn-fyers:active { transform: translateY(0); }
+        .btn-arrow { font-size: 1rem; transition: transform 0.2s; }
+        .btn-fyers:hover .btn-arrow { transform: translateX(3px); }
+
+        .secure-note { margin-top: 18px; text-align: center; font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-muted); display: flex; align-items: center; justify-content: center; gap: 7px; }
+        .secure-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-green); box-shadow: 0 0 5px var(--accent-green); animation: pulse 2s infinite; flex-shrink: 0; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+        /* FOOTER */
+        .site-footer { width: 100%; padding: 16px 2rem; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-muted); flex-shrink: 0; }
+        .footer-tag { background: rgba(99,179,237,0.08); border: 1px solid rgba(99,179,237,0.15); color: var(--accent-blue); padding: 2px 8px; border-radius: 4px; font-size: 0.65rem; letter-spacing: 0.04em; margin-left: 6px; }
+    </style>
+</head>
+<body>
+
+<nav class="navbar">
+    <div class="navbar-inner">
+        <div class="brand">
+            <div class="brand-icon">⚡</div>
+            <div>
+                <div class="brand-name">TRADER<span>EDGE</span> CPR</div>
+                <div class="brand-sub">AutoTrader · v2.0</div>
+            </div>
+        </div>
+        <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
+    </div>
+</nav>
+
+<div class="center-wrap">
+    <div class="login-card">
+        <div class="login-heading">Welcome back</div>
+        <div class="login-desc">Sign in to access your trading dashboard</div>
+        <hr class="divider">
+
+        <!-- RADIO: mode selection -->
+        <div class="radio-group">
+            <label class="radio-option selected-live" id="opt-live" onclick="selectMode('LIVE')">
+                <input type="radio" name="mode" value="LIVE" checked>
+                <div class="radio-dot"></div>
+                <div class="radio-text">
+                    <div class="radio-title">Live — Fyers</div>
+                    <div class="radio-sub">Real trading · logs/live/</div>
+                </div>
+            </label>
+            <label class="radio-option" id="opt-sim" onclick="selectMode('SIMULATOR')">
+                <input type="radio" name="mode" value="SIMULATOR">
+                <div class="radio-dot"></div>
+                <div class="radio-text">
+                    <div class="radio-title">Simulator — Mock</div>
+                    <div class="radio-sub">Paper trading · logs/simulator/</div>
+                </div>
+            </label>
+        </div>
+
+        <!-- SINGLE LOGIN BUTTON -->
+        <button class="btn-fyers" onclick="handleLogin()">
+            Login
+            <span class="btn-arrow">→</span>
+        </button>
+
+        <div class="secure-note">
+            <div class="secure-dot"></div>
+            <span id="secureNote">Live mode uses Fyers OAuth2 · API v3</span>
+        </div>
+    </div>
+</div>
+
+<footer class="site-footer">
+    <div>© <span id="footerYear"></span> TraderEdge CPR. All rights reserved.</div>
+    <div>Built by <strong style="color:var(--text-secondary);margin:0 4px">Prabhu Arumugham</strong><span class="footer-tag">rydytrader</span></div>
+</footer>
+
+<script>
+    const THEME_KEY = 'traderedge-theme';
+    document.getElementById('footerYear').textContent = new Date().getFullYear();
+
+    (function() {
+        const saved = localStorage.getItem(THEME_KEY) || 'dark';
+        document.documentElement.setAttribute('data-theme', saved);
+        document.getElementById('themeToggle').textContent = saved === 'light' ? '☀️' : '🌙';
+    })();
+
+    function toggleTheme() {
+        const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem(THEME_KEY, next);
+        document.getElementById('themeToggle').textContent = next === 'light' ? '☀️' : '🌙';
+    }
+
+    let selectedMode = 'LIVE';
+
+    function selectMode(mode) {
+        selectedMode = mode;
+        document.getElementById('opt-live').className = 'radio-option' + (mode === 'LIVE' ? ' selected-live' : '');
+        document.getElementById('opt-sim').className  = 'radio-option' + (mode === 'SIMULATOR' ? ' selected-sim' : '');
+        document.getElementById('secureNote').textContent = mode === 'LIVE'
+            ? 'Live mode uses Fyers OAuth2 · API v3'
+            : 'Simulator mode — no real orders placed';
+    }
+
+    function handleLogin() {
+        fetch('/api/mode/switch', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({mode: selectedMode})
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (selectedMode === 'SIMULATOR') {
+                window.location.href = data.redirect || '/positions';
+            } else {
+                window.location.href = '/login'; // Fyers OAuth redirect
+            }
+        })
+        .catch(() => { window.location.href = '/login'; });
+    }
+</script>
+
+</body>
+</html>

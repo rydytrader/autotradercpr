@@ -1,0 +1,91 @@
+package com.rydytrader.autotrader.fyers;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.stereotype.Component;
+
+import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
+
+@Component
+public class LiveFyersClient implements FyersClient {
+
+    private static final String BASE = "https://api-t1.fyers.in/api/v3";
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    @Override
+    public JsonNode placeOrder(String orderJson, String authHeader) throws Exception {
+        return post(BASE + "/orders/sync", orderJson, authHeader);
+    }
+
+    @Override
+    public JsonNode cancelOrder(String orderId, String authHeader) throws Exception {
+        String body = "{\"id\":\"" + orderId + "\"}";
+        return delete(BASE + "/orders", body, authHeader);
+    }
+
+    @Override
+    public JsonNode getOrder(String orderId, String authHeader) throws Exception {
+        return get(BASE + "/orders?id=" + orderId, authHeader);
+    }
+
+    @Override
+    public JsonNode getPositions(String authHeader) throws Exception {
+        return get(BASE + "/positions", authHeader);
+    }
+
+    @Override
+    public JsonNode getTradebook(String authHeader) throws Exception {
+        return get(BASE + "/tradebook", authHeader);
+    }
+
+    @Override
+    public JsonNode validateAuthCode(String requestBody) throws Exception {
+        return post(BASE + "/validate-authcode", requestBody, null);
+    }
+
+    // ── HTTP HELPERS ──────────────────────────────────────────────────────────
+    private JsonNode get(String urlStr, String authHeader) throws Exception {
+        URL url = new URL(urlStr);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("GET");
+        if (authHeader != null) conn.setRequestProperty("Authorization", authHeader);
+        return readResponse(conn);
+    }
+
+    private JsonNode post(String urlStr, String body, String authHeader) throws Exception {
+        URL url = new URL(urlStr);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type", "application/json");
+        if (authHeader != null) conn.setRequestProperty("Authorization", authHeader);
+        conn.setDoOutput(true);
+        conn.getOutputStream().write(body.getBytes());
+        conn.getOutputStream().close();
+        return readResponse(conn);
+    }
+
+    private JsonNode delete(String urlStr, String body, String authHeader) throws Exception {
+        URL url = new URL(urlStr);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("DELETE");
+        conn.setRequestProperty("Content-Type", "application/json");
+        if (authHeader != null) conn.setRequestProperty("Authorization", authHeader);
+        conn.setDoOutput(true);
+        conn.getOutputStream().write(body.getBytes());
+        conn.getOutputStream().close();
+        return readResponse(conn);
+    }
+
+    private JsonNode readResponse(HttpURLConnection conn) throws Exception {
+        InputStream is = conn.getResponseCode() < 400
+                ? conn.getInputStream() : conn.getErrorStream();
+        BufferedReader br = new BufferedReader(new InputStreamReader(is));
+        StringBuilder sb = new StringBuilder();
+        String line;
+        while ((line = br.readLine()) != null) sb.append(line);
+        br.close();
+        return mapper.readTree(sb.toString());
+    }
+}

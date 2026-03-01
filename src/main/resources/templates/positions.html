@@ -1,0 +1,1069 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TraderEdge CPR - AutoTrader</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <!-- Apply theme before render to prevent flash -->
+    <script>
+        (function() {
+            const t = localStorage.getItem('traderedge-theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', t);
+            // Set icon early to avoid flash
+            document.addEventListener('DOMContentLoaded', function() {
+                const btn = document.getElementById('themeToggle');
+                if (btn) btn.textContent = t === 'light' ? '☀️' : '🌙';
+            });
+        })();
+    </script>
+
+    <style>
+        /* ══════════════════════════════════════════
+           DARK THEME (default)
+        ══════════════════════════════════════════ */
+        :root {
+            --bg-base: #080c14;
+            --bg-surface: #0d1525;
+            --bg-card: #111827;
+            --bg-card-hover: #151f30;
+            --bg-section-header: #111827;
+            --border: rgba(255,255,255,0.06);
+            --accent-blue: #63b3ed;
+            --accent-cyan: #22d3ee;
+            --accent-green: #34d399;
+            --accent-red: #f87171;
+            --accent-yellow: #fbbf24;
+            --text-primary: #f0f4f8;
+            --text-secondary: #8899aa;
+            --text-muted: #4a5568;
+            --navbar-bg: rgba(13, 21, 37, 0.92);
+            --navbar-shadow: none;
+            --card-shadow: none;
+            --scrollbar-thumb: #475569;
+            --font-mono: 'Roboto Mono', monospace;
+            --font-sans: 'Roboto', sans-serif;
+            --body-gradient-1: rgba(99,179,237,0.07);
+            --body-gradient-2: rgba(34,211,238,0.04);
+            --icon-shadow: 0 0 18px rgba(99,179,237,0.35), 0 0 6px rgba(34,211,238,0.2);
+        }
+
+        /* ══════════════════════════════════════════
+           LIGHT THEME OVERRIDES
+        ══════════════════════════════════════════ */
+        [data-theme="light"] {
+            --bg-base: #f0f4f8;
+            --bg-surface: #e8eef5;
+            --bg-card: #ffffff;
+            --bg-card-hover: #f7fafd;
+            --bg-section-header: #fafbfc;
+            --border: rgba(0,0,0,0.08);
+            --accent-blue: #2563eb;
+            --accent-cyan: #0891b2;
+            --accent-green: #16a34a;
+            --accent-red: #dc2626;
+            --accent-yellow: #d97706;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #94a3b8;
+            --navbar-bg: rgba(255,255,255,0.92);
+            --navbar-shadow: 0 1px 12px rgba(0,0,0,0.06);
+            --card-shadow: 0 1px 6px rgba(0,0,0,0.05);
+            --scrollbar-thumb: #e2e8f0;
+            --body-gradient-1: rgba(37,99,235,0.06);
+            --body-gradient-2: rgba(8,145,178,0.04);
+            --icon-shadow: 0 4px 14px rgba(37,99,235,0.3);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            font-family: var(--font-sans);
+            min-height: 100vh;
+            transition: background-color 0.3s ease, color 0.3s ease;
+            background-image:
+                radial-gradient(ellipse 80% 50% at 50% -20%, var(--body-gradient-1) 0%, transparent 60%),
+                radial-gradient(ellipse 40% 30% at 90% 10%, var(--body-gradient-2) 0%, transparent 50%);
+        }
+
+        /* ── NAVBAR ─────────────────────────────── */
+        .navbar {
+            background: var(--navbar-bg);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border);
+            padding: 0 2rem;
+            height: 68px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: var(--navbar-shadow);
+            transition: background 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .navbar-inner {
+            display: flex; align-items: center; justify-content: space-between;
+            height: 100%; max-width: 1200px; margin: 0 auto; width: 100%;
+        }
+
+        .brand { display: flex; align-items: center; gap: 14px; font-family: var(--font-mono); font-weight: 700; }
+
+        .brand-icon {
+            width: 42px; height: 42px;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+            border-radius: 10px; display: flex; align-items: center; justify-content: center;
+            font-size: 22px; flex-shrink: 0;
+            box-shadow: var(--icon-shadow);
+            transition: box-shadow 0.3s ease;
+        }
+
+        .brand-name { font-size: 1.1rem; font-weight: 700; letter-spacing: 0.06em; line-height: 1.2; color: var(--text-primary); }
+
+        .brand-name span {
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+
+        .brand-sub { color: var(--text-muted); font-weight: 400; font-size: 0.72rem; letter-spacing: 0.05em; margin-top: 2px; }
+
+        .nav-right { display: flex; align-items: center; gap: 12px; }
+
+        .status-pill {
+            display: flex; align-items: center; gap: 7px;
+            background: rgba(128,128,128,0.06); border: 1px solid var(--border);
+            border-radius: 20px; padding: 5px 14px;
+            font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.04em;
+            color: var(--text-secondary);
+        }
+
+        .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); transition: background 0.3s ease; }
+        .status-dot.connected { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); animation: pulse-dot 2s infinite; }
+        .status-dot.syncing { background: var(--accent-yellow); box-shadow: 0 0 6px var(--accent-yellow); }
+        .status-dot.disconnected { background: var(--accent-red); }
+
+        @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        /* ── THEME TOGGLE ───────────────────────── */
+        .theme-toggle {
+            display: flex; align-items: center; justify-content: center;
+            width: 36px; height: 36px;
+            background: rgba(128,128,128,0.08); border: 1px solid var(--border);
+            border-radius: 8px; cursor: pointer;
+            font-size: 16px; transition: all 0.2s ease;
+            color: var(--text-secondary);
+        }
+
+        .theme-toggle:hover {
+            background: rgba(128,128,128,0.15);
+            border-color: var(--accent-blue);
+            color: var(--accent-blue);
+            transform: scale(1.05);
+        }
+
+        /* ── LAYOUT ─────────────────────────────── */
+        .page-wrap { max-width: 1200px; margin: 0 auto; padding: 32px 24px 60px; }
+
+        .page-header { margin-bottom: 28px; display: flex; align-items: flex-end; justify-content: space-between; }
+        .page-title { font-size: 1.5rem; font-weight: 600; color: var(--text-primary); letter-spacing: -0.01em; }
+        .page-subtitle { font-size: 0.82rem; color: var(--text-muted); margin-top: 3px; font-family: var(--font-mono); }
+
+        /* ── STAT CARDS ─────────────────────────── */
+        .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+
+        @media (max-width: 768px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
+
+        .stat-card {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 12px; padding: 18px 20px;
+            position: relative; overflow: hidden;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.3s ease;
+            box-shadow: var(--card-shadow);
+        }
+
+        .stat-card::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+            background: linear-gradient(90deg, transparent, var(--accent-color, var(--accent-blue)), transparent);
+        }
+
+        .stat-card:hover { border-color: rgba(99,179,237,0.25); }
+
+        .stat-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; font-family: var(--font-mono); margin-bottom: 10px; }
+        .stat-value { font-family: var(--font-mono); font-size: 1.6rem; font-weight: 700; color: var(--text-primary); line-height: 1; }
+        .stat-value.positive { color: var(--accent-green); }
+        .stat-value.negative { color: var(--accent-red); }
+        .stat-sub { font-size: 0.72rem; color: var(--text-muted); margin-top: 6px; }
+
+        /* ── SECTION CARD ───────────────────────── */
+        .section-card {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 14px; margin-bottom: 16px; overflow: hidden;
+            box-shadow: var(--card-shadow);
+            transition: background 0.3s ease;
+        }
+
+        .section-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 16px 22px; border-bottom: 1px solid var(--border);
+            background: var(--bg-section-header);
+        }
+
+        .section-title {
+            font-size: 0.78rem; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.1em; color: var(--text-secondary);
+            font-family: var(--font-mono); display: flex; align-items: center; gap: 8px;
+        }
+
+        .section-title-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-blue); }
+
+        .section-badge {
+            background: rgba(99,179,237,0.08); border: 1px solid rgba(99,179,237,0.15);
+            color: var(--accent-blue); font-family: var(--font-mono);
+            font-size: 0.7rem; padding: 3px 10px; border-radius: 20px;
+        }
+
+        /* ── EQUAL HEIGHT SECTION CARDS ─────────── */
+        .fixed-card {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .fixed-card-log {
+            height: 260px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .fixed-card .table-wrap,
+        .fixed-card-log .log-wrap {
+            flex: 1;
+            overflow-y: auto;
+            max-height: 420px;
+        }
+        .fixed-card-log .log-wrap::-webkit-scrollbar { width: 4px; }
+        .fixed-card-log .log-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        .fixed-card-log .log-wrap::-webkit-scrollbar-track { background: transparent; }
+
+        /* ── TABLE ──────────────────────────────── */
+        .table-wrap { overflow-x: auto; overflow-y: visible; max-height: unset; }
+        .table-wrap::-webkit-scrollbar { width: 4px; }
+        .table-wrap::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+
+        .data-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+
+        .data-table thead th {
+            padding: 10px 20px; font-family: var(--font-mono); font-size: 0.68rem;
+            text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted);
+            font-weight: 500; background: var(--bg-section-header); position: sticky; top: 0;
+            border-bottom: 1px solid var(--border); white-space: nowrap;
+        }
+
+        .data-table tbody tr { border-bottom: 1px solid var(--border); transition: background 0.15s ease; }
+        .data-table tbody tr:hover { background: var(--bg-card-hover); }
+        .data-table tbody td { padding: 13px 20px; color: var(--text-primary); font-family: var(--font-mono); font-size: 0.82rem; white-space: nowrap; }
+
+        .data-table .text-right { text-align: right; }
+        .data-table .text-center { text-align: center; }
+
+        .symbol-cell { font-weight: 700; font-size: 0.85rem; }
+
+        .side-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 4px; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; }
+        .side-long { background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.25); color: var(--accent-green); }
+        .side-short { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.25); color: var(--accent-red); }
+        .pnl-positive { color: var(--accent-green); font-weight: 600; }
+        .pnl-negative { color: var(--accent-red); font-weight: 600; }
+
+        .empty-state { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono); }
+        .empty-icon { font-size: 2rem; margin-bottom: 10px; opacity: 0.3; }
+
+        /* ── EVENT LOG ──────────────────────────── */
+        .log-entry {
+            padding: 10px 22px; border-bottom: 1px solid var(--border);
+            font-family: var(--font-mono); font-size: 0.77rem; color: var(--text-secondary);
+            transition: background 0.15s; display: flex; align-items: flex-start; gap: 10px;
+        }
+        .log-entry:hover { background: var(--bg-card-hover); }
+        .log-entry::before { content: '›'; color: var(--accent-blue); flex-shrink: 0; margin-top: 1px; }
+
+        /* ── PAGE FOOTER ────────────────────────── */
+        .page-footer {
+            margin-top: 32px;
+            padding: 20px 0;
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+
+        .page-footer .footer-copy { display: flex; align-items: center; gap: 6px; }
+        .page-footer .footer-author { display: flex; align-items: center; gap: 6px; }
+        .page-footer .footer-tag {
+            background: rgba(99,179,237,0.08);
+            border: 1px solid rgba(99,179,237,0.15);
+            color: var(--accent-blue);
+            padding: 2px 8px; border-radius: 4px;
+            font-size: 0.65rem; letter-spacing: 0.04em;
+        }
+
+        /* ── FOOTER ─────────────────────────────── */
+        .refresh-btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            background: rgba(99,179,237,0.08); border: 1px solid rgba(99,179,237,0.2);
+            color: var(--accent-blue); padding: 9px 22px; border-radius: 8px;
+            font-family: var(--font-mono); font-size: 0.78rem; font-weight: 700;
+            letter-spacing: 0.05em; text-decoration: none; transition: all 0.2s ease;
+        }
+        .refresh-btn:hover { background: rgba(99,179,237,0.15); border-color: rgba(99,179,237,0.45); color: var(--accent-blue); transform: translateY(-1px); }
+
+        .squareoff-btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            background: rgba(248,113,113,0.10); border: 1px solid rgba(248,113,113,0.3);
+            color: var(--accent-red); padding: 9px 22px; border-radius: 8px;
+            font-family: var(--font-mono); font-size: 0.78rem; font-weight: 700;
+            letter-spacing: 0.05em; cursor: pointer; transition: all 0.2s ease;
+        }
+        .squareoff-btn:hover { background: rgba(248,113,113,0.2); border-color: rgba(248,113,113,0.55); transform: translateY(-1px); }
+        .squareoff-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+        /* ── MODAL ───────────────────────────────── */
+
+        .footer-row { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 28px; }
+        .footer-note { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-muted); }
+
+        /* ── ANIMATIONS ─────────────────────────── */
+        .fade-in { animation: fadeIn 0.4s ease both; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in:nth-child(1) { animation-delay: 0.05s; }
+        .fade-in:nth-child(2) { animation-delay: 0.1s; }
+        .fade-in:nth-child(3) { animation-delay: 0.15s; }
+        .fade-in:nth-child(4) { animation-delay: 0.2s; }
+
+        /* ── NAV TABS ────────────────────────────── */
+        .nav-tabs { display: flex; gap: 4px; border-bottom: none !important; }
+        .nav-tab {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 7px 16px; border-radius: 8px; font-family: var(--font-mono);
+            font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em;
+            text-decoration: none; transition: all 0.2s ease; cursor: pointer;
+            border: 1px solid transparent; color: var(--text-muted);
+            background: transparent;
+        }
+        .nav-tab:hover { background: rgba(99,179,237,0.08); color: var(--text-secondary); border-color: var(--border); }
+        .nav-tab.active {
+            background: rgba(99,179,237,0.12); color: var(--accent-blue);
+            border-color: rgba(99,179,237,0.3);
+        }
+
+        .logout-btn {
+            display: flex; align-items: center; justify-content: center;
+            gap: 6px; padding: 6px 14px;
+            background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.2);
+            border-radius: 8px; color: var(--accent-red);
+            font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700;
+            letter-spacing: 0.04em; cursor: pointer; transition: all 0.2s;
+        }
+        .logout-btn:hover { background: rgba(248,113,113,0.15); border-color: rgba(248,113,113,0.4); transform: translateY(-1px); }
+
+        .mode-pill {
+            display: flex; align-items: center; gap: 7px;
+            background: rgba(128,128,128,0.06); border: 1px solid var(--border);
+            border-radius: 20px; padding: 5px 14px;
+            font-family: var(--font-mono); font-size: 0.72rem;
+        }
+        .mode-pill.live     { background: rgba(52,211,153,0.06);  border-color: rgba(52,211,153,0.2); }
+        .mode-pill.mock     { background: rgba(251,191,36,0.06);   border-color: rgba(251,191,36,0.2); }
+        .mode-pill-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+        .mode-pill.live .mode-pill-dot  { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
+        .mode-pill.mock .mode-pill-dot  { background: var(--accent-yellow); box-shadow: 0 0 6px var(--accent-yellow); }
+        .mode-pill-label { font-weight: 700; letter-spacing: 0.05em; }
+        .mode-pill.live .mode-pill-label { color: var(--accent-green); }
+        .mode-pill.mock .mode-pill-label { color: var(--accent-yellow); }
+        /* ── SIMULATOR MODAL ─────────────────────────── */
+        .sim-modal-backdrop {
+            display: none; position: fixed; inset: 0; z-index: 1000;
+            background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+            align-items: flex-start; justify-content: flex-end;
+        }
+        .sim-modal-backdrop.open { display: flex; }
+
+        .sim-modal {
+            width: 820px; max-width: 95vw; height: 100vh;
+            background: var(--bg-card); border-left: 1px solid var(--border);
+            display: flex; flex-direction: column;
+            animation: slideInRight 0.25s ease;
+            overflow: hidden;
+        }
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to   { transform: translateX(0);    opacity: 1; }
+        }
+
+        .sim-modal-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 20px; border-bottom: 1px solid var(--border);
+            background: var(--bg-section-header); flex-shrink: 0;
+        }
+        .sim-modal-title {
+            display: flex; align-items: center; gap: 10px;
+            font-family: var(--font-mono); font-size: 0.8rem; font-weight: 700;
+            letter-spacing: 0.06em; color: var(--accent-yellow);
+        }
+        .sim-modal-title-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--accent-yellow); box-shadow: 0 0 6px var(--accent-yellow);
+        }
+        .sim-modal-close {
+            display: flex; align-items: center; justify-content: center;
+            width: 32px; height: 32px; border-radius: 6px; cursor: pointer;
+            background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.2);
+            color: var(--accent-red); font-size: 1rem; font-weight: 700;
+            transition: all 0.15s;
+        }
+        .sim-modal-close:hover { background: rgba(248,113,113,0.18); }
+
+        .sim-modal-body {
+            flex: 1; overflow-y: auto; padding: 16px;
+            display: flex; flex-direction: column; gap: 14px;
+        }
+        .sim-modal-body::-webkit-scrollbar { width: 4px; }
+        .sim-modal-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+        /* reuse panel styles inside modal */
+        .sim-panel {
+            background: var(--bg-base); border: 1px solid var(--border);
+            border-radius: 10px; overflow: hidden; margin-bottom: 12px;
+        }
+        .sim-panel:last-child { margin-bottom: 0; }
+        .sim-panel-header {
+            display: flex; align-items: center; gap: 7px;
+            padding: 10px 14px; border-bottom: 1px solid var(--border);
+            font-family: var(--font-mono); font-size: 0.68rem; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted);
+        }
+        .sim-panel-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+        .sim-panel-body { padding: 14px; }
+
+        .sim-price-display {
+            background: var(--bg-section-header); border: 1px solid var(--border);
+            border-radius: 8px; padding: 12px; text-align: center; margin-bottom: 10px;
+        }
+        .sim-price-lbl { font-size: 0.65rem; color: var(--text-muted); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 3px; }
+        .sim-price-val { font-family: var(--font-mono); font-size: 1.6rem; font-weight: 700; color: var(--text-primary); }
+        .sim-price-sym { font-size: 0.65rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px; }
+
+        .sim-price-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 5px; margin-bottom: 6px; }
+
+        .sim-field { margin-bottom: 10px; }
+        .sim-field label { display: block; font-size: 0.65rem; color: var(--text-muted); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+        .sim-field input, .sim-field select { width: 100%; background: var(--bg-section-header); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; color: var(--text-primary); font-family: var(--font-mono); font-size: 0.78rem; outline: none; transition: border-color 0.2s; }
+        .sim-field input:focus, .sim-field select:focus { border-color: var(--accent-blue); }
+        .sim-field-row { display: flex; gap: 7px; align-items: flex-end; margin-bottom: 10px; }
+        .sim-field-row .sim-field { margin-bottom: 0; flex: 1; }
+
+        .sim-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+        .sim-toggle-lbl { font-size: 0.77rem; color: var(--text-primary); }
+        .sim-toggle-sub { font-size: 0.65rem; color: var(--text-muted); margin-top: 1px; }
+        .sim-toggle { width: 40px; height: 22px; background: var(--bg-section-header); border-radius: 11px; border: 1px solid var(--border); cursor: pointer; position: relative; transition: background 0.2s; flex-shrink: 0; }
+        .sim-toggle.on { background: var(--accent-green); border-color: var(--accent-green); }
+        .sim-toggle::after { content: ''; position: absolute; width: 16px; height: 16px; background: #fff; border-radius: 50%; top: 2px; left: 2px; transition: transform 0.2s; }
+        .sim-toggle.on::after { transform: translateX(18px); }
+
+        .sim-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 7px 12px; border-radius: 7px; font-family: var(--font-mono); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.03em; cursor: pointer; border: none; transition: all 0.15s; white-space: nowrap; }
+        .sim-btn-blue   { background: rgba(99,179,237,0.1);  border: 1px solid rgba(99,179,237,0.25);  color: var(--accent-blue); }
+        .sim-btn-green  { background: rgba(52,211,153,0.1);  border: 1px solid rgba(52,211,153,0.25);  color: var(--accent-green); }
+        .sim-btn-red    { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.25); color: var(--accent-red); }
+        .sim-btn-yellow { background: rgba(251,191,36,0.1);  border: 1px solid rgba(251,191,36,0.25);  color: var(--accent-yellow); }
+        .sim-btn-ghost  { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+        .sim-btn-full   { width: 100%; }
+        .sim-btn:hover  { filter: brightness(1.15); transform: translateY(-1px); }
+        .sim-btn:active { transform: translateY(0); }
+        .sim-btn-row    { display: flex; gap: 7px; flex-wrap: wrap; }
+
+        .sim-pos-card { background: var(--bg-section-header); border: 1px solid var(--border); border-radius: 7px; padding: 10px 12px; }
+        .sim-pos-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; font-size: 0.76rem; }
+        .sim-pos-row:last-child { margin-bottom: 0; }
+        .sim-pos-lbl { color: var(--text-muted); font-family: var(--font-mono); font-size: 0.65rem; }
+        .sim-pos-val { font-family: var(--font-mono); font-weight: 600; }
+        .sim-pos-none { color: var(--text-muted); font-family: var(--font-mono); font-size: 0.75rem; text-align: center; padding: 8px 0; }
+
+        .sim-tbl { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 0.72rem; }
+        .sim-tbl thead th { padding: 8px 12px; text-align: left; color: var(--text-muted); font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--border); background: var(--bg-section-header); white-space: nowrap; }
+        .sim-tbl tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+        .sim-tbl tbody tr:hover { background: var(--bg-card-hover,rgba(255,255,255,0.02)); }
+        .sim-tbl tbody tr:last-child { border-bottom: none; }
+        .sim-tbl tbody td { padding: 9px 12px; white-space: nowrap; }
+
+        .sim-bdg { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 4px; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.03em; }
+        .sim-bdg-pending  { background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.25); color: var(--accent-yellow); }
+        .sim-bdg-traded   { background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.25); color: var(--accent-green); }
+        .sim-bdg-cancelled{ background: rgba(100,116,139,0.1);border: 1px solid rgba(100,116,139,0.2); color: var(--text-muted); }
+        .sim-bdg-buy  { background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.25); color: var(--accent-green); }
+        .sim-bdg-sell { background: rgba(248,113,113,0.1);border: 1px solid rgba(248,113,113,0.25);color: var(--accent-red); }
+        .sim-bdg-blue { background: rgba(99,179,237,0.1); border: 1px solid rgba(99,179,237,0.25); color: var(--accent-blue); }
+
+        .sim-log-wrap { height: 180px; overflow-y: auto; }
+        .sim-log-wrap::-webkit-scrollbar { width: 3px; }
+        .sim-log-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        .sim-log-entry { padding: 5px 14px; border-bottom: 1px solid var(--border); font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-muted); display: flex; gap: 7px; }
+        .sim-log-entry::before { content: '›'; color: var(--accent-yellow); flex-shrink: 0; }
+        .sim-log-entry:hover { background: var(--bg-section-header); color: var(--text-secondary); }
+
+        .sim-divider { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+        .sim-warn { background: rgba(251,191,36,0.06); border: 1px solid rgba(251,191,36,0.18); border-radius: 7px; padding: 8px 12px; font-size: 0.68rem; color: var(--accent-yellow); font-family: var(--font-mono); margin-bottom: 12px; }
+        .sim-empty { padding: 20px; text-align: center; color: var(--text-muted); font-family: var(--font-mono); font-size: 0.72rem; }
+
+
+    </style>
+</head>
+
+<body>
+
+<nav class="navbar">
+    <div class="navbar-inner">
+        <div class="brand">
+            <div class="brand-icon">⚡</div>
+            <div>
+                <div class="brand-name">TRADER<span>EDGE</span> CPR</div>
+                <div class="brand-sub">AutoTrader · v2.0</div>
+            </div>
+        </div>
+        <div class="nav-right">
+            <div class="nav-tabs">
+                <a href="/positions" class="nav-tab active">⬡ Positions</a>
+                <a href="/trades" class="nav-tab">⊞ Trade Log</a>
+                <a href="/journal" class="nav-tab">📓 Journal</a>
+                <button class="nav-tab" id="simTab" style="display:none" onclick="openSimModal()">⚙ Simulator</button>
+            </div>
+            <button class="logout-btn" onclick="logout()">⏻ Logout</button>
+            <div class="mode-pill" id="modePill">
+                <div class="mode-pill-dot"></div>
+                <span class="mode-pill-label" id="modeLabel">LIVE</span>
+            </div>
+            <div class="status-pill">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="connectionStatus" style="color: var(--text-secondary);">Checking...</span>
+            </div>
+            <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
+        </div>
+    </div>
+</nav>
+
+<div class="page-wrap">
+
+    <div class="page-header fade-in">
+        <div>
+            <div class="page-title">Positions Dashboard</div>
+            <div class="page-subtitle">Live market positions &amp; trade activity</div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center;">
+            <a href="/positions" class="refresh-btn">⟳ Refresh Data</a>
+            <button class="squareoff-btn" id="squareOffBtn" onclick="executeSquareOff()" disabled>⬛ Square Off</button>
+        </div>
+    </div>
+
+    <div class="stat-grid">
+        <div class="stat-card fade-in" style="--accent-color: var(--accent-blue)">
+            <div class="stat-label">Current Side</div>
+            <div class="stat-value" id="statSide">NONE</div>
+            <div class="stat-sub">Active direction</div>
+        </div>
+        <div class="stat-card fade-in" style="--accent-color: var(--accent-cyan)">
+            <div class="stat-label">Open Positions</div>
+            <div class="stat-value" id="statCount">0</div>
+            <div class="stat-sub">Active contracts</div>
+        </div>
+        <div class="stat-card fade-in" style="--accent-color: var(--accent-green)">
+            <div class="stat-label">Net Day P&amp;L</div>
+            <div class="stat-value" id="statPnl">—</div>
+            <div class="stat-sub">Realized + Unrealized</div>
+        </div>
+        <div class="stat-card fade-in" style="--accent-color: var(--accent-yellow)">
+            <div class="stat-label">Last Update</div>
+            <div class="stat-value" id="lastUpdate" style="font-size: 1rem; padding-top: 4px;">—</div>
+            <div class="stat-sub">Auto-refresh 3s</div>
+        </div>
+    </div>
+
+    <div class="section-card fixed-card fade-in">
+        <div class="section-header">
+            <div class="section-title">
+                <div class="section-title-dot"></div>
+                Live Positions
+            </div>
+            <span class="section-badge" id="positionsBadge">0 active</span>
+        </div>
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Symbol</th>
+                        <th class="text-right">Quantity</th>
+                        <th class="text-center">Side</th>
+                        <th class="text-center">Setup</th>
+                        <th class="text-right">Avg Price</th>
+                        <th class="text-right">LTP</th>
+                        <th class="text-right">P&amp;L</th>
+                    </tr>
+                </thead>
+                <tbody id="positionsTableBody">
+                    <tr>
+                        <td colspan="6">
+                            <div class="empty-state">
+                                <div class="empty-icon">◎</div>
+                                No active positions
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="section-card fixed-card-log fade-in">
+        <div class="section-header">
+            <div class="section-title">
+                <div class="section-title-dot" style="background: var(--accent-cyan)"></div>
+                Event Log
+            </div>
+            <span class="section-badge" id="logStatusBadge" style="color: var(--accent-cyan); border-color: rgba(34,211,238,0.2); background: rgba(34,211,238,0.07);">Live</span>
+        </div>
+        <div class="log-wrap">
+            <div id="tradeLogContainer">
+                <div class="empty-state">
+                    <div class="empty-icon">⌁</div>
+                    No events recorded
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="page-footer">
+        <div class="footer-copy">
+            © <span id="footerYear"></span> TraderEdge CPR. All rights reserved.
+        </div>
+        <div class="footer-author">
+            Built by <strong style="color: var(--text-secondary); margin: 0 4px;">Prabhu Arumugham</strong>
+            <span class="footer-tag">rydytrader</span>
+        </div>
+    </footer>
+
+</div>
+
+<!-- ── SQUARE OFF CONFIRMATION MODAL ──────────────────────────── -->
+
+<script>
+    // ── THEME TOGGLE ──────────────────────────────
+    const THEME_KEY = 'traderedge-theme';
+
+    // Set footer year
+    
+
+    document.getElementById('footerYear').textContent = new Date().getFullYear();
+
+    function applyTheme(theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+        document.getElementById('themeToggle').textContent = theme === 'light' ? '☀️' : '🌙';
+        localStorage.setItem(THEME_KEY, theme);
+    }
+
+    function toggleTheme() {
+        const current = document.documentElement.getAttribute('data-theme') || 'dark';
+        applyTheme(current === 'dark' ? 'light' : 'dark');
+    }
+
+    // Apply saved theme immediately (before render to avoid flash)
+    (function() {
+        const saved = localStorage.getItem(THEME_KEY) || 'dark';
+        applyTheme(saved);
+    })();
+
+    // ── CONNECTION STATUS ─────────────────────────
+    function setLogBadge(status) {
+        const badge = document.getElementById('logStatusBadge');
+        if (status === 'CONNECTED') {
+            badge.textContent = '● Live';
+            badge.style.color = 'var(--accent-cyan)';
+            badge.style.borderColor = 'rgba(34,211,238,0.2)';
+            badge.style.background = 'rgba(34,211,238,0.07)';
+        } else if (status === 'SYNCING') {
+            badge.textContent = '● Syncing';
+            badge.style.color = 'var(--accent-yellow)';
+            badge.style.borderColor = 'rgba(251,191,36,0.2)';
+            badge.style.background = 'rgba(251,191,36,0.07)';
+        } else {
+            badge.textContent = '● Offline';
+            badge.style.color = 'var(--accent-red)';
+            badge.style.borderColor = 'rgba(248,113,113,0.2)';
+            badge.style.background = 'rgba(248,113,113,0.07)';
+        }
+    }
+
+    let serverWasDown = false;  // true once server becomes unreachable
+
+    function updateConnectionStatus() {
+        fetch('/status')
+            .then(r => {
+                // Server reachable again after being down → token is gone, force re-login
+                if (serverWasDown) {
+                    window.location.href = '/';
+                    return null;
+                }
+                return r.json();
+            })
+            .then(data => {
+                if (!data) return;
+                const dot = document.getElementById('statusDot');
+                const label = document.getElementById('connectionStatus');
+                dot.className = 'status-dot';
+                if (data.status === 'CONNECTED') {
+                    dot.classList.add('connected');
+                    label.textContent = 'Connected';
+                    label.style.color = 'var(--accent-green)';
+                    if (!isConnected) pollData();  // immediate fetch on first connect
+                    isConnected = true;
+                } else if (data.status === 'SYNCING') {
+                    dot.classList.add('syncing');
+                    label.textContent = 'Syncing';
+                    label.style.color = 'var(--accent-yellow)';
+                    if (!isConnected) pollData();  // immediate fetch on first connect
+                    isConnected = true;
+                } else {
+                    dot.classList.add('disconnected');
+                    label.textContent = 'Disconnected';
+                    label.style.color = 'var(--accent-red)';
+                    isConnected = false;
+                }
+                setLogBadge(data.status);
+                const now = new Date();
+                document.getElementById('lastUpdate').textContent =
+                    now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            })
+            .catch(() => {
+                // Server unreachable — set flag so we redirect when it comes back
+                serverWasDown = true;
+                isConnected = false;
+                const dot = document.getElementById('statusDot');
+                dot.className = 'status-dot disconnected';
+                document.getElementById('connectionStatus').textContent = 'Disconnected';
+                document.getElementById('connectionStatus').style.color = 'var(--accent-red)';
+                setLogBadge('DISCONNECTED');
+            });
+    }
+
+    // ── TRADE LOGS ────────────────────────────────
+    function updateTradeLogs() {
+        fetch('/logs')
+            .then(r => r.json())
+            .then(data => {
+                const container = document.getElementById('tradeLogContainer');
+                if (!data.length) {
+                    container.innerHTML = `<div class="empty-state"><div class="empty-icon">⌁</div>No events recorded</div>`;
+                    return;
+                }
+                container.innerHTML = data.slice().reverse().map(log => `<div class="log-entry">${log}</div>`).join('');
+            })
+            .catch(() => {});
+    }
+
+    // ── SQUARE OFF ────────────────────────────────
+    let currentSymbol = null;
+    let currentQty    = null;
+
+    function renderSetup(v) {
+        if (!v) return '—';
+        return v.replace(/_/g, ' ');
+    }
+
+    function executeSquareOff() {
+        if (!currentSymbol || !currentQty) return;
+        fetch('/api/squareoff', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ symbol: currentSymbol, quantity: Math.abs(currentQty) })
+        }).catch(() => {});
+    }
+
+    // ── POSITIONS TABLE ───────────────────────────
+    function updatePositions() {
+        fetch('/api/positions')
+            .then(r => r.json())
+            .then(positions => {
+                document.getElementById('statSide').textContent = positions.length === 0 ? 'NONE' : positions[0].side;
+                document.getElementById('statCount').textContent = positions.length;
+
+                // Enable/disable Square Off button based on open positions
+                const sqBtn = document.getElementById('squareOffBtn');
+                if (positions.length > 0) {
+                    currentSymbol = positions[0].symbol;
+                    currentQty    = Math.abs(positions[0].qty);
+                    sqBtn.disabled = false;
+                } else {
+                    currentSymbol = null;
+                    currentQty    = null;
+                    sqBtn.disabled = true;
+                }
+                const totalPnl = positions.reduce((sum, p) => sum + (parseFloat(p.pnl) || 0), 0);
+                const pnlEl = document.getElementById('statPnl');
+                if (positions.length === 0) {
+                    pnlEl.textContent = '—';
+                    pnlEl.className = 'stat-value';
+                } else {
+                    pnlEl.textContent = (totalPnl >= 0 ? '+' : '') + totalPnl.toFixed(2);
+                    pnlEl.className = 'stat-value ' + (totalPnl >= 0 ? 'positive' : 'negative');
+                }
+                document.getElementById('positionsBadge').textContent = positions.length + ' active';
+                const tbody = document.getElementById('positionsTableBody');
+                if (positions.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">◎</div>No active positions</div></td></tr>`;
+                    return;
+                }
+                tbody.innerHTML = positions.map(pos => {
+                    const sideBadge = pos.side === 'LONG'
+                        ? `<span class="side-badge side-long">▲ LONG</span>`
+                        : `<span class="side-badge side-short">▼ SHORT</span>`;
+                    const pnlClass = pos.pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+                    return `<tr>
+                        <td style="font-family:var(--font-mono);color:var(--text-secondary)">${pos.entryTime || '—'}</td>
+                        <td><span class="symbol-cell">${pos.symbol}</span></td>
+                        <td class="text-right">${pos.qty}</td>
+                        <td class="text-center">${sideBadge}</td>
+                        <td class="text-center">${renderSetup(pos.setup)}</td>
+                        <td class="text-right">${pos.avgPrice.toFixed(2)}</td>
+                        <td class="text-right">${pos.ltp.toFixed(2)}</td>
+                        <td class="text-right"><span class="${pnlClass}">${pos.pnl.toFixed(2)}</span></td>
+                    </tr>`;
+                }).join('');
+            })
+            .catch(() => {});
+    }
+
+    let isConnected = false;
+
+    function pollData() {
+        if (!isConnected) return;
+        updateTradeLogs();
+        updatePositions();
+    }
+
+    setInterval(updateConnectionStatus, 3000);
+    setInterval(pollData, 3000);
+    updateConnectionStatus();
+    updateTradeLogs();
+    updatePositions();
+
+    // ── MODE LABEL ────────────────────────────────────────────────────────────
+    function refreshMode() {
+        fetch('/api/mode').then(r => r.json()).then(d => {
+            const isMock = d.mode === 'SIMULATOR';
+            const pill   = document.getElementById('modePill');
+            const label  = document.getElementById('modeLabel');
+            const simTab = document.getElementById('simTab');
+            pill.className    = 'mode-pill ' + (isMock ? 'mock' : 'live');
+            label.textContent = isMock ? 'MOCK' : 'LIVE';
+            if (simTab) simTab.style.display = isMock ? 'inline-flex' : 'none';
+
+        }).catch(() => {});
+    }
+    refreshMode();
+
+    function logout() {
+        fetch('/api/logout', { method: 'POST' })
+            .then(r => r.json())
+            .then(data => { window.location.href = data.redirect || '/'; })
+            .catch(() => { window.location.href = '/'; });
+    }
+
+    // ── SIMULATOR MODAL ───────────────────────────────────────────────────────
+    let simPrice = 22400;
+    let simPollTimer = null;
+
+    function openSimModal() {
+        document.getElementById('simModalBackdrop').classList.add('open');
+        document.body.style.overflow = 'hidden';
+        simPollState();
+        simPollTimer = setInterval(simPollState, 1500);
+    }
+
+    function closeSimModal(e) {
+        if (e && e.target !== document.getElementById('simModalBackdrop')) return;
+        document.getElementById('simModalBackdrop').classList.remove('open');
+        document.body.style.overflow = '';
+        if (simPollTimer) { clearInterval(simPollTimer); simPollTimer = null; }
+    }
+
+    function simPost(url, body={}) {
+        return fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    }
+
+    function simMovePrice(delta) {
+        simPrice = Math.round((simPrice + delta) * 100) / 100;
+        simPost('/api/simulator/price', { price: simPrice });
+    }
+
+    function simSetManualPrice() {
+        const p = parseFloat(document.getElementById('simManualPrice').value);
+        if (!p) return;
+        simPrice = p;
+        simPost('/api/simulator/price', { price: p });
+    }
+
+    function simTrigger(sc) { simPost('/api/simulator/scenario/' + sc); }
+
+    function simCancelByTag(tag) {
+        fetch('/api/simulator/state').then(r => r.json()).then(data => {
+            const order = data.orders.find(o => o.tag === tag && o.status === 1);
+            if (order) simPost('/api/simulator/scenario/cancel-order', { orderId: order.id });
+            else alert('No pending ' + tag + ' order found');
+        }).catch(() => {});
+    }
+
+    function simCancelOrder(id) { simPost('/api/simulator/scenario/cancel-order', { orderId: id }); }
+
+    function simResetAll() {
+        if (confirm('Reset all simulator orders, positions and trades?'))
+            simPost('/api/simulator/reset');
+    }
+
+    const simStatusBdg = s => s===1?'<span class="sim-bdg sim-bdg-pending">PENDING</span>':s===2?'<span class="sim-bdg sim-bdg-traded">TRADED</span>':'<span class="sim-bdg sim-bdg-cancelled">CANCELLED</span>';
+    const simSideBdg   = s => s===1?'<span class="sim-bdg sim-bdg-buy">▲ BUY</span>':'<span class="sim-bdg sim-bdg-sell">▼ SELL</span>';
+    const simTypeName  = t => t===1?'<span class="sim-bdg sim-bdg-blue">LIMIT</span>':t===2?'<span class="sim-bdg sim-bdg-blue">MARKET</span>':'<span class="sim-bdg sim-bdg-blue">SL-MKT</span>';
+    const simTagColor  = tag => ({'AutoTrader':'var(--accent-blue)','AutoSL':'var(--accent-red)','AutoTarget':'var(--accent-green)'})[tag]||'var(--text-muted)';
+
+    function simPollState() {
+        fetch('/api/simulator/state').then(r => r.json()).then(data => {
+            simPrice = data.currentPrice;
+            document.getElementById('simPriceVal').textContent  = data.currentPrice.toFixed(2);
+            document.getElementById('simSymbolVal').textContent = data.symbol;
+
+            // Orders
+            document.getElementById('simOrderCount').textContent = data.orders.length;
+            const tbody = document.getElementById('simOrdersBody');
+            if (!data.orders.length) {
+                tbody.innerHTML = '<tr><td colspan="9"><div class="sim-empty">No orders yet</div></td></tr>';
+            } else {
+                tbody.innerHTML = data.orders.map(o => {
+                    const priceCol = o.type===3 ? o.stopPrice.toFixed(2) : o.type===1 ? o.limitPrice.toFixed(2) : '—';
+                    const filledAt = o.status===2 ? o.tradedPrice.toFixed(2) : '—';
+                    const acts = o.status===1
+                        ? `<button class="sim-btn sim-btn-red" style="padding:3px 7px;font-size:.6rem" onclick="simCancelOrder('${o.id}')">✕</button>`
+                        : '—';
+                    return `<tr>
+                        <td style="color:var(--text-muted);font-size:.65rem">${o.id}</td>
+                        <td><span style="font-size:.62rem;color:${simTagColor(o.tag)};font-weight:700">${o.tag||'—'}</span></td>
+                        <td>${simSideBdg(o.side)}</td><td>${simTypeName(o.type)}</td>
+                        <td>${o.qty}</td><td style="color:var(--text-muted)">${priceCol}</td>
+                        <td>${simStatusBdg(o.status)}</td>
+                        <td style="color:var(--accent-yellow)">${filledAt}</td>
+                        <td>${acts}</td>
+                    </tr>`;
+                }).join('');
+            }
+
+            // Log
+            const logDiv = document.getElementById('simLogWrap');
+            if (!data.eventLog.length) {
+                logDiv.innerHTML = '<div class="sim-empty">No simulator events yet</div>';
+            } else {
+                logDiv.innerHTML = data.eventLog.map(e => `<div class="sim-log-entry">${e}</div>`).join('');
+            }
+        }).catch(() => {});
+    }
+
+</script>
+
+
+    <!-- ── SIMULATOR MODAL ─────────────────────────────────────── -->
+    <div class="sim-modal-backdrop" id="simModalBackdrop" onclick="closeSimModal(event)">
+        <div class="sim-modal">
+            <div class="sim-modal-header">
+                <div class="sim-modal-title">
+                    <div class="sim-modal-title-dot"></div>
+                    ⚙ SIMULATOR CONTROL PANEL
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <input type="number" id="simManualPrice" step="0.05" placeholder="Set price…" style="width:130px;background:var(--bg-base);border:1px solid var(--border);border-radius:7px;padding:5px 10px;color:var(--text-primary);font-family:var(--font-mono);font-size:0.75rem;outline:none;">
+                    <button class="sim-btn sim-btn-blue" style="padding:5px 12px;font-size:0.7rem;" onclick="simSetManualPrice()">Set</button>
+<button class="sim-btn sim-btn-red"  style="padding:5px 12px;font-size:0.7rem;" onclick="simResetAll()">⟳ Reset</button>
+                    <div class="sim-modal-close" onclick="closeSimModal()">✕</div>
+                </div>
+            </div>
+            <div class="sim-modal-body">
+
+                <!-- Market Price -->
+                <div class="sim-panel">
+                    <div class="sim-panel-header"><div class="sim-panel-dot" style="background:var(--accent-blue)"></div>Market Price</div>
+                    <div class="sim-panel-body">
+                        <div class="sim-price-display" style="display:flex;align-items:center;gap:16px;padding:10px 14px;text-align:left;">
+                            <div class="sim-price-lbl" style="white-space:nowrap;flex-shrink:0;">Current LTP</div>
+                            <div class="sim-price-val" id="simPriceVal" style="font-size:1.1rem;flex-shrink:0;">—</div>
+                            <div class="sim-price-sym" id="simSymbolVal" style="font-size:0.72rem;margin-left:auto;">—</div>
+                        </div>
+                        <div class="sim-price-grid" style="grid-template-columns:repeat(8,1fr);margin-bottom:0">
+                            <button class="sim-btn sim-btn-red"   onclick="simMovePrice(-100)">−100</button>
+                            <button class="sim-btn sim-btn-red"   onclick="simMovePrice(-50)">−50</button>
+                            <button class="sim-btn sim-btn-red"   onclick="simMovePrice(-10)">−10</button>
+                            <button class="sim-btn sim-btn-red"   onclick="simMovePrice(-5)">−5</button>
+                            <button class="sim-btn sim-btn-green" onclick="simMovePrice(+5)">+5</button>
+                            <button class="sim-btn sim-btn-green" onclick="simMovePrice(+10)">+10</button>
+                            <button class="sim-btn sim-btn-green" onclick="simMovePrice(+50)">+50</button>
+                            <button class="sim-btn sim-btn-green" onclick="simMovePrice(+100)">+100</button>
+                        </div>
+
+                    </div>
+                </div>
+
+
+                <!-- Scenario Triggers -->
+                <div class="sim-panel">
+                    <div class="sim-panel-header"><div class="sim-panel-dot" style="background:var(--accent-yellow)"></div>Scenario Triggers</div>
+                    <div class="sim-panel-body">
+                        <div class="sim-btn-row" style="margin-bottom:8px">
+                            <button class="sim-btn sim-btn-red"    onclick="simTrigger('sl-hit')"     style="flex:1">⚡ SL Hit</button>
+                            <button class="sim-btn sim-btn-green"  onclick="simTrigger('target-hit')" style="flex:1">🎯 Target Hit</button>
+                            <button class="sim-btn sim-btn-yellow" onclick="simTrigger('square-off')" style="flex:1">⬛ Square Off</button>
+                        </div>
+                        <div style="font-size:.67rem;color:var(--text-muted);font-family:var(--font-mono);line-height:1.6">
+                            <b style="color:var(--accent-red)">SL Hit</b> — fills SL, cancels target &nbsp;·&nbsp;
+                            <b style="color:var(--accent-green)">Target Hit</b> — fills target, cancels SL &nbsp;·&nbsp;
+                            <b style="color:var(--accent-yellow)">Square Off</b> — simulates manual close
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Orders -->
+                <div class="sim-panel">
+                    <div class="sim-panel-header">
+                        <div class="sim-panel-dot" style="background:var(--accent-blue)"></div>Orders
+                        <span id="simOrderCount" style="margin-left:auto;background:rgba(99,179,237,.1);border:1px solid rgba(99,179,237,.2);color:var(--accent-blue);font-size:.62rem;padding:2px 7px;border-radius:10px;">0</span>
+                    </div>
+                    <div style="overflow-x:auto">
+                        <table class="sim-tbl">
+                            <thead><tr><th>ID</th><th>Tag</th><th>Side</th><th>Type</th><th>Qty</th><th>SL/Limit</th><th>Status</th><th>Filled@</th><th>Act.</th></tr></thead>
+                            <tbody id="simOrdersBody"><tr><td colspan="9"><div class="sim-empty">No orders yet</div></td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Simulator Log -->
+                <div class="sim-panel">
+                    <div class="sim-panel-header">
+                        <div class="sim-panel-dot" style="background:var(--accent-cyan,#22d3ee)"></div>Simulator Log
+                        <span style="margin-left:auto;font-size:.62rem;color:var(--text-muted)">Live · 1.5s</span>
+                    </div>
+                    <div class="sim-log-wrap" id="simLogWrap"><div class="sim-empty">No events yet</div></div>
+                </div>
+
+
+            </div>
+        </div>
+    </div>
+
+
+
+</body>
+</html>

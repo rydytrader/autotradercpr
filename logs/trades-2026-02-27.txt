@@ -1,0 +1,5 @@
+18:46:49 - SELL order rejected : RED:'MIS' Orders are disallowed after system square off
+18:59:09 - SELL order rejected : RED:'MIS' Orders are disallowed after system square off
+18:59:18 - SELL order rejected : RED:'MIS' Orders are disallowed after system square off
+18:59:28 - SELL order rejected : RED:'MIS' Orders are disallowed after system square off
+18:59:34 - SELL order rejected : RED:'MIS' Orders are disallowed after system square off

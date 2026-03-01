@@ -1,0 +1,28 @@
+package com.rydytrader.autotrader.fyers;
+
+import com.fasterxml.jackson.databind.JsonNode;
+
+/**
+ * Abstraction over all Fyers API calls.
+ * Implementations: LiveFyersClient (real API) and MockFyersClient (embedded mock).
+ */
+public interface FyersClient {
+
+    /** POST /api/v3/orders/sync — place any order, returns full JSON response */
+    JsonNode placeOrder(String orderJson, String authHeader) throws Exception;
+
+    /** DELETE /api/v3/orders — cancel an order by id */
+    JsonNode cancelOrder(String orderId, String authHeader) throws Exception;
+
+    /** GET /api/v3/orders?id=X — get single order status */
+    JsonNode getOrder(String orderId, String authHeader) throws Exception;
+
+    /** GET /api/v3/positions — get open positions */
+    JsonNode getPositions(String authHeader) throws Exception;
+
+    /** GET /api/v3/tradebook — get tradebook */
+    JsonNode getTradebook(String authHeader) throws Exception;
+
+    /** POST /api/v3/validate-authcode — exchange auth code for token */
+    JsonNode validateAuthCode(String requestBody) throws Exception;
+}

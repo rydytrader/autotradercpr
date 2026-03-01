@@ -1,0 +1,8 @@
+18:43:39 - BUY signal received for NSE:NIFTY26MARFUT | Setup: BUY_ABOVE_R1_PDH | SL: 25400.0 | Target: 26000.0
+18:43:41 - BUY order filled — placing SL + Target
+18:43:41 - SL order placed at 25400.0 [ID: SIM100002]
+18:43:41 - Target order placed at 26000.0 [ID: SIM100003]
+18:47:13 - BUY signal received for NSE:NIFTY26MARFUT | Setup: BUY_ABOVE_R1_PDH | SL: 25400.0 | Target: 26000.0
+18:47:15 - BUY order filled — placing SL + Target
+18:47:15 - SL order placed at 25400.0 [ID: SIM100002]
+18:47:15 - Target order placed at 26000.0 [ID: SIM100003]
