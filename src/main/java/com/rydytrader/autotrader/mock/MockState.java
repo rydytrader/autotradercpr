@@ -170,6 +170,22 @@ public class MockState {
     public int     getFillDelayMs()  { return fillDelayMs; }
     public List<String> getEventLog(){ return eventLog; }
 
+    public void restorePosition(String symbol, String side, int qty, double avgPrice) {
+        position = new LinkedHashMap<>();
+        position.put("symbol",           symbol);
+        position.put("productType",      "INTRADAY");
+        position.put("side",             "LONG".equals(side) ? 1 : -1);
+        position.put("netQty",           "LONG".equals(side) ? qty : -qty);
+        position.put("netAvgPrice",      avgPrice);
+        position.put("buyAvg",           "LONG".equals(side) ? avgPrice : 0.0);
+        position.put("sellAvg",          "SHORT".equals(side) ? avgPrice : 0.0);
+        position.put("buyQty",           "LONG".equals(side) ? qty : 0);
+        position.put("sellQty",          "SHORT".equals(side) ? qty : 0);
+        position.put("unrealizedProfit", 0.0);
+        activeSymbol = symbol;
+        log("RESTORED position: " + side + " " + qty + " @ " + avgPrice);
+    }
+
     public void setActiveSymbol(String s) { activeSymbol = s; log("Symbol → " + s); }
     public void setCurrentPrice(double p) { currentPrice = p; }
     public void setAutoFill(boolean b)    { autoFill = b;  log("AutoFill → " + b); }

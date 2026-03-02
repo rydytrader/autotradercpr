@@ -19,6 +19,7 @@ import com.rydytrader.autotrader.service.OrderService;
 import com.rydytrader.autotrader.service.PollingService;
 import com.rydytrader.autotrader.service.TradeHistoryService;
 import com.rydytrader.autotrader.store.ModeStore;
+import com.rydytrader.autotrader.store.PositionStateStore;
 
 @RestController
 public class TradingController {
@@ -29,19 +30,22 @@ public class TradingController {
     private final ModeStore modeStore;
     private final MockState mockState;
     private final TradeHistoryService tradeHistoryService;
+    private final PositionStateStore   positionStateStore;
 
     public TradingController(PollingService pollingService,
                               OrderService orderService,
                               EventService eventService,
                               ModeStore modeStore,
                               MockState mockState,
-                              TradeHistoryService tradeHistoryService) {
+                              TradeHistoryService tradeHistoryService,
+                              PositionStateStore positionStateStore) {
         this.pollingService      = pollingService;
         this.orderService        = orderService;
         this.eventService        = eventService;
         this.modeStore           = modeStore;
         this.mockState           = mockState;
         this.tradeHistoryService = tradeHistoryService;
+        this.positionStateStore  = positionStateStore;
     }
 
     // ── PLACE ORDER ───────────────────────────────────────────────────────────
@@ -101,6 +105,8 @@ public class TradingController {
             String side       = netQty > 0 ? "LONG" : "SHORT";
             String setup = pollingService.getCurrentSetup();
             PositionManager.setPosition("NONE");
+            positionStateStore.clear();
+            pollingService.clearCachedPositions();
             mockState.triggerManualSquareOff();
             tradeHistoryService.record(symbol, side, Math.abs(netQty), entryPrice, exitPrice, "MANUAL", setup);
             eventService.log("Square off at exit: " + exitPrice + " — SL and Target cancelled");
@@ -114,19 +120,23 @@ public class TradingController {
 
     // ── POSITIONS ─────────────────────────────────────────────────────────────
     @GetMapping("/api/positions")
-    public List<Map<String, Object>> getPositions() {
-        return pollingService.fetchPositions().stream().map(p -> {
+    public Map<String, Object> getPositions() {
+        List<Map<String, Object>> positions = pollingService.fetchPositions().stream().map(p -> {
             Map<String, Object> m = new java.util.LinkedHashMap<>();
-            m.put("symbol",   p.getSymbol());
-            m.put("qty",      p.getQty());
-            m.put("side",     p.getSide());
-            m.put("avgPrice", p.getAvgPrice());
-            m.put("ltp",      p.getLtp());
-            m.put("pnl",      p.getPnl());
+            m.put("symbol",    p.getSymbol());
+            m.put("qty",       p.getQty());
+            m.put("side",      p.getSide());
+            m.put("avgPrice",  p.getAvgPrice());
+            m.put("ltp",       p.getLtp());
+            m.put("pnl",       p.getPnl());
             m.put("setup",     p.getSetup());
             m.put("entryTime", p.getEntryTime());
             return m;
         }).collect(java.util.stream.Collectors.toList());
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("positions", positions);
+        result.put("lastSync",  pollingService.getLastSyncTime());
+        return result;
     }
 
     // ── STATUS ────────────────────────────────────────────────────────────────

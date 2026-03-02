@@ -6,6 +6,9 @@ import com.rydytrader.autotrader.dto.OrderDTO;
 import com.rydytrader.autotrader.dto.PositionsDTO;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
 import com.rydytrader.autotrader.manager.PositionManager;
+import com.rydytrader.autotrader.mock.MockState;
+import com.rydytrader.autotrader.store.ModeStore;
+import com.rydytrader.autotrader.store.PositionStateStore;
 import com.rydytrader.autotrader.store.TokenStore;
 import org.springframework.stereotype.Service;
 
@@ -26,7 +29,12 @@ public class PollingService {
     private volatile List<PositionsDTO> cachedPositions = new ArrayList<>();
     private volatile String currentSetup = "";
     private volatile String currentEntryTime = "";
+    private volatile boolean justRestored = false;
+    private volatile String lastSyncTime = "";
     private volatile String connectionStatus = "DISCONNECTED";
+    private final PositionStateStore positionStateStore;
+    private final MockState            mockState;
+    private final ModeStore            modeStore;
 
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(3);
 
@@ -35,13 +43,48 @@ public class PollingService {
                           FyersClientRouter fyersClient,
                           OrderService orderService,
                           EventService eventService,
-                          TradeHistoryService tradeHistoryService) {
+                          TradeHistoryService tradeHistoryService,
+                          PositionStateStore positionStateStore,
+                          MockState mockState,
+                          ModeStore modeStore) {
         this.tokenStore          = tokenStore;
         this.fyersProperties     = fyersProperties;
         this.fyersClient         = fyersClient;
         this.orderService        = orderService;
         this.eventService        = eventService;
         this.tradeHistoryService = tradeHistoryService;
+        this.positionStateStore  = positionStateStore;
+        this.mockState           = mockState;
+        this.modeStore           = modeStore;
+        restoreStateOnStartup();
+    }
+
+    private void restoreStateOnStartup() {
+        java.util.Map<String, Object> saved = positionStateStore.load();
+        if (saved == null) return;
+        try {
+            String symbol   = saved.get("symbol").toString();
+            String side     = saved.get("side").toString();
+            int    qty      = Integer.parseInt(saved.get("qty").toString());
+            double avgPrice = Double.parseDouble(saved.get("avgPrice").toString());
+            String setup    = saved.getOrDefault("setup", "").toString();
+            String entryTime = saved.getOrDefault("entryTime", "").toString();
+            // Restore in-memory state
+            currentSetup     = setup;
+            currentEntryTime = entryTime;
+            PositionManager.setPosition(side);
+            // Pre-populate cachedPositions so UI shows immediately
+            cachedPositions = new java.util.ArrayList<>();
+            cachedPositions.add(new PositionsDTO(symbol, qty, side, avgPrice, avgPrice, 0.0, setup, entryTime));
+            // If simulator mode — restore MockState too
+            if (modeStore.getMode() == ModeStore.Mode.SIMULATOR) {
+                mockState.restorePosition(symbol, side, qty, avgPrice);
+            }
+            justRestored = true;
+            System.out.println("[PollingService] Restored state on startup: " + side + " " + symbol);
+        } catch (Exception e) {
+            System.err.println("[PollingService] Failed to restore state: " + e.getMessage());
+        }
     }
 
     // ── ENTRY MONITOR + OCO ───────────────────────────────────────────────────
@@ -64,6 +107,7 @@ public class PollingService {
                     PositionManager.setPosition(position);
                     currentSetup = setup != null ? setup : "";
                     currentEntryTime = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
+                    positionStateStore.save(symbol, position, quantity, 0.0, currentSetup, currentEntryTime);
                     eventService.log((position.equals("LONG") ? "BUY" : "SELL") + " order filled — placing SL + Target");
 
                     OrderDTO slOrder     = orderService.placeStopLoss(symbol, quantity, exitSide, slPrice);
@@ -125,6 +169,8 @@ public class PollingService {
                     double exitPrice = orderService.getFilledPriceFromTradebook(symbol, exitSide);
                     double entryPrice = orderService.getFilledPriceFromTradebook(symbol, exitSide == 1 ? -1 : 1);
                     tradeHistoryService.record(symbol, positionSide, qty, entryPrice > 0 ? entryPrice : slPrice, exitPrice > 0 ? exitPrice : slPrice, "SL", setup);
+                    positionStateStore.clear();
+                    cachedPositions = new ArrayList<>();
                     PositionManager.setPosition("NONE");
                     if (s.future != null) s.future.cancel(false);
                 }
@@ -136,6 +182,8 @@ public class PollingService {
                     double exitPrice = orderService.getFilledPriceFromTradebook(symbol, exitSide);
                     double entryPrice = orderService.getFilledPriceFromTradebook(symbol, exitSide == 1 ? -1 : 1);
                     tradeHistoryService.record(symbol, positionSide, qty, entryPrice > 0 ? entryPrice : targetPrice, exitPrice > 0 ? exitPrice : targetPrice, "TARGET", setup);
+                    positionStateStore.clear();
+                    cachedPositions = new ArrayList<>();
                     PositionManager.setPosition("NONE");
                     if (s.future != null) s.future.cancel(false);
                 }
@@ -191,6 +239,8 @@ public class PollingService {
     // ── POSITION SYNC ─────────────────────────────────────────────────────────
     // ── SQUARE OFF ────────────────────────────────────────────────────────────
     public String getCurrentSetup() { return currentSetup; }
+    public void clearCachedPositions() { cachedPositions = new ArrayList<>(); }
+    public String getLastSyncTime()     { return lastSyncTime; }
 
     public boolean squareOff(String symbol, int quantity) {
         try {
@@ -210,6 +260,8 @@ public class PollingService {
 
             eventService.log("Square off executed — position closed");
             currentSetup = ""; currentEntryTime = "";
+            positionStateStore.clear();
+            cachedPositions = new ArrayList<>();
             PositionManager.setPosition("NONE");
             return true;
 
@@ -227,6 +279,7 @@ public class PollingService {
         positionSyncStarted = true;
         scheduler.scheduleAtFixedRate(() -> {
             if (tokenStore.getAccessToken() == null) return;
+            if (PositionManager.getPosition().equals("NONE") && positionStateStore.load() == null) return;
             syncPosition();
         }, 5, 10, TimeUnit.SECONDS);
     }
@@ -252,18 +305,25 @@ public class PollingService {
                         double pl  = pos.has("unrealizedProfit") ? pos.get("unrealizedProfit").asDouble()
                                    : pos.has("pl")               ? pos.get("pl").asDouble() : 0;
                         String posSide = side == 1 ? "LONG" : "SHORT";
-                        String resolvedEntryTime = !currentEntryTime.isEmpty() ? currentEntryTime : eventService.getEntryTimeFromLogs();
+                        String resolvedEntryTime = !currentEntryTime.isEmpty() ? currentEntryTime : "";
+                        if (resolvedEntryTime.isEmpty()) {
+                            java.util.Map<String,Object> saved = positionStateStore.load();
+                            if (saved != null && saved.containsKey("entryTime")) resolvedEntryTime = saved.get("entryTime").toString();
+                        }
+                        if (resolvedEntryTime.isEmpty()) resolvedEntryTime = eventService.getEntryTimeFromLogs();
                         if (currentEntryTime.isEmpty() && !resolvedEntryTime.isEmpty()) currentEntryTime = resolvedEntryTime;
                         updatedList.add(new PositionsDTO(
                             pos.get("symbol").asText(), qty, posSide, avg, ltp, pl, currentSetup, resolvedEntryTime
                         ));
                         PositionManager.setPosition(posSide);
+                        positionStateStore.save(pos.get("symbol").asText(), posSide, qty, avg, currentSetup, currentEntryTime);
                     }
                 }
             }
 
             // Detect manual square-off
-            if (updatedList.isEmpty() && !cachedPositions.isEmpty()
+            if (justRestored && updatedList.isEmpty()) { justRestored = false; }
+            else if (updatedList.isEmpty() && !cachedPositions.isEmpty()
                     && !PositionManager.getPosition().equals("NONE")) {
                 eventService.log("Position closed externally — recording trade");
                 PositionsDTO prev = cachedPositions.get(0);
@@ -271,13 +331,16 @@ public class PollingService {
                 tradeHistoryService.record(prev.getSymbol(), prev.getSide(), Math.abs(prev.getQty()),
                     prev.getAvgPrice(), exitPrice > 0 ? exitPrice : prev.getLtp(), "MANUAL", currentSetup);
                 currentSetup = ""; currentEntryTime = "";
+                positionStateStore.clear();
                 PositionManager.setPosition("NONE");
             } else if (updatedList.isEmpty()) {
                 currentSetup = ""; currentEntryTime = "";
+                positionStateStore.clear();
                 PositionManager.setPosition("NONE");
             }
 
             cachedPositions = updatedList;
+            lastSyncTime = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
             connectionStatus = "CONNECTED";
 
         } catch (Exception e) {

@@ -4,6 +4,7 @@ import com.rydytrader.autotrader.mock.MockState;
 import com.rydytrader.autotrader.manager.PositionManager;
 import com.rydytrader.autotrader.service.EventService;
 import com.rydytrader.autotrader.service.PollingService;
+import com.rydytrader.autotrader.store.PositionStateStore;
 import com.rydytrader.autotrader.service.TradeHistoryService;
 import com.rydytrader.autotrader.store.ModeStore;
 import com.rydytrader.autotrader.store.TokenStore;
@@ -21,19 +22,22 @@ public class SimulatorController {
     private final EventService       eventService;
     private final TradeHistoryService tradeHistoryService;
     private final PollingService       pollingService;
+    private final PositionStateStore   positionStateStore;
 
     public SimulatorController(ModeStore modeStore,
                                 TokenStore tokenStore,
                                 MockState mockState,
                                 EventService eventService,
                                 TradeHistoryService tradeHistoryService,
-                                PollingService pollingService) {
+                                PollingService pollingService,
+                                PositionStateStore positionStateStore) {
         this.modeStore          = modeStore;
         this.tokenStore         = tokenStore;
         this.mockState          = mockState;
         this.eventService       = eventService;
         this.tradeHistoryService = tradeHistoryService;
         this.pollingService      = pollingService;
+        this.positionStateStore  = positionStateStore;
     }
 
     // ── MODE SWITCH ───────────────────────────────────────────────────────────
@@ -153,6 +157,8 @@ public class SimulatorController {
 
             String setup = pollingService.getCurrentSetup();
             PositionManager.setPosition("NONE");
+            positionStateStore.clear();
+            pollingService.clearCachedPositions();
             mockState.triggerManualSquareOff();
 
             tradeHistoryService.record(symbol, side, qty, entryPrice, exitPrice, "MANUAL", setup);

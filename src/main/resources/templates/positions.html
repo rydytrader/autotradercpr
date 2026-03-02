@@ -583,8 +583,8 @@
         </div>
         <div class="stat-card fade-in" style="--accent-color: var(--accent-yellow)">
             <div class="stat-label">Last Update</div>
-            <div class="stat-value" id="lastUpdate" style="font-size: 1rem; padding-top: 4px;">—</div>
-            <div class="stat-sub">Auto-refresh 3s</div>
+            <div class="stat-value" id="lastUpdate">—</div>
+            <div class="stat-sub">Sync on open position (every 10s)</div>
         </div>
     </div>
 
@@ -739,9 +739,7 @@
                     isConnected = false;
                 }
                 setLogBadge(data.status);
-                const now = new Date();
-                document.getElementById('lastUpdate').textContent =
-                    now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
             })
             .catch(() => {
                 // Server unreachable — set flag so we redirect when it comes back
@@ -792,7 +790,9 @@
     function updatePositions() {
         fetch('/api/positions')
             .then(r => r.json())
-            .then(positions => {
+            .then(data => {
+                const positions = data.positions || [];
+                if (data.lastSync) document.getElementById('lastUpdate').textContent = data.lastSync;
                 document.getElementById('statSide').textContent = positions.length === 0 ? 'NONE' : positions[0].side;
                 document.getElementById('statCount').textContent = positions.length;
 
