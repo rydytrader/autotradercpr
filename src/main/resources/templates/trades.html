@@ -269,7 +269,7 @@
 
         .logout-btn {
             display: flex; align-items: center; justify-content: center;
-            gap: 6px; padding: 6px 14px;
+            width: 36px; height: 36px;
             background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.2);
             border-radius: 8px; color: var(--accent-red);
             font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700;
@@ -444,10 +444,10 @@
             <div class="nav-tabs">
                 <a href="/positions" class="nav-tab">⬡ Positions</a>
                 <a href="/trades" class="nav-tab active">⊞ Trade Log</a>
-                <a href="/journal" class="nav-tab">📓 Journal</a>
-                <button class="nav-tab" id="simTab" style="display:none" onclick="openSimModal()">⚙ Simulator</button>
+                <a href="/journal" class="nav-tab">≡ Journal</a>
+                <a href="/settings" class="nav-tab">⚙ Settings</a>
+                <button class="nav-tab" id="simTab" style="display:none;" onclick="openSimModal()">◈ Simulator</button>
             </div>
-            <button class="logout-btn" onclick="logout()">⏻ Logout</button>
             <div class="mode-pill" id="modePill">
                 <div class="mode-pill-dot"></div>
                 <span class="mode-pill-label" id="modeLabel">LIVE</span>
@@ -457,6 +457,7 @@
                 <span id="connectionStatus" style="color: var(--text-secondary);">Checking...</span>
             </div>
             <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
+            <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
         </div>
     </div>
 </nav>

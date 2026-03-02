@@ -54,7 +54,7 @@ lineStyleOpt = input.string("Dotted", "Style", options=["Solid","Dashed","Dotted
 showBuySellSignals  = input.bool(false, "Show Buy / Sell Signals",  group="▶ AUTO SIGNAL")
 tradeSymbol = input.string("NSE:NIFTY26MARFUT","Symbol" , group="▶ AUTO SIGNAL" ,inline="SIGNALS1" )
 tradeQuantity = input.int(65,"Quantity" , group="▶ AUTO SIGNAL" ,  inline="SIGNALS1" )
-sessionInput = input.session("0930-1430", "Session Time" , group="▶ AUTO SIGNAL" )
+// sessionInput = input.session("0930-1430", "Session Time" , group="▶ AUTO SIGNAL" )
 
 maxBreakDistance = input.float(25.0, "Max Distance", step=1 , group="▶ SIGNAL SETTINGS" , inline="SIGNALS")
 slBufferPoints = input.float(10.0, "SL Buffer", step=1 , group="▶ SIGNAL SETTINGS" , inline="SIGNALS")
@@ -73,7 +73,7 @@ sma200Color = input.color(color.black, "200 SMA Color", inline="group6", group="
 
 // Within trading time
 
-isWithinTradingTime = not na(time(timeframe.period, sessionInput))
+//isWithinTradingTime = not na(time(timeframe.period, sessionInput))
 
 lineStyle = line.style_solid
 if lineStyleOpt == "Dashed"
@@ -401,37 +401,37 @@ if hideHistory
 
 distanceFromCPR = close - math.max(tc,bc)
 validBuyBreakCpr = distanceFromCPR <= maxBreakDistance
-buyBreakCpr =  isBuyRecommendation and validBuyBreakCpr and isWithinTradingTime and barstate.isconfirmed and close > dTop and ( open < pp or open < tc or open < bc or low < pp or low < tc or low < bc ) and ( close > open ) 
+buyBreakCpr =  isBuyRecommendation and validBuyBreakCpr and barstate.isconfirmed and close > dTop and ( open < pp or open < tc or open < bc or low < pp or low < tc or low < bc ) and ( close > open ) 
 
 distanceFromR1PDH = close - math.max(r1,ph)
 validBuyBreakR1PDH = distanceFromR1PDH <= maxBreakDistance
-buyBreakR1PDH = isBuyRecommendation and validBuyBreakR1PDH and isWithinTradingTime and barstate.isconfirmed and ( close > r1 and close > ph ) and ( open < r1 or open < ph or low < r1 or low <ph ) and ( close > open ) 
+buyBreakR1PDH = isBuyRecommendation and validBuyBreakR1PDH and barstate.isconfirmed and ( close > r1 and close > ph ) and ( open < r1 or open < ph or low < r1 or low <ph ) and ( close > open ) 
 
 distanceFromS2 = close -s2
 validBuyBreakS2 = distanceFromS2 <= maxBreakDistance
-buyBreakR2 = isBuyRecommendation and validBuyBreakS2 and isWithinTradingTime and barstate.isconfirmed and ( close > r2 ) and ( open < r2 or low < r2 )  and (close > open )
+buyBreakR2 = isBuyRecommendation and validBuyBreakS2  and barstate.isconfirmed and ( close > r2 ) and ( open < r2 or low < r2 )  and (close > open )
 
 distanceFromS1PDL = close - math.max(s1,pl)
 validBuyBreakS1PDL = distanceFromS1PDL <= maxBreakDistance
-buyBreakS1PDL = isBuyRecommendation and validBuyBreakS1PDL and isWithinTradingTime and barstate.isconfirmed and ( close > s1 and close > pl )  and ( open < s1 or open < pl or low < s1 or low <pl ) and ( close > open ) 
+buyBreakS1PDL = isBuyRecommendation and validBuyBreakS1PDL  and barstate.isconfirmed and ( close > s1 and close > pl )  and ( open < s1 or open < pl or low < s1 or low <pl ) and ( close > open ) 
 
 // SELL SIGNALS
 
 sdistanceFromCPR = math.min(tc,bc) - close
 validSellBreakCpr = sdistanceFromCPR <= maxBreakDistance
-sellBreakCpr = isSellRecommendation and validSellBreakCpr and isWithinTradingTime and barstate.isconfirmed and close < dBot and ( open > pp or open > tc or open > bc or high > pp or high > tc or high > bc ) and ( close < open ) 
+sellBreakCpr = isSellRecommendation and validSellBreakCpr  and barstate.isconfirmed and close < dBot and ( open > pp or open > tc or open > bc or high > pp or high > tc or high > bc ) and ( close < open ) 
 
 sdistanceFromS1PDL = math.min(s1,pl) - close
 validSellBreakS1PDL = sdistanceFromS1PDL <= maxBreakDistance
-sellBreakS1PDL = isSellRecommendation and validSellBreakS1PDL and isWithinTradingTime and barstate.isconfirmed and ( close < s1 and close < pl )  and ( open > s1 or open > pl or high > s1 or high > pl ) and ( close < open ) 
+sellBreakS1PDL = isSellRecommendation and validSellBreakS1PDL  and barstate.isconfirmed and ( close < s1 and close < pl )  and ( open > s1 or open > pl or high > s1 or high > pl ) and ( close < open ) 
 
 sdistanceFromS2 = s2 - close
 validSellBreakS2 = sdistanceFromS2 <= maxBreakDistance
-sellBreakS2 = isSellRecommendation and validSellBreakS2 and isWithinTradingTime and barstate.isconfirmed and (close < s2 ) and ( open > s2 or low > s2) and (close < open ) 
+sellBreakS2 = isSellRecommendation and validSellBreakS2 and   barstate.isconfirmed and (close < s2 ) and ( open > s2 or low > s2) and (close < open ) 
 
 sdistanceFromR1PDH = math.min(r1,ph) - close
 validSellBreakR1PDH = sdistanceFromR1PDH <= maxBreakDistance
-sellBreakR1PDH = isSellRecommendation and validSellBreakR1PDH and isWithinTradingTime and barstate.isconfirmed and ( close < r1 and close < ph ) and ( open > r1 or open > ph or high > r1 or high > ph ) and ( close < open ) 
+sellBreakR1PDH = isSellRecommendation and validSellBreakR1PDH and barstate.isconfirmed and ( close < r1 and close < ph ) and ( open > r1 or open > ph or high > r1 or high > ph ) and ( close < open ) 
 
 
 //scalpBreakCpr = barstate.isconfirmed and close > dTop and ( open < pp or open < tc or open < bc or low < pp or low < tc or low < bc ) and ( close > open ) 
@@ -545,8 +545,8 @@ if barstate.islast
     table.cell(t, 1, 4, weeklyTrend,bgcolor=getBg(weeklyTrend),text_color=color.white)
 
     // Monthly CPR
-  //  table.cell(t, 0, 5, "DAILY" , bgcolor=color.new(color.gray, 20 ), text_color=color.white)
-  //  table.cell(t, 1, 5, monthlyTrend,bgcolor=getBg(monthlyTrend),text_color=color.white)
+    table.cell(t, 0, 5, "DAILY" , bgcolor=color.new(color.gray, 20 ), text_color=color.white)
+    table.cell(t, 1, 5, monthlyTrend,bgcolor=getBg(monthlyTrend),text_color=color.white)
 
 
 
@@ -606,7 +606,7 @@ if isNewMonth
 // tomorrow window
 //tomorrowStart = todayStart + prevSessionLen
 //tomorrowEnd   = tomorrowStart + prevSessionLen + 24 * 60 * 60 * 1000 
-//prevSessionLen = time_close("D")[1] - time("D")[1]
+prevSessionLen = time_close("D")[2] - time("D")[2]
 //tomorrowStart = time_close("D")
 //tomorrowEnd   = tomorrowStart + prevSessionLen * 3
 //tomorrowStart =request.security(syminfo.tickerid,"D",time,lookahead = barmerge.lookahead_on)
@@ -630,8 +630,9 @@ isNewDailyBar = ta.change(time("D"))
 // When new daily bar appears → that bar is the real "tomorrow"
 if isNewDailyBar
     tomorrowStart := time + 24 * 60 * 60 * 1000
-    tomorrowEnd   := tomorrowStart  + daysToAdd * 24 * 60 * 60 * 1000
-
+    //tomorrowEnd   := tomorrowStart  +  daysToAdd * 24 * 60 * 60 * 1000
+    tomorrowEnd   := tomorrowStart  + prevSessionLen +  daysToAdd * 24 * 60 * 60 * 1000
+    
 
 // NEXT MONTH SESSION START AND END
 
@@ -825,7 +826,7 @@ if isNewDay and showDaily
 
     drawLabel(tc, "TC", cprColor)
     drawLabel(bc, "BC", cprColor)
-    drawLabel(pp, "PIVOT", pivotColor)
+    drawLabel(pp, "PIVOT " + str.tostring(tomorrowEnd - tomorrowStart ), pivotColor)
 
     if showR1
         drawLine(r1, resColor)
@@ -1112,7 +1113,7 @@ if  showTomorrowPivots and barstate.islast
 
     drawTLabel(ttc, "TOMORROW TC", cprColor)
     drawTLabel(tbc, "TOMORROW BC", cprColor)
-    drawTLabel(tpp, "TOMORROW PIVOT", pivotColor)
+    drawTLabel(tpp, "TOMORROW PIVOT" + str.tostring(tomorrowEnd-tomorrowStart), pivotColor)
 
     // Tomorrow Resistance
     if showR1

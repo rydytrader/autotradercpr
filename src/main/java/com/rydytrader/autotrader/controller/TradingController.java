@@ -1,5 +1,6 @@
 package com.rydytrader.autotrader.controller;
 
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 
@@ -20,17 +21,19 @@ import com.rydytrader.autotrader.service.PollingService;
 import com.rydytrader.autotrader.service.TradeHistoryService;
 import com.rydytrader.autotrader.store.ModeStore;
 import com.rydytrader.autotrader.store.PositionStateStore;
+import com.rydytrader.autotrader.store.RiskSettingsStore;
 
 @RestController
 public class TradingController {
 
-    private final PollingService pollingService;
-    private final OrderService orderService;
-    private final EventService eventService;
-    private final ModeStore modeStore;
-    private final MockState mockState;
+    private final PollingService      pollingService;
+    private final OrderService        orderService;
+    private final EventService        eventService;
+    private final ModeStore           modeStore;
+    private final MockState           mockState;
     private final TradeHistoryService tradeHistoryService;
-    private final PositionStateStore   positionStateStore;
+    private final PositionStateStore  positionStateStore;
+    private final RiskSettingsStore   riskSettings;
 
     public TradingController(PollingService pollingService,
                               OrderService orderService,
@@ -38,7 +41,8 @@ public class TradingController {
                               ModeStore modeStore,
                               MockState mockState,
                               TradeHistoryService tradeHistoryService,
-                              PositionStateStore positionStateStore) {
+                              PositionStateStore positionStateStore,
+                              RiskSettingsStore riskSettings) {
         this.pollingService      = pollingService;
         this.orderService        = orderService;
         this.eventService        = eventService;
@@ -46,6 +50,7 @@ public class TradingController {
         this.mockState           = mockState;
         this.tradeHistoryService = tradeHistoryService;
         this.positionStateStore  = positionStateStore;
+        this.riskSettings        = riskSettings;
     }
 
     // ── PLACE ORDER ───────────────────────────────────────────────────────────
@@ -53,6 +58,39 @@ public class TradingController {
     //            "quantity": 50, "stoploss": 25450.0, "target": 25700.0 }
     @PostMapping("/placeorder")
     public ResponseEntity<String> receiveSignal(@RequestBody Map<String, Object> payload) {
+
+        // ── RISK CHECKS ───────────────────────────────────────────────────────────
+        // 1. Trading hours
+        LocalTime now   = LocalTime.now();
+        LocalTime start = LocalTime.parse(riskSettings.getTradingStartTime());
+        LocalTime end   = LocalTime.parse(riskSettings.getTradingEndTime());
+        if (now.isBefore(start) || now.isAfter(end)) {
+            String msg = "Signal ignored — outside trading hours " + riskSettings.getTradingStartTime()
+                       + "–" + riskSettings.getTradingEndTime() + " [now: " + now + "]";
+            eventService.log("[WARNING] " + msg);
+            return ResponseEntity.ok(msg);
+        }
+
+        // 2. Max daily loss
+        if (riskSettings.getMaxDailyLoss() > 0) {
+            double todayPnl = tradeHistoryService.getTrades().stream().mapToDouble(t -> t.getPnl()).sum();
+            if (todayPnl <= -Math.abs(riskSettings.getMaxDailyLoss())) {
+                String msg = "Signal ignored — daily loss limit reached (P&L: ₹" + Math.round(todayPnl) + ")";
+                eventService.log("[WARNING] " + msg);
+                return ResponseEntity.ok(msg);
+            }
+        }
+
+        // 3. Max trades per day
+        if (riskSettings.getMaxTradesPerDay() > 0) {
+            int todayTrades = tradeHistoryService.getTrades().size();
+            if (todayTrades >= riskSettings.getMaxTradesPerDay()) {
+                String msg = "Signal ignored — max trades per day reached ("
+                           + todayTrades + "/" + riskSettings.getMaxTradesPerDay() + ")";
+                eventService.log("[WARNING] " + msg);
+                return ResponseEntity.ok(msg);
+            }
+        }
 
         String signal   = payload.get("signal").toString();
         String symbol   = payload.get("symbol").toString();
@@ -66,7 +104,7 @@ public class TradingController {
         if (signal.equals("BUY") && !PositionManager.getPosition().equals("LONG")) {
 
             OrderDTO order = orderService.placeOrder(symbol, quantity, 1, stoploss);
-            eventService.log("BUY signal received for " + symbol + " | Setup: " + setup + " | SL: " + stoploss + " | Target: " + target);
+            eventService.log("[INFO] BUY signal received for " + symbol + " | Setup: " + setup + " | SL: " + stoploss + " | Target: " + target);
 
             // Monitor entry fill, then place SL + Target OCO
             // exitSide = -1 (SELL to exit a LONG)
@@ -75,7 +113,7 @@ public class TradingController {
         } else if (signal.equals("SELL") && !PositionManager.getPosition().equals("SHORT")) {
 
             OrderDTO order = orderService.placeOrder(symbol, quantity, -1, stoploss);
-            eventService.log("SELL signal received for " + symbol + " | Setup: " + setup + " | SL: " + stoploss + " | Target: " + target);
+            eventService.log("[INFO] SELL signal received for " + symbol + " | Setup: " + setup + " | SL: " + stoploss + " | Target: " + target);
 
             // exitSide = 1 (BUY to exit a SHORT)
             pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "SHORT", 1, stoploss, target, setup);
@@ -83,7 +121,7 @@ public class TradingController {
         } else {
             String msg = "Signal ignored — existing position: " + PositionManager.getPosition();
             System.out.println(msg);
-            eventService.log(msg);
+            eventService.log("[WARNING] " + msg);
         }
 
         return ResponseEntity.ok("Signal processed");
@@ -109,7 +147,7 @@ public class TradingController {
             pollingService.clearCachedPositions();
             mockState.triggerManualSquareOff();
             tradeHistoryService.record(symbol, side, Math.abs(netQty), entryPrice, exitPrice, "MANUAL", setup);
-            eventService.log("Square off at exit: " + exitPrice + " — SL and Target cancelled");
+            eventService.log("[SUCCESS] Manual Square off at exit: " + exitPrice + " — SL and Target cancelled");
             return ResponseEntity.ok(Map.of("ok", true));
         }
 

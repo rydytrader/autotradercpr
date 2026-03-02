@@ -18,8 +18,8 @@ public class TradeHistoryService {
     private static final DateTimeFormatter DATE_FMT   = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final String            FILE_PREFIX = "trades-history-";
 
-    private static final String LOG_DIR_LIVE = "logs/live";
-    private static final String LOG_DIR_SIM  = "logs/simulator";
+    private static final String LOG_DIR_LIVE = "../store/live/history";
+    private static final String LOG_DIR_SIM  = "../store/simulator/history";
 
     private final ModeStore modeStore;
     private final List<TradeRecord> trades = Collections.synchronizedList(new ArrayList<>());
@@ -27,8 +27,8 @@ public class TradeHistoryService {
     public TradeHistoryService(ModeStore modeStore) {
         this.modeStore = modeStore;
         try {
-            Files.createDirectories(Paths.get(LOG_DIR_LIVE));
-            Files.createDirectories(Paths.get(LOG_DIR_SIM));
+            Files.createDirectories(Paths.get("../store/live/history"));
+            Files.createDirectories(Paths.get("../store/simulator/history"));
         } catch (IOException e) { e.printStackTrace(); }
         loadTodaysTradesFromFile();
     }

@@ -285,6 +285,11 @@
         }
         .log-entry:hover { background: var(--bg-card-hover); }
         .log-entry::before { content: '›'; color: var(--accent-blue); flex-shrink: 0; margin-top: 1px; }
+        .log-tag { display: inline-block; font-size: 0.6rem; font-weight: 700; padding: 1px 6px; border-radius: 3px; letter-spacing: 0.05em; flex-shrink: 0; align-self: center; }
+        .log-tag-success { background: rgba(52,211,153,0.15); color: var(--accent-green); }
+        .log-tag-error   { background: rgba(248,113,113,0.15); color: var(--accent-red); }
+        .log-tag-warning { background: rgba(251,191,36,0.15);  color: var(--accent-yellow); }
+        .log-tag-info    { background: rgba(99,179,237,0.15);  color: var(--accent-blue); }
 
         /* ── PAGE FOOTER ────────────────────────── */
         .page-footer {
@@ -360,7 +365,7 @@
 
         .logout-btn {
             display: flex; align-items: center; justify-content: center;
-            gap: 6px; padding: 6px 14px;
+            width: 36px; height: 36px;
             background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.2);
             border-radius: 8px; color: var(--accent-red);
             font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700;
@@ -535,10 +540,10 @@
             <div class="nav-tabs">
                 <a href="/positions" class="nav-tab active">⬡ Positions</a>
                 <a href="/trades" class="nav-tab">⊞ Trade Log</a>
-                <a href="/journal" class="nav-tab">📓 Journal</a>
-                <button class="nav-tab" id="simTab" style="display:none" onclick="openSimModal()">⚙ Simulator</button>
+                <a href="/journal" class="nav-tab">≡ Journal</a>
+                <a href="/settings" class="nav-tab">⚙ Settings</a>
+                <button class="nav-tab" id="simTab" style="display:none;" onclick="openSimModal()">◈ Simulator</button>
             </div>
-            <button class="logout-btn" onclick="logout()">⏻ Logout</button>
             <div class="mode-pill" id="modePill">
                 <div class="mode-pill-dot"></div>
                 <span class="mode-pill-label" id="modeLabel">LIVE</span>
@@ -548,6 +553,7 @@
                 <span id="connectionStatus" style="color: var(--text-secondary);">Checking...</span>
             </div>
             <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
+            <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
         </div>
     </div>
 </nav>
@@ -754,6 +760,25 @@
     }
 
     // ── TRADE LOGS ────────────────────────────────
+    function parseLogLevel(log) {
+        const levels = ['SUCCESS', 'ERROR', 'WARNING', 'INFO'];
+        for (const level of levels) {
+            const prefix = '[' + level + '] ';
+            if (log.includes(prefix)) {
+                const idx = log.indexOf(prefix);
+                return { level, message: log.substring(0, idx) + log.substring(idx + prefix.length) };
+            }
+        }
+        if (log.includes('WARNING:')) return { level: 'WARNING', message: log };
+        return { level: 'INFO', message: log };
+    }
+
+    function renderLogEntry(log, cssClass) {
+        const { level, message } = parseLogLevel(log);
+        const tagClass = 'log-tag log-tag-' + level.toLowerCase();
+        return `<div class="${cssClass}"><span class="${tagClass}">${level}</span>${message}</div>`;
+    }
+
     function updateTradeLogs() {
         fetch('/logs')
             .then(r => r.json())
@@ -763,7 +788,7 @@
                     container.innerHTML = `<div class="empty-state"><div class="empty-icon">⌁</div>No events recorded</div>`;
                     return;
                 }
-                container.innerHTML = data.slice().reverse().map(log => `<div class="log-entry">${log}</div>`).join('');
+                container.innerHTML = data.slice().reverse().map(log => renderLogEntry(log, 'log-entry')).join('');
             })
             .catch(() => {});
     }
@@ -969,7 +994,7 @@
             if (!data.eventLog.length) {
                 logDiv.innerHTML = '<div class="sim-empty">No simulator events yet</div>';
             } else {
-                logDiv.innerHTML = data.eventLog.map(e => `<div class="sim-log-entry">${e}</div>`).join('');
+                logDiv.innerHTML = data.eventLog.map(e => renderLogEntry(e, 'sim-log-entry')).join('');
             }
         }).catch(() => {});
     }

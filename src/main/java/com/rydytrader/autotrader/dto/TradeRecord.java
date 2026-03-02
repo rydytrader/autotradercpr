@@ -3,6 +3,10 @@ package com.rydytrader.autotrader.dto;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
+/**
+ * Immutable record of a completed trade, including entry/exit prices, P&amp;L, and outcome.
+ * Used both for in-memory storage and CSV persistence.
+ */
 public class TradeRecord {
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("HH:mm:ss");

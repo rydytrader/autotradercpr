@@ -19,13 +19,13 @@ public class EventService {
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
-    private static final String LOG_DIR_LIVE = "logs/live";
-    private static final String LOG_DIR_SIM  = "logs/simulator";
+    private static final String LOG_DIR_LIVE = "../store/live/events";
+    private static final String LOG_DIR_SIM  = "../store/simulator/events";
 
     public EventService(ModeStore modeStore) {
         this.modeStore = modeStore;
-        new File(LOG_DIR_LIVE).mkdirs();
-        new File(LOG_DIR_SIM).mkdirs();
+        new File("../store/live/events").mkdirs();
+        new File("../store/simulator/events").mkdirs();
         loadTodaysLogsFromFile();
     }
 

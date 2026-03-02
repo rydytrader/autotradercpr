@@ -90,4 +90,10 @@ public class ViewController {
         if (!tokenStore.isTokenAvailable()) return "redirect:/";
         return "simulator";
     }
+
+    @GetMapping("/settings")
+    public String settings() {
+        if (!tokenStore.isTokenAvailable()) return "redirect:/";
+        return "settings";
+    }
 }

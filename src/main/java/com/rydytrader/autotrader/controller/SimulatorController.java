@@ -162,7 +162,7 @@ public class SimulatorController {
             mockState.triggerManualSquareOff();
 
             tradeHistoryService.record(symbol, side, qty, entryPrice, exitPrice, "MANUAL", setup);
-            eventService.log("Square off at exit: " + exitPrice + " — SL and Target cancelled");
+            eventService.log("[SUCCESS] Manual Square off at exit: " + exitPrice + " — SL and Target cancelled");
         } else {
             mockState.triggerManualSquareOff();
         }
