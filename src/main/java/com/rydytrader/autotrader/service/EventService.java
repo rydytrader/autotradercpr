@@ -57,7 +57,7 @@ public class EventService {
     }
 
     private String logDir()  { return modeStore.isLive() ? LOG_DIR_LIVE : LOG_DIR_SIM; }
-    private String logFile() { return logDir() + "/trades-" + LocalDate.now().format(DATE_FMT) + ".txt"; }
+    private String logFile() { return logDir() + "/event-logs-" + LocalDate.now().format(DATE_FMT) + ".txt"; }
 
     private void loadTodaysLogsFromFile() {
         File file = new File(logFile());
