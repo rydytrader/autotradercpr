@@ -454,22 +454,22 @@ if isSellRecommendation
 if buyBreakCpr and showBuySellSignals
     drawBuyLabel("BUY",color.new(color.green, 0))
     // stopLoss below CPR 
-    json := json + '"target":' + str.tostring(math.min(r1,ph)) + ',' + '"stoploss":' + str.tostring(math.min(tc,bc) - slBufferPoints ) + '}'
+    json := json + '"target":' + str.tostring(math.min(r1,ph)) + ',' + '"stoploss":' + str.tostring(math.min(tc,bc) - slBufferPoints ) + ',' + '"setup":"BUY_ABOVE_CPR"' +  '}'
     alert(json , alert.freq_once_per_bar_close)
 if buyBreakR1PDH and showBuySellSignals
     drawBuyLabel("BUY",color.new(color.green, 0))
     // stopLoss below R1 PDH target R2
-    json := json + '"target":' + str.tostring(r2) + ',' +  '"stoploss":' + str.tostring(math.min(r1,ph) - slBufferPoints ) + '}'
+    json := json + '"target":' + str.tostring(r2) + ',' +  '"stoploss":' + str.tostring(math.min(r1,ph) - slBufferPoints ) + ',' + '"setup":"BUY_ABOVE_R1_PDH"' +  '}'
     alert(json, alert.freq_once_per_bar_close)
 if buyBreakR2 and showBuySellSignals
     drawBuyLabel("BUY",color.new(color.green, 0))
     // stopLoss below R2 target R3
-    json := json + '"target":' + str.tostring(r3) + ',' + '"stoploss":' + str.tostring( r2-50 ) + '}'
+    json := json + '"target":' + str.tostring(r3) + ',' + '"stoploss":' + str.tostring( r2-50 ) + ',' + '"setup":"BUY_ABOVE_S2"' +  '}'
     alert(json, alert.freq_once_per_bar_close)
 if buyBreakS1PDL and showBuySellSignals
     drawBuyLabel("BUY", color.new(color.orange, 25))
     // stopLoss below S1 PDL target CPR
-    json := json + '"target":' + str.tostring(math.min(tc,bc)) + ',' + '"stoploss":' +  str.tostring(math.min(s1,pl) - slBufferPoints ) + '}'
+    json := json + '"target":' + str.tostring(math.min(tc,bc)) + ',' + '"stoploss":' +  str.tostring(math.min(s1,pl) - slBufferPoints ) + ',' + '"setup":"BUY_ABOVE_S1_PDL"' +  '}'
     alert(json, alert.freq_once_per_bar_close)
 //if scalpBreakCpr
    // drawBuyLabel("BUY SCALP", color.new(color.orange, 25))
@@ -477,22 +477,22 @@ if buyBreakS1PDL and showBuySellSignals
 if sellBreakCpr and showBuySellSignals
     drawSellLabel("SELL",color.new(color.red, 0))
     // stopLoss above CPR 
-    json := json +  '"target":' + str.tostring(math.max(s1,pl)) + ','  + '"stoploss":' + str.tostring(math.max(tc,bc) +  slBufferPoints) + '}'
+    json := json +  '"target":' + str.tostring(math.max(s1,pl)) + ','  + '"stoploss":' + str.tostring(math.max(tc,bc) +  slBufferPoints) + ',' + '"setup":"SELL_BELOW_CPR"' +  '}'
     alert(json , alert.freq_once_per_bar_close)
 if sellBreakS1PDL and showBuySellSignals     
     drawSellLabel("SELL",color.new(color.red, 0)) 
     // stopLoss above  S1 PDL and target S2
-    json := json +  '"target":' + str.tostring(s2) + ','  + '"stoploss":' + str.tostring(math.max(s1,pl) +  slBufferPoints ) + '}'
+    json := json +  '"target":' + str.tostring(s2) + ','  + '"stoploss":' + str.tostring(math.max(s1,pl) +  slBufferPoints ) + ',' + '"setup":"SELL_BELOW_S1_PDL"' +  '}'
     alert(json, alert.freq_once_per_bar_close)
 if sellBreakS2  and showBuySellSignals
     drawSellLabel("SELL",color.new(color.red, 0)) 
     // stopLoss below S2 and target S3
-    json := json +  '"target":' + str.tostring(s3) + ',' +  '"stoploss":' + str.tostring( s2 + 50 ) + '}'
+    json := json +  '"target":' + str.tostring(s3) + ',' +  '"stoploss":' + str.tostring( s2 + 50 ) +  ',' + '"setup":"SELL_BELOW_S2"' +  '}'
     alert(json, alert.freq_once_per_bar_close)
 if sellBreakR1PDH and showBuySellSignals
     drawSellLabel("SELL", color.new(color.orange, 25))
     // stopLoss above R1 PDH and target CPR
-    json := json + '"target":' + str.tostring(math.max(tc,bc)) + ','  + '"stoploss":' +  str.tostring(math.max(r1,ph) + slBufferPoints ) + '}'
+    json := json + '"target":' + str.tostring(math.max(tc,bc)) + ','  + '"stoploss":' +  str.tostring(math.max(r1,ph) + slBufferPoints ) + ',' + '"setup":"SELL_BELOW_R1_PDH"' +  '}'
     alert(json, alert.freq_once_per_bar_close)
 
 
