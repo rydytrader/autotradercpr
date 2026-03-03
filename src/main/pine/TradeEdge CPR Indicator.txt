@@ -630,8 +630,8 @@ isNewDailyBar = ta.change(time("D"))
 // When new daily bar appears → that bar is the real "tomorrow"
 if isNewDailyBar
     tomorrowStart := time + 24 * 60 * 60 * 1000
-    //tomorrowEnd   := tomorrowStart  +  daysToAdd * 24 * 60 * 60 * 1000
-    tomorrowEnd   := tomorrowStart  + prevSessionLen +  daysToAdd * 24 * 60 * 60 * 1000
+    tomorrowEnd   := tomorrowStart  +  daysToAdd * 24 * 60 * 60 * 1000
+    //tomorrowEnd   := tomorrowStart  + prevSessionLen +  daysToAdd * 24 * 60 * 60 * 1000
     
 
 // NEXT MONTH SESSION START AND END
@@ -826,7 +826,7 @@ if isNewDay and showDaily
 
     drawLabel(tc, "TC", cprColor)
     drawLabel(bc, "BC", cprColor)
-    drawLabel(pp, "PIVOT " + str.tostring(tomorrowEnd - tomorrowStart ), pivotColor)
+    drawLabel(pp, "PIVOT", pivotColor)
 
     if showR1
         drawLine(r1, resColor)
@@ -1113,7 +1113,7 @@ if  showTomorrowPivots and barstate.islast
 
     drawTLabel(ttc, "TOMORROW TC", cprColor)
     drawTLabel(tbc, "TOMORROW BC", cprColor)
-    drawTLabel(tpp, "TOMORROW PIVOT" + str.tostring(tomorrowEnd-tomorrowStart), pivotColor)
+    drawTLabel(tpp, "TOMORROW PIVOT", pivotColor)
 
     // Tomorrow Resistance
     if showR1

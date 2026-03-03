@@ -94,6 +94,13 @@ public class SimulatorController {
         snap.put("position",     mockState.getPosition());
         snap.put("eventLog",     mockState.getEventLog());
 
+        // Open position symbols and per-symbol prices for the symbol selector
+        List<String> openSymbols = mockState.getAllPositions().stream()
+            .map(p -> (String) p.get("symbol"))
+            .collect(java.util.stream.Collectors.toList());
+        snap.put("openSymbols", openSymbols);
+        snap.put("prices",      mockState.getPriceBySymbol());
+
         List<Map<String, Object>> orderList = new ArrayList<>();
         mockState.getAllOrders().forEach(o -> {
             Map<String, Object> item = new LinkedHashMap<>();
@@ -125,48 +132,65 @@ public class SimulatorController {
 
     @PostMapping("/api/simulator/price")
     public Map<String, Object> setPrice(@RequestBody Map<String, Object> body) {
-        double price = Double.parseDouble(body.get("price").toString());
-        mockState.setCurrentPrice(price);
-        mockState.log("Price → " + price);
+        double price  = Double.parseDouble(body.get("price").toString());
+        String symbol = body.containsKey("symbol") ? body.get("symbol").toString() : null;
+        if (symbol != null && !symbol.isEmpty()) {
+            mockState.setCurrentPrice(symbol, price);
+            mockState.log("Price [" + symbol + "] → " + price);
+        } else {
+            mockState.setCurrentPrice(price);
+            mockState.log("Price → " + price);
+        }
         return Map.of("ok", true, "price", price);
     }
 
     // ── SCENARIOS ─────────────────────────────────────────────────────────────
     @PostMapping("/api/simulator/scenario/sl-hit")
-    public Map<String, Object> slHit() {
-        mockState.triggerSlHit();
+    public Map<String, Object> slHit(@RequestBody(required = false) Map<String, Object> body) {
+        String symbol = resolveSymbol(body);
+        mockState.triggerSlHit(symbol);
         return Map.of("ok", true);
     }
 
     @PostMapping("/api/simulator/scenario/target-hit")
-    public Map<String, Object> targetHit() {
-        mockState.triggerTargetHit();
+    public Map<String, Object> targetHit(@RequestBody(required = false) Map<String, Object> body) {
+        String symbol = resolveSymbol(body);
+        mockState.triggerTargetHit(symbol);
         return Map.of("ok", true);
     }
 
     @PostMapping("/api/simulator/scenario/square-off")
-    public Map<String, Object> squareOff() {
-        Map<String, Object> pos = mockState.getPosition();
+    public Map<String, Object> squareOff(@RequestBody(required = false) Map<String, Object> body) {
+        String symbol = resolveSymbol(body);
+        Map<String, Object> pos = mockState.getPosition(symbol);
         if (pos != null) {
-            String symbol     = pos.get("symbol").toString();
             int    netQty     = Integer.parseInt(pos.get("netQty").toString());
             double entryPrice = Double.parseDouble(pos.get("netAvgPrice").toString());
-            double exitPrice  = mockState.getCurrentPrice();
+            double exitPrice  = mockState.getCurrentPrice(symbol);
             String side       = netQty > 0 ? "LONG" : "SHORT";
             int    qty        = Math.abs(netQty);
 
-            String setup = pollingService.getCurrentSetup();
-            PositionManager.setPosition("NONE");
-            positionStateStore.clear();
-            pollingService.clearCachedPositions();
-            mockState.triggerManualSquareOff();
+            String setup = pollingService.getCurrentSetup(symbol);
+            PositionManager.setPosition(symbol, "NONE");
+            positionStateStore.clear(symbol);
+            pollingService.clearCachedPositions(symbol);
+            mockState.triggerManualSquareOff(symbol);
 
             tradeHistoryService.record(symbol, side, qty, entryPrice, exitPrice, "MANUAL", setup);
-            eventService.log("[SUCCESS] Manual Square off at exit: " + exitPrice + " — SL and Target cancelled");
+            eventService.log("[SUCCESS] Manual Square off for " + symbol + " at exit: " + exitPrice + " — SL and Target cancelled");
         } else {
-            mockState.triggerManualSquareOff();
+            mockState.triggerManualSquareOff(symbol);
         }
         return Map.of("ok", true);
+    }
+
+    /** Resolves symbol from request body, falling back to mockState activeSymbol. */
+    private String resolveSymbol(Map<String, Object> body) {
+        if (body != null && body.containsKey("symbol")) {
+            String sym = body.get("symbol").toString().trim();
+            if (!sym.isEmpty()) return sym;
+        }
+        return mockState.getActiveSymbol();
     }
 
     @PostMapping("/api/simulator/scenario/fill-order")
@@ -185,7 +209,11 @@ public class SimulatorController {
     @PostMapping("/api/simulator/reset")
     public Map<String, Object> reset() {
         mockState.resetAll();
-        tradeHistoryService.reloadForCurrentMode();
+        tradeHistoryService.clearToday();
+        eventService.clearToday();
+        pollingService.clearCachedPositions();
+        positionStateStore.clearAll();
+        PositionManager.resetAll();
         return Map.of("ok", true);
     }
 }

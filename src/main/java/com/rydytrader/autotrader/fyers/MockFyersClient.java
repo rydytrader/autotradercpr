@@ -91,18 +91,19 @@ public class MockFyersClient implements FyersClient {
         root.put("code", 200);
         var arr = mapper.createArrayNode();
 
-        Map<String, Object> pos = state.getPosition();
-        if (pos != null) {
+        for (Map<String, Object> pos : state.getAllPositions()) {
             var p = mapper.createObjectNode();
-            p.put("symbol",      (String) pos.get("symbol"));
+            String sym = (String) pos.get("symbol");
+            p.put("symbol",      sym);
             p.put("productType", (String) pos.get("productType"));
             p.put("netQty",      toInt(pos.get("netQty")));
             p.put("netAvgPrice", toDouble(pos.get("netAvgPrice")));
             p.put("side",        toInt(pos.get("side")));
-            p.put("ltp",         state.getCurrentPrice());
-            int netQty    = toInt(pos.get("netQty"));
+            double ltp     = state.getCurrentPrice(sym);
+            p.put("ltp",         ltp);
+            int    netQty   = toInt(pos.get("netQty"));
             double avgPrice = toDouble(pos.get("netAvgPrice"));
-            double unreal   = (state.getCurrentPrice() - avgPrice) * netQty;
+            double unreal   = (ltp - avgPrice) * netQty;
             p.put("unrealizedProfit", Math.round(unreal * 100.0) / 100.0);
             p.put("buyAvg",  toDouble(pos.get("buyAvg")));
             p.put("sellAvg", toDouble(pos.get("sellAvg")));

@@ -4,6 +4,7 @@ import com.rydytrader.autotrader.store.ModeStore;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
+import java.nio.file.*;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
@@ -54,6 +55,11 @@ public class EventService {
     public void reloadLogsForCurrentMode() {
         tradeLogs.clear();
         loadTodaysLogsFromFile();
+    }
+
+    public void clearToday() {
+        tradeLogs.clear();
+        try { Files.deleteIfExists(Paths.get(logFile())); } catch (IOException e) { e.printStackTrace(); }
     }
 
     private String logDir()  { return modeStore.isLive() ? LOG_DIR_LIVE : LOG_DIR_SIM; }

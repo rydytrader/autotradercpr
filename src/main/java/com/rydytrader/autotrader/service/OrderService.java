@@ -69,7 +69,7 @@ public class OrderService {
             if (node != null && node.has("orderBook")) {
                 for (JsonNode o : node.get("orderBook")) {
                     int status = o.has("status") ? o.get("status").asInt() : 0;
-                    if (status == 1) { // PENDING
+                    if (status == 1 && o.get("symbol").asText().equals(symbol)) { // PENDING for this symbol
                         cancelOrder(o.get("id").asText());
                     }
                 }

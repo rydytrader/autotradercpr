@@ -12,7 +12,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.rydytrader.autotrader.dto.OrderDTO;
-import com.rydytrader.autotrader.dto.PositionsDTO;
 import com.rydytrader.autotrader.manager.PositionManager;
 import com.rydytrader.autotrader.mock.MockState;
 import com.rydytrader.autotrader.service.EventService;
@@ -59,6 +58,9 @@ public class TradingController {
     @PostMapping("/placeorder")
     public ResponseEntity<String> receiveSignal(@RequestBody Map<String, Object> payload) {
 
+        // Extract symbol early for log context
+        String symbolForLog = payload.containsKey("symbol") ? payload.get("symbol").toString() : "";
+
         // ── RISK CHECKS ───────────────────────────────────────────────────────────
         // 1. Trading hours
         LocalTime now   = LocalTime.now();
@@ -67,7 +69,8 @@ public class TradingController {
         if (now.isBefore(start) || now.isAfter(end)) {
             String msg = "Signal ignored — outside trading hours " + riskSettings.getTradingStartTime()
                        + "–" + riskSettings.getTradingEndTime() + " [now: " + now + "]";
-            eventService.log("[WARNING] " + msg);
+            eventService.log("[WARNING] Signal ignored for " + symbolForLog + " — outside trading hours "
+                + riskSettings.getTradingStartTime() + "–" + riskSettings.getTradingEndTime() + " [now: " + now + "]");
             return ResponseEntity.ok(msg);
         }
 
@@ -76,7 +79,7 @@ public class TradingController {
             double todayPnl = tradeHistoryService.getTrades().stream().mapToDouble(t -> t.getPnl()).sum();
             if (todayPnl <= -Math.abs(riskSettings.getMaxDailyLoss())) {
                 String msg = "Signal ignored — daily loss limit reached (P&L: ₹" + Math.round(todayPnl) + ")";
-                eventService.log("[WARNING] " + msg);
+                eventService.log("[WARNING] Signal ignored for " + symbolForLog + " — daily loss limit reached (P&L: ₹" + Math.round(todayPnl) + ")");
                 return ResponseEntity.ok(msg);
             }
         }
@@ -87,7 +90,8 @@ public class TradingController {
             if (todayTrades >= riskSettings.getMaxTradesPerDay()) {
                 String msg = "Signal ignored — max trades per day reached ("
                            + todayTrades + "/" + riskSettings.getMaxTradesPerDay() + ")";
-                eventService.log("[WARNING] " + msg);
+                eventService.log("[WARNING] Signal ignored for " + symbolForLog + " — max trades per day reached ("
+                    + todayTrades + "/" + riskSettings.getMaxTradesPerDay() + ")");
                 return ResponseEntity.ok(msg);
             }
         }
@@ -101,27 +105,27 @@ public class TradingController {
 
         System.out.println("Signal received: " + signal + " | SL: " + stoploss + " | Target: " + target + " | Setup: " + setup);
 
-        if (signal.equals("BUY") && !PositionManager.getPosition().equals("LONG")) {
+        if (signal.equals("BUY") && !PositionManager.getPosition(symbol).equals("LONG")) {
 
             OrderDTO order = orderService.placeOrder(symbol, quantity, 1, stoploss);
-            eventService.log("[INFO] BUY signal received for " + symbol + " | Setup: " + setup + " | SL: " + stoploss + " | Target: " + target);
+            eventService.log("[SUCCESS] BUY signal received for " + symbol + " | Setup: " + setup + " | SL: " + stoploss + " | Target: " + target);
 
             // Monitor entry fill, then place SL + Target OCO
             // exitSide = -1 (SELL to exit a LONG)
             pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "LONG", -1, stoploss, target, setup);
 
-        } else if (signal.equals("SELL") && !PositionManager.getPosition().equals("SHORT")) {
+        } else if (signal.equals("SELL") && !PositionManager.getPosition(symbol).equals("SHORT")) {
 
             OrderDTO order = orderService.placeOrder(symbol, quantity, -1, stoploss);
-            eventService.log("[INFO] SELL signal received for " + symbol + " | Setup: " + setup + " | SL: " + stoploss + " | Target: " + target);
+            eventService.log("[SUCCESS] SELL signal received for " + symbol + " | Setup: " + setup + " | SL: " + stoploss + " | Target: " + target);
 
             // exitSide = 1 (BUY to exit a SHORT)
             pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "SHORT", 1, stoploss, target, setup);
 
         } else {
-            String msg = "Signal ignored — existing position: " + PositionManager.getPosition();
+            String msg = "Signal ignored — existing position: " + PositionManager.getPosition(symbol);
             System.out.println(msg);
-            eventService.log("[WARNING] " + msg);
+            eventService.log("[WARNING] Signal ignored for " + symbol + " — existing position: " + PositionManager.getPosition(symbol));
         }
 
         return ResponseEntity.ok("Signal processed");
@@ -135,19 +139,19 @@ public class TradingController {
 
         if (!modeStore.isLive()) {
             // Simulator mode — use MockState directly (same as simulator panel square-off)
-            Map<String, Object> pos = mockState.getPosition();
+            Map<String, Object> pos = mockState.getPosition(symbol);
             if (pos == null) return ResponseEntity.ok(Map.of("ok", false, "reason", "No open position"));
             double entryPrice = Double.parseDouble(pos.get("netAvgPrice").toString());
-            double exitPrice  = mockState.getCurrentPrice();
+            double exitPrice  = mockState.getCurrentPrice(symbol);
             int    netQty     = Integer.parseInt(pos.get("netQty").toString());
             String side       = netQty > 0 ? "LONG" : "SHORT";
-            String setup = pollingService.getCurrentSetup();
-            PositionManager.setPosition("NONE");
-            positionStateStore.clear();
-            pollingService.clearCachedPositions();
-            mockState.triggerManualSquareOff();
+            String setup = pollingService.getCurrentSetup(symbol);
+            PositionManager.setPosition(symbol, "NONE");
+            positionStateStore.clear(symbol);
+            pollingService.clearCachedPositions(symbol);
+            mockState.triggerManualSquareOff(symbol);
             tradeHistoryService.record(symbol, side, Math.abs(netQty), entryPrice, exitPrice, "MANUAL", setup);
-            eventService.log("[SUCCESS] Manual Square off at exit: " + exitPrice + " — SL and Target cancelled");
+            eventService.log("[SUCCESS] Manual Square off for " + symbol + " at exit: " + exitPrice + " — SL and Target cancelled");
             return ResponseEntity.ok(Map.of("ok", true));
         }
 
@@ -342,6 +346,29 @@ public class TradingController {
             setupMap.put(setup, sd);
         }
         result.put("setupBreakdown", setupMap);
+
+        // Symbol breakdown
+        java.util.List<String> allSymbols = trades.stream()
+            .map(t -> t.getSymbol())
+            .filter(s -> s != null && !s.isEmpty())
+            .distinct()
+            .sorted()
+            .collect(java.util.stream.Collectors.toList());
+        Map<String, Object> symbolMap = new java.util.LinkedHashMap<>();
+        for (String sym : allSymbols) {
+            final String sy = sym;
+            var syt = trades.stream().filter(t -> sy.equals(t.getSymbol())).collect(java.util.stream.Collectors.toList());
+            int syw = (int) syt.stream().filter(t -> "PROFIT".equals(t.getResult())).count();
+            double syp = syt.stream().mapToDouble(t -> t.getPnl()).sum();
+            double sya = syt.isEmpty() ? 0 : Math.round(syp / syt.size() * 100.0) / 100.0;
+            Map<String, Object> sd = new java.util.LinkedHashMap<>();
+            sd.put("count",   syt.size());
+            sd.put("winRate", Math.round(syw * 1000.0 / syt.size()) / 10.0);
+            sd.put("pnl",     Math.round(syp * 100.0) / 100.0);
+            sd.put("avgPnl",  sya);
+            symbolMap.put(sym, sd);
+        }
+        result.put("symbolBreakdown", symbolMap);
         return result;
     }
 

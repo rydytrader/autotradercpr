@@ -87,6 +87,11 @@ public class TradeHistoryService {
         loadTodaysTradesFromFile();
     }
 
+    public void clearToday() {
+        trades.clear();
+        try { Files.deleteIfExists(Paths.get(todaysFile())); } catch (IOException e) { e.printStackTrace(); }
+    }
+
     // ── FILE PATHS ────────────────────────────────────────────────────────────
     private String logDir()   { return modeStore.isLive() ? LOG_DIR_LIVE : LOG_DIR_SIM; }
     private String todaysFile() {

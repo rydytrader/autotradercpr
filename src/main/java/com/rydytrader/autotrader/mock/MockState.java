@@ -16,15 +16,16 @@ public class MockState {
     public static final int STATUS_CANCELLED = 5;
 
     private final AtomicInteger orderCounter = new AtomicInteger(100001);
-    private final Map<String, Map<String, Object>> orders = new ConcurrentHashMap<>();
-    private final List<Map<String, Object>> tradebook = Collections.synchronizedList(new ArrayList<>());
-    private volatile Map<String, Object> position = null;
+    private final Map<String, Map<String, Object>> orders    = new ConcurrentHashMap<>();
+    private final List<Map<String, Object>>        tradebook = Collections.synchronizedList(new ArrayList<>());
+    private final ConcurrentHashMap<String, Map<String, Object>> positions = new ConcurrentHashMap<>();
 
     // Control panel settings
     private volatile String  activeSymbol = "NSE:NIFTY25FEBFUT";
     private volatile double  currentPrice = 22400.00;
     private volatile boolean autoFill     = true;
-    private volatile int     fillDelayMs  = 500;
+    private volatile int     fillDelayMs  = 100;
+    private final ConcurrentHashMap<String, Double> priceBySymbol = new ConcurrentHashMap<>();
 
     private final List<String> eventLog = Collections.synchronizedList(new ArrayList<>());
 
@@ -45,7 +46,7 @@ public class MockState {
         Map<String, Object> order = orders.get(id);
         if (order == null) return false;
         order.put("status", STATUS_CANCELLED);
-        log("CANCEL: " + id);
+        log("CANCEL: " + id + " [" + order.get("symbol") + "]");
         return true;
     }
 
@@ -67,89 +68,104 @@ public class MockState {
         tradebook.add(trade);
 
         updatePosition(order, fillPrice);
-        log("FILLED: " + id + " @ " + fillPrice + " | tag=" + order.get("orderTag"));
+        log("FILLED: " + id + " @ " + fillPrice + " [" + order.get("symbol") + "] | tag=" + order.get("orderTag"));
     }
 
     private void updatePosition(Map<String, Object> order, double fillPrice) {
-        int side = toInt(order.get("side"));
-        int qty  = toInt(order.get("qty"));
+        int    side   = toInt(order.get("side"));
+        int    qty    = toInt(order.get("qty"));
         String symbol = (String) order.get("symbol");
 
-        if (position == null) {
-            position = new LinkedHashMap<>();
-            position.put("symbol",       symbol);
-            position.put("productType",  "INTRADAY");
-            position.put("side",         side == 1 ? 1 : -1);
-            position.put("netQty",       side == 1 ? qty : -qty);
-            position.put("netAvgPrice",  fillPrice);
-            position.put("buyAvg",       side == 1 ? fillPrice : 0.0);
-            position.put("sellAvg",      side == -1 ? fillPrice : 0.0);
-            position.put("buyQty",       side == 1 ? qty : 0);
-            position.put("sellQty",      side == -1 ? qty : 0);
-            position.put("unrealizedProfit", 0.0);
+        Map<String, Object> pos = positions.get(symbol);
+        if (pos == null) {
+            pos = new LinkedHashMap<>();
+            pos.put("symbol",           symbol);
+            pos.put("productType",      "INTRADAY");
+            pos.put("side",             side == 1 ? 1 : -1);
+            pos.put("netQty",           side == 1 ? qty : -qty);
+            pos.put("netAvgPrice",      fillPrice);
+            pos.put("buyAvg",           side == 1 ? fillPrice : 0.0);
+            pos.put("sellAvg",          side == -1 ? fillPrice : 0.0);
+            pos.put("buyQty",           side == 1 ? qty : 0);
+            pos.put("sellQty",          side == -1 ? qty : 0);
+            pos.put("unrealizedProfit", 0.0);
+            positions.put(symbol, pos);
+            activeSymbol = symbol;  // track most recently opened position's symbol
         } else {
-            int currentNet = toInt(position.get("netQty"));
+            int currentNet = toInt(pos.get("netQty"));
             int newNet     = currentNet + (side == 1 ? qty : -qty);
-            if (newNet == 0) { position = null; log("POSITION CLOSED"); }
-            else { position.put("netQty", newNet); position.put("side", newNet > 0 ? 1 : -1); }
+            if (newNet == 0) {
+                positions.remove(symbol);
+                log("POSITION CLOSED [" + symbol + "]");
+            } else {
+                pos.put("netQty", newNet);
+                pos.put("side", newNet > 0 ? 1 : -1);
+            }
         }
     }
 
     // ── SCENARIO TRIGGERS ─────────────────────────────────────────────────────
-    public void triggerSlHit() {
+    public void triggerSlHit(String symbol) {
         orders.values().stream()
-            .filter(o -> "AutoSL".equals(o.get("orderTag")) && toInt(o.get("status")) == STATUS_PENDING)
+            .filter(o -> symbol.equals(o.get("symbol"))
+                      && "AutoSL".equals(o.get("orderTag"))
+                      && toInt(o.get("status")) == STATUS_PENDING)
             .findFirst().ifPresent(o -> {
                 double slPrice = toDouble(o.get("stopPrice"));
-                log("SCENARIO: SL HIT @ " + slPrice);
+                log("SCENARIO: SL HIT @ " + slPrice + " [" + symbol + "]");
                 fillOrder((String) o.get("id"), slPrice);
-                cancelByTag("AutoTarget");
+                cancelBySymbolAndTag(symbol, "AutoTarget");
             });
     }
 
-    public void triggerTargetHit() {
+    public void triggerTargetHit(String symbol) {
         orders.values().stream()
-            .filter(o -> "AutoTarget".equals(o.get("orderTag")) && toInt(o.get("status")) == STATUS_PENDING)
+            .filter(o -> symbol.equals(o.get("symbol"))
+                      && "AutoTarget".equals(o.get("orderTag"))
+                      && toInt(o.get("status")) == STATUS_PENDING)
             .findFirst().ifPresent(o -> {
                 double tp = toDouble(o.get("limitPrice"));
-                log("SCENARIO: TARGET HIT @ " + tp);
+                log("SCENARIO: TARGET HIT @ " + tp + " [" + symbol + "]");
                 fillOrder((String) o.get("id"), tp);
-                cancelByTag("AutoSL");
+                cancelBySymbolAndTag(symbol, "AutoSL");
             });
     }
 
-    public void triggerManualSquareOff() {
-        if (position == null) { log("SCENARIO: No open position to square off"); return; }
-        log("SCENARIO: Manual square-off — position closed at " + currentPrice);
-        // Add closing trade at current market price
+    public void triggerManualSquareOff(String symbol) {
+        Map<String, Object> pos = positions.get(symbol);
+        if (pos == null) { log("SCENARIO: No open position to square off [" + symbol + "]"); return; }
+        log("SCENARIO: Manual square-off — position closed at " + currentPrice + " [" + symbol + "]");
         Map<String, Object> t = new LinkedHashMap<>();
-        t.put("id", "T_SQF_" + System.currentTimeMillis());
-        t.put("symbol", activeSymbol);
-        t.put("side", toInt(position.get("netQty")) > 0 ? -1 : 1);
-        t.put("tradedQty", Math.abs(toInt(position.get("netQty"))));
+        t.put("id",         "T_SQF_" + System.currentTimeMillis());
+        t.put("symbol",     symbol);
+        t.put("side",       toInt(pos.get("netQty")) > 0 ? -1 : 1);
+        t.put("tradedQty",  Math.abs(toInt(pos.get("netQty"))));
         t.put("tradePrice", currentPrice);
-        t.put("orderTag", "ManualSquareOff");
-        t.put("timestamp", now());
+        t.put("orderTag",   "ManualSquareOff");
+        t.put("timestamp",  now());
         tradebook.add(t);
-        // Clear position BEFORE cancelling orders so OCO monitor skips "still active" warnings
-        position = null;
-        // Cancel all pending orders silently (logs handled by SimulatorController)
+        // Clear position before cancelling so OCO monitor skips "still active" warnings
+        positions.remove(symbol);
+        // Cancel all pending orders for this symbol silently
         orders.values().stream()
-            .filter(o -> toInt(o.get("status")) == STATUS_PENDING)
+            .filter(o -> symbol.equals(o.get("symbol")) && toInt(o.get("status")) == STATUS_PENDING)
             .forEach(o -> o.put("status", STATUS_CANCELLED));
     }
 
     public void resetAll() {
         orders.clear();
         tradebook.clear();
-        position = null;
+        positions.clear();
+        priceBySymbol.clear();
         eventLog.clear();
         log("STATE RESET");
     }
 
-    private void cancelByTag(String tag) {
+    private void cancelBySymbolAndTag(String symbol, String tag) {
         orders.values().stream()
-            .filter(o -> tag.equals(o.get("orderTag")) && toInt(o.get("status")) == STATUS_PENDING)
+            .filter(o -> symbol.equals(o.get("symbol"))
+                      && tag.equals(o.get("orderTag"))
+                      && toInt(o.get("status")) == STATUS_PENDING)
             .forEach(o -> cancelOrder((String) o.get("id")));
     }
 
@@ -162,8 +178,12 @@ public class MockState {
             }).reversed())
             .collect(java.util.stream.Collectors.toList());
     }
-    public List<Map<String, Object>>       getTradebook()  { return tradebook; }
-    public Map<String, Object>             getPosition()   { return position; }
+
+    public List<Map<String, Object>>             getTradebook()             { return tradebook; }
+    public Map<String, Object>                   getPosition(String symbol) { return positions.get(symbol); }
+    public Collection<Map<String, Object>>       getAllPositions()           { return positions.values(); }
+    /** Returns first open position or null — used for single-symbol simulator panel display. */
+    public Map<String, Object>                   getPosition()              { return positions.isEmpty() ? null : positions.values().iterator().next(); }
     public String  getActiveSymbol() { return activeSymbol; }
     public double  getCurrentPrice() { return currentPrice; }
     public boolean isAutoFill()      { return autoFill; }
@@ -171,23 +191,27 @@ public class MockState {
     public List<String> getEventLog(){ return eventLog; }
 
     public void restorePosition(String symbol, String side, int qty, double avgPrice) {
-        position = new LinkedHashMap<>();
-        position.put("symbol",           symbol);
-        position.put("productType",      "INTRADAY");
-        position.put("side",             "LONG".equals(side) ? 1 : -1);
-        position.put("netQty",           "LONG".equals(side) ? qty : -qty);
-        position.put("netAvgPrice",      avgPrice);
-        position.put("buyAvg",           "LONG".equals(side) ? avgPrice : 0.0);
-        position.put("sellAvg",          "SHORT".equals(side) ? avgPrice : 0.0);
-        position.put("buyQty",           "LONG".equals(side) ? qty : 0);
-        position.put("sellQty",          "SHORT".equals(side) ? qty : 0);
-        position.put("unrealizedProfit", 0.0);
+        Map<String, Object> pos = new LinkedHashMap<>();
+        pos.put("symbol",           symbol);
+        pos.put("productType",      "INTRADAY");
+        pos.put("side",             "LONG".equals(side) ? 1 : -1);
+        pos.put("netQty",           "LONG".equals(side) ? qty : -qty);
+        pos.put("netAvgPrice",      avgPrice);
+        pos.put("buyAvg",           "LONG".equals(side) ? avgPrice : 0.0);
+        pos.put("sellAvg",          "SHORT".equals(side) ? avgPrice : 0.0);
+        pos.put("buyQty",           "LONG".equals(side) ? qty : 0);
+        pos.put("sellQty",          "SHORT".equals(side) ? qty : 0);
+        pos.put("unrealizedProfit", 0.0);
+        positions.put(symbol, pos);
         activeSymbol = symbol;
-        log("RESTORED position: " + side + " " + qty + " @ " + avgPrice);
+        log("RESTORED position: " + side + " " + qty + " @ " + avgPrice + " [" + symbol + "]");
     }
 
     public void setActiveSymbol(String s) { activeSymbol = s; log("Symbol → " + s); }
     public void setCurrentPrice(double p) { currentPrice = p; }
+    public void setCurrentPrice(String symbol, double price) { priceBySymbol.put(symbol, price); }
+    public double getCurrentPrice(String symbol) { return priceBySymbol.getOrDefault(symbol, currentPrice); }
+    public Map<String, Double> getPriceBySymbol() { return priceBySymbol; }
     public void setAutoFill(boolean b)    { autoFill = b;  log("AutoFill → " + b); }
     public void setFillDelayMs(int ms)    { fillDelayMs = ms; }
 

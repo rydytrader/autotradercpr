@@ -216,13 +216,13 @@
         }
 
         /* ── TABLE ──────────────────────────────── */
-        .table-wrap { overflow-x: auto; overflow-y: auto; max-height: 520px; }
+        .table-wrap { overflow-x: auto; overflow-y: auto; max-height: 400px; }
         .table-wrap::-webkit-scrollbar { width: 4px; height: 4px; }
         .table-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
         .data-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
         .data-table thead th {
-            padding: 10px 20px; font-family: var(--font-mono); font-size: 0.68rem;
+            padding: 10px 12px; font-family: var(--font-mono); font-size: 0.68rem;
             text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted);
             font-weight: 500; background: var(--bg-section-header);
             border-bottom: 1px solid var(--border); white-space: nowrap;
@@ -230,7 +230,7 @@
         .data-table tbody tr { border-bottom: 1px solid var(--border); transition: background 0.15s ease; }
         .data-table tbody tr:last-child { border-bottom: none; }
         .data-table tbody tr:hover { background: var(--bg-card-hover); }
-        .data-table tbody td { padding: 13px 20px; color: var(--text-primary); font-family: var(--font-mono); font-size: 0.82rem; white-space: nowrap; }
+        .data-table tbody td { padding: 11px 12px; color: var(--text-primary); font-family: var(--font-mono); font-size: 0.82rem; white-space: nowrap; }
         .data-table .text-right { text-align: right; }
         .data-table .text-center { text-align: center; }
 
@@ -341,6 +341,44 @@
         .sim-modal-body::-webkit-scrollbar { width: 4px; }
         .sim-modal-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
+        /* ── RESET CONFIRM DIALOG ─────────────────── */
+        .confirm-dialog-backdrop {
+            display: none; position: fixed; inset: 0; z-index: 2000;
+            background: rgba(0,0,0,0.75); backdrop-filter: blur(4px);
+            align-items: center; justify-content: center;
+        }
+        .confirm-dialog-backdrop.open { display: flex; }
+        .confirm-dialog {
+            background: var(--bg-card); border: 1px solid rgba(248,113,113,0.3);
+            border-radius: 14px; width: 380px; max-width: 92vw;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+            animation: fadeScaleIn 0.2s ease;
+        }
+        @keyframes fadeScaleIn {
+            from { opacity: 0; transform: scale(0.92); }
+            to   { opacity: 1; transform: scale(1); }
+        }
+        .confirm-dialog-header {
+            padding: 18px 20px 14px; border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; gap: 10px;
+        }
+        .confirm-dialog-icon {
+            width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0;
+            background: rgba(248,113,113,0.12); border: 1px solid rgba(248,113,113,0.25);
+            display: flex; align-items: center; justify-content: center; font-size: 1.1rem;
+        }
+        .confirm-dialog-title {
+            font-family: var(--font-mono); font-size: 0.82rem; font-weight: 700;
+            letter-spacing: 0.05em; color: var(--accent-red);
+        }
+        .confirm-dialog-body {
+            padding: 16px 20px; font-size: 0.82rem;
+            color: var(--text-secondary); line-height: 1.65;
+        }
+        .confirm-dialog-footer {
+            padding: 12px 20px 16px; display: flex; justify-content: flex-end; gap: 8px;
+        }
+
         /* reuse panel styles inside modal */
         .sim-panel {
             background: var(--bg-base); border: 1px solid var(--border);
@@ -417,6 +455,14 @@
         .sim-log-wrap { height: 180px; overflow-y: auto; }
         .sim-log-wrap::-webkit-scrollbar { width: 3px; }
         .sim-log-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        .sim-tbl-wrap { overflow-x: auto; overflow-y: auto; max-height: 220px; }
+        .sim-tbl-wrap::-webkit-scrollbar { width: 3px; }
+        .sim-tbl-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        .log-tag { display: inline-block; font-size: 0.6rem; font-weight: 700; padding: 1px 6px; border-radius: 3px; letter-spacing: 0.05em; flex-shrink: 0; align-self: center; }
+        .log-tag-success { background: rgba(52,211,153,0.15); color: var(--accent-green); }
+        .log-tag-error   { background: rgba(248,113,113,0.15); color: var(--accent-red); }
+        .log-tag-warning { background: rgba(251,191,36,0.15);  color: var(--accent-yellow); }
+        .log-tag-info    { background: rgba(99,179,237,0.15);  color: var(--accent-blue); }
         .sim-log-entry { padding: 5px 14px; border-bottom: 1px solid var(--border); font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-muted); display: flex; gap: 7px; }
         .sim-log-entry::before { content: '›'; color: var(--accent-yellow); flex-shrink: 0; }
         .sim-log-entry:hover { background: var(--bg-section-header); color: var(--text-secondary); }
@@ -547,6 +593,10 @@
 </div>
 
 <script>
+    // ── FORMATTERS ────────────────────────────────
+    const inr = v => new Intl.NumberFormat('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}).format(Math.abs(v));
+    function fmtPnl(v) { return (v >= 0 ? '+₹' : '-₹') + inr(v); }
+
     // ── THEME ─────────────────────────────────────
     const THEME_KEY = 'traderedge-theme';
     const savedTheme = localStorage.getItem(THEME_KEY) || 'dark';
@@ -646,7 +696,7 @@
                 document.getElementById('statLosses').textContent = losses;
 
                 const pnlEl = document.getElementById('statNetPnl');
-                pnlEl.textContent = (netPnl >= 0 ? '+' : '') + netPnl.toFixed(2);
+                pnlEl.textContent = fmtPnl(netPnl);
                 pnlEl.className   = 'stat-value ' + (netPnl > 0 ? 'positive' : netPnl < 0 ? 'negative' : '');
 
                 const tbody = document.getElementById('tradesTableBody');
@@ -657,7 +707,6 @@
 
                 tbody.innerHTML = trades.map(t => {
                     const pnlClass  = t.pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
-                    const pnlPrefix = t.pnl > 0 ? '+' : '';
                     const exitDisplay = t.exitPrice > 0 ? t.exitPrice.toFixed(2) : '—';
                     return `<tr>
                         <td style="color:var(--text-muted);font-size:0.75rem">${t.timestamp}</td>
@@ -669,7 +718,7 @@
                         <td class="text-center">${renderSetup(t.setup)}</td>
                         <td class="text-center">${renderBadge('reason', t.exitReason)}</td>
                         <td class="text-center">${renderBadge('result', t.result)}</td>
-                        <td class="text-right"><span class="${pnlClass}">${pnlPrefix}${t.pnl.toFixed(2)}</span></td>
+                        <td class="text-right"><span class="${pnlClass}">${fmtPnl(t.pnl)}</span></td>
                     </tr>`;
                 }).join('');
             })
@@ -709,7 +758,10 @@
 
 
     // ── SIMULATOR MODAL ───────────────────────────────────────────────────────
-    let simPrice = 22400;
+    let simPrice  = 22400;
+    let simSymbol = '';
+    let simPrices = {};
+    let simPollTimer = null;
 
     function openSimModal() {
         document.getElementById('simModalBackdrop').classList.add('open');
@@ -731,17 +783,26 @@
 
     function simMovePrice(delta) {
         simPrice = Math.round((simPrice + delta) * 100) / 100;
-        simPost('/api/simulator/price', { price: simPrice });
+        simPost('/api/simulator/price', { price: simPrice, symbol: simSymbol });
     }
 
     function simSetManualPrice() {
         const p = parseFloat(document.getElementById('simManualPrice').value);
         if (!p) return;
         simPrice = p;
-        simPost('/api/simulator/price', { price: p });
+        simPost('/api/simulator/price', { price: p, symbol: simSymbol });
     }
 
-    function simTrigger(sc)      { simPost('/api/simulator/scenario/' + sc); }
+    function simChangeSymbol(sym) {
+        simSymbol = sym;
+        if (sym && simPrices[sym] !== undefined) {
+            simPrice = simPrices[sym];
+        }
+        document.getElementById('simPriceVal').textContent  = sym ? simPrice.toFixed(2) : '—';
+        document.getElementById('simSymbolVal').textContent = sym ? sym.replace(/^(NSE|BSE):/, '') : '—';
+    }
+
+    function simTrigger(sc) { simPost('/api/simulator/scenario/' + sc, { symbol: simSymbol }); }
 
 
     function simCancelByTag(tag) {
@@ -771,8 +832,14 @@
     function simCancelOrder(id) { simPost('/api/simulator/scenario/cancel-order', { orderId: id }); }
 
     function simResetAll() {
-        if (confirm('Reset all simulator orders, positions and trades?'))
-            simPost('/api/simulator/reset');
+        document.getElementById('resetConfirmBackdrop').classList.add('open');
+    }
+    function cancelReset() {
+        document.getElementById('resetConfirmBackdrop').classList.remove('open');
+    }
+    function confirmReset() {
+        document.getElementById('resetConfirmBackdrop').classList.remove('open');
+        simPost('/api/simulator/reset');
     }
 
     // Badge helpers
@@ -781,12 +848,48 @@
     const simTypeName  = t => t===1?'<span class="sim-bdg sim-bdg-blue">LIMIT</span>':t===2?'<span class="sim-bdg sim-bdg-blue">MARKET</span>':'<span class="sim-bdg sim-bdg-blue">SL-MKT</span>';
     const simTagColor  = tag => ({'AutoTrader':'var(--accent-blue)','AutoSL':'var(--accent-red)','AutoTarget':'var(--accent-green)'})[tag]||'var(--text-muted)';
 
+    function parseLogLevel(log) {
+        const levels = ['SUCCESS', 'ERROR', 'WARNING', 'INFO'];
+        for (const level of levels) {
+            const prefix = '[' + level + '] ';
+            if (log.includes(prefix)) {
+                const idx = log.indexOf(prefix);
+                return { level, message: log.substring(0, idx) + log.substring(idx + prefix.length) };
+            }
+        }
+        if (log.includes('WARNING:')) return { level: 'WARNING', message: log };
+        return { level: 'INFO', message: log };
+    }
+
+    function renderLogEntry(log, cssClass) {
+        const { level, message } = parseLogLevel(log);
+        const tagClass = 'log-tag log-tag-' + level.toLowerCase();
+        return `<div class="${cssClass}"><span class="${tagClass}">${level}</span>${message}</div>`;
+    }
+
     function simPollState() {
         fetch('/api/simulator/state').then(r => r.json()).then(data => {
-            simPrice = data.currentPrice;
-            document.getElementById('simPriceVal').textContent   = data.currentPrice.toFixed(2);
-            document.getElementById('simSymbolVal').textContent  = data.symbol;
-
+            // ── Symbol selector ────────────────────────────────────────────
+            simPrices = data.prices || {};
+            const openSymbols = data.openSymbols || [];
+            const sel = document.getElementById('simSymbolSelect');
+            const prevSym = simSymbol;
+            sel.innerHTML = openSymbols.length === 0
+                ? '<option value="">— No open positions —</option>'
+                : openSymbols.map(s =>
+                    `<option value="${s}" ${s === prevSym ? 'selected' : ''}>${s.replace(/^(NSE|BSE):/, '')}</option>`
+                  ).join('');
+            if (!simSymbol || !openSymbols.includes(simSymbol)) {
+                simSymbol = openSymbols.length > 0 ? openSymbols[0] : '';
+                sel.value = simSymbol;
+            }
+            if (simSymbol && simPrices[simSymbol] !== undefined) {
+                simPrice = simPrices[simSymbol];
+            } else {
+                simPrice = data.currentPrice;
+            }
+            document.getElementById('simPriceVal').textContent  = simSymbol ? simPrice.toFixed(2) : '—';
+            document.getElementById('simSymbolVal').textContent = simSymbol ? simSymbol.replace(/^(NSE|BSE):/, '') : '—';
 
             // Orders
             document.getElementById('simOrderCount').textContent = data.orders.length;
@@ -817,7 +920,7 @@
             if (!data.eventLog.length) {
                 logDiv.innerHTML = '<div class="sim-empty">No simulator events yet</div>';
             } else {
-                logDiv.innerHTML = data.eventLog.map(e => `<div class="sim-log-entry">${e}</div>`).join('');
+                logDiv.innerHTML = data.eventLog.map(e => renderLogEntry(e, 'sim-log-entry')).join('');
             }
         }).catch(() => {});
     }
@@ -825,6 +928,28 @@
 
 </script>
 
+
+    <!-- ── RESET CONFIRM DIALOG ─────────────────────────────────── -->
+    <div class="confirm-dialog-backdrop" id="resetConfirmBackdrop">
+        <div class="confirm-dialog">
+            <div class="confirm-dialog-header">
+                <div class="confirm-dialog-icon">⚠</div>
+                <div class="confirm-dialog-title">CONFIRM RESET</div>
+            </div>
+            <div class="confirm-dialog-body">
+                This will permanently clear all simulator <strong style="color:var(--text-primary)">orders</strong>,
+                <strong style="color:var(--text-primary)">positions</strong>,
+                <strong style="color:var(--text-primary)">event logs</strong> and
+                <strong style="color:var(--text-primary)">trade history</strong> for today.
+                <br><br>
+                <span style="color:var(--accent-red);font-family:var(--font-mono);font-size:0.75rem;">This action cannot be undone.</span>
+            </div>
+            <div class="confirm-dialog-footer">
+                <button class="sim-btn sim-btn-ghost" style="padding:7px 16px" onclick="cancelReset()">Cancel</button>
+                <button class="sim-btn sim-btn-red"   style="padding:7px 16px" onclick="confirmReset()">⟳ Reset All</button>
+            </div>
+        </div>
+    </div>
 
     <!-- ── SIMULATOR MODAL ─────────────────────────────────────── -->
     <div class="sim-modal-backdrop" id="simModalBackdrop" onclick="closeSimModal(event)">
@@ -834,10 +959,14 @@
                     <div class="sim-modal-title-dot"></div>
                     ⚙ SIMULATOR CONTROL PANEL
                 </div>
-                <div style="display:flex;align-items:center;gap:8px;">
-                    <input type="number" id="simManualPrice" step="0.05" placeholder="Set price…" style="width:130px;background:var(--bg-base);border:1px solid var(--border);border-radius:7px;padding:5px 10px;color:var(--text-primary);font-family:var(--font-mono);font-size:0.75rem;outline:none;">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                    <select id="simSymbolSelect" onchange="simChangeSymbol(this.value)"
+                        style="background:var(--bg-base);border:1px solid var(--border);border-radius:7px;padding:5px 10px;color:var(--text-primary);font-family:var(--font-mono);font-size:0.7rem;outline:none;min-width:170px;">
+                        <option value="">— No open positions —</option>
+                    </select>
+                    <input type="number" id="simManualPrice" step="0.05" placeholder="Set price…" style="width:120px;background:var(--bg-base);border:1px solid var(--border);border-radius:7px;padding:5px 10px;color:var(--text-primary);font-family:var(--font-mono);font-size:0.75rem;outline:none;">
                     <button class="sim-btn sim-btn-blue" style="padding:5px 12px;font-size:0.7rem;" onclick="simSetManualPrice()">Set</button>
-<button class="sim-btn sim-btn-red"  style="padding:5px 12px;font-size:0.7rem;" onclick="simResetAll()">⟳ Reset</button>
+                    <button class="sim-btn sim-btn-red"  style="padding:5px 12px;font-size:0.7rem;" onclick="simResetAll()">⟳ Reset</button>
                     <div class="sim-modal-close" onclick="closeSimModal()">✕</div>
                 </div>
             </div>
@@ -848,9 +977,10 @@
                     <div class="sim-panel-header"><div class="sim-panel-dot" style="background:var(--accent-blue)"></div>Market Price</div>
                     <div class="sim-panel-body">
                         <div class="sim-price-display" style="display:flex;align-items:center;gap:16px;padding:10px 14px;text-align:left;">
-                            <div class="sim-price-lbl" style="white-space:nowrap;flex-shrink:0;">Current LTP</div>
+                            <div class="sim-price-lbl" style="white-space:nowrap;flex-shrink:0;">Current Symbol</div>
+                            <div class="sim-price-val" id="simSymbolVal" style="font-size:1.1rem;flex-shrink:0;color:var(--accent-blue);">—</div>
+                            <div class="sim-price-lbl" style="white-space:nowrap;flex-shrink:0;margin-left:auto;">Current LTP</div>
                             <div class="sim-price-val" id="simPriceVal" style="font-size:1.1rem;flex-shrink:0;">—</div>
-                            <div class="sim-price-sym" id="simSymbolVal" style="font-size:0.72rem;margin-left:auto;">—</div>
                         </div>
                         <div class="sim-price-grid" style="grid-template-columns:repeat(8,1fr);margin-bottom:0">
                             <button class="sim-btn sim-btn-red"   onclick="simMovePrice(-100)">−100</button>
@@ -890,9 +1020,9 @@
                         <div class="sim-panel-dot" style="background:var(--accent-blue)"></div>Orders
                         <span id="simOrderCount" style="margin-left:auto;background:rgba(99,179,237,.1);border:1px solid rgba(99,179,237,.2);color:var(--accent-blue);font-size:.62rem;padding:2px 7px;border-radius:10px;">0</span>
                     </div>
-                    <div style="overflow-x:auto">
+                    <div class="sim-tbl-wrap">
                         <table class="sim-tbl">
-                            <thead><tr><th>ID</th><th>Tag</th><th>Side</th><th>Type</th><th>Qty</th><th>SL/Limit</th><th>Status</th><th>Filled@</th><th>Act.</th></tr></thead>
+                            <thead><tr><th style="position:sticky;top:0;z-index:1">ID</th><th style="position:sticky;top:0;z-index:1">Tag</th><th style="position:sticky;top:0;z-index:1">Side</th><th style="position:sticky;top:0;z-index:1">Type</th><th style="position:sticky;top:0;z-index:1">Qty</th><th style="position:sticky;top:0;z-index:1">SL/Limit</th><th style="position:sticky;top:0;z-index:1">Status</th><th style="position:sticky;top:0;z-index:1">Filled@</th><th style="position:sticky;top:0;z-index:1">Act.</th></tr></thead>
                             <tbody id="simOrdersBody"><tr><td colspan="9"><div class="sim-empty">No orders yet</div></td></tr></tbody>
                         </table>
                     </div>
