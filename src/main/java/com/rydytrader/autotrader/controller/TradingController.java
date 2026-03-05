@@ -175,9 +175,18 @@ public class TradingController {
             m.put("entryTime", p.getEntryTime());
             return m;
         }).collect(java.util.stream.Collectors.toList());
+        double realizedPnl   = tradeHistoryService.getTrades().stream()
+            .mapToDouble(t -> t.getPnl()).sum();
+        double unrealizedPnl = pollingService.fetchPositions().stream()
+            .mapToDouble(p -> p.getPnl()).sum();
+        double netDayPnl     = realizedPnl + unrealizedPnl;
+
         Map<String, Object> result = new java.util.LinkedHashMap<>();
-        result.put("positions", positions);
-        result.put("lastSync",  pollingService.getLastSyncTime());
+        result.put("positions",    positions);
+        result.put("lastSync",     pollingService.getLastSyncTime());
+        result.put("realizedPnl",  Math.round(realizedPnl   * 100.0) / 100.0);
+        result.put("unrealizedPnl",Math.round(unrealizedPnl * 100.0) / 100.0);
+        result.put("netDayPnl",    Math.round(netDayPnl     * 100.0) / 100.0);
         return result;
     }
 

@@ -1,7 +1,12 @@
 package com.rydytrader.autotrader.mock;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Component;
 
+import java.io.File;
+import java.nio.file.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -11,9 +16,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Component
 public class MockState {
 
-    public static final int STATUS_PENDING   = 1;
-    public static final int STATUS_TRADED    = 2;
-    public static final int STATUS_CANCELLED = 5;
+    public static final int STATUS_PENDING   = 6;  // Fyers: 6 = open/pending
+    public static final int STATUS_TRADED    = 2;  // Fyers: 2 = filled
+    public static final int STATUS_CANCELLED = 1;  // Fyers: 1 = cancelled
 
     private final AtomicInteger orderCounter = new AtomicInteger(100001);
     private final Map<String, Map<String, Object>> orders    = new ConcurrentHashMap<>();
@@ -22,12 +27,39 @@ public class MockState {
 
     // Control panel settings
     private volatile String  activeSymbol = "NSE:NIFTY25FEBFUT";
-    private volatile double  currentPrice = 22400.00;
+    private volatile double  currentPrice = 25000.00;
     private volatile boolean autoFill     = true;
     private volatile int     fillDelayMs  = 100;
     private final ConcurrentHashMap<String, Double> priceBySymbol = new ConcurrentHashMap<>();
 
+    private static final String PRICES_FILE = "../store/simulator/symbol_prices.json";
+    private static final ObjectMapper mapper = new ObjectMapper();
+
     private final List<String> eventLog = Collections.synchronizedList(new ArrayList<>());
+
+    @PostConstruct
+    public void loadPrices() {
+        try {
+            Path path = Paths.get(PRICES_FILE);
+            if (Files.exists(path)) {
+                Map<String, Double> loaded = mapper.readValue(
+                        Files.readString(path), new TypeReference<Map<String, Double>>() {});
+                priceBySymbol.putAll(loaded);
+                System.out.println("[MockState] Loaded " + loaded.size() + " symbol prices from disk");
+            }
+        } catch (Exception e) {
+            System.err.println("[MockState] Failed to load prices: " + e.getMessage());
+        }
+    }
+
+    private void savePrices() {
+        try {
+            new File("../store/simulator").mkdirs();
+            Files.writeString(Paths.get(PRICES_FILE), mapper.writeValueAsString(priceBySymbol));
+        } catch (Exception e) {
+            System.err.println("[MockState] Failed to save prices: " + e.getMessage());
+        }
+    }
 
     // ── ORDER OPS ─────────────────────────────────────────────────────────────
     public String nextOrderId() { return "SIM" + orderCounter.getAndIncrement(); }
@@ -158,6 +190,7 @@ public class MockState {
         positions.clear();
         priceBySymbol.clear();
         eventLog.clear();
+        savePrices();
         log("STATE RESET");
     }
 
@@ -209,7 +242,7 @@ public class MockState {
 
     public void setActiveSymbol(String s) { activeSymbol = s; log("Symbol → " + s); }
     public void setCurrentPrice(double p) { currentPrice = p; }
-    public void setCurrentPrice(String symbol, double price) { priceBySymbol.put(symbol, price); }
+    public void setCurrentPrice(String symbol, double price) { priceBySymbol.put(symbol, price); savePrices(); }
     public double getCurrentPrice(String symbol) { return priceBySymbol.getOrDefault(symbol, currentPrice); }
     public Map<String, Double> getPriceBySymbol() { return priceBySymbol; }
     public void setAutoFill(boolean b)    { autoFill = b;  log("AutoFill → " + b); }

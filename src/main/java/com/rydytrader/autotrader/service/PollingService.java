@@ -31,7 +31,8 @@ public class PollingService {
     // ── per-symbol state ──────────────────────────────────────────────────────
     private final ConcurrentHashMap<String, PositionsDTO> cachedPositions  = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String>       setupBySymbol    = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, String>       entryTimeBySymbol = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, String>       entryTimeBySymbol  = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Double>       entryAvgBySymbol   = new ConcurrentHashMap<>();
 
     private volatile boolean justRestored    = false;
     private volatile String  lastSyncTime    = "";
@@ -101,36 +102,69 @@ public class PollingService {
     public void monitorEntryAndPlaceOCO(OrderDTO entry, String symbol,
                                         int quantity, String position,
                                         int exitSide, double slPrice, double targetPrice, String setup) {
-        class Holder { ScheduledFuture<?> future; }
+        class Holder {
+            ScheduledFuture<?> future;
+            boolean positionSet    = false;  // set position state only once
+            double  entryFillPrice = 0.0;    // captured at fill time, passed to OCO monitor
+            int     ocoRetries     = 0;
+            static final int MAX_OCO_RETRIES = 3;
+        }
         Holder holder = new Holder();
 
         holder.future = scheduler.scheduleAtFixedRate(() -> {
             try {
                 String status = getOrderStatus(entry.getId());
                 if ("2".equals(status)) {
-                    String entryTime = java.time.LocalDateTime.now()
-                        .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
-                    PositionManager.setPosition(symbol, position);
-                    setupBySymbol.put(symbol, setup != null ? setup : "");
-                    entryTimeBySymbol.put(symbol, entryTime);
-                    positionStateStore.save(symbol, position, quantity, 0.0,
-                        setupBySymbol.get(symbol), entryTime);
-                    eventService.log("[SUCCESS] " + (position.equals("LONG") ? "BUY" : "SELL")
-                        + " order filled for " + symbol + " — placing SL + Target");
 
+                    // Set position state only on the first filled tick
+                    if (!holder.positionSet) {
+                        holder.positionSet = true;
+                        String entryTime = java.time.LocalDateTime.now()
+                            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
+                        PositionManager.setPosition(symbol, position);
+                        setupBySymbol.put(symbol, setup != null ? setup : "");
+                        entryTimeBySymbol.put(symbol, entryTime);
+                        // Capture actual fill price from tradebook at entry time
+                        int entrySide = exitSide == 1 ? -1 : 1;
+                        holder.entryFillPrice = orderService.getFilledPriceFromTradebook(symbol, entrySide);
+                        entryAvgBySymbol.put(symbol, holder.entryFillPrice);
+                        positionStateStore.save(symbol, position, quantity, holder.entryFillPrice,
+                            setupBySymbol.get(symbol), entryTime);
+                        eventService.log("[SUCCESS] " + (position.equals("LONG") ? "BUY" : "SELL")
+                            + " order filled for " + symbol + " @ " + holder.entryFillPrice + " — placing SL + Target");
+                    }
+
+                    holder.ocoRetries++;
                     OrderDTO slOrder     = orderService.placeStopLoss(symbol, quantity, exitSide, slPrice);
                     OrderDTO targetOrder = orderService.placeTarget(symbol, quantity, exitSide, targetPrice);
 
-                    if (slOrder != null && slOrder.getId() != null)
+                    boolean slOk  = slOrder     != null && slOrder.getId()     != null && !slOrder.getId().isEmpty();
+                    boolean tgtOk = targetOrder != null && targetOrder.getId() != null && !targetOrder.getId().isEmpty();
+
+                    if (slOk && tgtOk) {
                         eventService.log("[SUCCESS] SL order placed for " + symbol + " at " + slPrice + " [ID: " + slOrder.getId() + "]");
-                    if (targetOrder != null && targetOrder.getId() != null)
                         eventService.log("[SUCCESS] Target order placed for " + symbol + " at " + targetPrice + " [ID: " + targetOrder.getId() + "]");
-
-                    if (slOrder != null && targetOrder != null)
                         monitorOCO(slOrder.getId(), targetOrder.getId(), symbol, quantity,
-                            exitSide, slPrice, targetPrice, position, setup);
+                            exitSide, slPrice, targetPrice, position, setup, holder.entryFillPrice);
+                        if (holder.future != null) holder.future.cancel(false);
+                    } else {
+                        // Cancel whichever succeeded to avoid a half-OCO state
+                        if (slOk)  orderService.cancelOrder(slOrder.getId());
+                        if (tgtOk) orderService.cancelOrder(targetOrder.getId());
 
-                    if (holder.future != null) holder.future.cancel(false);
+                        if (!slOk)  eventService.log("[ERROR] SL order placement failed for " + symbol + " at " + slPrice);
+                        if (!tgtOk) eventService.log("[ERROR] Target order placement failed for " + symbol + " at " + targetPrice);
+
+                        if (holder.ocoRetries >= Holder.MAX_OCO_RETRIES) {
+                            eventService.log("[WARNING] Could not place SL/Target for " + symbol
+                                + " after " + Holder.MAX_OCO_RETRIES + " attempts — position is UNPROTECTED");
+                            if (holder.future != null) holder.future.cancel(false);
+                        } else {
+                            eventService.log("[WARNING] Retrying SL/Target placement for " + symbol
+                                + " (attempt " + holder.ocoRetries + "/" + Holder.MAX_OCO_RETRIES + ")");
+                            // do not cancel — next tick will retry
+                        }
+                    }
 
                 } else if ("5".equals(status)) {
                     eventService.log("[ERROR] " + (position.equals("LONG") ? "BUY" : "SELL")
@@ -144,7 +178,7 @@ public class PollingService {
     // ── OCO MONITOR ───────────────────────────────────────────────────────────
     private void monitorOCO(String slId, String targetId, String symbol, int qty,
                              int exitSide, double slPrice, double targetPrice,
-                             String positionSide, String setup) {
+                             String positionSide, String setup, double entryFillPrice) {
         class State {
             ScheduledFuture<?> future;
             boolean slManualCancelled     = false;
@@ -169,8 +203,10 @@ public class PollingService {
 
                 boolean slFilled     = "2".equals(slStatus);
                 boolean targetFilled = "2".equals(targetStatus);
-                boolean slCancelled  = "5".equals(slStatus);
-                boolean tgtCancelled = "5".equals(targetStatus);
+                boolean slCancelled  = "1".equals(slStatus);   // Fyers: 1 = cancelled
+                boolean tgtCancelled = "1".equals(targetStatus);
+                boolean slRejected   = "5".equals(slStatus);   // Fyers: 5 = rejected
+                boolean tgtRejected  = "5".equals(targetStatus);
 
                 // SL hit
                 if (slFilled && !s.handled) {
@@ -178,7 +214,9 @@ public class PollingService {
                     eventService.log("[SUCCESS] SL triggered for " + symbol + " at " + slPrice + " — cancelling target");
                     orderService.cancelOrder(targetId);
                     double exitPrice  = orderService.getFilledPriceFromTradebook(symbol, exitSide);
-                    double entryPrice = orderService.getFilledPriceFromTradebook(symbol, exitSide == 1 ? -1 : 1);
+                    // Use entry price captured at fill time; fall back to tradebook only if unavailable
+                    double entryPrice = entryFillPrice > 0 ? entryFillPrice
+                                      : orderService.getFilledPriceFromTradebook(symbol, exitSide == 1 ? -1 : 1);
                     tradeHistoryService.record(symbol, positionSide, qty,
                         entryPrice > 0 ? entryPrice : slPrice,
                         exitPrice  > 0 ? exitPrice  : slPrice, "SL", setup);
@@ -191,7 +229,9 @@ public class PollingService {
                     eventService.log("[SUCCESS] Target hit for " + symbol + " at " + targetPrice + " — cancelling SL");
                     orderService.cancelOrder(slId);
                     double exitPrice  = orderService.getFilledPriceFromTradebook(symbol, exitSide);
-                    double entryPrice = orderService.getFilledPriceFromTradebook(symbol, exitSide == 1 ? -1 : 1);
+                    // Use entry price captured at fill time; fall back to tradebook only if unavailable
+                    double entryPrice = entryFillPrice > 0 ? entryFillPrice
+                                      : orderService.getFilledPriceFromTradebook(symbol, exitSide == 1 ? -1 : 1);
                     tradeHistoryService.record(symbol, positionSide, qty,
                         entryPrice > 0 ? entryPrice : targetPrice,
                         exitPrice  > 0 ? exitPrice  : targetPrice, "TARGET", setup);
@@ -221,6 +261,17 @@ public class PollingService {
                     eventService.log("[WARNING] Both SL and Target cancelled for " + symbol + " — position unprotected");
                     if (s.future != null) s.future.cancel(false);
                 }
+                // SL or Target rejected by Fyers — position unprotected
+                else if ((slRejected || tgtRejected) && !s.handled) {
+                    s.handled = true;
+                    if (slRejected && tgtRejected)
+                        eventService.log("[ERROR] Both SL and Target orders rejected by Fyers for " + symbol + " — position UNPROTECTED");
+                    else if (slRejected)
+                        eventService.log("[ERROR] SL order rejected by Fyers for " + symbol + " — position UNPROTECTED");
+                    else
+                        eventService.log("[ERROR] Target order rejected by Fyers for " + symbol + " — position UNPROTECTED");
+                    if (s.future != null) s.future.cancel(false);
+                }
                 // Position closed externally — stop monitoring silently
                 if (!s.handled && PositionManager.getPosition(symbol).equals("NONE")
                         && slCancelled && tgtCancelled) {
@@ -238,6 +289,7 @@ public class PollingService {
         cachedPositions.remove(symbol);
         setupBySymbol.remove(symbol);
         entryTimeBySymbol.remove(symbol);
+        entryAvgBySymbol.remove(symbol);
         PositionManager.setPosition(symbol, "NONE");
     }
 
@@ -317,9 +369,11 @@ public class PollingService {
                                        : pos.has("pl")               ? pos.get("pl").asDouble() : 0;
                         String posSide = side == 1 ? "LONG" : "SHORT";
 
+                        // Load saved state once — used for both entryTime and avgPrice resolution
+                        Map<String, Object> saved = positionStateStore.load(symbol);
+
                         String resolvedEntryTime = entryTimeBySymbol.getOrDefault(symbol, "");
                         if (resolvedEntryTime.isEmpty()) {
-                            Map<String, Object> saved = positionStateStore.load(symbol);
                             if (saved != null && saved.containsKey("entryTime"))
                                 resolvedEntryTime = saved.get("entryTime").toString();
                         }
@@ -328,11 +382,21 @@ public class PollingService {
                         if (resolvedEntryTime.isEmpty())
                             entryTimeBySymbol.put(symbol, resolvedEntryTime);
 
+                        // Prefer bot's recorded fill price over Fyers' potentially blended netAvgPrice
+                        double resolvedAvg = avg;
+                        double inMemAvg = entryAvgBySymbol.getOrDefault(symbol, 0.0);
+                        if (inMemAvg > 0) {
+                            resolvedAvg = inMemAvg;
+                        } else if (saved != null && saved.containsKey("avgPrice")) {
+                            double savedAvg = Double.parseDouble(saved.get("avgPrice").toString());
+                            if (savedAvg > 0) resolvedAvg = savedAvg;
+                        }
+
                         String setup = setupBySymbol.getOrDefault(symbol, "");
                         int absQty = Math.abs(qty);
-                        cachedPositions.put(symbol, new PositionsDTO(symbol, absQty, posSide, avg, ltp, pl, setup, resolvedEntryTime));
+                        cachedPositions.put(symbol, new PositionsDTO(symbol, absQty, posSide, resolvedAvg, ltp, pl, setup, resolvedEntryTime));
                         PositionManager.setPosition(symbol, posSide);
-                        positionStateStore.save(symbol, posSide, absQty, avg, setup, resolvedEntryTime);
+                        positionStateStore.save(symbol, posSide, absQty, resolvedAvg, setup, resolvedEntryTime);
                         brokerSymbols.add(symbol);
                     }
                 }
@@ -351,8 +415,8 @@ public class PollingService {
                 for (String symbol : closedSymbols) {
                     PositionsDTO prev = cachedPositions.get(symbol);
                     if (prev != null && !PositionManager.getPosition(symbol).equals("NONE")) {
-                        eventService.log("[INFO] Position closed externally for " + symbol + " — recording trade");
-                        double exitPrice = orderService.getExitPriceFromTradebook(symbol);
+                        eventService.log("[SUCCESS] Manual Square Off for " + symbol + " initiated from Fyers Broker ( User / Automatic )");
+                        double exitPrice = orderService.getExitPriceFromTradebook(symbol, prev.getSide());
                         tradeHistoryService.record(symbol, prev.getSide(), Math.abs(prev.getQty()),
                             prev.getAvgPrice(), exitPrice > 0 ? exitPrice : prev.getLtp(),
                             "MANUAL", setupBySymbol.getOrDefault(symbol, ""));

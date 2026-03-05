@@ -45,6 +45,8 @@ public class SimulatorController {
     public ResponseEntity<?> logout() {
         tokenStore.setAccessToken(null);
         mockState.resetAll();
+        pollingService.clearCachedPositions();
+        PositionManager.resetAll();
         return ResponseEntity.ok(Map.of("redirect", "/"));
     }
 
@@ -58,7 +60,10 @@ public class SimulatorController {
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid mode: " + modeStr));
         }
 
-        // Reset session state on switch
+        // Clear in-memory state from the OLD mode before switching
+        pollingService.clearCachedPositions();
+        PositionManager.resetAll();
+
         modeStore.setMode(newMode);
         eventService.reloadLogsForCurrentMode();
         tradeHistoryService.reloadForCurrentMode();
@@ -136,6 +141,7 @@ public class SimulatorController {
         String symbol = body.containsKey("symbol") ? body.get("symbol").toString() : null;
         if (symbol != null && !symbol.isEmpty()) {
             mockState.setCurrentPrice(symbol, price);
+            mockState.setActiveSymbol(symbol);
             mockState.log("Price [" + symbol + "] → " + price);
         } else {
             mockState.setCurrentPrice(price);

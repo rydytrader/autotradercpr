@@ -3,6 +3,7 @@ package com.rydytrader.autotrader;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * Entry point for the Autotrader Spring Boot application.
@@ -10,6 +11,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
  */
 @SpringBootApplication
 @EnableConfigurationProperties
+@EnableScheduling
 public class AutotraderApplication {
 
 	/**

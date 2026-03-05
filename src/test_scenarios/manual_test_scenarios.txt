@@ -1,0 +1,39 @@
+Scenarios
+
+1. New Position ( Place Order )
+1.a check if SL and Target placed, logs updated and positions screen refreshed with right data.
+1.b Check if position screen is updated with PnL , side and other values automatically after price movements 
+1.c Check if positions json is updated with the right values ( required for server restart scenarios )
+1.d if SL and Target fails system should attempt three times to set the orders. If not it will throw a event log that position is not protected.
+
+
+2. Target Hit. 
+2.a Position table should be cleared with NONE position and event logs updated with Target hit message and SL cancellation message 
+2.b Trades table updated with all proper values indicated Target and Profit
+2.c Trade History csv should be updated with all proper values
+2.d Positions json should be deleted
+
+3. SL Hit 
+3.a Position table should be cleared  with NONE position and event logs updated with SL hit message and Target cancellation message 
+3.b Trades table updated with all proper values indicating a SL and loss
+3.c Trade History csv should be updated with all proper values
+3.d Positions json should be deleted.
+
+4. Manual Square-off from screen
+4.a Positions table should be cleared. 
+4.b Trades table should be updated with Manual and Profit / Loss with respective p&l values , trade closed price
+4.c Trade history csv to be updated with proper values
+4.d Positions json to be deleted
+
+5. Square-off from fyers screen
+5.a Positions table should be cleared. 
+5.b Trades table should be updated with Manual and Profit / Loss with respective p&l values , trade closed price 
+5.c Trade history csv to be updated with proper values
+5.d Positions json to be deleted
+
+6. SL Cancelled
+6.a SL cancelled event log updated with warning message, If Target is also not pending event log will say positions not protected 
+
+7. Target Cancelled
+7.a if Target is cancelled event log updated with warning message ,  If SL is also not pending event log will say positions not protected 
+

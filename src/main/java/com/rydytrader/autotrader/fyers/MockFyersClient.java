@@ -41,9 +41,10 @@ public class MockFyersClient implements FyersClient {
         // Auto-fill market orders (type=2)
         if (state.isAutoFill() && toInt(body.get("type")) == 2) {
             int delay = state.getFillDelayMs();
+            String sym = (String) order.get("symbol");
             new Thread(() -> {
                 try { Thread.sleep(delay); } catch (InterruptedException ignored) {}
-                state.fillOrder(orderId, state.getCurrentPrice());
+                state.fillOrder(orderId, state.getCurrentPrice(sym));
             }).start();
         }
 
