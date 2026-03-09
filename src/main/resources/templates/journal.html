@@ -4,6 +4,7 @@
     <title>TraderEdge CPR - Journal</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -45,7 +46,7 @@
         .navbar{background:var(--navbar-bg);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);padding:0 2rem;height:68px;position:sticky;top:0;z-index:100;box-shadow:var(--navbar-shadow);}
         .navbar-inner{display:flex;align-items:center;justify-content:space-between;height:100%;max-width:1200px;margin:0 auto;width:100%;}
         .brand{display:flex;align-items:center;gap:14px;font-family:var(--font-mono);font-weight:700;}
-        .brand-icon{width:42px;height:42px;background:linear-gradient(135deg,var(--accent-blue),var(--accent-cyan));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;box-shadow:var(--icon-shadow);}
+        .brand-icon{display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;}
         .brand-name{font-size:1.1rem;font-weight:700;letter-spacing:.06em;line-height:1.2;color:var(--text-primary);}
         .brand-name span{background:linear-gradient(90deg,var(--accent-blue),var(--accent-cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
         .brand-sub{color:var(--text-muted);font-weight:400;font-size:.72rem;letter-spacing:.05em;margin-top:2px;}
@@ -459,6 +460,19 @@
             </div>
         </div>
 
+        <div class="section-card chart-full">
+            <div class="section-header">
+                <div class="section-title">
+                    <div class="section-title-dot" style="background:var(--accent-red)"></div>
+                    Drawdown Curve
+                </div>
+                <span id="ddBadge" style="font-family:var(--font-mono);font-size:.7rem;color:var(--text-muted)"></span>
+            </div>
+            <div class="section-body">
+                <div class="chart-wrap"><canvas id="drawdownChart"></canvas></div>
+            </div>
+        </div>
+
         <div class="section-card">
             <div class="section-header">
                 <div class="section-title">
@@ -634,7 +648,7 @@
         };
     }
 
-    let equityChart = null, dailyChart = null, pieChart = null, currentData = null;
+    let equityChart = null, dailyChart = null, pieChart = null, drawdownChart = null, currentData = null;
 
     function renderCharts(data) {
         const c = cc();
@@ -684,6 +698,22 @@
                 plugins: { legend: { position: 'bottom', labels: { padding: 14, font: { family: "'Roboto Mono'", size: 11 } } }, tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed}` } } }
             }
         });
+
+        // Drawdown curve
+        if (drawdownChart) drawdownChart.destroy();
+        const ddData = data.drawdownCurve || [];
+        const ddVals = ddData.map(p => -p.drawdown); // negative so it shows below zero
+        drawdownChart = new Chart(document.getElementById('drawdownChart'), {
+            type: 'line',
+            data: {
+                labels: ddData.map(p => p.timestamp.substring(0,16)),
+                datasets: [{ label: 'Drawdown', data: ddVals, borderColor: c.red, backgroundColor: c.red+'18', borderWidth: 2, pointRadius: ddVals.length > 30 ? 0 : 3, pointHoverRadius: 5, fill: true, tension: 0.35 }]
+            },
+            options: { responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ' -₹' + Math.abs(ctx.parsed.y).toFixed(2) } } },
+                scales: { x: { grid: { color: c.grid }, ticks: { maxTicksLimit: 8, maxRotation: 0 } }, y: { grid: { color: c.grid }, max: 0, ticks: { callback: v => v === 0 ? '₹0' : '-₹' + Math.abs(v) } } }
+            }
+        });
     }
 
     // ── METRICS ───────────────────────────────────
@@ -719,6 +749,10 @@
 
         g('consecBadge').innerHTML = noData ? '' :
             '<span style="color:var(--accent-green)">▲ ' + d.maxConsecWins + ' wins</span> &nbsp; <span style="color:var(--accent-red)">▼ ' + d.maxConsecLosses + ' losses</span> &nbsp; <span style="color:var(--text-muted)">max streak</span>';
+
+        const maxDD = d.maxDrawdown || 0;
+        g('ddBadge').innerHTML = noData ? '' :
+            '<span style="color:var(--accent-red)">Max: -₹' + inr(maxDD) + '</span>';
     }
 
     function renderBreakdowns(d) {

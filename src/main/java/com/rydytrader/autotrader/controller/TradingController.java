@@ -378,6 +378,20 @@ public class TradingController {
             symbolMap.put(sym, sd);
         }
         result.put("symbolBreakdown", symbolMap);
+
+        // Max drawdown & drawdown curve
+        double peak = 0, maxDD = 0, cumDD = 0;
+        java.util.List<Map<String, Object>> ddCurve = new java.util.ArrayList<>();
+        for (var t : trades) {
+            cumDD += t.getPnl();
+            if (cumDD > peak) peak = cumDD;
+            double drawdown = peak - cumDD;
+            if (drawdown > maxDD) maxDD = drawdown;
+            ddCurve.add(Map.of("timestamp", t.getTimestamp(), "drawdown", Math.round(drawdown * 100.0) / 100.0));
+        }
+        result.put("maxDrawdown", Math.round(maxDD * 100.0) / 100.0);
+        result.put("drawdownCurve", ddCurve);
+
         return result;
     }
 

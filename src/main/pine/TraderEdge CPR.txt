@@ -1,0 +1,903 @@
+//@version=5
+indicator("TraderEdge CPR ", overlay=true, max_lines_count=500, max_labels_count=500)
+
+
+// ─── INPUTS ───────────────────────────────────────────────
+showDaily = input.bool(true, "Daily Pivots", group="▶ CURRENT SESSION PIVOTS" , inline="sessPivots"  )
+showWeekly = input.bool(false, "Weekly Pivots", group="▶ CURRENT SESSION PIVOTS", inline="sessPivots" )
+showMonthly = input.bool(false, "Monthly Pivots", group="▶ CURRENT SESSION PIVOTS", inline="sessPivots" )
+
+showTomorrowPivots = input.bool(false, "Tomorrow Pivots",  group="▶ NEXT SESSION PIVOTS" , inline="nextSessPivots" )
+showNextWeekPivots = input.bool(false, "Next Week Pivots", group="▶ NEXT SESSION PIVOTS" , inline="nextSessPivots")
+showNextMonthPivots = input.bool(false, "Next Month Pivots", group="▶ NEXT SESSION PIVOTS" , inline="nextSessPivots")
+
+showHistory = input.bool(false, "Show Historical Pivots",  group="▶ PIVOTS HISTORY")
+
+groupRes = "▶ Resistance Levels"
+
+showR1  = input.bool(true, "Show R1",  group=groupRes, inline="res")
+showR2  = input.bool(true, "Show R2",  group=groupRes, inline="res")
+showR3  = input.bool(true, "Show R3",  group=groupRes, inline="res")
+showR4  = input.bool(true, "Show R4",  group=groupRes, inline="res")
+showPH = input.bool(true, "Show PH", group=groupRes, inline="res")
+
+groupSup = "▶ Support Levels"
+
+showS1  = input.bool(true, "Show S1",  group=groupSup, inline="sup")
+showS2  = input.bool(true, "Show S2",  group=groupSup, inline="sup")
+showS3  = input.bool(true, "Show S3",  group=groupSup, inline="sup")
+showS4  = input.bool(true, "Show S4",  group=groupSup, inline="sup")
+showPL = input.bool(true, "Show PL", group=groupSup, inline="sup")
+
+
+// ─── STYLE : COLORS ──────────────────────────────────────
+pivotColor   = input.color(#e91e63, "Central Pivot",  inline="group1" , group="▶ PIVOTS SETTINGS")
+cprColor     = input.color(#2185c5, "TC & BC",  inline="group1" , group="▶ PIVOTS SETTINGS")
+
+resColor     = input.color(#089981, "Resistance (R)",  inline="group1", group="▶ PIVOTS SETTINGS")
+supColor     = input.color(#f23645, "Support (S)",  inline="group1", group="▶ PIVOTS SETTINGS")
+
+pdhColor     = input.color(#ff9800, "Prev High",  inline="group2", group="▶ PIVOTS SETTINGS")
+pdlColor     = input.color(#000000, "Prev Low",  inline="group2", group="▶ PIVOTS SETTINGS")
+
+pdhBandColor = input.color(color.teal, "R1–PDH Band",  inline="group2", group="▶ PIVOTS SETTINGS")
+pdlBandColor = input.color(color.maroon, "S1–PDL Band ", inline="group2", group="▶ PIVOTS SETTINGS")
+
+bandTransparency = 95
+
+// Style
+lineWidth = input.int(2, "Width", minval=1, maxval=5, group="▶ PIVOTS SETTINGS" , inline="style")
+lineStyleOpt = input.string("Dotted", "Style", options=["Solid","Dashed","Dotted"], group="▶ PIVOTS SETTINGS", inline="style")
+
+showLabels = input.bool(true, "Show Labels", group="▶ PIVOTS SETTINGS", inline="labels")
+
+//────────────────────────────────────────────
+// Moving Averages
+//────────────────────────────────────────────
+showSMA20  = input.bool(false,  "Show 20 SMA" , inline="group5", group="▶ MOVING AVERAGES")
+showSMA50  = input.bool(false,  "Show 50 SMA",inline="group5", group="▶ MOVING AVERAGES")
+showSMA200 = input.bool(false,  "Show 200 SMA",inline="group5", group="▶ MOVING AVERAGES")
+
+sma20Color  = input.color(#089981, "20 SMA Color", inline="group6", group="▶ MOVING AVERAGES SETTINGS")
+sma50Color  = input.color(#f23645,   "50 SMA Color", inline="group6", group="▶ MOVING AVERAGES SETTINGS")
+sma200Color = input.color(color.black, "200 SMA Color", inline="group6", group="▶ MOVING AVERAGES SETTINGS")
+
+
+// ─── LINE STYLE ──────────────────────────────────────
+lineStyle = line.style_solid
+if lineStyleOpt == "Dashed"
+    lineStyle := line.style_dashed
+if lineStyleOpt == "Dotted"
+    lineStyle := line.style_dotted
+
+
+// ─── PREVIOUS DAY DATA ───────────────────────────────────
+ph = request.security(syminfo.tickerid, "D", high[1],  lookahead=barmerge.lookahead_on)
+pl = request.security(syminfo.tickerid, "D", low[1],   lookahead=barmerge.lookahead_on)
+pc = request.security(syminfo.tickerid, "D", close[1],lookahead=barmerge.lookahead_on)
+
+// ─── PREVIOUS WEEK DATA ───────────────────────────────────
+wh = request.security(syminfo.tickerid, "W", high[1],  lookahead=barmerge.lookahead_on)
+wl = request.security(syminfo.tickerid, "W", low[1],   lookahead=barmerge.lookahead_on)
+wc = request.security(syminfo.tickerid, "W", close[1],lookahead=barmerge.lookahead_on)
+
+// ─── PREVIOUS MONTH DATA ───────────────────────────────────
+mh = request.security(syminfo.tickerid, "M", high[1],  lookahead=barmerge.lookahead_on)
+ml = request.security(syminfo.tickerid, "M", low[1],   lookahead=barmerge.lookahead_on)
+mc = request.security(syminfo.tickerid, "M", close[1],lookahead=barmerge.lookahead_on)
+
+// ─── CURRENT DAY DATA ───────────────────────────────────
+ch = request.security(syminfo.tickerid, "D", high,  lookahead=barmerge.lookahead_on)
+cl = request.security(syminfo.tickerid, "D", low,   lookahead=barmerge.lookahead_on)
+cc = request.security(syminfo.tickerid, "D", close,lookahead=barmerge.lookahead_on)
+
+// ─── CURRENT WEEK DATA ───────────────────────────────────
+cwh = request.security(syminfo.tickerid, "W", high,  lookahead=barmerge.lookahead_on)
+cwl = request.security(syminfo.tickerid, "W", low,   lookahead=barmerge.lookahead_on)
+cwc = request.security(syminfo.tickerid, "W", close,lookahead=barmerge.lookahead_on)
+
+// ─── CURRENT MONTH DATA ───────────────────────────────────
+cmh = request.security(syminfo.tickerid, "M", high,  lookahead=barmerge.lookahead_on)
+cml = request.security(syminfo.tickerid, "M", low,   lookahead=barmerge.lookahead_on)
+cmc = request.security(syminfo.tickerid, "M", close,lookahead=barmerge.lookahead_on)
+
+
+// ─── DAILY CPR CALCULATION ─────────────────────────────────
+pp = (ph + pl + pc) / 3
+bc = (ph + pl) / 2
+tc = pp * 2 - bc
+
+r1 = pp * 2 - pl
+s1 = pp * 2 - ph
+
+cprRange = ph - pl
+
+r2 = pp + cprRange
+s2 = pp - cprRange
+
+r3 = ph + 2 * (pp - pl)
+s3 = pl - 2 * (ph - pp)
+
+r4 = r3 + (r2 - r1)
+s4 = s3 - (s1 - s2)
+
+dTop = math.max(pp, math.max(bc, tc))
+dBot = math.min(pp, math.min(bc, tc))
+
+dailyVeryBull = close > r1 and close > ph
+dailyVeryBear = close < s1 and close < pl
+
+dailyBull = close > dTop
+dailyBear = close < dBot
+
+// ─── WEEKLY CPR CALCULATION ─────────────────────────────────
+
+wpp = (wh + wl + wc) / 3
+wbc = (wh + wl) / 2
+wtc = wpp * 2 - wbc
+
+wTop = math.max(wpp, math.max(wbc, wtc))
+wBot = math.min(wpp, math.min(wbc, wtc))
+
+weeklyBull = close > wTop
+weeklyBear = close < wBot
+
+wr1 = 2 * wpp - wl
+ws1 = 2 * wpp - wh
+
+weeklyVeryBull = close > wr1 and close > wh
+weeklyVeryBear = close < ws1 and close < wl
+
+// Weekly reversal detection (only on confirmed candle close)
+var bool weeklyBullRev = false
+var bool weeklyBearRev = false
+
+if barstate.isconfirmed
+    // Reset on new week
+    if ta.change(time("W"))
+        weeklyBullRev := false
+        weeklyBearRev := false
+
+    // Reset if no longer in bullish/bearish zone
+    if not weeklyVeryBull and not weeklyBull
+        weeklyBullRev := false
+    if not weeklyVeryBear and not weeklyBear
+        weeklyBearRev := false
+
+    // Trigger: candle entered R1-WH band but closed back below it
+    weeklyBullRevTrigger = (high > math.min(wr1, wh) or open > math.min(wr1, wh)) and (high < math.max(wr1, wh) or open < math.max(wr1, wh)) and close < math.min(wr1, wh) and close < open
+    if weeklyBullRevTrigger
+        weeklyBullRev := true
+
+    // Reset: close back inside the band
+    if close > math.min(wr1, wh) and close < math.max(wr1, wh)
+        weeklyBullRev := false
+
+    // Trigger: candle entered S1-WL band but closed back above it
+    weeklyBearRevTrigger = (low < math.max(ws1, wl) or open < math.max(ws1, wl)) and (low > math.min(ws1, wl) or open > math.min(ws1, wl)) and close > math.max(ws1, wl) and close > open
+    if weeklyBearRevTrigger
+        weeklyBearRev := true
+
+    // Reset: close back inside the band
+    if close < math.max(ws1, wl) and close > math.min(ws1, wl)
+        weeklyBearRev := false
+
+weeklyReversal = weeklyBullRev ? "Bull Rev" : weeklyBearRev ? "Bear Rev" : "No"
+
+wr2 = wpp + (wh - wl)
+ws2 = wpp - (wh - wl)
+
+wr3 = wh + 2 * (wpp - wl)
+ws3 = wl - 2 * (wh - wpp)
+
+wr4 = wr3 + (wr2 - wr1)
+ws4 = ws3 - (ws1 - ws2)
+
+// ─── MONTHLY CPR CALCULATION ─────────────────────────────────
+
+mpp = (mh + ml + mc) / 3
+mbc    = (mh + ml) / 2
+mtc    = 2 * mpp - mbc
+
+ms1 = 2 * mpp - mh
+ms2 = mpp - (mh - ml)
+ms3 = ml - 2 * (mh - mpp)
+ms4 = ms3 - (ms1 - ms2)
+
+mr1 = 2 * mpp - ml
+mr2 = mpp + (mh - ml)
+mr3 = mh + 2 * (mpp - ml)
+mr4 = mr3 + (mr2 - mr1)
+
+mTop = math.max(mpp, math.max(mbc, mtc))
+mBot = math.min(mpp, math.min(mbc, mtc))
+
+monthlyBull = close > mTop
+monthlyBear = close < mBot
+
+monthlyVeryBull = close > mr1 and close > mh
+monthlyVeryBear = close < ms1 and close < ml
+
+// Monthly reversal detection (only on confirmed candle close)
+var bool monthlyBullRev = false
+var bool monthlyBearRev = false
+
+if barstate.isconfirmed
+    // Reset on new month
+    if ta.change(time("M"))
+        monthlyBullRev := false
+        monthlyBearRev := false
+
+    // Reset if no longer in bullish/bearish zone
+    if not monthlyVeryBull and not monthlyBull
+        monthlyBullRev := false
+    if not monthlyVeryBear and not monthlyBear
+        monthlyBearRev := false
+
+    // Trigger: candle entered R1-MH band but closed back below it
+    monthlyBullRevTrigger = (high > math.min(mr1, mh) or open > math.min(mr1, mh)) and (high < math.max(mr1, mh) or open < math.max(mr1, mh)) and close < math.min(mr1, mh) and close < open
+    if monthlyBullRevTrigger
+        monthlyBullRev := true
+
+    // Reset: close back inside the band
+    if close > math.min(mr1, mh) and close < math.max(mr1, mh)
+        monthlyBullRev := false
+
+    // Trigger: candle entered S1-ML band but closed back above it
+    monthlyBearRevTrigger = (low < math.max(ms1, ml) or open < math.max(ms1, ml)) and (low > math.min(ms1, ml) or open > math.min(ms1, ml)) and close > math.max(ms1, ml) and close > open
+    if monthlyBearRevTrigger
+        monthlyBearRev := true
+
+    // Reset: close back inside the band
+    if close < math.max(ms1, ml) and close > math.min(ms1, ml)
+        monthlyBearRev := false
+
+monthlyReversal = monthlyBullRev ? "Bull Rev" : monthlyBearRev ? "Bear Rev" : "No"
+
+// ─── TOMORROW CPR CALCULATION ─────────────────────────────────
+tpp = (ch + cl + cc) / 3
+tbc = (ch + cl) / 2
+ttc = tpp * 2 - tbc
+
+tr1 = tpp * 2 - cl
+ts1 = tpp * 2 - ch
+
+tcprRange = ch - cl
+
+tr2 = tpp + tcprRange
+ts2 = tpp - tcprRange
+
+tr3 = ch + 2 * (tpp - cl)
+ts3 = cl - 2 * (ch - tpp)
+
+tr4 = tr3 + (tr2 - tr1)
+ts4 = ts3 - (ts1 - ts2)
+
+// ─── NEXT WEEK CPR CALCULATION ─────────────────────────────────
+
+nwpp = (cwh + cwl + cwc) / 3
+nwbc = (cwh + cwl) / 2
+nwtc = nwpp * 2 - nwbc
+
+nwr1 = nwpp * 2 - cwl
+nws1 = nwpp * 2 - cwh
+
+nwcprRange = cwh - cwl
+
+nwr2 = nwpp + nwcprRange
+nws2 = nwpp - nwcprRange
+
+nwr3 = cwh + 2 * (nwpp - cwl)
+nws3 = cwl - 2 * (cwh - nwpp)
+
+nwr4 = nwr3 + (nwr2 - nwr1)
+nws4 = nws3 - (nws1 - nws2)
+
+// ─── NEXT MONTH CPR CALCULATION ─────────────────────────────────
+
+nmpp = (cmh + cml + cmc) / 3
+nmbc = (cmh + cml) / 2
+nmtc = nmpp * 2 - nmbc
+
+nmr1 = nmpp * 2 - cml
+nms1 = nmpp * 2 - cmh
+
+nmcprRange = cmh - cml
+
+nmr2 = nmpp + nmcprRange
+nms2 = nmpp - nmcprRange
+
+nmr3 = cmh + 2 * (nmpp - cml)
+nms3 = cml - 2 * (cmh - nmpp)
+
+nmr4 = nmr3 + (nmr2 - nmr1)
+nms4 = nms3 - (nms1 - nms2)
+
+
+//────────────────────────────────────────────
+// Trend text
+//────────────────────────────────────────────
+dailyTrend =
+     dailyVeryBull ? "Strong Bullish" :
+     dailyVeryBear ? "Strong Bearish" :
+     dailyBull     ? "Bullish" :
+     dailyBear     ? "Bearish" :
+     "Neutral"
+
+weeklyTrend =
+     weeklyVeryBull ? "Strong Bullish" :
+     weeklyVeryBear ? "Strong Bearish" :
+     weeklyBull     ? "Bullish" :
+     weeklyBear     ? "Bearish" :
+     "Neutral"
+
+monthlyTrend =
+     monthlyVeryBull ? "Strong Bullish" :
+     monthlyVeryBear ? "Strong Bearish" :
+     monthlyBull     ? "Bullish" :
+     monthlyBear     ? "Bearish" :
+     "Neutral"
+
+getBg(trend) =>
+     trend == "Strong Bullish" ? color.new(color.green,0) :
+     trend == "Bullish"      ? color.new(color.green, 0) :
+     trend == "Strong Bearish" ? color.new(color.red,0) :
+     trend == "Bearish"      ? color.new(color.red,   0) :
+                               color.new(color.orange,25)
+
+
+//────────────────────────────────────────────
+// Trend Table
+//────────────────────────────────────────────
+tfSeconds = timeframe.in_seconds()
+isSubHourly = tfSeconds < 3600
+isHourly    = tfSeconds >= 3600 and tfSeconds < 86400
+isDailyPlus = tfSeconds >= 86400
+
+var table t = na
+
+if barstate.islast
+    if not na(t)
+        table.delete(t)
+    numRows = isDailyPlus ? 4 : 5
+    t := table.new(position.top_right, 3, numRows, frame_width=2, border_width=4, border_color=color.white)
+
+    table.cell(t, 0, 0, "")
+    table.cell(t, 1, 0, "")
+    table.cell(t, 2, 0, "")
+
+    table.cell(t, 0, 1, "TraderEdge CPR (1.0)", text_halign=text.align_center, bgcolor=color.new(color.green, 0), text_color=color.white, text_size=size.normal)
+    table.cell(t, 1, 1, "", bgcolor=color.new(color.gray, 0), text_color=color.white, text_size=size.normal)
+    table.cell(t, 2, 1, "")
+    table.merge_cells(t, 0, 1, 2, 1)
+
+    table.cell(t, 0, 2, "TIMEFRAME", width=8, bgcolor=color.new(color.gray, 0), text_color=color.white)
+    table.cell(t, 1, 2, "TREND", width=8, bgcolor=color.new(color.gray, 0), text_color=color.white)
+    table.cell(t, 2, 2, "REVERSAL", width=7, bgcolor=color.new(color.gray, 0), text_color=color.white)
+
+    if isSubHourly
+        table.cell(t, 0, 3, timeframe.period + " MINS", bgcolor=color.new(color.gray, 20), text_color=color.white)
+        table.cell(t, 1, 3, dailyTrend, bgcolor=getBg(dailyTrend), text_color=color.white)
+        table.cell(t, 2, 3, "—", bgcolor=color.new(color.gray, 20), text_color=color.white)
+        table.cell(t, 0, 4, "HOURLY", bgcolor=color.new(color.gray, 20), text_color=color.white)
+        table.cell(t, 1, 4, weeklyTrend, bgcolor=getBg(weeklyTrend), text_color=color.white)
+        table.cell(t, 2, 4, weeklyReversal, bgcolor=weeklyBullRev ? color.new(color.red, 30) : weeklyBearRev ? color.new(color.green, 30) : color.new(color.gray, 20), text_color=color.white)
+
+    else if isHourly
+        table.cell(t, 0, 3, "HOURLY", bgcolor=color.new(color.gray, 20), text_color=color.white)
+        table.cell(t, 1, 3, weeklyTrend, bgcolor=getBg(weeklyTrend), text_color=color.white)
+        table.cell(t, 2, 3, weeklyReversal, bgcolor=weeklyBullRev ? color.new(color.red, 30) : weeklyBearRev ? color.new(color.green, 30) : color.new(color.gray, 20), text_color=color.white)
+        table.cell(t, 0, 4, "DAILY", bgcolor=color.new(color.gray, 20), text_color=color.white)
+        table.cell(t, 1, 4, monthlyTrend, bgcolor=getBg(monthlyTrend), text_color=color.white)
+        table.cell(t, 2, 4, monthlyReversal, bgcolor=monthlyBullRev ? color.new(color.red, 30) : monthlyBearRev ? color.new(color.green, 30) : color.new(color.gray, 20), text_color=color.white)
+
+    else
+        table.cell(t, 0, 3, "DAILY", bgcolor=color.new(color.gray, 20), text_color=color.white)
+        table.cell(t, 1, 3, monthlyTrend, bgcolor=getBg(monthlyTrend), text_color=color.white)
+        table.cell(t, 2, 3, monthlyReversal, bgcolor=monthlyBullRev ? color.new(color.red, 30) : monthlyBearRev ? color.new(color.green, 30) : color.new(color.gray, 20), text_color=color.white)
+
+
+// ─── SMA ────────────────────────────────────────────────
+sma20  = ta.sma(close, 20)
+sma50  = ta.sma(close, 50)
+sma200 = ta.sma(close, 200)
+
+plot(showSMA20  ? sma20  : na, title="SMA 20",  color=sma20Color,  linewidth=2)
+plot(showSMA50  ? sma50  : na, title="SMA 50",  color=sma50Color,  linewidth=2)
+plot(showSMA200 ? sma200 : na, title="SMA 200", color=sma200Color, linewidth=2)
+
+
+// ─── ARRAYS FOR HISTORY MANAGEMENT ──────────────────────────
+// Daily
+var line[]  dayLines  = array.new<line>()
+var line[]  dayLinesHistory = array.new<line>()
+var label[] dayLabels = array.new<label>()
+var label[] dayLabelsHistory = array.new<label>()
+var box[]   dayBoxes  = array.new<box>()
+var box[]   dayBoxesHistory  = array.new<box>()
+
+// Weekly
+var line[]  weekLines  = array.new<line>()
+var line[]  weekHistoryLines  = array.new<line>()
+var label[] weekLabels = array.new<label>()
+var label[] weekkHistoryLabels = array.new<label>()
+var box[]   weekBoxes  = array.new<box>()
+var box[]   weekkHistoryBoxes  = array.new<box>()
+
+// Monthly
+var line[]  monthLines = array.new<line>()
+var line[]  monthHistoryLines = array.new<line>()
+var label[] monthLabels = array.new<label>()
+var label[] monthHistoryLabels = array.new<label>()
+var box[]   monthBoxes  = array.new<box>()
+var box[]   monthHistoryBoxes  = array.new<box>()
+
+
+// ─── SESSION TIMESTAMPS ─────────────────────────────────────
+isNewDay = ta.change(time("D"))
+
+var int dayStart = na
+var int dayEnd   = na
+if isNewDay
+    dayStart := time
+    dayEnd   := time + 86400000
+
+isNewWeek = ta.change(time("W"))
+var int weekStart = na
+var int weekEnd   = na
+if isNewWeek
+    weekStart := time
+    weekEnd   := time("W") + 6 * 86400000
+
+isNewMonth = ta.change(time("M"))
+var int monthStart = na
+var int monthEnd   = na
+if isNewMonth
+    monthStart := time
+    monthEnd := time_close("M")
+
+// Tomorrow timestamps
+daysToAdd = dayofweek == dayofweek.friday ? 3 : dayofweek == dayofweek.saturday ? 3 : dayofweek == dayofweek.sunday ? 3 : 1
+var int tomorrowStart = na
+var int tomorrowEnd   = na
+isNewDailyBar = ta.change(time("D"))
+if isNewDailyBar
+    tomorrowStart := time + 24 * 60 * 60 * 1000
+    tomorrowEnd   := tomorrowStart + daysToAdd * 24 * 60 * 60 * 1000
+
+// Next week timestamps
+nextWeekStart = time("W") + 24 * 60 * 60 * 1000 * 6
+nextWeekEnd   = time_close("W") + 24 * 60 * 60 * 1000 * 6
+
+// Next month timestamps
+curYear  = year(time)
+curMonth = month(time)
+nextMonthYear  = curMonth == 12 ? curYear + 1 : curYear
+nextMonthMonth = curMonth == 12 ? 1 : curMonth + 1
+nextMonthStart = timestamp(syminfo.timezone, nextMonthYear, nextMonthMonth, 1, 0, 0)
+endYear  = nextMonthMonth == 12 ? nextMonthYear + 1 : nextMonthYear
+endMonth = nextMonthMonth == 12 ? 1 : nextMonthMonth + 1
+nextMonthEnd = timestamp(syminfo.timezone, endYear, endMonth, 1, 0, 0)
+
+
+// ─── FORMAT HELPER (single function replaces 6 duplicates) ──
+fmt(_v) =>
+    str.tostring(_v, format.mintick)
+
+
+// ─── TRACKED DRAW HELPERS (push to arrays for history) ──────
+drawLineT(_start, _end, _y, _c, _lines) =>
+    ln = line.new(_start, _y, _end, _y, xloc=xloc.bar_time, extend=extend.none, color=_c, width=lineWidth, style=lineStyle)
+    array.push(_lines, ln)
+
+drawLabelRightT(_x, _y, _txt, _clr, _labels) =>
+    if showLabels
+        lb = label.new(x=_x, y=_y, xloc=xloc.bar_time, text=_txt + "  " + fmt(_y), style=label.style_label_right, textcolor=color.white, color=color.new(_clr, 30), size=size.normal)
+        array.push(_labels, lb)
+
+drawLabelLeftT(_x, _y, _txt, _clr, _labels) =>
+    if showLabels
+        lb = label.new(x=_x + 5, y=_y, xloc=xloc.bar_time, text=_txt + "  " + fmt(_y), style=label.style_label_left, textcolor=color.white, color=color.new(_clr, 30), size=size.normal)
+        array.push(_labels, lb)
+
+drawBandT(_start, _end, _top, _bot, _c, _boxes) =>
+    bx = box.new(_start, _top, _end, _bot, xloc=xloc.bar_time, bgcolor=color.new(_c, bandTransparency), border_color=na)
+    array.push(_boxes, bx)
+
+
+// ─── UNTRACKED DRAW HELPERS (no array, for projections) ─────
+drawLineU(_start, _end, _y, _c) =>
+    line.new(_start, _y, _end, _y, xloc=xloc.bar_time, extend=extend.none, color=_c, width=lineWidth, style=lineStyle)
+
+drawLabelRightU(_x, _y, _txt, _clr) =>
+    if showLabels
+        label.new(x=_x, y=_y, xloc=xloc.bar_time, text=_txt + "  " + fmt(_y), style=label.style_label_right, textcolor=color.white, color=color.new(_clr, 30), size=size.normal)
+
+drawLabelLeftU(_x, _y, _txt, _clr) =>
+    if showLabels
+        label.new(x=_x + 5, y=_y, xloc=xloc.bar_time, text=_txt + "  " + fmt(_y), style=label.style_label_left, textcolor=color.white, color=color.new(_clr, 30), size=size.normal)
+
+drawBandU(_start, _end, _top, _bot, _c) =>
+    box.new(_start, _top, _end, _bot, xloc=xloc.bar_time, bgcolor=color.new(_c, bandTransparency), border_color=na)
+
+
+// ─── HISTORY MANAGEMENT HELPERS ─────────────────────────────
+moveLinesToHistory(_source, _dest) =>
+    sz = array.size(_source)
+    if sz > 0
+        for i = 0 to sz - 1
+            array.push(_dest, array.get(_source, i))
+        array.clear(_source)
+
+moveLabelsToHistory(_source, _dest) =>
+    sz = array.size(_source)
+    if sz > 0
+        for i = 0 to sz - 1
+            array.push(_dest, array.get(_source, i))
+        array.clear(_source)
+
+moveBoxesToHistory(_source, _dest) =>
+    sz = array.size(_source)
+    if sz > 0
+        for i = 0 to sz - 1
+            array.push(_dest, array.get(_source, i))
+        array.clear(_source)
+
+clearLines(_arr) =>
+    sz = array.size(_arr)
+    if sz > 0
+        for i = 0 to sz - 1
+            line.delete(array.get(_arr, i))
+        array.clear(_arr)
+
+clearLabels(_arr) =>
+    sz = array.size(_arr)
+    if sz > 0
+        for i = 0 to sz - 1
+            label.delete(array.get(_arr, i))
+        array.clear(_arr)
+
+clearBoxes(_arr) =>
+    sz = array.size(_arr)
+    if sz > 0
+        for i = 0 to sz - 1
+            box.delete(array.get(_arr, i))
+        array.clear(_arr)
+
+
+// ─── DAILY HISTORY MANAGEMENT ───────────────────────────────
+if isNewDay
+    moveLinesToHistory(dayLines, dayLinesHistory)
+    moveLabelsToHistory(dayLabels, dayLabelsHistory)
+    moveBoxesToHistory(dayBoxes, dayBoxesHistory)
+
+if not showHistory
+    clearLines(dayLinesHistory)
+    clearLabels(dayLabelsHistory)
+    clearBoxes(dayBoxesHistory)
+
+
+// ─── DRAW DAILY PIVOTS ─────────────────────────────────────
+if isNewDay and showDaily
+    drawBandT(dayStart, dayEnd, tc, bc, cprColor, dayBoxes)
+    drawLineT(dayStart, dayEnd, tc, cprColor, dayLines)
+    drawLineT(dayStart, dayEnd, bc, cprColor, dayLines)
+    drawLineT(dayStart, dayEnd, pp, pivotColor, dayLines)
+
+    drawLabelLeftT(dayEnd, tc, "TC", cprColor, dayLabels)
+    drawLabelLeftT(dayEnd, bc, "BC", cprColor, dayLabels)
+    drawLabelLeftT(dayEnd, pp, "PIVOT", pivotColor, dayLabels)
+
+    if showR1
+        drawLineT(dayStart, dayEnd, r1, resColor, dayLines)
+        drawLabelLeftT(dayEnd, r1, "R1", resColor, dayLabels)
+    if showR2
+        drawLineT(dayStart, dayEnd, r2, resColor, dayLines)
+        drawLabelLeftT(dayEnd, r2, "R2", resColor, dayLabels)
+    if showR3
+        drawLineT(dayStart, dayEnd, r3, resColor, dayLines)
+        drawLabelLeftT(dayEnd, r3, "R3", resColor, dayLabels)
+    if showR4
+        drawLineT(dayStart, dayEnd, r4, resColor, dayLines)
+        drawLabelLeftT(dayEnd, r4, "R4", resColor, dayLabels)
+
+    if showS1
+        drawLineT(dayStart, dayEnd, s1, supColor, dayLines)
+        drawLabelLeftT(dayEnd, s1, "S1", supColor, dayLabels)
+    if showS2
+        drawLineT(dayStart, dayEnd, s2, supColor, dayLines)
+        drawLabelLeftT(dayEnd, s2, "S2", supColor, dayLabels)
+    if showS3
+        drawLineT(dayStart, dayEnd, s3, supColor, dayLines)
+        drawLabelLeftT(dayEnd, s3, "S3", supColor, dayLabels)
+    if showS4
+        drawLineT(dayStart, dayEnd, s4, supColor, dayLines)
+        drawLabelLeftT(dayEnd, s4, "S4", supColor, dayLabels)
+
+    if showPH
+        drawLineT(dayStart, dayEnd, ph, pdhColor, dayLines)
+        drawLabelLeftT(dayEnd, ph, "PDH", pdhColor, dayLabels)
+    if showPL
+        drawLineT(dayStart, dayEnd, pl, pdlColor, dayLines)
+        drawLabelLeftT(dayEnd, pl, "PDL", pdlColor, dayLabels)
+
+    if showR1 and showPH
+        drawBandT(dayStart, dayEnd, r1, ph, pdhBandColor, dayBoxes)
+    if showS1 and showPL
+        drawBandT(dayStart, dayEnd, s1, pl, pdlBandColor, dayBoxes)
+
+
+// ─── WEEKLY HISTORY MANAGEMENT ──────────────────────────────
+if isNewWeek
+    moveLinesToHistory(weekLines, weekHistoryLines)
+    moveLabelsToHistory(weekLabels, weekkHistoryLabels)
+    moveBoxesToHistory(weekBoxes, weekkHistoryBoxes)
+
+if not showHistory
+    clearLines(weekHistoryLines)
+    clearLabels(weekkHistoryLabels)
+    clearBoxes(weekkHistoryBoxes)
+
+
+// ─── DRAW WEEKLY PIVOTS ────────────────────────────────────
+if isNewWeek and showWeekly
+    drawBandT(weekStart, weekEnd, wtc, wbc, cprColor, weekBoxes)
+    drawLineT(weekStart, weekEnd, wtc, cprColor, weekLines)
+    drawLineT(weekStart, weekEnd, wbc, cprColor, weekLines)
+    drawLineT(weekStart, weekEnd, wpp, pivotColor, weekLines)
+
+    drawLabelRightT(weekStart, wtc, "W-TC", cprColor, weekLabels)
+    drawLabelRightT(weekStart, wbc, "W-BC", cprColor, weekLabels)
+    drawLabelRightT(weekStart, wpp, "W-PIVOT", pivotColor, weekLabels)
+
+    if showPH
+        drawLineT(weekStart, weekEnd, wh, pdhColor, weekLines)
+        drawLabelRightT(weekStart, wh, "PWH", pdhColor, weekLabels)
+    if showPL
+        drawLineT(weekStart, weekEnd, wl, pdlColor, weekLines)
+        drawLabelRightT(weekStart, wl, "PWL", pdlColor, weekLabels)
+
+    if showR1
+        drawLineT(weekStart, weekEnd, wr1, resColor, weekLines)
+        drawLabelRightT(weekStart, wr1, "W-R1", resColor, weekLabels)
+    if showR2
+        drawLineT(weekStart, weekEnd, wr2, resColor, weekLines)
+        drawLabelRightT(weekStart, wr2, "W-R2", resColor, weekLabels)
+    if showR3
+        drawLineT(weekStart, weekEnd, wr3, resColor, weekLines)
+        drawLabelRightT(weekStart, wr3, "W-R3", resColor, weekLabels)
+    if showR4
+        drawLineT(weekStart, weekEnd, wr4, resColor, weekLines)
+        drawLabelRightT(weekStart, wr4, "W-R4", resColor, weekLabels)
+
+    if showS1
+        drawLineT(weekStart, weekEnd, ws1, supColor, weekLines)
+        drawLabelRightT(weekStart, ws1, "W-S1", supColor, weekLabels)
+    if showS2
+        drawLineT(weekStart, weekEnd, ws2, supColor, weekLines)
+        drawLabelRightT(weekStart, ws2, "W-S2", supColor, weekLabels)
+    if showS3
+        drawLineT(weekStart, weekEnd, ws3, supColor, weekLines)
+        drawLabelRightT(weekStart, ws3, "W-S3", supColor, weekLabels)
+    if showS4
+        drawLineT(weekStart, weekEnd, ws4, supColor, weekLines)
+        drawLabelRightT(weekStart, ws4, "W-S4", supColor, weekLabels)
+
+    if showR1 and showPH
+        drawBandT(weekStart, weekEnd, wr1, wh, pdhBandColor, weekBoxes)
+    if showS1 and showPL
+        drawBandT(weekStart, weekEnd, ws1, wl, pdlBandColor, weekBoxes)
+
+
+// ─── MONTHLY HISTORY MANAGEMENT ─────────────────────────────
+if isNewMonth
+    moveLinesToHistory(monthLines, monthHistoryLines)
+    moveLabelsToHistory(monthLabels, monthHistoryLabels)
+    moveBoxesToHistory(monthBoxes, monthHistoryBoxes)
+
+if not showHistory
+    clearLines(monthHistoryLines)
+    clearLabels(monthHistoryLabels)
+    clearBoxes(monthHistoryBoxes)
+
+
+// ─── DRAW MONTHLY PIVOTS ───────────────────────────────────
+if isNewMonth and showMonthly
+    drawBandT(monthStart, monthEnd, mtc, mbc, cprColor, monthBoxes)
+    drawLineT(monthStart, monthEnd, mtc, cprColor, monthLines)
+    drawLineT(monthStart, monthEnd, mbc, cprColor, monthLines)
+    drawLineT(monthStart, monthEnd, mpp, pivotColor, monthLines)
+
+    drawLabelRightT(monthStart, mtc, "M-TC", cprColor, monthLabels)
+    drawLabelRightT(monthStart, mbc, "M-BC", cprColor, monthLabels)
+    drawLabelRightT(monthStart, mpp, "M-PIVOT", pivotColor, monthLabels)
+
+    if showPH
+        drawLineT(monthStart, monthEnd, mh, pdhColor, monthLines)
+        drawLabelRightT(monthStart, mh, "PMH", pdhColor, monthLabels)
+    if showPL
+        drawLineT(monthStart, monthEnd, ml, pdlColor, monthLines)
+        drawLabelRightT(monthStart, ml, "PML", pdlColor, monthLabels)
+
+    if showR1
+        drawLineT(monthStart, monthEnd, mr1, resColor, monthLines)
+        drawLabelRightT(monthStart, mr1, "M-R1", resColor, monthLabels)
+    if showR2
+        drawLineT(monthStart, monthEnd, mr2, resColor, monthLines)
+        drawLabelRightT(monthStart, mr2, "M-R2", resColor, monthLabels)
+    if showR3
+        drawLineT(monthStart, monthEnd, mr3, resColor, monthLines)
+        drawLabelRightT(monthStart, mr3, "M-R3", resColor, monthLabels)
+    if showR4
+        drawLineT(monthStart, monthEnd, mr4, resColor, monthLines)
+        drawLabelRightT(monthStart, mr4, "M-R4", resColor, monthLabels)
+
+    if showS1
+        drawLineT(monthStart, monthEnd, ms1, supColor, monthLines)
+        drawLabelRightT(monthStart, ms1, "M-S1", supColor, monthLabels)
+    if showS2
+        drawLineT(monthStart, monthEnd, ms2, supColor, monthLines)
+        drawLabelRightT(monthStart, ms2, "M-S2", supColor, monthLabels)
+    if showS3
+        drawLineT(monthStart, monthEnd, ms3, supColor, monthLines)
+        drawLabelRightT(monthStart, ms3, "M-S3", supColor, monthLabels)
+    if showS4
+        drawLineT(monthStart, monthEnd, ms4, supColor, monthLines)
+        drawLabelRightT(monthStart, ms4, "M-S4", supColor, monthLabels)
+
+    if showR1 and showPH
+        drawBandT(monthStart, monthEnd, mr1, mh, pdhBandColor, monthBoxes)
+    if showS1 and showPL
+        drawBandT(monthStart, monthEnd, ms1, ml, pdlBandColor, monthBoxes)
+
+
+// ─── DRAW TOMORROW PIVOTS ──────────────────────────────────
+if showTomorrowPivots and barstate.islast
+    drawBandU(tomorrowStart, tomorrowEnd, ttc, tbc, cprColor)
+    drawLineU(tomorrowStart, tomorrowEnd, ttc, cprColor)
+    drawLineU(tomorrowStart, tomorrowEnd, tbc, cprColor)
+    drawLineU(tomorrowStart, tomorrowEnd, tpp, pivotColor)
+
+    drawLabelLeftU(tomorrowEnd, ttc, "TOMORROW TC", cprColor)
+    drawLabelLeftU(tomorrowEnd, tbc, "TOMORROW BC", cprColor)
+    drawLabelLeftU(tomorrowEnd, tpp, "TOMORROW PIVOT", pivotColor)
+
+    if showR1
+        drawLineU(tomorrowStart, tomorrowEnd, tr1, resColor)
+        drawLabelLeftU(tomorrowEnd, tr1, "R1", resColor)
+    if showR2
+        drawLineU(tomorrowStart, tomorrowEnd, tr2, resColor)
+        drawLabelLeftU(tomorrowEnd, tr2, "R2", resColor)
+    if showR3
+        drawLineU(tomorrowStart, tomorrowEnd, tr3, resColor)
+        drawLabelLeftU(tomorrowEnd, tr3, "R3", resColor)
+    if showR4
+        drawLineU(tomorrowStart, tomorrowEnd, tr4, resColor)
+        drawLabelLeftU(tomorrowEnd, tr4, "R4", resColor)
+
+    if showS1
+        drawLineU(tomorrowStart, tomorrowEnd, ts1, supColor)
+        drawLabelLeftU(tomorrowEnd, ts1, "S1", supColor)
+    if showS2
+        drawLineU(tomorrowStart, tomorrowEnd, ts2, supColor)
+        drawLabelLeftU(tomorrowEnd, ts2, "S2", supColor)
+    if showS3
+        drawLineU(tomorrowStart, tomorrowEnd, ts3, supColor)
+        drawLabelLeftU(tomorrowEnd, ts3, "S3", supColor)
+    if showS4
+        drawLineU(tomorrowStart, tomorrowEnd, ts4, supColor)
+        drawLabelLeftU(tomorrowEnd, ts4, "S4", supColor)
+
+    if showPH
+        drawLineU(tomorrowStart, tomorrowEnd, ch, pdhColor)
+        drawLabelLeftU(tomorrowEnd, ch, "PDH", pdhColor)
+    if showPL
+        drawLineU(tomorrowStart, tomorrowEnd, cl, pdlColor)
+        drawLabelLeftU(tomorrowEnd, cl, "PDL", pdlColor)
+
+    if showR1 and showPH
+        drawBandU(tomorrowStart, tomorrowEnd, tr1, ch, pdhBandColor)
+    if showS1 and showPL
+        drawBandU(tomorrowStart, tomorrowEnd, ts1, cl, pdlBandColor)
+
+
+// ─── DRAW NEXT WEEK PIVOTS ─────────────────────────────────
+if showNextWeekPivots and barstate.islast
+    drawBandU(nextWeekStart, nextWeekEnd, nwtc, nwbc, cprColor)
+    drawLineU(nextWeekStart, nextWeekEnd, nwtc, cprColor)
+    drawLineU(nextWeekStart, nextWeekEnd, nwbc, cprColor)
+    drawLineU(nextWeekStart, nextWeekEnd, nwpp, pivotColor)
+
+    drawLabelRightU(nextWeekStart, nwtc, "NEXT WEEK TC", cprColor)
+    drawLabelRightU(nextWeekStart, nwbc, "NEXT WEEK BC", cprColor)
+    drawLabelRightU(nextWeekStart, nwpp, "NEXT WEEK PIVOT", pivotColor)
+
+    if showR1
+        drawLineU(nextWeekStart, nextWeekEnd, nwr1, resColor)
+        drawLabelRightU(nextWeekStart, nwr1, "W-R1", resColor)
+    if showR2
+        drawLineU(nextWeekStart, nextWeekEnd, nwr2, resColor)
+        drawLabelRightU(nextWeekStart, nwr2, "W-R2", resColor)
+    if showR3
+        drawLineU(nextWeekStart, nextWeekEnd, nwr3, resColor)
+        drawLabelRightU(nextWeekStart, nwr3, "W-R3", resColor)
+    if showR4
+        drawLineU(nextWeekStart, nextWeekEnd, nwr4, resColor)
+        drawLabelRightU(nextWeekStart, nwr4, "W-R4", resColor)
+
+    if showS1
+        drawLineU(nextWeekStart, nextWeekEnd, nws1, supColor)
+        drawLabelRightU(nextWeekStart, nws1, "W-S1", supColor)
+    if showS2
+        drawLineU(nextWeekStart, nextWeekEnd, nws2, supColor)
+        drawLabelRightU(nextWeekStart, nws2, "W-S2", supColor)
+    if showS3
+        drawLineU(nextWeekStart, nextWeekEnd, nws3, supColor)
+        drawLabelRightU(nextWeekStart, nws3, "W-S3", supColor)
+    if showS4
+        drawLineU(nextWeekStart, nextWeekEnd, nws4, supColor)
+        drawLabelRightU(nextWeekStart, nws4, "W-S4", supColor)
+
+    if showPH
+        drawLineU(nextWeekStart, nextWeekEnd, cwh, pdhColor)
+        drawLabelRightU(nextWeekStart, cwh, "PWH", pdhColor)
+    if showPL
+        drawLineU(nextWeekStart, nextWeekEnd, cwl, pdlColor)
+        drawLabelRightU(nextWeekStart, cwl, "PWL", pdlColor)
+
+    if showR1 and showPH
+        drawBandU(nextWeekStart, nextWeekEnd, nwr1, cwh, pdhBandColor)
+    if showS1 and showPL
+        drawBandU(nextWeekStart, nextWeekEnd, nws1, cwl, pdlBandColor)
+
+
+// ─── DRAW NEXT MONTH PIVOTS ────────────────────────────────
+if showNextMonthPivots and barstate.islast
+    drawBandU(nextMonthStart, nextMonthEnd, nmtc, nmbc, cprColor)
+    drawLineU(nextMonthStart, nextMonthEnd, nmtc, cprColor)
+    drawLineU(nextMonthStart, nextMonthEnd, nmbc, cprColor)
+    drawLineU(nextMonthStart, nextMonthEnd, nmpp, pivotColor)
+
+    drawLabelRightU(nextMonthStart, nmtc, "NEXT MONTH TC", cprColor)
+    drawLabelRightU(nextMonthStart, nmbc, "NEXT MONTH BC", cprColor)
+    drawLabelRightU(nextMonthStart, nmpp, "NEXT MONTH PIVOT", pivotColor)
+
+    if showR1
+        drawLineU(nextMonthStart, nextMonthEnd, nmr1, resColor)
+        drawLabelRightU(nextMonthStart, nmr1, "M-R1", resColor)
+    if showR2
+        drawLineU(nextMonthStart, nextMonthEnd, nmr2, resColor)
+        drawLabelRightU(nextMonthStart, nmr2, "M-R2", resColor)
+    if showR3
+        drawLineU(nextMonthStart, nextMonthEnd, nmr3, resColor)
+        drawLabelRightU(nextMonthStart, nmr3, "M-R3", resColor)
+    if showR4
+        drawLineU(nextMonthStart, nextMonthEnd, nmr4, resColor)
+        drawLabelRightU(nextMonthStart, nmr4, "M-R4", resColor)
+
+    if showS1
+        drawLineU(nextMonthStart, nextMonthEnd, nms1, supColor)
+        drawLabelRightU(nextMonthStart, nms1, "M-S1", supColor)
+    if showS2
+        drawLineU(nextMonthStart, nextMonthEnd, nms2, supColor)
+        drawLabelRightU(nextMonthStart, nms2, "M-S2", supColor)
+    if showS3
+        drawLineU(nextMonthStart, nextMonthEnd, nms3, supColor)
+        drawLabelRightU(nextMonthStart, nms3, "M-S3", supColor)
+    if showS4
+        drawLineU(nextMonthStart, nextMonthEnd, nms4, supColor)
+        drawLabelRightU(nextMonthStart, nms4, "M-S4", supColor)
+
+    if showPH
+        drawLineU(nextMonthStart, nextMonthEnd, cmh, pdhColor)
+        drawLabelRightU(nextMonthStart, cmh, "PMH", pdhColor)
+    if showPL
+        drawLineU(nextMonthStart, nextMonthEnd, cml, pdlColor)
+        drawLabelRightU(nextMonthStart, cml, "PML", pdlColor)
+
+    if showR1 and showPH
+        drawBandU(nextMonthStart, nextMonthEnd, nmr1, cmh, pdhBandColor)
+    if showS1 and showPL
+        drawBandU(nextMonthStart, nextMonthEnd, nms1, cml, pdlBandColor)
+
+// End of code

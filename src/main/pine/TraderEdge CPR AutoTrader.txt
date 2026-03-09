@@ -1,0 +1,434 @@
+//@version=5
+indicator("TraderEdge CPR AutoTrader", overlay=true, max_labels_count=500)
+
+
+// ─── INPUTS ───────────────────────────────────────────────
+tradeSymbol = input.string("NSE:NIFTY26MARFUT", "Broker Symbol ", group="▶ SIGNAL SETTINGS",  tooltip="The trading symbol for order alerts")
+tradeQuantity = input.int(65, "Quantity", group="▶ SIGNAL SETTINGS" , tooltip="The quantity to be traded. For futures this should be in multiples of lot size")
+
+maxBreakDistance = input.float(25.0, "Breakout Buffer", step=1, group="▶ SIGNAL SETTINGS", tooltip="The maximum points the breakout candle can be away from the pivot level. If it exceeds this level alerts are ignored")
+slBufferPoints = input.float(15.0, "SL Buffer", step=1, group="▶ SIGNAL SETTINGS",  tooltip="The additional stop loss buffer points added to pivot levels stop losses. ")
+
+r2s2SlBuffer = input.float(25.0, "R2/S2 SL Points", step=1, group="▶ SIGNAL SETTINGS", tooltip="The stop loss points for single level pivots like R2/R3/R4 and S2/S3/S4. SL Buffer is also added / reduced to this.")
+maxSlPoints = input.float(100.0, "Max SL Points", step=1, group="▶ SIGNAL SETTINGS", tooltip="The maximum stop loss points beyond which alerts are ignored. This is calculated from the breakout candle close levels to pivot based stop loss levels")
+
+showEventLog = input.bool(true, "Show Event Log", group="▶ EVENT LOGS", inline="SIGNALS3")
+
+// ─── PREVIOUS DAY DATA ───────────────────────────────────
+ph = request.security(syminfo.tickerid, "D", high[1],  lookahead=barmerge.lookahead_on)
+pl = request.security(syminfo.tickerid, "D", low[1],   lookahead=barmerge.lookahead_on)
+pc = request.security(syminfo.tickerid, "D", close[1], lookahead=barmerge.lookahead_on)
+
+// ─── PREVIOUS WEEK DATA ───────────────────────────────────
+wh = request.security(syminfo.tickerid, "W", high[1],  lookahead=barmerge.lookahead_on)
+wl = request.security(syminfo.tickerid, "W", low[1],   lookahead=barmerge.lookahead_on)
+wc = request.security(syminfo.tickerid, "W", close[1], lookahead=barmerge.lookahead_on)
+
+
+// ─── DAILY CPR CALCULATION ─────────────────────────────────
+pp = (ph + pl + pc) / 3
+bc = (ph + pl) / 2
+tc = pp * 2 - bc
+
+r1 = pp * 2 - pl
+s1 = pp * 2 - ph
+
+cprRange = ph - pl
+
+r2 = pp + cprRange
+s2 = pp - cprRange
+
+r3 = ph + 2 * (pp - pl)
+s3 = pl - 2 * (ph - pp)
+
+r4 = r3 + (r2 - r1)
+s4 = s3 - (s1 - s2)
+
+dTop = math.max(pp, math.max(bc, tc))
+dBot = math.min(pp, math.min(bc, tc))
+
+dailyVeryBull = close > r1 and close > ph
+dailyVeryBear = close < s1 and close < pl
+
+dailyBull = close > dTop
+dailyBear = close < dBot
+
+
+// ─── WEEKLY CPR (for trend determination) ───────────────────
+wpp = (wh + wl + wc) / 3
+wbc = (wh + wl) / 2
+wtc = wpp * 2 - wbc
+
+wTop = math.max(wpp, math.max(wbc, wtc))
+wBot = math.min(wpp, math.min(wbc, wtc))
+
+weeklyBull = close > wTop
+weeklyBear = close < wBot
+
+wr1 = 2 * wpp - wl
+ws1 = 2 * wpp - wh
+
+weeklyVeryBull = close > wr1 and close > wh
+weeklyVeryBear = close < ws1 and close < wl
+
+
+//────────────────────────────────────────────
+// Trend text
+//────────────────────────────────────────────
+dailyTrend =
+     dailyVeryBull ? "Strong Bullish" :
+     dailyVeryBear ? "Strong Bearish" :
+     dailyBull     ? "Bullish" :
+     dailyBear     ? "Bearish" :
+     "Neutral"
+
+weeklyTrend =
+     weeklyVeryBull ? "Strong Bullish" :
+     weeklyVeryBear ? "Strong Bearish" :
+     weeklyBull     ? "Bullish" :
+     weeklyBear     ? "Bearish" :
+     "Neutral"
+
+
+//────────────────────────────
+// Recommendation rules
+//────────────────────────────
+buyNearCpr =
+     (weeklyTrend == "Bullish" or weeklyTrend == "Strong Bullish") and
+     (dailyTrend == "Bullish")
+
+buyNearR1PDH =
+     (weeklyTrend == "Bullish" or weeklyTrend == "Strong Bullish") and
+     (dailyTrend == "Strong Bullish")
+
+buyReversal =
+     (weeklyTrend == "Bullish" or weeklyTrend == "Strong Bullish") and
+     (dailyTrend == "Bearish")
+
+sellNearCpr =
+     (weeklyTrend == "Bearish" or weeklyTrend == "Strong Bearish") and
+     (dailyTrend == "Bearish")
+
+sellNearS1PDL =
+     (weeklyTrend == "Bearish" or weeklyTrend == "Strong Bearish") and
+     (dailyTrend == "Strong Bearish")
+
+sellReversal =
+     (weeklyTrend == "Bearish" or weeklyTrend == "Strong Bearish") and
+     (dailyTrend == "Bullish")
+
+isBuyRecommendation = buyNearCpr or buyReversal or buyNearR1PDH
+isSellRecommendation = sellNearCpr or sellReversal or sellNearS1PDL
+
+
+//────────────────────────────
+// Label history management
+//────────────────────────────
+isNewDay = ta.change(time("D"))
+currentSession = time("D")
+
+//────────────────────────────
+// BUY SIGNALS
+//────────────────────────────
+
+// Raw breakout detection
+rawBuyBreakCpr = isBuyRecommendation and barstate.isconfirmed and close > dTop and (open < pp or open < tc or open < bc or low < pp or low < tc or low < bc) and (close > open)
+rawBuyBreakR1PDH = isBuyRecommendation and barstate.isconfirmed and (close > r1 and close > ph) and (open < r1 or open < ph or low < r1 or low < ph) and (close > open)
+rawBuyBreakR2 = isBuyRecommendation and barstate.isconfirmed and (close > r2) and (open < r2 or low < r2) and (close > open)
+rawBuyBreakR3 = isBuyRecommendation and barstate.isconfirmed and (close > r3) and (open < r3 or low < r3) and (close > open)
+rawBuyBreakR4 = isBuyRecommendation and barstate.isconfirmed and (close > r4) and (open < r4 or low < r4) and (close > open)
+rawBuyBreakS1PDL = isBuyRecommendation and barstate.isconfirmed and (close > s1 and close > pl) and (open < s1 or open < pl or low < s1 or low < pl) and (close > open)
+
+// Distance checks
+distanceFromCPR = close - math.max(tc, bc)
+validBuyBreakCpr = distanceFromCPR <= maxBreakDistance
+distanceFromR1PDH = close - math.max(r1, ph)
+validBuyBreakR1PDH = distanceFromR1PDH <= maxBreakDistance
+distanceFromR2 = close - r2
+validBuyBreakR2 = distanceFromR2 <= maxBreakDistance
+distanceFromR3 = close - r3
+validBuyBreakR3 = distanceFromR3 <= maxBreakDistance
+distanceFromR4 = close - r4
+validBuyBreakR4 = distanceFromR4 <= maxBreakDistance
+distanceFromS1PDL = close - math.max(s1, pl)
+validBuyBreakS1PDL = distanceFromS1PDL <= maxBreakDistance
+
+// SL distance checks
+slDistBuyCpr = close - (math.min(tc, bc) - slBufferPoints)
+validSlBuyCpr = slDistBuyCpr <= maxSlPoints
+slDistBuyR1PDH = close - (math.min(r1, ph) - slBufferPoints)
+validSlBuyR1PDH = slDistBuyR1PDH <= maxSlPoints
+slDistBuyR2 = close - (r2 - r2s2SlBuffer)
+validSlBuyR2 = slDistBuyR2 <= maxSlPoints
+slDistBuyR3 = close - (r3 - r2s2SlBuffer)
+validSlBuyR3 = slDistBuyR3 <= maxSlPoints
+slDistBuyR4 = close - (r4 - r2s2SlBuffer)
+validSlBuyR4 = slDistBuyR4 <= maxSlPoints
+slDistBuyS1PDL = close - (math.min(s1, pl) - slBufferPoints)
+validSlBuyS1PDL = slDistBuyS1PDL <= maxSlPoints
+
+// Final buy signals
+buyBreakCpr = rawBuyBreakCpr and validBuyBreakCpr and validSlBuyCpr
+buyBreakR1PDH = rawBuyBreakR1PDH and validBuyBreakR1PDH and validSlBuyR1PDH
+buyBreakR2 = rawBuyBreakR2 and validBuyBreakR2 and validSlBuyR2
+buyBreakR3 = rawBuyBreakR3 and validBuyBreakR3 and validSlBuyR3
+buyBreakR4 = rawBuyBreakR4 and validBuyBreakR4 and validSlBuyR4
+buyBreakS1PDL = rawBuyBreakS1PDL and validBuyBreakS1PDL and validSlBuyS1PDL
+
+
+//────────────────────────────
+// SELL SIGNALS
+//────────────────────────────
+
+// Raw breakout detection
+rawSellBreakCpr = isSellRecommendation and barstate.isconfirmed and close < dBot and (open > pp or open > tc or open > bc or high > pp or high > tc or high > bc) and (close < open)
+rawSellBreakS1PDL = isSellRecommendation and barstate.isconfirmed and (close < s1 and close < pl) and (open > s1 or open > pl or high > s1 or high > pl) and (close < open)
+rawSellBreakS2 = isSellRecommendation and barstate.isconfirmed and (close < s2) and (open > s2 or low > s2) and (close < open)
+rawSellBreakS3 = isSellRecommendation and barstate.isconfirmed and (close < s3) and (open > s3 or high > s3) and (close < open)
+rawSellBreakS4 = isSellRecommendation and barstate.isconfirmed and (close < s4) and (open > s4 or high > s4) and (close < open)
+rawSellBreakR1PDH = isSellRecommendation and barstate.isconfirmed and (close < r1 and close < ph) and (open > r1 or open > ph or high > r1 or high > ph) and (close < open)
+
+// Distance checks
+sdistanceFromCPR = math.min(tc, bc) - close
+validSellBreakCpr = sdistanceFromCPR <= maxBreakDistance
+sdistanceFromS1PDL = math.min(s1, pl) - close
+validSellBreakS1PDL = sdistanceFromS1PDL <= maxBreakDistance
+sdistanceFromS2 = s2 - close
+validSellBreakS2 = sdistanceFromS2 <= maxBreakDistance
+sdistanceFromS3 = s3 - close
+validSellBreakS3 = sdistanceFromS3 <= maxBreakDistance
+sdistanceFromS4 = s4 - close
+validSellBreakS4 = sdistanceFromS4 <= maxBreakDistance
+sdistanceFromR1PDH = math.min(r1, ph) - close
+validSellBreakR1PDH = sdistanceFromR1PDH <= maxBreakDistance
+
+// SL distance checks
+slDistSellCpr = (math.max(tc, bc) + slBufferPoints) - close
+validSlSellCpr = slDistSellCpr <= maxSlPoints
+slDistSellS1PDL = (math.max(s1, pl) + slBufferPoints) - close
+validSlSellS1PDL = slDistSellS1PDL <= maxSlPoints
+slDistSellS2 = (s2 + r2s2SlBuffer) - close
+validSlSellS2 = slDistSellS2 <= maxSlPoints
+slDistSellS3 = (s3 + r2s2SlBuffer) - close
+validSlSellS3 = slDistSellS3 <= maxSlPoints
+slDistSellS4 = (s4 + r2s2SlBuffer) - close
+validSlSellS4 = slDistSellS4 <= maxSlPoints
+slDistSellR1PDH = (math.max(r1, ph) + slBufferPoints) - close
+validSlSellR1PDH = slDistSellR1PDH <= maxSlPoints
+
+// Final sell signals
+sellBreakCpr = rawSellBreakCpr and validSellBreakCpr and validSlSellCpr
+sellBreakS1PDL = rawSellBreakS1PDL and validSellBreakS1PDL and validSlSellS1PDL
+sellBreakS2 = rawSellBreakS2 and validSellBreakS2 and validSlSellS2
+sellBreakS3 = rawSellBreakS3 and validSellBreakS3 and validSlSellS3
+sellBreakS4 = rawSellBreakS4 and validSellBreakS4 and validSlSellS4
+sellBreakR1PDH = rawSellBreakR1PDH and validSellBreakR1PDH and validSlSellR1PDH
+
+
+//────────────────────────────
+// Label drawing
+//────────────────────────────
+drawBuyLabel(_text, _color) =>
+    lbl = label.new(bar_index, low, _text, xloc=xloc.bar_index, yloc=yloc.belowbar, style=label.style_label_up, color=_color, textcolor=color.white, size=size.small)
+
+drawSellLabel(_text, _color) =>
+    slbl = label.new(bar_index, high, _text, xloc=xloc.bar_index, yloc=yloc.abovebar, style=label.style_label_down, color=_color, textcolor=color.white, size=size.small)
+
+//────────────────────────────
+// JSON + Event Log
+//────────────────────────────
+var string json = na
+
+var array<string> logTime    = array.new_string(0)
+var array<string> logMessage = array.new_string(0)
+var array<color>  logColor   = array.new_color(0)
+var array<int>    logSession = array.new_int(0)
+
+addLog(_time, _msg, _clr) =>
+    array.push(logTime, _time)
+    array.push(logMessage, _msg)
+    array.push(logColor, _clr)
+    array.push(logSession, currentSession)
+
+if isBuyRecommendation
+    json := '{"signal":"BUY",' + '"symbol":"' + tradeSymbol + '",' + '"quantity":' + str.tostring(tradeQuantity) + ','
+if isSellRecommendation
+    json := '{"signal":"SELL",' + '"symbol":"' + tradeSymbol + '",' + '"quantity":' + str.tostring(tradeQuantity) + ','
+
+barTime = str.format_time(time, "HH:mm", syminfo.timezone)
+
+
+// ── BUY SIGNAL ALERTS + LOGGING ──
+
+if buyBreakCpr
+    drawBuyLabel("BUY", color.new(color.green, 0))
+    _tgt = math.min(r1, ph)
+    _sl = math.min(tc, bc) - slBufferPoints
+    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_ABOVE_CPR"}'
+    alert(json, alert.freq_once_per_bar_close)
+    addLog(barTime, "BUY_ABOVE_CPR | Entry:" + str.tostring(close, "#.##") + " | Tgt:" + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL:" + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", color.green)
+else if rawBuyBreakCpr and not buyBreakCpr
+    _reason = not validBuyBreakCpr ? "Large Breakout Distance (" + str.tostring(distanceFromCPR, "#.##") + " pts)" : "Large SL (" + str.tostring(slDistBuyCpr, "#.##") + " pts)"
+    addLog(barTime, "BUY_ABOVE_CPR | SKIPPED: " + _reason, color.gray)
+
+if buyBreakR1PDH
+    drawBuyLabel("BUY", color.new(color.green, 0))
+    _tgt = r2
+    _sl = math.min(r1, ph) - slBufferPoints
+    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_ABOVE_R1_PDH"}'
+    alert(json, alert.freq_once_per_bar_close)
+    addLog(barTime, "BUY_ABOVE_R1_PDH | Entry:" + str.tostring(close, "#.##") + " | Tgt:" + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL:" + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", color.green)
+else if rawBuyBreakR1PDH and not buyBreakR1PDH
+    _reason = not validBuyBreakR1PDH ? "Large Breakout Distance (" + str.tostring(distanceFromR1PDH, "#.##") + " pts)" : "Large SL (" + str.tostring(slDistBuyR1PDH, "#.##") + " pts)"
+    addLog(barTime, "BUY_ABOVE_R1_PDH | SKIPPED: " + _reason, color.gray)
+
+if buyBreakR2
+    drawBuyLabel("BUY", color.new(color.green, 0))
+    _tgt = r3
+    _sl = r2 - r2s2SlBuffer
+    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_ABOVE_R2"}'
+    alert(json, alert.freq_once_per_bar_close)
+    addLog(barTime, "BUY_ABOVE_R2 | Entry:" + str.tostring(close, "#.##") + " | Tgt:" + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL:" + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", color.green)
+else if rawBuyBreakR2 and not buyBreakR2
+    _reason = not validBuyBreakR2 ? "Large Breakout Distance (" + str.tostring(distanceFromR2, "#.##") + " pts)" : "Large SL (" + str.tostring(slDistBuyR2, "#.##") + " pts)"
+    addLog(barTime, "BUY_ABOVE_R2 | SKIPPED: " + _reason, color.gray)
+
+if buyBreakR3
+    drawBuyLabel("BUY", color.new(color.green, 0))
+    _tgt = r4
+    _sl = r3 - r2s2SlBuffer
+    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_ABOVE_R3"}'
+    alert(json, alert.freq_once_per_bar_close)
+    addLog(barTime, "BUY_ABOVE_R3 | Entry:" + str.tostring(close, "#.##") + " | Tgt:" + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL:" + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", color.green)
+else if rawBuyBreakR3 and not buyBreakR3
+    _reason = not validBuyBreakR3 ? "Large Breakout Distance (" + str.tostring(distanceFromR3, "#.##") + " pts)" : "Large SL (" + str.tostring(slDistBuyR3, "#.##") + " pts)"
+    addLog(barTime, "BUY_ABOVE_R3 | SKIPPED: " + _reason, color.gray)
+
+if buyBreakR4
+    drawBuyLabel("BUY", color.new(color.green, 0))
+    _tgt = r4 + r2s2SlBuffer
+    _sl = r4 - r2s2SlBuffer
+    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_ABOVE_R4"}'
+    alert(json, alert.freq_once_per_bar_close)
+    addLog(barTime, "BUY_ABOVE_R4 | Entry:" + str.tostring(close, "#.##") + " | Tgt:" + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL:" + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", color.green)
+else if rawBuyBreakR4 and not buyBreakR4
+    _reason = not validBuyBreakR4 ? "Large Breakout Distance (" + str.tostring(distanceFromR4, "#.##") + " pts)" : "Large SL (" + str.tostring(slDistBuyR4, "#.##") + " pts)"
+    addLog(barTime, "BUY_ABOVE_R4 | SKIPPED: " + _reason, color.gray)
+
+if buyBreakS1PDL
+    drawBuyLabel("BUY", color.new(color.orange, 0))
+    _tgt = math.min(tc, bc)
+    _sl = math.min(s1, pl) - slBufferPoints
+    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_ABOVE_S1_PDL"}'
+    alert(json, alert.freq_once_per_bar_close)
+    addLog(barTime, "BUY_ABOVE_S1_PDL | Entry:" + str.tostring(close, "#.##") + " | Tgt:" + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL:" + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", color.orange)
+else if rawBuyBreakS1PDL and not buyBreakS1PDL
+    _reason = not validBuyBreakS1PDL ? "Large Breakout Distance (" + str.tostring(distanceFromS1PDL, "#.##") + " pts)" : "Large SL (" + str.tostring(slDistBuyS1PDL, "#.##") + " pts)"
+    addLog(barTime, "BUY_ABOVE_S1_PDL | SKIPPED: " + _reason, color.gray)
+
+
+// ── SELL SIGNAL ALERTS + LOGGING ──
+
+if sellBreakCpr
+    drawSellLabel("SELL", color.new(color.red, 0))
+    _tgt = math.max(s1, pl)
+    _sl = math.max(tc, bc) + slBufferPoints
+    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_BELOW_CPR"}'
+    alert(json, alert.freq_once_per_bar_close)
+    addLog(barTime, "SELL_BELOW_CPR | Entry:" + str.tostring(close, "#.##") + " | Tgt:" + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL:" + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", color.red)
+else if rawSellBreakCpr and not sellBreakCpr
+    _reason = not validSellBreakCpr ? "Large Breakout Distance (" + str.tostring(sdistanceFromCPR, "#.##") + " pts)" : "Large SL (" + str.tostring(slDistSellCpr, "#.##") + " pts)"
+    addLog(barTime, "SELL_BELOW_CPR | SKIPPED: " + _reason, color.gray)
+
+if sellBreakS1PDL
+    drawSellLabel("SELL", color.new(color.red, 0))
+    _tgt = s2
+    _sl = math.max(s1, pl) + slBufferPoints
+    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_BELOW_S1_PDL"}'
+    alert(json, alert.freq_once_per_bar_close)
+    addLog(barTime, "SELL_BELOW_S1_PDL | Entry:" + str.tostring(close, "#.##") + " | Tgt:" + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL:" + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", color.red)
+else if rawSellBreakS1PDL and not sellBreakS1PDL
+    _reason = not validSellBreakS1PDL ? "Large Breakout Distance (" + str.tostring(sdistanceFromS1PDL, "#.##") + " pts)" : "Large SL (" + str.tostring(slDistSellS1PDL, "#.##") + " pts)"
+    addLog(barTime, "SELL_BELOW_S1_PDL | SKIPPED: " + _reason, color.gray)
+
+if sellBreakS2
+    drawSellLabel("SELL", color.new(color.red, 0))
+    _tgt = s3
+    _sl = s2 + r2s2SlBuffer
+    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_BELOW_S2"}'
+    alert(json, alert.freq_once_per_bar_close)
+    addLog(barTime, "SELL_BELOW_S2 | Entry:" + str.tostring(close, "#.##") + " | Tgt:" + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL:" + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", color.red)
+else if rawSellBreakS2 and not sellBreakS2
+    _reason = not validSellBreakS2 ? "Large Breakout Distance (" + str.tostring(sdistanceFromS2, "#.##") + " pts)" : "Large SL (" + str.tostring(slDistSellS2, "#.##") + " pts)"
+    addLog(barTime, "SELL_BELOW_S2 | SKIPPED: " + _reason, color.gray)
+
+if sellBreakS3
+    drawSellLabel("SELL", color.new(color.red, 0))
+    _tgt = s4
+    _sl = s3 + r2s2SlBuffer
+    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_BELOW_S3"}'
+    alert(json, alert.freq_once_per_bar_close)
+    addLog(barTime, "SELL_BELOW_S3 | Entry:" + str.tostring(close, "#.##") + " | Tgt:" + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL:" + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", color.red)
+else if rawSellBreakS3 and not sellBreakS3
+    _reason = not validSellBreakS3 ? "Large Breakout Distance (" + str.tostring(sdistanceFromS3, "#.##") + " pts)" : "Large SL (" + str.tostring(slDistSellS3, "#.##") + " pts)"
+    addLog(barTime, "SELL_BELOW_S3 | SKIPPED: " + _reason, color.gray)
+
+if sellBreakS4
+    drawSellLabel("SELL", color.new(color.red, 0))
+    _tgt = s4 - r2s2SlBuffer
+    _sl = s4 + r2s2SlBuffer
+    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_BELOW_S4"}'
+    alert(json, alert.freq_once_per_bar_close)
+    addLog(barTime, "SELL_BELOW_S4 | Entry:" + str.tostring(close, "#.##") + " | Tgt:" + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL:" + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", color.red)
+else if rawSellBreakS4 and not sellBreakS4
+    _reason = not validSellBreakS4 ? "Large Breakout Distance (" + str.tostring(sdistanceFromS4, "#.##") + " pts)" : "Large SL (" + str.tostring(slDistSellS4, "#.##") + " pts)"
+    addLog(barTime, "SELL_BELOW_S4 | SKIPPED: " + _reason, color.gray)
+
+if sellBreakR1PDH
+    drawSellLabel("SELL", color.new(color.orange, 0))
+    _tgt = math.max(tc, bc)
+    _sl = math.max(r1, ph) + slBufferPoints
+    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_BELOW_R1_PDH"}'
+    alert(json, alert.freq_once_per_bar_close)
+    addLog(barTime, "SELL_BELOW_R1_PDH | Entry:" + str.tostring(close, "#.##") + " | Tgt:" + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL:" + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", color.orange)
+else if rawSellBreakR1PDH and not sellBreakR1PDH
+    _reason = not validSellBreakR1PDH ? "Large Breakout Distance (" + str.tostring(sdistanceFromR1PDH, "#.##") + " pts)" : "Large SL (" + str.tostring(slDistSellR1PDH, "#.##") + " pts)"
+    addLog(barTime, "SELL_BELOW_R1_PDH | SKIPPED: " + _reason, color.gray)
+
+
+//────────────────────────────
+// Event Log Table
+//────────────────────────────
+var table eventLog = na
+
+if barstate.islast and showEventLog
+    logSize = array.size(logTime)
+    todayCount = 0
+    if logSize > 0
+        for i = logSize - 1 to 0
+            if todayCount >= 5
+                break
+            if array.get(logSession, i) == currentSession
+                todayCount += 1
+
+    if not na(eventLog)
+        table.delete(eventLog)
+    eventLog := table.new(position.bottom_right, 3, todayCount + 1, frame_width=2, border_width=2, border_color=color.white)
+
+    table.cell(eventLog, 0, 0, "#",    bgcolor=color.new(color.gray, 0), text_color=color.white, text_size=size.small)
+    table.cell(eventLog, 1, 0, "Time", bgcolor=color.new(color.gray, 0), text_color=color.white, text_size=size.small)
+    table.cell(eventLog, 2, 0, "Event", bgcolor=color.new(color.gray, 0), text_color=color.white, text_size=size.small, text_halign=text.align_left)
+
+    rowCount = 0
+    if logSize > 0
+        for i = logSize - 1 to 0
+            if rowCount >= 5
+                break
+            if array.get(logSession, i) == currentSession
+                rowCount += 1
+                rowColor = array.get(logColor, i)
+                table.cell(eventLog, 0, rowCount, str.tostring(rowCount),  bgcolor=color.new(rowColor, 30), text_color=color.white, text_size=size.small)
+                table.cell(eventLog, 1, rowCount, array.get(logTime, i),   bgcolor=color.new(rowColor, 30), text_color=color.white, text_size=size.small)
+                table.cell(eventLog, 2, rowCount, array.get(logMessage, i), bgcolor=color.new(rowColor, 30), text_color=color.white, text_size=size.small, text_halign=text.align_left)
+
+// End of code
