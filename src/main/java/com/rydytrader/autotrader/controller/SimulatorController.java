@@ -8,6 +8,7 @@ import com.rydytrader.autotrader.store.PositionStateStore;
 import com.rydytrader.autotrader.service.TradeHistoryService;
 import com.rydytrader.autotrader.store.ModeStore;
 import com.rydytrader.autotrader.store.TokenStore;
+import com.rydytrader.autotrader.store.TradingStateStore;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,6 +24,7 @@ public class SimulatorController {
     private final TradeHistoryService tradeHistoryService;
     private final PollingService       pollingService;
     private final PositionStateStore   positionStateStore;
+    private final TradingStateStore    tradingState;
 
     public SimulatorController(ModeStore modeStore,
                                 TokenStore tokenStore,
@@ -30,7 +32,8 @@ public class SimulatorController {
                                 EventService eventService,
                                 TradeHistoryService tradeHistoryService,
                                 PollingService pollingService,
-                                PositionStateStore positionStateStore) {
+                                PositionStateStore positionStateStore,
+                                TradingStateStore tradingState) {
         this.modeStore          = modeStore;
         this.tokenStore         = tokenStore;
         this.mockState          = mockState;
@@ -38,6 +41,7 @@ public class SimulatorController {
         this.tradeHistoryService = tradeHistoryService;
         this.pollingService      = pollingService;
         this.positionStateStore  = positionStateStore;
+        this.tradingState        = tradingState;
     }
 
     // ── MODE SWITCH ───────────────────────────────────────────────────────────
@@ -86,6 +90,22 @@ public class SimulatorController {
     @GetMapping("/api/mode")
     public Map<String, String> getMode() {
         return Map.of("mode", modeStore.getMode().name());
+    }
+
+    // ── KILL SWITCH ──────────────────────────────────────────────────────────
+    @PostMapping("/api/trading/toggle")
+    public Map<String, Object> toggleTrading() {
+        boolean newState = !tradingState.isTradingEnabled();
+        tradingState.setTradingEnabled(newState);
+        eventService.log(newState
+            ? "[SUCCESS] Trading ENABLED — kill switch deactivated"
+            : "[WARNING] Trading DISABLED — kill switch activated");
+        return Map.of("tradingEnabled", newState);
+    }
+
+    @GetMapping("/api/trading/status")
+    public Map<String, Object> getTradingStatus() {
+        return Map.of("tradingEnabled", tradingState.isTradingEnabled());
     }
 
     // ── SIMULATOR STATE (for control panel) ───────────────────────────────────

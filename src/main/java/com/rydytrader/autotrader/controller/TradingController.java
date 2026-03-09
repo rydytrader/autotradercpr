@@ -21,6 +21,7 @@ import com.rydytrader.autotrader.service.TradeHistoryService;
 import com.rydytrader.autotrader.store.ModeStore;
 import com.rydytrader.autotrader.store.PositionStateStore;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
+import com.rydytrader.autotrader.store.TradingStateStore;
 
 @RestController
 public class TradingController {
@@ -33,6 +34,7 @@ public class TradingController {
     private final TradeHistoryService tradeHistoryService;
     private final PositionStateStore  positionStateStore;
     private final RiskSettingsStore   riskSettings;
+    private final TradingStateStore   tradingState;
 
     public TradingController(PollingService pollingService,
                               OrderService orderService,
@@ -41,7 +43,8 @@ public class TradingController {
                               MockState mockState,
                               TradeHistoryService tradeHistoryService,
                               PositionStateStore positionStateStore,
-                              RiskSettingsStore riskSettings) {
+                              RiskSettingsStore riskSettings,
+                              TradingStateStore tradingState) {
         this.pollingService      = pollingService;
         this.orderService        = orderService;
         this.eventService        = eventService;
@@ -50,6 +53,7 @@ public class TradingController {
         this.tradeHistoryService = tradeHistoryService;
         this.positionStateStore  = positionStateStore;
         this.riskSettings        = riskSettings;
+        this.tradingState        = tradingState;
     }
 
     // ── PLACE ORDER ───────────────────────────────────────────────────────────
@@ -60,6 +64,13 @@ public class TradingController {
 
         // Extract symbol early for log context
         String symbolForLog = payload.containsKey("symbol") ? payload.get("symbol").toString() : "";
+
+        // ── KILL SWITCH ──────────────────────────────────────────────────────────
+        if (!tradingState.isTradingEnabled()) {
+            String msg = "Signal ignored — trading is disabled (kill switch active)";
+            eventService.log("[WARNING] Signal ignored for " + symbolForLog + " — trading is disabled (kill switch active)");
+            return ResponseEntity.ok(msg);
+        }
 
         // ── RISK CHECKS ───────────────────────────────────────────────────────────
         // 1. Trading hours
@@ -336,8 +347,8 @@ public class TradingController {
 
         // Setup breakdown
         java.util.List<String> allSetups = java.util.Arrays.asList(
-            "BUY_ABOVE_CPR","BUY_ABOVE_R1_PDH","BUY_ABOVE_R2","BUY_ABOVE_S1_PDL",
-            "SELL_BELOW_CPR","SELL_BELOW_S1_PDL","SELL_BELOW_S2","SELL_BELOW_R1_PDH"
+            "BUY_ABOVE_CPR","BUY_ABOVE_R1_PDH","BUY_ABOVE_R2","BUY_ABOVE_R3","BUY_ABOVE_R4","BUY_ABOVE_S1_PDL",
+            "SELL_BELOW_CPR","SELL_BELOW_S1_PDL","SELL_BELOW_S2","SELL_BELOW_S3","SELL_BELOW_S4","SELL_BELOW_R1_PDH"
         );
         Map<String, Object> setupMap = new java.util.LinkedHashMap<>();
         for (String setup : allSetups) {

@@ -331,6 +331,82 @@
         .squareoff-btn:hover { background: rgba(248,113,113,0.2); border-color: rgba(248,113,113,0.55); transform: translateY(-1px); }
         .squareoff-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
 
+        /* ── KILL SWITCH ─────────────────────────── */
+        .kill-switch-wrap {
+            display: inline-flex; align-items: center; gap: 8px;
+            background: rgba(52,211,153,0.08); border: 1px solid rgba(52,211,153,0.25);
+            padding: 6px 14px; border-radius: 8px; transition: all 0.3s ease;
+        }
+        .kill-switch-wrap.disabled {
+            background: rgba(248,113,113,0.10); border-color: rgba(248,113,113,0.35);
+        }
+        .kill-switch-label {
+            font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700;
+            letter-spacing: 0.06em; color: var(--accent-green); transition: color 0.3s ease;
+        }
+        .kill-switch-wrap.disabled .kill-switch-label { color: var(--accent-red); }
+        .kill-switch {
+            position: relative; display: inline-block; width: 40px; height: 22px;
+        }
+        .kill-switch input { opacity: 0; width: 0; height: 0; }
+        .kill-switch-slider {
+            position: absolute; cursor: pointer; inset: 0;
+            background: rgba(248,113,113,0.5); border-radius: 22px;
+            transition: background 0.3s ease;
+        }
+        .kill-switch-slider:before {
+            content: ""; position: absolute; height: 16px; width: 16px;
+            left: 3px; bottom: 3px; background: white; border-radius: 50%;
+            transition: transform 0.3s ease;
+        }
+        .kill-switch input:checked + .kill-switch-slider { background: rgba(52,211,153,0.6); }
+        .kill-switch input:checked + .kill-switch-slider:before { transform: translateX(18px); }
+
+        /* ── ORDER MODAL ─────────────────────────── */
+        .order-modal-backdrop {
+            display: none; position: fixed; inset: 0; z-index: 2000;
+            background: rgba(0,0,0,0.75); backdrop-filter: blur(4px);
+            align-items: center; justify-content: center;
+        }
+        .order-modal-backdrop.open { display: flex; }
+        .order-modal {
+            background: var(--bg-card); border: 1px solid rgba(99,179,237,0.25);
+            border-radius: 14px; width: 420px; max-width: 92vw;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+            animation: fadeScaleIn 0.2s ease;
+        }
+        .order-modal-header {
+            padding: 18px 20px 14px; border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .order-modal-title {
+            display: flex; align-items: center; gap: 10px;
+            font-family: var(--font-mono); font-size: 0.82rem; font-weight: 700;
+            letter-spacing: 0.05em; color: var(--accent-blue);
+        }
+        .order-modal-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+        .order-field { display: flex; flex-direction: column; gap: 4px; }
+        .order-field label {
+            font-family: var(--font-mono); font-size: 0.68rem; font-weight: 700;
+            letter-spacing: 0.06em; color: var(--text-muted); text-transform: uppercase;
+        }
+        .order-field input, .order-field select {
+            background: var(--bg-base); border: 1px solid var(--border); border-radius: 7px;
+            padding: 9px 12px; color: var(--text-primary); font-family: var(--font-mono);
+            font-size: 0.8rem; outline: none; transition: border-color 0.2s;
+            min-width: 0; width: 100%; box-sizing: border-box;
+        }
+        .order-field input:focus, .order-field select:focus { border-color: rgba(99,179,237,0.5); }
+        .order-field-row { display: flex; gap: 10px; }
+        .order-field-row .order-field { flex: 1; }
+        .order-modal-footer {
+            padding: 12px 20px 18px; display: flex; justify-content: flex-end; gap: 8px;
+        }
+        .order-modal-status {
+            padding: 0 20px 12px; font-family: var(--font-mono); font-size: 0.72rem;
+            letter-spacing: 0.03em; display: none;
+        }
+
         /* ── MODAL ───────────────────────────────── */
 
         .footer-row { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 28px; }
@@ -604,8 +680,16 @@
             <div class="page-subtitle">Live market positions &amp; trade activity</div>
         </div>
         <div style="display:flex; gap:10px; align-items:center;">
-            <a href="/positions" class="refresh-btn">⟳ Refresh Data</a>
+            <div class="kill-switch-wrap" id="killSwitchWrap">
+                <span class="kill-switch-label" id="killSwitchLabel">Trading ON</span>
+                <label class="kill-switch">
+                    <input type="checkbox" id="killSwitchToggle" checked onchange="toggleKillSwitch()">
+                    <span class="kill-switch-slider"></span>
+                </label>
+            </div>
+            <button class="refresh-btn" onclick="openOrderModal()">+ Place Order</button>
             <button class="squareoff-btn" id="squareOffBtn" onclick="executeSquareOff()" disabled>⬛ Square Off</button>
+            <a href="/positions" class="refresh-btn" title="Refresh positions and trade data" style="background:rgba(99,179,237,0.08); border-color:rgba(99,179,237,0.25); color:var(--accent-blue); padding:9px 12px;">⟳</a>
         </div>
     </div>
 
@@ -940,6 +1024,95 @@
     }
     refreshMode();
 
+    // ── KILL SWITCH ────────────────────────────────────────────────────────────
+    function refreshTradingStatus() {
+        fetch('/api/trading/status').then(r => r.json()).then(d => {
+            const enabled = d.tradingEnabled;
+            const toggle  = document.getElementById('killSwitchToggle');
+            const wrap    = document.getElementById('killSwitchWrap');
+            const label   = document.getElementById('killSwitchLabel');
+            toggle.checked = enabled;
+            wrap.className = 'kill-switch-wrap' + (enabled ? '' : ' disabled');
+            label.textContent = enabled ? 'Trading ON' : 'Trading OFF';
+        }).catch(() => {});
+    }
+    refreshTradingStatus();
+
+    function toggleKillSwitch() {
+        fetch('/api/trading/toggle', { method: 'POST' })
+            .then(r => r.json())
+            .then(d => {
+                refreshTradingStatus();
+                updateTradeLogs();
+            }).catch(() => {});
+    }
+
+    // ── MANUAL ORDER MODAL ───────────────────────────────────────────────────
+    function openOrderModal() {
+        document.getElementById('orderModalBackdrop').classList.add('open');
+        document.getElementById('orderStatus').style.display = 'none';
+        document.body.style.overflow = 'hidden';
+        filterSetups();
+    }
+
+    function filterSetups() {
+        const signal = document.getElementById('orderSignal').value;
+        const sel    = document.getElementById('orderSetup');
+        const prefix = signal === 'BUY' ? 'BUY_' : 'SELL_';
+        for (const opt of sel.options) {
+            if (!opt.value) { opt.style.display = ''; continue; }
+            opt.style.display = opt.value.startsWith(prefix) ? '' : 'none';
+        }
+        if (sel.value && !sel.value.startsWith(prefix)) sel.value = '';
+    }
+
+    function closeOrderModal(e) {
+        if (e && e.target !== document.getElementById('orderModalBackdrop')) return;
+        document.getElementById('orderModalBackdrop').classList.remove('open');
+        document.body.style.overflow = '';
+    }
+
+    function submitOrder() {
+        const signal   = document.getElementById('orderSignal').value;
+        const symbol   = document.getElementById('orderSymbol').value.trim();
+        const qty      = parseInt(document.getElementById('orderQty').value);
+        const stoploss = parseFloat(document.getElementById('orderSL').value);
+        const target   = parseFloat(document.getElementById('orderTarget').value);
+        const setup    = document.getElementById('orderSetup').value;
+        const status   = document.getElementById('orderStatus');
+
+        if (!symbol || !qty || !stoploss || !target) {
+            status.style.display = 'block';
+            status.style.color = 'var(--accent-red)';
+            status.textContent = 'All fields are required';
+            return;
+        }
+
+        status.style.display = 'block';
+        status.style.color = 'var(--accent-yellow)';
+        status.textContent = 'Placing order...';
+
+        fetch('/placeorder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ signal, symbol, quantity: qty, stoploss, target, setup })
+        })
+        .then(r => r.text())
+        .then(msg => {
+            status.style.color = 'var(--accent-green)';
+            status.textContent = msg;
+            updateTradeLogs();
+            setTimeout(() => {
+                closeOrderModal();
+                document.body.style.overflow = '';
+            }, 1500);
+        })
+        .catch(err => {
+            status.style.color = 'var(--accent-red)';
+            status.textContent = 'Error: ' + err.message;
+        });
+    }
+
     function logout() {
         fetch('/api/logout', { method: 'POST' })
             .then(r => r.json())
@@ -1096,6 +1269,70 @@
 
 </script>
 
+
+    <!-- ── MANUAL ORDER MODAL ──────────────────────────────────── -->
+    <div class="order-modal-backdrop" id="orderModalBackdrop" onclick="closeOrderModal(event)">
+        <div class="order-modal" onclick="event.stopPropagation()">
+            <div class="order-modal-header">
+                <div class="order-modal-title">+ PLACE ORDER</div>
+                <div class="sim-modal-close" onclick="closeOrderModal()">✕</div>
+            </div>
+            <div class="order-modal-body">
+                <div class="order-field-row">
+                    <div class="order-field">
+                        <label>Signal</label>
+                        <select id="orderSignal" onchange="filterSetups()">
+                            <option value="BUY">BUY</option>
+                            <option value="SELL">SELL</option>
+                        </select>
+                    </div>
+                    <div class="order-field">
+                        <label>Setup</label>
+                        <select id="orderSetup">
+                            <option value="">— None —</option>
+                            <option value="BUY_ABOVE_CPR">BUY_ABOVE_CPR</option>
+                            <option value="BUY_ABOVE_R1_PDH">BUY_ABOVE_R1_PDH</option>
+                            <option value="BUY_ABOVE_R2">BUY_ABOVE_R2</option>
+                            <option value="BUY_ABOVE_R3">BUY_ABOVE_R3</option>
+                            <option value="BUY_ABOVE_R4">BUY_ABOVE_R4</option>
+                            <option value="BUY_ABOVE_S1_PDL">BUY_ABOVE_S1_PDL</option>
+                            <option value="SELL_BELOW_CPR">SELL_BELOW_CPR</option>
+                            <option value="SELL_BELOW_S1_PDL">SELL_BELOW_S1_PDL</option>
+                            <option value="SELL_BELOW_S2">SELL_BELOW_S2</option>
+                            <option value="SELL_BELOW_S3">SELL_BELOW_S3</option>
+                            <option value="SELL_BELOW_S4">SELL_BELOW_S4</option>
+                            <option value="SELL_BELOW_R1_PDH">SELL_BELOW_R1_PDH</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="order-field-row">
+                    <div class="order-field" style="flex:2">
+                        <label>Symbol</label>
+                        <input type="text" id="orderSymbol" placeholder="NSE:NIFTY25JUNFUT">
+                    </div>
+                    <div class="order-field" style="flex:1">
+                        <label>Quantity</label>
+                        <input type="number" id="orderQty" placeholder="50" min="1">
+                    </div>
+                </div>
+                <div class="order-field-row">
+                    <div class="order-field">
+                        <label>Stop Loss</label>
+                        <input type="number" id="orderSL" placeholder="0.00" step="0.05">
+                    </div>
+                    <div class="order-field">
+                        <label>Target</label>
+                        <input type="number" id="orderTarget" placeholder="0.00" step="0.05">
+                    </div>
+                </div>
+            </div>
+            <div class="order-modal-status" id="orderStatus"></div>
+            <div class="order-modal-footer">
+                <button class="sim-btn sim-btn-ghost" style="padding:8px 18px" onclick="closeOrderModal()">Cancel</button>
+                <button class="sim-btn" style="padding:8px 18px; background:rgba(99,179,237,0.12); border:1px solid rgba(99,179,237,0.3); color:var(--accent-blue);" onclick="submitOrder()">Place Order</button>
+            </div>
+        </div>
+    </div>
 
     <!-- ── RESET CONFIRM DIALOG ─────────────────────────────────── -->
     <div class="confirm-dialog-backdrop" id="resetConfirmBackdrop">
