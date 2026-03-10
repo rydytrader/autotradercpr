@@ -142,8 +142,8 @@ public class PollingService {
                     boolean tgtOk = targetOrder != null && targetOrder.getId() != null && !targetOrder.getId().isEmpty();
 
                     if (slOk && tgtOk) {
-                        eventService.log("[SUCCESS] SL order placed for " + symbol + " at " + slPrice + " [ID: " + slOrder.getId() + "]");
-                        eventService.log("[SUCCESS] Target order placed for " + symbol + " at " + targetPrice + " [ID: " + targetOrder.getId() + "]");
+                        eventService.log("[SUCCESS] SL order placed for " + symbol + " at " + orderService.roundToTick(slPrice, symbol) + " [ID: " + slOrder.getId() + "]");
+                        eventService.log("[SUCCESS] Target order placed for " + symbol + " at " + orderService.roundToTick(targetPrice, symbol) + " [ID: " + targetOrder.getId() + "]");
                         monitorOCO(slOrder.getId(), targetOrder.getId(), symbol, quantity,
                             exitSide, slPrice, targetPrice, position, setup, holder.entryFillPrice);
                         if (holder.future != null) holder.future.cancel(false);

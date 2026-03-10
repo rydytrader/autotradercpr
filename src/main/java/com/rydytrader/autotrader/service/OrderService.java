@@ -199,7 +199,7 @@ public class OrderService {
             + "}";
     }
 
-    private double roundToTick(double price, String symbol) {
+    public double roundToTick(double price, String symbol) {
         double tick   = symbolMaster.getTickSize(symbol);
         long   factor = Math.round(1.0 / tick);  // 0.05→20, 0.10→10, 0.25→4, 0.50→2
         return Math.round(price * factor) / (double) factor;

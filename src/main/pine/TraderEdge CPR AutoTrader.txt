@@ -12,6 +12,8 @@ slBufferPoints = input.float(15.0, "SL Buffer", step=1, group="▶ SIGNAL SETTIN
 r2s2SlBuffer = input.float(25.0, "R2/S2 SL Points", step=1, group="▶ SIGNAL SETTINGS", tooltip="The stop loss points for single level pivots like R2/R3/R4 and S2/S3/S4. SL Buffer is also added / reduced to this.")
 maxSlPoints = input.float(100.0, "Max SL Points", step=1, group="▶ SIGNAL SETTINGS", tooltip="The maximum stop loss points beyond which alerts are ignored. This is calculated from the breakout candle close levels to pivot based stop loss levels")
 
+signalMode = input.string("Daily + Weekly", "Signal Mode", options=["Daily + Weekly", "Daily Only"], group="▶ SIGNAL SETTINGS", tooltip="Daily Only: signals based on daily CPR trend only. Daily + Weekly: signals require both daily and weekly trend alignment (reversal setups enabled).")
+
 showEventLog = input.bool(true, "Show Event Log", group="▶ EVENT LOGS", inline="SIGNALS3")
 
 // ─── PREVIOUS DAY DATA ───────────────────────────────────
@@ -93,27 +95,31 @@ weeklyTrend =
 //────────────────────────────
 // Recommendation rules
 //────────────────────────────
+dailyOnly = signalMode == "Daily Only"
+
 buyNearCpr =
-     (weeklyTrend == "Bullish" or weeklyTrend == "Strong Bullish") and
+     (dailyOnly or weeklyTrend == "Bullish" or weeklyTrend == "Strong Bullish") and
      (dailyTrend == "Bullish")
 
 buyNearR1PDH =
-     (weeklyTrend == "Bullish" or weeklyTrend == "Strong Bullish") and
+     (dailyOnly or weeklyTrend == "Bullish" or weeklyTrend == "Strong Bullish") and
      (dailyTrend == "Strong Bullish")
 
 buyReversal =
+     not dailyOnly and
      (weeklyTrend == "Bullish" or weeklyTrend == "Strong Bullish") and
      (dailyTrend == "Bearish")
 
 sellNearCpr =
-     (weeklyTrend == "Bearish" or weeklyTrend == "Strong Bearish") and
+     (dailyOnly or weeklyTrend == "Bearish" or weeklyTrend == "Strong Bearish") and
      (dailyTrend == "Bearish")
 
 sellNearS1PDL =
-     (weeklyTrend == "Bearish" or weeklyTrend == "Strong Bearish") and
+     (dailyOnly or weeklyTrend == "Bearish" or weeklyTrend == "Strong Bearish") and
      (dailyTrend == "Strong Bearish")
 
 sellReversal =
+     not dailyOnly and
      (weeklyTrend == "Bearish" or weeklyTrend == "Strong Bearish") and
      (dailyTrend == "Bullish")
 
