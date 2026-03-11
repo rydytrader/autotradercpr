@@ -83,8 +83,12 @@ public class OrderService {
     public boolean cancelOrder(String orderId) {
         try {
             JsonNode node = fyersClient.cancelOrder(orderId, authHeader());
-            boolean ok = "ok".equals(node.get("s").asText());
-            System.out.println("Cancel " + orderId + " → " + (ok ? "OK" : "FAILED"));
+            boolean ok = node != null && "ok".equals(node.get("s").asText());
+            if (ok) {
+                System.out.println("Cancel " + orderId + " → OK");
+            } else {
+                System.out.println("Cancel " + orderId + " → FAILED | response: " + node);
+            }
             return ok;
         } catch (Exception e) { e.printStackTrace(); return false; }
     }

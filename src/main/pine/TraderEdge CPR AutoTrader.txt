@@ -187,12 +187,12 @@ buyBreakS1PDL = rawBuyBreakS1PDL and validBuyBreakS1PDL and validSlBuyS1PDL
 //────────────────────────────
 
 // Raw breakout detection
-rawSellBreakCpr = isSellRecommendation and barstate.isconfirmed and close < dBot and (open > pp or open > tc or open > bc or high > pp or high > tc or high > bc) and (close < open)
-rawSellBreakS1PDL = isSellRecommendation and barstate.isconfirmed and (close < s1 and close < pl) and (open > s1 or open > pl or high > s1 or high > pl) and (close < open)
-rawSellBreakS2 = isSellRecommendation and barstate.isconfirmed and (close < s2) and (open > s2 or low > s2) and (close < open)
-rawSellBreakS3 = isSellRecommendation and barstate.isconfirmed and (close < s3) and (open > s3 or high > s3) and (close < open)
-rawSellBreakS4 = isSellRecommendation and barstate.isconfirmed and (close < s4) and (open > s4 or high > s4) and (close < open)
-rawSellBreakR1PDH = isSellRecommendation and barstate.isconfirmed and (close < r1 and close < ph) and (open > r1 or open > ph or high > r1 or high > ph) and (close < open)
+rawSellBreakCpr = isSellRecommendation and barstate.isconfirmed and (close < open) and ((close < dBot and (open > pp or open > tc or open > bc or high > pp or high > tc or high > bc)) or (high > dTop and open < dTop and close < dTop))
+rawSellBreakS1PDL = isSellRecommendation and barstate.isconfirmed and (close < open) and ((close < s1 and close < pl and (open > s1 or open > pl or high > s1 or high > pl)) or (high > math.max(s1, pl) and open < math.max(s1, pl) and close < math.max(s1, pl)))
+rawSellBreakS2 = isSellRecommendation and barstate.isconfirmed and (close < open) and ((close < s2 and (open > s2 or high > s2)) or (high > s2 and open < s2 and close < s2))
+rawSellBreakS3 = isSellRecommendation and barstate.isconfirmed and (close < open) and ((close < s3 and (open > s3 or high > s3)) or (high > s3 and open < s3 and close < s3))
+rawSellBreakS4 = isSellRecommendation and barstate.isconfirmed and (close < open) and ((close < s4 and (open > s4 or high > s4)) or (high > s4 and open < s4 and close < s4))
+rawSellBreakR1PDH = isSellRecommendation and barstate.isconfirmed and (close < open) and ((close < r1 and close < ph and (open > r1 or open > ph or high > r1 or high > ph)) or (high > math.max(r1, ph) and open < math.max(r1, ph) and close < math.max(r1, ph)))
 
 // Distance checks
 sdistanceFromCPR = math.min(tc, bc) - close
