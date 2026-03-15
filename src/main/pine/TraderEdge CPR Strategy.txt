@@ -1,0 +1,278 @@
+//@version=5
+strategy("TraderEdge CPR Strategy", overlay=true,
+         default_qty_type       = strategy.fixed,
+         default_qty_value      = 1,
+         commission_type        = strategy.commission.cash_per_contract,
+         commission_value       = 20,
+         slippage               = 2,
+         pyramiding             = 0,
+         calc_on_every_tick     = false,
+         process_orders_on_close = true,
+         max_labels_count       = 500)
+
+
+// ─── INPUTS ───────────────────────────────────────────────
+tradeQuantity      = input.int(65,    "Quantity",          group="▶ TRADE SETTINGS")
+atrLength          = input.int(14,    "ATR Length",        group="▶ TRADE SETTINGS")
+atrMultiplier      = input.float(1.0, "ATR Multiplier",    step=0.5, minval=0.5, maxval=5.0, group="▶ TRADE SETTINGS", tooltip="SL = Entry Price ± ATR × multiplier")
+minSlPoints        = input.int(50,    "Min SL Points",     group="▶ TRADE SETTINGS", tooltip="Minimum SL distance in points. If ATR-based SL is smaller, this floor is used instead.")
+lastEntryHour      = input.int(14,    "Last Entry Hour",   minval=9, maxval=15, group="▶ TRADE SETTINGS")
+lastEntryMinute    = input.int(30,    "Last Entry Minute", minval=0, maxval=59,  group="▶ TRADE SETTINGS", tooltip="No new entries at or after this time. Default 14:30 (2:30 PM).")
+maxCprWidth        = input.float(1.5, "Max CPR Width (× ATR)", step=0.1, minval=0.1, maxval=10.0, group="▶ TRADE SETTINGS", tooltip="Skip all trades when TC−BC exceeds this multiple of ATR. Default 1.5 = 1.5×ATR is considered wide.")
+
+// ─── PREVIOUS DAY DATA ───────────────────────────────────
+ph = request.security(syminfo.tickerid, "D", high[1],  lookahead=barmerge.lookahead_on)
+pl = request.security(syminfo.tickerid, "D", low[1],   lookahead=barmerge.lookahead_on)
+pc = request.security(syminfo.tickerid, "D", close[1], lookahead=barmerge.lookahead_on)
+
+// ─── PREVIOUS WEEK DATA ───────────────────────────────────
+wh = request.security(syminfo.tickerid, "W", high[1],  lookahead=barmerge.lookahead_on)
+wl = request.security(syminfo.tickerid, "W", low[1],   lookahead=barmerge.lookahead_on)
+wc = request.security(syminfo.tickerid, "W", close[1], lookahead=barmerge.lookahead_on)
+
+// ─── VWAP & ATR ───────────────────────────────────────────
+vwap     = ta.vwap(hlc3)
+atrValue = ta.atr(atrLength)
+atrSl    = math.max(atrValue * atrMultiplier, minSlPoints)
+
+// ─── DAILY CPR ─────────────────────────────────────────────
+pp = (ph + pl + pc) / 3
+bc = (ph + pl) / 2
+tc = pp * 2 - bc
+
+r1 = pp * 2 - pl
+s1 = pp * 2 - ph
+
+cprRange = ph - pl
+
+r2 = pp + cprRange
+s2 = pp - cprRange
+
+r3 = ph + 2 * (pp - pl)
+s3 = pl - 2 * (ph - pp)
+
+r4 = r3 + (r2 - r1)
+s4 = s3 - (s1 - s2)
+
+dTop = math.max(pp, math.max(bc, tc))
+dBot = math.min(pp, math.min(bc, tc))
+
+dailyVeryBull = close > r1 and close > ph
+dailyVeryBear = close < s1 and close < pl
+dailyBull     = close > dTop
+dailyBear     = close < dBot
+
+
+// ─── WEEKLY CPR ─────────────────────────────────────────────
+wpp = (wh + wl + wc) / 3
+wbc = (wh + wl) / 2
+wtc = wpp * 2 - wbc
+
+wTop = math.max(wpp, math.max(wbc, wtc))
+wBot = math.min(wpp, math.min(wbc, wtc))
+
+weeklyBull     = close > wTop
+weeklyBear     = close < wBot
+
+wr1 = 2 * wpp - wl
+ws1 = 2 * wpp - wh
+
+weeklyVeryBull = close > wr1 and close > wh
+weeklyVeryBear = close < ws1 and close < wl
+
+
+// ─── TREND ─────────────────────────────────────────────────
+dailyTrend =
+     dailyVeryBull ? "Strong Bullish" :
+     dailyVeryBear ? "Strong Bearish" :
+     dailyBull     ? "Bullish" :
+     dailyBear     ? "Bearish" :
+     "Neutral"
+
+weeklyTrend =
+     weeklyVeryBull ? "Strong Bullish" :
+     weeklyVeryBear ? "Strong Bearish" :
+     weeklyBull     ? "Bullish" :
+     weeklyBear     ? "Bearish" :
+     "Neutral"
+
+
+// ─── RECOMMENDATIONS ───────────────────────────────────────
+weeklyBullish = weeklyTrend == "Bullish" or weeklyTrend == "Strong Bullish"
+weeklyBearish = weeklyTrend == "Bearish" or weeklyTrend == "Strong Bearish"
+dailyBullish  = dailyTrend == "Bullish" or dailyTrend == "Strong Bullish"
+dailyBearish  = dailyTrend == "Bearish" or dailyTrend == "Strong Bearish"
+
+// Aligned: both weekly and daily confirm the direction (original logic)
+alignedBuy  = weeklyBullish and dailyBullish
+alignedSell = weeklyBearish and dailyBearish
+
+// Misaligned: trends disagree → follow daily trend only
+misalignedBuy  = (not weeklyBullish) and dailyBullish
+misalignedSell = (not weeklyBearish) and dailyBearish
+
+isBuyRecommendation  = alignedBuy  or misalignedBuy
+isSellRecommendation = alignedSell or misalignedSell
+
+
+// ─── BUY SIGNALS ───────────────────────────────────────────
+
+// Raw breakouts
+rawBuyBreakCpr   = isBuyRecommendation and barstate.isconfirmed and close > dTop and (open < pp or open < tc or open < bc or low < pp or low < tc or low < bc) and (close > open)
+rawBuyBreakR1PDH = isBuyRecommendation and barstate.isconfirmed and (close > r1 and close > ph) and (open < r1 or open < ph or low < r1 or low < ph) and (close > open)
+rawBuyBreakR2    = isBuyRecommendation and barstate.isconfirmed and (close > r2) and (open < r2 or low < r2) and (close > open)
+rawBuyBreakR3    = isBuyRecommendation and barstate.isconfirmed and (close > r3) and (open < r3 or low < r3) and (close > open)
+rawBuyBreakR4    = isBuyRecommendation and barstate.isconfirmed and (close > r4) and (open < r4 or low < r4) and (close > open)
+rawBuyBreakS1PDL = isBuyRecommendation and barstate.isconfirmed and (close > s1 and close > pl) and (open < s1 or open < pl or low < s1 or low < pl) and (close > open)
+
+// Final
+buyBreakCpr   = rawBuyBreakCpr   and close > vwap
+buyBreakR1PDH = rawBuyBreakR1PDH and close > vwap
+buyBreakR2    = rawBuyBreakR2    and close > vwap
+buyBreakR3    = rawBuyBreakR3    and close > vwap
+buyBreakR4    = rawBuyBreakR4    and close > vwap
+buyBreakS1PDL = rawBuyBreakS1PDL and close > vwap
+
+
+// ─── SELL SIGNALS ──────────────────────────────────────────
+
+// Raw breakouts
+rawSellBreakCpr   = isSellRecommendation and barstate.isconfirmed and (close < open) and ((close < dBot and (open > pp or open > tc or open > bc or high > pp or high > tc or high > bc)) or (high > dTop and open < dTop and close < dBot))
+rawSellBreakS1PDL = isSellRecommendation and barstate.isconfirmed and (close < open) and ((close < s1 and close < pl and (open > s1 or open > pl or high > s1 or high > pl)) or (high > math.max(s1, pl) and open < math.max(s1, pl) and close < math.min(s1, pl)))
+rawSellBreakS2    = isSellRecommendation and barstate.isconfirmed and (close < open) and ((close < s2 and (open > s2 or high > s2)) or (high > s2 and open < s2 and close < s2))
+rawSellBreakS3    = isSellRecommendation and barstate.isconfirmed and (close < open) and ((close < s3 and (open > s3 or high > s3)) or (high > s3 and open < s3 and close < s3))
+rawSellBreakS4    = isSellRecommendation and barstate.isconfirmed and (close < open) and ((close < s4 and (open > s4 or high > s4)) or (high > s4 and open < s4 and close < s4))
+rawSellBreakR1PDH = isSellRecommendation and barstate.isconfirmed and (close < open) and ((close < r1 and close < ph and (open > r1 or open > ph or high > r1 or high > ph)) or (high > math.max(r1, ph) and open < math.max(r1, ph) and close < math.min(r1, ph)))
+
+// Final
+sellBreakCpr   = rawSellBreakCpr   and close < vwap
+sellBreakS1PDL = rawSellBreakS1PDL and close < vwap
+sellBreakS2    = rawSellBreakS2    and close < vwap
+sellBreakS3    = rawSellBreakS3    and close < vwap
+sellBreakS4    = rawSellBreakS4    and close < vwap
+sellBreakR1PDH = rawSellBreakR1PDH and close < vwap
+
+
+// ─── SESSION END CLOSE ─────────────────────────────────────
+// eodTime: actual session end from exchange daily bar — handles shortened sessions
+// (Diwali 2:30 PM, Republic Day early close, etc.)
+// remaining check fires on the exact last bar for any session length.
+// Fallback: hour/minute check covers regular 15:30 sessions if eodTime is stale.
+// Safety net: isNewSession catches any position still open at the next session start.
+eodTime       = request.security(syminfo.tickerid, "D", time_close, lookahead=barmerge.lookahead_on)
+barMs         = timeframe.in_seconds() * 1000
+remaining     = eodTime - time_close
+isLastCandle  = (remaining >= 0 and remaining < barMs) or (hour == 15 and minute >= 15)
+isNewSession  = ta.change(time("D")) != 0
+isFirstCandle = hour == 9 and minute == 15
+
+if (isLastCandle or isNewSession) and strategy.position_size != 0
+    strategy.close_all(comment="Session End")
+
+inEntryWindow = (hour * 60 + minute) < (lastEntryHour * 60 + lastEntryMinute)
+cprNarrow     = math.abs(tc - bc) <= maxCprWidth * atrValue
+canTrade      = strategy.position_size == 0 and not isLastCandle and not isNewSession and not isFirstCandle and inEntryWindow and cprNarrow
+
+ordTag(n) =>
+    "ORD_" + (n < 10 ? "00" + str.tostring(n) : n < 100 ? "0" + str.tostring(n) : str.tostring(n))
+
+// ─── STRATEGY ENTRIES & EXITS ──────────────────────────────
+
+// BUY: CPR breakout
+if buyBreakCpr and canTrade
+    _tgt = math.min(r1, ph)
+    _sl  = close - atrSl
+    _ord = ordTag(strategy.closedtrades + 1)
+    strategy.entry("BUY_CPR", strategy.long, qty=tradeQuantity, comment="ENTER BUY " + _ord)
+    strategy.exit("EXIT_BUY_CPR", "BUY_CPR", limit=_tgt, stop=_sl, comment_profit="TARGET " + _ord, comment_loss="SL " + _ord)
+
+// BUY: R1/PDH breakout
+if buyBreakR1PDH and canTrade
+    _tgt = r2
+    _sl  = close - atrSl
+    _ord = ordTag(strategy.closedtrades + 1)
+    strategy.entry("BUY_R1PDH", strategy.long, qty=tradeQuantity, comment="ENTER BUY " + _ord)
+    strategy.exit("EXIT_BUY_R1PDH", "BUY_R1PDH", limit=_tgt, stop=_sl, comment_profit="TARGET " + _ord, comment_loss="SL " + _ord)
+
+// BUY: R2 breakout
+if buyBreakR2 and canTrade
+    _tgt = r3
+    _sl  = close - atrSl
+    _ord = ordTag(strategy.closedtrades + 1)
+    strategy.entry("BUY_R2", strategy.long, qty=tradeQuantity, comment="ENTER BUY " + _ord)
+    strategy.exit("EXIT_BUY_R2", "BUY_R2", limit=_tgt, stop=_sl, comment_profit="TARGET " + _ord, comment_loss="SL " + _ord)
+
+// BUY: R3 breakout
+if buyBreakR3 and canTrade
+    _tgt = r4
+    _sl  = close - atrSl
+    _ord = ordTag(strategy.closedtrades + 1)
+    strategy.entry("BUY_R3", strategy.long, qty=tradeQuantity, comment="ENTER BUY " + _ord)
+    strategy.exit("EXIT_BUY_R3", "BUY_R3", limit=_tgt, stop=_sl, comment_profit="TARGET " + _ord, comment_loss="SL " + _ord)
+
+// BUY: R4 breakout
+if buyBreakR4 and canTrade
+    _tgt = close + 50
+    _sl  = close - atrSl
+    _ord = ordTag(strategy.closedtrades + 1)
+    strategy.entry("BUY_R4", strategy.long, qty=tradeQuantity, comment="ENTER BUY " + _ord)
+    strategy.exit("EXIT_BUY_R4", "BUY_R4", limit=_tgt, stop=_sl, comment_profit="TARGET " + _ord, comment_loss="SL " + _ord)
+
+// BUY: S1/PDL reversal
+if buyBreakS1PDL and canTrade
+    _tgt = math.min(tc, bc)
+    _sl  = close - atrSl
+    _ord = ordTag(strategy.closedtrades + 1)
+    strategy.entry("BUY_S1PDL", strategy.long, qty=tradeQuantity, comment="ENTER BUY " + _ord)
+    strategy.exit("EXIT_BUY_S1PDL", "BUY_S1PDL", limit=_tgt, stop=_sl, comment_profit="TARGET " + _ord, comment_loss="SL " + _ord)
+
+// SELL: CPR breakdown
+if sellBreakCpr and canTrade
+    _tgt = math.max(s1, pl)
+    _sl  = close + atrSl
+    _ord = ordTag(strategy.closedtrades + 1)
+    strategy.entry("SELL_CPR", strategy.short, qty=tradeQuantity, comment="ENTER SELL " + _ord)
+    strategy.exit("EXIT_SELL_CPR", "SELL_CPR", limit=_tgt, stop=_sl, comment_profit="TARGET " + _ord, comment_loss="SL " + _ord)
+
+// SELL: S1/PDL breakdown
+if sellBreakS1PDL and canTrade
+    _tgt = s2
+    _sl  = close + atrSl
+    _ord = ordTag(strategy.closedtrades + 1)
+    strategy.entry("SELL_S1PDL", strategy.short, qty=tradeQuantity, comment="ENTER SELL " + _ord)
+    strategy.exit("EXIT_SELL_S1PDL", "SELL_S1PDL", limit=_tgt, stop=_sl, comment_profit="TARGET " + _ord, comment_loss="SL " + _ord)
+
+// SELL: S2 breakdown
+if sellBreakS2 and canTrade
+    _tgt = s3
+    _sl  = close + atrSl
+    _ord = ordTag(strategy.closedtrades + 1)
+    strategy.entry("SELL_S2", strategy.short, qty=tradeQuantity, comment="ENTER SELL " + _ord)
+    strategy.exit("EXIT_SELL_S2", "SELL_S2", limit=_tgt, stop=_sl, comment_profit="TARGET " + _ord, comment_loss="SL " + _ord)
+
+// SELL: S3 breakdown
+if sellBreakS3 and canTrade
+    _tgt = s4
+    _sl  = close + atrSl
+    _ord = ordTag(strategy.closedtrades + 1)
+    strategy.entry("SELL_S3", strategy.short, qty=tradeQuantity, comment="ENTER SELL " + _ord)
+    strategy.exit("EXIT_SELL_S3", "SELL_S3", limit=_tgt, stop=_sl, comment_profit="TARGET " + _ord, comment_loss="SL " + _ord)
+
+// SELL: S4 breakdown
+if sellBreakS4 and canTrade
+    _tgt = close - 50
+    _sl  = close + atrSl
+    _ord = ordTag(strategy.closedtrades + 1)
+    strategy.entry("SELL_S4", strategy.short, qty=tradeQuantity, comment="ENTER SELL " + _ord)
+    strategy.exit("EXIT_SELL_S4", "SELL_S4", limit=_tgt, stop=_sl, comment_profit="TARGET " + _ord, comment_loss="SL " + _ord)
+
+// SELL: R1/PDH reversal
+if sellBreakR1PDH and canTrade
+    _tgt = math.max(tc, bc)
+    _sl  = close + atrSl
+    _ord = ordTag(strategy.closedtrades + 1)
+    strategy.entry("SELL_R1PDH", strategy.short, qty=tradeQuantity, comment="ENTER SELL " + _ord)
+    strategy.exit("EXIT_SELL_R1PDH", "SELL_R1PDH", limit=_tgt, stop=_sl, comment_profit="TARGET " + _ord, comment_loss="SL " + _ord)
+
+
+

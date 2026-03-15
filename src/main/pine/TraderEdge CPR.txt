@@ -54,12 +54,14 @@ showLabels = input.bool(true, "Show Labels", group="▶ PIVOTS SETTINGS", inline
 //────────────────────────────────────────────
 // Moving Averages
 //────────────────────────────────────────────
-showSMA20  = input.bool(false,  "Show 20 SMA" , inline="group5", group="▶ MOVING AVERAGES")
-showSMA50  = input.bool(false,  "Show 50 SMA",inline="group5", group="▶ MOVING AVERAGES")
+showVWAP   = input.bool(true,   "Show VWAP",   inline="group5", group="▶ MOVING AVERAGES")
+showSMA20  = input.bool(false,  "Show 20 SMA", inline="group5", group="▶ MOVING AVERAGES")
+showSMA50  = input.bool(false,  "Show 50 SMA", inline="group5", group="▶ MOVING AVERAGES")
 showSMA200 = input.bool(false,  "Show 200 SMA",inline="group5", group="▶ MOVING AVERAGES")
 
-sma20Color  = input.color(#089981, "20 SMA Color", inline="group6", group="▶ MOVING AVERAGES SETTINGS")
-sma50Color  = input.color(#f23645,   "50 SMA Color", inline="group6", group="▶ MOVING AVERAGES SETTINGS")
+vwapColor   = input.color(color.purple, "VWAP Color",    inline="group6", group="▶ MOVING AVERAGES SETTINGS")
+sma20Color  = input.color(#089981,     "20 SMA Color",  inline="group6", group="▶ MOVING AVERAGES SETTINGS")
+sma50Color  = input.color(#f23645,     "50 SMA Color",  inline="group6", group="▶ MOVING AVERAGES SETTINGS")
 sma200Color = input.color(color.black, "200 SMA Color", inline="group6", group="▶ MOVING AVERAGES SETTINGS")
 
 
@@ -396,11 +398,13 @@ if barstate.islast
         table.cell(t, 2, 3, monthlyReversal, bgcolor=monthlyBullRev ? color.new(color.red, 30) : monthlyBearRev ? color.new(color.green, 30) : color.new(color.gray, 20), text_color=color.white)
 
 
-// ─── SMA ────────────────────────────────────────────────
+// ─── VWAP & SMA ─────────────────────────────────────────────
+vwap   = ta.vwap(hlc3)
 sma20  = ta.sma(close, 20)
 sma50  = ta.sma(close, 50)
 sma200 = ta.sma(close, 200)
 
+plot(showVWAP   ? vwap  : na, title="VWAP",    color=vwapColor,   linewidth=2)
 plot(showSMA20  ? sma20  : na, title="SMA 20",  color=sma20Color,  linewidth=2)
 plot(showSMA50  ? sma50  : na, title="SMA 50",  color=sma50Color,  linewidth=2)
 plot(showSMA200 ? sma200 : na, title="SMA 200", color=sma200Color, linewidth=2)
