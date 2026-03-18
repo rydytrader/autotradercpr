@@ -430,6 +430,12 @@
                     <input type="time" id="endTime" class="form-control" value="15:25">
                     <div class="form-hint">Signals after this time are ignored</div>
                 </div>
+                <div class="form-group">
+                    <label class="form-label">Auto Square Off Time</label>
+                    <input type="time" id="autoSquareOffTime" class="form-control" value="">
+                    <div class="form-hint">All open positions auto squared off at this time</div>
+                    <div class="disabled-note">Leave empty to disable</div>
+                </div>
             </div>
         </div>
     </div>
@@ -460,6 +466,38 @@
                     <div class="disabled-note">Set to 0 to disable</div>
                     <div class="limit-bar-wrap" id="tradeBarWrap" style="display:none">
                         <div class="limit-bar-track"><div class="limit-bar-fill ok" id="tradeBar" style="width:0%"></div></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TRADE PARAMETERS -->
+    <div class="section-card fade-in">
+        <div class="section-header">
+            <div class="section-title">
+                <div class="section-title-dot" style="background: var(--accent-blue);"></div>
+                Trade Parameters
+            </div>
+        </div>
+        <div class="section-body">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label">ATR Multiplier</label>
+                    <input type="number" id="atrMultiplier" class="form-control" min="0.5" max="5" step="0.1" placeholder="1.5">
+                    <div class="form-hint">Stop loss = Entry ± (ATR × multiplier)</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Session Move Limit (%)</label>
+                    <input type="number" id="sessionMoveLimit" class="form-control" min="0" max="10" step="0.1" placeholder="2.0">
+                    <div class="form-hint">Halve quantity when session move exceeds this %</div>
+                    <div class="disabled-note">Set to 0 to disable</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Enable R4/S4 Signals</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableR4S4" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Allow BUY_ABOVE_R4 and SELL_BELOW_S4 breakout signals</span>
                     </div>
                 </div>
             </div>
@@ -570,10 +608,14 @@
             const r = await fetch('/api/settings/risk');
             const d = await r.json();
 
-            document.getElementById('startTime').value      = d.tradingStartTime || '09:15';
-            document.getElementById('endTime').value        = d.tradingEndTime   || '15:25';
-            document.getElementById('maxDailyLoss').value   = d.maxDailyLoss     || 0;
-            document.getElementById('maxTradesPerDay').value = d.maxTradesPerDay || 0;
+            document.getElementById('startTime').value         = d.tradingStartTime  || '09:15';
+            document.getElementById('endTime').value           = d.tradingEndTime    || '15:25';
+            document.getElementById('autoSquareOffTime').value = d.autoSquareOffTime || '';
+            document.getElementById('maxDailyLoss').value      = d.maxDailyLoss      || 0;
+            document.getElementById('maxTradesPerDay').value   = d.maxTradesPerDay   || 0;
+            document.getElementById('atrMultiplier').value     = d.atrMultiplier     || 1.5;
+            document.getElementById('sessionMoveLimit').value   = d.sessionMoveLimit  != null ? d.sessionMoveLimit : 2.0;
+            document.getElementById('enableR4S4').checked      = d.enableR4S4        || false;
 
             const pnl    = d.todayPnl    || 0;
             const trades = d.todayTrades || 0;
@@ -631,10 +673,14 @@
         let saved = false;
         try {
             const payload = {
-                tradingStartTime: document.getElementById('startTime').value,
-                tradingEndTime:   document.getElementById('endTime').value,
-                maxDailyLoss:     parseFloat(document.getElementById('maxDailyLoss').value) || 0,
-                maxTradesPerDay:  parseInt(document.getElementById('maxTradesPerDay').value) || 0
+                tradingStartTime:  document.getElementById('startTime').value,
+                tradingEndTime:    document.getElementById('endTime').value,
+                autoSquareOffTime: document.getElementById('autoSquareOffTime').value || '',
+                maxDailyLoss:      parseFloat(document.getElementById('maxDailyLoss').value) || 0,
+                maxTradesPerDay:   parseInt(document.getElementById('maxTradesPerDay').value) || 0,
+                atrMultiplier:     parseFloat(document.getElementById('atrMultiplier').value) || 1.5,
+                sessionMoveLimit:  parseFloat(document.getElementById('sessionMoveLimit').value) || 0,
+                enableR4S4:        document.getElementById('enableR4S4').checked
             };
             const r = await fetch('/api/settings/risk', {
                 method: 'POST',

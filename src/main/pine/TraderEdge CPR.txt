@@ -379,7 +379,7 @@ if barstate.islast
         _ys = str.length(_yr) >= 4 ? str.substring(_yr, 2) : _yr
         _mn = _mc == "F" ? "JAN" : _mc == "G" ? "FEB" : _mc == "H" ? "MAR" : _mc == "J" ? "APR" : _mc == "K" ? "MAY" : _mc == "M" ? "JUN" : _mc == "N" ? "JUL" : _mc == "Q" ? "AUG" : _mc == "U" ? "SEP" : _mc == "V" ? "OCT" : _mc == "X" ? "NOV" : _mc == "Z" ? "DEC" : ""
         _brokerSym := syminfo.prefix + ":" + syminfo.root + _ys + _mn + "FUT"
-    table.cell(t, 0, 1, "TraderEdge CPR (1.0) | " + _brokerSym, text_halign=text.align_center, bgcolor=color.new(color.green, 0), text_color=color.white, text_size=size.normal)
+    table.cell(t, 0, 1, _brokerSym, text_halign=text.align_center, bgcolor=color.new(color.green, 0), text_color=color.white, text_size=size.normal)
     table.cell(t, 1, 1, "", bgcolor=color.new(color.gray, 0), text_color=color.white, text_size=size.normal)
     table.cell(t, 2, 1, "")
     table.merge_cells(t, 0, 1, 2, 1)

@@ -12,11 +12,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.rydytrader.autotrader.dto.OrderDTO;
+import com.rydytrader.autotrader.dto.ProcessedSignal;
 import com.rydytrader.autotrader.manager.PositionManager;
 import com.rydytrader.autotrader.mock.MockState;
 import com.rydytrader.autotrader.service.EventService;
 import com.rydytrader.autotrader.service.OrderService;
 import com.rydytrader.autotrader.service.PollingService;
+import com.rydytrader.autotrader.service.SignalProcessor;
 import com.rydytrader.autotrader.service.TradeHistoryService;
 import com.rydytrader.autotrader.store.ModeStore;
 import com.rydytrader.autotrader.store.PositionStateStore;
@@ -35,6 +37,7 @@ public class TradingController {
     private final PositionStateStore  positionStateStore;
     private final RiskSettingsStore   riskSettings;
     private final TradingStateStore   tradingState;
+    private final SignalProcessor     signalProcessor;
 
     public TradingController(PollingService pollingService,
                               OrderService orderService,
@@ -44,7 +47,8 @@ public class TradingController {
                               TradeHistoryService tradeHistoryService,
                               PositionStateStore positionStateStore,
                               RiskSettingsStore riskSettings,
-                              TradingStateStore tradingState) {
+                              TradingStateStore tradingState,
+                              SignalProcessor signalProcessor) {
         this.pollingService      = pollingService;
         this.orderService        = orderService;
         this.eventService        = eventService;
@@ -54,6 +58,7 @@ public class TradingController {
         this.positionStateStore  = positionStateStore;
         this.riskSettings        = riskSettings;
         this.tradingState        = tradingState;
+        this.signalProcessor     = signalProcessor;
     }
 
     // ── PLACE ORDER ───────────────────────────────────────────────────────────
@@ -107,12 +112,17 @@ public class TradingController {
             }
         }
 
-        String signal   = payload.get("signal").toString();
-        String symbol   = payload.get("symbol").toString();
-        int    quantity = Integer.parseInt(payload.get("quantity").toString());
-        double stoploss = Double.parseDouble(payload.get("stoploss").toString());
-        double target   = Double.parseDouble(payload.get("target").toString());
-        String setup    = payload.containsKey("setup") ? payload.get("setup").toString() : "";
+        ProcessedSignal ps = signalProcessor.process(payload);
+        if (ps.isRejected()) {
+            eventService.log("[FILTERED] " + ps.getSetup() + " — " + ps.getRejectionReason());
+            return ResponseEntity.ok("Signal filtered: " + ps.getRejectionReason());
+        }
+        String signal   = ps.getSignal();
+        String symbol   = ps.getSymbol();
+        int    quantity = ps.getQuantity();
+        double stoploss = ps.getStoploss();
+        double target   = ps.getTarget();
+        String setup    = ps.getSetup();
 
         System.out.println("Signal received: " + signal + " | SL: " + stoploss + " | Target: " + target + " | Setup: " + setup);
 

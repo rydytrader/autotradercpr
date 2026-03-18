@@ -9,9 +9,13 @@ import com.rydytrader.autotrader.manager.PositionManager;
 import com.rydytrader.autotrader.mock.MockState;
 import com.rydytrader.autotrader.store.ModeStore;
 import com.rydytrader.autotrader.store.PositionStateStore;
+import com.rydytrader.autotrader.store.RiskSettingsStore;
 import com.rydytrader.autotrader.store.TokenStore;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -27,6 +31,7 @@ public class PollingService {
     private final PositionStateStore  positionStateStore;
     private final MockState           mockState;
     private final ModeStore           modeStore;
+    private final RiskSettingsStore   riskSettings;
 
     // ── per-symbol state ──────────────────────────────────────────────────────
     private final ConcurrentHashMap<String, PositionsDTO> cachedPositions  = new ConcurrentHashMap<>();
@@ -34,6 +39,8 @@ public class PollingService {
     private final ConcurrentHashMap<String, String>       entryTimeBySymbol  = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Double>       entryAvgBySymbol   = new ConcurrentHashMap<>();
     private final Set<String> ocoHandledSymbols = ConcurrentHashMap.newKeySet();
+    private final Set<String> ocoMonitoredSymbols = ConcurrentHashMap.newKeySet();
+    private final Set<String> pendingEntrySymbols = ConcurrentHashMap.newKeySet();
 
     private volatile boolean justRestored    = false;
     private volatile String  lastSyncTime    = "";
@@ -50,7 +57,8 @@ public class PollingService {
                           TradeHistoryService tradeHistoryService,
                           PositionStateStore positionStateStore,
                           MockState mockState,
-                          ModeStore modeStore) {
+                          ModeStore modeStore,
+                          RiskSettingsStore riskSettings) {
         this.tokenStore          = tokenStore;
         this.fyersProperties     = fyersProperties;
         this.fyersClient         = fyersClient;
@@ -60,7 +68,9 @@ public class PollingService {
         this.positionStateStore  = positionStateStore;
         this.mockState           = mockState;
         this.modeStore           = modeStore;
+        this.riskSettings        = riskSettings;
         restoreStateOnStartup();
+        startAutoSquareOffScheduler();
     }
 
     // ── STARTUP RESTORE ───────────────────────────────────────────────────────
@@ -111,6 +121,7 @@ public class PollingService {
             static final int MAX_OCO_RETRIES = 3;
         }
         Holder holder = new Holder();
+        pendingEntrySymbols.add(symbol);
 
         holder.future = scheduler.scheduleAtFixedRate(() -> {
             try {
@@ -129,6 +140,7 @@ public class PollingService {
                         int entrySide = exitSide == 1 ? -1 : 1;
                         holder.entryFillPrice = orderService.getFilledPriceFromTradebook(symbol, entrySide);
                         entryAvgBySymbol.put(symbol, holder.entryFillPrice);
+                        pendingEntrySymbols.remove(symbol);
                         positionStateStore.save(symbol, position, quantity, holder.entryFillPrice,
                             setupBySymbol.get(symbol), entryTime);
                         eventService.log("[SUCCESS] " + (position.equals("LONG") ? "BUY" : "SELL")
@@ -168,6 +180,7 @@ public class PollingService {
                     }
 
                 } else if ("5".equals(status)) {
+                    pendingEntrySymbols.remove(symbol);
                     eventService.log("[ERROR] " + (position.equals("LONG") ? "BUY" : "SELL")
                         + " order rejected for " + symbol + ": " + entry.getMessage());
                     if (holder.future != null) holder.future.cancel(false);
@@ -190,12 +203,14 @@ public class PollingService {
             double currentTargetPrice = targetPrice;
         }
         State s = new State();
+        ocoMonitoredSymbols.add(symbol);
 
         s.future = scheduler.scheduleAtFixedRate(() -> {
             try {
                 if (s.handled) return;
                 s.ticks++;
                 if (s.ticks > 4680) {
+                    ocoMonitoredSymbols.remove(symbol);
                     eventService.log("[WARNING] OCO monitor timeout for " + symbol + " after 6.5 hours");
                     if (s.future != null) s.future.cancel(false);
                     return;
@@ -233,6 +248,7 @@ public class PollingService {
                 // SL hit
                 if (slFilled && !s.handled) {
                     s.handled = true;
+                    ocoMonitoredSymbols.remove(symbol);
                     ocoHandledSymbols.add(symbol);
                     eventService.log("[SUCCESS] SL triggered for " + symbol + " at " + s.currentSlPrice + " — cancelling target");
                     orderService.cancelOrder(targetId);
@@ -248,6 +264,7 @@ public class PollingService {
                 // Target hit
                 else if (targetFilled && !s.handled) {
                     s.handled = true;
+                    ocoMonitoredSymbols.remove(symbol);
                     ocoHandledSymbols.add(symbol);
                     eventService.log("[SUCCESS] Target hit for " + symbol + " at " + s.currentTargetPrice + " — cancelling SL");
                     orderService.cancelOrder(slId);
@@ -280,12 +297,14 @@ public class PollingService {
                 else if (slCancelled && tgtCancelled && s.slManualCancelled && s.targetManualCancelled
                          && !PositionManager.getPosition(symbol).equals("NONE") && !s.handled) {
                     s.handled = true;
+                    ocoMonitoredSymbols.remove(symbol);
                     eventService.log("[WARNING] Both SL and Target cancelled for " + symbol + " — position unprotected");
                     if (s.future != null) s.future.cancel(false);
                 }
                 // SL or Target rejected by Fyers — position unprotected
                 else if ((slRejected || tgtRejected) && !s.handled) {
                     s.handled = true;
+                    ocoMonitoredSymbols.remove(symbol);
                     if (slRejected && tgtRejected)
                         eventService.log("[ERROR] Both SL and Target orders rejected by Fyers for " + symbol + " — position UNPROTECTED");
                     else if (slRejected)
@@ -298,6 +317,7 @@ public class PollingService {
                 if (!s.handled && PositionManager.getPosition(symbol).equals("NONE")
                         && slCancelled && tgtCancelled) {
                     s.handled = true;
+                    ocoMonitoredSymbols.remove(symbol);
                     if (s.future != null) s.future.cancel(false);
                 }
 
@@ -363,6 +383,73 @@ public class PollingService {
         }
     }
 
+    // ── AUTO SQUARE OFF SCHEDULER ───────────────────────────────────────────
+    private volatile LocalDate lastAutoSquareOffDate = null;
+
+    private void startAutoSquareOffScheduler() {
+        scheduler.scheduleAtFixedRate(() -> {
+            try {
+                String sqTime = riskSettings.getAutoSquareOffTime();
+                if (sqTime == null || sqTime.isBlank()) return;
+                if (!PositionManager.hasAnyPosition()) return;
+
+                LocalTime now = LocalTime.now();
+                LocalTime target = LocalTime.parse(sqTime, DateTimeFormatter.ofPattern("HH:mm"));
+                LocalDate today = LocalDate.now();
+
+                // Trigger once per day when current time crosses the configured time
+                if (now.isAfter(target) && !today.equals(lastAutoSquareOffDate)) {
+                    lastAutoSquareOffDate = today;
+                    eventService.log("[AUTO] Scheduled square off triggered at " + sqTime);
+                    squareOffAll();
+                }
+            } catch (Exception e) {
+                System.err.println("[PollingService] Auto square off check error: " + e.getMessage());
+            }
+        }, 10, 15, TimeUnit.SECONDS);
+    }
+
+    /** Squares off all open positions. */
+    public void squareOffAll() {
+        List<PositionsDTO> positions = fetchPositions();
+        if (positions.isEmpty()) {
+            eventService.log("[AUTO] No open positions to square off");
+            return;
+        }
+        for (PositionsDTO pos : positions) {
+            String symbol = pos.getSymbol();
+            int qty = Math.abs(pos.getQty());
+            if (qty == 0) continue;
+            try {
+                if (!modeStore.isLive()) {
+                    // Simulator mode
+                    Map<String, Object> mockPos = mockState.getPosition(symbol);
+                    if (mockPos == null) continue;
+                    double entryPrice = Double.parseDouble(mockPos.get("netAvgPrice").toString());
+                    double exitPrice  = mockState.getCurrentPrice(symbol);
+                    String side = pos.getSide();
+                    String setup = getCurrentSetup(symbol);
+                    PositionManager.setPosition(symbol, "NONE");
+                    positionStateStore.clear(symbol);
+                    clearCachedPositions(symbol);
+                    mockState.triggerManualSquareOff(symbol);
+                    tradeHistoryService.record(symbol, side, qty, entryPrice, exitPrice, "AUTO_SQUAREOFF", setup);
+                    eventService.log("[SUCCESS] Auto square off for " + symbol + " at " + exitPrice);
+                } else {
+                    // Live mode
+                    boolean ok = squareOff(symbol, qty);
+                    if (ok) {
+                        eventService.log("[SUCCESS] Auto square off for " + symbol);
+                    } else {
+                        eventService.log("[ERROR] Auto square off failed for " + symbol);
+                    }
+                }
+            } catch (Exception e) {
+                eventService.log("[ERROR] Auto square off error for " + symbol + ": " + e.getMessage());
+            }
+        }
+    }
+
     // ── POSITION SYNC ─────────────────────────────────────────────────────────
     private volatile boolean positionSyncStarted = false;
 
@@ -390,6 +477,7 @@ public class PollingService {
                                                 : pos.has("qty") ? pos.get("qty").asInt() : 0;
                     if (qty != 0) {
                         String symbol  = pos.get("symbol").asText();
+                        if (pendingEntrySymbols.contains(symbol)) continue;
                         int    side    = pos.get("side").asInt();
                         double avg     = pos.has("netAvgPrice") ? pos.get("netAvgPrice").asDouble()
                                        : pos.has("netAvg")      ? pos.get("netAvg").asDouble() : 0;
@@ -445,6 +533,8 @@ public class PollingService {
                     }
                 }
                 for (String symbol : closedSymbols) {
+                    // Skip if OCO monitor is still active — let it handle the exit
+                    if (ocoMonitoredSymbols.contains(symbol)) continue;
                     // Skip if OCO already handled this exit (SL/Target hit)
                     if (ocoHandledSymbols.remove(symbol)) {
                         cachedPositions.remove(symbol);
@@ -506,5 +596,7 @@ public class PollingService {
         cachedPositions.clear();
         setupBySymbol.clear();
         entryTimeBySymbol.clear();
+        pendingEntrySymbols.clear();
+        ocoMonitoredSymbols.clear();
     }
 }
