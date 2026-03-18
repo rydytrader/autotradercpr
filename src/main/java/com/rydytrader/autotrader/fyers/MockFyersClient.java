@@ -74,8 +74,11 @@ public class MockFyersClient implements FyersClient {
             String id = (String) order.get("id");
             var oNode = mapper.createObjectNode();
             oNode.put("id",          id);
+            oNode.put("symbol",      String.valueOf(order.getOrDefault("symbol", "")));
             oNode.put("status",      toInt(order.get("status")));
             oNode.put("tradedPrice", toDouble(order.get("tradedPrice")));
+            oNode.put("stopPrice",   toDouble(order.get("stopPrice")));
+            oNode.put("limitPrice",  toDouble(order.get("limitPrice")));
             oNode.put("filledQty",   toInt(order.get("status")) == MockState.STATUS_TRADED
                                         ? toInt(order.get("qty")) : 0);
             arr.add(oNode);
@@ -142,6 +145,56 @@ public class MockFyersClient implements FyersClient {
     public JsonNode validateAuthCode(String requestBody) throws Exception {
         return ok().put("access_token", "SIM_TOKEN_" + System.currentTimeMillis())
                    .put("message", "Simulator login successful");
+    }
+
+    @Override
+    public JsonNode getOptionChain(String symbol, int strikeCount, String authHeader) throws Exception {
+        // Return mock option chain with realistic per-strike OI data
+        var root = mapper.createObjectNode();
+        root.put("s", "ok");
+        root.put("code", 200);
+        var data = mapper.createObjectNode();
+        var chain = mapper.createArrayNode();
+
+        // ATM ~24200, generate strikes around it
+        int atm = 24200;
+        int step = 100;
+        int count = Math.max(strikeCount, 5);
+        long totalCallOi = 0, totalPutOi = 0;
+
+        // OI profiles: higher OI near ATM, tapering off; puts heavier below ATM, calls heavier above
+        for (int i = -count; i <= count; i++) {
+            int strike = atm + i * step;
+            // CE OI: higher for strikes above ATM (OTM calls get more OI from writers)
+            long ceOi = (long)(300_000 + Math.random() * 200_000);
+            if (i >= 1) ceOi += (long)(i * 150_000 * (1 + Math.random() * 0.3));
+            // PE OI: higher for strikes below ATM (OTM puts get more OI from writers)
+            long peOi = (long)(300_000 + Math.random() * 200_000);
+            if (i <= -1) peOi += (long)((-i) * 150_000 * (1 + Math.random() * 0.3));
+
+            var ce = mapper.createObjectNode();
+            ce.put("strike_price", strike);
+            ce.put("option_type", "CE");
+            ce.put("oi", ceOi);
+            ce.put("ltp", Math.max(0, (atm - strike) + 100 + Math.random() * 50));
+            chain.add(ce);
+
+            var pe = mapper.createObjectNode();
+            pe.put("strike_price", strike);
+            pe.put("option_type", "PE");
+            pe.put("oi", peOi);
+            pe.put("ltp", Math.max(0, (strike - atm) + 100 + Math.random() * 50));
+            chain.add(pe);
+
+            totalCallOi += ceOi;
+            totalPutOi += peOi;
+        }
+
+        data.put("callOi", totalCallOi);
+        data.put("putOi", totalPutOi);
+        data.set("optionsChain", chain);
+        root.set("data", data);
+        return root;
     }
 
     // ── HELPERS ───────────────────────────────────────────────────────────────

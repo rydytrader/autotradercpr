@@ -411,4 +411,5 @@ public class TradingController {
     public Map<String, Double> getNetDayPnl() {
         return Map.of("netDayPnl", orderService.getNetDayPnl());
     }
+
 }

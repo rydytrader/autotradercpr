@@ -246,15 +246,21 @@
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({mode: selectedMode})
         })
-        .then(r => r.json())
+        .then(r => {
+            if (!r.ok) throw new Error('Mode switch failed');
+            return r.json();
+        })
         .then(data => {
             if (selectedMode === 'SIMULATOR') {
                 window.location.href = data.redirect || '/positions';
             } else {
-                window.location.href = '/login'; // Fyers OAuth redirect
+                window.location.href = '/login?mode=LIVE';
             }
         })
-        .catch(() => { window.location.href = '/login'; });
+        .catch(err => {
+            console.error('Login error:', err);
+            alert('Failed to set trading mode. Please try again.');
+        });
     }
 </script>
 

@@ -42,9 +42,12 @@ public class ViewController {
     }
 
     @GetMapping("/login")
-    public void redirectToFyers(HttpServletResponse response) throws IOException {
-        // Mode is already set by the login page button click via /api/mode/switch
-        // Just redirect to Fyers OAuth
+    public void redirectToFyers(@RequestParam(value = "mode", required = false) String mode,
+                                 HttpServletResponse response) throws IOException {
+        // Safety net: ensure mode is LIVE if passed as query param
+        if ("LIVE".equalsIgnoreCase(mode) && !modeStore.isLive()) {
+            modeStore.setMode(ModeStore.Mode.LIVE);
+        }
         String loginUrl = "https://api-t1.fyers.in/api/v3/generate-authcode"
                 + "?client_id=" + fyersProperties.getClientId()
                 + "&redirect_uri=http://localhost:9090/login/callback"

@@ -22,7 +22,7 @@ public class LiveFyersClient implements FyersClient {
     @Override
     public JsonNode cancelOrder(String orderId, String authHeader) throws Exception {
         String body = "{\"id\":\"" + orderId + "\"}";
-        return delete(BASE + "/orders", body, authHeader);
+        return delete(BASE + "/orders/sync", body, authHeader);
     }
 
     @Override
@@ -43,6 +43,12 @@ public class LiveFyersClient implements FyersClient {
     @Override
     public JsonNode validateAuthCode(String requestBody) throws Exception {
         return post(BASE + "/validate-authcode", requestBody, null);
+    }
+
+    @Override
+    public JsonNode getOptionChain(String symbol, int strikeCount, String authHeader) throws Exception {
+        String url = "https://api-t1.fyers.in/data/options-chain-v3?symbol=" + symbol + "&strikecount=" + strikeCount + "&timestamp=";
+        return get(url, authHeader);
     }
 
     // ── HTTP HELPERS ──────────────────────────────────────────────────────────

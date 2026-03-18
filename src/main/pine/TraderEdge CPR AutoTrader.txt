@@ -3,17 +3,35 @@ indicator("TraderEdge CPR AutoTrader", overlay=true, max_labels_count=500)
 
 
 // ─── INPUTS ───────────────────────────────────────────────
-tradeSymbol   = input.string("NSE:NIFTY26MARFUT", "Broker Symbol", group="▶ SIGNAL SETTINGS", tooltip="The trading symbol for order alerts")
-tradeQuantity = input.int(65, "Quantity", group="▶ SIGNAL SETTINGS", tooltip="The quantity to be traded. For futures this should be in multiples of lot size")
-atrLength     = input.int(14,   "ATR Length",     group="▶ SIGNAL SETTINGS")
-atrMultiplier = input.float(1.0,"ATR Multiplier", step=0.5, minval=0.5, maxval=5.0, group="▶ SIGNAL SETTINGS", tooltip="SL = Entry Price ± ATR × multiplier")
 
-enableHPT          = input.bool(true, "Enable HPT Signals",          group="▶ SIGNAL SETTINGS", tooltip="Generate signals when weekly + daily trends are aligned (green/red labels)")
-enableLPT          = input.bool(true, "Enable LPT Signals",          group="▶ SIGNAL SETTINGS", tooltip="Generate signals when trends are misaligned (orange labels)")
-enableCounterTrend = input.bool(true, "Enable MPT Signals",          group="▶ SIGNAL SETTINGS", tooltip="Generate BUY_ABOVE_S1_PDL and SELL_BELOW_R1_PDH signals — fires when weekly trend is established but daily is reversing to align (yellow labels)")
 
-showEventLog          = input.bool(true,  "Show Event Log",          group="▶ EVENT LOGS", inline="SIGNALS3")
+showIntradayAlerts = input.bool(true, "Intraday Signals", group="▶ SIGNAL TYPES", tooltip="Generate intraday signals using weekly+daily CPR alignment")
+showSwingAlerts    = input.bool(false, "Swing Signals",    group="▶ SIGNAL TYPES", tooltip="Generate swing signals using monthly+weekly CPR alignment (BUY SWING / SELL SWING)")
+
+
+// Auto-detect Fyers broker symbol from chart
+// Stocks: NSE:RELIANCE → NSE:RELIANCE-EQ
+// Futures: NSE:NIFTYH2026 → NSE:NIFTY26MARFUT (month code: F=JAN..Z=DEC)
+tradeSymbol = syminfo.prefix + ":" + syminfo.ticker
+if syminfo.type == "stock"
+    tradeSymbol := syminfo.prefix + ":" + syminfo.ticker + "-EQ"
+else if syminfo.type == "futures"
+    _mc = str.substring(syminfo.ticker, str.length(syminfo.root), str.length(syminfo.root) + 1)
+    _yr = str.substring(syminfo.ticker, str.length(syminfo.root) + 1)
+    _ys = str.length(_yr) >= 4 ? str.substring(_yr, 2) : _yr
+    _mn = _mc == "F" ? "JAN" : _mc == "G" ? "FEB" : _mc == "H" ? "MAR" : _mc == "J" ? "APR" : _mc == "K" ? "MAY" : _mc == "M" ? "JUN" : _mc == "N" ? "JUL" : _mc == "Q" ? "AUG" : _mc == "U" ? "SEP" : _mc == "V" ? "OCT" : _mc == "X" ? "NOV" : _mc == "Z" ? "DEC" : ""
+    tradeSymbol := syminfo.prefix + ":" + syminfo.root + _ys + _mn + "FUT"
+tradeQuantity = input.int(1, "Quantity", group="▶ SIGNAL SETTINGS", tooltip="The quantity to be traded. For futures this should be in multiples of lot size")
+//
+atrMultiplier = input.float(1.5,"SL Multiplier", step=0.5, minval=0.5, maxval=5.0, group="▶ SIGNAL SETTINGS", tooltip="SL = Entry Price ± ATR × SL multiplier")
+
+enableHPT          = input.bool(true, "Enable HPT Signals",          group="▶ SIGNAL CATEGORY", tooltip="Generate signals when daily and weekly CPR trends are aligned")
+enableLPT          = input.bool(false, "Enable LPT Signals",          group="▶ SIGNAL CATEGORY", tooltip="Generate signals based on daily CPR only")
+
+showEventLog          = input.bool(false,  "Show Event Log",          group="▶ EVENT LOGS", inline="SIGNALS3")
 showHistoricalSignals = input.bool(false, "Show Historical Signals", group="▶ EVENT LOGS", tooltip="Show buy/sell signal labels from previous days. When off, only today's signals are shown.")
+
+atrLength = 14 
 
 // ─── PREVIOUS DAY DATA ───────────────────────────────────
 ph = request.security(syminfo.tickerid, "D", high[1],  lookahead=barmerge.lookahead_on)
@@ -25,9 +43,16 @@ wh = request.security(syminfo.tickerid, "W", high[1],  lookahead=barmerge.lookah
 wl = request.security(syminfo.tickerid, "W", low[1],   lookahead=barmerge.lookahead_on)
 wc = request.security(syminfo.tickerid, "W", close[1], lookahead=barmerge.lookahead_on)
 
+// ─── PREVIOUS MONTH DATA ─────────────────────────────────
+mh = request.security(syminfo.tickerid, "M", high[1],  lookahead=barmerge.lookahead_on)
+ml = request.security(syminfo.tickerid, "M", low[1],   lookahead=barmerge.lookahead_on)
+mc = request.security(syminfo.tickerid, "M", close[1], lookahead=barmerge.lookahead_on)
+
 // ─── VWAP & ATR ───────────────────────────────────────────
-vwap  = ta.vwap(hlc3)
-atrSl = ta.atr(atrLength) * atrMultiplier
+vwap       = ta.vwap(hlc3)
+weeklyVwap = ta.vwap(hlc3, ta.change(time("W")) != 0)
+atrRaw     = ta.atr(atrLength)
+atrSl      = atrRaw * atrMultiplier
 
 // ─── DAILY CPR CALCULATION ─────────────────────────────────
 pp = (ph + pl + pc) / 3
@@ -58,7 +83,7 @@ dailyBull = close > dTop
 dailyBear = close < dBot
 
 
-// ─── WEEKLY CPR (for trend determination) ───────────────────
+// ─── WEEKLY CPR ──────────────────────────────────────────
 wpp = (wh + wl + wc) / 3
 wbc = (wh + wl) / 2
 wtc = wpp * 2 - wbc
@@ -74,6 +99,32 @@ ws1 = 2 * wpp - wh
 
 weeklyVeryBull = close > wr1 and close > wh
 weeklyVeryBear = close < ws1 and close < wl
+
+wCprRange = wh - wl
+wr2 = wpp + wCprRange
+ws2 = wpp - wCprRange
+wr3 = wh + 2 * (wpp - wl)
+ws3 = wl - 2 * (wh - wpp)
+wr4 = wr3 + (wr2 - wr1)
+ws4 = ws3 - (ws1 - ws2)
+
+
+// ─── MONTHLY CPR ─────────────────────────────────────────
+mpp = (mh + ml + mc) / 3
+mbc = (mh + ml) / 2
+mtc = mpp * 2 - mbc
+
+mTop = math.max(mpp, math.max(mbc, mtc))
+mBot = math.min(mpp, math.min(mbc, mtc))
+
+monthlyBull = close > mTop
+monthlyBear = close < mBot
+
+mr1 = 2 * mpp - ml
+ms1 = 2 * mpp - mh
+
+monthlyVeryBull = close > mr1 and close > mh
+monthlyVeryBear = close < ms1 and close < ml
 
 
 //────────────────────────────────────────────
@@ -93,33 +144,57 @@ weeklyTrend =
      weeklyBear     ? "Bearish" :
      "Neutral"
 
+monthlyTrend =
+     monthlyVeryBull ? "Strong Bullish" :
+     monthlyVeryBear ? "Strong Bearish" :
+     monthlyBull     ? "Bullish" :
+     monthlyBear     ? "Bearish" :
+     "Neutral"
+
 
 //────────────────────────────
-// Recommendation rules
+// Intraday recommendation rules (weekly=long, daily=short)
 //────────────────────────────
 weeklyBullish = weeklyTrend == "Bullish" or weeklyTrend == "Strong Bullish"
 weeklyBearish = weeklyTrend == "Bearish" or weeklyTrend == "Strong Bearish"
 dailyBullish  = dailyTrend == "Bullish"  or dailyTrend == "Strong Bullish"
 dailyBearish  = dailyTrend == "Bearish"  or dailyTrend == "Strong Bearish"
 
-// Aligned: both weekly and daily confirm the direction
 alignedBuy  = weeklyBullish and dailyBullish
 alignedSell = weeklyBearish and dailyBearish
 
-// Misaligned: trends disagree → follow daily trend only
 misalignedBuy  = (not weeklyBullish) and dailyBullish
 misalignedSell = (not weeklyBearish) and dailyBearish
 
 isBuyRecommendation  = alignedBuy  or misalignedBuy
 isSellRecommendation = alignedSell or misalignedSell
 
-buyLabelColor  = misalignedBuy  ? color.orange : color.green
-sellLabelColor = misalignedSell ? color.orange : color.red
+buyLabelColor  = misalignedBuy  ? color.new(color.green, 20) : color.green
+sellLabelColor = misalignedSell ? color.new(color.red, 20)   : color.red
 
-buyTag      = misalignedBuy  ? "BUY [LPT]"  : "BUY [HPT]"
-sellTag     = misalignedSell ? "SELL [LPT]" : "SELL [HPT]"
 buyProbTag  = misalignedBuy  ? "[LPT] " : "[HPT] "
 sellProbTag = misalignedSell ? "[LPT] " : "[HPT] "
+
+
+//────────────────────────────
+// Swing recommendation rules (monthly=long, weekly=short)
+//────────────────────────────
+monthlyBullish = monthlyTrend == "Bullish" or monthlyTrend == "Strong Bullish"
+monthlyBearish = monthlyTrend == "Bearish" or monthlyTrend == "Strong Bearish"
+
+swingAlignedBuy     = monthlyBullish and weeklyBullish
+swingAlignedSell    = monthlyBearish and weeklyBearish
+swingMisalignedBuy  = (not monthlyBullish) and weeklyBullish
+swingMisalignedSell = (not monthlyBearish) and weeklyBearish
+
+isSwingBuyRec  = swingAlignedBuy  or swingMisalignedBuy
+isSwingSellRec = swingAlignedSell or swingMisalignedSell
+
+swingBuyLabelColor  = swingMisalignedBuy  ? color.new(color.green, 20) : color.green
+swingSellLabelColor = swingMisalignedSell ? color.new(color.red, 20)   : color.red
+
+swingBuyProbTag  = swingMisalignedBuy  ? "[LPT] " : "[HPT] "
+swingSellProbTag = swingMisalignedSell ? "[LPT] " : "[HPT] "
 
 
 //────────────────────────────
@@ -129,45 +204,79 @@ isNewDay = ta.change(time("D"))
 currentSession = time("D")
 
 //────────────────────────────
-// BUY SIGNALS
+// INTRADAY BUY SIGNALS
 //────────────────────────────
 
-// Raw breakout detection
 rawBuyBreakCpr   = isBuyRecommendation and barstate.isconfirmed and close > dTop and (open < pp or open < tc or open < bc or low < pp or low < tc or low < bc) and (close > open)
 rawBuyBreakR1PDH = isBuyRecommendation and barstate.isconfirmed and (close > r1 and close > ph) and (open < r1 or open < ph or low < r1 or low < ph) and (close > open)
 rawBuyBreakR2    = isBuyRecommendation and barstate.isconfirmed and (close > r2) and (open < r2 or low < r2) and (close > open)
 rawBuyBreakR3    = isBuyRecommendation and barstate.isconfirmed and (close > r3) and (open < r3 or low < r3) and (close > open)
 rawBuyBreakR4    = isBuyRecommendation and barstate.isconfirmed and (close > r4) and (open < r4 or low < r4) and (close > open)
-rawBuyBreakS1PDL = (weeklyBullish and not dailyBullish) and barstate.isconfirmed and (close > s1 and close > pl) and (open < s1 or open < pl or low < s1 or low < pl) and (close > open)
+rawBuyBreakS1PDL = (not dailyBullish) and barstate.isconfirmed and (close > s1 and close > pl) and (open < s1 or open < pl or low < s1 or low < pl) and (close > open)
 
-// Final buy signals — require close above VWAP, gated by HPT/LPT setting
 buyBreakCpr   = rawBuyBreakCpr   and close > vwap and (alignedBuy ? enableHPT : enableLPT)
 buyBreakR1PDH = rawBuyBreakR1PDH and close > vwap and (alignedBuy ? enableHPT : enableLPT)
 buyBreakR2    = rawBuyBreakR2    and close > vwap and (alignedBuy ? enableHPT : enableLPT)
 buyBreakR3    = rawBuyBreakR3    and close > vwap and (alignedBuy ? enableHPT : enableLPT)
 buyBreakR4    = rawBuyBreakR4    and close > vwap and (alignedBuy ? enableHPT : enableLPT)
-buyBreakS1PDL = rawBuyBreakS1PDL and close > vwap and enableCounterTrend
+buyBreakS1PDL = rawBuyBreakS1PDL and close > vwap and enableLPT
 
 
 //────────────────────────────
-// SELL SIGNALS
+// INTRADAY SELL SIGNALS
 //────────────────────────────
 
-// Raw breakout detection
 rawSellBreakCpr   = isSellRecommendation and barstate.isconfirmed and (close < open) and ((close < dBot and (open > pp or open > tc or open > bc or high > pp or high > tc or high > bc)) or (high > dTop and open < dTop and close < dBot))
 rawSellBreakS1PDL = isSellRecommendation and barstate.isconfirmed and (close < open) and ((close < s1 and close < pl and (open > s1 or open > pl or high > s1 or high > pl)) or (high > math.max(s1, pl) and open < math.max(s1, pl) and close < math.min(s1, pl)))
 rawSellBreakS2    = isSellRecommendation and barstate.isconfirmed and (close < open) and ((close < s2 and (open > s2 or high > s2)) or (high > s2 and open < s2 and close < s2))
 rawSellBreakS3    = isSellRecommendation and barstate.isconfirmed and (close < open) and ((close < s3 and (open > s3 or high > s3)) or (high > s3 and open < s3 and close < s3))
 rawSellBreakS4    = isSellRecommendation and barstate.isconfirmed and (close < open) and ((close < s4 and (open > s4 or high > s4)) or (high > s4 and open < s4 and close < s4))
-rawSellBreakR1PDH = (weeklyBearish and not dailyBearish) and barstate.isconfirmed and (close < open) and ((close < r1 and close < ph and (open > r1 or open > ph or high > r1 or high > ph)) or (high > math.max(r1, ph) and open < math.max(r1, ph) and close < math.min(r1, ph)))
+rawSellBreakR1PDH = (not dailyBearish) and barstate.isconfirmed and (close < open) and ((close < r1 and close < ph and (open > r1 or open > ph or high > r1 or high > ph)) or (high > math.max(r1, ph) and open < math.max(r1, ph) and close < math.min(r1, ph)))
 
-// Final sell signals — require close below VWAP, gated by HPT/LPT setting
 sellBreakCpr   = rawSellBreakCpr   and close < vwap and (alignedSell ? enableHPT : enableLPT)
 sellBreakS1PDL = rawSellBreakS1PDL and close < vwap and (alignedSell ? enableHPT : enableLPT)
 sellBreakS2    = rawSellBreakS2    and close < vwap and (alignedSell ? enableHPT : enableLPT)
 sellBreakS3    = rawSellBreakS3    and close < vwap and (alignedSell ? enableHPT : enableLPT)
 sellBreakS4    = rawSellBreakS4    and close < vwap and (alignedSell ? enableHPT : enableLPT)
-sellBreakR1PDH = rawSellBreakR1PDH and close < vwap and enableCounterTrend
+sellBreakR1PDH = rawSellBreakR1PDH and close < vwap and enableLPT
+
+
+//────────────────────────────
+// SWING BUY SIGNALS
+//────────────────────────────
+
+rawSwingBuyBreakWCpr   = isSwingBuyRec and barstate.isconfirmed and close > wTop and (open < wpp or open < wtc or open < wbc or low < wpp or low < wtc or low < wbc) and (close > open)
+rawSwingBuyBreakWR1WH  = isSwingBuyRec and barstate.isconfirmed and (close > wr1 and close > wh) and (open < wr1 or open < wh or low < wr1 or low < wh) and (close > open)
+rawSwingBuyBreakWR2    = isSwingBuyRec and barstate.isconfirmed and (close > wr2) and (open < wr2 or low < wr2) and (close > open)
+rawSwingBuyBreakWR3    = isSwingBuyRec and barstate.isconfirmed and (close > wr3) and (open < wr3 or low < wr3) and (close > open)
+rawSwingBuyBreakWR4    = isSwingBuyRec and barstate.isconfirmed and (close > wr4) and (open < wr4 or low < wr4) and (close > open)
+rawSwingBuyBreakWS1WL  = (not weeklyBullish) and barstate.isconfirmed and (close > ws1 and close > wl) and (open < ws1 or open < wl or low < ws1 or low < wl) and (close > open)
+
+swingBuyBreakWCpr   = rawSwingBuyBreakWCpr  and close > weeklyVwap and showSwingAlerts and (swingAlignedBuy ? enableHPT : enableLPT)
+swingBuyBreakWR1WH  = rawSwingBuyBreakWR1WH and close > weeklyVwap and showSwingAlerts and (swingAlignedBuy ? enableHPT : enableLPT)
+swingBuyBreakWR2    = rawSwingBuyBreakWR2   and close > weeklyVwap and showSwingAlerts and (swingAlignedBuy ? enableHPT : enableLPT)
+swingBuyBreakWR3    = rawSwingBuyBreakWR3   and close > weeklyVwap and showSwingAlerts and (swingAlignedBuy ? enableHPT : enableLPT)
+swingBuyBreakWR4    = rawSwingBuyBreakWR4   and close > weeklyVwap and showSwingAlerts and (swingAlignedBuy ? enableHPT : enableLPT)
+swingBuyBreakWS1WL  = rawSwingBuyBreakWS1WL and close > weeklyVwap and showSwingAlerts and enableLPT
+
+
+//────────────────────────────
+// SWING SELL SIGNALS
+//────────────────────────────
+
+rawSwingSellBreakWCpr   = isSwingSellRec and barstate.isconfirmed and (close < open) and ((close < wBot and (open > wpp or open > wtc or open > wbc or high > wpp or high > wtc or high > wbc)) or (high > wTop and open < wTop and close < wBot))
+rawSwingSellBreakWS1WL  = isSwingSellRec and barstate.isconfirmed and (close < open) and ((close < ws1 and close < wl and (open > ws1 or open > wl or high > ws1 or high > wl)) or (high > math.max(ws1, wl) and open < math.max(ws1, wl) and close < math.min(ws1, wl)))
+rawSwingSellBreakWS2    = isSwingSellRec and barstate.isconfirmed and (close < open) and ((close < ws2 and (open > ws2 or high > ws2)) or (high > ws2 and open < ws2 and close < ws2))
+rawSwingSellBreakWS3    = isSwingSellRec and barstate.isconfirmed and (close < open) and ((close < ws3 and (open > ws3 or high > ws3)) or (high > ws3 and open < ws3 and close < ws3))
+rawSwingSellBreakWS4    = isSwingSellRec and barstate.isconfirmed and (close < open) and ((close < ws4 and (open > ws4 or high > ws4)) or (high > ws4 and open < ws4 and close < ws4))
+rawSwingSellBreakWR1WH  = (not weeklyBearish) and barstate.isconfirmed and (close < open) and ((close < wr1 and close < wh and (open > wr1 or open > wh or high > wr1 or high > wh)) or (high > math.max(wr1, wh) and open < math.max(wr1, wh) and close < math.min(wr1, wh)))
+
+swingSellBreakWCpr   = rawSwingSellBreakWCpr  and close < weeklyVwap and showSwingAlerts and (swingAlignedSell ? enableHPT : enableLPT)
+swingSellBreakWS1WL  = rawSwingSellBreakWS1WL and close < weeklyVwap and showSwingAlerts and (swingAlignedSell ? enableHPT : enableLPT)
+swingSellBreakWS2    = rawSwingSellBreakWS2   and close < weeklyVwap and showSwingAlerts and (swingAlignedSell ? enableHPT : enableLPT)
+swingSellBreakWS3    = rawSwingSellBreakWS3   and close < weeklyVwap and showSwingAlerts and (swingAlignedSell ? enableHPT : enableLPT)
+swingSellBreakWS4    = rawSwingSellBreakWS4   and close < weeklyVwap and showSwingAlerts and (swingAlignedSell ? enableHPT : enableLPT)
+swingSellBreakWR1WH  = rawSwingSellBreakWR1WH and close < weeklyVwap and showSwingAlerts and enableLPT
 
 
 //────────────────────────────
@@ -199,114 +308,439 @@ addLog(_time, _msg, _clr) =>
     array.push(logColor, _clr)
     array.push(logSession, currentSession)
 
+barTime = str.format_time(time, "HH:mm", syminfo.timezone)
+
+
+// ══════════════════════════════════════════
+// INTRADAY SIGNAL ALERTS + LOGGING
+// ══════════════════════════════════════════
+
 if isBuyRecommendation
     json := '{"signal":"BUY",'  + '"symbol":"' + tradeSymbol + '",' + '"quantity":' + str.tostring(tradeQuantity) + ','
 if isSellRecommendation
     json := '{"signal":"SELL",' + '"symbol":"' + tradeSymbol + '",' + '"quantity":' + str.tostring(tradeQuantity) + ','
 
-barTime = str.format_time(time, "HH:mm", syminfo.timezone)
+if showIntradayAlerts
+
+    if buyBreakCpr
+        _brkLvl = dTop
+        if close - _brkLvl > atrRaw
+            addLog(barTime, "[SKIP] BUY_ABOVE_CPR — large candle (move: " + str.tostring(close - _brkLvl, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawBuyLabel("BUY", color.new(buyLabelColor, 0))
+            _tgt = math.min(r1, ph)
+            _shifted = false
+            if math.abs(close - _tgt) < atrRaw
+                _tgt := r2
+                _shifted := true
+            _sl  = close - atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_ABOVE_CPR"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, buyProbTag + "BUY_ABOVE_CPR | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", buyLabelColor)
+            if _shifted
+                addLog(barTime, "[INFO] Target shifted for BUY_ABOVE_CPR — " + str.tostring(math.min(r1, ph), "#.##") + " → " + str.tostring(_tgt, "#.##") + " (< 1 ATR)", color.gray)
+
+    if buyBreakR1PDH
+        _brkLvl = math.max(r1, ph)
+        if close - _brkLvl > atrRaw
+            addLog(barTime, "[SKIP] BUY_ABOVE_R1_PDH — large candle (move: " + str.tostring(close - _brkLvl, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawBuyLabel("BUY", color.new(buyLabelColor, 0))
+            _tgt = r2
+            _shifted = false
+            if math.abs(close - _tgt) < atrRaw
+                _tgt := r3
+                _shifted := true
+            _sl  = close - atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_ABOVE_R1_PDH"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, buyProbTag + "BUY_ABOVE_R1_PDH | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", buyLabelColor)
+            if _shifted
+                addLog(barTime, "[INFO] Target shifted for BUY_ABOVE_R1_PDH — " + str.tostring(r2, "#.##") + " → " + str.tostring(_tgt, "#.##") + " (< 1 ATR)", color.gray)
+
+    if buyBreakR2
+        _brkLvl = r2
+        if close - _brkLvl > atrRaw
+            addLog(barTime, "[SKIP] BUY_ABOVE_R2 — large candle (move: " + str.tostring(close - _brkLvl, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawBuyLabel("BUY", color.new(buyLabelColor, 0))
+            _tgt = r3
+            _shifted = false
+            if math.abs(close - _tgt) < atrRaw
+                _tgt := r4
+                _shifted := true
+            _sl  = close - atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_ABOVE_R2"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, buyProbTag + "BUY_ABOVE_R2 | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", buyLabelColor)
+            if _shifted
+                addLog(barTime, "[INFO] Target shifted for BUY_ABOVE_R2 — " + str.tostring(r3, "#.##") + " → " + str.tostring(_tgt, "#.##") + " (< 1 ATR)", color.gray)
+
+    if buyBreakR3
+        _brkLvl = r3
+        if close - _brkLvl > atrRaw
+            addLog(barTime, "[SKIP] BUY_ABOVE_R3 — large candle (move: " + str.tostring(close - _brkLvl, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawBuyLabel("BUY", color.new(buyLabelColor, 0))
+            _tgt = r4
+            _shifted = false
+            if math.abs(close - _tgt) < atrRaw
+                _tgt := close + 50
+                _shifted := true
+            _sl  = close - atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_ABOVE_R3"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, buyProbTag + "BUY_ABOVE_R3 | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", buyLabelColor)
+            if _shifted
+                addLog(barTime, "[INFO] Target shifted for BUY_ABOVE_R3 — " + str.tostring(r4, "#.##") + " → " + str.tostring(_tgt, "#.##") + " (< 1 ATR)", color.gray)
+
+    if buyBreakR4
+        _brkLvl = r4
+        if close - _brkLvl > atrRaw
+            addLog(barTime, "[SKIP] BUY_ABOVE_R4 — large candle (move: " + str.tostring(close - _brkLvl, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawBuyLabel("BUY", color.new(buyLabelColor, 0))
+            _tgt = close + 50
+            _sl  = close - atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_ABOVE_R4"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, buyProbTag + "BUY_ABOVE_R4 | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", buyLabelColor)
+
+    if buyBreakS1PDL
+        _brkLvl = math.max(s1, pl)
+        if close - _brkLvl > atrRaw
+            addLog(barTime, "[SKIP] BUY_ABOVE_S1_PDL — large candle (move: " + str.tostring(close - _brkLvl, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawBuyLabel("BUY", color.new(color.green, 20))
+            _tgt = math.min(tc, bc)
+            _shifted = false
+            if math.abs(close - _tgt) < atrRaw
+                _tgt := math.min(r1, ph)
+                _shifted := true
+            _sl  = close - atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_ABOVE_S1_PDL"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, "[LPT] " + "BUY_ABOVE_S1_PDL | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", color.new(color.green, 20))
+            if _shifted
+                addLog(barTime, "[INFO] Target shifted for BUY_ABOVE_S1_PDL — " + str.tostring(math.min(tc, bc), "#.##") + " → " + str.tostring(_tgt, "#.##") + " (< 1 ATR)", color.gray)
+
+    if sellBreakCpr
+        _brkLvl = dBot
+        if _brkLvl - close > atrRaw
+            addLog(barTime, "[SKIP] SELL_BELOW_CPR — large candle (move: " + str.tostring(_brkLvl - close, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawSellLabel("SELL", color.new(sellLabelColor, 0))
+            _tgt = math.max(s1, pl)
+            _shifted = false
+            if math.abs(close - _tgt) < atrRaw
+                _tgt := s2
+                _shifted := true
+            _sl  = close + atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_BELOW_CPR"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, sellProbTag + "SELL_BELOW_CPR | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", sellLabelColor)
+            if _shifted
+                addLog(barTime, "[INFO] Target shifted for SELL_BELOW_CPR — " + str.tostring(math.max(s1, pl), "#.##") + " → " + str.tostring(_tgt, "#.##") + " (< 1 ATR)", color.gray)
+
+    if sellBreakS1PDL
+        _brkLvl = math.min(s1, pl)
+        if _brkLvl - close > atrRaw
+            addLog(barTime, "[SKIP] SELL_BELOW_S1_PDL — large candle (move: " + str.tostring(_brkLvl - close, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawSellLabel("SELL", color.new(sellLabelColor, 0))
+            _tgt = s2
+            _shifted = false
+            if math.abs(close - _tgt) < atrRaw
+                _tgt := s3
+                _shifted := true
+            _sl  = close + atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_BELOW_S1_PDL"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, sellProbTag + "SELL_BELOW_S1_PDL | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", sellLabelColor)
+            if _shifted
+                addLog(barTime, "[INFO] Target shifted for SELL_BELOW_S1_PDL — " + str.tostring(s2, "#.##") + " → " + str.tostring(_tgt, "#.##") + " (< 1 ATR)", color.gray)
+
+    if sellBreakS2
+        _brkLvl = s2
+        if _brkLvl - close > atrRaw
+            addLog(barTime, "[SKIP] SELL_BELOW_S2 — large candle (move: " + str.tostring(_brkLvl - close, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawSellLabel("SELL", color.new(sellLabelColor, 0))
+            _tgt = s3
+            _shifted = false
+            if math.abs(close - _tgt) < atrRaw
+                _tgt := s4
+                _shifted := true
+            _sl  = close + atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_BELOW_S2"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, sellProbTag + "SELL_BELOW_S2 | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", sellLabelColor)
+            if _shifted
+                addLog(barTime, "[INFO] Target shifted for SELL_BELOW_S2 — " + str.tostring(s3, "#.##") + " → " + str.tostring(_tgt, "#.##") + " (< 1 ATR)", color.gray)
+
+    if sellBreakS3
+        _brkLvl = s3
+        if _brkLvl - close > atrRaw
+            addLog(barTime, "[SKIP] SELL_BELOW_S3 — large candle (move: " + str.tostring(_brkLvl - close, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawSellLabel("SELL", color.new(sellLabelColor, 0))
+            _tgt = s4
+            _shifted = false
+            if math.abs(close - _tgt) < atrRaw
+                _tgt := close - 50
+                _shifted := true
+            _sl  = close + atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_BELOW_S3"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, sellProbTag + "SELL_BELOW_S3 | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", sellLabelColor)
+            if _shifted
+                addLog(barTime, "[INFO] Target shifted for SELL_BELOW_S3 — " + str.tostring(s4, "#.##") + " → " + str.tostring(_tgt, "#.##") + " (< 1 ATR)", color.gray)
+
+    if sellBreakS4
+        _brkLvl = s4
+        if _brkLvl - close > atrRaw
+            addLog(barTime, "[SKIP] SELL_BELOW_S4 — large candle (move: " + str.tostring(_brkLvl - close, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawSellLabel("SELL", color.new(sellLabelColor, 0))
+            _tgt = close - 50
+            _sl  = close + atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_BELOW_S4"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, sellProbTag + "SELL_BELOW_S4 | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", sellLabelColor)
+
+    if sellBreakR1PDH
+        _brkLvl = math.min(r1, ph)
+        if _brkLvl - close > atrRaw
+            addLog(barTime, "[SKIP] SELL_BELOW_R1_PDH — large candle (move: " + str.tostring(_brkLvl - close, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawSellLabel("SELL", color.new(color.red, 20))
+            _tgt = math.max(tc, bc)
+            _shifted = false
+            if math.abs(close - _tgt) < atrRaw
+                _tgt := math.max(s1, pl)
+                _shifted := true
+            _sl  = close + atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_BELOW_R1_PDH"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, "[LPT] " + "SELL_BELOW_R1_PDH | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", color.new(color.red, 20))
+            if _shifted
+                addLog(barTime, "[INFO] Target shifted for SELL_BELOW_R1_PDH — " + str.tostring(math.max(tc, bc), "#.##") + " → " + str.tostring(_tgt, "#.##") + " (< 1 ATR)", color.gray)
 
 
-// ── BUY SIGNAL ALERTS + LOGGING ──
+// ══════════════════════════════════════════
+// SWING SIGNAL ALERTS + LOGGING
+// ══════════════════════════════════════════
 
-if buyBreakCpr
-    drawBuyLabel("BUY", color.new(buyLabelColor, 0))
-    _tgt = math.min(r1, ph)
-    _sl  = close - atrSl
-    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_ABOVE_CPR"}'
-    alert(json, alert.freq_once_per_bar_close)
-    addLog(barTime, buyProbTag + "BUY_ABOVE_CPR | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", buyLabelColor)
+if isSwingBuyRec
+    json := '{"signal":"BUY",'  + '"symbol":"' + tradeSymbol + '",' + '"quantity":' + str.tostring(tradeQuantity) + ','
+if isSwingSellRec
+    json := '{"signal":"SELL",' + '"symbol":"' + tradeSymbol + '",' + '"quantity":' + str.tostring(tradeQuantity) + ','
 
-if buyBreakR1PDH
-    drawBuyLabel("BUY", color.new(buyLabelColor, 0))
-    _tgt = r2
-    _sl  = close - atrSl
-    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_ABOVE_R1_PDH"}'
-    alert(json, alert.freq_once_per_bar_close)
-    addLog(barTime, buyProbTag + "BUY_ABOVE_R1_PDH | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", buyLabelColor)
+if showSwingAlerts
 
-if buyBreakR2
-    drawBuyLabel("BUY", color.new(buyLabelColor, 0))
-    _tgt = r3
-    _sl  = close - atrSl
-    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_ABOVE_R2"}'
-    alert(json, alert.freq_once_per_bar_close)
-    addLog(barTime, buyProbTag + "BUY_ABOVE_R2 | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", buyLabelColor)
+    if swingBuyBreakWCpr
+        _brkLvl = wTop
+        if close - _brkLvl > atrRaw
+            addLog(barTime, "[SKIP] BUY_SWING_ABOVE_WCPR — large candle (move: " + str.tostring(close - _brkLvl, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawBuyLabel("BUY SWING", color.new(swingBuyLabelColor, 0))
+            _tgt = math.min(wr1, wh)
+            _shifted = false
+            if math.abs(close - _tgt) < atrRaw
+                _tgt := wr2
+                _shifted := true
+            _sl  = close - atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_SWING_ABOVE_WCPR"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, swingBuyProbTag + "BUY_SWING_ABOVE_WCPR | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", swingBuyLabelColor)
+            if _shifted
+                addLog(barTime, "[INFO] Target shifted for BUY_SWING_ABOVE_WCPR — " + str.tostring(math.min(wr1, wh), "#.##") + " → " + str.tostring(_tgt, "#.##") + " (< 1 ATR)", color.gray)
 
-if buyBreakR3
-    drawBuyLabel("BUY", color.new(buyLabelColor, 0))
-    _tgt = r4
-    _sl  = close - atrSl
-    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_ABOVE_R3"}'
-    alert(json, alert.freq_once_per_bar_close)
-    addLog(barTime, buyProbTag + "BUY_ABOVE_R3 | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", buyLabelColor)
+    if swingBuyBreakWR1WH
+        _brkLvl = math.max(wr1, wh)
+        if close - _brkLvl > atrRaw
+            addLog(barTime, "[SKIP] BUY_SWING_ABOVE_WR1_WH — large candle (move: " + str.tostring(close - _brkLvl, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawBuyLabel("BUY SWING", color.new(swingBuyLabelColor, 0))
+            _tgt = wr2
+            _shifted = false
+            if math.abs(close - _tgt) < atrRaw
+                _tgt := wr3
+                _shifted := true
+            _sl  = close - atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_SWING_ABOVE_WR1_WH"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, swingBuyProbTag + "BUY_SWING_ABOVE_WR1_WH | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", swingBuyLabelColor)
+            if _shifted
+                addLog(barTime, "[INFO] Target shifted for BUY_SWING_ABOVE_WR1_WH — " + str.tostring(wr2, "#.##") + " → " + str.tostring(_tgt, "#.##") + " (< 1 ATR)", color.gray)
 
-if buyBreakR4
-    drawBuyLabel("BUY", color.new(buyLabelColor, 0))
-    _tgt = close + 50
-    _sl  = close - atrSl
-    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_ABOVE_R4"}'
-    alert(json, alert.freq_once_per_bar_close)
-    addLog(barTime, buyProbTag + "BUY_ABOVE_R4 | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", buyLabelColor)
+    if swingBuyBreakWR2
+        _brkLvl = wr2
+        if close - _brkLvl > atrRaw
+            addLog(barTime, "[SKIP] BUY_SWING_ABOVE_WR2 — large candle (move: " + str.tostring(close - _brkLvl, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawBuyLabel("BUY SWING", color.new(swingBuyLabelColor, 0))
+            _tgt = wr3
+            _shifted = false
+            if math.abs(close - _tgt) < atrRaw
+                _tgt := wr4
+                _shifted := true
+            _sl  = close - atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_SWING_ABOVE_WR2"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, swingBuyProbTag + "BUY_SWING_ABOVE_WR2 | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", swingBuyLabelColor)
+            if _shifted
+                addLog(barTime, "[INFO] Target shifted for BUY_SWING_ABOVE_WR2 — " + str.tostring(wr3, "#.##") + " → " + str.tostring(_tgt, "#.##") + " (< 1 ATR)", color.gray)
 
-if buyBreakS1PDL
-    drawBuyLabel("BUY", color.new(color.green, 20))
-    _tgt = math.min(tc, bc)
-    _sl  = close - atrSl
-    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_ABOVE_S1_PDL"}'
-    alert(json, alert.freq_once_per_bar_close)
-    addLog(barTime, "[MPT] " + "BUY_ABOVE_S1_PDL | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", color.new(color.green, 20))
+    if swingBuyBreakWR3
+        _brkLvl = wr3
+        if close - _brkLvl > atrRaw
+            addLog(barTime, "[SKIP] BUY_SWING_ABOVE_WR3 — large candle (move: " + str.tostring(close - _brkLvl, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawBuyLabel("BUY SWING", color.new(swingBuyLabelColor, 0))
+            _tgt = wr4
+            _shifted = false
+            if math.abs(close - _tgt) < atrRaw
+                _tgt := close + 50
+                _shifted := true
+            _sl  = close - atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_SWING_ABOVE_WR3"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, swingBuyProbTag + "BUY_SWING_ABOVE_WR3 | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", swingBuyLabelColor)
+            if _shifted
+                addLog(barTime, "[INFO] Target shifted for BUY_SWING_ABOVE_WR3 — " + str.tostring(wr4, "#.##") + " → " + str.tostring(_tgt, "#.##") + " (< 1 ATR)", color.gray)
 
+    if swingBuyBreakWR4
+        _brkLvl = wr4
+        if close - _brkLvl > atrRaw
+            addLog(barTime, "[SKIP] BUY_SWING_ABOVE_WR4 — large candle (move: " + str.tostring(close - _brkLvl, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawBuyLabel("BUY SWING", color.new(swingBuyLabelColor, 0))
+            _tgt = close + 50
+            _sl  = close - atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_SWING_ABOVE_WR4"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, swingBuyProbTag + "BUY_SWING_ABOVE_WR4 | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", swingBuyLabelColor)
 
-// ── SELL SIGNAL ALERTS + LOGGING ──
+    if swingBuyBreakWS1WL
+        _brkLvl = math.max(ws1, wl)
+        if close - _brkLvl > atrRaw
+            addLog(barTime, "[SKIP] BUY_SWING_ABOVE_WS1_WL — large candle (move: " + str.tostring(close - _brkLvl, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawBuyLabel("BUY SWING", color.new(color.green, 20))
+            _tgt = math.min(wtc, wbc)
+            _shifted = false
+            if math.abs(close - _tgt) < atrRaw
+                _tgt := math.min(wr1, wh)
+                _shifted := true
+            _sl  = close - atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"BUY_SWING_ABOVE_WS1_WL"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, "[LPT] " + "BUY_SWING_ABOVE_WS1_WL | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(_tgt - close, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(close - _sl, "#.##") + ")", color.new(color.green, 20))
+            if _shifted
+                addLog(barTime, "[INFO] Target shifted for BUY_SWING_ABOVE_WS1_WL — " + str.tostring(math.min(wtc, wbc), "#.##") + " → " + str.tostring(_tgt, "#.##") + " (< 1 ATR)", color.gray)
 
-if sellBreakCpr
-    drawSellLabel("SELL", color.new(sellLabelColor, 0))
-    _tgt = math.max(s1, pl)
-    _sl  = close + atrSl
-    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_BELOW_CPR"}'
-    alert(json, alert.freq_once_per_bar_close)
-    addLog(barTime, sellProbTag + "SELL_BELOW_CPR | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", sellLabelColor)
+    if swingSellBreakWCpr
+        _brkLvl = wBot
+        if _brkLvl - close > atrRaw
+            addLog(barTime, "[SKIP] SELL_SWING_BELOW_WCPR — large candle (move: " + str.tostring(_brkLvl - close, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawSellLabel("SELL SWING", color.new(swingSellLabelColor, 0))
+            _tgt = math.max(ws1, wl)
+            _shifted = false
+            if math.abs(close - _tgt) < atrRaw
+                _tgt := ws2
+                _shifted := true
+            _sl  = close + atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_SWING_BELOW_WCPR"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, swingSellProbTag + "SELL_SWING_BELOW_WCPR | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", swingSellLabelColor)
+            if _shifted
+                addLog(barTime, "[INFO] Target shifted for SELL_SWING_BELOW_WCPR — " + str.tostring(math.max(ws1, wl), "#.##") + " → " + str.tostring(_tgt, "#.##") + " (< 1 ATR)", color.gray)
 
-if sellBreakS1PDL
-    drawSellLabel("SELL", color.new(sellLabelColor, 0))
-    _tgt = s2
-    _sl  = close + atrSl
-    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_BELOW_S1_PDL"}'
-    alert(json, alert.freq_once_per_bar_close)
-    addLog(barTime, sellProbTag + "SELL_BELOW_S1_PDL | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", sellLabelColor)
+    if swingSellBreakWS1WL
+        _brkLvl = math.min(ws1, wl)
+        if _brkLvl - close > atrRaw
+            addLog(barTime, "[SKIP] SELL_SWING_BELOW_WS1_WL — large candle (move: " + str.tostring(_brkLvl - close, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawSellLabel("SELL SWING", color.new(swingSellLabelColor, 0))
+            _tgt = ws2
+            _shifted = false
+            if math.abs(close - _tgt) < atrRaw
+                _tgt := ws3
+                _shifted := true
+            _sl  = close + atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_SWING_BELOW_WS1_WL"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, swingSellProbTag + "SELL_SWING_BELOW_WS1_WL | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", swingSellLabelColor)
+            if _shifted
+                addLog(barTime, "[INFO] Target shifted for SELL_SWING_BELOW_WS1_WL — " + str.tostring(ws2, "#.##") + " → " + str.tostring(_tgt, "#.##") + " (< 1 ATR)", color.gray)
 
-if sellBreakS2
-    drawSellLabel("SELL", color.new(sellLabelColor, 0))
-    _tgt = s3
-    _sl  = close + atrSl
-    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_BELOW_S2"}'
-    alert(json, alert.freq_once_per_bar_close)
-    addLog(barTime, sellProbTag + "SELL_BELOW_S2 | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", sellLabelColor)
+    if swingSellBreakWS2
+        _brkLvl = ws2
+        if _brkLvl - close > atrRaw
+            addLog(barTime, "[SKIP] SELL_SWING_BELOW_WS2 — large candle (move: " + str.tostring(_brkLvl - close, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawSellLabel("SELL SWING", color.new(swingSellLabelColor, 0))
+            _tgt = ws3
+            _shifted = false
+            if math.abs(close - _tgt) < atrRaw
+                _tgt := ws4
+                _shifted := true
+            _sl  = close + atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_SWING_BELOW_WS2"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, swingSellProbTag + "SELL_SWING_BELOW_WS2 | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", swingSellLabelColor)
+            if _shifted
+                addLog(barTime, "[INFO] Target shifted for SELL_SWING_BELOW_WS2 — " + str.tostring(ws3, "#.##") + " → " + str.tostring(_tgt, "#.##") + " (< 1 ATR)", color.gray)
 
-if sellBreakS3
-    drawSellLabel("SELL", color.new(sellLabelColor, 0))
-    _tgt = s4
-    _sl  = close + atrSl
-    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_BELOW_S3"}'
-    alert(json, alert.freq_once_per_bar_close)
-    addLog(barTime, sellProbTag + "SELL_BELOW_S3 | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", sellLabelColor)
+    if swingSellBreakWS3
+        _brkLvl = ws3
+        if _brkLvl - close > atrRaw
+            addLog(barTime, "[SKIP] SELL_SWING_BELOW_WS3 — large candle (move: " + str.tostring(_brkLvl - close, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawSellLabel("SELL SWING", color.new(swingSellLabelColor, 0))
+            _tgt = ws4
+            _shifted = false
+            if math.abs(close - _tgt) < atrRaw
+                _tgt := close - 50
+                _shifted := true
+            _sl  = close + atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_SWING_BELOW_WS3"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, swingSellProbTag + "SELL_SWING_BELOW_WS3 | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", swingSellLabelColor)
+            if _shifted
+                addLog(barTime, "[INFO] Target shifted for SELL_SWING_BELOW_WS3 — " + str.tostring(ws4, "#.##") + " → " + str.tostring(_tgt, "#.##") + " (< 1 ATR)", color.gray)
 
-if sellBreakS4
-    drawSellLabel("SELL", color.new(sellLabelColor, 0))
-    _tgt = close - 50
-    _sl  = close + atrSl
-    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_BELOW_S4"}'
-    alert(json, alert.freq_once_per_bar_close)
-    addLog(barTime, sellProbTag + "SELL_BELOW_S4 | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", sellLabelColor)
+    if swingSellBreakWS4
+        _brkLvl = ws4
+        if _brkLvl - close > atrRaw
+            addLog(barTime, "[SKIP] SELL_SWING_BELOW_WS4 — large candle (move: " + str.tostring(_brkLvl - close, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawSellLabel("SELL SWING", color.new(swingSellLabelColor, 0))
+            _tgt = close - 50
+            _sl  = close + atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_SWING_BELOW_WS4"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, swingSellProbTag + "SELL_SWING_BELOW_WS4 | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", swingSellLabelColor)
 
-if sellBreakR1PDH
-    drawSellLabel("SELL", color.new(color.red, 20))
-    _tgt = math.max(tc, bc)
-    _sl  = close + atrSl
-    json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_BELOW_R1_PDH"}'
-    alert(json, alert.freq_once_per_bar_close)
-    addLog(barTime, "[MPT] " + "SELL_BELOW_R1_PDH | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", color.new(color.red, 20))
+    if swingSellBreakWR1WH
+        _brkLvl = math.min(wr1, wh)
+        if _brkLvl - close > atrRaw
+            addLog(barTime, "[SKIP] SELL_SWING_BELOW_WR1_WH — large candle (move: " + str.tostring(_brkLvl - close, "#.##") + " > ATR: " + str.tostring(atrRaw, "#.##") + ")", color.gray)
+        else
+            drawSellLabel("SELL SWING", color.new(color.red, 20))
+            _tgt = math.max(wtc, wbc)
+            _shifted = false
+            if math.abs(close - _tgt) < atrRaw
+                _tgt := math.max(ws1, wl)
+                _shifted := true
+            _sl  = close + atrSl
+            json := json + '"target":' + str.tostring(_tgt) + ',' + '"stoploss":' + str.tostring(_sl) + ',' + '"setup":"SELL_SWING_BELOW_WR1_WH"}'
+            alert(json, alert.freq_once_per_bar_close)
+            addLog(barTime, "[LPT] " + "SELL_SWING_BELOW_WR1_WH | Entry: " + str.tostring(close, "#.##") + " | Tgt: " + str.tostring(_tgt, "#.##") + "(" + str.tostring(close - _tgt, "#.##") + ")" + " | SL: " + str.tostring(_sl, "#.##") + "(" + str.tostring(_sl - close, "#.##") + ")", color.new(color.red, 20))
+            if _shifted
+                addLog(barTime, "[INFO] Target shifted for SELL_SWING_BELOW_WR1_WH — " + str.tostring(math.max(wtc, wbc), "#.##") + " → " + str.tostring(_tgt, "#.##") + " (< 1 ATR)", color.gray)
 
 
 //────────────────────────────

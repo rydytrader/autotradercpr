@@ -25,4 +25,7 @@ public interface FyersClient {
 
     /** POST /api/v3/validate-authcode — exchange auth code for token */
     JsonNode validateAuthCode(String requestBody) throws Exception;
+
+    /** GET /api/v3/optionChain — get option chain with OI data */
+    JsonNode getOptionChain(String symbol, int strikeCount, String authHeader) throws Exception;
 }
