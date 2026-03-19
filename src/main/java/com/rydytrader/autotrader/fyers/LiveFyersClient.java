@@ -31,6 +31,11 @@ public class LiveFyersClient implements FyersClient {
     }
 
     @Override
+    public JsonNode getOrders(String authHeader) throws Exception {
+        return get(BASE + "/orders", authHeader);
+    }
+
+    @Override
     public JsonNode getPositions(String authHeader) throws Exception {
         return get(BASE + "/positions", authHeader);
     }

@@ -761,7 +761,15 @@
                 <div class="section-title-dot" style="background: var(--accent-cyan)"></div>
                 Event Log
             </div>
-            <span class="section-badge" id="logStatusBadge" style="color: var(--accent-cyan); border-color: rgba(34,211,238,0.2); background: rgba(34,211,238,0.07);">Live</span>
+            <div style="display:flex;align-items:center;gap:8px;margin-left:auto;">
+                <select id="logSymbolFilter" onchange="filterLogs()" style="
+                    background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
+                    border-radius:4px;padding:2px 8px;font-size:0.65rem;font-family:var(--font-mono);
+                    outline:none;cursor:pointer;min-width:100px;">
+                    <option value="">All Symbols</option>
+                </select>
+                <span class="section-badge" id="logStatusBadge" style="color: var(--accent-cyan); border-color: rgba(34,211,238,0.2); background: rgba(34,211,238,0.07);">Live</span>
+            </div>
         </div>
         <div class="log-wrap">
             <div id="tradeLogContainer">
@@ -908,16 +916,47 @@
         return `<div class="${cssClass}"><span class="${tagClass}">${level}</span>${message}</div>`;
     }
 
+    let allLogEntries = [];
+    const symbolPattern = /\b(NSE:\S+|BSE:\S+|MCX:\S+)\b/;
+
+    function extractSymbols(logs) {
+        const symbols = new Set();
+        logs.forEach(log => {
+            const m = log.match(symbolPattern);
+            if (m) symbols.add(m[1]);
+        });
+        return [...symbols].sort();
+    }
+
+    function updateSymbolFilter(symbols) {
+        const sel = document.getElementById('logSymbolFilter');
+        const current = sel.value;
+        const opts = ['<option value="">All Symbols</option>'];
+        symbols.forEach(s => {
+            const label = s.replace(/^(NSE|BSE|MCX):/, '').replace(/-EQ$/, '');
+            opts.push(`<option value="${s}"${s === current ? ' selected' : ''}>${label}</option>`);
+        });
+        sel.innerHTML = opts.join('');
+    }
+
+    function filterLogs() {
+        const filter = document.getElementById('logSymbolFilter').value;
+        const container = document.getElementById('tradeLogContainer');
+        const filtered = filter ? allLogEntries.filter(log => log.includes(filter)) : allLogEntries;
+        if (!filtered.length) {
+            container.innerHTML = `<div class="empty-state"><div class="empty-icon">⌁</div>No events${filter ? ' for ' + filter : ''}</div>`;
+            return;
+        }
+        container.innerHTML = filtered.slice().reverse().map(log => renderLogEntry(log, 'log-entry')).join('');
+    }
+
     function updateTradeLogs() {
         fetch('/logs')
             .then(r => r.json())
             .then(data => {
-                const container = document.getElementById('tradeLogContainer');
-                if (!data.length) {
-                    container.innerHTML = `<div class="empty-state"><div class="empty-icon">⌁</div>No events recorded</div>`;
-                    return;
-                }
-                container.innerHTML = data.slice().reverse().map(log => renderLogEntry(log, 'log-entry')).join('');
+                allLogEntries = data;
+                updateSymbolFilter(extractSymbols(data));
+                filterLogs();
             })
             .catch(() => {});
     }

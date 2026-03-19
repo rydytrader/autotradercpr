@@ -35,6 +35,9 @@ public class RiskSettingsStore {
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile boolean enableR4S4       = false; // allow BUY_ABOVE_R4 / SELL_BELOW_S4
         volatile double sessionMoveLimit = 2.0;   // qty halved if session move exceeds this % (0 = disabled)
+        volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
+        volatile int    fixedQuantity    = 2;     // -1 = use capital-based calculation
+        volatile double capitalPerTrade  = 0;     // ₹ per trade (used when fixedQuantity == -1)
     }
 
     private final Cfg live = new Cfg();
@@ -75,6 +78,9 @@ public class RiskSettingsStore {
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public boolean isEnableR4S4()        { return cfg().enableR4S4; }
     public double getSessionMoveLimit() { return cfg().sessionMoveLimit; }
+    public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
+    public int    getFixedQuantity()   { return cfg().fixedQuantity; }
+    public double getCapitalPerTrade() { return cfg().capitalPerTrade; }
 
     public void setTradingStartTime(String v)  { cfg().tradingStartTime = v; }
     public void setTradingEndTime(String v)    { cfg().tradingEndTime = v; }
@@ -84,6 +90,9 @@ public class RiskSettingsStore {
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setEnableR4S4(boolean v)       { cfg().enableR4S4 = v; }
     public void setSessionMoveLimit(double v) { cfg().sessionMoveLimit = v; }
+    public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
+    public void setFixedQuantity(int v)      { cfg().fixedQuantity = v; }
+    public void setCapitalPerTrade(double v) { cfg().capitalPerTrade = v; }
 
     // ── mode-specific getters/setters (used by SettingsController) ────────────
     public String getTradingStartTime(String mode)  { return cfgFor(mode).tradingStartTime; }
@@ -94,6 +103,9 @@ public class RiskSettingsStore {
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public boolean isEnableR4S4(String mode)       { return cfgFor(mode).enableR4S4; }
     public double getSessionMoveLimit(String mode) { return cfgFor(mode).sessionMoveLimit; }
+    public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
+    public int    getFixedQuantity(String mode)   { return cfgFor(mode).fixedQuantity; }
+    public double getCapitalPerTrade(String mode) { return cfgFor(mode).capitalPerTrade; }
 
     public void setTradingStartTime(String mode, String v)  { cfgFor(mode).tradingStartTime = v; }
     public void setTradingEndTime(String mode, String v)    { cfgFor(mode).tradingEndTime = v; }
@@ -103,6 +115,9 @@ public class RiskSettingsStore {
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
     public void setEnableR4S4(String mode, boolean v)       { cfgFor(mode).enableR4S4 = v; }
     public void setSessionMoveLimit(String mode, double v) { cfgFor(mode).sessionMoveLimit = v; }
+    public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
+    public void setFixedQuantity(String mode, int v)      { cfgFor(mode).fixedQuantity = v; }
+    public void setCapitalPerTrade(String mode, double v) { cfgFor(mode).capitalPerTrade = v; }
 
     // ── save ──────────────────────────────────────────────────────────────────
     /** Saves the currently active mode's settings. */
@@ -124,6 +139,9 @@ public class RiskSettingsStore {
             state.put("atrMultiplier",    c.atrMultiplier);
             state.put("enableR4S4",      c.enableR4S4);
             state.put("sessionMoveLimit", c.sessionMoveLimit);
+            state.put("brokeragePerOrder", c.brokeragePerOrder);
+            state.put("fixedQuantity",   c.fixedQuantity);
+            state.put("capitalPerTrade", c.capitalPerTrade);
             Files.writeString(Paths.get(fileFor(mode)), mapper.writeValueAsString(state));
         } catch (IOException e) {
             System.err.println("[RiskSettingsStore] Failed to save " + mode + ": " + e.getMessage());
@@ -146,10 +164,15 @@ public class RiskSettingsStore {
             if (state.containsKey("atrMultiplier"))    c.atrMultiplier    = Double.parseDouble(state.get("atrMultiplier").toString());
             if (state.containsKey("enableR4S4"))       c.enableR4S4       = Boolean.parseBoolean(state.get("enableR4S4").toString());
             if (state.containsKey("sessionMoveLimit")) c.sessionMoveLimit = Double.parseDouble(state.get("sessionMoveLimit").toString());
+            if (state.containsKey("brokeragePerOrder")) c.brokeragePerOrder = Double.parseDouble(state.get("brokeragePerOrder").toString());
+            if (state.containsKey("fixedQuantity"))   c.fixedQuantity   = Integer.parseInt(state.get("fixedQuantity").toString());
+            if (state.containsKey("capitalPerTrade")) c.capitalPerTrade = Double.parseDouble(state.get("capitalPerTrade").toString());
             System.out.println("[RiskSettingsStore] Loaded " + mode + ": start=" + c.tradingStartTime
                 + " end=" + c.tradingEndTime + " maxLoss=" + c.maxDailyLoss + " maxTrades=" + c.maxTradesPerDay
                 + " autoSquareOff=" + c.autoSquareOffTime + " atrMult=" + c.atrMultiplier
-                + " enableR4S4=" + c.enableR4S4 + " sessionMove=" + c.sessionMoveLimit + "%");
+                + " enableR4S4=" + c.enableR4S4 + " sessionMove=" + c.sessionMoveLimit + "%"
+                + " brokerage=" + c.brokeragePerOrder + " fixedQty=" + c.fixedQuantity
+                + " capitalPerTrade=" + c.capitalPerTrade);
         } catch (IOException e) {
             System.err.println("[RiskSettingsStore] Failed to load " + mode + ": " + e.getMessage());
         }

@@ -61,6 +61,22 @@ public class PositionStateStore {
         }
     }
 
+    /** Updates persisted state with OCO order IDs and prices. */
+    public void saveOcoState(String symbol, String slOrderId, String targetOrderId,
+                             double slPrice, double targetPrice) {
+        try {
+            Map<String, Object> state = load(symbol);
+            if (state == null) return;
+            state.put("slOrderId", slOrderId);
+            state.put("targetOrderId", targetOrderId);
+            state.put("slPrice", slPrice);
+            state.put("targetPrice", targetPrice);
+            Files.writeString(filePath(symbol), mapper.writeValueAsString(state));
+        } catch (IOException e) {
+            System.err.println("[PositionStateStore] Failed to save OCO state for " + symbol + ": " + e.getMessage());
+        }
+    }
+
     public void clear(String symbol) {
         try {
             Files.deleteIfExists(filePath(symbol));

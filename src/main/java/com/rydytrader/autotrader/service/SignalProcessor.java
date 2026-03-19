@@ -11,10 +11,13 @@ public class SignalProcessor {
 
     private final RiskSettingsStore riskSettings;
     private final EventService     eventService;
+    private final QuantityService  quantityService;
 
-    public SignalProcessor(RiskSettingsStore riskSettings, EventService eventService) {
+    public SignalProcessor(RiskSettingsStore riskSettings, EventService eventService,
+                           QuantityService quantityService) {
         this.riskSettings = riskSettings;
         this.eventService = eventService;
+        this.quantityService = quantityService;
     }
 
     public ProcessedSignal process(Map<String, Object> alert) {
@@ -25,7 +28,7 @@ public class SignalProcessor {
         String probability = str(alert, "probability");
         double close       = dbl(alert, "close");
         double atr         = dbl(alert, "atr");
-        int    baseQty     = intVal(alert, "quantity");
+        int    baseQty     = quantityService.computeBaseQty(symbol, close);
         double sessionHigh = dbl(alert, "sessionHigh");
         double sessionLow  = dbl(alert, "sessionLow");
         double r1 = dbl(alert, "r1"), r2 = dbl(alert, "r2"), r3 = dbl(alert, "r3"), r4 = dbl(alert, "r4");
@@ -34,60 +37,52 @@ public class SignalProcessor {
         double tc = dbl(alert, "tc"), bc = dbl(alert, "bc");
 
         // ── 4b. Derive direction ────────────────────────────────────────────────
-        boolean isBuy = setup.startsWith("BUY_");
+        boolean isBuy = setup.startsWith("BUY_") || "DAY_HIGH_BO".equals(setup);
         String signal = isBuy ? "BUY" : "SELL";
 
         // ── R4/S4 gate ────────────────────────────────────────────────────────
         boolean isR4S4 = "BUY_ABOVE_R4".equals(setup) || "SELL_BELOW_S4".equals(setup);
         if (isR4S4 && !riskSettings.isEnableR4S4()) {
-            return ProcessedSignal.rejected(setup, "R4/S4 signals disabled in settings");
+            return ProcessedSignal.rejected(setup, symbol, "R4/S4 signals disabled in settings");
         }
 
         // ── 4c. Compute breakout level ──────────────────────────────────────────
         double breakoutLevel = computeBreakoutLevel(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
 
         // ── 4d. Large candle filter ─────────────────────────────────────────────
-        if (isBuy && (close - breakoutLevel) > atr) {
-            return ProcessedSignal.rejected(setup, "Large candle — entry too far from breakout level");
-        }
-        if (!isBuy && (breakoutLevel - close) > atr) {
-            return ProcessedSignal.rejected(setup, "Large candle — entry too far from breakout level");
+        boolean isDayBO = "DAY_HIGH_BO".equals(setup) || "DAY_LOW_BO".equals(setup);
+        if (!isDayBO) {
+            if (isBuy && (close - breakoutLevel) > atr) {
+                return ProcessedSignal.rejected(setup, symbol, "Large candle — entry too far from breakout level");
+            }
+            if (!isBuy && (breakoutLevel - close) > atr) {
+                return ProcessedSignal.rejected(setup, symbol, "Large candle — entry too far from breakout level");
+            }
         }
 
-        // ── 4e. Session high/low rejection ──────────────────────────────────────
-        if (isBuy && sessionHigh > 0 && close == sessionHigh) {
-            return ProcessedSignal.rejected(setup, "Close equals session high — reversal risk");
-        }
-        if (!isBuy && sessionLow > 0 && close == sessionLow) {
-            return ProcessedSignal.rejected(setup, "Close equals session low — reversal risk");
+        // ── 4e. Session high/low rejection (skip for day BO — close already broke session extreme)
+        if (!isDayBO) {
+            if (isBuy && sessionHigh > 0 && close == sessionHigh) {
+                return ProcessedSignal.rejected(setup, symbol, "Close equals session high — reversal risk");
+            }
+            if (!isBuy && sessionLow > 0 && close == sessionLow) {
+                return ProcessedSignal.rejected(setup, symbol, "Close equals session low — reversal risk");
+            }
         }
 
         // ── 4f. Compute target ──────────────────────────────────────────────────
-        double[] targets = computeTargets(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
+        double[] targets = computeTargets(setup, close, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
         double defaultTarget = targets[0];
         double shiftTarget   = targets[1];
         double target = defaultTarget;
 
+        boolean shifted = false;
         if (Math.abs(close - defaultTarget) < atr) {
             target = shiftTarget;
-            eventService.log("[INFO] " + setup + " target shifted: " + fmt(defaultTarget) + " -> " + fmt(shiftTarget)
-                + " (default was < 1 ATR from entry)");
+            shifted = true;
         }
 
-        // ── 4g. Session high/low target capping ─────────────────────────────────
-        if (isBuy && close < sessionHigh && sessionHigh < target) {
-            eventService.log("[INFO] " + setup + " target capped at session high: " + fmt(target) + " -> " + fmt(sessionHigh));
-            target = sessionHigh;
-        }
-        if (!isBuy && target < sessionLow && sessionLow < close) {
-            eventService.log("[INFO] " + setup + " target capped at session low: " + fmt(target) + " -> " + fmt(sessionLow));
-            target = sessionLow;
-        }
-        if (Math.abs(close - target) < atr) {
-            return ProcessedSignal.rejected(setup, "Capped target too close to entry (< 1 ATR)");
-        }
-
-        // ── 4h. Stop loss ───────────────────────────────────────────────────────
+        // ── 4g. Stop loss ───────────────────────────────────────────────────────
         double atrMultiplier = riskSettings.getAtrMultiplier();
         double sl = isBuy ? (close - atr * atrMultiplier) : (close + atr * atrMultiplier);
 
@@ -96,27 +91,31 @@ public class SignalProcessor {
         boolean isExtreme = "BUY_ABOVE_R3".equals(setup) || "SELL_BELOW_S3".equals(setup) || isR4S4;
         if (isExtreme) {
             qty = Math.max(1, qty / 2);
-            eventService.log("[INFO] " + setup + " qty halved (extreme level): " + baseQty + " -> " + qty);
+            eventService.log("[INFO] " + symbol + " " + setup + " qty halved (extreme level): " + baseQty + " -> " + qty);
         }
         double sessionMoveLimit = riskSettings.getSessionMoveLimit() / 100.0; // e.g. 2.0 → 0.02
-        if (!isExtreme && sessionMoveLimit > 0) {
+        if (!isExtreme && !isDayBO && sessionMoveLimit > 0) {
             if (isBuy && sessionLow > 0 && (breakoutLevel - sessionLow) / sessionLow > sessionMoveLimit) {
                 int reduced = Math.max(1, qty / 2);
-                eventService.log("[INFO] " + setup + " qty reduced (" + fmt(riskSettings.getSessionMoveLimit()) + "% session move): " + qty + " -> " + reduced);
+                eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (" + fmt(riskSettings.getSessionMoveLimit()) + "% session move): " + qty + " -> " + reduced);
                 qty = reduced;
             }
             if (!isBuy && sessionHigh > 0 && (sessionHigh - breakoutLevel) / breakoutLevel > sessionMoveLimit) {
                 int reduced = Math.max(1, qty / 2);
-                eventService.log("[INFO] " + setup + " qty reduced (" + fmt(riskSettings.getSessionMoveLimit()) + "% session move): " + qty + " -> " + reduced);
+                eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (" + fmt(riskSettings.getSessionMoveLimit()) + "% session move): " + qty + " -> " + reduced);
                 qty = reduced;
             }
         }
 
         // ── 4j. Log the decision ────────────────────────────────────────────────
-        eventService.log("[SIGNAL] " + setup + " | Entry: " + fmt(close)
+        eventService.log("[SUCCESS] " + signal + " signal received for " + symbol + " | " + setup + " | Entry: " + fmt(close)
             + " | Tgt: " + fmt(target) + "(" + fmt(Math.abs(target - close)) + ")"
             + " | SL: " + fmt(sl) + "(" + fmt(Math.abs(close - sl)) + ")"
-            + " | Qty: " + qty + " | " + probability);
+            + " | Qty: " + qty);
+        if (shifted) {
+            eventService.log("[INFO] " + symbol + " " + setup + " target shifted: " + fmt(defaultTarget) + " -> " + fmt(shiftTarget)
+                + " (default was < 1 ATR from entry)");
+        }
 
         return new ProcessedSignal.Builder()
             .signal(signal)
@@ -148,12 +147,14 @@ public class SignalProcessor {
             case "SELL_BELOW_S3"     -> s3;
             case "SELL_BELOW_S4"     -> s4;
             case "SELL_BELOW_R1_PDH" -> Math.min(r1, ph);
+            case "DAY_HIGH_BO"       -> 0;  // no fixed breakout level; skip large candle filter
+            case "DAY_LOW_BO"        -> 0;
             default -> 0;
         };
     }
 
     // ── Default + shift target per setup ────────────────────────────────────────
-    private double[] computeTargets(String setup,
+    private double[] computeTargets(String setup, double close,
             double r1, double r2, double r3, double r4,
             double s1, double s2, double s3, double s4,
             double ph, double pl, double tc, double bc) {
@@ -170,8 +171,56 @@ public class SignalProcessor {
             case "SELL_BELOW_S3"      -> new double[]{ s4, s4 };
             case "SELL_BELOW_S4"      -> { double s5 = s4 - (s3 - s4); yield new double[]{ s5, s5 }; }
             case "SELL_BELOW_R1_PDH"  -> new double[]{ Math.max(tc, bc), Math.max(s1, pl) };
+            case "DAY_HIGH_BO"       -> nextResistanceTargets(close, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
+            case "DAY_LOW_BO"        -> nextSupportTargets(close, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
             default -> new double[]{ 0, 0 };
         };
+    }
+
+    // ── Find next pivot level above close for DAY_HIGH_BO ─────────────────────
+    private double[] nextResistanceTargets(double close,
+            double r1, double r2, double r3, double r4,
+            double s1, double s2, double s3, double s4,
+            double ph, double pl, double tc, double bc) {
+        double[] all = { r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc };
+        java.util.Arrays.sort(all);
+        // Find the two nearest levels above close
+        double target = 0, shift = 0;
+        for (int i = 0; i < all.length; i++) {
+            if (all[i] > close) {
+                target = all[i];
+                shift = (i + 1 < all.length) ? all[i + 1] : target + (target - all[i - 1]);
+                return new double[]{ target, shift };
+            }
+        }
+        // Above all levels — use synthetic level
+        double top = all[all.length - 1];
+        double gap = all.length >= 2 ? top - all[all.length - 2] : top * 0.01;
+        double synthetic = top + gap;
+        return new double[]{ synthetic, synthetic };
+    }
+
+    // ── Find next pivot level below close for DAY_LOW_BO ────────────────────────
+    private double[] nextSupportTargets(double close,
+            double r1, double r2, double r3, double r4,
+            double s1, double s2, double s3, double s4,
+            double ph, double pl, double tc, double bc) {
+        double[] all = { r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc };
+        java.util.Arrays.sort(all);
+        // Find the two nearest levels below close (scan from high to low)
+        double target = 0, shift = 0;
+        for (int i = all.length - 1; i >= 0; i--) {
+            if (all[i] < close) {
+                target = all[i];
+                shift = (i - 1 >= 0) ? all[i - 1] : target - (all[i + 1] - target);
+                return new double[]{ target, shift };
+            }
+        }
+        // Below all levels — use synthetic level
+        double bottom = all[0];
+        double gap = all.length >= 2 ? all[1] - bottom : bottom * 0.01;
+        double synthetic = bottom - gap;
+        return new double[]{ synthetic, synthetic };
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────

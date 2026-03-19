@@ -2,6 +2,7 @@ package com.rydytrader.autotrader.service;
 
 import com.rydytrader.autotrader.dto.TradeRecord;
 import com.rydytrader.autotrader.store.ModeStore;
+import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
@@ -20,10 +21,12 @@ public class TradeHistoryService {
     private static final String LOG_DIR_SIM  = "../store/simulator/history";
 
     private final ModeStore modeStore;
+    private final RiskSettingsStore riskSettings;
     private final List<TradeRecord> trades = Collections.synchronizedList(new ArrayList<>());
 
-    public TradeHistoryService(ModeStore modeStore) {
+    public TradeHistoryService(ModeStore modeStore, RiskSettingsStore riskSettings) {
         this.modeStore = modeStore;
+        this.riskSettings = riskSettings;
         try {
             Files.createDirectories(Paths.get("../store/live/history"));
             Files.createDirectories(Paths.get("../store/simulator/history"));
@@ -36,24 +39,25 @@ public class TradeHistoryService {
         appendToFile(record);
         System.out.println("[" + modeStore.getMode() + "] Trade: "
             + record.getSymbol() + " | " + record.getSide()
-            + " | Result: " + record.getResult() + " | P&L: " + record.getPnl());
+            + " | P&L: " + record.getPnl() + " | Charges: " + record.getCharges()
+            + " | Net: " + record.getNetPnl() + " | " + record.getResult());
     }
 
     public void record(String symbol, String side, int qty,
                        double entryPrice, double exitPrice, String exitReason) {
-        addRecord(new TradeRecord(symbol, side, qty, entryPrice, exitPrice, exitReason, ""));
+        record(symbol, side, qty, entryPrice, exitPrice, exitReason, "");
     }
 
     public void record(String symbol, String side, int qty,
                        double entryPrice, double exitPrice, String exitReason, String setup) {
-        addRecord(new TradeRecord(symbol, side, qty, entryPrice, exitPrice, exitReason, setup));
+        double brokerage = riskSettings.getBrokeragePerOrder();
+        addRecord(new TradeRecord(symbol, side, qty, entryPrice, exitPrice, exitReason, setup, brokerage));
     }
 
     public List<TradeRecord> getTrades() { return new ArrayList<>(trades); }
 
     public List<TradeRecord> getTradesForRange(LocalDate from, LocalDate to) {
         List<TradeRecord> result = new ArrayList<>();
-        // Iterate each day in the range and load CSV
         LocalDate d = from;
         while (!d.isAfter(to)) {
             String file = logDir() + "/" + FILE_PREFIX + d.format(DATE_FMT) + ".csv";
@@ -65,12 +69,21 @@ public class TradeHistoryService {
                         String[] p = lines.get(i).split(",");
                         if (p.length < 7) continue;
                         try {
-                            String setup = p.length >= 9 ? p[7] : "";
-                            result.add(new TradeRecord(p[0], p[1], p[2],
-                                Integer.parseInt(p[3]),
-                                Double.parseDouble(p[4]),
-                                Double.parseDouble(p[5]),
-                                p[6], setup));
+                            String setup = p.length >= 8 ? p[7] : "";
+                            double charges = p.length >= 10 ? Double.parseDouble(p[9]) : 0;
+                            if (charges > 0) {
+                                result.add(new TradeRecord(p[0], p[1], p[2],
+                                    Integer.parseInt(p[3]),
+                                    Double.parseDouble(p[4]),
+                                    Double.parseDouble(p[5]),
+                                    p[6], setup, charges, true));
+                            } else {
+                                result.add(new TradeRecord(p[0], p[1], p[2],
+                                    Integer.parseInt(p[3]),
+                                    Double.parseDouble(p[4]),
+                                    Double.parseDouble(p[5]),
+                                    p[6], setup));
+                            }
                         } catch (Exception ignored) {}
                     }
                 } catch (IOException e) { e.printStackTrace(); }
@@ -101,10 +114,11 @@ public class TradeHistoryService {
             String filePath = todaysFile();
             boolean isNew = !Files.exists(Paths.get(filePath));
             try (FileWriter fw = new FileWriter(filePath, true)) {
-                if (isNew) fw.write("timestamp,symbol,side,qty,entryPrice,exitPrice,exitReason,setup,pnl\n");
-                fw.write(String.format("%s,%s,%s,%d,%.2f,%.2f,%s,%s,%.2f\n",
+                if (isNew) fw.write("timestamp,symbol,side,qty,entryPrice,exitPrice,exitReason,setup,pnl,charges,netPnl\n");
+                fw.write(String.format("%s,%s,%s,%d,%.2f,%.2f,%s,%s,%.2f,%.2f,%.2f\n",
                     r.getTimestamp(), r.getSymbol(), r.getSide(), r.getQty(),
-                    r.getEntryPrice(), r.getExitPrice(), r.getExitReason(), r.getSetup(), r.getPnl()));
+                    r.getEntryPrice(), r.getExitPrice(), r.getExitReason(), r.getSetup(),
+                    r.getPnl(), r.getCharges(), r.getNetPnl()));
             }
         } catch (IOException e) { e.printStackTrace(); }
     }
@@ -116,14 +130,23 @@ public class TradeHistoryService {
             List<String> lines = Files.readAllLines(path);
             for (int i = lines.size() - 1; i >= 1; i--) {
                 String[] p = lines.get(i).split(",");
-                if (p.length < 8) continue;
+                if (p.length < 7) continue;
                 try {
-                    String setup = p.length >= 9 ? p[7] : "";
-                    trades.add(new TradeRecord(p[0], p[1], p[2],
-                        Integer.parseInt(p[3]),
-                        Double.parseDouble(p[4]),
-                        Double.parseDouble(p[5]),
-                        p[6], setup));
+                    String setup = p.length >= 8 ? p[7] : "";
+                    double charges = p.length >= 10 ? Double.parseDouble(p[9]) : 0;
+                    if (charges > 0) {
+                        trades.add(new TradeRecord(p[0], p[1], p[2],
+                            Integer.parseInt(p[3]),
+                            Double.parseDouble(p[4]),
+                            Double.parseDouble(p[5]),
+                            p[6], setup, charges, true));
+                    } else {
+                        trades.add(new TradeRecord(p[0], p[1], p[2],
+                            Integer.parseInt(p[3]),
+                            Double.parseDouble(p[4]),
+                            Double.parseDouble(p[5]),
+                            p[6], setup));
+                    }
                 } catch (Exception ignored) {}
             }
             System.out.println("Loaded " + trades.size() + " trade(s) from " + todaysFile());

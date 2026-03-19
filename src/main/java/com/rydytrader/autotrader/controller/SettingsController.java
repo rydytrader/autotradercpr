@@ -30,7 +30,7 @@ public class SettingsController {
             @RequestParam(defaultValue = "") String mode) {
 
         String effectiveMode = resolveMode(mode);
-        double todayPnl    = tradeHistoryService.getTrades().stream().mapToDouble(t -> t.getPnl()).sum();
+        double todayPnl    = tradeHistoryService.getTrades().stream().mapToDouble(t -> t.getNetPnl()).sum();
         int    todayTrades = tradeHistoryService.getTrades().size();
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -44,6 +44,9 @@ public class SettingsController {
         result.put("atrMultiplier",    riskSettings.getAtrMultiplier(effectiveMode));
         result.put("enableR4S4",      riskSettings.isEnableR4S4(effectiveMode));
         result.put("sessionMoveLimit", riskSettings.getSessionMoveLimit(effectiveMode));
+        result.put("brokeragePerOrder", riskSettings.getBrokeragePerOrder(effectiveMode));
+        result.put("fixedQuantity",   riskSettings.getFixedQuantity(effectiveMode));
+        result.put("capitalPerTrade", riskSettings.getCapitalPerTrade(effectiveMode));
         result.put("todayPnl",         Math.round(todayPnl * 100.0) / 100.0);
         result.put("todayTrades",      todayTrades);
         return result;
@@ -64,6 +67,9 @@ public class SettingsController {
             if (body.containsKey("atrMultiplier"))    riskSettings.setAtrMultiplier(effectiveMode, Double.parseDouble(body.get("atrMultiplier").toString()));
             if (body.containsKey("enableR4S4"))       riskSettings.setEnableR4S4(effectiveMode, Boolean.parseBoolean(body.get("enableR4S4").toString()));
             if (body.containsKey("sessionMoveLimit")) riskSettings.setSessionMoveLimit(effectiveMode, Double.parseDouble(body.get("sessionMoveLimit").toString()));
+            if (body.containsKey("brokeragePerOrder")) riskSettings.setBrokeragePerOrder(effectiveMode, Double.parseDouble(body.get("brokeragePerOrder").toString()));
+            if (body.containsKey("fixedQuantity"))   riskSettings.setFixedQuantity(effectiveMode, Integer.parseInt(body.get("fixedQuantity").toString()));
+            if (body.containsKey("capitalPerTrade")) riskSettings.setCapitalPerTrade(effectiveMode, Double.parseDouble(body.get("capitalPerTrade").toString()));
             riskSettings.saveFor(effectiveMode);
             return ResponseEntity.ok(Map.of("ok", true, "message", "Settings saved"));
         } catch (Exception e) {

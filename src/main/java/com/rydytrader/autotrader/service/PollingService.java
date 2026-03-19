@@ -95,7 +95,22 @@ public class PollingService {
                 if (modeStore.getMode() == ModeStore.Mode.SIMULATOR) {
                     mockState.restorePosition(symbol, side, qty, avgPrice);
                 }
-                System.out.println("[PollingService] Restored state on startup: " + side + " " + symbol);
+
+                // Restart OCO monitor if SL/Target order IDs were persisted
+                String slOrderId     = saved.getOrDefault("slOrderId", "").toString();
+                String targetOrderId = saved.getOrDefault("targetOrderId", "").toString();
+                if (!slOrderId.isEmpty() && !targetOrderId.isEmpty()) {
+                    double slPrice     = Double.parseDouble(saved.getOrDefault("slPrice", "0").toString());
+                    double targetPrice = Double.parseDouble(saved.getOrDefault("targetPrice", "0").toString());
+                    int exitSide       = "LONG".equals(side) ? -1 : 1;
+                    monitorOCO(slOrderId, targetOrderId, symbol, qty, exitSide,
+                        slPrice, targetPrice, side, setup, avgPrice);
+                    System.out.println("[PollingService] Restored OCO monitor for " + symbol
+                        + " — SL: " + slOrderId + " | Target: " + targetOrderId);
+                } else {
+                    System.out.println("[PollingService] Restored state on startup: " + side + " " + symbol
+                        + " (no OCO monitor — SL/Target IDs not saved)");
+                }
             }
             justRestored = true;
         } catch (Exception e) {
@@ -204,6 +219,8 @@ public class PollingService {
         }
         State s = new State();
         ocoMonitoredSymbols.add(symbol);
+        positionStateStore.saveOcoState(symbol, slId, targetId, slPrice, targetPrice);
+        eventService.log("[INFO] OCO monitor started for " + symbol + " — SL: " + slId + " | Target: " + targetId);
 
         s.future = scheduler.scheduleAtFixedRate(() -> {
             try {
@@ -219,8 +236,21 @@ public class PollingService {
                 JsonNode slNode     = getOrderNode(slId);
                 JsonNode targetNode = getOrderNode(targetId);
 
-                String slStatus     = slNode != null ? slNode.get("status").asText() : null;
-                String targetStatus = targetNode != null ? targetNode.get("status").asText() : null;
+                String slStatus     = slNode != null && slNode.has("status") ? slNode.get("status").asText() : null;
+                String targetStatus = targetNode != null && targetNode.has("status") ? targetNode.get("status").asText() : null;
+
+                // First poll: sync baseline prices from Fyers (tick-rounded) and log diagnostics
+                if (s.ticks == 1) {
+                    if (slNode != null && slNode.has("stopPrice")) {
+                        double liveSl = slNode.get("stopPrice").asDouble();
+                        if (liveSl > 0) s.currentSlPrice = liveSl;
+                    }
+                    if (targetNode != null && targetNode.has("limitPrice")) {
+                        double liveTgt = targetNode.get("limitPrice").asDouble();
+                        if (liveTgt > 0) s.currentTargetPrice = liveTgt;
+                    }
+                    eventService.log("[INFO] " + symbol + " OCO first poll — SL status: " + slStatus + " | Target status: " + targetStatus);
+                }
 
                 boolean slFilled     = "2".equals(slStatus);
                 boolean targetFilled = "2".equals(targetStatus);
@@ -232,26 +262,30 @@ public class PollingService {
                 // ── Detect manual SL/Target price modifications ──
                 if (slNode != null && "6".equals(slStatus) && slNode.has("stopPrice")) {
                     double liveSlPrice = slNode.get("stopPrice").asDouble();
-                    if (liveSlPrice > 0 && liveSlPrice != s.currentSlPrice) {
+                    if (liveSlPrice > 0 && Math.abs(liveSlPrice - s.currentSlPrice) > 0.10) {
                         eventService.log("[SUCCESS] SL modified for " + symbol + ": " + s.currentSlPrice + " → " + liveSlPrice);
                         s.currentSlPrice = liveSlPrice;
+                        positionStateStore.saveOcoState(symbol, slId, targetId, s.currentSlPrice, s.currentTargetPrice);
                     }
                 }
                 if (targetNode != null && "6".equals(targetStatus) && targetNode.has("limitPrice")) {
                     double liveTargetPrice = targetNode.get("limitPrice").asDouble();
-                    if (liveTargetPrice > 0 && liveTargetPrice != s.currentTargetPrice) {
+                    if (liveTargetPrice > 0 && Math.abs(liveTargetPrice - s.currentTargetPrice) > 0.10) {
                         eventService.log("[SUCCESS] Target modified for " + symbol + ": " + s.currentTargetPrice + " → " + liveTargetPrice);
                         s.currentTargetPrice = liveTargetPrice;
+                        positionStateStore.saveOcoState(symbol, slId, targetId, s.currentSlPrice, s.currentTargetPrice);
                     }
                 }
 
                 // SL hit
                 if (slFilled && !s.handled) {
                     s.handled = true;
-                    ocoMonitoredSymbols.remove(symbol);
                     ocoHandledSymbols.add(symbol);
+                    ocoMonitoredSymbols.remove(symbol);
                     eventService.log("[SUCCESS] SL triggered for " + symbol + " at " + s.currentSlPrice + " — cancelling target");
-                    orderService.cancelOrder(targetId);
+                    if (!orderService.cancelOrder(targetId)) {
+                        eventService.log("[WARNING] Failed to cancel target order " + targetId + " for " + symbol);
+                    }
                     double exitPrice  = orderService.getFilledPriceFromTradebook(symbol, exitSide);
                     double entryPrice = entryFillPrice > 0 ? entryFillPrice
                                       : orderService.getFilledPriceFromTradebook(symbol, exitSide == 1 ? -1 : 1);
@@ -264,10 +298,12 @@ public class PollingService {
                 // Target hit
                 else if (targetFilled && !s.handled) {
                     s.handled = true;
-                    ocoMonitoredSymbols.remove(symbol);
                     ocoHandledSymbols.add(symbol);
+                    ocoMonitoredSymbols.remove(symbol);
                     eventService.log("[SUCCESS] Target hit for " + symbol + " at " + s.currentTargetPrice + " — cancelling SL");
-                    orderService.cancelOrder(slId);
+                    if (!orderService.cancelOrder(slId)) {
+                        eventService.log("[WARNING] Failed to cancel SL order " + slId + " for " + symbol);
+                    }
                     double exitPrice  = orderService.getFilledPriceFromTradebook(symbol, exitSide);
                     double entryPrice = entryFillPrice > 0 ? entryFillPrice
                                       : orderService.getFilledPriceFromTradebook(symbol, exitSide == 1 ? -1 : 1);
@@ -321,7 +357,10 @@ public class PollingService {
                     if (s.future != null) s.future.cancel(false);
                 }
 
-            } catch (Exception e) { e.printStackTrace(); }
+            } catch (Exception e) {
+                eventService.log("[ERROR] OCO monitor exception for " + symbol + ": " + e.getMessage());
+                e.printStackTrace();
+            }
         }, 5, 5, TimeUnit.SECONDS);
     }
 
@@ -335,23 +374,48 @@ public class PollingService {
         PositionManager.setPosition(symbol, "NONE");
     }
 
-    // ── ORDER STATUS ──────────────────────────────────────────────────────────
-    private String getOrderStatus(String orderId) {
-        JsonNode node = getOrderNode(orderId);
-        return node != null ? node.get("status").asText() : null;
-    }
+    // ── ORDER STATUS (cached order book) ────────────────────────────────────
+    private volatile JsonNode cachedOrderBook = null;
+    private volatile long     orderBookFetchTime = 0;
+    private static final long ORDER_BOOK_CACHE_MS = 4000; // 4 seconds
 
-    /** Returns the full order node from orderBook for the given orderId, or null. */
-    private JsonNode getOrderNode(String orderId) {
+    /** Fetches the full order book once, caches for ORDER_BOOK_CACHE_MS. */
+    private JsonNode getOrderBook() {
+        long now = System.currentTimeMillis();
+        if (cachedOrderBook != null && (now - orderBookFetchTime) < ORDER_BOOK_CACHE_MS) {
+            return cachedOrderBook;
+        }
         try {
             String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
-            JsonNode node = fyersClient.getOrder(orderId, auth);
-            for (JsonNode order : node.get("orderBook")) {
-                if (order.get("id").asText().equals(orderId)) {
-                    return order;
-                }
+            JsonNode node = fyersClient.getOrders(auth);
+            JsonNode orderBook = node != null ? node.get("orderBook") : null;
+            if (orderBook != null && orderBook.isArray()) {
+                cachedOrderBook = orderBook;
+                orderBookFetchTime = now;
+                return orderBook;
             }
-        } catch (Exception e) { e.printStackTrace(); }
+            eventService.log("[WARNING] getOrders response missing orderBook: "
+                + (node != null ? node.toString().substring(0, Math.min(200, node.toString().length())) : "null"));
+        } catch (Exception e) {
+            eventService.log("[ERROR] Failed to fetch order book: " + e.getMessage());
+        }
+        return cachedOrderBook; // return stale cache on error (better than null)
+    }
+
+    private String getOrderStatus(String orderId) {
+        JsonNode node = getOrderNode(orderId);
+        return node != null && node.has("status") ? node.get("status").asText() : null;
+    }
+
+    /** Returns the full order node from cached orderBook for the given orderId, or null. */
+    private JsonNode getOrderNode(String orderId) {
+        JsonNode orderBook = getOrderBook();
+        if (orderBook == null) return null;
+        for (JsonNode order : orderBook) {
+            if (order.has("id") && order.get("id").asText().equals(orderId)) {
+                return order;
+            }
+        }
         return null;
     }
 
@@ -508,6 +572,10 @@ public class PollingService {
                         }
 
                         String setup = setupBySymbol.getOrDefault(symbol, "");
+                        if (setup.isEmpty() && saved != null && saved.containsKey("setup")) {
+                            setup = saved.get("setup").toString();
+                            setupBySymbol.put(symbol, setup);
+                        }
                         int absQty = Math.abs(qty);
                         // Compute unrealized P&L from our resolved avg, not Fyers' day-level pl
                         // which includes realized P&L from earlier closed trades on the same symbol

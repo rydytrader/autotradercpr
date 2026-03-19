@@ -59,6 +59,11 @@ public class MockFyersClient implements FyersClient {
     }
 
     @Override
+    public JsonNode getOrders(String authHeader) throws Exception {
+        return getOrder(null, authHeader);
+    }
+
+    @Override
     public JsonNode getOrder(String orderId, String authHeader) throws Exception {
         var root = mapper.createObjectNode();
         var arr  = mapper.createArrayNode();

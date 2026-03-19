@@ -552,7 +552,7 @@
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>Time</th>
+                        <th class="text-center">#</th>
                         <th>Symbol</th>
                         <th class="text-center">Side</th>
                         <th class="text-right">Qty</th>
@@ -562,6 +562,8 @@
                         <th class="text-center">Reason</th>
                         <th class="text-center">Result</th>
                         <th class="text-right">P&amp;L</th>
+                        <th class="text-right">Charges</th>
+                        <th class="text-right">Net P&amp;L</th>
                     </tr>
                 </thead>
                 <tbody id="tradesTableBody">
@@ -687,7 +689,7 @@
 
                 const wins   = trades.filter(t => t.result === 'PROFIT').length;
                 const losses = trades.filter(t => t.result === 'LOSS').length;
-                const netPnl = trades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+                const netPnl = trades.reduce((sum, t) => sum + (t.netPnl != null ? t.netPnl : t.pnl || 0), 0);
 
                 document.getElementById('statTotal').textContent  = trades.length;
                 document.getElementById('statWins').textContent   = wins;
@@ -699,15 +701,19 @@
 
                 const tbody = document.getElementById('tradesTableBody');
                 if (trades.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="10"><div class="empty-state"><div class="empty-icon">◎</div>No completed trades today</div></td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="12"><div class="empty-state"><div class="empty-icon">◎</div>No completed trades today</div></td></tr>`;
                     return;
                 }
 
-                tbody.innerHTML = trades.map(t => {
+                tbody.innerHTML = trades.map((t, idx) => {
+                    const sno = trades.length - idx;
+                    const netP = t.netPnl != null ? t.netPnl : t.pnl;
                     const pnlClass  = t.pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+                    const netClass  = netP >= 0 ? 'pnl-positive' : 'pnl-negative';
                     const exitDisplay = t.exitPrice > 0 ? t.exitPrice.toFixed(2) : '—';
+                    const charges = t.charges != null ? t.charges : 0;
                     return `<tr>
-                        <td style="color:var(--text-muted);font-size:0.75rem">${t.timestamp}</td>
+                        <td class="text-center" style="color:var(--text-muted);font-size:0.8rem">${sno}</td>
                         <td><span class="symbol-cell">${t.symbol}</span></td>
                         <td class="text-center">${renderBadge('side', t.side)}</td>
                         <td class="text-right">${t.qty}</td>
@@ -717,6 +723,8 @@
                         <td class="text-center">${renderBadge('reason', t.exitReason)}</td>
                         <td class="text-center">${renderBadge('result', t.result)}</td>
                         <td class="text-right"><span class="${pnlClass}">${fmtPnl(t.pnl)}</span></td>
+                        <td class="text-right" style="color:var(--text-muted);font-size:0.8rem">₹${inr(charges)}</td>
+                        <td class="text-right"><span class="${netClass}">${fmtPnl(netP)}</span></td>
                     </tr>`;
                 }).join('');
             })

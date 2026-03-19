@@ -494,6 +494,21 @@
                     <div class="disabled-note">Set to 0 to disable</div>
                 </div>
                 <div class="form-group">
+                    <label class="form-label">Brokerage per Order</label>
+                    <input type="number" id="brokeragePerOrder" class="form-control" min="0" max="100" step="1" placeholder="20">
+                    <div class="form-hint">Flat brokerage per order in ₹ (entry + exit)</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Fixed Quantity</label>
+                    <input type="number" id="fixedQuantity" class="form-control" min="-1" step="1" placeholder="2">
+                    <div class="form-hint">Fixed qty for all trades. Set -1 for capital-based. Must be even (auto-rounded)</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Capital Per Trade</label>
+                    <input type="number" id="capitalPerTrade" class="form-control" min="0" step="1000" placeholder="0">
+                    <div class="form-hint">Used when Fixed Qty = -1. Qty = (capital x leverage) / price, rounded to even</div>
+                </div>
+                <div class="form-group">
                     <label class="form-label">Enable R4/S4 Signals</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableR4S4" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
@@ -615,6 +630,9 @@
             document.getElementById('maxTradesPerDay').value   = d.maxTradesPerDay   || 0;
             document.getElementById('atrMultiplier').value     = d.atrMultiplier     || 1.5;
             document.getElementById('sessionMoveLimit').value   = d.sessionMoveLimit  != null ? d.sessionMoveLimit : 2.0;
+            document.getElementById('brokeragePerOrder').value  = d.brokeragePerOrder != null ? d.brokeragePerOrder : 20;
+            document.getElementById('fixedQuantity').value     = d.fixedQuantity    != null ? d.fixedQuantity : 2;
+            document.getElementById('capitalPerTrade').value   = d.capitalPerTrade  != null ? d.capitalPerTrade : 0;
             document.getElementById('enableR4S4').checked      = d.enableR4S4        || false;
 
             const pnl    = d.todayPnl    || 0;
@@ -680,6 +698,9 @@
                 maxTradesPerDay:   parseInt(document.getElementById('maxTradesPerDay').value) || 0,
                 atrMultiplier:     parseFloat(document.getElementById('atrMultiplier').value) || 1.5,
                 sessionMoveLimit:  parseFloat(document.getElementById('sessionMoveLimit').value) || 0,
+                brokeragePerOrder: parseFloat(document.getElementById('brokeragePerOrder').value) || 20,
+                fixedQuantity:    parseInt(document.getElementById('fixedQuantity').value),
+                capitalPerTrade:  parseFloat(document.getElementById('capitalPerTrade').value) || 0,
                 enableR4S4:        document.getElementById('enableR4S4').checked
             };
             const r = await fetch('/api/settings/risk', {

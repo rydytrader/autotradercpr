@@ -24,8 +24,8 @@ public class ProcessedSignal {
         this.rejectionReason = b.rejectionReason;
     }
 
-    public static ProcessedSignal rejected(String setup, String reason) {
-        return new Builder().setup(setup).rejected(true).rejectionReason(reason).build();
+    public static ProcessedSignal rejected(String setup, String symbol, String reason) {
+        return new Builder().setup(setup).symbol(symbol).rejected(true).rejectionReason(reason).build();
     }
 
     public String  getSignal()          { return signal; }

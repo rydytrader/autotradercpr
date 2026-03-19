@@ -30,6 +30,7 @@ public class FyersClientRouter implements FyersClient {
     @Override public JsonNode placeOrder(String json, String auth) throws Exception    { return client().placeOrder(json, auth); }
     @Override public JsonNode cancelOrder(String id, String auth) throws Exception     { return client().cancelOrder(id, auth); }
     @Override public JsonNode getOrder(String id, String auth) throws Exception        { return client().getOrder(id, auth); }
+    @Override public JsonNode getOrders(String auth) throws Exception                 { return client().getOrders(auth); }
     @Override public JsonNode getPositions(String auth) throws Exception               { return client().getPositions(auth); }
     @Override public JsonNode getTradebook(String auth) throws Exception               { return client().getTradebook(auth); }
     @Override public JsonNode validateAuthCode(String body) throws Exception           { return client().validateAuthCode(body); }

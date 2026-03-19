@@ -17,6 +17,9 @@ public interface FyersClient {
     /** GET /api/v3/orders?id=X — get single order status */
     JsonNode getOrder(String orderId, String authHeader) throws Exception;
 
+    /** GET /api/v3/orders — get all orders (full order book) */
+    JsonNode getOrders(String authHeader) throws Exception;
+
     /** GET /api/v3/positions — get open positions */
     JsonNode getPositions(String authHeader) throws Exception;
 

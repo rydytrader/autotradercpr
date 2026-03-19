@@ -92,7 +92,7 @@ public class TradingController {
 
         // 2. Max daily loss
         if (riskSettings.getMaxDailyLoss() > 0) {
-            double todayPnl = tradeHistoryService.getTrades().stream().mapToDouble(t -> t.getPnl()).sum();
+            double todayPnl = tradeHistoryService.getTrades().stream().mapToDouble(t -> t.getNetPnl()).sum();
             if (todayPnl <= -Math.abs(riskSettings.getMaxDailyLoss())) {
                 String msg = "Signal ignored — daily loss limit reached (P&L: ₹" + Math.round(todayPnl) + ")";
                 eventService.log("[WARNING] Signal ignored for " + symbolForLog + " — daily loss limit reached (P&L: ₹" + Math.round(todayPnl) + ")");
@@ -114,7 +114,7 @@ public class TradingController {
 
         ProcessedSignal ps = signalProcessor.process(payload);
         if (ps.isRejected()) {
-            eventService.log("[FILTERED] " + ps.getSetup() + " — " + ps.getRejectionReason());
+            eventService.log("[WARNING] " + ps.getSymbol() + " " + ps.getSetup() + " filtered — " + ps.getRejectionReason());
             return ResponseEntity.ok("Signal filtered: " + ps.getRejectionReason());
         }
         String signal   = ps.getSignal();
@@ -129,7 +129,6 @@ public class TradingController {
         if (signal.equals("BUY") && !PositionManager.getPosition(symbol).equals("LONG")) {
 
             OrderDTO order = orderService.placeOrder(symbol, quantity, 1, stoploss);
-            eventService.log("[SUCCESS] BUY signal received for " + symbol + " | Setup: " + setup + " | SL: " + stoploss + " | Target: " + target);
 
             // Monitor entry fill, then place SL + Target OCO
             // exitSide = -1 (SELL to exit a LONG)
@@ -138,7 +137,6 @@ public class TradingController {
         } else if (signal.equals("SELL") && !PositionManager.getPosition(symbol).equals("SHORT")) {
 
             OrderDTO order = orderService.placeOrder(symbol, quantity, -1, stoploss);
-            eventService.log("[SUCCESS] SELL signal received for " + symbol + " | Setup: " + setup + " | SL: " + stoploss + " | Target: " + target);
 
             // exitSide = 1 (BUY to exit a SHORT)
             pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "SHORT", 1, stoploss, target, setup);
@@ -237,6 +235,8 @@ public class TradingController {
             m.put("exitReason", t.getExitReason());
             m.put("setup",      t.getSetup());
             m.put("pnl",        t.getPnl());
+            m.put("charges",    t.getCharges());
+            m.put("netPnl",     t.getNetPnl());
             m.put("result",     t.getResult());
             return m;
         }).collect(java.util.stream.Collectors.toList());
@@ -256,7 +256,9 @@ public class TradingController {
         int total  = trades.size();
         int wins   = (int) trades.stream().filter(t -> "PROFIT".equals(t.getResult())).count();
         int losses = (int) trades.stream().filter(t -> "LOSS".equals(t.getResult())).count();
-        double netPnl  = trades.stream().mapToDouble(t -> t.getPnl()).sum();
+        double netPnl  = trades.stream().mapToDouble(t -> t.getNetPnl()).sum();
+        double totalCharges = trades.stream().mapToDouble(t -> t.getCharges()).sum();
+        double grossPnl = trades.stream().mapToDouble(t -> t.getPnl()).sum();
         double winRate = total == 0 ? 0 : Math.round(wins * 1000.0 / total) / 10.0;
 
         double grossWin  = trades.stream().filter(t -> t.getPnl() > 0).mapToDouble(t -> t.getPnl()).sum();
@@ -281,7 +283,7 @@ public class TradingController {
         java.util.List<Map<String, Object>> eq = new java.util.ArrayList<>();
         double cum = 0;
         for (var t : trades) {
-            cum += t.getPnl();
+            cum += t.getNetPnl();
             eq.add(Map.of("timestamp", t.getTimestamp(), "cumPnl", Math.round(cum * 100.0) / 100.0));
         }
 
@@ -298,7 +300,7 @@ public class TradingController {
         while (!dd.isAfter(dTo)) {
             java.util.List<com.rydytrader.autotrader.dto.TradeRecord> dt =
                 tradeHistoryService.getTradesForRange(dd, dd);
-            double dpnl = dt.stream().mapToDouble(t -> t.getPnl()).sum();
+            double dpnl = dt.stream().mapToDouble(t -> t.getNetPnl()).sum();
             if (!dt.isEmpty() || !dd.isAfter(java.time.LocalDate.now())) {
                 daily.add(Map.of("date", dd.toString(), "pnl", Math.round(dpnl * 100.0) / 100.0));
             }
@@ -338,6 +340,8 @@ public class TradingController {
         result.put("totalTrades",    total);
         result.put("wins",           wins);
         result.put("losses",         losses);
+        result.put("grossPnl",       Math.round(grossPnl*100.0)/100.0);
+        result.put("totalCharges",   Math.round(totalCharges*100.0)/100.0);
         result.put("netPnl",         Math.round(netPnl*100.0)/100.0);
         result.put("winRate",        winRate);
         result.put("profitFactor",   pf);
@@ -358,7 +362,8 @@ public class TradingController {
         // Setup breakdown
         java.util.List<String> allSetups = java.util.Arrays.asList(
             "BUY_ABOVE_CPR","BUY_ABOVE_R1_PDH","BUY_ABOVE_R2","BUY_ABOVE_R3","BUY_ABOVE_R4","BUY_ABOVE_S1_PDL",
-            "SELL_BELOW_CPR","SELL_BELOW_S1_PDL","SELL_BELOW_S2","SELL_BELOW_S3","SELL_BELOW_S4","SELL_BELOW_R1_PDH"
+            "SELL_BELOW_CPR","SELL_BELOW_S1_PDL","SELL_BELOW_S2","SELL_BELOW_S3","SELL_BELOW_S4","SELL_BELOW_R1_PDH",
+            "DAY_HIGH_BO","DAY_LOW_BO"
         );
         Map<String, Object> setupMap = new java.util.LinkedHashMap<>();
         for (String setup : allSetups) {
@@ -404,7 +409,7 @@ public class TradingController {
         double peak = 0, maxDD = 0, cumDD = 0;
         java.util.List<Map<String, Object>> ddCurve = new java.util.ArrayList<>();
         for (var t : trades) {
-            cumDD += t.getPnl();
+            cumDD += t.getNetPnl();
             if (cumDD > peak) peak = cumDD;
             double drawdown = peak - cumDD;
             if (drawdown > maxDD) maxDD = drawdown;
