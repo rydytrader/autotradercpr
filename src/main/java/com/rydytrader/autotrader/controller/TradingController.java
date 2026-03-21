@@ -90,24 +90,33 @@ public class TradingController {
             return ResponseEntity.ok(msg);
         }
 
-        // 2. Max daily loss
-        if (riskSettings.getMaxDailyLoss() > 0) {
-            double todayPnl = tradeHistoryService.getTrades().stream().mapToDouble(t -> t.getNetPnl()).sum();
-            if (todayPnl <= -Math.abs(riskSettings.getMaxDailyLoss())) {
-                String msg = "Signal ignored — daily loss limit reached (P&L: ₹" + Math.round(todayPnl) + ")";
-                eventService.log("[WARNING] Signal ignored for " + symbolForLog + " — daily loss limit reached (P&L: ₹" + Math.round(todayPnl) + ")");
-                return ResponseEntity.ok(msg);
+        // 2. Risk exposure check (only in risk-based mode, not fixed quantity)
+        int fixedQty = riskSettings.getFixedQuantity();
+        double riskPerTrade = riskSettings.getRiskPerTrade();
+        double maxLoss = riskSettings.getMaxDailyLoss(); // auto-calculated: totalCapital × maxRiskPerDayPct / 100
+        if (fixedQty == -1 && riskPerTrade > 0 && maxLoss > 0) {
+            // Open position risk
+            double openRisk = 0;
+            for (String sym : PositionManager.getAllSymbols()) {
+                Map<String, Object> state = positionStateStore.load(sym);
+                if (state != null && state.containsKey("slPrice") && state.containsKey("avgPrice")) {
+                    double sl = Double.parseDouble(state.get("slPrice").toString());
+                    double avg = Double.parseDouble(state.get("avgPrice").toString());
+                    int qty = Integer.parseInt(state.get("qty").toString());
+                    openRisk += qty * Math.abs(avg - sl);
+                }
             }
-        }
-
-        // 3. Max trades per day
-        if (riskSettings.getMaxTradesPerDay() > 0) {
-            int todayTrades = tradeHistoryService.getTrades().size();
-            if (todayTrades >= riskSettings.getMaxTradesPerDay()) {
-                String msg = "Signal ignored — max trades per day reached ("
-                           + todayTrades + "/" + riskSettings.getMaxTradesPerDay() + ")";
-                eventService.log("[WARNING] Signal ignored for " + symbolForLog + " — max trades per day reached ("
-                    + todayTrades + "/" + riskSettings.getMaxTradesPerDay() + ")");
+            // Consumed risk: sum of absolute losses from today's losing trades
+            double consumedRisk = tradeHistoryService.getTrades().stream()
+                .filter(t -> t.getNetPnl() < 0)
+                .mapToDouble(t -> Math.abs(t.getNetPnl()))
+                .sum();
+            double totalRisk = openRisk + consumedRisk;
+            if (totalRisk + riskPerTrade > maxLoss) {
+                String msg = "Signal ignored — risk exposure limit reached (open: ₹" + (int)openRisk
+                    + " + losses: ₹" + (int)consumedRisk
+                    + " + new: ₹" + (int)riskPerTrade + " > limit: ₹" + (int)maxLoss + ")";
+                eventService.log("[WARNING] " + symbolForLog + " — " + msg);
                 return ResponseEntity.ok(msg);
             }
         }
@@ -195,10 +204,27 @@ public class TradingController {
             return m;
         }).collect(java.util.stream.Collectors.toList());
         double realizedPnl   = tradeHistoryService.getTrades().stream()
-            .mapToDouble(t -> t.getPnl()).sum();
+            .mapToDouble(t -> t.getNetPnl()).sum();
         double unrealizedPnl = pollingService.fetchPositions().stream()
             .mapToDouble(p -> p.getPnl()).sum();
         double netDayPnl     = realizedPnl + unrealizedPnl;
+
+        // Risk budget info
+        double openRisk = 0;
+        for (String sym : PositionManager.getAllSymbols()) {
+            Map<String, Object> state = positionStateStore.load(sym);
+            if (state != null && state.containsKey("slPrice") && state.containsKey("avgPrice")) {
+                double sl = Double.parseDouble(state.get("slPrice").toString());
+                double avg = Double.parseDouble(state.get("avgPrice").toString());
+                int qty = Integer.parseInt(state.get("qty").toString());
+                openRisk += qty * Math.abs(avg - sl);
+            }
+        }
+        double consumedRisk = tradeHistoryService.getTrades().stream()
+            .filter(t -> t.getNetPnl() < 0)
+            .mapToDouble(t -> Math.abs(t.getNetPnl()))
+            .sum();
+        double maxDailyLoss = riskSettings.getMaxDailyLoss();
 
         Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("positions",    positions);
@@ -206,6 +232,9 @@ public class TradingController {
         result.put("realizedPnl",  Math.round(realizedPnl   * 100.0) / 100.0);
         result.put("unrealizedPnl",Math.round(unrealizedPnl * 100.0) / 100.0);
         result.put("netDayPnl",    Math.round(netDayPnl     * 100.0) / 100.0);
+        result.put("openRisk",     Math.round(openRisk      * 100.0) / 100.0);
+        result.put("consumedRisk", Math.round(consumedRisk  * 100.0) / 100.0);
+        result.put("maxDailyLoss", Math.round(maxDailyLoss  * 100.0) / 100.0);
         return result;
     }
 

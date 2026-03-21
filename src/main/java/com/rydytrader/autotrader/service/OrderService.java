@@ -37,6 +37,10 @@ public class OrderService {
     // ── STOP LOSS ORDER (Stop-Market) ─────────────────────────────────────────
     public OrderDTO placeStopLoss(String symbol, int qty, int side, double slPrice) {
         try {
+            if (Double.isNaN(slPrice) || slPrice <= 0) {
+                System.err.println("[OrderService] Invalid SL price " + slPrice + " for " + symbol + " — skipping order");
+                return null;
+            }
             double rounded = roundToTick(slPrice, symbol);
             String json = buildOrderJson(symbol, qty, side, 3, 0, rounded, "AutoSL");
             System.out.println("SL Order: " + json);
@@ -47,6 +51,10 @@ public class OrderService {
     // ── TARGET ORDER (Limit) ──────────────────────────────────────────────────
     public OrderDTO placeTarget(String symbol, int qty, int side, double targetPrice) {
         try {
+            if (Double.isNaN(targetPrice) || targetPrice <= 0) {
+                System.err.println("[OrderService] Invalid target price " + targetPrice + " for " + symbol + " — skipping order");
+                return null;
+            }
             double rounded = roundToTick(targetPrice, symbol);
             String json = buildOrderJson(symbol, qty, side, 1, rounded, 0, "AutoTarget");
             System.out.println("Target Order: " + json);
@@ -64,18 +72,42 @@ public class OrderService {
     }
 
     // ── CANCEL ORDER ──────────────────────────────────────────────────────────
-    // Cancels all pending orders by fetching current order book and cancelling PENDING ones
+    // Cancels all pending/transit orders by fetching current order book
+    // Fyers statuses: 1=Cancelled, 2=Filled, 4=Transit, 5=Rejected, 6=Pending
     public void cancelAllPendingOrders(String symbol) {
         try {
             String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
             JsonNode node = fyersClient.getOrder(null, auth); // null = fetch all orders
             if (node != null && node.has("orderBook")) {
+                int cancelled = 0;
                 for (JsonNode o : node.get("orderBook")) {
                     int status = o.has("status") ? o.get("status").asInt() : 0;
-                    if (status == 6 && o.get("symbol").asText().equals(symbol)) { // PENDING for this symbol
-                        cancelOrder(o.get("id").asText());
+                    String orderSymbol = o.has("symbol") ? o.get("symbol").asText() : "";
+                    if (orderSymbol.equals(symbol) && (status == 6 || status == 4)) {
+                        String orderId = o.get("id").asText();
+                        int orderType = o.has("type") ? o.get("type").asInt() : 0;
+                        System.out.println("[CancelAll] Cancelling order " + orderId
+                            + " | symbol=" + orderSymbol + " | status=" + status + " | type=" + orderType);
+                        cancelOrder(orderId);
+                        cancelled++;
                     }
                 }
+                if (cancelled == 0) {
+                    System.out.println("[CancelAll] No pending/transit orders found for " + symbol
+                        + " — dumping order book for symbol:");
+                    for (JsonNode o : node.get("orderBook")) {
+                        String orderSymbol = o.has("symbol") ? o.get("symbol").asText() : "";
+                        if (orderSymbol.equals(symbol)) {
+                            int status = o.has("status") ? o.get("status").asInt() : 0;
+                            System.out.println("  order=" + o.get("id").asText() + " status=" + status
+                                + " type=" + (o.has("type") ? o.get("type").asInt() : "?"));
+                        }
+                    }
+                } else {
+                    System.out.println("[CancelAll] Cancelled " + cancelled + " order(s) for " + symbol);
+                }
+            } else {
+                System.out.println("[CancelAll] No orderBook in response for " + symbol);
             }
         } catch (Exception e) { e.printStackTrace(); }
     }
@@ -204,8 +236,12 @@ public class OrderService {
     }
 
     public double roundToTick(double price, String symbol) {
-        double tick   = symbolMaster.getTickSize(symbol);
-        long   factor = Math.round(1.0 / tick);  // 0.05→20, 0.10→10, 0.25→4, 0.50→2
-        return Math.round(price * factor) / (double) factor;
+        double tick = symbolMaster.getTickSize(symbol);
+        if (Double.isNaN(tick) || tick <= 0) {
+            System.err.println("[OrderService] Invalid tick size " + tick + " for " + symbol + " — using default 0.05");
+            tick = 0.05;
+        }
+        // Round price to nearest tick: e.g. tick=0.05 → nearest 0.05, tick=5.0 → nearest 5
+        return Math.round(price / tick) * tick;
     }
 }

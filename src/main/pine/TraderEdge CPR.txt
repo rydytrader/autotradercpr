@@ -150,42 +150,6 @@ ws1 = 2 * wpp - wh
 weeklyVeryBull = close > wr1 and close > wh
 weeklyVeryBear = close < ws1 and close < wl
 
-// Weekly reversal detection (only on confirmed candle close)
-var bool weeklyBullRev = false
-var bool weeklyBearRev = false
-
-if barstate.isconfirmed
-    // Reset on new week
-    if ta.change(time("W"))
-        weeklyBullRev := false
-        weeklyBearRev := false
-
-    // Reset if no longer in bullish/bearish zone
-    if not weeklyVeryBull and not weeklyBull
-        weeklyBullRev := false
-    if not weeklyVeryBear and not weeklyBear
-        weeklyBearRev := false
-
-    // Trigger: candle entered R1-WH band but closed back below it
-    weeklyBullRevTrigger = (high > math.min(wr1, wh) or open > math.min(wr1, wh)) and (high < math.max(wr1, wh) or open < math.max(wr1, wh)) and close < math.min(wr1, wh) and close < open
-    if weeklyBullRevTrigger
-        weeklyBullRev := true
-
-    // Reset: close back inside the band
-    if close > math.min(wr1, wh) and close < math.max(wr1, wh)
-        weeklyBullRev := false
-
-    // Trigger: candle entered S1-WL band but closed back above it
-    weeklyBearRevTrigger = (low < math.max(ws1, wl) or open < math.max(ws1, wl)) and (low > math.min(ws1, wl) or open > math.min(ws1, wl)) and close > math.max(ws1, wl) and close > open
-    if weeklyBearRevTrigger
-        weeklyBearRev := true
-
-    // Reset: close back inside the band
-    if close < math.max(ws1, wl) and close > math.min(ws1, wl)
-        weeklyBearRev := false
-
-weeklyReversal = weeklyBullRev ? "Bull Rev" : weeklyBearRev ? "Bear Rev" : "No"
-
 wr2 = wpp + (wh - wl)
 ws2 = wpp - (wh - wl)
 
@@ -219,42 +183,6 @@ monthlyBear = close < mBot
 
 monthlyVeryBull = close > mr1 and close > mh
 monthlyVeryBear = close < ms1 and close < ml
-
-// Monthly reversal detection (only on confirmed candle close)
-var bool monthlyBullRev = false
-var bool monthlyBearRev = false
-
-if barstate.isconfirmed
-    // Reset on new month
-    if ta.change(time("M"))
-        monthlyBullRev := false
-        monthlyBearRev := false
-
-    // Reset if no longer in bullish/bearish zone
-    if not monthlyVeryBull and not monthlyBull
-        monthlyBullRev := false
-    if not monthlyVeryBear and not monthlyBear
-        monthlyBearRev := false
-
-    // Trigger: candle entered R1-MH band but closed back below it
-    monthlyBullRevTrigger = (high > math.min(mr1, mh) or open > math.min(mr1, mh)) and (high < math.max(mr1, mh) or open < math.max(mr1, mh)) and close < math.min(mr1, mh) and close < open
-    if monthlyBullRevTrigger
-        monthlyBullRev := true
-
-    // Reset: close back inside the band
-    if close > math.min(mr1, mh) and close < math.max(mr1, mh)
-        monthlyBullRev := false
-
-    // Trigger: candle entered S1-ML band but closed back above it
-    monthlyBearRevTrigger = (low < math.max(ms1, ml) or open < math.max(ms1, ml)) and (low > math.min(ms1, ml) or open > math.min(ms1, ml)) and close > math.max(ms1, ml) and close > open
-    if monthlyBearRevTrigger
-        monthlyBearRev := true
-
-    // Reset: close back inside the band
-    if close < math.max(ms1, ml) and close > math.min(ms1, ml)
-        monthlyBearRev := false
-
-monthlyReversal = monthlyBullRev ? "Bull Rev" : monthlyBearRev ? "Bear Rev" : "No"
 
 // ─── TOMORROW CPR CALCULATION ─────────────────────────────────
 tpp = (ch + cl + cc) / 3
@@ -361,11 +289,10 @@ if barstate.islast
     if not na(t)
         table.delete(t)
     numRows = isDailyPlus ? 4 : 5
-    t := table.new(position.top_right, 3, numRows, frame_width=2, border_width=4, border_color=color.white)
+    t := table.new(position.top_right, 2, numRows, frame_width=2, border_width=4, border_color=color.white)
 
     table.cell(t, 0, 0, "")
     table.cell(t, 1, 0, "")
-    table.cell(t, 2, 0, "")
 
     // Convert TradingView symbol to Fyers broker format
     // Stocks: NSE:RELIANCE → NSE:RELIANCE-EQ
@@ -381,33 +308,26 @@ if barstate.islast
         _brokerSym := syminfo.prefix + ":" + syminfo.root + _ys + _mn + "FUT"
     table.cell(t, 0, 1, _brokerSym, text_halign=text.align_center, bgcolor=color.new(color.green, 0), text_color=color.white, text_size=size.normal)
     table.cell(t, 1, 1, "", bgcolor=color.new(color.gray, 0), text_color=color.white, text_size=size.normal)
-    table.cell(t, 2, 1, "")
-    table.merge_cells(t, 0, 1, 2, 1)
+    table.merge_cells(t, 0, 1, 1, 1)
 
     table.cell(t, 0, 2, "CPR", width=8, bgcolor=color.new(color.gray, 0), text_color=color.white)
     table.cell(t, 1, 2, "TREND", width=8, bgcolor=color.new(color.gray, 0), text_color=color.white)
-    table.cell(t, 2, 2, "REVERSAL", width=7, bgcolor=color.new(color.gray, 0), text_color=color.white)
 
     if isSubHourly
         table.cell(t, 0, 3, "DAILY", bgcolor=color.new(color.gray, 20), text_color=color.white)
         table.cell(t, 1, 3, dailyTrend, bgcolor=getBg(dailyTrend), text_color=color.white)
-        table.cell(t, 2, 3, "—", bgcolor=color.new(color.gray, 20), text_color=color.white)
         table.cell(t, 0, 4, "HOURLY", bgcolor=color.new(color.gray, 20), text_color=color.white)
         table.cell(t, 1, 4, weeklyTrend, bgcolor=getBg(weeklyTrend), text_color=color.white)
-        table.cell(t, 2, 4, weeklyReversal, bgcolor=weeklyBullRev ? color.new(color.red, 30) : weeklyBearRev ? color.new(color.green, 30) : color.new(color.gray, 20), text_color=color.white)
 
     else if isHourly
         table.cell(t, 0, 3, "HOURLY", bgcolor=color.new(color.gray, 20), text_color=color.white)
         table.cell(t, 1, 3, weeklyTrend, bgcolor=getBg(weeklyTrend), text_color=color.white)
-        table.cell(t, 2, 3, weeklyReversal, bgcolor=weeklyBullRev ? color.new(color.red, 30) : weeklyBearRev ? color.new(color.green, 30) : color.new(color.gray, 20), text_color=color.white)
         table.cell(t, 0, 4, "DAILY", bgcolor=color.new(color.gray, 20), text_color=color.white)
         table.cell(t, 1, 4, monthlyTrend, bgcolor=getBg(monthlyTrend), text_color=color.white)
-        table.cell(t, 2, 4, monthlyReversal, bgcolor=monthlyBullRev ? color.new(color.red, 30) : monthlyBearRev ? color.new(color.green, 30) : color.new(color.gray, 20), text_color=color.white)
 
     else
         table.cell(t, 0, 3, "DAILY", bgcolor=color.new(color.gray, 20), text_color=color.white)
         table.cell(t, 1, 3, monthlyTrend, bgcolor=getBg(monthlyTrend), text_color=color.white)
-        table.cell(t, 2, 3, monthlyReversal, bgcolor=monthlyBullRev ? color.new(color.red, 30) : monthlyBearRev ? color.new(color.green, 30) : color.new(color.gray, 20), text_color=color.white)
 
 
 // ─── VWAP & SMA ─────────────────────────────────────────────

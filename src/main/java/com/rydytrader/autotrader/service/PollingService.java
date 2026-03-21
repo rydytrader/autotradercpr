@@ -32,6 +32,7 @@ public class PollingService {
     private final MockState           mockState;
     private final ModeStore           modeStore;
     private final RiskSettingsStore   riskSettings;
+    private final TelegramService     telegramService;
 
     // ── per-symbol state ──────────────────────────────────────────────────────
     private final ConcurrentHashMap<String, PositionsDTO> cachedPositions  = new ConcurrentHashMap<>();
@@ -58,7 +59,8 @@ public class PollingService {
                           PositionStateStore positionStateStore,
                           MockState mockState,
                           ModeStore modeStore,
-                          RiskSettingsStore riskSettings) {
+                          RiskSettingsStore riskSettings,
+                          TelegramService telegramService) {
         this.tokenStore          = tokenStore;
         this.fyersProperties     = fyersProperties;
         this.fyersClient         = fyersClient;
@@ -69,8 +71,11 @@ public class PollingService {
         this.mockState           = mockState;
         this.modeStore           = modeStore;
         this.riskSettings        = riskSettings;
+        this.telegramService     = telegramService;
         restoreStateOnStartup();
         startAutoSquareOffScheduler();
+        startTelegramSummaryScheduler();
+        startEodSummaryScheduler();
     }
 
     // ── STARTUP RESTORE ───────────────────────────────────────────────────────
@@ -89,6 +94,7 @@ public class PollingService {
 
                 setupBySymbol.put(symbol, setup);
                 entryTimeBySymbol.put(symbol, entryTime);
+                entryAvgBySymbol.put(symbol, avgPrice);
                 PositionManager.setPosition(symbol, side);
                 cachedPositions.put(symbol, new PositionsDTO(symbol, qty, side, avgPrice, avgPrice, 0.0, setup, entryTime));
 
@@ -108,8 +114,11 @@ public class PollingService {
                     System.out.println("[PollingService] Restored OCO monitor for " + symbol
                         + " — SL: " + slOrderId + " | Target: " + targetOrderId);
                 } else {
+                    // No saved OCO IDs — scan for manually placed SL/Target orders
+                    int exitSide = "LONG".equals(side) ? -1 : 1;
                     System.out.println("[PollingService] Restored state on startup: " + side + " " + symbol
-                        + " (no OCO monitor — SL/Target IDs not saved)");
+                        + " (no OCO IDs — scanning for manual SL/Target)");
+                    scanForManualOCO(symbol, qty, exitSide, side, setup, avgPrice);
                 }
             }
             justRestored = true;
@@ -159,7 +168,7 @@ public class PollingService {
                         positionStateStore.save(symbol, position, quantity, holder.entryFillPrice,
                             setupBySymbol.get(symbol), entryTime);
                         eventService.log("[SUCCESS] " + (position.equals("LONG") ? "BUY" : "SELL")
-                            + " order filled for " + symbol + " @ " + holder.entryFillPrice + " — placing SL + Target");
+                            + " order filled for " + symbol + " @ " + holder.entryFillPrice + " [ID: " + entry.getId() + "] — placing SL + Target");
                     }
 
                     holder.ocoRetries++;
@@ -185,7 +194,8 @@ public class PollingService {
 
                         if (holder.ocoRetries >= Holder.MAX_OCO_RETRIES) {
                             eventService.log("[WARNING] Could not place SL/Target for " + symbol
-                                + " after " + Holder.MAX_OCO_RETRIES + " attempts — position is UNPROTECTED");
+                                + " after " + Holder.MAX_OCO_RETRIES + " attempts — scanning for manually placed orders");
+                            scanForManualOCO(symbol, quantity, exitSide, position, setup, holder.entryFillPrice);
                             if (holder.future != null) holder.future.cancel(false);
                         } else {
                             eventService.log("[WARNING] Retrying SL/Target placement for " + symbol
@@ -202,6 +212,71 @@ public class PollingService {
                 }
             } catch (Exception e) { e.printStackTrace(); }
         }, 0, 2, TimeUnit.SECONDS);
+    }
+
+    // ── SCAN FOR MANUALLY PLACED SL/TARGET ────────────────────────────────────
+    // After auto-placement fails, polls the order book every 10s looking for
+    // a pending SL-M (type 3) and Limit (type 1) order on the same symbol/side.
+    // Once both are found, starts the OCO monitor automatically.
+    private void scanForManualOCO(String symbol, int qty, int exitSide,
+                                   String positionSide, String setup, double entryFillPrice) {
+        class ScanState {
+            ScheduledFuture<?> future;
+            int ticks = 0;
+        }
+        ScanState ss = new ScanState();
+        eventService.log("[INFO] Watching order book for manually placed SL/Target for " + symbol);
+
+        ss.future = scheduler.scheduleAtFixedRate(() -> {
+            try {
+                ss.ticks++;
+                // Stop scanning after 30 minutes (180 ticks × 10s)
+                if (ss.ticks > 180) {
+                    eventService.log("[WARNING] Manual OCO scan timed out for " + symbol + " after 30 min — position UNPROTECTED");
+                    if (ss.future != null) ss.future.cancel(false);
+                    return;
+                }
+                // Stop if position was closed externally
+                if (PositionManager.getPosition(symbol).equals("NONE")) {
+                    if (ss.future != null) ss.future.cancel(false);
+                    return;
+                }
+
+                JsonNode orderBook = getOrderBook();
+                if (orderBook == null) return;
+
+                String slId = null, tgtId = null;
+                double slPrice = 0, tgtPrice = 0;
+
+                for (JsonNode order : orderBook) {
+                    if (!order.has("symbol") || !order.get("symbol").asText().equals(symbol)) continue;
+                    int status = order.has("status") ? order.get("status").asInt() : 0;
+                    if (status != 6) continue; // only PENDING orders
+                    int side = order.has("side") ? order.get("side").asInt() : 0;
+                    if (side != exitSide) continue; // must be on exit side
+                    int type = order.has("type") ? order.get("type").asInt() : 0;
+                    String id = order.has("id") ? order.get("id").asText() : "";
+
+                    if (type == 3 && slId == null) { // SL-M order
+                        slId = id;
+                        slPrice = order.has("stopPrice") ? order.get("stopPrice").asDouble() : 0;
+                    } else if (type == 1 && tgtId == null) { // Limit order
+                        tgtId = id;
+                        tgtPrice = order.has("limitPrice") ? order.get("limitPrice").asDouble() : 0;
+                    }
+                }
+
+                if (slId != null && tgtId != null) {
+                    eventService.log("[SUCCESS] Detected manual SL (" + slId + " @ " + slPrice
+                        + ") and Target (" + tgtId + " @ " + tgtPrice + ") for " + symbol + " — starting OCO monitor");
+                    monitorOCO(slId, tgtId, symbol, qty, exitSide, slPrice, tgtPrice,
+                        positionSide, setup, entryFillPrice);
+                    if (ss.future != null) ss.future.cancel(false);
+                }
+            } catch (Exception e) {
+                eventService.log("[ERROR] Manual OCO scan error for " + symbol + ": " + e.getMessage());
+            }
+        }, 5, 10, TimeUnit.SECONDS);
     }
 
     // ── OCO MONITOR ───────────────────────────────────────────────────────────
@@ -282,16 +357,19 @@ public class PollingService {
                     s.handled = true;
                     ocoHandledSymbols.add(symbol);
                     ocoMonitoredSymbols.remove(symbol);
-                    eventService.log("[SUCCESS] SL triggered for " + symbol + " at " + s.currentSlPrice + " — cancelling target");
                     if (!orderService.cancelOrder(targetId)) {
                         eventService.log("[WARNING] Failed to cancel target order " + targetId + " for " + symbol);
                     }
                     double exitPrice  = orderService.getFilledPriceFromTradebook(symbol, exitSide);
                     double entryPrice = entryFillPrice > 0 ? entryFillPrice
                                       : orderService.getFilledPriceFromTradebook(symbol, exitSide == 1 ? -1 : 1);
-                    tradeHistoryService.record(symbol, positionSide, qty,
-                        entryPrice > 0 ? entryPrice : s.currentSlPrice,
-                        exitPrice  > 0 ? exitPrice  : s.currentSlPrice, "SL", setup);
+                    double finalEntry = entryPrice > 0 ? entryPrice : s.currentSlPrice;
+                    double finalExit  = exitPrice  > 0 ? exitPrice  : s.currentSlPrice;
+                    double pnl = "LONG".equals(positionSide) ? (finalExit - finalEntry) * qty : (finalEntry - finalExit) * qty;
+                    String pnlTag = pnl >= 0 ? "PROFIT" : "LOSS";
+                    eventService.log("[SUCCESS] SL triggered for " + symbol + " at " + finalExit
+                        + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl)) + " — cancelling target");
+                    tradeHistoryService.record(symbol, positionSide, qty, finalEntry, finalExit, "SL", setup);
                     clearSymbolState(symbol);
                     if (s.future != null) s.future.cancel(false);
                 }
@@ -300,16 +378,19 @@ public class PollingService {
                     s.handled = true;
                     ocoHandledSymbols.add(symbol);
                     ocoMonitoredSymbols.remove(symbol);
-                    eventService.log("[SUCCESS] Target hit for " + symbol + " at " + s.currentTargetPrice + " — cancelling SL");
                     if (!orderService.cancelOrder(slId)) {
                         eventService.log("[WARNING] Failed to cancel SL order " + slId + " for " + symbol);
                     }
                     double exitPrice  = orderService.getFilledPriceFromTradebook(symbol, exitSide);
                     double entryPrice = entryFillPrice > 0 ? entryFillPrice
                                       : orderService.getFilledPriceFromTradebook(symbol, exitSide == 1 ? -1 : 1);
-                    tradeHistoryService.record(symbol, positionSide, qty,
-                        entryPrice > 0 ? entryPrice : s.currentTargetPrice,
-                        exitPrice  > 0 ? exitPrice  : s.currentTargetPrice, "TARGET", setup);
+                    double finalEntry = entryPrice > 0 ? entryPrice : s.currentTargetPrice;
+                    double finalExit  = exitPrice  > 0 ? exitPrice  : s.currentTargetPrice;
+                    double pnl = "LONG".equals(positionSide) ? (finalExit - finalEntry) * qty : (finalEntry - finalExit) * qty;
+                    String pnlTag = pnl >= 0 ? "PROFIT" : "LOSS";
+                    eventService.log("[SUCCESS] Target hit for " + symbol + " at " + finalExit
+                        + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl)) + " — cancelling SL");
+                    tradeHistoryService.record(symbol, positionSide, qty, finalEntry, finalExit, "TARGET", setup);
                     clearSymbolState(symbol);
                     if (s.future != null) s.future.cancel(false);
                 }
@@ -421,28 +502,50 @@ public class PollingService {
 
     // ── SQUARE OFF ────────────────────────────────────────────────────────────
     public boolean squareOff(String symbol, int quantity) {
+        return squareOff(symbol, quantity, "MANUAL");
+    }
+
+    public boolean squareOff(String symbol, int quantity, String reason) {
+        String label = "AUTO_SQUAREOFF".equals(reason) ? "Auto square off" : "Manual Square off";
+        String exitReason = reason != null ? reason : "MANUAL";
         try {
             String position = PositionManager.getPosition(symbol);
             if ("NONE".equals(position)) return false;
             int exitSide = "LONG".equals(position) ? -1 : 1;
 
-            eventService.log("[SUCCESS] Manual Square off for " + symbol + " — cancelling SL/Target orders");
+            eventService.log("[SUCCESS] " + label + " for " + symbol + " — cancelling SL/Target orders");
             orderService.cancelAllPendingOrders(symbol);
 
             OrderDTO exitOrder = orderService.placeExitOrder(symbol, quantity, exitSide);
             if (exitOrder == null || !"ok".equals(exitOrder.getStatus())) {
-                eventService.log("[ERROR] Manual Square off failed for " + symbol + " — exit order rejected");
+                eventService.log("[ERROR] " + label + " failed for " + symbol + " — exit order rejected");
                 return false;
             }
 
-            eventService.log("[SUCCESS] Manual Square off executed for " + symbol + " — position closed");
+            double entryPrice = entryAvgBySymbol.getOrDefault(symbol, 0.0);
+            if (entryPrice <= 0) {
+                int entrySide = exitSide == 1 ? -1 : 1;
+                entryPrice = orderService.getFilledPriceFromTradebook(symbol, entrySide);
+            }
+            double exitPrice = orderService.getExitPriceFromTradebook(symbol, position);
+            String setup = setupBySymbol.getOrDefault(symbol, "");
+            if (entryPrice > 0 && exitPrice > 0) {
+                double pnl = "LONG".equals(position) ? (exitPrice - entryPrice) * quantity : (entryPrice - exitPrice) * quantity;
+                String pnlTag = pnl >= 0 ? "PROFIT" : "LOSS";
+                eventService.log("[SUCCESS] " + label + " executed for " + symbol + " at " + exitPrice
+                    + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl)));
+                tradeHistoryService.record(symbol, position, quantity, entryPrice, exitPrice, exitReason, setup);
+            } else {
+                eventService.log("[SUCCESS] " + label + " executed for " + symbol + " — position closed");
+                tradeHistoryService.record(symbol, position, quantity, entryPrice, exitPrice > 0 ? exitPrice : 0, exitReason, setup);
+            }
             ocoHandledSymbols.add(symbol);
             clearSymbolState(symbol);
             return true;
 
         } catch (Exception e) {
             e.printStackTrace();
-            eventService.log("[ERROR] Manual Square off error for " + symbol + ": " + e.getMessage());
+            eventService.log("[ERROR] " + label + " error for " + symbol + ": " + e.getMessage());
             return false;
         }
     }
@@ -473,6 +576,112 @@ public class PollingService {
         }, 10, 15, TimeUnit.SECONDS);
     }
 
+    // ── TELEGRAM END-OF-DAY SUMMARY ────────────────────────────────────────
+    private volatile LocalDate lastEodSummaryDate = null;
+
+    private void startEodSummaryScheduler() {
+        scheduler.scheduleAtFixedRate(() -> {
+            try {
+                LocalTime now = LocalTime.now();
+                LocalDate today = LocalDate.now();
+                if (today.equals(lastEodSummaryDate)) return;
+                if (now.isBefore(LocalTime.of(15, 30))) return;
+
+                lastEodSummaryDate = today;
+                List<com.rydytrader.autotrader.dto.TradeRecord> trades = tradeHistoryService.getTrades();
+                if (trades.isEmpty()) {
+                    telegramService.sendMessage("=== Day Summary ===\n\nNo trades today.");
+                    return;
+                }
+
+                int wins = 0, losses = 0;
+                double totalPnl = 0, totalCharges = 0, totalNetPnl = 0;
+                for (com.rydytrader.autotrader.dto.TradeRecord t : trades) {
+                    if (t.getNetPnl() >= 0) wins++; else losses++;
+                    totalPnl += t.getPnl();
+                    totalCharges += t.getCharges();
+                    totalNetPnl += t.getNetPnl();
+                }
+
+                StringBuilder sb = new StringBuilder();
+                sb.append("=== Day Summary ===\n\n");
+                sb.append("Total Trades: ").append(trades.size()).append("\n");
+                sb.append("Wins: ").append(wins).append(" | Losses: ").append(losses).append("\n");
+                sb.append("Win Rate: ").append(trades.size() > 0 ? String.format("%.0f", (wins * 100.0 / trades.size())) : "0").append("%\n\n");
+
+                for (com.rydytrader.autotrader.dto.TradeRecord t : trades) {
+                    String tag = t.getNetPnl() >= 0 ? "+" : "-";
+                    sb.append(t.getSymbol().replace("NSE:", ""))
+                      .append(" | ").append(t.getSide())
+                      .append(" | ").append(t.getExitReason())
+                      .append(" | ").append(tag).append("₹").append(String.format("%.2f", Math.abs(t.getNetPnl())))
+                      .append("\n");
+                }
+
+                sb.append("\nGross P&L: ₹").append(String.format("%.2f", totalPnl));
+                sb.append("\nCharges: ₹").append(String.format("%.2f", totalCharges));
+                sb.append("\nNet P&L: ₹").append(String.format("%.2f", totalNetPnl));
+
+                telegramService.sendMessage(sb.toString());
+            } catch (Exception e) {
+                System.err.println("[PollingService] EOD summary error: " + e.getMessage());
+            }
+        }, 15, 15, TimeUnit.SECONDS);
+    }
+
+    // ── TELEGRAM SUMMARY SCHEDULER ─────────────────────────────────────────
+    private volatile long lastTelegramSummaryTime = 0;
+
+    private void startTelegramSummaryScheduler() {
+        scheduler.scheduleAtFixedRate(() -> {
+            try {
+                if (cachedPositions.isEmpty()) return;
+                int freqSeconds = riskSettings.getTelegramAlertFrequency();
+                if (freqSeconds <= 0) return; // disabled
+
+                long now = System.currentTimeMillis();
+                if ((now - lastTelegramSummaryTime) < freqSeconds * 1000L) return;
+                lastTelegramSummaryTime = now;
+
+                StringBuilder sb = new StringBuilder();
+                sb.append("--- Portfolio Update ---\n\n");
+                double totalUnrealizedPnl = 0;
+                for (PositionsDTO pos : cachedPositions.values()) {
+                    String arrow = pos.getPnl() >= 0 ? "+" : "-";
+                    sb.append(pos.getSymbol().replace("NSE:", ""))
+                      .append(" | ").append(pos.getSide())
+                      .append(" x").append(pos.getQty())
+                      .append(" @ ").append(String.format("%.2f", pos.getAvgPrice()))
+                      .append(" -> ").append(String.format("%.2f", pos.getLtp()))
+                      .append(" | ").append(arrow).append("₹").append(String.format("%.2f", Math.abs(pos.getPnl())))
+                      .append("\n");
+                    totalUnrealizedPnl += pos.getPnl();
+                }
+
+                List<com.rydytrader.autotrader.dto.TradeRecord> trades = tradeHistoryService.getTrades();
+                int wins = 0, losses = 0;
+                double realizedPnl = 0;
+                for (com.rydytrader.autotrader.dto.TradeRecord t : trades) {
+                    if (t.getNetPnl() >= 0) wins++; else losses++;
+                    realizedPnl += t.getNetPnl();
+                }
+
+                sb.append("\nOpen: ").append(cachedPositions.size())
+                  .append(" | Unrealized: ₹").append(String.format("%.2f", totalUnrealizedPnl));
+                if (!trades.isEmpty()) {
+                    sb.append("\nWins: ").append(wins)
+                      .append(" | Losses: ").append(losses)
+                      .append(" | Realized: ₹").append(String.format("%.2f", realizedPnl));
+                }
+                sb.append("\nNet: ₹").append(String.format("%.2f", realizedPnl + totalUnrealizedPnl));
+
+                telegramService.sendMessage(sb.toString());
+            } catch (Exception e) {
+                System.err.println("[PollingService] Telegram summary error: " + e.getMessage());
+            }
+        }, 10, 10, TimeUnit.SECONDS);
+    }
+
     /** Squares off all open positions. */
     public void squareOffAll() {
         List<PositionsDTO> positions = fetchPositions();
@@ -493,18 +702,20 @@ public class PollingService {
                     double exitPrice  = mockState.getCurrentPrice(symbol);
                     String side = pos.getSide();
                     String setup = getCurrentSetup(symbol);
+                    orderService.cancelAllPendingOrders(symbol);
                     PositionManager.setPosition(symbol, "NONE");
-                    positionStateStore.clear(symbol);
-                    clearCachedPositions(symbol);
                     mockState.triggerManualSquareOff(symbol);
+                    ocoHandledSymbols.add(symbol);
+                    double pnl = "LONG".equals(side) ? (exitPrice - entryPrice) * qty : (entryPrice - exitPrice) * qty;
+                    String pnlTag = pnl >= 0 ? "PROFIT" : "LOSS";
                     tradeHistoryService.record(symbol, side, qty, entryPrice, exitPrice, "AUTO_SQUAREOFF", setup);
-                    eventService.log("[SUCCESS] Auto square off for " + symbol + " at " + exitPrice);
+                    eventService.log("[SUCCESS] Auto square off for " + symbol + " at " + exitPrice
+                        + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl)));
+                    clearSymbolState(symbol);
                 } else {
                     // Live mode
-                    boolean ok = squareOff(symbol, qty);
-                    if (ok) {
-                        eventService.log("[SUCCESS] Auto square off for " + symbol);
-                    } else {
+                    boolean ok = squareOff(symbol, qty, "AUTO_SQUAREOFF");
+                    if (!ok) {
                         eventService.log("[ERROR] Auto square off failed for " + symbol);
                     }
                 }
@@ -542,6 +753,7 @@ public class PollingService {
                     if (qty != 0) {
                         String symbol  = pos.get("symbol").asText();
                         if (pendingEntrySymbols.contains(symbol)) continue;
+                        if (ocoHandledSymbols.contains(symbol)) continue; // OCO just closed this — don't re-add
                         int    side    = pos.get("side").asInt();
                         double avg     = pos.has("netAvgPrice") ? pos.get("netAvgPrice").asDouble()
                                        : pos.has("netAvg")      ? pos.get("netAvg").asDouble() : 0;
@@ -582,10 +794,19 @@ public class PollingService {
                         double unrealizedPl = "LONG".equals(posSide)
                             ? (ltp - resolvedAvg) * absQty
                             : (resolvedAvg - ltp) * absQty;
+                        boolean isNewPosition = !cachedPositions.containsKey(symbol);
                         cachedPositions.put(symbol, new PositionsDTO(symbol, absQty, posSide, resolvedAvg, ltp, unrealizedPl, setup, resolvedEntryTime));
                         PositionManager.setPosition(symbol, posSide);
                         positionStateStore.save(symbol, posSide, absQty, resolvedAvg, setup, resolvedEntryTime);
                         brokerSymbols.add(symbol);
+
+                        // Auto-scan for SL/Target orders on newly detected positions without OCO monitor
+                        if (isNewPosition && !ocoMonitoredSymbols.contains(symbol)) {
+                            int exitSide = "LONG".equals(posSide) ? -1 : 1;
+                            entryAvgBySymbol.put(symbol, resolvedAvg);
+                            eventService.log("[INFO] New position detected for " + symbol + " — scanning for SL/Target orders");
+                            scanForManualOCO(symbol, absQty, exitSide, posSide, setup, resolvedAvg);
+                        }
                     }
                 }
             }
@@ -610,10 +831,17 @@ public class PollingService {
                     }
                     PositionsDTO prev = cachedPositions.get(symbol);
                     if (prev != null && !PositionManager.getPosition(symbol).equals("NONE")) {
-                        eventService.log("[SUCCESS] Manual Square Off for " + symbol + " initiated from Fyers Broker ( User / Automatic )");
+                        orderService.cancelAllPendingOrders(symbol);
                         double exitPrice = orderService.getExitPriceFromTradebook(symbol, prev.getSide());
-                        tradeHistoryService.record(symbol, prev.getSide(), Math.abs(prev.getQty()),
-                            prev.getAvgPrice(), exitPrice > 0 ? exitPrice : prev.getLtp(),
+                        double finalExit = exitPrice > 0 ? exitPrice : prev.getLtp();
+                        double finalEntry = prev.getAvgPrice();
+                        int absQty = Math.abs(prev.getQty());
+                        double pnl = "LONG".equals(prev.getSide()) ? (finalExit - finalEntry) * absQty : (finalEntry - finalExit) * absQty;
+                        String pnlTag = pnl >= 0 ? "PROFIT" : "LOSS";
+                        eventService.log("[SUCCESS] Manual Square Off for " + symbol
+                            + " initiated from Fyers Broker ( User / Automatic ) | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl)));
+                        tradeHistoryService.record(symbol, prev.getSide(), absQty,
+                            finalEntry, finalExit,
                             "MANUAL", setupBySymbol.getOrDefault(symbol, ""));
                         clearSymbolState(symbol);
                     } else if (prev != null) {

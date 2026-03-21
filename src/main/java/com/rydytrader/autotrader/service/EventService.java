@@ -15,6 +15,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class EventService {
 
     private final ModeStore modeStore;
+    private final TelegramService telegramService;
     private final List<String> tradeLogs = new CopyOnWriteArrayList<>();
 
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
@@ -23,8 +24,9 @@ public class EventService {
     private static final String LOG_DIR_LIVE = "../store/live/events";
     private static final String LOG_DIR_SIM  = "../store/simulator/events";
 
-    public EventService(ModeStore modeStore) {
+    public EventService(ModeStore modeStore, TelegramService telegramService) {
         this.modeStore = modeStore;
+        this.telegramService = telegramService;
         new File("../store/live/events").mkdirs();
         new File("../store/simulator/events").mkdirs();
         loadTodaysLogsFromFile();
@@ -33,8 +35,17 @@ public class EventService {
     public void log(String message) {
         String entry = LocalTime.now().format(TIME_FMT) + " - " + message;
         tradeLogs.add(entry);
-        if (tradeLogs.size() > 100) tradeLogs.remove(0);
         writeToFile(entry);
+        if (isTelegramWorthy(message)) {
+            telegramService.sendMessage(message);
+        }
+    }
+
+    private boolean isTelegramWorthy(String msg) {
+        if (msg.contains("[SUCCESS]") || msg.contains("[ERROR]")) return true;
+        if (msg.contains("PROFIT") || msg.contains("LOSS")) return true;
+        if (msg.contains("[WARNING]") && (msg.contains("UNPROTECTED") || msg.contains("failed") || msg.contains("rejected"))) return true;
+        return false;
     }
 
     public List<String> getTradeLogs() { return tradeLogs; }
@@ -72,7 +83,7 @@ public class EventService {
             String line;
             while ((line = reader.readLine()) != null)
                 if (!line.isBlank()) tradeLogs.add(line);
-            while (tradeLogs.size() > 100) tradeLogs.remove(0);
+            // No cap — keep all of today's logs in memory
             System.out.println("Loaded " + tradeLogs.size() + " log entries from " + file.getPath());
         } catch (IOException e) {
             System.err.println("Failed to load logs: " + e.getMessage());

@@ -27,6 +27,11 @@ public class MarginDataService {
 
     private final ConcurrentHashMap<String, Integer> leverageMap = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final EventService eventService;
+
+    public MarginDataService(EventService eventService) {
+        this.eventService = eventService;
+    }
 
     @PostConstruct
     public void loadOnStartup() {
@@ -99,7 +104,9 @@ public class MarginDataService {
                     count++;
                 }
             }
-            System.out.println("[MarginData] Loaded " + count + " equity margin entries from Fyers");
+            String msg = "[MarginData] Loaded " + count + " equity margin entries from Fyers";
+            System.out.println(msg);
+            eventService.log(msg);
 
         } catch (Exception e) {
             System.err.println("[MarginData] Failed to load margin data: " + e.getMessage());

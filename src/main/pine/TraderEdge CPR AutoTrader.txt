@@ -218,54 +218,38 @@ sellPrefix(_setup) =>
 // INTRADAY SIGNAL ALERTS + LOGGING
 // ══════════════════════════════════════════
 
-if buyBreakCpr
-    drawBuyLabel("BUY", color.new(buyLabelColor, 0))
-    json := buyPrefix("BUY_ABOVE_CPR") + levelsJson()
-    alert(json, alert.freq_once_per_bar_close)
-
-if buyBreakR1PDH
-    drawBuyLabel("BUY", color.new(buyLabelColor, 0))
-    json := buyPrefix("BUY_ABOVE_R1_PDH") + levelsJson()
-    alert(json, alert.freq_once_per_bar_close)
-
-if buyBreakR2
-    drawBuyLabel("BUY", color.new(buyLabelColor, 0))
-    json := buyPrefix("BUY_ABOVE_R2") + levelsJson()
-    alert(json, alert.freq_once_per_bar_close)
-
-if buyBreakR3
-    drawBuyLabel("BUY", color.new(buyLabelColor, 0))
-    json := buyPrefix("BUY_ABOVE_R3") + levelsJson()
-    alert(json, alert.freq_once_per_bar_close)
+// Dedup: when a single candle breaks multiple levels, only alert the highest one
+// Buy priority: R4 > R3 > R2 > R1/PDH > CPR > S1/PDL > DayHighBO
+// Sell priority: S4 > S3 > S2 > S1/PDL > CPR > R1/PDH > DayLowBO
 
 if buyBreakR4
     drawBuyLabel("BUY", color.new(buyLabelColor, 0))
     json := buyPrefix("BUY_ABOVE_R4") + levelsJson()
     alert(json, alert.freq_once_per_bar_close)
 
-if buyBreakS1PDL
+if buyBreakR3 and not buyBreakR4
+    drawBuyLabel("BUY", color.new(buyLabelColor, 0))
+    json := buyPrefix("BUY_ABOVE_R3") + levelsJson()
+    alert(json, alert.freq_once_per_bar_close)
+
+if buyBreakR2 and not buyBreakR3 and not buyBreakR4
+    drawBuyLabel("BUY", color.new(buyLabelColor, 0))
+    json := buyPrefix("BUY_ABOVE_R2") + levelsJson()
+    alert(json, alert.freq_once_per_bar_close)
+
+if buyBreakR1PDH and not buyBreakR2 and not buyBreakR3 and not buyBreakR4
+    drawBuyLabel("BUY", color.new(buyLabelColor, 0))
+    json := buyPrefix("BUY_ABOVE_R1_PDH") + levelsJson()
+    alert(json, alert.freq_once_per_bar_close)
+
+if buyBreakCpr and not buyBreakR1PDH and not buyBreakR2 and not buyBreakR3 and not buyBreakR4
+    drawBuyLabel("BUY", color.new(buyLabelColor, 0))
+    json := buyPrefix("BUY_ABOVE_CPR") + levelsJson()
+    alert(json, alert.freq_once_per_bar_close)
+
+if buyBreakS1PDL and not buyBreakCpr and not buyBreakR1PDH and not buyBreakR2 and not buyBreakR3 and not buyBreakR4
     drawBuyLabel("BUY", color.new(color.green, 20))
     json := buyPrefix("BUY_ABOVE_S1_PDL") + levelsJson()
-    alert(json, alert.freq_once_per_bar_close)
-
-if sellBreakCpr
-    drawSellLabel("SELL", color.new(sellLabelColor, 0))
-    json := sellPrefix("SELL_BELOW_CPR") + levelsJson()
-    alert(json, alert.freq_once_per_bar_close)
-
-if sellBreakS1PDL
-    drawSellLabel("SELL", color.new(sellLabelColor, 0))
-    json := sellPrefix("SELL_BELOW_S1_PDL") + levelsJson()
-    alert(json, alert.freq_once_per_bar_close)
-
-if sellBreakS2
-    drawSellLabel("SELL", color.new(sellLabelColor, 0))
-    json := sellPrefix("SELL_BELOW_S2") + levelsJson()
-    alert(json, alert.freq_once_per_bar_close)
-
-if sellBreakS3
-    drawSellLabel("SELL", color.new(sellLabelColor, 0))
-    json := sellPrefix("SELL_BELOW_S3") + levelsJson()
     alert(json, alert.freq_once_per_bar_close)
 
 if sellBreakS4
@@ -273,7 +257,27 @@ if sellBreakS4
     json := sellPrefix("SELL_BELOW_S4") + levelsJson()
     alert(json, alert.freq_once_per_bar_close)
 
-if sellBreakR1PDH
+if sellBreakS3 and not sellBreakS4
+    drawSellLabel("SELL", color.new(sellLabelColor, 0))
+    json := sellPrefix("SELL_BELOW_S3") + levelsJson()
+    alert(json, alert.freq_once_per_bar_close)
+
+if sellBreakS2 and not sellBreakS3 and not sellBreakS4
+    drawSellLabel("SELL", color.new(sellLabelColor, 0))
+    json := sellPrefix("SELL_BELOW_S2") + levelsJson()
+    alert(json, alert.freq_once_per_bar_close)
+
+if sellBreakS1PDL and not sellBreakS2 and not sellBreakS3 and not sellBreakS4
+    drawSellLabel("SELL", color.new(sellLabelColor, 0))
+    json := sellPrefix("SELL_BELOW_S1_PDL") + levelsJson()
+    alert(json, alert.freq_once_per_bar_close)
+
+if sellBreakCpr and not sellBreakS1PDL and not sellBreakS2 and not sellBreakS3 and not sellBreakS4
+    drawSellLabel("SELL", color.new(sellLabelColor, 0))
+    json := sellPrefix("SELL_BELOW_CPR") + levelsJson()
+    alert(json, alert.freq_once_per_bar_close)
+
+if sellBreakR1PDH and not sellBreakCpr and not sellBreakS1PDL and not sellBreakS2 and not sellBreakS3 and not sellBreakS4
     drawSellLabel("SELL", color.new(color.red, 20))
     json := sellPrefix("SELL_BELOW_R1_PDH") + levelsJson()
     alert(json, alert.freq_once_per_bar_close)

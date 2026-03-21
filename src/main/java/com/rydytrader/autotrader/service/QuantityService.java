@@ -6,7 +6,7 @@ import org.springframework.stereotype.Service;
 /**
  * Computes the base trade quantity based on settings:
  * - Fixed mode (fixedQuantity != -1): uses the configured fixed value
- * - Capital mode (fixedQuantity == -1): qty = (capitalPerTrade × leverage) / closePrice
+ * - Risk mode (fixedQuantity == -1): qty = riskPerTrade / |entry - SL|, capped by (capitalPerTrade × leverage) / 2 / price
  *
  * Quantity is always rounded to the nearest even number (min 2)
  * because the bot halves qty for R3/S3/R4/S4 extreme-level signals.
@@ -26,39 +26,55 @@ public class QuantityService {
         this.eventService = eventService;
     }
 
+    /** Backward-compat overload: returns fixed qty or minimum 2 when SL is unknown. */
+    public int computeBaseQty(String fyersSymbol, double closePrice) {
+        return computeBaseQty(fyersSymbol, closePrice, 0);
+    }
+
     /**
      * Computes the base quantity for a trade.
      *
      * @param fyersSymbol Fyers symbol (e.g. "NSE:HDFCBANK-EQ")
-     * @param closePrice  current close price
+     * @param closePrice  current close/entry price
+     * @param slPrice     stop loss price (0 if unknown — falls back to min qty in risk mode)
      * @return even quantity (minimum 2)
      */
-    public int computeBaseQty(String fyersSymbol, double closePrice) {
+    public int computeBaseQty(String fyersSymbol, double closePrice, double slPrice) {
         int fixedQty = riskSettings.getFixedQuantity();
 
         if (fixedQty != -1) {
             return roundToEven(fixedQty);
         }
 
-        // Capital-based mode
+        // Risk-based mode
+        double riskPerTrade = riskSettings.getRiskPerTrade();
+        double riskPerShare = Math.abs(closePrice - slPrice);
+        if (riskPerTrade <= 0 || riskPerShare <= 0) {
+            eventService.log("[WARN] riskPerTrade=" + fmt(riskPerTrade) + " riskPerShare=" + fmt(riskPerShare) + ", using minimum qty 2");
+            return 2;
+        }
+
+        int riskQty = (int) (riskPerTrade / riskPerShare);
+
+        // Capital cap: broker blocks margin for both SL+Target, so /2
         double capital = riskSettings.getCapitalPerTrade();
-        if (capital <= 0) {
-            eventService.log("[WARN] capitalPerTrade not set, using minimum qty 2");
-            return 2;
-        }
-        if (closePrice <= 0) {
-            eventService.log("[WARN] closePrice <= 0, using minimum qty 2");
-            return 2;
-        }
-
         int leverage = marginDataService.getLeverage(fyersSymbol);
-        double effectiveCapital = (capital * leverage) / 2.0; // divide by 2: broker blocks margin for both target + SL orders
-        int rawQty = (int) (effectiveCapital / closePrice);
-        int qty = roundDownToEven(rawQty);
+        int capitalCapQty = Integer.MAX_VALUE;
+        if (capital > 0 && closePrice > 0) {
+            double effectiveCapital = (capital * leverage) / 2.0;
+            capitalCapQty = (int) (effectiveCapital / closePrice);
+        }
 
-        eventService.log("[INFO] Qty computed: capital=" + fmt(capital)
-            + " × leverage=" + leverage + " / 2 / price=" + fmt(closePrice)
-            + " = " + rawQty + " → " + qty + " (even)");
+        int finalRawQty = Math.min(riskQty, capitalCapQty);
+        int qty = roundDownToEven(finalRawQty);
+
+        String capNote = (riskQty > capitalCapQty) ? " [CAPITAL-CAPPED from " + riskQty + "]" : "";
+        eventService.log("[INFO] Qty computed: risk=" + fmt(riskPerTrade)
+            + " / riskPerShare=" + fmt(riskPerShare)
+            + " = " + riskQty
+            + " | capitalCap=(" + fmt(capital) + "×" + leverage + ")/2/" + fmt(closePrice) + "=" + capitalCapQty
+            + capNote
+            + " → " + qty + " (even)");
 
         return qty;
     }

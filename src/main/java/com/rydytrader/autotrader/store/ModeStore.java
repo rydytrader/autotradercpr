@@ -7,7 +7,7 @@ public class ModeStore {
 
     public enum Mode { LIVE, SIMULATOR }
 
-    private volatile Mode mode = Mode.SIMULATOR; // safe default
+    private volatile Mode mode = Mode.LIVE; // default to live on startup
 
     public Mode getMode() { return mode; }
 

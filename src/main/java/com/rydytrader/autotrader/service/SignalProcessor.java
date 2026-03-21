@@ -28,13 +28,17 @@ public class SignalProcessor {
         String probability = str(alert, "probability");
         double close       = dbl(alert, "close");
         double atr         = dbl(alert, "atr");
-        int    baseQty     = quantityService.computeBaseQty(symbol, close);
         double sessionHigh = dbl(alert, "sessionHigh");
         double sessionLow  = dbl(alert, "sessionLow");
         double r1 = dbl(alert, "r1"), r2 = dbl(alert, "r2"), r3 = dbl(alert, "r3"), r4 = dbl(alert, "r4");
         double s1 = dbl(alert, "s1"), s2 = dbl(alert, "s2"), s3 = dbl(alert, "s3"), s4 = dbl(alert, "s4");
         double ph = dbl(alert, "ph"), pl = dbl(alert, "pl");
         double tc = dbl(alert, "tc"), bc = dbl(alert, "bc");
+
+        // ── Reject if ATR is invalid (NaN or zero — Pine Script may send NaN for insufficient bars)
+        if (Double.isNaN(atr) || atr <= 0) {
+            return ProcessedSignal.rejected(setup, symbol, "Invalid ATR (" + atr + ") — cannot compute stop loss");
+        }
 
         // ── 4b. Derive direction ────────────────────────────────────────────────
         boolean isBuy = setup.startsWith("BUY_") || "DAY_HIGH_BO".equals(setup);
@@ -49,14 +53,21 @@ public class SignalProcessor {
         // ── 4c. Compute breakout level ──────────────────────────────────────────
         double breakoutLevel = computeBreakoutLevel(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
 
+        // ── 4c2. Compute stop loss (needed for risk-based qty) ─────────────────
+        double atrMultiplier = riskSettings.getAtrMultiplier();
+        double sl = isBuy ? (close - atr * atrMultiplier) : (close + atr * atrMultiplier);
+
+        // ── 4c3. Compute base quantity (uses SL for risk-based sizing) ─────────
+        int baseQty = quantityService.computeBaseQty(symbol, close, sl);
+
         // ── 4d. Large candle filter ─────────────────────────────────────────────
         boolean isDayBO = "DAY_HIGH_BO".equals(setup) || "DAY_LOW_BO".equals(setup);
-        if (!isDayBO) {
+        if (!isDayBO && riskSettings.isEnableLargeCandleFilter()) {
             if (isBuy && (close - breakoutLevel) > atr) {
-                return ProcessedSignal.rejected(setup, symbol, "Large candle — entry too far from breakout level");
+                return ProcessedSignal.rejected(setup, symbol, "Large candle — candle > 1 ATR from breakout level");
             }
             if (!isBuy && (breakoutLevel - close) > atr) {
-                return ProcessedSignal.rejected(setup, symbol, "Large candle — entry too far from breakout level");
+                return ProcessedSignal.rejected(setup, symbol, "Large candle — candle > 1 ATR from breakout level");
             }
         }
 
@@ -82,27 +93,41 @@ public class SignalProcessor {
             shifted = true;
         }
 
-        // ── 4g. Stop loss ───────────────────────────────────────────────────────
-        double atrMultiplier = riskSettings.getAtrMultiplier();
-        double sl = isBuy ? (close - atr * atrMultiplier) : (close + atr * atrMultiplier);
-
         // ── 4i. Quantity ────────────────────────────────────────────────────────
         int qty = baseQty;
+        String qtyLog = null;
         boolean isExtreme = "BUY_ABOVE_R3".equals(setup) || "SELL_BELOW_S3".equals(setup) || isR4S4;
         if (isExtreme) {
             qty = Math.max(1, qty / 2);
-            eventService.log("[INFO] " + symbol + " " + setup + " qty halved (extreme level): " + baseQty + " -> " + qty);
+            qtyLog = "[INFO] " + symbol + " " + setup + " qty halved (extreme level): " + baseQty + " -> " + qty;
         }
         double sessionMoveLimit = riskSettings.getSessionMoveLimit() / 100.0; // e.g. 2.0 → 0.02
         if (!isExtreme && !isDayBO && sessionMoveLimit > 0) {
-            if (isBuy && sessionLow > 0 && (breakoutLevel - sessionLow) / sessionLow > sessionMoveLimit) {
-                int reduced = Math.max(1, qty / 2);
-                eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (" + fmt(riskSettings.getSessionMoveLimit()) + "% session move): " + qty + " -> " + reduced);
-                qty = reduced;
+            // Derive previous day close from CPR pivot: pivot = (PH + PL + PDC) / 3
+            double pivot = (tc + bc) / 2.0;
+            double pdc = pivot * 3 - ph - pl;
+
+            // Check total move from PDC (covers both gap and intraday movement)
+            boolean moveLimitHit = false;
+            if (isBuy && pdc > 0 && (breakoutLevel - pdc) / pdc > sessionMoveLimit) {
+                moveLimitHit = true;
             }
-            if (!isBuy && sessionHigh > 0 && (sessionHigh - breakoutLevel) / breakoutLevel > sessionMoveLimit) {
+            if (!isBuy && pdc > 0 && (pdc - breakoutLevel) / pdc > sessionMoveLimit) {
+                moveLimitHit = true;
+            }
+            // Fallback: also check intraday session range if PDC is not usable
+            if (!moveLimitHit && isBuy && sessionLow > 0 && (breakoutLevel - sessionLow) / sessionLow > sessionMoveLimit) {
+                moveLimitHit = true;
+            }
+            if (!moveLimitHit && !isBuy && sessionHigh > 0 && (sessionHigh - breakoutLevel) / breakoutLevel > sessionMoveLimit) {
+                moveLimitHit = true;
+            }
+            if (moveLimitHit) {
                 int reduced = Math.max(1, qty / 2);
-                eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (" + fmt(riskSettings.getSessionMoveLimit()) + "% session move): " + qty + " -> " + reduced);
+                double movePct = isBuy
+                    ? (pdc > 0 ? (breakoutLevel - pdc) / pdc * 100 : (breakoutLevel - sessionLow) / sessionLow * 100)
+                    : (pdc > 0 ? (pdc - breakoutLevel) / pdc * 100 : (sessionHigh - breakoutLevel) / breakoutLevel * 100);
+                qtyLog = "[INFO] " + symbol + " " + setup + " qty reduced (move " + fmt(movePct) + "% > " + fmt(riskSettings.getSessionMoveLimit()) + "% limit): " + qty + " -> " + reduced;
                 qty = reduced;
             }
         }
@@ -112,6 +137,9 @@ public class SignalProcessor {
             + " | Tgt: " + fmt(target) + "(" + fmt(Math.abs(target - close)) + ")"
             + " | SL: " + fmt(sl) + "(" + fmt(Math.abs(close - sl)) + ")"
             + " | Qty: " + qty);
+        if (qtyLog != null) {
+            eventService.log(qtyLog);
+        }
         if (shifted) {
             eventService.log("[INFO] " + symbol + " " + setup + " target shifted: " + fmt(defaultTarget) + " -> " + fmt(shiftTarget)
                 + " (default was < 1 ATR from entry)");

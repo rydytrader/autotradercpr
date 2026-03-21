@@ -13,6 +13,12 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class SymbolMasterService {
 
+    private final EventService eventService;
+
+    public SymbolMasterService(EventService eventService) {
+        this.eventService = eventService;
+    }
+
     // Column indices (0-based), verified against actual CSV sample:
     // [4] = tick size (e.g. 0.1), [9] = Fyers symbol (e.g. NSE:NIFTY26MARFUT)
     private static final int COL_TICK_SIZE = 4;
@@ -52,7 +58,9 @@ public class SymbolMasterService {
         for (String csvUrl : CSV_URLS) {
             loaded += loadCsv(csvUrl);
         }
-        System.out.println("[SymbolMaster] Loaded " + loaded + " symbol tick sizes from Fyers symbol master");
+        String msg = "[SymbolMaster] Loaded " + loaded + " symbol tick sizes from Fyers symbol master";
+        System.out.println(msg);
+        eventService.log(msg);
     }
 
     private int loadCsv(String csvUrl) {
