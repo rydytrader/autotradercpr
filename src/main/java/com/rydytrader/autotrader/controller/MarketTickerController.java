@@ -1,0 +1,97 @@
+package com.rydytrader.autotrader.controller;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.rydytrader.autotrader.config.FyersProperties;
+import com.rydytrader.autotrader.fyers.FyersClientRouter;
+import com.rydytrader.autotrader.manager.PositionManager;
+import com.rydytrader.autotrader.store.TokenStore;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+@RestController
+public class MarketTickerController {
+
+    private final FyersClientRouter fyersClient;
+    private final FyersProperties fyersProperties;
+    private final TokenStore tokenStore;
+
+    private static final String BASE_SYMBOLS =
+        "NSE:NIFTY50-INDEX,NSE:NIFTYBANK-INDEX,NSE:NIFTYIT-INDEX," +
+        "NSE:RELIANCE-EQ,NSE:TCS-EQ,NSE:HDFCBANK-EQ,NSE:INFY-EQ,NSE:ICICIBANK-EQ";
+
+    private static final long CACHE_TTL_MS = 60_000; // 60 seconds
+    private volatile List<Map<String, Object>> cachedTickers = List.of();
+    private volatile long lastFetchTime = 0;
+    private volatile String lastSymbolsKey = "";
+
+    public MarketTickerController(FyersClientRouter fyersClient,
+                                   FyersProperties fyersProperties,
+                                   TokenStore tokenStore) {
+        this.fyersClient = fyersClient;
+        this.fyersProperties = fyersProperties;
+        this.tokenStore = tokenStore;
+    }
+
+    @GetMapping("/api/market-ticker")
+    public ResponseEntity<?> getMarketTicker() {
+        String symbols = buildSymbolList();
+        long now = System.currentTimeMillis();
+
+        // Invalidate cache if position symbols changed or TTL expired
+        boolean cacheValid = (now - lastFetchTime < CACHE_TTL_MS)
+                && !cachedTickers.isEmpty()
+                && symbols.equals(lastSymbolsKey);
+
+        if (cacheValid) {
+            return ResponseEntity.ok(cachedTickers);
+        }
+
+        try {
+            String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
+            JsonNode resp = fyersClient.getQuotes(symbols, auth);
+
+            List<Map<String, Object>> tickers = new ArrayList<>();
+            Set<String> positionSymbols = PositionManager.getAllSymbols();
+            JsonNode data = resp.get("d");
+            if (data != null && data.isArray()) {
+                for (JsonNode item : data) {
+                    JsonNode v = item.get("v");
+                    if (v == null) continue;
+                    Map<String, Object> tick = new LinkedHashMap<>();
+                    String sym = v.get("symbol").asText();
+                    tick.put("symbol", v.has("short_name") ? v.get("short_name").asText() : sym);
+                    tick.put("lp", v.get("lp").asDouble());
+                    tick.put("ch", v.get("ch").asDouble());
+                    tick.put("chp", v.get("chp").asDouble());
+                    // Mark position symbols so the UI can highlight them
+                    tick.put("position", positionSymbols.contains(sym));
+                    tickers.add(tick);
+                }
+            }
+            cachedTickers = tickers;
+            lastFetchTime = now;
+            lastSymbolsKey = symbols;
+            return ResponseEntity.ok(tickers);
+        } catch (Exception e) {
+            return ResponseEntity.ok(cachedTickers.isEmpty() ? List.of() : cachedTickers);
+        }
+    }
+
+    private String buildSymbolList() {
+        Set<String> symbols = new LinkedHashSet<>();
+        for (String s : BASE_SYMBOLS.split(",")) {
+            symbols.add(s);
+        }
+        // Add open position symbols to the ticker
+        symbols.addAll(PositionManager.getAllSymbols());
+        return String.join(",", symbols);
+    }
+}

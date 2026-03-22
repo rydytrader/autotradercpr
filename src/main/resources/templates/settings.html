@@ -81,31 +81,40 @@
     </style>
 </head>
 <body>
+<div class="app-layout">
 
+<aside class="sidebar">
+    <div class="sidebar-brand">
+        <div class="brand-icon">⚡</div>
+        <div class="sidebar-brand-text">
+            <div class="brand-name">TRADER<span>EDGE</span> CPR</div>
+        </div>
+    </div>
+    <nav class="sidebar-nav">
+        <a href="/positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
+        <a href="/trades" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
+        <a href="/journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">≡</span><span class="sidebar-nav-label">Journal</span></a>
+        <a href="/settings" class="sidebar-nav-item active"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
+        <button class="sidebar-nav-item" id="simTab" style="display:none;" onclick="openSimModal()"><span class="sidebar-nav-icon">◈</span><span class="sidebar-nav-label">Simulator</span></button>
+    </nav>
+    <div class="sidebar-footer">
+        <div class="status-pill">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="connectionStatus" style="color: var(--text-secondary);">Checking...</span>
+        </div>
+    </div>
+</aside>
+
+<div class="app-main">
 <nav class="navbar">
     <div class="navbar-inner">
-        <div class="brand">
-            <div class="brand-icon">⚡</div>
-            <div>
-                <div class="brand-name">TRADER<span>EDGE</span> CPR</div>
-                <div class="brand-sub">AutoTrader · v2.0</div>
-            </div>
+        <div class="ticker-wrap" id="tickerWrap">
+            <div class="ticker-track" id="tickerTrack"></div>
         </div>
         <div class="nav-right">
-            <div class="nav-tabs">
-                <a href="/positions" class="nav-tab">⬡ Positions</a>
-                <a href="/trades" class="nav-tab">⊞ Trade Log</a>
-                <a href="/journal" class="nav-tab">≡ Journal</a>
-                <a href="/settings" class="nav-tab active">⚙ Settings</a>
-                <button class="nav-tab" id="simTab" style="display:none;" onclick="openSimModal()">◈ Simulator</button>
-            </div>
             <div class="mode-pill" id="modePill">
                 <div class="mode-pill-dot"></div>
                 <span class="mode-pill-label" id="modeLabel">LIVE</span>
-            </div>
-            <div class="status-pill">
-                <div class="status-dot" id="statusDot"></div>
-                <span id="connectionStatus" style="color: var(--text-secondary);">Checking...</span>
             </div>
             <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
             <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
@@ -119,6 +128,24 @@
         <div>
             <div class="page-title">Trade and Risk Settings</div>
             <div class="page-subtitle" id="settingsSubtitle">Trade parameters, guardrails &amp; daily limits</div>
+        </div>
+        <div style="display:flex; gap:8px;">
+            <button onclick="showNarrowCpr()" style="
+                background: rgba(99,179,237,0.1); border: 1px solid rgba(99,179,237,0.3);
+                color: var(--accent-blue); padding: 6px 14px; border-radius: 8px;
+                font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
+                cursor: pointer; transition: all 0.2s;
+            " onmouseover="this.style.background='rgba(99,179,237,0.18)'" onmouseout="this.style.background='rgba(99,179,237,0.1)'">
+                View Narrow CPR List
+            </button>
+            <button onclick="showInsideCpr()" style="
+                background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3);
+                color: var(--accent-yellow); padding: 6px 14px; border-radius: 8px;
+                font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
+                cursor: pointer; transition: all 0.2s;
+            " onmouseover="this.style.background='rgba(251,191,36,0.18)'" onmouseout="this.style.background='rgba(251,191,36,0.1)'">
+                View Inside CPR List
+            </button>
         </div>
     </div>
 
@@ -193,28 +220,10 @@
 
     <!-- TRADE PARAMETERS -->
     <div class="section-card fade-in">
-        <div class="section-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <div class="section-header">
             <div class="section-title">
                 <div class="section-title-dot" style="background: var(--accent-blue);"></div>
                 Trade Parameters
-            </div>
-            <div style="display:flex; gap:8px;">
-                <button onclick="showNarrowCpr()" style="
-                    background: rgba(99,179,237,0.1); border: 1px solid rgba(99,179,237,0.3);
-                    color: var(--accent-blue); padding: 6px 14px; border-radius: 8px;
-                    font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
-                    cursor: pointer; transition: all 0.2s;
-                " onmouseover="this.style.background='rgba(99,179,237,0.18)'" onmouseout="this.style.background='rgba(99,179,237,0.1)'">
-                    View Narrow CPR List
-                </button>
-                <button onclick="showInsideCpr()" style="
-                    background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3);
-                    color: var(--accent-yellow); padding: 6px 14px; border-radius: 8px;
-                    font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
-                    cursor: pointer; transition: all 0.2s;
-                " onmouseover="this.style.background='rgba(251,191,36,0.18)'" onmouseout="this.style.background='rgba(251,191,36,0.1)'">
-                    View Inside CPR List
-                </button>
             </div>
         </div>
         <div class="section-body">
@@ -311,6 +320,31 @@
 
 <script src="/js/common.js"></script>
 <script>
+    // ── STOCK TICKER ─────────────────────────────
+    function loadTicker() {
+        fetch('/api/market-ticker')
+            .then(r => r.json())
+            .then(data => {
+                if (!data || !data.length) return;
+                const track = document.getElementById('tickerTrack');
+                let html = '';
+                for (const t of data) {
+                    const dir = t.ch >= 0 ? 'up' : 'down';
+                    const arrow = t.ch >= 0 ? '▲' : '▼';
+                    const pos = t.position ? ' has-position' : '';
+                    html += `<div class="ticker-item${pos}">
+                        <span class="ticker-symbol">${t.symbol}</span>
+                        <span class="ticker-price">${t.lp.toLocaleString('en-IN', {minimumFractionDigits:2})}</span>
+                        <span class="ticker-change ${dir}">${arrow} ${Math.abs(t.ch).toFixed(2)} (${Math.abs(t.chp).toFixed(2)}%)</span>
+                    </div>`;
+                }
+                track.innerHTML = html + html;
+            })
+            .catch(() => {});
+    }
+    loadTicker();
+    setInterval(loadTicker, 60000);
+
     // ── LOGOUT ───────────────────────────────────────────────────────────────
     function logout() {
         fetch('/api/logout', { method: 'POST' })
@@ -919,6 +953,9 @@ function showInsideCpr() {
         </div>
     </div>
 </div>
+
+</div><!-- /app-main -->
+</div><!-- /app-layout -->
 
 </body>
 </html>

@@ -56,6 +56,12 @@ public class LiveFyersClient implements FyersClient {
         return get(url, authHeader);
     }
 
+    @Override
+    public JsonNode getQuotes(String symbols, String authHeader) throws Exception {
+        String url = "https://api-t1.fyers.in/data/quotes/?symbols=" + symbols;
+        return get(url, authHeader);
+    }
+
     // ── HTTP HELPERS ──────────────────────────────────────────────────────────
     private JsonNode get(String urlStr, String authHeader) throws Exception {
         URL url = new URL(urlStr);

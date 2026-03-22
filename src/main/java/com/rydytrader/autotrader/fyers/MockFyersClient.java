@@ -202,6 +202,38 @@ public class MockFyersClient implements FyersClient {
         return root;
     }
 
+    @Override
+    public JsonNode getQuotes(String symbols, String authHeader) throws Exception {
+        var root = mapper.createObjectNode();
+        root.put("s", "ok");
+        root.put("code", 200);
+        var arr = mapper.createArrayNode();
+        // Mock data for key indices
+        String[][] mockData = {
+            {"NSE:NIFTY50-INDEX", "NIFTY 50", "24250.30", "185.40", "0.77"},
+            {"NSE:NIFTYBANK-INDEX", "BANK NIFTY", "51820.55", "-142.30", "-0.27"},
+            {"NSE:NIFTYIT-INDEX", "NIFTY IT", "35420.10", "312.60", "0.89"},
+            {"NSE:RELIANCE-EQ", "RELIANCE", "2485.60", "28.35", "1.15"},
+            {"NSE:TCS-EQ", "TCS", "3892.45", "-45.20", "-1.15"},
+            {"NSE:HDFCBANK-EQ", "HDFC BANK", "1678.30", "12.80", "0.77"},
+            {"NSE:INFY-EQ", "INFOSYS", "1542.75", "18.90", "1.24"},
+            {"NSE:ICICIBANK-EQ", "ICICI BANK", "1265.40", "-8.55", "-0.67"}
+        };
+        for (String[] d : mockData) {
+            var item = mapper.createObjectNode();
+            var v = mapper.createObjectNode();
+            v.put("symbol", d[0]);
+            v.put("short_name", d[1]);
+            v.put("lp", Double.parseDouble(d[2]));
+            v.put("chp", Double.parseDouble(d[4]));
+            v.put("ch", Double.parseDouble(d[3]));
+            item.set("v", v);
+            arr.add(item);
+        }
+        root.set("d", arr);
+        return root;
+    }
+
     // ── HELPERS ───────────────────────────────────────────────────────────────
     private com.fasterxml.jackson.databind.node.ObjectNode ok() {
         var n = mapper.createObjectNode();

@@ -35,4 +35,5 @@ public class FyersClientRouter implements FyersClient {
     @Override public JsonNode getTradebook(String auth) throws Exception               { return client().getTradebook(auth); }
     @Override public JsonNode validateAuthCode(String body) throws Exception           { return client().validateAuthCode(body); }
     @Override public JsonNode getOptionChain(String sym, int strikes, String auth) throws Exception { return client().getOptionChain(sym, strikes, auth); }
+    @Override public JsonNode getQuotes(String symbols, String auth) throws Exception { return client().getQuotes(symbols, auth); }
 }

@@ -31,4 +31,7 @@ public interface FyersClient {
 
     /** GET /api/v3/optionChain — get option chain with OI data */
     JsonNode getOptionChain(String symbol, int strikeCount, String authHeader) throws Exception;
+
+    /** GET /data/quotes — get quotes for a comma-separated list of symbols */
+    JsonNode getQuotes(String symbols, String authHeader) throws Exception;
 }
