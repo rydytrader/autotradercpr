@@ -6,8 +6,8 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/shared.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/shared.css?v=2">
     <!-- Apply theme before render to prevent flash -->
     <script>
         (function() {
@@ -16,7 +16,7 @@
             // Set icon early to avoid flash
             document.addEventListener('DOMContentLoaded', function() {
                 const btn = document.getElementById('themeToggle');
-                if (btn) btn.textContent = t === 'light' ? '☀️' : '🌙';
+                if (btn) btn.textContent = t === 'light' ? '\u2600\uFE0F' : t === 'forest' ? '\uD83C\uDF32' : '\uD83C\uDF19';
             });
         })();
     </script>
@@ -95,6 +95,7 @@
         </div>
     </div>
     <nav class="sidebar-nav">
+        <a href="/home" class="sidebar-nav-item"><span class="sidebar-nav-icon">◉</span><span class="sidebar-nav-label">Home</span></a>
         <a href="/positions" class="sidebar-nav-item active"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
         <a href="/trades" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
         <a href="/journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">≡</span><span class="sidebar-nav-label">Journal</span></a>
@@ -130,12 +131,12 @@
 
     <div class="page-header fade-in">
         <div>
-            <div class="page-title">Positions Dashboard</div>
+            <div class="page-title">Positions</div>
             <div class="page-subtitle">Live market positions &amp; trade activity</div>
         </div>
         <div style="display:flex; gap:10px; align-items:center;">
             <div class="kill-switch-wrap" id="killSwitchWrap">
-                <span class="kill-switch-label" id="killSwitchLabel">Trading ON</span>
+                <span class="kill-switch-label" id="killSwitchLabel">Kill Switch ON</span>
                 <label class="kill-switch">
                     <input type="checkbox" id="killSwitchToggle" checked onchange="toggleKillSwitch()">
                     <span class="kill-switch-slider"></span>
@@ -176,6 +177,12 @@
                 Live Positions
             </div>
             <div style="display:flex; gap:12px; align-items:center;">
+<select id="posSymbolFilter" onchange="filterPositions()" style="
+    background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
+    border-radius:4px;padding:2px 8px;font-size:0.65rem;font-family:var(--font-mono);
+    outline:none;cursor:pointer;min-width:100px;">
+    <option value="">All Symbols</option>
+</select>
 <span class="section-badge" id="positionsBadge">0 active</span>
 <span class="section-badge" id="exposedRiskBadge" style="background:rgba(246,173,85,0.10); color:#f6ad55; border-color:rgba(246,173,85,0.25);">Exposed Risk: ₹0</span>
 <span class="section-badge" id="consumedRiskBadge" style="background:rgba(252,129,129,0.10); color:#fc8181; border-color:rgba(252,129,129,0.25);">Consumed Risk: ₹0</span>
@@ -251,7 +258,7 @@
 
 <!-- ── SQUARE OFF CONFIRMATION MODAL ──────────────────────────── -->
 
-<script src="/js/common.js"></script>
+<script src="/js/common.js?v=2"></script>
 <script>
     // ── STOCK TICKER ─────────────────────────────
     function loadTicker() {
@@ -481,31 +488,53 @@
                     else if (pct >= 0.8) { budgetBadge.style.color = '#f6ad55'; budgetBadge.style.background = 'rgba(246,173,85,0.10)'; budgetBadge.style.borderColor = 'rgba(246,173,85,0.25)'; }
                     else { budgetBadge.style.color = '#68d391'; budgetBadge.style.background = 'rgba(104,211,145,0.10)'; budgetBadge.style.borderColor = 'rgba(104,211,145,0.25)'; }
                 }
-                const tbody = document.getElementById('positionsTableBody');
-                if (positions.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">◎</div>No active positions</div></td></tr>`;
-                    return;
-                }
-                tbody.innerHTML = positions.map(pos => {
-                    const sideBadge = pos.side === 'LONG'
-                        ? `<span class="side-badge side-long">▲ LONG</span>`
-                        : `<span class="side-badge side-short">▼ SHORT</span>`;
-                    const pnlClass = pos.pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
-                    const sym = pos.symbol.replace(/'/g, "\\'");
-                    return `<tr>
-                        <td style="font-family:var(--font-mono);color:var(--text-secondary)">${pos.entryTime || '—'}</td>
-                        <td><span class="symbol-cell">${pos.symbol}</span></td>
-                        <td class="text-right">${pos.qty}</td>
-                        <td class="text-center">${sideBadge}</td>
-                        <td class="text-center">${renderSetup(pos.setup)}</td>
-                        <td class="text-right">${pos.avgPrice.toFixed(2)}</td>
-                        <td class="text-right">${pos.ltp.toFixed(2)}</td>
-                        <td class="text-right"><span class="${pnlClass}">${fmtPnl(pos.pnl)}</span></td>
-                        <td class="text-center"><button class="squareoff-btn" style="padding:5px 14px;font-size:0.7rem;" onclick="squareOffSymbol('${sym}',${Math.abs(pos.qty)})">⬛ SqOff</button></td>
-                    </tr>`;
-                }).join('');
+                allPositions = positions;
+                updatePosSymbolFilter(positions);
+                renderPositionsTable();
+
             })
             .catch(() => {});
+    }
+
+    var allPositions = [];
+
+    function updatePosSymbolFilter(positions) {
+        const sel = document.getElementById('posSymbolFilter');
+        const current = sel.value;
+        const symbols = [...new Set(positions.map(p => p.symbol))].sort();
+        sel.innerHTML = '<option value="">All Symbols</option>' + symbols.map(s =>
+            `<option value="${s}"${s === current ? ' selected' : ''}>${s.replace('NSE:','').replace('-EQ','')}</option>`
+        ).join('');
+    }
+
+    function filterPositions() { renderPositionsTable(); }
+
+    function renderPositionsTable() {
+        const filter = document.getElementById('posSymbolFilter').value;
+        const positions = filter ? allPositions.filter(p => p.symbol === filter) : allPositions;
+        const tbody = document.getElementById('positionsTableBody');
+        if (positions.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">◎</div>No active positions${filter ? ' for ' + filter : ''}</div></td></tr>`;
+            return;
+        }
+        tbody.innerHTML = positions.map(pos => {
+            const sideBadge = pos.side === 'LONG'
+                ? `<span class="side-badge side-long">▲ LONG</span>`
+                : `<span class="side-badge side-short">▼ SHORT</span>`;
+            const pnlClass = pos.pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+            const sym = pos.symbol.replace(/'/g, "\\'");
+            return `<tr>
+                <td style="font-family:var(--font-mono);color:var(--text-secondary)">${pos.entryTime || '—'}</td>
+                <td><span class="symbol-cell">${pos.symbol}</span></td>
+                <td class="text-right">${pos.qty}</td>
+                <td class="text-center">${sideBadge}</td>
+                <td class="text-center">${renderSetup(pos.setup)}</td>
+                <td class="text-right">${pos.avgPrice.toFixed(2)}</td>
+                <td class="text-right">${pos.ltp.toFixed(2)}</td>
+                <td class="text-right"><span class="${pnlClass}">${fmtPnl(pos.pnl)}</span></td>
+                <td class="text-center"><button class="squareoff-btn" style="padding:5px 14px;font-size:0.7rem;" onclick="squareOffSymbol('${sym}',${Math.abs(pos.qty)})">⬛ SqOff</button></td>
+            </tr>`;
+        }).join('');
     }
 
     let isConnected = false;
@@ -546,7 +575,7 @@
             const label   = document.getElementById('killSwitchLabel');
             toggle.checked = enabled;
             wrap.className = 'kill-switch-wrap' + (enabled ? '' : ' disabled');
-            label.textContent = enabled ? 'Trading ON' : 'Trading OFF';
+            label.textContent = enabled ? 'Kill Switch ON' : 'Kill Switch OFF';
         }).catch(() => {});
     }
     refreshTradingStatus();

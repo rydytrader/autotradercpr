@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TraderEdge CPR - Dashboard</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="/css/shared.css?v=2">
+    <script>
+        (function() {
+            const t = localStorage.getItem('traderedge-theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', t);
+            document.addEventListener('DOMContentLoaded', function() {
+                const btn = document.getElementById('themeToggle');
+                if (btn) btn.textContent = t === 'light' ? '\u2600\uFE0F' : t === 'forest' ? '\uD83C\uDF32' : '\uD83C\uDF19';
+            });
+        })();
+    </script>
+    <style>
+        /* no page-specific styles needed */
+    </style>
+</head>
+<body>
+<div class="app-layout">
+<aside class="sidebar">
+    <div class="sidebar-brand">
+        <div class="brand-icon">⚡</div>
+        <div class="sidebar-brand-text">
+            <div class="brand-name">TRADER<span>EDGE</span> CPR</div>
+        </div>
+    </div>
+    <nav class="sidebar-nav">
+        <a href="/home" class="sidebar-nav-item active"><span class="sidebar-nav-icon">◉</span><span class="sidebar-nav-label">Home</span></a>
+        <a href="/positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
+        <a href="/trades" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
+        <a href="/journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">≡</span><span class="sidebar-nav-label">Journal</span></a>
+        <a href="/settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
+        <button class="sidebar-nav-item" id="simTab" style="display:none;" onclick="openSimModal()"><span class="sidebar-nav-icon">◈</span><span class="sidebar-nav-label">Simulator</span></button>
+    </nav>
+    <div class="sidebar-footer">
+        <div class="status-pill">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="connectionStatus" style="color: var(--text-secondary);">Checking...</span>
+        </div>
+    </div>
+</aside>
+
+<div class="app-main">
+<nav class="navbar">
+    <div class="navbar-inner">
+        <div class="ticker-wrap" id="tickerWrap">
+            <div class="ticker-track" id="tickerTrack"></div>
+        </div>
+        <div class="nav-right">
+            <div class="mode-pill" id="modePill">
+                <div class="mode-pill-dot"></div>
+                <span class="mode-pill-label" id="modeLabel">LIVE</span>
+            </div>
+            <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
+            <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
+        </div>
+    </div>
+</nav>
+
+<div class="page-wrap">
+
+    <div class="page-header">
+        <div>
+            <div class="page-title">Dashboard</div>
+            <div class="page-subtitle">Today's Trading Overview</div>
+        </div>
+    </div>
+
+    <!-- HERO CARD: Net Day P&L -->
+    <div class="section-card fade-in" style="margin-bottom:20px;">
+        <div class="section-header">
+            <div class="section-title"><div class="section-title-dot"></div> Overview</div>
+        </div>
+        <div style="padding:20px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px;">
+            <div>
+                <div class="stat-label" style="margin-bottom:6px;">Net Day P&L</div>
+                <div class="stat-value" id="netDayPnl" style="font-size:2.2rem;">0.00</div>
+                <div class="stat-sub" id="netDayPnlSub" style="margin-top:6px;">Realized + Unrealized</div>
+            </div>
+            <div style="display:flex; gap:32px; flex-wrap:wrap;">
+                <div style="text-align:center;">
+                    <div class="stat-label">Realized</div>
+                    <div class="stat-value" id="realizedPnl" style="font-size:1.1rem; margin-top:4px;">0.00</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">Unrealized</div>
+                    <div class="stat-value" id="unrealizedPnl" style="font-size:1.1rem; margin-top:4px;">0.00</div>
+                </div>
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
+                    <div class="stat-label">Open</div>
+                    <div class="stat-value" id="openPositions" style="font-size:1.1rem; margin-top:4px;">0</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">Closed</div>
+                    <div class="stat-value" id="closedTrades" style="font-size:1.1rem; margin-top:4px;">0</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">Win Rate</div>
+                    <div class="stat-value" id="winRate" style="font-size:1.1rem; margin-top:4px;">--</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- THREE SECTION CARDS -->
+    <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin-bottom:20px;" class="fade-in">
+
+        <!-- Trade Details -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Trade Details</div>
+            </div>
+            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Wins / Losses</span>
+                    <span style="font-family:var(--font-mono); font-size:0.95rem; font-weight:700;">
+                        <span class="pnl-positive" id="profitCount">0</span>
+                        <span style="color:var(--text-muted);"> / </span>
+                        <span class="pnl-negative" id="lossCount">0</span>
+                    </span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Avg Win / Loss</span>
+                    <span class="stat-value" id="avgWinLoss" style="font-size:0.85rem;">-- / --</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Best / Worst</span>
+                    <span class="stat-value" id="bestWorst" style="font-size:0.85rem;">-- / --</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Risk Budget -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> Risk Budget</div>
+                <span class="section-badge" id="riskBudgetSub" style="font-size:0.6rem;"></span>
+            </div>
+            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Exposed Risk</span>
+                    <span class="stat-value" id="exposedRisk" style="font-size:1rem;">0.00</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Consumed Risk</span>
+                    <span class="stat-value" id="consumedRisk" style="font-size:1rem;">0.00</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Budget Left</span>
+                    <span class="stat-value" id="riskBudget" style="font-size:1rem;">--</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- P&L Breakdown -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot"></div> P&L Breakdown</div>
+            </div>
+            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Gross P&L</span>
+                    <span class="stat-value" id="grossPnl" style="font-size:1rem;">0.00</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Total Charges</span>
+                    <span class="stat-value" id="totalCharges" style="font-size:1rem;">0.00</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Profit Factor</span>
+                    <span class="stat-value" id="profitFactor" style="font-size:1rem;">--</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Equity Curve Chart -->
+    <div class="section-card fade-in" style="margin-bottom:0;">
+        <div class="section-header">
+            <div class="section-title"><div class="section-title-dot"></div> Equity Curve</div>
+        </div>
+        <div style="padding:16px 22px; position:relative; height:280px;">
+            <canvas id="equityChart" style="max-height:250px;"></canvas>
+            <div id="equityEmpty" style="display:none; text-align:center; padding:40px 0; color:var(--text-muted); font-family:var(--font-mono); font-size:0.82rem;">No trades yet today</div>
+        </div>
+    </div>
+
+    <footer class="page-footer">
+        <div class="footer-copy">
+            &copy; <span id="footerYear"></span> TraderEdge CPR. All rights reserved.
+        </div>
+        <div class="footer-author">
+            Built by <strong style="color: var(--text-secondary); margin: 0 4px;">Prabhu Arumugham</strong>
+            <span class="footer-tag">rydytrader</span>
+        </div>
+    </footer>
+
+</div>
+</div><!-- /app-main -->
+</div><!-- /app-layout -->
+
+<script src="/js/common.js?v=2"></script>
+<script>
+    // ── STOCK TICKER ─────────────────────────────
+    function loadTicker() {
+        fetch('/api/market-ticker')
+            .then(r => r.json())
+            .then(data => {
+                if (!data || !data.length) return;
+                const track = document.getElementById('tickerTrack');
+                let html = '';
+                for (const t of data) {
+                    const dir = t.ch >= 0 ? 'up' : 'down';
+                    const arrow = t.ch >= 0 ? '▲' : '▼';
+                    const pos = t.position ? ' has-position' : '';
+                    html += `<div class="ticker-item${pos}">
+                        <span class="ticker-symbol">${t.symbol}</span>
+                        <span class="ticker-price">${t.lp.toLocaleString('en-IN', {minimumFractionDigits:2})}</span>
+                        <span class="ticker-change ${dir}">${arrow} ${Math.abs(t.ch).toFixed(2)} (${Math.abs(t.chp).toFixed(2)}%)</span>
+                    </div>`;
+                }
+                track.innerHTML = html + html;
+            })
+            .catch(() => {});
+    }
+    loadTicker();
+    setInterval(loadTicker, 60000);
+
+    // ── MODE + STATUS ────────────────────────────
+    function loadMode() {
+        fetch('/api/mode').then(r => r.json()).then(d => {
+            const pill = document.getElementById('modePill');
+            const label = document.getElementById('modeLabel');
+            if (d.mode === 'SIMULATOR') {
+                pill.className = 'mode-pill mock';
+                label.textContent = 'SIMULATOR';
+                document.getElementById('simTab').style.display = '';
+            } else {
+                pill.className = 'mode-pill live';
+                label.textContent = 'LIVE';
+                document.getElementById('simTab').style.display = 'none';
+            }
+        }).catch(() => {});
+    }
+    loadMode();
+
+    function checkConnection() {
+        fetch('/status').then(r => r.json()).then(d => {
+            const dot = document.getElementById('statusDot');
+            const label = document.getElementById('connectionStatus');
+            if (d.status && d.status.toLowerCase().includes('connect')) {
+                dot.className = 'status-dot connected';
+                label.textContent = 'Connected';
+                label.style.color = 'var(--accent-green)';
+            } else {
+                dot.className = 'status-dot disconnected';
+                label.textContent = 'Disconnected';
+                label.style.color = 'var(--accent-red)';
+            }
+        }).catch(() => {
+            document.getElementById('statusDot').className = 'status-dot disconnected';
+            document.getElementById('connectionStatus').textContent = 'Disconnected';
+            document.getElementById('connectionStatus').style.color = 'var(--accent-red)';
+        });
+    }
+    checkConnection();
+    setInterval(checkConnection, 5000);
+
+    function logout() {
+        fetch('/api/logout', { method: 'POST' }).then(() => window.location.href = '/').catch(() => window.location.href = '/');
+    }
+
+    // ── HELPERS ──────────────────────────────────
+    function fmt(v) {
+        if (v == null || isNaN(v)) return '0.00';
+        return Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function fmtInt(v) { return v != null ? v.toLocaleString('en-IN') : '0'; }
+    function setPnlClass(el, val) {
+        el.classList.remove('positive', 'negative');
+        if (val > 0) el.classList.add('positive');
+        else if (val < 0) el.classList.add('negative');
+    }
+
+    // ── EQUITY CHART ────────────────────────────
+    let equityChart = null;
+    function initEquityChart() {
+        const ctx = document.getElementById('equityChart').getContext('2d');
+        equityChart = new Chart(ctx, {
+            type: 'line',
+            data: { labels: [], datasets: [{
+                label: 'Cumulative P&L',
+                data: [],
+                borderColor: 'rgba(99,179,237,0.8)',
+                backgroundColor: 'rgba(99,179,237,0.08)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.3,
+                pointRadius: 3,
+                pointBackgroundColor: 'rgba(99,179,237,0.8)',
+            }]},
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => '₹' + ctx.parsed.y.toFixed(2)
+                        }
+                    }
+                },
+                scales: {
+                    x: { ticks: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim(), font: { size: 10 } }, grid: { color: 'rgba(128,128,128,0.08)' } },
+                    y: { ticks: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim(), font: { size: 10 }, callback: v => '₹' + v }, grid: { color: 'rgba(128,128,128,0.08)' } }
+                }
+            }
+        });
+    }
+    initEquityChart();
+
+    // ── DATA LOADING ─────────────────────────────
+    function loadPositions() {
+        fetch('/api/positions').then(r => r.json()).then(d => {
+            const positions = d.positions || [];
+            document.getElementById('openPositions').textContent = positions.length;
+
+            const netPnl = d.netDayPnl || 0;
+            const netEl = document.getElementById('netDayPnl');
+            netEl.textContent = (netPnl >= 0 ? '+' : '') + fmt(netPnl);
+            setPnlClass(netEl, netPnl);
+
+            const realEl = document.getElementById('realizedPnl');
+            realEl.textContent = (d.realizedPnl >= 0 ? '+' : '') + fmt(d.realizedPnl);
+            setPnlClass(realEl, d.realizedPnl);
+
+            const unrEl = document.getElementById('unrealizedPnl');
+            unrEl.textContent = (d.unrealizedPnl >= 0 ? '+' : '') + fmt(d.unrealizedPnl);
+            setPnlClass(unrEl, d.unrealizedPnl);
+
+            document.getElementById('exposedRisk').textContent = fmt(d.openRisk);
+            document.getElementById('consumedRisk').textContent = fmt(d.consumedRisk);
+
+            const maxLoss = d.maxDailyLoss || 0;
+            const remaining = maxLoss - (d.openRisk || 0) - (d.consumedRisk || 0);
+            const budgetEl = document.getElementById('riskBudget');
+            if (maxLoss > 0) {
+                budgetEl.textContent = fmt(remaining);
+                setPnlClass(budgetEl, remaining);
+                document.getElementById('riskBudgetSub').textContent = 'of ' + fmt(maxLoss) + ' limit';
+            } else {
+                budgetEl.textContent = '--';
+                document.getElementById('riskBudgetSub').textContent = 'Not configured';
+            }
+        }).catch(() => {});
+    }
+
+    function loadTrades() {
+        fetch('/api/trades').then(r => r.json()).then(trades => {
+            if (!Array.isArray(trades)) trades = [];
+            document.getElementById('closedTrades').textContent = trades.length;
+
+            const wins = trades.filter(t => t.netPnl > 0);
+            const losses = trades.filter(t => t.netPnl < 0);
+            document.getElementById('profitCount').textContent = wins.length;
+            document.getElementById('lossCount').textContent = losses.length;
+
+            // Win rate
+            const wr = trades.length > 0 ? (wins.length / trades.length * 100) : 0;
+            document.getElementById('winRate').textContent = trades.length > 0 ? wr.toFixed(1) + '%' : '--';
+
+            // Gross P&L & charges
+            const grossPnl = trades.reduce((s, t) => s + (t.pnl || 0), 0);
+            const charges = trades.reduce((s, t) => s + (t.charges || 0), 0);
+            const grossEl = document.getElementById('grossPnl');
+            grossEl.textContent = (grossPnl >= 0 ? '+' : '') + fmt(grossPnl);
+            setPnlClass(grossEl, grossPnl);
+            document.getElementById('totalCharges').textContent = fmt(charges);
+
+            // Avg win / avg loss
+            const avgWin = wins.length > 0 ? wins.reduce((s, t) => s + t.netPnl, 0) / wins.length : 0;
+            const avgLoss = losses.length > 0 ? losses.reduce((s, t) => s + t.netPnl, 0) / losses.length : 0;
+            document.getElementById('avgWinLoss').textContent =
+                (wins.length > 0 ? '+' + fmt(avgWin) : '--') + ' / ' +
+                (losses.length > 0 ? fmt(avgLoss) : '--');
+
+            // Best / worst
+            const allPnls = trades.map(t => t.netPnl);
+            const best = allPnls.length > 0 ? Math.max(...allPnls) : 0;
+            const worst = allPnls.length > 0 ? Math.min(...allPnls) : 0;
+            document.getElementById('bestWorst').textContent =
+                (trades.length > 0 ? (best >= 0 ? '+' : '') + fmt(best) : '--') + ' / ' +
+                (trades.length > 0 ? fmt(worst) : '--');
+
+            // Profit factor
+            const grossProfit = wins.reduce((s, t) => s + t.netPnl, 0);
+            const grossLoss = Math.abs(losses.reduce((s, t) => s + t.netPnl, 0));
+            const pf = grossLoss > 0 ? (grossProfit / grossLoss) : (grossProfit > 0 ? '∞' : '--');
+            document.getElementById('profitFactor').textContent = typeof pf === 'number' ? pf.toFixed(2) : pf;
+
+            // Equity curve
+            if (trades.length === 0) {
+                document.getElementById('equityChart').style.display = 'none';
+                document.getElementById('equityEmpty').style.display = '';
+            } else {
+                document.getElementById('equityChart').style.display = '';
+                document.getElementById('equityEmpty').style.display = 'none';
+                // Sort trades by timestamp (oldest first) for correct chart order
+                const sorted = [...trades].sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+                let cumulative = 0;
+                const labels = ['09:15'];
+                const data = [0];
+                for (const t of sorted) {
+                    cumulative += t.netPnl;
+                    labels.push(t.timestamp ? t.timestamp.substring(0, 5) : '');
+                    data.push(Math.round(cumulative * 100) / 100);
+                }
+                // Add end-of-day point at current P&L
+                labels.push('15:30');
+                data.push(Math.round(cumulative * 100) / 100);
+                equityChart.data.labels = labels;
+                equityChart.data.datasets[0].data = data;
+                // Color based on final cumulative
+                const lineColor = cumulative >= 0 ? 'rgba(52,211,153,0.8)' : 'rgba(248,113,113,0.8)';
+                const fillColor = cumulative >= 0 ? 'rgba(52,211,153,0.08)' : 'rgba(248,113,113,0.08)';
+                equityChart.data.datasets[0].borderColor = lineColor;
+                equityChart.data.datasets[0].backgroundColor = fillColor;
+                equityChart.data.datasets[0].pointBackgroundColor = lineColor;
+                equityChart.update();
+            }
+        }).catch(() => {});
+    }
+
+    // ── INIT ─────────────────────────────────────
+    loadPositions();
+    loadTrades();
+    setInterval(loadPositions, 10000);
+    setInterval(loadTrades, 30000);
+</script>
+</body>
+</html>

@@ -54,6 +54,20 @@ public class BhavcopyService {
         if (!expectedDate.equals(cachedDate)) {
             fetchAndCompute();
         } else {
+            // If previous day data is missing, fetch it now
+            if (previousCache.isEmpty() && !cache.isEmpty()) {
+                System.out.println("[BhavcopyService] Previous day CPR missing, fetching...");
+                try {
+                    String cookies = getNseCookies();
+                    Set<String> nfoSymbols = cache.keySet();
+                    if (cookies != null && !cookies.isEmpty()) {
+                        fetchPreviousDay(LocalDate.parse(cachedDate), cookies, nfoSymbols);
+                        saveToFile();
+                    }
+                } catch (Exception e) {
+                    System.err.println("[BhavcopyService] Failed to fetch previous day: " + e.getMessage());
+                }
+            }
             long narrowCount = cache.values().stream().filter(CprLevels::isNarrowCpr).count();
             long insideCount = getInsideCprStocks().size();
             System.out.println("[BhavcopyService] Loaded " + cache.size()
@@ -94,6 +108,7 @@ public class BhavcopyService {
                 double todayBot = Math.min(c.getTc(), c.getBc());
                 double prevTop  = Math.max(prev.getTc(), prev.getBc());
                 double prevBot  = Math.min(prev.getTc(), prev.getBc());
+                // Today's CPR must be fully contained inside yesterday's CPR
                 return todayTop <= prevTop && todayBot >= prevBot;
             })
             .sorted(Comparator.comparingDouble(CprLevels::getCprWidthPct))
@@ -103,6 +118,7 @@ public class BhavcopyService {
     public String getCachedDate()   { return cachedDate; }
     public String getPreviousDate() { return previousDate; }
     public int getLoadedCount()     { return cache.size(); }
+    public CprLevels getPreviousCpr(String symbol) { return previousCache.get(symbol); }
 
     // ── Core fetch logic ───────────────────────────────────────────────────────
 
@@ -162,8 +178,8 @@ public class BhavcopyService {
                     newCache.put(entry.getKey(), new CprLevels(entry.getKey(), hlc[0], hlc[1], hlc[2]));
                 }
 
-                // Preserve current cache as previous day's data
-                if (!cache.isEmpty()) {
+                // Current cache becomes previous day (for next day's inside CPR comparison)
+                if (!cache.isEmpty() && !cachedDate.equals(targetDate.toString())) {
                     previousCache.clear();
                     previousCache.putAll(cache);
                     previousDate = cachedDate;
@@ -172,6 +188,11 @@ public class BhavcopyService {
                 cache.clear();
                 cache.putAll(newCache);
                 cachedDate = targetDate.toString();
+
+                // If still no previous day data, fetch it explicitly
+                if (previousCache.isEmpty()) {
+                    fetchPreviousDay(targetDate, cookies, nfoSymbols);
+                }
 
                 saveToFile();
 
@@ -190,6 +211,38 @@ public class BhavcopyService {
         }
 
         System.err.println("[BhavcopyService] Failed to fetch Bhavcopy after 3 attempts, using cached data");
+    }
+
+    // ── Fetch previous trading day's bhavcopy for inside CPR ───────────────────
+
+    private void fetchPreviousDay(LocalDate currentDate, String cookies, Set<String> nfoSymbols) {
+        LocalDate prevDate = skipWeekends(currentDate.minusDays(1));
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try {
+                String dateStr = DATE_FMT.format(prevDate);
+                String cmUrl = String.format(CM_URL_TEMPLATE, dateStr);
+                byte[] cmZip = downloadZip(cmUrl, cookies);
+                if (cmZip == null) {
+                    prevDate = skipWeekends(prevDate.minusDays(1));
+                    continue;
+                }
+
+                Map<String, double[]> ohlcMap = parseCmOhlc(cmZip, nfoSymbols);
+                previousCache.clear();
+                for (Map.Entry<String, double[]> entry : ohlcMap.entrySet()) {
+                    double[] hlc = entry.getValue();
+                    previousCache.put(entry.getKey(), new CprLevels(entry.getKey(), hlc[0], hlc[1], hlc[2]));
+                }
+                previousDate = prevDate.toString();
+                System.out.println("[BhavcopyService] Loaded previous day CPR for " + previousCache.size()
+                    + " stocks from " + previousDate);
+                return;
+            } catch (Exception e) {
+                System.err.println("[BhavcopyService] Error fetching previous day Bhavcopy for " + prevDate + ": " + e.getMessage());
+                prevDate = skipWeekends(prevDate.minusDays(1));
+            }
+        }
+        System.err.println("[BhavcopyService] Failed to fetch previous day Bhavcopy after 3 attempts");
     }
 
     // ── NSE session cookies ────────────────────────────────────────────────────

@@ -83,7 +83,7 @@ public class SimulatorController {
 
         return ResponseEntity.ok(Map.of(
             "mode",     newMode.name(),
-            "redirect", newMode == ModeStore.Mode.SIMULATOR ? "/positions" : "/"
+            "redirect", newMode == ModeStore.Mode.SIMULATOR ? "/home" : "/"
         ));
     }
 

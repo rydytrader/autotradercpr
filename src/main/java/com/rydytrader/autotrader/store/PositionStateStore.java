@@ -46,15 +46,18 @@ public class PositionStateStore {
         return Paths.get(positionsDir(), toFileName(symbol));
     }
 
-    public void save(String symbol, String side, int qty, double avgPrice, String setup, String entryTime) {
+    public void save(String symbol, String side, int qty, double avgPrice,
+                     String setup, String entryTime, double slPrice, double targetPrice) {
         try {
             Map<String, Object> state = new LinkedHashMap<>();
-            state.put("symbol",    symbol);
-            state.put("side",      side);
-            state.put("qty",       qty);
-            state.put("avgPrice",  avgPrice);
-            state.put("setup",     setup != null ? setup : "");
-            state.put("entryTime", entryTime != null ? entryTime : "");
+            state.put("symbol",      symbol);
+            state.put("side",        side);
+            state.put("qty",         qty);
+            state.put("avgPrice",    avgPrice);
+            state.put("setup",       setup != null ? setup : "");
+            state.put("entryTime",   entryTime != null ? entryTime : "");
+            state.put("slPrice",     slPrice);
+            state.put("targetPrice", targetPrice);
             Files.writeString(filePath(symbol), mapper.writeValueAsString(state));
         } catch (IOException e) {
             System.err.println("[PositionStateStore] Failed to save " + symbol + ": " + e.getMessage());

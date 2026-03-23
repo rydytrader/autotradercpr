@@ -23,6 +23,9 @@ public class TradeHistoryService {
     private final ModeStore modeStore;
     private final RiskSettingsStore riskSettings;
     private final List<TradeRecord> trades = Collections.synchronizedList(new ArrayList<>());
+    // Dedup: track last recorded exit per symbol to prevent duplicate entries
+    private final java.util.concurrent.ConcurrentHashMap<String, Long> lastRecordTime = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final long DEDUP_WINDOW_MS = 5000; // 5 seconds
 
     public TradeHistoryService(ModeStore modeStore, RiskSettingsStore riskSettings) {
         this.modeStore = modeStore;
@@ -50,6 +53,15 @@ public class TradeHistoryService {
 
     public void record(String symbol, String side, int qty,
                        double entryPrice, double exitPrice, String exitReason, String setup) {
+        // Dedup: skip if same symbol was recorded within the last 5 seconds
+        long now = System.currentTimeMillis();
+        Long lastTime = lastRecordTime.get(symbol);
+        if (lastTime != null && (now - lastTime) < DEDUP_WINDOW_MS) {
+            System.out.println("[TradeHistory] Duplicate record skipped for " + symbol
+                + " (last recorded " + (now - lastTime) + "ms ago)");
+            return;
+        }
+        lastRecordTime.put(symbol, now);
         double brokerage = riskSettings.getBrokeragePerOrder();
         addRecord(new TradeRecord(symbol, side, qty, entryPrice, exitPrice, exitReason, setup, brokerage));
     }

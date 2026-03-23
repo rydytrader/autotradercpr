@@ -128,6 +128,13 @@ public class SettingsController {
             m.put("cprWidthPct", Math.round(c.getCprWidthPct() * 1000.0) / 1000.0);
             m.put("r1", Math.round(c.getR1() * 100.0) / 100.0);
             m.put("s1", Math.round(c.getS1() * 100.0) / 100.0);
+            // Previous day CPR for verification
+            CprLevels prev = bhavcopyService.getPreviousCpr(c.getSymbol());
+            if (prev != null) {
+                m.put("prevTc", Math.round(prev.getTc() * 100.0) / 100.0);
+                m.put("prevBc", Math.round(prev.getBc() * 100.0) / 100.0);
+                m.put("prevPivot", Math.round(prev.getPivot() * 100.0) / 100.0);
+            }
             return m;
         }).collect(Collectors.toList());
 

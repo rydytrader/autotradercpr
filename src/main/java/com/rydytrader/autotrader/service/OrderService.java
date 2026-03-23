@@ -106,14 +106,25 @@ public class OrderService {
                 } else {
                     System.out.println("[CancelAll] Cancelled " + cancelled + " order(s) for " + symbol);
                 }
+            } else if (node != null && node.has("code") && node.get("code").asInt() == -429) {
+                System.out.println("[CancelAll] Fyers rate limit hit for " + symbol + " — will retry on next sync");
             } else {
                 System.out.println("[CancelAll] No orderBook in response for " + symbol);
             }
         } catch (Exception e) { e.printStackTrace(); }
     }
 
+    private volatile long lastCancelTime = 0;
+    private static final long CANCEL_THROTTLE_MS = 3000; // 3 seconds between cancel calls
+
     public boolean cancelOrder(String orderId) {
         try {
+            long now = System.currentTimeMillis();
+            long wait = CANCEL_THROTTLE_MS - (now - lastCancelTime);
+            if (wait > 0) {
+                try { Thread.sleep(wait); } catch (InterruptedException ignored) {}
+            }
+            lastCancelTime = System.currentTimeMillis();
             JsonNode node = fyersClient.cancelOrder(orderId, authHeader());
             boolean ok = node != null && node.get("s") != null && "ok".equals(node.get("s").asText());
             if (ok) {
@@ -125,10 +136,36 @@ public class OrderService {
         } catch (Exception e) { e.printStackTrace(); return false; }
     }
 
+    // ── TRADEBOOK CACHE ───────────────────────────────────────────────────────
+    private volatile JsonNode cachedTradebook = null;
+    private volatile long     tradebookFetchTime = 0;
+    private static final long TRADEBOOK_CACHE_MS = 5000; // 5 seconds
+
+    private JsonNode getCachedTradebook() {
+        long now = System.currentTimeMillis();
+        if (cachedTradebook != null && (now - tradebookFetchTime) < TRADEBOOK_CACHE_MS) {
+            return cachedTradebook;
+        }
+        try {
+            JsonNode root = getCachedTradebook();
+            if (root != null && "ok".equals(root.get("s").asText())) {
+                cachedTradebook = root;
+                tradebookFetchTime = now;
+                return root;
+            }
+            // Rate limit — back off and return stale cache
+            if (root != null && root.has("code") && root.get("code").asInt() == -429) {
+                tradebookFetchTime = now + 30000;
+                return cachedTradebook;
+            }
+        } catch (Exception e) { e.printStackTrace(); }
+        return cachedTradebook; // return stale cache on any error
+    }
+
     // ── NET DAY P&L (from tradebook) ──────────────────────────────────────────
     public double getNetDayPnl() {
         try {
-            JsonNode root = fyersClient.getTradebook(authHeader());
+            JsonNode root = getCachedTradebook();
             if (!"ok".equals(root.get("s").asText())) return 0;
             double netPnl = 0;
             for (JsonNode trade : root.get("tradeBook")) {
@@ -142,7 +179,7 @@ public class OrderService {
     // ── TRADEBOOK FILL PRICE ──────────────────────────────────────────────────
     public double getFilledPriceFromTradebook(String symbol, int side) {
         try {
-            JsonNode root = fyersClient.getTradebook(authHeader());
+            JsonNode root = getCachedTradebook();
             if (!"ok".equals(root.get("s").asText())) return 0;
             JsonNode tradeBook = root.get("tradeBook");
             // Walk in reverse (newest first), skip ManualSquareOff trades for entry lookup
@@ -151,6 +188,22 @@ public class OrderService {
                 if (t.get("symbol").asText().equals(symbol)
                         && t.get("side").asInt() == side
                         && !"ManualSquareOff".equals(t.has("orderTag") ? t.get("orderTag").asText() : "")) {
+                    return t.get("tradePrice").asDouble();
+                }
+            }
+        } catch (Exception e) { e.printStackTrace(); }
+        return 0;
+    }
+
+    /** Look up fill price by exact order ID — unambiguous even with multiple trades on same symbol. */
+    public double getFilledPriceByOrderId(String orderId) {
+        try {
+            JsonNode root = getCachedTradebook();
+            if (!"ok".equals(root.get("s").asText())) return 0;
+            for (JsonNode t : root.get("tradeBook")) {
+                String tid = t.has("orderNumber") ? t.get("orderNumber").asText()
+                           : t.has("orderId") ? t.get("orderId").asText() : "";
+                if (orderId.equals(tid)) {
                     return t.get("tradePrice").asDouble();
                 }
             }
@@ -168,7 +221,7 @@ public class OrderService {
      */
     public double getExitPriceFromTradebook(String symbol, String positionSide) {
         try {
-            JsonNode root = fyersClient.getTradebook(authHeader());
+            JsonNode root = getCachedTradebook();
             if (!"ok".equals(root.get("s").asText())) return 0;
             JsonNode tradeBook = root.get("tradeBook");
 

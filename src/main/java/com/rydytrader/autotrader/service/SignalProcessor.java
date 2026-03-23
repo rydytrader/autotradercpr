@@ -72,11 +72,17 @@ public class SignalProcessor {
         }
 
         // ── 4e. Session high/low rejection (skip for day BO — close already broke session extreme)
+        // Only reject if the session extreme was set by a PREVIOUS candle (not the current breakout candle).
+        // Since sessionHigh/Low from Pine includes the current candle, close == sessionHigh/Low means
+        // this candle set the extreme — which is expected for a breakout. Only reject if close is
+        // EXACTLY at a pre-existing extreme without breaking through.
+        // We approximate this: if close equals the session extreme AND also equals the breakout level,
+        // the candle likely set the extreme itself — allow it. Otherwise reject.
         if (!isDayBO) {
-            if (isBuy && sessionHigh > 0 && close == sessionHigh) {
+            if (isBuy && sessionHigh > 0 && close == sessionHigh && close != breakoutLevel) {
                 return ProcessedSignal.rejected(setup, symbol, "Close equals session high — reversal risk");
             }
-            if (!isBuy && sessionLow > 0 && close == sessionLow) {
+            if (!isBuy && sessionLow > 0 && close == sessionLow && close != breakoutLevel) {
                 return ProcessedSignal.rejected(setup, symbol, "Close equals session low — reversal risk");
             }
         }
@@ -91,6 +97,19 @@ public class SignalProcessor {
         if (Math.abs(close - defaultTarget) < atr) {
             target = shiftTarget;
             shifted = true;
+        }
+
+        // ── 4g. Cap target at session extreme ─────────────────────────────────
+        // If session low/high sits between close and target, use it as target
+        // since price is likely to bounce at the session extreme.
+        boolean sessionCapped = false;
+        if (isBuy && sessionHigh > 0 && sessionHigh > close && sessionHigh < target) {
+            target = sessionHigh;
+            sessionCapped = true;
+        }
+        if (!isBuy && sessionLow > 0 && sessionLow < close && sessionLow > target) {
+            target = sessionLow;
+            sessionCapped = true;
         }
 
         // ── 4i. Quantity ────────────────────────────────────────────────────────
@@ -143,6 +162,10 @@ public class SignalProcessor {
         if (shifted) {
             eventService.log("[INFO] " + symbol + " " + setup + " target shifted: " + fmt(defaultTarget) + " -> " + fmt(shiftTarget)
                 + " (default was < 1 ATR from entry)");
+        }
+        if (sessionCapped) {
+            eventService.log("[INFO] " + symbol + " " + setup + " target capped at session "
+                + (isBuy ? "high" : "low") + ": " + fmt(target));
         }
 
         return new ProcessedSignal.Builder()

@@ -134,7 +134,8 @@ public class MockFyersClient implements FyersClient {
         var arr = mapper.createArrayNode();
         for (Map<String, Object> t : state.getTradebook()) {
             var tn = mapper.createObjectNode();
-            tn.put("id",         t.get("id").toString());
+            tn.put("id",          t.get("id").toString());
+            tn.put("orderNumber", t.getOrDefault("orderId", "").toString());
             tn.put("symbol",     t.get("symbol").toString());
             tn.put("side",       toInt(t.get("side")));
             tn.put("tradedQty",  toInt(t.get("tradedQty")));

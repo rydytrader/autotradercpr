@@ -34,9 +34,9 @@ public class ViewController {
 
     @GetMapping("/")
     public String home() {
-        // Already logged in — go straight to positions
+        // Already logged in — go straight to home dashboard
         if (tokenStore.isTokenAvailable()) {
-            return "redirect:/positions";
+            return "redirect:/home";
         }
         return "login";
     }
@@ -63,13 +63,19 @@ public class ViewController {
             tokenStore.setAccessToken(token);
             pollingService.syncPositionOnce();
             pollingService.startPositionSync();
-            return "redirect:/positions";
+            return "redirect:/home";
         }
         System.out.println("Login callback error");
         return "error";
     }
 
     // ── PAGES (all require token) ─────────────────────────────────────────────
+    @GetMapping("/home")
+    public String dashboard() {
+        if (!tokenStore.isTokenAvailable()) return "redirect:/";
+        return "home";
+    }
+
     @GetMapping("/positions")
     public String positions() {
         if (!tokenStore.isTokenAvailable()) return "redirect:/";
