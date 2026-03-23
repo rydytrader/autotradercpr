@@ -157,20 +157,20 @@
             <div class="stat-value" id="statPnl">—</div>
             <div class="stat-sub" id="statPnlSub">Loading...</div>
         </div>
-        <div class="stat-card" style="--accent-color: var(--accent-blue)">
-            <div class="stat-label">Trades Today</div>
-            <div class="stat-value" id="statTrades">—</div>
-            <div class="stat-sub" id="statTradesSub">Loading...</div>
-        </div>
         <div class="stat-card" style="--accent-color: var(--accent-red)">
             <div class="stat-label">Risk Budget</div>
             <div class="stat-value" id="statLossLimit">—</div>
             <div class="stat-sub" id="statLossLimitSub">Loading...</div>
         </div>
         <div class="stat-card" style="--accent-color: var(--accent-yellow)">
-            <div class="stat-label">Trades Today</div>
-            <div class="stat-value" id="statTradeLimit">—</div>
-            <div class="stat-sub" id="statTradeLimitSub">Loading...</div>
+            <div class="stat-label">Small Candle ATR</div>
+            <div class="stat-value" id="statSmallCandleAtr">—</div>
+            <div class="stat-sub" id="statSmallCandleSub">Loading...</div>
+        </div>
+        <div class="stat-card" style="--accent-color: var(--accent-blue)">
+            <div class="stat-label">Session Move Limit</div>
+            <div class="stat-value" id="statSessionMove">—</div>
+            <div class="stat-sub" id="statSessionMoveSub">Qty halved if exceeded</div>
         </div>
     </div>
 
@@ -261,7 +261,25 @@
                     <label class="form-label">Large Candle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableLargeCandleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject trade if candle moves > 1 ATR from breakout level</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject if move &gt;</span>
+                        <input type="number" id="largeCandleAtrThreshold" class="form-control" step="0.1" min="0.5" max="3.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR from breakout level</span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Small Candle Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableSmallCandleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject if move &lt;</span>
+                        <input type="number" id="smallCandleAtrThreshold" class="form-control" step="0.1" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR from breakout level</span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Target Shift</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableTargetShift" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift target to next level if default target &lt; 1 ATR. If off, skip the entry.</span>
                     </div>
                 </div>
             </div>
@@ -439,6 +457,10 @@
             document.getElementById('telegramAlertFrequency').value = d.telegramAlertFrequency != null ? d.telegramAlertFrequency : 60;
             document.getElementById('enableR4S4').checked      = d.enableR4S4        || false;
             document.getElementById('enableLargeCandleFilter').checked = d.enableLargeCandleFilter !== false;
+            document.getElementById('largeCandleAtrThreshold').value = d.largeCandleAtrThreshold || 1.0;
+            document.getElementById('enableTargetShift').checked = d.enableTargetShift !== false;
+            document.getElementById('enableSmallCandleFilter').checked = d.enableSmallCandleFilter === true;
+            document.getElementById('smallCandleAtrThreshold').value = d.smallCandleAtrThreshold || 0.5;
 
             const pnl    = d.todayPnl    || 0;
             const trades = d.todayTrades || 0;
@@ -453,10 +475,6 @@
             pnlEl.className = 'stat-value ' + (pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : '');
             document.getElementById('statPnlSub').textContent = 'Realized today';
 
-            // Trades stat
-            document.getElementById('statTrades').textContent = trades;
-            document.getElementById('statTradesSub').textContent = 'Completed trades';
-
             // Loss limit stat
             if (maxLoss > 0) {
                 document.getElementById('statLossLimit').textContent = '₹' + maxLoss.toLocaleString('en-IN');
@@ -467,9 +485,16 @@
                 document.getElementById('statLossLimitSub').textContent = 'Not configured';
             }
 
-            // Trade limit stat — show total trades today
-            document.getElementById('statTradeLimit').textContent = trades;
-            document.getElementById('statTradeLimitSub').textContent = 'Trades today';
+            // Small candle ATR stat
+            const smallAtr = d.smallCandleAtrThreshold || 0.5;
+            const smallEnabled = d.enableSmallCandleFilter === true;
+            document.getElementById('statSmallCandleAtr').textContent = smallEnabled ? smallAtr + 'x' : 'OFF';
+            document.getElementById('statSmallCandleSub').textContent = smallEnabled ? 'Reject if move < ' + smallAtr + ' ATR' : 'Filter disabled';
+
+            // Session move limit stat
+            const moveLimit = d.sessionMoveLimit || 0;
+            document.getElementById('statSessionMove').textContent = moveLimit > 0 ? moveLimit + '%' : 'OFF';
+            document.getElementById('statSessionMoveSub').textContent = moveLimit > 0 ? 'Qty halved if exceeded' : 'No limit set';
 
         } catch (e) {
             console.error('Failed to load settings', e);
@@ -497,7 +522,11 @@
                 capitalPerTrade:  parseFloat(document.getElementById('capitalPerTrade').value) || 0,
                 telegramAlertFrequency: parseInt(document.getElementById('telegramAlertFrequency').value) || 60,
                 enableR4S4:        document.getElementById('enableR4S4').checked,
-                enableLargeCandleFilter: document.getElementById('enableLargeCandleFilter').checked
+                enableLargeCandleFilter: document.getElementById('enableLargeCandleFilter').checked,
+                largeCandleAtrThreshold: parseFloat(document.getElementById('largeCandleAtrThreshold').value) || 1.0,
+                enableTargetShift: document.getElementById('enableTargetShift').checked,
+                enableSmallCandleFilter: document.getElementById('enableSmallCandleFilter').checked,
+                smallCandleAtrThreshold: parseFloat(document.getElementById('smallCandleAtrThreshold').value) || 0.5
             };
             const r = await fetch('/api/settings/risk', {
                 method: 'POST',

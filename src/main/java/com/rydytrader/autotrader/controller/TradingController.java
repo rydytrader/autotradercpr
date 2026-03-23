@@ -290,14 +290,15 @@ public class TradingController {
         double grossPnl = trades.stream().mapToDouble(t -> t.getPnl()).sum();
         double winRate = total == 0 ? 0 : Math.round(wins * 1000.0 / total) / 10.0;
 
-        double grossWin  = trades.stream().filter(t -> t.getPnl() > 0).mapToDouble(t -> t.getPnl()).sum();
-        double grossLoss = Math.abs(trades.stream().filter(t -> t.getPnl() < 0).mapToDouble(t -> t.getPnl()).sum());
-        double pf        = grossLoss == 0 ? (grossWin > 0 ? 99 : 0) : Math.round(grossWin / grossLoss * 100.0) / 100.0;
+        // Use netPnl (after charges) for all metrics — consistent with win/loss classification
+        double netWin    = trades.stream().filter(t -> t.getNetPnl() > 0).mapToDouble(t -> t.getNetPnl()).sum();
+        double netLoss   = Math.abs(trades.stream().filter(t -> t.getNetPnl() < 0).mapToDouble(t -> t.getNetPnl()).sum());
+        double pf        = netLoss == 0 ? (netWin > 0 ? 99 : 0) : Math.round(netWin / netLoss * 100.0) / 100.0;
 
-        double avgWin  = wins == 0 ? 0 : Math.round(grossWin / wins * 100.0) / 100.0;
-        double avgLoss = losses == 0 ? 0 : Math.round(-grossLoss / losses * 100.0) / 100.0;
-        double maxWin  = trades.stream().mapToDouble(t -> t.getPnl()).filter(p -> p > 0).max().orElse(0);
-        double maxLoss = trades.stream().mapToDouble(t -> t.getPnl()).filter(p -> p < 0).min().orElse(0);
+        double avgWin  = wins == 0 ? 0 : Math.round(netWin / wins * 100.0) / 100.0;
+        double avgLoss = losses == 0 ? 0 : Math.round(-netLoss / losses * 100.0) / 100.0;
+        double maxWin  = trades.stream().mapToDouble(t -> t.getNetPnl()).filter(p -> p > 0).max().orElse(0);
+        double maxLoss = trades.stream().mapToDouble(t -> t.getNetPnl()).filter(p -> p < 0).min().orElse(0);
         double avgRR   = avgLoss == 0 ? 0 : Math.round(Math.abs(avgWin / avgLoss) * 100.0) / 100.0;
         double expectancy = total == 0 ? 0 : Math.round(netPnl / total * 100.0) / 100.0;
 
@@ -348,7 +349,7 @@ public class TradingController {
             final String s = side;
             var st = trades.stream().filter(t -> s.equals(t.getSide())).collect(java.util.stream.Collectors.toList());
             int sw = (int) st.stream().filter(t -> "PROFIT".equals(t.getResult())).count();
-            double sp = st.stream().mapToDouble(t -> t.getPnl()).sum();
+            double sp = st.stream().mapToDouble(t -> t.getNetPnl()).sum();
             Map<String, Object> sideMap = new java.util.LinkedHashMap<>();
             sideMap.put("trades",  st.size());
             sideMap.put("winRate", st.isEmpty() ? 0 : Math.round(sw*1000.0/st.size())/10.0);
@@ -360,7 +361,7 @@ public class TradingController {
         Map<String, Object> rb = new java.util.LinkedHashMap<>();
         for (String r : new String[]{"SL","TARGET","MANUAL"}) {
             var rt = trades.stream().filter(t -> r.equals(t.getExitReason())).collect(java.util.stream.Collectors.toList());
-            double rp = rt.stream().mapToDouble(t -> t.getPnl()).sum();
+            double rp = rt.stream().mapToDouble(t -> t.getNetPnl()).sum();
             double ra = rt.isEmpty() ? 0 : Math.round(rp / rt.size() * 100.0) / 100.0;
             rb.put(r, Map.of("count", rt.size(), "pnl", Math.round(rp*100.0)/100.0, "avgPnl", ra));
         }
@@ -400,7 +401,7 @@ public class TradingController {
             var sut = trades.stream().filter(t -> su.equals(t.getSetup())).collect(java.util.stream.Collectors.toList());
             if (sut.isEmpty()) continue;
             int suw = (int) sut.stream().filter(t -> "PROFIT".equals(t.getResult())).count();
-            double sup = sut.stream().mapToDouble(t -> t.getPnl()).sum();
+            double sup = sut.stream().mapToDouble(t -> t.getNetPnl()).sum();
             double sua = sut.isEmpty() ? 0 : Math.round(sup / sut.size() * 100.0) / 100.0;
             Map<String, Object> sd = new java.util.LinkedHashMap<>();
             sd.put("count",   sut.size());
@@ -423,7 +424,7 @@ public class TradingController {
             final String sy = sym;
             var syt = trades.stream().filter(t -> sy.equals(t.getSymbol())).collect(java.util.stream.Collectors.toList());
             int syw = (int) syt.stream().filter(t -> "PROFIT".equals(t.getResult())).count();
-            double syp = syt.stream().mapToDouble(t -> t.getPnl()).sum();
+            double syp = syt.stream().mapToDouble(t -> t.getNetPnl()).sum();
             double sya = syt.isEmpty() ? 0 : Math.round(syp / syt.size() * 100.0) / 100.0;
             Map<String, Object> sd = new java.util.LinkedHashMap<>();
             sd.put("count",   syt.size());

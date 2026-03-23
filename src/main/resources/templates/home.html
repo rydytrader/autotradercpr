@@ -106,6 +106,10 @@
                     <div class="stat-label">Win Rate</div>
                     <div class="stat-value" id="winRate" style="font-size:1.1rem; margin-top:4px;">--</div>
                 </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">R : R</div>
+                    <div class="stat-value" id="rrOverview" style="font-size:1.1rem; margin-top:4px;">--</div>
+                </div>
             </div>
         </div>
     </div>
@@ -399,6 +403,11 @@
             document.getElementById('bestWorst').textContent =
                 (trades.length > 0 ? (best >= 0 ? '+' : '') + fmt(best) : '--') + ' / ' +
                 (trades.length > 0 ? fmt(worst) : '--');
+
+            // Risk / Reward
+            const rr = (avgLoss !== 0 && wins.length > 0 && losses.length > 0)
+                ? Math.abs(avgWin / avgLoss).toFixed(2) + ' : 1' : '--';
+            document.getElementById('rrOverview').textContent = rr;
 
             // Profit factor
             const grossProfit = wins.reduce((s, t) => s + t.netPnl, 0);

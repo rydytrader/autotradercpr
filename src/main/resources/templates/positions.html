@@ -193,6 +193,7 @@
             <table class="data-table">
                 <thead>
                     <tr>
+                        <th>#</th>
                         <th>Time</th>
                         <th>Symbol</th>
                         <th class="text-right">Quantity</th>
@@ -511,19 +512,22 @@
 
     function renderPositionsTable() {
         const filter = document.getElementById('posSymbolFilter').value;
-        const positions = filter ? allPositions.filter(p => p.symbol === filter) : allPositions;
+        const positions = filter ? allPositions.filter(p => p.symbol === filter) : [...allPositions];
+        // Sort by entry time descending (latest first)
+        positions.sort((a, b) => (b.entryTime || '').localeCompare(a.entryTime || ''));
         const tbody = document.getElementById('positionsTableBody');
         if (positions.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">◎</div>No active positions${filter ? ' for ' + filter : ''}</div></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="10"><div class="empty-state"><div class="empty-icon">◎</div>No active positions${filter ? ' for ' + filter : ''}</div></td></tr>`;
             return;
         }
-        tbody.innerHTML = positions.map(pos => {
+        tbody.innerHTML = positions.map((pos, idx) => {
             const sideBadge = pos.side === 'LONG'
                 ? `<span class="side-badge side-long">▲ LONG</span>`
                 : `<span class="side-badge side-short">▼ SHORT</span>`;
             const pnlClass = pos.pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
             const sym = pos.symbol.replace(/'/g, "\\'");
             return `<tr>
+                <td style="font-family:var(--font-mono);color:var(--text-muted);font-size:0.75rem;">${idx + 1}</td>
                 <td style="font-family:var(--font-mono);color:var(--text-secondary)">${pos.entryTime || '—'}</td>
                 <td><span class="symbol-cell">${pos.symbol}</span></td>
                 <td class="text-right">${pos.qty}</td>

@@ -63,11 +63,22 @@ public class SignalProcessor {
         // ── 4d. Large candle filter ─────────────────────────────────────────────
         boolean isDayBO = "DAY_HIGH_BO".equals(setup) || "DAY_LOW_BO".equals(setup);
         if (!isDayBO && riskSettings.isEnableLargeCandleFilter()) {
-            if (isBuy && (close - breakoutLevel) > atr) {
-                return ProcessedSignal.rejected(setup, symbol, "Large candle — candle > 1 ATR from breakout level");
+            double largeThreshold = riskSettings.getLargeCandleAtrThreshold();
+            if (isBuy && (close - breakoutLevel) > atr * largeThreshold) {
+                return ProcessedSignal.rejected(setup, symbol, "Large candle — move > " + largeThreshold + " ATR (" + fmt(atr * largeThreshold) + ") from breakout level");
             }
-            if (!isBuy && (breakoutLevel - close) > atr) {
-                return ProcessedSignal.rejected(setup, symbol, "Large candle — candle > 1 ATR from breakout level");
+            if (!isBuy && (breakoutLevel - close) > atr * largeThreshold) {
+                return ProcessedSignal.rejected(setup, symbol, "Large candle — move > " + largeThreshold + " ATR (" + fmt(atr * largeThreshold) + ") from breakout level");
+            }
+        }
+
+        // ── 4d2. Small candle filter ────────────────────────────────────────────
+        if (!isDayBO && riskSettings.isEnableSmallCandleFilter()) {
+            double smallThreshold = riskSettings.getSmallCandleAtrThreshold();
+            double moveFromLevel = isBuy ? (close - breakoutLevel) : (breakoutLevel - close);
+            if (moveFromLevel < atr * smallThreshold) {
+                return ProcessedSignal.rejected(setup, symbol,
+                    "Small candle — move from breakout level (" + fmt(moveFromLevel) + ") < " + smallThreshold + " ATR (" + fmt(atr * smallThreshold) + ")");
             }
         }
 
@@ -95,8 +106,13 @@ public class SignalProcessor {
 
         boolean shifted = false;
         if (Math.abs(close - defaultTarget) < atr) {
-            target = shiftTarget;
-            shifted = true;
+            if (riskSettings.isEnableTargetShift()) {
+                target = shiftTarget;
+                shifted = true;
+            } else {
+                return ProcessedSignal.rejected(setup, symbol,
+                    "Target too close (< 1 ATR) and target shift disabled — default: " + fmt(defaultTarget) + ", distance: " + fmt(Math.abs(close - defaultTarget)) + ", ATR: " + fmt(atr));
+            }
         }
 
         // ── 4g. Cap target at session extreme ─────────────────────────────────

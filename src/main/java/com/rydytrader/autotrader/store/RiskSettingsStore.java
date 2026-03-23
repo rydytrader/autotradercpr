@@ -40,7 +40,11 @@ public class RiskSettingsStore {
         volatile int    fixedQuantity    = 2;     // -1 = use capital-based calculation
         volatile double capitalPerTrade  = 0;     // ₹ per trade (used when fixedQuantity == -1)
         volatile int    telegramAlertFrequency = 60; // seconds between Telegram portfolio updates (0 = disabled)
-        volatile boolean enableLargeCandleFilter = true; // reject trade if candle > 1 ATR from breakout level
+        volatile boolean enableLargeCandleFilter = true; // reject trade if candle > largeCandleAtrThreshold ATR from breakout level
+        volatile double largeCandleAtrThreshold = 1.0; // ATR multiplier for large candle filter
+        volatile boolean enableTargetShift = true; // shift target to next level if default target < 1 ATR. If false, skip the entry.
+        volatile boolean enableSmallCandleFilter = false; // reject if candle move from breakout level < smallCandleAtrThreshold ATR
+        volatile double smallCandleAtrThreshold = 0.5; // ATR multiplier for small candle filter
     }
 
     private final Cfg live = new Cfg();
@@ -88,6 +92,10 @@ public class RiskSettingsStore {
     public double getCapitalPerTrade() { return cfg().capitalPerTrade; }
     public int    getTelegramAlertFrequency() { return cfg().telegramAlertFrequency; }
     public boolean isEnableLargeCandleFilter() { return cfg().enableLargeCandleFilter; }
+    public double getLargeCandleAtrThreshold() { return cfg().largeCandleAtrThreshold; }
+    public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
+    public boolean isEnableSmallCandleFilter() { return cfg().enableSmallCandleFilter; }
+    public double getSmallCandleAtrThreshold() { return cfg().smallCandleAtrThreshold; }
 
     public void setTradingStartTime(String v)  { cfg().tradingStartTime = v; }
     public void setTradingEndTime(String v)    { cfg().tradingEndTime = v; }
@@ -103,6 +111,10 @@ public class RiskSettingsStore {
     public void setCapitalPerTrade(double v) { cfg().capitalPerTrade = v; }
     public void setTelegramAlertFrequency(int v) { cfg().telegramAlertFrequency = v; }
     public void setEnableLargeCandleFilter(boolean v) { cfg().enableLargeCandleFilter = v; }
+    public void setLargeCandleAtrThreshold(double v) { cfg().largeCandleAtrThreshold = v; }
+    public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
+    public void setEnableSmallCandleFilter(boolean v) { cfg().enableSmallCandleFilter = v; }
+    public void setSmallCandleAtrThreshold(double v) { cfg().smallCandleAtrThreshold = v; }
 
     // ── mode-specific getters/setters (used by SettingsController) ────────────
     public String getTradingStartTime(String mode)  { return cfgFor(mode).tradingStartTime; }
@@ -120,6 +132,10 @@ public class RiskSettingsStore {
     public double getCapitalPerTrade(String mode) { return cfgFor(mode).capitalPerTrade; }
     public int    getTelegramAlertFrequency(String mode) { return cfgFor(mode).telegramAlertFrequency; }
     public boolean isEnableLargeCandleFilter(String mode) { return cfgFor(mode).enableLargeCandleFilter; }
+    public double getLargeCandleAtrThreshold(String mode) { return cfgFor(mode).largeCandleAtrThreshold; }
+    public boolean isEnableTargetShift(String mode) { return cfgFor(mode).enableTargetShift; }
+    public boolean isEnableSmallCandleFilter(String mode) { return cfgFor(mode).enableSmallCandleFilter; }
+    public double getSmallCandleAtrThreshold(String mode) { return cfgFor(mode).smallCandleAtrThreshold; }
 
     public void setTradingStartTime(String mode, String v)  { cfgFor(mode).tradingStartTime = v; }
     public void setTradingEndTime(String mode, String v)    { cfgFor(mode).tradingEndTime = v; }
@@ -135,6 +151,10 @@ public class RiskSettingsStore {
     public void setCapitalPerTrade(String mode, double v) { cfgFor(mode).capitalPerTrade = v; }
     public void setTelegramAlertFrequency(String mode, int v) { cfgFor(mode).telegramAlertFrequency = v; }
     public void setEnableLargeCandleFilter(String mode, boolean v) { cfgFor(mode).enableLargeCandleFilter = v; }
+    public void setLargeCandleAtrThreshold(String mode, double v) { cfgFor(mode).largeCandleAtrThreshold = v; }
+    public void setEnableTargetShift(String mode, boolean v) { cfgFor(mode).enableTargetShift = v; }
+    public void setEnableSmallCandleFilter(String mode, boolean v) { cfgFor(mode).enableSmallCandleFilter = v; }
+    public void setSmallCandleAtrThreshold(String mode, double v) { cfgFor(mode).smallCandleAtrThreshold = v; }
 
     // ── save ──────────────────────────────────────────────────────────────────
     /** Saves the currently active mode's settings. */
@@ -162,6 +182,10 @@ public class RiskSettingsStore {
             state.put("capitalPerTrade", c.capitalPerTrade);
             state.put("telegramAlertFrequency", c.telegramAlertFrequency);
             state.put("enableLargeCandleFilter", c.enableLargeCandleFilter);
+            state.put("largeCandleAtrThreshold", c.largeCandleAtrThreshold);
+            state.put("enableTargetShift", c.enableTargetShift);
+            state.put("enableSmallCandleFilter", c.enableSmallCandleFilter);
+            state.put("smallCandleAtrThreshold", c.smallCandleAtrThreshold);
             Files.writeString(Paths.get(fileFor(mode)), mapper.writeValueAsString(state));
         } catch (IOException e) {
             System.err.println("[RiskSettingsStore] Failed to save " + mode + ": " + e.getMessage());
@@ -190,6 +214,10 @@ public class RiskSettingsStore {
             if (state.containsKey("capitalPerTrade")) c.capitalPerTrade = Double.parseDouble(state.get("capitalPerTrade").toString());
             if (state.containsKey("telegramAlertFrequency")) c.telegramAlertFrequency = Integer.parseInt(state.get("telegramAlertFrequency").toString());
             if (state.containsKey("enableLargeCandleFilter")) c.enableLargeCandleFilter = Boolean.parseBoolean(state.get("enableLargeCandleFilter").toString());
+            if (state.containsKey("largeCandleAtrThreshold")) c.largeCandleAtrThreshold = Double.parseDouble(state.get("largeCandleAtrThreshold").toString());
+            if (state.containsKey("enableTargetShift")) c.enableTargetShift = Boolean.parseBoolean(state.get("enableTargetShift").toString());
+            if (state.containsKey("enableSmallCandleFilter")) c.enableSmallCandleFilter = Boolean.parseBoolean(state.get("enableSmallCandleFilter").toString());
+            if (state.containsKey("smallCandleAtrThreshold")) c.smallCandleAtrThreshold = Double.parseDouble(state.get("smallCandleAtrThreshold").toString());
             System.out.println("[RiskSettingsStore] Loaded " + mode + ": start=" + c.tradingStartTime
                 + " end=" + c.tradingEndTime + " totalCapital=" + c.totalCapital
                 + " maxRiskPerDayPct=" + c.maxRiskPerDayPct + "% riskPerTrade=" + c.riskPerTrade

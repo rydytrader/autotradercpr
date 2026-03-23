@@ -135,51 +135,89 @@
         </div>
     </div>
 
-    <!-- Metrics Row 1 -->
-    <div class="metrics-grid fade-in">
-        <div class="metric-card" style="--accent-color:var(--accent-blue)">
-            <div class="metric-label">Total Trades</div>
-            <div class="metric-value neutral" id="mTotal">—</div>
-            <div class="metric-sub" id="mWinLoss">— W / — L</div>
+    <!-- HERO CARD: Net P&L + Overview -->
+    <div class="section-card fade-in" style="margin-bottom:20px;">
+        <div class="section-header">
+            <div class="section-title"><div class="section-title-dot"></div> Overview</div>
         </div>
-        <div class="metric-card" style="--accent-color:var(--accent-green)">
-            <div class="metric-label">Win Rate</div>
-            <div class="metric-value" id="mWinRate">—</div>
-            <div class="metric-sub">% of trades profitable</div>
-        </div>
-        <div class="metric-card" style="--accent-color:var(--accent-cyan)">
-            <div class="metric-label">Net P&amp;L</div>
-            <div class="metric-value" id="mNetPnl">—</div>
-            <div class="metric-sub">Realised profit / loss</div>
-        </div>
-        <div class="metric-card" style="--accent-color:var(--accent-yellow)">
-            <div class="metric-label">Profit Factor</div>
-            <div class="metric-value" id="mPF">—</div>
-            <div class="metric-sub">Gross profit / gross loss</div>
+        <div style="padding:20px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px;">
+            <div>
+                <div class="stat-label" style="margin-bottom:6px;">Net P&L</div>
+                <div class="metric-value" id="mNetPnl" style="font-size:2.2rem;">—</div>
+                <div class="stat-sub">Realised profit / loss</div>
+            </div>
+            <div style="display:flex; gap:32px; flex-wrap:wrap;">
+                <div style="text-align:center;">
+                    <div class="stat-label">Total</div>
+                    <div class="metric-value neutral" id="mTotal" style="font-size:1.1rem; margin-top:4px;">—</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">Wins</div>
+                    <div class="metric-value positive" id="mWins" style="font-size:1.1rem; margin-top:4px;">—</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">Losses</div>
+                    <div class="metric-value negative" id="mLosses" style="font-size:1.1rem; margin-top:4px;">—</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">Win Rate</div>
+                    <div class="metric-value" id="mWinRate" style="font-size:1.1rem; margin-top:4px;">—</div>
+                </div>
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
+                    <div class="stat-label">Profit Factor</div>
+                    <div class="metric-value" id="mPF" style="font-size:1.1rem; margin-top:4px;">—</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">Expectancy</div>
+                    <div class="metric-value" id="mExpectancy" style="font-size:1.1rem; margin-top:4px;">—</div>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- Metrics Row 2 -->
-    <div class="metrics-grid fade-in">
-        <div class="metric-card" style="--accent-color:var(--accent-green)">
-            <div class="metric-label">Avg Win</div>
-            <div class="metric-value positive" id="mAvgWin">—</div>
-            <div class="metric-sub" id="mMaxWin">Max: —</div>
+    <!-- TWO SECTION CARDS -->
+    <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:16px; margin-bottom:20px;" class="fade-in">
+
+        <!-- Win Stats -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Win Stats</div>
+            </div>
+            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Avg Win</span>
+                    <span class="metric-value positive" id="mAvgWin" style="font-size:1rem;">—</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Max Win</span>
+                    <span class="metric-value positive" id="mMaxWin" style="font-size:1rem;">—</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Risk / Reward</span>
+                    <span class="metric-value" id="mRR" style="font-size:1rem;">—</span>
+                </div>
+            </div>
         </div>
-        <div class="metric-card" style="--accent-color:var(--accent-red)">
-            <div class="metric-label">Avg Loss</div>
-            <div class="metric-value negative" id="mAvgLoss">—</div>
-            <div class="metric-sub" id="mMaxLoss">Max: —</div>
-        </div>
-        <div class="metric-card" style="--accent-color:var(--accent-cyan)">
-            <div class="metric-label">Risk / Reward</div>
-            <div class="metric-value" id="mRR">—</div>
-            <div class="metric-sub">Avg win : avg loss</div>
-        </div>
-        <div class="metric-card" style="--accent-color:var(--accent-blue)">
-            <div class="metric-label">Expectancy</div>
-            <div class="metric-value" id="mExpectancy">—</div>
-            <div class="metric-sub">Avg expected ₹ per trade</div>
+
+        <!-- Loss Stats -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-red);"></div> Loss Stats</div>
+            </div>
+            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Avg Loss</span>
+                    <span class="metric-value negative" id="mAvgLoss" style="font-size:1rem;">—</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Max Loss</span>
+                    <span class="metric-value negative" id="mMaxLoss" style="font-size:1rem;">—</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Max Drawdown</span>
+                    <span class="metric-value negative" id="mMaxDD" style="font-size:1rem;">—</span>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -484,7 +522,8 @@
         const noData = !d.totalTrades;
 
         g('mTotal').textContent   = d.totalTrades || 0;
-        g('mWinLoss').textContent = noData ? '— W / — L' : d.wins + ' W / ' + d.losses + ' L';
+        g('mWins').textContent    = noData ? '—' : d.wins;
+        g('mLosses').textContent  = noData ? '—' : d.losses;
 
         g('mWinRate').textContent = noData ? '—' : d.winRate + '%';
         g('mWinRate').className   = 'metric-value ' + (noData ? '' : d.winRate >= 50 ? 'positive' : 'negative');
@@ -496,9 +535,9 @@
         g('mPF').className        = 'metric-value ' + (d.profitFactor >= 1 ? 'positive' : d.profitFactor > 0 ? 'negative' : '');
 
         g('mAvgWin').textContent  = d.avgWin  ? '+₹' + inr(d.avgWin)  : '—';
-        g('mMaxWin').innerHTML    = d.maxWin  ? 'Max: <span style="color:var(--accent-green);font-weight:600">+₹' + inr(d.maxWin) + '</span>' : 'Max: —';
+        g('mMaxWin').textContent  = d.maxWin  ? '+₹' + inr(d.maxWin) : '—';
         g('mAvgLoss').textContent = d.avgLoss ? '-₹' + inr(d.avgLoss) : '—';
-        g('mMaxLoss').innerHTML   = d.maxLoss ? 'Max: <span style="color:var(--accent-red);font-weight:600">-₹' + inr(d.maxLoss) + '</span>' : 'Max: —';
+        g('mMaxLoss').textContent = d.maxLoss ? '-₹' + inr(d.maxLoss) : '—';
 
         g('mRR').textContent      = d.avgRR   ? d.avgRR.toFixed(2) + ' : 1' : '—';
         g('mRR').className        = 'metric-value ' + (d.avgRR >= 1 ? 'positive' : d.avgRR > 0 ? 'negative' : 'neutral');
@@ -510,6 +549,7 @@
             '<span style="color:var(--accent-green)">▲ ' + d.maxConsecWins + ' wins</span> &nbsp; <span style="color:var(--accent-red)">▼ ' + d.maxConsecLosses + ' losses</span> &nbsp; <span style="color:var(--text-muted)">max streak</span>';
 
         const maxDD = d.maxDrawdown || 0;
+        g('mMaxDD').textContent = noData ? '—' : '-₹' + inr(maxDD);
         g('ddBadge').innerHTML = noData ? '' :
             '<span style="color:var(--accent-red)">Max: -₹' + inr(maxDD) + '</span>';
     }
