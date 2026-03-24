@@ -115,7 +115,7 @@ public class OrderService {
     }
 
     private volatile long lastCancelTime = 0;
-    private static final long CANCEL_THROTTLE_MS = 3000; // 3 seconds between cancel calls
+    private static final long CANCEL_THROTTLE_MS = 1000; // 1 second between cancel calls
 
     public boolean cancelOrder(String orderId) {
         try {
@@ -127,8 +127,10 @@ public class OrderService {
             lastCancelTime = System.currentTimeMillis();
             JsonNode node = fyersClient.cancelOrder(orderId, authHeader());
             boolean ok = node != null && node.get("s") != null && "ok".equals(node.get("s").asText());
-            if (ok) {
-                System.out.println("Cancel " + orderId + " → OK");
+            int code = node != null && node.has("code") ? node.get("code").asInt() : 0;
+            if (ok || code == -52) {
+                System.out.println("Cancel " + orderId + " → " + (ok ? "OK" : "already cancelled/filled"));
+                return true;
             } else {
                 System.out.println("Cancel " + orderId + " → FAILED | response: " + node);
             }

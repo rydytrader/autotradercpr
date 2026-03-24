@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Map;
 import java.util.Set;
 
 @RestController
@@ -93,5 +94,23 @@ public class MarketTickerController {
         // Add open position symbols to the ticker
         symbols.addAll(PositionManager.getAllSymbols());
         return String.join(",", symbols);
+    }
+
+    @GetMapping("/api/profile")
+    public Map<String, Object> getProfile() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        try {
+            String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
+            JsonNode resp = fyersClient.getProfile(auth);
+            if (resp != null && resp.has("data")) {
+                JsonNode data = resp.get("data");
+                result.put("name", data.has("name") ? data.get("name").asText() : "");
+                result.put("fyId", data.has("fy_id") ? data.get("fy_id").asText() : "");
+                result.put("email", data.has("email_id") ? data.get("email_id").asText() : "");
+            }
+        } catch (Exception e) {
+            result.put("name", "");
+        }
+        return result;
     }
 }

@@ -72,6 +72,9 @@
             <div class="page-title">Dashboard</div>
             <div class="page-subtitle">Today's Trading Overview</div>
         </div>
+        <div style="font-family:var(--font-mono); font-size:1rem; color:var(--text-secondary); align-self:flex-start;">
+            Welcome, <span id="userName" style="color:var(--text-primary); font-weight:600;">—</span>
+        </div>
     </div>
 
     <!-- HERO CARD: Net Day P&L -->
@@ -447,6 +450,11 @@
             }
         }).catch(() => {});
     }
+
+    // ── USER PROFILE ─────────────────────────────
+    fetch('/api/profile').then(r => r.json()).then(d => {
+        if (d.name) document.getElementById('userName').textContent = d.name;
+    }).catch(() => {});
 
     // ── INIT ─────────────────────────────────────
     loadPositions();

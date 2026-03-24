@@ -34,4 +34,7 @@ public interface FyersClient {
 
     /** GET /data/quotes — get quotes for a comma-separated list of symbols */
     JsonNode getQuotes(String symbols, String authHeader) throws Exception;
+
+    /** GET /api/v3/profile — get user profile (name, email, etc.) */
+    JsonNode getProfile(String authHeader) throws Exception;
 }

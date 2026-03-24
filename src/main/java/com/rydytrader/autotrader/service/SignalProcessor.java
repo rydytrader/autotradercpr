@@ -115,17 +115,19 @@ public class SignalProcessor {
             }
         }
 
-        // ── 4g. Cap target at session extreme ─────────────────────────────────
-        // If session low/high sits between close and target, use it as target
+        // ── 4g. Cap target at session extreme (configurable) ─────────────────
+        // If enabled, and session low/high sits between close and target, use it as target
         // since price is likely to bounce at the session extreme.
         boolean sessionCapped = false;
-        if (isBuy && sessionHigh > 0 && sessionHigh > close && sessionHigh < target) {
-            target = sessionHigh;
-            sessionCapped = true;
-        }
-        if (!isBuy && sessionLow > 0 && sessionLow < close && sessionLow > target) {
-            target = sessionLow;
-            sessionCapped = true;
+        if (riskSettings.isEnableSessionTargetCap()) {
+            if (isBuy && sessionHigh > 0 && sessionHigh > close && sessionHigh < target) {
+                target = sessionHigh;
+                sessionCapped = true;
+            }
+            if (!isBuy && sessionLow > 0 && sessionLow < close && sessionLow > target) {
+                target = sessionLow;
+                sessionCapped = true;
+            }
         }
 
         // ── 4i. Quantity ────────────────────────────────────────────────────────
@@ -143,26 +145,33 @@ public class SignalProcessor {
             double pdc = pivot * 3 - ph - pl;
 
             // Check total move from PDC (covers both gap and intraday movement)
+            double movePct = 0;
+            String moveSource = "";
             boolean moveLimitHit = false;
             if (isBuy && pdc > 0 && (breakoutLevel - pdc) / pdc > sessionMoveLimit) {
+                movePct = (breakoutLevel - pdc) / pdc * 100;
+                moveSource = "PDC";
                 moveLimitHit = true;
             }
             if (!isBuy && pdc > 0 && (pdc - breakoutLevel) / pdc > sessionMoveLimit) {
+                movePct = (pdc - breakoutLevel) / pdc * 100;
+                moveSource = "PDC";
                 moveLimitHit = true;
             }
             // Fallback: also check intraday session range if PDC is not usable
             if (!moveLimitHit && isBuy && sessionLow > 0 && (breakoutLevel - sessionLow) / sessionLow > sessionMoveLimit) {
+                movePct = (breakoutLevel - sessionLow) / sessionLow * 100;
+                moveSource = "session low";
                 moveLimitHit = true;
             }
             if (!moveLimitHit && !isBuy && sessionHigh > 0 && (sessionHigh - breakoutLevel) / breakoutLevel > sessionMoveLimit) {
+                movePct = (sessionHigh - breakoutLevel) / breakoutLevel * 100;
+                moveSource = "session high";
                 moveLimitHit = true;
             }
             if (moveLimitHit) {
                 int reduced = Math.max(1, qty / 2);
-                double movePct = isBuy
-                    ? (pdc > 0 ? (breakoutLevel - pdc) / pdc * 100 : (breakoutLevel - sessionLow) / sessionLow * 100)
-                    : (pdc > 0 ? (pdc - breakoutLevel) / pdc * 100 : (sessionHigh - breakoutLevel) / breakoutLevel * 100);
-                qtyLog = "[INFO] " + symbol + " " + setup + " qty reduced (move " + fmt(movePct) + "% > " + fmt(riskSettings.getSessionMoveLimit()) + "% limit): " + qty + " -> " + reduced;
+                qtyLog = "[INFO] " + symbol + " " + setup + " qty reduced (move " + fmt(movePct) + "% from " + moveSource + " > " + fmt(riskSettings.getSessionMoveLimit()) + "% limit): " + qty + " -> " + reduced;
                 qty = reduced;
             }
         }

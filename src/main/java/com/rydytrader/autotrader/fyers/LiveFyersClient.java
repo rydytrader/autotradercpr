@@ -62,10 +62,20 @@ public class LiveFyersClient implements FyersClient {
         return get(url, authHeader);
     }
 
+    @Override
+    public JsonNode getProfile(String authHeader) throws Exception {
+        return get(BASE + "/profile", authHeader);
+    }
+
     // ── HTTP HELPERS ──────────────────────────────────────────────────────────
+    private static final int CONNECT_TIMEOUT = 10_000; // 10 seconds
+    private static final int READ_TIMEOUT    = 10_000; // 10 seconds
+
     private JsonNode get(String urlStr, String authHeader) throws Exception {
         URL url = new URL(urlStr);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setConnectTimeout(CONNECT_TIMEOUT);
+        conn.setReadTimeout(READ_TIMEOUT);
         conn.setRequestMethod("GET");
         if (authHeader != null) conn.setRequestProperty("Authorization", authHeader);
         return readResponse(conn);
@@ -74,6 +84,8 @@ public class LiveFyersClient implements FyersClient {
     private JsonNode post(String urlStr, String body, String authHeader) throws Exception {
         URL url = new URL(urlStr);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setConnectTimeout(CONNECT_TIMEOUT);
+        conn.setReadTimeout(READ_TIMEOUT);
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Content-Type", "application/json");
         if (authHeader != null) conn.setRequestProperty("Authorization", authHeader);
@@ -86,6 +98,8 @@ public class LiveFyersClient implements FyersClient {
     private JsonNode delete(String urlStr, String body, String authHeader) throws Exception {
         URL url = new URL(urlStr);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setConnectTimeout(CONNECT_TIMEOUT);
+        conn.setReadTimeout(READ_TIMEOUT);
         conn.setRequestMethod("DELETE");
         conn.setRequestProperty("Content-Type", "application/json");
         if (authHeader != null) conn.setRequestProperty("Authorization", authHeader);

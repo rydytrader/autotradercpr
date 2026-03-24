@@ -244,6 +244,7 @@ public class TradingController {
         return Map.of("status", pollingService.getConnectionStatus());
     }
 
+
     // ── LOGS ──────────────────────────────────────────────────────────────────
     @GetMapping("/logs")
     public List<String> getLogs() {

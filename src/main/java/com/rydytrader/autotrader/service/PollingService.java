@@ -160,14 +160,17 @@ public class PollingService {
                         PositionManager.setPosition(symbol, position);
                         setupBySymbol.put(symbol, setup != null ? setup : "");
                         entryTimeBySymbol.put(symbol, entryTime);
-                        // Capture actual fill price by order ID — avoids blended avg on same-day re-entry
-                        holder.entryFillPrice = orderService.getFilledPriceByOrderId(entry.getId());
-                        if (holder.entryFillPrice <= 0) {
-                            int entrySide = exitSide == 1 ? -1 : 1;
-                            holder.entryFillPrice = orderService.getFilledPriceFromTradebook(symbol, entrySide);
+                        pendingEntrySymbols.remove(symbol);
+                        // Get fill price directly from order book — no tradebook API call needed
+                        JsonNode entryNode = getOrderNode(entry.getId());
+                        if (entryNode != null) {
+                            if (entryNode.has("tradedPrice") && entryNode.get("tradedPrice").asDouble() > 0) {
+                                holder.entryFillPrice = entryNode.get("tradedPrice").asDouble();
+                            } else if (entryNode.has("limitPrice") && entryNode.get("limitPrice").asDouble() > 0) {
+                                holder.entryFillPrice = entryNode.get("limitPrice").asDouble();
+                            }
                         }
                         entryAvgBySymbol.put(symbol, holder.entryFillPrice);
-                        pendingEntrySymbols.remove(symbol);
                         positionStateStore.save(symbol, position, quantity, holder.entryFillPrice,
                             setupBySymbol.get(symbol), entryTime, slPrice, targetPrice);
                         eventService.log("[SUCCESS] " + (position.equals("LONG") ? "BUY" : "SELL")
@@ -184,6 +187,7 @@ public class PollingService {
                     if (slOk && tgtOk) {
                         eventService.log("[SUCCESS] SL order placed for " + symbol + " at " + orderService.roundToTick(slPrice, symbol) + " [ID: " + slOrder.getId() + "]");
                         eventService.log("[SUCCESS] Target order placed for " + symbol + " at " + orderService.roundToTick(targetPrice, symbol) + " [ID: " + targetOrder.getId() + "]");
+                        // Start OCO monitor immediately — don't wait for fill price
                         monitorOCO(slOrder.getId(), targetOrder.getId(), symbol, quantity,
                             exitSide, slPrice, targetPrice, position, setup, holder.entryFillPrice);
                         if (holder.future != null) holder.future.cancel(false);
@@ -213,7 +217,10 @@ public class PollingService {
                         + " order rejected for " + symbol + ": " + entry.getMessage());
                     if (holder.future != null) holder.future.cancel(false);
                 }
-            } catch (Exception e) { e.printStackTrace(); }
+            } catch (Exception e) {
+                eventService.log("[ERROR] Entry monitor error for " + symbol + ": " + e.getMessage());
+                e.printStackTrace();
+            }
         }, 0, 2, TimeUnit.SECONDS);
     }
 
@@ -233,6 +240,11 @@ public class PollingService {
         ss.future = scheduler.scheduleAtFixedRate(() -> {
             try {
                 ss.ticks++;
+                // Stop if OCO monitor already started for this symbol
+                if (ocoMonitoredSymbols.contains(symbol)) {
+                    if (ss.future != null) ss.future.cancel(false);
+                    return;
+                }
                 // Stop scanning after 30 minutes (180 ticks × 10s)
                 if (ss.ticks > 180) {
                     eventService.log("[WARNING] Manual OCO scan timed out for " + symbol + " after 30 min — position UNPROTECTED");
@@ -259,6 +271,7 @@ public class PollingService {
                     if (side != exitSide) continue; // must be on exit side
                     int type = order.has("type") ? order.get("type").asInt() : 0;
                     String id = order.has("id") ? order.get("id").asText() : "";
+                    if (id.isEmpty() && order.has("orderNumber")) id = order.get("orderNumber").asText();
 
                     if (type == 3 && slId == null) { // SL-M order
                         slId = id;
@@ -316,6 +329,7 @@ public class PollingService {
 
                 String slStatus     = slNode != null && slNode.has("status") ? slNode.get("status").asText() : null;
                 String targetStatus = targetNode != null && targetNode.has("status") ? targetNode.get("status").asText() : null;
+
 
                 // First poll: sync baseline prices from Fyers (tick-rounded) and log diagnostics
                 if (s.ticks == 1) {
@@ -482,11 +496,10 @@ public class PollingService {
                 orderBookFetchTime = now;
                 return orderBook;
             }
-            // Rate limit hit — use stale cache and back off
+            // Rate limit hit — return stale cache, normal 5s TTL will handle retry
             if (node != null && node.has("code") && node.get("code").asInt() == -429) {
-                orderBookFetchTime = now + 30000; // Back off 30s extra
-                System.out.println("[PollingService] Fyers rate limit hit — backing off 30s, using cached order book");
-                return cachedOrderBook; // Return stale cache instead of null
+                System.out.println("[PollingService] Fyers rate limit hit — using cached order book");
+                return cachedOrderBook;
             }
             eventService.log("[WARNING] getOrders response missing orderBook: "
                 + (node != null ? node.toString().substring(0, Math.min(200, node.toString().length())) : "null"));
@@ -506,7 +519,10 @@ public class PollingService {
         JsonNode orderBook = getOrderBook();
         if (orderBook == null) return null;
         for (JsonNode order : orderBook) {
-            if (order.has("id") && order.get("id").asText().equals(orderId)) {
+            // Fyers may use "id" or "orderNumber" for the order identifier
+            String oid = order.has("id") ? order.get("id").asText() : "";
+            String onum = order.has("orderNumber") ? order.get("orderNumber").asText() : "";
+            if (orderId.equals(oid) || orderId.equals(onum)) {
                 return order;
             }
         }
@@ -527,7 +543,16 @@ public class PollingService {
             int exitSide = "LONG".equals(position) ? -1 : 1;
 
             eventService.log("[SUCCESS] " + label + " for " + symbol + " — cancelling SL/Target orders");
-            orderService.cancelAllPendingOrders(symbol);
+            // Cancel by known order IDs first (fast, no API call to fetch order book)
+            Map<String, Object> state = positionStateStore.load(symbol);
+            String slOid  = state != null ? state.getOrDefault("slOrderId", "").toString() : "";
+            String tgtOid = state != null ? state.getOrDefault("targetOrderId", "").toString() : "";
+            if (!slOid.isEmpty())  orderService.cancelOrder(slOid);
+            if (!tgtOid.isEmpty()) orderService.cancelOrder(tgtOid);
+            // Fallback: cancel any remaining pending orders for the symbol
+            if (slOid.isEmpty() && tgtOid.isEmpty()) {
+                orderService.cancelAllPendingOrders(symbol);
+            }
 
             OrderDTO exitOrder = orderService.placeExitOrder(symbol, quantity, exitSide);
             if (exitOrder == null || !"ok".equals(exitOrder.getStatus())) {
@@ -715,7 +740,12 @@ public class PollingService {
                     double exitPrice  = mockState.getCurrentPrice(symbol);
                     String side = pos.getSide();
                     String setup = getCurrentSetup(symbol);
-                    orderService.cancelAllPendingOrders(symbol);
+                    // Cancel SL/Target by known IDs
+                    Map<String, Object> sqState = positionStateStore.load(symbol);
+                    String sqSlId  = sqState != null ? sqState.getOrDefault("slOrderId", "").toString() : "";
+                    String sqTgtId = sqState != null ? sqState.getOrDefault("targetOrderId", "").toString() : "";
+                    if (!sqSlId.isEmpty())  orderService.cancelOrder(sqSlId);
+                    if (!sqTgtId.isEmpty()) orderService.cancelOrder(sqTgtId);
                     PositionManager.setPosition(symbol, "NONE");
                     mockState.triggerManualSquareOff(symbol);
                     ocoHandledSymbols.add(symbol);
@@ -817,21 +847,34 @@ public class PollingService {
                         boolean isNewPosition = !cachedPositions.containsKey(symbol);
                         cachedPositions.put(symbol, new PositionsDTO(symbol, absQty, posSide, resolvedAvg, ltp, unrealizedPl, setup, resolvedEntryTime));
                         PositionManager.setPosition(symbol, posSide);
-                        // SL/target not known from sync — saveOcoState() will update when OCO orders found
+                        // Preserve existing OCO state (order IDs + prices) if already saved
                         Map<String, Object> existingState = positionStateStore.load(symbol);
                         double savedSl = existingState != null && existingState.containsKey("slPrice")
                             ? Double.parseDouble(existingState.get("slPrice").toString()) : 0;
                         double savedTarget = existingState != null && existingState.containsKey("targetPrice")
                             ? Double.parseDouble(existingState.get("targetPrice").toString()) : 0;
                         positionStateStore.save(symbol, posSide, absQty, resolvedAvg, setup, resolvedEntryTime, savedSl, savedTarget);
+                        // Re-apply OCO order IDs if they were saved by monitorOCO
+                        if (existingState != null) {
+                            String savedSlId = existingState.getOrDefault("slOrderId", "").toString();
+                            String savedTgtId = existingState.getOrDefault("targetOrderId", "").toString();
+                            if (!savedSlId.isEmpty() && !savedTgtId.isEmpty()) {
+                                positionStateStore.saveOcoState(symbol, savedSlId, savedTgtId, savedSl, savedTarget);
+                            }
+                        }
                         brokerSymbols.add(symbol);
 
                         // Auto-scan for SL/Target orders on newly detected positions without OCO monitor
                         if (isNewPosition && !ocoMonitoredSymbols.contains(symbol)) {
-                            int exitSide = "LONG".equals(posSide) ? -1 : 1;
-                            entryAvgBySymbol.put(symbol, resolvedAvg);
-                            eventService.log("[INFO] New position detected for " + symbol + " — scanning for SL/Target orders");
-                            scanForManualOCO(symbol, absQty, exitSide, posSide, setup, resolvedAvg);
+                            // Skip scan if OCO order IDs already exist on disk (restore will handle it)
+                            String existSlId = existingState != null ? existingState.getOrDefault("slOrderId", "").toString() : "";
+                            String existTgtId = existingState != null ? existingState.getOrDefault("targetOrderId", "").toString() : "";
+                            if (existSlId.isEmpty() || existTgtId.isEmpty()) {
+                                int exitSide = "LONG".equals(posSide) ? -1 : 1;
+                                entryAvgBySymbol.put(symbol, resolvedAvg);
+                                eventService.log("[INFO] New position detected for " + symbol + " — scanning for SL/Target orders");
+                                scanForManualOCO(symbol, absQty, exitSide, posSide, setup, resolvedAvg);
+                            }
                         }
                     }
                 }
@@ -857,7 +900,12 @@ public class PollingService {
                     }
                     PositionsDTO prev = cachedPositions.get(symbol);
                     if (prev != null && !PositionManager.getPosition(symbol).equals("NONE")) {
-                        orderService.cancelAllPendingOrders(symbol);
+                        // Cancel by known order IDs (fast) instead of fetching full order book
+                        Map<String, Object> closedState = positionStateStore.load(symbol);
+                        String cSlId  = closedState != null ? closedState.getOrDefault("slOrderId", "").toString() : "";
+                        String cTgtId = closedState != null ? closedState.getOrDefault("targetOrderId", "").toString() : "";
+                        if (!cSlId.isEmpty())  orderService.cancelOrder(cSlId);
+                        if (!cTgtId.isEmpty()) orderService.cancelOrder(cTgtId);
                         double exitPrice = orderService.getExitPriceFromTradebook(symbol, prev.getSide());
                         double finalExit = exitPrice > 0 ? exitPrice : prev.getLtp();
                         double finalEntry = prev.getAvgPrice();

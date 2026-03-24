@@ -136,7 +136,7 @@
         </div>
         <div style="display:flex; gap:10px; align-items:center;">
             <div class="kill-switch-wrap" id="killSwitchWrap">
-                <span class="kill-switch-label" id="killSwitchLabel">Kill Switch ON</span>
+                <span class="kill-switch-label" id="killSwitchLabel">Trading ON</span>
                 <label class="kill-switch">
                     <input type="checkbox" id="killSwitchToggle" checked onchange="toggleKillSwitch()">
                     <span class="kill-switch-slider"></span>
@@ -579,7 +579,7 @@
             const label   = document.getElementById('killSwitchLabel');
             toggle.checked = enabled;
             wrap.className = 'kill-switch-wrap' + (enabled ? '' : ' disabled');
-            label.textContent = enabled ? 'Kill Switch ON' : 'Kill Switch OFF';
+            label.textContent = enabled ? 'Trading ON' : 'Trading OFF';
         }).catch(() => {});
     }
     refreshTradingStatus();

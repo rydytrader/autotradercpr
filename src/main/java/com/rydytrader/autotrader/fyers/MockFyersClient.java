@@ -243,6 +243,18 @@ public class MockFyersClient implements FyersClient {
         return n;
     }
 
+    @Override
+    public JsonNode getProfile(String authHeader) throws Exception {
+        var root = mapper.createObjectNode();
+        root.put("s", "ok");
+        var data = mapper.createObjectNode();
+        data.put("name", "Simulator User");
+        data.put("fy_id", "SIM001");
+        data.put("email_id", "sim@traderedge.com");
+        root.set("data", data);
+        return root;
+    }
+
     private JsonNode error(String msg) {
         var n = mapper.createObjectNode();
         n.put("s", "error");

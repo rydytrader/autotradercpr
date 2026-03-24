@@ -43,6 +43,7 @@ public class RiskSettingsStore {
         volatile boolean enableLargeCandleFilter = true; // reject trade if candle > largeCandleAtrThreshold ATR from breakout level
         volatile double largeCandleAtrThreshold = 1.0; // ATR multiplier for large candle filter
         volatile boolean enableTargetShift = true; // shift target to next level if default target < 1 ATR. If false, skip the entry.
+        volatile boolean enableSessionTargetCap = true; // cap target at session high/low if it's between close and target
         volatile boolean enableSmallCandleFilter = false; // reject if candle move from breakout level < smallCandleAtrThreshold ATR
         volatile double smallCandleAtrThreshold = 0.5; // ATR multiplier for small candle filter
     }
@@ -94,6 +95,7 @@ public class RiskSettingsStore {
     public boolean isEnableLargeCandleFilter() { return cfg().enableLargeCandleFilter; }
     public double getLargeCandleAtrThreshold() { return cfg().largeCandleAtrThreshold; }
     public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
+    public boolean isEnableSessionTargetCap() { return cfg().enableSessionTargetCap; }
     public boolean isEnableSmallCandleFilter() { return cfg().enableSmallCandleFilter; }
     public double getSmallCandleAtrThreshold() { return cfg().smallCandleAtrThreshold; }
 
@@ -113,6 +115,7 @@ public class RiskSettingsStore {
     public void setEnableLargeCandleFilter(boolean v) { cfg().enableLargeCandleFilter = v; }
     public void setLargeCandleAtrThreshold(double v) { cfg().largeCandleAtrThreshold = v; }
     public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
+    public void setEnableSessionTargetCap(boolean v) { cfg().enableSessionTargetCap = v; }
     public void setEnableSmallCandleFilter(boolean v) { cfg().enableSmallCandleFilter = v; }
     public void setSmallCandleAtrThreshold(double v) { cfg().smallCandleAtrThreshold = v; }
 
@@ -134,6 +137,7 @@ public class RiskSettingsStore {
     public boolean isEnableLargeCandleFilter(String mode) { return cfgFor(mode).enableLargeCandleFilter; }
     public double getLargeCandleAtrThreshold(String mode) { return cfgFor(mode).largeCandleAtrThreshold; }
     public boolean isEnableTargetShift(String mode) { return cfgFor(mode).enableTargetShift; }
+    public boolean isEnableSessionTargetCap(String mode) { return cfgFor(mode).enableSessionTargetCap; }
     public boolean isEnableSmallCandleFilter(String mode) { return cfgFor(mode).enableSmallCandleFilter; }
     public double getSmallCandleAtrThreshold(String mode) { return cfgFor(mode).smallCandleAtrThreshold; }
 
@@ -153,6 +157,7 @@ public class RiskSettingsStore {
     public void setEnableLargeCandleFilter(String mode, boolean v) { cfgFor(mode).enableLargeCandleFilter = v; }
     public void setLargeCandleAtrThreshold(String mode, double v) { cfgFor(mode).largeCandleAtrThreshold = v; }
     public void setEnableTargetShift(String mode, boolean v) { cfgFor(mode).enableTargetShift = v; }
+    public void setEnableSessionTargetCap(String mode, boolean v) { cfgFor(mode).enableSessionTargetCap = v; }
     public void setEnableSmallCandleFilter(String mode, boolean v) { cfgFor(mode).enableSmallCandleFilter = v; }
     public void setSmallCandleAtrThreshold(String mode, double v) { cfgFor(mode).smallCandleAtrThreshold = v; }
 
@@ -184,6 +189,7 @@ public class RiskSettingsStore {
             state.put("enableLargeCandleFilter", c.enableLargeCandleFilter);
             state.put("largeCandleAtrThreshold", c.largeCandleAtrThreshold);
             state.put("enableTargetShift", c.enableTargetShift);
+            state.put("enableSessionTargetCap", c.enableSessionTargetCap);
             state.put("enableSmallCandleFilter", c.enableSmallCandleFilter);
             state.put("smallCandleAtrThreshold", c.smallCandleAtrThreshold);
             Files.writeString(Paths.get(fileFor(mode)), mapper.writeValueAsString(state));
@@ -216,6 +222,7 @@ public class RiskSettingsStore {
             if (state.containsKey("enableLargeCandleFilter")) c.enableLargeCandleFilter = Boolean.parseBoolean(state.get("enableLargeCandleFilter").toString());
             if (state.containsKey("largeCandleAtrThreshold")) c.largeCandleAtrThreshold = Double.parseDouble(state.get("largeCandleAtrThreshold").toString());
             if (state.containsKey("enableTargetShift")) c.enableTargetShift = Boolean.parseBoolean(state.get("enableTargetShift").toString());
+            if (state.containsKey("enableSessionTargetCap")) c.enableSessionTargetCap = Boolean.parseBoolean(state.get("enableSessionTargetCap").toString());
             if (state.containsKey("enableSmallCandleFilter")) c.enableSmallCandleFilter = Boolean.parseBoolean(state.get("enableSmallCandleFilter").toString());
             if (state.containsKey("smallCandleAtrThreshold")) c.smallCandleAtrThreshold = Double.parseDouble(state.get("smallCandleAtrThreshold").toString());
             System.out.println("[RiskSettingsStore] Loaded " + mode + ": start=" + c.tradingStartTime
