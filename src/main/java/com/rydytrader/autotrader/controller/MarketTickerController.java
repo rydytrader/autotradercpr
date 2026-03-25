@@ -28,6 +28,11 @@ public class MarketTickerController {
         "NSE:NIFTY50-INDEX,NSE:NIFTYBANK-INDEX,NSE:NIFTYIT-INDEX," +
         "NSE:RELIANCE-EQ,NSE:TCS-EQ,NSE:HDFCBANK-EQ,NSE:INFY-EQ,NSE:ICICIBANK-EQ";
 
+    /** Returns the base symbol list as an array. Used by MarketDataService for subscription. */
+    public static String[] getBaseSymbols() {
+        return BASE_SYMBOLS.split(",");
+    }
+
     private static final long CACHE_TTL_MS = 60_000; // 60 seconds
     private volatile List<Map<String, Object>> cachedTickers = List.of();
     private volatile long lastFetchTime = 0;

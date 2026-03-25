@@ -3,6 +3,8 @@ package com.rydytrader.autotrader.controller;
 import com.rydytrader.autotrader.mock.MockState;
 import com.rydytrader.autotrader.manager.PositionManager;
 import com.rydytrader.autotrader.service.EventService;
+import com.rydytrader.autotrader.service.MarketDataService;
+import com.rydytrader.autotrader.service.OrderEventService;
 import com.rydytrader.autotrader.service.PollingService;
 import com.rydytrader.autotrader.store.PositionStateStore;
 import com.rydytrader.autotrader.service.TradeHistoryService;
@@ -17,14 +19,16 @@ import java.util.*;
 @RestController
 public class SimulatorController {
 
-    private final ModeStore          modeStore;
-    private final TokenStore         tokenStore;
-    private final MockState          mockState;
-    private final EventService       eventService;
-    private final TradeHistoryService tradeHistoryService;
+    private final ModeStore           modeStore;
+    private final TokenStore          tokenStore;
+    private final MockState           mockState;
+    private final EventService        eventService;
+    private final TradeHistoryService  tradeHistoryService;
     private final PollingService       pollingService;
     private final PositionStateStore   positionStateStore;
     private final TradingStateStore    tradingState;
+    private final MarketDataService    marketDataService;
+    private final OrderEventService    orderEventService;
 
     public SimulatorController(ModeStore modeStore,
                                 TokenStore tokenStore,
@@ -33,20 +37,26 @@ public class SimulatorController {
                                 TradeHistoryService tradeHistoryService,
                                 PollingService pollingService,
                                 PositionStateStore positionStateStore,
-                                TradingStateStore tradingState) {
-        this.modeStore          = modeStore;
-        this.tokenStore         = tokenStore;
-        this.mockState          = mockState;
-        this.eventService       = eventService;
+                                TradingStateStore tradingState,
+                                MarketDataService marketDataService,
+                                OrderEventService orderEventService) {
+        this.modeStore           = modeStore;
+        this.tokenStore          = tokenStore;
+        this.mockState           = mockState;
+        this.eventService        = eventService;
         this.tradeHistoryService = tradeHistoryService;
         this.pollingService      = pollingService;
         this.positionStateStore  = positionStateStore;
         this.tradingState        = tradingState;
+        this.marketDataService   = marketDataService;
+        this.orderEventService   = orderEventService;
     }
 
     // ── MODE SWITCH ───────────────────────────────────────────────────────────
     @PostMapping("/api/logout")
     public ResponseEntity<?> logout() {
+        orderEventService.stop();
+        marketDataService.stop();
         tokenStore.setAccessToken(null);
         mockState.resetAll();
         pollingService.clearCachedPositions();
@@ -65,6 +75,8 @@ public class SimulatorController {
         }
 
         // Clear in-memory state from the OLD mode before switching
+        orderEventService.stop();
+        marketDataService.stop();
         pollingService.clearCachedPositions();
         PositionManager.resetAll();
 
@@ -76,9 +88,11 @@ public class SimulatorController {
             tokenStore.setAccessToken("SIM_TOKEN");
             pollingService.syncPositionOnce();
             pollingService.startPositionSync();
+            marketDataService.start();
         } else {
             tokenStore.setAccessToken(null);
             mockState.resetAll();
+            // LIVE mode: marketDataService.start() will be called after Fyers login callback
         }
 
         return ResponseEntity.ok(Map.of(

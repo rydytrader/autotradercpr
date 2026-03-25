@@ -215,32 +215,8 @@
 </div><!-- /app-layout -->
 
 <script src="/js/common.js?v=2"></script>
+<script src="/js/ticker.js?v=1"></script>
 <script>
-    // ── STOCK TICKER ─────────────────────────────
-    function loadTicker() {
-        fetch('/api/market-ticker')
-            .then(r => r.json())
-            .then(data => {
-                if (!data || !data.length) return;
-                const track = document.getElementById('tickerTrack');
-                let html = '';
-                for (const t of data) {
-                    const dir = t.ch >= 0 ? 'up' : 'down';
-                    const arrow = t.ch >= 0 ? '▲' : '▼';
-                    const pos = t.position ? ' has-position' : '';
-                    html += `<div class="ticker-item${pos}">
-                        <span class="ticker-symbol">${t.symbol}</span>
-                        <span class="ticker-price">${t.lp.toLocaleString('en-IN', {minimumFractionDigits:2})}</span>
-                        <span class="ticker-change ${dir}">${arrow} ${Math.abs(t.ch).toFixed(2)} (${Math.abs(t.chp).toFixed(2)}%)</span>
-                    </div>`;
-                }
-                track.innerHTML = html + html;
-            })
-            .catch(() => {});
-    }
-    loadTicker();
-    setInterval(loadTicker, 60000);
-
     // ── MODE + STATUS ────────────────────────────
     function loadMode() {
         fetch('/api/mode').then(r => r.json()).then(d => {
@@ -265,7 +241,7 @@
             const label = document.getElementById('connectionStatus');
             if (d.status && d.status.toLowerCase().includes('connect')) {
                 dot.className = 'status-dot connected';
-                label.textContent = 'Connected';
+                label.textContent = d.status;
                 label.style.color = 'var(--accent-green)';
             } else {
                 dot.className = 'status-dot disconnected';
@@ -461,6 +437,30 @@
     loadTrades();
     setInterval(loadPositions, 10000);
     setInterval(loadTrades, 30000);
+
+    // ── SSE REAL-TIME P&L UPDATES ────────────────
+    (function() {
+        if (typeof EventSource === 'undefined') return;
+        var src = new EventSource('/api/market-ticker/stream');
+        src.addEventListener('positions', function(event) {
+            try {
+                var d = JSON.parse(event.data);
+                if (d.netDayPnl !== undefined) {
+                    var netEl = document.getElementById('netDayPnl');
+                    if (netEl) { netEl.textContent = (d.netDayPnl >= 0 ? '+' : '') + fmt(d.netDayPnl); setPnlClass(netEl, d.netDayPnl); }
+                }
+                if (d.unrealizedPnl !== undefined) {
+                    var unrEl = document.getElementById('unrealizedPnl');
+                    if (unrEl) { unrEl.textContent = (d.unrealizedPnl >= 0 ? '+' : '') + fmt(d.unrealizedPnl); setPnlClass(unrEl, d.unrealizedPnl); }
+                }
+                if (d.realizedPnl !== undefined) {
+                    var realEl = document.getElementById('realizedPnl');
+                    if (realEl) { realEl.textContent = (d.realizedPnl >= 0 ? '+' : '') + fmt(d.realizedPnl); setPnlClass(realEl, d.realizedPnl); }
+                }
+            } catch (e) {}
+        });
+        src.onerror = function() { src.close(); setTimeout(function() { src = new EventSource('/api/market-ticker/stream'); }, 30000); };
+    })();
 </script>
 </body>
 </html>

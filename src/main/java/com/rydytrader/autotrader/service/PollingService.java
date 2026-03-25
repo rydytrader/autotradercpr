@@ -33,6 +33,8 @@ public class PollingService {
     private final ModeStore           modeStore;
     private final RiskSettingsStore   riskSettings;
     private final TelegramService     telegramService;
+    private final MarketDataService   marketDataService;
+    private final OrderEventService   orderEventService;
 
     // ── per-symbol state ──────────────────────────────────────────────────────
     private final ConcurrentHashMap<String, PositionsDTO> cachedPositions  = new ConcurrentHashMap<>();
@@ -60,7 +62,9 @@ public class PollingService {
                           MockState mockState,
                           ModeStore modeStore,
                           RiskSettingsStore riskSettings,
-                          TelegramService telegramService) {
+                          TelegramService telegramService,
+                          MarketDataService marketDataService,
+                          OrderEventService orderEventService) {
         this.tokenStore          = tokenStore;
         this.fyersProperties     = fyersProperties;
         this.fyersClient         = fyersClient;
@@ -72,6 +76,14 @@ public class PollingService {
         this.modeStore           = modeStore;
         this.riskSettings        = riskSettings;
         this.telegramService     = telegramService;
+        this.marketDataService   = marketDataService;
+        this.orderEventService   = orderEventService;
+        // Set back-reference to avoid circular DI
+        orderEventService.setPollingService(this);
+        // Start Order WebSocket early (before restore) so restored OCOs can use it
+        if (modeStore.isLive() && tokenStore.isTokenAvailable()) {
+            orderEventService.start();
+        }
         restoreStateOnStartup();
         startAutoSquareOffScheduler();
         startTelegramSummaryScheduler();
@@ -105,17 +117,24 @@ public class PollingService {
                 // Restart OCO monitor if SL/Target order IDs were persisted
                 String slOrderId     = saved.getOrDefault("slOrderId", "").toString();
                 String targetOrderId = saved.getOrDefault("targetOrderId", "").toString();
+                int exitSide         = "LONG".equals(side) ? -1 : 1;
                 if (!slOrderId.isEmpty() && !targetOrderId.isEmpty()) {
                     double slPrice     = Double.parseDouble(saved.getOrDefault("slPrice", "0").toString());
                     double targetPrice = Double.parseDouble(saved.getOrDefault("targetPrice", "0").toString());
-                    int exitSide       = "LONG".equals(side) ? -1 : 1;
-                    monitorOCO(slOrderId, targetOrderId, symbol, qty, exitSide,
-                        slPrice, targetPrice, side, setup, avgPrice);
-                    System.out.println("[PollingService] Restored OCO monitor for " + symbol
-                        + " — SL: " + slOrderId + " | Target: " + targetOrderId);
+                    // Try WebSocket tracking first, fall back to polling
+                    boolean wsTracked = orderEventService.trackOcoOrders(slOrderId, targetOrderId,
+                        symbol, qty, side, exitSide, setup, avgPrice, slPrice, targetPrice);
+                    if (wsTracked) {
+                        System.out.println("[PollingService] Restored OCO via WebSocket for " + symbol
+                            + " — SL: " + slOrderId + " | Target: " + targetOrderId);
+                    } else {
+                        monitorOCO(slOrderId, targetOrderId, symbol, qty, exitSide,
+                            slPrice, targetPrice, side, setup, avgPrice);
+                        System.out.println("[PollingService] Restored OCO via polling for " + symbol
+                            + " — SL: " + slOrderId + " | Target: " + targetOrderId);
+                    }
                 } else {
                     // No saved OCO IDs — scan for manually placed SL/Target orders
-                    int exitSide = "LONG".equals(side) ? -1 : 1;
                     System.out.println("[PollingService] Restored state on startup: " + side + " " + symbol
                         + " (no OCO IDs — scanning for manual SL/Target)");
                     scanForManualOCO(symbol, qty, exitSide, side, setup, avgPrice);
@@ -137,6 +156,18 @@ public class PollingService {
     public void monitorEntryAndPlaceOCO(OrderDTO entry, String symbol,
                                         int quantity, String position,
                                         int exitSide, double slPrice, double targetPrice, String setup) {
+
+        // ── Try WebSocket-based tracking first (LIVE mode, WS connected) ──
+        if (orderEventService.isConnected()) {
+            boolean tracked = orderEventService.trackEntryOrder(entry.getId(),
+                new OrderEventService.EntryContext(symbol, quantity, position, exitSide, slPrice, targetPrice, setup));
+            if (tracked) {
+                eventService.log("[INFO] Entry order " + entry.getId() + " tracked via WebSocket for " + symbol);
+                return; // WebSocket will handle fill detection — no polling needed
+            }
+        }
+
+        // ── Fallback: polling-based entry monitor ──
         class Holder {
             ScheduledFuture<?> future;
             boolean positionSet    = false;  // set position state only once
@@ -175,6 +206,7 @@ public class PollingService {
                             setupBySymbol.get(symbol), entryTime, slPrice, targetPrice);
                         eventService.log("[SUCCESS] " + (position.equals("LONG") ? "BUY" : "SELL")
                             + " order filled for " + symbol + " @ " + holder.entryFillPrice + " [ID: " + entry.getId() + "] — placing SL + Target");
+                        marketDataService.updateSubscriptions();
                     }
 
                     holder.ocoRetries++;
@@ -187,9 +219,14 @@ public class PollingService {
                     if (slOk && tgtOk) {
                         eventService.log("[SUCCESS] SL order placed for " + symbol + " at " + orderService.roundToTick(slPrice, symbol) + " [ID: " + slOrder.getId() + "]");
                         eventService.log("[SUCCESS] Target order placed for " + symbol + " at " + orderService.roundToTick(targetPrice, symbol) + " [ID: " + targetOrder.getId() + "]");
-                        // Start OCO monitor immediately — don't wait for fill price
-                        monitorOCO(slOrder.getId(), targetOrder.getId(), symbol, quantity,
-                            exitSide, slPrice, targetPrice, position, setup, holder.entryFillPrice);
+                        positionStateStore.saveOcoState(symbol, slOrder.getId(), targetOrder.getId(), slPrice, targetPrice);
+                        // Try WebSocket OCO tracking first, fall back to polling monitor
+                        boolean wsTracked = orderEventService.trackOcoOrders(slOrder.getId(), targetOrder.getId(),
+                            symbol, quantity, position, exitSide, setup, holder.entryFillPrice);
+                        if (!wsTracked) {
+                            monitorOCO(slOrder.getId(), targetOrder.getId(), symbol, quantity,
+                                exitSide, slPrice, targetPrice, position, setup, holder.entryFillPrice);
+                        }
                         if (holder.future != null) holder.future.cancel(false);
                     } else {
                         // Cancel whichever succeeded to avoid a half-OCO state
@@ -228,8 +265,8 @@ public class PollingService {
     // After auto-placement fails, polls the order book every 10s looking for
     // a pending SL-M (type 3) and Limit (type 1) order on the same symbol/side.
     // Once both are found, starts the OCO monitor automatically.
-    private void scanForManualOCO(String symbol, int qty, int exitSide,
-                                   String positionSide, String setup, double entryFillPrice) {
+    public void scanForManualOCO(String symbol, int qty, int exitSide,
+                                  String positionSide, String setup, double entryFillPrice) {
         class ScanState {
             ScheduledFuture<?> future;
             int ticks = 0;
@@ -474,6 +511,28 @@ public class PollingService {
         entryTimeBySymbol.remove(symbol);
         entryAvgBySymbol.remove(symbol);
         PositionManager.setPosition(symbol, "NONE");
+        marketDataService.updateSubscriptions();
+        orderEventService.untrackSymbol(symbol);
+    }
+
+    // ── Public helpers for OrderEventService (WebSocket-based fill handling) ──
+
+    /** Called by OrderEventService on WS entry fill to set in-memory symbol state. */
+    public void setSymbolState(String symbol, String setup, String entryTime, double entryPrice) {
+        setupBySymbol.put(symbol, setup != null ? setup : "");
+        entryTimeBySymbol.put(symbol, entryTime);
+        entryAvgBySymbol.put(symbol, entryPrice);
+        pendingEntrySymbols.remove(symbol);
+    }
+
+    /** Called by OrderEventService on WS OCO fill to clear state. */
+    public void clearSymbolStateFromWs(String symbol) {
+        clearSymbolState(symbol);
+    }
+
+    /** Get cached entry average price for a symbol. */
+    public double getEntryAvg(String symbol) {
+        return entryAvgBySymbol.getOrDefault(symbol, 0.0);
     }
 
     // ── ORDER STATUS (cached order book) ────────────────────────────────────
@@ -776,6 +835,8 @@ public class PollingService {
         positionSyncStarted = true;
         scheduler.scheduleAtFixedRate(() -> {
             if (tokenStore.getAccessToken() == null) return;
+            // Skip sync entirely when both WebSockets are connected (data + order)
+            if (orderEventService.isConnected() && marketDataService.isConnected()) return;
             if (!PositionManager.hasAnyPosition() && positionStateStore.loadAll().isEmpty()) return;
             syncPosition();
         }, 5, 10, TimeUnit.SECONDS);
@@ -847,6 +908,7 @@ public class PollingService {
                         boolean isNewPosition = !cachedPositions.containsKey(symbol);
                         cachedPositions.put(symbol, new PositionsDTO(symbol, absQty, posSide, resolvedAvg, ltp, unrealizedPl, setup, resolvedEntryTime));
                         PositionManager.setPosition(symbol, posSide);
+                        if (isNewPosition) marketDataService.updateSubscriptions();
                         // Preserve existing OCO state (order IDs + prices) if already saved
                         Map<String, Object> existingState = positionStateStore.load(symbol);
                         double savedSl = existingState != null && existingState.containsKey("slPrice")
@@ -929,7 +991,7 @@ public class PollingService {
 
             lastSyncTime = java.time.LocalTime.now()
                 .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
-            connectionStatus = "CONNECTED";
+            connectionStatus = "POLLING";
 
         } catch (Exception e) {
             connectionStatus = "DISCONNECTED";
@@ -942,7 +1004,14 @@ public class PollingService {
 
     public List<PositionsDTO> fetchPositions() { return new ArrayList<>(cachedPositions.values()); }
 
-    public String getConnectionStatus() { return connectionStatus; }
+    public String getConnectionStatus() {
+        boolean orderWs = orderEventService.isConnected();
+        boolean dataWs = marketDataService.isConnected();
+        if (orderWs && dataWs) return "WS CONNECTED";
+        if (orderWs) return "WS CONNECTED (Order)";
+        if (dataWs) return "WS CONNECTED (Data)";
+        return connectionStatus; // POLLING / SYNCING / DISCONNECTED
+    }
 
     public String getLastSyncTime() { return lastSyncTime; }
 

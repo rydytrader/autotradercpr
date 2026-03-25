@@ -2,6 +2,8 @@ package com.rydytrader.autotrader.controller;
 
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.service.LoginService;
+import com.rydytrader.autotrader.service.MarketDataService;
+import com.rydytrader.autotrader.service.OrderEventService;
 import com.rydytrader.autotrader.service.PollingService;
 import com.rydytrader.autotrader.store.ModeStore;
 import com.rydytrader.autotrader.store.TokenStore;
@@ -14,22 +16,28 @@ import java.io.IOException;
 @Controller
 public class ViewController {
 
-    private final TokenStore       tokenStore;
-    private final PollingService   pollingService;
-    private final LoginService     loginService;
-    private final FyersProperties  fyersProperties;
-    private final ModeStore        modeStore;
+    private final TokenStore        tokenStore;
+    private final PollingService    pollingService;
+    private final LoginService      loginService;
+    private final FyersProperties   fyersProperties;
+    private final ModeStore         modeStore;
+    private final MarketDataService marketDataService;
+    private final OrderEventService orderEventService;
 
     public ViewController(TokenStore tokenStore,
                            PollingService pollingService,
                            LoginService loginService,
                            FyersProperties fyersProperties,
-                           ModeStore modeStore) {
-        this.tokenStore      = tokenStore;
-        this.pollingService  = pollingService;
-        this.loginService    = loginService;
-        this.fyersProperties = fyersProperties;
-        this.modeStore       = modeStore;
+                           ModeStore modeStore,
+                           MarketDataService marketDataService,
+                           OrderEventService orderEventService) {
+        this.tokenStore        = tokenStore;
+        this.pollingService    = pollingService;
+        this.loginService      = loginService;
+        this.fyersProperties   = fyersProperties;
+        this.modeStore         = modeStore;
+        this.marketDataService = marketDataService;
+        this.orderEventService = orderEventService;
     }
 
     @GetMapping("/")
@@ -63,6 +71,8 @@ public class ViewController {
             tokenStore.setAccessToken(token);
             pollingService.syncPositionOnce();
             pollingService.startPositionSync();
+            marketDataService.start();
+            orderEventService.start();
             return "redirect:/home";
         }
         System.out.println("Login callback error");

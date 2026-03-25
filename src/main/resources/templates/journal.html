@@ -339,32 +339,8 @@
 </div>
 
 <script src="/js/common.js?v=2"></script>
+<script src="/js/ticker.js?v=1"></script>
 <script>
-    // ── STOCK TICKER ─────────────────────────────
-    function loadTicker() {
-        fetch('/api/market-ticker')
-            .then(r => r.json())
-            .then(data => {
-                if (!data || !data.length) return;
-                const track = document.getElementById('tickerTrack');
-                let html = '';
-                for (const t of data) {
-                    const dir = t.ch >= 0 ? 'up' : 'down';
-                    const arrow = t.ch >= 0 ? '▲' : '▼';
-                    const pos = t.position ? ' has-position' : '';
-                    html += `<div class="ticker-item${pos}">
-                        <span class="ticker-symbol">${t.symbol}</span>
-                        <span class="ticker-price">${t.lp.toLocaleString('en-IN', {minimumFractionDigits:2})}</span>
-                        <span class="ticker-change ${dir}">${arrow} ${Math.abs(t.ch).toFixed(2)} (${Math.abs(t.chp).toFixed(2)}%)</span>
-                    </div>`;
-                }
-                track.innerHTML = html + html;
-            })
-            .catch(() => {});
-    }
-    loadTicker();
-    setInterval(loadTicker, 60000);
-
     // ── THEME (override toggleTheme to also re-render charts) ──
     var _baseToggleTheme = toggleTheme;
     toggleTheme = function() {
@@ -382,8 +358,8 @@
                 const dot = document.getElementById('statusDot');
                 const lbl = document.getElementById('connectionStatus');
                 dot.className = 'status-dot';
-                if (data.status === 'CONNECTED')    { dot.classList.add('connected');    lbl.textContent = 'Connected';    lbl.style.color = 'var(--accent-green)'; }
-                else if (data.status === 'SYNCING') { dot.classList.add('syncing');      lbl.textContent = 'Syncing';      lbl.style.color = 'var(--accent-yellow)'; }
+                if (data.status.includes('CONNECTED')) { dot.classList.add('connected'); lbl.textContent = data.status; lbl.style.color = 'var(--accent-green)'; }
+                else if (data.status === 'POLLING' || data.status === 'SYNCING') { dot.classList.add('syncing'); lbl.textContent = data.status; lbl.style.color = 'var(--accent-yellow)'; }
                 else                                { dot.classList.add('disconnected'); lbl.textContent = 'Disconnected'; lbl.style.color = 'var(--accent-red)'; }
             })
             .catch(() => {

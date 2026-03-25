@@ -260,32 +260,8 @@
 <!-- ── SQUARE OFF CONFIRMATION MODAL ──────────────────────────── -->
 
 <script src="/js/common.js?v=2"></script>
+<script src="/js/ticker.js?v=1"></script>
 <script>
-    // ── STOCK TICKER ─────────────────────────────
-    function loadTicker() {
-        fetch('/api/market-ticker')
-            .then(r => r.json())
-            .then(data => {
-                if (!data || !data.length) return;
-                const track = document.getElementById('tickerTrack');
-                let html = '';
-                for (const t of data) {
-                    const dir = t.ch >= 0 ? 'up' : 'down';
-                    const arrow = t.ch >= 0 ? '▲' : '▼';
-                    const pos = t.position ? ' has-position' : '';
-                    html += `<div class="ticker-item${pos}">
-                        <span class="ticker-symbol">${t.symbol}</span>
-                        <span class="ticker-price">${t.lp.toLocaleString('en-IN', {minimumFractionDigits:2})}</span>
-                        <span class="ticker-change ${dir}">${arrow} ${Math.abs(t.ch).toFixed(2)} (${Math.abs(t.chp).toFixed(2)}%)</span>
-                    </div>`;
-                }
-                track.innerHTML = html + html;
-            })
-            .catch(() => {});
-    }
-    loadTicker();
-    setInterval(loadTicker, 60000);
-
     // ── FORMATTERS ────────────────────────────────
     const inr = v => new Intl.NumberFormat('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}).format(Math.abs(v));
     function fmtPnl(v) { return (v >= 0 ? '+₹' : '-₹') + inr(v); }
@@ -293,12 +269,12 @@
     // ── CONNECTION STATUS ─────────────────────────
     function setLogBadge(status) {
         const badge = document.getElementById('logStatusBadge');
-        if (status === 'CONNECTED') {
+        if (status.includes('CONNECTED')) {
             badge.textContent = '● Live';
             badge.style.color = 'var(--accent-cyan)';
             badge.style.borderColor = 'rgba(34,211,238,0.2)';
             badge.style.background = 'rgba(34,211,238,0.07)';
-        } else if (status === 'SYNCING') {
+        } else if (status === 'SYNCING' || status === 'POLLING') {
             badge.textContent = '● Syncing';
             badge.style.color = 'var(--accent-yellow)';
             badge.style.borderColor = 'rgba(251,191,36,0.2)';
@@ -328,15 +304,15 @@
                 const dot = document.getElementById('statusDot');
                 const label = document.getElementById('connectionStatus');
                 dot.className = 'status-dot';
-                if (data.status === 'CONNECTED') {
+                if (data.status.includes('CONNECTED')) {
                     dot.classList.add('connected');
-                    label.textContent = 'Connected';
+                    label.textContent = data.status;
                     label.style.color = 'var(--accent-green)';
                     if (!isConnected) pollData();  // immediate fetch on first connect
                     isConnected = true;
-                } else if (data.status === 'SYNCING') {
+                } else if (data.status === 'POLLING' || data.status === 'SYNCING') {
                     dot.classList.add('syncing');
-                    label.textContent = 'Syncing';
+                    label.textContent = data.status;
                     label.style.color = 'var(--accent-yellow)';
                     if (!isConnected) pollData();  // immediate fetch on first connect
                     isConnected = true;
@@ -554,6 +530,64 @@
     updateConnectionStatus();
     updateTradeLogs();
     updatePositions();
+
+    // ── SSE REAL-TIME POSITION UPDATES ───────────────────────────────────────
+    (function() {
+        var posSource = null;
+        var lastSseUpdate = 0;
+
+        function connectPositionSSE() {
+            if (posSource) { posSource.close(); posSource = null; }
+            try {
+                posSource = new EventSource('/api/market-ticker/stream');
+                posSource.addEventListener('positions', function(event) {
+                    try {
+                        var data = JSON.parse(event.data);
+                        var positions = data.positions || [];
+                        lastSseUpdate = Date.now();
+
+                        // Update LTP and P&L in current position data
+                        if (positions.length > 0 && allPositions.length > 0) {
+                            var ltpMap = {};
+                            positions.forEach(function(p) { ltpMap[p.symbol] = p; });
+
+                            allPositions.forEach(function(pos) {
+                                var live = ltpMap[pos.symbol];
+                                if (live) {
+                                    pos.ltp = live.ltp;
+                                    pos.pnl = live.pnl;
+                                }
+                            });
+                            renderPositionsTable();
+                        }
+
+                        // Update P&L stats
+                        if (data.netDayPnl !== undefined) {
+                            var pnlEl = document.getElementById('statPnl');
+                            if (pnlEl) {
+                                pnlEl.textContent = fmtPnl(data.netDayPnl);
+                                pnlEl.className = 'stat-value ' + (data.netDayPnl >= 0 ? 'positive' : 'negative');
+                            }
+                            var subEl = document.getElementById('statPnlSub');
+                            if (subEl) {
+                                subEl.textContent = 'R: ' + fmtPnl(data.realizedPnl || 0) + '  |  U: ' + fmtPnl(data.unrealizedPnl || 0);
+                            }
+                        }
+                    } catch (e) { /* ignore parse errors */ }
+                });
+                posSource.onerror = function() {
+                    posSource.close();
+                    posSource = null;
+                    // Retry SSE after 30s
+                    setTimeout(connectPositionSSE, 30000);
+                };
+            } catch (e) { /* EventSource not supported, REST polling continues */ }
+        }
+
+        if (typeof EventSource !== 'undefined') {
+            connectPositionSSE();
+        }
+    })();
 
     // ── MODE LABEL ────────────────────────────────────────────────────────────
     function refreshMode() {

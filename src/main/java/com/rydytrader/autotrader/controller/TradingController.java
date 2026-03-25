@@ -16,6 +16,7 @@ import com.rydytrader.autotrader.dto.ProcessedSignal;
 import com.rydytrader.autotrader.manager.PositionManager;
 import com.rydytrader.autotrader.mock.MockState;
 import com.rydytrader.autotrader.service.EventService;
+import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.OrderService;
 import com.rydytrader.autotrader.service.PollingService;
 import com.rydytrader.autotrader.service.SignalProcessor;
@@ -38,6 +39,7 @@ public class TradingController {
     private final RiskSettingsStore   riskSettings;
     private final TradingStateStore   tradingState;
     private final SignalProcessor     signalProcessor;
+    private final MarketDataService   marketDataService;
 
     public TradingController(PollingService pollingService,
                               OrderService orderService,
@@ -48,7 +50,8 @@ public class TradingController {
                               PositionStateStore positionStateStore,
                               RiskSettingsStore riskSettings,
                               TradingStateStore tradingState,
-                              SignalProcessor signalProcessor) {
+                              SignalProcessor signalProcessor,
+                              MarketDataService marketDataService) {
         this.pollingService      = pollingService;
         this.orderService        = orderService;
         this.eventService        = eventService;
@@ -59,6 +62,7 @@ public class TradingController {
         this.riskSettings        = riskSettings;
         this.tradingState        = tradingState;
         this.signalProcessor     = signalProcessor;
+        this.marketDataService   = marketDataService;
     }
 
     // ── PLACE ORDER ───────────────────────────────────────────────────────────
@@ -193,20 +197,26 @@ public class TradingController {
     public Map<String, Object> getPositions() {
         List<Map<String, Object>> positions = pollingService.fetchPositions().stream().map(p -> {
             Map<String, Object> m = new java.util.LinkedHashMap<>();
+            // Overlay live LTP from WebSocket if available
+            double liveLtp = marketDataService.getLtp(p.getSymbol());
+            double ltp = liveLtp > 0 ? liveLtp : p.getLtp();
+            double pnl = "LONG".equals(p.getSide())
+                ? (ltp - p.getAvgPrice()) * p.getQty()
+                : (p.getAvgPrice() - ltp) * p.getQty();
             m.put("symbol",    p.getSymbol());
             m.put("qty",       p.getQty());
             m.put("side",      p.getSide());
             m.put("avgPrice",  p.getAvgPrice());
-            m.put("ltp",       p.getLtp());
-            m.put("pnl",       p.getPnl());
+            m.put("ltp",       ltp);
+            m.put("pnl",       pnl);
             m.put("setup",     p.getSetup());
             m.put("entryTime", p.getEntryTime());
             return m;
         }).collect(java.util.stream.Collectors.toList());
         double realizedPnl   = tradeHistoryService.getTrades().stream()
             .mapToDouble(t -> t.getNetPnl()).sum();
-        double unrealizedPnl = pollingService.fetchPositions().stream()
-            .mapToDouble(p -> p.getPnl()).sum();
+        double unrealizedPnl = positions.stream()
+            .mapToDouble(p -> ((Number) p.get("pnl")).doubleValue()).sum();
         double netDayPnl     = realizedPnl + unrealizedPnl;
 
         // Risk budget info
