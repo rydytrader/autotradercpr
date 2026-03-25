@@ -6,8 +6,6 @@ import com.rydytrader.autotrader.dto.OrderDTO;
 import com.rydytrader.autotrader.dto.PositionsDTO;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
 import com.rydytrader.autotrader.manager.PositionManager;
-import com.rydytrader.autotrader.mock.MockState;
-import com.rydytrader.autotrader.store.ModeStore;
 import com.rydytrader.autotrader.store.PositionStateStore;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import com.rydytrader.autotrader.store.TokenStore;
@@ -33,8 +31,6 @@ public class PollingService {
     private final EventService        eventService;
     private final TradeHistoryService tradeHistoryService;
     private final PositionStateStore  positionStateStore;
-    private final MockState           mockState;
-    private final ModeStore           modeStore;
     private final RiskSettingsStore   riskSettings;
     private final TelegramService     telegramService;
     private final MarketDataService   marketDataService;
@@ -63,8 +59,6 @@ public class PollingService {
                           EventService eventService,
                           TradeHistoryService tradeHistoryService,
                           PositionStateStore positionStateStore,
-                          MockState mockState,
-                          ModeStore modeStore,
                           RiskSettingsStore riskSettings,
                           TelegramService telegramService,
                           MarketDataService marketDataService,
@@ -76,8 +70,6 @@ public class PollingService {
         this.eventService        = eventService;
         this.tradeHistoryService = tradeHistoryService;
         this.positionStateStore  = positionStateStore;
-        this.mockState           = mockState;
-        this.modeStore           = modeStore;
         this.riskSettings        = riskSettings;
         this.telegramService     = telegramService;
         this.marketDataService   = marketDataService;
@@ -85,7 +77,7 @@ public class PollingService {
         // Set back-reference to avoid circular DI
         orderEventService.setPollingService(this);
         // Start Order WebSocket early (before restore) so restored OCOs can use it
-        if (modeStore.isLive() && tokenStore.isTokenAvailable()) {
+        if (tokenStore.isTokenAvailable()) {
             orderEventService.start();
         }
         restoreStateOnStartup();
@@ -113,10 +105,6 @@ public class PollingService {
                 entryAvgBySymbol.put(symbol, avgPrice);
                 PositionManager.setPosition(symbol, side);
                 cachedPositions.put(symbol, new PositionsDTO(symbol, qty, side, avgPrice, avgPrice, 0.0, setup, entryTime));
-
-                if (modeStore.getMode() == ModeStore.Mode.SIMULATOR) {
-                    mockState.restorePosition(symbol, side, qty, avgPrice);
-                }
 
                 // Restart OCO monitor if SL/Target order IDs were persisted
                 String slOrderId     = saved.getOrDefault("slOrderId", "").toString();
@@ -803,35 +791,9 @@ public class PollingService {
             int qty = Math.abs(pos.getQty());
             if (qty == 0) continue;
             try {
-                if (!modeStore.isLive()) {
-                    // Simulator mode
-                    Map<String, Object> mockPos = mockState.getPosition(symbol);
-                    if (mockPos == null) continue;
-                    double entryPrice = Double.parseDouble(mockPos.get("netAvgPrice").toString());
-                    double exitPrice  = mockState.getCurrentPrice(symbol);
-                    String side = pos.getSide();
-                    String setup = getCurrentSetup(symbol);
-                    // Cancel SL/Target by known IDs
-                    Map<String, Object> sqState = positionStateStore.load(symbol);
-                    String sqSlId  = sqState != null ? sqState.getOrDefault("slOrderId", "").toString() : "";
-                    String sqTgtId = sqState != null ? sqState.getOrDefault("targetOrderId", "").toString() : "";
-                    if (!sqSlId.isEmpty())  orderService.cancelOrder(sqSlId);
-                    if (!sqTgtId.isEmpty()) orderService.cancelOrder(sqTgtId);
-                    PositionManager.setPosition(symbol, "NONE");
-                    mockState.triggerManualSquareOff(symbol);
-                    ocoHandledSymbols.add(symbol);
-                    double pnl = "LONG".equals(side) ? (exitPrice - entryPrice) * qty : (entryPrice - exitPrice) * qty;
-                    String pnlTag = pnl >= 0 ? "PROFIT" : "LOSS";
-                    tradeHistoryService.record(symbol, side, qty, entryPrice, exitPrice, "AUTO_SQUAREOFF", setup);
-                    eventService.log("[SUCCESS] Auto square off for " + symbol + " at " + exitPrice
-                        + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl)));
-                    clearSymbolState(symbol);
-                } else {
-                    // Live mode
-                    boolean ok = squareOff(symbol, qty, "AUTO_SQUAREOFF");
-                    if (!ok) {
-                        eventService.log("[ERROR] Auto square off failed for " + symbol);
-                    }
+                boolean ok = squareOff(symbol, qty, "AUTO_SQUAREOFF");
+                if (!ok) {
+                    eventService.log("[ERROR] Auto square off failed for " + symbol);
                 }
             } catch (Exception e) {
                 eventService.log("[ERROR] Auto square off error for " + symbol + ": " + e.getMessage());
@@ -993,7 +955,7 @@ public class PollingService {
                             "MANUAL", setupBySymbol.getOrDefault(symbol, ""));
                         clearSymbolState(symbol);
                     } else if (prev != null) {
-                        // position already NONE (e.g. simulator square-off), just remove from cache
+                        // position already NONE (e.g. external square-off), just remove from cache
                         cachedPositions.remove(symbol);
                         setupBySymbol.remove(symbol);
                         entryTimeBySymbol.remove(symbol);

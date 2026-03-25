@@ -3,7 +3,6 @@ package com.rydytrader.autotrader.store;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
@@ -12,33 +11,22 @@ import java.util.*;
 
 /**
  * Persists open position state to disk so polling resumes correctly after server restarts.
- * One JSON file per symbol, stored in a per-mode positions/ directory.
- * Live:      ../store/live/positions/{symbol}.json
- * Simulator: ../store/simulator/positions/{symbol}.json
+ * One JSON file per symbol, stored in ../store/data/positions/{symbol}.json
  */
 @Component
 public class PositionStateStore {
 
     private static final Logger log = LoggerFactory.getLogger(PositionStateStore.class);
 
-    private static final String LIVE_DIR = "../store/live/positions";
-    private static final String SIM_DIR  = "../store/simulator/positions";
+    private static final String POSITIONS_DIR = "../store/data/positions";
     private static final ObjectMapper mapper = new ObjectMapper();
 
-    private ModeStore modeStore;
-
     public PositionStateStore() {
-        new File(LIVE_DIR).mkdirs();
-        new File(SIM_DIR).mkdirs();
-    }
-
-    @Autowired
-    public void setModeStore(ModeStore modeStore) {
-        this.modeStore = modeStore;
+        new File(POSITIONS_DIR).mkdirs();
     }
 
     private String positionsDir() {
-        return (modeStore == null || modeStore.isLive()) ? LIVE_DIR : SIM_DIR;
+        return POSITIONS_DIR;
     }
 
     /** Converts symbol to a safe filename (e.g. "NSE:NIFTY25JUN" → "NSE_NIFTY25JUN"). */

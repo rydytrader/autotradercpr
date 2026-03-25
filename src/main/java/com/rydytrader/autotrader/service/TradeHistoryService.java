@@ -1,7 +1,6 @@
 package com.rydytrader.autotrader.service;
 
 import com.rydytrader.autotrader.dto.TradeRecord;
-import com.rydytrader.autotrader.store.ModeStore;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,22 +20,18 @@ public class TradeHistoryService {
     private static final DateTimeFormatter DATE_FMT   = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final String            FILE_PREFIX = "trades-history-";
 
-    private static final String LOG_DIR_LIVE = "../store/live/history";
-    private static final String LOG_DIR_SIM  = "../store/simulator/history";
+    private static final String LOG_DIR = "../store/data/history";
 
-    private final ModeStore modeStore;
     private final RiskSettingsStore riskSettings;
     private final List<TradeRecord> trades = Collections.synchronizedList(new ArrayList<>());
     // Dedup: track last recorded exit per symbol to prevent duplicate entries
     private final java.util.concurrent.ConcurrentHashMap<String, Long> lastRecordTime = new java.util.concurrent.ConcurrentHashMap<>();
     private static final long DEDUP_WINDOW_MS = 5000; // 5 seconds
 
-    public TradeHistoryService(ModeStore modeStore, RiskSettingsStore riskSettings) {
-        this.modeStore = modeStore;
+    public TradeHistoryService(RiskSettingsStore riskSettings) {
         this.riskSettings = riskSettings;
         try {
-            Files.createDirectories(Paths.get("../store/live/history"));
-            Files.createDirectories(Paths.get("../store/simulator/history"));
+            Files.createDirectories(Paths.get("../store/data/history"));
         } catch (IOException e) { log.error("Error creating trade history directories", e); }
         loadTodaysTradesFromFile();
     }
@@ -44,7 +39,7 @@ public class TradeHistoryService {
     public void addRecord(TradeRecord record) {
         trades.add(0, record);
         appendToFile(record);
-        log.info("[{}] Trade: {} | {} | P&L: {} | Charges: {} | Net: {} | {}", modeStore.getMode(), record.getSymbol(), record.getSide(), record.getPnl(), record.getCharges(), record.getNetPnl(), record.getResult());
+        log.info("[LIVE] Trade: {} | {} | P&L: {} | Charges: {} | Net: {} | {}", record.getSymbol(), record.getSide(), record.getPnl(), record.getCharges(), record.getNetPnl(), record.getResult());
     }
 
     public void record(String symbol, String side, int qty,
@@ -116,7 +111,7 @@ public class TradeHistoryService {
     }
 
     // ── FILE PATHS ────────────────────────────────────────────────────────────
-    private String logDir()   { return modeStore.isLive() ? LOG_DIR_LIVE : LOG_DIR_SIM; }
+    private String logDir()   { return LOG_DIR; }
     private String todaysFile() {
         return logDir() + "/" + FILE_PREFIX + LocalDate.now().format(DATE_FMT) + ".csv";
     }

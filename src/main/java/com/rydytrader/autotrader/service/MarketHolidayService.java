@@ -28,7 +28,7 @@ public class MarketHolidayService {
 
     private static final String HOLIDAY_API = "https://www.nseindia.com/api/holiday-master?type=trading";
     private static final String NSE_BASE_URL = "https://www.nseindia.com/";
-    private static final String CACHE_FILE = "../store/nse-holidays.json";
+    private static final String CACHE_FILE = "../store/config/nse-holidays.json";
     private static final DateTimeFormatter NSE_DATE_FMT = DateTimeFormatter.ofPattern("dd-MMM-yyyy", Locale.ENGLISH);
 
     private final ObjectMapper mapper = new ObjectMapper();

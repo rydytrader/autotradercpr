@@ -16,14 +16,12 @@ import org.springframework.web.bind.annotation.RestController;
 import com.rydytrader.autotrader.dto.OrderDTO;
 import com.rydytrader.autotrader.dto.ProcessedSignal;
 import com.rydytrader.autotrader.manager.PositionManager;
-import com.rydytrader.autotrader.mock.MockState;
 import com.rydytrader.autotrader.service.EventService;
 import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.OrderService;
 import com.rydytrader.autotrader.service.PollingService;
 import com.rydytrader.autotrader.service.SignalProcessor;
 import com.rydytrader.autotrader.service.TradeHistoryService;
-import com.rydytrader.autotrader.store.ModeStore;
 import com.rydytrader.autotrader.store.PositionStateStore;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import com.rydytrader.autotrader.store.TradingStateStore;
@@ -36,8 +34,6 @@ public class TradingController {
     private final PollingService      pollingService;
     private final OrderService        orderService;
     private final EventService        eventService;
-    private final ModeStore           modeStore;
-    private final MockState           mockState;
     private final TradeHistoryService tradeHistoryService;
     private final PositionStateStore  positionStateStore;
     private final RiskSettingsStore   riskSettings;
@@ -48,8 +44,6 @@ public class TradingController {
     public TradingController(PollingService pollingService,
                               OrderService orderService,
                               EventService eventService,
-                              ModeStore modeStore,
-                              MockState mockState,
                               TradeHistoryService tradeHistoryService,
                               PositionStateStore positionStateStore,
                               RiskSettingsStore riskSettings,
@@ -59,8 +53,6 @@ public class TradingController {
         this.pollingService      = pollingService;
         this.orderService        = orderService;
         this.eventService        = eventService;
-        this.modeStore           = modeStore;
-        this.mockState           = mockState;
         this.tradeHistoryService = tradeHistoryService;
         this.positionStateStore  = positionStateStore;
         this.riskSettings        = riskSettings;
@@ -183,25 +175,6 @@ public class TradingController {
         String symbol   = payload.get("symbol").toString();
         int    quantity = Integer.parseInt(payload.get("quantity").toString());
 
-        if (!modeStore.isLive()) {
-            // Simulator mode — use MockState directly (same as simulator panel square-off)
-            Map<String, Object> pos = mockState.getPosition(symbol);
-            if (pos == null) return ResponseEntity.ok(Map.of("ok", false, "reason", "No open position"));
-            double entryPrice = Double.parseDouble(pos.get("netAvgPrice").toString());
-            double exitPrice  = mockState.getCurrentPrice(symbol);
-            int    netQty     = Integer.parseInt(pos.get("netQty").toString());
-            String side       = netQty > 0 ? "LONG" : "SHORT";
-            String setup = pollingService.getCurrentSetup(symbol);
-            PositionManager.setPosition(symbol, "NONE");
-            positionStateStore.clear(symbol);
-            pollingService.clearCachedPositions(symbol);
-            mockState.triggerManualSquareOff(symbol);
-            tradeHistoryService.record(symbol, side, Math.abs(netQty), entryPrice, exitPrice, "MANUAL", setup);
-            eventService.log("[SUCCESS] Manual Square off for " + symbol + " at exit: " + exitPrice + " — SL and Target cancelled");
-            return ResponseEntity.ok(Map.of("ok", true));
-        }
-
-        // Live mode
         boolean success = pollingService.squareOff(symbol, quantity);
         return ResponseEntity.ok(Map.of("ok", success));
     }

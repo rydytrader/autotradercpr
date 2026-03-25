@@ -39,7 +39,6 @@
         <a href="/journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">≡</span><span class="sidebar-nav-label">Journal</span></a>
         <a href="/settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
         <a href="/console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
-        <button class="sidebar-nav-item" id="simTab" style="display:none;" onclick="openSimModal()"><span class="sidebar-nav-icon">◈</span><span class="sidebar-nav-label">Simulator</span></button>
     </nav>
     <div class="sidebar-footer">
         <div class="status-pill">
@@ -56,10 +55,6 @@
             <div class="ticker-track" id="tickerTrack"></div>
         </div>
         <div class="nav-right">
-            <div class="mode-pill" id="modePill">
-                <div class="mode-pill-dot"></div>
-                <span class="mode-pill-label" id="modeLabel">LIVE</span>
-            </div>
             <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
             <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
         </div>
@@ -218,24 +213,6 @@
 <script src="/js/common.js?v=2"></script>
 <script src="/js/ticker.js?v=2"></script>
 <script>
-    // ── MODE + STATUS ────────────────────────────
-    function loadMode() {
-        fetch('/api/mode').then(r => r.json()).then(d => {
-            const pill = document.getElementById('modePill');
-            const label = document.getElementById('modeLabel');
-            if (d.mode === 'SIMULATOR') {
-                pill.className = 'mode-pill mock';
-                label.textContent = 'SIMULATOR';
-                document.getElementById('simTab').style.display = '';
-            } else {
-                pill.className = 'mode-pill live';
-                label.textContent = 'LIVE';
-                document.getElementById('simTab').style.display = 'none';
-            }
-        }).catch(() => {});
-    }
-    loadMode();
-
     function checkConnection() {
         var ctrl = new AbortController(); var tid = setTimeout(function(){ ctrl.abort(); }, 3000);
         fetch('/status', {signal:ctrl.signal}).then(r => { clearTimeout(tid); return r.json(); }).then(d => {

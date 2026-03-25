@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 /**
  * Abstraction over all Fyers API calls.
- * Implementations: LiveFyersClient (real API) and MockFyersClient (embedded mock).
+ * Implementation: LiveFyersClient (real Fyers API).
  */
 public interface FyersClient {
 

@@ -5,7 +5,6 @@ import com.rydytrader.autotrader.service.LoginService;
 import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.OrderEventService;
 import com.rydytrader.autotrader.service.PollingService;
-import com.rydytrader.autotrader.store.ModeStore;
 import com.rydytrader.autotrader.store.TokenStore;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
@@ -24,7 +23,6 @@ public class ViewController {
     private final PollingService    pollingService;
     private final LoginService      loginService;
     private final FyersProperties   fyersProperties;
-    private final ModeStore         modeStore;
     private final MarketDataService marketDataService;
     private final OrderEventService orderEventService;
 
@@ -32,14 +30,12 @@ public class ViewController {
                            PollingService pollingService,
                            LoginService loginService,
                            FyersProperties fyersProperties,
-                           ModeStore modeStore,
                            MarketDataService marketDataService,
                            OrderEventService orderEventService) {
         this.tokenStore        = tokenStore;
         this.pollingService    = pollingService;
         this.loginService      = loginService;
         this.fyersProperties   = fyersProperties;
-        this.modeStore         = modeStore;
         this.marketDataService = marketDataService;
         this.orderEventService = orderEventService;
     }
@@ -54,12 +50,7 @@ public class ViewController {
     }
 
     @GetMapping("/login")
-    public void redirectToFyers(@RequestParam(value = "mode", required = false) String mode,
-                                 HttpServletResponse response) throws IOException {
-        // Safety net: ensure mode is LIVE if passed as query param
-        if ("LIVE".equalsIgnoreCase(mode) && !modeStore.isLive()) {
-            modeStore.setMode(ModeStore.Mode.LIVE);
-        }
+    public void redirectToFyers(HttpServletResponse response) throws IOException {
         String loginUrl = "https://api-t1.fyers.in/api/v3/generate-authcode"
                 + "?client_id=" + fyersProperties.getClientId()
                 + "&redirect_uri=http://localhost:9090/login/callback"
@@ -114,11 +105,7 @@ public class ViewController {
         return "console";
     }
 
-    @GetMapping("/simulator")
-    public String simulator() {
-        if (!tokenStore.isTokenAvailable()) return "redirect:/";
-        return "simulator";
-    }
+
 
     @GetMapping("/settings")
     public String settings() {

@@ -1,6 +1,5 @@
 package com.rydytrader.autotrader.service;
 
-import com.rydytrader.autotrader.store.ModeStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -18,21 +17,17 @@ public class EventService {
 
     private static final Logger log = LoggerFactory.getLogger(EventService.class);
 
-    private final ModeStore modeStore;
     private final TelegramService telegramService;
     private final List<String> tradeLogs = new CopyOnWriteArrayList<>();
 
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
-    private static final String LOG_DIR_LIVE = "../store/live/events";
-    private static final String LOG_DIR_SIM  = "../store/simulator/events";
+    private static final String LOG_DIR = "../store/data/events";
 
-    public EventService(ModeStore modeStore, TelegramService telegramService) {
-        this.modeStore = modeStore;
+    public EventService(TelegramService telegramService) {
         this.telegramService = telegramService;
-        new File("../store/live/events").mkdirs();
-        new File("../store/simulator/events").mkdirs();
+        new File("../store/data/events").mkdirs();
         loadTodaysLogsFromFile();
     }
 
@@ -77,7 +72,7 @@ public class EventService {
         try { Files.deleteIfExists(Paths.get(logFile())); } catch (IOException e) { log.error("Error clearing today's event log", e); }
     }
 
-    private String logDir()  { return modeStore.isLive() ? LOG_DIR_LIVE : LOG_DIR_SIM; }
+    private String logDir()  { return LOG_DIR; }
     private String logFile() { return logDir() + "/event-logs-" + LocalDate.now().format(DATE_FMT) + ".txt"; }
 
     private void loadTodaysLogsFromFile() {

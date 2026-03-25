@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.dto.OrderDTO;
 import com.rydytrader.autotrader.manager.PositionManager;
-import com.rydytrader.autotrader.store.ModeStore;
 import com.rydytrader.autotrader.store.PositionStateStore;
 import com.rydytrader.autotrader.store.TokenStore;
 import com.rydytrader.autotrader.websocket.FyersOrderWebSocket;
@@ -34,7 +33,6 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     private static final Logger log = LoggerFactory.getLogger(OrderEventService.class);
 
     private final TokenStore         tokenStore;
-    private final ModeStore          modeStore;
     private final FyersProperties    fyersProperties;
     private final OrderService       orderService;
     private final EventService       eventService;
@@ -109,13 +107,12 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     // Reference to PollingService for shared state access (set via setter to avoid circular DI)
     private volatile PollingService pollingService;
 
-    public OrderEventService(TokenStore tokenStore, ModeStore modeStore,
+    public OrderEventService(TokenStore tokenStore,
                               FyersProperties fyersProperties, OrderService orderService,
                               EventService eventService, TradeHistoryService tradeHistoryService,
                               PositionStateStore positionStateStore, MarketDataService marketDataService,
                               TelegramService telegramService) {
         this.tokenStore = tokenStore;
-        this.modeStore = modeStore;
         this.fyersProperties = fyersProperties;
         this.orderService = orderService;
         this.eventService = eventService;
@@ -134,10 +131,9 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     // Lifecycle
     // ────────────────────────────────────────────────────────────────────────────
 
-    /** Start the Order WebSocket. Called after login or on startup (LIVE mode only). */
+    /** Start the Order WebSocket. Called after login or on startup. */
     public synchronized void start() {
         if (running) stop();
-        if (!modeStore.isLive()) return; // Only for LIVE mode
         running = true;
         reconnectAttempts = 0;
         scheduler = Executors.newScheduledThreadPool(2);

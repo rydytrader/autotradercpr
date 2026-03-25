@@ -14,9 +14,8 @@ Automated intraday trading bot for Indian equity markets. Receives TradingView a
 
 ## Architecture
 
-### Dual Mode
-- **LIVE** — real Fyers API, WebSocket connections, real orders
-- **SIMULATOR** — MockFyersClient with in-memory MockState, polling-based
+### Live-Only Mode
+The app runs exclusively in LIVE mode — no simulator. All mock/simulator code has been removed.
 
 ### WebSocket Connections (LIVE mode)
 1. **Market Data WebSocket** (`wss://socket.fyers.in/hsm/v1-5/prod`)
@@ -56,10 +55,10 @@ TradingView Alert → POST /placeorder → SignalProcessor (filters/qty)
 ```
 
 ### Key Design Patterns
-- **FyersClient interface** → LiveFyersClient / MockFyersClient
-- **FyersClientRouter** → routes based on ModeStore (Strategy pattern)
+- **FyersClient interface** → LiveFyersClient (single implementation)
+- **FyersClientRouter** → delegates to LiveFyersClient
 - **PositionManager** — static in-memory LONG/SHORT/NONE per symbol
-- **PositionStateStore** — JSON files on disk, mode-separated (store/live/ vs store/simulator/)
+- **PositionStateStore** — JSON files on disk (store/data/positions/)
 - **OrderEventService ↔ PollingService** — circular dependency avoided via `setPollingService()` setter
 
 ### SSE (Server-Sent Events)
@@ -101,18 +100,17 @@ src/main/java/com/rydytrader/autotrader/
 ├── controller/      TradingController, ViewController, SimulatorController,
 │                    SettingsController, MarketTickerController, MarketTickerSseController
 ├── dto/             OrderDTO, PositionsDTO, TickData, TradeRecord, ProcessedSignal, CprLevels, JournalMetrics
-├── fyers/           FyersClient (interface), LiveFyersClient, MockFyersClient, FyersClientRouter
+├── fyers/           FyersClient (interface), LiveFyersClient, FyersClientRouter
 ├── manager/         PositionManager (static)
-├── mock/            MockState
 ├── service/         PollingService, OrderService, OrderEventService, MarketDataService,
 │                    SignalProcessor, EventService, TradeHistoryService, BhavcopyService,
 │                    MarketHolidayService, SymbolMasterService, TelegramService, LoginService,
 │                    MarginDataService, QuantityService
-├── store/           PositionStateStore, RiskSettingsStore, ModeStore, TokenStore, TradingStateStore
+├── store/           PositionStateStore, RiskSettingsStore, TokenStore, TradingStateStore
 └── websocket/       FyersDataWebSocket, FyersOrderWebSocket, HsmBinaryParser
 
 src/main/resources/
-├── templates/       home, positions, trades, journal, settings, console, login, simulator
+├── templates/       home, positions, trades, journal, settings, console, login
 ├── static/css/      shared.css (3 themes: dark, light, forest)
 ├── static/js/       common.js, ticker.js
 ├── logback-spring.xml
@@ -121,12 +119,16 @@ src/main/resources/
 src/main/pine/       TraderEdge CPR AutoTrader.txt (Pine Script indicator)
 
 store/
-├── live/positions/      Position JSON files (LIVE mode)
-├── simulator/positions/ Position JSON files (SIMULATOR mode)
-├── live/risk-settings.json
-├── simulator/risk-settings.json
-├── logs/autotrader.log  Daily rolling log
-└── nse-holidays.json    Cached NSE holidays
+├── config/              Configuration files
+│   ├── risk-settings.json   Risk management settings
+│   ├── cpr-data.json        Cached CPR levels from NSE bhavcopy
+│   └── nse-holidays.json    Cached NSE trading holidays
+├── data/                Runtime data
+│   ├── positions/       Position JSON files (one per symbol)
+│   ├── events/          Daily event log files
+│   └── history/         Daily trade history files
+└── logs/                Application logs
+    └── autotrader.log   Daily rolling log (30 days, 200MB cap)
 ```
 
 ## Key Services
@@ -148,7 +150,6 @@ store/
 - Manages Data WebSocket lifecycle
 - SSE push to browser (ticker + positions)
 - Trailing SL: monitors LTP, modifies SL when trigger hit
-- Mock ticker for simulator (random walk)
 
 ### SignalProcessor
 - Validates and filters incoming signals
@@ -178,6 +179,6 @@ store/
 ## Conventions
 - Event log prefixes: `[SUCCESS]`, `[WARNING]`, `[ERROR]`, `[INFO]`, `[WS]`
 - Log format: `HH:mm:ss.SSS LEVEL [ClassName] message`
-- All settings persisted per mode (live/simulator) as JSON
+- All settings persisted as JSON in store/config/
 - Prices rounded to tick size via SymbolMasterService (loaded from Fyers CSV)
-- No database — all state in JSON files and in-memory maps
+- No database — all state in JSON files (store/) and in-memory maps

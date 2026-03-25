@@ -1,41 +1,29 @@
 package com.rydytrader.autotrader.fyers;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.rydytrader.autotrader.store.ModeStore;
 import org.springframework.stereotype.Component;
 
 /**
- * Single injection point for all services.
- * Delegates to LiveFyersClient or MockFyersClient based on current ModeStore.
+ * Single injection point for all services. Delegates to LiveFyersClient.
  */
 @Component
 public class FyersClientRouter implements FyersClient {
 
-    private final ModeStore        modeStore;
-    private final LiveFyersClient  live;
-    private final MockFyersClient  mock;
+    private final LiveFyersClient live;
 
-    public FyersClientRouter(ModeStore modeStore,
-                              LiveFyersClient live,
-                              MockFyersClient mock) {
-        this.modeStore = modeStore;
-        this.live      = live;
-        this.mock      = mock;
+    public FyersClientRouter(LiveFyersClient live) {
+        this.live = live;
     }
 
-    private FyersClient client() {
-        return modeStore.isLive() ? live : mock;
-    }
-
-    @Override public JsonNode placeOrder(String json, String auth) throws Exception    { return client().placeOrder(json, auth); }
-    @Override public JsonNode cancelOrder(String id, String auth) throws Exception     { return client().cancelOrder(id, auth); }
-    @Override public JsonNode getOrder(String id, String auth) throws Exception        { return client().getOrder(id, auth); }
-    @Override public JsonNode getOrders(String auth) throws Exception                 { return client().getOrders(auth); }
-    @Override public JsonNode getPositions(String auth) throws Exception               { return client().getPositions(auth); }
-    @Override public JsonNode getTradebook(String auth) throws Exception               { return client().getTradebook(auth); }
-    @Override public JsonNode validateAuthCode(String body) throws Exception           { return client().validateAuthCode(body); }
-    @Override public JsonNode getOptionChain(String sym, int strikes, String auth) throws Exception { return client().getOptionChain(sym, strikes, auth); }
-    @Override public JsonNode getQuotes(String symbols, String auth) throws Exception { return client().getQuotes(symbols, auth); }
-    @Override public JsonNode getProfile(String auth) throws Exception { return client().getProfile(auth); }
-    @Override public JsonNode modifyOrder(String orderJson, String auth) throws Exception { return client().modifyOrder(orderJson, auth); }
+    @Override public JsonNode placeOrder(String json, String auth) throws Exception    { return live.placeOrder(json, auth); }
+    @Override public JsonNode cancelOrder(String id, String auth) throws Exception     { return live.cancelOrder(id, auth); }
+    @Override public JsonNode getOrder(String id, String auth) throws Exception        { return live.getOrder(id, auth); }
+    @Override public JsonNode getOrders(String auth) throws Exception                 { return live.getOrders(auth); }
+    @Override public JsonNode getPositions(String auth) throws Exception               { return live.getPositions(auth); }
+    @Override public JsonNode getTradebook(String auth) throws Exception               { return live.getTradebook(auth); }
+    @Override public JsonNode validateAuthCode(String body) throws Exception           { return live.validateAuthCode(body); }
+    @Override public JsonNode getOptionChain(String sym, int strikes, String auth) throws Exception { return live.getOptionChain(sym, strikes, auth); }
+    @Override public JsonNode getQuotes(String symbols, String auth) throws Exception { return live.getQuotes(symbols, auth); }
+    @Override public JsonNode getProfile(String auth) throws Exception { return live.getProfile(auth); }
+    @Override public JsonNode modifyOrder(String orderJson, String auth) throws Exception { return live.modifyOrder(orderJson, auth); }
 }

@@ -3,7 +3,6 @@ package com.rydytrader.autotrader.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
-import com.rydytrader.autotrader.store.ModeStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -17,24 +16,15 @@ public class LoginService {
 
     private final FyersProperties    fyersProperties;
     private final FyersClientRouter  fyersClient;
-    private final ModeStore          modeStore;
 
     public LoginService(FyersProperties fyersProperties,
-                        FyersClientRouter fyersClient,
-                        ModeStore modeStore) {
+                        FyersClientRouter fyersClient) {
         this.fyersProperties = fyersProperties;
         this.fyersClient     = fyersClient;
-        this.modeStore       = modeStore;
     }
 
     public String generateAccessToken(String authCode) {
         try {
-            if (modeStore.isSimulator()) {
-                // In simulator mode, bypass real auth
-                JsonNode resp = fyersClient.validateAuthCode("{}");
-                return resp.get("access_token").asText();
-            }
-
             String appIdHash = sha256(fyersProperties.getClientId() + ":" + fyersProperties.getSecretKey());
             String requestBody = "{"
                     + "\"grant_type\":\"authorization_code\","
@@ -44,7 +34,7 @@ public class LoginService {
 
             JsonNode node = fyersClient.validateAuthCode(requestBody);
             String token = node.get("access_token").asText();
-            log.info("Access Token Generated Successfully [{}]", modeStore.getMode());
+            log.info("Access Token Generated Successfully");
             return token;
 
         } catch (Exception e) {

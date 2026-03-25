@@ -31,7 +31,7 @@ public class BhavcopyService {
         "https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_%s_F_0000.csv.zip";
     private static final String FO_URL_TEMPLATE =
         "https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_%s_F_0000.csv.zip";
-    private static final String STORE_FILE = "../store/cpr-data.json";
+    private static final String STORE_FILE = "../store/config/cpr-data.json";
     private static final String NSE_BASE_URL = "https://www.nseindia.com/";
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");

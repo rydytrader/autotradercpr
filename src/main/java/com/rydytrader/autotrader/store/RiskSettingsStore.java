@@ -3,7 +3,6 @@ package com.rydytrader.autotrader.store;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
@@ -14,22 +13,18 @@ import java.util.Map;
 
 /**
  * Persists risk management settings to disk so they survive server restarts.
- * Live settings:      store/live/risk-settings.json
- * Simulator settings: store/simulator/risk-settings.json
+ * Settings file: store/config/risk-settings.json
  */
 @Component
 public class RiskSettingsStore {
 
     private static final Logger log = LoggerFactory.getLogger(RiskSettingsStore.class);
 
-    private static final String LIVE_FILE = "../store/live/risk-settings.json";
-    private static final String SIM_FILE  = "../store/simulator/risk-settings.json";
+    private static final String LIVE_FILE = "../store/config/risk-settings.json";
     private static final String LEGACY_FILE = "../store/risk-settings.json";
     private static final ObjectMapper mapper = new ObjectMapper();
 
-    private ModeStore modeStore;
-
-    // ── per-mode settings containers ─────────────────────────────────────────
+    // ── settings container ───────────────────────────────────────────────────
     static class Cfg {
         volatile String tradingStartTime  = "09:15";
         volatile String tradingEndTime    = "15:25";
@@ -55,32 +50,24 @@ public class RiskSettingsStore {
     }
 
     private final Cfg live = new Cfg();
-    private final Cfg sim  = new Cfg();
 
     public RiskSettingsStore() {
-        new File("../store/live").mkdirs();
-        new File("../store/simulator").mkdirs();
+        new File("../store/config").mkdirs();
         migrate();
         load("live");
-        load("simulator");
     }
 
-    @Autowired
-    public void setModeStore(ModeStore modeStore) {
-        this.modeStore = modeStore;
-    }
-
-    // ── route to active mode ──────────────────────────────────────────────────
+    // ── always returns live config ───────────────────────────────────────────
     private Cfg cfg() {
-        return (modeStore == null || modeStore.isLive()) ? live : sim;
+        return live;
     }
 
     public Cfg cfgFor(String mode) {
-        return "live".equalsIgnoreCase(mode) ? live : sim;
+        return live;
     }
 
     private String fileFor(String mode) {
-        return "live".equalsIgnoreCase(mode) ? LIVE_FILE : SIM_FILE;
+        return LIVE_FILE;
     }
 
     // ── parameterless getters/setters (used by TradingController etc.) ────────
@@ -176,10 +163,9 @@ public class RiskSettingsStore {
     public void setSmallCandleAtrThreshold(String mode, double v) { cfgFor(mode).smallCandleAtrThreshold = v; }
 
     // ── save ──────────────────────────────────────────────────────────────────
-    /** Saves the currently active mode's settings. */
+    /** Saves the current settings. */
     public void save() {
-        String activeMode = (modeStore == null || modeStore.isLive()) ? "live" : "simulator";
-        saveFor(activeMode);
+        saveFor("live");
     }
 
     /** Saves the specified mode's settings. */
@@ -249,18 +235,16 @@ public class RiskSettingsStore {
         }
     }
 
-    /** Migrates legacy logs/risk-settings.json to both mode-specific files on first run. */
+    /** Migrates legacy risk-settings.json to live settings file on first run. */
     private void migrate() {
         Path legacy = Paths.get(LEGACY_FILE);
         Path livePath = Paths.get(LIVE_FILE);
-        Path simPath  = Paths.get(SIM_FILE);
         if (!Files.exists(legacy)) return;
-        if (Files.exists(livePath) && Files.exists(simPath)) return; // already migrated
+        if (Files.exists(livePath)) return; // already migrated
         try {
             String json = Files.readString(legacy);
-            if (!Files.exists(livePath)) Files.writeString(livePath, json);
-            if (!Files.exists(simPath))  Files.writeString(simPath,  json);
-            log.info("[RiskSettingsStore] Migrated legacy risk-settings.json to live/ and simulator/");
+            Files.writeString(livePath, json);
+            log.info("[RiskSettingsStore] Migrated legacy risk-settings.json to live/");
         } catch (IOException e) {
             log.error("[RiskSettingsStore] Migration failed: {}", e.getMessage());
         }

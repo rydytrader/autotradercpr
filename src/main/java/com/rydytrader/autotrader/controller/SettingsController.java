@@ -3,7 +3,6 @@ package com.rydytrader.autotrader.controller;
 import com.rydytrader.autotrader.dto.CprLevels;
 import com.rydytrader.autotrader.service.BhavcopyService;
 import com.rydytrader.autotrader.service.TradeHistoryService;
-import com.rydytrader.autotrader.store.ModeStore;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -16,16 +15,13 @@ public class SettingsController {
 
     private final RiskSettingsStore   riskSettings;
     private final TradeHistoryService tradeHistoryService;
-    private final ModeStore           modeStore;
     private final BhavcopyService     bhavcopyService;
 
     public SettingsController(RiskSettingsStore riskSettings,
                                TradeHistoryService tradeHistoryService,
-                               ModeStore modeStore,
                                BhavcopyService bhavcopyService) {
         this.riskSettings        = riskSettings;
         this.tradeHistoryService = tradeHistoryService;
-        this.modeStore           = modeStore;
         this.bhavcopyService     = bhavcopyService;
     }
 
@@ -40,7 +36,7 @@ public class SettingsController {
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("mode",             effectiveMode);
-        result.put("activeMode",       modeStore.isLive() ? "live" : "simulator");
+        result.put("activeMode",       "live");
         result.put("tradingStartTime",  riskSettings.getTradingStartTime(effectiveMode));
         result.put("tradingEndTime",   riskSettings.getTradingEndTime(effectiveMode));
         result.put("totalCapital",     riskSettings.getTotalCapital(effectiveMode));
@@ -162,9 +158,6 @@ public class SettingsController {
     }
 
     private String resolveMode(String mode) {
-        if (mode == null || mode.isEmpty()) {
-            return modeStore.isLive() ? "live" : "simulator";
-        }
-        return "live".equalsIgnoreCase(mode) ? "live" : "simulator";
+        return "live";
     }
 }

@@ -6,7 +6,6 @@ import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.controller.MarketTickerController;
 import com.rydytrader.autotrader.dto.TickData;
 import com.rydytrader.autotrader.manager.PositionManager;
-import com.rydytrader.autotrader.store.ModeStore;
 import com.rydytrader.autotrader.store.PositionStateStore;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import com.rydytrader.autotrader.store.TokenStore;
@@ -31,9 +30,8 @@ import java.util.concurrent.*;
 /**
  * Central orchestrator for real-time market data.
  *
- * LIVE mode:  connects to Fyers HSM WebSocket, receives binary ticks,
- *             pushes updates to browser via SSE.
- * SIMULATOR:  generates random-walk ticks every 2 seconds.
+ * Connects to Fyers HSM WebSocket, receives binary ticks,
+ * pushes updates to browser via SSE.
  *
  * Maintains a ConcurrentHashMap of current TickData per symbol and
  * flushes dirty ticks to all SSE emitters every 500ms.
@@ -44,7 +42,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
     private static final Logger log = LoggerFactory.getLogger(MarketDataService.class);
 
     private final TokenStore          tokenStore;
-    private final ModeStore           modeStore;
     private final FyersProperties     fyersProperties;
     private final PositionStateStore  positionStateStore;
     private final TradeHistoryService tradeHistoryService;
@@ -62,7 +59,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
     // SSE emitters (browser connections)
     private final CopyOnWriteArrayList<SseEmitter> emitters = new CopyOnWriteArrayList<>();
 
-    // WebSocket client (only in LIVE mode)
+    // WebSocket client
     private volatile FyersDataWebSocket wsClient;
 
     // Schedulers
@@ -112,22 +109,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         Map.entry("NSE:INDIAVIX-INDEX", "India VIX")
     );
 
-    // Mock ticker data for simulator (base prices and names)
-    private static final String[][] MOCK_DATA = {
-        {"NSE:NIFTY50-INDEX", "NIFTY 50", "24250.30", "24064.90"},
-        {"NSE:NIFTYBANK-INDEX", "BANK NIFTY", "51820.55", "51962.85"},
-        {"NSE:NIFTYIT-INDEX", "NIFTY IT", "35420.10", "35107.50"},
-        {"NSE:RELIANCE-EQ", "RELIANCE", "2485.60", "2457.25"},
-        {"NSE:TCS-EQ", "TCS", "3892.45", "3937.65"},
-        {"NSE:HDFCBANK-EQ", "HDFC BANK", "1678.30", "1665.50"},
-        {"NSE:INFY-EQ", "INFOSYS", "1542.75", "1523.85"},
-        {"NSE:ICICIBANK-EQ", "ICICI BANK", "1265.40", "1273.95"},
-        {"NSE:SBIN-EQ", "SBIN", "812.30", "805.60"},
-        {"NSE:WIPRO-EQ", "WIPRO", "478.55", "482.10"},
-        {"NSE:ITC-EQ", "ITC", "435.20", "432.80"}
-    };
-
-    public MarketDataService(TokenStore tokenStore, ModeStore modeStore,
+    public MarketDataService(TokenStore tokenStore,
                               FyersProperties fyersProperties,
                               PositionStateStore positionStateStore,
                               TradeHistoryService tradeHistoryService,
@@ -135,7 +117,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
                               EventService eventService,
                               RiskSettingsStore riskSettings) {
         this.tokenStore = tokenStore;
-        this.modeStore = modeStore;
         this.fyersProperties = fyersProperties;
         this.positionStateStore = positionStateStore;
         this.tradeHistoryService = tradeHistoryService;
@@ -161,12 +142,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         // SSE keepalive every 15s
         scheduler.scheduleAtFixedRate(this::sendKeepalive, 15, 15, TimeUnit.SECONDS);
 
-        if (modeStore.isLive()) {
-            startLiveWebSocket();
-        } else {
-            startMockTicker();
-        }
-        log.info("[MarketData] Started in {} mode", modeStore.getMode());
+        startLiveWebSocket();
+        log.info("[MarketData] Started in LIVE mode");
     }
 
     /** Stop the market data feed. Called on logout or mode switch. */
@@ -252,31 +229,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         if (scheduler != null && !scheduler.isShutdown()) {
             scheduler.schedule(this::startLiveWebSocket, delay, TimeUnit.SECONDS);
         }
-    }
-
-    // ────────────────────────────────────────────────────────────────────────────
-    // SIMULATOR mode: Mock ticker
-    // ────────────────────────────────────────────────────────────────────────────
-
-    private void startMockTicker() {
-        // Seed with base mock data
-        for (String[] d : MOCK_DATA) {
-            TickData tick = new TickData(d[0], d[1],
-                Double.parseDouble(d[2]), Double.parseDouble(d[3]));
-            currentTicks.put(d[0], tick);
-        }
-        dirty = true;
-
-        // Random walk every 2 seconds
-        scheduler.scheduleAtFixedRate(() -> {
-            for (TickData tick : currentTicks.values()) {
-                double walk = (Math.random() - 0.5) * tick.getLtp() * 0.002;
-                tick.setLtp(tick.getLtp() + walk);
-                tick.recalcChange();
-                tick.setHasPosition(PositionManager.getAllSymbols().contains(tick.getFyersSymbol()));
-            }
-            dirty = true;
-        }, 2, 2, TimeUnit.SECONDS);
     }
 
     // ────────────────────────────────────────────────────────────────────────────
@@ -549,8 +501,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
 
     /** Called when position symbols change. Subscribes/unsubscribes delta. */
     public void updateSubscriptions() {
-        if (!running || !modeStore.isLive() || wsClient == null || !wsClient.isOpen()) {
-            // In simulator mode, just update position flags
+        if (!running || wsClient == null || !wsClient.isOpen()) {
+            // WebSocket not connected — just update position flags
             for (TickData tick : currentTicks.values()) {
                 tick.setHasPosition(PositionManager.getAllSymbols().contains(tick.getFyersSymbol()));
             }

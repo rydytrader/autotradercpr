@@ -94,7 +94,6 @@
         <a href="/journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">≡</span><span class="sidebar-nav-label">Journal</span></a>
         <a href="/settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
         <a href="/console" class="sidebar-nav-item active"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
-        <button class="sidebar-nav-item" id="simTab" style="display:none;" onclick="openSimModal()"><span class="sidebar-nav-icon">◈</span><span class="sidebar-nav-label">Simulator</span></button>
     </nav>
     <div class="sidebar-footer">
         <div class="status-pill">
@@ -111,10 +110,6 @@
             <div class="ticker-track" id="tickerTrack"></div>
         </div>
         <div class="nav-right">
-            <div class="mode-pill" id="modePill">
-                <div class="mode-pill-dot"></div>
-                <span class="mode-pill-label" id="modeLabel">LIVE</span>
-            </div>
             <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
             <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
         </div>
@@ -273,15 +268,6 @@
     }
     setInterval(updateConnectionStatus, 3000);
     updateConnectionStatus();
-
-    // ── MODE ────────────────────────────────
-    fetch('/api/mode').then(function(r) { return r.json(); }).then(function(d) {
-        var isMock = d.mode === 'SIMULATOR';
-        document.getElementById('modePill').className = 'mode-pill ' + (isMock ? 'mock' : 'live');
-        document.getElementById('modeLabel').textContent = isMock ? 'MOCK' : 'LIVE';
-        var simTab = document.getElementById('simTab');
-        if (simTab) simTab.style.display = isMock ? 'inline-flex' : 'none';
-    }).catch(function() {});
 
     // ── LOGOUT ──────────────────────────────
     function logout() {

@@ -7,7 +7,7 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/shared.css?v=2">
+    <link rel="stylesheet" href="/css/shared.css?v=4">
     <script>
         (function() {
             const t = localStorage.getItem('traderedge-theme') || 'dark';
@@ -51,50 +51,13 @@
         .login-desc { font-size: 0.82rem; color: var(--text-secondary); text-align: center; margin-bottom: 28px; }
         .divider { border: none; border-top: 1px solid var(--border); margin: 0 0 22px; }
 
-        /* RADIO OPTIONS */
-        .radio-group { display: flex; flex-direction: column; gap: 10px; margin-bottom: 22px; }
-
-        .radio-option {
-            display: flex; align-items: center; gap: 14px;
-            padding: 13px 16px; border-radius: 10px;
-            border: 1px solid var(--border); cursor: pointer;
-            transition: all 0.2s ease; background: transparent;
-        }
-        .radio-option:hover { border-color: rgba(99,179,237,0.3); background: rgba(99,179,237,0.04); }
-        .radio-option.selected-live    { border-color: rgba(52,211,153,0.4);  background: rgba(52,211,153,0.06); }
-        .radio-option.selected-sim     { border-color: rgba(251,191,36,0.4);  background: rgba(251,191,36,0.06); }
-
-        /* Hide native radio, use custom */
-        .radio-option input[type="radio"] { display: none; }
-
-        .radio-dot {
-            width: 18px; height: 18px; border-radius: 50%;
-            border: 2px solid var(--text-muted); flex-shrink: 0;
-            display: flex; align-items: center; justify-content: center;
-            transition: all 0.2s;
-        }
-        .radio-dot::after {
-            content: ''; width: 8px; height: 8px; border-radius: 50%;
-            background: transparent; transition: background 0.15s;
-        }
-        .selected-live .radio-dot  { border-color: var(--accent-green); }
-        .selected-live .radio-dot::after  { background: var(--accent-green); }
-        .selected-sim  .radio-dot  { border-color: var(--accent-yellow); }
-        .selected-sim  .radio-dot::after  { background: var(--accent-yellow); }
-
-        .radio-text { flex: 1; }
-        .radio-title { font-family: var(--font-mono); font-size: 0.82rem; font-weight: 700; color: var(--text-primary); margin-bottom: 2px; }
-        .radio-sub { font-size: 0.68rem; color: var(--text-muted); }
-        .selected-live .radio-title { color: var(--accent-green); }
-        .selected-sim  .radio-title { color: var(--accent-yellow); }
-
         /* LOGIN BUTTON */
         .btn-fyers {
             display: flex; align-items: center; justify-content: center; gap: 10px;
-            width: 100%; padding: 12px 20px;
+            width: 100%; padding: 14px 20px;
             background: rgba(99,179,237,0.08); border: 1px solid rgba(99,179,237,0.25);
             border-radius: 8px; color: var(--accent-blue);
-            font-family: var(--font-mono); font-size: 0.82rem; font-weight: 700;
+            font-family: var(--font-mono); font-size: 0.88rem; font-weight: 700;
             letter-spacing: 0.06em; text-decoration: none; transition: all 0.2s ease; cursor: pointer;
         }
         .btn-fyers:hover { background: rgba(99,179,237,0.15); border-color: rgba(99,179,237,0.5); color: var(--accent-blue); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(99,179,237,0.15); }
@@ -119,7 +82,7 @@
             <div class="brand-icon">⚡</div>
             <div>
                 <div class="brand-name">TRADER<span>EDGE</span> CPR</div>
-                <div class="brand-sub">AutoTrader · v2.0</div>
+                <div class="brand-sub">AutoTrader</div>
             </div>
         </div>
         <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
@@ -132,35 +95,14 @@
         <div class="login-desc">Sign in to access your trading dashboard</div>
         <hr class="divider">
 
-        <!-- RADIO: mode selection -->
-        <div class="radio-group">
-            <label class="radio-option selected-live" id="opt-live" onclick="selectMode('LIVE')">
-                <input type="radio" name="mode" value="LIVE" checked>
-                <div class="radio-dot"></div>
-                <div class="radio-text">
-                    <div class="radio-title">Live — Fyers</div>
-                    <div class="radio-sub">Real trading · logs/live/</div>
-                </div>
-            </label>
-            <label class="radio-option" id="opt-sim" onclick="selectMode('SIMULATOR')">
-                <input type="radio" name="mode" value="SIMULATOR">
-                <div class="radio-dot"></div>
-                <div class="radio-text">
-                    <div class="radio-title">Simulator — Mock</div>
-                    <div class="radio-sub">Paper trading · logs/simulator/</div>
-                </div>
-            </label>
-        </div>
-
-        <!-- SINGLE LOGIN BUTTON -->
-        <button class="btn-fyers" onclick="handleLogin()">
-            Login
+        <a class="btn-fyers" href="/login">
+            Login with Fyers
             <span class="btn-arrow">→</span>
-        </button>
+        </a>
 
         <div class="secure-note">
             <div class="secure-dot"></div>
-            <span id="secureNote">Live mode uses Fyers OAuth2 · API v3</span>
+            <span>Fyers OAuth2 · API v3</span>
         </div>
     </div>
 </div>
@@ -172,39 +114,7 @@
 
 <script src="/js/common.js?v=2"></script>
 <script>
-    let selectedMode = 'LIVE';
-
-    function selectMode(mode) {
-        selectedMode = mode;
-        document.getElementById('opt-live').className = 'radio-option' + (mode === 'LIVE' ? ' selected-live' : '');
-        document.getElementById('opt-sim').className  = 'radio-option' + (mode === 'SIMULATOR' ? ' selected-sim' : '');
-        document.getElementById('secureNote').textContent = mode === 'LIVE'
-            ? 'Live mode uses Fyers OAuth2 · API v3'
-            : 'Simulator mode — no real orders placed';
-    }
-
-    function handleLogin() {
-        fetch('/api/mode/switch', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({mode: selectedMode})
-        })
-        .then(r => {
-            if (!r.ok) throw new Error('Mode switch failed');
-            return r.json();
-        })
-        .then(data => {
-            if (selectedMode === 'SIMULATOR') {
-                window.location.href = data.redirect || '/home';
-            } else {
-                window.location.href = '/login?mode=LIVE';
-            }
-        })
-        .catch(err => {
-            console.error('Login error:', err);
-            alert('Failed to set trading mode. Please try again.');
-        });
-    }
+    document.getElementById('footerYear').textContent = new Date().getFullYear();
 </script>
 
 </body>
