@@ -28,8 +28,6 @@ public class SignalProcessor {
         String probability = str(alert, "probability");
         double close       = dbl(alert, "close");
         double atr         = dbl(alert, "atr");
-        double sessionHigh = dbl(alert, "sessionHigh");
-        double sessionLow  = dbl(alert, "sessionLow");
         double dayOpen     = dbl(alert, "dayOpen");
         double r1 = dbl(alert, "r1"), r2 = dbl(alert, "r2"), r3 = dbl(alert, "r3"), r4 = dbl(alert, "r4");
         double s1 = dbl(alert, "s1"), s2 = dbl(alert, "s2"), s3 = dbl(alert, "s3"), s4 = dbl(alert, "s4");

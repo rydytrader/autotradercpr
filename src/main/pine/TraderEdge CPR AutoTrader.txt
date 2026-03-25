@@ -29,20 +29,6 @@ ph = request.security(syminfo.tickerid, "D", high[1],  lookahead=barmerge.lookah
 pl = request.security(syminfo.tickerid, "D", low[1],   lookahead=barmerge.lookahead_on)
 pc = request.security(syminfo.tickerid, "D", close[1], lookahead=barmerge.lookahead_on)
 
-// ─── CURRENT SESSION DATA (excluding current bar) ──────
-// Track session high/low from previous bars only, so the breakout candle
-// doesn't set the extreme and falsely trigger the reversal-risk filter.
-var float _sessHigh = na
-var float _sessLow  = na
-if ta.change(time("D"))
-    _sessHigh := high[1]
-    _sessLow  := low[1]
-else
-    _sessHigh := math.max(nz(_sessHigh, high[1]), high[1])
-    _sessLow  := math.min(nz(_sessLow,  low[1]),  low[1])
-sessionHigh = _sessHigh
-sessionLow  = _sessLow
-
 // Day open price (first bar of the session)
 var float _dayOpen = na
 if ta.change(time("D"))
@@ -224,10 +210,10 @@ levelsJson() =>
 
 // Helper: build common JSON prefix
 buyPrefix(_setup) =>
-    '{"setup":"' + _setup + '",' + '"symbol":"' + tradeSymbol + '",' + '"close":' + str.tostring(close) + ',' + '"atr":' + str.tostring(atrRaw) + ',' + '"dayOpen":' + str.tostring(dayOpen) + ',' + '"sessionHigh":' + str.tostring(sessionHigh) + ',' + '"sessionLow":' + str.tostring(sessionLow) + ',' + '"probability":"' + (misalignedBuy ? 'LPT' : 'HPT') + '",'
+    '{"setup":"' + _setup + '",' + '"symbol":"' + tradeSymbol + '",' + '"close":' + str.tostring(close) + ',' + '"atr":' + str.tostring(atrRaw) + ',' + '"dayOpen":' + str.tostring(dayOpen) + ',' + '"probability":"' + (misalignedBuy ? 'LPT' : 'HPT') + '",'
 
 sellPrefix(_setup) =>
-    '{"setup":"' + _setup + '",' + '"symbol":"' + tradeSymbol + '",' + '"close":' + str.tostring(close) + ',' + '"atr":' + str.tostring(atrRaw) + ',' + '"dayOpen":' + str.tostring(dayOpen) + ',' + '"sessionHigh":' + str.tostring(sessionHigh) + ',' + '"sessionLow":' + str.tostring(sessionLow) + ',' + '"probability":"' + (misalignedSell ? 'LPT' : 'HPT') + '",'
+    '{"setup":"' + _setup + '",' + '"symbol":"' + tradeSymbol + '",' + '"close":' + str.tostring(close) + ',' + '"atr":' + str.tostring(atrRaw) + ',' + '"dayOpen":' + str.tostring(dayOpen) + ',' + '"probability":"' + (misalignedSell ? 'LPT' : 'HPT') + '",'
 
 
 // ══════════════════════════════════════════
