@@ -110,7 +110,10 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         {"NSE:TCS-EQ", "TCS", "3892.45", "3937.65"},
         {"NSE:HDFCBANK-EQ", "HDFC BANK", "1678.30", "1665.50"},
         {"NSE:INFY-EQ", "INFOSYS", "1542.75", "1523.85"},
-        {"NSE:ICICIBANK-EQ", "ICICI BANK", "1265.40", "1273.95"}
+        {"NSE:ICICIBANK-EQ", "ICICI BANK", "1265.40", "1273.95"},
+        {"NSE:SBIN-EQ", "SBIN", "812.30", "805.60"},
+        {"NSE:WIPRO-EQ", "WIPRO", "478.55", "482.10"},
+        {"NSE:ITC-EQ", "ITC", "435.20", "432.80"}
     };
 
     public MarketDataService(TokenStore tokenStore, ModeStore modeStore,
@@ -417,11 +420,15 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
             .mapToDouble(t -> t.getNetPnl()).sum();
         double netDayPnl = realizedPnl + unrealizedPnl;
 
+        String lastUpdate = java.time.LocalTime.now()
+            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
+
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("positions", positions);
         result.put("unrealizedPnl", Math.round(unrealizedPnl * 100.0) / 100.0);
         result.put("realizedPnl", Math.round(realizedPnl * 100.0) / 100.0);
         result.put("netDayPnl", Math.round(netDayPnl * 100.0) / 100.0);
+        result.put("lastSync", lastUpdate);
         return result;
     }
 

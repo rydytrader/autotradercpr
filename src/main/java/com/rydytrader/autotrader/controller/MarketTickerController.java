@@ -26,7 +26,8 @@ public class MarketTickerController {
 
     private static final String BASE_SYMBOLS =
         "NSE:NIFTY50-INDEX,NSE:NIFTYBANK-INDEX,NSE:NIFTYIT-INDEX," +
-        "NSE:RELIANCE-EQ,NSE:TCS-EQ,NSE:HDFCBANK-EQ,NSE:INFY-EQ,NSE:ICICIBANK-EQ";
+        "NSE:RELIANCE-EQ,NSE:TCS-EQ,NSE:HDFCBANK-EQ,NSE:INFY-EQ,NSE:ICICIBANK-EQ," +
+        "NSE:SBIN-EQ,NSE:WIPRO-EQ,NSE:ITC-EQ";
 
     /** Returns the base symbol list as an array. Used by MarketDataService for subscription. */
     public static String[] getBaseSymbols() {

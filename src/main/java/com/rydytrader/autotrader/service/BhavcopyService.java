@@ -93,15 +93,13 @@ public class BhavcopyService {
     public List<CprLevels> getNarrowCprStocks() {
         return cache.values().stream()
             .filter(CprLevels::isNarrowCpr)
-            .filter(c -> c.getClose() > 300)
-            .sorted(Comparator.comparingDouble(CprLevels::getCprWidthPct))
+                        .sorted(Comparator.comparingDouble(CprLevels::getCprWidthPct))
             .collect(Collectors.toList());
     }
 
     public List<CprLevels> getInsideCprStocks() {
         return cache.values().stream()
-            .filter(c -> c.getClose() > 300)
-            .filter(c -> {
+                        .filter(c -> {
                 CprLevels prev = previousCache.get(c.getSymbol());
                 if (prev == null) return false;
                 double todayTop = Math.max(c.getTc(), c.getBc());

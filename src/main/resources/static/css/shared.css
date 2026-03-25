@@ -180,7 +180,7 @@ body {
     height: 68px; min-height: 68px;
 }
 
-.sidebar-nav { display: flex; flex-direction: column; gap: 8px; padding: 14px 8px; flex: 1; }
+.sidebar-nav { display: flex; flex-direction: column; gap: 8px; padding: 14px 8px; }
 
 .sidebar-nav-item {
     display: flex; align-items: center; gap: 10px;
@@ -197,10 +197,43 @@ body {
 }
 .sidebar-nav-icon { font-size: 1.1rem; width: 20px; text-align: center; flex-shrink: 0; }
 
+/* ── Sidebar Index Cards (Nifty/BankNifty) ──── */
+.sidebar-indices {
+    padding: 8px 10px; border-top: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 6px;
+}
+.sidebar-indices-title {
+    font-family: var(--font-mono); font-size: 0.65rem; font-weight: 700;
+    color: var(--text-secondary); letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 4px 6px; margin-bottom: 2px;
+}
+.index-card {
+    background: rgba(99,179,237,0.04); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px;
+    font-family: var(--font-mono); transition: border-color 0.2s;
+}
+.index-card:hover { border-color: rgba(99,179,237,0.3); }
+.index-card-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 4px;
+}
+.index-card-name {
+    font-size: 0.7rem; font-weight: 700; color: var(--text-primary);
+    letter-spacing: 0.04em; text-transform: uppercase;
+}
+.index-card-price {
+    font-size: 0.82rem; font-weight: 700; color: var(--text-primary);
+}
+.index-card-change {
+    font-size: 0.68rem; font-weight: 600; text-align: right;
+}
+.index-card-change.up { color: var(--accent-green); }
+.index-card-change.down { color: var(--accent-red); }
+
 .sidebar-footer {
     padding: 10px 16px; border-top: 1px solid var(--border);
     font-family: var(--font-mono); font-size: 0.65rem; color: var(--text-muted);
-    letter-spacing: 0.04em;
+    letter-spacing: 0.04em; margin-top: auto;
 }
 
 .app-main { flex: 1; margin-left: 240px; width: calc(100% - 240px); display: flex; flex-direction: column; min-height: 100vh; }

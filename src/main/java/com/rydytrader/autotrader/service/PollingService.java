@@ -525,6 +525,16 @@ public class PollingService {
         pendingEntrySymbols.remove(symbol);
     }
 
+    /** Called by OrderEventService to add a position to the cached positions map. */
+    public void addCachedPosition(String symbol, int qty, String side, double avgPrice, String setup, String entryTime) {
+        cachedPositions.put(symbol, new PositionsDTO(symbol, qty, side, avgPrice, avgPrice, 0.0, setup, entryTime));
+    }
+
+    /** Called by OrderEventService to remove a position from the cached positions map. */
+    public void removeCachedPosition(String symbol) {
+        cachedPositions.remove(symbol);
+    }
+
     /** Called by OrderEventService on WS OCO fill to clear state. */
     public void clearSymbolStateFromWs(String symbol) {
         clearSymbolState(symbol);
@@ -1014,6 +1024,12 @@ public class PollingService {
     }
 
     public String getLastSyncTime() { return lastSyncTime; }
+
+    /** Update last sync time — called by WS handlers when positions are updated. */
+    public void updateLastSyncTime() {
+        lastSyncTime = java.time.LocalTime.now()
+            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
+    }
 
     /** Returns setup for a specific symbol. */
     public String getCurrentSetup(String symbol) {

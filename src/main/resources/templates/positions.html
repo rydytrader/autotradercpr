@@ -7,7 +7,7 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/shared.css?v=2">
+    <link rel="stylesheet" href="/css/shared.css?v=4">
     <!-- Apply theme before render to prevent flash -->
     <script>
         (function() {
@@ -260,7 +260,7 @@
 <!-- ── SQUARE OFF CONFIRMATION MODAL ──────────────────────────── -->
 
 <script src="/js/common.js?v=2"></script>
-<script src="/js/ticker.js?v=1"></script>
+<script src="/js/ticker.js?v=2"></script>
 <script>
     // ── FORMATTERS ────────────────────────────────
     const inr = v => new Intl.NumberFormat('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}).format(Math.abs(v));
@@ -290,8 +290,10 @@
     let serverWasDown = false;  // true once server becomes unreachable
 
     function updateConnectionStatus() {
-        fetch('/status')
-            .then(r => {
+        var controller = new AbortController();
+        var timeoutId = setTimeout(function() { controller.abort(); }, 3000);
+        fetch('/status', { signal: controller.signal })
+            .then(r => { clearTimeout(timeoutId);
                 // Server reachable again after being down → token is gone, force re-login
                 if (serverWasDown) {
                     window.location.href = '/';
@@ -318,7 +320,7 @@
                     isConnected = true;
                 } else {
                     dot.classList.add('disconnected');
-                    label.textContent = 'Disconnected';
+                    label.textContent = 'DISCONNECTED';
                     label.style.color = 'var(--accent-red)';
                     isConnected = false;
                 }
@@ -331,7 +333,7 @@
                 isConnected = false;
                 const dot = document.getElementById('statusDot');
                 dot.className = 'status-dot disconnected';
-                document.getElementById('connectionStatus').textContent = 'Disconnected';
+                document.getElementById('connectionStatus').textContent = 'DISCONNECTED';
                 document.getElementById('connectionStatus').style.color = 'var(--accent-red)';
                 setLogBadge('DISCONNECTED');
             });
@@ -543,6 +545,9 @@
                         var data = JSON.parse(event.data);
                         var positions = data.positions || [];
                         lastSseUpdate = Date.now();
+
+                        // Update last sync time
+                        if (data.lastSync) document.getElementById('lastUpdate').textContent = data.lastSync;
 
                         // Update LTP and P&L in current position data
                         if (positions.length > 0 && allPositions.length > 0) {

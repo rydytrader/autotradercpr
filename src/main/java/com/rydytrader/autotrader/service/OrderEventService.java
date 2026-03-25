@@ -228,7 +228,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     }
 
     /** Is the Order WebSocket connected? Used by PollingService to decide polling vs push. */
-    public boolean isConnected() { return connected; }
+    public boolean isConnected() { return connected && wsClient != null && wsClient.isOpen(); }
 
     // ────────────────────────────────────────────────────────────────────────────
     // Order tracking — called by PollingService after placing orders
@@ -386,6 +386,8 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
 
         if (pollingService != null) {
             pollingService.setSymbolState(symbol, "", entryTime, entryPrice);
+            pollingService.addCachedPosition(symbol, absQty, posSide, entryPrice, "", entryTime);
+            pollingService.updateLastSyncTime();
         }
 
         marketDataService.updateSubscriptions();
@@ -456,6 +458,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
 
         if (pollingService != null) {
             pollingService.clearSymbolStateFromWs(symbol);
+            pollingService.updateLastSyncTime();
         }
     }
 
@@ -493,6 +496,8 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
 
         if (pollingService != null) {
             pollingService.setSymbolState(symbol, ctx.setup, entryTime, entryPrice);
+            pollingService.addCachedPosition(symbol, ctx.quantity, ctx.position, entryPrice, ctx.setup, entryTime);
+            pollingService.updateLastSyncTime();
         }
 
         positionStateStore.save(symbol, ctx.position, ctx.quantity, entryPrice,
@@ -595,6 +600,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         // Clear all state
         if (pollingService != null) {
             pollingService.clearSymbolStateFromWs(symbol);
+            pollingService.updateLastSyncTime();
         }
     }
 

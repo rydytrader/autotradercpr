@@ -30,6 +30,7 @@ public class SignalProcessor {
         double atr         = dbl(alert, "atr");
         double sessionHigh = dbl(alert, "sessionHigh");
         double sessionLow  = dbl(alert, "sessionLow");
+        double dayOpen     = dbl(alert, "dayOpen");
         double r1 = dbl(alert, "r1"), r2 = dbl(alert, "r2"), r3 = dbl(alert, "r3"), r4 = dbl(alert, "r4");
         double s1 = dbl(alert, "s1"), s2 = dbl(alert, "s2"), s3 = dbl(alert, "s3"), s4 = dbl(alert, "s4");
         double ph = dbl(alert, "ph"), pl = dbl(alert, "pl");
@@ -82,22 +83,6 @@ public class SignalProcessor {
             }
         }
 
-        // ── 4e. Session high/low rejection (skip for day BO — close already broke session extreme)
-        // Only reject if the session extreme was set by a PREVIOUS candle (not the current breakout candle).
-        // Since sessionHigh/Low from Pine includes the current candle, close == sessionHigh/Low means
-        // this candle set the extreme — which is expected for a breakout. Only reject if close is
-        // EXACTLY at a pre-existing extreme without breaking through.
-        // We approximate this: if close equals the session extreme AND also equals the breakout level,
-        // the candle likely set the extreme itself — allow it. Otherwise reject.
-        if (!isDayBO) {
-            if (isBuy && sessionHigh > 0 && close == sessionHigh && close != breakoutLevel) {
-                return ProcessedSignal.rejected(setup, symbol, "Close equals session high — reversal risk");
-            }
-            if (!isBuy && sessionLow > 0 && close == sessionLow && close != breakoutLevel) {
-                return ProcessedSignal.rejected(setup, symbol, "Close equals session low — reversal risk");
-            }
-        }
-
         // ── 4f. Compute target ──────────────────────────────────────────────────
         double[] targets = computeTargets(setup, close, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
         double defaultTarget = targets[0];
@@ -115,20 +100,7 @@ public class SignalProcessor {
             }
         }
 
-        // ── 4g. Cap target at session extreme (configurable) ─────────────────
-        // If enabled, and session low/high sits between close and target, use it as target
-        // since price is likely to bounce at the session extreme.
-        boolean sessionCapped = false;
-        if (riskSettings.isEnableSessionTargetCap()) {
-            if (isBuy && sessionHigh > 0 && sessionHigh > close && sessionHigh < target) {
-                target = sessionHigh;
-                sessionCapped = true;
-            }
-            if (!isBuy && sessionLow > 0 && sessionLow < close && sessionLow > target) {
-                target = sessionLow;
-                sessionCapped = true;
-            }
-        }
+        boolean sessionCapped = false; // session target cap removed — use CPR levels only
 
         // ── 4i. Quantity ────────────────────────────────────────────────────────
         int qty = baseQty;
@@ -138,40 +110,19 @@ public class SignalProcessor {
             qty = Math.max(1, qty / 2);
             qtyLog = "[INFO] " + symbol + " " + setup + " qty halved (extreme level): " + baseQty + " -> " + qty;
         }
+        // ── Session move limit: reduce qty if price moved too far from day open or PDC ──
         double sessionMoveLimit = riskSettings.getSessionMoveLimit() / 100.0; // e.g. 2.0 → 0.02
         if (!isExtreme && !isDayBO && sessionMoveLimit > 0) {
-            // Derive previous day close from CPR pivot: pivot = (PH + PL + PDC) / 3
             double pivot = (tc + bc) / 2.0;
             double pdc = pivot * 3 - ph - pl;
-
-            // Check total move from PDC (covers both gap and intraday movement)
-            double movePct = 0;
-            String moveSource = "";
-            boolean moveLimitHit = false;
-            if (isBuy && pdc > 0 && (breakoutLevel - pdc) / pdc > sessionMoveLimit) {
-                movePct = (breakoutLevel - pdc) / pdc * 100;
-                moveSource = "PDC";
-                moveLimitHit = true;
-            }
-            if (!isBuy && pdc > 0 && (pdc - breakoutLevel) / pdc > sessionMoveLimit) {
-                movePct = (pdc - breakoutLevel) / pdc * 100;
-                moveSource = "PDC";
-                moveLimitHit = true;
-            }
-            // Fallback: also check intraday session range if PDC is not usable
-            if (!moveLimitHit && isBuy && sessionLow > 0 && (breakoutLevel - sessionLow) / sessionLow > sessionMoveLimit) {
-                movePct = (breakoutLevel - sessionLow) / sessionLow * 100;
-                moveSource = "session low";
-                moveLimitHit = true;
-            }
-            if (!moveLimitHit && !isBuy && sessionHigh > 0 && (sessionHigh - breakoutLevel) / breakoutLevel > sessionMoveLimit) {
-                movePct = (sessionHigh - breakoutLevel) / breakoutLevel * 100;
-                moveSource = "session high";
-                moveLimitHit = true;
-            }
-            if (moveLimitHit) {
+            double moveFromOpen = dayOpen > 0 ? Math.abs(close - dayOpen) / dayOpen : 0;
+            double moveFromPdc  = pdc > 0 ? Math.abs(close - pdc) / pdc : 0;
+            double movePct = Math.max(moveFromOpen, moveFromPdc) * 100;
+            String moveSource = moveFromOpen >= moveFromPdc ? "day open " + fmt(dayOpen) : "PDC " + fmt(pdc);
+            if (Math.max(moveFromOpen, moveFromPdc) > sessionMoveLimit) {
                 int reduced = Math.max(1, qty / 2);
-                qtyLog = "[INFO] " + symbol + " " + setup + " qty reduced (move " + fmt(movePct) + "% from " + moveSource + " > " + fmt(riskSettings.getSessionMoveLimit()) + "% limit): " + qty + " -> " + reduced;
+                qtyLog = "[INFO] " + symbol + " " + setup + " qty halved (moved " + fmt(movePct)
+                    + "% from " + moveSource + " > " + fmt(riskSettings.getSessionMoveLimit()) + "% limit): " + qty + " -> " + reduced;
                 qty = reduced;
             }
         }
@@ -187,10 +138,6 @@ public class SignalProcessor {
         if (shifted) {
             eventService.log("[INFO] " + symbol + " " + setup + " target shifted: " + fmt(defaultTarget) + " -> " + fmt(shiftTarget)
                 + " (default was < 1 ATR from entry)");
-        }
-        if (sessionCapped) {
-            eventService.log("[INFO] " + symbol + " " + setup + " target capped at session "
-                + (isBuy ? "high" : "low") + ": " + fmt(target));
         }
 
         return new ProcessedSignal.Builder()

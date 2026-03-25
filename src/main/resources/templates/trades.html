@@ -7,7 +7,7 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/shared.css?v=2">
+    <link rel="stylesheet" href="/css/shared.css?v=4">
     <style>
         .section-card .table-wrap { max-height: 780px; overflow-y: auto; }
         .data-table { min-height: 100%; }
@@ -159,7 +159,7 @@
 </div>
 
 <script src="/js/common.js?v=2"></script>
-<script src="/js/ticker.js?v=1"></script>
+<script src="/js/ticker.js?v=2"></script>
 <script>
     // ── FORMATTERS ────────────────────────────────
     const inr = v => new Intl.NumberFormat('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}).format(Math.abs(v));
@@ -169,8 +169,9 @@
     let serverWasDown = false;
 
     function updateConnectionStatus() {
-        fetch('/status')
-            .then(r => {
+        var ctrl = new AbortController(); var tid = setTimeout(function(){ ctrl.abort(); }, 3000);
+        fetch('/status', {signal:ctrl.signal})
+            .then(r => { clearTimeout(tid);
                 if (serverWasDown) {
                     window.location.href = '/';
                     return null;
@@ -192,7 +193,7 @@
                     label.style.color = 'var(--accent-yellow)';
                 } else {
                     dot.classList.add('disconnected');
-                    label.textContent = 'Disconnected';
+                    label.textContent = 'DISCONNECTED';
                     label.style.color = 'var(--accent-red)';
                 }
             })
@@ -200,7 +201,7 @@
                 serverWasDown = true;
                 const dot = document.getElementById('statusDot');
                 dot.className = 'status-dot disconnected';
-                document.getElementById('connectionStatus').textContent = 'Disconnected';
+                document.getElementById('connectionStatus').textContent = 'DISCONNECTED';
                 document.getElementById('connectionStatus').style.color = 'var(--accent-red)';
             });
     }
