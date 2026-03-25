@@ -8,9 +8,12 @@ import com.rydytrader.autotrader.dto.TickData;
 import com.rydytrader.autotrader.manager.PositionManager;
 import com.rydytrader.autotrader.store.ModeStore;
 import com.rydytrader.autotrader.store.PositionStateStore;
+import com.rydytrader.autotrader.store.RiskSettingsStore;
 import com.rydytrader.autotrader.store.TokenStore;
 import com.rydytrader.autotrader.websocket.FyersDataWebSocket;
 import com.rydytrader.autotrader.websocket.HsmBinaryParser;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -38,12 +41,20 @@ import java.util.concurrent.*;
 @Service
 public class MarketDataService implements FyersDataWebSocket.TickCallback {
 
+    private static final Logger log = LoggerFactory.getLogger(MarketDataService.class);
+
     private final TokenStore          tokenStore;
     private final ModeStore           modeStore;
     private final FyersProperties     fyersProperties;
     private final PositionStateStore  positionStateStore;
     private final TradeHistoryService tradeHistoryService;
+    private final OrderService        orderService;
+    private final EventService        eventService;
+    private final RiskSettingsStore   riskSettings;
     private final ObjectMapper        mapper = new ObjectMapper();
+
+    // Trailing SL: track symbols where SL has already been trailed (one-time per position)
+    private final Set<String> trailedSymbols = ConcurrentHashMap.newKeySet();
 
     // Current tick state per Fyers symbol
     private final ConcurrentHashMap<String, TickData> currentTicks = new ConcurrentHashMap<>();
@@ -119,12 +130,18 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
     public MarketDataService(TokenStore tokenStore, ModeStore modeStore,
                               FyersProperties fyersProperties,
                               PositionStateStore positionStateStore,
-                              TradeHistoryService tradeHistoryService) {
+                              TradeHistoryService tradeHistoryService,
+                              OrderService orderService,
+                              EventService eventService,
+                              RiskSettingsStore riskSettings) {
         this.tokenStore = tokenStore;
         this.modeStore = modeStore;
         this.fyersProperties = fyersProperties;
         this.positionStateStore = positionStateStore;
         this.tradeHistoryService = tradeHistoryService;
+        this.orderService = orderService;
+        this.eventService = eventService;
+        this.riskSettings = riskSettings;
     }
 
     // ────────────────────────────────────────────────────────────────────────────
@@ -149,7 +166,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         } else {
             startMockTicker();
         }
-        System.out.println("[MarketData] Started in " + modeStore.getMode() + " mode");
+        log.info("[MarketData] Started in {} mode", modeStore.getMode());
     }
 
     /** Stop the market data feed. Called on logout or mode switch. */
@@ -168,7 +185,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         fyersToHsmToken.clear();
         subscribedHsmTokens.clear();
         // Don't clear emitters — browsers may reconnect
-        System.out.println("[MarketData] Stopped");
+        log.info("[MarketData] Stopped");
     }
 
     // ────────────────────────────────────────────────────────────────────────────
@@ -180,14 +197,14 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
             try {
                 String accessToken = tokenStore.getAccessToken();
                 if (accessToken == null || accessToken.isEmpty()) {
-                    System.out.println("[MarketData] No access token, skipping WS connect");
+                    log.info("[MarketData] No access token, skipping WS connect");
                     return;
                 }
 
                 // 1. Extract hsm_key from JWT
                 String hsmKey = extractHsmKey(accessToken);
                 if (hsmKey == null) {
-                    System.out.println("[MarketData] Failed to extract hsm_key from token");
+                    log.info("[MarketData] Failed to extract hsm_key from token");
                     return;
                 }
 
@@ -198,7 +215,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
                 resolveSymbolTokens(fyersSymbols, accessToken);
 
                 if (fyersToHsmToken.isEmpty()) {
-                    System.out.println("[MarketData] No HSM tokens resolved, falling back to REST");
+                    log.info("[MarketData] No HSM tokens resolved, falling back to REST");
                     return;
                 }
 
@@ -218,7 +235,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
                 }, 10, 10, TimeUnit.SECONDS);
 
             } catch (Exception e) {
-                System.out.println("[MarketData] WS connect error: " + e.getMessage());
+                log.error("[MarketData] WS connect error: {}", e.getMessage());
                 scheduleReconnect();
             }
         });
@@ -226,12 +243,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
 
     private void scheduleReconnect() {
         if (!running || reconnectAttempts >= MAX_RECONNECT) {
-            System.out.println("[MarketData] Max reconnect attempts reached, using REST fallback");
+            log.info("[MarketData] Max reconnect attempts reached, using REST fallback");
             return;
         }
         reconnectAttempts++;
         long delay = Math.min(2L * (1L << reconnectAttempts), 30);
-        System.out.println("[MarketData] Reconnecting in " + delay + "s (attempt " + reconnectAttempts + ")");
+        log.info("[MarketData] Reconnecting in {}s (attempt {})", delay, reconnectAttempts);
         if (scheduler != null && !scheduler.isShutdown()) {
             scheduler.schedule(this::startLiveWebSocket, delay, TimeUnit.SECONDS);
         }
@@ -272,7 +289,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
 
         TickData tick = currentTicks.computeIfAbsent(raw.fyersSymbol, k -> new TickData());
         tick.setFyersSymbol(raw.fyersSymbol);
-        // Derive short name from symbol (e.g. "NSE:RELIANCE-EQ" → "RELIANCE")
         if (tick.getShortName() == null || tick.getShortName().isEmpty()) {
             tick.setShortName(deriveShortName(raw.fyersSymbol));
         }
@@ -284,13 +300,84 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         tick.recalcChange();
         tick.setHasPosition(PositionManager.getAllSymbols().contains(raw.fyersSymbol));
 
+        // Check trailing SL for position symbols
+        if (tick.isHasPosition()) {
+            checkTrailingSl(raw.fyersSymbol, raw.ltp);
+        }
+
         dirty = true;
+    }
+
+    /**
+     * Trailing SL: when price moves 75% from entry toward target,
+     * move SL to entry + 10% of the range (one-time per position).
+     */
+    private void checkTrailingSl(String symbol, double ltp) {
+        if (trailedSymbols.contains(symbol)) return;
+
+        Map<String, Object> state = positionStateStore.load(symbol);
+        if (state == null) return;
+
+        String side = state.getOrDefault("side", "").toString();
+        String slOrderId = state.getOrDefault("slOrderId", "").toString();
+        if (slOrderId.isEmpty()) return;
+
+        double entryPrice = 0, targetPrice = 0;
+        try {
+            entryPrice = Double.parseDouble(state.getOrDefault("avgPrice", "0").toString());
+            targetPrice = Double.parseDouble(state.getOrDefault("targetPrice", "0").toString());
+        } catch (NumberFormatException ignored) {}
+
+        if (entryPrice <= 0 || targetPrice <= 0) return;
+
+        double range = Math.abs(targetPrice - entryPrice);
+        if (range <= 0) return;
+
+        double triggerPct = riskSettings.getTrailTriggerPct() / 100.0; // e.g. 75 → 0.75
+        double slPct      = riskSettings.getTrailSlPct() / 100.0;      // e.g. 50 → 0.50
+        if (triggerPct <= 0 || slPct <= 0) return; // disabled if set to 0
+
+        double triggerLevel, newSl;
+        if ("LONG".equals(side)) {
+            triggerLevel = entryPrice + range * triggerPct;
+            newSl = entryPrice + range * slPct;
+            if (ltp < triggerLevel) return;
+        } else if ("SHORT".equals(side)) {
+            triggerLevel = entryPrice - range * triggerPct;
+            newSl = entryPrice - range * slPct;
+            if (ltp > triggerLevel) return;
+        } else {
+            return;
+        }
+
+        // Trail! Mark as done first to prevent duplicate attempts
+        trailedSymbols.add(symbol);
+
+        boolean ok = orderService.modifySlOrder(slOrderId, newSl, symbol);
+        if (ok) {
+            // Update saved SL price on disk
+            double currentTarget = Double.parseDouble(state.getOrDefault("targetPrice", "0").toString());
+            String targetOrderId = state.getOrDefault("targetOrderId", "").toString();
+            positionStateStore.saveOcoState(symbol, slOrderId, targetOrderId, newSl, currentTarget);
+
+            eventService.log("[SUCCESS] Trailing SL for " + symbol + ": moved to "
+                + String.format("%.2f", newSl) + " (locking 50% profit)"
+                + " — LTP " + String.format("%.2f", ltp) + " crossed 75% level " + String.format("%.2f", triggerLevel));
+        } else {
+            eventService.log("[ERROR] Failed to trail SL for " + symbol + " to " + String.format("%.2f", newSl));
+            trailedSymbols.remove(symbol); // allow retry
+        }
+    }
+
+    /** Clear trailing SL flag when a position is closed. Called from clearSymbolState flow. */
+    public void clearTrailedFlag(String symbol) {
+        trailedSymbols.remove(symbol);
     }
 
     @Override
     public void onConnected() {
         reconnectAttempts = 0;
-        System.out.println("[MarketData] WebSocket fully connected and subscribed");
+        log.info("[MarketData] WebSocket fully connected and subscribed");
     }
 
     @Override
@@ -303,7 +390,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
     @Override
     public void onAuthResult(boolean success, int ackCount) {
         if (!success) {
-            System.out.println("[MarketData] Auth failed, will not reconnect");
+            log.error("[MarketData] Auth failed, will not reconnect");
         }
     }
 
@@ -505,13 +592,13 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
                     }
                 }
             } catch (Exception e) {
-                System.out.println("[MarketData] Failed to resolve new symbols: " + e.getMessage());
+                log.error("[MarketData] Failed to resolve new symbols: {}", e.getMessage());
             }
         }
 
         if (!toSubscribe.isEmpty()) {
             wsClient.subscribeSymbols(toSubscribe);
-            System.out.println("[MarketData] Subscribed " + toSubscribe.size() + " new symbols");
+            log.info("[MarketData] Subscribed {} new symbols", toSubscribe.size());
         }
 
         // Update position flags
@@ -545,7 +632,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
             JsonNode json = mapper.readTree(decoded);
             return json.has("hsm_key") ? json.get("hsm_key").asText() : null;
         } catch (Exception e) {
-            System.out.println("[MarketData] JWT decode error: " + e.getMessage());
+            log.error("[MarketData] JWT decode error: {}", e.getMessage());
             return null;
         }
     }
@@ -607,7 +694,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
             }
         }
 
-        System.out.println("[MarketData] Resolved " + fyersToHsmToken.size() + " symbol tokens");
+        log.info("[MarketData] Resolved {} symbol tokens", fyersToHsmToken.size());
     }
 
     /**
@@ -639,13 +726,15 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
     }
 
     private String deriveShortName(String fyersSymbol) {
-        // "NSE:RELIANCE-EQ" → "RELIANCE"
-        // "NSE:NIFTY50-INDEX" → check INDEX_DICT
+        // "NSE:NIFTY50-INDEX" → check INDEX_DICT first
         String display = INDEX_DICT.get(fyersSymbol);
         if (display != null) return display;
         try {
+            // "NSE:RELIANCE-EQ" → "RELIANCE"
+            // "NSE:BAJAJ-AUTO-EQ" → "BAJAJ-AUTO"
             String afterColon = fyersSymbol.split(":")[1];
-            return afterColon.split("-")[0];
+            // Strip known suffixes: -EQ, -INDEX, -MF, -BE, etc.
+            return afterColon.replaceAll("-(EQ|INDEX|MF|BE|BL|SM)$", "");
         } catch (Exception e) {
             return fyersSymbol;
         }

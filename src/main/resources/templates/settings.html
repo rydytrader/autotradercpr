@@ -96,6 +96,7 @@
         <a href="/trades" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
         <a href="/journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">≡</span><span class="sidebar-nav-label">Journal</span></a>
         <a href="/settings" class="sidebar-nav-item active"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
+        <a href="/console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
         <button class="sidebar-nav-item" id="simTab" style="display:none;" onclick="openSimModal()"><span class="sidebar-nav-icon">◈</span><span class="sidebar-nav-label">Simulator</span></button>
     </nav>
     <div class="sidebar-footer">
@@ -162,15 +163,15 @@
             <div class="stat-value" id="statLossLimit">—</div>
             <div class="stat-sub" id="statLossLimitSub">Loading...</div>
         </div>
-        <div class="stat-card" style="--accent-color: var(--accent-yellow)">
-            <div class="stat-label">Small Candle ATR</div>
-            <div class="stat-value" id="statSmallCandleAtr">—</div>
-            <div class="stat-sub" id="statSmallCandleSub">Loading...</div>
-        </div>
         <div class="stat-card" style="--accent-color: var(--accent-blue)">
             <div class="stat-label">Session Move Limit</div>
             <div class="stat-value" id="statSessionMove">—</div>
             <div class="stat-sub" id="statSessionMoveSub">Qty halved if exceeded</div>
+        </div>
+        <div class="stat-card" style="--accent-color: var(--accent-green)">
+            <div class="stat-label">Trailing SL</div>
+            <div class="stat-value" id="statTrailSl">—</div>
+            <div class="stat-sub" id="statTrailSlSub">Trigger / Lock profit</div>
         </div>
     </div>
 
@@ -241,16 +242,6 @@
                     <div class="disabled-note">Set to 0 to disable</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Brokerage per Order</label>
-                    <input type="number" id="brokeragePerOrder" class="form-control" min="0" max="100" step="1" placeholder="20">
-                    <div class="form-hint">Flat brokerage per order in ₹ (entry + exit)</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Telegram Alert Frequency</label>
-                    <input type="number" id="telegramAlertFrequency" class="form-control" min="0" max="600" step="10" placeholder="60">
-                    <div class="form-hint">Seconds between Telegram portfolio updates (0 = disabled)</div>
-                </div>
-                <div class="form-group">
                     <label class="form-label">Enable R4/S4 Signals</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableR4S4" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
@@ -289,6 +280,16 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift target to next level if default target &lt; 1 ATR. If off, skip the entry.</span>
                     </div>
                 </div>
+                <div class="form-group">
+                    <label class="form-label">Trailing SL</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">When price moves</span>
+                        <input type="number" id="trailTriggerPct" class="form-control" step="5" min="0" max="100" style="width:65px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">% toward target, trail SL to lock</span>
+                        <input type="number" id="trailSlPct" class="form-control" step="5" min="0" max="100" style="width:65px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">% profit (0 = disabled)</span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -318,6 +319,30 @@
                     <input type="time" id="autoSquareOffTime" class="form-control" value="">
                     <div class="form-hint">All open positions auto squared off at this time</div>
                     <div class="disabled-note">Leave empty to disable</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- OTHER SETTINGS -->
+    <div class="section-card fade-in">
+        <div class="section-header">
+            <div class="section-title">
+                <div class="section-title-dot" style="background: var(--text-muted);"></div>
+                Other Settings
+            </div>
+        </div>
+        <div class="section-body">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label">Brokerage per Order</label>
+                    <input type="number" id="brokeragePerOrder" class="form-control" min="0" max="100" step="1" placeholder="20">
+                    <div class="form-hint">Flat brokerage per order in ₹ (entry + exit)</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Telegram Alert Frequency</label>
+                    <input type="number" id="telegramAlertFrequency" class="form-control" min="0" max="600" step="10" placeholder="60">
+                    <div class="form-hint">Seconds between Telegram portfolio updates (0 = disabled)</div>
                 </div>
             </div>
         </div>
@@ -446,6 +471,8 @@
             document.getElementById('enableSessionTargetCap').checked = d.enableSessionTargetCap !== false;
             document.getElementById('enableSmallCandleFilter').checked = d.enableSmallCandleFilter === true;
             document.getElementById('smallCandleAtrThreshold').value = d.smallCandleAtrThreshold || 0.5;
+            document.getElementById('trailTriggerPct').value = d.trailTriggerPct != null ? d.trailTriggerPct : 75;
+            document.getElementById('trailSlPct').value = d.trailSlPct != null ? d.trailSlPct : 50;
 
             const pnl    = d.todayPnl    || 0;
             const trades = d.todayTrades || 0;
@@ -470,16 +497,20 @@
                 document.getElementById('statLossLimitSub').textContent = 'Not configured';
             }
 
-            // Small candle ATR stat
-            const smallAtr = d.smallCandleAtrThreshold || 0.5;
-            const smallEnabled = d.enableSmallCandleFilter === true;
-            document.getElementById('statSmallCandleAtr').textContent = smallEnabled ? smallAtr + 'x' : 'OFF';
-            document.getElementById('statSmallCandleSub').textContent = smallEnabled ? 'Reject if move < ' + smallAtr + ' ATR' : 'Filter disabled';
-
             // Session move limit stat
             const moveLimit = d.sessionMoveLimit || 0;
             document.getElementById('statSessionMove').textContent = moveLimit > 0 ? moveLimit + '%' : 'OFF';
             document.getElementById('statSessionMoveSub').textContent = moveLimit > 0 ? 'Qty halved if exceeded' : 'No limit set';
+
+            // Trailing SL stat
+            const trailTrigger = d.trailTriggerPct || 0;
+            const trailSl = d.trailSlPct || 0;
+            const trailEl = document.getElementById('statTrailSl');
+            const trailSubEl = document.getElementById('statTrailSlSub');
+            if (trailEl) {
+                trailEl.textContent = (trailTrigger > 0 && trailSl > 0) ? trailTrigger + '% / ' + trailSl + '%' : 'OFF';
+                trailSubEl.textContent = (trailTrigger > 0 && trailSl > 0) ? 'Trigger / Lock profit' : 'Trailing SL disabled';
+            }
 
         } catch (e) {
             console.error('Failed to load settings', e);
@@ -512,7 +543,9 @@
                 enableTargetShift: document.getElementById('enableTargetShift').checked,
                 enableSessionTargetCap: document.getElementById('enableSessionTargetCap').checked,
                 enableSmallCandleFilter: document.getElementById('enableSmallCandleFilter').checked,
-                smallCandleAtrThreshold: parseFloat(document.getElementById('smallCandleAtrThreshold').value) || 0.5
+                smallCandleAtrThreshold: parseFloat(document.getElementById('smallCandleAtrThreshold').value) || 0.5,
+                trailTriggerPct: parseFloat(document.getElementById('trailTriggerPct').value) || 0,
+                trailSlPct: parseFloat(document.getElementById('trailSlPct').value) || 0
             };
             const r = await fetch('/api/settings/risk', {
                 method: 'POST',

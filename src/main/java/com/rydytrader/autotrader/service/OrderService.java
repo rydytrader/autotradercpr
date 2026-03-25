@@ -5,10 +5,14 @@ import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.dto.OrderDTO;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
 import com.rydytrader.autotrader.store.TokenStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 @Service
 public class OrderService {
+
+    private static final Logger log = LoggerFactory.getLogger(OrderService.class);
 
     private final TokenStore          tokenStore;
     private final FyersProperties     fyersProperties;
@@ -29,46 +33,67 @@ public class OrderService {
     public OrderDTO placeOrder(String symbol, int qty, int side, double stoploss) {
         try {
             String json = buildOrderJson(symbol, qty, side, 2, 0, 0, "AutoTrader");
-            System.out.println("Entry Order: " + json);
+            log.info("Entry Order: {}", json);
             return postOrder(json);
-        } catch (Exception e) { e.printStackTrace(); return null; }
+        } catch (Exception e) { log.error("Error placing entry order", e); return null; }
     }
 
     // ── STOP LOSS ORDER (Stop-Market) ─────────────────────────────────────────
     public OrderDTO placeStopLoss(String symbol, int qty, int side, double slPrice) {
         try {
             if (Double.isNaN(slPrice) || slPrice <= 0) {
-                System.err.println("[OrderService] Invalid SL price " + slPrice + " for " + symbol + " — skipping order");
+                log.error("[OrderService] Invalid SL price {} for {} — skipping order", slPrice, symbol);
                 return null;
             }
             double rounded = roundToTick(slPrice, symbol);
             String json = buildOrderJson(symbol, qty, side, 3, 0, rounded, "AutoSL");
-            System.out.println("SL Order: " + json);
+            log.info("SL Order: {}", json);
             return postOrder(json);
-        } catch (Exception e) { e.printStackTrace(); return null; }
+        } catch (Exception e) { log.error("Error placing SL order", e); return null; }
+    }
+
+    // ── MODIFY SL ORDER (change stop price) ────────────────────────────────────
+    public boolean modifySlOrder(String orderId, double newSlPrice, String symbol) {
+        try {
+            double rounded = roundToTick(newSlPrice, symbol);
+            String json = "{\"id\":\"" + orderId + "\",\"type\":3,\"stopPrice\":" + rounded + ",\"limitPrice\":0}";
+            log.info("[OrderService] Modify SL {} → {}: {}", orderId, rounded, json);
+            String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
+            JsonNode resp = fyersClient.modifyOrder(json, auth);
+            boolean ok = resp != null && resp.has("s") && "ok".equals(resp.get("s").asText());
+            if (ok) {
+                log.info("[OrderService] SL modified successfully: {} → {}", orderId, rounded);
+            } else {
+                log.error("[OrderService] SL modify failed: {}", resp);
+            }
+            return ok;
+        } catch (Exception e) {
+            log.error("[OrderService] Error modifying SL order {}", orderId, e);
+            return false;
+        }
     }
 
     // ── TARGET ORDER (Limit) ──────────────────────────────────────────────────
     public OrderDTO placeTarget(String symbol, int qty, int side, double targetPrice) {
         try {
             if (Double.isNaN(targetPrice) || targetPrice <= 0) {
-                System.err.println("[OrderService] Invalid target price " + targetPrice + " for " + symbol + " — skipping order");
+                log.error("[OrderService] Invalid target price {} for {} — skipping order", targetPrice, symbol);
                 return null;
             }
             double rounded = roundToTick(targetPrice, symbol);
             String json = buildOrderJson(symbol, qty, side, 1, rounded, 0, "AutoTarget");
-            System.out.println("Target Order: " + json);
+            log.info("Target Order: {}", json);
             return postOrder(json);
-        } catch (Exception e) { e.printStackTrace(); return null; }
+        } catch (Exception e) { log.error("Error placing target order", e); return null; }
     }
 
     // ── EXIT MARKET ORDER (Square-off) ────────────────────────────────────────
     public OrderDTO placeExitOrder(String symbol, int qty, int side) {
         try {
             String json = buildOrderJson(symbol, qty, side, 2, 0, 0, "SquareOff");
-            System.out.println("Exit Order: " + json);
+            log.info("Exit Order: {}", json);
             return postOrder(json);
-        } catch (Exception e) { e.printStackTrace(); return null; }
+        } catch (Exception e) { log.error("Error placing exit order", e); return null; }
     }
 
     // ── CANCEL ORDER ──────────────────────────────────────────────────────────
@@ -86,32 +111,29 @@ public class OrderService {
                     if (orderSymbol.equals(symbol) && (status == 6 || status == 4)) {
                         String orderId = o.get("id").asText();
                         int orderType = o.has("type") ? o.get("type").asInt() : 0;
-                        System.out.println("[CancelAll] Cancelling order " + orderId
-                            + " | symbol=" + orderSymbol + " | status=" + status + " | type=" + orderType);
+                        log.info("[CancelAll] Cancelling order {} | symbol={} | status={} | type={}", orderId, orderSymbol, status, orderType);
                         cancelOrder(orderId);
                         cancelled++;
                     }
                 }
                 if (cancelled == 0) {
-                    System.out.println("[CancelAll] No pending/transit orders found for " + symbol
-                        + " — dumping order book for symbol:");
+                    log.info("[CancelAll] No pending/transit orders found for {} — dumping order book for symbol:", symbol);
                     for (JsonNode o : node.get("orderBook")) {
                         String orderSymbol = o.has("symbol") ? o.get("symbol").asText() : "";
                         if (orderSymbol.equals(symbol)) {
                             int status = o.has("status") ? o.get("status").asInt() : 0;
-                            System.out.println("  order=" + o.get("id").asText() + " status=" + status
-                                + " type=" + (o.has("type") ? o.get("type").asInt() : "?"));
+                            log.info("  order={} status={} type={}", o.get("id").asText(), status, o.has("type") ? o.get("type").asInt() : "?");
                         }
                     }
                 } else {
-                    System.out.println("[CancelAll] Cancelled " + cancelled + " order(s) for " + symbol);
+                    log.info("[CancelAll] Cancelled {} order(s) for {}", cancelled, symbol);
                 }
             } else if (node != null && node.has("code") && node.get("code").asInt() == -429) {
-                System.out.println("[CancelAll] Fyers rate limit hit for " + symbol + " — will retry on next sync");
+                log.info("[CancelAll] Fyers rate limit hit for {} — will retry on next sync", symbol);
             } else {
-                System.out.println("[CancelAll] No orderBook in response for " + symbol);
+                log.info("[CancelAll] No orderBook in response for {}", symbol);
             }
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) { log.error("Error cancelling pending orders for " + symbol, e); }
     }
 
     private volatile long lastCancelTime = 0;
@@ -129,13 +151,13 @@ public class OrderService {
             boolean ok = node != null && node.get("s") != null && "ok".equals(node.get("s").asText());
             int code = node != null && node.has("code") ? node.get("code").asInt() : 0;
             if (ok || code == -52) {
-                System.out.println("Cancel " + orderId + " → " + (ok ? "OK" : "already cancelled/filled"));
+                log.info("Cancel {} → {}", orderId, ok ? "OK" : "already cancelled/filled");
                 return true;
             } else {
-                System.out.println("Cancel " + orderId + " → FAILED | response: " + node);
+                log.info("Cancel {} → FAILED | response: {}", orderId, node);
             }
             return ok;
-        } catch (Exception e) { e.printStackTrace(); return false; }
+        } catch (Exception e) { log.error("Error cancelling order " + orderId, e); return false; }
     }
 
     // ── TRADEBOOK CACHE ───────────────────────────────────────────────────────
@@ -149,7 +171,8 @@ public class OrderService {
             return cachedTradebook;
         }
         try {
-            JsonNode root = getCachedTradebook();
+            String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
+            JsonNode root = fyersClient.getTradebook(auth);
             if (root != null && "ok".equals(root.get("s").asText())) {
                 cachedTradebook = root;
                 tradebookFetchTime = now;
@@ -160,7 +183,7 @@ public class OrderService {
                 tradebookFetchTime = now + 30000;
                 return cachedTradebook;
             }
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) { log.error("Error fetching tradebook", e); }
         return cachedTradebook; // return stale cache on any error
     }
 
@@ -175,7 +198,7 @@ public class OrderService {
                 netPnl += trade.get("side").asInt() == 1 ? -val : val;
             }
             return netPnl;
-        } catch (Exception e) { e.printStackTrace(); return 0; }
+        } catch (Exception e) { log.error("Error calculating net day P&L", e); return 0; }
     }
 
     // ── TRADEBOOK FILL PRICE ──────────────────────────────────────────────────
@@ -193,7 +216,7 @@ public class OrderService {
                     return t.get("tradePrice").asDouble();
                 }
             }
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) { log.error("Error getting filled price from tradebook", e); }
         return 0;
     }
 
@@ -209,7 +232,7 @@ public class OrderService {
                     return t.get("tradePrice").asDouble();
                 }
             }
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) { log.error("Error getting filled price by order ID", e); }
         return 0;
     }
 
@@ -233,7 +256,7 @@ public class OrderService {
                 if (t.get("symbol").asText().equals(symbol)
                         && "ManualSquareOff".equals(t.has("orderTag") ? t.get("orderTag").asText() : "")) {
 
-                    System.out.println("Exit price calculated from ManualSquareOff Tag " + t.get("tradePrice").asDouble());
+                    log.info("Exit price calculated from ManualSquareOff Tag {}", t.get("tradePrice").asDouble());
                     return t.get("tradePrice").asDouble();
                 }
             }
@@ -241,15 +264,15 @@ public class OrderService {
             if (positionSide != null) {
                 int exitSide = "LONG".equals(positionSide) ? -1 : 1;  // LONG closed by SELL(-1), SHORT by BUY(1)
                 double price = getFilledPriceFromTradebook(symbol, exitSide);
-                System.out.println("Exit price calculated from SIDE LOGIC  ( LONG closed by SELL(-1), SHORT by BUY(1) )  logic " + price);
+                log.info("Exit price calculated from SIDE LOGIC  ( LONG closed by SELL(-1), SHORT by BUY(1) )  logic {}", price);
                 if (price > 0) return price;
             }
             // Final fallback: try both sides
             double price = getFilledPriceFromTradebook(symbol, -1);
             if (price <= 0) price = getFilledPriceFromTradebook(symbol, 1);
-            System.out.println("Exit price calculated from Final fallback: try both sides " + price);
+            log.info("Exit price calculated from Final fallback: try both sides {}", price);
             return price;
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) { log.error("Error getting exit price from tradebook", e); }
         return 0;
     }
 
@@ -259,9 +282,9 @@ public class OrderService {
         String s   = node.has("s")       ? node.get("s").asText()       : "unknown";
         String id  = node.has("id")      ? node.get("id").asText()       : "";
         String msg = node.has("message") ? node.get("message").asText()  : "";
-        System.out.println("[ORDER] status=" + s + " | id=" + id + " | message=" + msg);
+        log.info("[ORDER] status={} | id={} | message={}", s, id, msg);
         if (!"ok".equals(s)) {
-            System.err.println("[ORDER ERROR] Fyers rejected order: " + msg + " | Full response: " + node);
+            log.error("[ORDER ERROR] Fyers rejected order: {} | Full response: {}", msg, node);
         }
         return new OrderDTO(s, id, msg);
     }
@@ -293,7 +316,7 @@ public class OrderService {
     public double roundToTick(double price, String symbol) {
         double tick = symbolMaster.getTickSize(symbol);
         if (Double.isNaN(tick) || tick <= 0) {
-            System.err.println("[OrderService] Invalid tick size " + tick + " for " + symbol + " — using default 0.05");
+            log.error("[OrderService] Invalid tick size {} for {} — using default 0.05", tick, symbol);
             tick = 0.05;
         }
         // Round price to nearest tick: e.g. tick=0.05 → nearest 0.05, tick=5.0 → nearest 5

@@ -24,7 +24,9 @@ public class SignalProcessor {
 
         // ── 4a. Parse alert fields ──────────────────────────────────────────────
         String setup       = str(alert, "setup");
-        String symbol      = str(alert, "symbol");
+        String rawSymbol   = str(alert, "symbol");
+        // TradingView uses _ in symbols (e.g. BAJAJ_AUTO), Fyers uses - (BAJAJ-AUTO)
+        String symbol      = rawSymbol.replace("_", "-");
         String probability = str(alert, "probability");
         double close       = dbl(alert, "close");
         double atr         = dbl(alert, "atr");

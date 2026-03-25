@@ -4,12 +4,16 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
 import com.rydytrader.autotrader.store.ModeStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.security.MessageDigest;
 
 @Service
 public class LoginService {
+
+    private static final Logger log = LoggerFactory.getLogger(LoginService.class);
 
     private final FyersProperties    fyersProperties;
     private final FyersClientRouter  fyersClient;
@@ -40,11 +44,11 @@ public class LoginService {
 
             JsonNode node = fyersClient.validateAuthCode(requestBody);
             String token = node.get("access_token").asText();
-            System.out.println("Access Token Generated Successfully [" + modeStore.getMode() + "]");
+            log.info("Access Token Generated Successfully [{}]", modeStore.getMode());
             return token;
 
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Error generating access token", e);
             return null;
         }
     }

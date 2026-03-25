@@ -1,6 +1,8 @@
 package com.rydytrader.autotrader.service;
 
 import com.rydytrader.autotrader.config.TelegramProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
@@ -14,6 +16,8 @@ import java.util.concurrent.Executors;
 
 @Service
 public class TelegramService {
+
+    private static final Logger log = LoggerFactory.getLogger(TelegramService.class);
 
     private final TelegramProperties props;
     private final HttpClient httpClient = HttpClient.newHttpClient();
@@ -40,11 +44,10 @@ public class TelegramService {
 
                 HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
                 if (response.statusCode() != 200) {
-                    System.err.println("[Telegram] Failed to send message: HTTP " + response.statusCode()
-                        + " | " + response.body());
+                    log.error("[Telegram] Failed to send message: HTTP {} | {}", response.statusCode(), response.body());
                 }
             } catch (Exception e) {
-                System.err.println("[Telegram] Error sending message: " + e.getMessage());
+                log.error("[Telegram] Error sending message: {}", e.getMessage());
             }
         });
     }

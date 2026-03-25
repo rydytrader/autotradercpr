@@ -4,6 +4,8 @@ import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -28,6 +30,8 @@ import com.rydytrader.autotrader.store.TradingStateStore;
 
 @RestController
 public class TradingController {
+
+    private static final Logger log = LoggerFactory.getLogger(TradingController.class);
 
     private final PollingService      pollingService;
     private final OrderService        orderService;
@@ -137,11 +141,16 @@ public class TradingController {
         double target   = ps.getTarget();
         String setup    = ps.getSetup();
 
-        System.out.println("Signal received: " + signal + " | SL: " + stoploss + " | Target: " + target + " | Setup: " + setup);
+        log.info("Signal received: {} | SL: {} | Target: {} | Setup: {}", signal, stoploss, target, setup);
 
         if (signal.equals("BUY") && !PositionManager.getPosition(symbol).equals("LONG")) {
 
             OrderDTO order = orderService.placeOrder(symbol, quantity, 1, stoploss);
+            if (order == null || order.getId() == null || order.getId().isEmpty()) {
+                String msg = order != null ? order.getMessage() : "null response";
+                eventService.log("[ERROR] BUY order placement failed for " + symbol + ": " + msg);
+                return ResponseEntity.ok("Order failed: " + msg);
+            }
 
             // Monitor entry fill, then place SL + Target OCO
             // exitSide = -1 (SELL to exit a LONG)
@@ -150,13 +159,18 @@ public class TradingController {
         } else if (signal.equals("SELL") && !PositionManager.getPosition(symbol).equals("SHORT")) {
 
             OrderDTO order = orderService.placeOrder(symbol, quantity, -1, stoploss);
+            if (order == null || order.getId() == null || order.getId().isEmpty()) {
+                String msg = order != null ? order.getMessage() : "null response";
+                eventService.log("[ERROR] SELL order placement failed for " + symbol + ": " + msg);
+                return ResponseEntity.ok("Order failed: " + msg);
+            }
 
             // exitSide = 1 (BUY to exit a SHORT)
             pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "SHORT", 1, stoploss, target, setup);
 
         } else {
             String msg = "Signal ignored — existing position: " + PositionManager.getPosition(symbol);
-            System.out.println(msg);
+            log.info(msg);
             eventService.log("[WARNING] Signal ignored for " + symbol + " — existing position: " + PositionManager.getPosition(symbol));
         }
 

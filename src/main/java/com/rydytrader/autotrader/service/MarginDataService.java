@@ -3,6 +3,8 @@ package com.rydytrader.autotrader.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -21,6 +23,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Service
 public class MarginDataService {
+
+    private static final Logger log = LoggerFactory.getLogger(MarginDataService.class);
 
     private static final String MARGIN_URL =
         "https://public.fyers.in/website/margin-calculator/equity/eq_website_upload.json";
@@ -91,7 +95,7 @@ public class MarginDataService {
             JsonNode root = objectMapper.readTree(sb.toString());
             JsonNode data = root.get("data");
             if (data == null || !data.isArray()) {
-                System.err.println("[MarginData] No 'data' array in response");
+                log.error("[MarginData] No 'data' array in response");
                 return;
             }
 
@@ -105,11 +109,11 @@ public class MarginDataService {
                 }
             }
             String msg = "[MarginData] Loaded " + count + " equity margin entries from Fyers";
-            System.out.println(msg);
+            log.info(msg);
             eventService.log(msg);
 
         } catch (Exception e) {
-            System.err.println("[MarginData] Failed to load margin data: " + e.getMessage());
+            log.error("[MarginData] Failed to load margin data: {}", e.getMessage());
         }
     }
 }

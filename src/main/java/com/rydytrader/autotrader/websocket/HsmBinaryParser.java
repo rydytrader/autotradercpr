@@ -1,5 +1,8 @@
 package com.rydytrader.autotrader.websocket;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -13,6 +16,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * All methods are static. Wire format is big-endian.
  */
 public class HsmBinaryParser {
+
+    private static final Logger log = LoggerFactory.getLogger(HsmBinaryParser.class);
 
     private static final int SENTINEL = -2147483648; // Integer.MIN_VALUE
     private static final String SOURCE = "JavaSDK-1.0";
@@ -328,7 +333,7 @@ public class HsmBinaryParser {
             }
         } catch (Exception e) {
             // Log but don't crash — partial parse is better than none
-            System.out.println("[HsmParser] Error parsing data feed: " + e.getMessage());
+            log.error("[HsmParser] Error parsing data feed: {}", e.getMessage());
         }
         return ticks;
     }

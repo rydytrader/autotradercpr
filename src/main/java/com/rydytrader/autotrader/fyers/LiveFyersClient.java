@@ -67,6 +67,11 @@ public class LiveFyersClient implements FyersClient {
         return get(BASE + "/profile", authHeader);
     }
 
+    @Override
+    public JsonNode modifyOrder(String orderJson, String authHeader) throws Exception {
+        return put(BASE + "/orders/sync", orderJson, authHeader);
+    }
+
     // ── HTTP HELPERS ──────────────────────────────────────────────────────────
     private static final int CONNECT_TIMEOUT = 10_000; // 10 seconds
     private static final int READ_TIMEOUT    = 10_000; // 10 seconds
@@ -87,6 +92,20 @@ public class LiveFyersClient implements FyersClient {
         conn.setConnectTimeout(CONNECT_TIMEOUT);
         conn.setReadTimeout(READ_TIMEOUT);
         conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type", "application/json");
+        if (authHeader != null) conn.setRequestProperty("Authorization", authHeader);
+        conn.setDoOutput(true);
+        conn.getOutputStream().write(body.getBytes());
+        conn.getOutputStream().close();
+        return readResponse(conn);
+    }
+
+    private JsonNode put(String urlStr, String body, String authHeader) throws Exception {
+        URL url = new URL(urlStr);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setConnectTimeout(CONNECT_TIMEOUT);
+        conn.setReadTimeout(READ_TIMEOUT);
+        conn.setRequestMethod("PUT");
         conn.setRequestProperty("Content-Type", "application/json");
         if (authHeader != null) conn.setRequestProperty("Authorization", authHeader);
         conn.setDoOutput(true);

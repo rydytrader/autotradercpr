@@ -8,6 +8,8 @@ import com.rydytrader.autotrader.service.PollingService;
 import com.rydytrader.autotrader.store.ModeStore;
 import com.rydytrader.autotrader.store.TokenStore;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,6 +17,8 @@ import java.io.IOException;
 
 @Controller
 public class ViewController {
+
+    private static final Logger log = LoggerFactory.getLogger(ViewController.class);
 
     private final TokenStore        tokenStore;
     private final PollingService    pollingService;
@@ -75,7 +79,7 @@ public class ViewController {
             orderEventService.start();
             return "redirect:/home";
         }
-        System.out.println("Login callback error");
+        log.error("Login callback error");
         return "error";
     }
 
@@ -102,6 +106,12 @@ public class ViewController {
     public String journal() {
         if (!tokenStore.isTokenAvailable()) return "redirect:/";
         return "journal";
+    }
+
+    @GetMapping("/console")
+    public String console() {
+        if (!tokenStore.isTokenAvailable()) return "redirect:/";
+        return "console";
     }
 
     @GetMapping("/simulator")

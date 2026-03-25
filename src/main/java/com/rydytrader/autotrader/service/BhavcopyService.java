@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rydytrader.autotrader.dto.CprLevels;
 import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -22,6 +24,8 @@ import java.util.zip.ZipInputStream;
 
 @Service
 public class BhavcopyService {
+
+    private static final Logger log = LoggerFactory.getLogger(BhavcopyService.class);
 
     private static final String CM_URL_TEMPLATE =
         "https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_%s_F_0000.csv.zip";
@@ -56,7 +60,7 @@ public class BhavcopyService {
         } else {
             // If previous day data is missing, fetch it now
             if (previousCache.isEmpty() && !cache.isEmpty()) {
-                System.out.println("[BhavcopyService] Previous day CPR missing, fetching...");
+                log.info("[BhavcopyService] Previous day CPR missing, fetching...");
                 try {
                     String cookies = getNseCookies();
                     Set<String> nfoSymbols = cache.keySet();
@@ -65,13 +69,12 @@ public class BhavcopyService {
                         saveToFile();
                     }
                 } catch (Exception e) {
-                    System.err.println("[BhavcopyService] Failed to fetch previous day: " + e.getMessage());
+                    log.error("[BhavcopyService] Failed to fetch previous day: {}", e.getMessage());
                 }
             }
             long narrowCount = cache.values().stream().filter(CprLevels::isNarrowCpr).count();
             long insideCount = getInsideCprStocks().size();
-            System.out.println("[BhavcopyService] Loaded " + cache.size()
-                + " NFO stocks from cache for " + cachedDate + " (" + narrowCount + " narrow, " + insideCount + " inside CPR)");
+            log.info("[BhavcopyService] Loaded {} NFO stocks from cache for {} ({} narrow, {} inside CPR)", cache.size(), cachedDate, narrowCount, insideCount);
         }
     }
 
@@ -128,7 +131,7 @@ public class BhavcopyService {
                 String dateStr = DATE_FMT.format(targetDate);
                 String cookies = getNseCookies();
                 if (cookies == null || cookies.isEmpty()) {
-                    System.err.println("[BhavcopyService] Failed to obtain NSE session cookies");
+                    log.error("[BhavcopyService] Failed to obtain NSE session cookies");
                     return;
                 }
 
@@ -136,16 +139,15 @@ public class BhavcopyService {
                 String foUrl = String.format(FO_URL_TEMPLATE, dateStr);
                 byte[] foZip = downloadZip(foUrl, cookies);
                 if (foZip == null) {
-                    System.err.println("[BhavcopyService] FO Bhavcopy not available for " + targetDate
-                        + ", trying previous day");
+                    log.error("[BhavcopyService] FO Bhavcopy not available for {}, trying previous day", targetDate);
                     targetDate = skipWeekends(targetDate.minusDays(1));
                     continue;
                 }
 
                 Set<String> nfoSymbols = extractNfoSymbols(foZip);
-                System.out.println("[BhavcopyService] FO Bhavcopy yielded " + nfoSymbols.size() + " unique NFO stock symbols");
+                log.info("[BhavcopyService] FO Bhavcopy yielded {} unique NFO stock symbols", nfoSymbols.size());
                 if (nfoSymbols.isEmpty()) {
-                    System.err.println("[BhavcopyService] No NFO symbols found in FO Bhavcopy for " + targetDate);
+                    log.error("[BhavcopyService] No NFO symbols found in FO Bhavcopy for {}", targetDate);
                     targetDate = skipWeekends(targetDate.minusDays(1));
                     continue;
                 }
@@ -154,7 +156,7 @@ public class BhavcopyService {
                 String cmUrl = String.format(CM_URL_TEMPLATE, dateStr);
                 byte[] cmZip = downloadZip(cmUrl, cookies);
                 if (cmZip == null) {
-                    System.err.println("[BhavcopyService] CM Bhavcopy not available for " + targetDate);
+                    log.error("[BhavcopyService] CM Bhavcopy not available for {}", targetDate);
                     targetDate = skipWeekends(targetDate.minusDays(1));
                     continue;
                 }
@@ -165,8 +167,7 @@ public class BhavcopyService {
                 if (ohlcMap.size() < nfoSymbols.size()) {
                     Set<String> missing = new HashSet<>(nfoSymbols);
                     missing.removeAll(ohlcMap.keySet());
-                    System.out.println("[BhavcopyService] NFO symbols: " + nfoSymbols.size()
-                        + ", CM matches: " + ohlcMap.size() + ", missing: " + missing);
+                    log.info("[BhavcopyService] NFO symbols: {}, CM matches: {}, missing: {}", nfoSymbols.size(), ohlcMap.size(), missing);
                 }
 
                 // Compute CPR levels
@@ -198,17 +199,17 @@ public class BhavcopyService {
                 long insideCount = getInsideCprStocks().size();
                 String msg = "[BhavcopyService] Loaded CPR for " + cache.size()
                     + " NFO stocks for " + cachedDate + " (" + narrowCount + " narrow, " + insideCount + " inside CPR)";
-                System.out.println(msg);
+                log.info(msg);
                 eventService.log(msg);
                 return;
 
             } catch (Exception e) {
-                System.err.println("[BhavcopyService] Error fetching Bhavcopy for " + targetDate + ": " + e.getMessage());
+                log.error("[BhavcopyService] Error fetching Bhavcopy for {}: {}", targetDate, e.getMessage());
                 targetDate = skipWeekends(targetDate.minusDays(1));
             }
         }
 
-        System.err.println("[BhavcopyService] Failed to fetch Bhavcopy after 3 attempts, using cached data");
+        log.error("[BhavcopyService] Failed to fetch Bhavcopy after 3 attempts, using cached data");
     }
 
     // ── Fetch previous trading day's bhavcopy for inside CPR ───────────────────
@@ -232,15 +233,14 @@ public class BhavcopyService {
                     previousCache.put(entry.getKey(), new CprLevels(entry.getKey(), hlc[0], hlc[1], hlc[2]));
                 }
                 previousDate = prevDate.toString();
-                System.out.println("[BhavcopyService] Loaded previous day CPR for " + previousCache.size()
-                    + " stocks from " + previousDate);
+                log.info("[BhavcopyService] Loaded previous day CPR for {} stocks from {}", previousCache.size(), previousDate);
                 return;
             } catch (Exception e) {
-                System.err.println("[BhavcopyService] Error fetching previous day Bhavcopy for " + prevDate + ": " + e.getMessage());
+                log.error("[BhavcopyService] Error fetching previous day Bhavcopy for {}: {}", prevDate, e.getMessage());
                 prevDate = skipWeekends(prevDate.minusDays(1));
             }
         }
-        System.err.println("[BhavcopyService] Failed to fetch previous day Bhavcopy after 3 attempts");
+        log.error("[BhavcopyService] Failed to fetch previous day Bhavcopy after 3 attempts");
     }
 
     // ── NSE session cookies ────────────────────────────────────────────────────
@@ -265,7 +265,7 @@ public class BhavcopyService {
             }
             return cookies.toString();
         } catch (Exception e) {
-            System.err.println("[BhavcopyService] Failed to get NSE cookies: " + e.getMessage());
+            log.error("[BhavcopyService] Failed to get NSE cookies: {}", e.getMessage());
             return null;
         }
     }
@@ -286,7 +286,7 @@ public class BhavcopyService {
 
             int status = conn.getResponseCode();
             if (status != 200) {
-                System.err.println("[BhavcopyService] HTTP " + status + " for " + url);
+                log.error("[BhavcopyService] HTTP {} for {}", status, url);
                 return null;
             }
 
@@ -296,7 +296,7 @@ public class BhavcopyService {
             }
             return baos.toByteArray();
         } catch (Exception e) {
-            System.err.println("[BhavcopyService] Download failed for " + url + ": " + e.getMessage());
+            log.error("[BhavcopyService] Download failed for {}: {}", url, e.getMessage());
             return null;
         }
     }
@@ -331,7 +331,7 @@ public class BhavcopyService {
             }
 
             if (instIdx == -1 || symIdx == -1) {
-                System.err.println("[BhavcopyService] FO CSV header not recognized: " + header);
+                log.error("[BhavcopyService] FO CSV header not recognized: {}", header);
                 return symbols;
             }
 
@@ -360,7 +360,7 @@ public class BhavcopyService {
                 }
             }
         } catch (Exception e) {
-            System.err.println("[BhavcopyService] Error parsing FO Bhavcopy: " + e.getMessage());
+            log.error("[BhavcopyService] Error parsing FO Bhavcopy: {}", e.getMessage());
         }
         return symbols;
     }
@@ -408,7 +408,7 @@ public class BhavcopyService {
             }
 
             if (symIdx == -1 || highIdx == -1 || lowIdx == -1 || closeIdx == -1) {
-                System.err.println("[BhavcopyService] CM CSV header not recognized: " + header);
+                log.error("[BhavcopyService] CM CSV header not recognized: {}", header);
                 return result;
             }
 
@@ -437,7 +437,7 @@ public class BhavcopyService {
                 } catch (NumberFormatException ignored) {}
             }
         } catch (Exception e) {
-            System.err.println("[BhavcopyService] Error parsing CM Bhavcopy: " + e.getMessage());
+            log.error("[BhavcopyService] Error parsing CM Bhavcopy: {}", e.getMessage());
         }
         return result;
     }
@@ -469,7 +469,7 @@ public class BhavcopyService {
             Files.writeString(Paths.get(STORE_FILE),
                 mapper.writerWithDefaultPrettyPrinter().writeValueAsString(data));
         } catch (Exception e) {
-            System.err.println("[BhavcopyService] Failed to save CPR data: " + e.getMessage());
+            log.error("[BhavcopyService] Failed to save CPR data: {}", e.getMessage());
         }
     }
 
@@ -504,7 +504,7 @@ public class BhavcopyService {
                 });
             }
         } catch (Exception e) {
-            System.err.println("[BhavcopyService] Failed to load CPR data from file: " + e.getMessage());
+            log.error("[BhavcopyService] Failed to load CPR data from file: {}", e.getMessage());
         }
     }
 

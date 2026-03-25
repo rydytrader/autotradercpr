@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
 import com.rydytrader.autotrader.manager.PositionManager;
+import com.rydytrader.autotrader.service.MarketHolidayService;
 import com.rydytrader.autotrader.store.TokenStore;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,6 +24,7 @@ public class MarketTickerController {
     private final FyersClientRouter fyersClient;
     private final FyersProperties fyersProperties;
     private final TokenStore tokenStore;
+    private final MarketHolidayService marketHolidayService;
 
     private static final String BASE_SYMBOLS =
         "NSE:NIFTY50-INDEX,NSE:NIFTYBANK-INDEX,NSE:NIFTYIT-INDEX," +
@@ -41,10 +43,12 @@ public class MarketTickerController {
 
     public MarketTickerController(FyersClientRouter fyersClient,
                                    FyersProperties fyersProperties,
-                                   TokenStore tokenStore) {
+                                   TokenStore tokenStore,
+                                   MarketHolidayService marketHolidayService) {
         this.fyersClient = fyersClient;
         this.fyersProperties = fyersProperties;
         this.tokenStore = tokenStore;
+        this.marketHolidayService = marketHolidayService;
     }
 
     @GetMapping("/api/market-ticker")
@@ -118,5 +122,23 @@ public class MarketTickerController {
             result.put("name", "");
         }
         return result;
+    }
+
+    @GetMapping("/api/market-holidays")
+    public List<Map<String, String>> getMarketHolidays() {
+        return marketHolidayService.getHolidayList();
+    }
+
+    @GetMapping("/api/console-log")
+    public ResponseEntity<List<String>> getConsoleLog(@org.springframework.web.bind.annotation.RequestParam(defaultValue = "500") int lines) {
+        try {
+            java.nio.file.Path logFile = java.nio.file.Paths.get("../store/logs/autotrader.log");
+            if (!java.nio.file.Files.exists(logFile)) return ResponseEntity.ok(List.of());
+            List<String> allLines = java.nio.file.Files.readAllLines(logFile);
+            int from = Math.max(0, allLines.size() - lines);
+            return ResponseEntity.ok(allLines.subList(from, allLines.size()));
+        } catch (Exception e) {
+            return ResponseEntity.ok(List.of("Error reading log: " + e.getMessage()));
+        }
     }
 }

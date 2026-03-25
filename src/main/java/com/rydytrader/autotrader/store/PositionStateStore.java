@@ -1,6 +1,8 @@
 package com.rydytrader.autotrader.store;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -16,6 +18,8 @@ import java.util.*;
  */
 @Component
 public class PositionStateStore {
+
+    private static final Logger log = LoggerFactory.getLogger(PositionStateStore.class);
 
     private static final String LIVE_DIR = "../store/live/positions";
     private static final String SIM_DIR  = "../store/simulator/positions";
@@ -60,7 +64,7 @@ public class PositionStateStore {
             state.put("targetPrice", targetPrice);
             Files.writeString(filePath(symbol), mapper.writeValueAsString(state));
         } catch (IOException e) {
-            System.err.println("[PositionStateStore] Failed to save " + symbol + ": " + e.getMessage());
+            log.error("[PositionStateStore] Failed to save {}: {}", symbol, e.getMessage());
         }
     }
 
@@ -76,7 +80,7 @@ public class PositionStateStore {
             state.put("targetPrice", targetPrice);
             Files.writeString(filePath(symbol), mapper.writeValueAsString(state));
         } catch (IOException e) {
-            System.err.println("[PositionStateStore] Failed to save OCO state for " + symbol + ": " + e.getMessage());
+            log.error("[PositionStateStore] Failed to save OCO state for {}: {}", symbol, e.getMessage());
         }
     }
 
@@ -84,7 +88,7 @@ public class PositionStateStore {
         try {
             Files.deleteIfExists(filePath(symbol));
         } catch (IOException e) {
-            System.err.println("[PositionStateStore] Failed to clear " + symbol + ": " + e.getMessage());
+            log.error("[PositionStateStore] Failed to clear {}: {}", symbol, e.getMessage());
         }
     }
 
@@ -96,7 +100,7 @@ public class PositionStateStore {
             if (!Files.exists(path)) return null;
             return mapper.readValue(Files.readString(path), Map.class);
         } catch (IOException e) {
-            System.err.println("[PositionStateStore] Failed to load " + symbol + ": " + e.getMessage());
+            log.error("[PositionStateStore] Failed to load {}: {}", symbol, e.getMessage());
             return null;
         }
     }
@@ -108,7 +112,7 @@ public class PositionStateStore {
         if (files == null) return;
         for (File f : files) {
             try { Files.deleteIfExists(f.toPath()); }
-            catch (IOException e) { System.err.println("[PositionStateStore] Failed to delete " + f.getName() + ": " + e.getMessage()); }
+            catch (IOException e) { log.error("[PositionStateStore] Failed to delete {}: {}", f.getName(), e.getMessage()); }
         }
     }
 
@@ -126,7 +130,7 @@ public class PositionStateStore {
                 result.put(symbol, state);
             }
         } catch (IOException e) {
-            System.err.println("[PositionStateStore] Failed to loadAll: " + e.getMessage());
+            log.error("[PositionStateStore] Failed to loadAll: {}", e.getMessage());
         }
         return result;
     }

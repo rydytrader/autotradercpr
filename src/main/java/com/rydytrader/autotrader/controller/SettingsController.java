@@ -61,6 +61,8 @@ public class SettingsController {
         result.put("enableSessionTargetCap", riskSettings.isEnableSessionTargetCap(effectiveMode));
         result.put("enableSmallCandleFilter", riskSettings.isEnableSmallCandleFilter(effectiveMode));
         result.put("smallCandleAtrThreshold", riskSettings.getSmallCandleAtrThreshold(effectiveMode));
+        result.put("trailTriggerPct", riskSettings.getTrailTriggerPct(effectiveMode));
+        result.put("trailSlPct", riskSettings.getTrailSlPct(effectiveMode));
         result.put("todayPnl",         Math.round(todayPnl * 100.0) / 100.0);
         result.put("todayTrades",      todayTrades);
         return result;
@@ -92,6 +94,8 @@ public class SettingsController {
             if (body.containsKey("enableSessionTargetCap")) riskSettings.setEnableSessionTargetCap(effectiveMode, Boolean.parseBoolean(body.get("enableSessionTargetCap").toString()));
             if (body.containsKey("enableSmallCandleFilter")) riskSettings.setEnableSmallCandleFilter(effectiveMode, Boolean.parseBoolean(body.get("enableSmallCandleFilter").toString()));
             if (body.containsKey("smallCandleAtrThreshold")) riskSettings.setSmallCandleAtrThreshold(effectiveMode, Double.parseDouble(body.get("smallCandleAtrThreshold").toString()));
+            if (body.containsKey("trailTriggerPct")) riskSettings.setTrailTriggerPct(effectiveMode, Double.parseDouble(body.get("trailTriggerPct").toString()));
+            if (body.containsKey("trailSlPct")) riskSettings.setTrailSlPct(effectiveMode, Double.parseDouble(body.get("trailSlPct").toString()));
             riskSettings.saveFor(effectiveMode);
             return ResponseEntity.ok(Map.of("ok", true, "message", "Settings saved"));
         } catch (Exception e) {

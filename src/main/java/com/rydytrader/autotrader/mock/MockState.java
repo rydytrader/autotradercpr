@@ -3,6 +3,8 @@ package com.rydytrader.autotrader.mock;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
@@ -15,6 +17,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
 public class MockState {
+
+    private static final Logger log = LoggerFactory.getLogger(MockState.class);
 
     public static final int STATUS_PENDING   = 6;  // Fyers: 6 = open/pending
     public static final int STATUS_TRADED    = 2;  // Fyers: 2 = filled
@@ -45,10 +49,10 @@ public class MockState {
                 Map<String, Double> loaded = mapper.readValue(
                         Files.readString(path), new TypeReference<Map<String, Double>>() {});
                 priceBySymbol.putAll(loaded);
-                System.out.println("[MockState] Loaded " + loaded.size() + " symbol prices from disk");
+                log.info("[MockState] Loaded {} symbol prices from disk", loaded.size());
             }
         } catch (Exception e) {
-            System.err.println("[MockState] Failed to load prices: " + e.getMessage());
+            log.error("[MockState] Failed to load prices: {}", e.getMessage());
         }
     }
 
@@ -57,7 +61,7 @@ public class MockState {
             new File("../store/simulator").mkdirs();
             Files.writeString(Paths.get(PRICES_FILE), mapper.writeValueAsString(priceBySymbol));
         } catch (Exception e) {
-            System.err.println("[MockState] Failed to save prices: " + e.getMessage());
+            log.error("[MockState] Failed to save prices: {}", e.getMessage());
         }
     }
 
@@ -251,7 +255,7 @@ public class MockState {
     // ── LOG ───────────────────────────────────────────────────────────────────
     public void log(String msg) {
         String e = "[" + now() + "] " + msg;
-        System.out.println("SIM | " + e);
+        log.info("SIM | {}", e);
         eventLog.add(0, e);
         if (eventLog.size() > 200) eventLog.remove(eventLog.size() - 1);
     }

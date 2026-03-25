@@ -1,9 +1,14 @@
 package com.rydytrader.autotrader.manager;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class PositionManager {
+
+    private static final Logger log = LoggerFactory.getLogger(PositionManager.class);
 
     // Thread-safe per-symbol position holder
     private static final ConcurrentHashMap<String, String> positions = new ConcurrentHashMap<>();
@@ -20,7 +25,7 @@ public class PositionManager {
         } else {
             positions.put(symbol, side);
         }
-        System.out.println("Position Updated [" + symbol + "]: " + side);
+        log.info("Position Updated [{}]: {}", symbol, side);
     }
 
     /** Returns true if any symbol has an open position. */
@@ -36,6 +41,6 @@ public class PositionManager {
     /** Clears all tracked positions (used on reset). */
     public static void resetAll() {
         positions.clear();
-        System.out.println("PositionManager: all positions cleared");
+        log.info("PositionManager: all positions cleared");
     }
 }

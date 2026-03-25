@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.drafts.Draft_6455;
 import org.java_websocket.handshake.ServerHandshake;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.URI;
 import java.util.Map;
@@ -15,6 +17,8 @@ import java.util.Map;
  * for order status changes, trade fills, and position updates.
  */
 public class FyersOrderWebSocket extends WebSocketClient {
+
+    private static final Logger log = LoggerFactory.getLogger(FyersOrderWebSocket.class);
 
     public interface OrderCallback {
         void onOrderEvent(JsonNode order);
@@ -37,11 +41,11 @@ public class FyersOrderWebSocket extends WebSocketClient {
 
     @Override
     public void onOpen(ServerHandshake handshake) {
-        System.out.println("[OrderWS] Connected to Fyers Order WebSocket");
+        log.info("[OrderWS] Connected to Fyers Order WebSocket");
         // Subscribe to orders, trades, and positions
         String subMsg = "{\"T\":\"SUB_ORD\",\"SLIST\":[\"orders\",\"trades\",\"positions\"],\"SUB_T\":1}";
         send(subMsg);
-        System.out.println("[OrderWS] Subscribed to orders, trades, positions");
+        log.info("[OrderWS] Subscribed to orders, trades, positions");
         callback.onWsConnected();
     }
 
@@ -54,39 +58,34 @@ public class FyersOrderWebSocket extends WebSocketClient {
 
             if (json.has("orders")) {
                 JsonNode order = json.get("orders");
-                System.out.println("[OrderWS] Order event: " + order.get("symbol").asText()
-                    + " status=" + order.get("org_ord_status").asText()
-                    + " tag=" + (order.has("ordertag") ? order.get("ordertag").asText() : ""));
+                log.info("[OrderWS] Order event: {} status={} tag={}", order.get("symbol").asText(), order.get("org_ord_status").asText(), order.has("ordertag") ? order.get("ordertag").asText() : "");
                 callback.onOrderEvent(order);
             } else if (json.has("trades")) {
                 JsonNode trade = json.get("trades");
-                System.out.println("[OrderWS] Trade event: " + trade.get("symbol").asText()
-                    + " price=" + trade.get("price_traded").asText());
+                log.info("[OrderWS] Trade event: {} price={}", trade.get("symbol").asText(), trade.get("price_traded").asText());
                 callback.onTradeEvent(trade);
             } else if (json.has("positions")) {
                 JsonNode position = json.get("positions");
-                System.out.println("[OrderWS] Position event: " + position.get("symbol").asText()
-                    + " netQty=" + position.get("net_qty").asText());
+                log.info("[OrderWS] Position event: {} netQty={}", position.get("symbol").asText(), position.get("net_qty").asText());
                 callback.onPositionEvent(position);
             } else {
                 // General event (login, alerts, etc.)
-                System.out.println("[OrderWS] General event: " + message);
+                log.info("[OrderWS] General event: {}", message);
             }
         } catch (Exception e) {
-            System.out.println("[OrderWS] Parse error: " + e.getMessage());
+            log.error("[OrderWS] Parse error: {}", e.getMessage());
         }
     }
 
     @Override
     public void onClose(int code, String reason, boolean remote) {
-        System.out.println("[OrderWS] Disconnected: code=" + code + " reason=" + reason);
+        log.info("[OrderWS] Disconnected: code={} reason={}", code, reason);
         callback.onWsDisconnected(reason);
     }
 
     @Override
     public void onError(Exception ex) {
-        System.out.println("[OrderWS] Error: " + ex.getMessage());
-        ex.printStackTrace();
+        log.error("[OrderWS] Error", ex);
     }
 
     /** Send ping to keep connection alive. Called every 10s by scheduler. */

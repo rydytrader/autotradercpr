@@ -8,6 +8,8 @@ import com.rydytrader.autotrader.store.ModeStore;
 import com.rydytrader.autotrader.store.PositionStateStore;
 import com.rydytrader.autotrader.store.TokenStore;
 import com.rydytrader.autotrader.websocket.FyersOrderWebSocket;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -28,6 +30,8 @@ import java.util.concurrent.*;
  */
 @Service
 public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
+
+    private static final Logger log = LoggerFactory.getLogger(OrderEventService.class);
 
     private final TokenStore         tokenStore;
     private final ModeStore          modeStore;
@@ -154,7 +158,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         }
         trackedEntries.clear();
         trackedOcoOrders.clear();
-        System.out.println("[OrderEventSvc] Stopped");
+        log.info("[OrderEventSvc] Stopped");
     }
 
     /** Synchronous connect — blocks until connected or fails. Used on startup. */
@@ -162,28 +166,27 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         try {
             String accessToken = tokenStore.getAccessToken();
             if (accessToken == null || accessToken.isEmpty()) {
-                System.out.println("[OrderEventSvc] No access token — skipping WS connect");
+                log.info("[OrderEventSvc] No access token — skipping WS connect");
                 return;
             }
 
             // Fyers Order WS expects "clientId:accessToken" format
             String authToken = fyersProperties.getClientId() + ":" + accessToken;
-            System.out.println("[OrderEventSvc] Connecting to Order WS (sync)... clientId=" + fyersProperties.getClientId());
+            log.info("[OrderEventSvc] Connecting to Order WS (sync)... clientId={}", fyersProperties.getClientId());
             wsClient = new FyersOrderWebSocket(authToken, this);
             boolean ok = wsClient.connectBlocking(10, TimeUnit.SECONDS);
             if (ok) {
-                System.out.println("[OrderEventSvc] Sync connect SUCCESS — isOpen=" + wsClient.isOpen());
+                log.info("[OrderEventSvc] Sync connect SUCCESS — isOpen={}", wsClient.isOpen());
                 // Ping every 10s
                 scheduler.scheduleAtFixedRate(() -> {
                     if (wsClient != null && wsClient.isOpen()) wsClient.sendPing();
                 }, 10, 10, TimeUnit.SECONDS);
             } else {
-                System.out.println("[OrderEventSvc] Sync connect FAILED — timed out after 10s");
+                log.info("[OrderEventSvc] Sync connect FAILED — timed out after 10s");
                 scheduleReconnect();
             }
         } catch (Exception e) {
-            System.out.println("[OrderEventSvc] Sync connect error: " + e.getMessage());
-            e.printStackTrace();
+            log.error("[OrderEventSvc] Sync connect error", e);
             scheduleReconnect();
         }
     }
@@ -207,7 +210,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
                 }, 10, 10, TimeUnit.SECONDS);
 
             } catch (Exception e) {
-                System.out.println("[OrderEventSvc] Connect error: " + e.getMessage());
+                log.error("[OrderEventSvc] Connect error: {}", e.getMessage());
                 scheduleReconnect();
             }
         });
@@ -215,13 +218,13 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
 
     private void scheduleReconnect() {
         if (!running || reconnectAttempts >= MAX_RECONNECT) {
-            System.out.println("[OrderEventSvc] Max reconnect attempts, falling back to polling");
+            log.info("[OrderEventSvc] Max reconnect attempts, falling back to polling");
             connected = false;
             return;
         }
         reconnectAttempts++;
         long delay = Math.min(2L * (1L << reconnectAttempts), 30);
-        System.out.println("[OrderEventSvc] Reconnecting in " + delay + "s (attempt " + reconnectAttempts + ")");
+        log.info("[OrderEventSvc] Reconnecting in {}s (attempt {})", delay, reconnectAttempts);
         if (scheduler != null && !scheduler.isShutdown()) {
             scheduler.schedule(this::connectWebSocket, delay, TimeUnit.SECONDS);
         }
@@ -238,7 +241,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     public boolean trackEntryOrder(String orderId, EntryContext ctx) {
         if (!connected || orderId == null || orderId.isEmpty()) return false;
         trackedEntries.put(orderId, ctx);
-        System.out.println("[OrderEventSvc] Tracking entry order " + orderId + " for " + ctx.symbol);
+        log.info("[OrderEventSvc] Tracking entry order {} for {}", orderId, ctx.symbol);
         return true;
     }
 
@@ -260,7 +263,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         tgtCtx.currentPrice = targetPrice;
         trackedOcoOrders.put(slOrderId, slCtx);
         trackedOcoOrders.put(targetOrderId, tgtCtx);
-        System.out.println("[OrderEventSvc] Tracking OCO for " + symbol + " — SL: " + slOrderId + " (" + slPrice + ") | Target: " + targetOrderId + " (" + targetPrice + ")");
+        log.info("[OrderEventSvc] Tracking OCO for {} — SL: {} ({}) | Target: {} ({})", symbol, slOrderId, slPrice, targetOrderId, targetPrice);
         return true;
     }
 
@@ -284,14 +287,14 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     public void onWsConnected() {
         connected = true;
         reconnectAttempts = 0;
-        System.out.println("[OrderEventSvc] Order WebSocket connected");
+        log.info("[OrderEventSvc] Order WebSocket connected");
         eventService.log("[INFO] Order Update WebSocket connected — real-time fill detection active");
     }
 
     @Override
     public void onWsDisconnected(String reason) {
         connected = false;
-        System.out.println("[OrderEventSvc] Order WebSocket disconnected: " + reason);
+        log.info("[OrderEventSvc] Order WebSocket disconnected: {}", reason);
         if (running) {
             eventService.log("[WARNING] Order Update WebSocket disconnected — falling back to polling");
             scheduleReconnect();
@@ -324,8 +327,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             }
 
         } catch (Exception e) {
-            System.out.println("[OrderEventSvc] Error handling order event: " + e.getMessage());
-            e.printStackTrace();
+            log.error("[OrderEventSvc] Error handling order event", e);
         }
     }
 
@@ -336,7 +338,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             String symbol = trade.has("symbol") ? trade.get("symbol").asText() : "";
             double price = trade.has("price_traded") ? trade.get("price_traded").asDouble() : 0;
             String tag = trade.has("ordertag") ? trade.get("ordertag").asText() : "";
-            System.out.println("[OrderEventSvc] Trade fill: " + symbol + " @ " + price + " tag=" + tag);
+            log.info("[OrderEventSvc] Trade fill: {} @ {} tag={}", symbol, price, tag);
         } catch (Exception e) {
             // Non-critical
         }
@@ -348,7 +350,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             String symbol = position.has("symbol") ? position.get("symbol").asText() : "";
             int netQty = position.has("net_qty") ? position.get("net_qty").asInt() : 0;
             double netAvg = position.has("net_avg") ? position.get("net_avg").asDouble() : 0;
-            System.out.println("[OrderEventSvc] Position update: " + symbol + " netQty=" + netQty + " netAvg=" + netAvg);
+            log.info("[OrderEventSvc] Position update: {} netQty={} netAvg={}", symbol, netQty, netAvg);
 
             if (symbol.isEmpty()) return;
 
@@ -363,8 +365,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
                 handleExternalClose(symbol, currentPos);
             }
         } catch (Exception e) {
-            System.out.println("[OrderEventSvc] Error handling position event: " + e.getMessage());
-            e.printStackTrace();
+            log.error("[OrderEventSvc] Error handling position event", e);
         }
     }
 
@@ -409,7 +410,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         boolean hasTrackedOco = trackedOcoOrders.values().stream()
             .anyMatch(ctx -> symbol.equals(ctx.symbol) && !ctx.handled);
         if (hasTrackedOco) {
-            System.out.println("[OrderEventSvc] Position closed for " + symbol + " but OCO orders still tracked — letting fill handler process");
+            log.info("[OrderEventSvc] Position closed for {} but OCO orders still tracked — letting fill handler process", symbol);
             return;
         }
 
@@ -484,7 +485,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         }
 
         // Untracked fill — log it
-        System.out.println("[OrderEventSvc] Untracked order filled: " + orderId + " " + symbol + " @ " + tradedPrice + " tag=" + tag);
+        log.info("[OrderEventSvc] Untracked order filled: {} {} @ {} tag={}", orderId, symbol, tradedPrice, tag);
     }
 
     private void handleEntryFill(EntryContext ctx, String orderId, double fillPrice) {
@@ -503,7 +504,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         positionStateStore.save(symbol, ctx.position, ctx.quantity, entryPrice,
             ctx.setup, entryTime, ctx.slPrice, ctx.targetPrice);
 
-        eventService.log("[WS] " + (ctx.position.equals("LONG") ? "BUY" : "SELL")
+        eventService.log("[SUCCESS] [WS] " + (ctx.position.equals("LONG") ? "BUY" : "SELL")
             + " order filled for " + symbol + " @ " + entryPrice + " [ID: " + orderId + "] — placing SL + Target");
 
         marketDataService.updateSubscriptions();
@@ -526,8 +527,8 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             boolean tgtOk = targetOrder != null && targetOrder.getId() != null && !targetOrder.getId().isEmpty();
 
             if (slOk && tgtOk) {
-                eventService.log("[WS] SL placed for " + symbol + " at " + orderService.roundToTick(ctx.slPrice, symbol) + " [ID: " + slOrder.getId() + "]");
-                eventService.log("[WS] Target placed for " + symbol + " at " + orderService.roundToTick(ctx.targetPrice, symbol) + " [ID: " + targetOrder.getId() + "]");
+                eventService.log("[SUCCESS] [WS] SL placed for " + symbol + " at " + orderService.roundToTick(ctx.slPrice, symbol) + " [ID: " + slOrder.getId() + "]");
+                eventService.log("[SUCCESS] [WS] Target placed for " + symbol + " at " + orderService.roundToTick(ctx.targetPrice, symbol) + " [ID: " + targetOrder.getId() + "]");
                 positionStateStore.saveOcoState(symbol, slOrder.getId(), targetOrder.getId(), ctx.slPrice, ctx.targetPrice);
 
                 // Track SL + Target for fill detection via WebSocket
@@ -582,7 +583,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
                                                       : (finalEntry - finalExit) * ctx.quantity;
         String pnlTag = pnl >= 0 ? "PROFIT" : "LOSS";
 
-        eventService.log("[WS] " + ctx.type + " triggered for " + symbol + " at " + finalExit
+        eventService.log("[SUCCESS] [WS] " + ctx.type + " triggered for " + symbol + " at " + finalExit
             + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl))
             + " — cancelling " + ("SL".equals(ctx.type) ? "target" : "SL"));
 
@@ -649,7 +650,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         if ("SL".equals(oco.type) && stopPrice > 0) {
             // SL order — check if stopPrice changed
             if (oco.currentPrice > 0 && Math.abs(stopPrice - oco.currentPrice) > 0.10) {
-                eventService.log("[WS] SL modified for " + symbol + ": "
+                eventService.log("[SUCCESS] [WS] SL modified for " + symbol + ": "
                     + String.format("%.2f", oco.currentPrice) + " → " + String.format("%.2f", stopPrice));
                 oco.currentPrice = stopPrice;
                 // Update disk state — find counterpart to get target price
@@ -662,7 +663,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         } else if ("TARGET".equals(oco.type) && limitPrice > 0) {
             // Target order — check if limitPrice changed
             if (oco.currentPrice > 0 && Math.abs(limitPrice - oco.currentPrice) > 0.10) {
-                eventService.log("[WS] Target modified for " + symbol + ": "
+                eventService.log("[SUCCESS] [WS] Target modified for " + symbol + ": "
                     + String.format("%.2f", oco.currentPrice) + " → " + String.format("%.2f", limitPrice));
                 oco.currentPrice = limitPrice;
                 // Update disk state — find counterpart to get SL price

@@ -1,6 +1,8 @@
 package com.rydytrader.autotrader.store;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -17,6 +19,8 @@ import java.util.Map;
  */
 @Component
 public class RiskSettingsStore {
+
+    private static final Logger log = LoggerFactory.getLogger(RiskSettingsStore.class);
 
     private static final String LIVE_FILE = "../store/live/risk-settings.json";
     private static final String SIM_FILE  = "../store/simulator/risk-settings.json";
@@ -46,6 +50,8 @@ public class RiskSettingsStore {
         volatile boolean enableSessionTargetCap = true; // cap target at session high/low if it's between close and target
         volatile boolean enableSmallCandleFilter = false; // reject if candle move from breakout level < smallCandleAtrThreshold ATR
         volatile double smallCandleAtrThreshold = 0.5; // ATR multiplier for small candle filter
+        volatile double trailTriggerPct = 75;  // % of range from entry to target that triggers trailing SL
+        volatile double trailSlPct      = 50;  // % of range to lock as profit when trailing SL triggers
     }
 
     private final Cfg live = new Cfg();
@@ -97,6 +103,8 @@ public class RiskSettingsStore {
     public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
     public boolean isEnableSessionTargetCap() { return cfg().enableSessionTargetCap; }
     public boolean isEnableSmallCandleFilter() { return cfg().enableSmallCandleFilter; }
+    public double getTrailTriggerPct() { return cfg().trailTriggerPct; }
+    public double getTrailSlPct()      { return cfg().trailSlPct; }
     public double getSmallCandleAtrThreshold() { return cfg().smallCandleAtrThreshold; }
 
     public void setTradingStartTime(String v)  { cfg().tradingStartTime = v; }
@@ -117,6 +125,8 @@ public class RiskSettingsStore {
     public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
     public void setEnableSessionTargetCap(boolean v) { cfg().enableSessionTargetCap = v; }
     public void setEnableSmallCandleFilter(boolean v) { cfg().enableSmallCandleFilter = v; }
+    public void setTrailTriggerPct(double v) { cfg().trailTriggerPct = v; }
+    public void setTrailSlPct(double v)      { cfg().trailSlPct = v; }
     public void setSmallCandleAtrThreshold(double v) { cfg().smallCandleAtrThreshold = v; }
 
     // ── mode-specific getters/setters (used by SettingsController) ────────────
@@ -139,6 +149,8 @@ public class RiskSettingsStore {
     public boolean isEnableTargetShift(String mode) { return cfgFor(mode).enableTargetShift; }
     public boolean isEnableSessionTargetCap(String mode) { return cfgFor(mode).enableSessionTargetCap; }
     public boolean isEnableSmallCandleFilter(String mode) { return cfgFor(mode).enableSmallCandleFilter; }
+    public double getTrailTriggerPct(String mode) { return cfgFor(mode).trailTriggerPct; }
+    public double getTrailSlPct(String mode)      { return cfgFor(mode).trailSlPct; }
     public double getSmallCandleAtrThreshold(String mode) { return cfgFor(mode).smallCandleAtrThreshold; }
 
     public void setTradingStartTime(String mode, String v)  { cfgFor(mode).tradingStartTime = v; }
@@ -159,6 +171,8 @@ public class RiskSettingsStore {
     public void setEnableTargetShift(String mode, boolean v) { cfgFor(mode).enableTargetShift = v; }
     public void setEnableSessionTargetCap(String mode, boolean v) { cfgFor(mode).enableSessionTargetCap = v; }
     public void setEnableSmallCandleFilter(String mode, boolean v) { cfgFor(mode).enableSmallCandleFilter = v; }
+    public void setTrailTriggerPct(String mode, double v) { cfgFor(mode).trailTriggerPct = v; }
+    public void setTrailSlPct(String mode, double v)      { cfgFor(mode).trailSlPct = v; }
     public void setSmallCandleAtrThreshold(String mode, double v) { cfgFor(mode).smallCandleAtrThreshold = v; }
 
     // ── save ──────────────────────────────────────────────────────────────────
@@ -192,9 +206,11 @@ public class RiskSettingsStore {
             state.put("enableSessionTargetCap", c.enableSessionTargetCap);
             state.put("enableSmallCandleFilter", c.enableSmallCandleFilter);
             state.put("smallCandleAtrThreshold", c.smallCandleAtrThreshold);
+            state.put("trailTriggerPct", c.trailTriggerPct);
+            state.put("trailSlPct", c.trailSlPct);
             Files.writeString(Paths.get(fileFor(mode)), mapper.writeValueAsString(state));
         } catch (IOException e) {
-            System.err.println("[RiskSettingsStore] Failed to save " + mode + ": " + e.getMessage());
+            log.error("[RiskSettingsStore] Failed to save {}: {}", mode, e.getMessage());
         }
     }
 
@@ -225,15 +241,11 @@ public class RiskSettingsStore {
             if (state.containsKey("enableSessionTargetCap")) c.enableSessionTargetCap = Boolean.parseBoolean(state.get("enableSessionTargetCap").toString());
             if (state.containsKey("enableSmallCandleFilter")) c.enableSmallCandleFilter = Boolean.parseBoolean(state.get("enableSmallCandleFilter").toString());
             if (state.containsKey("smallCandleAtrThreshold")) c.smallCandleAtrThreshold = Double.parseDouble(state.get("smallCandleAtrThreshold").toString());
-            System.out.println("[RiskSettingsStore] Loaded " + mode + ": start=" + c.tradingStartTime
-                + " end=" + c.tradingEndTime + " totalCapital=" + c.totalCapital
-                + " maxRiskPerDayPct=" + c.maxRiskPerDayPct + "% riskPerTrade=" + c.riskPerTrade
-                + " autoSquareOff=" + c.autoSquareOffTime + " atrMult=" + c.atrMultiplier
-                + " enableR4S4=" + c.enableR4S4 + " sessionMove=" + c.sessionMoveLimit + "%"
-                + " brokerage=" + c.brokeragePerOrder + " fixedQty=" + c.fixedQuantity
-                + " capitalPerTrade=" + c.capitalPerTrade);
+            if (state.containsKey("trailTriggerPct")) c.trailTriggerPct = Double.parseDouble(state.get("trailTriggerPct").toString());
+            if (state.containsKey("trailSlPct")) c.trailSlPct = Double.parseDouble(state.get("trailSlPct").toString());
+            log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} enableR4S4={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} trail={}%/{}%", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.enableR4S4, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.trailTriggerPct, c.trailSlPct);
         } catch (IOException e) {
-            System.err.println("[RiskSettingsStore] Failed to load " + mode + ": " + e.getMessage());
+            log.error("[RiskSettingsStore] Failed to load {}: {}", mode, e.getMessage());
         }
     }
 
@@ -248,9 +260,9 @@ public class RiskSettingsStore {
             String json = Files.readString(legacy);
             if (!Files.exists(livePath)) Files.writeString(livePath, json);
             if (!Files.exists(simPath))  Files.writeString(simPath,  json);
-            System.out.println("[RiskSettingsStore] Migrated legacy risk-settings.json to live/ and simulator/");
+            log.info("[RiskSettingsStore] Migrated legacy risk-settings.json to live/ and simulator/");
         } catch (IOException e) {
-            System.err.println("[RiskSettingsStore] Migration failed: " + e.getMessage());
+            log.error("[RiskSettingsStore] Migration failed: {}", e.getMessage());
         }
     }
 }

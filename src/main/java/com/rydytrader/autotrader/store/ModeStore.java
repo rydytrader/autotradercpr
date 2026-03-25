@@ -1,9 +1,13 @@
 package com.rydytrader.autotrader.store;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 @Component
 public class ModeStore {
+
+    private static final Logger log = LoggerFactory.getLogger(ModeStore.class);
 
     public enum Mode { LIVE, SIMULATOR }
 
@@ -13,7 +17,7 @@ public class ModeStore {
 
     public void setMode(Mode mode) {
         this.mode = mode;
-        System.out.println("▶ Trading mode switched to: " + mode);
+        log.info("Trading mode switched to: {}", mode);
     }
 
     public boolean isLive()      { return mode == Mode.LIVE; }

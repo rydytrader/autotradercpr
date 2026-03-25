@@ -2,6 +2,8 @@ package com.rydytrader.autotrader.websocket;
 
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.URI;
 import java.nio.ByteBuffer;
@@ -15,6 +17,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * subscribes to symbols, and forwards parsed ticks via a callback.
  */
 public class FyersDataWebSocket extends WebSocketClient {
+
+    private static final Logger log = LoggerFactory.getLogger(FyersDataWebSocket.class);
 
     public interface TickCallback {
         void onTick(HsmBinaryParser.RawTick tick);
@@ -54,7 +58,7 @@ public class FyersDataWebSocket extends WebSocketClient {
 
     @Override
     public void onOpen(ServerHandshake handshake) {
-        System.out.println("[FyersWS] Connected to HSM WebSocket");
+        log.info("[FyersWS] Connected to HSM WebSocket");
         // Step 1: Send auth message
         byte[] authMsg = HsmBinaryParser.buildAuthMessage(hsmKey);
         send(authMsg);
@@ -63,7 +67,7 @@ public class FyersDataWebSocket extends WebSocketClient {
     @Override
     public void onMessage(String message) {
         // Text messages not expected from HSM feed
-        System.out.println("[FyersWS] Unexpected text message: " + message);
+        log.info("[FyersWS] Unexpected text message: {}", message);
     }
 
     @Override
@@ -78,37 +82,37 @@ public class FyersDataWebSocket extends WebSocketClient {
                 int ack = HsmBinaryParser.parseAuthResponse(data);
                 if (ack >= 0) {
                     this.ackCount = ack;
-                    System.out.println("[FyersWS] Auth success, ack_count=" + ack);
+                    log.info("[FyersWS] Auth success, ack_count={}", ack);
                     callback.onAuthResult(true, ack);
 
                     // Step 2: Subscribe to symbols
                     if (!hsmTokens.isEmpty()) {
                         byte[] subMsg = HsmBinaryParser.buildSubscribeMessage(hsmTokens, channelNum);
                         send(subMsg);
-                        System.out.println("[FyersWS] Subscribed to " + hsmTokens.size() + " symbols");
+                        log.info("[FyersWS] Subscribed to {} symbols", hsmTokens.size());
                     }
 
                     // Step 3: Switch to lite mode if requested
                     if (liteMode) {
                         byte[] liteMsg = HsmBinaryParser.buildLiteModeMessage(channelNum);
                         send(liteMsg);
-                        System.out.println("[FyersWS] Lite mode enabled");
+                        log.info("[FyersWS] Lite mode enabled");
                     }
 
                     callback.onConnected();
                 } else {
-                    System.out.println("[FyersWS] Auth FAILED");
+                    log.error("[FyersWS] Auth FAILED");
                     callback.onAuthResult(false, 0);
                     close();
                 }
                 break;
 
             case 4: // Subscribe response
-                System.out.println("[FyersWS] Subscribe response received");
+                log.info("[FyersWS] Subscribe response received");
                 break;
 
             case 5: // Unsubscribe response
-                System.out.println("[FyersWS] Unsubscribe response received");
+                log.info("[FyersWS] Unsubscribe response received");
                 break;
 
             case 6: // Data feed
@@ -116,7 +120,7 @@ public class FyersDataWebSocket extends WebSocketClient {
                 break;
 
             case 12: // Mode change response
-                System.out.println("[FyersWS] Mode change response received");
+                log.info("[FyersWS] Mode change response received");
                 break;
 
             default:
@@ -147,13 +151,13 @@ public class FyersDataWebSocket extends WebSocketClient {
 
     @Override
     public void onClose(int code, String reason, boolean remote) {
-        System.out.println("[FyersWS] Disconnected: code=" + code + " reason=" + reason);
+        log.info("[FyersWS] Disconnected: code={} reason={}", code, reason);
         callback.onDisconnected(reason);
     }
 
     @Override
     public void onError(Exception ex) {
-        System.out.println("[FyersWS] Error: " + ex.getMessage());
+        log.error("[FyersWS] Error: {}", ex.getMessage());
     }
 
     /** Send subscribe for additional symbols (delta subscription). */

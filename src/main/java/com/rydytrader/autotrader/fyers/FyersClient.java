@@ -37,4 +37,7 @@ public interface FyersClient {
 
     /** GET /api/v3/profile — get user profile (name, email, etc.) */
     JsonNode getProfile(String authHeader) throws Exception;
+
+    /** PUT /api/v3/orders/sync — modify an existing order */
+    JsonNode modifyOrder(String orderJson, String authHeader) throws Exception;
 }

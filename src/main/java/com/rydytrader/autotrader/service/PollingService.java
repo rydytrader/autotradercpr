@@ -11,6 +11,8 @@ import com.rydytrader.autotrader.store.ModeStore;
 import com.rydytrader.autotrader.store.PositionStateStore;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import com.rydytrader.autotrader.store.TokenStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -21,6 +23,8 @@ import java.util.concurrent.*;
 
 @Service
 public class PollingService {
+
+    private static final Logger log = LoggerFactory.getLogger(PollingService.class);
 
     private final TokenStore          tokenStore;
     private final FyersProperties     fyersProperties;
@@ -125,24 +129,21 @@ public class PollingService {
                     boolean wsTracked = orderEventService.trackOcoOrders(slOrderId, targetOrderId,
                         symbol, qty, side, exitSide, setup, avgPrice, slPrice, targetPrice);
                     if (wsTracked) {
-                        System.out.println("[PollingService] Restored OCO via WebSocket for " + symbol
-                            + " — SL: " + slOrderId + " | Target: " + targetOrderId);
+                        log.info("[PollingService] Restored OCO via WebSocket for {} — SL: {} | Target: {}", symbol, slOrderId, targetOrderId);
                     } else {
                         monitorOCO(slOrderId, targetOrderId, symbol, qty, exitSide,
                             slPrice, targetPrice, side, setup, avgPrice);
-                        System.out.println("[PollingService] Restored OCO via polling for " + symbol
-                            + " — SL: " + slOrderId + " | Target: " + targetOrderId);
+                        log.info("[PollingService] Restored OCO via polling for {} — SL: {} | Target: {}", symbol, slOrderId, targetOrderId);
                     }
                 } else {
                     // No saved OCO IDs — scan for manually placed SL/Target orders
-                    System.out.println("[PollingService] Restored state on startup: " + side + " " + symbol
-                        + " (no OCO IDs — scanning for manual SL/Target)");
+                    log.info("[PollingService] Restored state on startup: {} {} (no OCO IDs — scanning for manual SL/Target)", side, symbol);
                     scanForManualOCO(symbol, qty, exitSide, side, setup, avgPrice);
                 }
             }
             justRestored = true;
         } catch (Exception e) {
-            System.err.println("[PollingService] Failed to restore state: " + e.getMessage());
+            log.error("[PollingService] Failed to restore state: {}", e.getMessage());
         }
     }
 
@@ -256,7 +257,7 @@ public class PollingService {
                 }
             } catch (Exception e) {
                 eventService.log("[ERROR] Entry monitor error for " + symbol + ": " + e.getMessage());
-                e.printStackTrace();
+                log.error("[PollingService] Entry monitor error for {}", symbol, e);
             }
         }, 0, 2, TimeUnit.SECONDS);
     }
@@ -498,7 +499,7 @@ public class PollingService {
 
             } catch (Exception e) {
                 eventService.log("[ERROR] OCO monitor exception for " + symbol + ": " + e.getMessage());
-                e.printStackTrace();
+                log.error("[PollingService] OCO monitor exception for {}", symbol, e);
             }
         }, 5, 5, TimeUnit.SECONDS);
     }
@@ -512,6 +513,7 @@ public class PollingService {
         entryAvgBySymbol.remove(symbol);
         PositionManager.setPosition(symbol, "NONE");
         marketDataService.updateSubscriptions();
+        marketDataService.clearTrailedFlag(symbol);
         orderEventService.untrackSymbol(symbol);
     }
 
@@ -567,7 +569,7 @@ public class PollingService {
             }
             // Rate limit hit — return stale cache, normal 5s TTL will handle retry
             if (node != null && node.has("code") && node.get("code").asInt() == -429) {
-                System.out.println("[PollingService] Fyers rate limit hit — using cached order book");
+                log.info("[PollingService] Fyers rate limit hit — using cached order book");
                 return cachedOrderBook;
             }
             eventService.log("[WARNING] getOrders response missing orderBook: "
@@ -651,7 +653,7 @@ public class PollingService {
             return true;
 
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("[PollingService] {} error for {}", label, symbol, e);
             eventService.log("[ERROR] " + label + " error for " + symbol + ": " + e.getMessage());
             return false;
         }
@@ -678,7 +680,7 @@ public class PollingService {
                     squareOffAll();
                 }
             } catch (Exception e) {
-                System.err.println("[PollingService] Auto square off check error: " + e.getMessage());
+                log.error("[PollingService] Auto square off check error: {}", e.getMessage());
             }
         }, 10, 15, TimeUnit.SECONDS);
     }
@@ -731,7 +733,7 @@ public class PollingService {
 
                 telegramService.sendMessage(sb.toString());
             } catch (Exception e) {
-                System.err.println("[PollingService] EOD summary error: " + e.getMessage());
+                log.error("[PollingService] EOD summary error: {}", e.getMessage());
             }
         }, 15, 15, TimeUnit.SECONDS);
     }
@@ -784,7 +786,7 @@ public class PollingService {
 
                 telegramService.sendMessage(sb.toString());
             } catch (Exception e) {
-                System.err.println("[PollingService] Telegram summary error: " + e.getMessage());
+                log.error("[PollingService] Telegram summary error: {}", e.getMessage());
             }
         }, 10, 10, TimeUnit.SECONDS);
     }
@@ -1005,7 +1007,7 @@ public class PollingService {
 
         } catch (Exception e) {
             connectionStatus = "DISCONNECTED";
-            e.printStackTrace();
+            log.error("[PollingService] Position sync error", e);
         }
     }
 

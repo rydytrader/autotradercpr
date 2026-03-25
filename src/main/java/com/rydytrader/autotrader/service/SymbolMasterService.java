@@ -1,6 +1,8 @@
 package com.rydytrader.autotrader.service;
 
 import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -12,6 +14,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class SymbolMasterService {
+
+    private static final Logger log = LoggerFactory.getLogger(SymbolMasterService.class);
 
     private final EventService eventService;
 
@@ -59,7 +63,7 @@ public class SymbolMasterService {
             loaded += loadCsv(csvUrl);
         }
         String msg = "[SymbolMaster] Loaded " + loaded + " symbol tick sizes from Fyers symbol master";
-        System.out.println(msg);
+        log.info(msg);
         eventService.log(msg);
     }
 
@@ -90,7 +94,7 @@ public class SymbolMasterService {
                 }
             }
         } catch (Exception e) {
-            System.err.println("[SymbolMaster] Failed to load " + csvUrl + ": " + e.getMessage());
+            log.error("[SymbolMaster] Failed to load {}: {}", csvUrl, e.getMessage());
         }
         return count;
     }

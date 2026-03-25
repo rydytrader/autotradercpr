@@ -255,6 +255,15 @@ public class MockFyersClient implements FyersClient {
         return root;
     }
 
+    @Override
+    public JsonNode modifyOrder(String orderJson, String authHeader) throws Exception {
+        var root = mapper.createObjectNode();
+        root.put("s", "ok");
+        root.put("code", 200);
+        root.put("message", "Order modified (mock)");
+        return root;
+    }
+
     private JsonNode error(String msg) {
         var n = mapper.createObjectNode();
         n.put("s", "error");

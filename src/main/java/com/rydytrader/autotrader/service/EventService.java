@@ -1,6 +1,8 @@
 package com.rydytrader.autotrader.service;
 
 import com.rydytrader.autotrader.store.ModeStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
@@ -13,6 +15,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 @Service
 public class EventService {
+
+    private static final Logger log = LoggerFactory.getLogger(EventService.class);
 
     private final ModeStore modeStore;
     private final TelegramService telegramService;
@@ -70,7 +74,7 @@ public class EventService {
 
     public void clearToday() {
         tradeLogs.clear();
-        try { Files.deleteIfExists(Paths.get(logFile())); } catch (IOException e) { e.printStackTrace(); }
+        try { Files.deleteIfExists(Paths.get(logFile())); } catch (IOException e) { log.error("Error clearing today's event log", e); }
     }
 
     private String logDir()  { return modeStore.isLive() ? LOG_DIR_LIVE : LOG_DIR_SIM; }
@@ -84,9 +88,9 @@ public class EventService {
             while ((line = reader.readLine()) != null)
                 if (!line.isBlank()) tradeLogs.add(line);
             // No cap — keep all of today's logs in memory
-            System.out.println("Loaded " + tradeLogs.size() + " log entries from " + file.getPath());
+            log.info("Loaded {} log entries from {}", tradeLogs.size(), file.getPath());
         } catch (IOException e) {
-            System.err.println("Failed to load logs: " + e.getMessage());
+            log.error("Failed to load logs: {}", e.getMessage());
         }
     }
 
@@ -95,7 +99,7 @@ public class EventService {
             writer.write(entry);
             writer.newLine();
         } catch (IOException e) {
-            System.err.println("Failed to write log: " + e.getMessage());
+            log.error("Failed to write log: {}", e.getMessage());
         }
     }
 }

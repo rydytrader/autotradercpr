@@ -3,6 +3,8 @@ package com.rydytrader.autotrader.service;
 import com.rydytrader.autotrader.dto.TradeRecord;
 import com.rydytrader.autotrader.store.ModeStore;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
@@ -13,6 +15,8 @@ import java.util.*;
 
 @Service
 public class TradeHistoryService {
+
+    private static final Logger log = LoggerFactory.getLogger(TradeHistoryService.class);
 
     private static final DateTimeFormatter DATE_FMT   = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final String            FILE_PREFIX = "trades-history-";
@@ -33,17 +37,14 @@ public class TradeHistoryService {
         try {
             Files.createDirectories(Paths.get("../store/live/history"));
             Files.createDirectories(Paths.get("../store/simulator/history"));
-        } catch (IOException e) { e.printStackTrace(); }
+        } catch (IOException e) { log.error("Error creating trade history directories", e); }
         loadTodaysTradesFromFile();
     }
 
     public void addRecord(TradeRecord record) {
         trades.add(0, record);
         appendToFile(record);
-        System.out.println("[" + modeStore.getMode() + "] Trade: "
-            + record.getSymbol() + " | " + record.getSide()
-            + " | P&L: " + record.getPnl() + " | Charges: " + record.getCharges()
-            + " | Net: " + record.getNetPnl() + " | " + record.getResult());
+        log.info("[{}] Trade: {} | {} | P&L: {} | Charges: {} | Net: {} | {}", modeStore.getMode(), record.getSymbol(), record.getSide(), record.getPnl(), record.getCharges(), record.getNetPnl(), record.getResult());
     }
 
     public void record(String symbol, String side, int qty,
@@ -57,8 +58,7 @@ public class TradeHistoryService {
         long now = System.currentTimeMillis();
         Long lastTime = lastRecordTime.get(symbol);
         if (lastTime != null && (now - lastTime) < DEDUP_WINDOW_MS) {
-            System.out.println("[TradeHistory] Duplicate record skipped for " + symbol
-                + " (last recorded " + (now - lastTime) + "ms ago)");
+            log.info("[TradeHistory] Duplicate record skipped for {} (last recorded {}ms ago)", symbol, now - lastTime);
             return;
         }
         lastRecordTime.put(symbol, now);
@@ -98,7 +98,7 @@ public class TradeHistoryService {
                             }
                         } catch (Exception ignored) {}
                     }
-                } catch (IOException e) { e.printStackTrace(); }
+                } catch (IOException e) { log.error("Error reading trade history file", e); }
             }
             d = d.plusDays(1);
         }
@@ -112,7 +112,7 @@ public class TradeHistoryService {
 
     public void clearToday() {
         trades.clear();
-        try { Files.deleteIfExists(Paths.get(todaysFile())); } catch (IOException e) { e.printStackTrace(); }
+        try { Files.deleteIfExists(Paths.get(todaysFile())); } catch (IOException e) { log.error("Error clearing today's trade file", e); }
     }
 
     // ── FILE PATHS ────────────────────────────────────────────────────────────
@@ -132,7 +132,7 @@ public class TradeHistoryService {
                     r.getEntryPrice(), r.getExitPrice(), r.getExitReason(), r.getSetup(),
                     r.getPnl(), r.getCharges(), r.getNetPnl()));
             }
-        } catch (IOException e) { e.printStackTrace(); }
+        } catch (IOException e) { log.error("Error appending trade record to file", e); }
     }
 
     private void loadTodaysTradesFromFile() {
@@ -161,7 +161,7 @@ public class TradeHistoryService {
                     }
                 } catch (Exception ignored) {}
             }
-            System.out.println("Loaded " + trades.size() + " trade(s) from " + todaysFile());
-        } catch (IOException e) { e.printStackTrace(); }
+            log.info("Loaded {} trade(s) from {}", trades.size(), todaysFile());
+        } catch (IOException e) { log.error("Error loading today's trades from file", e); }
     }
 }
