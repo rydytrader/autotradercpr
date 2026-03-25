@@ -356,6 +356,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
             try { posJson = mapper.writeValueAsString(buildPositionPayload(posSymbols)); } catch (Exception e) { /* skip */ }
         }
 
+        // Collect dead emitters to remove after iteration
+        List<SseEmitter> dead = new ArrayList<>();
         for (SseEmitter emitter : emitters) {
             try {
                 if (tickerJson != null) {
@@ -365,8 +367,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
                     emitter.send(SseEmitter.event().name("positions").data(posJson));
                 }
             } catch (Exception e) {
-                removeEmitter(emitter);
+                dead.add(emitter);
             }
+        }
+        for (SseEmitter d : dead) {
+            try { d.complete(); } catch (Exception ignored) {}
+            removeEmitter(d);
         }
     }
 

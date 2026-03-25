@@ -531,16 +531,14 @@
     updateTradeLogs();
     updatePositions();
 
-    // ── SSE REAL-TIME POSITION UPDATES ───────────────────────────────────────
+    // ── SSE REAL-TIME POSITION UPDATES (uses shared SSE from ticker.js) ─────
     (function() {
-        var posSource = null;
         var lastSseUpdate = 0;
 
-        function connectPositionSSE() {
-            if (posSource) { posSource.close(); posSource = null; }
-            try {
-                posSource = new EventSource('/api/market-ticker/stream');
-                posSource.addEventListener('positions', function(event) {
+        function attachPositionListener() {
+            var src = window.__tickerSSE;
+            if (!src) { setTimeout(attachPositionListener, 500); return; }
+            src.addEventListener('positions', function(event) {
                     try {
                         var data = JSON.parse(event.data);
                         var positions = data.positions || [];
@@ -575,18 +573,10 @@
                         }
                     } catch (e) { /* ignore parse errors */ }
                 });
-                posSource.onerror = function() {
-                    posSource.close();
-                    posSource = null;
-                    // Retry SSE after 30s
-                    setTimeout(connectPositionSSE, 30000);
-                };
-            } catch (e) { /* EventSource not supported, REST polling continues */ }
+            // Reconnection handled by ticker.js — no need for separate error handler
         }
 
-        if (typeof EventSource !== 'undefined') {
-            connectPositionSSE();
-        }
+        attachPositionListener();
     })();
 
     // ── MODE LABEL ────────────────────────────────────────────────────────────

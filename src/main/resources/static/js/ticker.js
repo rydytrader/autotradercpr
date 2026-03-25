@@ -22,6 +22,8 @@
         }
 
         tickerEventSource = new EventSource('/api/market-ticker/stream');
+        // Expose globally so other page scripts can add listeners without opening a second connection
+        window.__tickerSSE = tickerEventSource;
 
         tickerEventSource.addEventListener('ticker', function(event) {
             try {
@@ -37,6 +39,7 @@
         tickerEventSource.onerror = function() {
             tickerEventSource.close();
             tickerEventSource = null;
+            window.__tickerSSE = null;
             // Fallback to REST polling, retry SSE after 30s
             startPolling();
             if (sseRetryTimeout) clearTimeout(sseRetryTimeout);
@@ -83,6 +86,13 @@
         }
         track.innerHTML = html + html; // doubled for seamless marquee loop
     }
+
+    // Clean up SSE on page unload to prevent stale connections
+    window.addEventListener('beforeunload', function() {
+        if (tickerEventSource) { tickerEventSource.close(); tickerEventSource = null; }
+        if (sseRetryTimeout) clearTimeout(sseRetryTimeout);
+        stopPolling();
+    });
 
     // Auto-init when DOM is ready
     if (document.readyState === 'loading') {

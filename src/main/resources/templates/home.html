@@ -438,28 +438,30 @@
     setInterval(loadPositions, 10000);
     setInterval(loadTrades, 30000);
 
-    // ── SSE REAL-TIME P&L UPDATES ────────────────
+    // ── SSE REAL-TIME P&L UPDATES (uses shared SSE from ticker.js) ──
     (function() {
-        if (typeof EventSource === 'undefined') return;
-        var src = new EventSource('/api/market-ticker/stream');
-        src.addEventListener('positions', function(event) {
-            try {
-                var d = JSON.parse(event.data);
-                if (d.netDayPnl !== undefined) {
-                    var netEl = document.getElementById('netDayPnl');
-                    if (netEl) { netEl.textContent = (d.netDayPnl >= 0 ? '+' : '') + fmt(d.netDayPnl); setPnlClass(netEl, d.netDayPnl); }
-                }
-                if (d.unrealizedPnl !== undefined) {
-                    var unrEl = document.getElementById('unrealizedPnl');
-                    if (unrEl) { unrEl.textContent = (d.unrealizedPnl >= 0 ? '+' : '') + fmt(d.unrealizedPnl); setPnlClass(unrEl, d.unrealizedPnl); }
-                }
-                if (d.realizedPnl !== undefined) {
-                    var realEl = document.getElementById('realizedPnl');
-                    if (realEl) { realEl.textContent = (d.realizedPnl >= 0 ? '+' : '') + fmt(d.realizedPnl); setPnlClass(realEl, d.realizedPnl); }
-                }
-            } catch (e) {}
-        });
-        src.onerror = function() { src.close(); setTimeout(function() { src = new EventSource('/api/market-ticker/stream'); }, 30000); };
+        function attachPnlListener() {
+            var src = window.__tickerSSE;
+            if (!src) { setTimeout(attachPnlListener, 500); return; }
+            src.addEventListener('positions', function(event) {
+                try {
+                    var d = JSON.parse(event.data);
+                    if (d.netDayPnl !== undefined) {
+                        var netEl = document.getElementById('netDayPnl');
+                        if (netEl) { netEl.textContent = (d.netDayPnl >= 0 ? '+' : '') + fmt(d.netDayPnl); setPnlClass(netEl, d.netDayPnl); }
+                    }
+                    if (d.unrealizedPnl !== undefined) {
+                        var unrEl = document.getElementById('unrealizedPnl');
+                        if (unrEl) { unrEl.textContent = (d.unrealizedPnl >= 0 ? '+' : '') + fmt(d.unrealizedPnl); setPnlClass(unrEl, d.unrealizedPnl); }
+                    }
+                    if (d.realizedPnl !== undefined) {
+                        var realEl = document.getElementById('realizedPnl');
+                        if (realEl) { realEl.textContent = (d.realizedPnl >= 0 ? '+' : '') + fmt(d.realizedPnl); setPnlClass(realEl, d.realizedPnl); }
+                    }
+                } catch (e) {}
+            });
+        }
+        attachPnlListener();
     })();
 </script>
 </body>
