@@ -191,6 +191,7 @@ public class PollingService {
                         if (holder.entryFillPrice > 0 && atr > 0 && atrMultiplier > 0) {
                             double slOffset = atr * atrMultiplier;
                             holder.adjustedSl = "LONG".equals(position) ? holder.entryFillPrice - slOffset : holder.entryFillPrice + slOffset;
+                            holder.adjustedSl = orderService.roundToTick(holder.adjustedSl, symbol);
                             log.info("[PollingService] SL recalculated from fill: {} → {} (fill={})",
                                 String.format("%.2f", slPrice), String.format("%.2f", holder.adjustedSl), String.format("%.2f", holder.entryFillPrice));
                         }

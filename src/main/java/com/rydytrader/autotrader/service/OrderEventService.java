@@ -503,6 +503,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         if (entryPrice > 0 && ctx.atr > 0 && ctx.atrMultiplier > 0) {
             double slOffset = ctx.atr * ctx.atrMultiplier;
             adjustedSl = "LONG".equals(ctx.position) ? entryPrice - slOffset : entryPrice + slOffset;
+            adjustedSl = orderService.roundToTick(adjustedSl, symbol);
             if (Math.abs(adjustedSl - ctx.slPrice) > 0.01) {
                 log.info("[OrderEventSvc] SL recalculated from fill price: {} → {} (fill={}, ATR offset={})",
                     String.format("%.2f", ctx.slPrice), String.format("%.2f", adjustedSl),
