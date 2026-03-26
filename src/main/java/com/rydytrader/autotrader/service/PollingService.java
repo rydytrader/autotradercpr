@@ -195,8 +195,9 @@ public class PollingService {
                             log.info("[PollingService] SL recalculated from fill: {} → {} (fill={})",
                                 String.format("%.2f", slPrice), String.format("%.2f", holder.adjustedSl), String.format("%.2f", holder.entryFillPrice));
                         }
+                        double roundedTarget = orderService.roundToTick(targetPrice, symbol);
                         positionStateStore.save(symbol, position, quantity, holder.entryFillPrice,
-                            setupBySymbol.get(symbol), entryTime, holder.adjustedSl, targetPrice);
+                            setupBySymbol.get(symbol), entryTime, holder.adjustedSl, roundedTarget);
                         eventService.log("[SUCCESS] " + (position.equals("LONG") ? "BUY" : "SELL")
                             + " order filled for " + symbol + " @ " + holder.entryFillPrice + " [ID: " + entry.getId() + "] — placing SL + Target");
                         marketDataService.updateSubscriptions();

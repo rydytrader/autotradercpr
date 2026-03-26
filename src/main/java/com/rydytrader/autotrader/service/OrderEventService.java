@@ -520,8 +520,9 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             pollingService.updateLastSyncTime();
         }
 
+        double roundedTarget = orderService.roundToTick(ctx.targetPrice, symbol);
         positionStateStore.save(symbol, ctx.position, ctx.quantity, entryPrice,
-            ctx.setup, entryTime, adjustedSl, ctx.targetPrice);
+            ctx.setup, entryTime, adjustedSl, roundedTarget);
 
         eventService.log("[SUCCESS] [WS] " + (ctx.position.equals("LONG") ? "BUY" : "SELL")
             + " order filled for " + symbol + " @ " + entryPrice + " [ID: " + orderId + "] — placing SL + Target");
