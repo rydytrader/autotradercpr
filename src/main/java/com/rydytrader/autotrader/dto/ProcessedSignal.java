@@ -11,6 +11,8 @@ public class ProcessedSignal {
     private final String probability;
     private final boolean rejected;
     private final String rejectionReason;
+    private final double atr;
+    private final double atrMultiplier;
 
     private ProcessedSignal(Builder b) {
         this.signal          = b.signal;
@@ -22,6 +24,8 @@ public class ProcessedSignal {
         this.probability     = b.probability;
         this.rejected        = b.rejected;
         this.rejectionReason = b.rejectionReason;
+        this.atr             = b.atr;
+        this.atrMultiplier   = b.atrMultiplier;
     }
 
     public static ProcessedSignal rejected(String setup, String symbol, String reason) {
@@ -37,6 +41,8 @@ public class ProcessedSignal {
     public String  getProbability()     { return probability; }
     public boolean isRejected()         { return rejected; }
     public String  getRejectionReason() { return rejectionReason; }
+    public double  getAtr()             { return atr; }
+    public double  getAtrMultiplier()   { return atrMultiplier; }
 
     public static class Builder {
         private String signal;
@@ -48,6 +54,8 @@ public class ProcessedSignal {
         private String probability;
         private boolean rejected;
         private String rejectionReason;
+        private double atr;
+        private double atrMultiplier;
 
         public Builder signal(String v)          { this.signal = v; return this; }
         public Builder symbol(String v)          { this.symbol = v; return this; }
@@ -58,6 +66,8 @@ public class ProcessedSignal {
         public Builder probability(String v)      { this.probability = v; return this; }
         public Builder rejected(boolean v)        { this.rejected = v; return this; }
         public Builder rejectionReason(String v)  { this.rejectionReason = v; return this; }
+        public Builder atr(double v)              { this.atr = v; return this; }
+        public Builder atrMultiplier(double v)    { this.atrMultiplier = v; return this; }
 
         public ProcessedSignal build() { return new ProcessedSignal(this); }
     }

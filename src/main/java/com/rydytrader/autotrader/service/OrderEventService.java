@@ -61,13 +61,21 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         public final int quantity;
         public final String position; // LONG or SHORT
         public final int exitSide;
-        public final double slPrice;
+        public final double slPrice;  // initial SL from SignalProcessor (based on close)
         public final double targetPrice;
         public final String setup;
+        public final double atr;
+        public final double atrMultiplier;
         public volatile boolean handled = false;
 
         public EntryContext(String symbol, int quantity, String position,
                            int exitSide, double slPrice, double targetPrice, String setup) {
+            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, 0, 0);
+        }
+
+        public EntryContext(String symbol, int quantity, String position,
+                           int exitSide, double slPrice, double targetPrice, String setup,
+                           double atr, double atrMultiplier) {
             this.symbol = symbol;
             this.quantity = quantity;
             this.position = position;
@@ -75,6 +83,8 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             this.slPrice = slPrice;
             this.targetPrice = targetPrice;
             this.setup = setup;
+            this.atr = atr;
+            this.atrMultiplier = atrMultiplier;
         }
     }
 
@@ -488,6 +498,18 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         String symbol = ctx.symbol;
         double entryPrice = fillPrice > 0 ? fillPrice : ctx.slPrice; // fallback
 
+        // Recalculate SL from actual fill price (more accurate than Pine Script's close)
+        double adjustedSl = ctx.slPrice;
+        if (entryPrice > 0 && ctx.atr > 0 && ctx.atrMultiplier > 0) {
+            double slOffset = ctx.atr * ctx.atrMultiplier;
+            adjustedSl = "LONG".equals(ctx.position) ? entryPrice - slOffset : entryPrice + slOffset;
+            if (Math.abs(adjustedSl - ctx.slPrice) > 0.01) {
+                log.info("[OrderEventSvc] SL recalculated from fill price: {} → {} (fill={}, ATR offset={})",
+                    String.format("%.2f", ctx.slPrice), String.format("%.2f", adjustedSl),
+                    String.format("%.2f", entryPrice), String.format("%.2f", slOffset));
+            }
+        }
+
         String entryTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
         PositionManager.setPosition(symbol, ctx.position);
 
@@ -498,39 +520,39 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         }
 
         positionStateStore.save(symbol, ctx.position, ctx.quantity, entryPrice,
-            ctx.setup, entryTime, ctx.slPrice, ctx.targetPrice);
+            ctx.setup, entryTime, adjustedSl, ctx.targetPrice);
 
         eventService.log("[SUCCESS] [WS] " + (ctx.position.equals("LONG") ? "BUY" : "SELL")
             + " order filled for " + symbol + " @ " + entryPrice + " [ID: " + orderId + "] — placing SL + Target");
 
         marketDataService.updateSubscriptions();
 
-        // Place SL + Target
-        placeOcoOrders(ctx, entryPrice);
+        // Place SL + Target (using adjusted SL based on actual fill price)
+        placeOcoOrders(ctx, entryPrice, adjustedSl);
     }
 
-    private void placeOcoOrders(EntryContext ctx, double entryFillPrice) {
+    private void placeOcoOrders(EntryContext ctx, double entryFillPrice, double slPrice) {
         String symbol = ctx.symbol;
         int retries = 0;
         final int MAX_RETRIES = 3;
 
         while (retries < MAX_RETRIES) {
             retries++;
-            OrderDTO slOrder = orderService.placeStopLoss(symbol, ctx.quantity, ctx.exitSide, ctx.slPrice);
+            OrderDTO slOrder = orderService.placeStopLoss(symbol, ctx.quantity, ctx.exitSide, slPrice);
             OrderDTO targetOrder = orderService.placeTarget(symbol, ctx.quantity, ctx.exitSide, ctx.targetPrice);
 
             boolean slOk = slOrder != null && slOrder.getId() != null && !slOrder.getId().isEmpty();
             boolean tgtOk = targetOrder != null && targetOrder.getId() != null && !targetOrder.getId().isEmpty();
 
             if (slOk && tgtOk) {
-                eventService.log("[SUCCESS] [WS] SL placed for " + symbol + " at " + orderService.roundToTick(ctx.slPrice, symbol) + " [ID: " + slOrder.getId() + "]");
+                eventService.log("[SUCCESS] [WS] SL placed for " + symbol + " at " + orderService.roundToTick(slPrice, symbol) + " [ID: " + slOrder.getId() + "]");
                 eventService.log("[SUCCESS] [WS] Target placed for " + symbol + " at " + orderService.roundToTick(ctx.targetPrice, symbol) + " [ID: " + targetOrder.getId() + "]");
-                positionStateStore.saveOcoState(symbol, slOrder.getId(), targetOrder.getId(), ctx.slPrice, ctx.targetPrice);
+                positionStateStore.saveOcoState(symbol, slOrder.getId(), targetOrder.getId(), slPrice, ctx.targetPrice);
 
                 // Track SL + Target for fill detection via WebSocket
                 trackOcoOrders(slOrder.getId(), targetOrder.getId(),
                     symbol, ctx.quantity, ctx.position, ctx.exitSide, ctx.setup, entryFillPrice,
-                    ctx.slPrice, ctx.targetPrice);
+                    slPrice, ctx.targetPrice);
                 return;
             }
 

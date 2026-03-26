@@ -42,7 +42,7 @@ public class SignalProcessor {
         }
 
         // ── 4b. Derive direction ────────────────────────────────────────────────
-        boolean isBuy = setup.startsWith("BUY_") || "DAY_HIGH_BO".equals(setup);
+        boolean isBuy = setup.startsWith("BUY_");
         String signal = isBuy ? "BUY" : "SELL";
 
         // ── R4/S4 gate ────────────────────────────────────────────────────────
@@ -62,8 +62,7 @@ public class SignalProcessor {
         int baseQty = quantityService.computeBaseQty(symbol, close, sl);
 
         // ── 4d. Large candle filter ─────────────────────────────────────────────
-        boolean isDayBO = "DAY_HIGH_BO".equals(setup) || "DAY_LOW_BO".equals(setup);
-        if (!isDayBO && riskSettings.isEnableLargeCandleFilter()) {
+        if (riskSettings.isEnableLargeCandleFilter()) {
             double largeThreshold = riskSettings.getLargeCandleAtrThreshold();
             if (isBuy && (close - breakoutLevel) > atr * largeThreshold) {
                 return ProcessedSignal.rejected(setup, symbol, "Large candle — move > " + largeThreshold + " ATR (" + fmt(atr * largeThreshold) + ") from breakout level");
@@ -74,7 +73,7 @@ public class SignalProcessor {
         }
 
         // ── 4d2. Small candle filter ────────────────────────────────────────────
-        if (!isDayBO && riskSettings.isEnableSmallCandleFilter()) {
+        if (riskSettings.isEnableSmallCandleFilter()) {
             double smallThreshold = riskSettings.getSmallCandleAtrThreshold();
             double moveFromLevel = isBuy ? (close - breakoutLevel) : (breakoutLevel - close);
             if (moveFromLevel < atr * smallThreshold) {
@@ -112,7 +111,7 @@ public class SignalProcessor {
         }
         // ── Session move limit: reduce qty if price moved too far from day open or PDC ──
         double sessionMoveLimit = riskSettings.getSessionMoveLimit() / 100.0; // e.g. 2.0 → 0.02
-        if (!isExtreme && !isDayBO && sessionMoveLimit > 0) {
+        if (!isExtreme && sessionMoveLimit > 0) {
             double pivot = (tc + bc) / 2.0;
             double pdc = pivot * 3 - ph - pl;
             double moveFromOpen = dayOpen > 0 ? Math.abs(close - dayOpen) / dayOpen : 0;
@@ -148,6 +147,8 @@ public class SignalProcessor {
             .stoploss(sl)
             .setup(setup)
             .probability(probability)
+            .atr(atr)
+            .atrMultiplier(riskSettings.getAtrMultiplier())
             .rejected(false)
             .build();
     }
@@ -170,8 +171,6 @@ public class SignalProcessor {
             case "SELL_BELOW_S3"     -> s3;
             case "SELL_BELOW_S4"     -> s4;
             case "SELL_BELOW_R1_PDH" -> Math.min(r1, ph);
-            case "DAY_HIGH_BO"       -> 0;  // no fixed breakout level; skip large candle filter
-            case "DAY_LOW_BO"        -> 0;
             default -> 0;
         };
     }
@@ -194,56 +193,8 @@ public class SignalProcessor {
             case "SELL_BELOW_S3"      -> new double[]{ s4, s4 };
             case "SELL_BELOW_S4"      -> { double s5 = s4 - (s3 - s4); yield new double[]{ s5, s5 }; }
             case "SELL_BELOW_R1_PDH"  -> new double[]{ Math.max(tc, bc), Math.max(s1, pl) };
-            case "DAY_HIGH_BO"       -> nextResistanceTargets(close, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
-            case "DAY_LOW_BO"        -> nextSupportTargets(close, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
             default -> new double[]{ 0, 0 };
         };
-    }
-
-    // ── Find next pivot level above close for DAY_HIGH_BO ─────────────────────
-    private double[] nextResistanceTargets(double close,
-            double r1, double r2, double r3, double r4,
-            double s1, double s2, double s3, double s4,
-            double ph, double pl, double tc, double bc) {
-        double[] all = { r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc };
-        java.util.Arrays.sort(all);
-        // Find the two nearest levels above close
-        double target = 0, shift = 0;
-        for (int i = 0; i < all.length; i++) {
-            if (all[i] > close) {
-                target = all[i];
-                shift = (i + 1 < all.length) ? all[i + 1] : target + (target - all[i - 1]);
-                return new double[]{ target, shift };
-            }
-        }
-        // Above all levels — use synthetic level
-        double top = all[all.length - 1];
-        double gap = all.length >= 2 ? top - all[all.length - 2] : top * 0.01;
-        double synthetic = top + gap;
-        return new double[]{ synthetic, synthetic };
-    }
-
-    // ── Find next pivot level below close for DAY_LOW_BO ────────────────────────
-    private double[] nextSupportTargets(double close,
-            double r1, double r2, double r3, double r4,
-            double s1, double s2, double s3, double s4,
-            double ph, double pl, double tc, double bc) {
-        double[] all = { r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc };
-        java.util.Arrays.sort(all);
-        // Find the two nearest levels below close (scan from high to low)
-        double target = 0, shift = 0;
-        for (int i = all.length - 1; i >= 0; i--) {
-            if (all[i] < close) {
-                target = all[i];
-                shift = (i - 1 >= 0) ? all[i - 1] : target - (all[i + 1] - target);
-                return new double[]{ target, shift };
-            }
-        }
-        // Below all levels — use synthetic level
-        double bottom = all[0];
-        double gap = all.length >= 2 ? all[1] - bottom : bottom * 0.01;
-        double synthetic = bottom - gap;
-        return new double[]{ synthetic, synthetic };
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────

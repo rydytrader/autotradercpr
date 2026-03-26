@@ -571,7 +571,7 @@
         var holidayName = getHolidayName(now);
         if (holidayName) {
             clockEl.textContent = now.toLocaleTimeString('en-IN', {hour12:false});
-            subEl.textContent = holidayName + ' — ' + nextTradingDay(now);
+            subEl.textContent = 'Closed (' + holidayName + ') — ' + nextTradingDay(now);
             subEl.style.color = 'var(--accent-red)';
             return;
         }

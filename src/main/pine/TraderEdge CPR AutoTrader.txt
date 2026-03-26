@@ -18,7 +18,6 @@ else if syminfo.type == "futures"
     tradeSymbol := syminfo.prefix + ":" + syminfo.root + _ys + _mn + "FUT"
 enableHPT          = input.bool(true, "Enable HPT Signals",          group="▶ SIGNAL CATEGORY", tooltip="Generate signals when daily and weekly CPR trends are aligned")
 enableLPT          = input.bool(false, "Enable LPT Signals",          group="▶ SIGNAL CATEGORY", tooltip="Generate signals based on daily CPR only")
-enableDayBO        = input.bool(true, "Enable Day High/Low Breakout", group="▶ SIGNAL CATEGORY", tooltip="Generate signals when session high or low is broken")
 
 showHistoricalSignals = input.bool(false, "Show Historical Signals", group="▶ DISPLAY", tooltip="Show buy/sell signal labels from previous days. When off, only today's signals are shown.")
 
@@ -43,16 +42,6 @@ wc = request.security(syminfo.tickerid, "W", close[1], lookahead=barmerge.lookah
 // ─── VWAP & ATR ───────────────────────────────────────────
 vwap       = ta.vwap(hlc3)
 atrRaw     = ta.atr(atrLength)
-
-// ─── SESSION HIGH/LOW BEFORE CURRENT BAR (for day high/low breakouts) ──
-var float dayHighBefore = na
-var float dayLowBefore  = na
-if ta.change(time("D"))
-    dayHighBefore := na
-    dayLowBefore  := na
-else
-    dayHighBefore := na(dayHighBefore) ? high[1] : math.max(dayHighBefore, high[1])
-    dayLowBefore  := na(dayLowBefore)  ? low[1]  : math.min(dayLowBefore, low[1])
 
 // ─── DAILY CPR CALCULATION ─────────────────────────────────
 pp = (ph + pl + pc) / 3
@@ -151,8 +140,6 @@ rawBuyBreakR3    = isBuyRecommendation and barstate.isconfirmed and (close > r3)
 rawBuyBreakR4    = isBuyRecommendation and barstate.isconfirmed and (close > r4) and (open < r4 or low < r4) and (close > open)
 rawBuyBreakS1PDL = (not dailyBullish) and barstate.isconfirmed and (close > s1 and close > pl) and (open < s1 or open < pl or low < s1 or low < pl) and (close > open)
 
-rawDayHighBO     = barstate.isconfirmed and not na(dayHighBefore) and close > dayHighBefore and close > open
-
 buyBreakCpr   = rawBuyBreakCpr   and close > vwap and (alignedBuy ? enableHPT : enableLPT)
 buyBreakR1PDH = rawBuyBreakR1PDH and close > vwap and (alignedBuy ? enableHPT : enableLPT)
 buyBreakR2    = rawBuyBreakR2    and close > vwap and (alignedBuy ? enableHPT : enableLPT)
@@ -160,7 +147,6 @@ buyBreakR3    = rawBuyBreakR3    and close > vwap and (alignedBuy ? enableHPT : 
 buyBreakR4    = rawBuyBreakR4    and close > vwap and (alignedBuy ? enableHPT : enableLPT)
 buyBreakS1PDL = rawBuyBreakS1PDL and close > vwap and enableLPT
 anyCprBuy     = buyBreakCpr or buyBreakR1PDH or buyBreakR2 or buyBreakR3 or buyBreakR4 or buyBreakS1PDL
-dayHighBO     = rawDayHighBO     and close > vwap and enableDayBO and not anyCprBuy
 
 
 //────────────────────────────
@@ -174,8 +160,6 @@ rawSellBreakS3    = isSellRecommendation and barstate.isconfirmed and (close < o
 rawSellBreakS4    = isSellRecommendation and barstate.isconfirmed and (close < open) and ((close < s4 and (open > s4 or high > s4)) or (high > s4 and open < s4 and close < s4))
 rawSellBreakR1PDH = (not dailyBearish) and barstate.isconfirmed and (close < open) and ((close < r1 and close < ph and (open > r1 or open > ph or high > r1 or high > ph)) or (high > math.max(r1, ph) and open < math.max(r1, ph) and close < math.min(r1, ph)))
 
-rawDayLowBO      = barstate.isconfirmed and not na(dayLowBefore) and close < dayLowBefore and close < open
-
 sellBreakCpr   = rawSellBreakCpr   and close < vwap and (alignedSell ? enableHPT : enableLPT)
 sellBreakS1PDL = rawSellBreakS1PDL and close < vwap and (alignedSell ? enableHPT : enableLPT)
 sellBreakS2    = rawSellBreakS2    and close < vwap and (alignedSell ? enableHPT : enableLPT)
@@ -183,7 +167,6 @@ sellBreakS3    = rawSellBreakS3    and close < vwap and (alignedSell ? enableHPT
 sellBreakS4    = rawSellBreakS4    and close < vwap and (alignedSell ? enableHPT : enableLPT)
 sellBreakR1PDH = rawSellBreakR1PDH and close < vwap and enableLPT
 anyCprSell    = sellBreakCpr or sellBreakS1PDL or sellBreakS2 or sellBreakS3 or sellBreakS4 or sellBreakR1PDH
-dayLowBO       = rawDayLowBO       and close < vwap and enableDayBO and not anyCprSell
 
 
 //────────────────────────────
@@ -221,8 +204,8 @@ sellPrefix(_setup) =>
 // ══════════════════════════════════════════
 
 // Dedup: when a single candle breaks multiple levels, only alert the highest one
-// Buy priority: R4 > R3 > R2 > R1/PDH > CPR > S1/PDL > DayHighBO
-// Sell priority: S4 > S3 > S2 > S1/PDL > CPR > R1/PDH > DayLowBO
+// Buy priority: R4 > R3 > R2 > R1/PDH > CPR > S1/PDL
+// Sell priority: S4 > S3 > S2 > S1/PDL > CPR > R1/PDH
 
 if buyBreakR4
     drawBuyLabel("BUY", color.new(buyLabelColor, 0))
@@ -284,15 +267,6 @@ if sellBreakR1PDH and not sellBreakCpr and not sellBreakS1PDL and not sellBreakS
     json := sellPrefix("SELL_BELOW_R1_PDH") + levelsJson()
     alert(json, alert.freq_once_per_bar_close)
 
-if dayHighBO
-    drawBuyLabel("BUY-DH-BO", color.new(buyLabelColor, 0))
-    json := buyPrefix("DAY_HIGH_BO") + levelsJson()
-    alert(json, alert.freq_once_per_bar_close)
-
-if dayLowBO
-    drawSellLabel("SELL-DL-BO", color.new(sellLabelColor, 0))
-    json := sellPrefix("DAY_LOW_BO") + levelsJson()
-    alert(json, alert.freq_once_per_bar_close)
 
 
 // End of code

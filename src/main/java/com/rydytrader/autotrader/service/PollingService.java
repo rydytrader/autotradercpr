@@ -138,18 +138,13 @@ public class PollingService {
     // ── ENTRY MONITOR + OCO ───────────────────────────────────────────────────
     public void monitorEntryAndPlaceOCO(OrderDTO entry, String symbol,
                                         int quantity, String position,
-                                        int exitSide, double slPrice, double targetPrice) {
-        monitorEntryAndPlaceOCO(entry, symbol, quantity, position, exitSide, slPrice, targetPrice, "");
-    }
+                                        int exitSide, double slPrice, double targetPrice, String setup,
+                                        double atr, double atrMultiplier) {
 
-    public void monitorEntryAndPlaceOCO(OrderDTO entry, String symbol,
-                                        int quantity, String position,
-                                        int exitSide, double slPrice, double targetPrice, String setup) {
-
-        // ── Try WebSocket-based tracking first (LIVE mode, WS connected) ──
+        // ── Try WebSocket-based tracking first (WS connected) ──
         if (orderEventService.isConnected()) {
             boolean tracked = orderEventService.trackEntryOrder(entry.getId(),
-                new OrderEventService.EntryContext(symbol, quantity, position, exitSide, slPrice, targetPrice, setup));
+                new OrderEventService.EntryContext(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier));
             if (tracked) {
                 eventService.log("[INFO] Entry order " + entry.getId() + " tracked via WebSocket for " + symbol);
                 return; // WebSocket will handle fill detection — no polling needed
@@ -159,8 +154,9 @@ public class PollingService {
         // ── Fallback: polling-based entry monitor ──
         class Holder {
             ScheduledFuture<?> future;
-            boolean positionSet    = false;  // set position state only once
-            double  entryFillPrice = 0.0;    // captured at fill time, passed to OCO monitor
+            boolean positionSet    = false;
+            double  entryFillPrice = 0.0;
+            double  adjustedSl     = slPrice; // recalculated from fill price
             int     ocoRetries     = 0;
             static final int MAX_OCO_RETRIES = 3;
         }
@@ -191,30 +187,37 @@ public class PollingService {
                             }
                         }
                         entryAvgBySymbol.put(symbol, holder.entryFillPrice);
+                        // Recalculate SL from actual fill price
+                        if (holder.entryFillPrice > 0 && atr > 0 && atrMultiplier > 0) {
+                            double slOffset = atr * atrMultiplier;
+                            holder.adjustedSl = "LONG".equals(position) ? holder.entryFillPrice - slOffset : holder.entryFillPrice + slOffset;
+                            log.info("[PollingService] SL recalculated from fill: {} → {} (fill={})",
+                                String.format("%.2f", slPrice), String.format("%.2f", holder.adjustedSl), String.format("%.2f", holder.entryFillPrice));
+                        }
                         positionStateStore.save(symbol, position, quantity, holder.entryFillPrice,
-                            setupBySymbol.get(symbol), entryTime, slPrice, targetPrice);
+                            setupBySymbol.get(symbol), entryTime, holder.adjustedSl, targetPrice);
                         eventService.log("[SUCCESS] " + (position.equals("LONG") ? "BUY" : "SELL")
                             + " order filled for " + symbol + " @ " + holder.entryFillPrice + " [ID: " + entry.getId() + "] — placing SL + Target");
                         marketDataService.updateSubscriptions();
                     }
 
                     holder.ocoRetries++;
-                    OrderDTO slOrder     = orderService.placeStopLoss(symbol, quantity, exitSide, slPrice);
+                    OrderDTO slOrder     = orderService.placeStopLoss(symbol, quantity, exitSide, holder.adjustedSl);
                     OrderDTO targetOrder = orderService.placeTarget(symbol, quantity, exitSide, targetPrice);
 
                     boolean slOk  = slOrder     != null && slOrder.getId()     != null && !slOrder.getId().isEmpty();
                     boolean tgtOk = targetOrder != null && targetOrder.getId() != null && !targetOrder.getId().isEmpty();
 
                     if (slOk && tgtOk) {
-                        eventService.log("[SUCCESS] SL order placed for " + symbol + " at " + orderService.roundToTick(slPrice, symbol) + " [ID: " + slOrder.getId() + "]");
+                        eventService.log("[SUCCESS] SL order placed for " + symbol + " at " + orderService.roundToTick(holder.adjustedSl, symbol) + " [ID: " + slOrder.getId() + "]");
                         eventService.log("[SUCCESS] Target order placed for " + symbol + " at " + orderService.roundToTick(targetPrice, symbol) + " [ID: " + targetOrder.getId() + "]");
-                        positionStateStore.saveOcoState(symbol, slOrder.getId(), targetOrder.getId(), slPrice, targetPrice);
+                        positionStateStore.saveOcoState(symbol, slOrder.getId(), targetOrder.getId(), holder.adjustedSl, targetPrice);
                         // Try WebSocket OCO tracking first, fall back to polling monitor
                         boolean wsTracked = orderEventService.trackOcoOrders(slOrder.getId(), targetOrder.getId(),
                             symbol, quantity, position, exitSide, setup, holder.entryFillPrice);
                         if (!wsTracked) {
                             monitorOCO(slOrder.getId(), targetOrder.getId(), symbol, quantity,
-                                exitSide, slPrice, targetPrice, position, setup, holder.entryFillPrice);
+                                exitSide, holder.adjustedSl, targetPrice, position, setup, holder.entryFillPrice);
                         }
                         if (holder.future != null) holder.future.cancel(false);
                     } else {

@@ -132,6 +132,8 @@ public class TradingController {
         double stoploss = ps.getStoploss();
         double target   = ps.getTarget();
         String setup    = ps.getSetup();
+        double atr      = ps.getAtr();
+        double atrMult  = ps.getAtrMultiplier();
 
         log.info("Signal received: {} | SL: {} | Target: {} | Setup: {}", signal, stoploss, target, setup);
 
@@ -146,7 +148,7 @@ public class TradingController {
 
             // Monitor entry fill, then place SL + Target OCO
             // exitSide = -1 (SELL to exit a LONG)
-            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "LONG", -1, stoploss, target, setup);
+            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "LONG", -1, stoploss, target, setup, atr, atrMult);
 
         } else if (signal.equals("SELL") && !PositionManager.getPosition(symbol).equals("SHORT")) {
 
@@ -158,7 +160,7 @@ public class TradingController {
             }
 
             // exitSide = 1 (BUY to exit a SHORT)
-            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "SHORT", 1, stoploss, target, setup);
+            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "SHORT", 1, stoploss, target, setup, atr, atrMult);
 
         } else {
             String msg = "Signal ignored — existing position: " + PositionManager.getPosition(symbol);
@@ -390,8 +392,7 @@ public class TradingController {
         // Setup breakdown
         java.util.List<String> allSetups = java.util.Arrays.asList(
             "BUY_ABOVE_CPR","BUY_ABOVE_R1_PDH","BUY_ABOVE_R2","BUY_ABOVE_R3","BUY_ABOVE_R4","BUY_ABOVE_S1_PDL",
-            "SELL_BELOW_CPR","SELL_BELOW_S1_PDL","SELL_BELOW_S2","SELL_BELOW_S3","SELL_BELOW_S4","SELL_BELOW_R1_PDH",
-            "DAY_HIGH_BO","DAY_LOW_BO"
+            "SELL_BELOW_CPR","SELL_BELOW_S1_PDL","SELL_BELOW_S2","SELL_BELOW_S3","SELL_BELOW_S4","SELL_BELOW_R1_PDH"
         );
         Map<String, Object> setupMap = new java.util.LinkedHashMap<>();
         for (String setup : allSetups) {
