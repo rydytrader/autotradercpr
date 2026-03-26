@@ -16,8 +16,9 @@ else if syminfo.type == "futures"
     _ys = str.length(_yr) >= 4 ? str.substring(_yr, 2) : _yr
     _mn = _mc == "F" ? "JAN" : _mc == "G" ? "FEB" : _mc == "H" ? "MAR" : _mc == "J" ? "APR" : _mc == "K" ? "MAY" : _mc == "M" ? "JUN" : _mc == "N" ? "JUL" : _mc == "Q" ? "AUG" : _mc == "U" ? "SEP" : _mc == "V" ? "OCT" : _mc == "X" ? "NOV" : _mc == "Z" ? "DEC" : ""
     tradeSymbol := syminfo.prefix + ":" + syminfo.root + _ys + _mn + "FUT"
-enableHPT          = input.bool(true, "Enable HPT Signals",          group="▶ SIGNAL CATEGORY", tooltip="Generate signals when daily and weekly CPR trends are aligned")
-enableLPT          = input.bool(false, "Enable LPT Signals",          group="▶ SIGNAL CATEGORY", tooltip="Generate signals based on daily CPR only")
+enableHPT          = input.bool(true,  "Enable High Probable Trade (HPT) Signals",   group="▶ SIGNAL CATEGORY", tooltip="Weekly and daily trends aligned")
+enableMPT          = input.bool(false, "Enable Medium Probable Trade (MPT) Signals", group="▶ SIGNAL CATEGORY", tooltip="Weekly neutral, daily directional")
+enableLPT          = input.bool(false, "Enable Low Probable Trade (LPT) Signals",    group="▶ SIGNAL CATEGORY", tooltip="Weekly and daily trends opposed")
 
 showHistoricalSignals = input.bool(false, "Show Historical Signals", group="▶ DISPLAY", tooltip="Show buy/sell signal labels from previous days. When off, only today's signals are shown.")
 
@@ -113,20 +114,27 @@ weeklyTrend =
 //────────────────────────────
 weeklyBullish = weeklyTrend == "Bullish" or weeklyTrend == "Strong Bullish"
 weeklyBearish = weeklyTrend == "Bearish" or weeklyTrend == "Strong Bearish"
+weeklyNeutral = weeklyTrend == "Neutral"
 dailyBullish  = dailyTrend == "Bullish"  or dailyTrend == "Strong Bullish"
 dailyBearish  = dailyTrend == "Bearish"  or dailyTrend == "Strong Bearish"
 
+// HPT: weekly and daily aligned (both bullish or both bearish)
 alignedBuy  = weeklyBullish and dailyBullish
 alignedSell = weeklyBearish and dailyBearish
 
-misalignedBuy  = (not weeklyBullish) and dailyBullish
-misalignedSell = (not weeklyBearish) and dailyBearish
+// MPT: weekly neutral, daily directional
+mediumBuy   = weeklyNeutral and dailyBullish
+mediumSell  = weeklyNeutral and dailyBearish
 
-isBuyRecommendation  = alignedBuy  or misalignedBuy
-isSellRecommendation = alignedSell or misalignedSell
+// LPT: weekly opposite to daily (e.g. weekly bearish, daily bullish)
+misalignedBuy  = weeklyBearish and dailyBullish
+misalignedSell = weeklyBullish and dailyBearish
 
-buyLabelColor  = misalignedBuy  ? color.new(color.green, 20) : color.green
-sellLabelColor = misalignedSell ? color.new(color.red, 20)   : color.red
+isBuyRecommendation  = alignedBuy or mediumBuy or misalignedBuy
+isSellRecommendation = alignedSell or mediumSell or misalignedSell
+
+buyLabelColor  = alignedBuy  ? color.green : mediumBuy  ? color.new(color.green, 10) : color.new(color.green, 30)
+sellLabelColor = alignedSell ? color.red   : mediumSell ? color.new(color.red, 10)   : color.new(color.red, 30)
 
 
 //────────────────────────────
@@ -140,12 +148,13 @@ rawBuyBreakR3    = isBuyRecommendation and barstate.isconfirmed and (close > r3)
 rawBuyBreakR4    = isBuyRecommendation and barstate.isconfirmed and (close > r4) and (open < r4 or low < r4) and (close > open)
 rawBuyBreakS1PDL = (not dailyBullish) and barstate.isconfirmed and (close > s1 and close > pl) and (open < s1 or open < pl or low < s1 or low < pl) and (close > open)
 
-buyBreakCpr   = rawBuyBreakCpr   and close > vwap and (alignedBuy ? enableHPT : enableLPT)
-buyBreakR1PDH = rawBuyBreakR1PDH and close > vwap and (alignedBuy ? enableHPT : enableLPT)
-buyBreakR2    = rawBuyBreakR2    and close > vwap and (alignedBuy ? enableHPT : enableLPT)
-buyBreakR3    = rawBuyBreakR3    and close > vwap and (alignedBuy ? enableHPT : enableLPT)
-buyBreakR4    = rawBuyBreakR4    and close > vwap and (alignedBuy ? enableHPT : enableLPT)
-buyBreakS1PDL = rawBuyBreakS1PDL and close > vwap and enableLPT
+buyEnabled    = alignedBuy ? enableHPT : mediumBuy ? enableMPT : enableLPT
+buyBreakCpr   = rawBuyBreakCpr   and close > vwap and buyEnabled
+buyBreakR1PDH = rawBuyBreakR1PDH and close > vwap and buyEnabled
+buyBreakR2    = rawBuyBreakR2    and close > vwap and buyEnabled
+buyBreakR3    = rawBuyBreakR3    and close > vwap and buyEnabled
+buyBreakR4    = rawBuyBreakR4    and close > vwap and buyEnabled
+buyBreakS1PDL = rawBuyBreakS1PDL and close > vwap and (enableLPT or (mediumBuy and enableMPT))
 anyCprBuy     = buyBreakCpr or buyBreakR1PDH or buyBreakR2 or buyBreakR3 or buyBreakR4 or buyBreakS1PDL
 
 
@@ -160,12 +169,13 @@ rawSellBreakS3    = isSellRecommendation and barstate.isconfirmed and (close < o
 rawSellBreakS4    = isSellRecommendation and barstate.isconfirmed and (close < open) and ((close < s4 and (open > s4 or high > s4)) or (high > s4 and open < s4 and close < s4))
 rawSellBreakR1PDH = (not dailyBearish) and barstate.isconfirmed and (close < open) and ((close < r1 and close < ph and (open > r1 or open > ph or high > r1 or high > ph)) or (high > math.max(r1, ph) and open < math.max(r1, ph) and close < math.min(r1, ph)))
 
-sellBreakCpr   = rawSellBreakCpr   and close < vwap and (alignedSell ? enableHPT : enableLPT)
-sellBreakS1PDL = rawSellBreakS1PDL and close < vwap and (alignedSell ? enableHPT : enableLPT)
-sellBreakS2    = rawSellBreakS2    and close < vwap and (alignedSell ? enableHPT : enableLPT)
-sellBreakS3    = rawSellBreakS3    and close < vwap and (alignedSell ? enableHPT : enableLPT)
-sellBreakS4    = rawSellBreakS4    and close < vwap and (alignedSell ? enableHPT : enableLPT)
-sellBreakR1PDH = rawSellBreakR1PDH and close < vwap and enableLPT
+sellEnabled    = alignedSell ? enableHPT : mediumSell ? enableMPT : enableLPT
+sellBreakCpr   = rawSellBreakCpr   and close < vwap and sellEnabled
+sellBreakS1PDL = rawSellBreakS1PDL and close < vwap and sellEnabled
+sellBreakS2    = rawSellBreakS2    and close < vwap and sellEnabled
+sellBreakS3    = rawSellBreakS3    and close < vwap and sellEnabled
+sellBreakS4    = rawSellBreakS4    and close < vwap and sellEnabled
+sellBreakR1PDH = rawSellBreakR1PDH and close < vwap and (enableLPT or (mediumSell and enableMPT))
 anyCprSell    = sellBreakCpr or sellBreakS1PDL or sellBreakS2 or sellBreakS3 or sellBreakS4 or sellBreakR1PDH
 
 
@@ -193,10 +203,10 @@ levelsJson() =>
 
 // Helper: build common JSON prefix
 buyPrefix(_setup) =>
-    '{"setup":"' + _setup + '",' + '"symbol":"' + tradeSymbol + '",' + '"close":' + str.tostring(close) + ',' + '"atr":' + str.tostring(atrRaw) + ',' + '"dayOpen":' + str.tostring(dayOpen) + ',' + '"probability":"' + (misalignedBuy ? 'LPT' : 'HPT') + '",'
+    '{"setup":"' + _setup + '",' + '"symbol":"' + tradeSymbol + '",' + '"close":' + str.tostring(close) + ',' + '"atr":' + str.tostring(atrRaw) + ',' + '"dayOpen":' + str.tostring(dayOpen) + ',' + '"probability":"' + (alignedBuy ? 'HPT' : mediumBuy ? 'MPT' : 'LPT') + '",'
 
 sellPrefix(_setup) =>
-    '{"setup":"' + _setup + '",' + '"symbol":"' + tradeSymbol + '",' + '"close":' + str.tostring(close) + ',' + '"atr":' + str.tostring(atrRaw) + ',' + '"dayOpen":' + str.tostring(dayOpen) + ',' + '"probability":"' + (misalignedSell ? 'LPT' : 'HPT') + '",'
+    '{"setup":"' + _setup + '",' + '"symbol":"' + tradeSymbol + '",' + '"close":' + str.tostring(close) + ',' + '"atr":' + str.tostring(atrRaw) + ',' + '"dayOpen":' + str.tostring(dayOpen) + ',' + '"probability":"' + (alignedSell ? 'HPT' : mediumSell ? 'MPT' : 'LPT') + '",'
 
 
 // ══════════════════════════════════════════

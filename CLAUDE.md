@@ -159,7 +159,22 @@ store/
 - Risk-based quantity calculation
 - TradingView symbol conversion (_ to -)
 
+## Signal Probability
+Signals are classified by alignment between weekly and daily CPR trends:
+
+| Weekly Trend | Daily Trend | Category | Default |
+|-------------|-------------|----------|---------|
+| Bullish | Bullish | **HPT** (High Probable Trade) | ON |
+| Bearish | Bearish | **HPT** | ON |
+| Neutral | Bullish | **MPT** (Medium Probable Trade) | OFF |
+| Neutral | Bearish | **MPT** | OFF |
+| Bearish | Bullish | **LPT** (Low Probable Trade) | OFF |
+| Bullish | Bearish | **LPT** | OFF |
+
+Each category is independently toggleable in Pine Script settings. Alert JSON includes `"probability":"HPT"`, `"MPT"`, or `"LPT"`.
+
 ## Trading Features
+- **SL from fill price**: SL recalculated using actual fill price (not Pine Script close)
 - **Trailing SL**: configurable trigger % and lock % (default 75%/50%)
 - **Auto Square Off**: scheduled at configurable time
 - **Session Move Limit**: halves qty if price moved too far from day open/PDC
