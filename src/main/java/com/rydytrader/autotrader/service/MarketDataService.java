@@ -325,6 +325,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
             // Mark tracked OCO as trailed so exit reason will be TRAILING_SL
             if (orderEventService != null) orderEventService.markAsTrailed(slOrderId);
 
+            positionStateStore.appendDescription(symbol,
+                "[TRAIL] SL moved → " + String.format("%.2f", newSl)
+                + " (LTP " + String.format("%.2f", ltp) + " crossed " + String.format("%.0f", riskSettings.getTrailTriggerPct())
+                + "% trigger " + String.format("%.2f", triggerLevel) + ").");
+
             eventService.log("[SUCCESS] Trailing SL for " + symbol + ": moved to "
                 + String.format("%.2f", newSl) + " (locking 50% profit)"
                 + " — LTP " + String.format("%.2f", ltp) + " crossed 75% level " + String.format("%.2f", triggerLevel));

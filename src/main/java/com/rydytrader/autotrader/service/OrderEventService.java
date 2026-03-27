@@ -68,16 +68,23 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         public final String setup;
         public final double atr;
         public final double atrMultiplier;
+        public final String description;
         public volatile boolean handled = false;
 
         public EntryContext(String symbol, int quantity, String position,
                            int exitSide, double slPrice, double targetPrice, String setup) {
-            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, 0, 0);
+            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, 0, 0, null);
         }
 
         public EntryContext(String symbol, int quantity, String position,
                            int exitSide, double slPrice, double targetPrice, String setup,
                            double atr, double atrMultiplier) {
+            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, null);
+        }
+
+        public EntryContext(String symbol, int quantity, String position,
+                           int exitSide, double slPrice, double targetPrice, String setup,
+                           double atr, double atrMultiplier, String description) {
             this.symbol = symbol;
             this.quantity = quantity;
             this.position = position;
@@ -87,6 +94,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             this.setup = setup;
             this.atr = atr;
             this.atrMultiplier = atrMultiplier;
+            this.description = description;
         }
     }
 
@@ -286,6 +294,11 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     public void markAsTrailed(String slOrderId) {
         OcoContext ctx = trackedOcoOrders.get(slOrderId);
         if (ctx != null) ctx.trailed = true;
+    }
+
+    /** Mark a symbol as recently handled (prevents WS position events from recording duplicate). */
+    public void markRecentlyHandled(String symbol) {
+        recentlyHandled.put(symbol, System.currentTimeMillis());
     }
 
     /** Untrack all orders for a symbol. */
@@ -529,7 +542,11 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             eventService.log("[WS] External close detected for " + symbol + " at " + finalExit
                 + " | P&L: " + (pnl >= 0 ? "+" : "") + String.format("%.2f", pnl));
 
-            tradeHistoryService.record(symbol, positionSide, qty, entryPrice, finalExit, "MANUAL", setup);
+            positionStateStore.appendDescription(symbol,
+                "[EXIT] MANUAL @ " + String.format("%.2f", finalExit)
+                + " | " + (pnl >= 0 ? "PROFIT" : "LOSS") + " ₹" + String.format("%.2f", Math.abs(pnl)));
+            String desc = positionStateStore.getDescription(symbol);
+            tradeHistoryService.record(symbol, positionSide, qty, entryPrice, finalExit, "MANUAL", setup, desc);
 
             try {
                 telegramService.sendMessage("[WS] Manual close for " + symbol
@@ -609,6 +626,14 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         eventService.log("[SUCCESS] [WS] " + (ctx.position.equals("LONG") ? "BUY" : "SELL")
             + " order filled for " + symbol + " @ " + entryPrice + " [ID: " + orderId + "] — placing SL + Target");
 
+        // Append [FILL] to description
+        if (ctx.description != null && !ctx.description.isEmpty()) {
+            positionStateStore.appendDescription(symbol, ctx.description);
+        }
+        positionStateStore.appendDescription(symbol,
+            "[FILL] " + (ctx.position.equals("LONG") ? "BUY" : "SELL") + " filled @ "
+            + String.format("%.2f", entryPrice) + ". SL recalculated → " + String.format("%.2f", adjustedSl) + ".");
+
         marketDataService.updateSubscriptions();
 
         // Place SL + Target (using adjusted SL based on actual fill price)
@@ -629,9 +654,16 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             boolean tgtOk = targetOrder != null && targetOrder.getId() != null && !targetOrder.getId().isEmpty();
 
             if (slOk && tgtOk) {
-                eventService.log("[SUCCESS] [WS] SL placed for " + symbol + " at " + orderService.roundToTick(slPrice, symbol) + " [ID: " + slOrder.getId() + "]");
-                eventService.log("[SUCCESS] [WS] Target placed for " + symbol + " at " + orderService.roundToTick(ctx.targetPrice, symbol) + " [ID: " + targetOrder.getId() + "]");
+                double roundedSl = orderService.roundToTick(slPrice, symbol);
+                double roundedTgt = orderService.roundToTick(ctx.targetPrice, symbol);
+                eventService.log("[SUCCESS] [WS] SL placed for " + symbol + " at " + roundedSl + " [ID: " + slOrder.getId() + "]");
+                eventService.log("[SUCCESS] [WS] Target placed for " + symbol + " at " + roundedTgt + " [ID: " + targetOrder.getId() + "]");
                 positionStateStore.saveOcoState(symbol, slOrder.getId(), targetOrder.getId(), slPrice, ctx.targetPrice);
+
+                positionStateStore.appendDescription(symbol,
+                    "[SL_PLACED] @ " + String.format("%.2f", roundedSl) + " [" + slOrder.getId() + "]");
+                positionStateStore.appendDescription(symbol,
+                    "[TGT_PLACED] @ " + String.format("%.2f", roundedTgt) + " [" + targetOrder.getId() + "]");
 
                 // Track SL + Target for fill detection via WebSocket
                 trackOcoOrders(slOrder.getId(), targetOrder.getId(),
@@ -693,7 +725,13 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl))
             + " — cancelling " + ("SL".equals(ctx.type) ? "target" : "SL"));
 
-        tradeHistoryService.record(symbol, ctx.positionSide, ctx.quantity, finalEntry, finalExit, exitReason, ctx.setup);
+        // Append [EXIT] to description and pass to trade record
+        positionStateStore.appendDescription(symbol,
+            "[EXIT] " + exitReason + " @ " + String.format("%.2f", finalExit)
+            + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl)));
+        String desc = positionStateStore.getDescription(symbol);
+
+        tradeHistoryService.record(symbol, ctx.positionSide, ctx.quantity, finalEntry, finalExit, exitReason, ctx.setup, desc);
 
         // Telegram notification
         try {
@@ -738,6 +776,8 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         OcoContext oco = trackedOcoOrders.get(orderId); // Don't remove — counterpart may still be active
         if (oco != null) {
             eventService.log("[WS] " + oco.type + " order cancelled for " + symbol + " — manual action");
+            positionStateStore.appendDescription(symbol,
+                ("SL".equals(oco.type) ? "[SL_CANCELLED]" : "[TGT_CANCELLED]") + " Manual cancellation.");
             trackedOcoOrders.remove(orderId);
             // Check if counterpart is also cancelled
             OcoContext counter = trackedOcoOrders.get(oco.counterpartOrderId);
@@ -758,6 +798,8 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             if (oco.currentPrice > 0 && Math.abs(stopPrice - oco.currentPrice) > 0.10) {
                 eventService.log("[SUCCESS] [WS] SL modified for " + symbol + ": "
                     + String.format("%.2f", oco.currentPrice) + " → " + String.format("%.2f", stopPrice));
+                positionStateStore.appendDescription(symbol,
+                    "[SL_MODIFIED] " + String.format("%.2f", oco.currentPrice) + " → " + String.format("%.2f", stopPrice));
                 oco.currentPrice = stopPrice;
                 // Update disk state — find counterpart to get target price
                 OcoContext counter = trackedOcoOrders.get(oco.counterpartOrderId);
@@ -771,6 +813,8 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             if (oco.currentPrice > 0 && Math.abs(limitPrice - oco.currentPrice) > 0.10) {
                 eventService.log("[SUCCESS] [WS] Target modified for " + symbol + ": "
                     + String.format("%.2f", oco.currentPrice) + " → " + String.format("%.2f", limitPrice));
+                positionStateStore.appendDescription(symbol,
+                    "[TGT_MODIFIED] " + String.format("%.2f", oco.currentPrice) + " → " + String.format("%.2f", limitPrice));
                 oco.currentPrice = limitPrice;
                 // Update disk state — find counterpart to get SL price
                 OcoContext counter = trackedOcoOrders.get(oco.counterpartOrderId);

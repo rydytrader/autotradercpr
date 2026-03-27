@@ -126,14 +126,15 @@ public class TradingController {
             eventService.log("[WARNING] " + ps.getSymbol() + " " + ps.getSetup() + " filtered — " + ps.getRejectionReason());
             return ResponseEntity.ok("Signal filtered: " + ps.getRejectionReason());
         }
-        String signal   = ps.getSignal();
-        String symbol   = ps.getSymbol();
-        int    quantity = ps.getQuantity();
-        double stoploss = ps.getStoploss();
-        double target   = ps.getTarget();
-        String setup    = ps.getSetup();
-        double atr      = ps.getAtr();
-        double atrMult  = ps.getAtrMultiplier();
+        String signal      = ps.getSignal();
+        String symbol      = ps.getSymbol();
+        int    quantity    = ps.getQuantity();
+        double stoploss    = ps.getStoploss();
+        double target      = ps.getTarget();
+        String setup       = ps.getSetup();
+        double atr         = ps.getAtr();
+        double atrMult     = ps.getAtrMultiplier();
+        String description = ps.getDescription();
 
         log.info("Signal received: {} | SL: {} | Target: {} | Setup: {}", signal, stoploss, target, setup);
 
@@ -148,7 +149,7 @@ public class TradingController {
 
             // Monitor entry fill, then place SL + Target OCO
             // exitSide = -1 (SELL to exit a LONG)
-            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "LONG", -1, stoploss, target, setup, atr, atrMult);
+            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "LONG", -1, stoploss, target, setup, atr, atrMult, description);
 
         } else if (signal.equals("SELL") && !PositionManager.getPosition(symbol).equals("SHORT")) {
 
@@ -160,7 +161,7 @@ public class TradingController {
             }
 
             // exitSide = 1 (BUY to exit a SHORT)
-            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "SHORT", 1, stoploss, target, setup, atr, atrMult);
+            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "SHORT", 1, stoploss, target, setup, atr, atrMult, description);
 
         } else {
             String msg = "Signal ignored — existing position: " + PositionManager.getPosition(symbol);
@@ -200,6 +201,9 @@ public class TradingController {
             m.put("pnl",       pnl);
             m.put("setup",     p.getSetup());
             m.put("entryTime", p.getEntryTime());
+            // Include description from persisted state
+            Map<String, Object> state = positionStateStore.load(p.getSymbol());
+            m.put("description", state != null ? state.getOrDefault("description", "") : "");
             return m;
         }).collect(java.util.stream.Collectors.toList());
         double realizedPnl   = tradeHistoryService.getTrades().stream()
@@ -267,6 +271,7 @@ public class TradingController {
             m.put("charges",    t.getCharges());
             m.put("netPnl",     t.getNetPnl());
             m.put("result",     t.getResult());
+            m.put("description", t.getDescription() != null ? t.getDescription() : "");
             return m;
         }).collect(java.util.stream.Collectors.toList());
     }

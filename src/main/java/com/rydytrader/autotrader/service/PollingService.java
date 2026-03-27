@@ -213,11 +213,18 @@ public class PollingService {
                                         int quantity, String position,
                                         int exitSide, double slPrice, double targetPrice, String setup,
                                         double atr, double atrMultiplier) {
+        monitorEntryAndPlaceOCO(entry, symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, null);
+    }
+
+    public void monitorEntryAndPlaceOCO(OrderDTO entry, String symbol,
+                                        int quantity, String position,
+                                        int exitSide, double slPrice, double targetPrice, String setup,
+                                        double atr, double atrMultiplier, String description) {
 
         // ── Try WebSocket-based tracking first (WS connected) ──
         if (orderEventService.isConnected()) {
             boolean tracked = orderEventService.trackEntryOrder(entry.getId(),
-                new OrderEventService.EntryContext(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier));
+                new OrderEventService.EntryContext(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description));
             if (tracked) {
                 eventService.log("[INFO] Entry order " + entry.getId() + " tracked via WebSocket for " + symbol);
                 return; // WebSocket will handle fill detection — no polling needed
@@ -271,6 +278,13 @@ public class PollingService {
                         double roundedTarget = orderService.roundToTick(targetPrice, symbol);
                         positionStateStore.save(symbol, position, quantity, holder.entryFillPrice,
                             setupBySymbol.get(symbol), entryTime, holder.adjustedSl, roundedTarget);
+                        // Save description from signal processing
+                        if (description != null && !description.isEmpty()) {
+                            positionStateStore.appendDescription(symbol, description);
+                        }
+                        positionStateStore.appendDescription(symbol,
+                            "[FILL] " + (position.equals("LONG") ? "BUY" : "SELL") + " filled @ "
+                            + String.format("%.2f", holder.entryFillPrice) + ". SL recalculated → " + String.format("%.2f", holder.adjustedSl) + ".");
                         eventService.log("[SUCCESS] " + (position.equals("LONG") ? "BUY" : "SELL")
                             + " order filled for " + symbol + " @ " + holder.entryFillPrice + " [ID: " + entry.getId() + "] — placing SL + Target");
                         marketDataService.updateSubscriptions();
@@ -284,9 +298,13 @@ public class PollingService {
                     boolean tgtOk = targetOrder != null && targetOrder.getId() != null && !targetOrder.getId().isEmpty();
 
                     if (slOk && tgtOk) {
-                        eventService.log("[SUCCESS] SL order placed for " + symbol + " at " + orderService.roundToTick(holder.adjustedSl, symbol) + " [ID: " + slOrder.getId() + "]");
-                        eventService.log("[SUCCESS] Target order placed for " + symbol + " at " + orderService.roundToTick(targetPrice, symbol) + " [ID: " + targetOrder.getId() + "]");
+                        double rSl = orderService.roundToTick(holder.adjustedSl, symbol);
+                        double rTgt = orderService.roundToTick(targetPrice, symbol);
+                        eventService.log("[SUCCESS] SL order placed for " + symbol + " at " + rSl + " [ID: " + slOrder.getId() + "]");
+                        eventService.log("[SUCCESS] Target order placed for " + symbol + " at " + rTgt + " [ID: " + targetOrder.getId() + "]");
                         positionStateStore.saveOcoState(symbol, slOrder.getId(), targetOrder.getId(), holder.adjustedSl, targetPrice);
+                        positionStateStore.appendDescription(symbol, "[SL_PLACED] @ " + String.format("%.2f", rSl) + " [" + slOrder.getId() + "]");
+                        positionStateStore.appendDescription(symbol, "[TGT_PLACED] @ " + String.format("%.2f", rTgt) + " [" + targetOrder.getId() + "]");
                         // Try WebSocket OCO tracking first, fall back to polling monitor
                         boolean wsTracked = orderEventService.trackOcoOrders(slOrder.getId(), targetOrder.getId(),
                             symbol, quantity, position, exitSide, setup, holder.entryFillPrice);
@@ -492,7 +510,10 @@ public class PollingService {
                     String pnlTag = pnl >= 0 ? "PROFIT" : "LOSS";
                     eventService.log("[SUCCESS] SL triggered for " + symbol + " at " + finalExit
                         + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl)) + " — cancelling target");
-                    tradeHistoryService.record(symbol, positionSide, qty, finalEntry, finalExit, "SL", setup);
+                    positionStateStore.appendDescription(symbol,
+                        "[EXIT] SL @ " + String.format("%.2f", finalExit) + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl)));
+                    String slDesc = positionStateStore.getDescription(symbol);
+                    tradeHistoryService.record(symbol, positionSide, qty, finalEntry, finalExit, "SL", setup, slDesc);
                     clearSymbolState(symbol);
                     if (s.future != null) s.future.cancel(false);
                 }
@@ -515,7 +536,10 @@ public class PollingService {
                     String pnlTag = pnl >= 0 ? "PROFIT" : "LOSS";
                     eventService.log("[SUCCESS] Target hit for " + symbol + " at " + finalExit
                         + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl)) + " — cancelling SL");
-                    tradeHistoryService.record(symbol, positionSide, qty, finalEntry, finalExit, "TARGET", setup);
+                    positionStateStore.appendDescription(symbol,
+                        "[EXIT] TARGET @ " + String.format("%.2f", finalExit) + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl)));
+                    String tgtDesc = positionStateStore.getDescription(symbol);
+                    tradeHistoryService.record(symbol, positionSide, qty, finalEntry, finalExit, "TARGET", setup, tgtDesc);
                     clearSymbolState(symbol);
                     if (s.future != null) s.future.cancel(false);
                 }
@@ -691,11 +715,19 @@ public class PollingService {
                 orderService.cancelAllPendingOrders(symbol);
             }
 
+            // Mark as recently handled so WebSocket doesn't record this as MANUAL
+            orderEventService.markRecentlyHandled(symbol);
+            // Untrack OCO orders so WS doesn't interfere
+            orderEventService.untrackSymbol(symbol);
+
             OrderDTO exitOrder = orderService.placeExitOrder(symbol, quantity, exitSide);
             if (exitOrder == null || !"ok".equals(exitOrder.getStatus())) {
                 eventService.log("[ERROR] " + label + " failed for " + symbol + " — exit order rejected");
                 return false;
             }
+
+            // Wait for exit order to fill and appear in tradebook
+            try { Thread.sleep(3000); } catch (InterruptedException ignored) {}
 
             double entryPrice = entryAvgBySymbol.getOrDefault(symbol, 0.0);
             if (entryPrice <= 0) {
@@ -703,16 +735,27 @@ public class PollingService {
                 entryPrice = orderService.getFilledPriceFromTradebook(symbol, entrySide);
             }
             double exitPrice = orderService.getExitPriceFromTradebook(symbol, position);
+
+            // If tradebook doesn't have exit price yet, try the LTP from WebSocket
+            if (exitPrice <= 0) {
+                exitPrice = marketDataService.getLtp(symbol);
+            }
             String setup = setupBySymbol.getOrDefault(symbol, "");
             if (entryPrice > 0 && exitPrice > 0) {
                 double pnl = "LONG".equals(position) ? (exitPrice - entryPrice) * quantity : (entryPrice - exitPrice) * quantity;
                 String pnlTag = pnl >= 0 ? "PROFIT" : "LOSS";
                 eventService.log("[SUCCESS] " + label + " executed for " + symbol + " at " + exitPrice
                     + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl)));
-                tradeHistoryService.record(symbol, position, quantity, entryPrice, exitPrice, exitReason, setup);
+                positionStateStore.appendDescription(symbol,
+                    "[EXIT] " + exitReason + " @ " + String.format("%.2f", exitPrice)
+                    + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl)));
+                String desc = positionStateStore.getDescription(symbol);
+                tradeHistoryService.record(symbol, position, quantity, entryPrice, exitPrice, exitReason, setup, desc);
             } else {
                 eventService.log("[SUCCESS] " + label + " executed for " + symbol + " — position closed");
-                tradeHistoryService.record(symbol, position, quantity, entryPrice, exitPrice > 0 ? exitPrice : 0, exitReason, setup);
+                positionStateStore.appendDescription(symbol, "[EXIT] " + exitReason + " — position closed.");
+                String desc = positionStateStore.getDescription(symbol);
+                tradeHistoryService.record(symbol, position, quantity, entryPrice, exitPrice > 0 ? exitPrice : 0, exitReason, setup, desc);
             }
             ocoHandledSymbols.add(symbol);
             clearSymbolState(symbol);

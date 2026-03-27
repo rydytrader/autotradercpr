@@ -13,6 +13,7 @@ public class ProcessedSignal {
     private final String rejectionReason;
     private final double atr;
     private final double atrMultiplier;
+    private final String description;
 
     private ProcessedSignal(Builder b) {
         this.signal          = b.signal;
@@ -26,6 +27,7 @@ public class ProcessedSignal {
         this.rejectionReason = b.rejectionReason;
         this.atr             = b.atr;
         this.atrMultiplier   = b.atrMultiplier;
+        this.description     = b.description;
     }
 
     public static ProcessedSignal rejected(String setup, String symbol, String reason) {
@@ -43,6 +45,7 @@ public class ProcessedSignal {
     public String  getRejectionReason() { return rejectionReason; }
     public double  getAtr()             { return atr; }
     public double  getAtrMultiplier()   { return atrMultiplier; }
+    public String  getDescription()     { return description; }
 
     public static class Builder {
         private String signal;
@@ -56,6 +59,7 @@ public class ProcessedSignal {
         private String rejectionReason;
         private double atr;
         private double atrMultiplier;
+        private String description;
 
         public Builder signal(String v)          { this.signal = v; return this; }
         public Builder symbol(String v)          { this.symbol = v; return this; }
@@ -68,6 +72,7 @@ public class ProcessedSignal {
         public Builder rejectionReason(String v)  { this.rejectionReason = v; return this; }
         public Builder atr(double v)              { this.atr = v; return this; }
         public Builder atrMultiplier(double v)    { this.atrMultiplier = v; return this; }
+        public Builder description(String v)     { this.description = v; return this; }
 
         public ProcessedSignal build() { return new ProcessedSignal(this); }
     }

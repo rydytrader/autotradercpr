@@ -25,6 +25,9 @@ public class PositionEntity {
     private String targetOrderId;
     private LocalDateTime updatedAt;
 
+    @Column(columnDefinition = "TEXT")
+    private String description;
+
     public PositionEntity() {}
 
     @PrePersist
@@ -69,4 +72,7 @@ public class PositionEntity {
 
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
 }

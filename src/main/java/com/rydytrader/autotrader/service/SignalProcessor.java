@@ -125,7 +125,45 @@ public class SignalProcessor {
             }
         }
 
-        // ── 4j. Log the decision ────────────────────────────────────────────────
+        // ── 4j. Build description ─────────────────────────────────────────────
+        StringBuilder desc = new StringBuilder();
+
+        // [ENTRY] line
+        String levelName = levelNameForSetup(setup);
+        desc.append("[ENTRY] ").append(setup).append(" | ").append(probability)
+            .append(" — Close ").append(fmt(close))
+            .append(" broke ").append(levelName)
+            .append(" (").append(fmt(breakoutLevel)).append(").");
+
+        // [QTY] line
+        int fixedQty = riskSettings.getFixedQuantity();
+        if (fixedQty != -1) {
+            desc.append("\n[QTY] Fixed: ").append(baseQty).append(".");
+        } else {
+            double riskPerTrade = riskSettings.getRiskPerTrade();
+            double riskPerShare = Math.abs(close - sl);
+            int riskQty = riskPerShare > 0 ? (int)(riskPerTrade / riskPerShare) : 0;
+            desc.append("\n[QTY] Risk: ₹").append(fmt(riskPerTrade))
+                .append(" / ₹").append(fmt(riskPerShare))
+                .append(" = ").append(riskQty)
+                .append(". Final: ").append(baseQty).append(".");
+        }
+        if (isExtreme) {
+            desc.append(" Halved → ").append(qty).append(" (extreme level).");
+        } else if (qtyLog != null && qty != baseQty) {
+            desc.append(" Halved → ").append(qty).append(" (session move limit).");
+        }
+
+        // [TARGET] line (only if shifted)
+        if (shifted) {
+            desc.append("\n[TARGET] Shifted ").append(fmt(defaultTarget))
+                .append(" → ").append(fmt(shiftTarget))
+                .append(" (default < 1 ATR from entry).");
+        }
+
+        String description = desc.toString();
+
+        // ── 4k. Log the decision ────────────────────────────────────────────────
         eventService.log("[SUCCESS] " + signal + " signal received for " + symbol + " | " + setup + " | Entry: " + fmt(close)
             + " | Tgt: " + fmt(target) + "(" + fmt(Math.abs(target - close)) + ")"
             + " | SL: " + fmt(sl) + "(" + fmt(Math.abs(close - sl)) + ")"
@@ -149,6 +187,7 @@ public class SignalProcessor {
             .atr(atr)
             .atrMultiplier(riskSettings.getAtrMultiplier())
             .rejected(false)
+            .description(description)
             .build();
     }
 
@@ -193,6 +232,25 @@ public class SignalProcessor {
             case "SELL_BELOW_S4"      -> { double s5 = s4 - (s3 - s4); yield new double[]{ s5, s5 }; }
             case "SELL_BELOW_R1_PDH"  -> new double[]{ Math.max(tc, bc), Math.max(s1, pl) };
             default -> new double[]{ 0, 0 };
+        };
+    }
+
+    // ── Level name for description ──────────────────────────────────────────────
+    private static String levelNameForSetup(String setup) {
+        return switch (setup) {
+            case "BUY_ABOVE_CPR"     -> "CPR top";
+            case "BUY_ABOVE_R1_PDH"  -> "R1+PDH";
+            case "BUY_ABOVE_R2"      -> "R2";
+            case "BUY_ABOVE_R3"      -> "R3";
+            case "BUY_ABOVE_R4"      -> "R4";
+            case "BUY_ABOVE_S1_PDL"  -> "S1+PDL";
+            case "SELL_BELOW_CPR"    -> "CPR bottom";
+            case "SELL_BELOW_S1_PDL" -> "S1+PDL";
+            case "SELL_BELOW_S2"     -> "S2";
+            case "SELL_BELOW_S3"     -> "S3";
+            case "SELL_BELOW_S4"     -> "S4";
+            case "SELL_BELOW_R1_PDH" -> "R1+PDH";
+            default -> setup;
         };
     }
 

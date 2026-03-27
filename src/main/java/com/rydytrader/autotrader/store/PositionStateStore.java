@@ -39,6 +39,30 @@ public class PositionStateStore {
         }
     }
 
+    /** Appends a line to the description field of a persisted position. */
+    public void appendDescription(String symbol, String text) {
+        try {
+            positionRepo.findBySymbol(symbol).ifPresent(entity -> {
+                String current = entity.getDescription() != null ? entity.getDescription() : "";
+                entity.setDescription(current.isEmpty() ? text : current + "\n" + text);
+                positionRepo.save(entity);
+            });
+        } catch (Exception e) {
+            log.error("[PositionStateStore] Failed to appendDescription for {}: {}", symbol, e.getMessage());
+        }
+    }
+
+    /** Returns the current description for a symbol, or null. */
+    public String getDescription(String symbol) {
+        try {
+            return positionRepo.findBySymbol(symbol)
+                .map(PositionEntity::getDescription)
+                .orElse(null);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /** Updates persisted state with OCO order IDs and prices. */
     public void saveOcoState(String symbol, String slOrderId, String targetOrderId,
                              double slPrice, double targetPrice) {
@@ -113,6 +137,7 @@ public class PositionStateStore {
         map.put("targetPrice",   e.getTargetPrice());
         map.put("slOrderId",     e.getSlOrderId());
         map.put("targetOrderId", e.getTargetOrderId());
+        map.put("description",   e.getDescription());
         return map;
     }
 }

@@ -28,6 +28,9 @@ public class TradeEntity {
     private double charges;
     private double netPnl;
 
+    @Column(columnDefinition = "TEXT")
+    private String description;
+
     public TradeEntity() {}
 
     // Getters and setters
@@ -69,4 +72,7 @@ public class TradeEntity {
 
     public double getNetPnl() { return netPnl; }
     public void setNetPnl(double netPnl) { this.netPnl = netPnl; }
+
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
 }

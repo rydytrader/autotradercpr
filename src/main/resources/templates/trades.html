@@ -126,6 +126,7 @@
                         <th class="text-right">P&amp;L</th>
                         <th class="text-right">Charges</th>
                         <th class="text-right">Net P&amp;L</th>
+                        <th class="text-center"></th>
                     </tr>
                 </thead>
                 <tbody id="tradesTableBody">
@@ -247,7 +248,7 @@
 
                 const tbody = document.getElementById('tradesTableBody');
                 if (trades.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="12"><div class="empty-state"><div class="empty-icon">◎</div>No completed trades today</div></td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="13"><div class="empty-state"><div class="empty-icon">◎</div>No completed trades today</div></td></tr>`;
                     return;
                 }
 
@@ -271,6 +272,7 @@
                         <td class="text-right"><span class="${pnlClass}">${fmtPnl(t.pnl)}</span></td>
                         <td class="text-right" style="color:var(--text-muted);font-size:0.8rem">₹${inr(charges)}</td>
                         <td class="text-right"><span class="${netClass}">${fmtPnl(netP)}</span></td>
+                        <td class="text-center"><button onclick="showDescription('${escapeForJs(t.description || '')}')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);cursor:pointer;padding:4px 8px;font-size:0.75rem;" title="Trade description">ℹ</button></td>
                     </tr>`;
                 }).join('');
             })
@@ -292,9 +294,30 @@
             .catch(() => { window.location.href = '/'; });
     }
 
+    function escapeForJs(str) {
+        if (!str) return '';
+        return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n').replace(/\r/g, '');
+    }
 
+    function showDescription(text) {
+        document.getElementById('descContent').textContent = text ? text.replace(/\\n/g, '\n') : 'No description available';
+        document.getElementById('descModal').style.display = 'flex';
+    }
+    function closeDescModal() {
+        document.getElementById('descModal').style.display = 'none';
+    }
 
 </script>
+
+<div id="descModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+  <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:24px; max-width:650px; width:90%; max-height:80vh; overflow-y:auto;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <h3 style="font-family:var(--font-mono); font-size:0.9rem; color:var(--text-primary); margin:0;">Trade Description</h3>
+      <button onclick="closeDescModal()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;">&#x2715;</button>
+    </div>
+    <pre id="descContent" style="white-space:pre-wrap; word-break:break-word; font-family:'JetBrains Mono',monospace; font-size:0.72rem; line-height:1.7; color:var(--text-secondary); margin:0;"></pre>
+  </div>
+</div>
 
 </div><!-- /app-main -->
 </div><!-- /app-layout -->
