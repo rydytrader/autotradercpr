@@ -620,13 +620,21 @@
     // Initialize with current positions
     allPositions.forEach(function(p) { knownPositionSymbols.add(p.symbol); });
 
-    function speak(text) {
+    window.speak = function speak(text) {
         try {
-            var utterance = new SpeechSynthesisUtterance(text);
-            utterance.rate = 1.1;
-            utterance.pitch = 1.0;
-            utterance.volume = 1.0;
-            window.speechSynthesis.speak(utterance);
+            window.speechSynthesis.cancel();
+            // Play a short silent utterance first to wake up the audio pipeline
+            var wake = new SpeechSynthesisUtterance(' ');
+            wake.volume = 0.01;
+            window.speechSynthesis.speak(wake);
+            // Then speak the actual message after a brief delay
+            setTimeout(function() {
+                var utterance = new SpeechSynthesisUtterance(text);
+                utterance.rate = 0.85;
+                utterance.pitch = 1.0;
+                utterance.volume = 1.0;
+                window.speechSynthesis.speak(utterance);
+            }, 300);
         } catch (e) {}
     }
 
