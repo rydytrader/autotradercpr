@@ -428,6 +428,7 @@
             .then(r => r.json())
             .then(data => {
                 const positions = data.positions || [];
+                checkNewPositions(positions);
                 const sides = new Set(positions.map(p => p.side));
                 const sideLabel = positions.length === 0 ? 'NONE'
                     : sides.has('LONG') && sides.has('SHORT') ? 'BOTH'
@@ -614,6 +615,59 @@
             subEl.style.color = 'var(--accent-red)';
         }
     }
+    // ── VOICE ALERTS ──────────────────────────────────────────────────────────
+    var knownPositionSymbols = new Set();
+    // Initialize with current positions
+    allPositions.forEach(function(p) { knownPositionSymbols.add(p.symbol); });
+
+    function speak(text) {
+        try {
+            var utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 1.1;
+            utterance.pitch = 1.0;
+            utterance.volume = 1.0;
+            window.speechSynthesis.speak(utterance);
+        } catch (e) {}
+    }
+
+    function checkNewPositions(positions) {
+        if (!positions || positions.length === 0) return;
+        var currentSymbols = new Set();
+        positions.forEach(function(p) { currentSymbols.add(p.symbol); });
+
+        // New position detected
+        currentSymbols.forEach(function(sym) {
+            if (!knownPositionSymbols.has(sym)) {
+                var pos = positions.find(function(p) { return p.symbol === sym; });
+                var name = sym.replace('NSE:', '').replace('-EQ', '');
+                speak('Order filled. ' + (pos ? pos.side : '') + ' ' + name);
+            }
+        });
+
+        // Position closed — fetch exit reason from latest trade
+        knownPositionSymbols.forEach(function(sym) {
+            if (!currentSymbols.has(sym)) {
+                var name = sym.replace('NSE:', '').replace('-EQ', '');
+                // Try to get exit reason from trades API
+                fetch('/api/trades').then(function(r) { return r.json(); }).then(function(trades) {
+                    var trade = trades.find(function(t) { return t.symbol === sym; });
+                    if (trade) {
+                        var reason = trade.exitReason || '';
+                        if (reason === 'SL') speak('Stop loss hit. ' + name);
+                        else if (reason === 'TARGET') speak('Target hit. ' + name);
+                        else if (reason === 'TRAILING_SL') speak('Trailing stop loss hit. ' + name + '. Profit locked.');
+                        else if (reason === 'AUTO_SQUAREOFF') speak('Auto square off. ' + name);
+                        else speak('Position closed. ' + name);
+                    } else {
+                        speak('Position closed. ' + name);
+                    }
+                }).catch(function() { speak('Position closed. ' + name); });
+            }
+        });
+
+        knownPositionSymbols = currentSymbols;
+    }
+
     // Market open/close chime using Web Audio API
     var chimePlayedOpen = false, chimePlayedClose = false;
     var _audioCtx = null;
@@ -655,16 +709,16 @@
         if (holidaysLoaded) updateMarketClock();
         var now = new Date();
         var h = now.getHours(), m = now.getMinutes();
-        // Market open chime at 9:15
+        // Market open voice at 9:15
         if (h === 9 && m === 15 && !chimePlayedOpen) {
             chimePlayedOpen = true;
-            playChime(880, 0.5); // A5 — bright tone
+            speak('Market is now open');
         }
-        if (h === 9 && m === 16) chimePlayedOpen = false; // reset for next check
-        // Market close chime at 15:30
+        if (h === 9 && m === 16) chimePlayedOpen = false;
+        // Market close voice at 15:30
         if (h === 15 && m === 30 && !chimePlayedClose) {
             chimePlayedClose = true;
-            playChime(440, 0.8); // A4 — deeper tone
+            speak('Market is now closed');
         }
         if (h === 15 && m === 31) chimePlayedClose = false;
     }, 1000);
