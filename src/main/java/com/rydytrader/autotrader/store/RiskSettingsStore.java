@@ -1,28 +1,24 @@
 package com.rydytrader.autotrader.store;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rydytrader.autotrader.entity.SettingEntity;
+import com.rydytrader.autotrader.repository.SettingRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.*;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.List;
 
 /**
- * Persists risk management settings to disk so they survive server restarts.
- * Settings file: store/config/risk-settings.json
+ * Persists risk management settings to SQLite so they survive server restarts.
  */
 @Component
 public class RiskSettingsStore {
 
     private static final Logger log = LoggerFactory.getLogger(RiskSettingsStore.class);
 
-    private static final String LIVE_FILE = "../store/config/risk-settings.json";
-    private static final String LEGACY_FILE = "../store/risk-settings.json";
-    private static final ObjectMapper mapper = new ObjectMapper();
+    @Autowired
+    private SettingRepository settingRepo;
 
     // ── settings container ───────────────────────────────────────────────────
     static class Cfg {
@@ -42,7 +38,6 @@ public class RiskSettingsStore {
         volatile boolean enableLargeCandleFilter = true; // reject trade if candle > largeCandleAtrThreshold ATR from breakout level
         volatile double largeCandleAtrThreshold = 1.0; // ATR multiplier for large candle filter
         volatile boolean enableTargetShift = true; // shift target to next level if default target < 1 ATR. If false, skip the entry.
-        volatile boolean enableSessionTargetCap = true; // cap target at session high/low if it's between close and target
         volatile boolean enableSmallCandleFilter = false; // reject if candle move from breakout level < smallCandleAtrThreshold ATR
         volatile double smallCandleAtrThreshold = 0.5; // ATR multiplier for small candle filter
         volatile double trailTriggerPct = 75;  // % of range from entry to target that triggers trailing SL
@@ -51,9 +46,8 @@ public class RiskSettingsStore {
 
     private final Cfg live = new Cfg();
 
-    public RiskSettingsStore() {
-        new File("../store/config").mkdirs();
-        migrate();
+    @jakarta.annotation.PostConstruct
+    public void init() {
         load("live");
     }
 
@@ -64,10 +58,6 @@ public class RiskSettingsStore {
 
     public Cfg cfgFor(String mode) {
         return live;
-    }
-
-    private String fileFor(String mode) {
-        return LIVE_FILE;
     }
 
     // ── parameterless getters/setters (used by TradingController etc.) ────────
@@ -88,7 +78,6 @@ public class RiskSettingsStore {
     public boolean isEnableLargeCandleFilter() { return cfg().enableLargeCandleFilter; }
     public double getLargeCandleAtrThreshold() { return cfg().largeCandleAtrThreshold; }
     public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
-    public boolean isEnableSessionTargetCap() { return cfg().enableSessionTargetCap; }
     public boolean isEnableSmallCandleFilter() { return cfg().enableSmallCandleFilter; }
     public double getTrailTriggerPct() { return cfg().trailTriggerPct; }
     public double getTrailSlPct()      { return cfg().trailSlPct; }
@@ -110,7 +99,6 @@ public class RiskSettingsStore {
     public void setEnableLargeCandleFilter(boolean v) { cfg().enableLargeCandleFilter = v; }
     public void setLargeCandleAtrThreshold(double v) { cfg().largeCandleAtrThreshold = v; }
     public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
-    public void setEnableSessionTargetCap(boolean v) { cfg().enableSessionTargetCap = v; }
     public void setEnableSmallCandleFilter(boolean v) { cfg().enableSmallCandleFilter = v; }
     public void setTrailTriggerPct(double v) { cfg().trailTriggerPct = v; }
     public void setTrailSlPct(double v)      { cfg().trailSlPct = v; }
@@ -134,7 +122,6 @@ public class RiskSettingsStore {
     public boolean isEnableLargeCandleFilter(String mode) { return cfgFor(mode).enableLargeCandleFilter; }
     public double getLargeCandleAtrThreshold(String mode) { return cfgFor(mode).largeCandleAtrThreshold; }
     public boolean isEnableTargetShift(String mode) { return cfgFor(mode).enableTargetShift; }
-    public boolean isEnableSessionTargetCap(String mode) { return cfgFor(mode).enableSessionTargetCap; }
     public boolean isEnableSmallCandleFilter(String mode) { return cfgFor(mode).enableSmallCandleFilter; }
     public double getTrailTriggerPct(String mode) { return cfgFor(mode).trailTriggerPct; }
     public double getTrailSlPct(String mode)      { return cfgFor(mode).trailSlPct; }
@@ -156,7 +143,6 @@ public class RiskSettingsStore {
     public void setEnableLargeCandleFilter(String mode, boolean v) { cfgFor(mode).enableLargeCandleFilter = v; }
     public void setLargeCandleAtrThreshold(String mode, double v) { cfgFor(mode).largeCandleAtrThreshold = v; }
     public void setEnableTargetShift(String mode, boolean v) { cfgFor(mode).enableTargetShift = v; }
-    public void setEnableSessionTargetCap(String mode, boolean v) { cfgFor(mode).enableSessionTargetCap = v; }
     public void setEnableSmallCandleFilter(String mode, boolean v) { cfgFor(mode).enableSmallCandleFilter = v; }
     public void setTrailTriggerPct(String mode, double v) { cfgFor(mode).trailTriggerPct = v; }
     public void setTrailSlPct(String mode, double v)      { cfgFor(mode).trailSlPct = v; }
@@ -172,81 +158,73 @@ public class RiskSettingsStore {
     public void saveFor(String mode) {
         Cfg c = cfgFor(mode);
         try {
-            Map<String, Object> state = new LinkedHashMap<>();
-            state.put("tradingStartTime",  c.tradingStartTime);
-            state.put("tradingEndTime",    c.tradingEndTime);
-            state.put("totalCapital",      c.totalCapital);
-            state.put("maxRiskPerDayPct", c.maxRiskPerDayPct);
-            state.put("riskPerTrade",     c.riskPerTrade);
-            state.put("autoSquareOffTime", c.autoSquareOffTime);
-            state.put("atrMultiplier",    c.atrMultiplier);
-            state.put("enableR4S4",      c.enableR4S4);
-            state.put("sessionMoveLimit", c.sessionMoveLimit);
-            state.put("brokeragePerOrder", c.brokeragePerOrder);
-            state.put("fixedQuantity",   c.fixedQuantity);
-            state.put("capitalPerTrade", c.capitalPerTrade);
-            state.put("telegramAlertFrequency", c.telegramAlertFrequency);
-            state.put("enableLargeCandleFilter", c.enableLargeCandleFilter);
-            state.put("largeCandleAtrThreshold", c.largeCandleAtrThreshold);
-            state.put("enableTargetShift", c.enableTargetShift);
-            state.put("enableSessionTargetCap", c.enableSessionTargetCap);
-            state.put("enableSmallCandleFilter", c.enableSmallCandleFilter);
-            state.put("smallCandleAtrThreshold", c.smallCandleAtrThreshold);
-            state.put("trailTriggerPct", c.trailTriggerPct);
-            state.put("trailSlPct", c.trailSlPct);
-            Files.writeString(Paths.get(fileFor(mode)), mapper.writeValueAsString(state));
-        } catch (IOException e) {
+            upsert("tradingStartTime", c.tradingStartTime);
+            upsert("tradingEndTime", c.tradingEndTime);
+            upsert("totalCapital", String.valueOf(c.totalCapital));
+            upsert("maxRiskPerDayPct", String.valueOf(c.maxRiskPerDayPct));
+            upsert("riskPerTrade", String.valueOf(c.riskPerTrade));
+            upsert("autoSquareOffTime", c.autoSquareOffTime);
+            upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
+            upsert("enableR4S4", String.valueOf(c.enableR4S4));
+            upsert("sessionMoveLimit", String.valueOf(c.sessionMoveLimit));
+            upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
+            upsert("fixedQuantity", String.valueOf(c.fixedQuantity));
+            upsert("capitalPerTrade", String.valueOf(c.capitalPerTrade));
+            upsert("telegramAlertFrequency", String.valueOf(c.telegramAlertFrequency));
+            upsert("enableLargeCandleFilter", String.valueOf(c.enableLargeCandleFilter));
+            upsert("largeCandleAtrThreshold", String.valueOf(c.largeCandleAtrThreshold));
+            upsert("enableTargetShift", String.valueOf(c.enableTargetShift));
+            upsert("enableSmallCandleFilter", String.valueOf(c.enableSmallCandleFilter));
+            upsert("smallCandleAtrThreshold", String.valueOf(c.smallCandleAtrThreshold));
+            upsert("trailTriggerPct", String.valueOf(c.trailTriggerPct));
+            upsert("trailSlPct", String.valueOf(c.trailSlPct));
+        } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to save {}: {}", mode, e.getMessage());
         }
     }
 
-    // ── load ──────────────────────────────────────────────────────────────────
-    @SuppressWarnings("unchecked")
-    private void load(String mode) {
-        try {
-            Path path = Paths.get(fileFor(mode));
-            if (!Files.exists(path)) return;
-            Map<String, Object> state = mapper.readValue(Files.readString(path), Map.class);
-            Cfg c = cfgFor(mode);
-            if (state.containsKey("tradingStartTime"))  c.tradingStartTime  = state.get("tradingStartTime").toString();
-            if (state.containsKey("tradingEndTime"))    c.tradingEndTime    = state.get("tradingEndTime").toString();
-            if (state.containsKey("totalCapital"))      c.totalCapital      = Double.parseDouble(state.get("totalCapital").toString());
-            if (state.containsKey("maxRiskPerDayPct")) c.maxRiskPerDayPct = Double.parseDouble(state.get("maxRiskPerDayPct").toString());
-            if (state.containsKey("riskPerTrade"))     c.riskPerTrade     = Double.parseDouble(state.get("riskPerTrade").toString());
-            if (state.containsKey("autoSquareOffTime")) c.autoSquareOffTime = state.get("autoSquareOffTime").toString();
-            if (state.containsKey("atrMultiplier"))    c.atrMultiplier    = Double.parseDouble(state.get("atrMultiplier").toString());
-            if (state.containsKey("enableR4S4"))       c.enableR4S4       = Boolean.parseBoolean(state.get("enableR4S4").toString());
-            if (state.containsKey("sessionMoveLimit")) c.sessionMoveLimit = Double.parseDouble(state.get("sessionMoveLimit").toString());
-            if (state.containsKey("brokeragePerOrder")) c.brokeragePerOrder = Double.parseDouble(state.get("brokeragePerOrder").toString());
-            if (state.containsKey("fixedQuantity"))   c.fixedQuantity   = Integer.parseInt(state.get("fixedQuantity").toString());
-            if (state.containsKey("capitalPerTrade")) c.capitalPerTrade = Double.parseDouble(state.get("capitalPerTrade").toString());
-            if (state.containsKey("telegramAlertFrequency")) c.telegramAlertFrequency = Integer.parseInt(state.get("telegramAlertFrequency").toString());
-            if (state.containsKey("enableLargeCandleFilter")) c.enableLargeCandleFilter = Boolean.parseBoolean(state.get("enableLargeCandleFilter").toString());
-            if (state.containsKey("largeCandleAtrThreshold")) c.largeCandleAtrThreshold = Double.parseDouble(state.get("largeCandleAtrThreshold").toString());
-            if (state.containsKey("enableTargetShift")) c.enableTargetShift = Boolean.parseBoolean(state.get("enableTargetShift").toString());
-            if (state.containsKey("enableSessionTargetCap")) c.enableSessionTargetCap = Boolean.parseBoolean(state.get("enableSessionTargetCap").toString());
-            if (state.containsKey("enableSmallCandleFilter")) c.enableSmallCandleFilter = Boolean.parseBoolean(state.get("enableSmallCandleFilter").toString());
-            if (state.containsKey("smallCandleAtrThreshold")) c.smallCandleAtrThreshold = Double.parseDouble(state.get("smallCandleAtrThreshold").toString());
-            if (state.containsKey("trailTriggerPct")) c.trailTriggerPct = Double.parseDouble(state.get("trailTriggerPct").toString());
-            if (state.containsKey("trailSlPct")) c.trailSlPct = Double.parseDouble(state.get("trailSlPct").toString());
-            log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} enableR4S4={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} trail={}%/{}%", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.enableR4S4, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.trailTriggerPct, c.trailSlPct);
-        } catch (IOException e) {
-            log.error("[RiskSettingsStore] Failed to load {}: {}", mode, e.getMessage());
-        }
+    private void upsert(String key, String value) {
+        SettingEntity entity = settingRepo.findBySettingKey(key).orElse(new SettingEntity(key, value));
+        entity.setSettingValue(value);
+        settingRepo.save(entity);
     }
 
-    /** Migrates legacy risk-settings.json to live settings file on first run. */
-    private void migrate() {
-        Path legacy = Paths.get(LEGACY_FILE);
-        Path livePath = Paths.get(LIVE_FILE);
-        if (!Files.exists(legacy)) return;
-        if (Files.exists(livePath)) return; // already migrated
+    // ── load ──────────────────────────────────────────────────────────────────
+    private void load(String mode) {
         try {
-            String json = Files.readString(legacy);
-            Files.writeString(livePath, json);
-            log.info("[RiskSettingsStore] Migrated legacy risk-settings.json to live/");
-        } catch (IOException e) {
-            log.error("[RiskSettingsStore] Migration failed: {}", e.getMessage());
+            List<SettingEntity> all = settingRepo.findAll();
+            if (all.isEmpty()) return;
+            Cfg c = cfgFor(mode);
+            for (SettingEntity s : all) {
+                String k = s.getSettingKey();
+                String v = s.getSettingValue();
+                if (v == null) continue;
+                switch (k) {
+                    case "tradingStartTime"  -> c.tradingStartTime = v;
+                    case "tradingEndTime"    -> c.tradingEndTime = v;
+                    case "totalCapital"      -> c.totalCapital = Double.parseDouble(v);
+                    case "maxRiskPerDayPct"  -> c.maxRiskPerDayPct = Double.parseDouble(v);
+                    case "riskPerTrade"      -> c.riskPerTrade = Double.parseDouble(v);
+                    case "autoSquareOffTime" -> c.autoSquareOffTime = v;
+                    case "atrMultiplier"     -> c.atrMultiplier = Double.parseDouble(v);
+                    case "enableR4S4"        -> c.enableR4S4 = Boolean.parseBoolean(v);
+                    case "sessionMoveLimit"  -> c.sessionMoveLimit = Double.parseDouble(v);
+                    case "brokeragePerOrder" -> c.brokeragePerOrder = Double.parseDouble(v);
+                    case "fixedQuantity"     -> c.fixedQuantity = Integer.parseInt(v);
+                    case "capitalPerTrade"   -> c.capitalPerTrade = Double.parseDouble(v);
+                    case "telegramAlertFrequency" -> c.telegramAlertFrequency = Integer.parseInt(v);
+                    case "enableLargeCandleFilter" -> c.enableLargeCandleFilter = Boolean.parseBoolean(v);
+                    case "largeCandleAtrThreshold" -> c.largeCandleAtrThreshold = Double.parseDouble(v);
+                    case "enableTargetShift" -> c.enableTargetShift = Boolean.parseBoolean(v);
+                    case "enableSmallCandleFilter" -> c.enableSmallCandleFilter = Boolean.parseBoolean(v);
+                    case "smallCandleAtrThreshold" -> c.smallCandleAtrThreshold = Double.parseDouble(v);
+                    case "trailTriggerPct"   -> c.trailTriggerPct = Double.parseDouble(v);
+                    case "trailSlPct"        -> c.trailSlPct = Double.parseDouble(v);
+                }
+            }
+            log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} enableR4S4={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} trail={}%/{}%", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.enableR4S4, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.trailTriggerPct, c.trailSlPct);
+        } catch (Exception e) {
+            log.error("[RiskSettingsStore] Failed to load {}: {}", mode, e.getMessage());
         }
     }
 }

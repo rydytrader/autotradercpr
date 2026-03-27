@@ -69,7 +69,7 @@ public class LiveFyersClient implements FyersClient {
 
     @Override
     public JsonNode modifyOrder(String orderJson, String authHeader) throws Exception {
-        return put(BASE + "/orders/sync", orderJson, authHeader);
+        return patch(BASE + "/orders/sync", orderJson, authHeader);
     }
 
     // ── HTTP HELPERS ──────────────────────────────────────────────────────────
@@ -98,6 +98,27 @@ public class LiveFyersClient implements FyersClient {
         conn.getOutputStream().write(body.getBytes());
         conn.getOutputStream().close();
         return readResponse(conn);
+    }
+
+    private JsonNode patch(String urlStr, String body, String authHeader) throws Exception {
+        // HttpURLConnection doesn't support PATCH — use Java 11+ HttpClient instead
+        java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+            .connectTimeout(java.time.Duration.ofMillis(CONNECT_TIMEOUT))
+            .build();
+        var reqBuilder = java.net.http.HttpRequest.newBuilder()
+            .uri(java.net.URI.create(urlStr))
+            .timeout(java.time.Duration.ofMillis(READ_TIMEOUT))
+            .header("Content-Type", "application/json")
+            .method("PATCH", java.net.http.HttpRequest.BodyPublishers.ofString(body));
+        if (authHeader != null) reqBuilder.header("Authorization", authHeader);
+        java.net.http.HttpResponse<String> resp = client.send(reqBuilder.build(),
+            java.net.http.HttpResponse.BodyHandlers.ofString());
+        try {
+            return mapper.readTree(resp.body());
+        } catch (Exception e) {
+            return mapper.createObjectNode().put("s", "error").put("code", resp.statusCode())
+                .put("message", "HTTP " + resp.statusCode() + ": " + resp.body().substring(0, Math.min(resp.body().length(), 200)));
+        }
     }
 
     private JsonNode put(String urlStr, String body, String authHeader) throws Exception {
@@ -129,13 +150,22 @@ public class LiveFyersClient implements FyersClient {
     }
 
     private JsonNode readResponse(HttpURLConnection conn) throws Exception {
-        InputStream is = conn.getResponseCode() < 400
-                ? conn.getInputStream() : conn.getErrorStream();
+        int httpStatus = conn.getResponseCode();
+        InputStream is = httpStatus < 400 ? conn.getInputStream() : conn.getErrorStream();
+        if (is == null) {
+            return mapper.createObjectNode().put("s", "error").put("code", httpStatus).put("message", "HTTP " + httpStatus + " (no response body)");
+        }
         BufferedReader br = new BufferedReader(new InputStreamReader(is));
         StringBuilder sb = new StringBuilder();
         String line;
         while ((line = br.readLine()) != null) sb.append(line);
         br.close();
-        return mapper.readTree(sb.toString());
+        String body = sb.toString();
+        try {
+            return mapper.readTree(body);
+        } catch (Exception e) {
+            // Non-JSON response (e.g. HTML 404 page)
+            return mapper.createObjectNode().put("s", "error").put("code", httpStatus).put("message", "HTTP " + httpStatus + ": " + body.substring(0, Math.min(body.length(), 200)));
+        }
     }
 }

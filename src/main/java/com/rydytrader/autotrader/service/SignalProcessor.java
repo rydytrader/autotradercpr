@@ -99,7 +99,6 @@ public class SignalProcessor {
             }
         }
 
-        boolean sessionCapped = false; // session target cap removed — use CPR levels only
 
         // ── 4i. Quantity ────────────────────────────────────────────────────────
         int qty = baseQty;

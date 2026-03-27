@@ -253,13 +253,6 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Session Target Cap</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableSessionTargetCap" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Cap target at session high/low if it's between entry and target</span>
-                    </div>
-                </div>
-                <div class="form-group">
                     <label class="form-label">Small Candle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableSmallCandleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
@@ -448,7 +441,6 @@
             document.getElementById('enableLargeCandleFilter').checked = d.enableLargeCandleFilter !== false;
             document.getElementById('largeCandleAtrThreshold').value = d.largeCandleAtrThreshold || 1.0;
             document.getElementById('enableTargetShift').checked = d.enableTargetShift !== false;
-            document.getElementById('enableSessionTargetCap').checked = d.enableSessionTargetCap !== false;
             document.getElementById('enableSmallCandleFilter').checked = d.enableSmallCandleFilter === true;
             document.getElementById('smallCandleAtrThreshold').value = d.smallCandleAtrThreshold || 0.5;
             document.getElementById('trailTriggerPct').value = d.trailTriggerPct != null ? d.trailTriggerPct : 75;
@@ -521,7 +513,6 @@
                 enableLargeCandleFilter: document.getElementById('enableLargeCandleFilter').checked,
                 largeCandleAtrThreshold: parseFloat(document.getElementById('largeCandleAtrThreshold').value) || 1.0,
                 enableTargetShift: document.getElementById('enableTargetShift').checked,
-                enableSessionTargetCap: document.getElementById('enableSessionTargetCap').checked,
                 enableSmallCandleFilter: document.getElementById('enableSmallCandleFilter').checked,
                 smallCandleAtrThreshold: parseFloat(document.getElementById('smallCandleAtrThreshold').value) || 0.5,
                 trailTriggerPct: parseFloat(document.getElementById('trailTriggerPct').value) || 0,

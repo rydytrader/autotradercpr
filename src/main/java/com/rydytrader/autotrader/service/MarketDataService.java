@@ -270,14 +270,18 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         Map<String, Object> state = positionStateStore.load(symbol);
         if (state == null) return;
 
-        String side = state.getOrDefault("side", "").toString();
-        String slOrderId = state.getOrDefault("slOrderId", "").toString();
+        Object sideObj = state.get("side");
+        Object slIdObj = state.get("slOrderId");
+        String side = sideObj != null ? sideObj.toString() : "";
+        String slOrderId = slIdObj != null ? slIdObj.toString() : "";
         if (slOrderId.isEmpty()) return;
 
         double entryPrice = 0, targetPrice = 0;
         try {
-            entryPrice = Double.parseDouble(state.getOrDefault("avgPrice", "0").toString());
-            targetPrice = Double.parseDouble(state.getOrDefault("targetPrice", "0").toString());
+            Object avgObj = state.get("avgPrice");
+            Object tgtObj = state.get("targetPrice");
+            if (avgObj != null) entryPrice = Double.parseDouble(avgObj.toString());
+            if (tgtObj != null) targetPrice = Double.parseDouble(tgtObj.toString());
         } catch (NumberFormatException ignored) {}
 
         if (entryPrice <= 0 || targetPrice <= 0) return;
@@ -308,8 +312,10 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         boolean ok = orderService.modifySlOrder(slOrderId, newSl, symbol);
         if (ok) {
             // Update saved SL price on disk
-            double currentTarget = Double.parseDouble(state.getOrDefault("targetPrice", "0").toString());
-            String targetOrderId = state.getOrDefault("targetOrderId", "").toString();
+            Object ctObj = state.get("targetPrice");
+            Object toObj = state.get("targetOrderId");
+            double currentTarget = ctObj != null ? Double.parseDouble(ctObj.toString()) : 0;
+            String targetOrderId = toObj != null ? toObj.toString() : "";
             positionStateStore.saveOcoState(symbol, slOrderId, targetOrderId, newSl, currentTarget);
 
             eventService.log("[SUCCESS] Trailing SL for " + symbol + ": moved to "
@@ -482,16 +488,38 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
     }
 
     private List<Map<String, Object>> buildPayload() {
-        List<Map<String, Object>> result = new ArrayList<>();
+        List<Map<String, Object>> indices = new ArrayList<>();
+        List<Map<String, Object>> stocks = new ArrayList<>();
         for (TickData tick : currentTicks.values()) {
             Map<String, Object> item = new LinkedHashMap<>();
-            item.put("symbol", tick.getShortName() != null ? tick.getShortName() : tick.getFyersSymbol());
+            String shortName = tick.getShortName() != null ? tick.getShortName() : tick.getFyersSymbol();
+            item.put("symbol", shortName);
             item.put("lp", Math.round(tick.getLtp() * 100.0) / 100.0);
             item.put("ch", Math.round(tick.getChange() * 100.0) / 100.0);
             item.put("chp", Math.round(tick.getChangePercent() * 100.0) / 100.0);
             item.put("position", tick.isHasPosition());
-            result.add(item);
+            // Indices first, then stocks
+            if (tick.getFyersSymbol() != null && tick.getFyersSymbol().endsWith("-INDEX")) {
+                indices.add(item);
+            } else {
+                stocks.add(item);
+            }
         }
+        // Sort indices in preferred order: Nifty 50, Bank Nifty, Nifty IT, rest alphabetical
+        java.util.Map<String, Integer> indexOrder = java.util.Map.of(
+            "Nifty 50", 1, "NIFTY 50", 1,
+            "Nifty Bank", 2, "BANK NIFTY", 2,
+            "Nifty IT", 3, "NIFTY IT", 3
+        );
+        indices.sort((a, b) -> {
+            int oa = indexOrder.getOrDefault(a.get("symbol"), 99);
+            int ob = indexOrder.getOrDefault(b.get("symbol"), 99);
+            if (oa != ob) return Integer.compare(oa, ob);
+            return ((String) a.get("symbol")).compareTo((String) b.get("symbol"));
+        });
+        stocks.sort((a, b) -> ((String) a.get("symbol")).compareTo((String) b.get("symbol")));
+        List<Map<String, Object>> result = new ArrayList<>(indices);
+        result.addAll(stocks);
         return result;
     }
 

@@ -56,15 +56,17 @@ public class OrderService {
     public boolean modifySlOrder(String orderId, double newSlPrice, String symbol) {
         try {
             double rounded = roundToTick(newSlPrice, symbol);
-            String json = "{\"id\":\"" + orderId + "\",\"type\":3,\"stopPrice\":" + rounded + ",\"limitPrice\":0}";
-            log.info("[OrderService] Modify SL {} → {}: {}", orderId, rounded, json);
+            // Format price to avoid floating point noise (e.g. 465.70000000000005 → 465.70)
+            String priceStr = String.format("%.2f", rounded);
+            String json = "{\"id\":\"" + orderId + "\",\"type\":3,\"stopPrice\":" + priceStr + ",\"limitPrice\":0}";
+            log.info("[OrderService] Modify SL {} → {} body={}", orderId, priceStr, json);
             String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
             JsonNode resp = fyersClient.modifyOrder(json, auth);
             boolean ok = resp != null && resp.has("s") && "ok".equals(resp.get("s").asText());
             if (ok) {
                 log.info("[OrderService] SL modified successfully: {} → {}", orderId, rounded);
             } else {
-                log.error("[OrderService] SL modify failed: {}", resp);
+                log.error("[OrderService] SL modify failed | Response: {} | OrderId: {} | Body: {}", resp, orderId, json);
             }
             return ok;
         } catch (Exception e) {

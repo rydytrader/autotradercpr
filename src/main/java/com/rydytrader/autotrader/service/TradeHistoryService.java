@@ -1,44 +1,45 @@
 package com.rydytrader.autotrader.service;
 
 import com.rydytrader.autotrader.dto.TradeRecord;
+import com.rydytrader.autotrader.entity.TradeEntity;
+import com.rydytrader.autotrader.repository.TradeRepository;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.io.*;
 import java.time.LocalDate;
-import java.nio.file.*;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class TradeHistoryService {
 
     private static final Logger log = LoggerFactory.getLogger(TradeHistoryService.class);
 
-    private static final DateTimeFormatter DATE_FMT   = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    private static final String            FILE_PREFIX = "trades-history-";
-
-    private static final String LOG_DIR = "../store/data/history";
-
     private final RiskSettingsStore riskSettings;
     private final List<TradeRecord> trades = Collections.synchronizedList(new ArrayList<>());
     // Dedup: track last recorded exit per symbol to prevent duplicate entries
-    private final java.util.concurrent.ConcurrentHashMap<String, Long> lastRecordTime = new java.util.concurrent.ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> lastRecordTime = new ConcurrentHashMap<>();
     private static final long DEDUP_WINDOW_MS = 5000; // 5 seconds
+
+    @Autowired
+    private TradeRepository tradeRepo;
 
     public TradeHistoryService(RiskSettingsStore riskSettings) {
         this.riskSettings = riskSettings;
-        try {
-            Files.createDirectories(Paths.get("../store/data/history"));
-        } catch (IOException e) { log.error("Error creating trade history directories", e); }
-        loadTodaysTradesFromFile();
+    }
+
+    @jakarta.annotation.PostConstruct
+    public void init() {
+        loadTodaysTradesFromDb();
     }
 
     public void addRecord(TradeRecord record) {
         trades.add(0, record);
-        appendToFile(record);
+        saveToDb(record);
         log.info("[LIVE] Trade: {} | {} | P&L: {} | Charges: {} | Net: {} | {}", record.getSymbol(), record.getSide(), record.getPnl(), record.getCharges(), record.getNetPnl(), record.getResult());
     }
 
@@ -65,98 +66,64 @@ public class TradeHistoryService {
 
     public List<TradeRecord> getTradesForRange(LocalDate from, LocalDate to) {
         List<TradeRecord> result = new ArrayList<>();
-        LocalDate d = from;
-        while (!d.isAfter(to)) {
-            String file = logDir() + "/" + FILE_PREFIX + d.format(DATE_FMT) + ".csv";
-            Path path = Paths.get(file);
-            if (Files.exists(path)) {
-                try {
-                    List<String> lines = Files.readAllLines(path);
-                    for (int i = 1; i < lines.size(); i++) {
-                        String[] p = lines.get(i).split(",");
-                        if (p.length < 7) continue;
-                        try {
-                            String setup = p.length >= 8 ? p[7] : "";
-                            double charges = p.length >= 10 ? Double.parseDouble(p[9]) : 0;
-                            if (charges > 0) {
-                                result.add(new TradeRecord(p[0], p[1], p[2],
-                                    Integer.parseInt(p[3]),
-                                    Double.parseDouble(p[4]),
-                                    Double.parseDouble(p[5]),
-                                    p[6], setup, charges, true));
-                            } else {
-                                result.add(new TradeRecord(p[0], p[1], p[2],
-                                    Integer.parseInt(p[3]),
-                                    Double.parseDouble(p[4]),
-                                    Double.parseDouble(p[5]),
-                                    p[6], setup));
-                            }
-                        } catch (Exception ignored) {}
-                    }
-                } catch (IOException e) { log.error("Error reading trade history file", e); }
-            }
-            d = d.plusDays(1);
+        List<TradeEntity> entities = tradeRepo.findByTradeDateBetween(from, to);
+        for (TradeEntity e : entities) {
+            result.add(entityToRecord(e));
         }
         return result;
     }
 
     public void reloadForCurrentMode() {
+        // No-op: DB handles persistence; just refresh in-memory cache
         trades.clear();
-        loadTodaysTradesFromFile();
+        loadTodaysTradesFromDb();
     }
 
+    @Transactional
     public void clearToday() {
         trades.clear();
-        try { Files.deleteIfExists(Paths.get(todaysFile())); } catch (IOException e) { log.error("Error clearing today's trade file", e); }
+        tradeRepo.deleteByTradeDate(LocalDate.now());
     }
 
-    // ── FILE PATHS ────────────────────────────────────────────────────────────
-    private String logDir()   { return LOG_DIR; }
-    private String todaysFile() {
-        return logDir() + "/" + FILE_PREFIX + LocalDate.now().format(DATE_FMT) + ".csv";
-    }
-
-    private void appendToFile(TradeRecord r) {
+    private void saveToDb(TradeRecord r) {
         try {
-            String filePath = todaysFile();
-            boolean isNew = !Files.exists(Paths.get(filePath));
-            try (FileWriter fw = new FileWriter(filePath, true)) {
-                if (isNew) fw.write("timestamp,symbol,side,qty,entryPrice,exitPrice,exitReason,setup,pnl,charges,netPnl\n");
-                fw.write(String.format("%s,%s,%s,%d,%.2f,%.2f,%s,%s,%.2f,%.2f,%.2f\n",
-                    r.getTimestamp(), r.getSymbol(), r.getSide(), r.getQty(),
-                    r.getEntryPrice(), r.getExitPrice(), r.getExitReason(), r.getSetup(),
-                    r.getPnl(), r.getCharges(), r.getNetPnl()));
-            }
-        } catch (IOException e) { log.error("Error appending trade record to file", e); }
+            TradeEntity entity = new TradeEntity();
+            entity.setTradeDate(LocalDate.now());
+            entity.setTimestamp(r.getTimestamp());
+            entity.setSymbol(r.getSymbol());
+            entity.setSide(r.getSide());
+            entity.setQty(r.getQty());
+            entity.setEntryPrice(r.getEntryPrice());
+            entity.setExitPrice(r.getExitPrice());
+            entity.setExitReason(r.getExitReason());
+            entity.setSetup(r.getSetup());
+            entity.setPnl(r.getPnl());
+            entity.setCharges(r.getCharges());
+            entity.setNetPnl(r.getNetPnl());
+            tradeRepo.save(entity);
+        } catch (Exception e) {
+            log.error("Error saving trade to DB", e);
+        }
     }
 
-    private void loadTodaysTradesFromFile() {
+    private void loadTodaysTradesFromDb() {
         try {
-            Path path = Paths.get(todaysFile());
-            if (!Files.exists(path)) return;
-            List<String> lines = Files.readAllLines(path);
-            for (int i = lines.size() - 1; i >= 1; i--) {
-                String[] p = lines.get(i).split(",");
-                if (p.length < 7) continue;
-                try {
-                    String setup = p.length >= 8 ? p[7] : "";
-                    double charges = p.length >= 10 ? Double.parseDouble(p[9]) : 0;
-                    if (charges > 0) {
-                        trades.add(new TradeRecord(p[0], p[1], p[2],
-                            Integer.parseInt(p[3]),
-                            Double.parseDouble(p[4]),
-                            Double.parseDouble(p[5]),
-                            p[6], setup, charges, true));
-                    } else {
-                        trades.add(new TradeRecord(p[0], p[1], p[2],
-                            Integer.parseInt(p[3]),
-                            Double.parseDouble(p[4]),
-                            Double.parseDouble(p[5]),
-                            p[6], setup));
-                    }
-                } catch (Exception ignored) {}
+            List<TradeEntity> entities = tradeRepo.findByTradeDate(LocalDate.now());
+            // Load in reverse order (newest first) to match previous behavior
+            for (int i = entities.size() - 1; i >= 0; i--) {
+                trades.add(entityToRecord(entities.get(i)));
             }
-            log.info("Loaded {} trade(s) from {}", trades.size(), todaysFile());
-        } catch (IOException e) { log.error("Error loading today's trades from file", e); }
+            if (!entities.isEmpty()) {
+                log.info("Loaded {} trade(s) from DB for today", entities.size());
+            }
+        } catch (Exception e) {
+            log.error("Error loading today's trades from DB", e);
+        }
+    }
+
+    private TradeRecord entityToRecord(TradeEntity e) {
+        return new TradeRecord(e.getTimestamp(), e.getSymbol(), e.getSide(),
+                e.getQty(), e.getEntryPrice(), e.getExitPrice(),
+                e.getExitReason(), e.getSetup(), e.getCharges(), true);
     }
 }

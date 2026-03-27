@@ -21,14 +21,14 @@ public class EventService {
     private final List<String> tradeLogs = new CopyOnWriteArrayList<>();
 
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
-    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
-    private static final String LOG_DIR = "../store/data/events";
+    private static final String LOG_FILE = "../store/event-log.txt";
 
     public EventService(TelegramService telegramService) {
         this.telegramService = telegramService;
-        new File("../store/data/events").mkdirs();
-        loadTodaysLogsFromFile();
+        ensureLogDir();
+        clearIfStale();
+        loadLogsFromFile();
     }
 
     public void log(String message) {
@@ -64,25 +64,45 @@ public class EventService {
 
     public void reloadLogsForCurrentMode() {
         tradeLogs.clear();
-        loadTodaysLogsFromFile();
+        loadLogsFromFile();
     }
 
     public void clearToday() {
         tradeLogs.clear();
-        try { Files.deleteIfExists(Paths.get(logFile())); } catch (IOException e) { log.error("Error clearing today's event log", e); }
+        try { Files.deleteIfExists(Paths.get(LOG_FILE)); } catch (IOException e) { log.error("Error clearing event log", e); }
     }
 
-    private String logDir()  { return LOG_DIR; }
-    private String logFile() { return logDir() + "/event-logs-" + LocalDate.now().format(DATE_FMT) + ".txt"; }
+    private void ensureLogDir() {
+        try {
+            Path parent = Paths.get(LOG_FILE).getParent();
+            if (parent != null) Files.createDirectories(parent);
+        } catch (IOException e) { log.error("Error creating log directory", e); }
+    }
 
-    private void loadTodaysLogsFromFile() {
-        File file = new File(logFile());
+    /** If the log file's last modified date is not today, clear it. */
+    private void clearIfStale() {
+        try {
+            Path path = Paths.get(LOG_FILE);
+            if (!Files.exists(path)) return;
+            LocalDate fileDate = LocalDate.ofInstant(
+                    Files.getLastModifiedTime(path).toInstant(),
+                    java.time.ZoneId.systemDefault());
+            if (!fileDate.equals(LocalDate.now())) {
+                Files.deleteIfExists(path);
+                log.info("Cleared stale event log from {}", fileDate);
+            }
+        } catch (IOException e) {
+            log.error("Error checking event log date", e);
+        }
+    }
+
+    private void loadLogsFromFile() {
+        File file = new File(LOG_FILE);
         if (!file.exists()) return;
         try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
             String line;
             while ((line = reader.readLine()) != null)
                 if (!line.isBlank()) tradeLogs.add(line);
-            // No cap — keep all of today's logs in memory
             log.info("Loaded {} log entries from {}", tradeLogs.size(), file.getPath());
         } catch (IOException e) {
             log.error("Failed to load logs: {}", e.getMessage());
@@ -90,7 +110,7 @@ public class EventService {
     }
 
     private void writeToFile(String entry) {
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(logFile(), true))) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(LOG_FILE, true))) {
             writer.write(entry);
             writer.newLine();
         } catch (IOException e) {

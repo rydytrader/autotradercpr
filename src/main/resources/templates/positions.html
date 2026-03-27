@@ -530,12 +530,15 @@
 
     // ── MARKET CLOCK ─────────────────────────────────────────────────────────
     var NSE_HOLIDAYS = {}; // {date: name}
-    // Fetch holidays from backend (cached from NSE API)
+    var holidaysLoaded = false;
+    // Fetch holidays from backend (cached from NSE API), then start market clock
     fetch('/api/market-holidays').then(function(r) { return r.json(); }).then(function(data) {
         if (Array.isArray(data)) {
             data.forEach(function(h) { NSE_HOLIDAYS[h.date] = h.name || 'Holiday'; });
         }
-    }).catch(function() {});
+        holidaysLoaded = true;
+        updateMarketClock();
+    }).catch(function() { holidaysLoaded = true; updateMarketClock(); });
     function getHolidayName(date) {
         var d = date.getFullYear() + '-' + String(date.getMonth()+1).padStart(2,'0') + '-' + String(date.getDate()).padStart(2,'0');
         return NSE_HOLIDAYS[d] || null;
@@ -645,9 +648,9 @@
         } catch (e) {}
     }
 
-    updateMarketClock();
+    // Market clock starts after holidays are loaded (see fetch above)
     setInterval(function() {
-        updateMarketClock();
+        if (holidaysLoaded) updateMarketClock();
         var now = new Date();
         var h = now.getHours(), m = now.getMinutes();
         // Market open chime at 9:15
