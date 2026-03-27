@@ -95,7 +95,7 @@ public class TradingController {
         double riskPerTrade = riskSettings.getRiskPerTrade();
         double maxLoss = riskSettings.getMaxDailyLoss(); // auto-calculated: totalCapital × maxRiskPerDayPct / 100
         if (fixedQty == -1 && riskPerTrade > 0 && maxLoss > 0) {
-            // Open position risk
+            // Open position risk (0 if SL has been trailed past entry — profit locked)
             double openRisk = 0;
             for (String sym : PositionManager.getAllSymbols()) {
                 Map<String, Object> state = positionStateStore.load(sym);
@@ -103,7 +103,16 @@ public class TradingController {
                     double sl = Double.parseDouble(state.get("slPrice").toString());
                     double avg = Double.parseDouble(state.get("avgPrice").toString());
                     int qty = Integer.parseInt(state.get("qty").toString());
-                    openRisk += qty * Math.abs(avg - sl);
+                    String side = state.containsKey("side") ? state.get("side").toString() : "";
+                    // Only count risk if SL is on the loss side of entry
+                    double risk = 0;
+                    if ("LONG".equals(side) && sl < avg) {
+                        risk = qty * (avg - sl);
+                    } else if ("SHORT".equals(side) && sl > avg) {
+                        risk = qty * (sl - avg);
+                    }
+                    // If SL >= entry (LONG) or SL <= entry (SHORT), risk = 0 (profit locked)
+                    openRisk += risk;
                 }
             }
             // Consumed risk: sum of absolute losses from today's losing trades
@@ -212,7 +221,7 @@ public class TradingController {
             .mapToDouble(p -> ((Number) p.get("pnl")).doubleValue()).sum();
         double netDayPnl     = realizedPnl + unrealizedPnl;
 
-        // Risk budget info
+        // Risk budget info (0 if SL trailed past entry — profit locked)
         double openRisk = 0;
         for (String sym : PositionManager.getAllSymbols()) {
             Map<String, Object> state = positionStateStore.load(sym);
@@ -220,7 +229,14 @@ public class TradingController {
                 double sl = Double.parseDouble(state.get("slPrice").toString());
                 double avg = Double.parseDouble(state.get("avgPrice").toString());
                 int qty = Integer.parseInt(state.get("qty").toString());
-                openRisk += qty * Math.abs(avg - sl);
+                String side = state.containsKey("side") ? state.get("side").toString() : "";
+                double risk = 0;
+                if ("LONG".equals(side) && sl < avg) {
+                    risk = qty * (avg - sl);
+                } else if ("SHORT".equals(side) && sl > avg) {
+                    risk = qty * (sl - avg);
+                }
+                openRisk += risk;
             }
         }
         double consumedRisk = tradeHistoryService.getTrades().stream()

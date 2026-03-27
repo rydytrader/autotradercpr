@@ -104,13 +104,10 @@ public class MarketHolidayService {
             JsonNode root = mapper.readTree(sb.toString());
             Map<LocalDate, String> newHolidays = new LinkedHashMap<>();
 
-            // Parse all segments (CM, CBM, FO, etc.)
-            Iterator<String> segments = root.fieldNames();
-            while (segments.hasNext()) {
-                String segment = segments.next();
-                JsonNode arr = root.get(segment);
-                if (!arr.isArray()) continue;
-                for (JsonNode entry : arr) {
+            // Parse only CM (Capital Market) segment — ignore settlement-only holidays (CBM etc.)
+            JsonNode cmArr = root.get("CM");
+            if (cmArr != null && cmArr.isArray()) {
+                for (JsonNode entry : cmArr) {
                     String dateStr = entry.has("tradingDate") ? entry.get("tradingDate").asText() : "";
                     if (dateStr.isEmpty()) continue;
                     String desc = entry.has("description") ? entry.get("description").asText() : "";
