@@ -113,6 +113,12 @@ public class PollingService {
                 if (!slOrderId.isEmpty() && !targetOrderId.isEmpty()) {
                     double slPrice     = Double.parseDouble(saved.getOrDefault("slPrice", "0").toString());
                     double targetPrice = Double.parseDouble(saved.getOrDefault("targetPrice", "0").toString());
+
+                    // Check if SL or target already filled while bot was down
+                    boolean handledOnRestore = checkOcoFilledOnRestore(
+                        slOrderId, targetOrderId, symbol, qty, exitSide, side, setup, avgPrice, slPrice, targetPrice);
+                    if (handledOnRestore) continue;
+
                     // Try WebSocket tracking first, fall back to polling
                     boolean wsTracked = orderEventService.trackOcoOrders(slOrderId, targetOrderId,
                         symbol, qty, side, exitSide, setup, avgPrice, slPrice, targetPrice);
@@ -133,6 +139,73 @@ public class PollingService {
         } catch (Exception e) {
             log.error("[PollingService] Failed to restore state: {}", e.getMessage());
         }
+    }
+
+    /**
+     * On restore, check if SL or target already filled while bot was down.
+     * Queries the order book via REST API. Returns true if handled (position closed).
+     */
+    private boolean checkOcoFilledOnRestore(String slOrderId, String targetOrderId,
+                                             String symbol, int qty, int exitSide,
+                                             String side, String setup, double avgPrice,
+                                             double slPrice, double targetPrice) {
+        try {
+            // Fetch order book once
+            String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
+            if (auth.contains("null")) return false;
+
+            JsonNode orderBook = fyersClient.getOrders(auth);
+            JsonNode orders = orderBook != null ? orderBook.get("orderBook") : null;
+            if (orders == null || !orders.isArray()) return false;
+
+            String slStatus = null, targetStatus = null;
+            double slFillPrice = 0, targetFillPrice = 0;
+            for (JsonNode order : orders) {
+                String oid = order.has("id") ? order.get("id").asText() : "";
+                String onum = order.has("orderNumber") ? order.get("orderNumber").asText() : "";
+                int status = order.has("status") ? order.get("status").asInt() : 0;
+                double tradedPrice = order.has("tradedPrice") ? order.get("tradedPrice").asDouble() : 0;
+
+                if (slOrderId.equals(oid) || slOrderId.equals(onum)) {
+                    slStatus = String.valueOf(status);
+                    slFillPrice = tradedPrice;
+                }
+                if (targetOrderId.equals(oid) || targetOrderId.equals(onum)) {
+                    targetStatus = String.valueOf(status);
+                    targetFillPrice = tradedPrice;
+                }
+            }
+
+            // Check if SL filled
+            if ("2".equals(slStatus)) {
+                double exitPrice = slFillPrice > 0 ? slFillPrice : slPrice;
+                double pnl = "LONG".equals(side) ? (exitPrice - avgPrice) * qty : (avgPrice - exitPrice) * qty;
+                log.info("[PollingService] SL already filled on restore for {} at {}", symbol, exitPrice);
+                eventService.log("[SUCCESS] SL hit for " + symbol + " at " + exitPrice
+                    + " (detected on restart) | " + (pnl >= 0 ? "PROFIT" : "LOSS") + " ₹" + String.format("%.2f", Math.abs(pnl)));
+                orderService.cancelOrder(targetOrderId);
+                tradeHistoryService.record(symbol, side, qty, avgPrice, exitPrice, "SL", setup);
+                clearSymbolState(symbol);
+                return true;
+            }
+
+            // Check if target filled
+            if ("2".equals(targetStatus)) {
+                double exitPrice = targetFillPrice > 0 ? targetFillPrice : targetPrice;
+                double pnl = "LONG".equals(side) ? (exitPrice - avgPrice) * qty : (avgPrice - exitPrice) * qty;
+                log.info("[PollingService] Target already filled on restore for {} at {}", symbol, exitPrice);
+                eventService.log("[SUCCESS] Target hit for " + symbol + " at " + exitPrice
+                    + " (detected on restart) | " + (pnl >= 0 ? "PROFIT" : "LOSS") + " ₹" + String.format("%.2f", Math.abs(pnl)));
+                orderService.cancelOrder(slOrderId);
+                tradeHistoryService.record(symbol, side, qty, avgPrice, exitPrice, "TARGET", setup);
+                clearSymbolState(symbol);
+                return true;
+            }
+
+        } catch (Exception e) {
+            log.error("[PollingService] Error checking OCO on restore for {}: {}", symbol, e.getMessage());
+        }
+        return false;
     }
 
     // ── ENTRY MONITOR + OCO ───────────────────────────────────────────────────

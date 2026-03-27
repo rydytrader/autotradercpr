@@ -50,6 +50,10 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
     private final RiskSettingsStore   riskSettings;
     private final ObjectMapper        mapper = new ObjectMapper();
 
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private OrderEventService orderEventService;
+
     // Trailing SL: track symbols where SL has already been trailed (one-time per position)
     private final Set<String> trailedSymbols = ConcurrentHashMap.newKeySet();
 
@@ -317,6 +321,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
             double currentTarget = ctObj != null ? Double.parseDouble(ctObj.toString()) : 0;
             String targetOrderId = toObj != null ? toObj.toString() : "";
             positionStateStore.saveOcoState(symbol, slOrderId, targetOrderId, newSl, currentTarget);
+
+            // Mark tracked OCO as trailed so exit reason will be TRAILING_SL
+            if (orderEventService != null) orderEventService.markAsTrailed(slOrderId);
 
             eventService.log("[SUCCESS] Trailing SL for " + symbol + ": moved to "
                 + String.format("%.2f", newSl) + " (locking 50% profit)"

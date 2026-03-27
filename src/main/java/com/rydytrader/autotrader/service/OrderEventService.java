@@ -54,6 +54,8 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     private final ConcurrentHashMap<String, EntryContext> trackedEntries = new ConcurrentHashMap<>();
     // OCO orders: orderId → context for handling SL/target fill
     private final ConcurrentHashMap<String, OcoContext> trackedOcoOrders = new ConcurrentHashMap<>();
+    // Recently handled symbols — prevents duplicate recording when position event arrives after OCO fill
+    private final ConcurrentHashMap<String, Long> recentlyHandled = new ConcurrentHashMap<>();
 
     /** Context for a tracked entry order. */
     public static class EntryContext {
@@ -100,6 +102,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         public final double entryFillPrice;
         public volatile boolean handled = false;
         public volatile double currentPrice; // tracks current SL stop price or target limit price
+        public volatile boolean trailed = false; // true if SL was moved by trailing logic
 
         public OcoContext(String symbol, int quantity, String positionSide, int exitSide,
                          String counterpartOrderId, String type, String setup, double entryFillPrice) {
@@ -279,6 +282,12 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         trackedOcoOrders.remove(orderId);
     }
 
+    /** Mark a tracked SL order as trailed (exit reason will be TRAILING_SL instead of SL). */
+    public void markAsTrailed(String slOrderId) {
+        OcoContext ctx = trackedOcoOrders.get(slOrderId);
+        if (ctx != null) ctx.trailed = true;
+    }
+
     /** Untrack all orders for a symbol. */
     public void untrackSymbol(String symbol) {
         trackedEntries.entrySet().removeIf(e -> symbol.equals(e.getValue().symbol));
@@ -364,6 +373,19 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             boolean isTracked = !"NONE".equals(currentPos);
 
             if (netQty != 0 && !isTracked) {
+                // Skip if recently handled by entry fill (bot-placed order)
+                Long entryHandledAt = recentlyHandled.get(symbol);
+                if (entryHandledAt != null && (System.currentTimeMillis() - entryHandledAt) < 30_000) {
+                    log.info("[OrderEventSvc] Position event for {} skipped — recently handled by entry fill", symbol);
+                    return;
+                }
+                // Skip if entry order is currently being tracked (fill event hasn't arrived yet)
+                boolean hasTrackedEntry = trackedEntries.values().stream()
+                    .anyMatch(ctx -> symbol.equals(ctx.symbol) && !ctx.handled);
+                if (hasTrackedEntry) {
+                    log.info("[OrderEventSvc] Position event for {} skipped — entry order still tracked", symbol);
+                    return;
+                }
                 // ── New position detected (manual trade on Fyers) ──
                 handleNewManualPosition(symbol, netQty, netAvg);
             } else if (netQty == 0 && isTracked) {
@@ -412,6 +434,27 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
 
     /** Handle an externally closed position (manual close on Fyers terminal). */
     private void handleExternalClose(String symbol, String positionSide) {
+        // Defer processing by 5 seconds — gives time for order fill event to arrive first
+        // (Fyers doesn't guarantee order of position vs order events)
+        if (scheduler != null && !scheduler.isShutdown()) {
+            scheduler.schedule(() -> handleExternalCloseDeferred(symbol, positionSide), 5, TimeUnit.SECONDS);
+        }
+    }
+
+    private void handleExternalCloseDeferred(String symbol, String positionSide) {
+        // Check if position was already cleared by OCO fill handler
+        if ("NONE".equals(PositionManager.getPosition(symbol))) {
+            log.info("[OrderEventSvc] Position for {} already cleared — skipping external close", symbol);
+            return;
+        }
+
+        // Check if this symbol was recently handled by OCO fill (within 30s)
+        Long handledAt = recentlyHandled.get(symbol);
+        if (handledAt != null && (System.currentTimeMillis() - handledAt) < 30_000) {
+            log.info("[OrderEventSvc] Position event for {} skipped — recently handled by OCO fill", symbol);
+            return;
+        }
+
         // Check if OCO orders are being tracked — if so, the fill handler will take care of it
         boolean hasTrackedOco = trackedOcoOrders.values().stream()
             .anyMatch(ctx -> symbol.equals(ctx.symbol) && !ctx.handled);
@@ -420,7 +463,40 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             return;
         }
 
-        // External close — record trade and clear state
+        // Check if this is a bot-managed position (has saved SL/target order IDs)
+        // If so, the order fill event will handle it — not a manual close
+        Map<String, Object> savedState = positionStateStore.load(symbol);
+        if (savedState != null) {
+            Object slId = savedState.get("slOrderId");
+            Object tgtId = savedState.get("targetOrderId");
+            if ((slId != null && !slId.toString().isEmpty()) || (tgtId != null && !tgtId.toString().isEmpty())) {
+                log.info("[OrderEventSvc] Position for {} has saved OCO IDs — not a manual close, waiting for order event", symbol);
+                // Re-defer once more to give order fill event time
+                if (scheduler != null && !scheduler.isShutdown()) {
+                    scheduler.schedule(() -> handleExternalCloseFinal(symbol, positionSide), 5, TimeUnit.SECONDS);
+                }
+                return;
+            }
+        }
+
+        handleExternalCloseFinal(symbol, positionSide);
+    }
+
+    /** Final attempt — only records MANUAL if position is truly unhandled after all delays. */
+    private void handleExternalCloseFinal(String symbol, String positionSide) {
+        // Final check: position already cleared?
+        if ("NONE".equals(PositionManager.getPosition(symbol))) {
+            log.info("[OrderEventSvc] Position for {} already cleared (final check) — skipping", symbol);
+            return;
+        }
+        // Final check: recently handled?
+        Long handledAt = recentlyHandled.get(symbol);
+        if (handledAt != null && (System.currentTimeMillis() - handledAt) < 30_000) {
+            log.info("[OrderEventSvc] Position for {} skipped (final check) — recently handled", symbol);
+            return;
+        }
+
+        // Genuinely external close — record trade and clear state
         double entryPrice = pollingService != null ? pollingService.getEntryAvg(symbol) : 0;
         Map<String, Object> state = positionStateStore.load(symbol);
         if (entryPrice <= 0 && state != null && state.containsKey("avgPrice")) {
@@ -474,6 +550,9 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     // ────────────────────────────────────────────────────────────────────────────
 
     private void handleFill(String orderId, String symbol, double tradedPrice, String tag) {
+        log.info("[OrderEventSvc] handleFill called: orderId={} symbol={} price={} tag={} trackedOco={} trackedEntry={}",
+            orderId, symbol, tradedPrice, tag, trackedOcoOrders.containsKey(orderId), trackedEntries.containsKey(orderId));
+
         // Check if this is a tracked entry order
         EntryContext entry = trackedEntries.remove(orderId);
         if (entry != null && !entry.handled) {
@@ -497,6 +576,9 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     private void handleEntryFill(EntryContext ctx, String orderId, double fillPrice) {
         String symbol = ctx.symbol;
         double entryPrice = fillPrice > 0 ? fillPrice : ctx.slPrice; // fallback
+
+        // Mark as recently handled to prevent duplicate from position event
+        recentlyHandled.put(symbol, System.currentTimeMillis());
 
         // Recalculate SL from actual fill price (more accurate than Pine Script's close)
         double adjustedSl = ctx.slPrice;
@@ -579,6 +661,9 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     private void handleOcoFill(OcoContext ctx, String orderId, double tradedPrice) {
         String symbol = ctx.symbol;
 
+        // Mark as recently handled to prevent duplicate recording from position event
+        recentlyHandled.put(symbol, System.currentTimeMillis());
+
         // Remove counterpart from tracking
         OcoContext counterpart = trackedOcoOrders.remove(ctx.counterpartOrderId);
 
@@ -602,12 +687,13 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         double pnl = "LONG".equals(ctx.positionSide) ? (finalExit - finalEntry) * ctx.quantity
                                                       : (finalEntry - finalExit) * ctx.quantity;
         String pnlTag = pnl >= 0 ? "PROFIT" : "LOSS";
+        String exitReason = ("SL".equals(ctx.type) && ctx.trailed) ? "TRAILING_SL" : ctx.type;
 
-        eventService.log("[SUCCESS] [WS] " + ctx.type + " triggered for " + symbol + " at " + finalExit
+        eventService.log("[SUCCESS] [WS] " + exitReason + " triggered for " + symbol + " at " + finalExit
             + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl))
             + " — cancelling " + ("SL".equals(ctx.type) ? "target" : "SL"));
 
-        tradeHistoryService.record(symbol, ctx.positionSide, ctx.quantity, finalEntry, finalExit, ctx.type, ctx.setup);
+        tradeHistoryService.record(symbol, ctx.positionSide, ctx.quantity, finalEntry, finalExit, exitReason, ctx.setup);
 
         // Telegram notification
         try {
