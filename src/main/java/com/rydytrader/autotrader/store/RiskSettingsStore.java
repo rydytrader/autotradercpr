@@ -40,6 +40,12 @@ public class RiskSettingsStore {
         volatile boolean enableTargetShift = true; // shift target to next level if default target < 1 ATR. If false, skip the entry.
         volatile boolean enableSmallCandleFilter = false; // reject if candle move from breakout level < smallCandleAtrThreshold ATR
         volatile double smallCandleAtrThreshold = 0.5; // ATR multiplier for small candle filter
+        volatile double wickRejectionRatio = 1.5; // breakout wick must be >= this * body to allow small body candle
+        volatile double oppositeWickRatio = 2.0; // opposite wick >= this * body = counter-pressure, reject
+        volatile boolean enableVolumeFilter = false; // reject if candle volume < volumeMultiple * avg volume
+        volatile double volumeMultiple = 2.0; // breakout candle must have this x avg volume
+        volatile int volumeLookback = 20; // average volume over last N candles (max 20)
+        volatile boolean enableTrailingSl = true; // enable trailing SL feature
         volatile double trailTriggerPct = 75;  // % of range from entry to target that triggers trailing SL
         volatile double trailSlPct      = 50;  // % of range to lock as profit when trailing SL triggers
         // Scanner settings
@@ -86,9 +92,15 @@ public class RiskSettingsStore {
     public double getLargeCandleAtrThreshold() { return cfg().largeCandleAtrThreshold; }
     public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
     public boolean isEnableSmallCandleFilter() { return cfg().enableSmallCandleFilter; }
+    public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
     public double getTrailTriggerPct() { return cfg().trailTriggerPct; }
     public double getTrailSlPct()      { return cfg().trailSlPct; }
     public double getSmallCandleAtrThreshold() { return cfg().smallCandleAtrThreshold; }
+    public double getWickRejectionRatio() { return cfg().wickRejectionRatio; }
+    public double getOppositeWickRatio() { return cfg().oppositeWickRatio; }
+    public boolean isEnableVolumeFilter() { return cfg().enableVolumeFilter; }
+    public double getVolumeMultiple() { return cfg().volumeMultiple; }
+    public int getVolumeLookback() { return cfg().volumeLookback; }
 
     public String  getSignalSource()      { return cfg().signalSource; }
     public int     getScannerTimeframe()  { return cfg().scannerTimeframe; }
@@ -121,9 +133,15 @@ public class RiskSettingsStore {
     public void setLargeCandleAtrThreshold(double v) { cfg().largeCandleAtrThreshold = v; }
     public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
     public void setEnableSmallCandleFilter(boolean v) { cfg().enableSmallCandleFilter = v; }
+    public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
     public void setTrailTriggerPct(double v) { cfg().trailTriggerPct = v; }
     public void setTrailSlPct(double v)      { cfg().trailSlPct = v; }
     public void setSmallCandleAtrThreshold(double v) { cfg().smallCandleAtrThreshold = v; }
+    public void setWickRejectionRatio(double v) { cfg().wickRejectionRatio = v; }
+    public void setOppositeWickRatio(double v) { cfg().oppositeWickRatio = v; }
+    public void setEnableVolumeFilter(boolean v) { cfg().enableVolumeFilter = v; }
+    public void setVolumeMultiple(double v) { cfg().volumeMultiple = v; }
+    public void setVolumeLookback(int v) { cfg().volumeLookback = Math.min(v, 20); }
 
     // ── mode-specific getters/setters (used by SettingsController) ────────────
     public String getTradingStartTime(String mode)  { return cfgFor(mode).tradingStartTime; }
@@ -144,9 +162,15 @@ public class RiskSettingsStore {
     public double getLargeCandleAtrThreshold(String mode) { return cfgFor(mode).largeCandleAtrThreshold; }
     public boolean isEnableTargetShift(String mode) { return cfgFor(mode).enableTargetShift; }
     public boolean isEnableSmallCandleFilter(String mode) { return cfgFor(mode).enableSmallCandleFilter; }
+    public boolean isEnableTrailingSl(String mode) { return cfgFor(mode).enableTrailingSl; }
     public double getTrailTriggerPct(String mode) { return cfgFor(mode).trailTriggerPct; }
     public double getTrailSlPct(String mode)      { return cfgFor(mode).trailSlPct; }
     public double getSmallCandleAtrThreshold(String mode) { return cfgFor(mode).smallCandleAtrThreshold; }
+    public double getWickRejectionRatio(String mode) { return cfgFor(mode).wickRejectionRatio; }
+    public double getOppositeWickRatio(String mode) { return cfgFor(mode).oppositeWickRatio; }
+    public boolean isEnableVolumeFilter(String mode) { return cfgFor(mode).enableVolumeFilter; }
+    public double getVolumeMultiple(String mode) { return cfgFor(mode).volumeMultiple; }
+    public int getVolumeLookback(String mode) { return cfgFor(mode).volumeLookback; }
 
     public void setTradingStartTime(String mode, String v)  { cfgFor(mode).tradingStartTime = v; }
     public void setTradingEndTime(String mode, String v)    { cfgFor(mode).tradingEndTime = v; }
@@ -165,9 +189,15 @@ public class RiskSettingsStore {
     public void setLargeCandleAtrThreshold(String mode, double v) { cfgFor(mode).largeCandleAtrThreshold = v; }
     public void setEnableTargetShift(String mode, boolean v) { cfgFor(mode).enableTargetShift = v; }
     public void setEnableSmallCandleFilter(String mode, boolean v) { cfgFor(mode).enableSmallCandleFilter = v; }
+    public void setEnableTrailingSl(String mode, boolean v) { cfgFor(mode).enableTrailingSl = v; }
     public void setTrailTriggerPct(String mode, double v) { cfgFor(mode).trailTriggerPct = v; }
     public void setTrailSlPct(String mode, double v)      { cfgFor(mode).trailSlPct = v; }
     public void setSmallCandleAtrThreshold(String mode, double v) { cfgFor(mode).smallCandleAtrThreshold = v; }
+    public void setWickRejectionRatio(String mode, double v) { cfgFor(mode).wickRejectionRatio = v; }
+    public void setOppositeWickRatio(String mode, double v) { cfgFor(mode).oppositeWickRatio = v; }
+    public void setEnableVolumeFilter(String mode, boolean v) { cfgFor(mode).enableVolumeFilter = v; }
+    public void setVolumeMultiple(String mode, double v) { cfgFor(mode).volumeMultiple = v; }
+    public void setVolumeLookback(String mode, int v) { cfgFor(mode).volumeLookback = Math.min(v, 20); }
 
     // ── save ──────────────────────────────────────────────────────────────────
     /** Saves the current settings. */
@@ -197,6 +227,12 @@ public class RiskSettingsStore {
             upsert("enableTargetShift", String.valueOf(c.enableTargetShift));
             upsert("enableSmallCandleFilter", String.valueOf(c.enableSmallCandleFilter));
             upsert("smallCandleAtrThreshold", String.valueOf(c.smallCandleAtrThreshold));
+            upsert("wickRejectionRatio", String.valueOf(c.wickRejectionRatio));
+            upsert("oppositeWickRatio", String.valueOf(c.oppositeWickRatio));
+            upsert("enableVolumeFilter", String.valueOf(c.enableVolumeFilter));
+            upsert("volumeMultiple", String.valueOf(c.volumeMultiple));
+            upsert("volumeLookback", String.valueOf(c.volumeLookback));
+            upsert("enableTrailingSl", String.valueOf(c.enableTrailingSl));
             upsert("trailTriggerPct", String.valueOf(c.trailTriggerPct));
             upsert("trailSlPct", String.valueOf(c.trailSlPct));
             upsert("signalSource", c.signalSource);
@@ -245,6 +281,12 @@ public class RiskSettingsStore {
                     case "enableTargetShift" -> c.enableTargetShift = Boolean.parseBoolean(v);
                     case "enableSmallCandleFilter" -> c.enableSmallCandleFilter = Boolean.parseBoolean(v);
                     case "smallCandleAtrThreshold" -> c.smallCandleAtrThreshold = Double.parseDouble(v);
+                    case "wickRejectionRatio" -> c.wickRejectionRatio = Double.parseDouble(v);
+                    case "oppositeWickRatio" -> c.oppositeWickRatio = Double.parseDouble(v);
+                    case "enableVolumeFilter" -> c.enableVolumeFilter = Boolean.parseBoolean(v);
+                    case "volumeMultiple" -> c.volumeMultiple = Double.parseDouble(v);
+                    case "volumeLookback" -> c.volumeLookback = Integer.parseInt(v);
+                    case "enableTrailingSl"   -> c.enableTrailingSl = Boolean.parseBoolean(v);
                     case "trailTriggerPct"   -> c.trailTriggerPct = Double.parseDouble(v);
                     case "trailSlPct"        -> c.trailSlPct = Double.parseDouble(v);
                     case "signalSource"      -> c.signalSource = v;

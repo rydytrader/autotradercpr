@@ -266,7 +266,7 @@ body {
 }
 .ticker-track {
     display: flex; gap: 32px; white-space: nowrap;
-    animation: tickerScroll 30s linear infinite;
+    animation: tickerScroll 60s linear infinite;
     width: max-content;
 }
 .ticker-track:hover { animation-play-state: paused; }

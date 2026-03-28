@@ -78,6 +78,8 @@ public class ScannerController {
         card.put("vwap", Math.round(candleAggregator.getVwap(fyersSymbol) * 100.0) / 100.0);
         card.put("atr", Math.round(atrService.getAtr(fyersSymbol) * 100.0) / 100.0);
         card.put("dayOpen", Math.round(candleAggregator.getDayOpen(fyersSymbol) * 100.0) / 100.0);
+        card.put("candleVolume", candleAggregator.getCurrentCandleVolume(fyersSymbol));
+        card.put("avgVolume", Math.round(candleAggregator.getAvgVolume(fyersSymbol, riskSettings.getVolumeLookback())));
 
         card.put("weeklyTrend", weeklyCprService.getWeeklyTrend(fyersSymbol));
         card.put("dailyTrend", weeklyCprService.getDailyTrend(fyersSymbol));
@@ -87,10 +89,11 @@ public class ScannerController {
         Map<String, Object> lvls = new LinkedHashMap<>();
         lvls.put("r4", r(levels.getR4())); lvls.put("r3", r(levels.getR3()));
         lvls.put("r2", r(levels.getR2())); lvls.put("r1", r(levels.getR1()));
-        lvls.put("ph", r(levels.getPh())); lvls.put("tc", r(levels.getTc()));
-        lvls.put("bc", r(levels.getBc())); lvls.put("s1", r(levels.getS1()));
-        lvls.put("pl", r(levels.getPl())); lvls.put("s2", r(levels.getS2()));
-        lvls.put("s3", r(levels.getS3())); lvls.put("s4", r(levels.getS4()));
+        lvls.put("ph", r(levels.getPh())); lvls.put("pivot", r(levels.getPivot()));
+        lvls.put("tc", r(levels.getTc())); lvls.put("bc", r(levels.getBc()));
+        lvls.put("s1", r(levels.getS1())); lvls.put("pl", r(levels.getPl()));
+        lvls.put("s2", r(levels.getS2())); lvls.put("s3", r(levels.getS3()));
+        lvls.put("s4", r(levels.getS4()));
         card.put("levels", lvls);
 
         // Broken levels
@@ -109,6 +112,7 @@ public class ScannerController {
             card.put("lastSignal", null);
         }
 
+        card.put("weeklyLevels", weeklyCprService.getWeeklyLevelsMap(fyersSymbol));
         card.put("hasPosition", positionSymbols.contains(fyersSymbol));
         card.put("cprWidthPct", Math.round(levels.getCprWidthPct() * 1000.0) / 1000.0);
 

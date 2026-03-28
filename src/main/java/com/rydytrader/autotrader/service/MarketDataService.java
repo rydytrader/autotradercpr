@@ -297,6 +297,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
      * move SL to entry + 10% of the range (one-time per position).
      */
     private void checkTrailingSl(String symbol, double ltp) {
+        if (!riskSettings.isEnableTrailingSl()) return;
         if (trailedSymbols.contains(symbol)) return;
 
         Map<String, Object> state = positionStateStore.load(symbol);

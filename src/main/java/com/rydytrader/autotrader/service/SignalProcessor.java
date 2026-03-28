@@ -35,6 +35,9 @@ public class SignalProcessor {
         double s1 = dbl(alert, "s1"), s2 = dbl(alert, "s2"), s3 = dbl(alert, "s3"), s4 = dbl(alert, "s4");
         double ph = dbl(alert, "ph"), pl = dbl(alert, "pl");
         double tc = dbl(alert, "tc"), bc = dbl(alert, "bc");
+        double candleOpen = dbl(alert, "candleOpen");
+        double candleHigh = dbl(alert, "candleHigh");
+        double candleLow  = dbl(alert, "candleLow");
 
         // ── Reject if ATR is invalid (NaN or zero — Pine Script may send NaN for insufficient bars)
         if (Double.isNaN(atr) || atr <= 0) {
@@ -75,10 +78,58 @@ public class SignalProcessor {
         // ── 4d2. Small candle filter ────────────────────────────────────────────
         if (riskSettings.isEnableSmallCandleFilter()) {
             double smallThreshold = riskSettings.getSmallCandleAtrThreshold();
+            double wickRatio = riskSettings.getWickRejectionRatio();
+            double oppWickRatio = riskSettings.getOppositeWickRatio();
             double moveFromLevel = isBuy ? (close - breakoutLevel) : (breakoutLevel - close);
+
+            // Check 1: close too near breakout level
             if (moveFromLevel < atr * smallThreshold) {
                 return ProcessedSignal.rejected(setup, symbol,
                     "Small candle — move from breakout level (" + fmt(moveFromLevel) + ") < " + smallThreshold + " ATR (" + fmt(atr * smallThreshold) + ")");
+            }
+
+            if (candleOpen > 0) {
+                double candleBody = Math.abs(close - candleOpen);
+
+                // Check 2 + 3: candle body too small, unless wick rejection overrides
+                if (candleBody < atr * smallThreshold) {
+                    boolean wickRejection = false;
+                    if (candleHigh > 0 && candleLow > 0) {
+                        // Buy: long lower wick = buyers defended. Sell: long upper wick = sellers defended.
+                        double breakoutWick = isBuy
+                            ? (Math.min(close, candleOpen) - candleLow)
+                            : (candleHigh - Math.max(close, candleOpen));
+                        wickRejection = breakoutWick >= wickRatio * candleBody
+                            && breakoutWick >= atr * smallThreshold;
+                    }
+                    if (!wickRejection) {
+                        return ProcessedSignal.rejected(setup, symbol,
+                            "Small candle body (" + fmt(candleBody) + ") < " + smallThreshold + " ATR (" + fmt(atr * smallThreshold) + ")");
+                    }
+                }
+
+                // Check 4: opposite wick pressure (always checked, even for large bodies)
+                // Buy: long upper wick = sellers pushing down. Sell: long lower wick = buyers pushing up.
+                if (candleHigh > 0 && candleLow > 0) {
+                    double oppositeWick = isBuy
+                        ? (candleHigh - Math.max(close, candleOpen))
+                        : (Math.min(close, candleOpen) - candleLow);
+                    if (oppositeWick >= oppWickRatio * candleBody && oppositeWick >= atr * smallThreshold) {
+                        return ProcessedSignal.rejected(setup, symbol,
+                            "Opposite wick pressure (" + fmt(oppositeWick) + ") — counter-pressure against breakout");
+                    }
+                }
+            }
+        }
+
+        // ── 4e. Volume filter ─────────────────────────────────────────────────
+        double candleVolume = dbl(alert, "candleVolume");
+        double avgVolume = dbl(alert, "avgVolume");
+        if (riskSettings.isEnableVolumeFilter() && candleVolume > 0 && avgVolume > 0) {
+            double volumeMultiple = riskSettings.getVolumeMultiple();
+            if (candleVolume < avgVolume * volumeMultiple) {
+                return ProcessedSignal.rejected(setup, symbol,
+                    "Low volume — candle vol (" + (long) candleVolume + ") < " + volumeMultiple + "x avg (" + (long) avgVolume + ")");
             }
         }
 

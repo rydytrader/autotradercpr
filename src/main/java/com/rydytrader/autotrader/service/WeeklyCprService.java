@@ -132,37 +132,52 @@ public class WeeklyCprService {
     }
 
     /**
-     * Get probability based on real-time weekly + daily trends.
-     * HPT: both aligned. MPT: weekly neutral. LPT: opposed.
+     * Get probability based on real-time weekly + daily trends (for scanner dashboard display).
+     * Returns the probability assuming current daily trend direction.
+     * For actual signal generation, use getProbabilityForDirection() instead.
      */
     public String getProbability(String symbol) {
-        String weekly = getWeeklyTrend(symbol);
         String daily = getDailyTrend(symbol);
+        boolean dBull = daily.contains("BULLISH");
+        boolean dBear = daily.contains("BEARISH");
+        if (dBull) return getProbabilityForDirection(symbol, true);
+        if (dBear) return getProbabilityForDirection(symbol, false);
+        // Daily neutral — no classification until breakout direction is known
+        return "--";
+    }
 
+    /**
+     * Get probability based on breakout direction + weekly trend.
+     * HPT: weekly aligned with direction. MPT: weekly neutral. LPT: weekly opposed.
+     * @param isBuy true for buy breakout, false for sell breakout
+     */
+    public String getProbabilityForDirection(String symbol, boolean isBuy) {
+        String weekly = getWeeklyTrend(symbol);
         boolean wBull = weekly.contains("BULLISH");
         boolean wBear = weekly.contains("BEARISH");
         boolean wNeutral = "NEUTRAL".equals(weekly);
-        boolean dBull = daily.contains("BULLISH");
-        boolean dBear = daily.contains("BEARISH");
 
-        // HPT: weekly and daily aligned
-        if ((wBull && dBull) || (wBear && dBear)) return "HPT";
-        // MPT: weekly neutral, daily directional
-        if (wNeutral) return "MPT";
-        // LPT: weekly opposite to daily
-        if ((wBear && dBull) || (wBull && dBear)) return "LPT";
-        // Default: weekly directional, daily neutral
-        return "MPT";
+        if (isBuy) {
+            if (wBull) return "HPT";
+            if (wNeutral) return "MPT";
+            return "LPT"; // weekly bearish, buying
+        } else {
+            if (wBear) return "HPT";
+            if (wNeutral) return "MPT";
+            return "LPT"; // weekly bullish, selling
+        }
     }
 
     // ── Fyers history API ────────────────────────────────────────────────────
 
     private double[] fetchPreviousWeekOhlc(String symbol, String authHeader) throws Exception {
+        // Fetch daily candles for last 3 weeks and aggregate into weekly OHLC ourselves,
+        // because Fyers weekly candle API may not include the most recent completed week on weekends.
         long toEpoch = Instant.now().getEpochSecond();
         long fromEpoch = toEpoch - (21 * 24 * 3600); // 3 weeks back
 
         String urlStr = "https://api-t1.fyers.in/data/history?symbol=" + symbol
-            + "&resolution=1W"
+            + "&resolution=1D"
             + "&date_format=0"
             + "&range_from=" + fromEpoch
             + "&range_to=" + toEpoch
@@ -187,20 +202,46 @@ public class WeeklyCprService {
 
         JsonNode root = mapper.readTree(sb.toString());
         JsonNode candles = root.get("candles");
-        if (candles == null || !candles.isArray() || candles.size() < 2) {
+        if (candles == null || !candles.isArray() || candles.isEmpty()) {
             return null;
         }
 
-        // Second-to-last candle is previous completed week
-        JsonNode prevWeek = candles.get(candles.size() - 2);
-        if (prevWeek.size() < 5) return null;
+        // Group daily candles by ISO week number
+        java.time.ZoneId ist = java.time.ZoneId.of("Asia/Kolkata");
+        Map<Integer, double[]> weeklyOhlc = new LinkedHashMap<>(); // weekNum → [open, high, low, close]
+        List<Integer> weekOrder = new ArrayList<>();
 
-        return new double[]{
-            prevWeek.get(1).asDouble(), // open
-            prevWeek.get(2).asDouble(), // high
-            prevWeek.get(3).asDouble(), // low
-            prevWeek.get(4).asDouble()  // close
-        };
+        for (int i = 0; i < candles.size(); i++) {
+            JsonNode c = candles.get(i);
+            long epoch = c.get(0).asLong();
+            java.time.LocalDate date = java.time.Instant.ofEpochSecond(epoch).atZone(ist).toLocalDate();
+            int weekNum = date.get(java.time.temporal.IsoFields.WEEK_OF_WEEK_BASED_YEAR);
+
+            double o = c.get(1).asDouble(), h = c.get(2).asDouble();
+            double l = c.get(3).asDouble(), cl = c.get(4).asDouble();
+
+            if (!weeklyOhlc.containsKey(weekNum)) {
+                weeklyOhlc.put(weekNum, new double[]{o, h, l, cl});
+                weekOrder.add(weekNum);
+            } else {
+                double[] w = weeklyOhlc.get(weekNum);
+                w[1] = Math.max(w[1], h);  // high
+                w[2] = Math.min(w[2], l);  // low
+                w[3] = cl;                  // close (last day's close)
+            }
+        }
+
+        if (weekOrder.size() < 2) return null;
+
+        // On weekdays, current week is incomplete → use second-to-last completed week.
+        // On weekends, current week is done → use last week.
+        java.time.DayOfWeek today = java.time.LocalDate.now().getDayOfWeek();
+        boolean weekend = (today == java.time.DayOfWeek.SATURDAY || today == java.time.DayOfWeek.SUNDAY);
+        int targetWeekIdx = weekend ? weekOrder.size() - 1 : weekOrder.size() - 2;
+        int targetWeekNum = weekOrder.get(targetWeekIdx);
+        double[] result = weeklyOhlc.get(targetWeekNum);
+
+        return result;
     }
 
     /**
@@ -223,6 +264,23 @@ public class WeeklyCprService {
         int dash = s.indexOf('-');
         if (dash >= 0) s = s.substring(0, dash);
         return s;
+    }
+
+    /** Debug: return weekly levels for a symbol as a map. */
+    public Map<String, Double> getWeeklyLevelsMap(String symbol) {
+        WeeklyLevels wl = weeklyLevels.get(symbol);
+        if (wl == null) return Collections.emptyMap();
+        Map<String, Double> m = new LinkedHashMap<>();
+        m.put("pivot", Math.round(wl.pivot * 100.0) / 100.0);
+        m.put("tc", Math.round(wl.tc * 100.0) / 100.0);
+        m.put("bc", Math.round(wl.bc * 100.0) / 100.0);
+        m.put("top", Math.round(wl.top * 100.0) / 100.0);
+        m.put("bot", Math.round(wl.bot * 100.0) / 100.0);
+        m.put("r1", Math.round(wl.r1 * 100.0) / 100.0);
+        m.put("s1", Math.round(wl.s1 * 100.0) / 100.0);
+        m.put("ph", Math.round(wl.ph * 100.0) / 100.0);
+        m.put("pl", Math.round(wl.pl * 100.0) / 100.0);
+        return m;
     }
 
     // ── Inner class for weekly CPR levels ────────────────────────────────────

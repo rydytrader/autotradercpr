@@ -37,7 +37,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
     @org.springframework.context.annotation.Lazy
     private TradingController tradingController;
 
-    // Track which levels have been broken today per symbol
+    // Track which levels have been broken today per symbol (prevents re-fire)
     private final ConcurrentHashMap<String, Set<String>> brokenLevels = new ConcurrentHashMap<>();
 
     // Track signals generated today (for scanner dashboard)
@@ -90,60 +90,83 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
         double atr = atrService.getAtr(fyersSymbol);
         if (atr <= 0) return; // no ATR available
 
-        // Get previous candle for breakout comparison
-        CandleAggregator.CandleBar prevCandle = candleAggregator.getPreviousCandle(fyersSymbol);
-        double prevClose = prevCandle != null ? prevCandle.close : 0;
+        double open = candle.open;
         double close = candle.close;
+        boolean greenCandle = close > open;
+        boolean redCandle = close < open;
 
         // VWAP check
         double vwap = candleAggregator.getVwap(fyersSymbol);
 
-        // Probability filter
-        String prob = weeklyCprService.getProbability(fyersSymbol);
-        if (!isProbabilityEnabled(prob)) return;
-
         // Already in position for this symbol?
         if (!"NONE".equals(PositionManager.getPosition(fyersSymbol))) return;
 
-        // Check BUY signals (highest level wins)
-        String buySetup = detectBuyBreakout(close, prevClose, levels, vwap);
-        if (buySetup != null) {
-            fireSignal(fyersSymbol, buySetup, close, atr, levels, prob);
-            return;
+        Set<String> broken = brokenLevels.getOrDefault(fyersSymbol, Collections.emptySet());
+
+        double low = candle.low;
+        double high = candle.high;
+
+        // Check BUY signals — requires green candle (close > open)
+        if (greenCandle) {
+            String buySetup = detectBuyBreakout(open, high, low, close, levels, vwap, broken);
+            if (buySetup != null) {
+                String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, true);
+                if (!isProbabilityEnabled(prob)) return;
+                fireSignal(fyersSymbol, buySetup, open, high, low, close, candle.volume, atr, levels, prob);
+                return;
+            }
         }
 
-        // Check SELL signals (highest level wins)
-        String sellSetup = detectSellBreakout(close, prevClose, levels, vwap);
-        if (sellSetup != null) {
-            fireSignal(fyersSymbol, sellSetup, close, atr, levels, prob);
+        // Check SELL signals — requires red candle (close < open)
+        if (redCandle) {
+            String sellSetup = detectSellBreakout(open, high, low, close, levels, vwap, broken);
+            if (sellSetup != null) {
+                String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, false);
+                if (!isProbabilityEnabled(prob)) return;
+                fireSignal(fyersSymbol, sellSetup, open, high, low, close, candle.volume, atr, levels, prob);
+            }
         }
     }
 
     /**
      * Detect buy breakout — returns setup name or null.
      * Priority: R4 > R3 > R2 > R1/PDH > CPR > S1/PDL (only if LPT enabled)
+     * Two paths per level:
+     *   Path 1 (standard breakout): open or low below level, close above — candle broke through
+     *   Path 2 (wick rejection):    open above level, low dips below level, close above — buyers defended
      */
-    private String detectBuyBreakout(double close, double prevClose, CprLevels levels, double vwap) {
+    private String detectBuyBreakout(double open, double high, double low, double close,
+                                      CprLevels levels, double vwap, Set<String> broken) {
         // VWAP check for buys: close must be above VWAP
         if (riskSettings.isEnableVwapCheck() && vwap > 0 && close < vwap) return null;
 
         double r4 = levels.getR4(), r3 = levels.getR3(), r2 = levels.getR2();
         double r1 = levels.getR1(), ph = levels.getPh();
-        double tc = levels.getTc(), bc = levels.getBc();
+        double pp = levels.getPivot(), tc = levels.getTc(), bc = levels.getBc();
         double s1 = levels.getS1(), pl = levels.getPl();
 
-        double r1Pdh = Math.max(r1, ph);
         double cprTop = Math.max(tc, bc);
-        double s1Pdl = Math.max(s1, pl);
+        double cprBot = Math.min(tc, bc);
 
-        // Check from highest to lowest (dedup: only fire highest)
-        if (riskSettings.isEnableR4S4() && close > r4 && prevClose <= r4) return "BUY_ABOVE_R4";
-        if (close > r3 && prevClose <= r3) return "BUY_ABOVE_R3";
-        if (close > r2 && prevClose <= r2) return "BUY_ABOVE_R2";
-        if (close > r1Pdh && prevClose <= r1Pdh) return "BUY_ABOVE_R1_PDH";
-        if (close > cprTop && prevClose <= cprTop) return "BUY_ABOVE_CPR";
-        // S1/PDL buy is LPT-only (counter-trend)
-        if (riskSettings.isEnableLpt() && close > s1Pdl && prevClose <= s1Pdl) return "BUY_ABOVE_S1_PDL";
+        // Check from highest to lowest — standard breakout OR wick rejection
+        if (riskSettings.isEnableR4S4() && close > r4
+                && ((open < r4 || low < r4) || (low < r4 && open > r4))
+                && !broken.contains("BUY_ABOVE_R4")) return "BUY_ABOVE_R4";
+        if (close > r3
+                && ((open < r3 || low < r3) || (low < r3 && open > r3))
+                && !broken.contains("BUY_ABOVE_R3")) return "BUY_ABOVE_R3";
+        if (close > r2
+                && ((open < r2 || low < r2) || (low < r2 && open > r2))
+                && !broken.contains("BUY_ABOVE_R2")) return "BUY_ABOVE_R2";
+        if (close > r1 && close > ph
+                && ((open < r1 || open < ph || low < r1 || low < ph) || (low < Math.min(r1, ph) && open > Math.min(r1, ph)))
+                && !broken.contains("BUY_ABOVE_R1_PDH")) return "BUY_ABOVE_R1_PDH";
+        if (close > cprTop
+                && ((open < pp || open < tc || open < bc || low < pp || low < tc || low < bc) || (low < cprBot && open > cprBot && close > cprTop))
+                && !broken.contains("BUY_ABOVE_CPR")) return "BUY_ABOVE_CPR";
+        if (riskSettings.isEnableLpt() && close > s1 && close > pl
+                && ((open < s1 || open < pl || low < s1 || low < pl) || (low < Math.min(s1, pl) && open > Math.min(s1, pl)))
+                && !broken.contains("BUY_ABOVE_S1_PDL")) return "BUY_ABOVE_S1_PDL";
 
         return null;
     }
@@ -151,26 +174,42 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
     /**
      * Detect sell breakout — returns setup name or null.
      * Priority: S4 > S3 > S2 > S1/PDL > CPR > R1/PDH (only if LPT enabled)
+     * Two paths per level:
+     *   Path 1 (standard breakdown): open or high above level, close below — candle broke through
+     *   Path 2 (wick rejection):     open below level, high pokes above level, close below — sellers defended
      */
-    private String detectSellBreakout(double close, double prevClose, CprLevels levels, double vwap) {
+    private String detectSellBreakout(double open, double high, double low, double close,
+                                       CprLevels levels, double vwap, Set<String> broken) {
         // VWAP check for sells: close must be below VWAP
         if (riskSettings.isEnableVwapCheck() && vwap > 0 && close > vwap) return null;
 
         double s4 = levels.getS4(), s3 = levels.getS3(), s2 = levels.getS2();
         double s1 = levels.getS1(), pl = levels.getPl();
-        double tc = levels.getTc(), bc = levels.getBc();
+        double pp = levels.getPivot(), tc = levels.getTc(), bc = levels.getBc();
         double r1 = levels.getR1(), ph = levels.getPh();
 
-        double s1Pdl = Math.min(s1, pl);
+        double cprTop = Math.max(tc, bc);
         double cprBot = Math.min(tc, bc);
-        double r1Pdh = Math.min(r1, ph);
 
-        if (riskSettings.isEnableR4S4() && close < s4 && prevClose >= s4) return "SELL_BELOW_S4";
-        if (close < s3 && prevClose >= s3) return "SELL_BELOW_S3";
-        if (close < s2 && prevClose >= s2) return "SELL_BELOW_S2";
-        if (close < s1Pdl && prevClose >= s1Pdl) return "SELL_BELOW_S1_PDL";
-        if (close < cprBot && prevClose >= cprBot) return "SELL_BELOW_CPR";
-        if (riskSettings.isEnableLpt() && close < r1Pdh && prevClose >= r1Pdh) return "SELL_BELOW_R1_PDH";
+        // Check from highest to lowest — standard breakdown OR wick rejection
+        if (riskSettings.isEnableR4S4() && close < s4
+                && ((open > s4 || high > s4) || (high > s4 && open < s4))
+                && !broken.contains("SELL_BELOW_S4")) return "SELL_BELOW_S4";
+        if (close < s3
+                && ((open > s3 || high > s3) || (high > s3 && open < s3))
+                && !broken.contains("SELL_BELOW_S3")) return "SELL_BELOW_S3";
+        if (close < s2
+                && ((open > s2 || high > s2) || (high > s2 && open < s2))
+                && !broken.contains("SELL_BELOW_S2")) return "SELL_BELOW_S2";
+        if (close < s1 && close < pl
+                && ((open > s1 || open > pl || high > s1 || high > pl) || (high > Math.max(s1, pl) && open < Math.max(s1, pl)))
+                && !broken.contains("SELL_BELOW_S1_PDL")) return "SELL_BELOW_S1_PDL";
+        if (close < cprBot
+                && ((open > pp || open > tc || open > bc || high > pp || high > tc || high > bc) || (high > cprTop && open < cprTop && close < cprBot))
+                && !broken.contains("SELL_BELOW_CPR")) return "SELL_BELOW_CPR";
+        if (riskSettings.isEnableLpt() && close < r1 && close < ph
+                && ((open > r1 || open > ph || high > r1 || high > ph) || (high > Math.max(r1, ph) && open < Math.max(r1, ph)))
+                && !broken.contains("SELL_BELOW_R1_PDH")) return "SELL_BELOW_R1_PDH";
 
         return null;
     }
@@ -178,17 +217,19 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
     /**
      * Build signal payload and feed into TradingController.
      */
-    private void fireSignal(String fyersSymbol, String setup, double close, double atr,
-                            CprLevels levels, String prob) {
+    private void fireSignal(String fyersSymbol, String setup, double open, double high,
+                            double low, double close, long candleVolume, double atr, CprLevels levels, String prob) {
         String timeStr = ZonedDateTime.now(IST).toLocalTime().format(TIME_FMT);
-
-        // Track broken level
-        brokenLevels.computeIfAbsent(fyersSymbol, k -> ConcurrentHashMap.newKeySet()).add(setup);
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("setup", setup);
         payload.put("symbol", fyersSymbol);
         payload.put("close", close);
+        payload.put("candleOpen", open);
+        payload.put("candleHigh", high);
+        payload.put("candleLow", low);
+        payload.put("candleVolume", candleVolume);
+        payload.put("avgVolume", candleAggregator.getAvgVolume(fyersSymbol, riskSettings.getVolumeLookback()));
         payload.put("atr", atr);
         payload.put("dayOpen", candleAggregator.getDayOpen(fyersSymbol));
         payload.put("probability", prob);
@@ -217,10 +258,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
             SignalInfo info = new SignalInfo();
             info.setup = setup;
             info.time = timeStr;
-            info.status = status.contains("failed") || status.contains("filtered") || status.contains("ignored")
-                ? "FILTERED" : "TRADED";
+            boolean filtered = status.contains("failed") || status.contains("filtered") || status.contains("ignored");
+            info.status = filtered ? "FILTERED" : "TRADED";
             info.detail = status;
             lastSignal.put(fyersSymbol, info);
+
+            // Only mark level as broken if signal was actually traded
+            if (!filtered) {
+                brokenLevels.computeIfAbsent(fyersSymbol, k -> ConcurrentHashMap.newKeySet()).add(setup);
+            }
 
         } catch (Exception e) {
             log.error("[Scanner] Failed to process signal for {}: {}", fyersSymbol, e.getMessage());
@@ -251,6 +297,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
     }
 
     // ── Public API for scanner dashboard ─────────────────────────────────────
+
+    /** Clear broken levels for a symbol when its position is closed. Allows re-entry. */
+    public void clearBrokenLevels(String symbol) {
+        brokenLevels.remove(symbol);
+    }
 
     public Set<String> getBrokenLevels(String symbol) {
         return brokenLevels.getOrDefault(symbol, Collections.emptySet());

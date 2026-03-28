@@ -19,9 +19,10 @@ The app runs exclusively in LIVE mode — no simulator. All mock/simulator code 
 
 ### WebSocket Connections (LIVE mode)
 1. **Market Data WebSocket** (`wss://socket.fyers.in/hsm/v1-5/prod`)
-   - Binary protocol (HsmBinaryParser), lite mode (LTP only)
+   - Binary protocol (HsmBinaryParser), full mode (LTP + VWAP + volume)
    - Feeds real-time ticker + position P&L via SSE to browser
    - Handles trailing SL trigger detection
+   - Feeds CandleAggregator for internal scanner
    - Service: `MarketDataService`
 
 2. **Order Update WebSocket** (`wss://socket.fyers.in/trade/v3`)
@@ -42,10 +43,12 @@ The app runs exclusively in LIVE mode — no simulator. All mock/simulator code 
 - syncPosition runs every 10s as safety net
 - Status shows "POLLING"
 
-### Signal Flow
+### Signal Flow (two sources)
 ```
-TradingView Alert → POST /placeorder → SignalProcessor (filters/qty)
-  → OrderService.placeOrder → Fyers API
+Source 1: TradingView Alert → POST /placeorder → SignalProcessor
+Source 2: BreakoutScanner (internal) → 15-min candle close → TradingController
+
+Both → SignalProcessor (filters/qty) → OrderService.placeOrder → Fyers API
   → OrderEventService tracks order ID (if WS connected)
   OR PollingService.monitorEntry (polling fallback)
   → On fill: place SL + Target
@@ -53,6 +56,28 @@ TradingView Alert → POST /placeorder → SignalProcessor (filters/qty)
   OR PollingService.monitorOCO (polling fallback)
   → On SL/target fill: cancel counterpart, record trade, clear state
 ```
+
+### Internal Scanner (Bot-Managed Signals)
+When signal source is INTERNAL, the bot generates its own breakout signals:
+```
+WebSocket Ticks → CandleAggregator (15-min candles) → BreakoutScanner
+  → Detects CPR level breakouts (Path 1: standard, Path 2: wick rejection)
+  → Checks: green/red candle, VWAP, probability (HPT/MPT/LPT)
+  → Feeds into TradingController (same pipeline as TradingView)
+```
+
+**Breakout Detection (matches Pine Script)**:
+- Buy: close > level + (open or low below level OR low dips below and closes above)
+- Sell: close < level + (open or high above level OR high pokes above and closes below)
+- Green candle required for buys, red candle for sells
+- Priority: highest level wins (R4 > R3 > R2 > R1/PDH > CPR > S1/PDL)
+- `brokenLevels` prevents re-fire — only marked when trade is placed, cleared on position close
+
+**Key Scanner Services**:
+- `CandleAggregator` — buffers WebSocket ticks into 15-min candles, tracks VWAP
+- `AtrService` — ATR(14) from Fyers daily history, updated from completed candles
+- `WeeklyCprService` — weekly/daily CPR trends using LTP vs levels (fetches daily candles, aggregates weekly OHLC)
+- `BreakoutScanner` — breakout detection, feeds signals into trading pipeline
 
 ### Key Design Patterns
 - **FyersClient interface** → LiveFyersClient (single implementation)
@@ -98,19 +123,20 @@ TradingView Alert → POST /placeorder → SignalProcessor (filters/qty)
 src/main/java/com/rydytrader/autotrader/
 ├── config/          AsyncConfig, FyersProperties, TelegramProperties
 ├── controller/      TradingController, ViewController, SimulatorController,
-│                    SettingsController, MarketTickerController, MarketTickerSseController
+│                    SettingsController, ScannerController, MarketTickerController, MarketTickerSseController
 ├── dto/             OrderDTO, PositionsDTO, TickData, TradeRecord, ProcessedSignal, CprLevels, JournalMetrics
 ├── fyers/           FyersClient (interface), LiveFyersClient, FyersClientRouter
 ├── manager/         PositionManager (static)
 ├── service/         PollingService, OrderService, OrderEventService, MarketDataService,
 │                    SignalProcessor, EventService, TradeHistoryService, BhavcopyService,
 │                    MarketHolidayService, SymbolMasterService, TelegramService, LoginService,
-│                    MarginDataService, QuantityService
+│                    MarginDataService, QuantityService, BreakoutScanner, CandleAggregator,
+│                    AtrService, WeeklyCprService
 ├── store/           PositionStateStore, RiskSettingsStore, TokenStore, TradingStateStore
 └── websocket/       FyersDataWebSocket, FyersOrderWebSocket, HsmBinaryParser
 
 src/main/resources/
-├── templates/       home, positions, trades, journal, settings, console, login
+├── templates/       home, scanner (watchlist), positions, trades, journal, settings, console, login
 ├── static/css/      shared.css (3 themes: dark, light, forest)
 ├── static/js/       common.js, ticker.js
 ├── logback-spring.xml
@@ -160,18 +186,19 @@ store/
 - TradingView symbol conversion (_ to -)
 
 ## Signal Probability
-Signals are classified by alignment between weekly and daily CPR trends:
+Probability is determined by **breakout direction + weekly trend** (not daily trend):
 
-| Weekly Trend | Daily Trend | Category | Default |
-|-------------|-------------|----------|---------|
-| Bullish | Bullish | **HPT** (High Probable Trade) | ON |
-| Bearish | Bearish | **HPT** | ON |
-| Neutral | Bullish | **MPT** (Medium Probable Trade) | OFF |
-| Neutral | Bearish | **MPT** | OFF |
-| Bearish | Bullish | **LPT** (Low Probable Trade) | OFF |
-| Bullish | Bearish | **LPT** | OFF |
+| Weekly Trend | Breakout Direction | Category |
+|-------------|-------------------|----------|
+| Bullish | Buy | **HPT** (High Probable Trade) |
+| Bearish | Sell | **HPT** |
+| Neutral | Buy or Sell | **MPT** (Medium Probable Trade) |
+| Bearish | Buy | **LPT** (Low Probable Trade) |
+| Bullish | Sell | **LPT** |
 
-Each category is independently toggleable in Pine Script settings. Alert JSON includes `"probability":"HPT"`, `"MPT"`, or `"LPT"`.
+Daily trend is irrelevant for classification — what matters is the breakout direction vs weekly bias.
+Each category is independently toggleable in settings. TradingView alerts include `"probability"` field.
+For internal scanner signals, probability is computed after breakout direction is detected.
 
 ## Trading Features
 - **SL from fill price**: SL recalculated using actual fill price (not Pine Script close)
@@ -183,12 +210,13 @@ Each category is independently toggleable in Pine Script settings. Alert JSON in
 - **Risk Gating**: max daily loss, risk per trade, exposure limits
 - **Dedup Guard**: 5-second window prevents duplicate trade recordings
 
-## UI Pages
+## UI Pages (nav order)
 - **Home** — day P&L hero, equity curve, trade stats
+- **Watchlist** (`/scanner`) — narrow/inside CPR stock cards with real-time LTP, VWAP, ATR, weekly/daily trends, CPR levels, breakout signals. Filters: CPR type, HPT/MPT/LPT, has signal. Narrow/Inside CPR list modals.
 - **Positions** — live positions table, market clock, P&L stats
 - **Trade Log** — all trades with P&L
 - **Journal** — win/loss analysis, profit factor
-- **Settings** — all configurable parameters
+- **Settings** — all configurable parameters (signal source: TRADINGVIEW/INTERNAL, HPT/MPT/LPT enables, VWAP check)
 - **Console** — color-coded application logs with search/filter
 
 ## Conventions

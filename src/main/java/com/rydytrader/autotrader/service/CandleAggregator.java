@@ -36,6 +36,9 @@ public class CandleAggregator {
     // Latest LTP per symbol
     private final ConcurrentHashMap<String, Double> latestLtp = new ConcurrentHashMap<>();
 
+    // Latest cumulative volume per symbol (for computing candle volume deltas)
+    private final ConcurrentHashMap<String, Long> lastCumulativeVol = new ConcurrentHashMap<>();
+
     // Latest change % per symbol
     private final ConcurrentHashMap<String, Double> latestChangePct = new ConcurrentHashMap<>();
 
@@ -103,6 +106,10 @@ public class CandleAggregator {
         // Track VWAP from exchange avg_trade_price
         if (raw.vwap > 0) latestVwap.put(symbol, raw.vwap);
 
+        // Track cumulative volume
+        long cumVol = raw.volume;
+        if (cumVol > 0) lastCumulativeVol.put(symbol, cumVol);
+
         // Update current forming candle
         LocalTime now = ZonedDateTime.now(IST).toLocalTime();
         long candleStart = getCandleStartMinute(now);
@@ -116,12 +123,17 @@ public class CandleAggregator {
                 c.high = ltp;
                 c.low = ltp;
                 c.close = ltp;
+                c.volAtStart = cumVol;
                 return c;
             }
             // Update existing candle
             if (ltp > existing.high) existing.high = ltp;
             if (ltp < existing.low) existing.low = ltp;
             existing.close = ltp;
+            // Update candle volume as delta from start
+            if (cumVol > 0 && existing.volAtStart > 0) {
+                existing.volume = cumVol - existing.volAtStart;
+            }
             return existing;
         });
     }
@@ -241,6 +253,26 @@ public class CandleAggregator {
         }
     }
 
+    /** Get volume of the current forming candle (live, updates every tick). */
+    public long getCurrentCandleVolume(String symbol) {
+        CandleBar c = currentCandles.get(symbol);
+        return c != null ? c.volume : 0;
+    }
+
+    /** Get average volume of the last N completed candles. */
+    public double getAvgVolume(String symbol, int periods) {
+        Deque<CandleBar> history = completedCandles.get(symbol);
+        if (history == null || history.isEmpty()) return 0;
+        long sum = 0;
+        int count = 0;
+        Iterator<CandleBar> it = history.descendingIterator();
+        while (it.hasNext() && count < periods) {
+            sum += it.next().volume;
+            count++;
+        }
+        return count > 0 ? (double) sum / count : 0;
+    }
+
     /** Clear all state for end of day. */
     public void clearAll() {
         currentCandles.clear();
@@ -249,6 +281,7 @@ public class CandleAggregator {
         latestVwap.clear();
         latestLtp.clear();
         latestChangePct.clear();
+        lastCumulativeVol.clear();
     }
 
     // ── Candle bar data class ─────────────────────────────────────────────────
@@ -259,6 +292,8 @@ public class CandleAggregator {
         public double high;
         public double low;
         public double close;
+        public long volume;      // candle volume (delta of cumulative vol)
+        public long volAtStart;  // cumulative vol when candle opened (internal)
 
         public double trueRange(CandleBar prev) {
             if (prev == null) return high - low;

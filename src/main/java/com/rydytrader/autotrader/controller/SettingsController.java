@@ -56,6 +56,12 @@ public class SettingsController {
         result.put("enableTargetShift", riskSettings.isEnableTargetShift(effectiveMode));
         result.put("enableSmallCandleFilter", riskSettings.isEnableSmallCandleFilter(effectiveMode));
         result.put("smallCandleAtrThreshold", riskSettings.getSmallCandleAtrThreshold(effectiveMode));
+        result.put("wickRejectionRatio", riskSettings.getWickRejectionRatio(effectiveMode));
+        result.put("oppositeWickRatio", riskSettings.getOppositeWickRatio(effectiveMode));
+        result.put("enableVolumeFilter", riskSettings.isEnableVolumeFilter(effectiveMode));
+        result.put("volumeMultiple", riskSettings.getVolumeMultiple(effectiveMode));
+        result.put("volumeLookback", riskSettings.getVolumeLookback(effectiveMode));
+        result.put("enableTrailingSl", riskSettings.isEnableTrailingSl(effectiveMode));
         result.put("trailTriggerPct", riskSettings.getTrailTriggerPct(effectiveMode));
         result.put("trailSlPct", riskSettings.getTrailSlPct(effectiveMode));
         result.put("signalSource", riskSettings.getSignalSource());
@@ -94,6 +100,12 @@ public class SettingsController {
             if (body.containsKey("enableTargetShift")) riskSettings.setEnableTargetShift(effectiveMode, Boolean.parseBoolean(body.get("enableTargetShift").toString()));
             if (body.containsKey("enableSmallCandleFilter")) riskSettings.setEnableSmallCandleFilter(effectiveMode, Boolean.parseBoolean(body.get("enableSmallCandleFilter").toString()));
             if (body.containsKey("smallCandleAtrThreshold")) riskSettings.setSmallCandleAtrThreshold(effectiveMode, Double.parseDouble(body.get("smallCandleAtrThreshold").toString()));
+            if (body.containsKey("wickRejectionRatio")) riskSettings.setWickRejectionRatio(effectiveMode, Double.parseDouble(body.get("wickRejectionRatio").toString()));
+            if (body.containsKey("oppositeWickRatio")) riskSettings.setOppositeWickRatio(effectiveMode, Double.parseDouble(body.get("oppositeWickRatio").toString()));
+            if (body.containsKey("enableVolumeFilter")) riskSettings.setEnableVolumeFilter(effectiveMode, Boolean.parseBoolean(body.get("enableVolumeFilter").toString()));
+            if (body.containsKey("volumeMultiple")) riskSettings.setVolumeMultiple(effectiveMode, Double.parseDouble(body.get("volumeMultiple").toString()));
+            if (body.containsKey("volumeLookback")) riskSettings.setVolumeLookback(effectiveMode, Integer.parseInt(body.get("volumeLookback").toString()));
+            if (body.containsKey("enableTrailingSl")) riskSettings.setEnableTrailingSl(effectiveMode, Boolean.parseBoolean(body.get("enableTrailingSl").toString()));
             if (body.containsKey("trailTriggerPct")) riskSettings.setTrailTriggerPct(effectiveMode, Double.parseDouble(body.get("trailTriggerPct").toString()));
             if (body.containsKey("trailSlPct")) riskSettings.setTrailSlPct(effectiveMode, Double.parseDouble(body.get("trailSlPct").toString()));
             if (body.containsKey("signalSource")) riskSettings.setSignalSource(body.get("signalSource").toString());

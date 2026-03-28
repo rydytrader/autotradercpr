@@ -20,9 +20,6 @@
     </script>
     <style>
         /* ── SETTINGS PAGE SPECIFIC ────────────── */
-        .narrow-cpr-scroll::-webkit-scrollbar { width: 4px; }
-        .narrow-cpr-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-        .narrow-cpr-scroll::-webkit-scrollbar-track { background: transparent; }
         .stat-value.warning  { color: var(--accent-yellow); }
         .section-body { padding: 24px 22px; }
 
@@ -91,12 +88,12 @@
         </div>
     </div>
     <nav class="sidebar-nav">
-        <a href="/home" class="sidebar-nav-item"><span class="sidebar-nav-icon">◉</span><span class="sidebar-nav-label">Home</span></a>
+        <a href="/home" class="sidebar-nav-item"><span class="sidebar-nav-icon">⌂</span><span class="sidebar-nav-label">Home</span></a>
+        <a href="/scanner" class="sidebar-nav-item"><span class="sidebar-nav-icon">◎</span><span class="sidebar-nav-label">Watchlist</span></a>
         <a href="/positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
         <a href="/trades" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
         <a href="/journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">≡</span><span class="sidebar-nav-label">Journal</span></a>
         <a href="/settings" class="sidebar-nav-item active"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
-        <a href="/scanner" class="sidebar-nav-item"><span class="sidebar-nav-icon">◎</span><span class="sidebar-nav-label">Scanner</span></a>
         <a href="/console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
     </nav>
     <div class="sidebar-footer">
@@ -126,24 +123,6 @@
         <div>
             <div class="page-title">Trade and Risk Settings</div>
             <div class="page-subtitle">Trade parameters, guardrails &amp; daily limits</div>
-        </div>
-        <div style="display:flex; gap:8px;">
-            <button onclick="showNarrowCpr()" style="
-                background: rgba(99,179,237,0.1); border: 1px solid rgba(99,179,237,0.3);
-                color: var(--accent-blue); padding: 6px 14px; border-radius: 8px;
-                font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
-                cursor: pointer; transition: all 0.2s;
-            " onmouseover="this.style.background='rgba(99,179,237,0.18)'" onmouseout="this.style.background='rgba(99,179,237,0.1)'">
-                View Narrow CPR List
-            </button>
-            <button onclick="showInsideCpr()" style="
-                background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3);
-                color: var(--accent-yellow); padding: 6px 14px; border-radius: 8px;
-                font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
-                cursor: pointer; transition: all 0.2s;
-            " onmouseover="this.style.background='rgba(251,191,36,0.18)'" onmouseout="this.style.background='rgba(251,191,36,0.1)'">
-                View Inside CPR List
-            </button>
         </div>
     </div>
 
@@ -259,7 +238,28 @@
                         <input type="checkbox" id="enableSmallCandleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject if move &lt;</span>
                         <input type="number" id="smallCandleAtrThreshold" class="form-control" step="0.1" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR from breakout level</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR from breakout level, or candle body &lt; threshold x ATR</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px; padding-left: 28px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Breakout wick ratio:</span>
+                        <input type="number" id="wickRejectionRatio" class="form-control" step="0.1" min="1.0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.75rem; font-family: var(--font-mono);">wick/body to allow small body (default 1.5)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px; padding-left: 28px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Opposite wick ratio:</span>
+                        <input type="number" id="oppositeWickRatio" class="form-control" step="0.1" min="1.0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.75rem; font-family: var(--font-mono);">wick/body to reject counter-pressure (default 2.0)</span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Volume Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableVolumeFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject if candle volume &lt;</span>
+                        <input type="number" id="volumeMultiple" class="form-control" step="0.5" min="1.0" max="10.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">x avg volume of last</span>
+                        <input type="number" id="volumeLookback" class="form-control" step="1" min="1" max="20" style="width:55px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">candles</span>
                     </div>
                 </div>
                 <div class="form-group">
@@ -272,11 +272,12 @@
                 <div class="form-group">
                     <label class="form-label">Trailing SL</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
+                        <input type="checkbox" id="enableTrailingSl" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">When price moves</span>
                         <input type="number" id="trailTriggerPct" class="form-control" step="5" min="0" max="100" style="width:65px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">% toward target, trail SL to lock</span>
                         <input type="number" id="trailSlPct" class="form-control" step="5" min="0" max="100" style="width:65px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">% profit (0 = disabled)</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">% profit</span>
                     </div>
                 </div>
             </div>
@@ -493,6 +494,12 @@
             document.getElementById('enableTargetShift').checked = d.enableTargetShift !== false;
             document.getElementById('enableSmallCandleFilter').checked = d.enableSmallCandleFilter === true;
             document.getElementById('smallCandleAtrThreshold').value = d.smallCandleAtrThreshold || 0.5;
+            document.getElementById('wickRejectionRatio').value = d.wickRejectionRatio || 1.5;
+            document.getElementById('oppositeWickRatio').value = d.oppositeWickRatio || 2.0;
+            document.getElementById('enableVolumeFilter').checked = d.enableVolumeFilter || false;
+            document.getElementById('volumeMultiple').value = d.volumeMultiple || 2.0;
+            document.getElementById('volumeLookback').value = d.volumeLookback || 20;
+            document.getElementById('enableTrailingSl').checked = d.enableTrailingSl != null ? d.enableTrailingSl : true;
             document.getElementById('trailTriggerPct').value = d.trailTriggerPct != null ? d.trailTriggerPct : 75;
             document.getElementById('trailSlPct').value = d.trailSlPct != null ? d.trailSlPct : 50;
 
@@ -561,7 +568,7 @@
                 totalCapital:      parseFloat(document.getElementById('totalCapital').value) || 0,
                 maxRiskPerDayPct:  parseFloat(document.getElementById('maxRiskPerDayPct').value) || 0,
                 riskPerTrade:      parseFloat(document.getElementById('riskPerTrade').value) || 0,
-                atrMultiplier:     parseFloat(document.getElementById('atrMultiplier').value) || 1.5,
+                atrMultiplier:     parseFloat(document.getElementById('atrMultiplier').value) || 2.0,
                 sessionMoveLimit:  parseFloat(document.getElementById('sessionMoveLimit').value) || 0,
                 brokeragePerOrder: parseFloat(document.getElementById('brokeragePerOrder').value) || 20,
                 fixedQuantity:    parseInt(document.getElementById('fixedQuantity').value),
@@ -573,6 +580,12 @@
                 enableTargetShift: document.getElementById('enableTargetShift').checked,
                 enableSmallCandleFilter: document.getElementById('enableSmallCandleFilter').checked,
                 smallCandleAtrThreshold: parseFloat(document.getElementById('smallCandleAtrThreshold').value) || 0.5,
+                wickRejectionRatio: parseFloat(document.getElementById('wickRejectionRatio').value) || 1.5,
+                oppositeWickRatio: parseFloat(document.getElementById('oppositeWickRatio').value) || 2.0,
+                enableVolumeFilter: document.getElementById('enableVolumeFilter').checked,
+                volumeMultiple: parseFloat(document.getElementById('volumeMultiple').value) || 2.0,
+                volumeLookback: parseInt(document.getElementById('volumeLookback').value) || 20,
+                enableTrailingSl: document.getElementById('enableTrailingSl').checked,
                 trailTriggerPct: parseFloat(document.getElementById('trailTriggerPct').value) || 0,
                 trailSlPct: parseFloat(document.getElementById('trailSlPct').value) || 0,
                 signalSource: document.getElementById('signalSource').value,
@@ -619,151 +632,6 @@
 
 </script>
 
-<!-- Narrow CPR Modal -->
-<div id="narrowCprModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px);" onclick="if(event.target===this)this.style.display='none'">
-    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:90%; max-width:800px; max-height:80vh; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border); background:var(--bg-section-header);">
-            <div>
-                <div style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:var(--text-primary);">Narrow CPR Stocks</div>
-                <div id="narrowCprSubtitle" style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); margin-top:2px;"></div>
-            </div>
-            <button onclick="document.getElementById('narrowCprModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
-        </div>
-        <div class="narrow-cpr-scroll" style="overflow-y:auto; padding:0;">
-            <table style="width:100%; border-collapse:collapse; font-family:var(--font-mono); font-size:0.78rem;">
-                <thead>
-                    <tr style="background:var(--bg-surface); position:sticky; top:0;">
-                        <th style="padding:10px 14px; text-align:left; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">#</th>
-                        <th style="padding:10px 14px; text-align:left; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Symbol</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Close</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">CPR %</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Pivot</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">TC</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">BC</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">R1</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">S1</th>
-                    </tr>
-                </thead>
-                <tbody id="narrowCprBody"></tbody>
-            </table>
-            <div id="narrowCprEmpty" style="display:none; padding:40px; text-align:center; color:var(--text-muted); font-family:var(--font-mono); font-size:0.85rem;">No narrow CPR stocks found</div>
-        </div>
-    </div>
-</div>
-
-<script>
-function showNarrowCpr() {
-    document.getElementById('narrowCprModal').style.display = 'block';
-    document.getElementById('narrowCprBody').innerHTML = '<tr><td colspan="9" style="padding:30px; text-align:center; color:var(--text-muted);">Loading...</td></tr>';
-    document.getElementById('narrowCprEmpty').style.display = 'none';
-    document.getElementById('narrowCprSubtitle').textContent = '';
-
-    fetch('/api/narrow-cpr')
-        .then(r => r.json())
-        .then(data => {
-            const subtitle = 'Date: ' + (data.date || '—') + ' | NFO Stocks: ' + (data.totalNfoStocks || 0) + ' | Narrow: ' + (data.narrowCount || 0);
-            document.getElementById('narrowCprSubtitle').textContent = subtitle;
-
-            const stocks = data.stocks || [];
-            if (stocks.length === 0) {
-                document.getElementById('narrowCprBody').innerHTML = '';
-                document.getElementById('narrowCprEmpty').style.display = 'block';
-                return;
-            }
-            document.getElementById('narrowCprEmpty').style.display = 'none';
-            let html = '';
-            stocks.forEach((s, i) => {
-                html += '<tr style="border-bottom:1px solid var(--border);">'
-                    + '<td style="padding:8px 14px; color:var(--text-muted);">' + (i+1) + '</td>'
-                    + '<td style="padding:8px 14px; color:var(--accent-cyan); font-weight:600;">' + s.symbol + '</td>'
-                    + '<td style="padding:8px 14px; text-align:right; color:var(--text-primary);">' + s.close.toFixed(2) + '</td>'
-                    + '<td style="padding:8px 14px; text-align:right; color:var(--accent-yellow); font-weight:600;">' + s.cprWidthPct.toFixed(3) + '%</td>'
-                    + '<td style="padding:8px 14px; text-align:right; color:var(--text-secondary);">' + s.pivot.toFixed(2) + '</td>'
-                    + '<td style="padding:8px 14px; text-align:right; color:var(--text-secondary);">' + s.tc.toFixed(2) + '</td>'
-                    + '<td style="padding:8px 14px; text-align:right; color:var(--text-secondary);">' + s.bc.toFixed(2) + '</td>'
-                    + '<td style="padding:8px 14px; text-align:right; color:var(--accent-green);">' + s.r1.toFixed(2) + '</td>'
-                    + '<td style="padding:8px 14px; text-align:right; color:var(--accent-red);">' + s.s1.toFixed(2) + '</td>'
-                    + '</tr>';
-            });
-            document.getElementById('narrowCprBody').innerHTML = html;
-        })
-        .catch(err => {
-            document.getElementById('narrowCprBody').innerHTML = '<tr><td colspan="9" style="padding:30px; text-align:center; color:var(--accent-red);">Failed to load: ' + err.message + '</td></tr>';
-        });
-}
-
-function showInsideCpr() {
-    document.getElementById('insideCprModal').style.display = 'block';
-    document.getElementById('insideCprBody').innerHTML = '<tr><td colspan="9" style="padding:30px; text-align:center; color:var(--text-muted);">Loading...</td></tr>';
-    document.getElementById('insideCprEmpty').style.display = 'none';
-    document.getElementById('insideCprSubtitle').textContent = '';
-
-    fetch('/api/inside-cpr')
-        .then(r => r.json())
-        .then(data => {
-            const subtitle = 'Date: ' + (data.date || '—') + ' | Previous: ' + (data.previousDate || '—') + ' | NFO Stocks: ' + (data.totalNfoStocks || 0) + ' | Inside: ' + (data.insideCount || 0);
-            document.getElementById('insideCprSubtitle').textContent = subtitle;
-
-            const stocks = data.stocks || [];
-            if (stocks.length === 0) {
-                document.getElementById('insideCprBody').innerHTML = '';
-                document.getElementById('insideCprEmpty').style.display = 'block';
-                return;
-            }
-            document.getElementById('insideCprEmpty').style.display = 'none';
-            let html = '';
-            stocks.forEach((s, i) => {
-                html += '<tr style="border-bottom:1px solid var(--border);">'
-                    + '<td style="padding:8px 14px; color:var(--text-muted);">' + (i+1) + '</td>'
-                    + '<td style="padding:8px 14px; color:var(--accent-cyan); font-weight:600;">' + s.symbol + '</td>'
-                    + '<td style="padding:8px 14px; text-align:right; color:var(--text-primary);">' + s.close.toFixed(2) + '</td>'
-                    + '<td style="padding:8px 14px; text-align:right; color:var(--accent-yellow); font-weight:600;">' + s.cprWidthPct.toFixed(3) + '%</td>'
-                    + '<td style="padding:8px 14px; text-align:right; color:var(--text-secondary);">' + s.pivot.toFixed(2) + '</td>'
-                    + '<td style="padding:8px 14px; text-align:right; color:var(--text-secondary);">' + s.tc.toFixed(2) + '</td>'
-                    + '<td style="padding:8px 14px; text-align:right; color:var(--text-secondary);">' + s.bc.toFixed(2) + '</td>'
-                    + '<td style="padding:8px 14px; text-align:right; color:var(--accent-green);">' + s.r1.toFixed(2) + '</td>'
-                    + '<td style="padding:8px 14px; text-align:right; color:var(--accent-red);">' + s.s1.toFixed(2) + '</td>'
-                    + '</tr>';
-            });
-            document.getElementById('insideCprBody').innerHTML = html;
-        })
-        .catch(err => {
-            document.getElementById('insideCprBody').innerHTML = '<tr><td colspan="9" style="padding:30px; text-align:center; color:var(--accent-red);">Failed to load: ' + err.message + '</td></tr>';
-        });
-}
-</script>
-
-<!-- Inside CPR Modal -->
-<div id="insideCprModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px);" onclick="if(event.target===this)this.style.display='none'">
-    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:90%; max-width:800px; max-height:80vh; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border); background:var(--bg-section-header);">
-            <div>
-                <div style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:var(--text-primary);">Inside CPR Stocks</div>
-                <div id="insideCprSubtitle" style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); margin-top:2px;"></div>
-            </div>
-            <button onclick="document.getElementById('insideCprModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
-        </div>
-        <div class="narrow-cpr-scroll" style="overflow-y:auto; padding:0;">
-            <table style="width:100%; border-collapse:collapse; font-family:var(--font-mono); font-size:0.78rem;">
-                <thead>
-                    <tr style="background:var(--bg-surface); position:sticky; top:0;">
-                        <th style="padding:10px 14px; text-align:left; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">#</th>
-                        <th style="padding:10px 14px; text-align:left; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Symbol</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Close</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">CPR %</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Pivot</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">TC</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">BC</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">R1</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">S1</th>
-                    </tr>
-                </thead>
-                <tbody id="insideCprBody"></tbody>
-            </table>
-            <div id="insideCprEmpty" style="display:none; padding:40px; text-align:center; color:var(--text-muted); font-family:var(--font-mono); font-size:0.85rem;">No inside CPR stocks found</div>
-        </div>
-    </div>
-</div>
 
 </div><!-- /app-main -->
 </div><!-- /app-layout -->
