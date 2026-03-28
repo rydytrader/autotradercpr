@@ -43,6 +43,7 @@ wc = request.security(syminfo.tickerid, "W", close[1], lookahead=barmerge.lookah
 // ─── VWAP & ATR ───────────────────────────────────────────
 vwap       = ta.vwap(hlc3)
 atrRaw     = ta.atr(atrLength)
+avgVol     = ta.sma(volume, 20)
 
 // ─── DAILY CPR CALCULATION ─────────────────────────────────
 pp = (ph + pl + pc) / 3
@@ -203,10 +204,10 @@ levelsJson() =>
 
 // Helper: build common JSON prefix
 buyPrefix(_setup) =>
-    '{"setup":"' + _setup + '",' + '"symbol":"' + tradeSymbol + '",' + '"close":' + str.tostring(close) + ',' + '"candleOpen":' + str.tostring(open) + ',"candleHigh":' + str.tostring(high) + ',"candleLow":' + str.tostring(low) + ',' + '"atr":' + str.tostring(atrRaw) + ',' + '"dayOpen":' + str.tostring(dayOpen) + ',' + '"probability":"' + (alignedBuy ? 'HPT' : mediumBuy ? 'MPT' : 'LPT') + '",'
+    '{"setup":"' + _setup + '",' + '"symbol":"' + tradeSymbol + '",' + '"close":' + str.tostring(close) + ',' + '"candleOpen":' + str.tostring(open) + ',"candleHigh":' + str.tostring(high) + ',"candleLow":' + str.tostring(low) + ',' + '"candleVolume":' + str.tostring(volume) + ',"avgVolume":' + str.tostring(avgVol) + ',' + '"atr":' + str.tostring(atrRaw) + ',' + '"dayOpen":' + str.tostring(dayOpen) + ',' + '"probability":"' + (alignedBuy ? 'HPT' : mediumBuy ? 'MPT' : 'LPT') + '",'
 
 sellPrefix(_setup) =>
-    '{"setup":"' + _setup + '",' + '"symbol":"' + tradeSymbol + '",' + '"close":' + str.tostring(close) + ',' + '"candleOpen":' + str.tostring(open) + ',"candleHigh":' + str.tostring(high) + ',"candleLow":' + str.tostring(low) + ',' + '"atr":' + str.tostring(atrRaw) + ',' + '"dayOpen":' + str.tostring(dayOpen) + ',' + '"probability":"' + (alignedSell ? 'HPT' : mediumSell ? 'MPT' : 'LPT') + '",'
+    '{"setup":"' + _setup + '",' + '"symbol":"' + tradeSymbol + '",' + '"close":' + str.tostring(close) + ',' + '"candleOpen":' + str.tostring(open) + ',"candleHigh":' + str.tostring(high) + ',"candleLow":' + str.tostring(low) + ',' + '"candleVolume":' + str.tostring(volume) + ',"avgVolume":' + str.tostring(avgVol) + ',' + '"atr":' + str.tostring(atrRaw) + ',' + '"dayOpen":' + str.tostring(dayOpen) + ',' + '"probability":"' + (alignedSell ? 'HPT' : mediumSell ? 'MPT' : 'LPT') + '",'
 
 
 // ══════════════════════════════════════════
