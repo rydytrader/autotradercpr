@@ -48,6 +48,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
     private final OrderService        orderService;
     private final EventService        eventService;
     private final RiskSettingsStore   riskSettings;
+    private final CandleAggregator    candleAggregator;
+    private final AtrService          atrService;
+    private final WeeklyCprService    weeklyCprService;
+    private final BreakoutScanner     breakoutScanner;
+    private final BhavcopyService     bhavcopyService;
     private final ObjectMapper        mapper = new ObjectMapper();
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -119,7 +124,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
                               TradeHistoryService tradeHistoryService,
                               OrderService orderService,
                               EventService eventService,
-                              RiskSettingsStore riskSettings) {
+                              RiskSettingsStore riskSettings,
+                              CandleAggregator candleAggregator,
+                              AtrService atrService,
+                              WeeklyCprService weeklyCprService,
+                              BreakoutScanner breakoutScanner,
+                              BhavcopyService bhavcopyService) {
         this.tokenStore = tokenStore;
         this.fyersProperties = fyersProperties;
         this.positionStateStore = positionStateStore;
@@ -127,6 +137,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         this.orderService = orderService;
         this.eventService = eventService;
         this.riskSettings = riskSettings;
+        this.candleAggregator = candleAggregator;
+        this.atrService = atrService;
+        this.weeklyCprService = weeklyCprService;
+        this.breakoutScanner = breakoutScanner;
+        this.bhavcopyService = bhavcopyService;
     }
 
     // ────────────────────────────────────────────────────────────────────────────
@@ -146,6 +161,15 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         // SSE keepalive every 15s
         scheduler.scheduleAtFixedRate(this::sendKeepalive, 15, 15, TimeUnit.SECONDS);
 
+        // Register candle close listeners
+        candleAggregator.setTimeframe(riskSettings.getScannerTimeframe());
+        candleAggregator.addListener(atrService);
+        candleAggregator.addListener(breakoutScanner);
+        candleAggregator.start();
+
+        // Schedule scanner pre-market data fetch
+        scheduleScannerInit();
+
         startLiveWebSocket();
         log.info("[MarketData] Started in LIVE mode");
     }
@@ -161,6 +185,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
             scheduler.shutdownNow();
             scheduler = null;
         }
+        candleAggregator.stop();
         currentTicks.clear();
         hsmToFyersSymbol.clear();
         fyersToHsmToken.clear();
@@ -205,7 +230,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
 
                 // 4. Connect WebSocket
                 wsClient = new FyersDataWebSocket(hsmKey, hsmTokens, hsmToFyersSymbol,
-                    true, CHANNEL_NUM, this);
+                    false, CHANNEL_NUM, this);
                 wsClient.connectBlocking();
 
                 // 5. Start ping scheduler (10s)
@@ -260,6 +285,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         if (tick.isHasPosition()) {
             checkTrailingSl(raw.fyersSymbol, raw.ltp);
         }
+
+        // Route tick to candle aggregator for scanner
+        candleAggregator.onTick(raw);
 
         dirty = true;
     }
@@ -627,6 +655,110 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
             log.error("[MarketData] JWT decode error: {}", e.getMessage());
             return null;
         }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────────
+    // Scanner initialization
+    // ────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Schedule pre-market scanner data fetch.
+     * If already past 9:00 AM, runs immediately (restart scenario).
+     */
+    private void scheduleScannerInit() {
+        // Always initialize scanner data (watchlist, ATR, trends) for the dashboard page.
+        // Signal generation is gated by signalSource check in BreakoutScanner.onCandleClose().
+        scheduler.submit(() -> {
+            try {
+                initScanner();
+            } catch (Exception e) {
+                log.error("[MarketData] Scanner init failed: {}", e.getMessage());
+            }
+        });
+    }
+
+    /**
+     * Initialize scanner: fetch ATR + weekly data, subscribe watchlist symbols.
+     */
+    private void initScanner() {
+        List<String> watchlist = buildWatchlist();
+        if (watchlist.isEmpty()) {
+            log.warn("[MarketData] No watchlist symbols (narrow/inside CPR lists empty)");
+            return;
+        }
+
+        log.info("[MarketData] Initializing scanner with {} watchlist symbols", watchlist.size());
+        breakoutScanner.setWatchlistSymbols(watchlist);
+
+        // Fetch ATR and weekly trends (throttled API calls)
+        atrService.fetchAtrForSymbols(watchlist);
+        weeklyCprService.fetchWeeklyTrends(watchlist);
+
+        // Subscribe watchlist to WebSocket for real-time data
+        subscribeWatchlist(watchlist);
+
+        eventService.log("[INFO] Scanner initialized: " + watchlist.size() + " symbols, ATR loaded, trends calculated");
+    }
+
+    /**
+     * Build watchlist from narrow + inside CPR stocks.
+     * Returns Fyers symbols (e.g., "NSE:RELIANCE-EQ").
+     */
+    private List<String> buildWatchlist() {
+        Set<String> symbols = new LinkedHashSet<>();
+
+        for (var cpr : bhavcopyService.getNarrowCprStocks()) {
+            symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
+        }
+        for (var cpr : bhavcopyService.getInsideCprStocks()) {
+            symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
+        }
+        return new ArrayList<>(symbols);
+    }
+
+    /**
+     * Subscribe watchlist symbols to the HSM WebSocket.
+     */
+    private void subscribeWatchlist(List<String> fyersSymbols) {
+        if (wsClient == null || !wsClient.isOpen()) {
+            log.warn("[MarketData] WebSocket not connected, cannot subscribe watchlist");
+            return;
+        }
+
+        // Resolve HSM tokens for watchlist symbols
+        List<String> unresolved = new ArrayList<>();
+        for (String fyers : fyersSymbols) {
+            if (!fyersToHsmToken.containsKey(fyers)) {
+                unresolved.add(fyers);
+            }
+        }
+        if (!unresolved.isEmpty()) {
+            try {
+                resolveSymbolTokens(unresolved, tokenStore.getAccessToken());
+            } catch (Exception e) {
+                log.error("[MarketData] Failed to resolve watchlist tokens: {}", e.getMessage());
+            }
+        }
+
+        // Subscribe new tokens
+        List<String> toSubscribe = new ArrayList<>();
+        for (String fyers : fyersSymbols) {
+            String hsm = fyersToHsmToken.get(fyers);
+            if (hsm != null && !subscribedHsmTokens.contains(hsm)) {
+                toSubscribe.add(hsm);
+                subscribedHsmTokens.add(hsm);
+            }
+        }
+
+        if (!toSubscribe.isEmpty()) {
+            wsClient.subscribeSymbols(toSubscribe);
+            log.info("[MarketData] Subscribed {} watchlist symbols to WebSocket", toSubscribe.size());
+        }
+    }
+
+    /** Get watchlist for external use (scanner dashboard). */
+    public List<String> getWatchlist() {
+        return buildWatchlist();
     }
 
     /** Build the full symbol list (base + position symbols). */

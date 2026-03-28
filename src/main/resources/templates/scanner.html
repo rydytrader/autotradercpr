@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TraderEdge CPR - Scanner</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/shared.css?v=4">
+    <script>
+        (function() {
+            var t = localStorage.getItem('traderedge-theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', t);
+            document.addEventListener('DOMContentLoaded', function() {
+                var btn = document.getElementById('themeToggle');
+                if (btn) btn.textContent = t === 'light' ? '\u2600\uFE0F' : t === 'forest' ? '\uD83C\uDF32' : '\uD83C\uDF19';
+            });
+        })();
+    </script>
+    <style>
+        /* ── SCANNER CARDS GRID ───────────────────── */
+        .scanner-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 16px;
+            padding: 0;
+        }
+        .scan-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 0;
+            transition: all 0.2s ease;
+            overflow: hidden;
+        }
+        .scan-card:hover {
+            border-color: var(--accent-blue);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+        .scan-card.has-position { border-color: var(--accent-green); border-width: 2px; }
+        .scan-card.signal-filtered { border-color: var(--accent-yellow); border-width: 2px; }
+        .scan-card.signal-traded { border-color: var(--accent-green); border-width: 2px; }
+
+        .scan-card-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 16px 10px;
+            border-bottom: 1px solid var(--border);
+        }
+        .scan-symbol {
+            font-family: var(--font-mono);
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        .scan-badge {
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 4px;
+            letter-spacing: 0.05em;
+        }
+        .scan-badge.narrow { background: rgba(99,179,237,0.12); color: var(--accent-blue); }
+        .scan-badge.inside { background: rgba(251,191,36,0.12); color: var(--accent-yellow); }
+
+        .scan-price-row {
+            display: flex; align-items: baseline; gap: 10px;
+            padding: 8px 16px 6px;
+        }
+        .scan-ltp {
+            font-family: var(--font-mono);
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        .scan-change {
+            font-family: var(--font-mono);
+            font-size: 0.78rem;
+            font-weight: 600;
+        }
+        .scan-change.up { color: var(--accent-green); }
+        .scan-change.down { color: var(--accent-red); }
+
+        .scan-data-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 0;
+            padding: 6px 16px 10px;
+        }
+        .scan-data-item {
+            text-align: center;
+            padding: 4px 0;
+        }
+        .scan-data-label {
+            font-family: var(--font-mono);
+            font-size: 0.6rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+        .scan-data-value {
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        .scan-trend-row {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 8px 16px;
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+        }
+        .scan-trend {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        .scan-trend .label { color: var(--text-muted); }
+        .scan-trend .bullish { color: var(--accent-green); }
+        .scan-trend .bearish { color: var(--accent-red); }
+        .scan-trend .neutral { color: var(--accent-yellow); }
+
+        .scan-badge.hpt { background: rgba(52,211,153,0.12); color: var(--accent-green); }
+        .scan-badge.mpt { background: rgba(251,191,36,0.12); color: var(--accent-yellow); }
+        .scan-badge.lpt { background: rgba(248,113,113,0.12); color: var(--accent-red); }
+
+        .scan-levels {
+            padding: 8px 16px 10px;
+            font-family: var(--font-mono);
+            font-size: 0.68rem;
+        }
+        .scan-levels-title {
+            color: var(--text-muted);
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 4px;
+        }
+        .scan-level-row {
+            display: flex; justify-content: space-between;
+            padding: 1px 0;
+            color: var(--text-secondary);
+        }
+        .scan-level-row .lvl-name { color: var(--text-muted); min-width: 40px; }
+        .scan-level-row .lvl-price { font-weight: 600; }
+        .scan-level-row.broken .lvl-name { color: var(--accent-green); }
+        .scan-level-row.broken .lvl-price { color: var(--accent-green); font-weight: 700; }
+
+        .scan-signal-row {
+            padding: 10px 16px;
+            border-top: 1px solid var(--border);
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
+        }
+        .scan-signal-row .sig-none { color: var(--text-muted); }
+        .scan-signal-row .sig-setup { color: var(--accent-blue); font-weight: 700; }
+        .scan-signal-row .sig-time { color: var(--text-muted); margin-left: 6px; }
+        .scan-signal-status {
+            display: inline-block;
+            font-size: 0.6rem;
+            font-weight: 700;
+            padding: 1px 6px;
+            border-radius: 3px;
+            margin-left: 6px;
+        }
+        .scan-signal-status.traded { background: rgba(52,211,153,0.15); color: var(--accent-green); }
+        .scan-signal-status.filtered { background: rgba(251,191,36,0.15); color: var(--accent-yellow); }
+        .scan-signal-status.error { background: rgba(248,113,113,0.15); color: var(--accent-red); }
+
+        /* ── STATUS BAR ───────────────────────────── */
+        .scanner-status {
+            display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+            padding: 10px 20px;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            margin-bottom: 16px;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+        }
+        .scanner-status .ss-item { color: var(--text-secondary); }
+        .scanner-status .ss-label { color: var(--text-muted); margin-right: 4px; }
+        .scanner-status .ss-value { font-weight: 700; color: var(--text-primary); }
+        .scanner-status .ss-mode {
+            padding: 2px 10px; border-radius: 4px; font-weight: 700;
+        }
+        .scanner-status .ss-mode.internal { background: rgba(52,211,153,0.12); color: var(--accent-green); }
+        .scanner-status .ss-mode.tradingview { background: rgba(99,179,237,0.12); color: var(--accent-blue); }
+
+        /* ── FILTER BAR ───────────────────────────── */
+        .filter-bar {
+            display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+        .filter-btn {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 5px 14px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .filter-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
+        .filter-btn.active {
+            background: rgba(99,179,237,0.12);
+            border-color: var(--accent-blue);
+            color: var(--accent-blue);
+        }
+        .filter-sep {
+            width: 1px; height: 20px; background: var(--border); margin: 0 4px;
+        }
+        .scan-count {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-left: auto;
+        }
+    </style>
+</head>
+<body>
+<div class="app-layout">
+<aside class="sidebar">
+    <div class="sidebar-brand">
+        <div class="brand-icon">&#9889;</div>
+        <div class="sidebar-brand-text">
+            <div class="brand-name">TRADER<span>EDGE</span> CPR</div>
+        </div>
+    </div>
+    <nav class="sidebar-nav">
+        <a href="/home" class="sidebar-nav-item"><span class="sidebar-nav-icon">&#9673;</span><span class="sidebar-nav-label">Home</span></a>
+        <a href="/positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">&#11041;</span><span class="sidebar-nav-label">Positions</span></a>
+        <a href="/trades" class="sidebar-nav-item"><span class="sidebar-nav-icon">&#8862;</span><span class="sidebar-nav-label">Trade Log</span></a>
+        <a href="/journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">&#8801;</span><span class="sidebar-nav-label">Journal</span></a>
+        <a href="/scanner" class="sidebar-nav-item active"><span class="sidebar-nav-icon">&#9678;</span><span class="sidebar-nav-label">Scanner</span></a>
+        <a href="/settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">&#9881;</span><span class="sidebar-nav-label">Settings</span></a>
+        <a href="/console" class="sidebar-nav-item"><span class="sidebar-nav-icon">&#9636;</span><span class="sidebar-nav-label">Console</span></a>
+    </nav>
+    <div class="sidebar-footer">
+        <div class="status-pill">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="connectionStatus" style="color: var(--text-secondary);">Checking...</span>
+        </div>
+    </div>
+</aside>
+
+<div class="app-main">
+<nav class="navbar">
+    <div class="navbar-inner">
+        <div class="ticker-wrap" id="tickerWrap">
+            <div class="ticker-track" id="tickerTrack"></div>
+        </div>
+        <div class="nav-right">
+            <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">&#127769;</button>
+            <button class="logout-btn" title="Logout" onclick="logout()">&#9211;</button>
+        </div>
+    </div>
+</nav>
+
+<div class="page-wrap">
+
+    <div class="page-header">
+        <div>
+            <div class="page-title">CPR Scanner</div>
+            <div class="page-subtitle">Narrow &amp; Inside CPR Watchlist</div>
+        </div>
+    </div>
+
+    <!-- Scanner Status Bar -->
+    <div class="scanner-status" id="scannerStatus">
+        <div class="ss-item">
+            <span class="ss-label">Mode:</span>
+            <span class="ss-mode" id="ssMode">--</span>
+        </div>
+        <div class="ss-item">
+            <span class="ss-label">Watchlist:</span>
+            <span class="ss-value" id="ssWatchlist">0</span>
+        </div>
+        <div class="ss-item">
+            <span class="ss-label">Timeframe:</span>
+            <span class="ss-value" id="ssTimeframe">15</span><span class="ss-label">m</span>
+        </div>
+        <div class="ss-item">
+            <span class="ss-label">Signals:</span>
+            <span id="ssSignals">--</span>
+        </div>
+        <div class="ss-item">
+            <span class="ss-label">VWAP:</span>
+            <span class="ss-value" id="ssVwap">--</span>
+        </div>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="filter-bar">
+        <button class="filter-btn active" onclick="setFilter('all', this)">All</button>
+        <button class="filter-btn" onclick="setFilter('NARROW', this)">Narrow CPR</button>
+        <button class="filter-btn" onclick="setFilter('INSIDE', this)">Inside CPR</button>
+        <div class="filter-sep"></div>
+        <button class="filter-btn" onclick="toggleSignalFilter(this)">Has Signal</button>
+        <span class="scan-count" id="scanCount">0 stocks</span>
+    </div>
+
+    <!-- Cards Grid -->
+    <div class="scanner-grid" id="scannerGrid">
+        <div style="color: var(--text-muted); font-family: var(--font-mono); font-size: 0.85rem; grid-column: 1/-1; text-align: center; padding: 60px 0;">
+            Loading watchlist...
+        </div>
+    </div>
+
+</div>
+</div>
+</div>
+
+<script src="/js/common.js"></script>
+<script src="/js/ticker.js"></script>
+<script>
+(function() {
+    var allData = [];
+    var cprFilter = 'all';
+    var signalFilter = false;
+
+    // ── Filter controls ─────────────────────────────
+    window.setFilter = function(type, btn) {
+        cprFilter = type;
+        document.querySelectorAll('.filter-bar .filter-btn').forEach(function(b, i) {
+            if (i < 3) b.classList.remove('active');
+        });
+        btn.classList.add('active');
+        renderCards();
+    };
+
+    window.toggleSignalFilter = function(btn) {
+        signalFilter = !signalFilter;
+        btn.classList.toggle('active', signalFilter);
+        renderCards();
+    };
+
+    // ── Render cards ────────────────────────────────
+    function renderCards() {
+        var grid = document.getElementById('scannerGrid');
+        var filtered = allData.filter(function(d) {
+            if (cprFilter !== 'all' && d.cprType !== cprFilter) return false;
+            if (signalFilter && !d.lastSignal) return false;
+            return true;
+        });
+
+        document.getElementById('scanCount').textContent = filtered.length + ' stock' + (filtered.length !== 1 ? 's' : '');
+
+        if (filtered.length === 0) {
+            grid.innerHTML = '<div style="color:var(--text-muted); font-family:var(--font-mono); font-size:0.85rem; grid-column:1/-1; text-align:center; padding:60px 0;">No stocks match filters</div>';
+            return;
+        }
+
+        var html = '';
+        for (var i = 0; i < filtered.length; i++) {
+            html += buildCard(filtered[i]);
+        }
+        grid.innerHTML = html;
+    }
+
+    function buildCard(d) {
+        var cardClass = 'scan-card';
+        if (d.hasPosition) cardClass += ' has-position';
+        else if (d.lastSignal && d.lastSignal.status === 'FILTERED') cardClass += ' signal-filtered';
+        else if (d.lastSignal && d.lastSignal.status === 'TRADED') cardClass += ' signal-traded';
+
+        var chClass = d.changePercent >= 0 ? 'up' : 'down';
+        var chArrow = d.changePercent >= 0 ? '&#9650;' : '&#9660;';
+
+        var wTrend = d.weeklyTrend || 'NEUTRAL';
+        var dTrend = d.dailyTrend || 'NEUTRAL';
+        var wClass = wTrend.toLowerCase();
+        var dClass = dTrend.toLowerCase();
+        var wArrow = wTrend === 'BULLISH' ? '&#9650;' : wTrend === 'BEARISH' ? '&#9660;' : '&#9644;';
+        var dArrow = dTrend === 'BULLISH' ? '&#9650;' : dTrend === 'BEARISH' ? '&#9660;' : '&#9644;';
+
+        var probClass = (d.probability || 'lpt').toLowerCase();
+
+        // Build levels — show key levels with broken markers
+        var broken = d.brokenLevels || [];
+        var brokenSet = {};
+        for (var b = 0; b < broken.length; b++) brokenSet[broken[b]] = true;
+
+        var lvls = d.levels || {};
+        var buyLevels = [
+            {name: 'R4', price: lvls.r4, setup: 'BUY_ABOVE_R4'},
+            {name: 'R3', price: lvls.r3, setup: 'BUY_ABOVE_R3'},
+            {name: 'R2', price: lvls.r2, setup: 'BUY_ABOVE_R2'},
+            {name: 'R1', price: lvls.r1, setup: 'BUY_ABOVE_R1_PDH'},
+            {name: 'CPR', price: Math.max(lvls.tc || 0, lvls.bc || 0), setup: 'BUY_ABOVE_CPR'}
+        ];
+        var sellLevels = [
+            {name: 'S1', price: lvls.s1, setup: 'SELL_BELOW_S1_PDL'},
+            {name: 'S2', price: lvls.s2, setup: 'SELL_BELOW_S2'},
+            {name: 'S3', price: lvls.s3, setup: 'SELL_BELOW_S3'},
+            {name: 'S4', price: lvls.s4, setup: 'SELL_BELOW_S4'}
+        ];
+
+        var levelsHtml = '';
+        for (var j = 0; j < buyLevels.length; j++) {
+            var l = buyLevels[j];
+            var isBroken = brokenSet[l.setup] ? ' broken' : '';
+            var mark = brokenSet[l.setup] ? ' &#10003;' : '';
+            levelsHtml += '<div class="scan-level-row' + isBroken + '"><span class="lvl-name">' + l.name + mark + '</span><span class="lvl-price">' + fmt(l.price) + '</span></div>';
+        }
+        levelsHtml += '<div style="border-top:1px dashed var(--border); margin:2px 0;"></div>';
+        for (var k = 0; k < sellLevels.length; k++) {
+            var s = sellLevels[k];
+            var isBrokenS = brokenSet[s.setup] ? ' broken' : '';
+            var markS = brokenSet[s.setup] ? ' &#10003;' : '';
+            levelsHtml += '<div class="scan-level-row' + isBrokenS + '"><span class="lvl-name">' + s.name + markS + '</span><span class="lvl-price">' + fmt(s.price) + '</span></div>';
+        }
+
+        // Signal row
+        var sigHtml = '';
+        if (d.lastSignal) {
+            var stClass = d.lastSignal.status.toLowerCase();
+            sigHtml = '<span class="sig-setup">' + d.lastSignal.setup + '</span>'
+                + '<span class="sig-time">@ ' + d.lastSignal.time + '</span>'
+                + '<span class="scan-signal-status ' + stClass + '">' + d.lastSignal.status + '</span>';
+        } else {
+            sigHtml = '<span class="sig-none">No breakout yet</span>';
+        }
+
+        return '<div class="' + cardClass + '">'
+            + '<div class="scan-card-header">'
+            + '  <span class="scan-symbol">' + d.shortName + '</span>'
+            + '  <span class="scan-badge ' + d.cprType.toLowerCase() + '">' + d.cprType + '</span>'
+            + '</div>'
+            + '<div class="scan-price-row">'
+            + '  <span class="scan-ltp">' + fmt(d.ltp) + '</span>'
+            + '  <span class="scan-change ' + chClass + '">' + chArrow + ' ' + d.changePercent.toFixed(2) + '%</span>'
+            + '</div>'
+            + '<div class="scan-data-grid">'
+            + '  <div class="scan-data-item"><div class="scan-data-label">VWAP</div><div class="scan-data-value">' + fmt(d.vwap) + '</div></div>'
+            + '  <div class="scan-data-item"><div class="scan-data-label">ATR</div><div class="scan-data-value">' + fmt(d.atr) + '</div></div>'
+            + '  <div class="scan-data-item"><div class="scan-data-label">Day Open</div><div class="scan-data-value">' + fmt(d.dayOpen) + '</div></div>'
+            + '</div>'
+            + '<div class="scan-trend-row">'
+            + '  <span class="scan-trend"><span class="label">W:</span> <span class="' + wClass + '">' + wArrow + ' ' + wTrend + '</span></span>'
+            + '  <span class="scan-trend"><span class="label">D:</span> <span class="' + dClass + '">' + dArrow + ' ' + dTrend + '</span></span>'
+            + '  <span class="scan-badge ' + probClass + '">' + d.probability + '</span>'
+            + '</div>'
+            + '<div class="scan-levels">'
+            + '  <div class="scan-levels-title">CPR Levels</div>'
+            + levelsHtml
+            + '</div>'
+            + '<div class="scan-signal-row">' + sigHtml + '</div>'
+            + '</div>';
+    }
+
+    function fmt(v) {
+        if (v == null || v === 0) return '--';
+        return v.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
+
+    // ── Data fetch ──────────────────────────────────
+    function fetchData() {
+        fetch('/api/scanner/watchlist').then(function(r) { return r.json(); }).then(function(data) {
+            allData = data;
+            renderCards();
+        }).catch(function() {});
+
+        fetch('/api/scanner/status').then(function(r) { return r.json(); }).then(function(s) {
+            var modeEl = document.getElementById('ssMode');
+            modeEl.textContent = s.signalSource;
+            modeEl.className = 'ss-mode ' + (s.signalSource === 'INTERNAL' ? 'internal' : 'tradingview');
+            document.getElementById('ssWatchlist').textContent = s.watchlistCount;
+            document.getElementById('ssTimeframe').textContent = s.timeframe;
+
+            var sigs = [];
+            if (s.enableHpt) sigs.push('HPT');
+            if (s.enableMpt) sigs.push('MPT');
+            if (s.enableLpt) sigs.push('LPT');
+            document.getElementById('ssSignals').innerHTML = sigs.length > 0
+                ? sigs.map(function(p) { return '<span class="scan-badge ' + p.toLowerCase() + '" style="margin-left:2px;">' + p + '</span>'; }).join(' ')
+                : '<span style="color:var(--text-muted);">None</span>';
+            document.getElementById('ssVwap').textContent = s.enableVwap ? 'ON' : 'OFF';
+        }).catch(function() {});
+    }
+
+    // ── Connection status ───────────────────────────
+    function checkStatus() {
+        fetch('/status').then(function(r) { return r.json(); }).then(function(d) {
+            var dot = document.getElementById('statusDot');
+            var label = document.getElementById('connectionStatus');
+            if (d.status && d.status.includes('CONNECTED')) {
+                dot.style.background = 'var(--accent-green)';
+                label.textContent = d.status;
+            } else {
+                dot.style.background = 'var(--accent-red)';
+                label.textContent = d.status || 'DISCONNECTED';
+            }
+        }).catch(function() {
+            document.getElementById('statusDot').style.background = 'var(--accent-red)';
+            document.getElementById('connectionStatus').textContent = 'DISCONNECTED';
+        });
+    }
+
+    // ── Init ────────────────────────────────────────
+    fetchData();
+    checkStatus();
+    setInterval(fetchData, 15000);
+    setInterval(checkStatus, 5000);
+})();
+</script>
+</body>
+</html>

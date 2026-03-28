@@ -46,6 +46,10 @@ public class BhavcopyService {
     private volatile String previousDate = "";
     private final EventService eventService;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private SymbolMasterService symbolMasterService;
+
     public BhavcopyService(EventService eventService) {
         this.eventService = eventService;
         new File("../store").mkdirs();
@@ -174,7 +178,12 @@ public class BhavcopyService {
                 ConcurrentHashMap<String, CprLevels> newCache = new ConcurrentHashMap<>();
                 for (Map.Entry<String, double[]> entry : ohlcMap.entrySet()) {
                     double[] hlc = entry.getValue();
-                    newCache.put(entry.getKey(), new CprLevels(entry.getKey(), hlc[0], hlc[1], hlc[2]));
+                    CprLevels lvl = new CprLevels(entry.getKey(), hlc[0], hlc[1], hlc[2]);
+                    if (symbolMasterService != null) {
+                        double tick = symbolMasterService.getTickSize("NSE:" + entry.getKey() + "-EQ");
+                        lvl.roundToTick(tick);
+                    }
+                    newCache.put(entry.getKey(), lvl);
                 }
 
                 // Current cache becomes previous day (for next day's inside CPR comparison)
@@ -230,7 +239,12 @@ public class BhavcopyService {
                 previousCache.clear();
                 for (Map.Entry<String, double[]> entry : ohlcMap.entrySet()) {
                     double[] hlc = entry.getValue();
-                    previousCache.put(entry.getKey(), new CprLevels(entry.getKey(), hlc[0], hlc[1], hlc[2]));
+                        CprLevels lvl = new CprLevels(entry.getKey(), hlc[0], hlc[1], hlc[2]);
+                    if (symbolMasterService != null) {
+                        double tick = symbolMasterService.getTickSize("NSE:" + entry.getKey() + "-EQ");
+                        lvl.roundToTick(tick);
+                    }
+                    previousCache.put(entry.getKey(), lvl);
                 }
                 previousDate = prevDate.toString();
                 log.info("[BhavcopyService] Loaded previous day CPR for {} stocks from {}", previousCache.size(), previousDate);

@@ -42,6 +42,13 @@ public class RiskSettingsStore {
         volatile double smallCandleAtrThreshold = 0.5; // ATR multiplier for small candle filter
         volatile double trailTriggerPct = 75;  // % of range from entry to target that triggers trailing SL
         volatile double trailSlPct      = 50;  // % of range to lock as profit when trailing SL triggers
+        // Scanner settings
+        volatile String signalSource    = "TRADINGVIEW"; // TRADINGVIEW or INTERNAL
+        volatile int    scannerTimeframe = 15;  // candle timeframe in minutes
+        volatile boolean enableVwapCheck = true; // require VWAP confirmation for scanner signals
+        volatile boolean enableHpt      = true;  // High Probable Trade signals
+        volatile boolean enableMpt      = false; // Medium Probable Trade signals
+        volatile boolean enableLpt      = false; // Low Probable Trade signals
     }
 
     private final Cfg live = new Cfg();
@@ -82,6 +89,20 @@ public class RiskSettingsStore {
     public double getTrailTriggerPct() { return cfg().trailTriggerPct; }
     public double getTrailSlPct()      { return cfg().trailSlPct; }
     public double getSmallCandleAtrThreshold() { return cfg().smallCandleAtrThreshold; }
+
+    public String  getSignalSource()      { return cfg().signalSource; }
+    public int     getScannerTimeframe()  { return cfg().scannerTimeframe; }
+    public boolean isEnableVwapCheck()    { return cfg().enableVwapCheck; }
+    public boolean isEnableHpt()          { return cfg().enableHpt; }
+    public boolean isEnableMpt()          { return cfg().enableMpt; }
+    public boolean isEnableLpt()          { return cfg().enableLpt; }
+
+    public void setSignalSource(String v)      { cfg().signalSource = v; }
+    public void setScannerTimeframe(int v)     { cfg().scannerTimeframe = v; }
+    public void setEnableVwapCheck(boolean v)  { cfg().enableVwapCheck = v; }
+    public void setEnableHpt(boolean v)        { cfg().enableHpt = v; }
+    public void setEnableMpt(boolean v)        { cfg().enableMpt = v; }
+    public void setEnableLpt(boolean v)        { cfg().enableLpt = v; }
 
     public void setTradingStartTime(String v)  { cfg().tradingStartTime = v; }
     public void setTradingEndTime(String v)    { cfg().tradingEndTime = v; }
@@ -178,6 +199,12 @@ public class RiskSettingsStore {
             upsert("smallCandleAtrThreshold", String.valueOf(c.smallCandleAtrThreshold));
             upsert("trailTriggerPct", String.valueOf(c.trailTriggerPct));
             upsert("trailSlPct", String.valueOf(c.trailSlPct));
+            upsert("signalSource", c.signalSource);
+            upsert("scannerTimeframe", String.valueOf(c.scannerTimeframe));
+            upsert("enableVwapCheck", String.valueOf(c.enableVwapCheck));
+            upsert("enableHpt", String.valueOf(c.enableHpt));
+            upsert("enableMpt", String.valueOf(c.enableMpt));
+            upsert("enableLpt", String.valueOf(c.enableLpt));
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to save {}: {}", mode, e.getMessage());
         }
@@ -220,6 +247,12 @@ public class RiskSettingsStore {
                     case "smallCandleAtrThreshold" -> c.smallCandleAtrThreshold = Double.parseDouble(v);
                     case "trailTriggerPct"   -> c.trailTriggerPct = Double.parseDouble(v);
                     case "trailSlPct"        -> c.trailSlPct = Double.parseDouble(v);
+                    case "signalSource"      -> c.signalSource = v;
+                    case "scannerTimeframe"  -> c.scannerTimeframe = Integer.parseInt(v);
+                    case "enableVwapCheck"   -> c.enableVwapCheck = Boolean.parseBoolean(v);
+                    case "enableHpt"         -> c.enableHpt = Boolean.parseBoolean(v);
+                    case "enableMpt"         -> c.enableMpt = Boolean.parseBoolean(v);
+                    case "enableLpt"         -> c.enableLpt = Boolean.parseBoolean(v);
                 }
             }
             log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} enableR4S4={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} trail={}%/{}%", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.enableR4S4, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.trailTriggerPct, c.trailSlPct);

@@ -96,6 +96,7 @@
         <a href="/trades" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
         <a href="/journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">≡</span><span class="sidebar-nav-label">Journal</span></a>
         <a href="/settings" class="sidebar-nav-item active"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
+        <a href="/scanner" class="sidebar-nav-item"><span class="sidebar-nav-icon">◎</span><span class="sidebar-nav-label">Scanner</span></a>
         <a href="/console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
     </nav>
     <div class="sidebar-footer">
@@ -312,6 +313,55 @@
         </div>
     </div>
 
+    <!-- SIGNAL SOURCE -->
+    <div class="section-card fade-in">
+        <div class="section-header">
+            <div class="section-title">
+                <div class="section-title-dot" style="background: var(--accent-cyan, var(--accent-blue));"></div>
+                Signal Source
+            </div>
+        </div>
+        <div class="section-body">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label">Signal Source</label>
+                    <select id="signalSource" class="form-control" style="padding:8px 12px;">
+                        <option value="TRADINGVIEW">TradingView (Webhook)</option>
+                        <option value="INTERNAL">Bot Managed (Internal Scanner)</option>
+                    </select>
+                    <div class="form-hint">TRADINGVIEW = alerts via webhook, INTERNAL = bot scans CPR levels</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Scanner Timeframe</label>
+                    <input type="number" id="scannerTimeframe" class="form-control" min="1" max="60" step="1" placeholder="15">
+                    <div class="form-hint">Candle timeframe in minutes for breakout detection</div>
+                </div>
+                <div class="form-group" style="grid-column: 1 / -1;">
+                    <label class="form-label">Signal Probability</label>
+                    <div style="display: flex; gap: 20px; margin-top: 6px;">
+                        <label class="form-check-label" style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem;">
+                            <input type="checkbox" id="enableHpt" class="form-check-input"> HPT (High Probable)
+                        </label>
+                        <label class="form-check-label" style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem;">
+                            <input type="checkbox" id="enableMpt" class="form-check-input"> MPT (Medium Probable)
+                        </label>
+                        <label class="form-check-label" style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem;">
+                            <input type="checkbox" id="enableLpt" class="form-check-input"> LPT (Low Probable)
+                        </label>
+                    </div>
+                    <div class="form-hint">Enable/disable signal categories for the internal scanner</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">VWAP Check</label>
+                    <label class="form-check-label" style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem; margin-top:6px;">
+                        <input type="checkbox" id="enableVwapCheck" class="form-check-input"> Require VWAP confirmation
+                    </label>
+                    <div class="form-hint">Buy only above VWAP, sell only below VWAP</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- OTHER SETTINGS -->
     <div class="section-card fade-in">
         <div class="section-header">
@@ -446,6 +496,14 @@
             document.getElementById('trailTriggerPct').value = d.trailTriggerPct != null ? d.trailTriggerPct : 75;
             document.getElementById('trailSlPct').value = d.trailSlPct != null ? d.trailSlPct : 50;
 
+            // Scanner settings
+            document.getElementById('signalSource').value = d.signalSource || 'TRADINGVIEW';
+            document.getElementById('scannerTimeframe').value = d.scannerTimeframe != null ? d.scannerTimeframe : 15;
+            document.getElementById('enableVwapCheck').checked = d.enableVwapCheck !== false;
+            document.getElementById('enableHpt').checked = d.enableHpt !== false;
+            document.getElementById('enableMpt').checked = d.enableMpt === true;
+            document.getElementById('enableLpt').checked = d.enableLpt === true;
+
             const pnl    = d.todayPnl    || 0;
             const trades = d.todayTrades || 0;
             const maxLoss = d.maxDailyLoss || 0;
@@ -516,7 +574,13 @@
                 enableSmallCandleFilter: document.getElementById('enableSmallCandleFilter').checked,
                 smallCandleAtrThreshold: parseFloat(document.getElementById('smallCandleAtrThreshold').value) || 0.5,
                 trailTriggerPct: parseFloat(document.getElementById('trailTriggerPct').value) || 0,
-                trailSlPct: parseFloat(document.getElementById('trailSlPct').value) || 0
+                trailSlPct: parseFloat(document.getElementById('trailSlPct').value) || 0,
+                signalSource: document.getElementById('signalSource').value,
+                scannerTimeframe: parseInt(document.getElementById('scannerTimeframe').value) || 15,
+                enableVwapCheck: document.getElementById('enableVwapCheck').checked,
+                enableHpt: document.getElementById('enableHpt').checked,
+                enableMpt: document.getElementById('enableMpt').checked,
+                enableLpt: document.getElementById('enableLpt').checked
             };
             const r = await fetch('/api/settings/risk', {
                 method: 'POST',

@@ -99,6 +99,12 @@ public class ViewController {
         return "journal";
     }
 
+    @GetMapping("/scanner")
+    public String scanner() {
+        if (!tokenStore.isTokenAvailable()) return "redirect:/";
+        return "scanner";
+    }
+
     @GetMapping("/console")
     public String console() {
         if (!tokenStore.isTokenAvailable()) return "redirect:/";

@@ -45,6 +45,29 @@ public class CprLevels {
         this.narrowCpr   = cprWidthPct < 0.1;
     }
 
+    /** Round all calculated levels to the given tick size. */
+    public void roundToTick(double tick) {
+        if (tick <= 0) return;
+        this.pivot = round(pivot, tick);
+        this.tc    = round(tc, tick);
+        this.bc    = round(bc, tick);
+        this.r1    = round(r1, tick);
+        this.r2    = round(r2, tick);
+        this.r3    = round(r3, tick);
+        this.r4    = round(r4, tick);
+        this.s1    = round(s1, tick);
+        this.s2    = round(s2, tick);
+        this.s3    = round(s3, tick);
+        this.s4    = round(s4, tick);
+        this.cprWidth    = Math.abs(tc - bc);
+        this.cprWidthPct = close > 0 ? cprWidth / close * 100.0 : 0;
+        this.narrowCpr   = cprWidthPct < 0.1;
+    }
+
+    private static double round(double price, double tick) {
+        return Math.round(price / tick) * tick;
+    }
+
     public String  getSymbol()      { return symbol; }
     public double  getHigh()        { return high; }
     public double  getLow()         { return low; }

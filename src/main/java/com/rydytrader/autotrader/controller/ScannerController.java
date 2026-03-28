@@ -1,0 +1,133 @@
+package com.rydytrader.autotrader.controller;
+
+import com.rydytrader.autotrader.dto.CprLevels;
+import com.rydytrader.autotrader.manager.PositionManager;
+import com.rydytrader.autotrader.service.*;
+import com.rydytrader.autotrader.store.RiskSettingsStore;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.*;
+
+/**
+ * REST endpoints for the scanner dashboard.
+ */
+@RestController
+public class ScannerController {
+
+    private final MarketDataService marketDataService;
+    private final BhavcopyService bhavcopyService;
+    private final AtrService atrService;
+    private final WeeklyCprService weeklyCprService;
+    private final CandleAggregator candleAggregator;
+    private final BreakoutScanner breakoutScanner;
+    private final RiskSettingsStore riskSettings;
+
+    public ScannerController(MarketDataService marketDataService,
+                             BhavcopyService bhavcopyService,
+                             AtrService atrService,
+                             WeeklyCprService weeklyCprService,
+                             CandleAggregator candleAggregator,
+                             BreakoutScanner breakoutScanner,
+                             RiskSettingsStore riskSettings) {
+        this.marketDataService = marketDataService;
+        this.bhavcopyService = bhavcopyService;
+        this.atrService = atrService;
+        this.weeklyCprService = weeklyCprService;
+        this.candleAggregator = candleAggregator;
+        this.breakoutScanner = breakoutScanner;
+        this.riskSettings = riskSettings;
+    }
+
+    @GetMapping("/api/scanner/watchlist")
+    public List<Map<String, Object>> getWatchlist() {
+        List<Map<String, Object>> result = new ArrayList<>();
+        Set<String> positionSymbols = PositionManager.getAllSymbols();
+
+        // Collect narrow CPR stocks
+        for (CprLevels cpr : bhavcopyService.getNarrowCprStocks()) {
+            String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
+            result.add(buildCard(fyers, cpr, "NARROW", positionSymbols));
+        }
+
+        // Collect inside CPR stocks (avoid duplicates)
+        Set<String> seen = new HashSet<>();
+        for (var m : result) seen.add(m.get("symbol").toString());
+        for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
+            String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
+            if (!seen.contains(fyers)) {
+                result.add(buildCard(fyers, cpr, "INSIDE", positionSymbols));
+            }
+        }
+
+        return result;
+    }
+
+    private Map<String, Object> buildCard(String fyersSymbol, CprLevels levels, String cprType, Set<String> positionSymbols) {
+        Map<String, Object> card = new LinkedHashMap<>();
+        card.put("symbol", fyersSymbol);
+        card.put("shortName", levels.getSymbol());
+        card.put("cprType", cprType);
+
+        double ltp = candleAggregator.getLtp(fyersSymbol);
+        if (ltp <= 0) ltp = levels.getClose(); // fallback to previous close (weekends/pre-market)
+        double changePct = candleAggregator.getChangePct(fyersSymbol);
+        card.put("ltp", Math.round(ltp * 100.0) / 100.0);
+        card.put("changePercent", Math.round(changePct * 100.0) / 100.0);
+
+        card.put("vwap", Math.round(candleAggregator.getVwap(fyersSymbol) * 100.0) / 100.0);
+        card.put("atr", Math.round(atrService.getAtr(fyersSymbol) * 100.0) / 100.0);
+        card.put("dayOpen", Math.round(candleAggregator.getDayOpen(fyersSymbol) * 100.0) / 100.0);
+
+        card.put("weeklyTrend", weeklyCprService.getWeeklyTrend(fyersSymbol));
+        card.put("dailyTrend", weeklyCprService.getDailyTrend(fyersSymbol));
+        card.put("probability", weeklyCprService.getProbability(fyersSymbol));
+
+        // CPR levels
+        Map<String, Object> lvls = new LinkedHashMap<>();
+        lvls.put("r4", r(levels.getR4())); lvls.put("r3", r(levels.getR3()));
+        lvls.put("r2", r(levels.getR2())); lvls.put("r1", r(levels.getR1()));
+        lvls.put("ph", r(levels.getPh())); lvls.put("tc", r(levels.getTc()));
+        lvls.put("bc", r(levels.getBc())); lvls.put("s1", r(levels.getS1()));
+        lvls.put("pl", r(levels.getPl())); lvls.put("s2", r(levels.getS2()));
+        lvls.put("s3", r(levels.getS3())); lvls.put("s4", r(levels.getS4()));
+        card.put("levels", lvls);
+
+        // Broken levels
+        Set<String> broken = breakoutScanner.getBrokenLevels(fyersSymbol);
+        card.put("brokenLevels", broken != null ? new ArrayList<>(broken) : Collections.emptyList());
+
+        // Last signal
+        BreakoutScanner.SignalInfo sig = breakoutScanner.getLastSignal(fyersSymbol);
+        if (sig != null) {
+            Map<String, String> sigMap = new LinkedHashMap<>();
+            sigMap.put("setup", sig.setup);
+            sigMap.put("time", sig.time);
+            sigMap.put("status", sig.status);
+            card.put("lastSignal", sigMap);
+        } else {
+            card.put("lastSignal", null);
+        }
+
+        card.put("hasPosition", positionSymbols.contains(fyersSymbol));
+        card.put("cprWidthPct", Math.round(levels.getCprWidthPct() * 1000.0) / 1000.0);
+
+        return card;
+    }
+
+    private double r(double v) { return Math.round(v * 100.0) / 100.0; }
+
+    @GetMapping("/api/scanner/status")
+    public Map<String, Object> getScannerStatus() {
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("signalSource", riskSettings.getSignalSource());
+        status.put("watchlistCount", marketDataService.getWatchlist().size());
+        status.put("atrLoaded", atrService.getAllAtr().size());
+        status.put("enableHpt", riskSettings.isEnableHpt());
+        status.put("enableMpt", riskSettings.isEnableMpt());
+        status.put("enableLpt", riskSettings.isEnableLpt());
+        status.put("enableVwap", riskSettings.isEnableVwapCheck());
+        status.put("timeframe", riskSettings.getScannerTimeframe());
+        return status;
+    }
+}

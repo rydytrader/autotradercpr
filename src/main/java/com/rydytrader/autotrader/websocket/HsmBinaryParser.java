@@ -377,6 +377,12 @@ public class HsmBinaryParser {
         Integer lowRaw = meta.rawValues.get("low_price");
         if (lowRaw != null) tick.low = lowRaw / divisor;
 
+        Integer vwapRaw = meta.rawValues.get("avg_trade_price");
+        if (vwapRaw != null) tick.vwap = vwapRaw / divisor;
+
+        Integer volRaw = meta.rawValues.get("vol_traded_today");
+        if (volRaw != null) tick.volume = volRaw;
+
         return tick;
     }
 
@@ -442,6 +448,8 @@ public class HsmBinaryParser {
         public double open;
         public double high;
         public double low;
+        public double vwap;
+        public long volume;
         public int messageNumber;
     }
 }
