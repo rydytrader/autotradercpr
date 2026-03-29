@@ -130,6 +130,10 @@ public class CandleAggregator {
             if (ltp > existing.high) existing.high = ltp;
             if (ltp < existing.low) existing.low = ltp;
             existing.close = ltp;
+            // Adjust volAtStart on first tick after mid-candle restart
+            if (existing.volAtStart == -1 && cumVol > 0) {
+                existing.volAtStart = cumVol - existing.volume;
+            }
             // Update candle volume as delta from start
             if (cumVol > 0 && existing.volAtStart > 0) {
                 existing.volume = cumVol - existing.volAtStart;
@@ -248,8 +252,27 @@ public class CandleAggregator {
     public void seedCandles(String symbol, List<CandleBar> candles) {
         Deque<CandleBar> history = completedCandles.computeIfAbsent(symbol, k -> new ConcurrentLinkedDeque<>());
         history.clear();
-        for (CandleBar c : candles) {
-            history.addLast(c);
+
+        if (candles.isEmpty()) return;
+
+        // Check if the last candle is the current forming period (mid-candle restart)
+        long currentStart = getCandleStartMinute(ZonedDateTime.now(IST).toLocalTime());
+        CandleBar lastCandle = candles.get(candles.size() - 1);
+
+        if (lastCandle.startMinute == currentStart) {
+            // Last candle is partial (current period) — seed as current forming candle
+            // volAtStart will be adjusted on first tick (see onTick)
+            lastCandle.volAtStart = -1; // sentinel: needs adjustment on first tick
+            currentCandles.put(symbol, lastCandle);
+            // Add all except the last to completed history
+            for (int i = 0; i < candles.size() - 1; i++) {
+                history.addLast(candles.get(i));
+            }
+        } else {
+            // All candles are completed
+            for (CandleBar c : candles) {
+                history.addLast(c);
+            }
         }
     }
 

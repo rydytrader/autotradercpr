@@ -136,6 +136,7 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
             bar.high = c.get(2).asDouble();
             bar.low = c.get(3).asDouble();
             bar.close = c.get(4).asDouble();
+            if (c.size() >= 6) bar.volume = c.get(5).asLong();
             result.add(bar);
         }
 
