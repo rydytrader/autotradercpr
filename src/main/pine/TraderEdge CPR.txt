@@ -275,8 +275,26 @@ getBg(trend) =>
      trend == "Bearish"      ? color.new(color.red,   0) :
                                color.new(color.orange,25)
 
+fmtVol(v) =>
+    v >= 10000000 ? str.tostring(v / 10000000, "#.#") + "Cr" : v >= 100000 ? str.tostring(v / 100000, "#.#") + "L" : v >= 1000 ? str.tostring(v / 1000, "#.#") + "K" : str.tostring(v, "#")
+
+// ─── ATR, Volume, VWAP & SMA ────────────────────────────────────
+atrVal     = ta.atr(14)
+avgVol     = ta.sma(volume, 20)
+dailyVwap  = ta.vwap(hlc3)
+weeklyVwap = ta.vwap(hlc3, ta.change(time("W")) != 0)
+vwap       = timeframe.in_seconds() >= 3600 ? weeklyVwap : dailyVwap
+sma20      = ta.sma(close, 20)
+sma50      = ta.sma(close, 50)
+sma200     = ta.sma(close, 200)
+
+plot(showVWAP   ? vwap   : na, title="VWAP",    color=vwapColor,   linewidth=2)
+plot(showSMA20  ? sma20  : na, title="SMA 20",  color=sma20Color,  linewidth=2)
+plot(showSMA50  ? sma50  : na, title="SMA 50",  color=sma50Color,  linewidth=2)
+plot(showSMA200 ? sma200 : na, title="SMA 200", color=sma200Color, linewidth=2)
+
 //────────────────────────────────────────────
-// Trend Table
+// Trend & Data Table
 //────────────────────────────────────────────
 tfSeconds = timeframe.in_seconds()
 isSubHourly = tfSeconds < 3600
@@ -288,7 +306,7 @@ var table t = na
 if barstate.islast
     if not na(t)
         table.delete(t)
-    numRows = isDailyPlus ? 4 : 5
+    numRows = isDailyPlus ? 9 : 10
     t := table.new(position.top_right, 2, numRows, frame_width=2, border_width=4, border_color=color.white)
 
     table.cell(t, 0, 0, "")
@@ -329,20 +347,24 @@ if barstate.islast
         table.cell(t, 0, 3, "DAILY", bgcolor=color.new(color.gray, 20), text_color=color.white)
         table.cell(t, 1, 3, monthlyTrend, bgcolor=getBg(monthlyTrend), text_color=color.white)
 
+    // ─── Data section ──────────────────────────────────────────────
+    int dataStart = isDailyPlus ? 4 : 5
+    _vwapVal = timeframe.in_seconds() >= 3600 ? weeklyVwap : dailyVwap
+    _volRatio = avgVol > 0 ? volume / avgVol : 0.0
+    _volColor = _volRatio >= 2 ? color.new(color.green, 0) : color.new(color.gray, 20)
 
-// ─── VWAP & SMA ─────────────────────────────────────────────
-dailyVwap  = ta.vwap(hlc3)
-weeklyVwap = ta.vwap(hlc3, ta.change(time("W")) != 0)
-// On 1h+ charts show weekly VWAP; on sub-hourly charts show daily VWAP
-vwap  = timeframe.in_seconds() >= 3600 ? weeklyVwap : dailyVwap
-sma20  = ta.sma(close, 20)
-sma50  = ta.sma(close, 50)
-sma200 = ta.sma(close, 200)
+    table.cell(t, 0, dataStart, "DATA", width=8, bgcolor=color.new(color.gray, 0), text_color=color.white)
+    table.cell(t, 1, dataStart, "VALUE", width=8, bgcolor=color.new(color.gray, 0), text_color=color.white)
+    table.cell(t, 0, dataStart + 1, "ATR(14)", bgcolor=color.new(color.gray, 20), text_color=color.white)
+    table.cell(t, 1, dataStart + 1, str.tostring(atrVal, "#.##"), bgcolor=color.new(color.gray, 20), text_color=color.white)
+    table.cell(t, 0, dataStart + 2, "VWAP", bgcolor=color.new(color.gray, 20), text_color=color.white)
+    table.cell(t, 1, dataStart + 2, str.tostring(_vwapVal, "#.##"), bgcolor=color.new(color.gray, 20), text_color=color.white)
+    table.cell(t, 0, dataStart + 3, "VOLUME", bgcolor=color.new(color.gray, 20), text_color=color.white)
+    table.cell(t, 1, dataStart + 3, fmtVol(volume), bgcolor=_volColor, text_color=color.white)
+    table.cell(t, 0, dataStart + 4, "AVG VOL", bgcolor=color.new(color.gray, 20), text_color=color.white)
+    table.cell(t, 1, dataStart + 4, fmtVol(avgVol), bgcolor=color.new(color.gray, 20), text_color=color.white)
 
-plot(showVWAP   ? vwap  : na, title="VWAP",    color=vwapColor,   linewidth=2)
-plot(showSMA20  ? sma20  : na, title="SMA 20",  color=sma20Color,  linewidth=2)
-plot(showSMA50  ? sma50  : na, title="SMA 50",  color=sma50Color,  linewidth=2)
-plot(showSMA200 ? sma200 : na, title="SMA 200", color=sma200Color, linewidth=2)
+
 
 
 // ─── ARRAYS FOR HISTORY MANAGEMENT ──────────────────────────

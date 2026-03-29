@@ -44,10 +44,18 @@ public class ScannerController {
         List<Map<String, Object>> result = new ArrayList<>();
         Set<String> positionSymbols = PositionManager.getAllSymbols();
 
+        // Build set of weekly narrow CPR symbols for cross-referencing
+        Set<String> weeklyNarrowSymbols = new HashSet<>();
+        for (CprLevels cpr : bhavcopyService.getWeeklyNarrowCprStocks()) {
+            weeklyNarrowSymbols.add(cpr.getSymbol());
+        }
+
         // Collect narrow CPR stocks
         for (CprLevels cpr : bhavcopyService.getNarrowCprStocks()) {
             String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
-            result.add(buildCard(fyers, cpr, "NARROW", positionSymbols));
+            Map<String, Object> card = buildCard(fyers, cpr, "NARROW", positionSymbols);
+            card.put("weeklyNarrow", weeklyNarrowSymbols.contains(cpr.getSymbol()));
+            result.add(card);
         }
 
         // Collect inside CPR stocks (avoid duplicates)
@@ -56,7 +64,9 @@ public class ScannerController {
         for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
             String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
             if (!seen.contains(fyers)) {
-                result.add(buildCard(fyers, cpr, "INSIDE", positionSymbols));
+                Map<String, Object> card = buildCard(fyers, cpr, "INSIDE", positionSymbols);
+                card.put("weeklyNarrow", weeklyNarrowSymbols.contains(cpr.getSymbol()));
+                result.add(card);
             }
         }
 
@@ -133,5 +143,32 @@ public class ScannerController {
         status.put("enableVwap", riskSettings.isEnableVwapCheck());
         status.put("timeframe", riskSettings.getScannerTimeframe());
         return status;
+    }
+
+    @GetMapping("/api/weekly-narrow-cpr")
+    public Map<String, Object> getWeeklyNarrowCpr() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("weekDates", bhavcopyService.getWeekDateRange());
+        result.put("historyDays", bhavcopyService.getHistoryDays());
+        result.put("totalNfoStocks", bhavcopyService.getLoadedCount());
+
+        var stocks = bhavcopyService.getWeeklyNarrowCprStocks();
+        result.put("narrowCount", stocks.size());
+
+        List<Map<String, Object>> stockList = new ArrayList<>();
+        for (var cpr : stocks) {
+            Map<String, Object> s = new LinkedHashMap<>();
+            s.put("symbol", cpr.getSymbol());
+            s.put("close", r(cpr.getClose()));
+            s.put("cprWidthPct", Math.round(cpr.getCprWidthPct() * 1000.0) / 1000.0);
+            s.put("pivot", r(cpr.getPivot()));
+            s.put("tc", r(cpr.getTc()));
+            s.put("bc", r(cpr.getBc()));
+            s.put("r1", r(cpr.getR1()));
+            s.put("s1", r(cpr.getS1()));
+            stockList.add(s);
+        }
+        result.put("stocks", stockList);
+        return result;
     }
 }

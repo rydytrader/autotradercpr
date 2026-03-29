@@ -41,9 +41,16 @@ public class BhavcopyService {
     private static final ObjectMapper mapper = new ObjectMapper();
 
     private final ConcurrentHashMap<String, CprLevels> cache = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, CprLevels> previousCache = new ConcurrentHashMap<>();
     private volatile String cachedDate = "";
-    private volatile String previousDate = "";
+
+    // Rolling 5-day history (most recent first) for weekly CPR and inside-CPR detection
+    private final LinkedList<DaySnapshot> dailyHistory = new LinkedList<>();
+    private static final int MAX_HISTORY_DAYS = 5;
+
+    static class DaySnapshot {
+        String date;
+        Map<String, CprLevels> symbols = new LinkedHashMap<>();
+    }
     private final EventService eventService;
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -62,18 +69,18 @@ public class BhavcopyService {
         if (!expectedDate.equals(cachedDate)) {
             fetchAndCompute();
         } else {
-            // If previous day data is missing, fetch it now
-            if (previousCache.isEmpty() && !cache.isEmpty()) {
-                log.info("[BhavcopyService] Previous day CPR missing, fetching...");
+            // Backfill history if we have fewer than 5 days
+            if (dailyHistory.size() < MAX_HISTORY_DAYS && !cache.isEmpty()) {
+                log.info("[BhavcopyService] History incomplete ({} days), backfilling...", dailyHistory.size());
                 try {
                     String cookies = getNseCookies();
                     Set<String> nfoSymbols = cache.keySet();
                     if (cookies != null && !cookies.isEmpty()) {
-                        fetchPreviousDay(LocalDate.parse(cachedDate), cookies, nfoSymbols);
+                        backfillHistory(LocalDate.parse(cachedDate), cookies, nfoSymbols);
                         saveToFile();
                     }
                 } catch (Exception e) {
-                    log.error("[BhavcopyService] Failed to fetch previous day: {}", e.getMessage());
+                    log.error("[BhavcopyService] Failed to backfill history: {}", e.getMessage());
                 }
             }
             long narrowCount = cache.values().stream().filter(CprLevels::isNarrowCpr).count();
@@ -105,9 +112,11 @@ public class BhavcopyService {
     }
 
     public List<CprLevels> getInsideCprStocks() {
+        Map<String, CprLevels> prevDay = getPreviousDaySymbols();
+        if (prevDay.isEmpty()) return Collections.emptyList();
         return cache.values().stream()
                         .filter(c -> {
-                CprLevels prev = previousCache.get(c.getSymbol());
+                CprLevels prev = prevDay.get(c.getSymbol());
                 if (prev == null) return false;
                 double todayTop = Math.max(c.getTc(), c.getBc());
                 double todayBot = Math.min(c.getTc(), c.getBc());
@@ -120,10 +129,116 @@ public class BhavcopyService {
             .collect(Collectors.toList());
     }
 
+    /**
+     * Get weekly narrow CPR stocks by aggregating daily OHLC from Mon-Fri of the most recent complete week.
+     * Uses cachedDate's week if it's a weekend, otherwise the previous week.
+     */
+    public List<CprLevels> getWeeklyNarrowCprStocks() {
+        List<DaySnapshot> weekDays = getLastCompleteWeekDays();
+        if (weekDays.size() < 3) return Collections.emptyList();
+
+        // The last day in the week provides the close
+        DaySnapshot lastDay = weekDays.get(weekDays.size() - 1);
+
+        List<CprLevels> result = new ArrayList<>();
+        for (String symbol : lastDay.symbols.keySet()) {
+            double weekHigh = Double.MIN_VALUE;
+            double weekLow = Double.MAX_VALUE;
+            double weekClose = lastDay.symbols.get(symbol).getClose();
+
+            for (DaySnapshot snap : weekDays) {
+                CprLevels day = snap.symbols.get(symbol);
+                if (day != null) {
+                    weekHigh = Math.max(weekHigh, day.getHigh());
+                    weekLow = Math.min(weekLow, day.getLow());
+                }
+            }
+            if (weekHigh == Double.MIN_VALUE || weekLow == Double.MAX_VALUE) continue;
+
+            CprLevels weeklyCpr = new CprLevels(symbol, weekHigh, weekLow, weekClose);
+            if (symbolMasterService != null) {
+                double tick = symbolMasterService.getTickSize("NSE:" + symbol + "-EQ");
+                weeklyCpr.roundToTick(tick);
+            }
+            if (weeklyCpr.isNarrowCpr()) {
+                result.add(weeklyCpr);
+            }
+        }
+        result.sort(Comparator.comparingDouble(CprLevels::getCprWidthPct));
+        return result;
+    }
+
+    /**
+     * Get all days belonging to the last COMPLETED Mon-Fri week from history + cache.
+     * Weekly CPR is calculated from previous week's HLC (same as daily CPR uses previous day).
+     * On weekdays (Mon-Fri): previous week's data.
+     * On weekends (Sat-Sun): the just-completed week's data (same week Monday will use).
+     */
+    private List<DaySnapshot> getLastCompleteWeekDays() {
+        // Build a combined list: current cache + history, sorted by date
+        List<DaySnapshot> allDays = new ArrayList<>();
+        if (!cachedDate.isEmpty()) {
+            DaySnapshot today = new DaySnapshot();
+            today.date = cachedDate;
+            today.symbols.putAll(cache);
+            allDays.add(today);
+        }
+        allDays.addAll(dailyHistory);
+        allDays.sort(Comparator.comparing(s -> s.date));
+
+        if (allDays.isEmpty()) return Collections.emptyList();
+
+        // Determine the target week: the last COMPLETED week
+        // Use today's date (not cached date) to decide weekday vs weekend
+        LocalDate today = LocalDate.now(IST);
+        DayOfWeek dow = today.getDayOfWeek();
+        boolean isWeekend = (dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY);
+
+        // On weekdays: previous week. On weekends: current (just-completed) week.
+        int currentWeek = today.get(java.time.temporal.IsoFields.WEEK_OF_WEEK_BASED_YEAR);
+        int currentYear = today.get(java.time.temporal.IsoFields.WEEK_BASED_YEAR);
+        int targetWeek, targetYear;
+        if (isWeekend) {
+            targetWeek = currentWeek;
+            targetYear = currentYear;
+        } else {
+            // Go back to previous week
+            LocalDate prevWeekDate = today.minusWeeks(1);
+            targetWeek = prevWeekDate.get(java.time.temporal.IsoFields.WEEK_OF_WEEK_BASED_YEAR);
+            targetYear = prevWeekDate.get(java.time.temporal.IsoFields.WEEK_BASED_YEAR);
+        }
+
+        List<DaySnapshot> weekDays = new ArrayList<>();
+        for (DaySnapshot snap : allDays) {
+            LocalDate d = LocalDate.parse(snap.date);
+            int w = d.get(java.time.temporal.IsoFields.WEEK_OF_WEEK_BASED_YEAR);
+            int y = d.get(java.time.temporal.IsoFields.WEEK_BASED_YEAR);
+            if (w == targetWeek && y == targetYear) {
+                weekDays.add(snap);
+            }
+        }
+        return weekDays;
+    }
+
+    public int getHistoryDays() { return dailyHistory.size(); }
+
+    public String getWeekDateRange() {
+        List<DaySnapshot> weekDays = getLastCompleteWeekDays();
+        if (weekDays.isEmpty()) return cachedDate;
+        return weekDays.get(0).date + " to " + weekDays.get(weekDays.size() - 1).date;
+    }
+
     public String getCachedDate()   { return cachedDate; }
-    public String getPreviousDate() { return previousDate; }
+    public String getPreviousDate() { return dailyHistory.isEmpty() ? "" : dailyHistory.getFirst().date; }
     public int getLoadedCount()     { return cache.size(); }
-    public CprLevels getPreviousCpr(String symbol) { return previousCache.get(symbol); }
+
+    private Map<String, CprLevels> getPreviousDaySymbols() {
+        return dailyHistory.isEmpty() ? Collections.emptyMap() : dailyHistory.getFirst().symbols;
+    }
+    public CprLevels getPreviousCpr(String symbol) {
+        Map<String, CprLevels> prev = getPreviousDaySymbols();
+        return prev.get(symbol);
+    }
 
     // ── Core fetch logic ───────────────────────────────────────────────────────
 
@@ -186,20 +301,22 @@ public class BhavcopyService {
                     newCache.put(entry.getKey(), lvl);
                 }
 
-                // Current cache becomes previous day (for next day's inside CPR comparison)
+                // Push current cache into daily history (rolling 5-day buffer)
                 if (!cache.isEmpty() && !cachedDate.equals(targetDate.toString())) {
-                    previousCache.clear();
-                    previousCache.putAll(cache);
-                    previousDate = cachedDate;
+                    DaySnapshot snapshot = new DaySnapshot();
+                    snapshot.date = cachedDate;
+                    snapshot.symbols.putAll(cache);
+                    dailyHistory.addFirst(snapshot);
+                    while (dailyHistory.size() > MAX_HISTORY_DAYS) dailyHistory.removeLast();
                 }
 
                 cache.clear();
                 cache.putAll(newCache);
                 cachedDate = targetDate.toString();
 
-                // If still no previous day data, fetch it explicitly
-                if (previousCache.isEmpty()) {
-                    fetchPreviousDay(targetDate, cookies, nfoSymbols);
+                // Backfill history if we have fewer than 5 days
+                if (dailyHistory.size() < MAX_HISTORY_DAYS) {
+                    backfillHistory(targetDate, cookies, nfoSymbols);
                 }
 
                 saveToFile();
@@ -221,40 +338,59 @@ public class BhavcopyService {
         log.error("[BhavcopyService] Failed to fetch Bhavcopy after 3 attempts, using cached data");
     }
 
-    // ── Fetch previous trading day's bhavcopy for inside CPR ───────────────────
+    // ── Backfill daily history from NSE archives ──────────────────────────────
 
-    private void fetchPreviousDay(LocalDate currentDate, String cookies, Set<String> nfoSymbols) {
-        LocalDate prevDate = skipWeekends(currentDate.minusDays(1));
-        for (int attempt = 0; attempt < 3; attempt++) {
+    private void backfillHistory(LocalDate currentDate, String cookies, Set<String> nfoSymbols) {
+        // Collect dates already in history to avoid re-fetching
+        Set<String> existingDates = new HashSet<>();
+        existingDates.add(cachedDate);
+        for (DaySnapshot snap : dailyHistory) existingDates.add(snap.date);
+
+        int needed = MAX_HISTORY_DAYS - dailyHistory.size();
+        LocalDate date = skipWeekends(currentDate.minusDays(1));
+        int fetched = 0;
+        int failures = 0;
+
+        log.info("[BhavcopyService] Backfilling history: have {} days, need {} more", dailyHistory.size(), needed);
+
+        while (fetched < needed && failures < 5) {
+            if (existingDates.contains(date.toString())) {
+                date = skipWeekends(date.minusDays(1));
+                continue;
+            }
             try {
-                String dateStr = DATE_FMT.format(prevDate);
+                String dateStr = DATE_FMT.format(date);
                 String cmUrl = String.format(CM_URL_TEMPLATE, dateStr);
                 byte[] cmZip = downloadZip(cmUrl, cookies);
                 if (cmZip == null) {
-                    prevDate = skipWeekends(prevDate.minusDays(1));
+                    failures++;
+                    date = skipWeekends(date.minusDays(1));
                     continue;
                 }
 
                 Map<String, double[]> ohlcMap = parseCmOhlc(cmZip, nfoSymbols);
-                previousCache.clear();
+                DaySnapshot snapshot = new DaySnapshot();
+                snapshot.date = date.toString();
                 for (Map.Entry<String, double[]> entry : ohlcMap.entrySet()) {
                     double[] hlc = entry.getValue();
-                        CprLevels lvl = new CprLevels(entry.getKey(), hlc[0], hlc[1], hlc[2]);
+                    CprLevels lvl = new CprLevels(entry.getKey(), hlc[0], hlc[1], hlc[2]);
                     if (symbolMasterService != null) {
                         double tick = symbolMasterService.getTickSize("NSE:" + entry.getKey() + "-EQ");
                         lvl.roundToTick(tick);
                     }
-                    previousCache.put(entry.getKey(), lvl);
+                    snapshot.symbols.put(entry.getKey(), lvl);
                 }
-                previousDate = prevDate.toString();
-                log.info("[BhavcopyService] Loaded previous day CPR for {} stocks from {}", previousCache.size(), previousDate);
-                return;
+                dailyHistory.addLast(snapshot);
+                existingDates.add(date.toString());
+                fetched++;
+                log.info("[BhavcopyService] Backfilled {} ({} stocks)", date, snapshot.symbols.size());
             } catch (Exception e) {
-                log.error("[BhavcopyService] Error fetching previous day Bhavcopy for {}: {}", prevDate, e.getMessage());
-                prevDate = skipWeekends(prevDate.minusDays(1));
+                log.error("[BhavcopyService] Error backfilling {}: {}", date, e.getMessage());
+                failures++;
             }
+            date = skipWeekends(date.minusDays(1));
         }
-        log.error("[BhavcopyService] Failed to fetch previous day Bhavcopy after 3 attempts");
+        log.info("[BhavcopyService] Backfill complete: {} days total history", dailyHistory.size());
     }
 
     // ── NSE session cookies ────────────────────────────────────────────────────
@@ -476,10 +612,15 @@ public class BhavcopyService {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("date", cachedDate);
             data.put("symbols", cache);
-            if (!previousCache.isEmpty()) {
-                data.put("previousDate", previousDate);
-                data.put("previousSymbols", previousCache);
+            // Save daily history as array
+            List<Map<String, Object>> historyList = new ArrayList<>();
+            for (DaySnapshot snap : dailyHistory) {
+                Map<String, Object> snapMap = new LinkedHashMap<>();
+                snapMap.put("date", snap.date);
+                snapMap.put("symbols", snap.symbols);
+                historyList.add(snapMap);
             }
+            data.put("dailyHistory", historyList);
             Files.writeString(Paths.get(STORE_FILE),
                 mapper.writerWithDefaultPrettyPrinter().writeValueAsString(data));
         } catch (Exception e) {
@@ -505,18 +646,42 @@ public class BhavcopyService {
                 } catch (Exception ignored) {}
             });
 
-            // Load previous day's CPR data
-            JsonNode prevDateNode = root.get("previousDate");
-            JsonNode prevSymbolsNode = root.get("previousSymbols");
-            if (prevDateNode != null && prevSymbolsNode != null) {
-                previousDate = prevDateNode.asText();
-                prevSymbolsNode.fields().forEachRemaining(entry -> {
-                    try {
-                        CprLevels levels = mapper.treeToValue(entry.getValue(), CprLevels.class);
-                        previousCache.put(entry.getKey(), levels);
-                    } catch (Exception ignored) {}
-                });
+            // Load daily history
+            JsonNode historyNode = root.get("dailyHistory");
+            if (historyNode != null && historyNode.isArray()) {
+                dailyHistory.clear();
+                for (JsonNode snapNode : historyNode) {
+                    DaySnapshot snap = new DaySnapshot();
+                    snap.date = snapNode.get("date").asText();
+                    JsonNode snapSymbols = snapNode.get("symbols");
+                    if (snapSymbols != null) {
+                        snapSymbols.fields().forEachRemaining(entry -> {
+                            try {
+                                CprLevels levels = mapper.treeToValue(entry.getValue(), CprLevels.class);
+                                snap.symbols.put(entry.getKey(), levels);
+                            } catch (Exception ignored) {}
+                        });
+                    }
+                    dailyHistory.addLast(snap);
+                }
+            } else {
+                // Backward compat: migrate from old previousDate/previousSymbols format
+                JsonNode prevDateNode = root.get("previousDate");
+                JsonNode prevSymbolsNode = root.get("previousSymbols");
+                if (prevDateNode != null && prevSymbolsNode != null) {
+                    DaySnapshot snap = new DaySnapshot();
+                    snap.date = prevDateNode.asText();
+                    prevSymbolsNode.fields().forEachRemaining(entry -> {
+                        try {
+                            CprLevels levels = mapper.treeToValue(entry.getValue(), CprLevels.class);
+                            snap.symbols.put(entry.getKey(), levels);
+                        } catch (Exception ignored) {}
+                    });
+                    dailyHistory.addFirst(snap);
+                }
             }
+            log.info("[BhavcopyService] Loaded from file: date={}, {} stocks, {} days history",
+                cachedDate, cache.size(), dailyHistory.size());
         } catch (Exception e) {
             log.error("[BhavcopyService] Failed to load CPR data from file: {}", e.getMessage());
         }
