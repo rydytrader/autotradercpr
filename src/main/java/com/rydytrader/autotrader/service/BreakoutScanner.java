@@ -149,11 +149,17 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
                 }
                 fireSignal(fyersSymbol, buySetup, open, high, low, close, candle.volume, atr, levels, prob);
                 return;
-            } else if (!broken.isEmpty()) {
-                // Check if any broken level would have matched (already traded)
-                String wouldMatch = detectBuyBreakout(open, high, low, close, levels, vwap, Collections.emptySet());
-                if (wouldMatch != null && broken.contains(wouldMatch)) {
-                    eventService.log("[INFO] " + wouldMatch + " for " + fyersSymbol + " — skipped, level already traded");
+            } else {
+                if (!broken.isEmpty()) {
+                    String wouldMatch = detectBuyBreakout(open, high, low, close, levels, vwap, Collections.emptySet());
+                    if (wouldMatch != null && broken.contains(wouldMatch)) {
+                        eventService.log("[INFO] " + wouldMatch + " for " + fyersSymbol + " — skipped, level already traded");
+                    }
+                }
+                // Debug: detect without VWAP to see if VWAP blocked it
+                String noVwapMatch = detectBuyBreakout(open, high, low, close, levels, 0, broken);
+                if (noVwapMatch != null) {
+                    eventService.log("[SCANNER] " + noVwapMatch + " for " + fyersSymbol + " — no breakout detected (O=" + String.format("%.2f", open) + " H=" + String.format("%.2f", high) + " L=" + String.format("%.2f", low) + " C=" + String.format("%.2f", close) + " VWAP=" + String.format("%.2f", vwap) + ")");
                 }
             }
         }
@@ -176,10 +182,18 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
                     return;
                 }
                 fireSignal(fyersSymbol, sellSetup, open, high, low, close, candle.volume, atr, levels, prob);
-            } else if (!broken.isEmpty()) {
-                String wouldMatch = detectSellBreakout(open, high, low, close, levels, vwap, Collections.emptySet());
-                if (wouldMatch != null && broken.contains(wouldMatch)) {
-                    eventService.log("[INFO] " + wouldMatch + " for " + fyersSymbol + " — skipped, level already traded");
+            } else {
+                // No sell breakout detected — log if close is below a key level for debugging
+                if (!broken.isEmpty()) {
+                    String wouldMatch = detectSellBreakout(open, high, low, close, levels, vwap, Collections.emptySet());
+                    if (wouldMatch != null && broken.contains(wouldMatch)) {
+                        eventService.log("[INFO] " + wouldMatch + " for " + fyersSymbol + " — skipped, level already traded");
+                    }
+                }
+                // Debug: detect without VWAP to see if VWAP blocked it
+                String noVwapMatch = detectSellBreakout(open, high, low, close, levels, 0, broken);
+                if (noVwapMatch != null) {
+                    eventService.log("[SCANNER] " + noVwapMatch + " for " + fyersSymbol + " — no breakout detected (O=" + String.format("%.2f", open) + " H=" + String.format("%.2f", high) + " L=" + String.format("%.2f", low) + " C=" + String.format("%.2f", close) + " VWAP=" + String.format("%.2f", vwap) + ")");
                 }
             }
         }

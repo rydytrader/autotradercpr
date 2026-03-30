@@ -65,13 +65,20 @@ public class CandleAggregator {
     /**
      * Start the candle close scheduler. Call after market data service starts.
      */
+    private ScheduledFuture<?> boundaryCheckerFuture;
+
     public void start() {
         if (scheduler != null && !scheduler.isShutdown()) scheduler.shutdownNow();
         scheduler = Executors.newSingleThreadScheduledExecutor();
 
         // Schedule candle check every second — only finalizes at clock boundaries
-        scheduler.scheduleAtFixedRate(this::checkCandleBoundary, 1, 1, TimeUnit.SECONDS);
+        boundaryCheckerFuture = scheduler.scheduleAtFixedRate(this::checkCandleBoundary, 1, 1, TimeUnit.SECONDS);
         log.info("[CandleAggregator] Started with {}min timeframe", timeframeMinutes);
+    }
+
+    /** Check if the candle boundary scheduler is still alive. */
+    public boolean isBoundaryCheckerAlive() {
+        return boundaryCheckerFuture != null && !boundaryCheckerFuture.isDone() && !boundaryCheckerFuture.isCancelled();
     }
 
     public void stop() {
@@ -114,7 +121,18 @@ public class CandleAggregator {
         // Track cumulative volume — only update when Fyers sends a non-zero value
         // (delta updates may not include volume, so we keep the last known value)
         long tickVol = raw.volume;
-        if (tickVol > 0) lastCumulativeVol.put(symbol, tickVol);
+        if (tickVol > 0) {
+            long prevCumVol = lastCumulativeVol.getOrDefault(symbol, 0L);
+            // Detect WebSocket reconnect: if new cumVol is less than previous, reset candle volAtStart
+            if (prevCumVol > 0 && tickVol < prevCumVol) {
+                CandleBar existing = currentCandles.get(symbol);
+                if (existing != null) {
+                    existing.volAtStart = tickVol - existing.volume;
+                    if (existing.volAtStart < 0) existing.volAtStart = tickVol;
+                }
+            }
+            lastCumulativeVol.put(symbol, tickVol);
+        }
         long cumVol = lastCumulativeVol.getOrDefault(symbol, 0L);
 
         // Update current forming candle
@@ -155,6 +173,9 @@ public class CandleAggregator {
     private void checkCandleBoundary() {
         try {
             LocalTime now = ZonedDateTime.now(IST).toLocalTime();
+            long nowMinute = now.getHour() * 60L + now.getMinute();
+            // Skip before market open
+            if (nowMinute < 555) return; // 9:15 AM
             long currentStart = getCandleStartMinute(now);
 
             for (Map.Entry<String, CandleBar> entry : currentCandles.entrySet()) {
@@ -175,8 +196,9 @@ public class CandleAggregator {
                     currentCandles.put(symbol, newCandle);
                 }
             }
-        } catch (Exception e) {
-            log.error("[CandleAggregator] Error in candle boundary check: {}", e.getMessage());
+        } catch (Throwable e) {
+            // Catch Throwable (not just Exception) to prevent ScheduledExecutorService from dying
+            log.error("[CandleAggregator] Error in candle boundary check: {}", e.getMessage(), e);
         }
     }
 

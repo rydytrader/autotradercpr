@@ -427,7 +427,19 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         }
     }
 
+    private volatile boolean boundaryCheckerWarned = false;
+
     private void flushSse() {
+        // Health check: restart candle boundary checker if it died
+        if (!candleAggregator.isBoundaryCheckerAlive() && !boundaryCheckerWarned) {
+            boundaryCheckerWarned = true;
+            log.error("[MarketData] Candle boundary checker DIED — restarting!");
+            eventService.log("[ERROR] Candle boundary checker died — restarting. Signals may have been missed.");
+            candleAggregator.start();
+        } else if (candleAggregator.isBoundaryCheckerAlive()) {
+            boundaryCheckerWarned = false;
+        }
+
         if (!dirty || emitters.isEmpty()) return;
         dirty = false;
 

@@ -368,6 +368,13 @@
         </span>
         <div class="filter-sep"></div>
         <button class="filter-btn" onclick="toggleSignalFilter(this)">Has Signal</button>
+        <button class="filter-btn" onclick="toggleFilteredFilter(this)">Filtered</button>
+        <select id="timeFilter" onchange="applyTimeFilter()" style="
+            background: var(--bg-card); border: 1px solid var(--border); color: var(--text-secondary);
+            padding: 5px 8px; border-radius: 8px; font-family: var(--font-mono); font-size: 0.75rem;
+            cursor: pointer;">
+            <option value="">All Times</option>
+        </select>
         <span class="scan-count" id="scanCount">0 stocks</span>
     </div>
 
@@ -391,6 +398,23 @@
     var probFilter = null;
     var weeklyFilter = false;
     var signalFilter = false;
+    var filteredFilter = false;
+    var timeFilter = '';
+
+    // Populate time dropdown (9:15 to 15:30 in 15-min intervals)
+    (function() {
+        var sel = document.getElementById('timeFilter');
+        for (var h = 9; h <= 15; h++) {
+            for (var m = (h === 9 ? 15 : 0); m < 60; m += 15) {
+                if (h === 15 && m > 30) break;
+                var t = (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+                var opt = document.createElement('option');
+                opt.value = t;
+                opt.textContent = t;
+                sel.appendChild(opt);
+            }
+        }
+    })();
 
     // ── Filter controls ─────────────────────────────
     window.setFilter = function(type, btn) {
@@ -428,6 +452,17 @@
         renderCards();
     };
 
+    window.toggleFilteredFilter = function(btn) {
+        filteredFilter = !filteredFilter;
+        btn.classList.toggle('active', filteredFilter);
+        renderCards();
+    };
+
+    window.applyTimeFilter = function() {
+        timeFilter = document.getElementById('timeFilter').value;
+        renderCards();
+    };
+
     // ── Render cards ────────────────────────────────
     function renderCards() {
         var grid = document.getElementById('scannerGrid');
@@ -436,6 +471,12 @@
             if (probFilter && d.probability !== probFilter) return false;
             if (weeklyFilter && !d.weeklyNarrow) return false;
             if (signalFilter && (!d.lastSignal || d.lastSignal.status !== 'TRADED')) return false;
+            if (filteredFilter && (!d.lastSignal || d.lastSignal.status !== 'FILTERED')) return false;
+            if (timeFilter && d.lastSignal && d.lastSignal.time) {
+                if (d.lastSignal.time < timeFilter) return false;
+            } else if (timeFilter && !d.lastSignal) {
+                return false;
+            }
             return true;
         });
 

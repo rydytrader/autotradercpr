@@ -772,9 +772,16 @@ public class PollingService {
                 int entrySide = exitSide == 1 ? -1 : 1;
                 entryPrice = orderService.getFilledPriceFromTradebook(symbol, entrySide);
             }
-            double exitPrice = orderService.getExitPriceFromTradebook(symbol, position);
 
-            // If tradebook doesn't have exit price yet, try the LTP from WebSocket
+            // Get exit price by order ID first (most accurate), then tradebook, then LTP
+            orderService.invalidateTradebookCache();
+            double exitPrice = 0;
+            if (exitOrder.getId() != null && !exitOrder.getId().isEmpty()) {
+                exitPrice = orderService.getFilledPriceByOrderId(exitOrder.getId());
+            }
+            if (exitPrice <= 0) {
+                exitPrice = orderService.getExitPriceFromTradebook(symbol, position);
+            }
             if (exitPrice <= 0) {
                 exitPrice = marketDataService.getLtp(symbol);
             }

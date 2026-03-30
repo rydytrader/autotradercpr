@@ -167,6 +167,10 @@ public class OrderService {
     private volatile long     tradebookFetchTime = 0;
     private static final long TRADEBOOK_CACHE_MS = 5000; // 5 seconds
 
+    public void invalidateTradebookCache() {
+        tradebookFetchTime = 0;
+    }
+
     private JsonNode getCachedTradebook() {
         long now = System.currentTimeMillis();
         if (cachedTradebook != null && (now - tradebookFetchTime) < TRADEBOOK_CACHE_MS) {
