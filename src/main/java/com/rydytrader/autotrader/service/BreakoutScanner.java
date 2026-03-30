@@ -52,6 +52,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
     // Track signals generated today (for scanner dashboard)
     private final ConcurrentHashMap<String, SignalInfo> lastSignal = new ConcurrentHashMap<>();
 
+    // Signal history for the day (all traded + filtered signals per symbol)
+    private final ConcurrentHashMap<String, List<SignalInfo>> signalHistory = new ConcurrentHashMap<>();
+
     // Watchlist symbols (set by MarketDataService)
     private volatile List<String> watchlistSymbols = Collections.emptyList();
 
@@ -345,6 +348,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
             info.status = filtered ? "FILTERED" : "TRADED";
             info.detail = status;
             lastSignal.put(fyersSymbol, info);
+            signalHistory.computeIfAbsent(fyersSymbol, k -> Collections.synchronizedList(new ArrayList<>())).add(info);
 
             // Only mark level as broken if signal was actually traded
             if (!filtered) {
@@ -360,6 +364,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
             info.status = "ERROR";
             info.detail = e.getMessage();
             lastSignal.put(fyersSymbol, info);
+            signalHistory.computeIfAbsent(fyersSymbol, k -> Collections.synchronizedList(new ArrayList<>())).add(info);
             saveState();
         }
     }
@@ -401,10 +406,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
         return Collections.unmodifiableMap(lastSignal);
     }
 
+    public List<SignalInfo> getSignalHistory(String symbol) {
+        return signalHistory.getOrDefault(symbol, Collections.emptyList());
+    }
+
     /** Clear all state for end of day. */
     public void clearAll() {
         brokenLevels.clear();
         lastSignal.clear();
+        signalHistory.clear();
         saveState();
     }
 

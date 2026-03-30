@@ -125,6 +125,18 @@ public class ScannerController {
             card.put("lastSignal", null);
         }
 
+        // Signal history
+        List<BreakoutScanner.SignalInfo> history = breakoutScanner.getSignalHistory(fyersSymbol);
+        List<Map<String, String>> histList = new ArrayList<>();
+        for (BreakoutScanner.SignalInfo h : history) {
+            Map<String, String> hm = new LinkedHashMap<>();
+            hm.put("setup", h.setup);
+            hm.put("time", h.time);
+            hm.put("status", h.status);
+            histList.add(hm);
+        }
+        card.put("signalHistory", histList);
+
         card.put("weeklyLevels", weeklyCprService.getWeeklyLevelsMap(fyersSymbol));
         card.put("hasPosition", positionSymbols.contains(fyersSymbol));
         card.put("cprWidthPct", Math.round(levels.getCprWidthPct() * 1000.0) / 1000.0);

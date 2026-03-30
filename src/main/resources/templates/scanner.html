@@ -153,6 +153,8 @@
             margin-bottom: 4px;
             cursor: pointer;
             user-select: none;
+            display: flex;
+            align-items: center;
         }
         .scan-levels-title:hover { color: var(--text-primary); }
         .scan-levels-title .toggle-arrow { font-size: 0.55rem; margin-left: 4px; transition: transform 0.2s; display: inline-block; }
@@ -178,8 +180,9 @@
             font-size: 0.72rem;
         }
         .scan-signal-row .sig-none { color: var(--text-muted); }
-        .scan-signal-row .sig-setup { color: var(--accent-blue); font-weight: 700; }
-        .scan-signal-row .sig-time { color: var(--text-muted); margin-left: 6px; }
+        .sig-setup { color: var(--accent-blue); font-weight: 700; }
+        .sig-time { color: var(--accent-blue); margin-left: 6px; }
+        .sig-time .sig-at { color: var(--text-muted); }
         .scan-signal-status {
             display: inline-block;
             font-size: 0.6rem;
@@ -375,6 +378,12 @@
             cursor: pointer;">
             <option value="">All Times</option>
         </select>
+        <select id="symbolFilter" onchange="applySymbolFilter()" style="
+            background: var(--bg-card); border: 1px solid var(--border); color: var(--text-secondary);
+            padding: 5px 8px; border-radius: 8px; font-family: var(--font-mono); font-size: 0.75rem;
+            cursor: pointer;">
+            <option value="">All Symbols</option>
+        </select>
         <span class="scan-count" id="scanCount">0 stocks</span>
     </div>
 
@@ -400,6 +409,7 @@
     var signalFilter = false;
     var filteredFilter = false;
     var timeFilter = '';
+    var symbolFilter = '';
 
     // Populate time dropdown (9:15 to 15:30 in 15-min intervals)
     (function() {
@@ -463,17 +473,39 @@
         renderCards();
     };
 
+    window.applySymbolFilter = function() {
+        symbolFilter = document.getElementById('symbolFilter').value;
+        renderCards();
+    };
+
+    function populateSymbolDropdown() {
+        var sel = document.getElementById('symbolFilter');
+        var current = sel.value;
+        var opts = sel.options;
+        // Keep first option (All Symbols), remove rest
+        while (opts.length > 1) sel.remove(1);
+        var symbols = allData.map(function(d) { return d.shortName; }).sort();
+        for (var i = 0; i < symbols.length; i++) {
+            var opt = document.createElement('option');
+            opt.value = symbols[i];
+            opt.textContent = symbols[i];
+            sel.appendChild(opt);
+        }
+        sel.value = current;
+    }
+
     // ── Render cards ────────────────────────────────
     function renderCards() {
         var grid = document.getElementById('scannerGrid');
         var filtered = allData.filter(function(d) {
+            if (symbolFilter && d.shortName !== symbolFilter) return false;
             if (cprFilter !== 'all' && d.cprType !== cprFilter) return false;
             if (probFilter && d.probability !== probFilter) return false;
             if (weeklyFilter && !d.weeklyNarrow) return false;
             if (signalFilter && (!d.lastSignal || d.lastSignal.status !== 'TRADED')) return false;
             if (filteredFilter && (!d.lastSignal || d.lastSignal.status !== 'FILTERED')) return false;
             if (timeFilter && d.lastSignal && d.lastSignal.time) {
-                if (d.lastSignal.time < timeFilter) return false;
+                if (d.lastSignal.time !== timeFilter) return false;
             } else if (timeFilter && !d.lastSignal) {
                 return false;
             }
@@ -556,15 +588,20 @@
             levelsHtml += '<div class="scan-level-row' + isBrokenS + refClassS + '"><span class="lvl-name">' + s.name + markS + '</span><span class="lvl-price">' + fmt(s.price) + '</span></div>';
         }
 
-        // Signal row
+        // Signal history (exclude latest since it's shown in the title)
         var sigHtml = '';
-        if (d.lastSignal) {
-            var stClass = d.lastSignal.status.toLowerCase();
-            sigHtml = '<span class="sig-setup">' + d.lastSignal.setup + '</span>'
-                + '<span class="sig-time">@ ' + d.lastSignal.time + '</span>'
-                + '<span class="scan-signal-status ' + stClass + '">' + d.lastSignal.status + '</span>';
+        var sigs = d.signalHistory || [];
+        if (sigs.length > 1) {
+            sigHtml = sigs.slice(0, -1).map(function(s) {
+                var stClass = s.status.toLowerCase();
+                return '<div style="display:flex;align-items:center;gap:6px;padding:1px 0;">'
+                    + '<span class="sig-setup">' + s.setup + '</span>'
+                    + '<span class="sig-time"><span class="sig-at">@ </span>' + s.time + '</span>'
+                    + '<span class="scan-signal-status ' + stClass + '" style="margin-left:auto;">' + s.status + '</span>'
+                    + '</div>';
+            }).join('');
         } else {
-            sigHtml = '<span class="sig-none">No breakout yet</span>';
+            sigHtml = '<span class="sig-none">No history</span>';
         }
 
         return '<div class="' + cardClass + '" data-symbol="' + d.symbol + '">'
@@ -594,7 +631,17 @@
             + '  <div class="scan-levels-title" onclick="this.parentElement.classList.toggle(\'expanded\')">CPR Levels <span class="toggle-arrow">&#9654;</span></div>'
             + '  <div class="scan-levels-body">' + levelsHtml + '</div>'
             + '</div>'
-            + '<div class="scan-signal-row">' + sigHtml + '</div>'
+            + '<div style="border-top:1px solid var(--border);"></div>'
+            + '<div class="scan-levels">'
+            + '  <div class="scan-levels-title" onclick="this.parentElement.classList.toggle(\'expanded\')">'
+            + (d.lastSignal
+                ? 'Latest Signal &#9654; <span class="sig-setup" style="margin-left:4px;">' + d.lastSignal.setup + '</span>'
+                  + '<span class="sig-time" style="margin-left:4px;">@ ' + d.lastSignal.time + '</span>'
+                  + '<span class="scan-signal-status ' + d.lastSignal.status.toLowerCase() + '" style="margin-left:auto;">' + d.lastSignal.status + '</span>'
+                : 'Latest Signal &#9654; <span style="color:var(--text-muted); margin-left:4px;">No breakout yet</span>')
+            + '</div>'
+            + '  <div class="scan-levels-body"><div class="scan-signal-row">' + sigHtml + '</div></div>'
+            + '</div>'
             + '</div>';
     }
 
@@ -615,6 +662,7 @@
     function fetchData() {
         fetch('/api/scanner/watchlist').then(function(r) { return r.json(); }).then(function(data) {
             allData = data;
+            populateSymbolDropdown();
             renderCards();
         }).catch(function() {});
 
@@ -641,7 +689,7 @@
         fetch('/status').then(function(r) { return r.json(); }).then(function(d) {
             var dot = document.getElementById('statusDot');
             var label = document.getElementById('connectionStatus');
-            if (d.status && d.status.includes('CONNECTED')) {
+            if (d.status && d.status.includes('WS CONNECTED')) {
                 dot.style.background = 'var(--accent-green)';
                 label.textContent = d.status;
             } else {

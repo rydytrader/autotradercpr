@@ -1148,12 +1148,16 @@ public class PollingService {
         boolean orderWs = orderEventService.isConnected();
         boolean dataWs = marketDataService.isConnected();
         if (orderWs && dataWs) return "WS CONNECTED";
-        if (orderWs) return "WS CONNECTED (Order)";
-        if (dataWs) return "WS CONNECTED (Data)";
+        if (orderWs && !dataWs) return "RECONNECTING (Data)";
+        if (!orderWs && dataWs) return "RECONNECTING (Order)";
+        if (marketDataService.isReconnecting() || orderEventService.isReconnecting()) return "RECONNECTING";
         return connectionStatus; // POLLING / SYNCING / DISCONNECTED
     }
 
     public String getLastSyncTime() { return lastSyncTime; }
+    public int getOcoMonitorCount() { return ocoMonitoredSymbols.size(); }
+    public Set<String> getOcoMonitoredSymbols() { return Collections.unmodifiableSet(ocoMonitoredSymbols); }
+    public int getOpenPositionCount() { return cachedPositions.size(); }
 
     /** Update last sync time — called by WS handlers when positions are updated. */
     public void updateLastSyncTime() {

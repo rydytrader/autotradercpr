@@ -935,6 +935,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         return wsClient != null && wsClient.isOpen();
     }
 
+    public boolean isReconnecting() {
+        return running && !isConnected() && reconnectAttempts > 0;
+    }
+
+    public int getEmitterCount() { return emitters.size(); }
+
     /** Get current tick count (for debug/status). */
     public int getTickCount() {
         return currentTicks.size();

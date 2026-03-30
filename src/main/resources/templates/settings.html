@@ -430,7 +430,7 @@
                 const dot   = document.getElementById('statusDot');
                 const label = document.getElementById('connectionStatus');
                 dot.className = 'status-dot';
-                if (data.status.includes('CONNECTED')) {
+                if (data.status.includes('WS CONNECTED')) {
                     dot.classList.add('connected');
                     label.textContent = data.status;
                     label.style.color = 'var(--accent-green)';

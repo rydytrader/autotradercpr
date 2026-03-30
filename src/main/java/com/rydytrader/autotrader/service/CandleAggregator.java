@@ -45,6 +45,10 @@ public class CandleAggregator {
     // Candle close listeners
     private final List<CandleCloseListener> listeners = new CopyOnWriteArrayList<>();
 
+    // Last candle close cycle stats
+    private volatile int lastCycleProcessed = 0;
+    private volatile String lastCycleTime = "";
+
     private volatile int timeframeMinutes = 15;
 
     // Scheduler for clock-boundary candle finalization
@@ -75,6 +79,9 @@ public class CandleAggregator {
         boundaryCheckerFuture = scheduler.scheduleAtFixedRate(this::checkCandleBoundary, 1, 1, TimeUnit.SECONDS);
         log.info("[CandleAggregator] Started with {}min timeframe", timeframeMinutes);
     }
+
+    public int getLastCycleProcessed() { return lastCycleProcessed; }
+    public String getLastCycleTime() { return lastCycleTime; }
 
     /** Check if the candle boundary scheduler is still alive. */
     public boolean isBoundaryCheckerAlive() {
@@ -178,6 +185,7 @@ public class CandleAggregator {
             if (nowMinute < 555) return; // 9:15 AM
             long currentStart = getCandleStartMinute(now);
 
+            int processed = 0;
             for (Map.Entry<String, CandleBar> entry : currentCandles.entrySet()) {
                 String symbol = entry.getKey();
                 CandleBar candle = entry.getValue();
@@ -185,6 +193,7 @@ public class CandleAggregator {
                 // If the current candle belongs to a previous period, finalize it
                 if (candle.startMinute < currentStart && candle.open > 0) {
                     finalizeCandle(symbol, candle);
+                    processed++;
                     // Reset for new period
                     double ltp = candle.close;
                     CandleBar newCandle = new CandleBar();
@@ -195,6 +204,10 @@ public class CandleAggregator {
                     newCandle.close = ltp;
                     currentCandles.put(symbol, newCandle);
                 }
+            }
+            if (processed > 0) {
+                lastCycleProcessed = processed;
+                lastCycleTime = now.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"));
             }
         } catch (Throwable e) {
             // Catch Throwable (not just Exception) to prevent ScheduledExecutorService from dying

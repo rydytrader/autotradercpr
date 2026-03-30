@@ -125,6 +125,9 @@
         </div>
     </div>
 
+    <!-- Health Dashboard -->
+    <div id="healthBar" style="display:flex; gap:10px; flex-wrap:wrap; padding:0 0 12px; font-family:var(--font-mono); font-size:0.72rem;"></div>
+
     <div class="console-wrap fade-in">
         <div class="console-toolbar">
             <label>Filter:</label>
@@ -134,6 +137,9 @@
                 <option value="WARN">WARN</option>
                 <option value="INFO">INFO</option>
             </select>
+            <input type="time" id="fromTime" style="width:100px; font-family:var(--font-mono); font-size:0.75rem; background:var(--bg-card); color:var(--text-secondary); border:1px solid var(--border); border-radius:4px; padding:2px 4px;" title="From time">
+            <span style="color:var(--text-muted); font-size:0.75rem;">to</span>
+            <input type="time" id="toTime" style="width:100px; font-family:var(--font-mono); font-size:0.75rem; background:var(--bg-card); color:var(--text-secondary); border:1px solid var(--border); border-radius:4px; padding:2px 4px;" title="To time">
             <input type="text" id="searchFilter" placeholder="Search..." style="width:200px;">
             <button class="auto-scroll-btn active" id="autoScrollBtn" onclick="toggleAutoScroll()">Auto-scroll ON</button>
             <button class="auto-scroll-btn" onclick="loadLogs()">Refresh</button>
@@ -199,14 +205,29 @@
         return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
 
+    function extractTime(line) {
+        // Log format: "HH:mm:ss" or "HH:mm:ss.SSS" at the start after date
+        var m = line.match(/(\d{2}:\d{2})/);
+        return m ? m[1] : '';
+    }
+
     function renderLogs() {
         var levelFilter = document.getElementById('levelFilter').value;
         var searchFilter = document.getElementById('searchFilter').value.toLowerCase();
+        var fromTime = document.getElementById('fromTime').value;
+        var toTime = document.getElementById('toTime').value;
         var body = document.getElementById('consoleBody');
 
         var filtered = allLogLines.filter(function(line) {
             if (levelFilter && line.indexOf(' ' + levelFilter + ' ') === -1) return false;
             if (searchFilter && line.toLowerCase().indexOf(searchFilter) === -1) return false;
+            if (fromTime || toTime) {
+                var t = extractTime(line);
+                if (t) {
+                    if (fromTime && t < fromTime) return false;
+                    if (toTime && t > toTime) return false;
+                }
+            }
             return true;
         });
 
@@ -234,9 +255,53 @@
 
     document.getElementById('levelFilter').addEventListener('change', renderLogs);
     document.getElementById('searchFilter').addEventListener('input', renderLogs);
+    document.getElementById('fromTime').addEventListener('input', renderLogs);
+    document.getElementById('toTime').addEventListener('input', renderLogs);
 
     loadLogs();
-    setInterval(loadLogs, 5000); // refresh every 5s
+    setInterval(loadLogs, 5000);
+
+    // ── HEALTH DASHBOARD ──────────────────────
+    function pill(label, value, ok) {
+        var color = ok === true ? '#22c55e' : ok === false ? '#ef4444' : '#f97316';
+        var bg = ok === true ? 'rgba(34,197,94,0.1)' : ok === false ? 'rgba(239,68,68,0.1)' : 'rgba(249,115,22,0.1)';
+        return '<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:6px;border:1px solid ' + color + '30;background:' + bg + ';">'
+            + '<span style="width:6px;height:6px;border-radius:50%;background:' + color + ';"></span>'
+            + '<span style="color:var(--text-muted);">' + label + ':</span>'
+            + '<span style="color:' + color + ';font-weight:600;">' + value + '</span></span>';
+    }
+
+    function group(label, pills) {
+        return '<div style="display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:8px;background:var(--bg-card);border:1px solid var(--border);">'
+            + '<span style="color:var(--text-muted);font-weight:600;font-size:0.68rem;margin-right:2px;">' + label + '</span>'
+            + pills + '</div>';
+    }
+
+    function fetchHealth() {
+        fetch('/api/health').then(function(r) { return r.json(); }).then(function(h) {
+            var conn = '';
+            conn += pill('Data WS', h.dataWs, h.dataWs === 'CONNECTED');
+            conn += pill('Order WS', h.orderWs, h.orderWs === 'CONNECTED');
+            conn += pill('Status', h.status, h.status === 'WS CONNECTED');
+            conn += pill('SSE', h.sseClients, h.sseClients > 0);
+
+            var scanner = '';
+            scanner += pill('Watchlist', h.watchlistCount, h.watchlistCount > 0);
+            scanner += pill('ATR', h.atrLoaded + '/' + h.watchlistCount, h.atrLoaded >= h.watchlistCount);
+            scanner += pill('Candle Checker', h.candleChecker, h.candleChecker === 'ALIVE');
+            var cycleLabel = h.lastCycleProcessed + '/' + h.watchlistCount + (h.lastCycleTime ? ' @ ' + h.lastCycleTime : '');
+            scanner += pill('Last Cycle', cycleLabel, h.lastCycleProcessed >= h.watchlistCount);
+
+            var trading = '';
+            trading += pill('Positions', h.openPositions, null);
+            trading += pill('OCO', h.ocoMonitors, h.openPositions > 0 ? h.ocoMonitors >= h.openPositions : null);
+
+            document.getElementById('healthBar').innerHTML = group('CONNECTION', conn) + group('SCANNER', scanner) + group('TRADING', trading);
+        }).catch(function() {});
+    }
+
+    fetchHealth();
+    setInterval(fetchHealth, 5000);
 
     // ── CONNECTION STATUS ──────────────────────
     function updateConnectionStatus() {
@@ -247,7 +312,11 @@
                 var dot = document.getElementById('statusDot');
                 var label = document.getElementById('connectionStatus');
                 dot.className = 'status-dot';
-                if (data.status.includes('CONNECTED')) {
+                if (data.status.includes('RECONNECTING')) {
+                    dot.classList.add('syncing');
+                    label.textContent = data.status;
+                    label.style.color = '#f97316';
+                } else if (data.status.includes('WS CONNECTED')) {
                     dot.classList.add('connected');
                     label.textContent = data.status;
                     label.style.color = 'var(--accent-green)';

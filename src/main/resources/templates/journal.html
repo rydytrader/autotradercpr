@@ -356,7 +356,7 @@
                 const dot = document.getElementById('statusDot');
                 const lbl = document.getElementById('connectionStatus');
                 dot.className = 'status-dot';
-                if (data.status.includes('CONNECTED')) { dot.classList.add('connected'); lbl.textContent = data.status; lbl.style.color = 'var(--accent-green)'; }
+                if (data.status.includes('WS CONNECTED')) { dot.classList.add('connected'); lbl.textContent = data.status; lbl.style.color = 'var(--accent-green)'; }
                 else if (data.status === 'POLLING' || data.status === 'SYNCING') { dot.classList.add('syncing'); lbl.textContent = data.status; lbl.style.color = 'var(--accent-yellow)'; }
                 else                                { dot.classList.add('disconnected'); lbl.textContent = 'DISCONNECTED'; lbl.style.color = 'var(--accent-red)'; }
             })

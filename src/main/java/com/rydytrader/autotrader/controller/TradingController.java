@@ -17,7 +17,10 @@ import com.rydytrader.autotrader.dto.OrderDTO;
 import com.rydytrader.autotrader.dto.ProcessedSignal;
 import com.rydytrader.autotrader.manager.PositionManager;
 import com.rydytrader.autotrader.service.EventService;
+import com.rydytrader.autotrader.service.AtrService;
+import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.service.MarketDataService;
+import com.rydytrader.autotrader.service.OrderEventService;
 import com.rydytrader.autotrader.service.OrderService;
 import com.rydytrader.autotrader.service.PollingService;
 import com.rydytrader.autotrader.service.SignalProcessor;
@@ -40,6 +43,9 @@ public class TradingController {
     private final TradingStateStore   tradingState;
     private final SignalProcessor     signalProcessor;
     private final MarketDataService   marketDataService;
+    private final OrderEventService   orderEventService;
+    private final CandleAggregator    candleAggregator;
+    private final AtrService          atrService;
 
     public TradingController(PollingService pollingService,
                               OrderService orderService,
@@ -49,7 +55,10 @@ public class TradingController {
                               RiskSettingsStore riskSettings,
                               TradingStateStore tradingState,
                               SignalProcessor signalProcessor,
-                              MarketDataService marketDataService) {
+                              MarketDataService marketDataService,
+                              OrderEventService orderEventService,
+                              CandleAggregator candleAggregator,
+                              AtrService atrService) {
         this.pollingService      = pollingService;
         this.orderService        = orderService;
         this.eventService        = eventService;
@@ -59,6 +68,9 @@ public class TradingController {
         this.tradingState        = tradingState;
         this.signalProcessor     = signalProcessor;
         this.marketDataService   = marketDataService;
+        this.orderEventService   = orderEventService;
+        this.candleAggregator    = candleAggregator;
+        this.atrService          = atrService;
     }
 
     // ── PLACE ORDER ───────────────────────────────────────────────────────────
@@ -261,6 +273,41 @@ public class TradingController {
     @GetMapping("/status")
     public Map<String, String> getStatus() {
         return Map.of("status", pollingService.getConnectionStatus());
+    }
+
+    @GetMapping("/api/health")
+    public Map<String, Object> getHealth() {
+        Map<String, Object> health = new java.util.LinkedHashMap<>();
+
+        // WebSocket status
+        health.put("dataWs", marketDataService.isConnected() ? "CONNECTED" : marketDataService.isReconnecting() ? "RECONNECTING" : "DISCONNECTED");
+        health.put("orderWs", orderEventService.isConnected() ? "CONNECTED" : orderEventService.isReconnecting() ? "RECONNECTING" : "DISCONNECTED");
+
+        // Candle boundary checker
+        health.put("candleChecker", candleAggregator.isBoundaryCheckerAlive() ? "ALIVE" : "DEAD");
+        health.put("lastCycleProcessed", candleAggregator.getLastCycleProcessed());
+        health.put("lastCycleTime", candleAggregator.getLastCycleTime());
+
+        // Scanner
+        health.put("signalSource", riskSettings.getSignalSource());
+        health.put("watchlistCount", marketDataService.getWatchlist().size());
+        health.put("atrLoaded", atrService.getAllAtr().size());
+
+        // OCO monitors
+        health.put("ocoMonitors", pollingService.getOcoMonitorCount());
+        health.put("ocoSymbols", pollingService.getOcoMonitoredSymbols());
+
+        // Positions
+        health.put("openPositions", pollingService.getOpenPositionCount());
+
+        // Connection status
+        health.put("status", pollingService.getConnectionStatus());
+        health.put("lastSync", pollingService.getLastSyncTime());
+
+        // SSE emitters
+        health.put("sseClients", marketDataService.getEmitterCount());
+
+        return health;
     }
 
 

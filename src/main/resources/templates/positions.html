@@ -224,6 +224,15 @@
                 Event Log
             </div>
             <div style="display:flex;align-items:center;gap:8px;margin-left:auto;">
+                <input type="time" id="logFromTime" onchange="filterLogs()" style="
+                    background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
+                    border-radius:4px;padding:2px 4px;font-size:0.65rem;font-family:var(--font-mono);
+                    width:80px;" title="From time">
+                <span style="color:var(--text-muted);font-size:0.65rem;">to</span>
+                <input type="time" id="logToTime" onchange="filterLogs()" style="
+                    background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
+                    border-radius:4px;padding:2px 4px;font-size:0.65rem;font-family:var(--font-mono);
+                    width:80px;" title="To time">
                 <select id="logSymbolFilter" onchange="filterLogs()" style="
                     background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
                     border-radius:4px;padding:2px 8px;font-size:0.65rem;font-family:var(--font-mono);
@@ -267,11 +276,16 @@
     // ── CONNECTION STATUS ─────────────────────────
     function setLogBadge(status) {
         const badge = document.getElementById('logStatusBadge');
-        if (status.includes('CONNECTED')) {
+        if (status.includes('WS CONNECTED')) {
             badge.textContent = '● Live';
             badge.style.color = 'var(--accent-cyan)';
             badge.style.borderColor = 'rgba(34,211,238,0.2)';
             badge.style.background = 'rgba(34,211,238,0.07)';
+        } else if (status.includes('RECONNECTING')) {
+            badge.textContent = '● Reconnecting';
+            badge.style.color = '#f97316';
+            badge.style.borderColor = 'rgba(249,115,22,0.2)';
+            badge.style.background = 'rgba(249,115,22,0.07)';
         } else if (status === 'SYNCING' || status === 'POLLING') {
             badge.textContent = '● Syncing';
             badge.style.color = 'var(--accent-yellow)';
@@ -304,17 +318,22 @@
                 const dot = document.getElementById('statusDot');
                 const label = document.getElementById('connectionStatus');
                 dot.className = 'status-dot';
-                if (data.status.includes('CONNECTED')) {
+                if (data.status.includes('WS CONNECTED')) {
                     dot.classList.add('connected');
                     label.textContent = data.status;
                     label.style.color = 'var(--accent-green)';
-                    if (!isConnected) pollData();  // immediate fetch on first connect
+                    if (!isConnected) pollData();
+                    isConnected = true;
+                } else if (data.status.includes('RECONNECTING')) {
+                    dot.classList.add('syncing');
+                    label.textContent = data.status;
+                    label.style.color = 'var(--accent-orange, #f97316)';
                     isConnected = true;
                 } else if (data.status === 'POLLING' || data.status === 'SYNCING') {
                     dot.classList.add('syncing');
                     label.textContent = data.status;
                     label.style.color = 'var(--accent-yellow)';
-                    if (!isConnected) pollData();  // immediate fetch on first connect
+                    if (!isConnected) pollData();
                     isConnected = true;
                 } else {
                     dot.classList.add('disconnected');
@@ -380,12 +399,29 @@
         sel.innerHTML = opts.join('');
     }
 
+    function extractLogTime(log) {
+        const m = log.match(/^(\d{2}:\d{2})/);
+        return m ? m[1] : '';
+    }
+
     function filterLogs() {
-        const filter = document.getElementById('logSymbolFilter').value;
+        const symbolFilter = document.getElementById('logSymbolFilter').value;
+        const fromTime = document.getElementById('logFromTime').value;
+        const toTime = document.getElementById('logToTime').value;
         const container = document.getElementById('tradeLogContainer');
-        const filtered = filter ? allLogEntries.filter(log => log.includes(filter)) : allLogEntries;
+        const filtered = allLogEntries.filter(log => {
+            if (symbolFilter && !log.includes(symbolFilter)) return false;
+            if (fromTime || toTime) {
+                const t = extractLogTime(log);
+                if (t) {
+                    if (fromTime && t < fromTime) return false;
+                    if (toTime && t > toTime) return false;
+                }
+            }
+            return true;
+        });
         if (!filtered.length) {
-            container.innerHTML = `<div class="empty-state"><div class="empty-icon">⌁</div>No events${filter ? ' for ' + filter : ''}</div>`;
+            container.innerHTML = `<div class="empty-state"><div class="empty-icon">⌁</div>No events matching filters</div>`;
             return;
         }
         container.innerHTML = filtered.slice().reverse().map(log => renderLogEntry(log, 'log-entry')).join('');
