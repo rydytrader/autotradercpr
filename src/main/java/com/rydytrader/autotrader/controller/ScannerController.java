@@ -4,6 +4,9 @@ import com.rydytrader.autotrader.dto.CprLevels;
 import com.rydytrader.autotrader.manager.PositionManager;
 import com.rydytrader.autotrader.service.*;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -170,5 +173,29 @@ public class ScannerController {
         }
         result.put("stocks", stockList);
         return result;
+    }
+
+    @GetMapping("/api/scanner/tv-watchlist")
+    public ResponseEntity<String> getTvWatchlist() {
+        StringBuilder csv = new StringBuilder();
+        Set<String> added = new HashSet<>();
+
+        // Narrow CPR stocks first
+        for (CprLevels cpr : bhavcopyService.getNarrowCprStocks()) {
+            csv.append("NSE:").append(cpr.getSymbol()).append(",");
+            added.add(cpr.getSymbol());
+        }
+        // Inside CPR stocks (skip duplicates)
+        for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
+            if (!added.contains(cpr.getSymbol())) {
+                csv.append("NSE:").append(cpr.getSymbol()).append(",");
+            }
+        }
+
+        String filename = "cpr-watchlist-" + bhavcopyService.getCachedDate() + ".txt";
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+            .contentType(MediaType.TEXT_PLAIN)
+            .body(csv.toString());
     }
 }

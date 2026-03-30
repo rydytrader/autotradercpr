@@ -445,6 +445,27 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
             try { posJson = mapper.writeValueAsString(buildPositionPayload(posSymbols)); } catch (Exception e) { /* skip */ }
         }
 
+        // 3. Watchlist event (lightweight LTP + change% + volume for scanner page)
+        String watchlistJson = null;
+        List<String> wl = getWatchlist();
+        if (!wl.isEmpty()) {
+            try {
+                Map<String, Map<String, Object>> wlPayload = new LinkedHashMap<>();
+                for (String sym : wl) {
+                    double ltp = candleAggregator.getLtp(sym);
+                    if (ltp <= 0) continue;
+                    Map<String, Object> d = new LinkedHashMap<>();
+                    d.put("ltp", Math.round(ltp * 100.0) / 100.0);
+                    d.put("changePercent", Math.round(candleAggregator.getChangePct(sym) * 100.0) / 100.0);
+                    d.put("candleVolume", candleAggregator.getCurrentCandleVolume(sym));
+                    wlPayload.put(sym, d);
+                }
+                if (!wlPayload.isEmpty()) {
+                    watchlistJson = mapper.writeValueAsString(wlPayload);
+                }
+            } catch (Exception e) { /* skip */ }
+        }
+
         // Collect dead emitters to remove after iteration
         List<SseEmitter> dead = new ArrayList<>();
         for (SseEmitter emitter : emitters) {
@@ -454,6 +475,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
                 }
                 if (posJson != null) {
                     emitter.send(SseEmitter.event().name("positions").data(posJson));
+                }
+                if (watchlistJson != null) {
+                    emitter.send(SseEmitter.event().name("watchlist").data(watchlistJson));
                 }
             } catch (Exception e) {
                 dead.add(emitter);
@@ -695,8 +719,20 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         atrService.fetchAtrForSymbols(watchlist);
         weeklyCprService.fetchWeeklyTrends(watchlist);
 
-        // Subscribe watchlist to WebSocket for real-time data
+        // Subscribe watchlist to WebSocket (after API calls give WS time to connect)
         subscribeWatchlist(watchlist);
+
+        // Verify all symbols subscribed — retry if some failed
+        int subscribed = 0;
+        for (String fyers : watchlist) {
+            String hsm = fyersToHsmToken.get(fyers);
+            if (hsm != null && subscribedHsmTokens.contains(hsm)) subscribed++;
+        }
+        if (subscribed < watchlist.size()) {
+            log.warn("[MarketData] Only {}/{} symbols subscribed, retrying in 3s...", subscribed, watchlist.size());
+            try { Thread.sleep(3000); } catch (InterruptedException ignored) {}
+            subscribeWatchlist(watchlist);
+        }
 
         eventService.log("[INFO] Scanner initialized: " + watchlist.size() + " symbols, ATR loaded, trends calculated");
     }
@@ -743,17 +779,28 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
 
         // Subscribe new tokens
         List<String> toSubscribe = new ArrayList<>();
+        List<String> unresolvedSymbols = new ArrayList<>();
         for (String fyers : fyersSymbols) {
             String hsm = fyersToHsmToken.get(fyers);
             if (hsm != null && !subscribedHsmTokens.contains(hsm)) {
                 toSubscribe.add(hsm);
                 subscribedHsmTokens.add(hsm);
+            } else if (hsm == null) {
+                unresolvedSymbols.add(fyers);
             }
         }
 
         if (!toSubscribe.isEmpty()) {
             wsClient.subscribeSymbols(toSubscribe);
-            log.info("[MarketData] Subscribed {} watchlist symbols to WebSocket", toSubscribe.size());
+        }
+        int totalSubscribed = 0;
+        for (String fyers : fyersSymbols) {
+            String hsm = fyersToHsmToken.get(fyers);
+            if (hsm != null && subscribedHsmTokens.contains(hsm)) totalSubscribed++;
+        }
+        log.info("[MarketData] Watchlist WebSocket: {}/{} subscribed ({} new)", totalSubscribed, fyersSymbols.size(), toSubscribe.size());
+        if (!unresolvedSymbols.isEmpty()) {
+            log.warn("[MarketData] Failed to resolve HSM tokens for: {}", unresolvedSymbols);
         }
     }
 

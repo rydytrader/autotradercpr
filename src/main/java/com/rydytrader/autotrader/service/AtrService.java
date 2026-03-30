@@ -62,6 +62,7 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
         log.info("[AtrService] Fetching ATR({}) for {} symbols ({}min candles)", ATR_PERIOD, fyersSymbols.size(), timeframe);
 
         int success = 0;
+        List<String> failed = new ArrayList<>();
         for (String symbol : fyersSymbols) {
             try {
                 List<CandleAggregator.CandleBar> candles = fetchHistoricalCandles(symbol, timeframe, authHeader);
@@ -73,13 +74,36 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
                     success++;
                 } else {
                     log.warn("[AtrService] Only {} candles for {} (need {})", candles.size(), symbol, ATR_PERIOD);
+                    failed.add(symbol);
                 }
-                // Throttle: 100ms between calls
-                Thread.sleep(100);
+                Thread.sleep(300);
             } catch (Exception e) {
                 log.error("[AtrService] Failed to fetch ATR for {}: {}", symbol, e.getMessage());
+                failed.add(symbol);
             }
         }
+
+        // Retry failed symbols with longer delay
+        if (!failed.isEmpty()) {
+            log.info("[AtrService] Retrying {} failed symbols after 2s delay...", failed.size());
+            try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
+            for (String symbol : failed) {
+                try {
+                    List<CandleAggregator.CandleBar> candles = fetchHistoricalCandles(symbol, timeframe, authHeader);
+                    if (candles.size() >= ATR_PERIOD) {
+                        double atr = calculateAtr(candles, ATR_PERIOD);
+                        atrBySymbol.put(symbol, atr);
+                        candleAggregator.seedCandles(symbol, candles);
+                        success++;
+                        log.info("[AtrService] Retry succeeded for {}", symbol);
+                    }
+                    Thread.sleep(500);
+                } catch (Exception e) {
+                    log.error("[AtrService] Retry failed for {}: {}", symbol, e.getMessage());
+                }
+            }
+        }
+
         log.info("[AtrService] ATR loaded for {}/{} symbols", success, fyersSymbols.size());
     }
 

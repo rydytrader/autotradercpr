@@ -8,6 +8,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -25,6 +31,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
     private static final Logger log = LoggerFactory.getLogger(BreakoutScanner.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm");
+    private static final long MARKET_OPEN_MINUTE = 9 * 60 + 15; // 9:15 AM = 555
+    private static final String SCANNER_STATE_FILE = "../store/config/scanner-state.json";
+    private static final ObjectMapper mapper = new ObjectMapper();
 
     private final BhavcopyService bhavcopyService;
     private final AtrService atrService;
@@ -58,6 +67,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
         this.candleAggregator = candleAggregator;
         this.riskSettings = riskSettings;
         this.eventService = eventService;
+        loadState();
     }
 
     public void setWatchlistSymbols(List<String> symbols) {
@@ -72,6 +82,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
         if (!"INTERNAL".equalsIgnoreCase(riskSettings.getSignalSource())) return;
         if (!watchlistSymbols.contains(fyersSymbol)) return;
 
+        // Skip candles that started before market open (9:15 AM = 9*60+15 = 555)
+        if (completedCandle.startMinute < MARKET_OPEN_MINUTE) return;
+
         try {
             scanForBreakout(fyersSymbol, completedCandle);
         } catch (Exception e) {
@@ -85,10 +98,16 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
     private void scanForBreakout(String fyersSymbol, CandleAggregator.CandleBar candle) {
         String ticker = extractTicker(fyersSymbol);
         CprLevels levels = bhavcopyService.getCprLevels(ticker);
-        if (levels == null) return;
+        if (levels == null) {
+            eventService.log("[WARNING] " + fyersSymbol + " — no CPR levels available, skipping scan");
+            return;
+        }
 
         double atr = atrService.getAtr(fyersSymbol);
-        if (atr <= 0) return; // no ATR available
+        if (atr <= 0) {
+            eventService.log("[WARNING] " + fyersSymbol + " — no ATR available, skipping scan");
+            return;
+        }
 
         double open = candle.open;
         double close = candle.close;
@@ -99,7 +118,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
         double vwap = candleAggregator.getVwap(fyersSymbol);
 
         // Already in position for this symbol?
-        if (!"NONE".equals(PositionManager.getPosition(fyersSymbol))) return;
+        String pos = PositionManager.getPosition(fyersSymbol);
+        if (!"NONE".equals(pos)) {
+            eventService.log("[SCANNER] " + fyersSymbol + " — skipped, position already open (" + pos + ")");
+            return;
+        }
 
         Set<String> broken = brokenLevels.getOrDefault(fyersSymbol, Collections.emptySet());
 
@@ -108,22 +131,56 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
 
         // Check BUY signals — requires green candle (close > open)
         if (greenCandle) {
+            // VWAP check for buys: close must be above VWAP
+            if (riskSettings.isEnableVwapCheck() && vwap > 0 && close < vwap) {
+                // Only log if a breakout would have been detected without VWAP check
+                String wouldMatch = detectBuyBreakout(open, high, low, close, levels, 0, broken);
+                if (wouldMatch != null) {
+                    eventService.log("[SCANNER] " + wouldMatch + " for " + fyersSymbol + " — skipped, close (" + String.format("%.2f", close) + ") below VWAP (" + String.format("%.2f", vwap) + ")");
+                }
+                return;
+            }
             String buySetup = detectBuyBreakout(open, high, low, close, levels, vwap, broken);
             if (buySetup != null) {
                 String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, true);
-                if (!isProbabilityEnabled(prob)) return;
+                if (!isProbabilityEnabled(prob)) {
+                    eventService.log("[SCANNER] " + buySetup + " for " + fyersSymbol + " — skipped, " + prob + " not enabled");
+                    return;
+                }
                 fireSignal(fyersSymbol, buySetup, open, high, low, close, candle.volume, atr, levels, prob);
                 return;
+            } else if (!broken.isEmpty()) {
+                // Check if any broken level would have matched (already traded)
+                String wouldMatch = detectBuyBreakout(open, high, low, close, levels, vwap, Collections.emptySet());
+                if (wouldMatch != null && broken.contains(wouldMatch)) {
+                    eventService.log("[INFO] " + wouldMatch + " for " + fyersSymbol + " — skipped, level already traded");
+                }
             }
         }
 
         // Check SELL signals — requires red candle (close < open)
         if (redCandle) {
+            // VWAP check for sells: close must be below VWAP
+            if (riskSettings.isEnableVwapCheck() && vwap > 0 && close > vwap) {
+                String wouldMatch = detectSellBreakout(open, high, low, close, levels, 0, broken);
+                if (wouldMatch != null) {
+                    eventService.log("[SCANNER] " + wouldMatch + " for " + fyersSymbol + " — skipped, close (" + String.format("%.2f", close) + ") above VWAP (" + String.format("%.2f", vwap) + ")");
+                }
+                return;
+            }
             String sellSetup = detectSellBreakout(open, high, low, close, levels, vwap, broken);
             if (sellSetup != null) {
                 String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, false);
-                if (!isProbabilityEnabled(prob)) return;
+                if (!isProbabilityEnabled(prob)) {
+                    eventService.log("[SCANNER] " + sellSetup + " for " + fyersSymbol + " — skipped, " + prob + " not enabled");
+                    return;
+                }
                 fireSignal(fyersSymbol, sellSetup, open, high, low, close, candle.volume, atr, levels, prob);
+            } else if (!broken.isEmpty()) {
+                String wouldMatch = detectSellBreakout(open, high, low, close, levels, vwap, Collections.emptySet());
+                if (wouldMatch != null && broken.contains(wouldMatch)) {
+                    eventService.log("[INFO] " + wouldMatch + " for " + fyersSymbol + " — skipped, level already traded");
+                }
             }
         }
     }
@@ -149,9 +206,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
         double cprBot = Math.min(tc, bc);
 
         // Check from highest to lowest — standard breakout OR wick rejection
-        if (riskSettings.isEnableR4S4() && close > r4
-                && ((open < r4 || low < r4) || (low < r4 && open > r4))
-                && !broken.contains("BUY_ABOVE_R4")) return "BUY_ABOVE_R4";
+        if (close > r4 && ((open < r4 || low < r4) || (low < r4 && open > r4)) && !broken.contains("BUY_ABOVE_R4")) {
+            if (!riskSettings.isEnableR4S4()) { eventService.log("[SCANNER] BUY_ABOVE_R4 for " + levels.getSymbol() + " — skipped, R4/S4 disabled"); }
+            else return "BUY_ABOVE_R4";
+        }
         if (close > r3
                 && ((open < r3 || low < r3) || (low < r3 && open > r3))
                 && !broken.contains("BUY_ABOVE_R3")) return "BUY_ABOVE_R3";
@@ -164,9 +222,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
         if (close > cprTop
                 && ((open < pp || open < tc || open < bc || low < pp || low < tc || low < bc) || (low < cprBot && open > cprBot && close > cprTop))
                 && !broken.contains("BUY_ABOVE_CPR")) return "BUY_ABOVE_CPR";
-        if (riskSettings.isEnableLpt() && close > s1 && close > pl
+        if (close > s1 && close > pl
                 && ((open < s1 || open < pl || low < s1 || low < pl) || (low < Math.min(s1, pl) && open > Math.min(s1, pl)))
-                && !broken.contains("BUY_ABOVE_S1_PDL")) return "BUY_ABOVE_S1_PDL";
+                && !broken.contains("BUY_ABOVE_S1_PDL")) {
+            if (!riskSettings.isEnableLpt()) { eventService.log("[SCANNER] BUY_ABOVE_S1_PDL for " + levels.getSymbol() + " — skipped, LPT disabled"); }
+            else return "BUY_ABOVE_S1_PDL";
+        }
 
         return null;
     }
@@ -192,9 +253,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
         double cprBot = Math.min(tc, bc);
 
         // Check from highest to lowest — standard breakdown OR wick rejection
-        if (riskSettings.isEnableR4S4() && close < s4
-                && ((open > s4 || high > s4) || (high > s4 && open < s4))
-                && !broken.contains("SELL_BELOW_S4")) return "SELL_BELOW_S4";
+        if (close < s4 && ((open > s4 || high > s4) || (high > s4 && open < s4)) && !broken.contains("SELL_BELOW_S4")) {
+            if (!riskSettings.isEnableR4S4()) { eventService.log("[SCANNER] SELL_BELOW_S4 for " + levels.getSymbol() + " — skipped, R4/S4 disabled"); }
+            else return "SELL_BELOW_S4";
+        }
         if (close < s3
                 && ((open > s3 || high > s3) || (high > s3 && open < s3))
                 && !broken.contains("SELL_BELOW_S3")) return "SELL_BELOW_S3";
@@ -207,9 +269,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
         if (close < cprBot
                 && ((open > pp || open > tc || open > bc || high > pp || high > tc || high > bc) || (high > cprTop && open < cprTop && close < cprBot))
                 && !broken.contains("SELL_BELOW_CPR")) return "SELL_BELOW_CPR";
-        if (riskSettings.isEnableLpt() && close < r1 && close < ph
+        if (close < r1 && close < ph
                 && ((open > r1 || open > ph || high > r1 || high > ph) || (high > Math.max(r1, ph) && open < Math.max(r1, ph)))
-                && !broken.contains("SELL_BELOW_R1_PDH")) return "SELL_BELOW_R1_PDH";
+                && !broken.contains("SELL_BELOW_R1_PDH")) {
+            if (!riskSettings.isEnableLpt()) { eventService.log("[SCANNER] SELL_BELOW_R1_PDH for " + levels.getSymbol() + " — skipped, LPT disabled"); }
+            else return "SELL_BELOW_R1_PDH";
+        }
 
         return null;
     }
@@ -267,6 +332,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
             if (!filtered) {
                 brokenLevels.computeIfAbsent(fyersSymbol, k -> ConcurrentHashMap.newKeySet()).add(setup);
             }
+            saveState();
 
         } catch (Exception e) {
             log.error("[Scanner] Failed to process signal for {}: {}", fyersSymbol, e.getMessage());
@@ -276,6 +342,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
             info.status = "ERROR";
             info.detail = e.getMessage();
             lastSignal.put(fyersSymbol, info);
+            saveState();
         }
     }
 
@@ -301,6 +368,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
     /** Clear broken levels for a symbol when its position is closed. Allows re-entry. */
     public void clearBrokenLevels(String symbol) {
         brokenLevels.remove(symbol);
+        saveState();
     }
 
     public Set<String> getBrokenLevels(String symbol) {
@@ -319,6 +387,85 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
     public void clearAll() {
         brokenLevels.clear();
         lastSignal.clear();
+        saveState();
+    }
+
+    // ── Persistence ──────────────────────────────────────────────────────────
+
+    public void saveState() {
+        try {
+            Map<String, Object> state = new LinkedHashMap<>();
+            state.put("date", ZonedDateTime.now(IST).toLocalDate().toString());
+
+            // Save lastSignal
+            Map<String, Map<String, String>> signals = new LinkedHashMap<>();
+            for (var entry : lastSignal.entrySet()) {
+                Map<String, String> sig = new LinkedHashMap<>();
+                sig.put("setup", entry.getValue().setup);
+                sig.put("time", entry.getValue().time);
+                sig.put("status", entry.getValue().status);
+                sig.put("detail", entry.getValue().detail);
+                signals.put(entry.getKey(), sig);
+            }
+            state.put("signals", signals);
+
+            // Save brokenLevels
+            Map<String, List<String>> broken = new LinkedHashMap<>();
+            for (var entry : brokenLevels.entrySet()) {
+                broken.put(entry.getKey(), new ArrayList<>(entry.getValue()));
+            }
+            state.put("brokenLevels", broken);
+
+            Files.writeString(Paths.get(SCANNER_STATE_FILE),
+                mapper.writerWithDefaultPrettyPrinter().writeValueAsString(state));
+        } catch (Exception e) {
+            log.error("[Scanner] Failed to save state: {}", e.getMessage());
+        }
+    }
+
+    public void loadState() {
+        try {
+            Path path = Paths.get(SCANNER_STATE_FILE);
+            if (!Files.exists(path)) return;
+
+            JsonNode root = mapper.readTree(Files.readString(path));
+
+            // Only load if same day
+            String savedDate = root.has("date") ? root.get("date").asText() : "";
+            String today = ZonedDateTime.now(IST).toLocalDate().toString();
+            if (!today.equals(savedDate)) {
+                log.info("[Scanner] State file from {} — stale, starting fresh", savedDate);
+                return;
+            }
+
+            // Load signals
+            JsonNode signalsNode = root.get("signals");
+            if (signalsNode != null) {
+                signalsNode.fields().forEachRemaining(entry -> {
+                    SignalInfo info = new SignalInfo();
+                    JsonNode v = entry.getValue();
+                    info.setup = v.has("setup") ? v.get("setup").asText() : "";
+                    info.time = v.has("time") ? v.get("time").asText() : "";
+                    info.status = v.has("status") ? v.get("status").asText() : "";
+                    info.detail = v.has("detail") ? v.get("detail").asText() : "";
+                    lastSignal.put(entry.getKey(), info);
+                });
+            }
+
+            // Load brokenLevels
+            JsonNode brokenNode = root.get("brokenLevels");
+            if (brokenNode != null) {
+                brokenNode.fields().forEachRemaining(entry -> {
+                    Set<String> levels = ConcurrentHashMap.newKeySet();
+                    entry.getValue().forEach(n -> levels.add(n.asText()));
+                    brokenLevels.put(entry.getKey(), levels);
+                });
+            }
+
+            log.info("[Scanner] Restored state: {} signals, {} broken levels", lastSignal.size(), brokenLevels.size());
+        } catch (Exception e) {
+            log.error("[Scanner] Failed to load state: {}", e.getMessage());
+        }
     }
 
     // ── Signal info for dashboard ────────────────────────────────────────────

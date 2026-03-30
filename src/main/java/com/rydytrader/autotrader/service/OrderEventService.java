@@ -317,6 +317,10 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         reconnectAttempts = 0;
         log.info("[OrderEventSvc] Order WebSocket connected");
         eventService.log("[INFO] Order Update WebSocket connected — real-time fill detection active");
+        // Hand off any polling OCO monitors to WebSocket tracking
+        if (pollingService != null) {
+            pollingService.handoffOcoToWebSocket();
+        }
     }
 
     @Override

@@ -79,7 +79,7 @@ public class WeeklyCprService {
                     weeklyLevels.put(symbol, wl);
                     success++;
                 }
-                Thread.sleep(100); // throttle
+                Thread.sleep(300); // throttle
             } catch (Exception e) {
                 log.error("[WeeklyCpr] Failed for {}: {}", symbol, e.getMessage());
             }

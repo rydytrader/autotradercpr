@@ -621,24 +621,6 @@
     // Initialize with current positions
     allPositions.forEach(function(p) { knownPositionSymbols.add(p.symbol); });
 
-    window.speak = function speak(text) {
-        try {
-            window.speechSynthesis.cancel();
-            // Play a short silent utterance first to wake up the audio pipeline
-            var wake = new SpeechSynthesisUtterance(' ');
-            wake.volume = 0.01;
-            window.speechSynthesis.speak(wake);
-            // Then speak the actual message after a brief delay
-            setTimeout(function() {
-                var utterance = new SpeechSynthesisUtterance(text);
-                utterance.rate = 0.85;
-                utterance.pitch = 1.0;
-                utterance.volume = 1.0;
-                window.speechSynthesis.speak(utterance);
-            }, 300);
-        } catch (e) {}
-    }
-
     function checkNewPositions(positions) {
         if (!positions || positions.length === 0) return;
         var currentSymbols = new Set();
@@ -649,7 +631,7 @@
             if (!knownPositionSymbols.has(sym)) {
                 var pos = positions.find(function(p) { return p.symbol === sym; });
                 var name = sym.replace('NSE:', '').replace('-EQ', '');
-                speak('Order filled. ' + (pos ? pos.side : '') + ' ' + name);
+
             }
         });
 
@@ -659,77 +641,17 @@
                 var name = sym.replace('NSE:', '').replace('-EQ', '');
                 // Try to get exit reason from trades API
                 fetch('/api/trades').then(function(r) { return r.json(); }).then(function(trades) {
-                    var trade = trades.find(function(t) { return t.symbol === sym; });
-                    if (trade) {
-                        var reason = trade.exitReason || '';
-                        if (reason === 'SL') speak('Stop loss hit. ' + name);
-                        else if (reason === 'TARGET') speak('Target hit. ' + name);
-                        else if (reason === 'TRAILING_SL') speak('Trailing stop loss hit. ' + name + '. Profit locked.');
-                        else if (reason === 'AUTO_SQUAREOFF') speak('Auto square off. ' + name);
-                        else speak('Position closed. ' + name);
-                    } else {
-                        speak('Position closed. ' + name);
-                    }
-                }).catch(function() { speak('Position closed. ' + name); });
+                    // Position closed — trade recorded in history
+                }).catch(function() {});
             }
         });
 
         knownPositionSymbols = currentSymbols;
     }
 
-    // Market open/close chime using Web Audio API
-    var chimePlayedOpen = false, chimePlayedClose = false;
-    var _audioCtx = null;
-    function getAudioCtx() {
-        if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        if (_audioCtx.state === 'suspended') _audioCtx.resume();
-        return _audioCtx;
-    }
-    // Pre-initialize audio context on first user interaction (Chrome requires this)
-    document.addEventListener('click', function() { getAudioCtx(); }, {once: true});
-
-    function playChime(freq, duration) {
-        try {
-            var ctx = getAudioCtx();
-            var osc = ctx.createOscillator();
-            var gain = ctx.createGain();
-            osc.connect(gain); gain.connect(ctx.destination);
-            osc.frequency.value = freq;
-            osc.type = 'sine';
-            gain.gain.setValueAtTime(0.3, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
-            osc.start(); osc.stop(ctx.currentTime + duration);
-            // Second tone for a "ding-ding" effect
-            setTimeout(function() {
-                var osc2 = ctx.createOscillator();
-                var gain2 = ctx.createGain();
-                osc2.connect(gain2); gain2.connect(ctx.destination);
-                osc2.frequency.value = freq * 1.25;
-                osc2.type = 'sine';
-                gain2.gain.setValueAtTime(0.3, ctx.currentTime);
-                gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
-                osc2.start(); osc2.stop(ctx.currentTime + duration);
-            }, 200);
-        } catch (e) {}
-    }
-
     // Market clock starts after holidays are loaded (see fetch above)
     setInterval(function() {
         if (holidaysLoaded) updateMarketClock();
-        var now = new Date();
-        var h = now.getHours(), m = now.getMinutes();
-        // Market open voice at 9:15
-        if (h === 9 && m === 15 && !chimePlayedOpen) {
-            chimePlayedOpen = true;
-            speak('Market is now open');
-        }
-        if (h === 9 && m === 16) chimePlayedOpen = false;
-        // Market close voice at 15:30
-        if (h === 15 && m === 30 && !chimePlayedClose) {
-            chimePlayedClose = true;
-            speak('Market is now closed');
-        }
-        if (h === 15 && m === 31) chimePlayedClose = false;
     }, 1000);
 
     // ── SSE REAL-TIME POSITION UPDATES (uses shared SSE from ticker.js) ─────

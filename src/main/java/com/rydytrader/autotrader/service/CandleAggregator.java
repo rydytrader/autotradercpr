@@ -97,6 +97,11 @@ public class CandleAggregator {
         double ltp = raw.ltp;
         if (ltp <= 0) return;
 
+        // Ignore pre-market ticks (before 9:15 AM)
+        long nowMinute = ZonedDateTime.now(IST).toLocalTime().getHour() * 60L
+            + ZonedDateTime.now(IST).toLocalTime().getMinute();
+        if (nowMinute < 555) return; // 9:15 AM = 9*60+15
+
         latestLtp.put(symbol, ltp);
         if (raw.changePercent != 0) latestChangePct.put(symbol, raw.changePercent);
 
@@ -106,9 +111,11 @@ public class CandleAggregator {
         // Track VWAP from exchange avg_trade_price
         if (raw.vwap > 0) latestVwap.put(symbol, raw.vwap);
 
-        // Track cumulative volume
-        long cumVol = raw.volume;
-        if (cumVol > 0) lastCumulativeVol.put(symbol, cumVol);
+        // Track cumulative volume — only update when Fyers sends a non-zero value
+        // (delta updates may not include volume, so we keep the last known value)
+        long tickVol = raw.volume;
+        if (tickVol > 0) lastCumulativeVol.put(symbol, tickVol);
+        long cumVol = lastCumulativeVol.getOrDefault(symbol, 0L);
 
         // Update current forming candle
         LocalTime now = ZonedDateTime.now(IST).toLocalTime();
@@ -134,7 +141,7 @@ public class CandleAggregator {
             if (existing.volAtStart == -1 && cumVol > 0) {
                 existing.volAtStart = cumVol - existing.volume;
             }
-            // Update candle volume as delta from start
+            // Update candle volume as delta from start (uses last known cumulative volume)
             if (cumVol > 0 && existing.volAtStart > 0) {
                 existing.volume = cumVol - existing.volAtStart;
             }

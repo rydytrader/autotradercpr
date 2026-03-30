@@ -641,6 +641,40 @@ public class PollingService {
         return entryAvgBySymbol.getOrDefault(symbol, 0.0);
     }
 
+    /**
+     * Called when Order WebSocket connects — hand off polling OCO monitors to WebSocket tracking.
+     * This handles the case where OCO was restored via polling on startup before WS was ready.
+     */
+    public void handoffOcoToWebSocket() {
+        Map<String, Map<String, Object>> allSaved = positionStateStore.loadAll();
+        int handedOff = 0;
+        for (Map.Entry<String, Map<String, Object>> entry : allSaved.entrySet()) {
+            Map<String, Object> saved = entry.getValue();
+            String symbol = saved.get("symbol").toString();
+            String slOrderId = saved.getOrDefault("slOrderId", "").toString();
+            String targetOrderId = saved.getOrDefault("targetOrderId", "").toString();
+            if (slOrderId.isEmpty() || targetOrderId.isEmpty()) continue;
+
+            String side = saved.get("side").toString();
+            int qty = Integer.parseInt(saved.get("qty").toString());
+            double avgPrice = Double.parseDouble(saved.get("avgPrice").toString());
+            String setup = saved.getOrDefault("setup", "").toString();
+            int exitSide = "LONG".equals(side) ? -1 : 1;
+            double slPrice = Double.parseDouble(saved.getOrDefault("slPrice", "0").toString());
+            double targetPrice = Double.parseDouble(saved.getOrDefault("targetPrice", "0").toString());
+
+            boolean tracked = orderEventService.trackOcoOrders(slOrderId, targetOrderId,
+                symbol, qty, side, exitSide, setup, avgPrice, slPrice, targetPrice);
+            if (tracked) {
+                handedOff++;
+                log.info("[PollingService] Handed off OCO to WebSocket for {} — SL: {} | Target: {}", symbol, slOrderId, targetOrderId);
+            }
+        }
+        if (handedOff > 0) {
+            eventService.log("[INFO] Handed off " + handedOff + " OCO monitors to WebSocket");
+        }
+    }
+
     // ── ORDER STATUS (cached order book) ────────────────────────────────────
     private volatile JsonNode cachedOrderBook = null;
     private volatile long     orderBookFetchTime = 0;
