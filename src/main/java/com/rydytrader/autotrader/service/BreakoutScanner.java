@@ -86,6 +86,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
         if (completedCandle.startMinute < MARKET_OPEN_MINUTE) return;
 
         try {
+            log.info("[Scanner] Candle close: {} start={} O={} H={} L={} C={}",
+                fyersSymbol, completedCandle.startMinute,
+                String.format("%.2f", completedCandle.open), String.format("%.2f", completedCandle.high),
+                String.format("%.2f", completedCandle.low), String.format("%.2f", completedCandle.close));
             scanForBreakout(fyersSymbol, completedCandle);
         } catch (Exception e) {
             log.error("[Scanner] Error scanning {}: {}", fyersSymbol, e.getMessage());
