@@ -595,8 +595,12 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         log.info("[OrderEventSvc] Untracked order filled: {} {} @ {} tag={}", orderId, symbol, tradedPrice, tag);
     }
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private LatencyTracker latencyTracker;
+
     private void handleEntryFill(EntryContext ctx, String orderId, double fillPrice) {
         String symbol = ctx.symbol;
+        if (latencyTracker != null) latencyTracker.mark(symbol, ctx.setup, LatencyTracker.Stage.ORDER_FILLED);
         double entryPrice = fillPrice > 0 ? fillPrice : ctx.slPrice; // fallback
 
         // Mark as recently handled to prevent duplicate from position event

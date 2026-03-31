@@ -25,6 +25,7 @@ public class ScannerController {
     private final CandleAggregator candleAggregator;
     private final BreakoutScanner breakoutScanner;
     private final RiskSettingsStore riskSettings;
+    private final MarginDataService marginDataService;
 
     public ScannerController(MarketDataService marketDataService,
                              BhavcopyService bhavcopyService,
@@ -32,7 +33,8 @@ public class ScannerController {
                              WeeklyCprService weeklyCprService,
                              CandleAggregator candleAggregator,
                              BreakoutScanner breakoutScanner,
-                             RiskSettingsStore riskSettings) {
+                             RiskSettingsStore riskSettings,
+                             MarginDataService marginDataService) {
         this.marketDataService = marketDataService;
         this.bhavcopyService = bhavcopyService;
         this.atrService = atrService;
@@ -40,6 +42,7 @@ public class ScannerController {
         this.candleAggregator = candleAggregator;
         this.breakoutScanner = breakoutScanner;
         this.riskSettings = riskSettings;
+        this.marginDataService = marginDataService;
     }
 
     @GetMapping("/api/scanner/watchlist")
@@ -225,5 +228,75 @@ public class ScannerController {
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
             .contentType(MediaType.TEXT_PLAIN)
             .body(csv.toString());
+    }
+
+    @GetMapping("/api/scanner/simulate-qty")
+    public Map<String, Object> simulateQty() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        double riskPerTrade = riskSettings.getRiskPerTrade();
+        double capitalPerTrade = riskSettings.getCapitalPerTrade();
+        double atrMultiplier = riskSettings.getAtrMultiplier();
+        int fixedQty = riskSettings.getFixedQuantity();
+
+        result.put("riskPerTrade", riskPerTrade);
+        result.put("capitalPerTrade", capitalPerTrade);
+        result.put("atrMultiplier", atrMultiplier);
+        result.put("fixedQuantity", fixedQty);
+
+        List<Map<String, Object>> stocks = new ArrayList<>();
+        for (String fyersSymbol : marketDataService.getWatchlist()) {
+            String ticker = fyersSymbol.replaceAll("^(NSE|BSE|MCX):", "").replaceAll("-(EQ|INDEX)$", "");
+            double ltp = candleAggregator.getLtp(fyersSymbol);
+            if (ltp <= 0) {
+                CprLevels cpr = bhavcopyService.getCprLevels(ticker);
+                if (cpr != null) ltp = cpr.getClose();
+            }
+            double atr = atrService.getAtr(fyersSymbol);
+            int leverage = marginDataService.getLeverage(fyersSymbol);
+
+            Map<String, Object> s = new LinkedHashMap<>();
+            s.put("symbol", ticker);
+            s.put("ltp", r(ltp));
+            s.put("atr", r(atr));
+            s.put("leverage", leverage);
+
+            if (fixedQty != -1) {
+                int qty = Math.max(2, fixedQty % 2 != 0 ? fixedQty + 1 : fixedQty);
+                s.put("qty", qty);
+                s.put("mode", "FIXED");
+                s.put("slDist", r(atr * atrMultiplier));
+                s.put("riskQty", "--");
+                s.put("capitalCapQty", "--");
+                s.put("capitalUsed", r(ltp * qty));
+                s.put("riskAmount", r(atr * atrMultiplier * qty));
+            } else if (atr > 0 && ltp > 0) {
+                double slDist = atr * atrMultiplier;
+                int riskQty = (int) (riskPerTrade / slDist);
+                double effectiveCapital = (capitalPerTrade * leverage) / 2.0;
+                int capitalCapQty = (int) (effectiveCapital / ltp);
+                int rawQty = Math.min(riskQty, capitalCapQty);
+                int qty = Math.max(2, (rawQty / 2) * 2);
+                boolean capped = riskQty > capitalCapQty;
+
+                s.put("qty", qty);
+                s.put("mode", capped ? "CAPITAL-CAPPED" : "RISK-BASED");
+                s.put("slDist", r(slDist));
+                s.put("riskQty", riskQty);
+                s.put("capitalCapQty", capitalCapQty);
+                s.put("capitalUsed", r(ltp * qty));
+                s.put("riskAmount", r(slDist * qty));
+            } else {
+                s.put("qty", 2);
+                s.put("mode", "MIN (no ATR)");
+                s.put("slDist", 0);
+                s.put("riskQty", 0);
+                s.put("capitalCapQty", 0);
+                s.put("capitalUsed", r(ltp * 2));
+                s.put("riskAmount", 0);
+            }
+            stocks.add(s);
+        }
+        result.put("stocks", stocks);
+        return result;
     }
 }

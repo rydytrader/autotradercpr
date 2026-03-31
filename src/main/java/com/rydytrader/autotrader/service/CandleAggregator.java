@@ -117,7 +117,7 @@ public class CandleAggregator {
         // Ignore pre-market ticks (before 9:15 AM)
         long nowMinute = ZonedDateTime.now(IST).toLocalTime().getHour() * 60L
             + ZonedDateTime.now(IST).toLocalTime().getMinute();
-        if (nowMinute < 555) return; // 9:15 AM = 9*60+15
+        if (nowMinute < MarketHolidayService.MARKET_OPEN_MINUTE) return;
 
         latestLtp.put(symbol, ltp);
         if (raw.changePercent != 0) latestChangePct.put(symbol, raw.changePercent);
@@ -193,7 +193,7 @@ public class CandleAggregator {
             LocalTime now = ZonedDateTime.now(IST).toLocalTime();
             long nowMinute = now.getHour() * 60L + now.getMinute();
             // Only process during market hours (9:15 AM to 3:30 PM)
-            if (nowMinute < 555 || nowMinute > 930) return; // 9:15 AM to 15:30
+            if (nowMinute < MarketHolidayService.MARKET_OPEN_MINUTE || nowMinute > MarketHolidayService.MARKET_CLOSE_MINUTE) return;
             long currentStart = getCandleStartMinute(now);
 
             int processed = 0;

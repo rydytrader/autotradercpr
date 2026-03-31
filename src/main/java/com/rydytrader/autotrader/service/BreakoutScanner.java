@@ -31,7 +31,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     private static final Logger log = LoggerFactory.getLogger(BreakoutScanner.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm");
-    private static final long MARKET_OPEN_MINUTE = 9 * 60 + 15; // 9:15 AM = 555
+    // Uses MarketHolidayService.MARKET_OPEN_MINUTE for market hours
     private static final String SCANNER_STATE_FILE = "../store/config/scanner-state.json";
     private static final ObjectMapper mapper = new ObjectMapper();
 
@@ -41,6 +41,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     private final CandleAggregator candleAggregator;
     private final RiskSettingsStore riskSettings;
     private final EventService eventService;
+    private final LatencyTracker latencyTracker;
 
     @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.context.annotation.Lazy
@@ -63,13 +64,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                            WeeklyCprService weeklyCprService,
                            CandleAggregator candleAggregator,
                            RiskSettingsStore riskSettings,
-                           EventService eventService) {
+                           EventService eventService,
+                           LatencyTracker latencyTracker) {
         this.bhavcopyService = bhavcopyService;
         this.atrService = atrService;
         this.weeklyCprService = weeklyCprService;
         this.candleAggregator = candleAggregator;
         this.riskSettings = riskSettings;
         this.eventService = eventService;
+        this.latencyTracker = latencyTracker;
         loadState();
     }
 
@@ -85,8 +88,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (!"INTERNAL".equalsIgnoreCase(riskSettings.getSignalSource())) return;
         if (!watchlistSymbols.contains(fyersSymbol)) return;
 
-        // Skip candles that started before market open (9:15 AM = 9*60+15 = 555)
-        if (completedCandle.startMinute < MARKET_OPEN_MINUTE) return;
+        // Skip candles that started before market open
+        if (completedCandle.startMinute < MarketHolidayService.MARKET_OPEN_MINUTE) return;
 
         try {
             log.info("[Scanner] Candle close: {} start={} O={} H={} L={} C={}",
@@ -306,6 +309,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     private void fireSignal(String fyersSymbol, String setup, double open, double high,
                             double low, double close, long candleVolume, double atr, CprLevels levels, String prob) {
         String timeStr = ZonedDateTime.now(IST).toLocalTime().format(TIME_FMT);
+        latencyTracker.mark(fyersSymbol, setup, LatencyTracker.Stage.SIGNAL_DETECTED);
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("setup", setup);

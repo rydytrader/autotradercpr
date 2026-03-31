@@ -19,6 +19,7 @@ import com.rydytrader.autotrader.manager.PositionManager;
 import com.rydytrader.autotrader.service.EventService;
 import com.rydytrader.autotrader.service.AtrService;
 import com.rydytrader.autotrader.service.CandleAggregator;
+import com.rydytrader.autotrader.service.LatencyTracker;
 import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.OrderEventService;
 import com.rydytrader.autotrader.service.OrderService;
@@ -46,6 +47,7 @@ public class TradingController {
     private final OrderEventService   orderEventService;
     private final CandleAggregator    candleAggregator;
     private final AtrService          atrService;
+    private final LatencyTracker      latencyTracker;
 
     public TradingController(PollingService pollingService,
                               OrderService orderService,
@@ -58,7 +60,8 @@ public class TradingController {
                               MarketDataService marketDataService,
                               OrderEventService orderEventService,
                               CandleAggregator candleAggregator,
-                              AtrService atrService) {
+                              AtrService atrService,
+                              LatencyTracker latencyTracker) {
         this.pollingService      = pollingService;
         this.orderService        = orderService;
         this.eventService        = eventService;
@@ -71,6 +74,7 @@ public class TradingController {
         this.orderEventService   = orderEventService;
         this.candleAggregator    = candleAggregator;
         this.atrService          = atrService;
+        this.latencyTracker      = latencyTracker;
     }
 
     // ── PLACE ORDER ───────────────────────────────────────────────────────────
@@ -143,8 +147,11 @@ public class TradingController {
         }
 
         ProcessedSignal ps = signalProcessor.process(payload);
+        String psSymbol = ps.getSymbol();
+        latencyTracker.mark(psSymbol, ps.getSetup(), LatencyTracker.Stage.SIGNAL_PROCESSED);
         if (ps.isRejected()) {
-            eventService.log("[WARNING] " + ps.getSymbol() + " " + ps.getSetup() + " filtered — " + ps.getRejectionReason());
+            latencyTracker.cancel(psSymbol);
+            eventService.log("[WARNING] " + psSymbol + " " + ps.getSetup() + " filtered — " + ps.getRejectionReason());
             return ResponseEntity.ok("Signal filtered: " + ps.getRejectionReason());
         }
         String signal      = ps.getSignal();
@@ -161,7 +168,9 @@ public class TradingController {
 
         if (signal.equals("BUY") && !PositionManager.getPosition(symbol).equals("LONG")) {
 
+            latencyTracker.mark(symbol, setup, LatencyTracker.Stage.ORDER_PLACED);
             OrderDTO order = orderService.placeOrder(symbol, quantity, 1, stoploss);
+            latencyTracker.mark(symbol, setup, LatencyTracker.Stage.ORDER_RESPONSE);
             if (order == null || order.getId() == null || order.getId().isEmpty()) {
                 String msg = order != null ? order.getMessage() : "null response";
                 eventService.log("[ERROR] BUY order placement failed for " + symbol + ": " + msg);
@@ -174,7 +183,9 @@ public class TradingController {
 
         } else if (signal.equals("SELL") && !PositionManager.getPosition(symbol).equals("SHORT")) {
 
+            latencyTracker.mark(symbol, setup, LatencyTracker.Stage.ORDER_PLACED);
             OrderDTO order = orderService.placeOrder(symbol, quantity, -1, stoploss);
+            latencyTracker.mark(symbol, setup, LatencyTracker.Stage.ORDER_RESPONSE);
             if (order == null || order.getId() == null || order.getId().isEmpty()) {
                 String msg = order != null ? order.getMessage() : "null response";
                 eventService.log("[ERROR] SELL order placement failed for " + symbol + ": " + msg);
@@ -306,6 +317,10 @@ public class TradingController {
 
         // SSE emitters
         health.put("sseClients", marketDataService.getEmitterCount());
+
+        // Latency
+        health.put("avgLatency", latencyTracker.getAverages());
+        health.put("recentLatency", latencyTracker.getCompleted());
 
         return health;
     }

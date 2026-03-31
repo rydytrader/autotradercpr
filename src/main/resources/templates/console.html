@@ -296,7 +296,12 @@
             trading += pill('Positions', h.openPositions, null);
             trading += pill('OCO', h.ocoMonitors, h.openPositions > 0 ? h.ocoMonitors >= h.openPositions : null);
 
-            document.getElementById('healthBar').innerHTML = group('CONNECTION', conn) + group('SCANNER', scanner) + group('TRADING', trading);
+            var latency = '';
+            var avg = h.avgLatency || {};
+            latency += pill('Signal→Fill', avg.signalToFill || '--', null);
+            latency += pill('Order→Fill', avg.orderToFill || '--', null);
+
+            document.getElementById('healthBar').innerHTML = group('CONNECTION', conn) + group('SCANNER', scanner) + group('TRADING', trading) + group('LATENCY', latency);
         }).catch(function() {});
     }
 

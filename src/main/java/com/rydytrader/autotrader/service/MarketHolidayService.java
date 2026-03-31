@@ -12,7 +12,7 @@ import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.file.*;
-import java.time.LocalDate;
+import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArraySet;
@@ -71,6 +71,69 @@ public class MarketHolidayService {
         }
         return result;
     }
+
+    // ── Market Calendar Constants & Methods ─────────────────────────────────
+
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+    public static final int MARKET_OPEN_MINUTE = 9 * 60 + 15;   // 9:15 AM = 555
+    public static final int MARKET_CLOSE_MINUTE = 15 * 60 + 30;  // 3:30 PM = 930
+    public static final int PRE_MARKET_MINUTE = 9 * 60;           // 9:00 AM = 540
+
+    /** Is the market currently open (9:15 to 15:30 on a trading day)? */
+    public boolean isMarketOpen() {
+        if (!isTradingDay()) return false;
+        int nowMin = getNowMinute();
+        return nowMin >= MARKET_OPEN_MINUTE && nowMin <= MARKET_CLOSE_MINUTE;
+    }
+
+    /** Is it pre-market session (9:00 to 9:15)? */
+    public boolean isPreMarket() {
+        if (!isTradingDay()) return false;
+        int nowMin = getNowMinute();
+        return nowMin >= PRE_MARKET_MINUTE && nowMin < MARKET_OPEN_MINUTE;
+    }
+
+    /** Is today a trading day (not weekend, not holiday)? */
+    public boolean isTradingDay() {
+        return isTradingDay(LocalDate.now(IST));
+    }
+
+    public boolean isTradingDay(LocalDate date) {
+        DayOfWeek dow = date.getDayOfWeek();
+        if (dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY) return false;
+        return !isHoliday(date);
+    }
+
+    /** Is today the last trading day of the week? (for weekly squareoff) */
+    public boolean isLastTradingDayOfWeek() {
+        LocalDate today = LocalDate.now(IST);
+        if (!isTradingDay(today)) return false;
+        // Check if any remaining weekday this week is a trading day
+        LocalDate next = today.plusDays(1);
+        while (next.getDayOfWeek() != DayOfWeek.SATURDAY) {
+            if (isTradingDay(next)) return false;
+            next = next.plusDays(1);
+        }
+        return true; // no more trading days this week
+    }
+
+    /** Get next trading day after the given date. */
+    public LocalDate getNextTradingDay(LocalDate after) {
+        LocalDate d = after.plusDays(1);
+        while (!isTradingDay(d)) {
+            d = d.plusDays(1);
+            if (d.isAfter(after.plusDays(30))) break; // safety: max 30 days ahead
+        }
+        return d;
+    }
+
+    /** Current time as minutes since midnight (IST). */
+    public int getNowMinute() {
+        LocalTime now = ZonedDateTime.now(IST).toLocalTime();
+        return now.getHour() * 60 + now.getMinute();
+    }
+
+    // ── NSE Holiday Fetch ─────────────────────────────────────────────────
 
     private void fetchFromNse() {
         try {

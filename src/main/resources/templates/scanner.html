@@ -328,6 +328,14 @@
             " onmouseover="this.style.background='rgba(52,211,153,0.18)'" onmouseout="this.style.background='rgba(52,211,153,0.1)'">
                 TV Watchlist
             </a>
+            <button onclick="showSimulateQty()" style="
+                background: rgba(249,115,22,0.1); border: 1px solid rgba(249,115,22,0.3);
+                color: #f97316; padding: 6px 14px; border-radius: 8px;
+                font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
+                cursor: pointer; transition: all 0.2s;
+            " onmouseover="this.style.background='rgba(249,115,22,0.18)'" onmouseout="this.style.background='rgba(249,115,22,0.1)'">
+                Position Size Simulator
+            </button>
         </div>
     </div>
 
@@ -915,6 +923,158 @@ function showWeeklyNarrowCpr() {
         </div>
     </div>
 </div>
+
+<!-- Simulate Qty Modal -->
+<div id="simQtyModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px);" onclick="if(event.target===this)this.style.display='none'">
+    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:1000px; max-height:85vh; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border); background:var(--bg-section-header);">
+            <div>
+                <div id="simQtyTitle" style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:var(--text-primary);">QUANTITY SIMULATOR</div>
+                <div id="simQtySubtitle" style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); margin-top:2px;"></div>
+                <div id="simQtyInput" style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+                    <span id="simQtyInputLabel" style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-secondary);"></span>
+                    <input type="number" id="simQtyOverride" style="width:80px; padding:3px 6px; font-family:var(--font-mono); font-size:0.75rem; background:var(--bg-surface); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; text-align:right;">
+                    <button onclick="recalcSimQty()" style="padding:3px 10px; font-family:var(--font-mono); font-size:0.72rem; font-weight:600; background:rgba(99,179,237,0.15); color:var(--accent-blue); border:1px solid rgba(99,179,237,0.3); border-radius:4px; cursor:pointer;">Recalculate</button>
+                </div>
+            </div>
+            <button onclick="document.getElementById('simQtyModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
+        </div>
+        <div style="overflow-y:auto; padding:0;">
+            <table style="width:100%; border-collapse:collapse; font-family:var(--font-mono); font-size:0.75rem;">
+                <thead>
+                    <tr style="background:var(--bg-surface); position:sticky; top:0;">
+                        <th style="padding:8px 12px; text-align:left; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">#</th>
+                        <th style="padding:8px 12px; text-align:left; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Symbol</th>
+                        <th style="padding:8px 12px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">LTP</th>
+                        <th style="padding:8px 12px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">ATR</th>
+                        <th style="padding:8px 12px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">SL Dist</th>
+                        <th style="padding:8px 12px; text-align:center; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Leverage</th>
+                        <th style="padding:8px 12px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Risk Qty</th>
+                        <th style="padding:8px 12px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Cap Qty</th>
+                        <th style="padding:8px 12px; text-align:right; color:var(--accent-cyan); font-weight:700; border-bottom:1px solid var(--border);">Qty</th>
+                        <th style="padding:8px 12px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Risk Amt</th>
+                        <th style="padding:8px 12px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Capital</th>
+                    </tr>
+                </thead>
+                <tbody id="simQtyBody"></tbody>
+            </table>
+            <div id="simQtyEmpty" style="display:none; padding:40px; text-align:center; color:var(--text-muted); font-family:var(--font-mono); font-size:0.85rem;">No data available</div>
+        </div>
+    </div>
+</div>
+
+<script>
+function showSimulateQty() {
+    document.getElementById('simQtyModal').style.display = 'block';
+    document.getElementById('simQtyBody').innerHTML = '<tr><td colspan="11" style="padding:30px; text-align:center; color:var(--text-muted);">Loading...</td></tr>';
+    document.getElementById('simQtyEmpty').style.display = 'none';
+    fetch('/api/scanner/simulate-qty')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            window._simData = data; // cache for re-simulation
+            var totalCapital = 0, totalRisk = 0, totalMargin = 0;
+            (data.stocks || []).forEach(function(s) {
+                totalCapital += s.capitalUsed || 0;
+                totalRisk += s.riskAmount || 0;
+                totalMargin += s.leverage > 0 ? (s.capitalUsed || 0) / s.leverage : (s.capitalUsed || 0);
+            });
+            function inrH(v) { return '\u20B9' + v.toLocaleString('en-IN'); }
+            var sub = 'Risk/Trade: ' + inrH(data.riskPerTrade) + ' | Capital/Trade: ' + inrH(data.capitalPerTrade) + ' | ATR Mult: ' + data.atrMultiplier;
+            if (data.fixedQuantity !== -1) sub += ' | Fixed Qty: ' + data.fixedQuantity;
+            sub += ' | Total Value: ' + inrH(Math.round(totalCapital)) + ' | Est. Margin: ' + inrH(Math.round(totalMargin)) + ' | Total Risk: ' + inrH(Math.round(totalRisk));
+            var isFixed = data.fixedQuantity !== -1;
+            document.getElementById('simQtyTitle').textContent = 'QUANTITY SIMULATOR - ' + (isFixed ? 'FIXED QUANTITY' : 'RISK BASED');
+            document.getElementById('simQtyInputLabel').textContent = isFixed ? 'Fixed Qty:' : 'Risk/Trade (₹):';
+            document.getElementById('simQtyOverride').value = isFixed ? data.fixedQuantity : data.riskPerTrade;
+            document.getElementById('simQtySubtitle').textContent = sub;
+            var stocks = data.stocks || [];
+            if (stocks.length === 0) { document.getElementById('simQtyBody').innerHTML = ''; document.getElementById('simQtyEmpty').style.display = 'block'; return; }
+            var html = '';
+            function inr(v) { return typeof v === 'number' ? '₹' + v.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : v; }
+            stocks.forEach(function(s, i) {
+                var capped = s.mode === 'CAPITAL-CAPPED';
+                html += '<tr style="border-bottom:1px solid var(--border);">'
+                    + '<td style="padding:6px 12px; color:var(--text-muted);">' + (i + 1) + '</td>'
+                    + '<td style="padding:6px 12px; color:var(--accent-cyan); font-weight:600;">' + s.symbol + '</td>'
+                    + '<td style="padding:6px 12px; text-align:right; color:var(--text-primary);">' + inr(s.ltp) + '</td>'
+                    + '<td style="padding:6px 12px; text-align:right; color:var(--text-secondary);">' + inr(s.atr) + '</td>'
+                    + '<td style="padding:6px 12px; text-align:right; color:var(--text-secondary);">' + inr(s.slDist) + '</td>'
+                    + '<td style="padding:6px 12px; text-align:center; color:var(--text-secondary);">' + s.leverage + 'x</td>'
+                    + '<td style="padding:6px 12px; text-align:right; color:var(--text-secondary);">' + s.riskQty + '</td>'
+                    + '<td style="padding:6px 12px; text-align:right; color:' + (capped ? 'var(--accent-yellow)' : 'var(--text-secondary)') + ';">' + s.capitalCapQty + (capped ? ' *' : '') + '</td>'
+                    + '<td style="padding:6px 12px; text-align:right; color:var(--accent-cyan); font-weight:700;">' + s.qty + '</td>'
+                    + '<td style="padding:6px 12px; text-align:right; color:var(--accent-red);">' + inr(s.riskAmount) + '</td>'
+                    + '<td style="padding:6px 12px; text-align:right; color:var(--text-secondary);">' + inr(s.capitalUsed) + '</td>'
+                    + '</tr>';
+            });
+            document.getElementById('simQtyBody').innerHTML = html;
+        })
+        .catch(function(err) { document.getElementById('simQtyBody').innerHTML = '<tr><td colspan="11" style="padding:30px; text-align:center; color:var(--accent-red);">Failed: ' + err.message + '</td></tr>'; });
+}
+
+function recalcSimQty() {
+    var data = window._simData;
+    if (!data) return;
+    var override = parseFloat(document.getElementById('simQtyOverride').value);
+    if (isNaN(override) || override <= 0) return;
+
+    var isFixed = data.fixedQuantity !== -1;
+    var riskPerTrade = isFixed ? data.riskPerTrade : override;
+    var fixedQty = isFixed ? override : -1;
+    var capitalPerTrade = data.capitalPerTrade;
+    var atrMultiplier = data.atrMultiplier;
+
+    function inr(v) { return typeof v === 'number' ? '\u20B9' + v.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : v; }
+    function inrH(v) { return '\u20B9' + v.toLocaleString('en-IN'); }
+
+    var totalCapital = 0, totalRisk = 0, totalMargin = 0;
+    var html = '';
+    (data.stocks || []).forEach(function(s, i) {
+        var ltp = s.ltp, atr = s.atr, leverage = s.leverage;
+        var slDist = atr * atrMultiplier;
+        var qty, riskQty, capitalCapQty, capped = false, riskAmount, capitalUsed;
+
+        if (fixedQty !== -1) {
+            qty = Math.max(2, fixedQty % 2 !== 0 ? fixedQty + 1 : fixedQty);
+            riskQty = '--'; capitalCapQty = '--';
+        } else if (atr > 0 && ltp > 0) {
+            riskQty = Math.floor(riskPerTrade / slDist);
+            var effectiveCap = (capitalPerTrade * leverage) / 2;
+            capitalCapQty = Math.floor(effectiveCap / ltp);
+            var rawQty = Math.min(riskQty, capitalCapQty);
+            qty = Math.max(2, Math.floor(rawQty / 2) * 2);
+            capped = riskQty > capitalCapQty;
+        } else {
+            qty = 2; riskQty = 0; capitalCapQty = 0; slDist = 0;
+        }
+        riskAmount = slDist * qty;
+        capitalUsed = ltp * qty;
+        totalCapital += capitalUsed;
+        totalRisk += riskAmount;
+        totalMargin += leverage > 0 ? capitalUsed / leverage : capitalUsed;
+
+        html += '<tr style="border-bottom:1px solid var(--border);">'
+            + '<td style="padding:6px 12px; color:var(--text-muted);">' + (i + 1) + '</td>'
+            + '<td style="padding:6px 12px; color:var(--accent-cyan); font-weight:600;">' + s.symbol + '</td>'
+            + '<td style="padding:6px 12px; text-align:right; color:var(--text-primary);">' + inr(ltp) + '</td>'
+            + '<td style="padding:6px 12px; text-align:right; color:var(--text-secondary);">' + inr(atr) + '</td>'
+            + '<td style="padding:6px 12px; text-align:right; color:var(--text-secondary);">' + inr(slDist) + '</td>'
+            + '<td style="padding:6px 12px; text-align:center; color:var(--text-secondary);">' + leverage + 'x</td>'
+            + '<td style="padding:6px 12px; text-align:right; color:var(--text-secondary);">' + riskQty + '</td>'
+            + '<td style="padding:6px 12px; text-align:right; color:' + (capped ? 'var(--accent-yellow)' : 'var(--text-secondary)') + ';">' + capitalCapQty + (capped ? ' *' : '') + '</td>'
+            + '<td style="padding:6px 12px; text-align:right; color:var(--accent-cyan); font-weight:700;">' + qty + '</td>'
+            + '<td style="padding:6px 12px; text-align:right; color:var(--accent-red);">' + inr(riskAmount) + '</td>'
+            + '<td style="padding:6px 12px; text-align:right; color:var(--text-secondary);">' + inr(capitalUsed) + '</td>'
+            + '</tr>';
+    });
+    document.getElementById('simQtyBody').innerHTML = html;
+
+    var sub = 'Risk/Trade: ' + inrH(riskPerTrade) + ' | Capital/Trade: ' + inrH(capitalPerTrade) + ' | ATR Mult: ' + atrMultiplier;
+    if (fixedQty !== -1) sub += ' | Fixed Qty: ' + fixedQty;
+    sub += ' | Total Value: ' + inrH(Math.round(totalCapital)) + ' | Est. Margin: ' + inrH(Math.round(totalMargin)) + ' | Total Risk: ' + inrH(Math.round(totalRisk));
+    document.getElementById('simQtySubtitle').textContent = sub;
+}
+</script>
 
 </body>
 </html>

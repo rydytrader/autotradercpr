@@ -37,6 +37,9 @@ public class PollingService {
     private final OrderEventService   orderEventService;
     private final BreakoutScanner     breakoutScanner;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private LatencyTracker latencyTracker;
+
     // ── per-symbol state ──────────────────────────────────────────────────────
     private final ConcurrentHashMap<String, PositionsDTO> cachedPositions  = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String>       setupBySymbol    = new ConcurrentHashMap<>();
@@ -288,6 +291,7 @@ public class PollingService {
                         positionStateStore.appendDescription(symbol,
                             "[FILL] " + (position.equals("LONG") ? "BUY" : "SELL") + " filled @ "
                             + String.format("%.2f", holder.entryFillPrice) + ". SL recalculated → " + String.format("%.2f", holder.adjustedSl) + ".");
+                        if (latencyTracker != null) latencyTracker.mark(symbol, setup, LatencyTracker.Stage.ORDER_FILLED);
                         eventService.log("[SUCCESS] " + (position.equals("LONG") ? "BUY" : "SELL")
                             + " order filled for " + symbol + " @ " + holder.entryFillPrice + " [ID: " + entry.getId() + "] — placing SL + Target");
                         marketDataService.updateSubscriptions();
