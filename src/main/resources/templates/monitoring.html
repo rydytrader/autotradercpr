@@ -33,18 +33,20 @@
 <div class="app-layout">
 <div class="sidebar">
     <div class="sidebar-brand">
-        <div class="brand-logo">
-            <svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="2.5"/><path d="M10 16h12M16 10v12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <div class="brand-icon">⚡</div>
+        <div class="sidebar-brand-text">
+            <div class="brand-name">TRADER<span>EDGE</span> CPR<div style="font-size:0.65rem;font-weight:500;letter-spacing:0.12em;color:var(--text-secondary);margin-top:4px;opacity:0.7;">AutoTrader BOT</div></div>
         </div>
-        <div class="brand-name">TRADER<span>EDGE</span> CPR<div style="font-size:0.65rem;font-weight:500;letter-spacing:0.12em;color:var(--text-secondary);margin-top:4px;opacity:0.7;">AutoTrader BOT</div></div>
     </div>
     <nav class="sidebar-nav">
+        <div class="sidebar-nav-section">Main</div>
         <a href="/home" class="sidebar-nav-item"><span class="sidebar-nav-icon">⌂</span><span class="sidebar-nav-label">Home</span></a>
         <a href="/scanner" class="sidebar-nav-item"><span class="sidebar-nav-icon">◎</span><span class="sidebar-nav-label">Watchlist</span></a>
         <a href="/positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
         <a href="/trades" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
         <a href="/journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">≡</span><span class="sidebar-nav-label">Journal</span></a>
         <a href="/settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
+        <div class="sidebar-nav-section">Operations</div>
         <a href="/console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
         <a href="/monitoring" class="sidebar-nav-item active"><span class="sidebar-nav-icon">◉</span><span class="sidebar-nav-label">Monitoring</span></a>
     </nav>
@@ -57,6 +59,18 @@
 </div>
 
 <div class="app-main">
+<nav class="navbar">
+    <div class="navbar-inner">
+        <div class="ticker-wrap" id="tickerWrap">
+            <div class="ticker-track" id="tickerTrack"></div>
+        </div>
+        <div class="nav-right">
+            <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
+            <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
+        </div>
+    </div>
+</nav>
+
 <div class="page-wrap">
     <div class="page-header">
         <div>
@@ -118,13 +132,15 @@ function renderMonitoring(d) {
     html += row('Signal Source', sc.signalSource || '--', 'info');
     html += row('Watchlist', sc.watchlistCount || 0, sc.watchlistCount > 0 ? 'ok' : 'err');
     html += row('ATR Loaded', (sc.atrLoaded || 0) + '/' + (sc.watchlistCount || 0), sc.atrLoaded >= sc.watchlistCount ? 'ok' : 'warn');
+    html += '<div style="border-top:1px dashed var(--border);margin:6px 0;"></div>';
     html += row('Candle Checker', sc.candleChecker || '--', cls(sc.candleChecker, 'ALIVE'));
+    if (sc.candleCheckerRestarts > 0) {
+        html += row('Checker Restarts', sc.candleCheckerRestarts + (sc.candleCheckerLastRestart ? ' (last: ' + sc.candleCheckerLastRestart + ')' : ''), 'warn');
+    }
     html += row('Last Scan', (sc.lastScanCount || 0) + '/' + (sc.watchlistCount || 0) + (sc.lastScanTime ? ' @ ' + sc.lastScanTime : ''), sc.lastScanCount >= sc.watchlistCount ? 'ok' : sc.lastScanCount > 0 ? 'warn' : '');
+    html += '<div style="border-top:1px dashed var(--border);margin:6px 0;"></div>';
     html += row('Traded Today', sc.tradedToday || 0, sc.tradedToday > 0 ? 'ok' : '');
     html += row('Filtered Today', sc.filteredToday || 0, sc.filteredToday > 0 ? 'warn' : '');
-    if (sc.watchlistSymbols) {
-        html += '<div class="mon-list">' + (sc.watchlistSymbols || []).join(', ') + '</div>';
-    }
     html += '</div>';
 
     // Trading card

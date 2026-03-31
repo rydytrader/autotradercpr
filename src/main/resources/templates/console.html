@@ -88,12 +88,14 @@
         </div>
     </div>
     <nav class="sidebar-nav">
+        <div class="sidebar-nav-section">Main</div>
         <a href="/home" class="sidebar-nav-item"><span class="sidebar-nav-icon">⌂</span><span class="sidebar-nav-label">Home</span></a>
         <a href="/scanner" class="sidebar-nav-item"><span class="sidebar-nav-icon">◎</span><span class="sidebar-nav-label">Watchlist</span></a>
         <a href="/positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
         <a href="/trades" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
         <a href="/journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">≡</span><span class="sidebar-nav-label">Journal</span></a>
         <a href="/settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
+        <div class="sidebar-nav-section">Operations</div>
         <a href="/console" class="sidebar-nav-item active"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
         <a href="/monitoring" class="sidebar-nav-item"><span class="sidebar-nav-icon">◉</span><span class="sidebar-nav-label">Monitoring</span></a>
     </nav>
@@ -126,8 +128,6 @@
         </div>
     </div>
 
-    <!-- Health Dashboard -->
-    <div id="healthBar" style="display:flex; gap:10px; flex-wrap:wrap; padding:0 0 12px; font-family:var(--font-mono); font-size:0.72rem;"></div>
 
     <div class="console-wrap fade-in">
         <div class="console-toolbar">
@@ -261,53 +261,6 @@
 
     loadLogs();
     setInterval(loadLogs, 5000);
-
-    // ── HEALTH DASHBOARD ──────────────────────
-    function pill(label, value, ok) {
-        var color = ok === true ? '#22c55e' : ok === false ? '#ef4444' : '#f97316';
-        var bg = ok === true ? 'rgba(34,197,94,0.1)' : ok === false ? 'rgba(239,68,68,0.1)' : 'rgba(249,115,22,0.1)';
-        return '<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:6px;border:1px solid ' + color + '30;background:' + bg + ';">'
-            + '<span style="width:6px;height:6px;border-radius:50%;background:' + color + ';"></span>'
-            + '<span style="color:var(--text-muted);">' + label + ':</span>'
-            + '<span style="color:' + color + ';font-weight:600;">' + value + '</span></span>';
-    }
-
-    function group(label, pills) {
-        return '<div style="display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:8px;background:var(--bg-card);border:1px solid var(--border);">'
-            + '<span style="color:var(--text-muted);font-weight:600;font-size:0.68rem;margin-right:2px;">' + label + '</span>'
-            + pills + '</div>';
-    }
-
-    function fetchHealth() {
-        fetch('/api/health').then(function(r) { return r.json(); }).then(function(h) {
-            var conn = '';
-            conn += pill('Data WS', h.dataWs, h.dataWs === 'CONNECTED');
-            conn += pill('Order WS', h.orderWs, h.orderWs === 'CONNECTED');
-            conn += pill('Status', h.status, h.status === 'WS CONNECTED');
-            conn += pill('SSE', h.sseClients, h.sseClients > 0);
-
-            var scanner = '';
-            scanner += pill('Watchlist', h.watchlistCount, h.watchlistCount > 0);
-            scanner += pill('ATR', h.atrLoaded + '/' + h.watchlistCount, h.atrLoaded >= h.watchlistCount);
-            scanner += pill('Candle Checker', h.candleChecker, h.candleChecker === 'ALIVE');
-            var scanLabel = h.lastScanCount + '/' + h.watchlistCount + (h.lastScanTime ? ' @ ' + h.lastScanTime : '');
-            scanner += pill('Last Scan', scanLabel, h.lastScanCount >= h.watchlistCount);
-
-            var trading = '';
-            trading += pill('Positions', h.openPositions, null);
-            trading += pill('OCO', h.ocoMonitors, h.openPositions > 0 ? h.ocoMonitors >= h.openPositions : null);
-
-            var latency = '';
-            var avg = h.avgLatency || {};
-            latency += pill('Signal→Fill', avg.signalToFill || '--', null);
-            latency += pill('Order→Fill', avg.orderToFill || '--', null);
-
-            document.getElementById('healthBar').innerHTML = group('CONNECTION', conn) + group('SCANNER', scanner) + group('TRADING', trading) + group('LATENCY', latency);
-        }).catch(function() {});
-    }
-
-    fetchHealth();
-    setInterval(fetchHealth, 5000);
 
     // ── CONNECTION STATUS ──────────────────────
     function updateConnectionStatus() {

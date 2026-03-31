@@ -73,15 +73,28 @@ public class CandleAggregator {
      * Start the candle close scheduler. Call after market data service starts.
      */
     private ScheduledFuture<?> boundaryCheckerFuture;
+    private volatile String lastRestartTime = "";
+    private volatile int restartCount = 0;
 
     public void start() {
-        if (scheduler != null && !scheduler.isShutdown()) scheduler.shutdownNow();
+        boolean isRestart = scheduler != null;
+        if (scheduler != null && !scheduler.isShutdown()) {
+            scheduler.shutdownNow();
+        }
+        if (isRestart) {
+            restartCount++;
+            lastRestartTime = java.time.ZonedDateTime.now(IST)
+                .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
+        }
         scheduler = Executors.newSingleThreadScheduledExecutor();
 
         // Schedule candle check every second — only finalizes at clock boundaries
         boundaryCheckerFuture = scheduler.scheduleAtFixedRate(this::checkCandleBoundary, 1, 1, TimeUnit.SECONDS);
         log.info("[CandleAggregator] Started with {}min timeframe", timeframeMinutes);
     }
+
+    public String getLastRestartTime() { return lastRestartTime; }
+    public int getRestartCount() { return restartCount; }
 
     public int getLastCycleProcessed() { return lastCycleProcessed; }
     public String getLastCycleTime() { return lastCycleTime; }
