@@ -499,7 +499,10 @@
         var grid = document.getElementById('scannerGrid');
         var filtered = allData.filter(function(d) {
             if (symbolFilter && d.shortName !== symbolFilter) return false;
-            if (cprFilter !== 'all' && d.cprType !== cprFilter) return false;
+            if (cprFilter !== 'all') {
+                var types = d.cprTypes || [d.cprType];
+                if (types.indexOf(cprFilter) === -1) return false;
+            }
             if (probFilter && d.probability !== probFilter) return false;
             if (weeklyFilter && !d.weeklyNarrow) return false;
             if (signalFilter && (!d.lastSignal || d.lastSignal.status !== 'TRADED')) return false;
@@ -608,7 +611,7 @@
             + '<div class="scan-card-header">'
             + '  <span class="scan-symbol">' + d.shortName + '</span>'
             + '  <span style="display:flex; gap:4px;">'
-            + '    <span class="scan-badge ' + d.cprType.toLowerCase() + '">' + d.cprType + '</span>'
+            + ((d.cprTypes || [d.cprType]).map(function(t) { return '<span class="scan-badge ' + t.toLowerCase() + '">' + t + '</span>'; }).join(''))
             + (d.weeklyNarrow ? '<span class="scan-badge weekly-narrow">WEEKLY NARROW</span>' : '')
             + '  </span>'
             + '</div>'

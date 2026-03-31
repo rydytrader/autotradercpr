@@ -652,7 +652,24 @@
             subEl.style.color = 'var(--accent-red)';
         }
     }
-    // ── VOICE ALERTS ──────────────────────────────────────────────────────────
+    // ── TRADE NOTIFICATIONS ─────────────────────────────────────────────────
+    // Request browser notification permission
+    if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+    }
+
+    function showTradeNotification(title, body) {
+        if ('Notification' in window && Notification.permission === 'granted') {
+            var n = new Notification('TraderEdge CPR - ' + title, {
+                body: body,
+                icon: '/favicon.ico',
+                tag: 'trade-' + Date.now(),
+                requireInteraction: true
+            });
+            setTimeout(function() { n.close(); }, 15000);
+        }
+    }
+
     var knownPositionSymbols = new Set();
     // Initialize with current positions
     allPositions.forEach(function(p) { knownPositionSymbols.add(p.symbol); });
@@ -662,12 +679,15 @@
         var currentSymbols = new Set();
         positions.forEach(function(p) { currentSymbols.add(p.symbol); });
 
-        // New position detected
+        // New position detected — show browser notification
         currentSymbols.forEach(function(sym) {
             if (!knownPositionSymbols.has(sym)) {
                 var pos = positions.find(function(p) { return p.symbol === sym; });
                 var name = sym.replace('NSE:', '').replace('-EQ', '');
-
+                var side = pos ? pos.side : '';
+                var price = pos ? pos.avgPrice : 0;
+                var time = new Date().toLocaleTimeString('en-IN', {hour12: false, hour: '2-digit', minute: '2-digit'});
+                showTradeNotification(side + ' ' + name, 'Entry @ ' + price.toFixed(2) + ' | ' + time);
             }
         });
 
@@ -675,10 +695,18 @@
         knownPositionSymbols.forEach(function(sym) {
             if (!currentSymbols.has(sym)) {
                 var name = sym.replace('NSE:', '').replace('-EQ', '');
-                // Try to get exit reason from trades API
+                // Try to get exit reason and P&L from trades API
                 fetch('/api/trades').then(function(r) { return r.json(); }).then(function(trades) {
-                    // Position closed — trade recorded in history
-                }).catch(function() {});
+                    var trade = trades.find(function(t) { return t.symbol === sym; });
+                    if (trade) {
+                        var pnl = trade.pnl || 0;
+                        var pnlStr = (pnl >= 0 ? '+' : '') + pnl.toFixed(2);
+                        var reason = trade.exitReason || 'CLOSED';
+                        showTradeNotification(name + ' ' + reason, 'P&L: ' + pnlStr + ' | Exit @ ' + (trade.exitPrice || 0).toFixed(2));
+                    } else {
+                        showTradeNotification(name + ' CLOSED', 'Position closed');
+                    }
+                }).catch(function() { showTradeNotification(name + ' CLOSED', 'Position closed'); });
             }
         });
 

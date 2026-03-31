@@ -26,7 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * and feeds signals into the existing trading pipeline.
  */
 @Service
-public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
+public class BreakoutScanner implements CandleAggregator.CandleCloseListener, CandleAggregator.DailyResetListener {
 
     private static final Logger log = LoggerFactory.getLogger(BreakoutScanner.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
@@ -416,6 +416,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener {
         lastSignal.clear();
         signalHistory.clear();
         saveState();
+    }
+
+    @Override
+    public void onDailyReset() {
+        log.info("[Scanner] Daily reset — clearing signals, broken levels, signal history");
+        clearAll();
+        eventService.log("[INFO] Scanner daily reset — signals and broken levels cleared for new trading day");
     }
 
     // ── Persistence ──────────────────────────────────────────────────────────

@@ -47,29 +47,45 @@ public class ScannerController {
         List<Map<String, Object>> result = new ArrayList<>();
         Set<String> positionSymbols = PositionManager.getAllSymbols();
 
-        // Build set of weekly narrow CPR symbols for cross-referencing
+        // Build sets for cross-referencing
         Set<String> weeklyNarrowSymbols = new HashSet<>();
         for (CprLevels cpr : bhavcopyService.getWeeklyNarrowCprStocks()) {
             weeklyNarrowSymbols.add(cpr.getSymbol());
         }
-
-        // Collect narrow CPR stocks
+        Set<String> narrowSymbols = new HashSet<>();
         for (CprLevels cpr : bhavcopyService.getNarrowCprStocks()) {
-            String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
-            Map<String, Object> card = buildCard(fyers, cpr, "NARROW", positionSymbols);
-            card.put("weeklyNarrow", weeklyNarrowSymbols.contains(cpr.getSymbol()));
-            result.add(card);
+            narrowSymbols.add(cpr.getSymbol());
+        }
+        Set<String> insideSymbols = new HashSet<>();
+        for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
+            insideSymbols.add(cpr.getSymbol());
         }
 
-        // Collect inside CPR stocks (avoid duplicates)
+        // Collect narrow CPR stocks (mark if also inside)
         Set<String> seen = new HashSet<>();
-        for (var m : result) seen.add(m.get("symbol").toString());
+        for (CprLevels cpr : bhavcopyService.getNarrowCprStocks()) {
+            String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
+            List<String> types = new ArrayList<>();
+            types.add("NARROW");
+            if (insideSymbols.contains(cpr.getSymbol())) types.add("INSIDE");
+            Map<String, Object> card = buildCard(fyers, cpr, "NARROW", positionSymbols);
+            card.put("cprTypes", types);
+            card.put("weeklyNarrow", weeklyNarrowSymbols.contains(cpr.getSymbol()));
+            result.add(card);
+            seen.add(fyers);
+        }
+
+        // Collect inside-only CPR stocks
         for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
             String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
             if (!seen.contains(fyers)) {
+                List<String> types = new ArrayList<>();
+                types.add("INSIDE");
                 Map<String, Object> card = buildCard(fyers, cpr, "INSIDE", positionSymbols);
+                card.put("cprTypes", types);
                 card.put("weeklyNarrow", weeklyNarrowSymbols.contains(cpr.getSymbol()));
                 result.add(card);
+                seen.add(fyers);
             }
         }
 

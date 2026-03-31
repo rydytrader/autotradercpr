@@ -171,15 +171,35 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
      * Calculate ATR using Simple Moving Average of True Range.
      */
     private double calculateAtr(List<CandleAggregator.CandleBar> candles, int period) {
-        if (candles.size() < period) return 0;
+        if (candles.size() < period + 1) return 0; // need period+1 for Wilder's (first ATR is SMA)
 
+        // First ATR = SMA of first 'period' true ranges
         double sum = 0;
         int start = candles.size() - period;
         for (int i = start; i < candles.size(); i++) {
             CandleAggregator.CandleBar prev = i > 0 ? candles.get(i - 1) : null;
             sum += candles.get(i).trueRange(prev);
         }
-        return sum / period;
+        double atr = sum / period;
+
+        // Wilder's smoothing for remaining candles: ATR = ((prevATR × (period-1)) + currentTR) / period
+        // Since we use the last 'period' candles, apply smoothing from start to end
+        // Re-calculate using full available history for proper smoothing
+        if (candles.size() > period + 1) {
+            // Seed with SMA of first 'period' true ranges
+            sum = 0;
+            for (int i = 1; i <= period; i++) {
+                sum += candles.get(i).trueRange(candles.get(i - 1));
+            }
+            atr = sum / period;
+            // Apply Wilder's smoothing for the rest
+            for (int i = period + 1; i < candles.size(); i++) {
+                double tr = candles.get(i).trueRange(candles.get(i - 1));
+                atr = ((atr * (period - 1)) + tr) / period;
+            }
+        }
+
+        return atr;
     }
 
     // ── CandleCloseListener — update ATR on each new candle ──────────────────

@@ -49,6 +49,9 @@ public class CandleAggregator {
     private volatile int lastCycleProcessed = 0;
     private volatile String lastCycleTime = "";
 
+    // Daily reset tracker
+    private volatile String currentTradingDate = "";
+
     private volatile int timeframeMinutes = 15;
 
     // Scheduler for clock-boundary candle finalization
@@ -179,10 +182,18 @@ public class CandleAggregator {
      */
     private void checkCandleBoundary() {
         try {
+            // Daily reset: detect new trading day and clear stale data
+            String today = ZonedDateTime.now(IST).toLocalDate().toString();
+            if (!today.equals(currentTradingDate) && !currentTradingDate.isEmpty()) {
+                log.info("[CandleAggregator] New trading day detected ({} → {}), clearing daily state", currentTradingDate, today);
+                clearDaily();
+            }
+            currentTradingDate = today;
+
             LocalTime now = ZonedDateTime.now(IST).toLocalTime();
             long nowMinute = now.getHour() * 60L + now.getMinute();
-            // Skip before market open
-            if (nowMinute < 555) return; // 9:15 AM
+            // Only process during market hours (9:15 AM to 3:30 PM)
+            if (nowMinute < 555 || nowMinute > 930) return; // 9:15 AM to 15:30
             long currentStart = getCandleStartMinute(now);
 
             int processed = 0;
@@ -336,6 +347,33 @@ public class CandleAggregator {
             count++;
         }
         return count > 0 ? (double) sum / count : 0;
+    }
+
+    /** Clear daily state for new trading day (called automatically on date change). */
+    private void clearDaily() {
+        currentCandles.clear();
+        dayOpen.clear();
+        latestVwap.clear();
+        latestLtp.clear();
+        latestChangePct.clear();
+        lastCumulativeVol.clear();
+        lastCycleProcessed = 0;
+        lastCycleTime = "";
+        // Notify listeners to reset their daily state
+        for (CandleCloseListener listener : listeners) {
+            try {
+                if (listener instanceof DailyResetListener) {
+                    ((DailyResetListener) listener).onDailyReset();
+                }
+            } catch (Exception e) {
+                log.error("[CandleAggregator] Daily reset error for listener: {}", e.getMessage());
+            }
+        }
+    }
+
+    /** Interface for listeners that need daily reset notification. */
+    public interface DailyResetListener {
+        void onDailyReset();
     }
 
     /** Clear all state for end of day. */
