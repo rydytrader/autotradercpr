@@ -261,12 +261,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (close > cprTop
                 && ((open < pp || open < tc || open < bc || low < pp || low < tc || low < bc) || (low < cprBot && open > cprBot && close > cprTop))
                 && !broken.contains("BUY_ABOVE_CPR")) return "BUY_ABOVE_CPR";
-        if (close > s1 && close > pl
-                && ((open < s1 || open < pl || low < s1 || low < pl) || (low < Math.min(s1, pl) && open > Math.min(s1, pl)))
-                && !broken.contains("BUY_ABOVE_S1_PDL")) {
-            if (!riskSettings.isEnableLpt()) { eventService.log("[SCANNER] BUY_ABOVE_S1_PDL for " + levels.getSymbol() + " — skipped, LPT disabled"); }
-            else return "BUY_ABOVE_S1_PDL";
-        }
+        // BUY_ABOVE_S1_PDL removed — counter-trend buy below CPR is too risky
 
         return null;
     }
@@ -308,12 +303,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (close < cprBot
                 && ((open > pp || open > tc || open > bc || high > pp || high > tc || high > bc) || (high > cprTop && open < cprTop && close < cprBot))
                 && !broken.contains("SELL_BELOW_CPR")) return "SELL_BELOW_CPR";
-        if (close < r1 && close < ph
-                && ((open > r1 || open > ph || high > r1 || high > ph) || (high > Math.max(r1, ph) && open < Math.max(r1, ph)))
-                && !broken.contains("SELL_BELOW_R1_PDH")) {
-            if (!riskSettings.isEnableLpt()) { eventService.log("[SCANNER] SELL_BELOW_R1_PDH for " + levels.getSymbol() + " — skipped, LPT disabled"); }
-            else return "SELL_BELOW_R1_PDH";
-        }
+        // SELL_BELOW_R1_PDH removed — counter-trend sell above CPR is too risky
 
         return null;
     }
