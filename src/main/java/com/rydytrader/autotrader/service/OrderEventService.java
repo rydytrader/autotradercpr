@@ -47,6 +47,9 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     private volatile boolean running = false;
     private volatile boolean connected = false;
     private volatile int reconnectAttempts = 0;
+    private volatile String lastConnectTime = "";
+    private volatile String lastDisconnectTime = "";
+    private volatile int reconnectCountToday = 0;
     private static final int MAX_RECONNECT = 10;
 
     // ── Order tracking ──────────────────────────────────────────────────────────
@@ -316,6 +319,8 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     public void onWsConnected() {
         connected = true;
         reconnectAttempts = 0;
+        lastConnectTime = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata"))
+            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
         log.info("[OrderEventSvc] Order WebSocket connected");
         eventService.log("[INFO] Order Update WebSocket connected — real-time fill detection active");
         // Hand off any polling OCO monitors to WebSocket tracking
@@ -327,12 +332,21 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     @Override
     public void onWsDisconnected(String reason) {
         connected = false;
+        lastDisconnectTime = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata"))
+            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
+        reconnectCountToday++;
         log.info("[OrderEventSvc] Order WebSocket disconnected: {}", reason);
         if (running) {
             eventService.log("[WARNING] Order Update WebSocket disconnected — falling back to polling");
             scheduleReconnect();
         }
     }
+
+    // Monitoring accessors
+    public String getLastConnectTime() { return lastConnectTime; }
+    public String getLastDisconnectTime() { return lastDisconnectTime; }
+    public int getReconnectCountToday() { return reconnectCountToday; }
+    public int getTrackedOcoCount() { return (int) trackedOcoOrders.values().stream().filter(c -> !c.handled).count(); }
 
     @Override
     public void onOrderEvent(JsonNode order) {

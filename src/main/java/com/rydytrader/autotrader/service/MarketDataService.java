@@ -83,6 +83,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
     private volatile boolean running = false;
     private volatile boolean dirty = false;
     private volatile int reconnectAttempts = 0;
+
+    // Monitoring: connection timing
+    private volatile String lastConnectTime = "";
+    private volatile String lastDisconnectTime = "";
+    private volatile int reconnectCountToday = 0;
+    private volatile long connectSinceMs = 0;
     private static final int MAX_RECONNECT = 5;
     private static final int CHANNEL_NUM = 11;
 
@@ -376,15 +382,27 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
     @Override
     public void onConnected() {
         reconnectAttempts = 0;
+        lastConnectTime = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata"))
+            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
+        connectSinceMs = System.currentTimeMillis();
         log.info("[MarketData] WebSocket fully connected and subscribed");
     }
 
     @Override
     public void onDisconnected(String reason) {
+        lastDisconnectTime = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata"))
+            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
+        reconnectCountToday++;
+        connectSinceMs = 0;
         if (running) {
             scheduleReconnect();
         }
     }
+
+    // Monitoring accessors
+    public String getLastConnectTime() { return lastConnectTime; }
+    public String getLastDisconnectTime() { return lastDisconnectTime; }
+    public int getReconnectCountToday() { return reconnectCountToday; }
 
     @Override
     public void onAuthResult(boolean success, int ackCount) {

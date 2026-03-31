@@ -18,6 +18,7 @@ import com.rydytrader.autotrader.dto.ProcessedSignal;
 import com.rydytrader.autotrader.manager.PositionManager;
 import com.rydytrader.autotrader.service.EventService;
 import com.rydytrader.autotrader.service.AtrService;
+import com.rydytrader.autotrader.service.BreakoutScanner;
 import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.service.LatencyTracker;
 import com.rydytrader.autotrader.service.MarketDataService;
@@ -48,6 +49,7 @@ public class TradingController {
     private final CandleAggregator    candleAggregator;
     private final AtrService          atrService;
     private final LatencyTracker      latencyTracker;
+    private final BreakoutScanner     breakoutScanner;
 
     public TradingController(PollingService pollingService,
                               OrderService orderService,
@@ -61,7 +63,8 @@ public class TradingController {
                               OrderEventService orderEventService,
                               CandleAggregator candleAggregator,
                               AtrService atrService,
-                              LatencyTracker latencyTracker) {
+                              LatencyTracker latencyTracker,
+                              BreakoutScanner breakoutScanner) {
         this.pollingService      = pollingService;
         this.orderService        = orderService;
         this.eventService        = eventService;
@@ -75,6 +78,7 @@ public class TradingController {
         this.candleAggregator    = candleAggregator;
         this.atrService          = atrService;
         this.latencyTracker      = latencyTracker;
+        this.breakoutScanner     = breakoutScanner;
     }
 
     // ── PLACE ORDER ───────────────────────────────────────────────────────────
@@ -296,8 +300,8 @@ public class TradingController {
 
         // Candle boundary checker
         health.put("candleChecker", candleAggregator.isBoundaryCheckerAlive() ? "ALIVE" : "DEAD");
-        health.put("lastCycleProcessed", candleAggregator.getLastCycleProcessed());
-        health.put("lastCycleTime", candleAggregator.getLastCycleTime());
+        health.put("lastScanCount", breakoutScanner.getLastScanCount());
+        health.put("lastScanTime", breakoutScanner.getLastScanTime());
 
         // Scanner
         health.put("signalSource", riskSettings.getSignalSource());
@@ -320,9 +324,85 @@ public class TradingController {
 
         // Latency
         health.put("avgLatency", latencyTracker.getAverages());
-        health.put("recentLatency", latencyTracker.getCompleted());
 
         return health;
+    }
+
+    @GetMapping("/api/monitoring")
+    public Map<String, Object> getMonitoring() {
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+
+        // WebSocket Status
+        Map<String, Object> ws = new java.util.LinkedHashMap<>();
+        ws.put("dataWs", marketDataService.isConnected() ? "CONNECTED" : marketDataService.isReconnecting() ? "RECONNECTING" : "DISCONNECTED");
+        ws.put("dataLastConnect", marketDataService.getLastConnectTime());
+        ws.put("dataLastDisconnect", marketDataService.getLastDisconnectTime());
+        ws.put("dataReconnects", marketDataService.getReconnectCountToday());
+        ws.put("orderWs", orderEventService.isConnected() ? "CONNECTED" : orderEventService.isReconnecting() ? "RECONNECTING" : "DISCONNECTED");
+        ws.put("orderLastConnect", orderEventService.getLastConnectTime());
+        ws.put("orderLastDisconnect", orderEventService.getLastDisconnectTime());
+        ws.put("orderReconnects", orderEventService.getReconnectCountToday());
+        ws.put("sseClients", marketDataService.getEmitterCount());
+        m.put("websocket", ws);
+
+        // Scanner
+        Map<String, Object> scanner = new java.util.LinkedHashMap<>();
+        scanner.put("signalSource", riskSettings.getSignalSource());
+        scanner.put("watchlistCount", marketDataService.getWatchlist().size());
+        scanner.put("watchlistSymbols", marketDataService.getWatchlist().stream()
+            .map(s -> s.replaceAll("^(NSE|BSE):", "").replaceAll("-EQ$", ""))
+            .collect(java.util.stream.Collectors.toList()));
+        scanner.put("atrLoaded", atrService.getAllAtr().size());
+        scanner.put("candleChecker", candleAggregator.isBoundaryCheckerAlive() ? "ALIVE" : "DEAD");
+        scanner.put("lastScanCount", breakoutScanner.getLastScanCount());
+        scanner.put("lastScanTime", breakoutScanner.getLastScanTime());
+        scanner.put("tradedToday", breakoutScanner.getTradedCountToday());
+        scanner.put("filteredToday", breakoutScanner.getFilteredCountToday());
+        m.put("scanner", scanner);
+
+        // Positions & OCO
+        Map<String, Object> trading = new java.util.LinkedHashMap<>();
+        trading.put("openPositions", pollingService.getOpenPositionCount());
+        trading.put("ocoPolling", pollingService.getOcoMonitorCount());
+        trading.put("ocoPollingSymbols", pollingService.getOcoMonitoredSymbols());
+        trading.put("ocoWebSocket", orderEventService.getTrackedOcoCount());
+        // Risk exposure
+        double openRisk = 0, consumedRisk = 0;
+        for (String sym : com.rydytrader.autotrader.manager.PositionManager.getAllSymbols()) {
+            Map<String, Object> state = positionStateStore.load(sym);
+            if (state != null && state.containsKey("slPrice") && state.containsKey("avgPrice")) {
+                double sl = Double.parseDouble(state.get("slPrice").toString());
+                double avg = Double.parseDouble(state.get("avgPrice").toString());
+                int qty = Integer.parseInt(state.get("qty").toString());
+                String side = state.containsKey("side") ? state.get("side").toString() : "";
+                if ("LONG".equals(side) && sl < avg) openRisk += qty * (avg - sl);
+                else if ("SHORT".equals(side) && sl > avg) openRisk += qty * (sl - avg);
+            }
+        }
+        consumedRisk = tradeHistoryService.getTrades().stream()
+            .filter(t -> t.getNetPnl() < 0).mapToDouble(t -> Math.abs(t.getNetPnl())).sum();
+        double maxLoss = riskSettings.getMaxDailyLoss();
+        trading.put("openRisk", Math.round(openRisk * 100.0) / 100.0);
+        trading.put("consumedRisk", Math.round(consumedRisk * 100.0) / 100.0);
+        trading.put("maxDailyLoss", Math.round(maxLoss * 100.0) / 100.0);
+        trading.put("remainingBudget", Math.round((maxLoss - openRisk - consumedRisk) * 100.0) / 100.0);
+        m.put("trading", trading);
+
+        // Latency
+        Map<String, Object> latency = new java.util.LinkedHashMap<>();
+        latency.put("averages", latencyTracker.getAverages());
+        latency.put("recent", latencyTracker.getCompleted());
+        m.put("latency", latency);
+
+        // System
+        Map<String, Object> system = new java.util.LinkedHashMap<>();
+        long uptimeMs = java.lang.management.ManagementFactory.getRuntimeMXBean().getUptime();
+        long uptimeSec = uptimeMs / 1000;
+        system.put("uptime", String.format("%dh %dm %ds", uptimeSec / 3600, (uptimeSec % 3600) / 60, uptimeSec % 60));
+        system.put("status", pollingService.getConnectionStatus());
+        m.put("system", system);
+
+        return m;
     }
 
 

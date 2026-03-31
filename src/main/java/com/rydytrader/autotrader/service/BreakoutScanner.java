@@ -59,6 +59,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     // Watchlist symbols (set by MarketDataService)
     private volatile List<String> watchlistSymbols = Collections.emptyList();
 
+    // Last scan cycle stats
+    private volatile int lastScanCount = 0;
+    private volatile String lastScanTime = "";
+    private volatile long lastScanBoundary = 0;
+    private volatile int tradedCountToday = 0;
+    private volatile int filteredCountToday = 0;
+
     public BreakoutScanner(BhavcopyService bhavcopyService,
                            AtrService atrService,
                            WeeklyCprService weeklyCprService,
@@ -90,6 +97,14 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
         // Skip candles that started before market open
         if (completedCandle.startMinute < MarketHolidayService.MARKET_OPEN_MINUTE) return;
+
+        // Track scan cycle — reset counter when boundary changes
+        if (completedCandle.startMinute != lastScanBoundary) {
+            lastScanBoundary = completedCandle.startMinute;
+            lastScanCount = 0;
+        }
+        lastScanCount++;
+        lastScanTime = ZonedDateTime.now(IST).toLocalTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"));
 
         try {
             log.info("[Scanner] Candle close: {} start={} O={} H={} L={} C={}",
@@ -350,6 +365,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             info.time = timeStr;
             boolean filtered = status.contains("failed") || status.contains("filtered") || status.contains("ignored");
             info.status = filtered ? "FILTERED" : "TRADED";
+            if (filtered) filteredCountToday++; else tradedCountToday++;
             info.detail = status;
             lastSignal.put(fyersSymbol, info);
             signalHistory.computeIfAbsent(fyersSymbol, k -> Collections.synchronizedList(new ArrayList<>())).add(info);
@@ -402,6 +418,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         return brokenLevels.getOrDefault(symbol, Collections.emptySet());
     }
 
+    public int getLastScanCount() { return lastScanCount; }
+    public String getLastScanTime() { return lastScanTime; }
+    public int getTradedCountToday() { return tradedCountToday; }
+    public int getFilteredCountToday() { return filteredCountToday; }
+
     public SignalInfo getLastSignal(String symbol) {
         return lastSignal.get(symbol);
     }
@@ -419,6 +440,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         brokenLevels.clear();
         lastSignal.clear();
         signalHistory.clear();
+        tradedCountToday = 0;
+        filteredCountToday = 0;
+        lastScanCount = 0;
+        lastScanTime = "";
+        lastScanBoundary = 0;
         saveState();
     }
 

@@ -111,6 +111,12 @@ public class ViewController {
         return "console";
     }
 
+    @GetMapping("/monitoring")
+    public String monitoring() {
+        if (!tokenStore.isTokenAvailable()) return "redirect:/";
+        return "monitoring";
+    }
+
 
 
     @GetMapping("/settings")

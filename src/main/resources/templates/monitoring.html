@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TraderEdge CPR - Monitoring</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/shared.css?v=4">
+    <style>
+        .mon-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 0; }
+        .mon-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; box-shadow: var(--card-shadow); }
+        .mon-card-title { font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+        .mon-row { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; font-family: var(--font-mono); font-size: 0.78rem; }
+        .mon-label { color: var(--text-muted); }
+        .mon-value { color: var(--text-primary); font-weight: 600; }
+        .mon-value.ok { color: var(--accent-green); }
+        .mon-value.warn { color: #f97316; }
+        .mon-value.err { color: var(--accent-red); }
+        .mon-value.info { color: var(--accent-cyan); }
+        .mon-list { font-size: 0.7rem; color: var(--text-secondary); margin-top: 4px; word-break: break-all; }
+        .mon-card-full { grid-column: 1 / -1; }
+        .lat-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 0.72rem; margin-top: 8px; }
+        .lat-table th { padding: 6px 8px; text-align: right; color: var(--text-muted); font-weight: 600; border-bottom: 1px solid var(--border); }
+        .lat-table th:first-child { text-align: left; }
+        .lat-table td { padding: 4px 8px; text-align: right; color: var(--text-secondary); }
+        .lat-table td:first-child { text-align: left; color: var(--accent-cyan); font-weight: 600; }
+    </style>
+</head>
+<body>
+
+<div class="app-layout">
+<div class="sidebar">
+    <div class="sidebar-brand">
+        <div class="brand-logo">
+            <svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="2.5"/><path d="M10 16h12M16 10v12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </div>
+        <div class="brand-name">TRADER<span>EDGE</span> CPR<div style="font-size:0.65rem;font-weight:500;letter-spacing:0.12em;color:var(--text-secondary);margin-top:4px;opacity:0.7;">AutoTrader BOT</div></div>
+    </div>
+    <nav class="sidebar-nav">
+        <a href="/home" class="sidebar-nav-item"><span class="sidebar-nav-icon">⌂</span><span class="sidebar-nav-label">Home</span></a>
+        <a href="/scanner" class="sidebar-nav-item"><span class="sidebar-nav-icon">◎</span><span class="sidebar-nav-label">Watchlist</span></a>
+        <a href="/positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
+        <a href="/trades" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
+        <a href="/journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">≡</span><span class="sidebar-nav-label">Journal</span></a>
+        <a href="/settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
+        <a href="/console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
+        <a href="/monitoring" class="sidebar-nav-item active"><span class="sidebar-nav-icon">◉</span><span class="sidebar-nav-label">Monitoring</span></a>
+    </nav>
+    <div class="sidebar-footer">
+        <div class="status-pill">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="connectionStatus" style="color: var(--text-secondary);">Checking...</span>
+        </div>
+    </div>
+</div>
+
+<div class="app-main">
+<div class="page-wrap">
+    <div class="page-header">
+        <div>
+            <div class="page-title">System Monitoring</div>
+            <div class="page-subtitle">Real-time health, latency &amp; component status</div>
+        </div>
+        <div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted);" id="lastRefresh"></div>
+    </div>
+
+    <div class="mon-grid" id="monGrid">
+        <div style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.85rem;grid-column:1/-1;text-align:center;padding:60px 0;">Loading...</div>
+    </div>
+</div>
+</div>
+</div>
+
+<script src="/js/common.js"></script>
+<script src="/js/ticker.js"></script>
+<script>
+function cls(val, goodVal) {
+    if (val === goodVal) return 'ok';
+    if (val === 'RECONNECTING' || val === 'DEAD') return 'warn';
+    if (val === 'DISCONNECTED') return 'err';
+    return '';
+}
+
+function row(label, value, cssClass) {
+    return '<div class="mon-row"><span class="mon-label">' + label + '</span><span class="mon-value ' + (cssClass || '') + '">' + value + '</span></div>';
+}
+
+function renderMonitoring(d) {
+    var ws = d.websocket || {};
+    var sc = d.scanner || {};
+    var tr = d.trading || {};
+    var lt = d.latency || {};
+    var sys = d.system || {};
+
+    var html = '';
+
+    // WebSocket card
+    html += '<div class="mon-card">';
+    html += '<div class="mon-card-title">WebSocket Status</div>';
+    html += row('Data WS', ws.dataWs, cls(ws.dataWs, 'CONNECTED'));
+    html += row('Last Connect', ws.dataLastConnect || '--', 'info');
+    html += row('Last Disconnect', ws.dataLastDisconnect || '--', ws.dataLastDisconnect ? 'warn' : '');
+    html += row('Reconnects Today', ws.dataReconnects || 0, ws.dataReconnects > 0 ? 'warn' : 'ok');
+    html += '<div style="border-top:1px dashed var(--border);margin:6px 0;"></div>';
+    html += row('Order WS', ws.orderWs, cls(ws.orderWs, 'CONNECTED'));
+    html += row('Last Connect', ws.orderLastConnect || '--', 'info');
+    html += row('Last Disconnect', ws.orderLastDisconnect || '--', ws.orderLastDisconnect ? 'warn' : '');
+    html += row('Reconnects Today', ws.orderReconnects || 0, ws.orderReconnects > 0 ? 'warn' : 'ok');
+    html += '<div style="border-top:1px dashed var(--border);margin:6px 0;"></div>';
+    html += row('SSE Clients', ws.sseClients || 0, 'info');
+    html += '</div>';
+
+    // Scanner card
+    html += '<div class="mon-card">';
+    html += '<div class="mon-card-title">Scanner</div>';
+    html += row('Signal Source', sc.signalSource || '--', 'info');
+    html += row('Watchlist', sc.watchlistCount || 0, sc.watchlistCount > 0 ? 'ok' : 'err');
+    html += row('ATR Loaded', (sc.atrLoaded || 0) + '/' + (sc.watchlistCount || 0), sc.atrLoaded >= sc.watchlistCount ? 'ok' : 'warn');
+    html += row('Candle Checker', sc.candleChecker || '--', cls(sc.candleChecker, 'ALIVE'));
+    html += row('Last Scan', (sc.lastScanCount || 0) + '/' + (sc.watchlistCount || 0) + (sc.lastScanTime ? ' @ ' + sc.lastScanTime : ''), sc.lastScanCount >= sc.watchlistCount ? 'ok' : sc.lastScanCount > 0 ? 'warn' : '');
+    html += row('Traded Today', sc.tradedToday || 0, sc.tradedToday > 0 ? 'ok' : '');
+    html += row('Filtered Today', sc.filteredToday || 0, sc.filteredToday > 0 ? 'warn' : '');
+    if (sc.watchlistSymbols) {
+        html += '<div class="mon-list">' + (sc.watchlistSymbols || []).join(', ') + '</div>';
+    }
+    html += '</div>';
+
+    // Trading card
+    html += '<div class="mon-card">';
+    html += '<div class="mon-card-title">Positions &amp; Risk</div>';
+    html += row('Open Positions', tr.openPositions || 0, tr.openPositions > 0 ? 'info' : '');
+    html += row('OCO (Polling)', tr.ocoPolling || 0, '');
+    html += row('OCO (WebSocket)', tr.ocoWebSocket || 0, '');
+    html += '<div style="border-top:1px dashed var(--border);margin:6px 0;"></div>';
+    html += row('Open Risk', '\u20B9' + (tr.openRisk || 0).toLocaleString('en-IN'), tr.openRisk > 0 ? 'warn' : 'ok');
+    html += row('Consumed Risk', '\u20B9' + (tr.consumedRisk || 0).toLocaleString('en-IN'), tr.consumedRisk > 0 ? 'err' : 'ok');
+    html += row('Max Daily Loss', '\u20B9' + (tr.maxDailyLoss || 0).toLocaleString('en-IN'), '');
+    html += row('Remaining Budget', '\u20B9' + (tr.remainingBudget || 0).toLocaleString('en-IN'), tr.remainingBudget > 0 ? 'ok' : 'err');
+    if (tr.ocoPollingSymbols && tr.ocoPollingSymbols.length > 0) {
+        html += '<div class="mon-list">OCO: ' + tr.ocoPollingSymbols.join(', ') + '</div>';
+    }
+    html += '</div>';
+
+    // System card
+    html += '<div class="mon-card">';
+    html += '<div class="mon-card-title">System</div>';
+    html += row('Server Uptime', sys.uptime || '--', 'info');
+    html += row('Status', sys.status || '--', sys.status === 'WS CONNECTED' ? 'ok' : 'warn');
+    html += '</div>';
+
+    // Latency card (full width)
+    var avg = lt.averages || {};
+    var recent = lt.recent || [];
+    html += '<div class="mon-card mon-card-full">';
+    html += '<div class="mon-card-title">Latency</div>';
+    html += row('Avg Signal\u2192Fill', avg.signalToFill || '--', 'info');
+    html += row('Avg Order\u2192Fill', avg.orderToFill || '--', 'info');
+    if (recent.length > 0) {
+        html += '<table class="lat-table"><thead><tr><th>Symbol</th><th>Setup</th><th>Signal\u2192Proc</th><th>Proc\u2192Order</th><th>Order\u2192Resp</th><th>Resp\u2192Fill</th><th>End-to-End</th></tr></thead><tbody>';
+        for (var i = 0; i < Math.min(recent.length, 10); i++) {
+            var r = recent[i];
+            html += '<tr><td>' + (r.symbol || '').replace(/^NSE:/, '').replace(/-EQ$/, '') + '</td><td>' + (r.setup || '') + '</td>';
+            html += '<td>' + (r.signalToProcessed || '--') + '</td><td>' + (r.processedToOrder || '--') + '</td>';
+            html += '<td>' + (r.orderToResponse || '--') + '</td><td>' + (r.responseToFill || '--') + '</td>';
+            html += '<td style="color:var(--accent-cyan);font-weight:700;">' + (r.endToEnd || '--') + '</td></tr>';
+        }
+        html += '</tbody></table>';
+    }
+    html += '</div>';
+
+    document.getElementById('monGrid').innerHTML = html;
+    document.getElementById('lastRefresh').textContent = 'Last refresh: ' + new Date().toLocaleTimeString('en-IN', {hour12: false});
+}
+
+function fetchMonitoring() {
+    fetch('/api/monitoring').then(function(r) { return r.json(); }).then(function(d) {
+        renderMonitoring(d);
+    }).catch(function() {});
+}
+
+fetchMonitoring();
+setInterval(fetchMonitoring, 5000);
+
+// Connection status
+function updateStatus() {
+    var ctrl = new AbortController(); var tid = setTimeout(function(){ ctrl.abort(); }, 3000);
+    fetch('/status', {signal:ctrl.signal})
+        .then(function(r) { clearTimeout(tid); return r.json(); })
+        .then(function(data) {
+            var dot = document.getElementById('statusDot');
+            var label = document.getElementById('connectionStatus');
+            dot.className = 'status-dot';
+            if (data.status.includes('RECONNECTING')) { dot.classList.add('syncing'); label.textContent = data.status; label.style.color = '#f97316'; }
+            else if (data.status.includes('WS CONNECTED')) { dot.classList.add('connected'); label.textContent = data.status; label.style.color = 'var(--accent-green)'; }
+            else if (data.status === 'POLLING' || data.status === 'SYNCING') { dot.classList.add('syncing'); label.textContent = data.status; label.style.color = 'var(--accent-yellow)'; }
+            else { dot.classList.add('disconnected'); label.textContent = 'DISCONNECTED'; label.style.color = 'var(--accent-red)'; }
+        })
+        .catch(function() {
+            document.getElementById('statusDot').className = 'status-dot disconnected';
+            document.getElementById('connectionStatus').textContent = 'DISCONNECTED';
+            document.getElementById('connectionStatus').style.color = 'var(--accent-red)';
+        });
+}
+setInterval(updateStatus, 5000);
+updateStatus();
+</script>
+</body>
+</html>
