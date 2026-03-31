@@ -54,6 +54,7 @@ public class SettingsController {
         result.put("enableLargeCandleFilter", riskSettings.isEnableLargeCandleFilter(effectiveMode));
         result.put("largeCandleAtrThreshold", riskSettings.getLargeCandleAtrThreshold(effectiveMode));
         result.put("enableTargetShift", riskSettings.isEnableTargetShift(effectiveMode));
+        result.put("targetShiftAtrThreshold", riskSettings.getTargetShiftAtrThreshold(effectiveMode));
         result.put("enableSmallCandleFilter", riskSettings.isEnableSmallCandleFilter(effectiveMode));
         result.put("smallCandleAtrThreshold", riskSettings.getSmallCandleAtrThreshold(effectiveMode));
         result.put("wickRejectionRatio", riskSettings.getWickRejectionRatio(effectiveMode));
@@ -98,6 +99,7 @@ public class SettingsController {
             if (body.containsKey("enableLargeCandleFilter")) riskSettings.setEnableLargeCandleFilter(effectiveMode, Boolean.parseBoolean(body.get("enableLargeCandleFilter").toString()));
             if (body.containsKey("largeCandleAtrThreshold")) riskSettings.setLargeCandleAtrThreshold(effectiveMode, Double.parseDouble(body.get("largeCandleAtrThreshold").toString()));
             if (body.containsKey("enableTargetShift")) riskSettings.setEnableTargetShift(effectiveMode, Boolean.parseBoolean(body.get("enableTargetShift").toString()));
+            if (body.containsKey("targetShiftAtrThreshold")) riskSettings.setTargetShiftAtrThreshold(effectiveMode, Double.parseDouble(body.get("targetShiftAtrThreshold").toString()));
             if (body.containsKey("enableSmallCandleFilter")) riskSettings.setEnableSmallCandleFilter(effectiveMode, Boolean.parseBoolean(body.get("enableSmallCandleFilter").toString()));
             if (body.containsKey("smallCandleAtrThreshold")) riskSettings.setSmallCandleAtrThreshold(effectiveMode, Double.parseDouble(body.get("smallCandleAtrThreshold").toString()));
             if (body.containsKey("wickRejectionRatio")) riskSettings.setWickRejectionRatio(effectiveMode, Double.parseDouble(body.get("wickRejectionRatio").toString()));

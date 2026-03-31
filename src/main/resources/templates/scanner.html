@@ -405,6 +405,16 @@
         </div>
     </div>
 
+    <footer class="page-footer">
+        <div class="footer-copy">
+            &copy; <span id="footerYear"></span> TraderEdge CPR. All rights reserved.
+        </div>
+        <div class="footer-author">
+            Built by <strong style="color: var(--text-secondary); margin: 0 4px;">Prabhu Arumugham</strong>
+            <span class="footer-tag">rydytrader</span>
+        </div>
+    </footer>
+
 </div>
 </div>
 </div>
@@ -621,6 +631,7 @@
         return '<div class="' + cardClass + '" data-symbol="' + d.symbol + '">'
             + '<div class="scan-card-header">'
             + '  <span class="scan-symbol">' + d.shortName + '</span>'
+            + '<span class="scan-ohl" style="font-family:var(--font-mono);font-size:0.62rem;color:var(--text-secondary);margin-left:6px;">' + (d.candleOpen ? 'O:' + fmt(d.candleOpen) + ' H:' + fmt(d.candleHigh) + ' L:' + fmt(d.candleLow) : '') + '</span>'
             + '  <span style="display:flex; gap:4px;">'
             + ((d.cprTypes || [d.cprType]).map(function(t) { return '<span class="scan-badge ' + t.toLowerCase() + '">' + t + '</span>'; }).join(''))
             + (d.weeklyNarrow ? '<span class="scan-badge weekly-narrow">WEEKLY NARROW</span>' : '')
@@ -730,6 +741,9 @@
                         if (update.ltp) d.ltp = update.ltp;
                         if (update.changePercent !== undefined) d.changePercent = update.changePercent;
                         if (update.candleVolume > 0) d.candleVolume = update.candleVolume;
+                        if (update.candleOpen) d.candleOpen = update.candleOpen;
+                        if (update.candleHigh) d.candleHigh = update.candleHigh;
+                        if (update.candleLow) d.candleLow = update.candleLow;
 
                         // Update DOM in-place
                         var card = document.querySelector('[data-symbol="' + d.symbol + '"]');
@@ -747,6 +761,10 @@
                             var isHigh = d.avgVolume > 0 && d.candleVolume >= d.avgVolume * 2;
                             volEl.className = 'scan-vol' + (isHigh ? ' vol-high' : '');
                             volEl.textContent = fmtVol(d.candleVolume) + ' / ' + fmtVol(d.avgVolume);
+                        }
+                        var ohlEl = card.querySelector('.scan-ohl');
+                        if (ohlEl && d.candleOpen) {
+                            ohlEl.textContent = 'O:' + fmt(d.candleOpen) + ' H:' + fmt(d.candleHigh) + ' L:' + fmt(d.candleLow);
                         }
                     }
                 } catch (err) {}

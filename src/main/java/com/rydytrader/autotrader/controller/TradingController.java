@@ -353,6 +353,7 @@ public class TradingController {
             .map(s -> s.replaceAll("^(NSE|BSE):", "").replaceAll("-EQ$", ""))
             .collect(java.util.stream.Collectors.toList()));
         scanner.put("atrLoaded", atrService.getAllAtr().size());
+        scanner.put("activeCandles", candleAggregator.getActiveCandleCount());
         scanner.put("candleChecker", candleAggregator.isBoundaryCheckerAlive() ? "ALIVE" : "DEAD");
         scanner.put("candleCheckerRestarts", candleAggregator.getRestartCount());
         scanner.put("candleCheckerLastRestart", candleAggregator.getLastRestartTime());

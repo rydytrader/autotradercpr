@@ -37,7 +37,8 @@ public class RiskSettingsStore {
         volatile int    telegramAlertFrequency = 60; // seconds between Telegram portfolio updates (0 = disabled)
         volatile boolean enableLargeCandleFilter = true; // reject trade if candle > largeCandleAtrThreshold ATR from breakout level
         volatile double largeCandleAtrThreshold = 1.0; // ATR multiplier for large candle filter
-        volatile boolean enableTargetShift = true; // shift target to next level if default target < 1 ATR. If false, skip the entry.
+        volatile boolean enableTargetShift = true; // shift target to next level if default target < threshold ATR. If false, skip the entry.
+        volatile double targetShiftAtrThreshold = 1.0; // shift target if distance < this × ATR
         volatile boolean enableSmallCandleFilter = false; // reject if candle move from breakout level < smallCandleAtrThreshold ATR
         volatile double smallCandleAtrThreshold = 0.5; // ATR multiplier for small candle filter
         volatile double wickRejectionRatio = 1.5; // breakout wick must be >= this * body to allow small body candle
@@ -91,6 +92,7 @@ public class RiskSettingsStore {
     public boolean isEnableLargeCandleFilter() { return cfg().enableLargeCandleFilter; }
     public double getLargeCandleAtrThreshold() { return cfg().largeCandleAtrThreshold; }
     public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
+    public double getTargetShiftAtrThreshold() { return cfg().targetShiftAtrThreshold; }
     public boolean isEnableSmallCandleFilter() { return cfg().enableSmallCandleFilter; }
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
     public double getTrailTriggerPct() { return cfg().trailTriggerPct; }
@@ -132,6 +134,7 @@ public class RiskSettingsStore {
     public void setEnableLargeCandleFilter(boolean v) { cfg().enableLargeCandleFilter = v; }
     public void setLargeCandleAtrThreshold(double v) { cfg().largeCandleAtrThreshold = v; }
     public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
+    public void setTargetShiftAtrThreshold(double v) { cfg().targetShiftAtrThreshold = v; }
     public void setEnableSmallCandleFilter(boolean v) { cfg().enableSmallCandleFilter = v; }
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
     public void setTrailTriggerPct(double v) { cfg().trailTriggerPct = v; }
@@ -161,6 +164,7 @@ public class RiskSettingsStore {
     public boolean isEnableLargeCandleFilter(String mode) { return cfgFor(mode).enableLargeCandleFilter; }
     public double getLargeCandleAtrThreshold(String mode) { return cfgFor(mode).largeCandleAtrThreshold; }
     public boolean isEnableTargetShift(String mode) { return cfgFor(mode).enableTargetShift; }
+    public double getTargetShiftAtrThreshold(String mode) { return cfgFor(mode).targetShiftAtrThreshold; }
     public boolean isEnableSmallCandleFilter(String mode) { return cfgFor(mode).enableSmallCandleFilter; }
     public boolean isEnableTrailingSl(String mode) { return cfgFor(mode).enableTrailingSl; }
     public double getTrailTriggerPct(String mode) { return cfgFor(mode).trailTriggerPct; }
@@ -188,6 +192,7 @@ public class RiskSettingsStore {
     public void setEnableLargeCandleFilter(String mode, boolean v) { cfgFor(mode).enableLargeCandleFilter = v; }
     public void setLargeCandleAtrThreshold(String mode, double v) { cfgFor(mode).largeCandleAtrThreshold = v; }
     public void setEnableTargetShift(String mode, boolean v) { cfgFor(mode).enableTargetShift = v; }
+    public void setTargetShiftAtrThreshold(String mode, double v) { cfgFor(mode).targetShiftAtrThreshold = v; }
     public void setEnableSmallCandleFilter(String mode, boolean v) { cfgFor(mode).enableSmallCandleFilter = v; }
     public void setEnableTrailingSl(String mode, boolean v) { cfgFor(mode).enableTrailingSl = v; }
     public void setTrailTriggerPct(String mode, double v) { cfgFor(mode).trailTriggerPct = v; }
@@ -225,6 +230,7 @@ public class RiskSettingsStore {
             upsert("enableLargeCandleFilter", String.valueOf(c.enableLargeCandleFilter));
             upsert("largeCandleAtrThreshold", String.valueOf(c.largeCandleAtrThreshold));
             upsert("enableTargetShift", String.valueOf(c.enableTargetShift));
+            upsert("targetShiftAtrThreshold", String.valueOf(c.targetShiftAtrThreshold));
             upsert("enableSmallCandleFilter", String.valueOf(c.enableSmallCandleFilter));
             upsert("smallCandleAtrThreshold", String.valueOf(c.smallCandleAtrThreshold));
             upsert("wickRejectionRatio", String.valueOf(c.wickRejectionRatio));
@@ -279,6 +285,7 @@ public class RiskSettingsStore {
                     case "enableLargeCandleFilter" -> c.enableLargeCandleFilter = Boolean.parseBoolean(v);
                     case "largeCandleAtrThreshold" -> c.largeCandleAtrThreshold = Double.parseDouble(v);
                     case "enableTargetShift" -> c.enableTargetShift = Boolean.parseBoolean(v);
+                    case "targetShiftAtrThreshold" -> c.targetShiftAtrThreshold = Double.parseDouble(v);
                     case "enableSmallCandleFilter" -> c.enableSmallCandleFilter = Boolean.parseBoolean(v);
                     case "smallCandleAtrThreshold" -> c.smallCandleAtrThreshold = Double.parseDouble(v);
                     case "wickRejectionRatio" -> c.wickRejectionRatio = Double.parseDouble(v);

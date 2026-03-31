@@ -140,13 +140,14 @@ public class SignalProcessor {
         double target = defaultTarget;
 
         boolean shifted = false;
-        if (Math.abs(close - defaultTarget) < atr) {
+        double targetShiftThreshold = riskSettings.getTargetShiftAtrThreshold();
+        if (Math.abs(close - defaultTarget) < atr * targetShiftThreshold) {
             if (riskSettings.isEnableTargetShift()) {
                 target = shiftTarget;
                 shifted = true;
             } else {
                 return ProcessedSignal.rejected(setup, symbol,
-                    "Target too close (< 1 ATR) and target shift disabled — default: " + fmt(defaultTarget) + ", distance: " + fmt(Math.abs(close - defaultTarget)) + ", ATR: " + fmt(atr));
+                    "Target too close (< " + targetShiftThreshold + " ATR) and target shift disabled — default: " + fmt(defaultTarget) + ", distance: " + fmt(Math.abs(close - defaultTarget)) + ", ATR: " + fmt(atr));
             }
         }
 
@@ -209,7 +210,7 @@ public class SignalProcessor {
         if (shifted) {
             desc.append("\n[TARGET] Shifted ").append(fmt(defaultTarget))
                 .append(" → ").append(fmt(shiftTarget))
-                .append(" (default < 1 ATR from entry).");
+                .append(" (default < ").append(targetShiftThreshold).append(" ATR from entry).");
         }
 
         String description = desc.toString();
@@ -224,7 +225,7 @@ public class SignalProcessor {
         }
         if (shifted) {
             eventService.log("[INFO] " + symbol + " " + setup + " target shifted: " + fmt(defaultTarget) + " -> " + fmt(shiftTarget)
-                + " (default was < 1 ATR from entry)");
+                + " (default was < " + targetShiftThreshold + " ATR from entry)");
         }
 
         return new ProcessedSignal.Builder()

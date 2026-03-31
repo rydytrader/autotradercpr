@@ -83,9 +83,20 @@
     <div class="mon-grid" id="monGrid">
         <div style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.85rem;grid-column:1/-1;text-align:center;padding:60px 0;">Loading...</div>
     </div>
-</div>
-</div>
-</div>
+
+    <footer class="page-footer">
+        <div class="footer-copy">
+            &copy; <span id="footerYear"></span> TraderEdge CPR. All rights reserved.
+        </div>
+        <div class="footer-author">
+            Built by <strong style="color: var(--text-secondary); margin: 0 4px;">Prabhu Arumugham</strong>
+            <span class="footer-tag">rydytrader</span>
+        </div>
+    </footer>
+
+</div><!-- /page-wrap -->
+</div><!-- /app-main -->
+</div><!-- /app-layout -->
 
 <script src="/js/common.js"></script>
 <script src="/js/ticker.js"></script>
@@ -133,6 +144,7 @@ function renderMonitoring(d) {
     html += row('Watchlist', sc.watchlistCount || 0, sc.watchlistCount > 0 ? 'ok' : 'err');
     html += row('ATR Loaded', (sc.atrLoaded || 0) + '/' + (sc.watchlistCount || 0), sc.atrLoaded >= sc.watchlistCount ? 'ok' : 'warn');
     html += '<div style="border-top:1px dashed var(--border);margin:6px 0;"></div>';
+    html += row('Active Candles', (sc.activeCandles || 0) + ' (total) / ' + (sc.watchlistCount || 0) + ' (watchlist)', sc.activeCandles >= sc.watchlistCount ? 'ok' : 'warn');
     html += row('Candle Checker', sc.candleChecker || '--', cls(sc.candleChecker, 'ALIVE'));
     if (sc.candleCheckerRestarts > 0) {
         html += row('Checker Restarts', sc.candleCheckerRestarts + (sc.candleCheckerLastRestart ? ' (last: ' + sc.candleCheckerLastRestart + ')' : ''), 'warn');

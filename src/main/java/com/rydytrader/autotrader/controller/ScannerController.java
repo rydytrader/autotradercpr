@@ -107,6 +107,14 @@ public class ScannerController {
         card.put("ltp", Math.round(ltp * 100.0) / 100.0);
         card.put("changePercent", Math.round(changePct * 100.0) / 100.0);
 
+        // Current candle OHLC
+        CandleAggregator.CandleBar currentCandle = candleAggregator.getCurrentCandle(fyersSymbol);
+        if (currentCandle != null) {
+            card.put("candleOpen", r(currentCandle.open));
+            card.put("candleHigh", r(currentCandle.high));
+            card.put("candleLow", r(currentCandle.low));
+        }
+
         card.put("vwap", Math.round(candleAggregator.getVwap(fyersSymbol) * 100.0) / 100.0);
         card.put("atr", Math.round(atrService.getAtr(fyersSymbol) * 100.0) / 100.0);
         card.put("dayOpen", Math.round(candleAggregator.getDayOpen(fyersSymbol) * 100.0) / 100.0);

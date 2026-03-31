@@ -269,7 +269,9 @@
                     <label class="form-label">Target Shift</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableTargetShift" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift target to next level if default target &lt; 1 ATR. If off, skip the entry.</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift target to next level if default target &lt;</span>
+                        <input type="number" id="targetShiftAtrThreshold" class="form-control" step="0.5" min="0.5" max="5.0" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR. If off, skip the entry.</span>
                     </div>
                 </div>
                 <div class="form-group">
@@ -495,6 +497,7 @@
             document.getElementById('enableLargeCandleFilter').checked = d.enableLargeCandleFilter !== false;
             document.getElementById('largeCandleAtrThreshold').value = d.largeCandleAtrThreshold || 1.0;
             document.getElementById('enableTargetShift').checked = d.enableTargetShift !== false;
+            document.getElementById('targetShiftAtrThreshold').value = d.targetShiftAtrThreshold || 1.0;
             document.getElementById('enableSmallCandleFilter').checked = d.enableSmallCandleFilter === true;
             document.getElementById('smallCandleAtrThreshold').value = d.smallCandleAtrThreshold || 0.5;
             document.getElementById('wickRejectionRatio').value = d.wickRejectionRatio || 1.5;
@@ -581,6 +584,7 @@
                 enableLargeCandleFilter: document.getElementById('enableLargeCandleFilter').checked,
                 largeCandleAtrThreshold: parseFloat(document.getElementById('largeCandleAtrThreshold').value) || 1.0,
                 enableTargetShift: document.getElementById('enableTargetShift').checked,
+                targetShiftAtrThreshold: parseFloat(document.getElementById('targetShiftAtrThreshold').value) || 1.0,
                 enableSmallCandleFilter: document.getElementById('enableSmallCandleFilter').checked,
                 smallCandleAtrThreshold: parseFloat(document.getElementById('smallCandleAtrThreshold').value) || 0.5,
                 wickRejectionRatio: parseFloat(document.getElementById('wickRejectionRatio').value) || 1.5,

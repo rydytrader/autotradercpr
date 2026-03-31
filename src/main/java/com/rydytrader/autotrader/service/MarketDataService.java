@@ -488,6 +488,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
                     d.put("ltp", Math.round(ltp * 100.0) / 100.0);
                     d.put("changePercent", Math.round(candleAggregator.getChangePct(sym) * 100.0) / 100.0);
                     d.put("candleVolume", candleAggregator.getCurrentCandleVolume(sym));
+                    CandleAggregator.CandleBar cb = candleAggregator.getCurrentCandle(sym);
+                    if (cb != null) {
+                        d.put("candleOpen", Math.round(cb.open * 100.0) / 100.0);
+                        d.put("candleHigh", Math.round(cb.high * 100.0) / 100.0);
+                        d.put("candleLow", Math.round(cb.low * 100.0) / 100.0);
+                    }
                     wlPayload.put(sym, d);
                 }
                 if (!wlPayload.isEmpty()) {

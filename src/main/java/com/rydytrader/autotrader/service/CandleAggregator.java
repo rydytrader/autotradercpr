@@ -96,6 +96,10 @@ public class CandleAggregator {
     public String getLastRestartTime() { return lastRestartTime; }
     public int getRestartCount() { return restartCount; }
 
+    public int getActiveCandleCount() { return currentCandles.size(); }
+
+    public CandleBar getCurrentCandle(String symbol) { return currentCandles.get(symbol); }
+
     public int getLastCycleProcessed() { return lastCycleProcessed; }
     public String getLastCycleTime() { return lastCycleTime; }
 
