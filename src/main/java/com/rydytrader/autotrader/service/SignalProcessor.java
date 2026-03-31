@@ -177,12 +177,17 @@ public class SignalProcessor {
             }
         }
 
-        // ── 4i2. LPT qty halving — reduce risk for counter-trend trades ──────
-        boolean isLpt = "LPT".equals(probability);
-        if (isLpt) {
-            int lptReduced = Math.max(2, (qty / 2 / 2) * 2); // halve and round to even
-            eventService.log("[INFO] " + symbol + " " + setup + " qty halved (LPT counter-trend): " + qty + " -> " + lptReduced);
-            qty = lptReduced;
+        // ── 4i2. Probability-based qty adjustment (MPT = half, LPT = quarter, configurable) ──
+        if ("MPT".equals(probability)) {
+            double factor = riskSettings.getMptQtyFactor();
+            int reduced = Math.max(2, ((int)(qty * factor) / 2) * 2); // apply factor, round to even
+            eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (MPT ×" + factor + "): " + qty + " -> " + reduced);
+            qty = reduced;
+        } else if ("LPT".equals(probability)) {
+            double factor = riskSettings.getLptQtyFactor();
+            int reduced = Math.max(2, ((int)(qty * factor) / 2) * 2);
+            eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (LPT ×" + factor + "): " + qty + " -> " + reduced);
+            qty = reduced;
         }
 
         // ── 4j. Build description ─────────────────────────────────────────────

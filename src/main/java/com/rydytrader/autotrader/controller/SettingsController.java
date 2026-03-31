@@ -71,6 +71,8 @@ public class SettingsController {
         result.put("enableHpt", riskSettings.isEnableHpt());
         result.put("enableMpt", riskSettings.isEnableMpt());
         result.put("enableLpt", riskSettings.isEnableLpt());
+        result.put("mptQtyFactor", riskSettings.getMptQtyFactor());
+        result.put("lptQtyFactor", riskSettings.getLptQtyFactor());
         result.put("todayPnl",         Math.round(todayPnl * 100.0) / 100.0);
         result.put("todayTrades",      todayTrades);
         return result;
@@ -116,6 +118,8 @@ public class SettingsController {
             if (body.containsKey("enableHpt")) riskSettings.setEnableHpt(Boolean.parseBoolean(body.get("enableHpt").toString()));
             if (body.containsKey("enableMpt")) riskSettings.setEnableMpt(Boolean.parseBoolean(body.get("enableMpt").toString()));
             if (body.containsKey("enableLpt")) riskSettings.setEnableLpt(Boolean.parseBoolean(body.get("enableLpt").toString()));
+            if (body.containsKey("mptQtyFactor")) riskSettings.setMptQtyFactor(Double.parseDouble(body.get("mptQtyFactor").toString()));
+            if (body.containsKey("lptQtyFactor")) riskSettings.setLptQtyFactor(Double.parseDouble(body.get("lptQtyFactor").toString()));
             riskSettings.saveFor(effectiveMode);
             return ResponseEntity.ok(Map.of("ok", true, "message", "Settings saved"));
         } catch (Exception e) {

@@ -350,12 +350,16 @@
                         </label>
                         <label class="form-check-label" style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem;">
                             <input type="checkbox" id="enableMpt" class="form-check-input"> MPT (Medium Probable)
+                            <span style="color:var(--text-muted);font-size:0.72rem;margin-left:4px;">Qty ×</span>
+                            <input type="number" id="mptQtyFactor" step="0.05" min="0.1" max="1.0" style="width:55px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;">
                         </label>
                         <label class="form-check-label" style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem;">
                             <input type="checkbox" id="enableLpt" class="form-check-input"> LPT (Low Probable)
+                            <span style="color:var(--text-muted);font-size:0.72rem;margin-left:4px;">Qty ×</span>
+                            <input type="number" id="lptQtyFactor" step="0.05" min="0.1" max="1.0" style="width:55px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;">
                         </label>
                     </div>
-                    <div class="form-hint">Enable/disable signal categories for the internal scanner</div>
+                    <div class="form-hint">Enable/disable signal categories. MPT/LPT qty factors reduce position size.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">VWAP Check</label>
@@ -516,6 +520,8 @@
             document.getElementById('enableHpt').checked = d.enableHpt !== false;
             document.getElementById('enableMpt').checked = d.enableMpt === true;
             document.getElementById('enableLpt').checked = d.enableLpt === true;
+            document.getElementById('mptQtyFactor').value = d.mptQtyFactor || 0.5;
+            document.getElementById('lptQtyFactor').value = d.lptQtyFactor || 0.25;
 
             const pnl    = d.todayPnl    || 0;
             const trades = d.todayTrades || 0;
@@ -600,7 +606,9 @@
                 enableVwapCheck: document.getElementById('enableVwapCheck').checked,
                 enableHpt: document.getElementById('enableHpt').checked,
                 enableMpt: document.getElementById('enableMpt').checked,
-                enableLpt: document.getElementById('enableLpt').checked
+                enableLpt: document.getElementById('enableLpt').checked,
+                mptQtyFactor: parseFloat(document.getElementById('mptQtyFactor').value) || 0.5,
+                lptQtyFactor: parseFloat(document.getElementById('lptQtyFactor').value) || 0.25
             };
             const r = await fetch('/api/settings/risk', {
                 method: 'POST',
