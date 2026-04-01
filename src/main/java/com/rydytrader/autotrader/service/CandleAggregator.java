@@ -168,6 +168,10 @@ public class CandleAggregator {
 
         currentCandles.compute(symbol, (k, existing) -> {
             if (existing == null || existing.startMinute != candleStart) {
+                // Finalize the old candle before replacing (prevents race with boundary checker)
+                if (existing != null && existing.open > 0) {
+                    finalizeCandle(symbol, existing);
+                }
                 // New candle period — start fresh
                 CandleBar c = new CandleBar();
                 c.startMinute = candleStart;
@@ -243,7 +247,14 @@ public class CandleAggregator {
         }
     }
 
+    // Track last finalized candle per symbol to prevent double finalization
+    private final ConcurrentHashMap<String, Long> lastFinalizedMinute = new ConcurrentHashMap<>();
+
     private void finalizeCandle(String symbol, CandleBar candle) {
+        // Prevent double finalization (race between onTick and checkCandleBoundary)
+        Long prev = lastFinalizedMinute.put(symbol, candle.startMinute);
+        if (prev != null && prev == candle.startMinute) return; // already finalized
+
         // Add to completed candles buffer (keep last 20)
         completedCandles.computeIfAbsent(symbol, k -> new ConcurrentLinkedDeque<>());
         Deque<CandleBar> history = completedCandles.get(symbol);
