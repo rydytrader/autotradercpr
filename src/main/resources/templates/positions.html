@@ -271,7 +271,7 @@
 <!-- ── SQUARE OFF CONFIRMATION MODAL ──────────────────────────── -->
 
 <script src="/js/common.js?v=2"></script>
-<script src="/js/ticker.js?v=2"></script>
+<script src="/js/ticker.js?v=3"></script>
 <script>
     // ── FORMATTERS ────────────────────────────────
     const inr = v => new Intl.NumberFormat('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}).format(Math.abs(v));
@@ -477,7 +477,6 @@
             .then(r => r.json())
             .then(data => {
                 const positions = data.positions || [];
-                checkNewPositions(positions);
                 const sides = new Set(positions.map(p => p.side));
                 const sideLabel = positions.length === 0 ? 'NONE'
                     : sides.has('LONG') && sides.has('SHORT') ? 'BOTH'
@@ -665,66 +664,7 @@
             subEl.style.color = 'var(--accent-red)';
         }
     }
-    // ── TRADE NOTIFICATIONS ─────────────────────────────────────────────────
-    // Request browser notification permission
-    if ('Notification' in window && Notification.permission === 'default') {
-        Notification.requestPermission();
-    }
-
-    function showTradeNotification(title, body) {
-        if ('Notification' in window && Notification.permission === 'granted') {
-            var n = new Notification('TraderEdge CPR - ' + title, {
-                body: body,
-                icon: '/favicon.ico',
-                tag: 'trade-' + Date.now(),
-                requireInteraction: true
-            });
-            setTimeout(function() { n.close(); }, 15000);
-        }
-    }
-
-    var knownPositionSymbols = new Set();
-    // Initialize with current positions
-    allPositions.forEach(function(p) { knownPositionSymbols.add(p.symbol); });
-
-    function checkNewPositions(positions) {
-        if (!positions || positions.length === 0) return;
-        var currentSymbols = new Set();
-        positions.forEach(function(p) { currentSymbols.add(p.symbol); });
-
-        // New position detected — show browser notification
-        currentSymbols.forEach(function(sym) {
-            if (!knownPositionSymbols.has(sym)) {
-                var pos = positions.find(function(p) { return p.symbol === sym; });
-                var name = sym.replace('NSE:', '').replace('-EQ', '');
-                var side = pos ? pos.side : '';
-                var price = pos ? pos.avgPrice : 0;
-                var time = new Date().toLocaleTimeString('en-IN', {hour12: false, hour: '2-digit', minute: '2-digit'});
-                showTradeNotification(side + ' ' + name, 'Entry @ ' + price.toFixed(2) + ' | ' + time);
-            }
-        });
-
-        // Position closed — fetch exit reason from latest trade
-        knownPositionSymbols.forEach(function(sym) {
-            if (!currentSymbols.has(sym)) {
-                var name = sym.replace('NSE:', '').replace('-EQ', '');
-                // Try to get exit reason and P&L from trades API
-                fetch('/api/trades').then(function(r) { return r.json(); }).then(function(trades) {
-                    var trade = trades.find(function(t) { return t.symbol === sym; });
-                    if (trade) {
-                        var pnl = trade.pnl || 0;
-                        var pnlStr = (pnl >= 0 ? '+' : '') + pnl.toFixed(2);
-                        var reason = trade.exitReason || 'CLOSED';
-                        showTradeNotification(name + ' ' + reason, 'P&L: ' + pnlStr + ' | Exit @ ' + (trade.exitPrice || 0).toFixed(2));
-                    } else {
-                        showTradeNotification(name + ' CLOSED', 'Position closed');
-                    }
-                }).catch(function() { showTradeNotification(name + ' CLOSED', 'Position closed'); });
-            }
-        });
-
-        knownPositionSymbols = currentSymbols;
-    }
+    // Trade notifications handled globally by ticker.js (works on all pages)
 
     // Market clock starts after holidays are loaded (see fetch above)
     setInterval(function() {
@@ -744,8 +684,7 @@
                         var positions = data.positions || [];
                         lastSseUpdate = Date.now();
 
-                        // Check for new/closed positions
-                        checkNewPositions(positions);
+                        // Notifications handled by ticker.js
 
                         // Update LTP and P&L in current position data
                         if (positions.length > 0 && allPositions.length > 0) {
