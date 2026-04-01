@@ -112,6 +112,12 @@
                 <div class="section-title-dot" style="background: var(--accent-green)"></div>
                 Completed Trades
             </div>
+            <select id="tradeSymbolFilter" onchange="filterTrades()" style="
+                background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
+                border-radius:4px;padding:2px 8px;font-size:0.72rem;font-family:var(--font-mono);
+                outline:none;cursor:pointer;margin-left:auto;margin-right:10px;">
+                <option value="">All Symbols</option>
+            </select>
             <span class="section-badge" id="tradesBadge">0 today</span>
         </div>
         <div class="table-wrap">
@@ -232,31 +238,45 @@
         }
     }
 
-    function updateTrades() {
-        fetch('/api/trades')
-            .then(r => r.json())
-            .then(trades => {
-                document.getElementById('tradesBadge').textContent = trades.length + ' today';
+    var allTrades = [];
 
-                const wins   = trades.filter(t => t.result === 'PROFIT').length;
-                const losses = trades.filter(t => t.result === 'LOSS').length;
-                const netPnl = trades.reduce((sum, t) => sum + (t.netPnl != null ? t.netPnl : t.pnl || 0), 0);
+    function populateTradeSymbolFilter(trades) {
+        var sel = document.getElementById('tradeSymbolFilter');
+        var current = sel.value;
+        var symbols = [...new Set(trades.map(t => t.symbol))].sort();
+        sel.innerHTML = '<option value="">All Symbols</option>' + symbols.map(s =>
+            '<option value="' + s + '"' + (s === current ? ' selected' : '') + '>' + s.replace(/^NSE:/, '').replace(/-EQ$/, '') + '</option>'
+        ).join('');
+    }
 
-                document.getElementById('statTotal').textContent  = trades.length;
-                document.getElementById('statWins').textContent   = wins;
-                document.getElementById('statLosses').textContent = losses;
+    function filterTrades() {
+        var filter = document.getElementById('tradeSymbolFilter').value;
+        var trades = filter ? allTrades.filter(t => t.symbol === filter) : allTrades;
+        renderTrades(trades);
+    }
 
-                const pnlEl = document.getElementById('statNetPnl');
-                pnlEl.textContent = fmtPnl(netPnl);
-                pnlEl.className   = 'stat-value ' + (netPnl > 0 ? 'positive' : netPnl < 0 ? 'negative' : '');
+    function renderTrades(trades) {
+        document.getElementById('tradesBadge').textContent = trades.length + ' today';
 
-                const tbody = document.getElementById('tradesTableBody');
-                if (trades.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="13"><div class="empty-state"><div class="empty-icon">◎</div>No completed trades today</div></td></tr>`;
-                    return;
-                }
+        const wins   = trades.filter(t => t.result === 'PROFIT').length;
+        const losses = trades.filter(t => t.result === 'LOSS').length;
+        const netPnl = trades.reduce((sum, t) => sum + (t.netPnl != null ? t.netPnl : t.pnl || 0), 0);
 
-                tbody.innerHTML = trades.map((t, idx) => {
+        document.getElementById('statTotal').textContent  = trades.length;
+        document.getElementById('statWins').textContent   = wins;
+        document.getElementById('statLosses').textContent = losses;
+
+        const pnlEl = document.getElementById('statNetPnl');
+        pnlEl.textContent = fmtPnl(netPnl);
+        pnlEl.className   = 'stat-value ' + (netPnl > 0 ? 'positive' : netPnl < 0 ? 'negative' : '');
+
+        const tbody = document.getElementById('tradesTableBody');
+        if (trades.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="13"><div class="empty-state"><div class="empty-icon">◎</div>No completed trades today</div></td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = trades.map((t, idx) => {
                     const sno = trades.length - idx;
                     const netP = t.netPnl != null ? t.netPnl : t.pnl;
                     const pnlClass  = t.pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
@@ -279,6 +299,15 @@
                         <td class="text-center"><button onclick="showDescription('${escapeForJs(t.description || '')}')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);cursor:pointer;padding:4px 8px;font-size:0.75rem;" title="Trade description">ℹ</button></td>
                     </tr>`;
                 }).join('');
+    }
+
+    function updateTrades() {
+        fetch('/api/trades')
+            .then(r => r.json())
+            .then(trades => {
+                allTrades = trades;
+                populateTradeSymbolFilter(trades);
+                filterTrades();
             })
             .catch(() => {});
     }
