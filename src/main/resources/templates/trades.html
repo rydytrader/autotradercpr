@@ -131,6 +131,7 @@
                         <th class="text-right">Entry</th>
                         <th class="text-right">Exit</th>
                         <th class="text-center">Setup</th>
+                        <th class="text-center">Prob</th>
                         <th class="text-center">Reason</th>
                         <th class="text-center">Result</th>
                         <th class="text-right">P&amp;L</th>
@@ -219,6 +220,14 @@
         return v.replace(/_/g, ' ');
     }
 
+    function renderProb(v) {
+        if (!v) return '<span style="color:var(--text-muted)">—</span>';
+        if (v === 'HPT') return '<span style="background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.25);color:var(--accent-green);padding:2px 8px;border-radius:4px;font-size:.67rem;font-weight:700;">HPT</span>';
+        if (v === 'MPT') return '<span style="background:rgba(99,179,237,.1);border:1px solid rgba(99,179,237,.25);color:var(--accent-blue);padding:2px 8px;border-radius:4px;font-size:.67rem;font-weight:700;">MPT</span>';
+        if (v === 'LPT') return '<span style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25);color:var(--accent-yellow);padding:2px 8px;border-radius:4px;font-size:.67rem;font-weight:700;">LPT</span>';
+        return v;
+    }
+
     function renderBadge(type, value) {
         if (type === 'side') {
             return value === 'LONG'
@@ -272,7 +281,7 @@
 
         const tbody = document.getElementById('tradesTableBody');
         if (trades.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="13"><div class="empty-state"><div class="empty-icon">◎</div>No completed trades today</div></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="14"><div class="empty-state"><div class="empty-icon">◎</div>No completed trades today</div></td></tr>`;
             return;
         }
 
@@ -291,6 +300,7 @@
                         <td class="text-right">${t.entryPrice.toFixed(2)}</td>
                         <td class="text-right">${exitDisplay}</td>
                         <td class="text-center">${renderSetup(t.setup)}</td>
+                        <td class="text-center">${renderProb(t.probability)}</td>
                         <td class="text-center">${renderBadge('reason', t.exitReason)}</td>
                         <td class="text-center">${renderBadge('result', t.result)}</td>
                         <td class="text-right"><span class="${pnlClass}">${fmtPnl(t.pnl)}</span></td>

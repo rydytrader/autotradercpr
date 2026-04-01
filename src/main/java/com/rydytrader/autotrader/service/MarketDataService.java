@@ -374,6 +374,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         }
     }
 
+    /** Check if a symbol's SL has been trailed. Used during OCO handoff to preserve flag. */
+    public boolean isTrailed(String symbol) {
+        return trailedSymbols.contains(symbol);
+    }
+
     /** Clear trailing SL flag when a position is closed. Called from clearSymbolState flow. */
     public void clearTrailedFlag(String symbol) {
         trailedSymbols.remove(symbol);

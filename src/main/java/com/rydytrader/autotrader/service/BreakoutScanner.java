@@ -470,6 +470,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 broken.put(entry.getKey(), new ArrayList<>(entry.getValue()));
             }
             state.put("brokenLevels", broken);
+            state.put("tradedCountToday", tradedCountToday);
+            state.put("filteredCountToday", filteredCountToday);
 
             Files.writeString(Paths.get(SCANNER_STATE_FILE),
                 mapper.writerWithDefaultPrettyPrinter().writeValueAsString(state));
@@ -517,7 +519,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 });
             }
 
-            log.info("[Scanner] Restored state: {} signals, {} broken levels", lastSignal.size(), brokenLevels.size());
+            // Load counters
+            if (root.has("tradedCountToday")) tradedCountToday = root.get("tradedCountToday").asInt();
+            if (root.has("filteredCountToday")) filteredCountToday = root.get("filteredCountToday").asInt();
+
+            log.info("[Scanner] Restored state: {} signals, {} broken levels, {} traded, {} filtered",
+                lastSignal.size(), brokenLevels.size(), tradedCountToday, filteredCountToday);
         } catch (Exception e) {
             log.error("[Scanner] Failed to load state: {}", e.getMessage());
         }

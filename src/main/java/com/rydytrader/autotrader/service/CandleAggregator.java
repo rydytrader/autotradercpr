@@ -52,7 +52,7 @@ public class CandleAggregator {
     // Daily reset tracker
     private volatile String currentTradingDate = "";
 
-    private volatile int timeframeMinutes = 15;
+    private volatile int timeframeMinutes = 5;
 
     // Scheduler for clock-boundary candle finalization
     private ScheduledExecutorService scheduler;

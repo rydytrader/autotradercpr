@@ -28,6 +28,8 @@ public class PositionEntity {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    private String probability;
+
     public PositionEntity() {}
 
     @PrePersist
@@ -75,4 +77,7 @@ public class PositionEntity {
 
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
+
+    public String getProbability() { return probability; }
+    public void setProbability(String probability) { this.probability = probability; }
 }

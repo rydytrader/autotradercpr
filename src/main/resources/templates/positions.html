@@ -199,6 +199,7 @@
                         <th class="text-right">Quantity</th>
                         <th class="text-center">Side</th>
                         <th class="text-center">Setup</th>
+                        <th class="text-center">Prob</th>
                         <th class="text-right">Entry</th>
                         <th class="text-right">LTP</th>
                         <th class="text-right">P&amp;L</th>
@@ -449,6 +450,14 @@
         return v.replace(/_/g, ' ');
     }
 
+    function renderProb(v) {
+        if (!v) return '<span style="color:var(--text-muted)">—</span>';
+        if (v === 'HPT') return '<span style="background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.25);color:var(--accent-green);padding:2px 8px;border-radius:4px;font-size:.67rem;font-weight:700;">HPT</span>';
+        if (v === 'MPT') return '<span style="background:rgba(99,179,237,.1);border:1px solid rgba(99,179,237,.25);color:var(--accent-blue);padding:2px 8px;border-radius:4px;font-size:.67rem;font-weight:700;">MPT</span>';
+        if (v === 'LPT') return '<span style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25);color:var(--accent-yellow);padding:2px 8px;border-radius:4px;font-size:.67rem;font-weight:700;">LPT</span>';
+        return v;
+    }
+
     function squareOffSymbol(symbol, qty) {
         fetch('/api/squareoff', {
             method: 'POST',
@@ -548,6 +557,7 @@
                 <td class="text-right">${pos.qty}</td>
                 <td class="text-center">${sideBadge}</td>
                 <td class="text-center">${renderSetup(pos.setup)}</td>
+                <td class="text-center">${renderProb(pos.probability)}</td>
                 <td class="text-right">${pos.avgPrice.toFixed(2)}</td>
                 <td class="text-right">${pos.ltp.toFixed(2)}</td>
                 <td class="text-right"><span class="${pnlClass}">${fmtPnl(pos.pnl)}</span></td>
@@ -734,6 +744,8 @@
                         var positions = data.positions || [];
                         lastSseUpdate = Date.now();
 
+                        // Check for new/closed positions
+                        checkNewPositions(positions);
 
                         // Update LTP and P&L in current position data
                         if (positions.length > 0 && allPositions.length > 0) {

@@ -31,6 +31,8 @@ public class TradeEntity {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    private String probability;
+
     public TradeEntity() {}
 
     // Getters and setters
@@ -75,4 +77,7 @@ public class TradeEntity {
 
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
+
+    public String getProbability() { return probability; }
+    public void setProbability(String probability) { this.probability = probability; }
 }

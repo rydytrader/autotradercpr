@@ -146,8 +146,8 @@ public class SignalProcessor {
                 target = shiftTarget;
                 shifted = true;
             } else {
-                return ProcessedSignal.rejected(setup, symbol,
-                    "Target too close (< " + targetShiftThreshold + " ATR) and target shift disabled — default: " + fmt(defaultTarget) + ", distance: " + fmt(Math.abs(close - defaultTarget)) + ", ATR: " + fmt(atr));
+                // Target shift disabled — use the small target as-is
+                eventService.log("[INFO] " + symbol + " " + setup + " target close (< " + targetShiftThreshold + " ATR) but shift disabled — using default: " + fmt(defaultTarget));
             }
         }
 

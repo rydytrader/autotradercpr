@@ -43,10 +43,12 @@ public class PollingService {
     // ── per-symbol state ──────────────────────────────────────────────────────
     private final ConcurrentHashMap<String, PositionsDTO> cachedPositions  = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String>       setupBySymbol    = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, String>       probabilityBySymbol = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String>       entryTimeBySymbol  = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Double>       entryAvgBySymbol   = new ConcurrentHashMap<>();
     private final Set<String> ocoHandledSymbols = ConcurrentHashMap.newKeySet();
     private final Set<String> ocoMonitoredSymbols = ConcurrentHashMap.newKeySet();
+    private final ConcurrentHashMap<String, ScheduledFuture<?>> ocoPollingFutures = new ConcurrentHashMap<>();
     private final Set<String> pendingEntrySymbols = ConcurrentHashMap.newKeySet();
 
     private volatile boolean justRestored    = false;
@@ -106,7 +108,9 @@ public class PollingService {
                 String setup     = saved.getOrDefault("setup", "").toString();
                 String entryTime = saved.getOrDefault("entryTime", "").toString();
 
+                String probability = saved.getOrDefault("probability", "").toString();
                 setupBySymbol.put(symbol, setup);
+                probabilityBySymbol.put(symbol, probability);
                 entryTimeBySymbol.put(symbol, entryTime);
                 entryAvgBySymbol.put(symbol, avgPrice);
                 PositionManager.setPosition(symbol, side);
@@ -190,7 +194,7 @@ public class PollingService {
                 eventService.log("[SUCCESS] SL hit for " + symbol + " at " + exitPrice
                     + " (detected on restart) | " + (pnl >= 0 ? "PROFIT" : "LOSS") + " ₹" + String.format("%.2f", Math.abs(pnl)));
                 orderService.cancelOrder(targetOrderId);
-                tradeHistoryService.record(symbol, side, qty, avgPrice, exitPrice, "SL", setup);
+                tradeHistoryService.record(symbol, side, qty, avgPrice, exitPrice, "SL", setup, null, probabilityBySymbol.getOrDefault(symbol, ""));
                 clearSymbolState(symbol);
                 return true;
             }
@@ -203,7 +207,7 @@ public class PollingService {
                 eventService.log("[SUCCESS] Target hit for " + symbol + " at " + exitPrice
                     + " (detected on restart) | " + (pnl >= 0 ? "PROFIT" : "LOSS") + " ₹" + String.format("%.2f", Math.abs(pnl)));
                 orderService.cancelOrder(slOrderId);
-                tradeHistoryService.record(symbol, side, qty, avgPrice, exitPrice, "TARGET", setup);
+                tradeHistoryService.record(symbol, side, qty, avgPrice, exitPrice, "TARGET", setup, null, probabilityBySymbol.getOrDefault(symbol, ""));
                 clearSymbolState(symbol);
                 return true;
             }
@@ -439,12 +443,20 @@ public class PollingService {
         }
         State s = new State();
         ocoMonitoredSymbols.add(symbol);
+        // Store future reference for handoff cancellation
         positionStateStore.saveOcoState(symbol, slId, targetId, slPrice, targetPrice);
         eventService.log("[INFO] OCO monitor started for " + symbol + " — SL: " + slId + " | Target: " + targetId);
 
         s.future = scheduler.scheduleAtFixedRate(() -> {
             try {
                 if (s.handled) return;
+                // Check if WebSocket already handled this position
+                if ("NONE".equals(PositionManager.getPosition(symbol))) {
+                    s.handled = true;
+                    ocoMonitoredSymbols.remove(symbol);
+                    if (s.future != null) s.future.cancel(false);
+                    return;
+                }
                 s.ticks++;
                 if (s.ticks > 4680) {
                     ocoMonitoredSymbols.remove(symbol);
@@ -520,7 +532,7 @@ public class PollingService {
                     positionStateStore.appendDescription(symbol,
                         "[EXIT] SL @ " + String.format("%.2f", finalExit) + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl)));
                     String slDesc = positionStateStore.getDescription(symbol);
-                    tradeHistoryService.record(symbol, positionSide, qty, finalEntry, finalExit, "SL", setup, slDesc);
+                    tradeHistoryService.record(symbol, positionSide, qty, finalEntry, finalExit, "SL", setup, slDesc, probabilityBySymbol.getOrDefault(symbol, ""));
                     clearSymbolState(symbol);
                     if (s.future != null) s.future.cancel(false);
                 }
@@ -546,7 +558,7 @@ public class PollingService {
                     positionStateStore.appendDescription(symbol,
                         "[EXIT] TARGET @ " + String.format("%.2f", finalExit) + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl)));
                     String tgtDesc = positionStateStore.getDescription(symbol);
-                    tradeHistoryService.record(symbol, positionSide, qty, finalEntry, finalExit, "TARGET", setup, tgtDesc);
+                    tradeHistoryService.record(symbol, positionSide, qty, finalEntry, finalExit, "TARGET", setup, tgtDesc, probabilityBySymbol.getOrDefault(symbol, ""));
                     clearSymbolState(symbol);
                     if (s.future != null) s.future.cancel(false);
                 }
@@ -599,6 +611,7 @@ public class PollingService {
                 log.error("[PollingService] OCO monitor exception for {}", symbol, e);
             }
         }, 5, 5, TimeUnit.SECONDS);
+        ocoPollingFutures.put(symbol, s.future);
     }
 
     /** Clears all in-memory and persisted state for a single symbol. */
@@ -606,6 +619,7 @@ public class PollingService {
         positionStateStore.clear(symbol);
         cachedPositions.remove(symbol);
         setupBySymbol.remove(symbol);
+        probabilityBySymbol.remove(symbol);
         entryTimeBySymbol.remove(symbol);
         entryAvgBySymbol.remove(symbol);
         PositionManager.setPosition(symbol, "NONE");
@@ -659,6 +673,12 @@ public class PollingService {
             String targetOrderId = saved.getOrDefault("targetOrderId", "").toString();
             if (slOrderId.isEmpty() || targetOrderId.isEmpty()) continue;
 
+            // Skip if position is already closed
+            if ("NONE".equals(PositionManager.getPosition(symbol))) {
+                log.info("[PollingService] Skipping handoff for {} — position already closed", symbol);
+                continue;
+            }
+
             String side = saved.get("side").toString();
             int qty = Integer.parseInt(saved.get("qty").toString());
             double avgPrice = Double.parseDouble(saved.get("avgPrice").toString());
@@ -670,8 +690,18 @@ public class PollingService {
             boolean tracked = orderEventService.trackOcoOrders(slOrderId, targetOrderId,
                 symbol, qty, side, exitSide, setup, avgPrice, slPrice, targetPrice);
             if (tracked) {
+                // Preserve trailed flag if MarketDataService already trailed SL for this symbol
+                if (marketDataService.isTrailed(symbol)) {
+                    orderEventService.markAsTrailed(slOrderId);
+                    log.info("[PollingService] Preserved trailed flag for {} during handoff", symbol);
+                }
                 handedOff++;
-                log.info("[PollingService] Handed off OCO to WebSocket for {} — SL: {} | Target: {}", symbol, slOrderId, targetOrderId);
+                ocoMonitoredSymbols.remove(symbol);
+                ocoHandledSymbols.add(symbol);
+                // Cancel the polling monitor immediately
+                ScheduledFuture<?> pollingFuture = ocoPollingFutures.remove(symbol);
+                if (pollingFuture != null) pollingFuture.cancel(false);
+                log.info("[PollingService] Handed off OCO to WebSocket for {} — polling cancelled", symbol);
             }
         }
         if (handedOff > 0) {
@@ -761,6 +791,8 @@ public class PollingService {
             orderEventService.markRecentlyHandled(symbol);
             // Untrack OCO orders so WS doesn't interfere
             orderEventService.untrackSymbol(symbol);
+            // Mark early so syncPosition doesn't record MANUAL during the sleep below
+            ocoHandledSymbols.add(symbol);
 
             OrderDTO exitOrder = orderService.placeExitOrder(symbol, quantity, exitSide);
             if (exitOrder == null || !"ok".equals(exitOrder.getStatus())) {
@@ -799,14 +831,15 @@ public class PollingService {
                     "[EXIT] " + exitReason + " @ " + String.format("%.2f", exitPrice)
                     + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl)));
                 String desc = positionStateStore.getDescription(symbol);
-                tradeHistoryService.record(symbol, position, quantity, entryPrice, exitPrice, exitReason, setup, desc);
+                String prob = probabilityBySymbol.getOrDefault(symbol, "");
+                tradeHistoryService.record(symbol, position, quantity, entryPrice, exitPrice, exitReason, setup, desc, prob);
             } else {
                 eventService.log("[SUCCESS] " + label + " executed for " + symbol + " — position closed");
                 positionStateStore.appendDescription(symbol, "[EXIT] " + exitReason + " — position closed.");
                 String desc = positionStateStore.getDescription(symbol);
-                tradeHistoryService.record(symbol, position, quantity, entryPrice, exitPrice > 0 ? exitPrice : 0, exitReason, setup, desc);
+                String prob = probabilityBySymbol.getOrDefault(symbol, "");
+                tradeHistoryService.record(symbol, position, quantity, entryPrice, exitPrice > 0 ? exitPrice : 0, exitReason, setup, desc, prob);
             }
-            ocoHandledSymbols.add(symbol);
             clearSymbolState(symbol);
             return true;
 
@@ -1122,7 +1155,7 @@ public class PollingService {
                             + " initiated from Fyers Broker ( User / Automatic ) | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl)));
                         tradeHistoryService.record(symbol, prev.getSide(), absQty,
                             finalEntry, finalExit,
-                            "MANUAL", setupBySymbol.getOrDefault(symbol, ""));
+                            "MANUAL", setupBySymbol.getOrDefault(symbol, ""), null, probabilityBySymbol.getOrDefault(symbol, ""));
                         clearSymbolState(symbol);
                     } else if (prev != null) {
                         // position already NONE (e.g. external square-off), just remove from cache
@@ -1177,6 +1210,19 @@ public class PollingService {
     /** Returns first setup found — backward-compat for single-symbol callers. */
     public String getCurrentSetup() {
         return setupBySymbol.isEmpty() ? "" : setupBySymbol.values().iterator().next();
+    }
+
+    /** Returns probability for a specific symbol. */
+    public String getProbability(String symbol) {
+        return probabilityBySymbol.getOrDefault(symbol, "");
+    }
+
+    /** Sets probability for a symbol. Called from TradingController after signal processing. */
+    public void setProbability(String symbol, String probability) {
+        if (probability != null && !probability.isEmpty()) {
+            probabilityBySymbol.put(symbol, probability);
+            positionStateStore.saveProbability(symbol, probability);
+        }
     }
 
     /** Removes the cached position for a specific symbol. */

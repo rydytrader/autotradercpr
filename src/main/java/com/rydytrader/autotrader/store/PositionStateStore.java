@@ -138,6 +138,19 @@ public class PositionStateStore {
         map.put("slOrderId",     e.getSlOrderId());
         map.put("targetOrderId", e.getTargetOrderId());
         map.put("description",   e.getDescription());
+        map.put("probability",   e.getProbability());
         return map;
+    }
+
+    /** Updates the probability field for a position. */
+    public void saveProbability(String symbol, String probability) {
+        try {
+            positionRepo.findBySymbol(symbol).ifPresent(entity -> {
+                entity.setProbability(probability != null ? probability : "");
+                positionRepo.save(entity);
+            });
+        } catch (Exception e) {
+            log.error("[PositionStateStore] Failed to saveProbability for {}: {}", symbol, e.getMessage());
+        }
     }
 }

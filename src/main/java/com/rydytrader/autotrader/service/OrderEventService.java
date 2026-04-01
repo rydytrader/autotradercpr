@@ -528,6 +528,12 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             return;
         }
 
+        // Check if OCO orders are still tracked — use their context for exit reason
+        // (handles race where position event arrives before order fill event)
+        OcoContext ocoCtx = trackedOcoOrders.values().stream()
+            .filter(ctx -> symbol.equals(ctx.symbol) && !ctx.handled)
+            .findFirst().orElse(null);
+
         // Genuinely external close — record trade and clear state
         double entryPrice = pollingService != null ? pollingService.getEntryAvg(symbol) : 0;
         Map<String, Object> state = positionStateStore.load(symbol);
@@ -551,6 +557,15 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             exitPrice = orderService.getFilledPriceFromTradebook(symbol, exitSide);
         } catch (Exception ignored) {}
 
+        // Determine exit reason: use OCO context if available (SL/TARGET/TRAILING_SL), else MANUAL
+        String exitReason = "MANUAL";
+        if (ocoCtx != null) {
+            // Position closed while OCO was tracked — likely SL/target fill whose order event was delayed
+            exitReason = ("SL".equals(ocoCtx.type) && ocoCtx.trailed) ? "TRAILING_SL" : ocoCtx.type;
+            log.info("[OrderEventSvc] Using OCO context for exit reason: {} (trailed={})", exitReason, ocoCtx.trailed);
+            ocoCtx.handled = true;
+        }
+
         if (qty > 0 && entryPrice > 0) {
             double finalExit = exitPrice > 0 ? exitPrice : entryPrice; // fallback
             double pnl = "LONG".equals(positionSide)
@@ -558,17 +573,19 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
                 : (entryPrice - finalExit) * qty;
             String setup = pollingService != null ? pollingService.getCurrentSetup(symbol) : "";
 
-            eventService.log("[WS] External close detected for " + symbol + " at " + finalExit
+            eventService.log("[WS] " + (!"MANUAL".equals(exitReason) ? exitReason + " detected" : "External close detected")
+                + " for " + symbol + " at " + finalExit
                 + " | P&L: " + (pnl >= 0 ? "+" : "") + String.format("%.2f", pnl));
 
             positionStateStore.appendDescription(symbol,
-                "[EXIT] MANUAL @ " + String.format("%.2f", finalExit)
+                "[EXIT] " + exitReason + " @ " + String.format("%.2f", finalExit)
                 + " | " + (pnl >= 0 ? "PROFIT" : "LOSS") + " ₹" + String.format("%.2f", Math.abs(pnl)));
             String desc = positionStateStore.getDescription(symbol);
-            tradeHistoryService.record(symbol, positionSide, qty, entryPrice, finalExit, "MANUAL", setup, desc);
+            String prob = pollingService != null ? pollingService.getProbability(symbol) : "";
+            tradeHistoryService.record(symbol, positionSide, qty, entryPrice, finalExit, exitReason, setup, desc, prob);
 
             try {
-                telegramService.sendMessage("[WS] Manual close for " + symbol
+                telegramService.sendMessage("[WS] " + exitReason + " close for " + symbol
                     + " | " + positionSide + " | P&L: " + (pnl >= 0 ? "+" : "") + String.format("%.2f", pnl));
             } catch (Exception ignored) {}
         } else {
@@ -754,7 +771,8 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl)));
         String desc = positionStateStore.getDescription(symbol);
 
-        tradeHistoryService.record(symbol, ctx.positionSide, ctx.quantity, finalEntry, finalExit, exitReason, ctx.setup, desc);
+        String prob = pollingService != null ? pollingService.getProbability(symbol) : "";
+        tradeHistoryService.record(symbol, ctx.positionSide, ctx.quantity, finalEntry, finalExit, exitReason, ctx.setup, desc, prob);
 
         // Telegram notification
         try {

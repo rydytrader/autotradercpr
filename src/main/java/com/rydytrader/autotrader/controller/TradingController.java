@@ -164,6 +164,7 @@ public class TradingController {
         double stoploss    = ps.getStoploss();
         double target      = ps.getTarget();
         String setup       = ps.getSetup();
+        String probability = ps.getProbability();
         double atr         = ps.getAtr();
         double atrMult     = ps.getAtrMultiplier();
         String description = ps.getDescription();
@@ -184,6 +185,7 @@ public class TradingController {
             // Monitor entry fill, then place SL + Target OCO
             // exitSide = -1 (SELL to exit a LONG)
             pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "LONG", -1, stoploss, target, setup, atr, atrMult, description);
+            pollingService.setProbability(symbol, probability);
 
         } else if (signal.equals("SELL") && !PositionManager.getPosition(symbol).equals("SHORT")) {
 
@@ -198,6 +200,7 @@ public class TradingController {
 
             // exitSide = 1 (BUY to exit a SHORT)
             pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "SHORT", 1, stoploss, target, setup, atr, atrMult, description);
+            pollingService.setProbability(symbol, probability);
 
         } else {
             String msg = "Signal ignored — existing position: " + PositionManager.getPosition(symbol);
@@ -237,9 +240,10 @@ public class TradingController {
             m.put("pnl",       pnl);
             m.put("setup",     p.getSetup());
             m.put("entryTime", p.getEntryTime());
-            // Include description from persisted state
+            // Include description and probability from persisted state
             Map<String, Object> state = positionStateStore.load(p.getSymbol());
             m.put("description", state != null ? state.getOrDefault("description", "") : "");
+            m.put("probability", pollingService.getProbability(p.getSymbol()));
             return m;
         }).collect(java.util.stream.Collectors.toList());
         double realizedPnl   = tradeHistoryService.getTrades().stream()
@@ -433,6 +437,7 @@ public class TradingController {
             m.put("netPnl",     t.getNetPnl());
             m.put("result",     t.getResult());
             m.put("description", t.getDescription() != null ? t.getDescription() : "");
+            m.put("probability", t.getProbability() != null ? t.getProbability() : "");
             return m;
         }).collect(java.util.stream.Collectors.toList());
     }
@@ -525,7 +530,7 @@ public class TradingController {
 
         // Reason breakdown
         Map<String, Object> rb = new java.util.LinkedHashMap<>();
-        for (String r : new String[]{"SL","TARGET","MANUAL"}) {
+        for (String r : new String[]{"SL","TRAILING_SL","TARGET","AUTO_SQUAREOFF","MANUAL"}) {
             var rt = trades.stream().filter(t -> r.equals(t.getExitReason())).collect(java.util.stream.Collectors.toList());
             double rp = rt.stream().mapToDouble(t -> t.getNetPnl()).sum();
             double ra = rt.isEmpty() ? 0 : Math.round(rp / rt.size() * 100.0) / 100.0;
@@ -599,6 +604,78 @@ public class TradingController {
             symbolMap.put(sym, sd);
         }
         result.put("symbolBreakdown", symbolMap);
+
+        // Time breakdown — bucket by 1-hour slots (9:15–10:15, 10:15–11:15, ...)
+        // Pre-fill all market hour slots so empty ones show as 0
+        Map<String, Object> timeMap = new java.util.LinkedHashMap<>();
+        int[] slotStarts = {9*60+15, 10*60+15, 11*60+15, 12*60+15, 13*60+15, 14*60+15};
+        for (int start : slotStarts) {
+            int end = start + 60;
+            String key = String.format("%02d:%02d–%02d:%02d", start/60, start%60, end/60, end%60);
+            Map<String, Object> empty = new java.util.LinkedHashMap<>();
+            empty.put("count", 0); empty.put("wins", 0); empty.put("pnl", 0.0);
+            timeMap.put(key, empty);
+        }
+        for (var t : trades) {
+            String ts = t.getTimestamp(); // HH:mm:ss
+            if (ts == null || ts.length() < 5) continue;
+            int hour = Integer.parseInt(ts.substring(0, 2));
+            int min = Integer.parseInt(ts.substring(3, 5));
+            int totalMin = hour * 60 + min;
+            // Find the matching 1-hour slot
+            String bucket = null;
+            for (int start : slotStarts) {
+                if (totalMin >= start && totalMin < start + 60) {
+                    int end = start + 60;
+                    bucket = String.format("%02d:%02d–%02d:%02d", start/60, start%60, end/60, end%60);
+                    break;
+                }
+            }
+            if (bucket == null) continue;
+            @SuppressWarnings("unchecked")
+            Map<String, Object> tm = (Map<String, Object>) timeMap.computeIfAbsent(bucket, k -> {
+                Map<String, Object> m = new java.util.LinkedHashMap<>();
+                m.put("count", 0); m.put("wins", 0); m.put("pnl", 0.0);
+                return m;
+            });
+            tm.put("count", (int) tm.get("count") + 1);
+            if ("PROFIT".equals(t.getResult())) tm.put("wins", (int) tm.get("wins") + 1);
+            tm.put("pnl", (double) tm.get("pnl") + t.getNetPnl());
+        }
+        // Add winRate and round pnl
+        for (var te : timeMap.entrySet()) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> tm = (Map<String, Object>) te.getValue();
+            int tc = (int) tm.get("count");
+            int tw = (int) tm.get("wins");
+            tm.put("winRate", tc > 0 ? Math.round(tw * 1000.0 / tc) / 10.0 : 0);
+            tm.put("pnl", Math.round((double) tm.get("pnl") * 100.0) / 100.0);
+            tm.put("avgPnl", tc > 0 ? Math.round((double) tm.get("pnl") / tc * 100.0) / 100.0 : 0);
+        }
+        result.put("timeBreakdown", timeMap);
+
+        // Probability breakdown — HPT / MPT / LPT
+        Map<String, Object> probMap = new java.util.LinkedHashMap<>();
+        for (String p : new String[]{"HPT","MPT","LPT"}) {
+            final String pf2 = p;
+            var pt = trades.stream().filter(t -> pf2.equals(t.getProbability())).collect(java.util.stream.Collectors.toList());
+            if (pt.isEmpty()) continue;
+            int pw = (int) pt.stream().filter(t -> "PROFIT".equals(t.getResult())).count();
+            double pp = pt.stream().mapToDouble(t -> t.getNetPnl()).sum();
+            double pa = Math.round(pp / pt.size() * 100.0) / 100.0;
+            double pWin = pt.stream().filter(t -> t.getNetPnl() > 0).mapToDouble(t -> t.getNetPnl()).sum();
+            double pLoss = Math.abs(pt.stream().filter(t -> t.getNetPnl() < 0).mapToDouble(t -> t.getNetPnl()).sum());
+            double ppf = pLoss == 0 ? (pWin > 0 ? 99 : 0) : Math.round(pWin / pLoss * 100.0) / 100.0;
+            Map<String, Object> pd = new java.util.LinkedHashMap<>();
+            pd.put("count",   pt.size());
+            pd.put("wins",    pw);
+            pd.put("winRate", Math.round(pw * 1000.0 / pt.size()) / 10.0);
+            pd.put("pnl",     Math.round(pp * 100.0) / 100.0);
+            pd.put("avgPnl",  pa);
+            pd.put("profitFactor", ppf);
+            probMap.put(p, pd);
+        }
+        result.put("probabilityBreakdown", probMap);
 
         // Max drawdown & drawdown curve
         double peak = 0, maxDD = 0, cumDD = 0;

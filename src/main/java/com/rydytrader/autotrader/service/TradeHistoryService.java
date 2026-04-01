@@ -45,16 +45,22 @@ public class TradeHistoryService {
 
     public void record(String symbol, String side, int qty,
                        double entryPrice, double exitPrice, String exitReason) {
-        record(symbol, side, qty, entryPrice, exitPrice, exitReason, "", null);
+        record(symbol, side, qty, entryPrice, exitPrice, exitReason, "", null, null);
     }
 
     public void record(String symbol, String side, int qty,
                        double entryPrice, double exitPrice, String exitReason, String setup) {
-        record(symbol, side, qty, entryPrice, exitPrice, exitReason, setup, null);
+        record(symbol, side, qty, entryPrice, exitPrice, exitReason, setup, null, null);
     }
 
     public void record(String symbol, String side, int qty,
                        double entryPrice, double exitPrice, String exitReason, String setup, String description) {
+        record(symbol, side, qty, entryPrice, exitPrice, exitReason, setup, description, null);
+    }
+
+    public void record(String symbol, String side, int qty,
+                       double entryPrice, double exitPrice, String exitReason, String setup,
+                       String description, String probability) {
         // Dedup: skip if same symbol was recorded within the last 5 seconds
         long now = System.currentTimeMillis();
         Long lastTime = lastRecordTime.get(symbol);
@@ -64,7 +70,7 @@ public class TradeHistoryService {
         }
         lastRecordTime.put(symbol, now);
         double brokerage = riskSettings.getBrokeragePerOrder();
-        addRecord(new TradeRecord(symbol, side, qty, entryPrice, exitPrice, exitReason, setup, brokerage, description));
+        addRecord(new TradeRecord(symbol, side, qty, entryPrice, exitPrice, exitReason, setup, brokerage, description, probability));
     }
 
     public List<TradeRecord> getTrades() { return new ArrayList<>(trades); }
@@ -106,6 +112,7 @@ public class TradeHistoryService {
             entity.setCharges(r.getCharges());
             entity.setNetPnl(r.getNetPnl());
             entity.setDescription(r.getDescription());
+            entity.setProbability(r.getProbability());
             tradeRepo.save(entity);
         } catch (Exception e) {
             log.error("Error saving trade to DB", e);
@@ -130,6 +137,6 @@ public class TradeHistoryService {
     private TradeRecord entityToRecord(TradeEntity e) {
         return new TradeRecord(e.getTimestamp(), e.getSymbol(), e.getSide(),
                 e.getQty(), e.getEntryPrice(), e.getExitPrice(),
-                e.getExitReason(), e.getSetup(), e.getCharges(), true, e.getDescription());
+                e.getExitReason(), e.getSetup(), e.getCharges(), true, e.getDescription(), e.getProbability());
     }
 }

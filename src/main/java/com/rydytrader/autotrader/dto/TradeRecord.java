@@ -27,26 +27,33 @@ public class TradeRecord {
     private final double netPnl;
     private final String result;
     private final String description;
+    private final String probability;
 
     public TradeRecord(String symbol, String side, int qty,
                        double entryPrice, double exitPrice, String exitReason) {
-        this(symbol, side, qty, entryPrice, exitPrice, exitReason, "", DEFAULT_BROKERAGE, null);
+        this(symbol, side, qty, entryPrice, exitPrice, exitReason, "", DEFAULT_BROKERAGE, null, null);
     }
 
     public TradeRecord(String symbol, String side, int qty,
                        double entryPrice, double exitPrice, String exitReason, String setup) {
-        this(symbol, side, qty, entryPrice, exitPrice, exitReason, setup, DEFAULT_BROKERAGE, null);
+        this(symbol, side, qty, entryPrice, exitPrice, exitReason, setup, DEFAULT_BROKERAGE, null, null);
     }
 
     public TradeRecord(String symbol, String side, int qty,
                        double entryPrice, double exitPrice, String exitReason, String setup,
                        double brokeragePerOrder) {
-        this(symbol, side, qty, entryPrice, exitPrice, exitReason, setup, brokeragePerOrder, null);
+        this(symbol, side, qty, entryPrice, exitPrice, exitReason, setup, brokeragePerOrder, null, null);
     }
 
     public TradeRecord(String symbol, String side, int qty,
                        double entryPrice, double exitPrice, String exitReason, String setup,
                        double brokeragePerOrder, String description) {
+        this(symbol, side, qty, entryPrice, exitPrice, exitReason, setup, brokeragePerOrder, description, null);
+    }
+
+    public TradeRecord(String symbol, String side, int qty,
+                       double entryPrice, double exitPrice, String exitReason, String setup,
+                       double brokeragePerOrder, String description, String probability) {
         this.timestamp  = LocalDateTime.now().format(FMT);
         this.symbol     = symbol;
         this.side       = side;
@@ -56,6 +63,7 @@ public class TradeRecord {
         this.exitReason = exitReason;
         this.setup      = setup != null ? setup : "";
         this.description = description;
+        this.probability = probability != null ? probability : "";
         double raw = (exitPrice - entryPrice) * qty * ("SHORT".equals(side) ? -1 : 1);
         this.pnl     = Math.round(raw * 100.0) / 100.0;
         this.charges = ChargesCalculator.calculate(side, qty, entryPrice, exitPrice, brokeragePerOrder).totalCharges;
@@ -77,12 +85,18 @@ public class TradeRecord {
     public TradeRecord(String timestamp, String symbol, String side, int qty,
                        double entryPrice, double exitPrice, String exitReason, String setup,
                        double brokeragePerOrder) {
-        this(timestamp, symbol, side, qty, entryPrice, exitPrice, exitReason, setup, brokeragePerOrder, null);
+        this(timestamp, symbol, side, qty, entryPrice, exitPrice, exitReason, setup, brokeragePerOrder, null, null);
     }
 
     public TradeRecord(String timestamp, String symbol, String side, int qty,
                        double entryPrice, double exitPrice, String exitReason, String setup,
                        double brokeragePerOrder, String description) {
+        this(timestamp, symbol, side, qty, entryPrice, exitPrice, exitReason, setup, brokeragePerOrder, description, null);
+    }
+
+    public TradeRecord(String timestamp, String symbol, String side, int qty,
+                       double entryPrice, double exitPrice, String exitReason, String setup,
+                       double brokeragePerOrder, String description, String probability) {
         this.timestamp  = timestamp;
         this.symbol     = symbol;
         this.side       = side;
@@ -92,6 +106,7 @@ public class TradeRecord {
         this.exitReason = exitReason;
         this.setup      = setup != null ? setup : "";
         this.description = description;
+        this.probability = probability != null ? probability : "";
         double raw = (exitPrice - entryPrice) * qty * ("SHORT".equals(side) ? -1 : 1);
         this.pnl     = Math.round(raw * 100.0) / 100.0;
         this.charges = ChargesCalculator.calculate(side, qty, entryPrice, exitPrice, brokeragePerOrder).totalCharges;
@@ -102,13 +117,19 @@ public class TradeRecord {
     // Used when reloading from DB with pre-computed charges
     public TradeRecord(String timestamp, String symbol, String side, int qty,
                        double entryPrice, double exitPrice, String exitReason, String setup,
-                       double charges, boolean fromCsv) {
-        this(timestamp, symbol, side, qty, entryPrice, exitPrice, exitReason, setup, charges, fromCsv, null);
+                       double charges, boolean fromDb) {
+        this(timestamp, symbol, side, qty, entryPrice, exitPrice, exitReason, setup, charges, fromDb, null, null);
     }
 
     public TradeRecord(String timestamp, String symbol, String side, int qty,
                        double entryPrice, double exitPrice, String exitReason, String setup,
-                       double charges, boolean fromCsv, String description) {
+                       double charges, boolean fromDb, String description) {
+        this(timestamp, symbol, side, qty, entryPrice, exitPrice, exitReason, setup, charges, fromDb, description, null);
+    }
+
+    public TradeRecord(String timestamp, String symbol, String side, int qty,
+                       double entryPrice, double exitPrice, String exitReason, String setup,
+                       double charges, boolean fromDb, String description, String probability) {
         this.timestamp  = timestamp;
         this.symbol     = symbol;
         this.side       = side;
@@ -118,6 +139,7 @@ public class TradeRecord {
         this.exitReason = exitReason;
         this.setup      = setup != null ? setup : "";
         this.description = description;
+        this.probability = probability != null ? probability : "";
         double raw = (exitPrice - entryPrice) * qty * ("SHORT".equals(side) ? -1 : 1);
         this.pnl     = Math.round(raw * 100.0) / 100.0;
         this.charges = charges;
@@ -138,4 +160,5 @@ public class TradeRecord {
     public double getNetPnl()     { return netPnl; }
     public String getResult()     { return result; }
     public String getDescription() { return description; }
+    public String getProbability() { return probability; }
 }

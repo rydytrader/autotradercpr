@@ -67,8 +67,13 @@
         .tr{text-align:right;}.tc{text-align:center;}
         .pos{color:var(--accent-green);font-weight:600;}.neg{color:var(--accent-red);font-weight:600;}
         .b-sl{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);color:var(--accent-red);padding:3px 10px;border-radius:4px;font-size:.67rem;font-weight:700;}
+        .b-trail{background:rgba(251,146,60,.1);border:1px solid rgba(251,146,60,.25);color:#fb923c;padding:3px 10px;border-radius:4px;font-size:.67rem;font-weight:700;}
         .b-tgt{background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.25);color:var(--accent-green);padding:3px 10px;border-radius:4px;font-size:.67rem;font-weight:700;}
+        .b-auto{background:rgba(99,179,237,.1);border:1px solid rgba(99,179,237,.25);color:var(--accent-blue);padding:3px 10px;border-radius:4px;font-size:.67rem;font-weight:700;}
         .b-man{background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25);color:var(--accent-yellow);padding:3px 10px;border-radius:4px;font-size:.67rem;font-weight:700;}
+        .b-hpt{background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.25);color:var(--accent-green);padding:3px 10px;border-radius:4px;font-size:.67rem;font-weight:700;}
+        .b-mpt{background:rgba(99,179,237,.1);border:1px solid rgba(99,179,237,.25);color:var(--accent-blue);padding:3px 10px;border-radius:4px;font-size:.67rem;font-weight:700;}
+        .b-lpt{background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25);color:var(--accent-yellow);padding:3px 10px;border-radius:4px;font-size:.67rem;font-weight:700;}
 
     </style>
 </head>
@@ -331,6 +336,34 @@
         </div>
     </div>
 
+    <!-- Time & Probability Breakdown -->
+    <div class="breakdown-grid fade-in">
+        <div class="section-card">
+            <div class="section-header">
+                <div class="section-title">
+                    <div class="section-title-dot" style="background:var(--accent-cyan)"></div>
+                    Win Rate by Time
+                </div>
+            </div>
+            <table class="data-table">
+                <thead><tr><th>Time Slot</th><th class="tr">Trades</th><th class="tr">Win %</th><th class="tr">Avg P&amp;L</th><th class="tr">Total P&amp;L</th></tr></thead>
+                <tbody id="timeTable"><tr><td colspan="5"><div class="empty-state" style="padding:20px"><div class="empty-icon" style="font-size:1.2rem">◎</div>No data</div></td></tr></tbody>
+            </table>
+        </div>
+        <div class="section-card">
+            <div class="section-header">
+                <div class="section-title">
+                    <div class="section-title-dot" style="background:var(--accent-green)"></div>
+                    Win Rate by Probability
+                </div>
+            </div>
+            <table class="data-table">
+                <thead><tr><th>Category</th><th class="tr">Trades</th><th class="tr">Win %</th><th class="tr">PF</th><th class="tr">Avg P&amp;L</th><th class="tr">Total P&amp;L</th></tr></thead>
+                <tbody id="probTable"><tr><td colspan="6"><div class="empty-state" style="padding:20px"><div class="empty-icon" style="font-size:1.2rem">◎</div>No data</div></td></tr></tbody>
+            </table>
+        </div>
+    </div>
+
     <footer class="page-footer">
         <div>© <span id="footerYear"></span> TraderEdge CPR. All rights reserved.</div>
         <div class="footer-author">Built by <strong style="color:var(--text-secondary);margin:0 4px">Prabhu Arumugham</strong><span class="footer-tag">rydytrader</span></div>
@@ -539,7 +572,13 @@
         }).join('') : '<tr><td colspan="4"><div class="empty-state" style="padding:20px">No data</div></td></tr>';
 
         const rb = d.reasonBreakdown;
-        const rbadge = r => r==='SL' ? '<span class="b-sl">SL</span>' : r==='TARGET' ? '<span class="b-tgt">TARGET</span>' : '<span class="b-man">MANUAL</span>';
+        const rbadge = r => {
+            if (r==='SL') return '<span class="b-sl">SL</span>';
+            if (r==='TRAILING_SL') return '<span class="b-trail">TRAILING SL</span>';
+            if (r==='TARGET') return '<span class="b-tgt">TARGET</span>';
+            if (r==='AUTO_SQUAREOFF') return '<span class="b-auto">AUTO SQ OFF</span>';
+            return '<span class="b-man">MANUAL</span>';
+        };
         g('reasonTable').innerHTML = Object.entries(rb).filter(([,v])=>v.count>0).map(([r,s]) =>
             `<tr><td>${rbadge(r)}</td><td class="tr">${s.count}</td><td class="tr"><span class="${s.avgPnl>=0?'pos':'neg'}">${fmtPnl(s.avgPnl)}</span></td><td class="tr"><span class="${s.pnl>=0?'pos':'neg'}">${fmtPnl(s.pnl)}</span></td></tr>`
         ).join('') || '<tr><td colspan="4"><div class="empty-state" style="padding:20px">No data</div></td></tr>';
@@ -553,6 +592,19 @@
         g('symbolTable').innerHTML = Object.entries(symbolb).filter(([,v])=>v.count>0).map(([sym,s]) =>
             `<tr><td style="font-family:var(--font-mono);font-size:.75rem;color:var(--accent-blue)">${sym||'—'}</td><td class="tr">${s.count}</td><td class="tr"><span class="${s.winRate>=50?'pos':'neg'}">${s.winRate}%</span></td><td class="tr"><span class="${s.avgPnl>=0?'pos':'neg'}">${fmtPnl(s.avgPnl)}</span></td><td class="tr"><span class="${s.pnl>=0?'pos':'neg'}">${fmtPnl(s.pnl)}</span></td></tr>`
         ).join('') || '<tr><td colspan="5"><div class="empty-state" style="padding:20px">No data</div></td></tr>';
+
+        // Time breakdown
+        const timeb = d.timeBreakdown || {};
+        g('timeTable').innerHTML = Object.entries(timeb).map(([slot,s]) =>
+            `<tr style="${s.count===0?'opacity:0.4':''}"><td style="font-family:var(--font-mono);font-size:.75rem;color:var(--accent-cyan)">${slot}</td><td class="tr">${s.count}</td><td class="tr">${s.count?'<span class=\"'+(s.winRate>=50?'pos':'neg')+'\">'+ s.winRate+'%</span>':'—'}</td><td class="tr">${s.count?'<span class=\"'+(s.avgPnl>=0?'pos':'neg')+'\">'+ fmtPnl(s.avgPnl)+'</span>':'—'}</td><td class="tr">${s.count?'<span class=\"'+(s.pnl>=0?'pos':'neg')+'\">'+ fmtPnl(s.pnl)+'</span>':'—'}</td></tr>`
+        ).join('') || '<tr><td colspan="5"><div class="empty-state" style="padding:20px">No data</div></td></tr>';
+
+        // Probability breakdown
+        const probb = d.probabilityBreakdown || {};
+        const pbadge = p => p==='HPT' ? '<span class="b-hpt">HPT</span>' : p==='MPT' ? '<span class="b-mpt">MPT</span>' : '<span class="b-lpt">LPT</span>';
+        g('probTable').innerHTML = Object.entries(probb).filter(([,v])=>v.count>0).map(([p,s]) =>
+            `<tr><td>${pbadge(p)}</td><td class="tr">${s.count}</td><td class="tr"><span class="${s.winRate>=50?'pos':'neg'}">${s.winRate}%</span></td><td class="tr">${s.profitFactor}</td><td class="tr"><span class="${s.avgPnl>=0?'pos':'neg'}">${fmtPnl(s.avgPnl)}</span></td><td class="tr"><span class="${s.pnl>=0?'pos':'neg'}">${fmtPnl(s.pnl)}</span></td></tr>`
+        ).join('') || '<tr><td colspan="6"><div class="empty-state" style="padding:20px">No data</div></td></tr>';
     }
 
     // ── LOAD ──────────────────────────────────────
