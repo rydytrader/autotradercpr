@@ -30,6 +30,19 @@ public class SecurityConfig {
     }
 
     @Bean
+    @org.springframework.core.annotation.Order(1)
+    public SecurityFilterChain sseFilterChain(HttpSecurity http) throws Exception {
+        http
+            .securityMatcher("/api/market-ticker/stream")
+            .csrf(csrf -> csrf.disable())
+            .sessionManagement(session -> session
+                .sessionCreationPolicy(org.springframework.security.config.http.SessionCreationPolicy.STATELESS))
+            .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
+        return http.build();
+    }
+
+    @Bean
+    @org.springframework.core.annotation.Order(2)
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         CsrfTokenRequestAttributeHandler csrfHandler = new CsrfTokenRequestAttributeHandler();
         csrfHandler.setCsrfRequestAttributeName("_csrf");
@@ -47,9 +60,8 @@ public class SecurityConfig {
                 // Allow async dispatches (SSE pushes) without re-auth
                 .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ASYNC).permitAll()
 
-                // Public: login page, static resources, TradingView webhook, SSE stream
+                // Public: login page, static resources, TradingView webhook
                 .requestMatchers("/login", "/css/**", "/js/**", "/favicon*", "/error").permitAll()
-                .requestMatchers("/api/market-ticker/stream").permitAll()
                 .requestMatchers(HttpMethod.POST, "/placeorder").permitAll()
 
                 // ADMIN only: all mutations (POST/PUT/DELETE) except login
