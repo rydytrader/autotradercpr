@@ -7,7 +7,7 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/shared.css?v=4">
+    <link rel="stylesheet" href="/css/shared.css?v=5">
     <style>
         .section-card .table-wrap { max-height: 780px; overflow-y: auto; }
         .data-table { min-height: 100%; }
@@ -40,16 +40,16 @@
         </div>
     </div>
     <nav class="sidebar-nav">
-        <div class="sidebar-nav-section">Main</div>
-        <a href="/home" class="sidebar-nav-item"><span class="sidebar-nav-icon" style="font-size:1.3rem;">⌂</span><span class="sidebar-nav-label">Home</span></a>
-        <a href="/scanner" class="sidebar-nav-item"><span class="sidebar-nav-icon">◎</span><span class="sidebar-nav-label">Watchlist</span></a>
-        <a href="/positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
-        <a href="/trades" class="sidebar-nav-item active"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
-        <a href="/journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">☷</span><span class="sidebar-nav-label">Journal</span></a>
-        <a href="/settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
+        <div class="sidebar-nav-section" style="display:flex;align-items:center;justify-content:space-between;"><button class="sidebar-collapse-btn" onclick="toggleSidebar()" title="Toggle sidebar" style="margin:0;padding:2px 6px;border:none;">☰</button></div>
+        <a href="/home" data-tooltip="Home" class="sidebar-nav-item"><span class="sidebar-nav-icon" style="font-size:1.3rem;">⌂</span><span class="sidebar-nav-label">Home</span></a>
+        <a href="/scanner" data-tooltip="Watchlist" class="sidebar-nav-item"><span class="sidebar-nav-icon">◎</span><span class="sidebar-nav-label">Watchlist</span></a>
+        <a href="/positions" data-tooltip="Positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
+        <a href="/trades" data-tooltip="Trade Log" class="sidebar-nav-item active"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
+        <a href="/journal" data-tooltip="Journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">☷</span><span class="sidebar-nav-label">Journal</span></a>
+        <a href="/settings" data-tooltip="Settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
         <div class="sidebar-nav-section">Operations</div>
-        <a href="/console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
-        <a href="/monitoring" class="sidebar-nav-item"><span class="sidebar-nav-icon">◉</span><span class="sidebar-nav-label">Monitoring</span></a>
+        <a href="/console" data-tooltip="Console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
+        <a href="/monitoring" data-tooltip="Monitoring" class="sidebar-nav-item"><span class="sidebar-nav-icon">◉</span><span class="sidebar-nav-label">Monitoring</span></a>
     </nav>
     <div class="sidebar-footer">
         <div class="status-pill">
@@ -115,8 +115,27 @@
             <select id="tradeSymbolFilter" onchange="filterTrades()" style="
                 background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
                 border-radius:4px;padding:2px 8px;font-size:0.72rem;font-family:var(--font-mono);
-                outline:none;cursor:pointer;margin-left:auto;margin-right:10px;">
+                outline:none;cursor:pointer;margin-left:auto;margin-right:6px;">
                 <option value="">All Symbols</option>
+            </select>
+            <select id="tradeResultFilter" onchange="filterTrades()" style="
+                background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
+                border-radius:4px;padding:2px 8px;font-size:0.72rem;font-family:var(--font-mono);
+                outline:none;cursor:pointer;margin-right:6px;">
+                <option value="">All Results</option>
+                <option value="PROFIT">Profit</option>
+                <option value="LOSS">Loss</option>
+            </select>
+            <select id="tradeReasonFilter" onchange="filterTrades()" style="
+                background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
+                border-radius:4px;padding:2px 8px;font-size:0.72rem;font-family:var(--font-mono);
+                outline:none;cursor:pointer;margin-right:10px;">
+                <option value="">All Reasons</option>
+                <option value="SL">SL</option>
+                <option value="TRAILING_SL">Trailing SL</option>
+                <option value="TARGET">Target</option>
+                <option value="AUTO_SQUAREOFF">Auto SqOff</option>
+                <option value="MANUAL">Manual</option>
             </select>
             <span class="section-badge" id="tradesBadge">0 today</span>
         </div>
@@ -166,7 +185,7 @@
 
 </div>
 
-<script src="/js/common.js?v=2"></script>
+<script src="/js/common.js?v=5"></script>
 <script src="/js/ticker.js?v=3"></script>
 <script>
     // ── FORMATTERS ────────────────────────────────
@@ -235,8 +254,10 @@
                 : `<span class="side-badge side-short">▼ SHORT</span>`;
         }
         if (type === 'reason') {
-            if (value === 'SL')     return `<span class="side-badge side-short">SL</span>`;
-            if (value === 'TARGET') return `<span class="side-badge side-long">TARGET</span>`;
+            if (value === 'SL')              return `<span class="side-badge side-short">SL</span>`;
+            if (value === 'TRAILING_SL')     return `<span class="side-badge" style="background:rgba(251,146,60,0.1);border:1px solid rgba(251,146,60,0.25);color:#fb923c">TRAILING SL</span>`;
+            if (value === 'TARGET')          return `<span class="side-badge side-long">TARGET</span>`;
+            if (value === 'AUTO_SQUAREOFF')  return `<span class="side-badge" style="background:rgba(99,179,237,0.1);border:1px solid rgba(99,179,237,0.25);color:var(--accent-blue)">AUTO SQOFF</span>`;
             return `<span class="side-badge" style="background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.25);color:var(--accent-yellow)">MANUAL</span>`;
         }
         if (type === 'result') {
@@ -259,8 +280,13 @@
     }
 
     function filterTrades() {
-        var filter = document.getElementById('tradeSymbolFilter').value;
-        var trades = filter ? allTrades.filter(t => t.symbol === filter) : allTrades;
+        var symFilter = document.getElementById('tradeSymbolFilter').value;
+        var resultFilter = document.getElementById('tradeResultFilter').value;
+        var reasonFilter = document.getElementById('tradeReasonFilter').value;
+        var trades = allTrades;
+        if (symFilter) trades = trades.filter(t => t.symbol === symFilter);
+        if (resultFilter) trades = trades.filter(t => t.result === resultFilter);
+        if (reasonFilter) trades = trades.filter(t => t.exitReason === reasonFilter);
         renderTrades(trades);
     }
 
@@ -330,12 +356,7 @@
 
 
 
-    function logout() {
-        fetch('/api/logout', { method: 'POST' })
-            .then(r => r.json())
-            .then(data => { window.location.href = data.redirect || '/'; })
-            .catch(() => { window.location.href = '/'; });
-    }
+    // logout() provided by common.js
 
     function escapeForJs(str) {
         if (!str) return '';

@@ -8,7 +8,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <link rel="stylesheet" href="/css/shared.css?v=4">
+    <link rel="stylesheet" href="/css/shared.css?v=5">
     <script>
         (function() {
             const t = localStorage.getItem('traderedge-theme') || 'dark';
@@ -88,16 +88,16 @@
         </div>
     </div>
     <nav class="sidebar-nav">
-        <div class="sidebar-nav-section">Main</div>
-        <a href="/home" class="sidebar-nav-item"><span class="sidebar-nav-icon" style="font-size:1.3rem;">⌂</span><span class="sidebar-nav-label">Home</span></a>
-        <a href="/scanner" class="sidebar-nav-item"><span class="sidebar-nav-icon">◎</span><span class="sidebar-nav-label">Watchlist</span></a>
-        <a href="/positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
-        <a href="/trades" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
-        <a href="/journal" class="sidebar-nav-item active"><span class="sidebar-nav-icon">☷</span><span class="sidebar-nav-label">Journal</span></a>
-        <a href="/settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
+        <div class="sidebar-nav-section" style="display:flex;align-items:center;justify-content:space-between;"><button class="sidebar-collapse-btn" onclick="toggleSidebar()" title="Toggle sidebar" style="margin:0;padding:2px 6px;border:none;">☰</button></div>
+        <a href="/home" data-tooltip="Home" class="sidebar-nav-item"><span class="sidebar-nav-icon" style="font-size:1.3rem;">⌂</span><span class="sidebar-nav-label">Home</span></a>
+        <a href="/scanner" data-tooltip="Watchlist" class="sidebar-nav-item"><span class="sidebar-nav-icon">◎</span><span class="sidebar-nav-label">Watchlist</span></a>
+        <a href="/positions" data-tooltip="Positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
+        <a href="/trades" data-tooltip="Trade Log" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
+        <a href="/journal" data-tooltip="Journal" class="sidebar-nav-item active"><span class="sidebar-nav-icon">☷</span><span class="sidebar-nav-label">Journal</span></a>
+        <a href="/settings" data-tooltip="Settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
         <div class="sidebar-nav-section">Operations</div>
-        <a href="/console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
-        <a href="/monitoring" class="sidebar-nav-item"><span class="sidebar-nav-icon">◉</span><span class="sidebar-nav-label">Monitoring</span></a>
+        <a href="/console" data-tooltip="Console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
+        <a href="/monitoring" data-tooltip="Monitoring" class="sidebar-nav-item"><span class="sidebar-nav-icon">◉</span><span class="sidebar-nav-label">Monitoring</span></a>
     </nav>
     <div class="sidebar-footer">
         <div class="status-pill">
@@ -371,7 +371,7 @@
 
 </div>
 
-<script src="/js/common.js?v=2"></script>
+<script src="/js/common.js?v=5"></script>
 <script src="/js/ticker.js?v=3"></script>
 <script>
     // ── THEME (override toggleTheme to also re-render charts) ──
@@ -634,12 +634,7 @@
 
 
 
-    function logout() {
-        fetch('/api/logout', { method: 'POST' })
-            .then(r => r.json())
-            .then(data => { window.location.href = data.redirect || '/'; })
-            .catch(() => { window.location.href = '/'; });
-    }
+    // logout() provided by common.js
 
 
 

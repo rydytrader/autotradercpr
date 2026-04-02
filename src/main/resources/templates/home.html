@@ -8,7 +8,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <link rel="stylesheet" href="/css/shared.css?v=4">
+    <link rel="stylesheet" href="/css/shared.css?v=5">
     <script>
         (function() {
             const t = localStorage.getItem('traderedge-theme') || 'dark';
@@ -33,16 +33,16 @@
         </div>
     </div>
     <nav class="sidebar-nav">
-        <div class="sidebar-nav-section">Main</div>
-        <a href="/home" class="sidebar-nav-item active"><span class="sidebar-nav-icon" style="font-size:1.3rem;">⌂</span><span class="sidebar-nav-label">Home</span></a>
-        <a href="/scanner" class="sidebar-nav-item"><span class="sidebar-nav-icon">◎</span><span class="sidebar-nav-label">Watchlist</span></a>
-        <a href="/positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
-        <a href="/trades" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
-        <a href="/journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">☷</span><span class="sidebar-nav-label">Journal</span></a>
-        <a href="/settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
+        <div class="sidebar-nav-section" style="display:flex;align-items:center;justify-content:space-between;"><button class="sidebar-collapse-btn" onclick="toggleSidebar()" title="Toggle sidebar" style="margin:0;padding:2px 6px;border:none;">☰</button></div>
+        <a href="/home" data-tooltip="Home" class="sidebar-nav-item active"><span class="sidebar-nav-icon" style="font-size:1.3rem;">⌂</span><span class="sidebar-nav-label">Home</span></a>
+        <a href="/scanner" data-tooltip="Watchlist" class="sidebar-nav-item"><span class="sidebar-nav-icon">◎</span><span class="sidebar-nav-label">Watchlist</span></a>
+        <a href="/positions" data-tooltip="Positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
+        <a href="/trades" data-tooltip="Trade Log" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
+        <a href="/journal" data-tooltip="Journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">☷</span><span class="sidebar-nav-label">Journal</span></a>
+        <a href="/settings" data-tooltip="Settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
         <div class="sidebar-nav-section">Operations</div>
-        <a href="/console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
-        <a href="/monitoring" class="sidebar-nav-item"><span class="sidebar-nav-icon">◉</span><span class="sidebar-nav-label">Monitoring</span></a>
+        <a href="/console" data-tooltip="Console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
+        <a href="/monitoring" data-tooltip="Monitoring" class="sidebar-nav-item"><span class="sidebar-nav-icon">◉</span><span class="sidebar-nav-label">Monitoring</span></a>
     </nav>
     <div class="sidebar-footer">
         <div class="status-pill">
@@ -72,10 +72,35 @@
             <div class="page-title">Dashboard</div>
             <div class="page-subtitle">Today's Trading Overview</div>
         </div>
-        <div style="font-family:var(--font-mono); font-size:1rem; color:var(--text-secondary); align-self:flex-start;">
-            Welcome, <span id="userName" style="color:var(--text-primary); font-weight:600;">—</span>
+        <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
+            <div style="font-size:1rem; color:var(--text-secondary);">
+                Welcome, <span id="userName" style="color:var(--text-primary); font-weight:600;">—</span>
+            </div>
+            <div id="fyersIdLine" style="font-size:0.72rem; color:var(--text-muted); margin-top:10px;">—</div>
         </div>
     </div>
+
+    <!-- FYERS NOT CONNECTED (Trader only) -->
+    <div id="fyersGate" style="display:none;">
+        <div class="section-card fade-in" style="margin-bottom:20px;">
+            <div style="padding:60px 28px; text-align:center;">
+                <div style="font-size:2.5rem; margin-bottom:16px; opacity:0.3;">⚡</div>
+                <div style="font-family:var(--font-mono); font-size:1.1rem; color:var(--text-primary); font-weight:600; margin-bottom:8px;">Fyers Broker Not Connected</div>
+                <div style="font-family:var(--font-mono); font-size:0.82rem; color:var(--text-muted); margin-bottom:24px;">Connect your Fyers account to start trading and view live data.</div>
+                <a href="/fyers/login" style="
+                    display:inline-flex; align-items:center; gap:10px;
+                    background:rgba(99,179,237,0.08); border:1px solid rgba(99,179,237,0.25);
+                    color:var(--accent-blue); padding:14px 32px; border-radius:8px;
+                    font-family:var(--font-mono); font-size:0.9rem; font-weight:700;
+                    letter-spacing:0.06em; text-decoration:none; transition:all 0.2s ease;">
+                    Login to Fyers <span style="font-size:1rem;">→</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN DASHBOARD CONTENT (hidden until Fyers connected for Trader) -->
+    <div id="dashboardContent">
 
     <!-- HERO CARD: Net Day P&L -->
     <div class="section-card fade-in" style="margin-bottom:20px;">
@@ -200,6 +225,8 @@
         </div>
     </div>
 
+    </div><!-- /dashboardContent -->
+
     <footer class="page-footer">
         <div class="footer-copy">
             &copy; <span id="footerYear"></span> TraderEdge CPR. All rights reserved.
@@ -214,7 +241,7 @@
 </div><!-- /app-main -->
 </div><!-- /app-layout -->
 
-<script src="/js/common.js?v=2"></script>
+<script src="/js/common.js?v=5"></script>
 <script src="/js/ticker.js?v=3"></script>
 <script>
     function checkConnection() {
@@ -240,9 +267,7 @@
     checkConnection();
     setInterval(checkConnection, 5000);
 
-    function logout() {
-        fetch('/api/logout', { method: 'POST' }).then(() => window.location.href = '/').catch(() => window.location.href = '/');
-    }
+    // logout() provided by common.js
 
     // ── HELPERS ──────────────────────────────────
     function fmt(v) {
@@ -411,15 +436,46 @@
     }
 
     // ── USER PROFILE ─────────────────────────────
-    fetch('/api/profile').then(r => r.json()).then(d => {
-        if (d.name) document.getElementById('userName').textContent = d.name;
+    fetch('/api/user/me').then(r => r.json()).then(d => {
+        if (d.lastName || d.firstName) {
+            var nameStr = (d.lastName || '') + ', ' + (d.firstName || '');
+            var typeColor = d.type === 'Trader' ? 'var(--accent-green)' : 'var(--accent-blue)';
+            document.getElementById('userName').innerHTML = nameStr
+                + ' <span style="font-size:0.7rem;font-weight:700;padding:2px 8px;border-radius:4px;margin-left:6px;'
+                + 'background:rgba(99,179,237,0.08);border:1px solid rgba(99,179,237,0.2);color:' + typeColor + ';">'
+                + (d.type || '') + '</span>';
+        }
+        var fyLine = document.getElementById('fyersIdLine');
+        var isTrader = d.type === 'Trader';
+
+        if (!isTrader) {
+            // Observer — show dashboard, hide Fyers ID
+            document.getElementById('fyersGate').style.display = 'none';
+            document.getElementById('dashboardContent').style.display = 'block';
+            fyLine.style.display = 'none';
+            initDashboard();
+        } else if (d.fyersConnected) {
+            // Trader + Fyers connected — show dashboard with Fyers ID
+            document.getElementById('fyersGate').style.display = 'none';
+            document.getElementById('dashboardContent').style.display = 'block';
+            fetch('/api/profile').then(r => r.json()).then(p => {
+                fyLine.innerHTML = 'Fyers ID: <span style="color:var(--accent-blue);font-weight:600;">' + (p.fyId || '—') + '</span>';
+            }).catch(() => { fyLine.innerHTML = 'Fyers: <span style="color:var(--accent-green)">Connected</span>'; });
+            initDashboard();
+        } else {
+            // Trader but Fyers not connected — show gate, hide dashboard
+            document.getElementById('fyersGate').style.display = 'block';
+            document.getElementById('dashboardContent').style.display = 'none';
+            fyLine.innerHTML = 'Fyers: <span style="color:var(--accent-red);font-weight:600;">Not logged in</span>';
+        }
     }).catch(() => {});
 
-    // ── INIT ─────────────────────────────────────
-    loadPositions();
-    loadTrades();
-    setInterval(loadPositions, 10000);
-    setInterval(loadTrades, 30000);
+    function initDashboard() {
+        loadPositions();
+        loadTrades();
+        setInterval(loadPositions, 10000);
+        setInterval(loadTrades, 30000);
+    }
 
     // ── SSE REAL-TIME P&L UPDATES (uses shared SSE from ticker.js) ──
     (function() {

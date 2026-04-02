@@ -7,7 +7,7 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/shared.css?v=4">
+    <link rel="stylesheet" href="/css/shared.css?v=5">
     <!-- Apply theme before render to prevent flash -->
     <script>
         (function() {
@@ -95,16 +95,16 @@
         </div>
     </div>
     <nav class="sidebar-nav">
-        <div class="sidebar-nav-section">Main</div>
-        <a href="/home" class="sidebar-nav-item"><span class="sidebar-nav-icon" style="font-size:1.3rem;">⌂</span><span class="sidebar-nav-label">Home</span></a>
-        <a href="/scanner" class="sidebar-nav-item"><span class="sidebar-nav-icon">◎</span><span class="sidebar-nav-label">Watchlist</span></a>
-        <a href="/positions" class="sidebar-nav-item active"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
-        <a href="/trades" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
-        <a href="/journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">☷</span><span class="sidebar-nav-label">Journal</span></a>
-        <a href="/settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
+        <div class="sidebar-nav-section" style="display:flex;align-items:center;justify-content:space-between;"><button class="sidebar-collapse-btn" onclick="toggleSidebar()" title="Toggle sidebar" style="margin:0;padding:2px 6px;border:none;">☰</button></div>
+        <a href="/home" data-tooltip="Home" class="sidebar-nav-item"><span class="sidebar-nav-icon" style="font-size:1.3rem;">⌂</span><span class="sidebar-nav-label">Home</span></a>
+        <a href="/scanner" data-tooltip="Watchlist" class="sidebar-nav-item"><span class="sidebar-nav-icon">◎</span><span class="sidebar-nav-label">Watchlist</span></a>
+        <a href="/positions" data-tooltip="Positions" class="sidebar-nav-item active"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
+        <a href="/trades" data-tooltip="Trade Log" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
+        <a href="/journal" data-tooltip="Journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">☷</span><span class="sidebar-nav-label">Journal</span></a>
+        <a href="/settings" data-tooltip="Settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
         <div class="sidebar-nav-section">Operations</div>
-        <a href="/console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
-        <a href="/monitoring" class="sidebar-nav-item"><span class="sidebar-nav-icon">◉</span><span class="sidebar-nav-label">Monitoring</span></a>
+        <a href="/console" data-tooltip="Console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
+        <a href="/monitoring" data-tooltip="Monitoring" class="sidebar-nav-item"><span class="sidebar-nav-icon">◉</span><span class="sidebar-nav-label">Monitoring</span></a>
     </nav>
     <div class="sidebar-footer">
         <div class="status-pill">
@@ -135,14 +135,14 @@
             <div class="page-subtitle">Live market positions &amp; trade activity</div>
         </div>
         <div style="display:flex; gap:10px; align-items:center;">
-            <div class="kill-switch-wrap" id="killSwitchWrap">
+            <div class="kill-switch-wrap admin-only" id="killSwitchWrap">
                 <span class="kill-switch-label" id="killSwitchLabel">Trading ON</span>
                 <label class="kill-switch">
                     <input type="checkbox" id="killSwitchToggle" checked onchange="toggleKillSwitch()">
                     <span class="kill-switch-slider"></span>
                 </label>
             </div>
-<button class="squareoff-btn" id="squareOffBtn" onclick="executeSquareOff()" disabled>⬛ Square Off</button>
+<button class="squareoff-btn admin-only" id="squareOffBtn" onclick="executeSquareOff()" disabled>⬛ Square Off</button>
             <a href="/positions" class="refresh-btn" title="Refresh positions and trade data" style="background:rgba(99,179,237,0.08); border-color:rgba(99,179,237,0.25); color:var(--accent-blue); padding:9px 12px;">⟳</a>
         </div>
     </div>
@@ -203,7 +203,7 @@
                         <th class="text-right">Entry</th>
                         <th class="text-right">LTP</th>
                         <th class="text-right">P&amp;L</th>
-                        <th class="text-center">Action</th>
+                        <th class="text-center admin-only">Action</th>
                         <th class="text-center"></th>
                     </tr>
                 </thead>
@@ -270,7 +270,7 @@
 
 <!-- ── SQUARE OFF CONFIRMATION MODAL ──────────────────────────── -->
 
-<script src="/js/common.js?v=2"></script>
+<script src="/js/common.js?v=5"></script>
 <script src="/js/ticker.js?v=3"></script>
 <script>
     // ── FORMATTERS ────────────────────────────────
@@ -461,7 +461,7 @@
     function squareOffSymbol(symbol, qty) {
         fetch('/api/squareoff', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: csrfHeaders(),
             body: JSON.stringify({ symbol: symbol, quantity: Math.abs(qty) })
         }).catch(() => {});
     }
@@ -560,10 +560,14 @@
                 <td class="text-right">${pos.avgPrice.toFixed(2)}</td>
                 <td class="text-right">${pos.ltp.toFixed(2)}</td>
                 <td class="text-right"><span class="${pnlClass}">${fmtPnl(pos.pnl)}</span></td>
-                <td class="text-center"><button class="squareoff-btn" style="padding:5px 14px;font-size:0.7rem;" onclick="squareOffSymbol('${sym}',${Math.abs(pos.qty)})">⬛ SqOff</button></td>
+                <td class="text-center admin-only"><button class="squareoff-btn" style="padding:5px 14px;font-size:0.7rem;" onclick="squareOffSymbol('${sym}',${Math.abs(pos.qty)})">⬛ SqOff</button></td>
                 <td class="text-center"><button onclick="showDescription('${escapeForJs(pos.description || '')}')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);cursor:pointer;padding:4px 8px;font-size:0.75rem;" title="Trade description">ℹ</button></td>
             </tr>`;
         }).join('');
+        // Re-apply admin-only visibility after dynamic render
+        if (userRole === 'ROLE_ADMIN') {
+            document.querySelectorAll('.admin-only').forEach(function(el) { el.classList.add('admin-visible'); });
+        }
     }
 
     let isConnected = false;
@@ -729,14 +733,14 @@
             const wrap    = document.getElementById('killSwitchWrap');
             const label   = document.getElementById('killSwitchLabel');
             toggle.checked = enabled;
-            wrap.className = 'kill-switch-wrap' + (enabled ? '' : ' disabled');
+            wrap.classList.toggle('disabled', !enabled);
             label.textContent = enabled ? 'Trading ON' : 'Trading OFF';
         }).catch(() => {});
     }
     refreshTradingStatus();
 
     function toggleKillSwitch() {
-        fetch('/api/trading/toggle', { method: 'POST' })
+        fetch('/api/trading/toggle', { method: 'POST', headers: csrfHeaders() })
             .then(r => r.json())
             .then(d => {
                 refreshTradingStatus();
@@ -745,12 +749,7 @@
     }
 
 
-    function logout() {
-        fetch('/api/logout', { method: 'POST' })
-            .then(r => r.json())
-            .then(data => { window.location.href = data.redirect || '/'; })
-            .catch(() => { window.location.href = '/'; });
-    }
+    // logout() provided by common.js
 
     function escapeForJs(str) {
         if (!str) return '';

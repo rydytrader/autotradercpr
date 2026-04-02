@@ -7,7 +7,7 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/shared.css?v=4">
+    <link rel="stylesheet" href="/css/shared.css?v=5">
     <script>
         (function() {
             const t = localStorage.getItem('traderedge-theme') || 'dark';
@@ -51,8 +51,24 @@
         .login-desc { font-size: 0.82rem; color: var(--text-secondary); text-align: center; margin-bottom: 28px; }
         .divider { border: none; border-top: 1px solid var(--border); margin: 0 0 22px; }
 
+        /* FORM */
+        .form-label-login { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; display: block; }
+        .form-input {
+            width: 100%; padding: 12px 14px; border-radius: 8px;
+            border: 1px solid var(--border); background: var(--bg-primary);
+            color: var(--text-primary); font-family: var(--font-mono); font-size: 0.88rem;
+            outline: none; transition: border-color 0.2s;
+        }
+        .form-input:focus { border-color: var(--accent-blue); }
+        .form-input::placeholder { color: var(--text-muted); }
+        .form-group-login { margin-bottom: 18px; }
+
+        .remember-row { display: flex; align-items: center; gap: 8px; margin-bottom: 24px; }
+        .remember-row input { width: 16px; height: 16px; accent-color: var(--accent-cyan); cursor: pointer; }
+        .remember-row label { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-secondary); cursor: pointer; }
+
         /* LOGIN BUTTON */
-        .btn-fyers {
+        .btn-login {
             display: flex; align-items: center; justify-content: center; gap: 10px;
             width: 100%; padding: 14px 20px;
             background: rgba(99,179,237,0.08); border: 1px solid rgba(99,179,237,0.25);
@@ -60,10 +76,11 @@
             font-family: var(--font-mono); font-size: 0.88rem; font-weight: 700;
             letter-spacing: 0.06em; text-decoration: none; transition: all 0.2s ease; cursor: pointer;
         }
-        .btn-fyers:hover { background: rgba(99,179,237,0.15); border-color: rgba(99,179,237,0.5); color: var(--accent-blue); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(99,179,237,0.15); }
-        .btn-fyers:active { transform: translateY(0); }
-        .btn-arrow { font-size: 1rem; transition: transform 0.2s; }
-        .btn-fyers:hover .btn-arrow { transform: translateX(3px); }
+        .btn-login:hover { background: rgba(99,179,237,0.15); border-color: rgba(99,179,237,0.5); color: var(--accent-blue); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(99,179,237,0.15); }
+        .btn-login:active { transform: translateY(0); }
+
+        .error-msg { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.25); color: var(--accent-red); padding: 10px 14px; border-radius: 8px; font-family: var(--font-mono); font-size: 0.78rem; text-align: center; margin-bottom: 18px; }
+        .logout-msg { background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.25); color: var(--accent-green); padding: 10px 14px; border-radius: 8px; font-family: var(--font-mono); font-size: 0.78rem; text-align: center; margin-bottom: 18px; }
 
         .secure-note { margin-top: 18px; text-align: center; font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-muted); display: flex; align-items: center; justify-content: center; gap: 7px; }
         .secure-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-green); box-shadow: 0 0 5px var(--accent-green); animation: pulse 2s infinite; flex-shrink: 0; }
@@ -82,7 +99,7 @@
             <div class="brand-icon">⚡</div>
             <div>
                 <div class="brand-name">TRADER<span>EDGE</span> CPR</div>
-                <div class="brand-sub">AutoTrader</div>
+                <div class="brand-sub">AutoTrader BOT</div>
             </div>
         </div>
         <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
@@ -95,14 +112,31 @@
         <div class="login-desc">Sign in to access your trading dashboard</div>
         <hr class="divider">
 
-        <a class="btn-fyers" href="/login">
-            Login with Fyers
-            <span class="btn-arrow">→</span>
-        </a>
+        <div id="errorMsg" class="error-msg" style="display:none">Invalid email or password</div>
+        <div id="logoutMsg" class="logout-msg" style="display:none">You have been logged out</div>
+
+        <form method="post" action="/login">
+            <div class="form-group-login">
+                <label class="form-label-login" for="email">Email</label>
+                <input class="form-input" type="email" id="email" name="email" placeholder="you@example.com" required autofocus>
+            </div>
+            <div class="form-group-login">
+                <label class="form-label-login" for="password">Password</label>
+                <input class="form-input" type="password" id="password" name="password" placeholder="Enter password" required>
+            </div>
+            <div class="remember-row">
+                <input type="checkbox" id="remember-me" name="remember-me">
+                <label for="remember-me">Remember me</label>
+            </div>
+            <button class="btn-login" type="submit">
+                Sign In
+                <span style="font-size:1rem;transition:transform 0.2s">→</span>
+            </button>
+        </form>
 
         <div class="secure-note">
             <div class="secure-dot"></div>
-            <span>Fyers OAuth2 · API v3</span>
+            <span>Secure session · TraderEdge CPR</span>
         </div>
     </div>
 </div>
@@ -112,9 +146,16 @@
     <div>Built by <strong style="color:var(--text-secondary);margin:0 4px">Prabhu Arumugham</strong><span class="footer-tag">rydytrader</span></div>
 </footer>
 
-<script src="/js/common.js?v=2"></script>
+<script src="/js/common.js?v=5"></script>
 <script>
     document.getElementById('footerYear').textContent = new Date().getFullYear();
+    // Show error/logout messages based on URL params
+    if (window.location.search.includes('error=true')) {
+        document.getElementById('errorMsg').style.display = 'block';
+    }
+    if (window.location.search.includes('logout=true')) {
+        document.getElementById('logoutMsg').style.display = 'block';
+    }
 </script>
 
 </body>

@@ -7,7 +7,7 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/shared.css?v=4">
+    <link rel="stylesheet" href="/css/shared.css?v=5">
     <script>
         (function() {
             const t = localStorage.getItem('traderedge-theme') || 'dark';
@@ -88,16 +88,16 @@
         </div>
     </div>
     <nav class="sidebar-nav">
-        <div class="sidebar-nav-section">Main</div>
-        <a href="/home" class="sidebar-nav-item"><span class="sidebar-nav-icon" style="font-size:1.3rem;">⌂</span><span class="sidebar-nav-label">Home</span></a>
-        <a href="/scanner" class="sidebar-nav-item"><span class="sidebar-nav-icon">◎</span><span class="sidebar-nav-label">Watchlist</span></a>
-        <a href="/positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
-        <a href="/trades" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
-        <a href="/journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">☷</span><span class="sidebar-nav-label">Journal</span></a>
-        <a href="/settings" class="sidebar-nav-item active"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
+        <div class="sidebar-nav-section" style="display:flex;align-items:center;justify-content:space-between;"><button class="sidebar-collapse-btn" onclick="toggleSidebar()" title="Toggle sidebar" style="margin:0;padding:2px 6px;border:none;">☰</button></div>
+        <a href="/home" data-tooltip="Home" class="sidebar-nav-item"><span class="sidebar-nav-icon" style="font-size:1.3rem;">⌂</span><span class="sidebar-nav-label">Home</span></a>
+        <a href="/scanner" data-tooltip="Watchlist" class="sidebar-nav-item"><span class="sidebar-nav-icon">◎</span><span class="sidebar-nav-label">Watchlist</span></a>
+        <a href="/positions" data-tooltip="Positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
+        <a href="/trades" data-tooltip="Trade Log" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
+        <a href="/journal" data-tooltip="Journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">☷</span><span class="sidebar-nav-label">Journal</span></a>
+        <a href="/settings" data-tooltip="Settings" class="sidebar-nav-item active"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
         <div class="sidebar-nav-section">Operations</div>
-        <a href="/console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
-        <a href="/monitoring" class="sidebar-nav-item"><span class="sidebar-nav-icon">◉</span><span class="sidebar-nav-label">Monitoring</span></a>
+        <a href="/console" data-tooltip="Console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
+        <a href="/monitoring" data-tooltip="Monitoring" class="sidebar-nav-item"><span class="sidebar-nav-icon">◉</span><span class="sidebar-nav-label">Monitoring</span></a>
     </nav>
     <div class="sidebar-footer">
         <div class="status-pill">
@@ -403,6 +403,76 @@
         </button>
     </div>
 
+    <!-- USER MANAGEMENT -->
+    <div class="section-card fade-in" style="margin-top:20px;">
+        <div class="section-header">
+            <div class="section-title">
+                <div class="section-title-dot" style="background: var(--accent-cyan);"></div>
+                User Management
+            </div>
+            <button onclick="showAddUserModal()" style="
+                background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.2);
+                color:var(--accent-green);padding:6px 16px;border-radius:6px;
+                font-family:var(--font-mono);font-size:0.72rem;font-weight:700;
+                cursor:pointer;transition:all 0.2s;">+ Add User</button>
+        </div>
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Email</th>
+                        <th>First Name</th>
+                        <th>Last Name</th>
+                        <th class="text-center">Role</th>
+                        <th class="text-center">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="usersTableBody">
+                    <tr><td colspan="5"><div class="empty-state" style="padding:20px"><div class="empty-icon" style="font-size:1.2rem">◎</div>Loading...</div></td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ADD/EDIT USER MODAL -->
+    <div id="userModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:999;
+        display:none;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;
+            padding:28px;width:400px;max-width:90vw;box-shadow:0 16px 48px rgba(0,0,0,0.3);">
+            <div style="font-family:var(--font-mono);font-size:0.82rem;font-weight:700;color:var(--text-primary);margin-bottom:20px;" id="userModalTitle">Add User</div>
+            <input type="hidden" id="userModalId">
+            <div style="margin-bottom:12px;">
+                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Email</label>
+                <input type="email" id="userModalEmail" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;" placeholder="user@example.com">
+            </div>
+            <div style="display:flex;gap:10px;margin-bottom:12px;">
+                <div style="flex:1;">
+                    <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">First Name</label>
+                    <input type="text" id="userModalFirstName" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;">
+                </div>
+                <div style="flex:1;">
+                    <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Last Name</label>
+                    <input type="text" id="userModalLastName" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;">
+                </div>
+            </div>
+            <div style="margin-bottom:12px;">
+                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Password <span id="pwdHint" style="color:var(--text-muted);font-weight:400;text-transform:none;">(leave blank to keep current)</span></label>
+                <input type="password" id="userModalPassword" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;" placeholder="Enter password">
+            </div>
+            <div style="margin-bottom:20px;">
+                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Role</label>
+                <select id="userModalRole" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;cursor:pointer;">
+                    <option value="ROLE_ADMIN">Trader (Admin)</option>
+                    <option value="ROLE_VIEWER">Observer (View Only)</option>
+                </select>
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;">
+                <button onclick="closeUserModal()" style="padding:8px 20px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);font-family:var(--font-mono);font-size:0.78rem;cursor:pointer;">Cancel</button>
+                <button onclick="saveUser()" style="padding:8px 20px;border-radius:6px;border:none;background:var(--accent-blue);color:#fff;font-family:var(--font-mono);font-size:0.78rem;font-weight:700;cursor:pointer;">Save</button>
+            </div>
+        </div>
+    </div>
+
     <footer class="page-footer">
         <div class="footer-copy">
             © <span id="footerYear"></span> TraderEdge CPR. All rights reserved.
@@ -417,16 +487,10 @@
 
 <div class="toast-wrap" id="toastWrap"></div>
 
-<script src="/js/common.js?v=2"></script>
+<script src="/js/common.js?v=5"></script>
 <script src="/js/ticker.js?v=3"></script>
 <script>
-    // ── LOGOUT ───────────────────────────────────────────────────────────────
-    function logout() {
-        fetch('/api/logout', { method: 'POST' })
-            .then(r => r.json())
-            .then(data => { window.location.href = data.redirect || '/'; })
-            .catch(() => { window.location.href = '/'; });
-    }
+    // logout() provided by common.js
 
     // ── INIT SETTINGS ────────────────────────────────────────────────────────
 
@@ -612,7 +676,7 @@
             };
             const r = await fetch('/api/settings/risk', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: csrfHeaders(),
                 body: JSON.stringify(payload)
             });
             const d = await r.json();
@@ -640,8 +704,95 @@
         }
     }
 
+    // ── USER MANAGEMENT ──────────────────────────────────────────────────────
+    function loadUsers() {
+        fetch('/api/users').then(r => r.json()).then(users => {
+            var tbody = document.getElementById('usersTableBody');
+            if (!users.length) {
+                tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state" style="padding:20px">No users</div></td></tr>';
+                return;
+            }
+            tbody.innerHTML = users.map(u => {
+                var roleBadge = u.role === 'ROLE_ADMIN'
+                    ? '<span style="background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.25);color:var(--accent-green);padding:2px 8px;border-radius:4px;font-size:.67rem;font-weight:700;">Trader</span>'
+                    : '<span style="background:rgba(99,179,237,.1);border:1px solid rgba(99,179,237,.25);color:var(--accent-blue);padding:2px 8px;border-radius:4px;font-size:.67rem;font-weight:700;">Observer</span>';
+                return '<tr>'
+                    + '<td style="font-family:var(--font-mono);font-size:.78rem;">' + u.email + '</td>'
+                    + '<td style="font-family:var(--font-mono);font-size:.78rem;">' + u.firstName + '</td>'
+                    + '<td style="font-family:var(--font-mono);font-size:.78rem;">' + u.lastName + '</td>'
+                    + '<td class="text-center">' + roleBadge + '</td>'
+                    + '<td class="text-center">'
+                    + '<button onclick="editUser(' + u.id + ',\'' + u.email.replace(/'/g,"\\'") + '\',\'' + u.firstName.replace(/'/g,"\\'") + '\',\'' + u.lastName.replace(/'/g,"\\'") + '\',\'' + u.role + '\')" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--accent-blue);cursor:pointer;padding:3px 10px;font-size:.7rem;font-family:var(--font-mono);margin-right:4px;">Edit</button>'
+                    + '<button onclick="deleteUser(' + u.id + ',\'' + u.email.replace(/'/g,"\\'") + '\')" style="background:none;border:1px solid rgba(248,113,113,.25);border-radius:4px;color:var(--accent-red);cursor:pointer;padding:3px 10px;font-size:.7rem;font-family:var(--font-mono);">Delete</button>'
+                    + '</td></tr>';
+            }).join('');
+        }).catch(() => {});
+    }
+
+    function showAddUserModal() {
+        document.getElementById('userModalTitle').textContent = 'Add User';
+        document.getElementById('userModalId').value = '';
+        document.getElementById('userModalEmail').value = '';
+        document.getElementById('userModalFirstName').value = '';
+        document.getElementById('userModalLastName').value = '';
+        document.getElementById('userModalPassword').value = '';
+        document.getElementById('userModalRole').value = 'ROLE_VIEWER';
+        document.getElementById('pwdHint').style.display = 'none';
+        document.getElementById('userModal').style.display = 'flex';
+    }
+
+    function editUser(id, email, firstName, lastName, role) {
+        document.getElementById('userModalTitle').textContent = 'Edit User';
+        document.getElementById('userModalId').value = id;
+        document.getElementById('userModalEmail').value = email;
+        document.getElementById('userModalFirstName').value = firstName;
+        document.getElementById('userModalLastName').value = lastName;
+        document.getElementById('userModalPassword').value = '';
+        document.getElementById('userModalRole').value = role;
+        document.getElementById('pwdHint').style.display = 'inline';
+        document.getElementById('userModal').style.display = 'flex';
+    }
+
+    function closeUserModal() {
+        document.getElementById('userModal').style.display = 'none';
+    }
+
+    function saveUser() {
+        var id = document.getElementById('userModalId').value;
+        var payload = {
+            email: document.getElementById('userModalEmail').value,
+            firstName: document.getElementById('userModalFirstName').value,
+            lastName: document.getElementById('userModalLastName').value,
+            password: document.getElementById('userModalPassword').value,
+            role: document.getElementById('userModalRole').value
+        };
+        var url = id ? '/api/users/' + id + '/update' : '/api/users';
+        fetch(url, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(payload) })
+            .then(r => r.json())
+            .then(d => {
+                if (d.ok) {
+                    closeUserModal();
+                    loadUsers();
+                    showToast(id ? 'User updated' : 'User created', 'success');
+                } else {
+                    showToast(d.error || 'Failed', 'error');
+                }
+            }).catch(() => showToast('Failed to save user', 'error'));
+    }
+
+    function deleteUser(id, email) {
+        if (!confirm('Delete user ' + email + '?')) return;
+        fetch('/api/users/' + id + '/delete', { method: 'POST', headers: csrfHeaders() })
+            .then(r => r.json())
+            .then(d => {
+                if (d.ok) { loadUsers(); showToast('User deleted', 'success'); }
+                else showToast(d.error || 'Failed', 'error');
+            }).catch(() => showToast('Failed to delete user', 'error'));
+    }
+
     // ── INIT ─────────────────────────────────────────────────────────────────
     loadSettings();
+    loadUsers();
     updateConnectionStatus();
 
 
