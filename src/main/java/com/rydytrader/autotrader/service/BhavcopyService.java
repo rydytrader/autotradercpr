@@ -578,9 +578,9 @@ public class BhavcopyService {
                     case "HghPric"  -> highIdx = i;
                     case "LwPric"   -> lowIdx = i;
                     case "ClsPric"  -> closeIdx = i;
-                    case "TtlTrdQty", "TradQnty" -> volumeIdx = i;
-                    case "Hgh52Wk", "52WkHgh"    -> w52HighIdx = i;
-                    case "Lw52Wk", "52WkLw"      -> w52LowIdx = i;
+                    case "TtlTradgVol", "TtlTrdQty", "TradQnty" -> volumeIdx = i;
+                    case "Hgh52Wk", "52WkHgh", "HghPric52Wk"  -> w52HighIdx = i;
+                    case "Lw52Wk", "52WkLw", "LwPric52Wk"     -> w52LowIdx = i;
                     // Legacy fallbacks
                     case "SYMBOL"   -> { if (symIdx == -1) symIdx = i; }
                     case "SERIES"   -> { if (seriesIdx == -1) seriesIdx = i; }
@@ -594,6 +594,9 @@ public class BhavcopyService {
                 log.error("[BhavcopyService] CM CSV header not recognized: {}", header);
                 return result;
             }
+
+            // Log ALL column headers for debugging
+            log.info("[BhavcopyService] CM CSV columns: {}", header);
 
             // Log which extra columns were found
             if (volumeIdx >= 0) log.info("[BhavcopyService] Found volume column at index {}", volumeIdx);

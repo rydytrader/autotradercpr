@@ -67,6 +67,18 @@ public class MomentumService {
 
         double volumeMultiple = riskSettings.getMomentumVolumeMultiple();
         int count = 0;
+        int noVolume = 0, noWeekData = 0, noMonthData = 0, volumeFailed = 0;
+
+        log.info("[MomentumService] Computing: {} stocks, {} history days, volumeMultiple={}",
+            today.size(), history.size(), volumeMultiple);
+
+        // Log first stock's data for debugging
+        if (!today.isEmpty()) {
+            var first = today.values().iterator().next();
+            log.info("[MomentumService] Sample: {} close={} vol={} 52wH={} 52wL={}",
+                first.getSymbol(), first.getClose(), first.getVolume(),
+                first.getFiftyTwoWeekHigh(), first.getFiftyTwoWeekLow());
+        }
 
         for (Map.Entry<String, CprLevels> entry : today.entrySet()) {
             String symbol = entry.getKey();
@@ -96,6 +108,7 @@ public class MomentumService {
 
             // Volume gate — skip if below threshold
             boolean volumeOk = avgVol > 0 && m.getVolumeRatio() >= volumeMultiple;
+            if (todayCpr.getVolume() == 0) noVolume++;
 
             // Previous week high/low (aggregate Mon-Fri of last complete week)
             double[] weekHL = computePreviousWeekHL(symbol, history, historyDates);
@@ -106,6 +119,10 @@ public class MomentumService {
             double[] monthHL = computePreviousMonthHL(symbol, history);
             m.setPrevMonthHigh(monthHL[0]);
             m.setPrevMonthLow(monthHL[1]);
+
+            if (weekHL[0] == 0 && weekHL[1] == 0) noWeekData++;
+            if (monthHL[0] == 0 && monthHL[1] == 0) noMonthData++;
+            if (!volumeOk && todayCpr.getVolume() > 0) volumeFailed++;
 
             // Check momentum breaks (all require volume confirmation)
             if (volumeOk && riskSettings.isMomentumWeekBreak()) {
@@ -127,8 +144,8 @@ public class MomentumService {
             if (m.hasMomentumTag()) count++;
         }
 
-        log.info("[MomentumService] Computed metrics for {} stocks, {} momentum candidates (vol >= {}x)",
-            today.size(), count, volumeMultiple);
+        log.info("[MomentumService] Computed: {} stocks, {} momentum | noVol={} noWeek={} noMonth={} volFailed={}",
+            today.size(), count, noVolume, noWeekData, noMonthData, volumeFailed);
     }
 
     /** Get all stocks with at least one momentum tag. */

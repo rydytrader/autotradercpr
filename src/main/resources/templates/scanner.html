@@ -298,8 +298,8 @@
 
     <div class="page-header">
         <div>
-            <div class="page-title">CPR Watchlist</div>
-            <div class="page-subtitle">Narrow &amp; Inside CPR Watchlist</div>
+            <div class="page-title">Watchlist</div>
+            <div class="page-subtitle">CPR Breakout and Momentum Stocks</div>
         </div>
         <div style="display:flex; gap:8px;">
             <button onclick="showNarrowCpr()" style="
@@ -661,15 +661,15 @@
             + '  <span class="scan-symbol">' + d.shortName + '</span>'
             + '<span class="scan-ohl" style="font-family:var(--font-mono);font-size:0.62rem;color:var(--text-secondary);margin-left:6px;">' + (d.candleOpen ? 'O:' + fmt(d.candleOpen) + ' H:' + fmt(d.candleHigh) + ' L:' + fmt(d.candleLow) : '') + '</span>'
             + '  <span style="display:flex; gap:4px;">'
-            + ((d.cprTypes || [d.cprType]).filter(function(t){ return ['NARROW','INSIDE'].includes(t); }).map(function(t) { return '<span class="scan-badge ' + t.toLowerCase() + '">' + t + '</span>'; }).join(''))
-            + (d.weeklyNarrow ? '<span class="scan-badge weekly-narrow">WEEKLY NARROW</span>' : '')
+            + ((d.cprTypes || [d.cprType]).filter(function(t){ return ['NARROW','INSIDE'].includes(t); }).map(function(t) { return '<span class="scan-badge ' + t.toLowerCase() + '">' + (t === 'NARROW' ? 'N' : 'I') + '</span>'; }).join(''))
+            + (d.weeklyNarrow ? '<span class="scan-badge weekly-narrow">W</span>' : '')
             + ((d.momentumTags || []).map(function(t) {
                 var cls = t.includes('WEEK') ? 'momentum-week' : t.includes('MONTH') ? 'momentum-month' : 'momentum-52w';
-                var label = t.replace(/_/g, ' ');
+                var label = t.includes('WEEK') ? 'WB' : t.includes('MONTH') ? 'MB' : '52B';
                 return '<span class="scan-badge ' + cls + '">' + label + '</span>';
             }).join(''))
             + (d.volumeRatio > 0 ? '<span class="scan-badge" style="background:rgba(34,211,238,.1);color:var(--accent-cyan);font-size:.6rem;">Vol:' + d.volumeRatio + 'x</span>' : '')
-            + (d.marketCapCategory ? '<span class="scan-badge" style="background:rgba(128,128,128,.08);color:var(--text-muted);font-size:.6rem;">' + d.marketCapCategory + (d.marketCapCr > 0 ? ' ' + Math.round(d.marketCapCr/1000) + 'K Cr' : '') + '</span>' : '')
+            + (d.marketCapCategory ? '<span class="scan-badge" style="background:rgba(128,128,128,.08);color:var(--text-muted);font-size:.6rem;">' + d.marketCapCategory.charAt(0) + '</span>' : '')
             + '  </span>'
             + '</div>'
             + '<div class="scan-price-row">'
