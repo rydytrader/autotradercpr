@@ -54,6 +54,15 @@ public class TradeRecord {
     public TradeRecord(String symbol, String side, int qty,
                        double entryPrice, double exitPrice, String exitReason, String setup,
                        double brokeragePerOrder, String description, String probability) {
+        this(symbol, side, qty, entryPrice, exitPrice, exitReason, setup, brokeragePerOrder, description, probability,
+            0.025, 0.00345, 18.0, 10.0, 0.003, 0.03);
+    }
+
+    public TradeRecord(String symbol, String side, int qty,
+                       double entryPrice, double exitPrice, String exitReason, String setup,
+                       double brokeragePerOrder, String description, String probability,
+                       double sttRate, double exchangeRate, double gstRate,
+                       double sebiRate, double stampDutyRate, double brokeragePct) {
         this.timestamp  = LocalDateTime.now().format(FMT);
         this.symbol     = symbol;
         this.side       = side;
@@ -66,7 +75,8 @@ public class TradeRecord {
         this.probability = probability != null ? probability : "";
         double raw = (exitPrice - entryPrice) * qty * ("SHORT".equals(side) ? -1 : 1);
         this.pnl     = Math.round(raw * 100.0) / 100.0;
-        this.charges = ChargesCalculator.calculate(side, qty, entryPrice, exitPrice, brokeragePerOrder).totalCharges;
+        this.charges = ChargesCalculator.calculate(side, qty, entryPrice, exitPrice, brokeragePerOrder,
+            sttRate, exchangeRate, gstRate, sebiRate, stampDutyRate, brokeragePct).totalCharges;
         this.netPnl  = Math.round((this.pnl - this.charges) * 100.0) / 100.0;
         this.result  = this.netPnl >= 0 ? "PROFIT" : "LOSS";
     }

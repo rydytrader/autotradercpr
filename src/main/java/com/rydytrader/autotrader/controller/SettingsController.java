@@ -48,6 +48,12 @@ public class SettingsController {
         result.put("enableR4S4",      riskSettings.isEnableR4S4(effectiveMode));
         result.put("sessionMoveLimit", riskSettings.getSessionMoveLimit(effectiveMode));
         result.put("brokeragePerOrder", riskSettings.getBrokeragePerOrder(effectiveMode));
+        result.put("sttRate",         riskSettings.getSttRate(effectiveMode));
+        result.put("exchangeRate",    riskSettings.getExchangeRate(effectiveMode));
+        result.put("gstRate",         riskSettings.getGstRate(effectiveMode));
+        result.put("sebiRate",        riskSettings.getSebiRate(effectiveMode));
+        result.put("stampDutyRate",   riskSettings.getStampDutyRate(effectiveMode));
+        result.put("brokeragePct",    riskSettings.getBrokeragePct(effectiveMode));
         result.put("fixedQuantity",   riskSettings.getFixedQuantity(effectiveMode));
         result.put("capitalPerTrade", riskSettings.getCapitalPerTrade(effectiveMode));
         result.put("telegramAlertFrequency", riskSettings.getTelegramAlertFrequency(effectiveMode));
@@ -95,6 +101,12 @@ public class SettingsController {
             if (body.containsKey("enableR4S4"))       riskSettings.setEnableR4S4(effectiveMode, Boolean.parseBoolean(body.get("enableR4S4").toString()));
             if (body.containsKey("sessionMoveLimit")) riskSettings.setSessionMoveLimit(effectiveMode, Double.parseDouble(body.get("sessionMoveLimit").toString()));
             if (body.containsKey("brokeragePerOrder")) riskSettings.setBrokeragePerOrder(effectiveMode, Double.parseDouble(body.get("brokeragePerOrder").toString()));
+            if (body.containsKey("sttRate"))         riskSettings.setSttRate(effectiveMode, Double.parseDouble(body.get("sttRate").toString()));
+            if (body.containsKey("exchangeRate"))    riskSettings.setExchangeRate(effectiveMode, Double.parseDouble(body.get("exchangeRate").toString()));
+            if (body.containsKey("gstRate"))         riskSettings.setGstRate(effectiveMode, Double.parseDouble(body.get("gstRate").toString()));
+            if (body.containsKey("sebiRate"))        riskSettings.setSebiRate(effectiveMode, Double.parseDouble(body.get("sebiRate").toString()));
+            if (body.containsKey("stampDutyRate"))   riskSettings.setStampDutyRate(effectiveMode, Double.parseDouble(body.get("stampDutyRate").toString()));
+            if (body.containsKey("brokeragePct"))    riskSettings.setBrokeragePct(effectiveMode, Double.parseDouble(body.get("brokeragePct").toString()));
             if (body.containsKey("fixedQuantity"))   riskSettings.setFixedQuantity(effectiveMode, Integer.parseInt(body.get("fixedQuantity").toString()));
             if (body.containsKey("capitalPerTrade")) riskSettings.setCapitalPerTrade(effectiveMode, Double.parseDouble(body.get("capitalPerTrade").toString()));
             if (body.containsKey("telegramAlertFrequency")) riskSettings.setTelegramAlertFrequency(effectiveMode, Integer.parseInt(body.get("telegramAlertFrequency").toString()));

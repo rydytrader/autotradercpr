@@ -43,6 +43,27 @@
 
         .disabled-note { font-size: 0.68rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 3px; }
 
+        /* ── TABS ───────────────────────────────── */
+        .settings-tabs {
+            display: flex; border-bottom: 2px solid var(--border); margin-bottom: 20px;
+        }
+        .settings-tab {
+            padding: 12px 24px; cursor: pointer;
+            font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
+            letter-spacing: 0.05em; text-transform: uppercase;
+            border: none; background: transparent;
+            color: var(--text-muted); transition: all 0.2s;
+            position: relative; margin-bottom: -2px;
+            border-bottom: 2px solid transparent;
+        }
+        .settings-tab:hover { color: var(--text-secondary); }
+        .settings-tab.active {
+            color: var(--accent-blue);
+            border-bottom: 2px solid var(--accent-blue);
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
         /* ── SAVE BUTTON ────────────────────────── */
         .save-btn {
             display: inline-flex; align-items: center; gap: 8px;
@@ -153,6 +174,19 @@
         </div>
     </div>
 
+    <!-- TABS -->
+    <div class="settings-tabs fade-in">
+        <button class="settings-tab active" onclick="switchTab('risk', this)">Risk</button>
+        <button class="settings-tab" onclick="switchTab('trade', this)">Trade</button>
+        <button class="settings-tab" onclick="switchTab('scanner', this)">Scanner</button>
+        <button class="settings-tab" onclick="switchTab('hours', this)">Hours</button>
+        <button class="settings-tab" onclick="switchTab('charges', this)">Charges</button>
+        <button class="settings-tab" onclick="switchTab('users', this)">Users</button>
+    </div>
+
+    <!-- TAB: RISK -->
+    <div class="tab-content active" id="tab-risk">
+
     <!-- RISK SETTINGS -->
     <div class="section-card fade-in">
         <div class="section-header">
@@ -197,6 +231,12 @@
             </div>
         </div>
     </div>
+
+        <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
+    </div><!-- /tab-risk -->
+
+    <!-- TAB: TRADE -->
+    <div class="tab-content" id="tab-trade">
 
     <!-- TRADE PARAMETERS -->
     <div class="section-card fade-in">
@@ -288,6 +328,12 @@
         </div>
     </div>
 
+        <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
+    </div><!-- /tab-trade -->
+
+    <!-- TAB: HOURS -->
+    <div class="tab-content" id="tab-hours">
+
     <!-- TRADING HOURS -->
     <div class="section-card fade-in">
         <div class="section-header">
@@ -317,6 +363,12 @@
             </div>
         </div>
     </div>
+
+        <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
+    </div><!-- /tab-hours -->
+
+    <!-- TAB: SCANNER -->
+    <div class="tab-content" id="tab-scanner">
 
     <!-- SIGNAL SOURCE -->
     <div class="section-card fade-in">
@@ -371,6 +423,12 @@
         </div>
     </div>
 
+        <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
+    </div><!-- /tab-scanner -->
+
+    <!-- TAB: CHARGES -->
+    <div class="tab-content" id="tab-charges">
+
     <!-- OTHER SETTINGS -->
     <div class="section-card fade-in">
         <div class="section-header">
@@ -382,25 +440,54 @@
         <div class="section-body">
             <div class="form-grid">
                 <div class="form-group">
-                    <label class="form-label">Brokerage per Order</label>
+                    <label class="form-label">Brokerage per Order (₹)</label>
                     <input type="number" id="brokeragePerOrder" class="form-control" min="0" max="100" step="1" placeholder="20">
-                    <div class="form-hint">Flat brokerage per order in ₹ (entry + exit)</div>
+                    <div class="form-hint">Flat brokerage cap per order</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Brokerage %</label>
+                    <input type="number" id="brokeragePct" class="form-control" min="0" max="1" step="0.01" placeholder="0.03">
+                    <div class="form-hint">% per order (capped by flat amount)</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">STT %</label>
+                    <input type="number" id="sttRate" class="form-control" min="0" max="1" step="0.001" placeholder="0.025">
+                    <div class="form-hint">On sell-side turnover</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Exchange Txn %</label>
+                    <input type="number" id="exchangeRate" class="form-control" min="0" max="1" step="0.0001" placeholder="0.00345">
+                    <div class="form-hint">NSE cash transaction charges</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">GST %</label>
+                    <input type="number" id="gstRate" class="form-control" min="0" max="30" step="1" placeholder="18">
+                    <div class="form-hint">On brokerage + exchange charges</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">SEBI (₹/Cr)</label>
+                    <input type="number" id="sebiRate" class="form-control" min="0" max="100" step="1" placeholder="10">
+                    <div class="form-hint">₹ per crore turnover</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Stamp Duty %</label>
+                    <input type="number" id="stampDutyRate" class="form-control" min="0" max="1" step="0.001" placeholder="0.003">
+                    <div class="form-hint">On buy-side turnover</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Telegram Alert Frequency</label>
                     <input type="number" id="telegramAlertFrequency" class="form-control" min="0" max="600" step="10" placeholder="60">
-                    <div class="form-hint">Seconds between Telegram portfolio updates (0 = disabled)</div>
+                    <div class="form-hint">Seconds between Telegram updates (0 = off)</div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- SAVE -->
-    <div style="display: flex; justify-content: flex-end; margin-top: 4px;">
-        <button class="save-btn" onclick="saveSettings()" id="saveBtn">
-            ✓ Save Settings
-        </button>
-    </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
+    </div><!-- /tab-charges -->
+
+    <!-- TAB: USERS -->
+    <div class="tab-content" id="tab-users">
 
     <!-- USER MANAGEMENT -->
     <div class="section-card fade-in" style="margin-top:20px;">
@@ -432,6 +519,8 @@
             </table>
         </div>
     </div>
+
+    </div><!-- /tab-users -->
 
     <!-- ADD/EDIT USER MODAL -->
     <div id="userModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:999;
@@ -542,6 +631,14 @@
         document.getElementById('maxDailyLossDisplay').value = '₹' + Math.round(maxLoss).toLocaleString('en-IN');
     }
 
+    // ── TABS ─────────────────────────────────────────────────────────────────
+    function switchTab(tabId, btn) {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.settings-tab').forEach(el => el.classList.remove('active'));
+        document.getElementById('tab-' + tabId).classList.add('active');
+        btn.classList.add('active');
+    }
+
     // ── LOAD SETTINGS ────────────────────────────────────────────────────────
     async function loadSettings() {
         try {
@@ -557,6 +654,12 @@
             document.getElementById('atrMultiplier').value     = d.atrMultiplier     || 1.5;
             document.getElementById('sessionMoveLimit').value   = d.sessionMoveLimit  != null ? d.sessionMoveLimit : 2.0;
             document.getElementById('brokeragePerOrder').value  = d.brokeragePerOrder != null ? d.brokeragePerOrder : 20;
+            document.getElementById('brokeragePct').value      = d.brokeragePct != null ? d.brokeragePct : 0.03;
+            document.getElementById('sttRate').value            = d.sttRate != null ? d.sttRate : 0.025;
+            document.getElementById('exchangeRate').value       = d.exchangeRate != null ? d.exchangeRate : 0.00345;
+            document.getElementById('gstRate').value            = d.gstRate != null ? d.gstRate : 18;
+            document.getElementById('sebiRate').value           = d.sebiRate != null ? d.sebiRate : 10;
+            document.getElementById('stampDutyRate').value      = d.stampDutyRate != null ? d.stampDutyRate : 0.003;
             document.getElementById('fixedQuantity').value     = d.fixedQuantity    != null ? d.fixedQuantity : 2;
             document.getElementById('capitalPerTrade').value   = d.capitalPerTrade  != null ? d.capitalPerTrade : 0;
             document.getElementById('telegramAlertFrequency').value = d.telegramAlertFrequency != null ? d.telegramAlertFrequency : 60;
@@ -631,9 +734,8 @@
 
     // ── SAVE SETTINGS ────────────────────────────────────────────────────────
     async function saveSettings() {
-        const btn = document.getElementById('saveBtn');
-        btn.disabled = true;
-        btn.textContent = 'Saving...';
+        const btns = document.querySelectorAll('.save-btn');
+        btns.forEach(b => { b.disabled = true; b.textContent = 'Saving...'; });
         let saved = false;
         try {
             const payload = {
@@ -646,6 +748,12 @@
                 atrMultiplier:     parseFloat(document.getElementById('atrMultiplier').value) || 2.0,
                 sessionMoveLimit:  parseFloat(document.getElementById('sessionMoveLimit').value) || 0,
                 brokeragePerOrder: parseFloat(document.getElementById('brokeragePerOrder').value) || 20,
+                brokeragePct:    parseFloat(document.getElementById('brokeragePct').value) || 0.03,
+                sttRate:         parseFloat(document.getElementById('sttRate').value) || 0.025,
+                exchangeRate:    parseFloat(document.getElementById('exchangeRate').value) || 0.00345,
+                gstRate:         parseFloat(document.getElementById('gstRate').value) || 18,
+                sebiRate:        parseFloat(document.getElementById('sebiRate').value) || 10,
+                stampDutyRate:   parseFloat(document.getElementById('stampDutyRate').value) || 0.003,
                 fixedQuantity:    parseInt(document.getElementById('fixedQuantity').value),
                 capitalPerTrade:  parseFloat(document.getElementById('capitalPerTrade').value) || 0,
                 telegramAlertFrequency: parseInt(document.getElementById('telegramAlertFrequency').value) || 60,
@@ -681,14 +789,11 @@
             const d = await r.json();
             if (d.ok) {
                 saved = true;
-                btn.textContent = '✓ Saved!';
-                btn.style.background = 'linear-gradient(135deg, #34d399, #059669)';
+                btns.forEach(b => { b.textContent = '✓ Saved!'; b.style.background = 'linear-gradient(135deg, #34d399, #059669)'; });
                 showToast('Settings saved');
                 loadSettings();
                 setTimeout(() => {
-                    btn.style.background = '';
-                    btn.textContent = '✓ Save Settings';
-                    btn.disabled = false;
+                    btns.forEach(b => { b.style.background = ''; b.textContent = '✓ Save Settings'; b.disabled = false; });
                 }, 1800);
             } else {
                 showToast('Save failed: ' + d.message, 'error');
@@ -697,8 +802,7 @@
             showToast('Save failed: ' + e.message, 'error');
         } finally {
             if (!saved) {
-                btn.disabled = false;
-                btn.textContent = '✓ Save Settings';
+                btns.forEach(b => { b.disabled = false; b.textContent = '✓ Save Settings'; });
             }
         }
     }

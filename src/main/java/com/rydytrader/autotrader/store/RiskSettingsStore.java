@@ -32,6 +32,13 @@ public class RiskSettingsStore {
         volatile boolean enableR4S4       = false; // allow BUY_ABOVE_R4 / SELL_BELOW_S4
         volatile double sessionMoveLimit = 2.0;   // qty halved if session move exceeds this % (0 = disabled)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
+        // Charges rates (regulatory — rarely change)
+        volatile double sttRate           = 0.025;   // STT % on sell side
+        volatile double exchangeRate      = 0.00345;  // Exchange transaction % (NSE cash)
+        volatile double gstRate           = 18.0;     // GST % on brokerage + exchange
+        volatile double sebiRate          = 10.0;     // SEBI charges ₹ per crore
+        volatile double stampDutyRate     = 0.003;    // Stamp duty % on buy side
+        volatile double brokeragePct      = 0.03;     // Brokerage % per order (cap)
         volatile int    fixedQuantity    = 2;     // -1 = use capital-based calculation
         volatile double capitalPerTrade  = 0;     // ₹ per trade (used when fixedQuantity == -1)
         volatile int    telegramAlertFrequency = 60; // seconds between Telegram portfolio updates (0 = disabled)
@@ -88,6 +95,12 @@ public class RiskSettingsStore {
     public boolean isEnableR4S4()        { return cfg().enableR4S4; }
     public double getSessionMoveLimit() { return cfg().sessionMoveLimit; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
+    public double getSttRate()         { return cfg().sttRate; }
+    public double getExchangeRate()    { return cfg().exchangeRate; }
+    public double getGstRate()         { return cfg().gstRate; }
+    public double getSebiRate()        { return cfg().sebiRate; }
+    public double getStampDutyRate()   { return cfg().stampDutyRate; }
+    public double getBrokeragePct()    { return cfg().brokeragePct; }
     public int    getFixedQuantity()   { return cfg().fixedQuantity; }
     public double getCapitalPerTrade() { return cfg().capitalPerTrade; }
     public int    getTelegramAlertFrequency() { return cfg().telegramAlertFrequency; }
@@ -134,6 +147,12 @@ public class RiskSettingsStore {
     public void setEnableR4S4(boolean v)       { cfg().enableR4S4 = v; }
     public void setSessionMoveLimit(double v) { cfg().sessionMoveLimit = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
+    public void setSttRate(double v)         { cfg().sttRate = v; }
+    public void setExchangeRate(double v)    { cfg().exchangeRate = v; }
+    public void setGstRate(double v)         { cfg().gstRate = v; }
+    public void setSebiRate(double v)        { cfg().sebiRate = v; }
+    public void setStampDutyRate(double v)   { cfg().stampDutyRate = v; }
+    public void setBrokeragePct(double v)    { cfg().brokeragePct = v; }
     public void setFixedQuantity(int v)      { cfg().fixedQuantity = v; }
     public void setCapitalPerTrade(double v) { cfg().capitalPerTrade = v; }
     public void setTelegramAlertFrequency(int v) { cfg().telegramAlertFrequency = v; }
@@ -164,6 +183,12 @@ public class RiskSettingsStore {
     public boolean isEnableR4S4(String mode)       { return cfgFor(mode).enableR4S4; }
     public double getSessionMoveLimit(String mode) { return cfgFor(mode).sessionMoveLimit; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
+    public double getSttRate(String mode)         { return cfgFor(mode).sttRate; }
+    public double getExchangeRate(String mode)    { return cfgFor(mode).exchangeRate; }
+    public double getGstRate(String mode)         { return cfgFor(mode).gstRate; }
+    public double getSebiRate(String mode)        { return cfgFor(mode).sebiRate; }
+    public double getStampDutyRate(String mode)   { return cfgFor(mode).stampDutyRate; }
+    public double getBrokeragePct(String mode)    { return cfgFor(mode).brokeragePct; }
     public int    getFixedQuantity(String mode)   { return cfgFor(mode).fixedQuantity; }
     public double getCapitalPerTrade(String mode) { return cfgFor(mode).capitalPerTrade; }
     public int    getTelegramAlertFrequency(String mode) { return cfgFor(mode).telegramAlertFrequency; }
@@ -192,6 +217,12 @@ public class RiskSettingsStore {
     public void setEnableR4S4(String mode, boolean v)       { cfgFor(mode).enableR4S4 = v; }
     public void setSessionMoveLimit(String mode, double v) { cfgFor(mode).sessionMoveLimit = v; }
     public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
+    public void setSttRate(String mode, double v)         { cfgFor(mode).sttRate = v; }
+    public void setExchangeRate(String mode, double v)    { cfgFor(mode).exchangeRate = v; }
+    public void setGstRate(String mode, double v)         { cfgFor(mode).gstRate = v; }
+    public void setSebiRate(String mode, double v)        { cfgFor(mode).sebiRate = v; }
+    public void setStampDutyRate(String mode, double v)   { cfgFor(mode).stampDutyRate = v; }
+    public void setBrokeragePct(String mode, double v)    { cfgFor(mode).brokeragePct = v; }
     public void setFixedQuantity(String mode, int v)      { cfgFor(mode).fixedQuantity = v; }
     public void setCapitalPerTrade(String mode, double v) { cfgFor(mode).capitalPerTrade = v; }
     public void setTelegramAlertFrequency(String mode, int v) { cfgFor(mode).telegramAlertFrequency = v; }
@@ -230,6 +261,12 @@ public class RiskSettingsStore {
             upsert("enableR4S4", String.valueOf(c.enableR4S4));
             upsert("sessionMoveLimit", String.valueOf(c.sessionMoveLimit));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
+            upsert("sttRate", String.valueOf(c.sttRate));
+            upsert("exchangeRate", String.valueOf(c.exchangeRate));
+            upsert("gstRate", String.valueOf(c.gstRate));
+            upsert("sebiRate", String.valueOf(c.sebiRate));
+            upsert("stampDutyRate", String.valueOf(c.stampDutyRate));
+            upsert("brokeragePct", String.valueOf(c.brokeragePct));
             upsert("fixedQuantity", String.valueOf(c.fixedQuantity));
             upsert("capitalPerTrade", String.valueOf(c.capitalPerTrade));
             upsert("telegramAlertFrequency", String.valueOf(c.telegramAlertFrequency));
@@ -287,6 +324,12 @@ public class RiskSettingsStore {
                     case "enableR4S4"        -> c.enableR4S4 = Boolean.parseBoolean(v);
                     case "sessionMoveLimit"  -> c.sessionMoveLimit = Double.parseDouble(v);
                     case "brokeragePerOrder" -> c.brokeragePerOrder = Double.parseDouble(v);
+                    case "sttRate"           -> c.sttRate = Double.parseDouble(v);
+                    case "exchangeRate"      -> c.exchangeRate = Double.parseDouble(v);
+                    case "gstRate"           -> c.gstRate = Double.parseDouble(v);
+                    case "sebiRate"          -> c.sebiRate = Double.parseDouble(v);
+                    case "stampDutyRate"     -> c.stampDutyRate = Double.parseDouble(v);
+                    case "brokeragePct"      -> c.brokeragePct = Double.parseDouble(v);
                     case "fixedQuantity"     -> c.fixedQuantity = Integer.parseInt(v);
                     case "capitalPerTrade"   -> c.capitalPerTrade = Double.parseDouble(v);
                     case "telegramAlertFrequency" -> c.telegramAlertFrequency = Integer.parseInt(v);

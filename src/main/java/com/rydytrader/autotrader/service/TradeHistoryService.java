@@ -70,7 +70,9 @@ public class TradeHistoryService {
         }
         lastRecordTime.put(symbol, now);
         double brokerage = riskSettings.getBrokeragePerOrder();
-        addRecord(new TradeRecord(symbol, side, qty, entryPrice, exitPrice, exitReason, setup, brokerage, description, probability));
+        addRecord(new TradeRecord(symbol, side, qty, entryPrice, exitPrice, exitReason, setup, brokerage, description, probability,
+            riskSettings.getSttRate(), riskSettings.getExchangeRate(), riskSettings.getGstRate(),
+            riskSettings.getSebiRate(), riskSettings.getStampDutyRate(), riskSettings.getBrokeragePct()));
     }
 
     public List<TradeRecord> getTrades() { return new ArrayList<>(trades); }
