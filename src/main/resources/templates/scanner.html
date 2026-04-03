@@ -66,6 +66,9 @@
         .scan-badge.narrow { background: rgba(99,179,237,0.12); color: var(--accent-blue); }
         .scan-badge.inside { background: rgba(251,191,36,0.12); color: var(--accent-yellow); }
         .scan-badge.weekly-narrow { background: rgba(139,92,246,0.15); color: #8b5cf6; font-weight: 700; }
+        .scan-badge.momentum-week { background: rgba(52,211,153,0.12); color: var(--accent-green); font-weight: 700; }
+        .scan-badge.momentum-month { background: rgba(251,146,60,0.12); color: #fb923c; font-weight: 700; }
+        .scan-badge.momentum-52w { background: rgba(139,92,246,0.12); color: #8b5cf6; font-weight: 700; }
 
         .scan-price-row {
             display: flex; align-items: baseline; gap: 10px;
@@ -381,6 +384,19 @@
             <button class="filter-btn" onclick="toggleProbFilter('LPT', this)">LPT</button>
         </span>
         <div class="filter-sep"></div>
+        <span class="momentum-filter-group">
+            <button class="filter-btn" onclick="setFilter('MOMENTUM', this)" style="color:var(--accent-green)">Momentum</button>
+            <button class="filter-btn" onclick="setFilter('WEEK_HIGH_BREAK', this)">Week Break</button>
+            <button class="filter-btn" onclick="setFilter('MONTH_HIGH_BREAK', this)">Month Break</button>
+            <button class="filter-btn" onclick="setFilter('52W_HIGH_BREAK', this)">52W H/L</button>
+        </span>
+        <div class="filter-sep"></div>
+        <span class="cap-filter-group">
+            <button class="filter-btn" onclick="setFilter('LARGE', this)" style="color:var(--accent-green)">Large</button>
+            <button class="filter-btn" onclick="setFilter('MID', this)" style="color:var(--accent-blue)">Mid</button>
+            <button class="filter-btn" onclick="setFilter('SMALL', this)" style="color:var(--accent-yellow)">Small</button>
+        </span>
+        <div class="filter-sep"></div>
         <button class="filter-btn" onclick="toggleSignalFilter(this)">Has Signal</button>
         <button class="filter-btn" onclick="toggleFilteredFilter(this)">Filtered</button>
         <select id="timeFilter" onchange="applyTimeFilter()" style="
@@ -450,7 +466,7 @@
     // ── Filter controls ─────────────────────────────
     window.setFilter = function(type, btn) {
         cprFilter = type;
-        document.querySelectorAll('.cpr-filter-group .filter-btn').forEach(function(b) {
+        document.querySelectorAll('.cpr-filter-group .filter-btn, .momentum-filter-group .filter-btn, .cap-filter-group .filter-btn').forEach(function(b) {
             b.classList.remove('active');
         });
         btn.classList.add('active');
@@ -522,7 +538,19 @@
             if (symbolFilter && d.shortName !== symbolFilter) return false;
             if (cprFilter !== 'all') {
                 var types = d.cprTypes || [d.cprType];
-                if (types.indexOf(cprFilter) === -1) return false;
+                if (cprFilter === 'MOMENTUM') {
+                    if (!d.momentumTags || d.momentumTags.length === 0) return false;
+                } else if (cprFilter === 'LARGE' || cprFilter === 'MID' || cprFilter === 'SMALL') {
+                    if ((d.marketCapCategory || '') !== cprFilter) return false;
+                } else if (cprFilter === 'WEEK_HIGH_BREAK' || cprFilter === 'MONTH_HIGH_BREAK' || cprFilter === '52W_HIGH_BREAK') {
+                    if (!types.includes(cprFilter) && !(d.momentumTags || []).includes(cprFilter)) return false;
+                    // Also match LOW variants
+                    var lowVariant = cprFilter.replace('HIGH', 'LOW');
+                    if (!types.includes(cprFilter) && !types.includes(lowVariant)
+                        && !(d.momentumTags || []).includes(cprFilter) && !(d.momentumTags || []).includes(lowVariant)) return false;
+                } else {
+                    if (types.indexOf(cprFilter) === -1) return false;
+                }
             }
             if (probFilter && d.probability !== probFilter) return false;
             if (weeklyFilter && !d.weeklyNarrow) return false;
@@ -633,8 +661,15 @@
             + '  <span class="scan-symbol">' + d.shortName + '</span>'
             + '<span class="scan-ohl" style="font-family:var(--font-mono);font-size:0.62rem;color:var(--text-secondary);margin-left:6px;">' + (d.candleOpen ? 'O:' + fmt(d.candleOpen) + ' H:' + fmt(d.candleHigh) + ' L:' + fmt(d.candleLow) : '') + '</span>'
             + '  <span style="display:flex; gap:4px;">'
-            + ((d.cprTypes || [d.cprType]).map(function(t) { return '<span class="scan-badge ' + t.toLowerCase() + '">' + t + '</span>'; }).join(''))
+            + ((d.cprTypes || [d.cprType]).filter(function(t){ return ['NARROW','INSIDE'].includes(t); }).map(function(t) { return '<span class="scan-badge ' + t.toLowerCase() + '">' + t + '</span>'; }).join(''))
             + (d.weeklyNarrow ? '<span class="scan-badge weekly-narrow">WEEKLY NARROW</span>' : '')
+            + ((d.momentumTags || []).map(function(t) {
+                var cls = t.includes('WEEK') ? 'momentum-week' : t.includes('MONTH') ? 'momentum-month' : 'momentum-52w';
+                var label = t.replace(/_/g, ' ');
+                return '<span class="scan-badge ' + cls + '">' + label + '</span>';
+            }).join(''))
+            + (d.volumeRatio > 0 ? '<span class="scan-badge" style="background:rgba(34,211,238,.1);color:var(--accent-cyan);font-size:.6rem;">Vol:' + d.volumeRatio + 'x</span>' : '')
+            + (d.marketCapCategory ? '<span class="scan-badge" style="background:rgba(128,128,128,.08);color:var(--text-muted);font-size:.6rem;">' + d.marketCapCategory + (d.marketCapCr > 0 ? ' ' + Math.round(d.marketCapCr/1000) + 'K Cr' : '') + '</span>' : '')
             + '  </span>'
             + '</div>'
             + '<div class="scan-price-row">'

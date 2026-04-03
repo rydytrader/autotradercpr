@@ -423,6 +423,61 @@
         </div>
     </div>
 
+    <!-- MOMENTUM SCANNER -->
+    <div class="section-card fade-in" style="margin-top:16px;">
+        <div class="section-header">
+            <div class="section-title">
+                <div class="section-title-dot" style="background: var(--accent-green);"></div>
+                Momentum Scanner
+            </div>
+        </div>
+        <div class="section-body">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label">Enable Momentum</label>
+                    <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
+                        <input type="checkbox" id="enableMomentumScanner" style="width:18px;height:18px;accent-color:var(--accent-cyan);">
+                        <span style="color:var(--text-secondary);font-size:0.82rem;font-family:var(--font-mono);">Add momentum stocks to watchlist</span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Volume Multiple</label>
+                    <input type="number" id="momentumVolumeMultiple" class="form-control" min="1" max="10" step="0.5" placeholder="2.0">
+                    <div class="form-hint">Min volume ratio vs 20-day avg (e.g. 2.0 = 2x)</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Break Filters</label>
+                    <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="momentumWeekBreak" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> Previous Week High/Low Break
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="momentumMonthBreak" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> Previous Month High/Low Break
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="momentum52Week" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> 52-Week High/Low Break
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Market Cap Filter</label>
+                    <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="marketCapLarge" style="width:16px;height:16px;accent-color:var(--accent-green);"> Large Cap (&gt; 20,000 Cr)
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="marketCapMid" style="width:16px;height:16px;accent-color:var(--accent-blue);"> Mid Cap (5,000 - 20,000 Cr)
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="marketCapSmall" style="width:16px;height:16px;accent-color:var(--accent-yellow);"> Small Cap (&lt; 5,000 Cr)
+                        </label>
+                    </div>
+                    <div class="form-hint">Applies to entire watchlist (CPR + momentum)</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
         <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
     </div><!-- /tab-scanner -->
 
@@ -688,6 +743,14 @@
             document.getElementById('enableLpt').checked = d.enableLpt === true;
             document.getElementById('mptQtyFactor').value = d.mptQtyFactor || 0.5;
             document.getElementById('lptQtyFactor').value = d.lptQtyFactor || 0.25;
+            document.getElementById('enableMomentumScanner').checked = d.enableMomentumScanner !== false;
+            document.getElementById('momentumWeekBreak').checked = d.momentumWeekBreak !== false;
+            document.getElementById('momentumMonthBreak').checked = d.momentumMonthBreak !== false;
+            document.getElementById('momentum52Week').checked = d.momentum52Week !== false;
+            document.getElementById('momentumVolumeMultiple').value = d.momentumVolumeMultiple || 2.0;
+            document.getElementById('marketCapLarge').checked = d.marketCapLarge !== false;
+            document.getElementById('marketCapMid').checked = d.marketCapMid !== false;
+            document.getElementById('marketCapSmall').checked = d.marketCapSmall === true;
 
             const pnl    = d.todayPnl    || 0;
             const trades = d.todayTrades || 0;
@@ -779,7 +842,15 @@
                 enableMpt: document.getElementById('enableMpt').checked,
                 enableLpt: document.getElementById('enableLpt').checked,
                 mptQtyFactor: parseFloat(document.getElementById('mptQtyFactor').value) || 0.5,
-                lptQtyFactor: parseFloat(document.getElementById('lptQtyFactor').value) || 0.25
+                lptQtyFactor: parseFloat(document.getElementById('lptQtyFactor').value) || 0.25,
+                enableMomentumScanner: document.getElementById('enableMomentumScanner').checked,
+                momentumWeekBreak: document.getElementById('momentumWeekBreak').checked,
+                momentumMonthBreak: document.getElementById('momentumMonthBreak').checked,
+                momentum52Week: document.getElementById('momentum52Week').checked,
+                momentumVolumeMultiple: parseFloat(document.getElementById('momentumVolumeMultiple').value) || 2.0,
+                marketCapLarge: document.getElementById('marketCapLarge').checked,
+                marketCapMid: document.getElementById('marketCapMid').checked,
+                marketCapSmall: document.getElementById('marketCapSmall').checked
             };
             const r = await fetch('/api/settings/risk', {
                 method: 'POST',
