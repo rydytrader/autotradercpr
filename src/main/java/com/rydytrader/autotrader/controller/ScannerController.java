@@ -19,28 +19,28 @@ import java.util.*;
 public class ScannerController {
 
     private final MarketDataService marketDataService;
-    private final BhavcopyService bhavcopyService;
+    private final CprLevelProvider cprLevelProvider;
     private final AtrService atrService;
-    private final WeeklyCprService weeklyCprService;
+    private final CprProbabilityCalculator cprProbabilityCalculator;
     private final CandleAggregator candleAggregator;
-    private final BreakoutScanner breakoutScanner;
+    private final CprBreakoutStrategy cprBreakoutStrategy;
     private final RiskSettingsStore riskSettings;
     private final MarginDataService marginDataService;
 
     public ScannerController(MarketDataService marketDataService,
-                             BhavcopyService bhavcopyService,
+                             CprLevelProvider cprLevelProvider,
                              AtrService atrService,
-                             WeeklyCprService weeklyCprService,
+                             CprProbabilityCalculator cprProbabilityCalculator,
                              CandleAggregator candleAggregator,
-                             BreakoutScanner breakoutScanner,
+                             CprBreakoutStrategy cprBreakoutStrategy,
                              RiskSettingsStore riskSettings,
                              MarginDataService marginDataService) {
         this.marketDataService = marketDataService;
-        this.bhavcopyService = bhavcopyService;
+        this.cprLevelProvider = cprLevelProvider;
         this.atrService = atrService;
-        this.weeklyCprService = weeklyCprService;
+        this.cprProbabilityCalculator = cprProbabilityCalculator;
         this.candleAggregator = candleAggregator;
-        this.breakoutScanner = breakoutScanner;
+        this.cprBreakoutStrategy = cprBreakoutStrategy;
         this.riskSettings = riskSettings;
         this.marginDataService = marginDataService;
     }
@@ -52,21 +52,21 @@ public class ScannerController {
 
         // Build sets for cross-referencing
         Set<String> weeklyNarrowSymbols = new HashSet<>();
-        for (CprLevels cpr : bhavcopyService.getWeeklyNarrowCprStocks()) {
+        for (CprLevels cpr : cprLevelProvider.getWeeklyNarrowCprStocks()) {
             weeklyNarrowSymbols.add(cpr.getSymbol());
         }
         Set<String> narrowSymbols = new HashSet<>();
-        for (CprLevels cpr : bhavcopyService.getNarrowCprStocks()) {
+        for (CprLevels cpr : cprLevelProvider.getNarrowCprStocks()) {
             narrowSymbols.add(cpr.getSymbol());
         }
         Set<String> insideSymbols = new HashSet<>();
-        for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
+        for (CprLevels cpr : cprLevelProvider.getInsideCprStocks()) {
             insideSymbols.add(cpr.getSymbol());
         }
 
         // Collect narrow CPR stocks (mark if also inside)
         Set<String> seen = new HashSet<>();
-        for (CprLevels cpr : bhavcopyService.getNarrowCprStocks()) {
+        for (CprLevels cpr : cprLevelProvider.getNarrowCprStocks()) {
             String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
             List<String> types = new ArrayList<>();
             types.add("NARROW");
@@ -79,7 +79,7 @@ public class ScannerController {
         }
 
         // Collect inside-only CPR stocks
-        for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
+        for (CprLevels cpr : cprLevelProvider.getInsideCprStocks()) {
             String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
             if (!seen.contains(fyers)) {
                 List<String> types = new ArrayList<>();
@@ -121,9 +121,9 @@ public class ScannerController {
         card.put("candleVolume", candleAggregator.getCurrentCandleVolume(fyersSymbol));
         card.put("avgVolume", Math.round(candleAggregator.getAvgVolume(fyersSymbol, riskSettings.getVolumeLookback())));
 
-        card.put("weeklyTrend", weeklyCprService.getWeeklyTrend(fyersSymbol));
-        card.put("dailyTrend", weeklyCprService.getDailyTrend(fyersSymbol));
-        card.put("probability", weeklyCprService.getProbability(fyersSymbol));
+        card.put("weeklyTrend", cprProbabilityCalculator.getWeeklyTrend(fyersSymbol));
+        card.put("dailyTrend", cprProbabilityCalculator.getDailyTrend(fyersSymbol));
+        card.put("probability", cprProbabilityCalculator.getProbability(fyersSymbol));
 
         // CPR levels
         Map<String, Object> lvls = new LinkedHashMap<>();
@@ -137,11 +137,11 @@ public class ScannerController {
         card.put("levels", lvls);
 
         // Broken levels
-        Set<String> broken = breakoutScanner.getBrokenLevels(fyersSymbol);
+        Set<String> broken = cprBreakoutStrategy.getBrokenLevels(fyersSymbol);
         card.put("brokenLevels", broken != null ? new ArrayList<>(broken) : Collections.emptyList());
 
         // Last signal
-        BreakoutScanner.SignalInfo sig = breakoutScanner.getLastSignal(fyersSymbol);
+        CprBreakoutStrategy.SignalInfo sig = cprBreakoutStrategy.getLastSignal(fyersSymbol);
         if (sig != null) {
             Map<String, String> sigMap = new LinkedHashMap<>();
             sigMap.put("setup", sig.setup);
@@ -153,9 +153,9 @@ public class ScannerController {
         }
 
         // Signal history
-        List<BreakoutScanner.SignalInfo> history = breakoutScanner.getSignalHistory(fyersSymbol);
+        List<CprBreakoutStrategy.SignalInfo> history = cprBreakoutStrategy.getSignalHistory(fyersSymbol);
         List<Map<String, String>> histList = new ArrayList<>();
-        for (BreakoutScanner.SignalInfo h : history) {
+        for (CprBreakoutStrategy.SignalInfo h : history) {
             Map<String, String> hm = new LinkedHashMap<>();
             hm.put("setup", h.setup);
             hm.put("time", h.time);
@@ -164,7 +164,7 @@ public class ScannerController {
         }
         card.put("signalHistory", histList);
 
-        card.put("weeklyLevels", weeklyCprService.getWeeklyLevelsMap(fyersSymbol));
+        card.put("weeklyLevels", cprProbabilityCalculator.getWeeklyLevelsMap(fyersSymbol));
         card.put("hasPosition", positionSymbols.contains(fyersSymbol));
         card.put("cprWidthPct", Math.round(levels.getCprWidthPct() * 1000.0) / 1000.0);
 
@@ -190,11 +190,11 @@ public class ScannerController {
     @GetMapping("/api/weekly-narrow-cpr")
     public Map<String, Object> getWeeklyNarrowCpr() {
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("weekDates", bhavcopyService.getWeekDateRange());
-        result.put("historyDays", bhavcopyService.getHistoryDays());
-        result.put("totalNfoStocks", bhavcopyService.getLoadedCount());
+        result.put("weekDates", cprLevelProvider.getWeekDateRange());
+        result.put("historyDays", cprLevelProvider.getHistoryDays());
+        result.put("totalNfoStocks", cprLevelProvider.getLoadedCount());
 
-        var stocks = bhavcopyService.getWeeklyNarrowCprStocks();
+        var stocks = cprLevelProvider.getWeeklyNarrowCprStocks();
         result.put("narrowCount", stocks.size());
 
         List<Map<String, Object>> stockList = new ArrayList<>();
@@ -220,18 +220,18 @@ public class ScannerController {
         Set<String> added = new HashSet<>();
 
         // Narrow CPR stocks first
-        for (CprLevels cpr : bhavcopyService.getNarrowCprStocks()) {
+        for (CprLevels cpr : cprLevelProvider.getNarrowCprStocks()) {
             csv.append("NSE:").append(cpr.getSymbol()).append(",");
             added.add(cpr.getSymbol());
         }
         // Inside CPR stocks (skip duplicates)
-        for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
+        for (CprLevels cpr : cprLevelProvider.getInsideCprStocks()) {
             if (!added.contains(cpr.getSymbol())) {
                 csv.append("NSE:").append(cpr.getSymbol()).append(",");
             }
         }
 
-        String filename = "cpr-watchlist-" + bhavcopyService.getCachedDate() + ".txt";
+        String filename = "cpr-watchlist-" + cprLevelProvider.getCachedDate() + ".txt";
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
             .contentType(MediaType.TEXT_PLAIN)
@@ -256,7 +256,7 @@ public class ScannerController {
             String ticker = fyersSymbol.replaceAll("^(NSE|BSE|MCX):", "").replaceAll("-(EQ|INDEX)$", "");
             double ltp = candleAggregator.getLtp(fyersSymbol);
             if (ltp <= 0) {
-                CprLevels cpr = bhavcopyService.getCprLevels(ticker);
+                CprLevels cpr = cprLevelProvider.getCprLevels(ticker);
                 if (cpr != null) ltp = cpr.getClose();
             }
             double atr = atrService.getAtr(fyersSymbol);

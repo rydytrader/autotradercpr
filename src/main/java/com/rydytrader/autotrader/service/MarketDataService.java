@@ -50,9 +50,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     private final RiskSettingsStore   riskSettings;
     private final CandleAggregator    candleAggregator;
     private final AtrService          atrService;
-    private final WeeklyCprService    weeklyCprService;
-    private final BreakoutScanner     breakoutScanner;
-    private final BhavcopyService     bhavcopyService;
+    private final CprProbabilityCalculator    cprProbabilityCalculator;
+    private final CprBreakoutStrategy     cprBreakoutStrategy;
+    private final CprLevelProvider     cprLevelProvider;
     private final ObjectMapper        mapper = new ObjectMapper();
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -133,9 +133,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                               RiskSettingsStore riskSettings,
                               CandleAggregator candleAggregator,
                               AtrService atrService,
-                              WeeklyCprService weeklyCprService,
-                              BreakoutScanner breakoutScanner,
-                              BhavcopyService bhavcopyService) {
+                              CprProbabilityCalculator cprProbabilityCalculator,
+                              CprBreakoutStrategy cprBreakoutStrategy,
+                              CprLevelProvider cprLevelProvider) {
         this.tokenStore = tokenStore;
         this.fyersProperties = fyersProperties;
         this.positionStateStore = positionStateStore;
@@ -145,9 +145,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         this.riskSettings = riskSettings;
         this.candleAggregator = candleAggregator;
         this.atrService = atrService;
-        this.weeklyCprService = weeklyCprService;
-        this.breakoutScanner = breakoutScanner;
-        this.bhavcopyService = bhavcopyService;
+        this.cprProbabilityCalculator = cprProbabilityCalculator;
+        this.cprBreakoutStrategy = cprBreakoutStrategy;
+        this.cprLevelProvider = cprLevelProvider;
         candleAggregator.addListener(this);
     }
 
@@ -171,7 +171,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         // Register candle close listeners
         candleAggregator.setTimeframe(riskSettings.getScannerTimeframe());
         candleAggregator.addListener(atrService);
-        candleAggregator.addListener(breakoutScanner);
+        candleAggregator.addListener(cprBreakoutStrategy);
         candleAggregator.start();
 
         // Schedule scanner pre-market data fetch
@@ -749,7 +749,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
      */
     private void scheduleScannerInit() {
         // Always initialize scanner data (watchlist, ATR, trends) for the dashboard page.
-        // Signal generation is gated by signalSource check in BreakoutScanner.onCandleClose().
+        // Signal generation is gated by signalSource check in CprBreakoutStrategy.onCandleClose().
         scheduler.submit(() -> {
             try {
                 initScanner();
@@ -770,11 +770,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         }
 
         log.info("[MarketData] Initializing scanner with {} watchlist symbols", watchlist.size());
-        breakoutScanner.setWatchlistSymbols(watchlist);
+        cprBreakoutStrategy.setWatchlistSymbols(watchlist);
 
         // Fetch ATR and weekly trends (throttled API calls)
         atrService.fetchAtrForSymbols(watchlist);
-        weeklyCprService.fetchWeeklyTrends(watchlist);
+        cprProbabilityCalculator.fetchWeeklyTrends(watchlist);
 
         // Subscribe watchlist to WebSocket (after API calls give WS time to connect)
         subscribeWatchlist(watchlist);
@@ -801,10 +801,10 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     private List<String> buildWatchlist() {
         Set<String> symbols = new LinkedHashSet<>();
 
-        for (var cpr : bhavcopyService.getNarrowCprStocks()) {
+        for (var cpr : cprLevelProvider.getNarrowCprStocks()) {
             symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
         }
-        for (var cpr : bhavcopyService.getInsideCprStocks()) {
+        for (var cpr : cprLevelProvider.getInsideCprStocks()) {
             symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
         }
         return new ArrayList<>(symbols);

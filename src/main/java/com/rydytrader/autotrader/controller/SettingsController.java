@@ -1,7 +1,7 @@
 package com.rydytrader.autotrader.controller;
 
 import com.rydytrader.autotrader.dto.CprLevels;
-import com.rydytrader.autotrader.service.BhavcopyService;
+import com.rydytrader.autotrader.strategy.cpr.CprLevelProvider;
 import com.rydytrader.autotrader.service.TradeHistoryService;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.http.ResponseEntity;
@@ -15,14 +15,14 @@ public class SettingsController {
 
     private final RiskSettingsStore   riskSettings;
     private final TradeHistoryService tradeHistoryService;
-    private final BhavcopyService     bhavcopyService;
+    private final CprLevelProvider     cprLevelProvider;
 
     public SettingsController(RiskSettingsStore riskSettings,
                                TradeHistoryService tradeHistoryService,
-                               BhavcopyService bhavcopyService) {
+                               CprLevelProvider cprLevelProvider) {
         this.riskSettings        = riskSettings;
         this.tradeHistoryService = tradeHistoryService;
-        this.bhavcopyService     = bhavcopyService;
+        this.cprLevelProvider     = cprLevelProvider;
     }
 
     // ── GET SETTINGS + TODAY'S STATUS ─────────────────────────────────────────
@@ -142,7 +142,7 @@ public class SettingsController {
     // ── NARROW CPR STOCKS ─────────────────────────────────────────────────────
     @GetMapping("/api/narrow-cpr")
     public Map<String, Object> getNarrowCprStocks() {
-        List<CprLevels> narrow = bhavcopyService.getNarrowCprStocks();
+        List<CprLevels> narrow = cprLevelProvider.getNarrowCprStocks();
         List<Map<String, Object>> list = narrow.stream().map(c -> {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("symbol", c.getSymbol());
@@ -157,8 +157,8 @@ public class SettingsController {
         }).collect(Collectors.toList());
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("date", bhavcopyService.getCachedDate());
-        result.put("totalNfoStocks", bhavcopyService.getLoadedCount());
+        result.put("date", cprLevelProvider.getCachedDate());
+        result.put("totalNfoStocks", cprLevelProvider.getLoadedCount());
         result.put("narrowCount", narrow.size());
         result.put("stocks", list);
         return result;
@@ -167,7 +167,7 @@ public class SettingsController {
     // ── INSIDE CPR STOCKS ─────────────────────────────────────────────────────
     @GetMapping("/api/inside-cpr")
     public Map<String, Object> getInsideCprStocks() {
-        List<CprLevels> inside = bhavcopyService.getInsideCprStocks();
+        List<CprLevels> inside = cprLevelProvider.getInsideCprStocks();
         List<Map<String, Object>> list = inside.stream().map(c -> {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("symbol", c.getSymbol());
@@ -179,7 +179,7 @@ public class SettingsController {
             m.put("r1", Math.round(c.getR1() * 100.0) / 100.0);
             m.put("s1", Math.round(c.getS1() * 100.0) / 100.0);
             // Previous day CPR for verification
-            CprLevels prev = bhavcopyService.getPreviousCpr(c.getSymbol());
+            CprLevels prev = cprLevelProvider.getPreviousCpr(c.getSymbol());
             if (prev != null) {
                 m.put("prevTc", Math.round(prev.getTc() * 100.0) / 100.0);
                 m.put("prevBc", Math.round(prev.getBc() * 100.0) / 100.0);
@@ -189,9 +189,9 @@ public class SettingsController {
         }).collect(Collectors.toList());
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("date", bhavcopyService.getCachedDate());
-        result.put("previousDate", bhavcopyService.getPreviousDate());
-        result.put("totalNfoStocks", bhavcopyService.getLoadedCount());
+        result.put("date", cprLevelProvider.getCachedDate());
+        result.put("previousDate", cprLevelProvider.getPreviousDate());
+        result.put("totalNfoStocks", cprLevelProvider.getLoadedCount());
         result.put("insideCount", inside.size());
         result.put("stocks", list);
         return result;

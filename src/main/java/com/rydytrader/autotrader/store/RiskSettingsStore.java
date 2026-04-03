@@ -58,6 +58,7 @@ public class RiskSettingsStore {
         volatile double chandelierMultiplier = 2.0; // ATR multiplier for Chandelier Exit
         // Scanner settings
         volatile String signalSource    = "TRADINGVIEW"; // TRADINGVIEW or INTERNAL
+        volatile String strategyType    = "CPR_BREAKOUT"; // active strategy name
         volatile int    scannerTimeframe = 15;  // candle timeframe in minutes
         volatile boolean enableVwapCheck = true; // require VWAP confirmation for scanner signals
         volatile boolean enableHpt      = true;  // High Probable Trade signals
@@ -120,6 +121,7 @@ public class RiskSettingsStore {
     public int getVolumeLookback() { return cfg().volumeLookback; }
 
     public String  getSignalSource()      { return cfg().signalSource; }
+    public String  getStrategyType()     { return cfg().strategyType; }
     public int     getScannerTimeframe()  { return cfg().scannerTimeframe; }
     public boolean isEnableVwapCheck()    { return cfg().enableVwapCheck; }
     public boolean isEnableHpt()          { return cfg().enableHpt; }
@@ -129,6 +131,7 @@ public class RiskSettingsStore {
     public double getLptQtyFactor()       { return cfg().lptQtyFactor; }
 
     public void setSignalSource(String v)      { cfg().signalSource = v; }
+    public void setStrategyType(String v)     { cfg().strategyType = v; }
     public void setScannerTimeframe(int v)     { cfg().scannerTimeframe = v; }
     public void setEnableVwapCheck(boolean v)  { cfg().enableVwapCheck = v; }
     public void setEnableHpt(boolean v)        { cfg().enableHpt = v; }
@@ -285,6 +288,7 @@ public class RiskSettingsStore {
             upsert("chandelierPeriod", String.valueOf(c.chandelierPeriod));
             upsert("chandelierMultiplier", String.valueOf(c.chandelierMultiplier));
             upsert("signalSource", c.signalSource);
+            upsert("strategyType", c.strategyType);
             upsert("scannerTimeframe", String.valueOf(c.scannerTimeframe));
             upsert("enableVwapCheck", String.valueOf(c.enableVwapCheck));
             upsert("enableHpt", String.valueOf(c.enableHpt));
@@ -348,6 +352,7 @@ public class RiskSettingsStore {
                     case "chandelierPeriod"  -> c.chandelierPeriod = Integer.parseInt(v);
                     case "chandelierMultiplier" -> c.chandelierMultiplier = Double.parseDouble(v);
                     case "signalSource"      -> c.signalSource = v;
+                    case "strategyType"      -> c.strategyType = v;
                     case "scannerTimeframe"  -> c.scannerTimeframe = Integer.parseInt(v);
                     case "enableVwapCheck"   -> c.enableVwapCheck = Boolean.parseBoolean(v);
                     case "enableHpt"         -> c.enableHpt = Boolean.parseBoolean(v);

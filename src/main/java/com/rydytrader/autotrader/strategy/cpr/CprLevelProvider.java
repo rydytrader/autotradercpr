@@ -1,8 +1,10 @@
-package com.rydytrader.autotrader.service;
+package com.rydytrader.autotrader.strategy.cpr;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rydytrader.autotrader.dto.CprLevels;
+import com.rydytrader.autotrader.service.EventService;
+import com.rydytrader.autotrader.service.SymbolMasterService;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,9 +25,9 @@ import java.util.stream.Collectors;
 import java.util.zip.ZipInputStream;
 
 @Service
-public class BhavcopyService {
+public class CprLevelProvider implements com.rydytrader.autotrader.strategy.LevelProvider, com.rydytrader.autotrader.strategy.WatchlistProvider {
 
-    private static final Logger log = LoggerFactory.getLogger(BhavcopyService.class);
+    private static final Logger log = LoggerFactory.getLogger(CprLevelProvider.class);
 
     private static final String CM_URL_TEMPLATE =
         "https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_%s_F_0000.csv.zip";
@@ -57,7 +59,7 @@ public class BhavcopyService {
     @org.springframework.context.annotation.Lazy
     private SymbolMasterService symbolMasterService;
 
-    public BhavcopyService(EventService eventService) {
+    public CprLevelProvider(EventService eventService) {
         this.eventService = eventService;
         new File("../store").mkdirs();
     }
@@ -71,7 +73,7 @@ public class BhavcopyService {
         } else {
             // Backfill history if we have fewer than 5 days
             if (dailyHistory.size() < MAX_HISTORY_DAYS && !cache.isEmpty()) {
-                log.info("[BhavcopyService] History incomplete ({} days), backfilling...", dailyHistory.size());
+                log.info("[CprLevelProvider] History incomplete ({} days), backfilling...", dailyHistory.size());
                 try {
                     String cookies = getNseCookies();
                     Set<String> nfoSymbols = cache.keySet();
@@ -80,12 +82,12 @@ public class BhavcopyService {
                         saveToFile();
                     }
                 } catch (Exception e) {
-                    log.error("[BhavcopyService] Failed to backfill history: {}", e.getMessage());
+                    log.error("[CprLevelProvider] Failed to backfill history: {}", e.getMessage());
                 }
             }
             long narrowCount = cache.values().stream().filter(CprLevels::isNarrowCpr).count();
             long insideCount = getInsideCprStocks().size();
-            log.info("[BhavcopyService] Loaded {} NFO stocks from cache for {} ({} narrow, {} inside CPR)", cache.size(), cachedDate, narrowCount, insideCount);
+            log.info("[CprLevelProvider] Loaded {} NFO stocks from cache for {} ({} narrow, {} inside CPR)", cache.size(), cachedDate, narrowCount, insideCount);
         }
     }
 
@@ -250,7 +252,7 @@ public class BhavcopyService {
                 String dateStr = DATE_FMT.format(targetDate);
                 String cookies = getNseCookies();
                 if (cookies == null || cookies.isEmpty()) {
-                    log.error("[BhavcopyService] Failed to obtain NSE session cookies");
+                    log.error("[CprLevelProvider] Failed to obtain NSE session cookies");
                     return;
                 }
 
@@ -258,15 +260,15 @@ public class BhavcopyService {
                 String foUrl = String.format(FO_URL_TEMPLATE, dateStr);
                 byte[] foZip = downloadZip(foUrl, cookies);
                 if (foZip == null) {
-                    log.error("[BhavcopyService] FO Bhavcopy not available for {}, trying previous day", targetDate);
+                    log.error("[CprLevelProvider] FO Bhavcopy not available for {}, trying previous day", targetDate);
                     targetDate = skipWeekends(targetDate.minusDays(1));
                     continue;
                 }
 
                 Set<String> nfoSymbols = extractNfoSymbols(foZip);
-                log.info("[BhavcopyService] FO Bhavcopy yielded {} unique NFO stock symbols", nfoSymbols.size());
+                log.info("[CprLevelProvider] FO Bhavcopy yielded {} unique NFO stock symbols", nfoSymbols.size());
                 if (nfoSymbols.isEmpty()) {
-                    log.error("[BhavcopyService] No NFO symbols found in FO Bhavcopy for {}", targetDate);
+                    log.error("[CprLevelProvider] No NFO symbols found in FO Bhavcopy for {}", targetDate);
                     targetDate = skipWeekends(targetDate.minusDays(1));
                     continue;
                 }
@@ -275,7 +277,7 @@ public class BhavcopyService {
                 String cmUrl = String.format(CM_URL_TEMPLATE, dateStr);
                 byte[] cmZip = downloadZip(cmUrl, cookies);
                 if (cmZip == null) {
-                    log.error("[BhavcopyService] CM Bhavcopy not available for {}", targetDate);
+                    log.error("[CprLevelProvider] CM Bhavcopy not available for {}", targetDate);
                     targetDate = skipWeekends(targetDate.minusDays(1));
                     continue;
                 }
@@ -286,7 +288,7 @@ public class BhavcopyService {
                 if (ohlcMap.size() < nfoSymbols.size()) {
                     Set<String> missing = new HashSet<>(nfoSymbols);
                     missing.removeAll(ohlcMap.keySet());
-                    log.info("[BhavcopyService] NFO symbols: {}, CM matches: {}, missing: {}", nfoSymbols.size(), ohlcMap.size(), missing);
+                    log.info("[CprLevelProvider] NFO symbols: {}, CM matches: {}, missing: {}", nfoSymbols.size(), ohlcMap.size(), missing);
                 }
 
                 // Compute CPR levels
@@ -323,19 +325,19 @@ public class BhavcopyService {
 
                 long narrowCount = cache.values().stream().filter(CprLevels::isNarrowCpr).count();
                 long insideCount = getInsideCprStocks().size();
-                String msg = "[BhavcopyService] Loaded CPR for " + cache.size()
+                String msg = "[CprLevelProvider] Loaded CPR for " + cache.size()
                     + " NFO stocks for " + cachedDate + " (" + narrowCount + " narrow, " + insideCount + " inside CPR)";
                 log.info(msg);
                 eventService.log(msg);
                 return;
 
             } catch (Exception e) {
-                log.error("[BhavcopyService] Error fetching Bhavcopy for {}: {}", targetDate, e.getMessage());
+                log.error("[CprLevelProvider] Error fetching Bhavcopy for {}: {}", targetDate, e.getMessage());
                 targetDate = skipWeekends(targetDate.minusDays(1));
             }
         }
 
-        log.error("[BhavcopyService] Failed to fetch Bhavcopy after 3 attempts, using cached data");
+        log.error("[CprLevelProvider] Failed to fetch Bhavcopy after 3 attempts, using cached data");
     }
 
     // ── Backfill daily history from NSE archives ──────────────────────────────
@@ -351,7 +353,7 @@ public class BhavcopyService {
         int fetched = 0;
         int failures = 0;
 
-        log.info("[BhavcopyService] Backfilling history: have {} days, need {} more", dailyHistory.size(), needed);
+        log.info("[CprLevelProvider] Backfilling history: have {} days, need {} more", dailyHistory.size(), needed);
 
         while (fetched < needed && failures < 5) {
             if (existingDates.contains(date.toString())) {
@@ -383,14 +385,14 @@ public class BhavcopyService {
                 dailyHistory.addLast(snapshot);
                 existingDates.add(date.toString());
                 fetched++;
-                log.info("[BhavcopyService] Backfilled {} ({} stocks)", date, snapshot.symbols.size());
+                log.info("[CprLevelProvider] Backfilled {} ({} stocks)", date, snapshot.symbols.size());
             } catch (Exception e) {
-                log.error("[BhavcopyService] Error backfilling {}: {}", date, e.getMessage());
+                log.error("[CprLevelProvider] Error backfilling {}: {}", date, e.getMessage());
                 failures++;
             }
             date = skipWeekends(date.minusDays(1));
         }
-        log.info("[BhavcopyService] Backfill complete: {} days total history", dailyHistory.size());
+        log.info("[CprLevelProvider] Backfill complete: {} days total history", dailyHistory.size());
     }
 
     // ── NSE session cookies ────────────────────────────────────────────────────
@@ -415,7 +417,7 @@ public class BhavcopyService {
             }
             return cookies.toString();
         } catch (Exception e) {
-            log.error("[BhavcopyService] Failed to get NSE cookies: {}", e.getMessage());
+            log.error("[CprLevelProvider] Failed to get NSE cookies: {}", e.getMessage());
             return null;
         }
     }
@@ -436,7 +438,7 @@ public class BhavcopyService {
 
             int status = conn.getResponseCode();
             if (status != 200) {
-                log.error("[BhavcopyService] HTTP {} for {}", status, url);
+                log.error("[CprLevelProvider] HTTP {} for {}", status, url);
                 return null;
             }
 
@@ -446,7 +448,7 @@ public class BhavcopyService {
             }
             return baos.toByteArray();
         } catch (Exception e) {
-            log.error("[BhavcopyService] Download failed for {}: {}", url, e.getMessage());
+            log.error("[CprLevelProvider] Download failed for {}: {}", url, e.getMessage());
             return null;
         }
     }
@@ -481,7 +483,7 @@ public class BhavcopyService {
             }
 
             if (instIdx == -1 || symIdx == -1) {
-                log.error("[BhavcopyService] FO CSV header not recognized: {}", header);
+                log.error("[CprLevelProvider] FO CSV header not recognized: {}", header);
                 return symbols;
             }
 
@@ -510,7 +512,7 @@ public class BhavcopyService {
                 }
             }
         } catch (Exception e) {
-            log.error("[BhavcopyService] Error parsing FO Bhavcopy: {}", e.getMessage());
+            log.error("[CprLevelProvider] Error parsing FO Bhavcopy: {}", e.getMessage());
         }
         return symbols;
     }
@@ -558,7 +560,7 @@ public class BhavcopyService {
             }
 
             if (symIdx == -1 || highIdx == -1 || lowIdx == -1 || closeIdx == -1) {
-                log.error("[BhavcopyService] CM CSV header not recognized: {}", header);
+                log.error("[CprLevelProvider] CM CSV header not recognized: {}", header);
                 return result;
             }
 
@@ -587,7 +589,7 @@ public class BhavcopyService {
                 } catch (NumberFormatException ignored) {}
             }
         } catch (Exception e) {
-            log.error("[BhavcopyService] Error parsing CM Bhavcopy: {}", e.getMessage());
+            log.error("[CprLevelProvider] Error parsing CM Bhavcopy: {}", e.getMessage());
         }
         return result;
     }
@@ -624,7 +626,7 @@ public class BhavcopyService {
             Files.writeString(Paths.get(STORE_FILE),
                 mapper.writerWithDefaultPrettyPrinter().writeValueAsString(data));
         } catch (Exception e) {
-            log.error("[BhavcopyService] Failed to save CPR data: {}", e.getMessage());
+            log.error("[CprLevelProvider] Failed to save CPR data: {}", e.getMessage());
         }
     }
 
@@ -680,10 +682,10 @@ public class BhavcopyService {
                     dailyHistory.addFirst(snap);
                 }
             }
-            log.info("[BhavcopyService] Loaded from file: date={}, {} stocks, {} days history",
+            log.info("[CprLevelProvider] Loaded from file: date={}, {} stocks, {} days history",
                 cachedDate, cache.size(), dailyHistory.size());
         } catch (Exception e) {
-            log.error("[BhavcopyService] Failed to load CPR data from file: {}", e.getMessage());
+            log.error("[CprLevelProvider] Failed to load CPR data from file: {}", e.getMessage());
         }
     }
 
@@ -696,5 +698,75 @@ public class BhavcopyService {
         int dash = s.indexOf('-');
         if (dash >= 0) s = s.substring(0, dash);
         return s;
+    }
+
+    // ── LevelProvider interface ──────────────────────────────────────────────
+
+    @Override
+    public java.util.Map<String, Double> getLevels(String symbol) {
+        CprLevels cpr = getCprLevels(symbol);
+        if (cpr == null) return java.util.Collections.emptyMap();
+        java.util.Map<String, Double> levels = new java.util.LinkedHashMap<>();
+        levels.put("PP", cpr.getPp());
+        levels.put("TC", cpr.getTc());
+        levels.put("BC", cpr.getBc());
+        levels.put("R1", cpr.getR1());
+        levels.put("R2", cpr.getR2());
+        levels.put("R3", cpr.getR3());
+        levels.put("R4", cpr.getR4());
+        levels.put("S1", cpr.getS1());
+        levels.put("S2", cpr.getS2());
+        levels.put("S3", cpr.getS3());
+        levels.put("S4", cpr.getS4());
+        levels.put("PDH", cpr.getPh());
+        levels.put("PDL", cpr.getPl());
+        return levels;
+    }
+
+    @Override
+    public java.util.List<String> getWatchlistSymbols() {
+        java.util.Set<String> symbols = new java.util.LinkedHashSet<>();
+        getNarrowCprStocks().forEach(c -> symbols.add(c.getSymbol()));
+        getInsideCprStocks().forEach(c -> symbols.add(c.getSymbol()));
+        return new java.util.ArrayList<>(symbols);
+    }
+
+    @Override
+    public void refresh() {
+        fetchAndCompute();
+    }
+
+    // ── WatchlistProvider interface ──────────────────────────────────────────
+
+    @Override
+    public java.util.List<java.util.Map<String, Object>> getWatchlist() {
+        java.util.List<java.util.Map<String, Object>> list = new java.util.ArrayList<>();
+        for (CprLevels c : getNarrowCprStocks()) {
+            java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("symbol", c.getSymbol());
+            m.put("levels", getLevels(c.getSymbol()));
+            m.put("type", "NARROW");
+            list.add(m);
+        }
+        for (CprLevels c : getInsideCprStocks()) {
+            if (list.stream().noneMatch(x -> c.getSymbol().equals(x.get("symbol")))) {
+                java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                m.put("symbol", c.getSymbol());
+                m.put("levels", getLevels(c.getSymbol()));
+                m.put("type", "INSIDE");
+                list.add(m);
+            }
+        }
+        return list;
+    }
+
+    @Override
+    public java.util.List<String> getFilterCategories() {
+        return java.util.List.of("Narrow CPR", "Inside CPR", "Weekly Narrow");
+    }
+
+    @Override
+    public String getDisplayName() {
+        return "CPR Watchlist";
     }
 }

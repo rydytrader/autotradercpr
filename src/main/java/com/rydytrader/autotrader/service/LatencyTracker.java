@@ -25,7 +25,7 @@ public class LatencyTracker {
     private static final int MAX_COMPLETED = 50;
 
     public enum Stage {
-        SIGNAL_DETECTED,      // BreakoutScanner detects breakout
+        SIGNAL_DETECTED,      // CprBreakoutStrategy detects breakout
         SIGNAL_PROCESSED,     // SignalProcessor validates + computes qty
         ORDER_PLACED,         // OrderService sends to Fyers API
         ORDER_RESPONSE,       // Fyers responds with order ID

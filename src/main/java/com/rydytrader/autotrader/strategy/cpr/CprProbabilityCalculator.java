@@ -1,9 +1,10 @@
-package com.rydytrader.autotrader.service;
+package com.rydytrader.autotrader.strategy.cpr;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.dto.CprLevels;
+import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.store.TokenStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,25 +26,25 @@ import java.util.concurrent.ConcurrentHashMap;
  * (matching Pine Script logic: close > wTop = Bullish, etc.).
  */
 @Service
-public class WeeklyCprService {
+public class CprProbabilityCalculator implements com.rydytrader.autotrader.strategy.ProbabilityCalculator {
 
-    private static final Logger log = LoggerFactory.getLogger(WeeklyCprService.class);
+    private static final Logger log = LoggerFactory.getLogger(CprProbabilityCalculator.class);
     private final TokenStore tokenStore;
     private final FyersProperties fyersProperties;
-    private final BhavcopyService bhavcopyService;
+    private final CprLevelProvider cprLevelProvider;
     private final CandleAggregator candleAggregator;
     private final ObjectMapper mapper = new ObjectMapper();
 
     // Weekly CPR levels per symbol (fixed for the week, fetched once)
     private final ConcurrentHashMap<String, WeeklyLevels> weeklyLevels = new ConcurrentHashMap<>();
 
-    public WeeklyCprService(TokenStore tokenStore,
+    public CprProbabilityCalculator(TokenStore tokenStore,
                             FyersProperties fyersProperties,
-                            BhavcopyService bhavcopyService,
+                            CprLevelProvider cprLevelProvider,
                             CandleAggregator candleAggregator) {
         this.tokenStore = tokenStore;
         this.fyersProperties = fyersProperties;
-        this.bhavcopyService = bhavcopyService;
+        this.cprLevelProvider = cprLevelProvider;
         this.candleAggregator = candleAggregator;
     }
 
@@ -115,7 +116,7 @@ public class WeeklyCprService {
      */
     public String getDailyTrend(String symbol) {
         String ticker = extractTicker(symbol);
-        CprLevels cpr = bhavcopyService.getCprLevels(ticker);
+        CprLevels cpr = cprLevelProvider.getCprLevels(ticker);
         if (cpr == null) return "NEUTRAL";
 
         double ltp = getPrice(symbol);
@@ -166,6 +167,13 @@ public class WeeklyCprService {
             if (wNeutral) return "MPT";
             return "LPT"; // weekly bullish, selling
         }
+    }
+
+    // ── ProbabilityCalculator interface ──────────────────────────────────────
+
+    @Override
+    public String calculate(String symbol, String direction) {
+        return getProbabilityForDirection(symbol, "BUY".equals(direction));
     }
 
     // ── Fyers history API ────────────────────────────────────────────────────
@@ -251,9 +259,9 @@ public class WeeklyCprService {
     private double getPrice(String symbol) {
         double ltp = candleAggregator.getLtp(symbol);
         if (ltp > 0) return ltp;
-        // Fallback to previous close from BhavcopyService
+        // Fallback to previous close from CprLevelProvider
         String ticker = extractTicker(symbol);
-        CprLevels cpr = bhavcopyService.getCprLevels(ticker);
+        CprLevels cpr = cprLevelProvider.getCprLevels(ticker);
         return cpr != null ? cpr.getClose() : 0;
     }
 

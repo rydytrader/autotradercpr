@@ -1,8 +1,16 @@
-package com.rydytrader.autotrader.service;
+package com.rydytrader.autotrader.strategy.cpr;
 
 import com.rydytrader.autotrader.controller.TradingController;
 import com.rydytrader.autotrader.dto.CprLevels;
 import com.rydytrader.autotrader.manager.PositionManager;
+import com.rydytrader.autotrader.service.AtrService;
+import com.rydytrader.autotrader.service.CandleAggregator;
+import com.rydytrader.autotrader.service.EventService;
+import com.rydytrader.autotrader.service.LatencyTracker;
+import com.rydytrader.autotrader.service.MarketHolidayService;
+import com.rydytrader.autotrader.strategy.LevelProvider;
+import com.rydytrader.autotrader.strategy.ProbabilityCalculator;
+import com.rydytrader.autotrader.strategy.WatchlistProvider;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,18 +34,18 @@ import java.util.concurrent.ConcurrentHashMap;
  * and feeds signals into the existing trading pipeline.
  */
 @Service
-public class BreakoutScanner implements CandleAggregator.CandleCloseListener, CandleAggregator.DailyResetListener {
+public class CprBreakoutStrategy implements com.rydytrader.autotrader.strategy.TradingStrategy {
 
-    private static final Logger log = LoggerFactory.getLogger(BreakoutScanner.class);
+    private static final Logger log = LoggerFactory.getLogger(CprBreakoutStrategy.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm");
     // Uses MarketHolidayService.MARKET_OPEN_MINUTE for market hours
     private static final String SCANNER_STATE_FILE = "../store/config/scanner-state.json";
     private static final ObjectMapper mapper = new ObjectMapper();
 
-    private final BhavcopyService bhavcopyService;
+    private final CprLevelProvider cprLevelProvider;
     private final AtrService atrService;
-    private final WeeklyCprService weeklyCprService;
+    private final CprProbabilityCalculator cprProbabilityCalculator;
     private final CandleAggregator candleAggregator;
     private final RiskSettingsStore riskSettings;
     private final EventService eventService;
@@ -66,22 +74,31 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     private volatile int tradedCountToday = 0;
     private volatile int filteredCountToday = 0;
 
-    public BreakoutScanner(BhavcopyService bhavcopyService,
+    public CprBreakoutStrategy(CprLevelProvider cprLevelProvider,
                            AtrService atrService,
-                           WeeklyCprService weeklyCprService,
+                           CprProbabilityCalculator cprProbabilityCalculator,
                            CandleAggregator candleAggregator,
                            RiskSettingsStore riskSettings,
                            EventService eventService,
                            LatencyTracker latencyTracker) {
-        this.bhavcopyService = bhavcopyService;
+        this.cprLevelProvider = cprLevelProvider;
         this.atrService = atrService;
-        this.weeklyCprService = weeklyCprService;
+        this.cprProbabilityCalculator = cprProbabilityCalculator;
         this.candleAggregator = candleAggregator;
         this.riskSettings = riskSettings;
         this.eventService = eventService;
         this.latencyTracker = latencyTracker;
         loadState();
     }
+
+    // ── TradingStrategy interface ────────────────────────────────────────────
+
+    @Override public String getName() { return "CPR_BREAKOUT"; }
+    @Override public String getDisplayName() { return "CPR Breakout"; }
+    @Override public void initialize() { /* data loaded via CprLevelProvider scheduled task */ }
+    @Override public LevelProvider getLevelProvider() { return cprLevelProvider; }
+    @Override public ProbabilityCalculator getProbabilityCalculator() { return cprProbabilityCalculator; }
+    @Override public WatchlistProvider getWatchlistProvider() { return cprLevelProvider; }
 
     public void setWatchlistSymbols(List<String> symbols) {
         this.watchlistSymbols = symbols;
@@ -122,7 +139,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      */
     private void scanForBreakout(String fyersSymbol, CandleAggregator.CandleBar candle) {
         String ticker = extractTicker(fyersSymbol);
-        CprLevels levels = bhavcopyService.getCprLevels(ticker);
+        CprLevels levels = cprLevelProvider.getCprLevels(ticker);
         if (levels == null) {
             eventService.log("[WARNING] " + fyersSymbol + " — no CPR levels available, skipping scan");
             return;
@@ -167,7 +184,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
             String buySetup = detectBuyBreakout(open, high, low, close, levels, vwap, broken);
             if (buySetup != null) {
-                String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, true);
+                String prob = cprProbabilityCalculator.getProbabilityForDirection(fyersSymbol, true);
                 if (!isProbabilityEnabled(prob)) {
                     eventService.log("[SCANNER] " + buySetup + " for " + fyersSymbol + " — skipped, " + prob + " not enabled");
                     return;
@@ -201,7 +218,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
             String sellSetup = detectSellBreakout(open, high, low, close, levels, vwap, broken);
             if (sellSetup != null) {
-                String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, false);
+                String prob = cprProbabilityCalculator.getProbabilityForDirection(fyersSymbol, false);
                 if (!isProbabilityEnabled(prob)) {
                     eventService.log("[SCANNER] " + sellSetup + " for " + fyersSymbol + " — skipped, " + prob + " not enabled");
                     return;

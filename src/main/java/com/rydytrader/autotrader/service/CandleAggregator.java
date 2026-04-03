@@ -13,7 +13,7 @@ import java.util.concurrent.*;
 
 /**
  * Buffers real-time ticks into fixed-interval candles (default 15 min).
- * On each candle close (clock boundary), notifies the BreakoutScanner.
+ * On each candle close (clock boundary), notifies the CprBreakoutStrategy.
  */
 @Service
 public class CandleAggregator {

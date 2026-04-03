@@ -18,7 +18,7 @@ import com.rydytrader.autotrader.dto.ProcessedSignal;
 import com.rydytrader.autotrader.manager.PositionManager;
 import com.rydytrader.autotrader.service.EventService;
 import com.rydytrader.autotrader.service.AtrService;
-import com.rydytrader.autotrader.service.BreakoutScanner;
+import com.rydytrader.autotrader.strategy.cpr.CprBreakoutStrategy;
 import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.service.LatencyTracker;
 import com.rydytrader.autotrader.service.MarketDataService;
@@ -49,7 +49,7 @@ public class TradingController {
     private final CandleAggregator    candleAggregator;
     private final AtrService          atrService;
     private final LatencyTracker      latencyTracker;
-    private final BreakoutScanner     breakoutScanner;
+    private final CprBreakoutStrategy     cprBreakoutStrategy;
 
     public TradingController(PollingService pollingService,
                               OrderService orderService,
@@ -64,7 +64,7 @@ public class TradingController {
                               CandleAggregator candleAggregator,
                               AtrService atrService,
                               LatencyTracker latencyTracker,
-                              BreakoutScanner breakoutScanner) {
+                              CprBreakoutStrategy cprBreakoutStrategy) {
         this.pollingService      = pollingService;
         this.orderService        = orderService;
         this.eventService        = eventService;
@@ -78,7 +78,7 @@ public class TradingController {
         this.candleAggregator    = candleAggregator;
         this.atrService          = atrService;
         this.latencyTracker      = latencyTracker;
-        this.breakoutScanner     = breakoutScanner;
+        this.cprBreakoutStrategy     = cprBreakoutStrategy;
     }
 
     // ── PLACE ORDER ───────────────────────────────────────────────────────────
@@ -304,8 +304,8 @@ public class TradingController {
 
         // Candle boundary checker
         health.put("candleChecker", candleAggregator.isBoundaryCheckerAlive() ? "ALIVE" : "DEAD");
-        health.put("lastScanCount", breakoutScanner.getLastScanCount());
-        health.put("lastScanTime", breakoutScanner.getLastScanTime());
+        health.put("lastScanCount", cprBreakoutStrategy.getLastScanCount());
+        health.put("lastScanTime", cprBreakoutStrategy.getLastScanTime());
 
         // Scanner
         health.put("signalSource", riskSettings.getSignalSource());
@@ -361,10 +361,10 @@ public class TradingController {
         scanner.put("candleChecker", candleAggregator.isBoundaryCheckerAlive() ? "ALIVE" : "DEAD");
         scanner.put("candleCheckerRestarts", candleAggregator.getRestartCount());
         scanner.put("candleCheckerLastRestart", candleAggregator.getLastRestartTime());
-        scanner.put("lastScanCount", breakoutScanner.getLastScanCount());
-        scanner.put("lastScanTime", breakoutScanner.getLastScanTime());
-        scanner.put("tradedToday", breakoutScanner.getTradedCountToday());
-        scanner.put("filteredToday", breakoutScanner.getFilteredCountToday());
+        scanner.put("lastScanCount", cprBreakoutStrategy.getLastScanCount());
+        scanner.put("lastScanTime", cprBreakoutStrategy.getLastScanTime());
+        scanner.put("tradedToday", cprBreakoutStrategy.getTradedCountToday());
+        scanner.put("filteredToday", cprBreakoutStrategy.getFilteredCountToday());
         m.put("scanner", scanner);
 
         // Positions & OCO

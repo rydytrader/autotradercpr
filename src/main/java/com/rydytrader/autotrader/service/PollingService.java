@@ -35,7 +35,7 @@ public class PollingService {
     private final TelegramService     telegramService;
     private final MarketDataService   marketDataService;
     private final OrderEventService   orderEventService;
-    private final BreakoutScanner     breakoutScanner;
+    private final CprBreakoutStrategy     cprBreakoutStrategy;
 
     @org.springframework.beans.factory.annotation.Autowired
     private LatencyTracker latencyTracker;
@@ -69,7 +69,7 @@ public class PollingService {
                           TelegramService telegramService,
                           MarketDataService marketDataService,
                           OrderEventService orderEventService,
-                          BreakoutScanner breakoutScanner) {
+                          CprBreakoutStrategy cprBreakoutStrategy) {
         this.tokenStore          = tokenStore;
         this.fyersProperties     = fyersProperties;
         this.fyersClient         = fyersClient;
@@ -81,7 +81,7 @@ public class PollingService {
         this.telegramService     = telegramService;
         this.marketDataService   = marketDataService;
         this.orderEventService   = orderEventService;
-        this.breakoutScanner     = breakoutScanner;
+        this.cprBreakoutStrategy     = cprBreakoutStrategy;
         // Set back-reference to avoid circular DI
         orderEventService.setPollingService(this);
         // Start Order WebSocket early (before restore) so restored OCOs can use it
@@ -639,7 +639,7 @@ public class PollingService {
         marketDataService.updateSubscriptions();
         marketDataService.clearTrailedFlag(symbol);
         orderEventService.untrackSymbol(symbol);
-        breakoutScanner.clearBrokenLevels(symbol);
+        cprBreakoutStrategy.clearBrokenLevels(symbol);
     }
 
     // ── Public helpers for OrderEventService (WebSocket-based fill handling) ──
