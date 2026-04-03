@@ -420,7 +420,7 @@ public class BhavcopyService {
 
     // ── NSE session cookies ────────────────────────────────────────────────────
 
-    private String getNseCookies() {
+    public String getNseCookies() {
         try {
             HttpURLConnection conn = (HttpURLConnection) new URL(NSE_BASE_URL).openConnection();
             conn.setRequestMethod("GET");

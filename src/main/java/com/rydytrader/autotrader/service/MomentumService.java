@@ -3,8 +3,10 @@ package com.rydytrader.autotrader.service;
 import com.rydytrader.autotrader.dto.CprLevels;
 import com.rydytrader.autotrader.dto.MomentumMetrics;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.DayOfWeek;
@@ -32,6 +34,21 @@ public class MomentumService {
     public MomentumService(BhavcopyService bhavcopyService, RiskSettingsStore riskSettings) {
         this.bhavcopyService = bhavcopyService;
         this.riskSettings = riskSettings;
+    }
+
+    @PostConstruct
+    public void init() {
+        // Run after BhavcopyService loads data
+        if (!bhavcopyService.getTodayCache().isEmpty()) {
+            fetchMarketCap();
+            compute();
+        }
+    }
+
+    @Scheduled(cron = "0 46 8 * * MON-FRI") // 1 minute after BhavcopyService (8:45)
+    public void scheduledCompute() {
+        fetchMarketCap();
+        compute();
     }
 
     /**
@@ -181,5 +198,114 @@ public class MomentumService {
             }
         }
         return found ? new double[]{high, low} : new double[]{0, 0};
+    }
+
+    // ── Market Cap from NSE API ──────────────────────────────────────────────
+
+    private final ConcurrentHashMap<String, Double> marketCapCache = new ConcurrentHashMap<>();
+
+    /**
+     * Fetch market cap for Nifty 500 stocks from NSE API (single call per index).
+     * Applies to BhavcopyService cache and MomentumMetrics.
+     */
+    public void fetchMarketCap() {
+        try {
+            String cookies = bhavcopyService.getNseCookies();
+            if (cookies == null || cookies.isEmpty()) {
+                log.warn("[MomentumService] Cannot fetch market cap — no NSE cookies");
+                return;
+            }
+
+            String[] indices = {"NIFTY 500"};
+            int total = 0;
+
+            for (String index : indices) {
+                try {
+                    String url = "https://www.nseindia.com/api/equity-stockIndices?index="
+                        + java.net.URLEncoder.encode(index, "UTF-8");
+                    java.net.HttpURLConnection conn = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+                    conn.setRequestMethod("GET");
+                    conn.setRequestProperty("User-Agent", "Mozilla/5.0");
+                    conn.setRequestProperty("Accept", "application/json");
+                    conn.setRequestProperty("Cookie", cookies);
+                    conn.setConnectTimeout(10000);
+                    conn.setReadTimeout(15000);
+
+                    if (conn.getResponseCode() != 200) {
+                        log.warn("[MomentumService] NSE market cap API returned {}", conn.getResponseCode());
+                        continue;
+                    }
+
+                    String body;
+                    try (var is = conn.getInputStream()) {
+                        body = new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                    }
+
+                    com.fasterxml.jackson.databind.JsonNode root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
+                    com.fasterxml.jackson.databind.JsonNode data = root.get("data");
+                    if (data == null || !data.isArray()) continue;
+
+                    for (var node : data) {
+                        String symbol = node.has("symbol") ? node.get("symbol").asText() : "";
+                        if (symbol.isEmpty()) continue;
+                        // Try different field names NSE uses for market cap
+                        double mcap = 0;
+                        if (node.has("ffmc")) mcap = node.get("ffmc").asDouble(0);
+                        else if (node.has("marketCap")) mcap = node.get("marketCap").asDouble(0);
+                        else if (node.has("totalTradedValue")) mcap = node.get("totalTradedValue").asDouble(0);
+
+                        if (mcap > 0) {
+                            // NSE ffmc is in lakhs → convert to crores
+                            double mcapCr = mcap / 100.0;
+                            marketCapCache.put(symbol, mcapCr);
+                            total++;
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("[MomentumService] Error fetching market cap for {}: {}", index, e.getMessage());
+                }
+            }
+
+            // Apply market cap to bhavcopy CprLevels cache
+            Map<String, CprLevels> todayCache = bhavcopyService.getTodayCache();
+            int applied = 0;
+            for (Map.Entry<String, Double> entry : marketCapCache.entrySet()) {
+                CprLevels cpr = todayCache.get(entry.getKey());
+                if (cpr != null) { cpr.setMarketCapCr(entry.getValue()); applied++; }
+            }
+
+            // Apply to momentum metrics cache
+            for (Map.Entry<String, Double> entry : marketCapCache.entrySet()) {
+                MomentumMetrics m = metricsCache.get(entry.getKey());
+                if (m != null) m.setMarketCapCr(entry.getValue());
+            }
+
+            log.info("[MomentumService] Market cap: {} stocks from NSE, {} applied to NFO cache", total, applied);
+        } catch (Exception e) {
+            log.error("[MomentumService] Error fetching market cap: {}", e.getMessage());
+        }
+    }
+
+    /** Get market cap for a symbol (in crores). Returns 0 if not available. */
+    public double getMarketCap(String symbol) {
+        return marketCapCache.getOrDefault(symbol, 0.0);
+    }
+
+    /** Get market cap category: "LARGE", "MID", "SMALL", or "" if unknown. */
+    public String getMarketCapCategory(String symbol) {
+        double mcap = getMarketCap(symbol);
+        if (mcap <= 0) return "";
+        if (mcap >= 20000) return "LARGE";
+        if (mcap >= 5000) return "MID";
+        return "SMALL";
+    }
+
+    /** Check if a symbol passes the market cap filter from settings. */
+    public boolean passesMarketCapFilter(String symbol) {
+        double mcap = getMarketCap(symbol);
+        if (mcap <= 0) return true; // no data = allow through
+        if (mcap >= 20000) return riskSettings.isMarketCapLarge();
+        if (mcap >= 5000) return riskSettings.isMarketCapMid();
+        return riskSettings.isMarketCapSmall();
     }
 }

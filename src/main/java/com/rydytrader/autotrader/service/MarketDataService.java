@@ -53,6 +53,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     private final WeeklyCprService    weeklyCprService;
     private final BreakoutScanner     breakoutScanner;
     private final BhavcopyService     bhavcopyService;
+    private final MomentumService     momentumService;
     private final ObjectMapper        mapper = new ObjectMapper();
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -135,7 +136,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                               AtrService atrService,
                               WeeklyCprService weeklyCprService,
                               BreakoutScanner breakoutScanner,
-                              BhavcopyService bhavcopyService) {
+                              BhavcopyService bhavcopyService,
+                              MomentumService momentumService) {
         this.tokenStore = tokenStore;
         this.fyersProperties = fyersProperties;
         this.positionStateStore = positionStateStore;
@@ -148,6 +150,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         this.weeklyCprService = weeklyCprService;
         this.breakoutScanner = breakoutScanner;
         this.bhavcopyService = bhavcopyService;
+        this.momentumService = momentumService;
         candleAggregator.addListener(this);
     }
 
@@ -795,17 +798,32 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     }
 
     /**
-     * Build watchlist from narrow + inside CPR stocks.
-     * Returns Fyers symbols (e.g., "NSE:RELIANCE-EQ").
+     * Build watchlist from narrow + inside CPR + momentum stocks.
+     * Applies market cap filter. Returns Fyers symbols (e.g., "NSE:RELIANCE-EQ").
      */
     private List<String> buildWatchlist() {
         Set<String> symbols = new LinkedHashSet<>();
 
         for (var cpr : bhavcopyService.getNarrowCprStocks()) {
-            symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
+            String sym = cpr.getSymbol();
+            if (momentumService.passesMarketCapFilter(sym)) {
+                symbols.add("NSE:" + sym + "-EQ");
+            }
         }
         for (var cpr : bhavcopyService.getInsideCprStocks()) {
-            symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
+            String sym = cpr.getSymbol();
+            if (momentumService.passesMarketCapFilter(sym)) {
+                symbols.add("NSE:" + sym + "-EQ");
+            }
+        }
+        // Add momentum stocks (if enabled)
+        if (riskSettings.isEnableMomentumScanner()) {
+            for (var m : momentumService.getMomentumStocks()) {
+                String sym = m.getSymbol();
+                if (momentumService.passesMarketCapFilter(sym)) {
+                    symbols.add("NSE:" + sym + "-EQ");
+                }
+            }
         }
         return new ArrayList<>(symbols);
     }
