@@ -373,8 +373,10 @@
     <div class="filter-bar">
         <span class="cpr-filter-group">
             <button class="filter-btn active" onclick="setFilter('all', this)">All</button>
-            <button class="filter-btn" onclick="setFilter('NARROW', this)">Narrow CPR</button>
-            <button class="filter-btn" onclick="setFilter('INSIDE', this)">Inside CPR</button>
+            <button class="filter-btn" onclick="setFilter('CPR', this)" style="color:var(--accent-blue)">CPR</button>
+            <button class="filter-btn" onclick="setFilter('NARROW', this)" style="color:var(--accent-blue)">Narrow</button>
+            <button class="filter-btn" onclick="setFilter('INSIDE', this)" style="color:var(--accent-blue)">Inside</button>
+            <button class="filter-btn" onclick="setFilter('N+I', this)" style="color:var(--accent-blue)">N+I</button>
             <button class="filter-btn" onclick="toggleWeeklyFilter(this)">Daily + Weekly Narrow</button>
         </span>
         <div class="filter-sep"></div>
@@ -538,16 +540,18 @@
             if (symbolFilter && d.shortName !== symbolFilter) return false;
             if (cprFilter !== 'all') {
                 var types = d.cprTypes || [d.cprType];
-                if (cprFilter === 'MOMENTUM') {
-                    if (!d.momentumTags || d.momentumTags.length === 0) return false;
+                var mTags = d.momentumTags || [];
+                if (cprFilter === 'CPR') {
+                    if (!types.includes('NARROW') && !types.includes('INSIDE')) return false;
+                } else if (cprFilter === 'N+I') {
+                    if (!types.includes('NARROW') || !types.includes('INSIDE')) return false;
+                } else if (cprFilter === 'MOMENTUM') {
+                    if (mTags.length === 0) return false;
                 } else if (cprFilter === 'LARGE' || cprFilter === 'MID' || cprFilter === 'SMALL') {
                     if ((d.marketCapCategory || '') !== cprFilter) return false;
                 } else if (cprFilter === 'WEEK_HIGH_BREAK' || cprFilter === 'MONTH_HIGH_BREAK' || cprFilter === '52W_HIGH_BREAK') {
-                    if (!types.includes(cprFilter) && !(d.momentumTags || []).includes(cprFilter)) return false;
-                    // Also match LOW variants
                     var lowVariant = cprFilter.replace('HIGH', 'LOW');
-                    if (!types.includes(cprFilter) && !types.includes(lowVariant)
-                        && !(d.momentumTags || []).includes(cprFilter) && !(d.momentumTags || []).includes(lowVariant)) return false;
+                    if (!mTags.includes(cprFilter) && !mTags.includes(lowVariant)) return false;
                 } else {
                     if (types.indexOf(cprFilter) === -1) return false;
                 }

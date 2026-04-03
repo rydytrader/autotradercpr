@@ -144,8 +144,20 @@ public class MomentumService {
             if (m.hasMomentumTag()) count++;
         }
 
-        log.info("[MomentumService] Computed: {} stocks, {} momentum | noVol={} noWeek={} noMonth={} volFailed={}",
-            today.size(), count, noVolume, noWeekData, noMonthData, volumeFailed);
+        // Count how many are near 52W extremes (for debugging)
+        int near52wHigh = 0, near52wLow = 0;
+        for (MomentumMetrics mm : metricsCache.values()) {
+            if (mm.getFiftyTwoWeekHigh() > 0 && mm.getLastClose() > 0) {
+                double pctFromHigh = (mm.getFiftyTwoWeekHigh() - mm.getLastClose()) / mm.getFiftyTwoWeekHigh() * 100;
+                if (pctFromHigh <= 5) near52wHigh++;
+            }
+            if (mm.getFiftyTwoWeekLow() > 0 && mm.getLastClose() > 0) {
+                double pctFromLow = (mm.getLastClose() - mm.getFiftyTwoWeekLow()) / mm.getFiftyTwoWeekLow() * 100;
+                if (pctFromLow <= 5) near52wLow++;
+            }
+        }
+        log.info("[MomentumService] Computed: {} stocks, {} momentum | noVol={} noWeek={} noMonth={} volFailed={} near52wH={} near52wL={}",
+            today.size(), count, noVolume, noWeekData, noMonthData, volumeFailed, near52wHigh, near52wLow);
     }
 
     /** Get all stocks with at least one momentum tag. */
@@ -263,6 +275,14 @@ public class MomentumService {
                     com.fasterxml.jackson.databind.JsonNode data = root.get("data");
                     if (data == null || !data.isArray()) continue;
 
+                    // Log first node's field names for debugging
+                    if (data.size() > 0) {
+                        var firstNode = data.get(0);
+                        var fields = new java.util.ArrayList<String>();
+                        firstNode.fieldNames().forEachRemaining(fields::add);
+                        log.info("[MomentumService] NSE API fields: {}", fields);
+                    }
+
                     for (var node : data) {
                         String symbol = node.has("symbol") ? node.get("symbol").asText() : "";
                         if (symbol.isEmpty()) continue;
@@ -311,7 +331,16 @@ public class MomentumService {
                 if (m != null) m.setMarketCapCr(entry.getValue());
             }
 
-            log.info("[MomentumService] Market cap: {} stocks from NSE, {} applied to NFO cache", total, applied);
+            log.info("[MomentumService] Market cap: {} stocks from NSE, {} applied to NFO cache, 52W data: {} stocks",
+                total, applied, fiftyTwoWeekCache.size());
+            // Log sample 52W data
+            if (!fiftyTwoWeekCache.isEmpty()) {
+                var sample = fiftyTwoWeekCache.entrySet().iterator().next();
+                log.info("[MomentumService] 52W sample: {} high={} low={}", sample.getKey(), sample.getValue()[0], sample.getValue()[1]);
+            } else {
+                // Log first node's fields to see what's available
+                log.warn("[MomentumService] No 52W data found — check API field names");
+            }
         } catch (Exception e) {
             log.error("[MomentumService] Error fetching market cap: {}", e.getMessage());
         }
