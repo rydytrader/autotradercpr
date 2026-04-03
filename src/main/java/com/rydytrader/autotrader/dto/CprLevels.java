@@ -10,6 +10,9 @@ public class CprLevels {
     private double ph, pl;
     private double cprWidth, cprWidthPct;
     private boolean narrowCpr;
+    private long   volume;
+    private double fiftyTwoWeekHigh, fiftyTwoWeekLow;
+    private double marketCapCr;
 
     /** No-arg constructor for Jackson deserialization. */
     public CprLevels() {}
@@ -88,4 +91,13 @@ public class CprLevels {
     public double  getCprWidth()    { return cprWidth; }
     public double  getCprWidthPct() { return cprWidthPct; }
     public boolean isNarrowCpr()    { return narrowCpr; }
+
+    public long    getVolume()             { return volume; }
+    public void    setVolume(long v)       { this.volume = v; }
+    public double  getFiftyTwoWeekHigh()   { return fiftyTwoWeekHigh; }
+    public void    setFiftyTwoWeekHigh(double v) { this.fiftyTwoWeekHigh = v; }
+    public double  getFiftyTwoWeekLow()    { return fiftyTwoWeekLow; }
+    public void    setFiftyTwoWeekLow(double v)  { this.fiftyTwoWeekLow = v; }
+    public double  getMarketCapCr()        { return marketCapCr; }
+    public void    setMarketCapCr(double v) { this.marketCapCr = v; }
 }

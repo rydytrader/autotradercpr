@@ -65,6 +65,16 @@ public class RiskSettingsStore {
         volatile boolean enableLpt      = false; // Low Probable Trade signals
         volatile double mptQtyFactor    = 0.5;   // MPT qty multiplier (0.5 = half)
         volatile double lptQtyFactor    = 0.25;  // LPT qty multiplier (0.25 = quarter)
+        // Momentum settings
+        volatile boolean enableMomentumScanner = true;
+        volatile boolean momentumWeekBreak  = true;
+        volatile boolean momentumMonthBreak = true;
+        volatile boolean momentum52Week     = true;
+        volatile double  momentumVolumeMultiple = 2.0; // min volume ratio vs 20-day avg
+        // Market cap filter (applies to entire watchlist)
+        volatile boolean marketCapLarge = true;   // > 20,000 Cr
+        volatile boolean marketCapMid   = true;   // 5,000 - 20,000 Cr
+        volatile boolean marketCapSmall = false;  // < 5,000 Cr
     }
 
     private final Cfg live = new Cfg();
@@ -127,6 +137,14 @@ public class RiskSettingsStore {
     public boolean isEnableLpt()          { return cfg().enableLpt; }
     public double getMptQtyFactor()       { return cfg().mptQtyFactor; }
     public double getLptQtyFactor()       { return cfg().lptQtyFactor; }
+    public boolean isEnableMomentumScanner() { return cfg().enableMomentumScanner; }
+    public boolean isMomentumWeekBreak()  { return cfg().momentumWeekBreak; }
+    public boolean isMomentumMonthBreak() { return cfg().momentumMonthBreak; }
+    public boolean isMomentum52Week()     { return cfg().momentum52Week; }
+    public double getMomentumVolumeMultiple() { return cfg().momentumVolumeMultiple; }
+    public boolean isMarketCapLarge()     { return cfg().marketCapLarge; }
+    public boolean isMarketCapMid()       { return cfg().marketCapMid; }
+    public boolean isMarketCapSmall()     { return cfg().marketCapSmall; }
 
     public void setSignalSource(String v)      { cfg().signalSource = v; }
     public void setScannerTimeframe(int v)     { cfg().scannerTimeframe = v; }
@@ -136,6 +154,14 @@ public class RiskSettingsStore {
     public void setEnableLpt(boolean v)        { cfg().enableLpt = v; }
     public void setMptQtyFactor(double v)      { cfg().mptQtyFactor = v; }
     public void setLptQtyFactor(double v)      { cfg().lptQtyFactor = v; }
+    public void setEnableMomentumScanner(boolean v) { cfg().enableMomentumScanner = v; }
+    public void setMomentumWeekBreak(boolean v)  { cfg().momentumWeekBreak = v; }
+    public void setMomentumMonthBreak(boolean v) { cfg().momentumMonthBreak = v; }
+    public void setMomentum52Week(boolean v)     { cfg().momentum52Week = v; }
+    public void setMomentumVolumeMultiple(double v) { cfg().momentumVolumeMultiple = v; }
+    public void setMarketCapLarge(boolean v)     { cfg().marketCapLarge = v; }
+    public void setMarketCapMid(boolean v)       { cfg().marketCapMid = v; }
+    public void setMarketCapSmall(boolean v)     { cfg().marketCapSmall = v; }
 
     public void setTradingStartTime(String v)  { cfg().tradingStartTime = v; }
     public void setTradingEndTime(String v)    { cfg().tradingEndTime = v; }
@@ -292,6 +318,14 @@ public class RiskSettingsStore {
             upsert("enableLpt", String.valueOf(c.enableLpt));
             upsert("mptQtyFactor", String.valueOf(c.mptQtyFactor));
             upsert("lptQtyFactor", String.valueOf(c.lptQtyFactor));
+            upsert("enableMomentumScanner", String.valueOf(c.enableMomentumScanner));
+            upsert("momentumWeekBreak", String.valueOf(c.momentumWeekBreak));
+            upsert("momentumMonthBreak", String.valueOf(c.momentumMonthBreak));
+            upsert("momentum52Week", String.valueOf(c.momentum52Week));
+            upsert("momentumVolumeMultiple", String.valueOf(c.momentumVolumeMultiple));
+            upsert("marketCapLarge", String.valueOf(c.marketCapLarge));
+            upsert("marketCapMid", String.valueOf(c.marketCapMid));
+            upsert("marketCapSmall", String.valueOf(c.marketCapSmall));
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to save {}: {}", mode, e.getMessage());
         }
@@ -355,6 +389,14 @@ public class RiskSettingsStore {
                     case "enableLpt"         -> c.enableLpt = Boolean.parseBoolean(v);
                     case "mptQtyFactor"      -> c.mptQtyFactor = Double.parseDouble(v);
                     case "lptQtyFactor"      -> c.lptQtyFactor = Double.parseDouble(v);
+                    case "enableMomentumScanner" -> c.enableMomentumScanner = Boolean.parseBoolean(v);
+                    case "momentumWeekBreak"  -> c.momentumWeekBreak = Boolean.parseBoolean(v);
+                    case "momentumMonthBreak" -> c.momentumMonthBreak = Boolean.parseBoolean(v);
+                    case "momentum52Week"     -> c.momentum52Week = Boolean.parseBoolean(v);
+                    case "momentumVolumeMultiple" -> c.momentumVolumeMultiple = Double.parseDouble(v);
+                    case "marketCapLarge"     -> c.marketCapLarge = Boolean.parseBoolean(v);
+                    case "marketCapMid"       -> c.marketCapMid = Boolean.parseBoolean(v);
+                    case "marketCapSmall"     -> c.marketCapSmall = Boolean.parseBoolean(v);
                 }
             }
             log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} enableR4S4={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} chandelier={}x{}", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.enableR4S4, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.chandelierPeriod, c.chandelierMultiplier);

@@ -45,7 +45,7 @@ public class BhavcopyService {
 
     // Rolling 5-day history (most recent first) for weekly CPR and inside-CPR detection
     private final LinkedList<DaySnapshot> dailyHistory = new LinkedList<>();
-    private static final int MAX_HISTORY_DAYS = 5;
+    private static final int MAX_HISTORY_DAYS = 25;
 
     static class DaySnapshot {
         String date;
@@ -232,6 +232,27 @@ public class BhavcopyService {
     public String getPreviousDate() { return dailyHistory.isEmpty() ? "" : dailyHistory.getFirst().date; }
     public int getLoadedCount()     { return cache.size(); }
 
+    /** Get today's cache (latest day). */
+    public Map<String, CprLevels> getTodayCache() { return Collections.unmodifiableMap(cache); }
+
+    /** Get all daily history snapshots (newest first, excludes today). */
+    public List<Map<String, CprLevels>> getDailyHistoryMaps() {
+        List<Map<String, CprLevels>> result = new ArrayList<>();
+        for (DaySnapshot snap : dailyHistory) {
+            result.add(snap.symbols);
+        }
+        return result;
+    }
+
+    /** Get all daily history dates (newest first, excludes today). */
+    public List<String> getDailyHistoryDates() {
+        List<String> result = new ArrayList<>();
+        for (DaySnapshot snap : dailyHistory) {
+            result.add(snap.date);
+        }
+        return result;
+    }
+
     private Map<String, CprLevels> getPreviousDaySymbols() {
         return dailyHistory.isEmpty() ? Collections.emptyMap() : dailyHistory.getFirst().symbols;
     }
@@ -294,6 +315,9 @@ public class BhavcopyService {
                 for (Map.Entry<String, double[]> entry : ohlcMap.entrySet()) {
                     double[] hlc = entry.getValue();
                     CprLevels lvl = new CprLevels(entry.getKey(), hlc[0], hlc[1], hlc[2]);
+                    if (hlc.length > 3) lvl.setVolume((long) hlc[3]);
+                    if (hlc.length > 4) lvl.setFiftyTwoWeekHigh(hlc[4]);
+                    if (hlc.length > 5) lvl.setFiftyTwoWeekLow(hlc[5]);
                     if (symbolMasterService != null) {
                         double tick = symbolMasterService.getTickSize("NSE:" + entry.getKey() + "-EQ");
                         lvl.roundToTick(tick);
@@ -374,6 +398,7 @@ public class BhavcopyService {
                 for (Map.Entry<String, double[]> entry : ohlcMap.entrySet()) {
                     double[] hlc = entry.getValue();
                     CprLevels lvl = new CprLevels(entry.getKey(), hlc[0], hlc[1], hlc[2]);
+                    if (hlc.length > 3) lvl.setVolume((long) hlc[3]);
                     if (symbolMasterService != null) {
                         double tick = symbolMasterService.getTickSize("NSE:" + entry.getKey() + "-EQ");
                         lvl.roundToTick(tick);
@@ -528,6 +553,10 @@ public class BhavcopyService {
 
     // ── Parse CM Bhavcopy OHLC ─────────────────────────────────────────────────
 
+    /**
+     * Parse CM bhavcopy ZIP. Returns map of symbol → double[]{high, low, close, volume, 52wHigh, 52wLow}.
+     * Volume/52W fields are 0 if not available in the CSV.
+     */
     private Map<String, double[]> parseCmOhlc(byte[] zipData, Set<String> nfoSymbols) {
         Map<String, double[]> result = new LinkedHashMap<>();
         try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipData))) {
@@ -539,6 +568,7 @@ public class BhavcopyService {
 
             String[] cols = header.split(",");
             int symIdx = -1, seriesIdx = -1, highIdx = -1, lowIdx = -1, closeIdx = -1;
+            int volumeIdx = -1, w52HighIdx = -1, w52LowIdx = -1;
 
             for (int i = 0; i < cols.length; i++) {
                 String col = cols[i].trim().replace("\"", "");
@@ -548,6 +578,9 @@ public class BhavcopyService {
                     case "HghPric"  -> highIdx = i;
                     case "LwPric"   -> lowIdx = i;
                     case "ClsPric"  -> closeIdx = i;
+                    case "TtlTrdQty", "TradQnty" -> volumeIdx = i;
+                    case "Hgh52Wk", "52WkHgh"    -> w52HighIdx = i;
+                    case "Lw52Wk", "52WkLw"      -> w52LowIdx = i;
                     // Legacy fallbacks
                     case "SYMBOL"   -> { if (symIdx == -1) symIdx = i; }
                     case "SERIES"   -> { if (seriesIdx == -1) seriesIdx = i; }
@@ -562,7 +595,15 @@ public class BhavcopyService {
                 return result;
             }
 
+            // Log which extra columns were found
+            if (volumeIdx >= 0) log.info("[BhavcopyService] Found volume column at index {}", volumeIdx);
+            if (w52HighIdx >= 0) log.info("[BhavcopyService] Found 52W High column at index {}", w52HighIdx);
+            if (w52LowIdx >= 0) log.info("[BhavcopyService] Found 52W Low column at index {}", w52LowIdx);
+
             int maxIdx = Math.max(Math.max(symIdx, seriesIdx), Math.max(Math.max(highIdx, lowIdx), closeIdx));
+            if (volumeIdx >= 0) maxIdx = Math.max(maxIdx, volumeIdx);
+            if (w52HighIdx >= 0) maxIdx = Math.max(maxIdx, w52HighIdx);
+            if (w52LowIdx >= 0) maxIdx = Math.max(maxIdx, w52LowIdx);
 
             String line;
             while ((line = br.readLine()) != null) {
@@ -581,8 +622,18 @@ public class BhavcopyService {
                     double h = Double.parseDouble(parts[highIdx].trim().replace("\"", ""));
                     double l = Double.parseDouble(parts[lowIdx].trim().replace("\"", ""));
                     double c = Double.parseDouble(parts[closeIdx].trim().replace("\"", ""));
+                    double vol = 0, w52h = 0, w52l = 0;
+                    if (volumeIdx >= 0 && volumeIdx < parts.length) {
+                        try { vol = Double.parseDouble(parts[volumeIdx].trim().replace("\"", "")); } catch (NumberFormatException ignored) {}
+                    }
+                    if (w52HighIdx >= 0 && w52HighIdx < parts.length) {
+                        try { w52h = Double.parseDouble(parts[w52HighIdx].trim().replace("\"", "")); } catch (NumberFormatException ignored) {}
+                    }
+                    if (w52LowIdx >= 0 && w52LowIdx < parts.length) {
+                        try { w52l = Double.parseDouble(parts[w52LowIdx].trim().replace("\"", "")); } catch (NumberFormatException ignored) {}
+                    }
                     if (h > 0 && l > 0 && c > 0) {
-                        result.put(sym, new double[]{h, l, c});
+                        result.put(sym, new double[]{h, l, c, vol, w52h, w52l});
                     }
                 } catch (NumberFormatException ignored) {}
             }
