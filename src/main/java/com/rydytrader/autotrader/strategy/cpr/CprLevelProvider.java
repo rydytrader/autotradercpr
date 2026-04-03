@@ -707,7 +707,7 @@ public class CprLevelProvider implements com.rydytrader.autotrader.strategy.Leve
         CprLevels cpr = getCprLevels(symbol);
         if (cpr == null) return java.util.Collections.emptyMap();
         java.util.Map<String, Double> levels = new java.util.LinkedHashMap<>();
-        levels.put("PP", cpr.getPp());
+        levels.put("PP", cpr.getPivot());
         levels.put("TC", cpr.getTc());
         levels.put("BC", cpr.getBc());
         levels.put("R1", cpr.getR1());
