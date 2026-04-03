@@ -103,7 +103,7 @@ public class ScannerController {
             // Find existing card or create new one
             Map<String, Object> existingCard = null;
             for (var card : result) {
-                if (fyers.equals(card.get("fyersSymbol"))) { existingCard = card; break; }
+                if (fyers.equals(card.get("symbol"))) { existingCard = card; break; }
             }
 
             if (existingCard != null) {
@@ -136,7 +136,7 @@ public class ScannerController {
         // Add market cap to all cards that don't have it yet
         for (var card : result) {
             if (!card.containsKey("marketCapCr")) {
-                String fyers = card.get("fyersSymbol").toString();
+                String fyers = card.get("symbol").toString();
                 String ticker = fyers.replace("NSE:", "").replace("-EQ", "");
                 card.put("marketCapCr", Math.round(momentumService.getMarketCap(ticker)));
                 card.put("marketCapCategory", momentumService.getMarketCapCategory(ticker));
