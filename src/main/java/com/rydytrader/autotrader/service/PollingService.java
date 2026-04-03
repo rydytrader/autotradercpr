@@ -3,6 +3,7 @@ package com.rydytrader.autotrader.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.dto.OrderDTO;
+import com.rydytrader.autotrader.strategy.cpr.CprBreakoutStrategy;
 import com.rydytrader.autotrader.dto.PositionsDTO;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
 import com.rydytrader.autotrader.manager.PositionManager;

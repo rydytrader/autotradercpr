@@ -16,6 +16,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import com.rydytrader.autotrader.strategy.cpr.CprBreakoutStrategy;
+import com.rydytrader.autotrader.strategy.cpr.CprLevelProvider;
+import com.rydytrader.autotrader.strategy.cpr.CprProbabilityCalculator;
+
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
