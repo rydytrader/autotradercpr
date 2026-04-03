@@ -63,8 +63,8 @@ public class SettingsController {
         result.put("volumeMultiple", riskSettings.getVolumeMultiple(effectiveMode));
         result.put("volumeLookback", riskSettings.getVolumeLookback(effectiveMode));
         result.put("enableTrailingSl", riskSettings.isEnableTrailingSl(effectiveMode));
-        result.put("trailTriggerPct", riskSettings.getTrailTriggerPct(effectiveMode));
-        result.put("trailSlPct", riskSettings.getTrailSlPct(effectiveMode));
+        result.put("chandelierPeriod", riskSettings.getChandelierPeriod(effectiveMode));
+        result.put("chandelierMultiplier", riskSettings.getChandelierMultiplier(effectiveMode));
         result.put("signalSource", riskSettings.getSignalSource());
         result.put("scannerTimeframe", riskSettings.getScannerTimeframe());
         result.put("enableVwapCheck", riskSettings.isEnableVwapCheck());
@@ -110,8 +110,8 @@ public class SettingsController {
             if (body.containsKey("volumeMultiple")) riskSettings.setVolumeMultiple(effectiveMode, Double.parseDouble(body.get("volumeMultiple").toString()));
             if (body.containsKey("volumeLookback")) riskSettings.setVolumeLookback(effectiveMode, Integer.parseInt(body.get("volumeLookback").toString()));
             if (body.containsKey("enableTrailingSl")) riskSettings.setEnableTrailingSl(effectiveMode, Boolean.parseBoolean(body.get("enableTrailingSl").toString()));
-            if (body.containsKey("trailTriggerPct")) riskSettings.setTrailTriggerPct(effectiveMode, Double.parseDouble(body.get("trailTriggerPct").toString()));
-            if (body.containsKey("trailSlPct")) riskSettings.setTrailSlPct(effectiveMode, Double.parseDouble(body.get("trailSlPct").toString()));
+            if (body.containsKey("chandelierPeriod")) riskSettings.setChandelierPeriod(effectiveMode, Integer.parseInt(body.get("chandelierPeriod").toString()));
+            if (body.containsKey("chandelierMultiplier")) riskSettings.setChandelierMultiplier(effectiveMode, Double.parseDouble(body.get("chandelierMultiplier").toString()));
             if (body.containsKey("signalSource")) riskSettings.setSignalSource(body.get("signalSource").toString());
             if (body.containsKey("scannerTimeframe")) riskSettings.setScannerTimeframe(Integer.parseInt(body.get("scannerTimeframe").toString()));
             if (body.containsKey("enableVwapCheck")) riskSettings.setEnableVwapCheck(Boolean.parseBoolean(body.get("enableVwapCheck").toString()));

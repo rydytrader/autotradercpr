@@ -40,6 +40,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     private final PositionStateStore positionStateStore;
     private final MarketDataService  marketDataService;
     private final TelegramService    telegramService;
+    private final com.rydytrader.autotrader.store.RiskSettingsStore riskSettings;
 
     // WebSocket client
     private volatile FyersOrderWebSocket wsClient;
@@ -135,7 +136,8 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
                               FyersProperties fyersProperties, OrderService orderService,
                               EventService eventService, TradeHistoryService tradeHistoryService,
                               PositionStateStore positionStateStore, MarketDataService marketDataService,
-                              TelegramService telegramService) {
+                              TelegramService telegramService,
+                              com.rydytrader.autotrader.store.RiskSettingsStore riskSettings) {
         this.tokenStore = tokenStore;
         this.fyersProperties = fyersProperties;
         this.orderService = orderService;
@@ -144,6 +146,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         this.positionStateStore = positionStateStore;
         this.marketDataService = marketDataService;
         this.telegramService = telegramService;
+        this.riskSettings = riskSettings;
     }
 
     /** Set PollingService reference (called from PollingService constructor to avoid circular DI). */
@@ -637,17 +640,25 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         // Mark as recently handled to prevent duplicate from position event
         recentlyHandled.put(symbol, System.currentTimeMillis());
 
-        // Recalculate SL from actual fill price (more accurate than Pine Script's close)
+        // Recalculate SL from actual fill price
         double adjustedSl = ctx.slPrice;
         if (entryPrice > 0 && ctx.atr > 0 && ctx.atrMultiplier > 0) {
             double slOffset = ctx.atr * ctx.atrMultiplier;
-            adjustedSl = "LONG".equals(ctx.position) ? entryPrice - slOffset : entryPrice + slOffset;
-            adjustedSl = orderService.roundToTick(adjustedSl, symbol);
-            if (Math.abs(adjustedSl - ctx.slPrice) > 0.01) {
-                log.info("[OrderEventSvc] SL recalculated from fill price: {} → {} (fill={}, ATR offset={})",
-                    String.format("%.2f", ctx.slPrice), String.format("%.2f", adjustedSl),
-                    String.format("%.2f", entryPrice), String.format("%.2f", slOffset));
+            double atrSl = "LONG".equals(ctx.position) ? entryPrice - slOffset : entryPrice + slOffset;
+            adjustedSl = atrSl;
+            // If Chandelier Exit enabled, use tighter of ATR and Chandelier
+            if (riskSettings.isEnableTrailingSl()) {
+                double chandelierSl = marketDataService.calculateChandelierSl(symbol, ctx.position);
+                if (chandelierSl > 0) {
+                    adjustedSl = "LONG".equals(ctx.position)
+                        ? Math.max(atrSl, chandelierSl)
+                        : Math.min(atrSl, chandelierSl);
+                    log.info("[OrderEventSvc] SL: ATR={} Chandelier={} → using {}",
+                        String.format("%.2f", atrSl), String.format("%.2f", chandelierSl),
+                        String.format("%.2f", adjustedSl));
+                }
             }
+            adjustedSl = orderService.roundToTick(adjustedSl, symbol);
         }
 
         String entryTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));

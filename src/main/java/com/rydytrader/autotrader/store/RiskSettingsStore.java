@@ -46,9 +46,9 @@ public class RiskSettingsStore {
         volatile boolean enableVolumeFilter = false; // reject if candle volume < volumeMultiple * avg volume
         volatile double volumeMultiple = 2.0; // breakout candle must have this x avg volume
         volatile int volumeLookback = 20; // average volume over last N candles (max 20)
-        volatile boolean enableTrailingSl = true; // enable trailing SL feature
-        volatile double trailTriggerPct = 75;  // % of range from entry to target that triggers trailing SL
-        volatile double trailSlPct      = 50;  // % of range to lock as profit when trailing SL triggers
+        volatile boolean enableTrailingSl = true; // enable Chandelier Exit trailing SL
+        volatile int    chandelierPeriod = 14;  // lookback period for highest high / lowest low (same as ATR)
+        volatile double chandelierMultiplier = 2.0; // ATR multiplier for Chandelier Exit
         // Scanner settings
         volatile String signalSource    = "TRADINGVIEW"; // TRADINGVIEW or INTERNAL
         volatile int    scannerTimeframe = 15;  // candle timeframe in minutes
@@ -97,8 +97,8 @@ public class RiskSettingsStore {
     public double getTargetShiftAtrThreshold() { return cfg().targetShiftAtrThreshold; }
     public boolean isEnableSmallCandleFilter() { return cfg().enableSmallCandleFilter; }
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
-    public double getTrailTriggerPct() { return cfg().trailTriggerPct; }
-    public double getTrailSlPct()      { return cfg().trailSlPct; }
+    public int    getChandelierPeriod() { return cfg().chandelierPeriod; }
+    public double getChandelierMultiplier() { return cfg().chandelierMultiplier; }
     public double getSmallCandleAtrThreshold() { return cfg().smallCandleAtrThreshold; }
     public double getWickRejectionRatio() { return cfg().wickRejectionRatio; }
     public double getOppositeWickRatio() { return cfg().oppositeWickRatio; }
@@ -143,8 +143,8 @@ public class RiskSettingsStore {
     public void setTargetShiftAtrThreshold(double v) { cfg().targetShiftAtrThreshold = v; }
     public void setEnableSmallCandleFilter(boolean v) { cfg().enableSmallCandleFilter = v; }
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
-    public void setTrailTriggerPct(double v) { cfg().trailTriggerPct = v; }
-    public void setTrailSlPct(double v)      { cfg().trailSlPct = v; }
+    public void setChandelierPeriod(int v) { cfg().chandelierPeriod = v; }
+    public void setChandelierMultiplier(double v) { cfg().chandelierMultiplier = v; }
     public void setSmallCandleAtrThreshold(double v) { cfg().smallCandleAtrThreshold = v; }
     public void setWickRejectionRatio(double v) { cfg().wickRejectionRatio = v; }
     public void setOppositeWickRatio(double v) { cfg().oppositeWickRatio = v; }
@@ -173,8 +173,8 @@ public class RiskSettingsStore {
     public double getTargetShiftAtrThreshold(String mode) { return cfgFor(mode).targetShiftAtrThreshold; }
     public boolean isEnableSmallCandleFilter(String mode) { return cfgFor(mode).enableSmallCandleFilter; }
     public boolean isEnableTrailingSl(String mode) { return cfgFor(mode).enableTrailingSl; }
-    public double getTrailTriggerPct(String mode) { return cfgFor(mode).trailTriggerPct; }
-    public double getTrailSlPct(String mode)      { return cfgFor(mode).trailSlPct; }
+    public int    getChandelierPeriod(String mode) { return cfgFor(mode).chandelierPeriod; }
+    public double getChandelierMultiplier(String mode) { return cfgFor(mode).chandelierMultiplier; }
     public double getSmallCandleAtrThreshold(String mode) { return cfgFor(mode).smallCandleAtrThreshold; }
     public double getWickRejectionRatio(String mode) { return cfgFor(mode).wickRejectionRatio; }
     public double getOppositeWickRatio(String mode) { return cfgFor(mode).oppositeWickRatio; }
@@ -201,8 +201,8 @@ public class RiskSettingsStore {
     public void setTargetShiftAtrThreshold(String mode, double v) { cfgFor(mode).targetShiftAtrThreshold = v; }
     public void setEnableSmallCandleFilter(String mode, boolean v) { cfgFor(mode).enableSmallCandleFilter = v; }
     public void setEnableTrailingSl(String mode, boolean v) { cfgFor(mode).enableTrailingSl = v; }
-    public void setTrailTriggerPct(String mode, double v) { cfgFor(mode).trailTriggerPct = v; }
-    public void setTrailSlPct(String mode, double v)      { cfgFor(mode).trailSlPct = v; }
+    public void setChandelierPeriod(String mode, int v) { cfgFor(mode).chandelierPeriod = v; }
+    public void setChandelierMultiplier(String mode, double v) { cfgFor(mode).chandelierMultiplier = v; }
     public void setSmallCandleAtrThreshold(String mode, double v) { cfgFor(mode).smallCandleAtrThreshold = v; }
     public void setWickRejectionRatio(String mode, double v) { cfgFor(mode).wickRejectionRatio = v; }
     public void setOppositeWickRatio(String mode, double v) { cfgFor(mode).oppositeWickRatio = v; }
@@ -245,8 +245,8 @@ public class RiskSettingsStore {
             upsert("volumeMultiple", String.valueOf(c.volumeMultiple));
             upsert("volumeLookback", String.valueOf(c.volumeLookback));
             upsert("enableTrailingSl", String.valueOf(c.enableTrailingSl));
-            upsert("trailTriggerPct", String.valueOf(c.trailTriggerPct));
-            upsert("trailSlPct", String.valueOf(c.trailSlPct));
+            upsert("chandelierPeriod", String.valueOf(c.chandelierPeriod));
+            upsert("chandelierMultiplier", String.valueOf(c.chandelierMultiplier));
             upsert("signalSource", c.signalSource);
             upsert("scannerTimeframe", String.valueOf(c.scannerTimeframe));
             upsert("enableVwapCheck", String.valueOf(c.enableVwapCheck));
@@ -302,8 +302,8 @@ public class RiskSettingsStore {
                     case "volumeMultiple" -> c.volumeMultiple = Double.parseDouble(v);
                     case "volumeLookback" -> c.volumeLookback = Integer.parseInt(v);
                     case "enableTrailingSl"   -> c.enableTrailingSl = Boolean.parseBoolean(v);
-                    case "trailTriggerPct"   -> c.trailTriggerPct = Double.parseDouble(v);
-                    case "trailSlPct"        -> c.trailSlPct = Double.parseDouble(v);
+                    case "chandelierPeriod"  -> c.chandelierPeriod = Integer.parseInt(v);
+                    case "chandelierMultiplier" -> c.chandelierMultiplier = Double.parseDouble(v);
                     case "signalSource"      -> c.signalSource = v;
                     case "scannerTimeframe"  -> c.scannerTimeframe = Integer.parseInt(v);
                     case "enableVwapCheck"   -> c.enableVwapCheck = Boolean.parseBoolean(v);
@@ -314,7 +314,7 @@ public class RiskSettingsStore {
                     case "lptQtyFactor"      -> c.lptQtyFactor = Double.parseDouble(v);
                 }
             }
-            log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} enableR4S4={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} trail={}%/{}%", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.enableR4S4, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.trailTriggerPct, c.trailSlPct);
+            log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} enableR4S4={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} chandelier={}x{}", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.enableR4S4, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.chandelierPeriod, c.chandelierMultiplier);
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to load {}: {}", mode, e.getMessage());
         }

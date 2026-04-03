@@ -37,7 +37,7 @@ import java.util.concurrent.*;
  * flushes dirty ticks to all SSE emitters every 500ms.
  */
 @Service
-public class MarketDataService implements FyersDataWebSocket.TickCallback {
+public class MarketDataService implements FyersDataWebSocket.TickCallback, CandleAggregator.CandleCloseListener {
 
     private static final Logger log = LoggerFactory.getLogger(MarketDataService.class);
 
@@ -148,6 +148,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         this.weeklyCprService = weeklyCprService;
         this.breakoutScanner = breakoutScanner;
         this.bhavcopyService = bhavcopyService;
+        candleAggregator.addListener(this);
     }
 
     // ────────────────────────────────────────────────────────────────────────────
@@ -287,10 +288,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         tick.recalcChange();
         tick.setHasPosition(PositionManager.getAllSymbols().contains(raw.fyersSymbol));
 
-        // Check trailing SL for position symbols
-        if (tick.isHasPosition()) {
-            checkTrailingSl(raw.fyersSymbol, raw.ltp);
-        }
+        // Chandelier Exit trailing SL is handled via onCandleClose callback (not per-tick)
 
         // Route tick to candle aggregator for scanner
         candleAggregator.onTick(raw);
@@ -302,75 +300,93 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
      * Trailing SL: when price moves 75% from entry toward target,
      * move SL to entry + 10% of the range (one-time per position).
      */
-    private void checkTrailingSl(String symbol, double ltp) {
-        if (!riskSettings.isEnableTrailingSl()) return;
-        if (trailedSymbols.contains(symbol)) return;
+    // ── CHANDELIER EXIT (called on every candle close) ─────────────────────────
 
-        Map<String, Object> state = positionStateStore.load(symbol);
+    /**
+     * Calculate Chandelier Exit SL for a symbol.
+     * LONG: Highest High(period) - ATR(period) * multiplier
+     * SHORT: Lowest Low(period) + ATR(period) * multiplier
+     * Returns 0 if insufficient data.
+     */
+    public double calculateChandelierSl(String fyersSymbol, String side) {
+        List<CandleAggregator.CandleBar> candles = candleAggregator.getCompletedCandles(fyersSymbol);
+        int period = riskSettings.getChandelierPeriod();
+        double multiplier = riskSettings.getChandelierMultiplier();
+
+        if (candles.size() < period) return 0;
+
+        List<CandleAggregator.CandleBar> recent = candles.subList(candles.size() - period, candles.size());
+
+        // ATR via Wilder's smoothing
+        double atr = 0;
+        for (int i = 0; i < recent.size(); i++) {
+            CandleAggregator.CandleBar c = recent.get(i);
+            CandleAggregator.CandleBar prev = i > 0 ? recent.get(i - 1) : null;
+            double tr = c.trueRange(prev);
+            atr = (i == 0) ? tr : (atr * (period - 1) + tr) / period;
+        }
+        if (atr <= 0) return 0;
+
+        if ("LONG".equals(side)) {
+            double highestHigh = recent.stream().mapToDouble(c -> c.high).max().orElse(0);
+            return highestHigh - atr * multiplier;
+        } else if ("SHORT".equals(side)) {
+            double lowestLow = recent.stream().mapToDouble(c -> c.low).min().orElse(0);
+            return lowestLow + atr * multiplier;
+        }
+        return 0;
+    }
+
+    @Override
+    public void onCandleClose(String fyersSymbol, CandleAggregator.CandleBar completedCandle) {
+        if (!riskSettings.isEnableTrailingSl()) return;
+        String position = PositionManager.getPosition(fyersSymbol);
+        if ("NONE".equals(position)) return;
+
+        Map<String, Object> state = positionStateStore.load(fyersSymbol);
         if (state == null) return;
 
-        Object sideObj = state.get("side");
-        Object slIdObj = state.get("slOrderId");
-        String side = sideObj != null ? sideObj.toString() : "";
-        String slOrderId = slIdObj != null ? slIdObj.toString() : "";
+        String slOrderId = state.getOrDefault("slOrderId", "").toString();
         if (slOrderId.isEmpty()) return;
 
-        double entryPrice = 0, targetPrice = 0;
-        try {
-            Object avgObj = state.get("avgPrice");
-            Object tgtObj = state.get("targetPrice");
-            if (avgObj != null) entryPrice = Double.parseDouble(avgObj.toString());
-            if (tgtObj != null) targetPrice = Double.parseDouble(tgtObj.toString());
-        } catch (NumberFormatException ignored) {}
+        String side = state.getOrDefault("side", "").toString();
+        double currentSlPrice = 0;
+        try { currentSlPrice = Double.parseDouble(state.getOrDefault("slPrice", "0").toString()); }
+        catch (NumberFormatException ignored) {}
 
-        if (entryPrice <= 0 || targetPrice <= 0) return;
+        double newSl = calculateChandelierSl(fyersSymbol, side);
+        if (newSl <= 0) return;
 
-        double range = Math.abs(targetPrice - entryPrice);
-        if (range <= 0) return;
+        // Round to tick size
+        newSl = Math.round(newSl * 20.0) / 20.0;
 
-        double triggerPct = riskSettings.getTrailTriggerPct() / 100.0; // e.g. 75 → 0.75
-        double slPct      = riskSettings.getTrailSlPct() / 100.0;      // e.g. 50 → 0.50
-        if (triggerPct <= 0 || slPct <= 0) return; // disabled if set to 0
+        // Only move SL in favorable direction (tighter)
+        if ("LONG".equals(side) && newSl <= currentSlPrice) return;
+        if ("SHORT".equals(side) && newSl >= currentSlPrice) return;
 
-        double triggerLevel, newSl;
-        if ("LONG".equals(side)) {
-            triggerLevel = entryPrice + range * triggerPct;
-            newSl = entryPrice + range * slPct;
-            if (ltp < triggerLevel) return;
-        } else if ("SHORT".equals(side)) {
-            triggerLevel = entryPrice - range * triggerPct;
-            newSl = entryPrice - range * slPct;
-            if (ltp > triggerLevel) return;
-        } else {
-            return;
-        }
+        log.info("[Chandelier] {} {} — new SL={} current={}", fyersSymbol, side,
+            String.format("%.2f", newSl), String.format("%.2f", currentSlPrice));
 
-        // Trail! Mark as done first to prevent duplicate attempts
-        trailedSymbols.add(symbol);
-
-        boolean ok = orderService.modifySlOrder(slOrderId, newSl, symbol);
+        boolean ok = orderService.modifySlOrder(slOrderId, newSl, fyersSymbol);
         if (ok) {
-            // Update saved SL price on disk
-            Object ctObj = state.get("targetPrice");
-            Object toObj = state.get("targetOrderId");
-            double currentTarget = ctObj != null ? Double.parseDouble(ctObj.toString()) : 0;
-            String targetOrderId = toObj != null ? toObj.toString() : "";
-            positionStateStore.saveOcoState(symbol, slOrderId, targetOrderId, newSl, currentTarget);
+            trailedSymbols.add(fyersSymbol);
 
-            // Mark tracked OCO as trailed so exit reason will be TRAILING_SL
+            String targetOrderId = state.getOrDefault("targetOrderId", "").toString();
+            double currentTarget = Double.parseDouble(state.getOrDefault("targetPrice", "0").toString());
+            positionStateStore.saveOcoState(fyersSymbol, slOrderId, targetOrderId, newSl, currentTarget);
+
             if (orderEventService != null) orderEventService.markAsTrailed(slOrderId);
 
-            positionStateStore.appendDescription(symbol,
-                "[TRAIL] SL moved → " + String.format("%.2f", newSl)
-                + " (LTP " + String.format("%.2f", ltp) + " crossed " + String.format("%.0f", riskSettings.getTrailTriggerPct())
-                + "% trigger " + String.format("%.2f", triggerLevel) + ").");
+            positionStateStore.appendDescription(fyersSymbol,
+                "[CHANDELIER] SL → " + String.format("%.2f", newSl)
+                + " (period=" + riskSettings.getChandelierPeriod()
+                + " mult=" + riskSettings.getChandelierMultiplier() + ")");
 
-            eventService.log("[SUCCESS] Trailing SL for " + symbol + ": moved to "
-                + String.format("%.2f", newSl) + " (locking 50% profit)"
-                + " — LTP " + String.format("%.2f", ltp) + " crossed 75% level " + String.format("%.2f", triggerLevel));
+            eventService.log("[SUCCESS] Chandelier Exit for " + fyersSymbol + ": SL → "
+                + String.format("%.2f", newSl) + " (was " + String.format("%.2f", currentSlPrice) + ")");
         } else {
-            eventService.log("[ERROR] Failed to trail SL for " + symbol + " to " + String.format("%.2f", newSl));
-            trailedSymbols.remove(symbol); // allow retry
+            eventService.log("[ERROR] Chandelier Exit failed for " + fyersSymbol
+                + " — could not modify SL to " + String.format("%.2f", newSl));
         }
     }
 

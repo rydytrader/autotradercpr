@@ -280,10 +280,23 @@ public class PollingService {
                         // Recalculate SL from actual fill price
                         if (holder.entryFillPrice > 0 && atr > 0 && atrMultiplier > 0) {
                             double slOffset = atr * atrMultiplier;
-                            holder.adjustedSl = "LONG".equals(position) ? holder.entryFillPrice - slOffset : holder.entryFillPrice + slOffset;
+                            double atrSl = "LONG".equals(position) ? holder.entryFillPrice - slOffset : holder.entryFillPrice + slOffset;
+                            holder.adjustedSl = atrSl;
+                            // If Chandelier Exit enabled, use tighter of ATR and Chandelier
+                            if (riskSettings.isEnableTrailingSl()) {
+                                double chandelierSl = marketDataService.calculateChandelierSl(symbol, position);
+                                if (chandelierSl > 0) {
+                                    if ("LONG".equals(position)) {
+                                        holder.adjustedSl = Math.max(atrSl, chandelierSl);
+                                    } else {
+                                        holder.adjustedSl = Math.min(atrSl, chandelierSl);
+                                    }
+                                    log.info("[PollingService] SL: ATR={} Chandelier={} → using {}",
+                                        String.format("%.2f", atrSl), String.format("%.2f", chandelierSl),
+                                        String.format("%.2f", holder.adjustedSl));
+                                }
+                            }
                             holder.adjustedSl = orderService.roundToTick(holder.adjustedSl, symbol);
-                            log.info("[PollingService] SL recalculated from fill: {} → {} (fill={})",
-                                String.format("%.2f", slPrice), String.format("%.2f", holder.adjustedSl), String.format("%.2f", holder.entryFillPrice));
                         }
                         double roundedTarget = orderService.roundToTick(targetPrice, symbol);
                         positionStateStore.save(symbol, position, quantity, holder.entryFillPrice,
