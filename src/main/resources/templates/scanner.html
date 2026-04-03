@@ -668,7 +668,6 @@
                 var label = t.includes('WEEK') ? 'WB' : t.includes('MONTH') ? 'MB' : '52B';
                 return '<span class="scan-badge ' + cls + '">' + label + '</span>';
             }).join(''))
-            + (d.volumeRatio > 0 ? '<span class="scan-badge" style="background:rgba(34,211,238,.1);color:var(--accent-cyan);font-size:.6rem;">Vol:' + d.volumeRatio + 'x</span>' : '')
             + (d.marketCapCategory ? '<span class="scan-badge" style="background:rgba(128,128,128,.08);color:var(--text-muted);font-size:.6rem;">' + d.marketCapCategory.charAt(0) + '</span>' : '')
             + '  </span>'
             + '</div>'

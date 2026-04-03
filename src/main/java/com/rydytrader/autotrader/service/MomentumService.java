@@ -220,6 +220,7 @@ public class MomentumService {
     // ── Market Cap from NSE API ──────────────────────────────────────────────
 
     private final ConcurrentHashMap<String, Double> marketCapCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, double[]> fiftyTwoWeekCache = new ConcurrentHashMap<>(); // symbol → {high, low}
 
     /**
      * Fetch market cap for Nifty 500 stocks from NSE API (single call per index).
@@ -265,17 +266,23 @@ public class MomentumService {
                     for (var node : data) {
                         String symbol = node.has("symbol") ? node.get("symbol").asText() : "";
                         if (symbol.isEmpty()) continue;
-                        // Try different field names NSE uses for market cap
+                        // Market cap
                         double mcap = 0;
                         if (node.has("ffmc")) mcap = node.get("ffmc").asDouble(0);
                         else if (node.has("marketCap")) mcap = node.get("marketCap").asDouble(0);
                         else if (node.has("totalTradedValue")) mcap = node.get("totalTradedValue").asDouble(0);
 
                         if (mcap > 0) {
-                            // NSE ffmc is in lakhs → convert to crores
                             double mcapCr = mcap / 100.0;
                             marketCapCache.put(symbol, mcapCr);
                             total++;
+                        }
+
+                        // 52-week high/low from same API response
+                        double yHigh = node.has("yearHigh") ? node.get("yearHigh").asDouble(0) : 0;
+                        double yLow = node.has("yearLow") ? node.get("yearLow").asDouble(0) : 0;
+                        if (yHigh > 0 || yLow > 0) {
+                            fiftyTwoWeekCache.put(symbol, new double[]{yHigh, yLow});
                         }
                     }
                 } catch (Exception e) {
@@ -283,12 +290,19 @@ public class MomentumService {
                 }
             }
 
-            // Apply market cap to bhavcopy CprLevels cache
+            // Apply market cap + 52W data to bhavcopy CprLevels cache
             Map<String, CprLevels> todayCache = bhavcopyService.getTodayCache();
             int applied = 0;
             for (Map.Entry<String, Double> entry : marketCapCache.entrySet()) {
                 CprLevels cpr = todayCache.get(entry.getKey());
                 if (cpr != null) { cpr.setMarketCapCr(entry.getValue()); applied++; }
+            }
+            for (Map.Entry<String, double[]> entry : fiftyTwoWeekCache.entrySet()) {
+                CprLevels cpr = todayCache.get(entry.getKey());
+                if (cpr != null) {
+                    cpr.setFiftyTwoWeekHigh(entry.getValue()[0]);
+                    cpr.setFiftyTwoWeekLow(entry.getValue()[1]);
+                }
             }
 
             // Apply to momentum metrics cache
