@@ -84,9 +84,6 @@ public class SettingsController {
         result.put("momentumMonthBreak", riskSettings.isMomentumMonthBreak());
         result.put("momentum52Week", riskSettings.isMomentum52Week());
         result.put("momentumVolumeMultiple", riskSettings.getMomentumVolumeMultiple());
-        result.put("marketCapLarge", riskSettings.isMarketCapLarge());
-        result.put("marketCapMid", riskSettings.isMarketCapMid());
-        result.put("marketCapSmall", riskSettings.isMarketCapSmall());
         result.put("todayPnl",         Math.round(todayPnl * 100.0) / 100.0);
         result.put("todayTrades",      todayTrades);
         return result;
@@ -145,9 +142,6 @@ public class SettingsController {
             if (body.containsKey("momentumMonthBreak")) riskSettings.setMomentumMonthBreak(Boolean.parseBoolean(body.get("momentumMonthBreak").toString()));
             if (body.containsKey("momentum52Week")) riskSettings.setMomentum52Week(Boolean.parseBoolean(body.get("momentum52Week").toString()));
             if (body.containsKey("momentumVolumeMultiple")) riskSettings.setMomentumVolumeMultiple(Double.parseDouble(body.get("momentumVolumeMultiple").toString()));
-            if (body.containsKey("marketCapLarge")) riskSettings.setMarketCapLarge(Boolean.parseBoolean(body.get("marketCapLarge").toString()));
-            if (body.containsKey("marketCapMid")) riskSettings.setMarketCapMid(Boolean.parseBoolean(body.get("marketCapMid").toString()));
-            if (body.containsKey("marketCapSmall")) riskSettings.setMarketCapSmall(Boolean.parseBoolean(body.get("marketCapSmall").toString()));
             riskSettings.saveFor(effectiveMode);
             return ResponseEntity.ok(Map.of("ok", true, "message", "Settings saved"));
         } catch (Exception e) {

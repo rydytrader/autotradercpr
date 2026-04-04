@@ -38,16 +38,15 @@ public class MomentumService {
 
     @PostConstruct
     public void init() {
-        // Run after BhavcopyService loads data
         if (!bhavcopyService.getTodayCache().isEmpty()) {
-            fetchMarketCap();
+            fetch52WeekData();
             compute();
         }
     }
 
-    @Scheduled(cron = "0 46 8 * * MON-FRI") // 1 minute after BhavcopyService (8:45)
+    @Scheduled(cron = "0 46 8 * * MON-FRI")
     public void scheduledCompute() {
-        fetchMarketCap();
+        fetch52WeekData();
         compute();
     }
 
@@ -89,7 +88,6 @@ public class MomentumService {
             m.setLastVolume(todayCpr.getVolume());
             m.setFiftyTwoWeekHigh(todayCpr.getFiftyTwoWeekHigh());
             m.setFiftyTwoWeekLow(todayCpr.getFiftyTwoWeekLow());
-            m.setMarketCapCr(todayCpr.getMarketCapCr());
 
             // Compute 20-day average volume from history
             double totalVol = 0;
@@ -231,141 +229,69 @@ public class MomentumService {
 
     // ── Market Cap from NSE API ──────────────────────────────────────────────
 
-    private final ConcurrentHashMap<String, Double> marketCapCache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, double[]> fiftyTwoWeekCache = new ConcurrentHashMap<>(); // symbol → {high, low}
 
     /**
-     * Fetch market cap for Nifty 500 stocks from NSE API (single call per index).
-     * Applies to BhavcopyService cache and MomentumMetrics.
+     * Fetch 52-week high/low from NSE Nifty 500 API.
+     * Applied to BhavcopyService CprLevels cache before compute() runs.
      */
-    public void fetchMarketCap() {
+    public void fetch52WeekData() {
         try {
             String cookies = bhavcopyService.getNseCookies();
             if (cookies == null || cookies.isEmpty()) {
-                log.warn("[MomentumService] Cannot fetch market cap — no NSE cookies");
+                log.warn("[MomentumService] Cannot fetch 52W data — no NSE cookies");
                 return;
             }
 
-            String[] indices = {"NIFTY 500"};
-            int total = 0;
+            String url = "https://www.nseindia.com/api/equity-stockIndices?index="
+                + java.net.URLEncoder.encode("NIFTY 500", "UTF-8");
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0");
+            conn.setRequestProperty("Accept", "application/json");
+            conn.setRequestProperty("Cookie", cookies);
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(15000);
 
-            for (String index : indices) {
-                try {
-                    String url = "https://www.nseindia.com/api/equity-stockIndices?index="
-                        + java.net.URLEncoder.encode(index, "UTF-8");
-                    java.net.HttpURLConnection conn = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
-                    conn.setRequestMethod("GET");
-                    conn.setRequestProperty("User-Agent", "Mozilla/5.0");
-                    conn.setRequestProperty("Accept", "application/json");
-                    conn.setRequestProperty("Cookie", cookies);
-                    conn.setConnectTimeout(10000);
-                    conn.setReadTimeout(15000);
+            if (conn.getResponseCode() != 200) {
+                log.warn("[MomentumService] NSE 52W API returned {}", conn.getResponseCode());
+                return;
+            }
 
-                    if (conn.getResponseCode() != 200) {
-                        log.warn("[MomentumService] NSE market cap API returned {}", conn.getResponseCode());
-                        continue;
-                    }
+            String body;
+            try (var is = conn.getInputStream()) {
+                body = new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            }
 
-                    String body;
-                    try (var is = conn.getInputStream()) {
-                        body = new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-                    }
+            com.fasterxml.jackson.databind.JsonNode root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
+            com.fasterxml.jackson.databind.JsonNode data = root.get("data");
+            if (data == null || !data.isArray()) return;
 
-                    com.fasterxml.jackson.databind.JsonNode root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
-                    com.fasterxml.jackson.databind.JsonNode data = root.get("data");
-                    if (data == null || !data.isArray()) continue;
-
-                    // Log first node's field names for debugging
-                    if (data.size() > 0) {
-                        var firstNode = data.get(0);
-                        var fields = new java.util.ArrayList<String>();
-                        firstNode.fieldNames().forEachRemaining(fields::add);
-                        log.info("[MomentumService] NSE API fields: {}", fields);
-                    }
-
-                    for (var node : data) {
-                        String symbol = node.has("symbol") ? node.get("symbol").asText() : "";
-                        if (symbol.isEmpty()) continue;
-                        // Market cap
-                        double mcap = 0;
-                        if (node.has("ffmc")) mcap = node.get("ffmc").asDouble(0);
-                        else if (node.has("marketCap")) mcap = node.get("marketCap").asDouble(0);
-                        else if (node.has("totalTradedValue")) mcap = node.get("totalTradedValue").asDouble(0);
-
-                        if (mcap > 0) {
-                            double mcapCr = mcap / 100.0;
-                            marketCapCache.put(symbol, mcapCr);
-                            total++;
-                        }
-
-                        // 52-week high/low from same API response
-                        double yHigh = node.has("yearHigh") ? node.get("yearHigh").asDouble(0) : 0;
-                        double yLow = node.has("yearLow") ? node.get("yearLow").asDouble(0) : 0;
-                        if (yHigh > 0 || yLow > 0) {
-                            fiftyTwoWeekCache.put(symbol, new double[]{yHigh, yLow});
-                        }
-                    }
-                } catch (Exception e) {
-                    log.warn("[MomentumService] Error fetching market cap for {}: {}", index, e.getMessage());
+            for (var node : data) {
+                String symbol = node.has("symbol") ? node.get("symbol").asText() : "";
+                if (symbol.isEmpty()) continue;
+                double yHigh = node.has("yearHigh") ? node.get("yearHigh").asDouble(0) : 0;
+                double yLow = node.has("yearLow") ? node.get("yearLow").asDouble(0) : 0;
+                if (yHigh > 0 || yLow > 0) {
+                    fiftyTwoWeekCache.put(symbol, new double[]{yHigh, yLow});
                 }
             }
 
-            // Apply market cap + 52W data to bhavcopy CprLevels cache
+            // Apply 52W data to bhavcopy CprLevels cache
             Map<String, CprLevels> todayCache = bhavcopyService.getTodayCache();
             int applied = 0;
-            for (Map.Entry<String, Double> entry : marketCapCache.entrySet()) {
-                CprLevels cpr = todayCache.get(entry.getKey());
-                if (cpr != null) { cpr.setMarketCapCr(entry.getValue()); applied++; }
-            }
             for (Map.Entry<String, double[]> entry : fiftyTwoWeekCache.entrySet()) {
                 CprLevels cpr = todayCache.get(entry.getKey());
                 if (cpr != null) {
                     cpr.setFiftyTwoWeekHigh(entry.getValue()[0]);
                     cpr.setFiftyTwoWeekLow(entry.getValue()[1]);
+                    applied++;
                 }
             }
 
-            // Apply to momentum metrics cache
-            for (Map.Entry<String, Double> entry : marketCapCache.entrySet()) {
-                MomentumMetrics m = metricsCache.get(entry.getKey());
-                if (m != null) m.setMarketCapCr(entry.getValue());
-            }
-
-            log.info("[MomentumService] Market cap: {} stocks from NSE, {} applied to NFO cache, 52W data: {} stocks",
-                total, applied, fiftyTwoWeekCache.size());
-            // Log sample 52W data
-            if (!fiftyTwoWeekCache.isEmpty()) {
-                var sample = fiftyTwoWeekCache.entrySet().iterator().next();
-                log.info("[MomentumService] 52W sample: {} high={} low={}", sample.getKey(), sample.getValue()[0], sample.getValue()[1]);
-            } else {
-                // Log first node's fields to see what's available
-                log.warn("[MomentumService] No 52W data found — check API field names");
-            }
+            log.info("[MomentumService] 52W data: {} stocks from NSE, {} applied to NFO cache", fiftyTwoWeekCache.size(), applied);
         } catch (Exception e) {
-            log.error("[MomentumService] Error fetching market cap: {}", e.getMessage());
+            log.error("[MomentumService] Error fetching 52W data: {}", e.getMessage());
         }
-    }
-
-    /** Get market cap for a symbol (in crores). Returns 0 if not available. */
-    public double getMarketCap(String symbol) {
-        return marketCapCache.getOrDefault(symbol, 0.0);
-    }
-
-    /** Get market cap category: "LARGE", "MID", "SMALL", or "" if unknown. */
-    public String getMarketCapCategory(String symbol) {
-        double mcap = getMarketCap(symbol);
-        if (mcap <= 0) return "";
-        if (mcap >= 20000) return "LARGE";
-        if (mcap >= 5000) return "MID";
-        return "SMALL";
-    }
-
-    /** Check if a symbol passes the market cap filter from settings. */
-    public boolean passesMarketCapFilter(String symbol) {
-        double mcap = getMarketCap(symbol);
-        if (mcap <= 0) return true; // no data = allow through
-        if (mcap >= 20000) return riskSettings.isMarketCapLarge();
-        if (mcap >= 5000) return riskSettings.isMarketCapMid();
-        return riskSettings.isMarketCapSmall();
     }
 }

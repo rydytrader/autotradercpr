@@ -12,7 +12,6 @@ public class CprLevels {
     private boolean narrowCpr;
     private long   volume;
     private double fiftyTwoWeekHigh, fiftyTwoWeekLow;
-    private double marketCapCr;
 
     /** No-arg constructor for Jackson deserialization. */
     public CprLevels() {}
@@ -98,6 +97,4 @@ public class CprLevels {
     public void    setFiftyTwoWeekHigh(double v) { this.fiftyTwoWeekHigh = v; }
     public double  getFiftyTwoWeekLow()    { return fiftyTwoWeekLow; }
     public void    setFiftyTwoWeekLow(double v)  { this.fiftyTwoWeekLow = v; }
-    public double  getMarketCapCr()        { return marketCapCr; }
-    public void    setMarketCapCr(double v) { this.marketCapCr = v; }
 }

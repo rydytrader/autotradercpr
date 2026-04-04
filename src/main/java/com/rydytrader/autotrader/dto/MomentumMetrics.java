@@ -16,7 +16,6 @@ public class MomentumMetrics {
     private double prevWeekHigh, prevWeekLow;
     private double prevMonthHigh, prevMonthLow;
     private double fiftyTwoWeekHigh, fiftyTwoWeekLow;
-    private double marketCapCr;
     private List<String> tags = new ArrayList<>();
 
     public MomentumMetrics() {}
@@ -56,8 +55,6 @@ public class MomentumMetrics {
     public double getFiftyTwoWeekLow() { return fiftyTwoWeekLow; }
     public void setFiftyTwoWeekLow(double v) { this.fiftyTwoWeekLow = v; }
 
-    public double getMarketCapCr() { return marketCapCr; }
-    public void setMarketCapCr(double v) { this.marketCapCr = v; }
 
     public List<String> getTags() { return tags; }
     public void setTags(List<String> v) { this.tags = v; }

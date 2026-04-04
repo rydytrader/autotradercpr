@@ -393,12 +393,6 @@
             <button class="filter-btn" onclick="setFilter('52W_HIGH_BREAK', this)">52W H/L</button>
         </span>
         <div class="filter-sep"></div>
-        <span class="cap-filter-group">
-            <button class="filter-btn" onclick="setFilter('LARGE', this)" style="color:var(--accent-green)">Large</button>
-            <button class="filter-btn" onclick="setFilter('MID', this)" style="color:var(--accent-blue)">Mid</button>
-            <button class="filter-btn" onclick="setFilter('SMALL', this)" style="color:var(--accent-yellow)">Small</button>
-        </span>
-        <div class="filter-sep"></div>
         <button class="filter-btn" onclick="toggleSignalFilter(this)">Has Signal</button>
         <button class="filter-btn" onclick="toggleFilteredFilter(this)">Filtered</button>
         <select id="timeFilter" onchange="applyTimeFilter()" style="
@@ -468,7 +462,7 @@
     // ── Filter controls ─────────────────────────────
     window.setFilter = function(type, btn) {
         cprFilter = type;
-        document.querySelectorAll('.cpr-filter-group .filter-btn, .momentum-filter-group .filter-btn, .cap-filter-group .filter-btn').forEach(function(b) {
+        document.querySelectorAll('.cpr-filter-group .filter-btn, .momentum-filter-group .filter-btn').forEach(function(b) {
             b.classList.remove('active');
         });
         btn.classList.add('active');
@@ -547,8 +541,6 @@
                     if (!types.includes('NARROW') || !types.includes('INSIDE')) return false;
                 } else if (cprFilter === 'MOMENTUM') {
                     if (mTags.length === 0) return false;
-                } else if (cprFilter === 'LARGE' || cprFilter === 'MID' || cprFilter === 'SMALL') {
-                    if ((d.marketCapCategory || '') !== cprFilter) return false;
                 } else if (cprFilter === 'WEEK_HIGH_BREAK' || cprFilter === 'MONTH_HIGH_BREAK' || cprFilter === '52W_HIGH_BREAK') {
                     var lowVariant = cprFilter.replace('HIGH', 'LOW');
                     if (!mTags.includes(cprFilter) && !mTags.includes(lowVariant)) return false;
@@ -672,7 +664,6 @@
                 var label = t.includes('WEEK') ? 'WB' : t.includes('MONTH') ? 'MB' : '52B';
                 return '<span class="scan-badge ' + cls + '">' + label + '</span>';
             }).join(''))
-            + (d.marketCapCategory ? '<span class="scan-badge" style="background:rgba(128,128,128,.08);color:var(--text-muted);font-size:.6rem;">' + d.marketCapCategory.charAt(0) + '</span>' : '')
             + '  </span>'
             + '</div>'
             + '<div class="scan-price-row">'

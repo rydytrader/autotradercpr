@@ -805,24 +805,15 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         Set<String> symbols = new LinkedHashSet<>();
 
         for (var cpr : bhavcopyService.getNarrowCprStocks()) {
-            String sym = cpr.getSymbol();
-            if (momentumService.passesMarketCapFilter(sym)) {
-                symbols.add("NSE:" + sym + "-EQ");
-            }
+            symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
         }
         for (var cpr : bhavcopyService.getInsideCprStocks()) {
-            String sym = cpr.getSymbol();
-            if (momentumService.passesMarketCapFilter(sym)) {
-                symbols.add("NSE:" + sym + "-EQ");
-            }
+            symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
         }
         // Add momentum stocks (if enabled)
         if (riskSettings.isEnableMomentumScanner()) {
             for (var m : momentumService.getMomentumStocks()) {
-                String sym = m.getSymbol();
-                if (momentumService.passesMarketCapFilter(sym)) {
-                    symbols.add("NSE:" + sym + "-EQ");
-                }
+                symbols.add("NSE:" + m.getSymbol() + "-EQ");
             }
         }
         return new ArrayList<>(symbols);

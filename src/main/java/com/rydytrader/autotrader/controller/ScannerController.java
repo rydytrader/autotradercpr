@@ -98,7 +98,6 @@ public class ScannerController {
         // Add momentum tags to existing cards + add momentum-only stocks
         for (var m : momentumService.getMomentumStocks()) {
             String fyers = "NSE:" + m.getSymbol() + "-EQ";
-            if (!momentumService.passesMarketCapFilter(m.getSymbol())) continue;
 
             // Find existing card or create new one
             Map<String, Object> existingCard = null;
@@ -113,8 +112,6 @@ public class ScannerController {
                 types.addAll(m.getTags());
                 existingCard.put("momentumTags", m.getTags());
                 existingCard.put("volumeRatio", Math.round(m.getVolumeRatio() * 10.0) / 10.0);
-                existingCard.put("marketCapCr", Math.round(m.getMarketCapCr()));
-                existingCard.put("marketCapCategory", momentumService.getMarketCapCategory(m.getSymbol()));
             } else {
                 // New momentum-only stock — build card from bhavcopy data
                 CprLevels cpr = bhavcopyService.getCprLevels(m.getSymbol());
@@ -125,8 +122,6 @@ public class ScannerController {
                     card.put("weeklyNarrow", false);
                     card.put("momentumTags", m.getTags());
                     card.put("volumeRatio", Math.round(m.getVolumeRatio() * 10.0) / 10.0);
-                    card.put("marketCapCr", Math.round(m.getMarketCapCr()));
-                    card.put("marketCapCategory", momentumService.getMarketCapCategory(m.getSymbol()));
                     result.add(card);
                     seen.add(fyers);
                 }
@@ -135,11 +130,8 @@ public class ScannerController {
 
         // Add market cap to all cards that don't have it yet
         for (var card : result) {
-            if (!card.containsKey("marketCapCr")) {
                 String fyers = card.get("symbol").toString();
                 String ticker = fyers.replace("NSE:", "").replace("-EQ", "");
-                card.put("marketCapCr", Math.round(momentumService.getMarketCap(ticker)));
-                card.put("marketCapCategory", momentumService.getMarketCapCategory(ticker));
             }
         }
 
@@ -381,8 +373,6 @@ public class ScannerController {
             item.put("prevMonthLow", m.getPrevMonthLow());
             item.put("fiftyTwoWeekHigh", m.getFiftyTwoWeekHigh());
             item.put("fiftyTwoWeekLow", m.getFiftyTwoWeekLow());
-            item.put("marketCapCr", Math.round(m.getMarketCapCr()));
-            item.put("marketCapCategory", momentumService.getMarketCapCategory(m.getSymbol()));
             item.put("tags", m.getTags());
             list.add(item);
         }

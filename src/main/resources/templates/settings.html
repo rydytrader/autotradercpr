@@ -460,19 +460,14 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Market Cap Filter</label>
                     <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
                         <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
-                            <input type="checkbox" id="marketCapLarge" style="width:16px;height:16px;accent-color:var(--accent-green);"> Large Cap (&gt; 20,000 Cr)
                         </label>
                         <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
-                            <input type="checkbox" id="marketCapMid" style="width:16px;height:16px;accent-color:var(--accent-blue);"> Mid Cap (5,000 - 20,000 Cr)
                         </label>
                         <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
-                            <input type="checkbox" id="marketCapSmall" style="width:16px;height:16px;accent-color:var(--accent-yellow);"> Small Cap (&lt; 5,000 Cr)
                         </label>
                     </div>
-                    <div class="form-hint">Applies to entire watchlist (CPR + momentum)</div>
                 </div>
             </div>
         </div>
@@ -748,9 +743,6 @@
             document.getElementById('momentumMonthBreak').checked = d.momentumMonthBreak !== false;
             document.getElementById('momentum52Week').checked = d.momentum52Week !== false;
             document.getElementById('momentumVolumeMultiple').value = d.momentumVolumeMultiple || 2.0;
-            document.getElementById('marketCapLarge').checked = d.marketCapLarge !== false;
-            document.getElementById('marketCapMid').checked = d.marketCapMid !== false;
-            document.getElementById('marketCapSmall').checked = d.marketCapSmall === true;
 
             const pnl    = d.todayPnl    || 0;
             const trades = d.todayTrades || 0;
@@ -848,9 +840,6 @@
                 momentumMonthBreak: document.getElementById('momentumMonthBreak').checked,
                 momentum52Week: document.getElementById('momentum52Week').checked,
                 momentumVolumeMultiple: parseFloat(document.getElementById('momentumVolumeMultiple').value) || 2.0,
-                marketCapLarge: document.getElementById('marketCapLarge').checked,
-                marketCapMid: document.getElementById('marketCapMid').checked,
-                marketCapSmall: document.getElementById('marketCapSmall').checked
             };
             const r = await fetch('/api/settings/risk', {
                 method: 'POST',
