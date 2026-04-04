@@ -128,13 +128,6 @@ public class ScannerController {
             }
         }
 
-        // Add market cap to all cards that don't have it yet
-        for (var card : result) {
-                String fyers = card.get("symbol").toString();
-                String ticker = fyers.replace("NSE:", "").replace("-EQ", "");
-            }
-        }
-
         return result;
     }
 
