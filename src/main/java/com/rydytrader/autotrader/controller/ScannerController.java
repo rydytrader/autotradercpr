@@ -166,7 +166,7 @@ public class ScannerController {
             card.put("candleLow", r(currentCandle.low));
         }
 
-        card.put("vwap", Math.round(candleAggregator.getVwap(fyersSymbol) * 100.0) / 100.0);
+        card.put("atp", Math.round(candleAggregator.getAtp(fyersSymbol) * 100.0) / 100.0);
         card.put("atr", Math.round(atrService.getAtr(fyersSymbol) * 100.0) / 100.0);
         card.put("dayOpen", Math.round(candleAggregator.getDayOpen(fyersSymbol) * 100.0) / 100.0);
         card.put("candleVolume", candleAggregator.getCurrentCandleVolume(fyersSymbol));
@@ -233,7 +233,7 @@ public class ScannerController {
         status.put("enableHpt", riskSettings.isEnableHpt());
         status.put("enableMpt", riskSettings.isEnableMpt());
         status.put("enableLpt", riskSettings.isEnableLpt());
-        status.put("enableVwap", riskSettings.isEnableVwapCheck());
+        status.put("enableAtp", riskSettings.isEnableAtpCheck());
         status.put("timeframe", riskSettings.getScannerTimeframe());
         return status;
     }

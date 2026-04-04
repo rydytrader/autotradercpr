@@ -73,7 +73,7 @@ public class SettingsController {
         result.put("chandelierMultiplier", riskSettings.getChandelierMultiplier(effectiveMode));
         result.put("signalSource", riskSettings.getSignalSource());
         result.put("scannerTimeframe", riskSettings.getScannerTimeframe());
-        result.put("enableVwapCheck", riskSettings.isEnableVwapCheck());
+        result.put("enableAtpCheck", riskSettings.isEnableAtpCheck());
         result.put("enableHpt", riskSettings.isEnableHpt());
         result.put("enableMpt", riskSettings.isEnableMpt());
         result.put("enableLpt", riskSettings.isEnableLpt());
@@ -134,7 +134,7 @@ public class SettingsController {
             if (body.containsKey("chandelierMultiplier")) riskSettings.setChandelierMultiplier(effectiveMode, Double.parseDouble(body.get("chandelierMultiplier").toString()));
             if (body.containsKey("signalSource")) riskSettings.setSignalSource(body.get("signalSource").toString());
             if (body.containsKey("scannerTimeframe")) riskSettings.setScannerTimeframe(Integer.parseInt(body.get("scannerTimeframe").toString()));
-            if (body.containsKey("enableVwapCheck")) riskSettings.setEnableVwapCheck(Boolean.parseBoolean(body.get("enableVwapCheck").toString()));
+            if (body.containsKey("enableAtpCheck")) riskSettings.setEnableAtpCheck(Boolean.parseBoolean(body.get("enableAtpCheck").toString()));
             if (body.containsKey("enableHpt")) riskSettings.setEnableHpt(Boolean.parseBoolean(body.get("enableHpt").toString()));
             if (body.containsKey("enableMpt")) riskSettings.setEnableMpt(Boolean.parseBoolean(body.get("enableMpt").toString()));
             if (body.containsKey("enableLpt")) riskSettings.setEnableLpt(Boolean.parseBoolean(body.get("enableLpt").toString()));

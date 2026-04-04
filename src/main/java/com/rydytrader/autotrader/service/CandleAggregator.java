@@ -30,8 +30,8 @@ public class CandleAggregator {
     // Day open price per symbol
     private final ConcurrentHashMap<String, Double> dayOpen = new ConcurrentHashMap<>();
 
-    // Latest VWAP per symbol (from exchange avg_trade_price)
-    private final ConcurrentHashMap<String, Double> latestVwap = new ConcurrentHashMap<>();
+    // Latest ATP per symbol (from exchange avg_trade_price)
+    private final ConcurrentHashMap<String, Double> latestAtp = new ConcurrentHashMap<>();
 
     // Latest LTP per symbol
     private final ConcurrentHashMap<String, Double> latestLtp = new ConcurrentHashMap<>();
@@ -116,7 +116,7 @@ public class CandleAggregator {
         currentCandles.clear();
         completedCandles.clear();
         dayOpen.clear();
-        latestVwap.clear();
+        latestAtp.clear();
         latestLtp.clear();
         latestChangePct.clear();
         log.info("[CandleAggregator] Stopped");
@@ -142,8 +142,8 @@ public class CandleAggregator {
         // Track day open from HSM open_price field
         if (raw.open > 0) dayOpen.putIfAbsent(symbol, raw.open);
 
-        // Track VWAP from exchange avg_trade_price
-        if (raw.vwap > 0) latestVwap.put(symbol, raw.vwap);
+        // Track ATP from exchange avg_trade_price
+        if (raw.atp > 0) latestAtp.put(symbol, raw.atp);
 
         // Track cumulative volume — only update when Fyers sends a non-zero value
         // (delta updates may not include volume, so we keep the last known value)
@@ -286,8 +286,8 @@ public class CandleAggregator {
         return dayOpen.getOrDefault(symbol, 0.0);
     }
 
-    public double getVwap(String symbol) {
-        return latestVwap.getOrDefault(symbol, 0.0);
+    public double getAtp(String symbol) {
+        return latestAtp.getOrDefault(symbol, 0.0);
     }
 
     public double getLtp(String symbol) {
@@ -381,7 +381,7 @@ public class CandleAggregator {
     private void clearDaily() {
         currentCandles.clear();
         dayOpen.clear();
-        latestVwap.clear();
+        latestAtp.clear();
         latestLtp.clear();
         latestChangePct.clear();
         lastCumulativeVol.clear();
@@ -409,7 +409,7 @@ public class CandleAggregator {
         currentCandles.clear();
         completedCandles.clear();
         dayOpen.clear();
-        latestVwap.clear();
+        latestAtp.clear();
         latestLtp.clear();
         latestChangePct.clear();
         lastCumulativeVol.clear();

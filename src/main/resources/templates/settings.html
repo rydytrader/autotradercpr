@@ -413,11 +413,11 @@
                     <div class="form-hint">Enable/disable signal categories. MPT/LPT qty factors reduce position size.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">VWAP Check</label>
+                    <label class="form-label">ATP Check</label>
                     <label class="form-check-label" style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem; margin-top:6px;">
-                        <input type="checkbox" id="enableVwapCheck" class="form-check-input"> Require VWAP confirmation
+                        <input type="checkbox" id="enableAtpCheck" class="form-check-input"> Require ATP confirmation
                     </label>
-                    <div class="form-hint">Buy only above VWAP, sell only below VWAP</div>
+                    <div class="form-hint">Buy only above ATP, sell only below ATP</div>
                 </div>
             </div>
         </div>
@@ -737,7 +737,7 @@
             // Scanner settings
             document.getElementById('signalSource').value = d.signalSource || 'TRADINGVIEW';
             document.getElementById('scannerTimeframe').value = d.scannerTimeframe != null ? d.scannerTimeframe : 15;
-            document.getElementById('enableVwapCheck').checked = d.enableVwapCheck !== false;
+            document.getElementById('enableAtpCheck').checked = d.enableAtpCheck !== false;
             document.getElementById('enableHpt').checked = d.enableHpt !== false;
             document.getElementById('enableMpt').checked = d.enableMpt === true;
             document.getElementById('enableLpt').checked = d.enableLpt === true;
@@ -837,7 +837,7 @@
                 chandelierMultiplier: parseFloat(document.getElementById('chandelierMultiplier').value) || 3.0,
                 signalSource: document.getElementById('signalSource').value,
                 scannerTimeframe: parseInt(document.getElementById('scannerTimeframe').value) || 15,
-                enableVwapCheck: document.getElementById('enableVwapCheck').checked,
+                enableAtpCheck: document.getElementById('enableAtpCheck').checked,
                 enableHpt: document.getElementById('enableHpt').checked,
                 enableMpt: document.getElementById('enableMpt').checked,
                 enableLpt: document.getElementById('enableLpt').checked,

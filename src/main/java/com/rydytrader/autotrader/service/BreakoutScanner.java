@@ -139,8 +139,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         boolean greenCandle = close > open;
         boolean redCandle = close < open;
 
-        // VWAP check
-        double vwap = candleAggregator.getVwap(fyersSymbol);
+        // ATP check
+        double atp = candleAggregator.getAtp(fyersSymbol);
 
         // Already in position for this symbol?
         String pos = PositionManager.getPosition(fyersSymbol);
@@ -156,16 +156,16 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
         // Check BUY signals — requires green candle (close > open)
         if (greenCandle) {
-            // VWAP check for buys: close must be above VWAP
-            if (riskSettings.isEnableVwapCheck() && vwap > 0 && close < vwap) {
-                // Only log if a breakout would have been detected without VWAP check
+            // ATP check for buys: close must be above ATP
+            if (riskSettings.isEnableAtpCheck() && atp > 0 && close < atp) {
+                // Only log if a breakout would have been detected without ATP check
                 String wouldMatch = detectBuyBreakout(open, high, low, close, levels, 0, broken);
                 if (wouldMatch != null) {
-                    eventService.log("[SCANNER] " + wouldMatch + " for " + fyersSymbol + " — skipped, close (" + String.format("%.2f", close) + ") below VWAP (" + String.format("%.2f", vwap) + ")");
+                    eventService.log("[SCANNER] " + wouldMatch + " for " + fyersSymbol + " — skipped, close (" + String.format("%.2f", close) + ") below ATP (" + String.format("%.2f", atp) + ")");
                 }
                 return;
             }
-            String buySetup = detectBuyBreakout(open, high, low, close, levels, vwap, broken);
+            String buySetup = detectBuyBreakout(open, high, low, close, levels, atp, broken);
             if (buySetup != null) {
                 String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, true);
                 if (!isProbabilityEnabled(prob)) {
@@ -176,30 +176,30 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 return;
             } else {
                 if (!broken.isEmpty()) {
-                    String wouldMatch = detectBuyBreakout(open, high, low, close, levels, vwap, Collections.emptySet());
+                    String wouldMatch = detectBuyBreakout(open, high, low, close, levels, atp, Collections.emptySet());
                     if (wouldMatch != null && broken.contains(wouldMatch)) {
                         eventService.log("[INFO] " + wouldMatch + " for " + fyersSymbol + " — skipped, level already traded");
                     }
                 }
-                // Debug: detect without VWAP to see if VWAP blocked it
-                String noVwapMatch = detectBuyBreakout(open, high, low, close, levels, 0, broken);
-                if (noVwapMatch != null) {
-                    eventService.log("[SCANNER] " + noVwapMatch + " for " + fyersSymbol + " — no breakout detected (O=" + String.format("%.2f", open) + " H=" + String.format("%.2f", high) + " L=" + String.format("%.2f", low) + " C=" + String.format("%.2f", close) + " VWAP=" + String.format("%.2f", vwap) + ")");
+                // Debug: detect without ATP to see if ATP blocked it
+                String noAtpMatch = detectBuyBreakout(open, high, low, close, levels, 0, broken);
+                if (noAtpMatch != null) {
+                    eventService.log("[SCANNER] " + noAtpMatch + " for " + fyersSymbol + " — no breakout detected (O=" + String.format("%.2f", open) + " H=" + String.format("%.2f", high) + " L=" + String.format("%.2f", low) + " C=" + String.format("%.2f", close) + " ATP=" + String.format("%.2f", atp) + ")");
                 }
             }
         }
 
         // Check SELL signals — requires red candle (close < open)
         if (redCandle) {
-            // VWAP check for sells: close must be below VWAP
-            if (riskSettings.isEnableVwapCheck() && vwap > 0 && close > vwap) {
+            // ATP check for sells: close must be below ATP
+            if (riskSettings.isEnableAtpCheck() && atp > 0 && close > atp) {
                 String wouldMatch = detectSellBreakout(open, high, low, close, levels, 0, broken);
                 if (wouldMatch != null) {
-                    eventService.log("[SCANNER] " + wouldMatch + " for " + fyersSymbol + " — skipped, close (" + String.format("%.2f", close) + ") above VWAP (" + String.format("%.2f", vwap) + ")");
+                    eventService.log("[SCANNER] " + wouldMatch + " for " + fyersSymbol + " — skipped, close (" + String.format("%.2f", close) + ") above ATP (" + String.format("%.2f", atp) + ")");
                 }
                 return;
             }
-            String sellSetup = detectSellBreakout(open, high, low, close, levels, vwap, broken);
+            String sellSetup = detectSellBreakout(open, high, low, close, levels, atp, broken);
             if (sellSetup != null) {
                 String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, false);
                 if (!isProbabilityEnabled(prob)) {
@@ -210,15 +210,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             } else {
                 // No sell breakout detected — log if close is below a key level for debugging
                 if (!broken.isEmpty()) {
-                    String wouldMatch = detectSellBreakout(open, high, low, close, levels, vwap, Collections.emptySet());
+                    String wouldMatch = detectSellBreakout(open, high, low, close, levels, atp, Collections.emptySet());
                     if (wouldMatch != null && broken.contains(wouldMatch)) {
                         eventService.log("[INFO] " + wouldMatch + " for " + fyersSymbol + " — skipped, level already traded");
                     }
                 }
-                // Debug: detect without VWAP to see if VWAP blocked it
-                String noVwapMatch = detectSellBreakout(open, high, low, close, levels, 0, broken);
-                if (noVwapMatch != null) {
-                    eventService.log("[SCANNER] " + noVwapMatch + " for " + fyersSymbol + " — no breakout detected (O=" + String.format("%.2f", open) + " H=" + String.format("%.2f", high) + " L=" + String.format("%.2f", low) + " C=" + String.format("%.2f", close) + " VWAP=" + String.format("%.2f", vwap) + ")");
+                // Debug: detect without ATP to see if ATP blocked it
+                String noAtpMatch = detectSellBreakout(open, high, low, close, levels, 0, broken);
+                if (noAtpMatch != null) {
+                    eventService.log("[SCANNER] " + noAtpMatch + " for " + fyersSymbol + " — no breakout detected (O=" + String.format("%.2f", open) + " H=" + String.format("%.2f", high) + " L=" + String.format("%.2f", low) + " C=" + String.format("%.2f", close) + " ATP=" + String.format("%.2f", atp) + ")");
                 }
             }
         }
@@ -232,9 +232,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      *   Path 2 (wick rejection):    open above level, low dips below level, close above — buyers defended
      */
     private String detectBuyBreakout(double open, double high, double low, double close,
-                                      CprLevels levels, double vwap, Set<String> broken) {
-        // VWAP check for buys: close must be above VWAP
-        if (riskSettings.isEnableVwapCheck() && vwap > 0 && close < vwap) return null;
+                                      CprLevels levels, double atp, Set<String> broken) {
+        // ATP check for buys: close must be above ATP
+        if (riskSettings.isEnableAtpCheck() && atp > 0 && close < atp) return null;
 
         double r4 = levels.getR4(), r3 = levels.getR3(), r2 = levels.getR2();
         double r1 = levels.getR1(), ph = levels.getPh();
@@ -274,9 +274,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      *   Path 2 (wick rejection):     open below level, high pokes above level, close below — sellers defended
      */
     private String detectSellBreakout(double open, double high, double low, double close,
-                                       CprLevels levels, double vwap, Set<String> broken) {
-        // VWAP check for sells: close must be below VWAP
-        if (riskSettings.isEnableVwapCheck() && vwap > 0 && close > vwap) return null;
+                                       CprLevels levels, double atp, Set<String> broken) {
+        // ATP check for sells: close must be below ATP
+        if (riskSettings.isEnableAtpCheck() && atp > 0 && close > atp) return null;
 
         double s4 = levels.getS4(), s3 = levels.getS3(), s2 = levels.getS2();
         double s1 = levels.getS1(), pl = levels.getPl();

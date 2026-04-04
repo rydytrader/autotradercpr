@@ -364,8 +364,8 @@
             <span id="ssSignals">--</span>
         </div>
         <div class="ss-item">
-            <span class="ss-label">VWAP:</span>
-            <span class="ss-value" id="ssVwap">--</span>
+            <span class="ss-label">ATP:</span>
+            <span class="ss-value" id="ssAtp">--</span>
         </div>
     </div>
 
@@ -682,7 +682,7 @@
             + '</div>'
             + '<div class="scan-data-grid">'
             + '  <div class="scan-data-item"><div class="scan-data-label">Day Open</div><div class="scan-data-value">' + fmt(d.dayOpen) + '</div></div>'
-            + '  <div class="scan-data-item"><div class="scan-data-label">VWAP</div><div class="scan-data-value">' + fmt(d.vwap) + '</div></div>'
+            + '  <div class="scan-data-item"><div class="scan-data-label">ATP</div><div class="scan-data-value">' + fmt(d.atp) + '</div></div>'
             + '  <div class="scan-data-item"><div class="scan-data-label">ATR</div><div class="scan-data-value">' + fmt(d.atr) + '</div></div>'
             + '</div>'
             + '<div class="scan-trend-row">'
@@ -743,7 +743,7 @@
             document.getElementById('ssSignals').innerHTML = sigs.length > 0
                 ? sigs.map(function(p) { return '<span class="scan-badge ' + p.toLowerCase() + '" style="margin-left:2px;">' + p + '</span>'; }).join(' ')
                 : '<span style="color:var(--text-muted);">None</span>';
-            document.getElementById('ssVwap').textContent = s.enableVwap ? 'ON' : 'OFF';
+            document.getElementById('ssAtp').textContent = s.enableAtp ? 'ON' : 'OFF';
         }).catch(function() {});
     }
 
