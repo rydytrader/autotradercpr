@@ -163,7 +163,7 @@ body {
 .app-layout { display: flex; min-height: 100vh; }
 
 .sidebar {
-    width: 240px; min-width: 240px;
+    width: 210px; min-width: 210px;
     background: var(--navbar-bg);
     backdrop-filter: blur(16px);
     border-right: 1px solid var(--border);
@@ -177,6 +177,7 @@ body {
 /* Collapsed sidebar */
 .sidebar.collapsed { width: 56px; min-width: 56px; }
 .sidebar.collapsed .sidebar-brand-text { display: none; }
+.sidebar.collapsed .sidebar-brand { justify-content: center; padding: 14px 0; }
 .sidebar.collapsed .sidebar-nav-label { display: none; }
 .sidebar.collapsed .sidebar-nav { padding: 14px 4px; }
 .sidebar.collapsed .sidebar-nav-section { display: flex; justify-content: center !important; padding: 10px 0; margin: 0; }
@@ -206,12 +207,13 @@ body {
 }
 .sidebar-collapse-btn:hover { color: var(--text-secondary); }
 
-.app-main { flex: 1; margin-left: 240px; width: calc(100% - 240px); display: flex; flex-direction: column; min-height: 100vh; transition: margin-left 0.2s ease, width 0.2s ease; }
+.app-main { flex: 1; margin-left: 210px; width: calc(100% - 210px); display: flex; flex-direction: column; min-height: 100vh; transition: margin-left 0.2s ease, width 0.2s ease; }
 .app-main.sidebar-collapsed { margin-left: 56px; width: calc(100% - 56px); }
 
 /* Prevent flash on page load when sidebar is collapsed */
 html.sidebar-is-collapsed .sidebar { width: 56px; min-width: 56px; }
 html.sidebar-is-collapsed .sidebar .sidebar-brand-text { display: none; }
+html.sidebar-is-collapsed .sidebar .sidebar-brand { justify-content: center; padding: 14px 0; }
 html.sidebar-is-collapsed .sidebar .sidebar-nav-label { display: none; }
 html.sidebar-is-collapsed .sidebar .sidebar-nav { padding: 14px 4px; }
 html.sidebar-is-collapsed .sidebar .sidebar-nav-section { display: flex; justify-content: center !important; padding: 10px 0; margin: 0; }

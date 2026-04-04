@@ -67,7 +67,7 @@ public class ViewController {
     public void redirectToFyers(HttpServletResponse response) throws IOException {
         String loginUrl = "https://api-t1.fyers.in/api/v3/generate-authcode"
                 + "?client_id=" + fyersProperties.getClientId()
-                + "&redirect_uri=https://app.cprautotrader.com/fyers/callback"
+                + "&redirect_uri=https://app.traderedge.in/fyers/callback"
                 + "&response_type=code"
                 + "&state=sample";
         response.sendRedirect(loginUrl);
