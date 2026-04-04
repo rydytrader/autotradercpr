@@ -460,13 +460,14 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
-                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
-                        </label>
-                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
-                        </label>
-                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
-                        </label>
+                    <label class="form-label">Power Candle</label>
+                    <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
+                        <input type="checkbox" id="enableHighMomentum" style="width:18px;height:18px;accent-color:var(--accent-cyan);flex-shrink:0;">
+                        <span style="color:var(--text-secondary);font-size:0.82rem;font-family:var(--font-mono);">Change &ge;</span>
+                        <input type="number" id="highMomentumPct" class="form-control" step="0.5" min="1" max="10" style="width:55px;padding:5px 8px;font-size:0.82rem;text-align:center;">
+                        <span style="color:var(--text-secondary);font-size:0.82rem;font-family:var(--font-mono);">% | Close range &ge;</span>
+                        <input type="number" id="highMomentumClosingRange" class="form-control" step="5" min="50" max="100" style="width:55px;padding:5px 8px;font-size:0.82rem;text-align:center;">
+                        <span style="color:var(--text-secondary);font-size:0.82rem;font-family:var(--font-mono);">%</span>
                     </div>
                 </div>
             </div>
@@ -743,6 +744,9 @@
             document.getElementById('momentumMonthBreak').checked = d.momentumMonthBreak !== false;
             document.getElementById('momentum52Week').checked = d.momentum52Week !== false;
             document.getElementById('momentumVolumeMultiple').value = d.momentumVolumeMultiple || 2.0;
+            document.getElementById('enableHighMomentum').checked = d.enableHighMomentum !== false;
+            document.getElementById('highMomentumPct').value = d.highMomentumPct || 3.0;
+            document.getElementById('highMomentumClosingRange').value = d.highMomentumClosingRange || 85;
 
             const pnl    = d.todayPnl    || 0;
             const trades = d.todayTrades || 0;
@@ -840,6 +844,9 @@
                 momentumMonthBreak: document.getElementById('momentumMonthBreak').checked,
                 momentum52Week: document.getElementById('momentum52Week').checked,
                 momentumVolumeMultiple: parseFloat(document.getElementById('momentumVolumeMultiple').value) || 2.0,
+                enableHighMomentum: document.getElementById('enableHighMomentum').checked,
+                highMomentumPct: parseFloat(document.getElementById('highMomentumPct').value) || 3.0,
+                highMomentumClosingRange: parseFloat(document.getElementById('highMomentumClosingRange').value) || 85
             };
             const r = await fetch('/api/settings/risk', {
                 method: 'POST',

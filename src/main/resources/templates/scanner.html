@@ -664,6 +664,8 @@
             + ((d.cprTypes || [d.cprType]).filter(function(t){ return ['NARROW','INSIDE'].includes(t); }).map(function(t) { return '<span class="scan-badge ' + t.toLowerCase() + '">' + (t === 'NARROW' ? 'N' : 'I') + '</span>'; }).join(''))
             + (d.weeklyNarrow ? '<span class="scan-badge weekly-narrow">W</span>' : '')
             + ((d.momentumTags || []).map(function(t) {
+                if (t === 'HMB+') return '<span class="scan-badge momentum-high">HMB+</span>';
+                if (t === 'HMB-') return '<span class="scan-badge momentum-low">HMB-</span>';
                 var isHigh = t.includes('HIGH');
                 var cls = isHigh ? 'momentum-high' : 'momentum-low';
                 var label = '';
@@ -1167,6 +1169,8 @@ function showMomentumStocks() {
             + '<th>Tags</th></tr></thead><tbody>';
         stocks.forEach(function(s, idx) {
             var tagBadges = (s.tags || []).map(function(t) {
+                if (t === 'HMB+') return '<span class="scan-badge momentum-high">HMB+</span>';
+                if (t === 'HMB-') return '<span class="scan-badge momentum-low">HMB-</span>';
                 var isHigh = t.includes('HIGH');
                 var cls = isHigh ? 'momentum-high' : 'momentum-low';
                 var label = '';

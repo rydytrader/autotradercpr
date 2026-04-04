@@ -145,6 +145,23 @@ public class MomentumService {
                 if (w52l > 0 && todayCpr.getClose() <= w52l && prevDayClose > w52l) m.addTag("52W_LOW_BREAK");
             }
 
+            // High Momentum candle: >3% change, 2x volume, closing range >85%
+            if (volumeOk && riskSettings.isEnableHighMomentum() && prevDayClose > 0) {
+                double changePct = (todayCpr.getClose() - prevDayClose) / prevDayClose * 100;
+                double range = todayCpr.getHigh() - todayCpr.getLow();
+                if (range > 0) {
+                    double closingRangePct = (todayCpr.getClose() - todayCpr.getLow()) / range * 100; // 100% = closed at high
+                    double hmThreshold = riskSettings.getHighMomentumPct();
+                    double hmClosingRange = riskSettings.getHighMomentumClosingRange();
+
+                    if (changePct >= hmThreshold && closingRangePct >= hmClosingRange) {
+                        m.addTag("HMB+"); // High Momentum Bullish
+                    } else if (changePct <= -hmThreshold && (100 - closingRangePct) >= hmClosingRange) {
+                        m.addTag("HMB-"); // High Momentum Bearish
+                    }
+                }
+            }
+
             metricsCache.put(symbol, m);
             if (m.hasMomentumTag()) count++;
         }
