@@ -263,7 +263,7 @@
     <nav class="sidebar-nav">
         <div class="sidebar-nav-section" style="display:flex;align-items:center;justify-content:space-between;"><button class="sidebar-collapse-btn" onclick="toggleSidebar()" title="Toggle sidebar" style="margin:0;padding:2px 6px;border:none;">☰</button></div>
         <a href="/home" data-tooltip="Home" class="sidebar-nav-item"><span class="sidebar-nav-icon" style="font-size:1.3rem;">&#8962;</span><span class="sidebar-nav-label">Home</span></a>
-        <a href="/scanner" data-tooltip="Watchlist" class="sidebar-nav-item active"><span class="sidebar-nav-icon">&#9678;</span><span class="sidebar-nav-label">Watchlist</span></a>
+        <a href="/scanner" data-tooltip="Scanner" class="sidebar-nav-item active"><span class="sidebar-nav-icon">&#9678;</span><span class="sidebar-nav-label">Scanner</span></a>
         <a href="/positions" data-tooltip="Positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">&#11041;</span><span class="sidebar-nav-label">Positions</span></a>
         <a href="/trades" data-tooltip="Trade Log" class="sidebar-nav-item"><span class="sidebar-nav-icon">&#8862;</span><span class="sidebar-nav-label">Trade Log</span></a>
         <a href="/journal" data-tooltip="Journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">&#9783;</span><span class="sidebar-nav-label">Journal</span></a>
@@ -297,7 +297,7 @@
 
     <div class="page-header">
         <div>
-            <div class="page-title">Watchlist</div>
+            <div class="page-title">Scanner</div>
             <div class="page-subtitle">CPR Breakout and Momentum Stocks</div>
         </div>
         <div style="display:flex; gap:8px;">
@@ -397,6 +397,7 @@
             <button class="filter-btn" onclick="setFilter('WEEK_HIGH_BREAK', this)">Week Break</button>
             <button class="filter-btn" onclick="setFilter('MONTH_HIGH_BREAK', this)">Month Break</button>
             <button class="filter-btn" onclick="setFilter('52W_HIGH_BREAK', this)">52W H/L</button>
+            <button class="filter-btn" onclick="setFilter('HMB', this)">Power Candle</button>
         </span>
         <div class="filter-sep"></div>
         <button class="filter-btn" onclick="toggleSignalFilter(this)">Has Signal</button>
@@ -545,6 +546,8 @@
                     if (!types.includes('NARROW') && !types.includes('INSIDE')) return false;
                 } else if (cprFilter === 'MOMENTUM') {
                     if (mTags.length === 0) return false;
+                } else if (cprFilter === 'HMB') {
+                    if (!mTags.includes('HMB+') && !mTags.includes('HMB-')) return false;
                 } else if (cprFilter === 'WEEK_HIGH_BREAK' || cprFilter === 'MONTH_HIGH_BREAK' || cprFilter === '52W_HIGH_BREAK') {
                     var lowVariant = cprFilter.replace('HIGH', 'LOW');
                     if (!mTags.includes(cprFilter) && !mTags.includes(lowVariant)) return false;

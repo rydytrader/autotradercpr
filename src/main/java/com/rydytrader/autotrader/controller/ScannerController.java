@@ -95,8 +95,8 @@ public class ScannerController {
             }
         }
 
-        // Add momentum tags to existing cards + add momentum-only stocks
-        for (var m : momentumService.getMomentumStocks()) {
+        // Add momentum tags to existing cards + add momentum-only stocks (if enabled)
+        if (riskSettings.isEnableMomentumScanner()) for (var m : momentumService.getMomentumStocks()) {
             String fyers = "NSE:" + m.getSymbol() + "-EQ";
 
             // Find existing card or create new one
