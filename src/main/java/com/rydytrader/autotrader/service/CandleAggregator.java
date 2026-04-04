@@ -130,6 +130,7 @@ public class CandleAggregator {
         String symbol = raw.fyersSymbol;
         double ltp = raw.ltp;
         if (ltp <= 0) return;
+        if (raw.openInterest > 0) latestOI.put(symbol, raw.openInterest);
 
         // Ignore pre-market ticks (before 9:15 AM)
         long nowMinute = ZonedDateTime.now(IST).toLocalTime().getHour() * 60L
@@ -180,12 +181,15 @@ public class CandleAggregator {
                 c.low = ltp;
                 c.close = ltp;
                 c.volAtStart = cumVol;
+                c.oiOpen = raw.openInterest;
+                c.oiClose = raw.openInterest;
                 return c;
             }
             // Update existing candle
             if (ltp > existing.high) existing.high = ltp;
             if (ltp < existing.low) existing.low = ltp;
             existing.close = ltp;
+            if (raw.openInterest > 0) existing.oiClose = raw.openInterest;
             // Adjust volAtStart on first tick after mid-candle restart
             if (existing.volAtStart == -1 && cumVol > 0) {
                 existing.volAtStart = cumVol - existing.volume;
@@ -260,6 +264,9 @@ public class CandleAggregator {
         Deque<CandleBar> history = completedCandles.get(symbol);
         history.addLast(candle);
         while (history.size() > 20) history.pollFirst();
+
+        // Compute OI buildup classification
+        computeOIBuildUp(symbol);
 
         // Notify listeners
         for (CandleCloseListener listener : listeners) {
@@ -425,10 +432,43 @@ public class CandleAggregator {
         public double close;
         public long volume;      // candle volume (delta of cumulative vol)
         public long volAtStart;  // cumulative vol when candle opened (internal)
+        public long oiOpen;      // OI at candle start
+        public long oiClose;     // OI at candle end (latest)
 
         public double trueRange(CandleBar prev) {
             if (prev == null) return high - low;
             return Math.max(high - low, Math.max(Math.abs(high - prev.close), Math.abs(low - prev.close)));
         }
+    }
+
+    // ── OI buildup classification ────────────────────────────────────────────
+
+    private final ConcurrentHashMap<String, String> oiBuildUp = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> latestOI = new ConcurrentHashMap<>();
+
+    public long getOI(String symbol) { return latestOI.getOrDefault(symbol, 0L); }
+    public String getOIBuildUp(String symbol) { return oiBuildUp.getOrDefault(symbol, ""); }
+
+    private void computeOIBuildUp(String symbol) {
+        Deque<CandleBar> history = completedCandles.get(symbol);
+        if (history == null || history.size() < 2) return;
+
+        var iter = history.descendingIterator();
+        CandleBar current = iter.next();
+        CandleBar prev = iter.next();
+
+        if (prev.oiClose <= 0 || current.oiClose <= 0) return;
+
+        long oiChange = current.oiClose - prev.oiClose;
+        double priceChange = current.close - prev.close;
+
+        String classification;
+        if (oiChange > 0 && priceChange > 0) classification = "LONG_BUILDUP";
+        else if (oiChange > 0 && priceChange < 0) classification = "SHORT_BUILDUP";
+        else if (oiChange < 0 && priceChange > 0) classification = "SHORT_COVERING";
+        else if (oiChange < 0 && priceChange < 0) classification = "LONG_UNWINDING";
+        else classification = "";
+
+        oiBuildUp.put(symbol, classification);
     }
 }

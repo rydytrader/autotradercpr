@@ -68,6 +68,8 @@
         .scan-badge.weekly-narrow { background: rgba(139,92,246,0.15); color: #8b5cf6; font-weight: 700; }
         .scan-badge.momentum-high { background: rgba(52,211,153,0.12); color: var(--accent-green); font-weight: 700; }
         .scan-badge.momentum-low { background: rgba(248,113,113,0.12); color: var(--accent-red); font-weight: 700; }
+        .scan-badge.oi-sc { background: rgba(99,179,237,0.12); color: var(--accent-blue); font-weight: 700; }
+        .scan-badge.oi-lu { background: rgba(251,146,60,0.12); color: #fb923c; font-weight: 700; }
 
         .scan-price-row {
             display: flex; align-items: baseline; gap: 10px;
@@ -398,6 +400,10 @@
             <button class="filter-btn" onclick="setFilter('MONTH_HIGH_BREAK', this)">Month Break</button>
             <button class="filter-btn" onclick="setFilter('52W_HIGH_BREAK', this)">52W H/L</button>
             <button class="filter-btn" onclick="setFilter('HMB', this)">Power Candle</button>
+            <button class="filter-btn" onclick="setFilter('LONG_BUILDUP', this)" style="color:var(--accent-green)">LB</button>
+            <button class="filter-btn" onclick="setFilter('SHORT_BUILDUP', this)" style="color:var(--accent-red)">SB</button>
+            <button class="filter-btn" onclick="setFilter('SHORT_COVERING', this)" style="color:var(--accent-blue)">SC</button>
+            <button class="filter-btn" onclick="setFilter('LONG_UNWINDING', this)" style="color:#fb923c">LU</button>
         </span>
         <div class="filter-sep"></div>
         <button class="filter-btn" onclick="toggleSignalFilter(this)">Has Signal</button>
@@ -548,6 +554,8 @@
                     if (mTags.length === 0) return false;
                 } else if (cprFilter === 'HMB') {
                     if (!mTags.includes('HMB+') && !mTags.includes('HMB-')) return false;
+                } else if (cprFilter === 'LONG_BUILDUP' || cprFilter === 'SHORT_BUILDUP' || cprFilter === 'SHORT_COVERING' || cprFilter === 'LONG_UNWINDING') {
+                    if ((d.oiBuildUp || '') !== cprFilter) return false;
                 } else if (cprFilter === 'WEEK_HIGH_BREAK' || cprFilter === 'MONTH_HIGH_BREAK' || cprFilter === '52W_HIGH_BREAK') {
                     var lowVariant = cprFilter.replace('HIGH', 'LOW');
                     if (!mTags.includes(cprFilter) && !mTags.includes(lowVariant)) return false;
@@ -688,6 +696,7 @@
             + '  <div class="scan-data-item"><div class="scan-data-label">Day Open</div><div class="scan-data-value">' + fmt(d.dayOpen) + '</div></div>'
             + '  <div class="scan-data-item"><div class="scan-data-label">ATP</div><div class="scan-data-value">' + fmt(d.atp) + '</div></div>'
             + '  <div class="scan-data-item"><div class="scan-data-label">ATR</div><div class="scan-data-value">' + fmt(d.atr) + '</div></div>'
+            + (d.oiBuildUp ? '  <div class="scan-data-item"><div class="scan-data-label">OI</div><div class="scan-data-value"><span class="scan-badge ' + (d.oiBuildUp === 'LONG_BUILDUP' ? 'momentum-high' : d.oiBuildUp === 'SHORT_BUILDUP' ? 'momentum-low' : d.oiBuildUp === 'SHORT_COVERING' ? 'oi-sc' : 'oi-lu') + '">' + (d.oiBuildUp === 'LONG_BUILDUP' ? 'LB' : d.oiBuildUp === 'SHORT_BUILDUP' ? 'SB' : d.oiBuildUp === 'SHORT_COVERING' ? 'SC' : 'LU') + '</span></div></div>' : '')
             + '</div>'
             + '<div class="scan-trend-row">'
             + '  <span class="scan-trend"><span class="label">W:</span> <span class="' + wClass + '">' + wArrow + ' ' + wLabel + '</span></span>'
