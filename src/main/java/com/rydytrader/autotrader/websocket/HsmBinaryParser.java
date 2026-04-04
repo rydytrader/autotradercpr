@@ -383,9 +383,6 @@ public class HsmBinaryParser {
         Integer volRaw = meta.rawValues.get("vol_traded_today");
         if (volRaw != null) tick.volume = volRaw;
 
-        Integer oiRaw = meta.rawValues.get("OI");
-        if (oiRaw != null) tick.openInterest = oiRaw;
-
         return tick;
     }
 
@@ -453,7 +450,6 @@ public class HsmBinaryParser {
         public double low;
         public double atp;
         public long volume;
-        public long openInterest;
         public int messageNumber;
     }
 }
