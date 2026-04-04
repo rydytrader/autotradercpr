@@ -43,7 +43,8 @@ public class SecurityConfig {
 
     @Bean
     @org.springframework.core.annotation.Order(2)
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http,
+            org.springframework.security.core.userdetails.UserDetailsService userDetailsService) throws Exception {
         CsrfTokenRequestAttributeHandler csrfHandler = new CsrfTokenRequestAttributeHandler();
         csrfHandler.setCsrfRequestAttributeName("_csrf");
 
@@ -91,6 +92,7 @@ public class SecurityConfig {
                 .key("traderedge-remember-key-2026")
                 .tokenValiditySeconds(7 * 24 * 60 * 60) // 7 days
                 .rememberMeParameter("remember-me")
+                .userDetailsService(userDetailsService)
             )
             .logout(logout -> logout
                 .logoutUrl("/app-logout")
