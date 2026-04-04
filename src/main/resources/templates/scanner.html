@@ -66,9 +66,8 @@
         .scan-badge.narrow { background: rgba(99,179,237,0.12); color: var(--accent-blue); }
         .scan-badge.inside { background: rgba(251,191,36,0.12); color: var(--accent-yellow); }
         .scan-badge.weekly-narrow { background: rgba(139,92,246,0.15); color: #8b5cf6; font-weight: 700; }
-        .scan-badge.momentum-week { background: rgba(52,211,153,0.12); color: var(--accent-green); font-weight: 700; }
-        .scan-badge.momentum-month { background: rgba(251,146,60,0.12); color: #fb923c; font-weight: 700; }
-        .scan-badge.momentum-52w { background: rgba(139,92,246,0.12); color: #8b5cf6; font-weight: 700; }
+        .scan-badge.momentum-high { background: rgba(52,211,153,0.12); color: var(--accent-green); font-weight: 700; }
+        .scan-badge.momentum-low { background: rgba(248,113,113,0.12); color: var(--accent-red); font-weight: 700; }
 
         .scan-price-row {
             display: flex; align-items: baseline; gap: 10px;
@@ -382,8 +381,8 @@
         <span class="cpr-filter-group">
             <button class="filter-btn active" onclick="setFilter('all', this)">All</button>
             <button class="filter-btn" onclick="setFilter('CPR', this)" style="color:var(--accent-blue)">CPR</button>
-            <button class="filter-btn" onclick="setFilter('NARROW', this)" style="color:var(--accent-blue)">Narrow</button>
-            <button class="filter-btn" onclick="setFilter('INSIDE', this)" style="color:var(--accent-blue)">Inside</button>
+            <button class="filter-btn" onclick="setFilter('NARROW', this)">Narrow</button>
+            <button class="filter-btn" onclick="setFilter('INSIDE', this)">Inside</button>
             <button class="filter-btn" onclick="toggleWeeklyFilter(this)">Daily + Weekly Narrow</button>
         </span>
         <div class="filter-sep"></div>
@@ -544,7 +543,6 @@
                 var mTags = d.momentumTags || [];
                 if (cprFilter === 'CPR') {
                     if (!types.includes('NARROW') && !types.includes('INSIDE')) return false;
-                    if (!types.includes('NARROW') || !types.includes('INSIDE')) return false;
                 } else if (cprFilter === 'MOMENTUM') {
                     if (mTags.length === 0) return false;
                 } else if (cprFilter === 'WEEK_HIGH_BREAK' || cprFilter === 'MONTH_HIGH_BREAK' || cprFilter === '52W_HIGH_BREAK') {
@@ -666,8 +664,12 @@
             + ((d.cprTypes || [d.cprType]).filter(function(t){ return ['NARROW','INSIDE'].includes(t); }).map(function(t) { return '<span class="scan-badge ' + t.toLowerCase() + '">' + (t === 'NARROW' ? 'N' : 'I') + '</span>'; }).join(''))
             + (d.weeklyNarrow ? '<span class="scan-badge weekly-narrow">W</span>' : '')
             + ((d.momentumTags || []).map(function(t) {
-                var cls = t.includes('WEEK') ? 'momentum-week' : t.includes('MONTH') ? 'momentum-month' : 'momentum-52w';
-                var label = t.includes('WEEK') ? 'WB' : t.includes('MONTH') ? 'MB' : '52B';
+                var isHigh = t.includes('HIGH');
+                var cls = isHigh ? 'momentum-high' : 'momentum-low';
+                var label = '';
+                if (t.includes('WEEK')) label = isHigh ? 'WHB' : 'WLB';
+                else if (t.includes('MONTH')) label = isHigh ? 'MHB' : 'MLB';
+                else label = isHigh ? '52HB' : '52LB';
                 return '<span class="scan-badge ' + cls + '">' + label + '</span>';
             }).join(''))
             + '  </span>'
@@ -983,7 +985,7 @@ function showWeeklyNarrowCpr() {
 <!-- Simulate Qty Modal -->
 <!-- Momentum Stocks Modal -->
 <div id="momentumModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px);" onclick="if(event.target===this)this.style.display='none'">
-    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:1000px; max-height:80vh; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
+    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:1200px; max-height:80vh; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
         <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border); background:var(--bg-section-header);">
             <div>
                 <div style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:var(--accent-green);">MOMENTUM STOCKS</div>
@@ -1157,28 +1159,34 @@ function showMomentumStocks() {
             return;
         }
         document.getElementById('momentumSubtitle').textContent = stocks.length + ' stocks | Vol threshold: ' + data.volumeThreshold + 'x';
-        var html = '<table class="data-table" style="width:100%"><thead><tr>'
-            + '<th>Symbol</th><th class="tr">Close</th><th class="tr">Vol Ratio</th>'
-            + '<th class="tr">Wk High</th><th class="tr">Wk Low</th>'
-            + '<th class="tr">Mo High</th><th class="tr">Mo Low</th>'
-            + '<th class="tr">52W High</th><th class="tr">52W Low</th>'
+        var html = '<table class="data-table" style="width:100%;font-size:.75rem;"><thead><tr>'
+            + '<th>#</th><th>Symbol</th><th class="tr">Close</th><th class="tr">Vol</th>'
+            + '<th class="tr">Wk H</th><th class="tr">Wk L</th>'
+            + '<th class="tr">Mo H</th><th class="tr">Mo L</th>'
+            + '<th class="tr">52W H</th><th class="tr">52W L</th>'
             + '<th>Tags</th></tr></thead><tbody>';
-        stocks.forEach(function(s) {
+        stocks.forEach(function(s, idx) {
             var tagBadges = (s.tags || []).map(function(t) {
-                var cls = t.includes('WEEK') ? 'momentum-week' : t.includes('MONTH') ? 'momentum-month' : 'momentum-52w';
-                var label = t.includes('WEEK') ? 'WB' : t.includes('MONTH') ? 'MB' : '52B';
+                var isHigh = t.includes('HIGH');
+                var cls = isHigh ? 'momentum-high' : 'momentum-low';
+                var label = '';
+                if (t.includes('WEEK')) label = isHigh ? 'WHB' : 'WLB';
+                else if (t.includes('MONTH')) label = isHigh ? 'MHB' : 'MLB';
+                else label = isHigh ? '52HB' : '52LB';
                 return '<span class="scan-badge ' + cls + '">' + label + '</span>';
             }).join(' ');
+            var f = function(v) { return v > 0 ? v.toFixed(2) : '—'; };
             html += '<tr>'
-                + '<td style="font-family:var(--font-mono);font-size:.78rem;font-weight:600;">' + s.symbol + '</td>'
-                + '<td class="tr" style="font-family:var(--font-mono);font-size:.78rem;">' + s.close.toFixed(2) + '</td>'
-                + '<td class="tr" style="font-family:var(--font-mono);font-size:.78rem;color:var(--accent-cyan);">' + s.volumeRatio + 'x</td>'
-                + '<td class="tr" style="font-family:var(--font-mono);font-size:.75rem;">' + (s.prevWeekHigh > 0 ? s.prevWeekHigh.toFixed(2) : '—') + '</td>'
-                + '<td class="tr" style="font-family:var(--font-mono);font-size:.75rem;">' + (s.prevWeekLow > 0 ? s.prevWeekLow.toFixed(2) : '—') + '</td>'
-                + '<td class="tr" style="font-family:var(--font-mono);font-size:.75rem;">' + (s.prevMonthHigh > 0 ? s.prevMonthHigh.toFixed(2) : '—') + '</td>'
-                + '<td class="tr" style="font-family:var(--font-mono);font-size:.75rem;">' + (s.prevMonthLow > 0 ? s.prevMonthLow.toFixed(2) : '—') + '</td>'
-                + '<td class="tr" style="font-family:var(--font-mono);font-size:.75rem;">' + (s.fiftyTwoWeekHigh > 0 ? s.fiftyTwoWeekHigh.toFixed(2) : '—') + '</td>'
-                + '<td class="tr" style="font-family:var(--font-mono);font-size:.75rem;">' + (s.fiftyTwoWeekLow > 0 ? s.fiftyTwoWeekLow.toFixed(2) : '—') + '</td>'
+                + '<td style="color:var(--text-muted);">' + (idx + 1) + '</td>'
+                + '<td style="font-weight:600;">' + s.symbol + '</td>'
+                + '<td class="tr">' + s.close.toFixed(2) + '</td>'
+                + '<td class="tr" style="color:var(--accent-cyan);">' + s.volumeRatio + 'x</td>'
+                + '<td class="tr" style="color:var(--accent-green);">' + f(s.prevWeekHigh) + '</td>'
+                + '<td class="tr" style="color:var(--accent-red);">' + f(s.prevWeekLow) + '</td>'
+                + '<td class="tr" style="color:var(--accent-green);">' + f(s.prevMonthHigh) + '</td>'
+                + '<td class="tr" style="color:var(--accent-red);">' + f(s.prevMonthLow) + '</td>'
+                + '<td class="tr" style="color:var(--accent-green);">' + f(s.fiftyTwoWeekHigh) + '</td>'
+                + '<td class="tr" style="color:var(--accent-red);">' + f(s.fiftyTwoWeekLow) + '</td>'
                 + '<td>' + tagBadges + '</td>'
                 + '</tr>';
         });

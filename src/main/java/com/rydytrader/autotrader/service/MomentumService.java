@@ -122,20 +122,27 @@ public class MomentumService {
             if (monthHL[0] == 0 && monthHL[1] == 0) noMonthData++;
             if (!volumeOk && todayCpr.getVolume() > 0) volumeFailed++;
 
-            // Check momentum breaks (all require volume confirmation)
+            // Get the day-before-yesterday's close (to check freshness of break)
+            double prevDayClose = 0;
+            if (!history.isEmpty()) {
+                CprLevels prevDay = history.get(0).get(symbol);
+                if (prevDay != null) prevDayClose = prevDay.getClose();
+            }
+
+            // Check momentum breaks (all require volume confirmation + fresh break on last trading day)
             if (volumeOk && riskSettings.isMomentumWeekBreak()) {
-                if (weekHL[0] > 0 && todayCpr.getClose() > weekHL[0]) m.addTag("WEEK_HIGH_BREAK");
-                if (weekHL[1] > 0 && todayCpr.getClose() < weekHL[1]) m.addTag("WEEK_LOW_BREAK");
+                if (weekHL[0] > 0 && todayCpr.getClose() > weekHL[0] && prevDayClose <= weekHL[0]) m.addTag("WEEK_HIGH_BREAK");
+                if (weekHL[1] > 0 && todayCpr.getClose() < weekHL[1] && prevDayClose >= weekHL[1]) m.addTag("WEEK_LOW_BREAK");
             }
             if (volumeOk && riskSettings.isMomentumMonthBreak()) {
-                if (monthHL[0] > 0 && todayCpr.getClose() > monthHL[0]) m.addTag("MONTH_HIGH_BREAK");
-                if (monthHL[1] > 0 && todayCpr.getClose() < monthHL[1]) m.addTag("MONTH_LOW_BREAK");
+                if (monthHL[0] > 0 && todayCpr.getClose() > monthHL[0] && prevDayClose <= monthHL[0]) m.addTag("MONTH_HIGH_BREAK");
+                if (monthHL[1] > 0 && todayCpr.getClose() < monthHL[1] && prevDayClose >= monthHL[1]) m.addTag("MONTH_LOW_BREAK");
             }
             if (volumeOk && riskSettings.isMomentum52Week()) {
                 double w52h = todayCpr.getFiftyTwoWeekHigh();
                 double w52l = todayCpr.getFiftyTwoWeekLow();
-                if (w52h > 0 && todayCpr.getClose() >= w52h) m.addTag("52W_HIGH_BREAK");
-                if (w52l > 0 && todayCpr.getClose() <= w52l) m.addTag("52W_LOW_BREAK");
+                if (w52h > 0 && todayCpr.getClose() >= w52h && prevDayClose < w52h) m.addTag("52W_HIGH_BREAK");
+                if (w52l > 0 && todayCpr.getClose() <= w52l && prevDayClose > w52l) m.addTag("52W_LOW_BREAK");
             }
 
             metricsCache.put(symbol, m);
