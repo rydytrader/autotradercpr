@@ -264,10 +264,18 @@ public class ScannerController {
         for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
             if (!added.contains(cpr.getSymbol())) {
                 csv.append("NSE:").append(cpr.getSymbol()).append(",");
+                added.add(cpr.getSymbol());
+            }
+        }
+        // Momentum stocks (skip duplicates)
+        for (var m : momentumService.getMomentumStocks()) {
+            if (!added.contains(m.getSymbol())) {
+                csv.append("NSE:").append(m.getSymbol()).append(",");
+                added.add(m.getSymbol());
             }
         }
 
-        String filename = "cpr-watchlist-" + bhavcopyService.getCachedDate() + ".txt";
+        String filename = "watchlist-" + bhavcopyService.getCachedDate() + ".txt";
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
             .contentType(MediaType.TEXT_PLAIN)
