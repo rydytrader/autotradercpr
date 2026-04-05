@@ -67,6 +67,10 @@ public class HmmRegimeService {
     public void init() {
         loadFromFile();
         log.info("[HmmRegime] Loaded history for {} symbols", closeHistory.size());
+        // Classify on startup using loaded history (so regimes are available without waiting for cron)
+        if (!closeHistory.isEmpty()) {
+            new Thread(this::classifyAll, "hmm-classify-startup").start();
+        }
     }
 
     /** Runs daily after BhavcopyService + MomentumService (8:47 AM). */
