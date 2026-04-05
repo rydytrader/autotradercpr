@@ -810,6 +810,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         for (var cpr : bhavcopyService.getInsideCprStocks()) {
             symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
         }
+        for (var cpr : bhavcopyService.getWeeklyNarrowCprStocks()) {
+            symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
+        }
         // Add momentum stocks (if enabled)
         if (riskSettings.isEnableMomentumScanner()) {
             for (var m : momentumService.getMomentumStocks()) {

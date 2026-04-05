@@ -70,36 +70,87 @@ public class ScannerController {
             insideSymbols.add(cpr.getSymbol());
         }
 
-        // Collect narrow CPR stocks (mark if also inside)
+        // Collect narrow CPR stocks (mark if also inside) — filtered by NS/NL/W toggles
         Set<String> seen = new HashSet<>();
         for (CprLevels cpr : bhavcopyService.getNarrowCprStocks()) {
+            boolean isWeekly = weeklyNarrowSymbols.contains(cpr.getSymbol());
+            String nrt = cpr.getNarrowRangeType();
+            boolean rangeMatches = ("SMALL".equals(nrt) && riskSettings.isScanIncludeNS())
+                                || ("LARGE".equals(nrt) && riskSettings.isScanIncludeNL())
+                                || (nrt == null && (riskSettings.isScanIncludeNS() || riskSettings.isScanIncludeNL())); // unclassified → include if any narrow enabled
+            boolean weeklyMatches = isWeekly && riskSettings.isScanIncludeWeeklyNarrow();
+            if (!rangeMatches && !weeklyMatches) continue;
+
             String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
             List<String> types = new ArrayList<>();
             types.add("NARROW");
             if (insideSymbols.contains(cpr.getSymbol())) types.add("INSIDE");
             Map<String, Object> card = buildCard(fyers, cpr, "NARROW", positionSymbols);
             card.put("cprTypes", types);
-            card.put("weeklyNarrow", weeklyNarrowSymbols.contains(cpr.getSymbol()));
+            card.put("weeklyNarrow", isWeekly);
+            card.put("narrowRangeType", nrt);
+            card.put("rangeZScore", cpr.getRangeZScore());
             result.add(card);
             seen.add(fyers);
         }
 
-        // Collect inside-only CPR stocks
-        for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
-            String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
-            if (!seen.contains(fyers)) {
+        // Collect weekly-narrow-only CPR stocks (those not already added via daily narrow)
+        if (riskSettings.isScanIncludeWeeklyNarrow()) {
+            for (CprLevels cpr : bhavcopyService.getWeeklyNarrowCprStocks()) {
+                String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
+                if (seen.contains(fyers)) continue;
+                // Use the daily-bhavcopy CprLevels for this symbol (for LTP, H/L etc.)
+                CprLevels dailyCpr = bhavcopyService.getCprLevels(cpr.getSymbol());
+                if (dailyCpr == null) dailyCpr = cpr;
                 List<String> types = new ArrayList<>();
-                types.add("INSIDE");
-                Map<String, Object> card = buildCard(fyers, cpr, "INSIDE", positionSymbols);
+                if (insideSymbols.contains(cpr.getSymbol())) types.add("INSIDE");
+                Map<String, Object> card = buildCard(fyers, dailyCpr, types.isEmpty() ? "WEEKLY_NARROW" : "INSIDE", positionSymbols);
                 card.put("cprTypes", types);
-                card.put("weeklyNarrow", weeklyNarrowSymbols.contains(cpr.getSymbol()));
+                card.put("weeklyNarrow", true);
+                card.put("narrowRangeType", dailyCpr.getNarrowRangeType());
+                card.put("rangeZScore", dailyCpr.getRangeZScore());
                 result.add(card);
                 seen.add(fyers);
             }
         }
 
-        // Add momentum tags to existing cards + add momentum-only stocks (if enabled)
-        if (riskSettings.isEnableMomentumScanner()) for (var m : momentumService.getMomentumStocks()) {
+        // Collect inside-only CPR stocks — filtered by IS/IL toggles
+        for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
+            String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
+            if (seen.contains(fyers)) continue;
+            String nrt = cpr.getNarrowRangeType();
+            boolean rangeMatches = ("SMALL".equals(nrt) && riskSettings.isScanIncludeIS())
+                                || ("LARGE".equals(nrt) && riskSettings.isScanIncludeIL())
+                                || (nrt == null && (riskSettings.isScanIncludeIS() || riskSettings.isScanIncludeIL()));
+            if (!rangeMatches) continue;
+
+            List<String> types = new ArrayList<>();
+            types.add("INSIDE");
+            Map<String, Object> card = buildCard(fyers, cpr, "INSIDE", positionSymbols);
+            card.put("cprTypes", types);
+            card.put("weeklyNarrow", weeklyNarrowSymbols.contains(cpr.getSymbol()));
+            card.put("narrowRangeType", nrt);
+            card.put("rangeZScore", cpr.getRangeZScore());
+            result.add(card);
+            seen.add(fyers);
+        }
+
+        // Add momentum tags to existing cards + add momentum-only stocks.
+        // Momentum Scanner (week/month/52w breaks) and Power Candle (HMB+/HMB-) are
+        // independent: a stock with only power-candle tags qualifies if Power Candle
+        // is on, even when Momentum Scanner is off (and vice versa).
+        boolean momentumOn = riskSettings.isEnableMomentumScanner();
+        boolean powerOn = riskSettings.isEnableHighMomentum();
+        for (var m : momentumService.getMomentumStocks()) {
+            // Filter tags by which scanners are enabled
+            List<String> activeTags = new ArrayList<>();
+            for (String tag : m.getTags()) {
+                boolean isPowerTag = tag.equals("HMB+") || tag.equals("HMB-");
+                if (isPowerTag && powerOn) activeTags.add(tag);
+                else if (!isPowerTag && momentumOn) activeTags.add(tag);
+            }
+            if (activeTags.isEmpty()) continue;
+
             String fyers = "NSE:" + m.getSymbol() + "-EQ";
 
             // Find existing card or create new one
@@ -112,23 +163,39 @@ public class ScannerController {
                 // Merge momentum tags into existing CPR card
                 @SuppressWarnings("unchecked")
                 List<String> types = (List<String>) existingCard.get("cprTypes");
-                types.addAll(m.getTags());
-                existingCard.put("momentumTags", m.getTags());
+                types.addAll(activeTags);
+                existingCard.put("momentumTags", activeTags);
                 existingCard.put("volumeRatio", Math.round(m.getVolumeRatio() * 10.0) / 10.0);
             } else {
                 // New momentum-only stock — build card from bhavcopy data
                 CprLevels cpr = bhavcopyService.getCprLevels(m.getSymbol());
                 if (cpr != null) {
                     Map<String, Object> card = buildCard(fyers, cpr, "MOMENTUM", positionSymbols);
-                    List<String> types = new ArrayList<>(m.getTags());
+                    List<String> types = new ArrayList<>(activeTags);
                     card.put("cprTypes", types);
                     card.put("weeklyNarrow", false);
-                    card.put("momentumTags", m.getTags());
+                    card.put("momentumTags", activeTags);
                     card.put("volumeRatio", Math.round(m.getVolumeRatio() * 10.0) / 10.0);
                     result.add(card);
                     seen.add(fyers);
                 }
             }
+        }
+
+        // HMM regime filter gate — if enabled, stock must pass regime + confidence check
+        if (riskSettings.isEnableRegimeFilter()) {
+            double minConf = riskSettings.getRegimeMinConfidence() / 100.0;
+            result.removeIf(card -> {
+                String regime = (String) card.get("regime");
+                Object confObj = card.get("regimeConfidence");
+                double conf = confObj instanceof Number ? ((Number) confObj).doubleValue() : 0.0;
+                if (regime == null || regime.isEmpty()) return true; // no regime data → drop
+                if (conf < minConf) return true;
+                if ("BULLISH".equals(regime)) return !riskSettings.isRegimeIncludeBullish();
+                if ("BEARISH".equals(regime)) return !riskSettings.isRegimeIncludeBearish();
+                if ("NEUTRAL".equals(regime)) return !riskSettings.isRegimeIncludeNeutral();
+                return false;
+            });
         }
 
         return result;
@@ -264,29 +331,15 @@ public class ScannerController {
 
     @GetMapping("/api/scanner/tv-watchlist")
     public ResponseEntity<String> getTvWatchlist() {
+        // Export exactly what's shown on the Watchlist page (same filters applied)
         StringBuilder csv = new StringBuilder();
-        Set<String> added = new HashSet<>();
-
-        // Narrow CPR stocks first
-        for (CprLevels cpr : bhavcopyService.getNarrowCprStocks()) {
-            csv.append("NSE:").append(cpr.getSymbol()).append(",");
-            added.add(cpr.getSymbol());
-        }
-        // Inside CPR stocks (skip duplicates)
-        for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
-            if (!added.contains(cpr.getSymbol())) {
-                csv.append("NSE:").append(cpr.getSymbol()).append(",");
-                added.add(cpr.getSymbol());
+        for (Map<String, Object> card : getWatchlist()) {
+            Object sym = card.get("symbol");
+            if (sym != null) {
+                String s = sym.toString().replaceAll("-EQ$", "");
+                csv.append(s).append(",");
             }
         }
-        // Momentum stocks (skip duplicates)
-        for (var m : momentumService.getMomentumStocks()) {
-            if (!added.contains(m.getSymbol())) {
-                csv.append("NSE:").append(m.getSymbol()).append(",");
-                added.add(m.getSymbol());
-            }
-        }
-
         String filename = "watchlist-" + bhavcopyService.getCachedDate() + ".txt";
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")

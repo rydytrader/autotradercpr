@@ -75,6 +75,18 @@ public class RiskSettingsStore {
         volatile boolean enableHighMomentum = true;
         volatile double  highMomentumPct = 3.0;       // min % change from previous close
         volatile double  highMomentumClosingRange = 85; // min closing range % (0-100)
+        // CPR Width scanner group toggles (decide which stocks enter the watchlist)
+        volatile boolean scanIncludeNS = true;   // Narrow + Small Range (z < -1.5)
+        volatile boolean scanIncludeNL = true;   // Narrow + Large Range
+        volatile boolean scanIncludeIS = true;   // Inside + Small Range
+        volatile boolean scanIncludeIL = false;  // Inside + Large Range
+        volatile boolean scanIncludeWeeklyNarrow = true; // Weekly Narrow CPR
+        // HMM regime filter gate (if enabled, stock must pass regime check)
+        volatile boolean enableRegimeFilter = false;
+        volatile boolean regimeIncludeBullish = true;
+        volatile boolean regimeIncludeBearish = true;
+        volatile boolean regimeIncludeNeutral = false;
+        volatile double  regimeMinConfidence = 60.0; // percent 0-100
     }
 
     private final Cfg live = new Cfg();
@@ -145,6 +157,16 @@ public class RiskSettingsStore {
     public boolean isEnableHighMomentum() { return cfg().enableHighMomentum; }
     public double getHighMomentumPct()    { return cfg().highMomentumPct; }
     public double getHighMomentumClosingRange() { return cfg().highMomentumClosingRange; }
+    public boolean isScanIncludeNS() { return cfg().scanIncludeNS; }
+    public boolean isScanIncludeNL() { return cfg().scanIncludeNL; }
+    public boolean isScanIncludeIS() { return cfg().scanIncludeIS; }
+    public boolean isScanIncludeIL() { return cfg().scanIncludeIL; }
+    public boolean isScanIncludeWeeklyNarrow() { return cfg().scanIncludeWeeklyNarrow; }
+    public boolean isEnableRegimeFilter() { return cfg().enableRegimeFilter; }
+    public boolean isRegimeIncludeBullish() { return cfg().regimeIncludeBullish; }
+    public boolean isRegimeIncludeBearish() { return cfg().regimeIncludeBearish; }
+    public boolean isRegimeIncludeNeutral() { return cfg().regimeIncludeNeutral; }
+    public double  getRegimeMinConfidence() { return cfg().regimeMinConfidence; }
 
     public void setSignalSource(String v)      { cfg().signalSource = v; }
     public void setScannerTimeframe(int v)     { cfg().scannerTimeframe = v; }
@@ -162,6 +184,16 @@ public class RiskSettingsStore {
     public void setEnableHighMomentum(boolean v) { cfg().enableHighMomentum = v; }
     public void setHighMomentumPct(double v)    { cfg().highMomentumPct = v; }
     public void setHighMomentumClosingRange(double v) { cfg().highMomentumClosingRange = v; }
+    public void setScanIncludeNS(boolean v) { cfg().scanIncludeNS = v; }
+    public void setScanIncludeNL(boolean v) { cfg().scanIncludeNL = v; }
+    public void setScanIncludeIS(boolean v) { cfg().scanIncludeIS = v; }
+    public void setScanIncludeIL(boolean v) { cfg().scanIncludeIL = v; }
+    public void setScanIncludeWeeklyNarrow(boolean v) { cfg().scanIncludeWeeklyNarrow = v; }
+    public void setEnableRegimeFilter(boolean v) { cfg().enableRegimeFilter = v; }
+    public void setRegimeIncludeBullish(boolean v) { cfg().regimeIncludeBullish = v; }
+    public void setRegimeIncludeBearish(boolean v) { cfg().regimeIncludeBearish = v; }
+    public void setRegimeIncludeNeutral(boolean v) { cfg().regimeIncludeNeutral = v; }
+    public void setRegimeMinConfidence(double v) { cfg().regimeMinConfidence = v; }
 
     public void setTradingStartTime(String v)  { cfg().tradingStartTime = v; }
     public void setTradingEndTime(String v)    { cfg().tradingEndTime = v; }
@@ -326,6 +358,16 @@ public class RiskSettingsStore {
             upsert("enableHighMomentum", String.valueOf(c.enableHighMomentum));
             upsert("highMomentumPct", String.valueOf(c.highMomentumPct));
             upsert("highMomentumClosingRange", String.valueOf(c.highMomentumClosingRange));
+            upsert("scanIncludeNS", String.valueOf(c.scanIncludeNS));
+            upsert("scanIncludeNL", String.valueOf(c.scanIncludeNL));
+            upsert("scanIncludeIS", String.valueOf(c.scanIncludeIS));
+            upsert("scanIncludeIL", String.valueOf(c.scanIncludeIL));
+            upsert("scanIncludeWeeklyNarrow", String.valueOf(c.scanIncludeWeeklyNarrow));
+            upsert("enableRegimeFilter", String.valueOf(c.enableRegimeFilter));
+            upsert("regimeIncludeBullish", String.valueOf(c.regimeIncludeBullish));
+            upsert("regimeIncludeBearish", String.valueOf(c.regimeIncludeBearish));
+            upsert("regimeIncludeNeutral", String.valueOf(c.regimeIncludeNeutral));
+            upsert("regimeMinConfidence", String.valueOf(c.regimeMinConfidence));
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to save {}: {}", mode, e.getMessage());
         }
@@ -397,6 +439,16 @@ public class RiskSettingsStore {
                     case "enableHighMomentum" -> c.enableHighMomentum = Boolean.parseBoolean(v);
                     case "highMomentumPct"    -> c.highMomentumPct = Double.parseDouble(v);
                     case "highMomentumClosingRange" -> c.highMomentumClosingRange = Double.parseDouble(v);
+                    case "scanIncludeNS" -> c.scanIncludeNS = Boolean.parseBoolean(v);
+                    case "scanIncludeNL" -> c.scanIncludeNL = Boolean.parseBoolean(v);
+                    case "scanIncludeIS" -> c.scanIncludeIS = Boolean.parseBoolean(v);
+                    case "scanIncludeIL" -> c.scanIncludeIL = Boolean.parseBoolean(v);
+                    case "scanIncludeWeeklyNarrow" -> c.scanIncludeWeeklyNarrow = Boolean.parseBoolean(v);
+                    case "enableRegimeFilter" -> c.enableRegimeFilter = Boolean.parseBoolean(v);
+                    case "regimeIncludeBullish" -> c.regimeIncludeBullish = Boolean.parseBoolean(v);
+                    case "regimeIncludeBearish" -> c.regimeIncludeBearish = Boolean.parseBoolean(v);
+                    case "regimeIncludeNeutral" -> c.regimeIncludeNeutral = Boolean.parseBoolean(v);
+                    case "regimeMinConfidence" -> c.regimeMinConfidence = Double.parseDouble(v);
                 }
             }
             log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} enableR4S4={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} chandelier={}x{}", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.enableR4S4, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.chandelierPeriod, c.chandelierMultiplier);

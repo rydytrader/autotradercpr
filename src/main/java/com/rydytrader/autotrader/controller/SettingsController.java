@@ -87,6 +87,16 @@ public class SettingsController {
         result.put("enableHighMomentum", riskSettings.isEnableHighMomentum());
         result.put("highMomentumPct", riskSettings.getHighMomentumPct());
         result.put("highMomentumClosingRange", riskSettings.getHighMomentumClosingRange());
+        result.put("scanIncludeNS", riskSettings.isScanIncludeNS());
+        result.put("scanIncludeNL", riskSettings.isScanIncludeNL());
+        result.put("scanIncludeIS", riskSettings.isScanIncludeIS());
+        result.put("scanIncludeIL", riskSettings.isScanIncludeIL());
+        result.put("scanIncludeWeeklyNarrow", riskSettings.isScanIncludeWeeklyNarrow());
+        result.put("enableRegimeFilter", riskSettings.isEnableRegimeFilter());
+        result.put("regimeIncludeBullish", riskSettings.isRegimeIncludeBullish());
+        result.put("regimeIncludeBearish", riskSettings.isRegimeIncludeBearish());
+        result.put("regimeIncludeNeutral", riskSettings.isRegimeIncludeNeutral());
+        result.put("regimeMinConfidence", riskSettings.getRegimeMinConfidence());
         result.put("todayPnl",         Math.round(todayPnl * 100.0) / 100.0);
         result.put("todayTrades",      todayTrades);
         return result;
@@ -148,6 +158,16 @@ public class SettingsController {
             if (body.containsKey("enableHighMomentum")) riskSettings.setEnableHighMomentum(Boolean.parseBoolean(body.get("enableHighMomentum").toString()));
             if (body.containsKey("highMomentumPct")) riskSettings.setHighMomentumPct(Double.parseDouble(body.get("highMomentumPct").toString()));
             if (body.containsKey("highMomentumClosingRange")) riskSettings.setHighMomentumClosingRange(Double.parseDouble(body.get("highMomentumClosingRange").toString()));
+            if (body.containsKey("scanIncludeNS")) riskSettings.setScanIncludeNS(Boolean.parseBoolean(body.get("scanIncludeNS").toString()));
+            if (body.containsKey("scanIncludeNL")) riskSettings.setScanIncludeNL(Boolean.parseBoolean(body.get("scanIncludeNL").toString()));
+            if (body.containsKey("scanIncludeIS")) riskSettings.setScanIncludeIS(Boolean.parseBoolean(body.get("scanIncludeIS").toString()));
+            if (body.containsKey("scanIncludeIL")) riskSettings.setScanIncludeIL(Boolean.parseBoolean(body.get("scanIncludeIL").toString()));
+            if (body.containsKey("scanIncludeWeeklyNarrow")) riskSettings.setScanIncludeWeeklyNarrow(Boolean.parseBoolean(body.get("scanIncludeWeeklyNarrow").toString()));
+            if (body.containsKey("enableRegimeFilter")) riskSettings.setEnableRegimeFilter(Boolean.parseBoolean(body.get("enableRegimeFilter").toString()));
+            if (body.containsKey("regimeIncludeBullish")) riskSettings.setRegimeIncludeBullish(Boolean.parseBoolean(body.get("regimeIncludeBullish").toString()));
+            if (body.containsKey("regimeIncludeBearish")) riskSettings.setRegimeIncludeBearish(Boolean.parseBoolean(body.get("regimeIncludeBearish").toString()));
+            if (body.containsKey("regimeIncludeNeutral")) riskSettings.setRegimeIncludeNeutral(Boolean.parseBoolean(body.get("regimeIncludeNeutral").toString()));
+            if (body.containsKey("regimeMinConfidence")) riskSettings.setRegimeMinConfidence(Double.parseDouble(body.get("regimeMinConfidence").toString()));
             riskSettings.saveFor(effectiveMode);
             return ResponseEntity.ok(Map.of("ok", true, "message", "Settings saved"));
         } catch (Exception e) {

@@ -423,6 +423,40 @@
         </div>
     </div>
 
+    <!-- CPR WIDTH SCANNER -->
+    <div class="section-card fade-in" style="margin-top:16px;">
+        <div class="section-header">
+            <div class="section-title">
+                <div class="section-title-dot" style="background: var(--accent-blue);"></div>
+                CPR Width Scanner
+            </div>
+        </div>
+        <div class="section-body">
+            <div class="form-grid">
+                <div class="form-group" style="grid-column: span 2;">
+                    <label class="form-label">Include in Watchlist</label>
+                    <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="scanIncludeNS" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:var(--accent-green);">NS</b> — Narrow + Small Range (z &lt; −1.5)
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="scanIncludeNL" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:#fb923c;">NL</b> — Narrow + Large Range
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="scanIncludeIS" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:var(--accent-green);">IS</b> — Inside + Small Range (z &lt; −1.5)
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="scanIncludeIL" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:#fb923c;">IL</b> — Inside + Large Range
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="scanIncludeWeeklyNarrow" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:#8b5cf6;">W</b> — Weekly Narrow CPR
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- MOMENTUM SCANNER -->
     <div class="section-card fade-in" style="margin-top:16px;">
         <div class="section-header">
@@ -459,15 +493,71 @@
                         </label>
                     </div>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Power Candle</label>
-                    <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
+            </div>
+        </div>
+    </div>
+
+    <!-- POWER CANDLE SCANNER -->
+    <div class="section-card fade-in" style="margin-top:16px;">
+        <div class="section-header">
+            <div class="section-title">
+                <div class="section-title-dot" style="background: var(--accent-red);"></div>
+                Power Candle Scanner
+            </div>
+        </div>
+        <div class="section-body">
+            <div class="form-grid">
+                <div class="form-group" style="grid-column: span 2;">
+                    <label class="form-label">Power Candle (HMB+ / HMB−)</label>
+                    <div style="display:flex;align-items:center;gap:10px;margin-top:4px;flex-wrap:wrap;">
                         <input type="checkbox" id="enableHighMomentum" style="width:18px;height:18px;accent-color:var(--accent-cyan);flex-shrink:0;">
                         <span style="color:var(--text-secondary);font-size:0.82rem;font-family:var(--font-mono);">Change &ge;</span>
                         <input type="number" id="highMomentumPct" class="form-control" step="0.5" min="1" max="10" style="width:55px;padding:5px 8px;font-size:0.82rem;text-align:center;">
                         <span style="color:var(--text-secondary);font-size:0.82rem;font-family:var(--font-mono);">% | Close range &ge;</span>
                         <input type="number" id="highMomentumClosingRange" class="form-control" step="5" min="50" max="100" style="width:55px;padding:5px 8px;font-size:0.82rem;text-align:center;">
                         <span style="color:var(--text-secondary);font-size:0.82rem;font-family:var(--font-mono);">%</span>
+                    </div>
+                    <div class="form-hint">Detects large directional candles on elevated volume — HMB+ (bullish) / HMB− (bearish)</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- HMM REGIME FILTER -->
+    <div class="section-card fade-in" style="margin-top:16px;">
+        <div class="section-header">
+            <div class="section-title">
+                <div class="section-title-dot" style="background: #8b5cf6;"></div>
+                HMM Regime Filter (Gate)
+            </div>
+        </div>
+        <div class="section-body">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label">Enable Regime Gate</label>
+                    <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
+                        <input type="checkbox" id="enableRegimeFilter" style="width:18px;height:18px;accent-color:var(--accent-cyan);">
+                        <span style="color:var(--text-secondary);font-size:0.82rem;font-family:var(--font-mono);">Filter out stocks not passing regime check</span>
+                    </div>
+                    <div class="form-hint">When enabled, watchlist only keeps stocks whose HMM regime is selected below.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Min Confidence (%)</label>
+                    <input type="number" id="regimeMinConfidence" class="form-control" min="0" max="100" step="5" placeholder="60">
+                    <div class="form-hint">Minimum posterior probability required to trust the regime (e.g. 60%)</div>
+                </div>
+                <div class="form-group" style="grid-column: span 2;">
+                    <label class="form-label">Allowed Regimes</label>
+                    <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="regimeIncludeBullish" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:var(--accent-green);">B+</b> — Bullish regime
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="regimeIncludeBearish" style="width:16px;height:16px;accent-color:var(--accent-red);"> <b style="color:var(--accent-red);">B−</b> — Bearish regime
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="regimeIncludeNeutral" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:var(--text-muted);">RG</b> — Ranging / Neutral
+                        </label>
                     </div>
                 </div>
             </div>
@@ -747,6 +837,16 @@
             document.getElementById('enableHighMomentum').checked = d.enableHighMomentum !== false;
             document.getElementById('highMomentumPct').value = d.highMomentumPct || 3.0;
             document.getElementById('highMomentumClosingRange').value = d.highMomentumClosingRange || 85;
+            document.getElementById('scanIncludeNS').checked = d.scanIncludeNS !== false;
+            document.getElementById('scanIncludeNL').checked = d.scanIncludeNL !== false;
+            document.getElementById('scanIncludeIS').checked = d.scanIncludeIS !== false;
+            document.getElementById('scanIncludeIL').checked = d.scanIncludeIL === true;
+            document.getElementById('scanIncludeWeeklyNarrow').checked = d.scanIncludeWeeklyNarrow !== false;
+            document.getElementById('enableRegimeFilter').checked = d.enableRegimeFilter === true;
+            document.getElementById('regimeIncludeBullish').checked = d.regimeIncludeBullish !== false;
+            document.getElementById('regimeIncludeBearish').checked = d.regimeIncludeBearish !== false;
+            document.getElementById('regimeIncludeNeutral').checked = d.regimeIncludeNeutral === true;
+            document.getElementById('regimeMinConfidence').value = d.regimeMinConfidence || 60;
 
             const pnl    = d.todayPnl    || 0;
             const trades = d.todayTrades || 0;
@@ -846,7 +946,17 @@
                 momentumVolumeMultiple: parseFloat(document.getElementById('momentumVolumeMultiple').value) || 2.0,
                 enableHighMomentum: document.getElementById('enableHighMomentum').checked,
                 highMomentumPct: parseFloat(document.getElementById('highMomentumPct').value) || 3.0,
-                highMomentumClosingRange: parseFloat(document.getElementById('highMomentumClosingRange').value) || 85
+                highMomentumClosingRange: parseFloat(document.getElementById('highMomentumClosingRange').value) || 85,
+                scanIncludeNS: document.getElementById('scanIncludeNS').checked,
+                scanIncludeNL: document.getElementById('scanIncludeNL').checked,
+                scanIncludeIS: document.getElementById('scanIncludeIS').checked,
+                scanIncludeIL: document.getElementById('scanIncludeIL').checked,
+                scanIncludeWeeklyNarrow: document.getElementById('scanIncludeWeeklyNarrow').checked,
+                enableRegimeFilter: document.getElementById('enableRegimeFilter').checked,
+                regimeIncludeBullish: document.getElementById('regimeIncludeBullish').checked,
+                regimeIncludeBearish: document.getElementById('regimeIncludeBearish').checked,
+                regimeIncludeNeutral: document.getElementById('regimeIncludeNeutral').checked,
+                regimeMinConfidence: parseFloat(document.getElementById('regimeMinConfidence').value) || 60
             };
             const r = await fetch('/api/settings/risk', {
                 method: 'POST',
