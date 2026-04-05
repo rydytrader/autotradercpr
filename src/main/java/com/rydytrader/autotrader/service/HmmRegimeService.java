@@ -283,7 +283,7 @@ public class HmmRegimeService {
 
     private List<Double> fetch1YearCloses(String fyersSymbol, String authHeader) throws Exception {
         long toEpoch = Instant.now().getEpochSecond();
-        long fromEpoch = toEpoch - (400L * 24 * 3600); // 400 days to ensure ~250 trading days
+        long fromEpoch = toEpoch - (364L * 24 * 3600); // 364 days (Fyers max is 365) — ~250 trading days
 
         String urlStr = "https://api-t1.fyers.in/data/history?symbol=" + fyersSymbol
             + "&resolution=1D"
