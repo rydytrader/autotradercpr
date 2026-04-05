@@ -394,4 +394,31 @@ public class ScannerController {
         result.put("stocks", list);
         return result;
     }
+
+    // ── HMM REGIMES ──────────────────────────────────────────────────────────
+    @GetMapping("/api/regime-list")
+    public Map<String, Object> getRegimeList() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        var regimes = hmmRegimeService.getAllRegimes();
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (var entry : regimes.entrySet()) {
+            var rs = entry.getValue();
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("symbol", rs.getSymbol());
+            item.put("regime", rs.getRegime());
+            item.put("confidence", Math.round(rs.getConfidence() * 10000.0) / 100.0); // %
+            double[] post = rs.getStatePosteriors();
+            if (post != null && post.length == 3) {
+                item.put("bullish", Math.round(post[0] * 10000.0) / 100.0);
+                item.put("bearish", Math.round(post[1] * 10000.0) / 100.0);
+                item.put("neutral", Math.round(post[2] * 10000.0) / 100.0);
+            }
+            list.add(item);
+        }
+        // Sort by confidence descending
+        list.sort((a, b) -> Double.compare((double) b.get("confidence"), (double) a.get("confidence")));
+        result.put("count", list.size());
+        result.put("stocks", list);
+        return result;
+    }
 }

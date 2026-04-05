@@ -336,6 +336,14 @@
             " onmouseover="this.style.background='rgba(52,211,153,0.18)'" onmouseout="this.style.background='rgba(52,211,153,0.1)'">
                 Momentum Stocks
             </button>
+            <button onclick="showRegimeList()" style="
+                background: rgba(139,92,246,0.1); border: 1px solid rgba(139,92,246,0.3);
+                color: #8b5cf6; padding: 6px 14px; border-radius: 8px;
+                font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
+                cursor: pointer; transition: all 0.2s;
+            " onmouseover="this.style.background='rgba(139,92,246,0.18)'" onmouseout="this.style.background='rgba(139,92,246,0.1)'">
+                Regime List
+            </button>
             <a href="/api/scanner/tv-watchlist" style="
                 background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.3);
                 color: var(--accent-green); padding: 6px 14px; border-radius: 8px;
@@ -1014,6 +1022,32 @@ function showWeeklyNarrowCpr() {
     </div>
 </div>
 
+<!-- Regime List Modal -->
+<div id="regimeModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px);" onclick="if(event.target===this)this.style.display='none'">
+    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:1000px; max-height:85vh; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border); background:var(--bg-section-header);">
+            <div>
+                <div style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:#8b5cf6;">HMM REGIME LIST</div>
+                <div id="regimeSubtitle" style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); margin-top:2px;"></div>
+            </div>
+            <button onclick="document.getElementById('regimeModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
+        </div>
+        <div style="display:flex; gap:12px; padding:12px 20px; border-bottom:1px solid var(--border); align-items:center; flex-wrap:wrap;">
+            <span style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-secondary);">Regime:</span>
+            <select id="regimeFilter" onchange="renderRegimeList()" style="background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:0.72rem;font-family:var(--font-mono);cursor:pointer;">
+                <option value="ALL">All</option>
+                <option value="BULLISH" selected>B+ Bullish</option>
+                <option value="BEARISH">B- Bearish</option>
+                <option value="NEUTRAL">RG Ranging</option>
+            </select>
+            <span style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-secondary); margin-left:8px;">Min Confidence:</span>
+            <input type="number" id="regimeConfidence" value="100" min="0" max="100" step="5" oninput="renderRegimeList()" style="background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:0.72rem;font-family:var(--font-mono);width:60px;">
+            <span style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted);">%</span>
+        </div>
+        <div id="regimeBody" style="overflow-y:auto; padding:12px 16px; flex:1;"></div>
+    </div>
+</div>
+
 <div id="simQtyModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px);" onclick="if(event.target===this)this.style.display='none'">
     <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:1000px; max-height:85vh; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
         <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border); background:var(--bg-section-header);">
@@ -1162,6 +1196,57 @@ function recalcSimQty() {
     if (fixedQty !== -1) sub += ' | Fixed Qty: ' + fixedQty;
     sub += ' | Total Value: ' + inrH(Math.round(totalCapital)) + ' | Est. Margin: ' + inrH(Math.round(totalMargin)) + ' | Total Risk: ' + inrH(Math.round(totalRisk));
     document.getElementById('simQtySubtitle').textContent = sub;
+}
+
+// ── REGIME LIST MODAL ────────────────────────────────────────────────────
+var regimeData = [];
+
+function showRegimeList() {
+    document.getElementById('regimeModal').style.display = 'flex';
+    document.getElementById('regimeBody').innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">Loading...</div>';
+    fetch('/api/regime-list').then(r => r.json()).then(data => {
+        regimeData = data.stocks || [];
+        renderRegimeList();
+    }).catch(function() {
+        document.getElementById('regimeBody').innerHTML = '<div style="text-align:center;padding:40px;color:var(--accent-red)">Failed to load</div>';
+    });
+}
+
+function renderRegimeList() {
+    var regimeFilter = document.getElementById('regimeFilter').value;
+    var minConf = parseFloat(document.getElementById('regimeConfidence').value) || 0;
+    var filtered = regimeData.filter(function(s) {
+        if (regimeFilter !== 'ALL' && s.regime !== regimeFilter) return false;
+        if (s.confidence < minConf) return false;
+        return true;
+    });
+    document.getElementById('regimeSubtitle').textContent = filtered.length + ' of ' + regimeData.length + ' stocks';
+
+    if (filtered.length === 0) {
+        document.getElementById('regimeBody').innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">No stocks match filter</div>';
+        return;
+    }
+
+    var html = '<table class="data-table" style="width:100%;font-size:.75rem;"><thead><tr>'
+        + '<th>#</th><th>Symbol</th><th class="tc">Regime</th><th class="tr">Confidence</th>'
+        + '<th class="tr">Bull %</th><th class="tr">Bear %</th><th class="tr">Neut %</th>'
+        + '</tr></thead><tbody>';
+    filtered.forEach(function(s, idx) {
+        var badge = s.regime === 'BULLISH' ? '<span class="scan-badge regime-bull">B+</span>'
+                  : s.regime === 'BEARISH' ? '<span class="scan-badge regime-bear">B-</span>'
+                  : '<span class="scan-badge regime-neutral">RG</span>';
+        html += '<tr>'
+            + '<td style="color:var(--text-muted);">' + (idx + 1) + '</td>'
+            + '<td style="font-weight:600;">' + s.symbol + '</td>'
+            + '<td class="tc">' + badge + '</td>'
+            + '<td class="tr" style="color:var(--accent-cyan);">' + s.confidence.toFixed(1) + '%</td>'
+            + '<td class="tr" style="color:var(--accent-green);">' + (s.bullish != null ? s.bullish.toFixed(1) : '—') + '</td>'
+            + '<td class="tr" style="color:var(--accent-red);">' + (s.bearish != null ? s.bearish.toFixed(1) : '—') + '</td>'
+            + '<td class="tr" style="color:var(--text-muted);">' + (s.neutral != null ? s.neutral.toFixed(1) : '—') + '</td>'
+            + '</tr>';
+    });
+    html += '</tbody></table>';
+    document.getElementById('regimeBody').innerHTML = html;
 }
 
 // ── MOMENTUM STOCKS MODAL ────────────────────────────────────────────────
