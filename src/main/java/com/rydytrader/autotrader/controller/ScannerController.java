@@ -27,6 +27,7 @@ public class ScannerController {
     private final RiskSettingsStore riskSettings;
     private final MarginDataService marginDataService;
     private final MomentumService momentumService;
+    private final HmmRegimeService hmmRegimeService;
 
     public ScannerController(MarketDataService marketDataService,
                              BhavcopyService bhavcopyService,
@@ -36,7 +37,8 @@ public class ScannerController {
                              BreakoutScanner breakoutScanner,
                              RiskSettingsStore riskSettings,
                              MarginDataService marginDataService,
-                             MomentumService momentumService) {
+                             MomentumService momentumService,
+                             HmmRegimeService hmmRegimeService) {
         this.marketDataService = marketDataService;
         this.bhavcopyService = bhavcopyService;
         this.atrService = atrService;
@@ -46,6 +48,7 @@ public class ScannerController {
         this.riskSettings = riskSettings;
         this.marginDataService = marginDataService;
         this.momentumService = momentumService;
+        this.hmmRegimeService = hmmRegimeService;
     }
 
     @GetMapping("/api/scanner/watchlist")
@@ -154,6 +157,15 @@ public class ScannerController {
         card.put("atp", Math.round(candleAggregator.getAtp(fyersSymbol) * 100.0) / 100.0);
         card.put("atr", Math.round(atrService.getAtr(fyersSymbol) * 100.0) / 100.0);
         card.put("dayOpen", Math.round(candleAggregator.getDayOpen(fyersSymbol) * 100.0) / 100.0);
+        // HMM regime
+        com.rydytrader.autotrader.dto.RegimeState rs = hmmRegimeService.getRegime(levels.getSymbol());
+        if (rs != null) {
+            card.put("regime", rs.getRegime());
+            card.put("regimeConfidence", Math.round(rs.getConfidence() * 100.0) / 100.0);
+        } else {
+            card.put("regime", "");
+            card.put("regimeConfidence", 0.0);
+        }
         card.put("candleVolume", candleAggregator.getCurrentCandleVolume(fyersSymbol));
         card.put("avgVolume", Math.round(candleAggregator.getAvgVolume(fyersSymbol, riskSettings.getVolumeLookback())));
 

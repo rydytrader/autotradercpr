@@ -66,6 +66,9 @@
         .scan-badge.narrow { background: rgba(99,179,237,0.12); color: var(--accent-blue); }
         .scan-badge.inside { background: rgba(251,191,36,0.12); color: var(--accent-yellow); }
         .scan-badge.weekly-narrow { background: rgba(139,92,246,0.15); color: #8b5cf6; font-weight: 700; }
+        .scan-badge.regime-bull { background: rgba(52,211,153,0.15); color: var(--accent-green); font-weight: 700; border: 1px solid rgba(52,211,153,0.3); }
+        .scan-badge.regime-bear { background: rgba(248,113,113,0.15); color: var(--accent-red); font-weight: 700; border: 1px solid rgba(248,113,113,0.3); }
+        .scan-badge.regime-neutral { background: rgba(160,160,160,0.15); color: var(--text-muted); font-weight: 700; border: 1px solid rgba(160,160,160,0.3); }
         .scan-badge.momentum-high { background: rgba(52,211,153,0.12); color: var(--accent-green); font-weight: 700; }
         .scan-badge.momentum-low { background: rgba(248,113,113,0.12); color: var(--accent-red); font-weight: 700; }
 
@@ -400,6 +403,12 @@
             <button class="filter-btn" onclick="setFilter('HMB', this)">Power Candle</button>
         </span>
         <div class="filter-sep"></div>
+        <span class="regime-filter-group">
+            <button class="filter-btn" onclick="setFilter('BULLISH', this)" style="color:var(--accent-green)">Bullish</button>
+            <button class="filter-btn" onclick="setFilter('BEARISH', this)" style="color:var(--accent-red)">Bearish</button>
+            <button class="filter-btn" onclick="setFilter('NEUTRAL', this)" style="color:var(--text-muted)">Ranging</button>
+        </span>
+        <div class="filter-sep"></div>
         <button class="filter-btn" onclick="toggleSignalFilter(this)">Has Signal</button>
         <button class="filter-btn" onclick="toggleFilteredFilter(this)">Filtered</button>
         <select id="timeFilter" onchange="applyTimeFilter()" style="
@@ -469,7 +478,7 @@
     // ── Filter controls ─────────────────────────────
     window.setFilter = function(type, btn) {
         cprFilter = type;
-        document.querySelectorAll('.cpr-filter-group .filter-btn, .momentum-filter-group .filter-btn').forEach(function(b) {
+        document.querySelectorAll('.cpr-filter-group .filter-btn, .momentum-filter-group .filter-btn, .regime-filter-group .filter-btn').forEach(function(b) {
             b.classList.remove('active');
         });
         btn.classList.add('active');
@@ -548,6 +557,8 @@
                     if (mTags.length === 0) return false;
                 } else if (cprFilter === 'HMB') {
                     if (!mTags.includes('HMB+') && !mTags.includes('HMB-')) return false;
+                } else if (cprFilter === 'BULLISH' || cprFilter === 'BEARISH' || cprFilter === 'NEUTRAL') {
+                    if ((d.regime || '') !== cprFilter) return false;
                 } else if (cprFilter === 'WEEK_HIGH_BREAK' || cprFilter === 'MONTH_HIGH_BREAK' || cprFilter === '52W_HIGH_BREAK') {
                     var lowVariant = cprFilter.replace('HIGH', 'LOW');
                     if (!mTags.includes(cprFilter) && !mTags.includes(lowVariant)) return false;
@@ -666,6 +677,7 @@
             + '  <span style="display:flex; gap:4px;">'
             + ((d.cprTypes || [d.cprType]).filter(function(t){ return ['NARROW','INSIDE'].includes(t); }).map(function(t) { return '<span class="scan-badge ' + t.toLowerCase() + '">' + (t === 'NARROW' ? 'N' : 'I') + '</span>'; }).join(''))
             + (d.weeklyNarrow ? '<span class="scan-badge weekly-narrow">W</span>' : '')
+            + (d.regime ? '<span class="scan-badge ' + (d.regime === 'BULLISH' ? 'regime-bull' : d.regime === 'BEARISH' ? 'regime-bear' : 'regime-neutral') + '" title="HMM regime — confidence ' + Math.round(d.regimeConfidence * 100) + '%">' + (d.regime === 'BULLISH' ? 'B+' : d.regime === 'BEARISH' ? 'B-' : 'RG') + '</span>' : '')
             + ((d.momentumTags || []).map(function(t) {
                 if (t === 'HMB+') return '<span class="scan-badge momentum-high">HMB+</span>';
                 if (t === 'HMB-') return '<span class="scan-badge momentum-low">HMB-</span>';

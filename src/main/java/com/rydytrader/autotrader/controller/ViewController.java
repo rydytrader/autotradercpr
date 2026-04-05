@@ -31,6 +31,7 @@ public class ViewController {
     private final OrderEventService orderEventService;
     private final AppUserRepository userRepo;
     private final PasswordEncoder  passwordEncoder;
+    private final com.rydytrader.autotrader.service.HmmRegimeService hmmRegimeService;
 
     public ViewController(TokenStore tokenStore,
                            PollingService pollingService,
@@ -39,7 +40,8 @@ public class ViewController {
                            MarketDataService marketDataService,
                            OrderEventService orderEventService,
                            AppUserRepository userRepo,
-                           PasswordEncoder passwordEncoder) {
+                           PasswordEncoder passwordEncoder,
+                           com.rydytrader.autotrader.service.HmmRegimeService hmmRegimeService) {
         this.tokenStore        = tokenStore;
         this.pollingService    = pollingService;
         this.loginService      = loginService;
@@ -48,6 +50,7 @@ public class ViewController {
         this.orderEventService = orderEventService;
         this.userRepo          = userRepo;
         this.passwordEncoder   = passwordEncoder;
+        this.hmmRegimeService  = hmmRegimeService;
     }
 
     // ── ROOT ────────────────────────────────────────────────────────────────
@@ -82,6 +85,8 @@ public class ViewController {
             pollingService.startPositionSync();
             marketDataService.start();
             orderEventService.start();
+            // Trigger HMM backfill asynchronously (one-time on first login)
+            new Thread(() -> hmmRegimeService.ensureBackfill(), "hmm-backfill").start();
             return "redirect:/home";
         }
         log.error("Fyers login callback error");
