@@ -345,7 +345,7 @@ public class BhavcopyService {
                     newCache.put(entry.getKey(), lvl);
                 }
 
-                // Push current cache into daily history (rolling 5-day buffer)
+                // Push current cache into daily history (rolling buffer)
                 if (!cache.isEmpty() && !cachedDate.equals(targetDate.toString())) {
                     DaySnapshot snapshot = new DaySnapshot();
                     snapshot.date = cachedDate;
@@ -354,17 +354,20 @@ public class BhavcopyService {
                     while (dailyHistory.size() > MAX_HISTORY_DAYS) dailyHistory.removeLast();
                 }
 
-                // Classify narrow/inside CPR stocks as SMALL or LARGE range using z-score
-                classifyNarrowRangeTypes(newCache);
+                // Purge empty history snapshots and backfill before classification
+                dailyHistory.removeIf(snap -> snap.symbols.isEmpty());
 
                 cache.clear();
                 cache.putAll(newCache);
                 cachedDate = targetDate.toString();
 
-                // Backfill history if we have fewer than 5 days
+                // Backfill history first (needed for z-score and inside CPR)
                 if (dailyHistory.size() < MAX_HISTORY_DAYS) {
                     backfillHistory(targetDate, cookies, nfoSymbols);
                 }
+
+                // Classify after backfill so z-score has sufficient history
+                classifyNarrowRangeTypes(cache);
 
                 saveToFile();
 
