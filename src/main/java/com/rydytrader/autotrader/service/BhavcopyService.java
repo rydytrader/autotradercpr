@@ -83,11 +83,29 @@ public class BhavcopyService {
                     log.error("[BhavcopyService] Failed to backfill history: {}", e.getMessage());
                 }
             }
+            // Purge empty history snapshots (from previous bad saves) and trigger backfill
+            int purged = 0;
+            var iter = dailyHistory.iterator();
+            while (iter.hasNext()) {
+                if (iter.next().symbols.isEmpty()) { iter.remove(); purged++; }
+            }
+            if (purged > 0) {
+                log.info("[BhavcopyService] Purged {} empty history snapshots, will backfill", purged);
+                try {
+                    String cookies = getNseCookies();
+                    if (cookies != null && !cookies.isEmpty()) {
+                        backfillHistory(LocalDate.parse(cachedDate), cookies, cache.keySet());
+                        saveToFile();
+                    }
+                } catch (Exception e) {
+                    log.error("[BhavcopyService] Failed to backfill after purge: {}", e.getMessage());
+                }
+            }
             // Classify narrow/inside range types from loaded cache + history
             classifyNarrowRangeTypes(cache);
             long narrowCount = cache.values().stream().filter(CprLevels::isNarrowCpr).count();
             long insideCount = getInsideCprStocks().size();
-            log.info("[BhavcopyService] Loaded {} NFO stocks from cache for {} ({} narrow, {} inside CPR)", cache.size(), cachedDate, narrowCount, insideCount);
+            log.info("[BhavcopyService] Loaded {} NFO stocks from cache for {} ({} narrow, {} inside CPR, {} history days)", cache.size(), cachedDate, narrowCount, insideCount, dailyHistory.size());
         }
     }
 
@@ -416,9 +434,11 @@ public class BhavcopyService {
     // ── Backfill daily history from NSE archives ──────────────────────────────
 
     private void backfillHistory(LocalDate currentDate, String cookies, Set<String> nfoSymbols) {
-        // Collect dates already in history to avoid re-fetching
+        // Collect dates already in history to avoid re-fetching (only if they have actual data)
         Set<String> existingDates = new HashSet<>();
         existingDates.add(cachedDate);
+        // Remove empty snapshots (from previous bad saves) and track valid ones
+        dailyHistory.removeIf(snap -> snap.symbols.isEmpty());
         for (DaySnapshot snap : dailyHistory) existingDates.add(snap.date);
 
         int needed = MAX_HISTORY_DAYS - dailyHistory.size();
