@@ -53,6 +53,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     private final WeeklyCprService    weeklyCprService;
     private final BreakoutScanner     breakoutScanner;
     private final BhavcopyService     bhavcopyService;
+    private final SwingCandleAggregator swingCandleAggregator;
+    private final SwingScanner        swingScanner;
+    private final MonthlyCprService   monthlyCprService;
+    private final WeeklyAtrService    weeklyAtrService;
+    private final WeeklyVwapService   weeklyVwapService;
     private final ObjectMapper        mapper = new ObjectMapper();
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -135,7 +140,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                               AtrService atrService,
                               WeeklyCprService weeklyCprService,
                               BreakoutScanner breakoutScanner,
-                              BhavcopyService bhavcopyService) {
+                              BhavcopyService bhavcopyService,
+                              SwingCandleAggregator swingCandleAggregator,
+                              SwingScanner swingScanner,
+                              MonthlyCprService monthlyCprService,
+                              WeeklyAtrService weeklyAtrService,
+                              WeeklyVwapService weeklyVwapService) {
         this.tokenStore = tokenStore;
         this.fyersProperties = fyersProperties;
         this.positionStateStore = positionStateStore;
@@ -148,6 +158,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         this.weeklyCprService = weeklyCprService;
         this.breakoutScanner = breakoutScanner;
         this.bhavcopyService = bhavcopyService;
+        this.swingCandleAggregator = swingCandleAggregator;
+        this.swingScanner = swingScanner;
+        this.monthlyCprService = monthlyCprService;
+        this.weeklyAtrService = weeklyAtrService;
+        this.weeklyVwapService = weeklyVwapService;
         candleAggregator.addListener(this);
     }
 
@@ -168,10 +183,17 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         // SSE keepalive every 15s
         scheduler.scheduleAtFixedRate(this::sendKeepalive, 15, 15, TimeUnit.SECONDS);
 
+        // Persist weekly VWAP every 60s
+        scheduler.scheduleAtFixedRate(weeklyVwapService::saveToFile, 60, 60, TimeUnit.SECONDS);
+
         // Register candle close listeners
         candleAggregator.setTimeframe(riskSettings.getScannerTimeframe());
         candleAggregator.addListener(atrService);
         candleAggregator.addListener(breakoutScanner);
+        // Swing: 75-min candle aggregator listens to 5-min candle closes
+        candleAggregator.addListener(swingCandleAggregator);
+        // Swing scanner listens to 75-min candle closes
+        swingCandleAggregator.addListener(swingScanner);
         candleAggregator.start();
 
         // Schedule scanner pre-market data fetch
@@ -293,6 +315,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         // Route tick to candle aggregator for scanner
         candleAggregator.onTick(raw);
 
+        // Capture week open for swing trading (first tick per symbol per week)
+        if (raw.ltp > 0) {
+            weeklyVwapService.onTick(raw.fyersSymbol, raw.ltp);
+        }
+
         dirty = true;
     }
 
@@ -339,6 +366,10 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
 
     @Override
     public void onCandleClose(String fyersSymbol, CandleAggregator.CandleBar completedCandle) {
+        // Feed weekly VWAP from candle close (correct delta volume)
+        weeklyVwapService.onCandleClose(fyersSymbol, completedCandle.high, completedCandle.low,
+            completedCandle.close, completedCandle.volume);
+
         if (!riskSettings.isEnableTrailingSl()) return;
         String position = PositionManager.getPosition(fyersSymbol);
         if ("NONE".equals(position)) return;
@@ -805,7 +836,23 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             subscribeWatchlist(watchlist);
         }
 
-        eventService.log("[INFO] Scanner initialized: " + watchlist.size() + " symbols, ATR loaded, trends calculated");
+        // Initialize swing trading indicators for WN/WI stocks
+        Set<String> swingSymbols = new LinkedHashSet<>();
+        for (var cpr : bhavcopyService.getWeeklyNarrowCprStocks()) {
+            swingSymbols.add("NSE:" + cpr.getSymbol() + "-EQ");
+        }
+        for (var cpr : bhavcopyService.getWeeklyInsideCprStocks()) {
+            swingSymbols.add("NSE:" + cpr.getSymbol() + "-EQ");
+        }
+        if (!swingSymbols.isEmpty()) {
+            List<String> swingList = new ArrayList<>(swingSymbols);
+            swingCandleAggregator.setSwingSymbols(swingSymbols);
+            monthlyCprService.fetchMonthlyLevels(swingList);
+            weeklyAtrService.fetchWeeklyAtr(swingList);
+            log.info("[MarketData] Swing scanner initialized: {} WN/WI symbols", swingSymbols.size());
+        }
+
+        eventService.log("[INFO] Scanner initialized: " + watchlist.size() + " symbols (swing: " + swingSymbols.size() + "), ATR loaded, trends calculated");
     }
 
     /**

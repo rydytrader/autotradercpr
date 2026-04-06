@@ -42,21 +42,29 @@ public class WeeklyVwapService {
     }
 
     /**
-     * Called on every tick from WebSocket. Accumulates price × volume for VWAP.
-     * Also captures week open (first tick after Monday reset).
+     * Called on every tick from WebSocket. Captures week open (first tick after Monday reset).
      */
-    public void onTick(String fyersSymbol, double price, long volume) {
-        if (price <= 0 || volume <= 0) return;
+    public void onTick(String fyersSymbol, double price) {
+        if (price <= 0) return;
+        String ticker = extractTicker(fyersSymbol);
+        checkWeekReset();
+        // Capture week open (first tick after reset)
+        weekOpen.putIfAbsent(ticker, price);
+    }
 
+    /**
+     * Called on candle close. Accumulates TP × volume for VWAP using candle data
+     * (which has correct delta volume, unlike raw ticks which have cumulative volume).
+     */
+    public void onCandleClose(String fyersSymbol, double high, double low, double close, long volume) {
+        if (volume <= 0) return;
         String ticker = extractTicker(fyersSymbol);
         checkWeekReset();
 
+        double tp = (high + low + close) / 3.0;
         VwapAccumulator acc = accumulators.computeIfAbsent(ticker, k -> new VwapAccumulator());
-        acc.sumPriceVol += price * volume;
+        acc.sumPriceVol += tp * volume;
         acc.sumVol += volume;
-
-        // Capture week open (first tick after reset)
-        weekOpen.putIfAbsent(ticker, price);
     }
 
     /** Get weekly VWAP for a symbol. Returns 0 if no data. */
