@@ -280,6 +280,33 @@ public class ScannerController {
         return result;
     }
 
+    @GetMapping("/api/weekly-inside-cpr")
+    public Map<String, Object> getWeeklyInsideCpr() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("weekDates", bhavcopyService.getWeekDateRange());
+        result.put("historyDays", bhavcopyService.getHistoryDays());
+        result.put("totalNfoStocks", bhavcopyService.getLoadedCount());
+
+        var stocks = bhavcopyService.getWeeklyInsideCprStocks();
+        result.put("insideCount", stocks.size());
+
+        List<Map<String, Object>> stockList = new ArrayList<>();
+        for (var cpr : stocks) {
+            Map<String, Object> s = new LinkedHashMap<>();
+            s.put("symbol", cpr.getSymbol());
+            s.put("close", r(cpr.getClose()));
+            s.put("cprWidthPct", Math.round(cpr.getCprWidthPct() * 1000.0) / 1000.0);
+            s.put("pivot", r(cpr.getPivot()));
+            s.put("tc", r(cpr.getTc()));
+            s.put("bc", r(cpr.getBc()));
+            s.put("r1", r(cpr.getR1()));
+            s.put("s1", r(cpr.getS1()));
+            stockList.add(s);
+        }
+        result.put("stocks", stockList);
+        return result;
+    }
+
     @GetMapping("/api/scanner/tv-watchlist")
     public ResponseEntity<String> getTvWatchlist() {
         // Export exactly what's shown on the Watchlist page (same filters applied)
