@@ -109,7 +109,7 @@ public class BhavcopyService {
         }
     }
 
-    @Scheduled(cron = "0 45 8 * * MON-FRI")
+    @Scheduled(cron = "0 0 8 * * MON-FRI")
     public void scheduledFetch() {
         fetchAndCompute();
     }
