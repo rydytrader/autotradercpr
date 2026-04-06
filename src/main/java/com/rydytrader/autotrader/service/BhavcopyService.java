@@ -189,6 +189,87 @@ public class BhavcopyService {
     }
 
     /**
+     * Get weekly inside CPR stocks: this week's CPR is fully inside previous week's CPR.
+     */
+    public List<CprLevels> getWeeklyInsideCprStocks() {
+        List<DaySnapshot> thisWeekDays = getLastCompleteWeekDays();
+        List<DaySnapshot> prevWeekDays = getPreviousCompleteWeekDays();
+        if (thisWeekDays.size() < 3 || prevWeekDays.size() < 3) return Collections.emptyList();
+
+        DaySnapshot thisLastDay = thisWeekDays.get(thisWeekDays.size() - 1);
+        DaySnapshot prevLastDay = prevWeekDays.get(prevWeekDays.size() - 1);
+
+        List<CprLevels> result = new ArrayList<>();
+        for (String symbol : thisLastDay.symbols.keySet()) {
+            double thisHigh = Double.MIN_VALUE, thisLow = Double.MAX_VALUE;
+            double thisClose = thisLastDay.symbols.get(symbol).getClose();
+            for (DaySnapshot snap : thisWeekDays) {
+                CprLevels day = snap.symbols.get(symbol);
+                if (day != null) { thisHigh = Math.max(thisHigh, day.getHigh()); thisLow = Math.min(thisLow, day.getLow()); }
+            }
+            if (thisHigh == Double.MIN_VALUE) continue;
+
+            CprLevels prevDayData = prevLastDay.symbols.get(symbol);
+            if (prevDayData == null) continue;
+            double prevHigh = Double.MIN_VALUE, prevLow = Double.MAX_VALUE;
+            double prevClose = prevDayData.getClose();
+            for (DaySnapshot snap : prevWeekDays) {
+                CprLevels day = snap.symbols.get(symbol);
+                if (day != null) { prevHigh = Math.max(prevHigh, day.getHigh()); prevLow = Math.min(prevLow, day.getLow()); }
+            }
+            if (prevHigh == Double.MIN_VALUE) continue;
+
+            CprLevels thisCpr = new CprLevels(symbol, thisHigh, thisLow, thisClose);
+            CprLevels prevCpr = new CprLevels(symbol, prevHigh, prevLow, prevClose);
+            if (symbolMasterService != null) {
+                double tick = symbolMasterService.getTickSize("NSE:" + symbol + "-EQ");
+                thisCpr.roundToTick(tick);
+                prevCpr.roundToTick(tick);
+            }
+
+            double thisTop = Math.max(thisCpr.getTc(), thisCpr.getBc());
+            double thisBot = Math.min(thisCpr.getTc(), thisCpr.getBc());
+            double prevTop = Math.max(prevCpr.getTc(), prevCpr.getBc());
+            double prevBot = Math.min(prevCpr.getTc(), prevCpr.getBc());
+
+            if (thisTop <= prevTop && thisBot >= prevBot && prevTop > prevBot) {
+                result.add(thisCpr);
+            }
+        }
+        result.sort(Comparator.comparingDouble(CprLevels::getCprWidthPct));
+        return result;
+    }
+
+    /** Get the week before the last complete week. */
+    private List<DaySnapshot> getPreviousCompleteWeekDays() {
+        List<DaySnapshot> allDays = new ArrayList<>();
+        if (!cachedDate.isEmpty()) {
+            DaySnapshot today = new DaySnapshot();
+            today.date = cachedDate;
+            today.symbols.putAll(cache);
+            allDays.add(today);
+        }
+        allDays.addAll(dailyHistory);
+        allDays.sort(Comparator.comparing(s -> s.date));
+        if (allDays.isEmpty()) return Collections.emptyList();
+
+        LocalDate today = LocalDate.now(IST);
+        boolean isWeekend = (today.getDayOfWeek() == DayOfWeek.SATURDAY || today.getDayOfWeek() == DayOfWeek.SUNDAY);
+        LocalDate refDate = isWeekend ? today.minusWeeks(1) : today.minusWeeks(2);
+        int targetWeek = refDate.get(java.time.temporal.IsoFields.WEEK_OF_WEEK_BASED_YEAR);
+        int targetYear = refDate.get(java.time.temporal.IsoFields.WEEK_BASED_YEAR);
+
+        List<DaySnapshot> weekDays = new ArrayList<>();
+        for (DaySnapshot snap : allDays) {
+            LocalDate d = LocalDate.parse(snap.date);
+            int w = d.get(java.time.temporal.IsoFields.WEEK_OF_WEEK_BASED_YEAR);
+            int y = d.get(java.time.temporal.IsoFields.WEEK_BASED_YEAR);
+            if (w == targetWeek && y == targetYear) weekDays.add(snap);
+        }
+        return weekDays;
+    }
+
+    /**
      * Get all days belonging to the last COMPLETED Mon-Fri week from history + cache.
      * Weekly CPR is calculated from previous week's HLC (same as daily CPR uses previous day).
      * On weekdays (Mon-Fri): previous week's data.

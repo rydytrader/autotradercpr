@@ -455,6 +455,9 @@
                         <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
                             <input type="checkbox" id="scanIncludeWeeklyNarrow" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:#8b5cf6;">W</b> — Weekly Narrow CPR
                         </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="scanIncludeWeeklyInside" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:#a78bfa;">WI</b> — Weekly Inside CPR
+                        </label>
                     </div>
                 </div>
             </div>
@@ -727,6 +730,7 @@
             document.getElementById('scanIncludeIS').checked = d.scanIncludeIS !== false;
             document.getElementById('scanIncludeIL').checked = d.scanIncludeIL === true;
             document.getElementById('scanIncludeWeeklyNarrow').checked = d.scanIncludeWeeklyNarrow !== false;
+            document.getElementById('scanIncludeWeeklyInside').checked = d.scanIncludeWeeklyInside !== false;
             document.getElementById('enableHpt').checked = d.enableHpt !== false;
             document.getElementById('enableMpt').checked = d.enableMpt === true;
             document.getElementById('enableLpt').checked = d.enableLpt === true;
@@ -825,6 +829,7 @@
                 scanIncludeIS: document.getElementById('scanIncludeIS').checked,
                 scanIncludeIL: document.getElementById('scanIncludeIL').checked,
                 scanIncludeWeeklyNarrow: document.getElementById('scanIncludeWeeklyNarrow').checked,
+                scanIncludeWeeklyInside: document.getElementById('scanIncludeWeeklyInside').checked,
                 enableHpt: document.getElementById('enableHpt').checked,
                 enableMpt: document.getElementById('enableMpt').checked,
                 enableLpt: document.getElementById('enableLpt').checked,

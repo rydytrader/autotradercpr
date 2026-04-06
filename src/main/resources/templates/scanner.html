@@ -70,6 +70,7 @@
         .scan-badge.inside-small { background: rgba(52,211,153,0.15); color: var(--accent-green); font-weight: 700; }
         .scan-badge.inside-large { background: rgba(251,146,60,0.15); color: #fb923c; font-weight: 700; }
         .scan-badge.weekly-narrow { background: rgba(139,92,246,0.15); color: #8b5cf6; font-weight: 700; }
+        .scan-badge.weekly-inside { background: rgba(139,92,246,0.12); color: #a78bfa; font-weight: 700; }
 
         .scan-price-row {
             display: flex; align-items: baseline; gap: 10px;
@@ -660,6 +661,7 @@
                 return '<span class="scan-badge ' + icls + '" title="' + ittl + '">' + ilbl + '</span>';
             }).join(''))
             + (d.weeklyNarrow ? '<span class="scan-badge weekly-narrow">W</span>' : '')
+            + (d.weeklyInside ? '<span class="scan-badge weekly-inside">WI</span>' : '')
             + '  </span>'
             + '</div>'
             + '<div class="scan-price-row">'
@@ -1006,6 +1008,7 @@ function showWeeklyNarrowCpr() {
                     <div><span class="scan-badge inside-small" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">IS</span> Inside + Small Range (z &lt; −1.5)</div>
                     <div><span class="scan-badge inside-large" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">IL</span> Inside + Large Range</div>
                     <div><span class="scan-badge weekly-narrow" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">W</span> Weekly Narrow CPR</div>
+                    <div><span class="scan-badge weekly-inside" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">WI</span> Weekly Inside CPR (this week's CPR inside previous week's)</div>
                 </div>
             </div>
 

@@ -55,6 +55,10 @@ public class ScannerController {
         for (CprLevels cpr : bhavcopyService.getWeeklyNarrowCprStocks()) {
             weeklyNarrowSymbols.add(cpr.getSymbol());
         }
+        Set<String> weeklyInsideSymbols = new HashSet<>();
+        for (CprLevels cpr : bhavcopyService.getWeeklyInsideCprStocks()) {
+            weeklyInsideSymbols.add(cpr.getSymbol());
+        }
         Set<String> insideSymbols = new HashSet<>();
         for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
             insideSymbols.add(cpr.getSymbol());
@@ -97,6 +101,7 @@ public class ScannerController {
                 Map<String, Object> card = buildCard(fyers, dailyCpr, types.isEmpty() ? "WEEKLY_NARROW" : "INSIDE", positionSymbols);
                 card.put("cprTypes", types);
                 card.put("weeklyNarrow", true);
+                card.put("weeklyInside", weeklyInsideSymbols.contains(cpr.getSymbol()));
                 card.put("narrowRangeType", dailyCpr.getNarrowRangeType());
                 card.put("rangeZScore", dailyCpr.getRangeZScore());
                 result.add(card);
@@ -119,10 +124,30 @@ public class ScannerController {
             Map<String, Object> card = buildCard(fyers, cpr, "INSIDE", positionSymbols);
             card.put("cprTypes", types);
             card.put("weeklyNarrow", weeklyNarrowSymbols.contains(cpr.getSymbol()));
+            card.put("weeklyInside", weeklyInsideSymbols.contains(cpr.getSymbol()));
             card.put("narrowRangeType", nrt);
             card.put("rangeZScore", cpr.getRangeZScore());
             result.add(card);
             seen.add(fyers);
+        }
+
+        // Collect weekly-inside-only CPR stocks (not already added)
+        if (riskSettings.isScanIncludeWeeklyInside()) {
+            for (CprLevels cpr : bhavcopyService.getWeeklyInsideCprStocks()) {
+                String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
+                if (seen.contains(fyers)) continue;
+                CprLevels dailyCpr = bhavcopyService.getCprLevels(cpr.getSymbol());
+                if (dailyCpr == null) dailyCpr = cpr;
+                List<String> types = new ArrayList<>();
+                Map<String, Object> card = buildCard(fyers, dailyCpr, "WEEKLY_INSIDE", positionSymbols);
+                card.put("cprTypes", types);
+                card.put("weeklyNarrow", weeklyNarrowSymbols.contains(cpr.getSymbol()));
+                card.put("weeklyInside", true);
+                card.put("narrowRangeType", dailyCpr.getNarrowRangeType());
+                card.put("rangeZScore", dailyCpr.getRangeZScore());
+                result.add(card);
+                seen.add(fyers);
+            }
         }
 
         return result;
