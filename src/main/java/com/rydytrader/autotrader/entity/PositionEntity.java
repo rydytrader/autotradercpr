@@ -4,15 +4,18 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "positions")
+@Table(name = "positions", uniqueConstraints = @UniqueConstraint(columnNames = {"symbol", "productType"}))
 public class PositionEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(unique = true, nullable = false)
+    @Column(nullable = false)
     private String symbol;
+
+    @Column(nullable = false)
+    private String productType = "INTRADAY"; // INTRADAY or CNC
 
     private String side;
     private int qty;
@@ -44,6 +47,9 @@ public class PositionEntity {
 
     public String getSymbol() { return symbol; }
     public void setSymbol(String symbol) { this.symbol = symbol; }
+
+    public String getProductType() { return productType; }
+    public void setProductType(String productType) { this.productType = productType; }
 
     public String getSide() { return side; }
     public void setSide(String side) { this.side = side; }

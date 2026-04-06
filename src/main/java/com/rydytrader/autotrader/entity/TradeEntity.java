@@ -33,6 +33,8 @@ public class TradeEntity {
 
     private String probability;
 
+    private String strategy = "DAY"; // DAY or SWING
+
     public TradeEntity() {}
 
     // Getters and setters
@@ -80,4 +82,7 @@ public class TradeEntity {
 
     public String getProbability() { return probability; }
     public void setProbability(String probability) { this.probability = probability; }
+
+    public String getStrategy() { return strategy; }
+    public void setStrategy(String strategy) { this.strategy = strategy; }
 }

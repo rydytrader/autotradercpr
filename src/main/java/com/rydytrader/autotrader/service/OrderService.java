@@ -31,8 +31,12 @@ public class OrderService {
 
     // ── ENTRY ORDER (Market) ──────────────────────────────────────────────────
     public OrderDTO placeOrder(String symbol, int qty, int side, double stoploss) {
+        return placeOrder(symbol, qty, side, stoploss, "INTRADAY");
+    }
+
+    public OrderDTO placeOrder(String symbol, int qty, int side, double stoploss, String productType) {
         try {
-            String json = buildOrderJson(symbol, qty, side, 2, 0, 0, "AutoTrader");
+            String json = buildOrderJson(symbol, qty, side, 2, 0, 0, "AutoTrader", productType);
             log.info("Entry Order: {}", json);
             return postOrder(json);
         } catch (Exception e) { log.error("Error placing entry order", e); return null; }
@@ -40,13 +44,17 @@ public class OrderService {
 
     // ── STOP LOSS ORDER (Stop-Market) ─────────────────────────────────────────
     public OrderDTO placeStopLoss(String symbol, int qty, int side, double slPrice) {
+        return placeStopLoss(symbol, qty, side, slPrice, "INTRADAY");
+    }
+
+    public OrderDTO placeStopLoss(String symbol, int qty, int side, double slPrice, String productType) {
         try {
             if (Double.isNaN(slPrice) || slPrice <= 0) {
                 log.error("[OrderService] Invalid SL price {} for {} — skipping order", slPrice, symbol);
                 return null;
             }
             double rounded = roundToTick(slPrice, symbol);
-            String json = buildOrderJson(symbol, qty, side, 3, 0, rounded, "AutoSL");
+            String json = buildOrderJson(symbol, qty, side, 3, 0, rounded, "AutoSL", productType);
             log.info("SL Order: {}", json);
             return postOrder(json);
         } catch (Exception e) { log.error("Error placing SL order", e); return null; }
@@ -77,13 +85,17 @@ public class OrderService {
 
     // ── TARGET ORDER (Limit) ──────────────────────────────────────────────────
     public OrderDTO placeTarget(String symbol, int qty, int side, double targetPrice) {
+        return placeTarget(symbol, qty, side, targetPrice, "INTRADAY");
+    }
+
+    public OrderDTO placeTarget(String symbol, int qty, int side, double targetPrice, String productType) {
         try {
             if (Double.isNaN(targetPrice) || targetPrice <= 0) {
                 log.error("[OrderService] Invalid target price {} for {} — skipping order", targetPrice, symbol);
                 return null;
             }
             double rounded = roundToTick(targetPrice, symbol);
-            String json = buildOrderJson(symbol, qty, side, 1, rounded, 0, "AutoTarget");
+            String json = buildOrderJson(symbol, qty, side, 1, rounded, 0, "AutoTarget", productType);
             log.info("Target Order: {}", json);
             return postOrder(json);
         } catch (Exception e) { log.error("Error placing target order", e); return null; }
@@ -91,8 +103,12 @@ public class OrderService {
 
     // ── EXIT MARKET ORDER (Square-off) ────────────────────────────────────────
     public OrderDTO placeExitOrder(String symbol, int qty, int side) {
+        return placeExitOrder(symbol, qty, side, "INTRADAY");
+    }
+
+    public OrderDTO placeExitOrder(String symbol, int qty, int side, String productType) {
         try {
-            String json = buildOrderJson(symbol, qty, side, 2, 0, 0, "SquareOff");
+            String json = buildOrderJson(symbol, qty, side, 2, 0, 0, "SquareOff", productType);
             log.info("Exit Order: {}", json);
             return postOrder(json);
         } catch (Exception e) { log.error("Error placing exit order", e); return null; }
@@ -301,12 +317,17 @@ public class OrderService {
 
     private String buildOrderJson(String symbol, int qty, int side, int type,
                                    double limitPrice, double stopPrice, String tag) {
+        return buildOrderJson(symbol, qty, side, type, limitPrice, stopPrice, tag, "INTRADAY");
+    }
+
+    private String buildOrderJson(String symbol, int qty, int side, int type,
+                                   double limitPrice, double stopPrice, String tag, String productType) {
         return "{"
             + "\"symbol\":\"" + symbol + "\","
             + "\"qty\":" + qty + ","
             + "\"type\":" + type + ","
             + "\"side\":" + side + ","
-            + "\"productType\":\"INTRADAY\","
+            + "\"productType\":\"" + productType + "\","
             + "\"limitPrice\":" + limitPrice + ","
             + "\"stopPrice\":" + stopPrice + ","
             + "\"validity\":\"DAY\","

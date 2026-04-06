@@ -20,8 +20,11 @@ public interface FyersClient {
     /** GET /api/v3/orders — get all orders (full order book) */
     JsonNode getOrders(String authHeader) throws Exception;
 
-    /** GET /api/v3/positions — get open positions */
+    /** GET /api/v3/positions — get open positions (intraday) */
     JsonNode getPositions(String authHeader) throws Exception;
+
+    /** GET /api/v3/holdings — get CNC holdings (multi-day positions) */
+    JsonNode getHoldings(String authHeader) throws Exception;
 
     /** GET /api/v3/tradebook — get tradebook */
     JsonNode getTradebook(String authHeader) throws Exception;

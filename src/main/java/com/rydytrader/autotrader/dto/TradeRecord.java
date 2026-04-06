@@ -28,6 +28,7 @@ public class TradeRecord {
     private final String result;
     private final String description;
     private final String probability;
+    private String strategy = "DAY"; // DAY or SWING (mutable — set after construction)
 
     public TradeRecord(String symbol, String side, int qty,
                        double entryPrice, double exitPrice, String exitReason) {
@@ -171,4 +172,6 @@ public class TradeRecord {
     public String getResult()     { return result; }
     public String getDescription() { return description; }
     public String getProbability() { return probability; }
+    public String getStrategy() { return strategy; }
+    public void setStrategy(String strategy) { this.strategy = strategy; }
 }

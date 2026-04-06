@@ -7,5 +7,8 @@ import java.util.Optional;
 
 public interface PositionRepository extends JpaRepository<PositionEntity, Long> {
     Optional<PositionEntity> findBySymbol(String symbol);
+    Optional<PositionEntity> findBySymbolAndProductType(String symbol, String productType);
     void deleteBySymbol(String symbol);
+    void deleteBySymbolAndProductType(String symbol, String productType);
+    java.util.List<PositionEntity> findByProductType(String productType);
 }
