@@ -1069,30 +1069,30 @@ function showWeeklyInsideCpr() {
             </div>
             <button onclick="document.getElementById('legendModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
         </div>
-        <div style="overflow-y:auto; padding:12px 18px; flex:1; font-family:var(--font-mono); font-size:0.68rem; color:var(--text-primary); line-height:1.4;">
+        <div style="overflow-y:auto; padding:20px 24px; flex:1; font-family:var(--font-mono); font-size:0.72rem; color:var(--text-primary); line-height:1.5;">
 
             <!-- 1. CPR Width -->
-            <div style="margin-bottom:14px;">
-                <div style="font-weight:700; font-size:0.78rem; color:var(--accent-cyan); margin-bottom:4px;">1. CPR Width</div>
-                <div style="color:var(--text-secondary); margin-bottom:6px; font-size:0.66rem;">Scans FNO stocks with narrow or inside CPR. Both types split by range z-score vs the stock's own 20-day history: <b>z = (x − μ) / σ</b>, where x = prior day's (H − L). Small range (z &lt; −1.5) = genuine tight bar. Large range = normal/wide bar where close landed near the midpoint.</div>
-                <div style="display:flex; flex-wrap:wrap; gap:10px 14px; font-size:0.66rem;">
-                    <div><span class="scan-badge narrow-small" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">NS</span> Narrow + Small Range (z &lt; −1.5)</div>
-                    <div><span class="scan-badge narrow-large" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">NL</span> Narrow + Large Range</div>
-                    <div><span class="scan-badge inside-small" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">IS</span> Inside + Small Range (z &lt; −1.5)</div>
-                    <div><span class="scan-badge inside-large" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">IL</span> Inside + Large Range</div>
-                    <div><span class="scan-badge weekly-narrow" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">WN</span> Weekly Narrow CPR</div>
-                    <div><span class="scan-badge weekly-inside" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">WI</span> Weekly Inside CPR (this week's CPR inside previous week's)</div>
+            <div style="margin-bottom:28px;">
+                <div style="font-weight:700; font-size:0.85rem; color:var(--accent-cyan); margin-bottom:10px;">1. CPR Width</div>
+                <div style="color:var(--text-secondary); margin-bottom:14px; font-size:0.72rem; line-height:1.6;">Scans FNO stocks with narrow or inside CPR. Both types split by range z-score vs the stock's own 20-day history: <b>z = (x − μ) / σ</b>, where x = prior day's (H − L). Small range (z &lt; −1.5) = genuine tight bar. Large range = normal/wide bar where close landed near the midpoint.</div>
+                <div style="display:flex; flex-wrap:wrap; gap:12px 20px; font-size:0.72rem;">
+                    <div><span class="scan-badge narrow-small" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NS</span> Narrow + Small Range (z &lt; −1.5)</div>
+                    <div><span class="scan-badge narrow-large" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NL</span> Narrow + Large Range</div>
+                    <div><span class="scan-badge inside-small" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">IS</span> Inside + Small Range (z &lt; −1.5)</div>
+                    <div><span class="scan-badge inside-large" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">IL</span> Inside + Large Range</div>
+                    <div><span class="scan-badge weekly-narrow" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">WN</span> Weekly Narrow CPR</div>
+                    <div><span class="scan-badge weekly-inside" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">WI</span> Weekly Inside CPR (this week's CPR inside previous week's)</div>
                 </div>
             </div>
 
             <!-- 2. Signal Probability -->
-            <div style="margin-bottom:8px;">
-                <div style="font-weight:700; font-size:0.78rem; color:var(--accent-cyan); margin-bottom:4px;">2. Signal Probability</div>
-                <div style="color:var(--text-secondary); margin-bottom:6px; font-size:0.66rem;">CPR breakout signals classified by alignment with weekly trend. Higher alignment = higher probability of follow-through.</div>
-                <div style="display:flex; flex-wrap:wrap; gap:10px 14px; font-size:0.66rem;">
-                    <div><span style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700; background:rgba(52,211,153,0.15); color:var(--accent-green); border:1px solid rgba(52,211,153,0.3);">HPT</span> High Probable Trade (breakout aligns with weekly trend)</div>
-                    <div><span style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700; background:rgba(251,191,36,0.15); color:#fbbf24; border:1px solid rgba(251,191,36,0.3);">MPT</span> Medium Probable Trade (weekly trend neutral)</div>
-                    <div><span style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700; background:rgba(248,113,113,0.15); color:var(--accent-red); border:1px solid rgba(248,113,113,0.3);">LPT</span> Low Probable Trade (breakout against weekly trend)</div>
+            <div style="margin-bottom:12px;">
+                <div style="font-weight:700; font-size:0.85rem; color:var(--accent-cyan); margin-bottom:10px;">2. Signal Probability</div>
+                <div style="color:var(--text-secondary); margin-bottom:14px; font-size:0.72rem; line-height:1.6;">CPR breakout signals classified by alignment with weekly trend. Higher alignment = higher probability of follow-through.</div>
+                <div style="display:flex; flex-wrap:wrap; gap:12px 20px; font-size:0.72rem;">
+                    <div><span style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700; background:rgba(52,211,153,0.15); color:var(--accent-green); border:1px solid rgba(52,211,153,0.3);">HPT</span> High Probable Trade (breakout aligns with weekly trend)</div>
+                    <div><span style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700; background:rgba(251,191,36,0.15); color:#fbbf24; border:1px solid rgba(251,191,36,0.3);">MPT</span> Medium Probable Trade (weekly trend neutral)</div>
+                    <div><span style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700; background:rgba(248,113,113,0.15); color:var(--accent-red); border:1px solid rgba(248,113,113,0.3);">LPT</span> Low Probable Trade (breakout against weekly trend)</div>
                 </div>
             </div>
 
