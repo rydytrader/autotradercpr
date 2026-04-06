@@ -116,6 +116,7 @@ public class SwingScanner implements SwingCandleAggregator.SwingCandleCloseListe
 
         Set<String> broken = brokenWeeklyLevels.getOrDefault(fyersSymbol, Collections.emptySet());
 
+        // CNC equity: BUY only (no short selling in delivery mode)
         // BUY signals — green candle
         if (greenCandle) {
             String buySetup = detectWeeklyBuyBreakout(open, high, low, close, wl, weeklyVwap, broken);
@@ -123,16 +124,6 @@ public class SwingScanner implements SwingCandleAggregator.SwingCandleCloseListe
                 double ltp = candleAggregator.getLtp(fyersSymbol);
                 String prob = monthlyCprService.getSwingProbability(fyersSymbol, ltp, "BUY");
                 recordSignal(fyersSymbol, buySetup, "BUY", close, weeklyAtr, prob, candle);
-            }
-        }
-
-        // SELL signals — red candle
-        if (redCandle) {
-            String sellSetup = detectWeeklySellBreakout(open, high, low, close, wl, weeklyVwap, broken);
-            if (sellSetup != null) {
-                double ltp = candleAggregator.getLtp(fyersSymbol);
-                String prob = monthlyCprService.getSwingProbability(fyersSymbol, ltp, "SELL");
-                recordSignal(fyersSymbol, sellSetup, "SELL", close, weeklyAtr, prob, candle);
             }
         }
     }
@@ -169,33 +160,11 @@ public class SwingScanner implements SwingCandleAggregator.SwingCandleCloseListe
     }
 
     /**
-     * Detect sell breakout against weekly CPR levels.
-     * Priority: S4 > S3 > S2 > S1/PWL > CPR > R1/PWH
-     */
-    private String detectWeeklySellBreakout(double open, double high, double low, double close,
-                                             WeeklyCprService.WeeklyLevels wl, double vwap, Set<String> broken) {
-        if (vwap > 0 && close > vwap) return null; // VWAP check
-
-        double cprBot = wl.bot;
-
-        if (close < wl.s4 && ((open > wl.s4 || high > wl.s4) || (high > wl.s4 && open < wl.s4)) && !broken.contains("SWING_SELL_S4")) return "SWING_SELL_S4";
-        if (close < wl.s3 && ((open > wl.s3 || high > wl.s3) || (high > wl.s3 && open < wl.s3)) && !broken.contains("SWING_SELL_S3")) return "SWING_SELL_S3";
-        if (close < wl.s2 && ((open > wl.s2 || high > wl.s2) || (high > wl.s2 && open < wl.s2)) && !broken.contains("SWING_SELL_S2")) return "SWING_SELL_S2";
-
-        double s1pl = Math.min(wl.s1, wl.pl);
-        if (close < s1pl && ((open > s1pl || high > s1pl) || (high > s1pl && open < s1pl)) && !broken.contains("SWING_SELL_S1")) return "SWING_SELL_S1";
-
-        if (close < cprBot && ((open > cprBot || high > cprBot) || (high > cprBot && open < cprBot)) && !broken.contains("SWING_SELL_CPR")) return "SWING_SELL_CPR";
-
-        double r1ph = Math.min(wl.r1, wl.ph);
-        if (close < r1ph && ((open > r1ph || high > r1ph) || (high > r1ph && open < r1ph)) && !broken.contains("SWING_SELL_R1")) return "SWING_SELL_R1";
-
-        return null;
-    }
-
-    /**
      * Compute swing target based on the breakout setup and weekly levels.
      * Target = next weekly level in the breakout direction.
+     */
+    /**
+     * Compute swing target: next weekly level above entry (BUY only — CNC has no short selling).
      */
     public double computeSwingTarget(String setup, WeeklyCprService.WeeklyLevels wl, double weeklyAtr) {
         return switch (setup) {
@@ -205,35 +174,22 @@ public class SwingScanner implements SwingCandleAggregator.SwingCandleCloseListe
             case "SWING_BUY_R2"  -> wl.r3;
             case "SWING_BUY_R3"  -> wl.r4;
             case "SWING_BUY_R4"  -> wl.r4 + weeklyAtr;        // no level above, use ATR extension
-            case "SWING_SELL_R1" -> wl.top;                    // R1 → CPR top
-            case "SWING_SELL_CPR"-> Math.max(wl.s1, wl.pl);   // CPR → S1/PWL
-            case "SWING_SELL_S1" -> wl.s2;
-            case "SWING_SELL_S2" -> wl.s3;
-            case "SWING_SELL_S3" -> wl.s4;
-            case "SWING_SELL_S4" -> wl.s4 - weeklyAtr;        // no level below
             default -> 0;
         };
     }
 
     /**
-     * Compute swing SL based on weekly ATR and direction.
-     * SL = entry ± (weeklyAtr × multiplier), capped at nearest opposite weekly level.
+     * Compute swing SL for BUY: entry - (weeklyAtr × multiplier), capped at nearest support.
+     * CNC equity is BUY only — no short selling.
      */
     public double computeSwingSl(String side, double entryPrice, double weeklyAtr,
                                   double atrMultiplier, WeeklyCprService.WeeklyLevels wl) {
         double slOffset = weeklyAtr * atrMultiplier;
-        if ("BUY".equals(side)) {
-            double sl = entryPrice - slOffset;
-            // Cap: SL should not be below the nearest support level below entry
-            double nearestSupport = findNearestSupportBelow(entryPrice, wl);
-            if (nearestSupport > 0 && sl < nearestSupport) sl = nearestSupport;
-            return sl;
-        } else {
-            double sl = entryPrice + slOffset;
-            double nearestResistance = findNearestResistanceAbove(entryPrice, wl);
-            if (nearestResistance > 0 && sl > nearestResistance) sl = nearestResistance;
-            return sl;
-        }
+        double sl = entryPrice - slOffset;
+        // Cap: SL should not be below the nearest support level below entry
+        double nearestSupport = findNearestSupportBelow(entryPrice, wl);
+        if (nearestSupport > 0 && sl < nearestSupport) sl = nearestSupport;
+        return sl;
     }
 
     private double findNearestSupportBelow(double price, WeeklyCprService.WeeklyLevels wl) {
@@ -243,15 +199,6 @@ public class SwingScanner implements SwingCandleAggregator.SwingCandleCloseListe
             if (s > 0 && s < price && s > nearest) nearest = s;
         }
         return nearest;
-    }
-
-    private double findNearestResistanceAbove(double price, WeeklyCprService.WeeklyLevels wl) {
-        double[] resistances = {wl.r4, wl.r3, wl.r2, wl.r1, wl.ph, wl.top, wl.bot, wl.s1, wl.pl};
-        double nearest = Double.MAX_VALUE;
-        for (double r : resistances) {
-            if (r > 0 && r > price && r < nearest) nearest = r;
-        }
-        return nearest == Double.MAX_VALUE ? 0 : nearest;
     }
 
     private void recordSignal(String fyersSymbol, String setup, String side, double close,
