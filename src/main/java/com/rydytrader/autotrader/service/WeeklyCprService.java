@@ -72,8 +72,15 @@ public class WeeklyCprService {
                     wl.tc = 2.0 * wl.pivot - wl.bc;
                     wl.top = Math.max(wl.tc, wl.bc);
                     wl.bot = Math.min(wl.tc, wl.bc);
+                    double range = wH - wL;
                     wl.r1 = 2.0 * wl.pivot - wL;
                     wl.s1 = 2.0 * wl.pivot - wH;
+                    wl.r2 = wl.pivot + range;
+                    wl.s2 = wl.pivot - range;
+                    wl.r3 = wH + 2.0 * (wl.pivot - wL);
+                    wl.s3 = wL - 2.0 * (wH - wl.pivot);
+                    wl.r4 = wl.r3 + (wl.r2 - wl.r1);
+                    wl.s4 = wl.s3 - (wl.s1 - wl.s2);
                     wl.ph = wH;
                     wl.pl = wL;
                     weeklyLevels.put(symbol, wl);
@@ -266,7 +273,12 @@ public class WeeklyCprService {
         return s;
     }
 
-    /** Debug: return weekly levels for a symbol as a map. */
+    /** Get raw weekly levels object for a symbol (used by SwingScanner). */
+    public WeeklyLevels getWeeklyLevels(String symbol) {
+        return weeklyLevels.get(symbol);
+    }
+
+    /** Return weekly levels for a symbol as a map (for API/UI). */
     public Map<String, Double> getWeeklyLevelsMap(String symbol) {
         WeeklyLevels wl = weeklyLevels.get(symbol);
         if (wl == null) return Collections.emptyMap();
@@ -277,7 +289,13 @@ public class WeeklyCprService {
         m.put("top", Math.round(wl.top * 100.0) / 100.0);
         m.put("bot", Math.round(wl.bot * 100.0) / 100.0);
         m.put("r1", Math.round(wl.r1 * 100.0) / 100.0);
+        m.put("r2", Math.round(wl.r2 * 100.0) / 100.0);
+        m.put("r3", Math.round(wl.r3 * 100.0) / 100.0);
+        m.put("r4", Math.round(wl.r4 * 100.0) / 100.0);
         m.put("s1", Math.round(wl.s1 * 100.0) / 100.0);
+        m.put("s2", Math.round(wl.s2 * 100.0) / 100.0);
+        m.put("s3", Math.round(wl.s3 * 100.0) / 100.0);
+        m.put("s4", Math.round(wl.s4 * 100.0) / 100.0);
         m.put("ph", Math.round(wl.ph * 100.0) / 100.0);
         m.put("pl", Math.round(wl.pl * 100.0) / 100.0);
         return m;
@@ -285,8 +303,10 @@ public class WeeklyCprService {
 
     // ── Inner class for weekly CPR levels ────────────────────────────────────
 
-    private static class WeeklyLevels {
+    static class WeeklyLevels {
         double pivot, tc, bc, top, bot;
-        double r1, s1, ph, pl;
+        double r1, r2, r3, r4;
+        double s1, s2, s3, s4;
+        double ph, pl;
     }
 }
