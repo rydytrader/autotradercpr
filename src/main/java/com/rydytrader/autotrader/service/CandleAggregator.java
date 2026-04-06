@@ -259,7 +259,7 @@ public class CandleAggregator {
         completedCandles.computeIfAbsent(symbol, k -> new ConcurrentLinkedDeque<>());
         Deque<CandleBar> history = completedCandles.get(symbol);
         history.addLast(candle);
-        while (history.size() > 20) history.pollFirst();
+        while (history.size() > 30) history.pollFirst();
 
         // Notify listeners
         for (CandleCloseListener listener : listeners) {

@@ -122,7 +122,8 @@ public class MomentumService {
             if (monthHL[0] == 0 && monthHL[1] == 0) noMonthData++;
             if (!volumeOk && todayCpr.getVolume() > 0) volumeFailed++;
 
-            // Get the day-before-yesterday's close (to check freshness of break)
+            // prevDayClose = day before bhavcopy day (e.g., Thursday if bhav=Friday)
+            // Used for freshness: break must have happened on the last trading day specifically
             double prevDayClose = 0;
             if (!history.isEmpty()) {
                 CprLevels prevDay = history.get(0).get(symbol);
@@ -211,9 +212,11 @@ public class MomentumService {
         double high = 0, low = Double.MAX_VALUE;
         boolean found = false;
 
-        // Find days belonging to the previous complete week
-        LocalDate today = LocalDate.now(IST);
-        LocalDate mondayThisWeek = today.with(DayOfWeek.MONDAY);
+        // Find days belonging to the previous complete week relative to the bhavcopy date
+        // (not LocalDate.now(), which may be Saturday/Sunday/Monday — misaligned with bhavcopy)
+        String bhavDate = bhavcopyService.getCachedDate();
+        LocalDate dataDate = (bhavDate != null && !bhavDate.isEmpty()) ? LocalDate.parse(bhavDate) : LocalDate.now(IST);
+        LocalDate mondayThisWeek = dataDate.with(DayOfWeek.MONDAY);
         LocalDate mondayLastWeek = mondayThisWeek.minusWeeks(1);
         LocalDate fridayLastWeek = mondayLastWeek.plusDays(4);
 

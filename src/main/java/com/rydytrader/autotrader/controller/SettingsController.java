@@ -2,6 +2,7 @@ package com.rydytrader.autotrader.controller;
 
 import com.rydytrader.autotrader.dto.CprLevels;
 import com.rydytrader.autotrader.service.BhavcopyService;
+import com.rydytrader.autotrader.service.MomentumService;
 import com.rydytrader.autotrader.service.TradeHistoryService;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.http.ResponseEntity;
@@ -16,13 +17,16 @@ public class SettingsController {
     private final RiskSettingsStore   riskSettings;
     private final TradeHistoryService tradeHistoryService;
     private final BhavcopyService     bhavcopyService;
+    private final MomentumService     momentumService;
 
     public SettingsController(RiskSettingsStore riskSettings,
                                TradeHistoryService tradeHistoryService,
-                               BhavcopyService bhavcopyService) {
+                               BhavcopyService bhavcopyService,
+                               MomentumService momentumService) {
         this.riskSettings        = riskSettings;
         this.tradeHistoryService = tradeHistoryService;
         this.bhavcopyService     = bhavcopyService;
+        this.momentumService     = momentumService;
     }
 
     // ── GET SETTINGS + TODAY'S STATUS ─────────────────────────────────────────
@@ -169,6 +173,8 @@ public class SettingsController {
             if (body.containsKey("regimeIncludeNeutral")) riskSettings.setRegimeIncludeNeutral(Boolean.parseBoolean(body.get("regimeIncludeNeutral").toString()));
             if (body.containsKey("regimeMinConfidence")) riskSettings.setRegimeMinConfidence(Double.parseDouble(body.get("regimeMinConfidence").toString()));
             riskSettings.saveFor(effectiveMode);
+            // Recompute momentum tags so threshold changes take effect immediately
+            momentumService.compute();
             return ResponseEntity.ok(Map.of("ok", true, "message", "Settings saved"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("ok", false, "message", e.getMessage()));
