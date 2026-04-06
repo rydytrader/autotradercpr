@@ -21,6 +21,7 @@ import com.rydytrader.autotrader.service.AtrService;
 import com.rydytrader.autotrader.service.BreakoutScanner;
 import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.service.LatencyTracker;
+import com.rydytrader.autotrader.service.MarginDataService;
 import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.OrderEventService;
 import com.rydytrader.autotrader.service.OrderService;
@@ -50,6 +51,7 @@ public class TradingController {
     private final AtrService          atrService;
     private final LatencyTracker      latencyTracker;
     private final BreakoutScanner     breakoutScanner;
+    private final MarginDataService   marginDataService;
 
     public TradingController(PollingService pollingService,
                               OrderService orderService,
@@ -64,7 +66,8 @@ public class TradingController {
                               CandleAggregator candleAggregator,
                               AtrService atrService,
                               LatencyTracker latencyTracker,
-                              BreakoutScanner breakoutScanner) {
+                              BreakoutScanner breakoutScanner,
+                              MarginDataService marginDataService) {
         this.pollingService      = pollingService;
         this.orderService        = orderService;
         this.eventService        = eventService;
@@ -79,6 +82,7 @@ public class TradingController {
         this.atrService          = atrService;
         this.latencyTracker      = latencyTracker;
         this.breakoutScanner     = breakoutScanner;
+        this.marginDataService   = marginDataService;
     }
 
     // ── PLACE ORDER ───────────────────────────────────────────────────────────
@@ -244,6 +248,15 @@ public class TradingController {
             Map<String, Object> state = positionStateStore.load(p.getSymbol());
             m.put("description", state != null ? state.getOrDefault("description", "") : "");
             m.put("probability", pollingService.getProbability(p.getSymbol()));
+            // SL and target prices from persisted state
+            if (state != null) {
+                try { m.put("slPrice", Double.parseDouble(state.getOrDefault("slPrice", "0").toString())); } catch (NumberFormatException e) { m.put("slPrice", 0.0); }
+                try { m.put("targetPrice", Double.parseDouble(state.getOrDefault("targetPrice", "0").toString())); } catch (NumberFormatException e) { m.put("targetPrice", 0.0); }
+            } else {
+                m.put("slPrice", 0.0);
+                m.put("targetPrice", 0.0);
+            }
+            m.put("leverage", marginDataService.getLeverage(p.getSymbol()));
             return m;
         }).collect(java.util.stream.Collectors.toList());
         double realizedPnl   = tradeHistoryService.getTrades().stream()

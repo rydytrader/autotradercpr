@@ -10,9 +10,8 @@ public class CprLevels {
     private double ph, pl;
     private double cprWidth, cprWidthPct;
     private boolean narrowCpr;
-    private double rangePct;          // (high-low)/close * 100
-    private double rangeZScore;       // cross-sectional z-score of rangePct across universe
-    private String  narrowRangeType;  // "SMALL" / "LARGE" / null (only set for narrow CPR)
+    private double rangeZScore;       // per-stock 20-day z-score of (H-L)
+    private String narrowRangeType;   // "SMALL" / "LARGE" / null (only set for narrow/inside CPR)
     private long   volume;
     private double fiftyTwoWeekHigh, fiftyTwoWeekLow;
 
@@ -48,7 +47,6 @@ public class CprLevels {
         this.cprWidth    = Math.abs(tc - bc);
         this.cprWidthPct = close > 0 ? cprWidth / close * 100.0 : 0;
         this.narrowCpr   = cprWidthPct < 0.1;
-        this.rangePct    = close > 0 ? (high - low) / close * 100.0 : 0;
     }
 
     /** Round all calculated levels to the given tick size. */
@@ -94,7 +92,6 @@ public class CprLevels {
     public double  getCprWidth()    { return cprWidth; }
     public double  getCprWidthPct() { return cprWidthPct; }
     public boolean isNarrowCpr()    { return narrowCpr; }
-    public double  getRangePct()        { return rangePct; }
     public double  getRangeZScore()     { return rangeZScore; }
     public void    setRangeZScore(double v) { this.rangeZScore = v; }
     public String  getNarrowRangeType() { return narrowRangeType; }

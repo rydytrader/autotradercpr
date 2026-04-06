@@ -334,7 +334,7 @@ public class BhavcopyService {
                     while (dailyHistory.size() > MAX_HISTORY_DAYS) dailyHistory.removeLast();
                 }
 
-                // Classify narrow CPR stocks as SMALL or LARGE range using cross-sectional z-score
+                // Classify narrow/inside CPR stocks as SMALL or LARGE range using z-score
                 classifyNarrowRangeTypes(newCache);
 
                 cache.clear();
@@ -365,18 +365,12 @@ public class BhavcopyService {
         log.error("[BhavcopyService] Failed to fetch Bhavcopy after 3 attempts, using cached data");
     }
 
-    // ── Backfill daily history from NSE archives ──────────────────────────────
-
     /**
      * Classify every stock's range as SMALL or LARGE using a per-stock 20-day z-score
-     * of the raw range x = High - Low. Mean/std computed from that stock's own prior 20
-     * trading days: z = (x - μ) / σ. z < -1.5 → SMALL (genuinely tight bar vs the stock's
-     * own history). Otherwise → LARGE. Applied to both narrow and inside CPR stocks so the
-     * scanner can distinguish genuine tight consolidations from wide-range days that
-     * happened to close near the H/L midpoint or inside the prior day's CPR.
+     * of the raw range x = High - Low: z = (x - μ) / σ. z < -1.5 → SMALL (genuinely
+     * tight bar). Otherwise → LARGE.
      */
     private void classifyNarrowRangeTypes(Map<String, CprLevels> todayCache) {
-        // Build history list: yesterday first, then older days (cache still holds yesterday here)
         List<Map<String, CprLevels>> history = new ArrayList<>();
         if (!cache.isEmpty()) history.add(cache);
         for (DaySnapshot snap : dailyHistory) history.add(snap.symbols);
@@ -390,8 +384,6 @@ public class BhavcopyService {
         int classified = 0;
         for (CprLevels today : todayCache.values()) {
             String sym = today.getSymbol();
-
-            // x = high - low (absolute range) from each of the prior 20 days
             List<Double> ranges = new ArrayList<>();
             for (int i = 0; i < window; i++) {
                 CprLevels h = history.get(i).get(sym);
@@ -402,7 +394,6 @@ public class BhavcopyService {
             }
             if (ranges.size() < 10) continue;
 
-            // μ = mean, σ = std dev of 20-day ranges
             double sum = 0;
             for (double r : ranges) sum += r;
             double mean = sum / ranges.size();
@@ -411,15 +402,16 @@ public class BhavcopyService {
             double std = Math.sqrt(sq / ranges.size());
             if (std <= 1e-9) continue;
 
-            // z = (x - μ) / σ, where x = today's (high - low)
             double x = today.getHigh() - today.getLow();
             double z = (x - mean) / std;
             today.setRangeZScore(Math.round(z * 100.0) / 100.0);
             today.setNarrowRangeType(z < -1.5 ? "SMALL" : "LARGE");
             classified++;
         }
-        log.info("[BhavcopyService] Classified range z-score (SMALL/LARGE) for {} stocks (using {}-day per-stock history)", classified, window);
+        log.info("[BhavcopyService] Classified range z-score for {} stocks ({}-day history)", classified, window);
     }
+
+    // ── Backfill daily history from NSE archives ──────────────────────────────
 
     private void backfillHistory(LocalDate currentDate, String cookies, Set<String> nfoSymbols) {
         // Collect dates already in history to avoid re-fetching

@@ -640,24 +640,11 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         // Mark as recently handled to prevent duplicate from position event
         recentlyHandled.put(symbol, System.currentTimeMillis());
 
-        // Recalculate SL from actual fill price
+        // Recalculate SL from actual fill price (always ATR-based at entry)
+        // Chandelier Exit only adjusts SL later on candle-close events, not at initial placement
         double adjustedSl = ctx.slPrice;
         if (entryPrice > 0 && ctx.atr > 0 && ctx.atrMultiplier > 0) {
-            double slOffset = ctx.atr * ctx.atrMultiplier;
-            double atrSl = "LONG".equals(ctx.position) ? entryPrice - slOffset : entryPrice + slOffset;
-            adjustedSl = atrSl;
-            // If Chandelier Exit enabled, use tighter of ATR and Chandelier
-            if (riskSettings.isEnableTrailingSl()) {
-                double chandelierSl = marketDataService.calculateChandelierSl(symbol, ctx.position);
-                if (chandelierSl > 0) {
-                    adjustedSl = "LONG".equals(ctx.position)
-                        ? Math.max(atrSl, chandelierSl)
-                        : Math.min(atrSl, chandelierSl);
-                    log.info("[OrderEventSvc] SL: ATR={} Chandelier={} → using {}",
-                        String.format("%.2f", atrSl), String.format("%.2f", chandelierSl),
-                        String.format("%.2f", adjustedSl));
-                }
-            }
+            adjustedSl = "LONG".equals(ctx.position) ? entryPrice - ctx.atr * ctx.atrMultiplier : entryPrice + ctx.atr * ctx.atrMultiplier;
             adjustedSl = orderService.roundToTick(adjustedSl, symbol);
         }
 
@@ -695,40 +682,52 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         String symbol = ctx.symbol;
         int retries = 0;
         final int MAX_RETRIES = 3;
+        boolean skipTarget = riskSettings.isEnableTrailingSl() && riskSettings.isTrailingSlNoTarget();
 
         while (retries < MAX_RETRIES) {
             retries++;
             OrderDTO slOrder = orderService.placeStopLoss(symbol, ctx.quantity, ctx.exitSide, slPrice);
-            OrderDTO targetOrder = orderService.placeTarget(symbol, ctx.quantity, ctx.exitSide, ctx.targetPrice);
+
+            OrderDTO targetOrder = null;
+            if (!skipTarget) {
+                targetOrder = orderService.placeTarget(symbol, ctx.quantity, ctx.exitSide, ctx.targetPrice);
+            }
 
             boolean slOk = slOrder != null && slOrder.getId() != null && !slOrder.getId().isEmpty();
-            boolean tgtOk = targetOrder != null && targetOrder.getId() != null && !targetOrder.getId().isEmpty();
+            boolean tgtOk = skipTarget || (targetOrder != null && targetOrder.getId() != null && !targetOrder.getId().isEmpty());
 
             if (slOk && tgtOk) {
                 double roundedSl = orderService.roundToTick(slPrice, symbol);
-                double roundedTgt = orderService.roundToTick(ctx.targetPrice, symbol);
-                eventService.log("[SUCCESS] [WS] SL placed for " + symbol + " at " + roundedSl + " [ID: " + slOrder.getId() + "]");
-                eventService.log("[SUCCESS] [WS] Target placed for " + symbol + " at " + roundedTgt + " [ID: " + targetOrder.getId() + "]");
-                positionStateStore.saveOcoState(symbol, slOrder.getId(), targetOrder.getId(), slPrice, ctx.targetPrice);
+                String tgtId = skipTarget ? "" : targetOrder.getId();
+                double tgtPrice = skipTarget ? 0 : ctx.targetPrice;
 
+                eventService.log("[SUCCESS] [WS] SL placed for " + symbol + " at " + roundedSl + " [ID: " + slOrder.getId() + "]");
+                if (skipTarget) {
+                    eventService.log("[INFO] [WS] No fixed target for " + symbol + " — trailing SL will close the trade");
+                } else {
+                    double roundedTgt = orderService.roundToTick(ctx.targetPrice, symbol);
+                    eventService.log("[SUCCESS] [WS] Target placed for " + symbol + " at " + roundedTgt + " [ID: " + tgtId + "]");
+                    positionStateStore.appendDescription(symbol,
+                        "[TGT_PLACED] @ " + String.format("%.2f", roundedTgt) + " [" + tgtId + "]");
+                }
+                positionStateStore.saveOcoState(symbol, slOrder.getId(), tgtId, slPrice, tgtPrice);
                 positionStateStore.appendDescription(symbol,
                     "[SL_PLACED] @ " + String.format("%.2f", roundedSl) + " [" + slOrder.getId() + "]");
-                positionStateStore.appendDescription(symbol,
-                    "[TGT_PLACED] @ " + String.format("%.2f", roundedTgt) + " [" + targetOrder.getId() + "]");
 
                 // Track SL + Target for fill detection via WebSocket
-                trackOcoOrders(slOrder.getId(), targetOrder.getId(),
+                trackOcoOrders(slOrder.getId(), tgtId,
                     symbol, ctx.quantity, ctx.position, ctx.exitSide, ctx.setup, entryFillPrice,
-                    slPrice, ctx.targetPrice);
+                    slPrice, tgtPrice);
                 return;
             }
 
             // Cancel whichever succeeded
             if (slOk) orderService.cancelOrder(slOrder.getId());
-            if (tgtOk) orderService.cancelOrder(targetOrder.getId());
+            if (!skipTarget && targetOrder != null && targetOrder.getId() != null && !targetOrder.getId().isEmpty())
+                orderService.cancelOrder(targetOrder.getId());
 
             if (!slOk) eventService.log("[ERROR] SL placement failed for " + symbol + " (attempt " + retries + ")");
-            if (!tgtOk) eventService.log("[ERROR] Target placement failed for " + symbol + " (attempt " + retries + ")");
+            if (!skipTarget && !tgtOk) eventService.log("[ERROR] Target placement failed for " + symbol + " (attempt " + retries + ")");
 
             try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
         }

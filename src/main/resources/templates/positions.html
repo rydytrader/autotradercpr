@@ -148,11 +148,6 @@
     </div>
 
     <div class="stat-grid">
-        <div class="stat-card fade-in" style="--accent-color: var(--accent-blue)">
-            <div class="stat-label">Current Side</div>
-            <div class="stat-value" id="statSide">NONE</div>
-            <div class="stat-sub">Active direction</div>
-        </div>
         <div class="stat-card fade-in" style="--accent-color: var(--accent-cyan)">
             <div class="stat-label">Open Positions</div>
             <div class="stat-value" id="statCount">0</div>
@@ -162,6 +157,11 @@
             <div class="stat-label">Net Day P&amp;L</div>
             <div class="stat-value" id="statPnl">—</div>
             <div class="stat-sub" id="statPnlSub">Realized + Unrealized</div>
+        </div>
+        <div class="stat-card fade-in" style="--accent-color: var(--accent-blue)">
+            <div class="stat-label">Capital Deployed</div>
+            <div class="stat-value" id="statCapital">₹0</div>
+            <div class="stat-sub" id="statCapitalSub">0 positions</div>
         </div>
         <div class="stat-card fade-in" style="--accent-color: var(--accent-yellow)">
             <div class="stat-label">Market Clock</div>
@@ -201,6 +201,8 @@
                         <th class="text-center">Setup</th>
                         <th class="text-center">Prob</th>
                         <th class="text-right">Entry</th>
+                        <th class="text-right">SL</th>
+                        <th class="text-right">Target</th>
                         <th class="text-right">LTP</th>
                         <th class="text-right">P&amp;L</th>
                         <th class="text-center admin-only">Action</th>
@@ -209,7 +211,7 @@
                 </thead>
                 <tbody id="positionsTableBody">
                     <tr>
-                        <td colspan="6">
+                        <td colspan="13">
                             <div class="empty-state">
                                 <div class="empty-icon">◎</div>
                                 No active positions
@@ -477,12 +479,18 @@
             .then(r => r.json())
             .then(data => {
                 const positions = data.positions || [];
-                const sides = new Set(positions.map(p => p.side));
-                const sideLabel = positions.length === 0 ? 'NONE'
-                    : sides.has('LONG') && sides.has('SHORT') ? 'BOTH'
-                    : sides.has('LONG') ? 'LONG' : 'SHORT';
-                document.getElementById('statSide').textContent = sideLabel;
                 document.getElementById('statCount').textContent = positions.length;
+
+                // Capital deployed: margin = notional / leverage
+                let totalNotional = 0, totalMargin = 0;
+                positions.forEach(p => {
+                    let notional = Math.abs(p.qty) * p.avgPrice;
+                    let lev = p.leverage || 1;
+                    totalNotional += notional;
+                    totalMargin += lev > 0 ? notional / lev : notional;
+                });
+                document.getElementById('statCapital').textContent = '\u20B9' + Math.round(totalMargin).toLocaleString('en-IN');
+                document.getElementById('statCapitalSub').textContent = 'Notional: \u20B9' + Math.round(totalNotional).toLocaleString('en-IN');
 
                 // Enable/disable Square Off button based on open positions
                 currentPositions = positions;
@@ -540,7 +548,7 @@
         positions.sort((a, b) => (b.entryTime || '').localeCompare(a.entryTime || ''));
         const tbody = document.getElementById('positionsTableBody');
         if (positions.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="11"><div class="empty-state"><div class="empty-icon">◎</div>No active positions${filter ? ' for ' + filter : ''}</div></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="13"><div class="empty-state"><div class="empty-icon">◎</div>No active positions${filter ? ' for ' + filter : ''}</div></td></tr>`;
             return;
         }
         tbody.innerHTML = positions.map((pos, idx) => {
@@ -549,6 +557,10 @@
                 : `<span class="side-badge side-short">▼ SHORT</span>`;
             const pnlClass = pos.pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
             const sym = pos.symbol.replace(/'/g, "\\'");
+            const sl = pos.slPrice || 0;
+            const tgt = pos.targetPrice || 0;
+            const slStr = sl > 0 ? sl.toFixed(2) : '—';
+            const tgtStr = tgt > 0 ? tgt.toFixed(2) : 'Trail';
             return `<tr>
                 <td style="font-family:var(--font-mono);color:var(--text-muted);font-size:0.75rem;">${idx + 1}</td>
                 <td style="font-family:var(--font-mono);color:var(--text-secondary)">${pos.entryTime || '—'}</td>
@@ -558,10 +570,12 @@
                 <td class="text-center">${renderSetup(pos.setup)}</td>
                 <td class="text-center">${renderProb(pos.probability)}</td>
                 <td class="text-right">${pos.avgPrice.toFixed(2)}</td>
+                <td class="text-right" style="color:var(--accent-red);">${slStr}</td>
+                <td class="text-right" style="color:var(--accent-green);">${tgtStr}</td>
                 <td class="text-right">${pos.ltp.toFixed(2)}</td>
                 <td class="text-right"><span class="${pnlClass}">${fmtPnl(pos.pnl)}</span></td>
-                <td class="text-center admin-only"><button class="squareoff-btn" style="padding:5px 14px;font-size:0.7rem;" onclick="squareOffSymbol('${sym}',${Math.abs(pos.qty)})">⬛ SqOff</button></td>
-                <td class="text-center"><button onclick="showDescription('${escapeForJs(pos.description || '')}')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);cursor:pointer;padding:4px 8px;font-size:0.75rem;" title="Trade description">ℹ</button></td>
+                <td class="text-center admin-only"><button onclick="squareOffSymbol('${sym}',${Math.abs(pos.qty)})" style="background:none;border:1px solid rgba(248,113,113,0.3);border-radius:6px;color:var(--accent-red);cursor:pointer;padding:4px 8px;font-size:0.85rem;line-height:1;" title="Square off ${pos.symbol}">&#x2715;</button></td>
+                <td class="text-center"><button onclick="showPosInfo(${idx})" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);cursor:pointer;padding:4px 8px;font-size:0.75rem;" title="Position details">ℹ</button></td>
             </tr>`;
         }).join('');
         // Re-apply admin-only visibility after dynamic render
@@ -700,6 +714,8 @@
                                 if (live) {
                                     pos.ltp = live.ltp;
                                     pos.pnl = live.pnl;
+                                    if (live.slPrice) pos.slPrice = live.slPrice;
+                                    if (live.targetPrice !== undefined) pos.targetPrice = live.targetPrice;
                                 }
                             });
                             renderPositionsTable();
@@ -762,6 +778,55 @@
     }
     function closeDescModal() {
         document.getElementById('descModal').style.display = 'none';
+    }
+
+    function showPosInfo(idx) {
+        const filter = document.getElementById('posSymbolFilter').value;
+        const positions = filter ? allPositions.filter(p => p.symbol === filter) : [...allPositions];
+        positions.sort((a, b) => (b.entryTime || '').localeCompare(a.entryTime || ''));
+        const pos = positions[idx];
+        if (!pos) return;
+
+        const sl = pos.slPrice || 0;
+        const tgt = pos.targetPrice || 0;
+        const entry = pos.avgPrice || 0;
+        const ltp = pos.ltp || 0;
+        const qty = Math.abs(pos.qty || 0);
+        const isLong = pos.side === 'LONG';
+
+        // Potential loss (if SL hit)
+        const potLoss = sl > 0 ? (isLong ? (entry - sl) * qty : (sl - entry) * qty) : 0;
+        // Potential profit (if target hit)
+        const potProfit = tgt > 0 ? (isLong ? (tgt - entry) * qty : (entry - tgt) * qty) : 0;
+        // Current P&L
+        const curPnl = pos.pnl || 0;
+        // Risk:Reward ratio
+        const rr = potLoss > 0 && potProfit > 0 ? (potProfit / potLoss).toFixed(1) : '—';
+        // Distance from LTP to SL/Target
+        const slDist = sl > 0 && ltp > 0 ? ((isLong ? ltp - sl : sl - ltp) / ltp * 100).toFixed(2) : '—';
+        const tgtDist = tgt > 0 && ltp > 0 ? ((isLong ? tgt - ltp : ltp - tgt) / ltp * 100).toFixed(2) : '—';
+
+        const fmtInr = v => (v >= 0 ? '+' : '') + '\u20B9' + Math.round(v).toLocaleString('en-IN');
+        const lines = [
+            pos.symbol + ' | ' + pos.side + ' | Qty: ' + qty,
+            '',
+            'Entry:   ' + entry.toFixed(2),
+            'LTP:     ' + ltp.toFixed(2),
+            'SL:      ' + (sl > 0 ? sl.toFixed(2) + '  (' + slDist + '% away)' : '—'),
+            'Target:  ' + (tgt > 0 ? tgt.toFixed(2) + '  (' + tgtDist + '% away)' : 'Trailing SL'),
+            '',
+            'Current P&L:      ' + fmtInr(curPnl),
+            'Potential Loss:   ' + fmtInr(-potLoss) + (sl > 0 ? '  (if SL hit)' : ''),
+            'Potential Profit: ' + (tgt > 0 ? fmtInr(potProfit) + '  (if Target hit)' : 'No fixed target'),
+            'Risk : Reward:    ' + rr,
+        ];
+
+        if (pos.description) {
+            lines.push('', '--- Description ---', pos.description.replace(/\\n/g, '\n'));
+        }
+
+        document.getElementById('descContent').textContent = lines.join('\n');
+        document.getElementById('descModal').style.display = 'flex';
     }
 
 </script>

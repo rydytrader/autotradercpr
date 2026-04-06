@@ -42,8 +42,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     private final RiskSettingsStore riskSettings;
     private final EventService eventService;
     private final LatencyTracker latencyTracker;
-    private final MomentumService momentumService;
-    private final HmmRegimeService hmmRegimeService;
 
     @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.context.annotation.Lazy
@@ -74,9 +72,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                            CandleAggregator candleAggregator,
                            RiskSettingsStore riskSettings,
                            EventService eventService,
-                           LatencyTracker latencyTracker,
-                           MomentumService momentumService,
-                           HmmRegimeService hmmRegimeService) {
+                           LatencyTracker latencyTracker) {
         this.bhavcopyService = bhavcopyService;
         this.atrService = atrService;
         this.weeklyCprService = weeklyCprService;
@@ -84,8 +80,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         this.riskSettings = riskSettings;
         this.eventService = eventService;
         this.latencyTracker = latencyTracker;
-        this.momentumService = momentumService;
-        this.hmmRegimeService = hmmRegimeService;
         loadState();
     }
 
@@ -100,10 +94,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // Only scan if signal source is INTERNAL
         if (!"INTERNAL".equalsIgnoreCase(riskSettings.getSignalSource())) return;
         if (!watchlistSymbols.contains(fyersSymbol)) return;
-
-        // Scanner-group gate: breakout signals only fire for stocks passing the
-        // CPR Width / Momentum / HMM regime filters configured in Settings.
-        if (!isBreakoutEligible(fyersSymbol)) return;
 
         // Skip candles that started before market open
         if (completedCandle.startMinute < MarketHolidayService.MARKET_OPEN_MINUTE) return;
@@ -398,73 +388,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         };
     }
 
-    /**
-     * Breakout-gate: returns true only if the stock passes the scanner-group filters
-     * (NS/NL/IS/IL/Weekly-Narrow/Momentum) and the optional HMM regime gate. Called on
-     * every candle close — a stock may be in the subscribed watchlist (so we aggregate
-     * its candles) yet still be blocked here from generating trade signals.
-     */
-    private boolean isBreakoutEligible(String fyersSymbol) {
-        String ticker = extractTicker(fyersSymbol);
-        CprLevels cpr = bhavcopyService.getCprLevels(ticker);
-        if (cpr == null) return false;
-
-        boolean isNarrow = cpr.isNarrowCpr();
-        boolean isInside = bhavcopyService.getInsideCprStocks().stream()
-                .anyMatch(c -> c.getSymbol().equals(ticker));
-        boolean isWeeklyNarrow = bhavcopyService.getWeeklyNarrowCprStocks().stream()
-                .anyMatch(c -> c.getSymbol().equals(ticker));
-        // Split momentum tags: breakout tags (week/month/52w) vs power-candle tags (HMB+/HMB-)
-        boolean hasBreakoutTag = false;
-        boolean hasPowerTag = false;
-        for (var m : momentumService.getMomentumStocks()) {
-            if (!m.getSymbol().equals(ticker)) continue;
-            for (String tag : m.getTags()) {
-                if (tag.equals("HMB+") || tag.equals("HMB-")) hasPowerTag = true;
-                else hasBreakoutTag = true;
-            }
-            break;
-        }
-        String nrt = cpr.getNarrowRangeType();
-
-        boolean passes = false;
-
-        // Narrow CPR → NS/NL filters
-        if (isNarrow) {
-            if ("SMALL".equals(nrt) && riskSettings.isScanIncludeNS()) passes = true;
-            else if ("LARGE".equals(nrt) && riskSettings.isScanIncludeNL()) passes = true;
-            else if (nrt == null && (riskSettings.isScanIncludeNS() || riskSettings.isScanIncludeNL())) passes = true;
-        }
-        // Inside-only → IS/IL filters
-        if (!passes && isInside && !isNarrow) {
-            if ("SMALL".equals(nrt) && riskSettings.isScanIncludeIS()) passes = true;
-            else if ("LARGE".equals(nrt) && riskSettings.isScanIncludeIL()) passes = true;
-            else if (nrt == null && (riskSettings.isScanIncludeIS() || riskSettings.isScanIncludeIL())) passes = true;
-        }
-        // Weekly narrow
-        if (!passes && isWeeklyNarrow && riskSettings.isScanIncludeWeeklyNarrow()) passes = true;
-        // Momentum breakouts (week/month/52w break tags)
-        if (!passes && hasBreakoutTag && riskSettings.isEnableMomentumScanner()) passes = true;
-        // Power candle (HMB+/HMB-)
-        if (!passes && hasPowerTag && riskSettings.isEnableHighMomentum()) passes = true;
-
-        if (!passes) return false;
-
-        // HMM regime gate — if enabled, stock must pass regime + confidence check
-        if (riskSettings.isEnableRegimeFilter()) {
-            var rs = hmmRegimeService.getRegime(ticker);
-            if (rs == null) return false;
-            double confPct = rs.getConfidence() * 100.0;
-            if (confPct < riskSettings.getRegimeMinConfidence()) return false;
-            String r = rs.getRegime();
-            if ("BULLISH".equals(r)) return riskSettings.isRegimeIncludeBullish();
-            if ("BEARISH".equals(r)) return riskSettings.isRegimeIncludeBearish();
-            if ("NEUTRAL".equals(r)) return riskSettings.isRegimeIncludeNeutral();
-            return false;
-        }
-        return true;
-    }
-
     private String extractTicker(String fyersSymbol) {
         String s = fyersSymbol;
         int colon = s.indexOf(':');
@@ -550,6 +473,22 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             state.put("tradedCountToday", tradedCountToday);
             state.put("filteredCountToday", filteredCountToday);
 
+            // Save signalHistory (all signals per symbol for the day)
+            Map<String, List<Map<String, String>>> history = new LinkedHashMap<>();
+            for (var entry : signalHistory.entrySet()) {
+                List<Map<String, String>> list = new ArrayList<>();
+                for (SignalInfo si : entry.getValue()) {
+                    Map<String, String> sig = new LinkedHashMap<>();
+                    sig.put("setup", si.setup);
+                    sig.put("time", si.time);
+                    sig.put("status", si.status);
+                    sig.put("detail", si.detail);
+                    list.add(sig);
+                }
+                history.put(entry.getKey(), list);
+            }
+            state.put("signalHistory", history);
+
             Files.writeString(Paths.get(SCANNER_STATE_FILE),
                 mapper.writerWithDefaultPrettyPrinter().writeValueAsString(state));
         } catch (Exception e) {
@@ -596,12 +535,29 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 });
             }
 
+            // Load signalHistory
+            JsonNode historyNode = root.get("signalHistory");
+            if (historyNode != null) {
+                historyNode.fields().forEachRemaining(entry -> {
+                    List<SignalInfo> list = Collections.synchronizedList(new ArrayList<>());
+                    entry.getValue().forEach(node -> {
+                        SignalInfo si = new SignalInfo();
+                        si.setup = node.has("setup") ? node.get("setup").asText() : "";
+                        si.time = node.has("time") ? node.get("time").asText() : "";
+                        si.status = node.has("status") ? node.get("status").asText() : "";
+                        si.detail = node.has("detail") ? node.get("detail").asText() : "";
+                        list.add(si);
+                    });
+                    signalHistory.put(entry.getKey(), list);
+                });
+            }
+
             // Load counters
             if (root.has("tradedCountToday")) tradedCountToday = root.get("tradedCountToday").asInt();
             if (root.has("filteredCountToday")) filteredCountToday = root.get("filteredCountToday").asInt();
 
-            log.info("[Scanner] Restored state: {} signals, {} broken levels, {} traded, {} filtered",
-                lastSignal.size(), brokenLevels.size(), tradedCountToday, filteredCountToday);
+            log.info("[Scanner] Restored state: {} signals, {} broken levels, {} traded, {} filtered, {} signal histories",
+                lastSignal.size(), brokenLevels.size(), tradedCountToday, filteredCountToday, signalHistory.size());
         } catch (Exception e) {
             log.error("[Scanner] Failed to load state: {}", e.getMessage());
         }

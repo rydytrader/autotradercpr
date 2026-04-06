@@ -54,6 +54,7 @@ public class RiskSettingsStore {
         volatile double volumeMultiple = 2.0; // breakout candle must have this x avg volume
         volatile int volumeLookback = 20; // average volume over last N candles (max 20)
         volatile boolean enableTrailingSl = true; // enable Chandelier Exit trailing SL
+        volatile boolean trailingSlNoTarget = false; // when true + trailing SL enabled: skip fixed target, let trailing SL close the trade
         volatile int    chandelierPeriod = 14;  // lookback period for highest high / lowest low (same as ATR)
         volatile double chandelierMultiplier = 2.0; // ATR multiplier for Chandelier Exit
         // Scanner settings
@@ -65,28 +66,6 @@ public class RiskSettingsStore {
         volatile boolean enableLpt      = false; // Low Probable Trade signals
         volatile double mptQtyFactor    = 0.5;   // MPT qty multiplier (0.5 = half)
         volatile double lptQtyFactor    = 0.25;  // LPT qty multiplier (0.25 = quarter)
-        // Momentum settings
-        volatile boolean enableMomentumScanner = true;
-        volatile boolean momentumWeekBreak  = true;
-        volatile boolean momentumMonthBreak = true;
-        volatile boolean momentum52Week     = true;
-        volatile double  momentumVolumeMultiple = 2.0; // min volume ratio vs 20-day avg
-        // Power candle (high momentum)
-        volatile boolean enableHighMomentum = true;
-        volatile double  highMomentumPct = 3.0;       // min % change from previous close
-        volatile double  highMomentumClosingRange = 85; // min closing range % (0-100)
-        // CPR Width scanner group toggles (decide which stocks enter the watchlist)
-        volatile boolean scanIncludeNS = true;   // Narrow + Small Range (z < -1.5)
-        volatile boolean scanIncludeNL = true;   // Narrow + Large Range
-        volatile boolean scanIncludeIS = true;   // Inside + Small Range
-        volatile boolean scanIncludeIL = false;  // Inside + Large Range
-        volatile boolean scanIncludeWeeklyNarrow = true; // Weekly Narrow CPR
-        // HMM regime filter gate (if enabled, stock must pass regime check)
-        volatile boolean enableRegimeFilter = false;
-        volatile boolean regimeIncludeBullish = true;
-        volatile boolean regimeIncludeBearish = true;
-        volatile boolean regimeIncludeNeutral = false;
-        volatile double  regimeMinConfidence = 60.0; // percent 0-100
     }
 
     private final Cfg live = new Cfg();
@@ -132,6 +111,7 @@ public class RiskSettingsStore {
     public double getTargetShiftAtrThreshold() { return cfg().targetShiftAtrThreshold; }
     public boolean isEnableSmallCandleFilter() { return cfg().enableSmallCandleFilter; }
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
+    public boolean isTrailingSlNoTarget() { return cfg().trailingSlNoTarget; }
     public int    getChandelierPeriod() { return cfg().chandelierPeriod; }
     public double getChandelierMultiplier() { return cfg().chandelierMultiplier; }
     public double getSmallCandleAtrThreshold() { return cfg().smallCandleAtrThreshold; }
@@ -149,25 +129,6 @@ public class RiskSettingsStore {
     public boolean isEnableLpt()          { return cfg().enableLpt; }
     public double getMptQtyFactor()       { return cfg().mptQtyFactor; }
     public double getLptQtyFactor()       { return cfg().lptQtyFactor; }
-    public boolean isEnableMomentumScanner() { return cfg().enableMomentumScanner; }
-    public boolean isMomentumWeekBreak()  { return cfg().momentumWeekBreak; }
-    public boolean isMomentumMonthBreak() { return cfg().momentumMonthBreak; }
-    public boolean isMomentum52Week()     { return cfg().momentum52Week; }
-    public double getMomentumVolumeMultiple() { return cfg().momentumVolumeMultiple; }
-    public boolean isEnableHighMomentum() { return cfg().enableHighMomentum; }
-    public double getHighMomentumPct()    { return cfg().highMomentumPct; }
-    public double getHighMomentumClosingRange() { return cfg().highMomentumClosingRange; }
-    public boolean isScanIncludeNS() { return cfg().scanIncludeNS; }
-    public boolean isScanIncludeNL() { return cfg().scanIncludeNL; }
-    public boolean isScanIncludeIS() { return cfg().scanIncludeIS; }
-    public boolean isScanIncludeIL() { return cfg().scanIncludeIL; }
-    public boolean isScanIncludeWeeklyNarrow() { return cfg().scanIncludeWeeklyNarrow; }
-    public boolean isEnableRegimeFilter() { return cfg().enableRegimeFilter; }
-    public boolean isRegimeIncludeBullish() { return cfg().regimeIncludeBullish; }
-    public boolean isRegimeIncludeBearish() { return cfg().regimeIncludeBearish; }
-    public boolean isRegimeIncludeNeutral() { return cfg().regimeIncludeNeutral; }
-    public double  getRegimeMinConfidence() { return cfg().regimeMinConfidence; }
-
     public void setSignalSource(String v)      { cfg().signalSource = v; }
     public void setScannerTimeframe(int v)     { cfg().scannerTimeframe = v; }
     public void setEnableAtpCheck(boolean v)  { cfg().enableAtpCheck = v; }
@@ -176,25 +137,6 @@ public class RiskSettingsStore {
     public void setEnableLpt(boolean v)        { cfg().enableLpt = v; }
     public void setMptQtyFactor(double v)      { cfg().mptQtyFactor = v; }
     public void setLptQtyFactor(double v)      { cfg().lptQtyFactor = v; }
-    public void setEnableMomentumScanner(boolean v) { cfg().enableMomentumScanner = v; }
-    public void setMomentumWeekBreak(boolean v)  { cfg().momentumWeekBreak = v; }
-    public void setMomentumMonthBreak(boolean v) { cfg().momentumMonthBreak = v; }
-    public void setMomentum52Week(boolean v)     { cfg().momentum52Week = v; }
-    public void setMomentumVolumeMultiple(double v) { cfg().momentumVolumeMultiple = v; }
-    public void setEnableHighMomentum(boolean v) { cfg().enableHighMomentum = v; }
-    public void setHighMomentumPct(double v)    { cfg().highMomentumPct = v; }
-    public void setHighMomentumClosingRange(double v) { cfg().highMomentumClosingRange = v; }
-    public void setScanIncludeNS(boolean v) { cfg().scanIncludeNS = v; }
-    public void setScanIncludeNL(boolean v) { cfg().scanIncludeNL = v; }
-    public void setScanIncludeIS(boolean v) { cfg().scanIncludeIS = v; }
-    public void setScanIncludeIL(boolean v) { cfg().scanIncludeIL = v; }
-    public void setScanIncludeWeeklyNarrow(boolean v) { cfg().scanIncludeWeeklyNarrow = v; }
-    public void setEnableRegimeFilter(boolean v) { cfg().enableRegimeFilter = v; }
-    public void setRegimeIncludeBullish(boolean v) { cfg().regimeIncludeBullish = v; }
-    public void setRegimeIncludeBearish(boolean v) { cfg().regimeIncludeBearish = v; }
-    public void setRegimeIncludeNeutral(boolean v) { cfg().regimeIncludeNeutral = v; }
-    public void setRegimeMinConfidence(double v) { cfg().regimeMinConfidence = v; }
-
     public void setTradingStartTime(String v)  { cfg().tradingStartTime = v; }
     public void setTradingEndTime(String v)    { cfg().tradingEndTime = v; }
     public void setTotalCapital(double v)       { cfg().totalCapital = v; }
@@ -220,6 +162,7 @@ public class RiskSettingsStore {
     public void setTargetShiftAtrThreshold(double v) { cfg().targetShiftAtrThreshold = v; }
     public void setEnableSmallCandleFilter(boolean v) { cfg().enableSmallCandleFilter = v; }
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
+    public void setTrailingSlNoTarget(boolean v) { cfg().trailingSlNoTarget = v; }
     public void setChandelierPeriod(int v) { cfg().chandelierPeriod = v; }
     public void setChandelierMultiplier(double v) { cfg().chandelierMultiplier = v; }
     public void setSmallCandleAtrThreshold(double v) { cfg().smallCandleAtrThreshold = v; }
@@ -340,6 +283,7 @@ public class RiskSettingsStore {
             upsert("volumeMultiple", String.valueOf(c.volumeMultiple));
             upsert("volumeLookback", String.valueOf(c.volumeLookback));
             upsert("enableTrailingSl", String.valueOf(c.enableTrailingSl));
+            upsert("trailingSlNoTarget", String.valueOf(c.trailingSlNoTarget));
             upsert("chandelierPeriod", String.valueOf(c.chandelierPeriod));
             upsert("chandelierMultiplier", String.valueOf(c.chandelierMultiplier));
             upsert("signalSource", c.signalSource);
@@ -350,24 +294,6 @@ public class RiskSettingsStore {
             upsert("enableLpt", String.valueOf(c.enableLpt));
             upsert("mptQtyFactor", String.valueOf(c.mptQtyFactor));
             upsert("lptQtyFactor", String.valueOf(c.lptQtyFactor));
-            upsert("enableMomentumScanner", String.valueOf(c.enableMomentumScanner));
-            upsert("momentumWeekBreak", String.valueOf(c.momentumWeekBreak));
-            upsert("momentumMonthBreak", String.valueOf(c.momentumMonthBreak));
-            upsert("momentum52Week", String.valueOf(c.momentum52Week));
-            upsert("momentumVolumeMultiple", String.valueOf(c.momentumVolumeMultiple));
-            upsert("enableHighMomentum", String.valueOf(c.enableHighMomentum));
-            upsert("highMomentumPct", String.valueOf(c.highMomentumPct));
-            upsert("highMomentumClosingRange", String.valueOf(c.highMomentumClosingRange));
-            upsert("scanIncludeNS", String.valueOf(c.scanIncludeNS));
-            upsert("scanIncludeNL", String.valueOf(c.scanIncludeNL));
-            upsert("scanIncludeIS", String.valueOf(c.scanIncludeIS));
-            upsert("scanIncludeIL", String.valueOf(c.scanIncludeIL));
-            upsert("scanIncludeWeeklyNarrow", String.valueOf(c.scanIncludeWeeklyNarrow));
-            upsert("enableRegimeFilter", String.valueOf(c.enableRegimeFilter));
-            upsert("regimeIncludeBullish", String.valueOf(c.regimeIncludeBullish));
-            upsert("regimeIncludeBearish", String.valueOf(c.regimeIncludeBearish));
-            upsert("regimeIncludeNeutral", String.valueOf(c.regimeIncludeNeutral));
-            upsert("regimeMinConfidence", String.valueOf(c.regimeMinConfidence));
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to save {}: {}", mode, e.getMessage());
         }
@@ -421,6 +347,7 @@ public class RiskSettingsStore {
                     case "volumeMultiple" -> c.volumeMultiple = Double.parseDouble(v);
                     case "volumeLookback" -> c.volumeLookback = Integer.parseInt(v);
                     case "enableTrailingSl"   -> c.enableTrailingSl = Boolean.parseBoolean(v);
+                    case "trailingSlNoTarget" -> c.trailingSlNoTarget = Boolean.parseBoolean(v);
                     case "chandelierPeriod"  -> c.chandelierPeriod = Integer.parseInt(v);
                     case "chandelierMultiplier" -> c.chandelierMultiplier = Double.parseDouble(v);
                     case "signalSource"      -> c.signalSource = v;
@@ -431,24 +358,6 @@ public class RiskSettingsStore {
                     case "enableLpt"         -> c.enableLpt = Boolean.parseBoolean(v);
                     case "mptQtyFactor"      -> c.mptQtyFactor = Double.parseDouble(v);
                     case "lptQtyFactor"      -> c.lptQtyFactor = Double.parseDouble(v);
-                    case "enableMomentumScanner" -> c.enableMomentumScanner = Boolean.parseBoolean(v);
-                    case "momentumWeekBreak"  -> c.momentumWeekBreak = Boolean.parseBoolean(v);
-                    case "momentumMonthBreak" -> c.momentumMonthBreak = Boolean.parseBoolean(v);
-                    case "momentum52Week"     -> c.momentum52Week = Boolean.parseBoolean(v);
-                    case "momentumVolumeMultiple" -> c.momentumVolumeMultiple = Double.parseDouble(v);
-                    case "enableHighMomentum" -> c.enableHighMomentum = Boolean.parseBoolean(v);
-                    case "highMomentumPct"    -> c.highMomentumPct = Double.parseDouble(v);
-                    case "highMomentumClosingRange" -> c.highMomentumClosingRange = Double.parseDouble(v);
-                    case "scanIncludeNS" -> c.scanIncludeNS = Boolean.parseBoolean(v);
-                    case "scanIncludeNL" -> c.scanIncludeNL = Boolean.parseBoolean(v);
-                    case "scanIncludeIS" -> c.scanIncludeIS = Boolean.parseBoolean(v);
-                    case "scanIncludeIL" -> c.scanIncludeIL = Boolean.parseBoolean(v);
-                    case "scanIncludeWeeklyNarrow" -> c.scanIncludeWeeklyNarrow = Boolean.parseBoolean(v);
-                    case "enableRegimeFilter" -> c.enableRegimeFilter = Boolean.parseBoolean(v);
-                    case "regimeIncludeBullish" -> c.regimeIncludeBullish = Boolean.parseBoolean(v);
-                    case "regimeIncludeBearish" -> c.regimeIncludeBearish = Boolean.parseBoolean(v);
-                    case "regimeIncludeNeutral" -> c.regimeIncludeNeutral = Boolean.parseBoolean(v);
-                    case "regimeMinConfidence" -> c.regimeMinConfidence = Double.parseDouble(v);
                 }
             }
             log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} enableR4S4={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} chandelier={}x{}", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.enableR4S4, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.chandelierPeriod, c.chandelierMultiplier);

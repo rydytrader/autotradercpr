@@ -2,7 +2,6 @@ package com.rydytrader.autotrader.controller;
 
 import com.rydytrader.autotrader.dto.CprLevels;
 import com.rydytrader.autotrader.service.BhavcopyService;
-import com.rydytrader.autotrader.service.MomentumService;
 import com.rydytrader.autotrader.service.TradeHistoryService;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.http.ResponseEntity;
@@ -17,16 +16,13 @@ public class SettingsController {
     private final RiskSettingsStore   riskSettings;
     private final TradeHistoryService tradeHistoryService;
     private final BhavcopyService     bhavcopyService;
-    private final MomentumService     momentumService;
 
     public SettingsController(RiskSettingsStore riskSettings,
                                TradeHistoryService tradeHistoryService,
-                               BhavcopyService bhavcopyService,
-                               MomentumService momentumService) {
+                               BhavcopyService bhavcopyService) {
         this.riskSettings        = riskSettings;
         this.tradeHistoryService = tradeHistoryService;
         this.bhavcopyService     = bhavcopyService;
-        this.momentumService     = momentumService;
     }
 
     // ── GET SETTINGS + TODAY'S STATUS ─────────────────────────────────────────
@@ -73,6 +69,7 @@ public class SettingsController {
         result.put("volumeMultiple", riskSettings.getVolumeMultiple(effectiveMode));
         result.put("volumeLookback", riskSettings.getVolumeLookback(effectiveMode));
         result.put("enableTrailingSl", riskSettings.isEnableTrailingSl(effectiveMode));
+        result.put("trailingSlNoTarget", riskSettings.isTrailingSlNoTarget());
         result.put("chandelierPeriod", riskSettings.getChandelierPeriod(effectiveMode));
         result.put("chandelierMultiplier", riskSettings.getChandelierMultiplier(effectiveMode));
         result.put("signalSource", riskSettings.getSignalSource());
@@ -83,24 +80,6 @@ public class SettingsController {
         result.put("enableLpt", riskSettings.isEnableLpt());
         result.put("mptQtyFactor", riskSettings.getMptQtyFactor());
         result.put("lptQtyFactor", riskSettings.getLptQtyFactor());
-        result.put("enableMomentumScanner", riskSettings.isEnableMomentumScanner());
-        result.put("momentumWeekBreak", riskSettings.isMomentumWeekBreak());
-        result.put("momentumMonthBreak", riskSettings.isMomentumMonthBreak());
-        result.put("momentum52Week", riskSettings.isMomentum52Week());
-        result.put("momentumVolumeMultiple", riskSettings.getMomentumVolumeMultiple());
-        result.put("enableHighMomentum", riskSettings.isEnableHighMomentum());
-        result.put("highMomentumPct", riskSettings.getHighMomentumPct());
-        result.put("highMomentumClosingRange", riskSettings.getHighMomentumClosingRange());
-        result.put("scanIncludeNS", riskSettings.isScanIncludeNS());
-        result.put("scanIncludeNL", riskSettings.isScanIncludeNL());
-        result.put("scanIncludeIS", riskSettings.isScanIncludeIS());
-        result.put("scanIncludeIL", riskSettings.isScanIncludeIL());
-        result.put("scanIncludeWeeklyNarrow", riskSettings.isScanIncludeWeeklyNarrow());
-        result.put("enableRegimeFilter", riskSettings.isEnableRegimeFilter());
-        result.put("regimeIncludeBullish", riskSettings.isRegimeIncludeBullish());
-        result.put("regimeIncludeBearish", riskSettings.isRegimeIncludeBearish());
-        result.put("regimeIncludeNeutral", riskSettings.isRegimeIncludeNeutral());
-        result.put("regimeMinConfidence", riskSettings.getRegimeMinConfidence());
         result.put("todayPnl",         Math.round(todayPnl * 100.0) / 100.0);
         result.put("todayTrades",      todayTrades);
         return result;
@@ -144,6 +123,7 @@ public class SettingsController {
             if (body.containsKey("volumeMultiple")) riskSettings.setVolumeMultiple(effectiveMode, Double.parseDouble(body.get("volumeMultiple").toString()));
             if (body.containsKey("volumeLookback")) riskSettings.setVolumeLookback(effectiveMode, Integer.parseInt(body.get("volumeLookback").toString()));
             if (body.containsKey("enableTrailingSl")) riskSettings.setEnableTrailingSl(effectiveMode, Boolean.parseBoolean(body.get("enableTrailingSl").toString()));
+            if (body.containsKey("trailingSlNoTarget")) riskSettings.setTrailingSlNoTarget(Boolean.parseBoolean(body.get("trailingSlNoTarget").toString()));
             if (body.containsKey("chandelierPeriod")) riskSettings.setChandelierPeriod(effectiveMode, Integer.parseInt(body.get("chandelierPeriod").toString()));
             if (body.containsKey("chandelierMultiplier")) riskSettings.setChandelierMultiplier(effectiveMode, Double.parseDouble(body.get("chandelierMultiplier").toString()));
             if (body.containsKey("signalSource")) riskSettings.setSignalSource(body.get("signalSource").toString());
@@ -154,27 +134,7 @@ public class SettingsController {
             if (body.containsKey("enableLpt")) riskSettings.setEnableLpt(Boolean.parseBoolean(body.get("enableLpt").toString()));
             if (body.containsKey("mptQtyFactor")) riskSettings.setMptQtyFactor(Double.parseDouble(body.get("mptQtyFactor").toString()));
             if (body.containsKey("lptQtyFactor")) riskSettings.setLptQtyFactor(Double.parseDouble(body.get("lptQtyFactor").toString()));
-            if (body.containsKey("enableMomentumScanner")) riskSettings.setEnableMomentumScanner(Boolean.parseBoolean(body.get("enableMomentumScanner").toString()));
-            if (body.containsKey("momentumWeekBreak")) riskSettings.setMomentumWeekBreak(Boolean.parseBoolean(body.get("momentumWeekBreak").toString()));
-            if (body.containsKey("momentumMonthBreak")) riskSettings.setMomentumMonthBreak(Boolean.parseBoolean(body.get("momentumMonthBreak").toString()));
-            if (body.containsKey("momentum52Week")) riskSettings.setMomentum52Week(Boolean.parseBoolean(body.get("momentum52Week").toString()));
-            if (body.containsKey("momentumVolumeMultiple")) riskSettings.setMomentumVolumeMultiple(Double.parseDouble(body.get("momentumVolumeMultiple").toString()));
-            if (body.containsKey("enableHighMomentum")) riskSettings.setEnableHighMomentum(Boolean.parseBoolean(body.get("enableHighMomentum").toString()));
-            if (body.containsKey("highMomentumPct")) riskSettings.setHighMomentumPct(Double.parseDouble(body.get("highMomentumPct").toString()));
-            if (body.containsKey("highMomentumClosingRange")) riskSettings.setHighMomentumClosingRange(Double.parseDouble(body.get("highMomentumClosingRange").toString()));
-            if (body.containsKey("scanIncludeNS")) riskSettings.setScanIncludeNS(Boolean.parseBoolean(body.get("scanIncludeNS").toString()));
-            if (body.containsKey("scanIncludeNL")) riskSettings.setScanIncludeNL(Boolean.parseBoolean(body.get("scanIncludeNL").toString()));
-            if (body.containsKey("scanIncludeIS")) riskSettings.setScanIncludeIS(Boolean.parseBoolean(body.get("scanIncludeIS").toString()));
-            if (body.containsKey("scanIncludeIL")) riskSettings.setScanIncludeIL(Boolean.parseBoolean(body.get("scanIncludeIL").toString()));
-            if (body.containsKey("scanIncludeWeeklyNarrow")) riskSettings.setScanIncludeWeeklyNarrow(Boolean.parseBoolean(body.get("scanIncludeWeeklyNarrow").toString()));
-            if (body.containsKey("enableRegimeFilter")) riskSettings.setEnableRegimeFilter(Boolean.parseBoolean(body.get("enableRegimeFilter").toString()));
-            if (body.containsKey("regimeIncludeBullish")) riskSettings.setRegimeIncludeBullish(Boolean.parseBoolean(body.get("regimeIncludeBullish").toString()));
-            if (body.containsKey("regimeIncludeBearish")) riskSettings.setRegimeIncludeBearish(Boolean.parseBoolean(body.get("regimeIncludeBearish").toString()));
-            if (body.containsKey("regimeIncludeNeutral")) riskSettings.setRegimeIncludeNeutral(Boolean.parseBoolean(body.get("regimeIncludeNeutral").toString()));
-            if (body.containsKey("regimeMinConfidence")) riskSettings.setRegimeMinConfidence(Double.parseDouble(body.get("regimeMinConfidence").toString()));
             riskSettings.saveFor(effectiveMode);
-            // Recompute momentum tags so threshold changes take effect immediately
-            momentumService.compute();
             return ResponseEntity.ok(Map.of("ok", true, "message", "Settings saved"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("ok", false, "message", e.getMessage()));

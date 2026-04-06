@@ -277,25 +277,10 @@ public class PollingService {
                             }
                         }
                         entryAvgBySymbol.put(symbol, holder.entryFillPrice);
-                        // Recalculate SL from actual fill price
+                        // Recalculate SL from actual fill price (always ATR-based at entry)
+                        // Chandelier Exit only adjusts SL later on candle-close events, not at initial placement
                         if (holder.entryFillPrice > 0 && atr > 0 && atrMultiplier > 0) {
-                            double slOffset = atr * atrMultiplier;
-                            double atrSl = "LONG".equals(position) ? holder.entryFillPrice - slOffset : holder.entryFillPrice + slOffset;
-                            holder.adjustedSl = atrSl;
-                            // If Chandelier Exit enabled, use tighter of ATR and Chandelier
-                            if (riskSettings.isEnableTrailingSl()) {
-                                double chandelierSl = marketDataService.calculateChandelierSl(symbol, position);
-                                if (chandelierSl > 0) {
-                                    if ("LONG".equals(position)) {
-                                        holder.adjustedSl = Math.max(atrSl, chandelierSl);
-                                    } else {
-                                        holder.adjustedSl = Math.min(atrSl, chandelierSl);
-                                    }
-                                    log.info("[PollingService] SL: ATR={} Chandelier={} → using {}",
-                                        String.format("%.2f", atrSl), String.format("%.2f", chandelierSl),
-                                        String.format("%.2f", holder.adjustedSl));
-                                }
-                            }
+                            holder.adjustedSl = "LONG".equals(position) ? holder.entryFillPrice - atr * atrMultiplier : holder.entryFillPrice + atr * atrMultiplier;
                             holder.adjustedSl = orderService.roundToTick(holder.adjustedSl, symbol);
                         }
                         double roundedTarget = orderService.roundToTick(targetPrice, symbol);
@@ -315,35 +300,43 @@ public class PollingService {
                     }
 
                     holder.ocoRetries++;
+                    boolean skipTarget = riskSettings.isEnableTrailingSl() && riskSettings.isTrailingSlNoTarget();
                     OrderDTO slOrder     = orderService.placeStopLoss(symbol, quantity, exitSide, holder.adjustedSl);
-                    OrderDTO targetOrder = orderService.placeTarget(symbol, quantity, exitSide, targetPrice);
+                    OrderDTO targetOrder = skipTarget ? null : orderService.placeTarget(symbol, quantity, exitSide, targetPrice);
 
                     boolean slOk  = slOrder     != null && slOrder.getId()     != null && !slOrder.getId().isEmpty();
-                    boolean tgtOk = targetOrder != null && targetOrder.getId() != null && !targetOrder.getId().isEmpty();
+                    boolean tgtOk = skipTarget || (targetOrder != null && targetOrder.getId() != null && !targetOrder.getId().isEmpty());
 
                     if (slOk && tgtOk) {
                         double rSl = orderService.roundToTick(holder.adjustedSl, symbol);
-                        double rTgt = orderService.roundToTick(targetPrice, symbol);
+                        String tgtId = skipTarget ? "" : targetOrder.getId();
+                        double tgtPrice = skipTarget ? 0 : targetPrice;
                         eventService.log("[SUCCESS] SL order placed for " + symbol + " at " + rSl + " [ID: " + slOrder.getId() + "]");
-                        eventService.log("[SUCCESS] Target order placed for " + symbol + " at " + rTgt + " [ID: " + targetOrder.getId() + "]");
-                        positionStateStore.saveOcoState(symbol, slOrder.getId(), targetOrder.getId(), holder.adjustedSl, targetPrice);
+                        if (skipTarget) {
+                            eventService.log("[INFO] No fixed target for " + symbol + " — trailing SL will close the trade");
+                        } else {
+                            double rTgt = orderService.roundToTick(targetPrice, symbol);
+                            eventService.log("[SUCCESS] Target order placed for " + symbol + " at " + rTgt + " [ID: " + tgtId + "]");
+                            positionStateStore.appendDescription(symbol, "[TGT_PLACED] @ " + String.format("%.2f", rTgt) + " [" + tgtId + "]");
+                        }
+                        positionStateStore.saveOcoState(symbol, slOrder.getId(), tgtId, holder.adjustedSl, tgtPrice);
                         positionStateStore.appendDescription(symbol, "[SL_PLACED] @ " + String.format("%.2f", rSl) + " [" + slOrder.getId() + "]");
-                        positionStateStore.appendDescription(symbol, "[TGT_PLACED] @ " + String.format("%.2f", rTgt) + " [" + targetOrder.getId() + "]");
                         // Try WebSocket OCO tracking first, fall back to polling monitor
-                        boolean wsTracked = orderEventService.trackOcoOrders(slOrder.getId(), targetOrder.getId(),
+                        boolean wsTracked = orderEventService.trackOcoOrders(slOrder.getId(), tgtId,
                             symbol, quantity, position, exitSide, setup, holder.entryFillPrice);
                         if (!wsTracked) {
-                            monitorOCO(slOrder.getId(), targetOrder.getId(), symbol, quantity,
-                                exitSide, holder.adjustedSl, targetPrice, position, setup, holder.entryFillPrice);
+                            monitorOCO(slOrder.getId(), tgtId, symbol, quantity,
+                                exitSide, holder.adjustedSl, tgtPrice, position, setup, holder.entryFillPrice);
                         }
                         if (holder.future != null) holder.future.cancel(false);
                     } else {
                         // Cancel whichever succeeded to avoid a half-OCO state
                         if (slOk)  orderService.cancelOrder(slOrder.getId());
-                        if (tgtOk) orderService.cancelOrder(targetOrder.getId());
+                        if (!skipTarget && targetOrder != null && targetOrder.getId() != null && !targetOrder.getId().isEmpty())
+                            orderService.cancelOrder(targetOrder.getId());
 
                         if (!slOk)  eventService.log("[ERROR] SL order placement failed for " + symbol + " at " + slPrice);
-                        if (!tgtOk) eventService.log("[ERROR] Target order placement failed for " + symbol + " at " + targetPrice);
+                        if (!skipTarget && !tgtOk) eventService.log("[ERROR] Target order placement failed for " + symbol + " at " + targetPrice);
 
                         if (holder.ocoRetries >= Holder.MAX_OCO_RETRIES) {
                             eventService.log("[WARNING] Could not place SL/Target for " + symbol

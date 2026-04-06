@@ -53,7 +53,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     private final WeeklyCprService    weeklyCprService;
     private final BreakoutScanner     breakoutScanner;
     private final BhavcopyService     bhavcopyService;
-    private final MomentumService     momentumService;
     private final ObjectMapper        mapper = new ObjectMapper();
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -136,8 +135,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                               AtrService atrService,
                               WeeklyCprService weeklyCprService,
                               BreakoutScanner breakoutScanner,
-                              BhavcopyService bhavcopyService,
-                              MomentumService momentumService) {
+                              BhavcopyService bhavcopyService) {
         this.tokenStore = tokenStore;
         this.fyersProperties = fyersProperties;
         this.positionStateStore = positionStateStore;
@@ -150,7 +148,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         this.weeklyCprService = weeklyCprService;
         this.breakoutScanner = breakoutScanner;
         this.bhavcopyService = bhavcopyService;
-        this.momentumService = momentumService;
         candleAggregator.addListener(this);
     }
 
@@ -518,6 +515,18 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                         d.put("candleHigh", Math.round(cb.high * 100.0) / 100.0);
                         d.put("candleLow", Math.round(cb.low * 100.0) / 100.0);
                     }
+                    if (riskSettings.isEnableTrailingSl()) {
+                        // Determine likely direction from LTP vs pivot
+                        String ticker = sym.replaceAll("^(NSE|BSE|MCX):", "").replaceAll("-(EQ|INDEX)$", "");
+                        com.rydytrader.autotrader.dto.CprLevels cprLvl = bhavcopyService.getCprLevels(ticker);
+                        boolean likelyLong = cprLvl == null || ltp >= cprLvl.getPivot();
+                        String cslSide = likelyLong ? "LONG" : "SHORT";
+                        double csl = calculateChandelierSl(sym, cslSide);
+                        if (csl > 0) {
+                            d.put("chandelierSl", Math.round(csl * 100.0) / 100.0);
+                            d.put("chandelierSlSide", cslSide);
+                        }
+                    }
                     wlPayload.put(sym, d);
                 }
                 if (!wlPayload.isEmpty()) {
@@ -583,6 +592,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             pos.put("side", side);
             pos.put("setup", state.getOrDefault("setup", ""));
             pos.put("entryTime", state.getOrDefault("entryTime", ""));
+            try { pos.put("slPrice", Double.parseDouble(state.getOrDefault("slPrice", "0").toString())); } catch (NumberFormatException e) { pos.put("slPrice", 0.0); }
+            try { pos.put("targetPrice", Double.parseDouble(state.getOrDefault("targetPrice", "0").toString())); } catch (NumberFormatException e) { pos.put("targetPrice", 0.0); }
             positions.add(pos);
         }
 
@@ -798,8 +809,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     }
 
     /**
-     * Build watchlist from narrow + inside CPR + momentum stocks.
-     * Applies market cap filter. Returns Fyers symbols (e.g., "NSE:RELIANCE-EQ").
+     * Build watchlist from narrow + inside + weekly narrow CPR stocks.
+     * Returns Fyers symbols (e.g., "NSE:RELIANCE-EQ").
      */
     private List<String> buildWatchlist() {
         Set<String> symbols = new LinkedHashSet<>();
@@ -812,12 +823,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         }
         for (var cpr : bhavcopyService.getWeeklyNarrowCprStocks()) {
             symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
-        }
-        // Add momentum stocks (if enabled)
-        if (riskSettings.isEnableMomentumScanner()) {
-            for (var m : momentumService.getMomentumStocks()) {
-                symbols.add("NSE:" + m.getSymbol() + "-EQ");
-            }
         }
         return new ArrayList<>(symbols);
     }

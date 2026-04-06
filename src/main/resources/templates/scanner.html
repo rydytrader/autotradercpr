@@ -66,15 +66,10 @@
         .scan-badge.narrow { background: rgba(99,179,237,0.12); color: var(--accent-blue); }
         .scan-badge.narrow-small { background: rgba(52,211,153,0.15); color: var(--accent-green); font-weight: 700; }
         .scan-badge.narrow-large { background: rgba(251,146,60,0.15); color: #fb923c; font-weight: 700; }
+        .scan-badge.inside { background: rgba(251,191,36,0.12); color: var(--accent-yellow); }
         .scan-badge.inside-small { background: rgba(52,211,153,0.15); color: var(--accent-green); font-weight: 700; }
         .scan-badge.inside-large { background: rgba(251,146,60,0.15); color: #fb923c; font-weight: 700; }
-        .scan-badge.inside { background: rgba(251,191,36,0.12); color: var(--accent-yellow); }
         .scan-badge.weekly-narrow { background: rgba(139,92,246,0.15); color: #8b5cf6; font-weight: 700; }
-        .scan-badge.regime-bull { background: rgba(52,211,153,0.15); color: var(--accent-green); font-weight: 700; border: 1px solid rgba(52,211,153,0.3); }
-        .scan-badge.regime-bear { background: rgba(248,113,113,0.15); color: var(--accent-red); font-weight: 700; border: 1px solid rgba(248,113,113,0.3); }
-        .scan-badge.regime-neutral { background: rgba(160,160,160,0.15); color: var(--text-muted); font-weight: 700; border: 1px solid rgba(160,160,160,0.3); }
-        .scan-badge.momentum-high { background: rgba(52,211,153,0.12); color: var(--accent-green); font-weight: 700; }
-        .scan-badge.momentum-low { background: rgba(248,113,113,0.12); color: var(--accent-red); font-weight: 700; }
 
         .scan-price-row {
             display: flex; align-items: baseline; gap: 10px;
@@ -101,7 +96,7 @@
 
         .scan-data-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr 1fr;
             gap: 0;
             padding: 6px 16px 10px;
         }
@@ -305,7 +300,7 @@
     <div class="page-header">
         <div>
             <div class="page-title">Scanner</div>
-            <div class="page-subtitle">CPR Breakout and Momentum Stocks</div>
+            <div class="page-subtitle">CPR Breakout Scanner</div>
         </div>
         <div style="display:flex; gap:8px;">
             <button onclick="showNarrowCpr()" style="
@@ -331,22 +326,6 @@
                 cursor: pointer; transition: all 0.2s;
             " onmouseover="this.style.background='rgba(139,92,246,0.18)'" onmouseout="this.style.background='rgba(139,92,246,0.1)'">
                 Weekly Narrow CPR Stocks
-            </button>
-            <button onclick="showMomentumStocks()" style="
-                background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.3);
-                color: var(--accent-green); padding: 6px 14px; border-radius: 8px;
-                font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
-                cursor: pointer; transition: all 0.2s;
-            " onmouseover="this.style.background='rgba(52,211,153,0.18)'" onmouseout="this.style.background='rgba(52,211,153,0.1)'">
-                Momentum Stocks
-            </button>
-            <button onclick="showRegimeList()" style="
-                background: rgba(139,92,246,0.1); border: 1px solid rgba(139,92,246,0.3);
-                color: #8b5cf6; padding: 6px 14px; border-radius: 8px;
-                font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
-                cursor: pointer; transition: all 0.2s;
-            " onmouseover="this.style.background='rgba(139,92,246,0.18)'" onmouseout="this.style.background='rgba(139,92,246,0.1)'">
-                Regime List
             </button>
             <a href="/api/scanner/tv-watchlist" style="
                 background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.3);
@@ -408,20 +387,6 @@
             <button class="filter-btn" onclick="toggleProbFilter('HPT', this)">HPT</button>
             <button class="filter-btn" onclick="toggleProbFilter('MPT', this)">MPT</button>
             <button class="filter-btn" onclick="toggleProbFilter('LPT', this)">LPT</button>
-        </span>
-        <div class="filter-sep"></div>
-        <span class="momentum-filter-group">
-            <button class="filter-btn" onclick="setFilter('MOMENTUM', this)" style="color:var(--accent-green)">Momentum</button>
-            <button class="filter-btn" onclick="setFilter('WEEK_HIGH_BREAK', this)">Week Break</button>
-            <button class="filter-btn" onclick="setFilter('MONTH_HIGH_BREAK', this)">Month Break</button>
-            <button class="filter-btn" onclick="setFilter('52W_HIGH_BREAK', this)">52W H/L</button>
-            <button class="filter-btn" onclick="setFilter('HMB', this)">Power Candle</button>
-        </span>
-        <div class="filter-sep"></div>
-        <span class="regime-filter-group">
-            <button class="filter-btn" onclick="setFilter('BULLISH', this)" style="color:var(--accent-green)">Bullish</button>
-            <button class="filter-btn" onclick="setFilter('BEARISH', this)" style="color:var(--accent-red)">Bearish</button>
-            <button class="filter-btn" onclick="setFilter('NEUTRAL', this)" style="color:var(--text-muted)">Ranging</button>
         </span>
         <div class="filter-sep"></div>
         <button class="filter-btn" onclick="toggleSignalFilter(this)">Has Signal</button>
@@ -493,7 +458,7 @@
     // ── Filter controls ─────────────────────────────
     window.setFilter = function(type, btn) {
         cprFilter = type;
-        document.querySelectorAll('.cpr-filter-group .filter-btn, .momentum-filter-group .filter-btn, .regime-filter-group .filter-btn').forEach(function(b) {
+        document.querySelectorAll('.cpr-filter-group .filter-btn').forEach(function(b) {
             b.classList.remove('active');
         });
         btn.classList.add('active');
@@ -565,18 +530,8 @@
             if (symbolFilter && d.shortName !== symbolFilter) return false;
             if (cprFilter !== 'all') {
                 var types = d.cprTypes || [d.cprType];
-                var mTags = d.momentumTags || [];
                 if (cprFilter === 'CPR') {
                     if (!types.includes('NARROW') && !types.includes('INSIDE')) return false;
-                } else if (cprFilter === 'MOMENTUM') {
-                    if (mTags.length === 0) return false;
-                } else if (cprFilter === 'HMB') {
-                    if (!mTags.includes('HMB+') && !mTags.includes('HMB-')) return false;
-                } else if (cprFilter === 'BULLISH' || cprFilter === 'BEARISH' || cprFilter === 'NEUTRAL') {
-                    if ((d.regime || '') !== cprFilter) return false;
-                } else if (cprFilter === 'WEEK_HIGH_BREAK' || cprFilter === 'MONTH_HIGH_BREAK' || cprFilter === '52W_HIGH_BREAK') {
-                    var lowVariant = cprFilter.replace('HIGH', 'LOW');
-                    if (!mTags.includes(cprFilter) && !mTags.includes(lowVariant)) return false;
                 } else {
                     if (types.indexOf(cprFilter) === -1) return false;
                 }
@@ -699,25 +654,12 @@
                     var ttl = 'Narrow CPR' + (nrt ? ' — ' + (nrt === 'SMALL' ? 'small range (z=' : 'large range (z=') + zs + ')' : '');
                     return '<span class="scan-badge ' + cls + '" title="' + ttl + '">' + lbl + '</span>';
                 }
-                // INSIDE
                 var icls = nrt === 'SMALL' ? 'inside-small' : nrt === 'LARGE' ? 'inside-large' : 'inside';
                 var ilbl = nrt === 'SMALL' ? 'IS' : nrt === 'LARGE' ? 'IL' : 'I';
                 var ittl = 'Inside CPR' + (nrt ? ' — ' + (nrt === 'SMALL' ? 'small range (z=' : 'large range (z=') + zs + ')' : '');
                 return '<span class="scan-badge ' + icls + '" title="' + ittl + '">' + ilbl + '</span>';
             }).join(''))
             + (d.weeklyNarrow ? '<span class="scan-badge weekly-narrow">W</span>' : '')
-            + (d.regime ? '<span class="scan-badge ' + (d.regime === 'BULLISH' ? 'regime-bull' : d.regime === 'BEARISH' ? 'regime-bear' : 'regime-neutral') + '" title="HMM regime — confidence ' + Math.round(d.regimeConfidence * 100) + '%">' + (d.regime === 'BULLISH' ? 'B+' : d.regime === 'BEARISH' ? 'B-' : 'RG') + '</span>' : '')
-            + ((d.momentumTags || []).map(function(t) {
-                if (t === 'HMB+') return '<span class="scan-badge momentum-high">HMB+</span>';
-                if (t === 'HMB-') return '<span class="scan-badge momentum-low">HMB-</span>';
-                var isHigh = t.includes('HIGH');
-                var cls = isHigh ? 'momentum-high' : 'momentum-low';
-                var label = '';
-                if (t.includes('WEEK')) label = isHigh ? 'WHB' : 'WLB';
-                else if (t.includes('MONTH')) label = isHigh ? 'MHB' : 'MLB';
-                else label = isHigh ? '52HB' : '52LB';
-                return '<span class="scan-badge ' + cls + '">' + label + '</span>';
-            }).join(''))
             + '  </span>'
             + '</div>'
             + '<div class="scan-price-row">'
@@ -729,6 +671,7 @@
             + '  <div class="scan-data-item"><div class="scan-data-label">Day Open</div><div class="scan-data-value">' + fmt(d.dayOpen) + '</div></div>'
             + '  <div class="scan-data-item"><div class="scan-data-label">ATP</div><div class="scan-data-value">' + fmt(d.atp) + '</div></div>'
             + '  <div class="scan-data-item"><div class="scan-data-label">ATR</div><div class="scan-data-value">' + fmt(d.atr) + '</div></div>'
+            + '  <div class="scan-data-item"><div class="scan-data-label">CSL</div><div class="scan-data-value scan-csl" style="font-size:0.68rem;">' + (d.chandelierSl ? '<span style="color:' + (d.chandelierSlSide === 'LONG' ? 'var(--accent-green)' : 'var(--accent-red)') + ';">' + (d.chandelierSlSide === 'LONG' ? '\u2191' : '\u2193') + fmt(d.chandelierSl) + '</span>' : '<span style="color:var(--text-muted);">\u2014</span>') + '</div></div>'
             + '</div>'
             + '<div class="scan-trend-row">'
             + '  <span class="scan-trend"><span class="label">W:</span> <span class="' + wClass + '">' + wArrow + ' ' + wLabel + '</span></span>'
@@ -827,6 +770,7 @@
                         if (update.candleOpen) d.candleOpen = update.candleOpen;
                         if (update.candleHigh) d.candleHigh = update.candleHigh;
                         if (update.candleLow) d.candleLow = update.candleLow;
+                        if (update.chandelierSl) { d.chandelierSl = update.chandelierSl; d.chandelierSlSide = update.chandelierSlSide; }
 
                         // Update DOM in-place
                         var card = document.querySelector('[data-symbol="' + d.symbol + '"]');
@@ -848,6 +792,16 @@
                         var ohlEl = card.querySelector('.scan-ohl');
                         if (ohlEl && d.candleOpen) {
                             ohlEl.textContent = 'O:' + fmt(d.candleOpen) + ' H:' + fmt(d.candleHigh) + ' L:' + fmt(d.candleLow);
+                        }
+                        var cslEl = card.querySelector('.scan-csl');
+                        if (cslEl) {
+                            if (d.chandelierSl) {
+                                var cslColor = d.chandelierSlSide === 'LONG' ? 'var(--accent-green)' : 'var(--accent-red)';
+                                var cslArrow = d.chandelierSlSide === 'LONG' ? '\u2191' : '\u2193';
+                                cslEl.innerHTML = '<span style="color:' + cslColor + ';">' + cslArrow + fmt(d.chandelierSl) + '</span>';
+                            } else {
+                                cslEl.innerHTML = '<span style="color:var(--text-muted);">\u2014</span>';
+                            }
                         }
                     }
                 } catch (err) {}
@@ -1029,45 +983,6 @@ function showWeeklyNarrowCpr() {
 </div>
 
 <!-- Simulate Qty Modal -->
-<!-- Momentum Stocks Modal -->
-<div id="momentumModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px);" onclick="if(event.target===this)this.style.display='none'">
-    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:1200px; max-height:80vh; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border); background:var(--bg-section-header);">
-            <div>
-                <div style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:var(--accent-green);">MOMENTUM STOCKS</div>
-                <div id="momentumSubtitle" style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); margin-top:2px;"></div>
-            </div>
-            <button onclick="document.getElementById('momentumModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
-        </div>
-        <div id="momentumBody" style="overflow-y:auto; padding:12px 16px; flex:1;"></div>
-    </div>
-</div>
-
-<!-- Regime List Modal -->
-<div id="regimeModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px);" onclick="if(event.target===this)this.style.display='none'">
-    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:1000px; max-height:85vh; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border); background:var(--bg-section-header);">
-            <div>
-                <div style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:#8b5cf6;">HMM REGIME LIST</div>
-                <div id="regimeSubtitle" style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); margin-top:2px;"></div>
-            </div>
-            <button onclick="document.getElementById('regimeModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
-        </div>
-        <div style="display:flex; gap:12px; padding:12px 20px; border-bottom:1px solid var(--border); align-items:center; flex-wrap:wrap;">
-            <span style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-secondary);">Regime:</span>
-            <select id="regimeFilter" onchange="renderRegimeList()" style="background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:0.72rem;font-family:var(--font-mono);cursor:pointer;">
-                <option value="ALL" selected>All</option>
-                <option value="BULLISH">B+ Bullish</option>
-                <option value="BEARISH">B- Bearish</option>
-                <option value="NEUTRAL">RG Ranging</option>
-            </select>
-            <span style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-secondary); margin-left:8px;">Min Confidence:</span>
-            <input type="number" id="regimeConfidence" value="60" min="0" max="100" step="5" oninput="renderRegimeList()" style="background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:0.72rem;font-family:var(--font-mono);width:60px;">
-            <span style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted);">%</span>
-        </div>
-        <div id="regimeBody" style="overflow-y:auto; padding:12px 16px; flex:1;"></div>
-    </div>
-</div>
 
 <!-- Classification Legend Modal -->
 <div id="legendModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px);" onclick="if(event.target===this)this.style.display='none'">
@@ -1084,54 +999,19 @@ function showWeeklyNarrowCpr() {
             <!-- 1. CPR Width -->
             <div style="margin-bottom:14px;">
                 <div style="font-weight:700; font-size:0.78rem; color:var(--accent-cyan); margin-bottom:4px;">1. CPR Width</div>
-                <div style="color:var(--text-secondary); margin-bottom:6px; font-size:0.66rem;">Scans FNO stocks with narrow or inside CPR relative to prior day. Both types are further split by range size using a z-score vs the stock's own 20-day history: <b>z = (x − μ) / σ</b>, where x = prior day's (High − Low), μ = 20-day mean range, σ = 20-day std dev. <b>Small range (z &lt; −1.5)</b> = genuine tight bar (typically precedes trending moves). <b>Large range (z ≥ −1.5)</b> = normal/wide bar where close happened to land inside the prior CPR or near the H/L midpoint (less predictive).</div>
+                <div style="color:var(--text-secondary); margin-bottom:6px; font-size:0.66rem;">Scans FNO stocks with narrow or inside CPR. Both types split by range z-score vs the stock's own 20-day history: <b>z = (x − μ) / σ</b>, where x = prior day's (H − L). Small range (z &lt; −1.5) = genuine tight bar. Large range = normal/wide bar where close landed near the midpoint.</div>
                 <div style="display:flex; flex-wrap:wrap; gap:10px 14px; font-size:0.66rem;">
-                    <div><span class="scan-badge narrow-small" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">NS</span> Narrow CPR + Small Range (z &lt; −1.5)</div>
-                    <div><span class="scan-badge narrow-large" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">NL</span> Narrow CPR + Large Range</div>
-                    <div><span class="scan-badge inside-small" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">IS</span> Inside CPR + Small Range (z &lt; −1.5)</div>
-                    <div><span class="scan-badge inside-large" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">IL</span> Inside CPR + Large Range</div>
+                    <div><span class="scan-badge narrow-small" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">NS</span> Narrow + Small Range (z &lt; −1.5)</div>
+                    <div><span class="scan-badge narrow-large" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">NL</span> Narrow + Large Range</div>
+                    <div><span class="scan-badge inside-small" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">IS</span> Inside + Small Range (z &lt; −1.5)</div>
+                    <div><span class="scan-badge inside-large" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">IL</span> Inside + Large Range</div>
                     <div><span class="scan-badge weekly-narrow" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">W</span> Weekly Narrow CPR</div>
                 </div>
             </div>
 
-            <!-- 2. Momentum Breakouts -->
-            <div style="margin-bottom:14px;">
-                <div style="font-weight:700; font-size:0.78rem; color:var(--accent-cyan); margin-bottom:4px;">2. Momentum Breakouts</div>
-                <div style="color:var(--text-secondary); margin-bottom:6px; font-size:0.66rem;">Tracks stocks breaking weekly, monthly, or 52-week highs/lows. Signals strong directional momentum.</div>
-                <div style="display:flex; flex-wrap:wrap; gap:10px 14px; font-size:0.66rem;">
-                    <div><span style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700; background:rgba(52,211,153,0.15); color:var(--accent-green); border:1px solid rgba(52,211,153,0.3);">WHB</span> Weekly High Breakout</div>
-                    <div><span style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700; background:rgba(248,113,113,0.15); color:var(--accent-red); border:1px solid rgba(248,113,113,0.3);">WLB</span> Weekly Low Breakout</div>
-                    <div><span style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700; background:rgba(52,211,153,0.15); color:var(--accent-green); border:1px solid rgba(52,211,153,0.3);">MHB</span> Monthly High Breakout</div>
-                    <div><span style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700; background:rgba(248,113,113,0.15); color:var(--accent-red); border:1px solid rgba(248,113,113,0.3);">MLB</span> Monthly Low Breakout</div>
-                    <div><span style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700; background:rgba(52,211,153,0.15); color:var(--accent-green); border:1px solid rgba(52,211,153,0.3);">52HB</span> 52-week High Breakout</div>
-                    <div><span style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700; background:rgba(248,113,113,0.15); color:var(--accent-red); border:1px solid rgba(248,113,113,0.3);">52LB</span> 52-week Low Breakout</div>
-                </div>
-            </div>
-
-            <!-- 3. Volume Price Surge -->
-            <div style="margin-bottom:14px;">
-                <div style="font-weight:700; font-size:0.78rem; color:var(--accent-cyan); margin-bottom:4px;">3. Volume Price Surge (Power Candle)</div>
-                <div style="color:var(--text-secondary); margin-bottom:6px; font-size:0.66rem;">Stocks with a strong directional move on elevated volume, closing near the day's high/low. Indicates institutional participation. Thresholds (% move, volume multiple, closing range) are configurable in Settings → Momentum (defaults: 3%, 2×, 80%).</div>
-                <div style="display:flex; flex-wrap:wrap; gap:10px 14px; font-size:0.66rem;">
-                    <div><span class="scan-badge momentum-high" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">HMB+</span> High Momentum Bullish (up move, close near top)</div>
-                    <div><span class="scan-badge momentum-low" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">HMB-</span> High Momentum Bearish (down move, close near bottom)</div>
-                </div>
-            </div>
-
-            <!-- 4. HMM Regime -->
-            <div style="margin-bottom:14px;">
-                <div style="font-weight:700; font-size:0.78rem; color:var(--accent-cyan); margin-bottom:4px;">4. HMM Regime</div>
-                <div style="color:var(--text-secondary); margin-bottom:6px; font-size:0.66rem;">3-state Gaussian Hidden Markov Model trained on ~250 days of daily log returns + 10-day volatility. Classifies current market regime with confidence score. Updates daily at 8:47 AM.</div>
-                <div style="display:flex; flex-wrap:wrap; gap:10px 14px; font-size:0.66rem;">
-                    <div><span class="scan-badge regime-bull" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">B+</span> Bullish regime (highest mean return state)</div>
-                    <div><span class="scan-badge regime-bear" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">B-</span> Bearish regime (lowest mean return state)</div>
-                    <div><span class="scan-badge regime-neutral" style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700;">RG</span> Ranging/Neutral (or confidence &lt; 60%)</div>
-                </div>
-            </div>
-
-            <!-- 5. Signal Probability -->
+            <!-- 2. Signal Probability -->
             <div style="margin-bottom:8px;">
-                <div style="font-weight:700; font-size:0.78rem; color:var(--accent-cyan); margin-bottom:4px;">5. Signal Probability</div>
+                <div style="font-weight:700; font-size:0.78rem; color:var(--accent-cyan); margin-bottom:4px;">2. Signal Probability</div>
                 <div style="color:var(--text-secondary); margin-bottom:6px; font-size:0.66rem;">CPR breakout signals classified by alignment with weekly trend. Higher alignment = higher probability of follow-through.</div>
                 <div style="display:flex; flex-wrap:wrap; gap:10px 14px; font-size:0.66rem;">
                     <div><span style="display:inline-block; padding:2px 6px; border-radius:3px; margin-right:6px; font-weight:700; background:rgba(52,211,153,0.15); color:var(--accent-green); border:1px solid rgba(52,211,153,0.3);">HPT</span> High Probable Trade (breakout aligns with weekly trend)</div>
@@ -1294,108 +1174,7 @@ function recalcSimQty() {
     document.getElementById('simQtySubtitle').textContent = sub;
 }
 
-// ── REGIME LIST MODAL ────────────────────────────────────────────────────
-var regimeData = [];
 
-function showRegimeList() {
-    document.getElementById('regimeModal').style.display = 'flex';
-    document.getElementById('regimeBody').innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">Loading...</div>';
-    fetch('/api/regime-list').then(r => r.json()).then(data => {
-        regimeData = data.stocks || [];
-        renderRegimeList();
-    }).catch(function() {
-        document.getElementById('regimeBody').innerHTML = '<div style="text-align:center;padding:40px;color:var(--accent-red)">Failed to load</div>';
-    });
-}
-
-function renderRegimeList() {
-    var regimeFilter = document.getElementById('regimeFilter').value;
-    var minConf = parseFloat(document.getElementById('regimeConfidence').value) || 0;
-    var filtered = regimeData.filter(function(s) {
-        if (regimeFilter !== 'ALL' && s.regime !== regimeFilter) return false;
-        if (s.confidence < minConf) return false;
-        return true;
-    });
-    document.getElementById('regimeSubtitle').textContent = filtered.length + ' of ' + regimeData.length + ' stocks';
-
-    if (filtered.length === 0) {
-        document.getElementById('regimeBody').innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">No stocks match filter</div>';
-        return;
-    }
-
-    var html = '<table class="data-table" style="width:100%;font-size:.75rem;"><thead><tr>'
-        + '<th>#</th><th>Symbol</th><th class="tc">Regime</th><th class="tr">Confidence</th>'
-        + '<th class="tr">Bull %</th><th class="tr">Bear %</th><th class="tr">Neut %</th>'
-        + '</tr></thead><tbody>';
-    filtered.forEach(function(s, idx) {
-        var badge = s.regime === 'BULLISH' ? '<span class="scan-badge regime-bull">B+</span>'
-                  : s.regime === 'BEARISH' ? '<span class="scan-badge regime-bear">B-</span>'
-                  : '<span class="scan-badge regime-neutral">RG</span>';
-        html += '<tr>'
-            + '<td style="color:var(--text-muted);">' + (idx + 1) + '</td>'
-            + '<td style="font-weight:600;">' + s.symbol + '</td>'
-            + '<td class="tc">' + badge + '</td>'
-            + '<td class="tr" style="color:var(--accent-cyan);">' + s.confidence.toFixed(1) + '%</td>'
-            + '<td class="tr" style="color:var(--accent-green);">' + (s.bullish != null ? s.bullish.toFixed(1) : '—') + '</td>'
-            + '<td class="tr" style="color:var(--accent-red);">' + (s.bearish != null ? s.bearish.toFixed(1) : '—') + '</td>'
-            + '<td class="tr" style="color:var(--text-muted);">' + (s.neutral != null ? s.neutral.toFixed(1) : '—') + '</td>'
-            + '</tr>';
-    });
-    html += '</tbody></table>';
-    document.getElementById('regimeBody').innerHTML = html;
-}
-
-// ── MOMENTUM STOCKS MODAL ────────────────────────────────────────────────
-function showMomentumStocks() {
-    document.getElementById('momentumModal').style.display = 'flex';
-    document.getElementById('momentumBody').innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">Loading...</div>';
-    fetch('/api/momentum-stocks').then(r => r.json()).then(data => {
-        var stocks = data.stocks || [];
-        if (stocks.length === 0) {
-            document.getElementById('momentumBody').innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">No momentum stocks found</div>';
-            document.getElementById('momentumSubtitle').textContent = '0 stocks | Vol threshold: ' + data.volumeThreshold + 'x';
-            return;
-        }
-        document.getElementById('momentumSubtitle').textContent = stocks.length + ' stocks | Vol threshold: ' + data.volumeThreshold + 'x';
-        var html = '<table class="data-table" style="width:100%;font-size:.75rem;"><thead><tr>'
-            + '<th>#</th><th>Symbol</th><th class="tr">Close</th><th class="tr">Vol</th>'
-            + '<th class="tr">Wk H</th><th class="tr">Wk L</th>'
-            + '<th class="tr">Mo H</th><th class="tr">Mo L</th>'
-            + '<th class="tr">52W H</th><th class="tr">52W L</th>'
-            + '<th>Tags</th></tr></thead><tbody>';
-        stocks.forEach(function(s, idx) {
-            var tagBadges = (s.tags || []).map(function(t) {
-                if (t === 'HMB+') return '<span class="scan-badge momentum-high">HMB+</span>';
-                if (t === 'HMB-') return '<span class="scan-badge momentum-low">HMB-</span>';
-                var isHigh = t.includes('HIGH');
-                var cls = isHigh ? 'momentum-high' : 'momentum-low';
-                var label = '';
-                if (t.includes('WEEK')) label = isHigh ? 'WHB' : 'WLB';
-                else if (t.includes('MONTH')) label = isHigh ? 'MHB' : 'MLB';
-                else label = isHigh ? '52HB' : '52LB';
-                return '<span class="scan-badge ' + cls + '">' + label + '</span>';
-            }).join(' ');
-            var f = function(v) { return v > 0 ? v.toFixed(2) : '—'; };
-            html += '<tr>'
-                + '<td style="color:var(--text-muted);">' + (idx + 1) + '</td>'
-                + '<td style="font-weight:600;">' + s.symbol + '</td>'
-                + '<td class="tr">' + s.close.toFixed(2) + '</td>'
-                + '<td class="tr" style="color:var(--accent-cyan);">' + s.volumeRatio + 'x</td>'
-                + '<td class="tr" style="color:var(--accent-green);">' + f(s.prevWeekHigh) + '</td>'
-                + '<td class="tr" style="color:var(--accent-red);">' + f(s.prevWeekLow) + '</td>'
-                + '<td class="tr" style="color:var(--accent-green);">' + f(s.prevMonthHigh) + '</td>'
-                + '<td class="tr" style="color:var(--accent-red);">' + f(s.prevMonthLow) + '</td>'
-                + '<td class="tr" style="color:var(--accent-green);">' + f(s.fiftyTwoWeekHigh) + '</td>'
-                + '<td class="tr" style="color:var(--accent-red);">' + f(s.fiftyTwoWeekLow) + '</td>'
-                + '<td>' + tagBadges + '</td>'
-                + '</tr>';
-        });
-        html += '</tbody></table>';
-        document.getElementById('momentumBody').innerHTML = html;
-    }).catch(function() {
-        document.getElementById('momentumBody').innerHTML = '<div style="text-align:center;padding:40px;color:var(--accent-red)">Failed to load</div>';
-    });
-}
 </script>
 
 </body>

@@ -26,8 +26,6 @@ public class ScannerController {
     private final BreakoutScanner breakoutScanner;
     private final RiskSettingsStore riskSettings;
     private final MarginDataService marginDataService;
-    private final MomentumService momentumService;
-    private final HmmRegimeService hmmRegimeService;
 
     public ScannerController(MarketDataService marketDataService,
                              BhavcopyService bhavcopyService,
@@ -36,9 +34,7 @@ public class ScannerController {
                              CandleAggregator candleAggregator,
                              BreakoutScanner breakoutScanner,
                              RiskSettingsStore riskSettings,
-                             MarginDataService marginDataService,
-                             MomentumService momentumService,
-                             HmmRegimeService hmmRegimeService) {
+                             MarginDataService marginDataService) {
         this.marketDataService = marketDataService;
         this.bhavcopyService = bhavcopyService;
         this.atrService = atrService;
@@ -47,8 +43,6 @@ public class ScannerController {
         this.breakoutScanner = breakoutScanner;
         this.riskSettings = riskSettings;
         this.marginDataService = marginDataService;
-        this.momentumService = momentumService;
-        this.hmmRegimeService = hmmRegimeService;
     }
 
     @GetMapping("/api/scanner/watchlist")
@@ -61,141 +55,57 @@ public class ScannerController {
         for (CprLevels cpr : bhavcopyService.getWeeklyNarrowCprStocks()) {
             weeklyNarrowSymbols.add(cpr.getSymbol());
         }
-        Set<String> narrowSymbols = new HashSet<>();
-        for (CprLevels cpr : bhavcopyService.getNarrowCprStocks()) {
-            narrowSymbols.add(cpr.getSymbol());
-        }
         Set<String> insideSymbols = new HashSet<>();
         for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
             insideSymbols.add(cpr.getSymbol());
         }
 
-        // Collect narrow CPR stocks (mark if also inside) — filtered by NS/NL/W toggles
+        // Collect narrow CPR stocks (mark if also inside / weekly narrow)
         Set<String> seen = new HashSet<>();
         for (CprLevels cpr : bhavcopyService.getNarrowCprStocks()) {
-            boolean isWeekly = weeklyNarrowSymbols.contains(cpr.getSymbol());
-            String nrt = cpr.getNarrowRangeType();
-            boolean rangeMatches = ("SMALL".equals(nrt) && riskSettings.isScanIncludeNS())
-                                || ("LARGE".equals(nrt) && riskSettings.isScanIncludeNL())
-                                || (nrt == null && (riskSettings.isScanIncludeNS() || riskSettings.isScanIncludeNL())); // unclassified → include if any narrow enabled
-            boolean weeklyMatches = isWeekly && riskSettings.isScanIncludeWeeklyNarrow();
-            if (!rangeMatches && !weeklyMatches) continue;
-
             String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
             List<String> types = new ArrayList<>();
             types.add("NARROW");
             if (insideSymbols.contains(cpr.getSymbol())) types.add("INSIDE");
             Map<String, Object> card = buildCard(fyers, cpr, "NARROW", positionSymbols);
             card.put("cprTypes", types);
-            card.put("weeklyNarrow", isWeekly);
-            card.put("narrowRangeType", nrt);
+            card.put("weeklyNarrow", weeklyNarrowSymbols.contains(cpr.getSymbol()));
+            card.put("narrowRangeType", cpr.getNarrowRangeType());
             card.put("rangeZScore", cpr.getRangeZScore());
             result.add(card);
             seen.add(fyers);
         }
 
         // Collect weekly-narrow-only CPR stocks (those not already added via daily narrow)
-        if (riskSettings.isScanIncludeWeeklyNarrow()) {
-            for (CprLevels cpr : bhavcopyService.getWeeklyNarrowCprStocks()) {
-                String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
-                if (seen.contains(fyers)) continue;
-                // Use the daily-bhavcopy CprLevels for this symbol (for LTP, H/L etc.)
-                CprLevels dailyCpr = bhavcopyService.getCprLevels(cpr.getSymbol());
-                if (dailyCpr == null) dailyCpr = cpr;
-                List<String> types = new ArrayList<>();
-                if (insideSymbols.contains(cpr.getSymbol())) types.add("INSIDE");
-                Map<String, Object> card = buildCard(fyers, dailyCpr, types.isEmpty() ? "WEEKLY_NARROW" : "INSIDE", positionSymbols);
-                card.put("cprTypes", types);
-                card.put("weeklyNarrow", true);
-                card.put("narrowRangeType", dailyCpr.getNarrowRangeType());
-                card.put("rangeZScore", dailyCpr.getRangeZScore());
-                result.add(card);
-                seen.add(fyers);
-            }
+        for (CprLevels cpr : bhavcopyService.getWeeklyNarrowCprStocks()) {
+            String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
+            if (seen.contains(fyers)) continue;
+            CprLevels dailyCpr = bhavcopyService.getCprLevels(cpr.getSymbol());
+            if (dailyCpr == null) dailyCpr = cpr;
+            List<String> types = new ArrayList<>();
+            if (insideSymbols.contains(cpr.getSymbol())) types.add("INSIDE");
+            Map<String, Object> card = buildCard(fyers, dailyCpr, types.isEmpty() ? "WEEKLY_NARROW" : "INSIDE", positionSymbols);
+            card.put("cprTypes", types);
+            card.put("weeklyNarrow", true);
+            card.put("narrowRangeType", dailyCpr.getNarrowRangeType());
+            card.put("rangeZScore", dailyCpr.getRangeZScore());
+            result.add(card);
+            seen.add(fyers);
         }
 
-        // Collect inside-only CPR stocks — filtered by IS/IL toggles
+        // Collect inside-only CPR stocks
         for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
             String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
             if (seen.contains(fyers)) continue;
-            String nrt = cpr.getNarrowRangeType();
-            boolean rangeMatches = ("SMALL".equals(nrt) && riskSettings.isScanIncludeIS())
-                                || ("LARGE".equals(nrt) && riskSettings.isScanIncludeIL())
-                                || (nrt == null && (riskSettings.isScanIncludeIS() || riskSettings.isScanIncludeIL()));
-            if (!rangeMatches) continue;
-
             List<String> types = new ArrayList<>();
             types.add("INSIDE");
             Map<String, Object> card = buildCard(fyers, cpr, "INSIDE", positionSymbols);
             card.put("cprTypes", types);
             card.put("weeklyNarrow", weeklyNarrowSymbols.contains(cpr.getSymbol()));
-            card.put("narrowRangeType", nrt);
+            card.put("narrowRangeType", cpr.getNarrowRangeType());
             card.put("rangeZScore", cpr.getRangeZScore());
             result.add(card);
             seen.add(fyers);
-        }
-
-        // Add momentum tags to existing cards + add momentum-only stocks.
-        // Momentum Scanner (week/month/52w breaks) and Power Candle (HMB+/HMB-) are
-        // independent: a stock with only power-candle tags qualifies if Power Candle
-        // is on, even when Momentum Scanner is off (and vice versa).
-        boolean momentumOn = riskSettings.isEnableMomentumScanner();
-        boolean powerOn = riskSettings.isEnableHighMomentum();
-        for (var m : momentumService.getMomentumStocks()) {
-            // Filter tags by which scanners are enabled
-            List<String> activeTags = new ArrayList<>();
-            for (String tag : m.getTags()) {
-                boolean isPowerTag = tag.equals("HMB+") || tag.equals("HMB-");
-                if (isPowerTag && powerOn) activeTags.add(tag);
-                else if (!isPowerTag && momentumOn) activeTags.add(tag);
-            }
-            if (activeTags.isEmpty()) continue;
-
-            String fyers = "NSE:" + m.getSymbol() + "-EQ";
-
-            // Find existing card or create new one
-            Map<String, Object> existingCard = null;
-            for (var card : result) {
-                if (fyers.equals(card.get("symbol"))) { existingCard = card; break; }
-            }
-
-            if (existingCard != null) {
-                // Merge momentum tags into existing CPR card
-                @SuppressWarnings("unchecked")
-                List<String> types = (List<String>) existingCard.get("cprTypes");
-                types.addAll(activeTags);
-                existingCard.put("momentumTags", activeTags);
-                existingCard.put("volumeRatio", Math.round(m.getVolumeRatio() * 10.0) / 10.0);
-            } else {
-                // New momentum-only stock — build card from bhavcopy data
-                CprLevels cpr = bhavcopyService.getCprLevels(m.getSymbol());
-                if (cpr != null) {
-                    Map<String, Object> card = buildCard(fyers, cpr, "MOMENTUM", positionSymbols);
-                    List<String> types = new ArrayList<>(activeTags);
-                    card.put("cprTypes", types);
-                    card.put("weeklyNarrow", false);
-                    card.put("momentumTags", activeTags);
-                    card.put("volumeRatio", Math.round(m.getVolumeRatio() * 10.0) / 10.0);
-                    result.add(card);
-                    seen.add(fyers);
-                }
-            }
-        }
-
-        // HMM regime filter gate — if enabled, stock must pass regime + confidence check
-        if (riskSettings.isEnableRegimeFilter()) {
-            double minConf = riskSettings.getRegimeMinConfidence() / 100.0;
-            result.removeIf(card -> {
-                String regime = (String) card.get("regime");
-                Object confObj = card.get("regimeConfidence");
-                double conf = confObj instanceof Number ? ((Number) confObj).doubleValue() : 0.0;
-                if (regime == null || regime.isEmpty()) return true; // no regime data → drop
-                if (conf < minConf) return true;
-                if ("BULLISH".equals(regime)) return !riskSettings.isRegimeIncludeBullish();
-                if ("BEARISH".equals(regime)) return !riskSettings.isRegimeIncludeBearish();
-                if ("NEUTRAL".equals(regime)) return !riskSettings.isRegimeIncludeNeutral();
-                return false;
-            });
         }
 
         return result;
@@ -224,17 +134,16 @@ public class ScannerController {
         card.put("atp", Math.round(candleAggregator.getAtp(fyersSymbol) * 100.0) / 100.0);
         card.put("atr", Math.round(atrService.getAtr(fyersSymbol) * 100.0) / 100.0);
         card.put("dayOpen", Math.round(candleAggregator.getDayOpen(fyersSymbol) * 100.0) / 100.0);
-        // HMM regime
-        com.rydytrader.autotrader.dto.RegimeState rs = hmmRegimeService.getRegime(levels.getSymbol());
-        if (rs != null) {
-            card.put("regime", rs.getRegime());
-            card.put("regimeConfidence", Math.round(rs.getConfidence() * 100.0) / 100.0);
-        } else {
-            card.put("regime", "");
-            card.put("regimeConfidence", 0.0);
-        }
         card.put("candleVolume", candleAggregator.getCurrentCandleVolume(fyersSymbol));
         card.put("avgVolume", Math.round(candleAggregator.getAvgVolume(fyersSymbol, riskSettings.getVolumeLookback())));
+        // Chandelier Exit SL — show the relevant direction based on LTP vs pivot
+        if (riskSettings.isEnableTrailingSl()) {
+            boolean likelyLong = ltp >= levels.getPivot();
+            String cslSide = likelyLong ? "LONG" : "SHORT";
+            double csl = marketDataService.calculateChandelierSl(fyersSymbol, cslSide);
+            card.put("chandelierSl", csl > 0 ? r(csl) : 0);
+            card.put("chandelierSlSide", cslSide);
+        }
 
         card.put("weeklyTrend", weeklyCprService.getWeeklyTrend(fyersSymbol));
         card.put("dailyTrend", weeklyCprService.getDailyTrend(fyersSymbol));
@@ -417,61 +326,4 @@ public class ScannerController {
         return result;
     }
 
-    // ── MOMENTUM STOCKS ──────────────────────────────────────────────────────
-    @GetMapping("/api/momentum-stocks")
-    public Map<String, Object> getMomentumStocks() {
-        Map<String, Object> result = new LinkedHashMap<>();
-        var stocks = momentumService.getMomentumStocks();
-        result.put("count", stocks.size());
-        result.put("volumeThreshold", riskSettings.getMomentumVolumeMultiple());
-
-        List<Map<String, Object>> list = new ArrayList<>();
-        for (var m : stocks) {
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("symbol", m.getSymbol());
-            item.put("close", m.getLastClose());
-            item.put("volume", m.getLastVolume());
-            item.put("avgVolume20", Math.round(m.getAvgVolume20()));
-            item.put("volumeRatio", Math.round(m.getVolumeRatio() * 10.0) / 10.0);
-            item.put("prevWeekHigh", m.getPrevWeekHigh());
-            item.put("prevWeekLow", m.getPrevWeekLow());
-            item.put("prevMonthHigh", m.getPrevMonthHigh());
-            item.put("prevMonthLow", m.getPrevMonthLow());
-            item.put("fiftyTwoWeekHigh", m.getFiftyTwoWeekHigh());
-            item.put("fiftyTwoWeekLow", m.getFiftyTwoWeekLow());
-            item.put("tags", m.getTags());
-            list.add(item);
-        }
-        // Sort by volume ratio descending
-        list.sort((a, b) -> Double.compare((double) b.get("volumeRatio"), (double) a.get("volumeRatio")));
-        result.put("stocks", list);
-        return result;
-    }
-
-    // ── HMM REGIMES ──────────────────────────────────────────────────────────
-    @GetMapping("/api/regime-list")
-    public Map<String, Object> getRegimeList() {
-        Map<String, Object> result = new LinkedHashMap<>();
-        var regimes = hmmRegimeService.getAllRegimes();
-        List<Map<String, Object>> list = new ArrayList<>();
-        for (var entry : regimes.entrySet()) {
-            var rs = entry.getValue();
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("symbol", rs.getSymbol());
-            item.put("regime", rs.getRegime());
-            item.put("confidence", Math.round(rs.getConfidence() * 10000.0) / 100.0); // %
-            double[] post = rs.getStatePosteriors();
-            if (post != null && post.length == 3) {
-                item.put("bullish", Math.round(post[0] * 10000.0) / 100.0);
-                item.put("bearish", Math.round(post[1] * 10000.0) / 100.0);
-                item.put("neutral", Math.round(post[2] * 10000.0) / 100.0);
-            }
-            list.add(item);
-        }
-        // Sort by confidence descending
-        list.sort((a, b) -> Double.compare((double) b.get("confidence"), (double) a.get("confidence")));
-        result.put("count", list.size());
-        result.put("stocks", list);
-        return result;
-    }
 }
