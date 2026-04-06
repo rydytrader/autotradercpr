@@ -381,7 +381,9 @@
             <button class="filter-btn" onclick="setFilter('CPR', this)" style="color:var(--accent-blue)">CPR</button>
             <button class="filter-btn" onclick="setFilter('NARROW', this)">Narrow</button>
             <button class="filter-btn" onclick="setFilter('INSIDE', this)">Inside</button>
-            <button class="filter-btn" onclick="toggleWeeklyFilter(this)">Daily + Weekly Narrow</button>
+            <button class="filter-btn" onclick="setFilter('WEEKLY_NARROW', this)">W Narrow</button>
+            <button class="filter-btn" onclick="setFilter('WEEKLY_INSIDE', this)">W Inside</button>
+            <button class="filter-btn" onclick="toggleWeeklyFilter(this)">Daily + Weekly</button>
         </span>
         <div class="filter-sep"></div>
         <span class="prob-filter-group">
@@ -533,12 +535,16 @@
                 var types = d.cprTypes || [d.cprType];
                 if (cprFilter === 'CPR') {
                     if (!types.includes('NARROW') && !types.includes('INSIDE')) return false;
+                } else if (cprFilter === 'WEEKLY_NARROW') {
+                    if (!d.weeklyNarrow) return false;
+                } else if (cprFilter === 'WEEKLY_INSIDE') {
+                    if (!d.weeklyInside) return false;
                 } else {
                     if (types.indexOf(cprFilter) === -1) return false;
                 }
             }
             if (probFilter && d.probability !== probFilter) return false;
-            if (weeklyFilter && !d.weeklyNarrow) return false;
+            if (weeklyFilter && !d.weeklyNarrow && !d.weeklyInside) return false;
             if (signalFilter && (!d.lastSignal || d.lastSignal.status !== 'TRADED')) return false;
             if (filteredFilter && (!d.lastSignal || d.lastSignal.status !== 'FILTERED')) return false;
             if (timeFilter && d.lastSignal && d.lastSignal.time) {
