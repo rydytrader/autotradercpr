@@ -61,48 +61,65 @@ public class ScannerController {
         }
 
         // Collect narrow CPR stocks (mark if also inside / weekly narrow)
+        // Collect narrow CPR stocks — filtered by NS/NL toggles
         Set<String> seen = new HashSet<>();
         for (CprLevels cpr : bhavcopyService.getNarrowCprStocks()) {
+            boolean isWeekly = weeklyNarrowSymbols.contains(cpr.getSymbol());
+            String nrt = cpr.getNarrowRangeType();
+            boolean rangeMatches = ("SMALL".equals(nrt) && riskSettings.isScanIncludeNS())
+                                || ("LARGE".equals(nrt) && riskSettings.isScanIncludeNL())
+                                || (nrt == null && (riskSettings.isScanIncludeNS() || riskSettings.isScanIncludeNL()));
+            boolean weeklyMatches = isWeekly && riskSettings.isScanIncludeWeeklyNarrow();
+            if (!rangeMatches && !weeklyMatches) continue;
+
             String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
             List<String> types = new ArrayList<>();
             types.add("NARROW");
             if (insideSymbols.contains(cpr.getSymbol())) types.add("INSIDE");
             Map<String, Object> card = buildCard(fyers, cpr, "NARROW", positionSymbols);
             card.put("cprTypes", types);
-            card.put("weeklyNarrow", weeklyNarrowSymbols.contains(cpr.getSymbol()));
-            card.put("narrowRangeType", cpr.getNarrowRangeType());
+            card.put("weeklyNarrow", isWeekly);
+            card.put("narrowRangeType", nrt);
             card.put("rangeZScore", cpr.getRangeZScore());
             result.add(card);
             seen.add(fyers);
         }
 
         // Collect weekly-narrow-only CPR stocks (those not already added via daily narrow)
-        for (CprLevels cpr : bhavcopyService.getWeeklyNarrowCprStocks()) {
-            String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
-            if (seen.contains(fyers)) continue;
-            CprLevels dailyCpr = bhavcopyService.getCprLevels(cpr.getSymbol());
-            if (dailyCpr == null) dailyCpr = cpr;
-            List<String> types = new ArrayList<>();
-            if (insideSymbols.contains(cpr.getSymbol())) types.add("INSIDE");
-            Map<String, Object> card = buildCard(fyers, dailyCpr, types.isEmpty() ? "WEEKLY_NARROW" : "INSIDE", positionSymbols);
-            card.put("cprTypes", types);
-            card.put("weeklyNarrow", true);
-            card.put("narrowRangeType", dailyCpr.getNarrowRangeType());
-            card.put("rangeZScore", dailyCpr.getRangeZScore());
-            result.add(card);
-            seen.add(fyers);
+        if (riskSettings.isScanIncludeWeeklyNarrow()) {
+            for (CprLevels cpr : bhavcopyService.getWeeklyNarrowCprStocks()) {
+                String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
+                if (seen.contains(fyers)) continue;
+                CprLevels dailyCpr = bhavcopyService.getCprLevels(cpr.getSymbol());
+                if (dailyCpr == null) dailyCpr = cpr;
+                List<String> types = new ArrayList<>();
+                if (insideSymbols.contains(cpr.getSymbol())) types.add("INSIDE");
+                Map<String, Object> card = buildCard(fyers, dailyCpr, types.isEmpty() ? "WEEKLY_NARROW" : "INSIDE", positionSymbols);
+                card.put("cprTypes", types);
+                card.put("weeklyNarrow", true);
+                card.put("narrowRangeType", dailyCpr.getNarrowRangeType());
+                card.put("rangeZScore", dailyCpr.getRangeZScore());
+                result.add(card);
+                seen.add(fyers);
+            }
         }
 
-        // Collect inside-only CPR stocks
+        // Collect inside-only CPR stocks — filtered by IS/IL toggles
         for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
             String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
             if (seen.contains(fyers)) continue;
+            String nrt = cpr.getNarrowRangeType();
+            boolean rangeMatches = ("SMALL".equals(nrt) && riskSettings.isScanIncludeIS())
+                                || ("LARGE".equals(nrt) && riskSettings.isScanIncludeIL())
+                                || (nrt == null && (riskSettings.isScanIncludeIS() || riskSettings.isScanIncludeIL()));
+            if (!rangeMatches) continue;
+
             List<String> types = new ArrayList<>();
             types.add("INSIDE");
             Map<String, Object> card = buildCard(fyers, cpr, "INSIDE", positionSymbols);
             card.put("cprTypes", types);
             card.put("weeklyNarrow", weeklyNarrowSymbols.contains(cpr.getSymbol()));
-            card.put("narrowRangeType", cpr.getNarrowRangeType());
+            card.put("narrowRangeType", nrt);
             card.put("rangeZScore", cpr.getRangeZScore());
             result.add(card);
             seen.add(fyers);

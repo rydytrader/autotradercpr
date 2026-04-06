@@ -427,6 +427,40 @@
         </div>
     </div>
 
+    <!-- CPR WIDTH SCANNER -->
+    <div class="section-card fade-in" style="margin-top:16px;">
+        <div class="section-header">
+            <div class="section-title">
+                <div class="section-title-dot" style="background: var(--accent-blue);"></div>
+                CPR Width Scanner
+            </div>
+        </div>
+        <div class="section-body">
+            <div class="form-grid">
+                <div class="form-group" style="grid-column: span 2;">
+                    <label class="form-label">Include in Watchlist</label>
+                    <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="scanIncludeNS" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:var(--accent-green);">NS</b> — Narrow + Small Range (z &lt; −1.5)
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="scanIncludeNL" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:#fb923c;">NL</b> — Narrow + Large Range
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="scanIncludeIS" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:var(--accent-green);">IS</b> — Inside + Small Range (z &lt; −1.5)
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="scanIncludeIL" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:#fb923c;">IL</b> — Inside + Large Range
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="scanIncludeWeeklyNarrow" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:#8b5cf6;">W</b> — Weekly Narrow CPR
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
         <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
     </div><!-- /tab-scanner -->
 
@@ -688,6 +722,11 @@
             document.getElementById('signalSource').value = d.signalSource || 'TRADINGVIEW';
             document.getElementById('scannerTimeframe').value = d.scannerTimeframe != null ? d.scannerTimeframe : 15;
             document.getElementById('enableAtpCheck').checked = d.enableAtpCheck !== false;
+            document.getElementById('scanIncludeNS').checked = d.scanIncludeNS !== false;
+            document.getElementById('scanIncludeNL').checked = d.scanIncludeNL !== false;
+            document.getElementById('scanIncludeIS').checked = d.scanIncludeIS !== false;
+            document.getElementById('scanIncludeIL').checked = d.scanIncludeIL === true;
+            document.getElementById('scanIncludeWeeklyNarrow').checked = d.scanIncludeWeeklyNarrow !== false;
             document.getElementById('enableHpt').checked = d.enableHpt !== false;
             document.getElementById('enableMpt').checked = d.enableMpt === true;
             document.getElementById('enableLpt').checked = d.enableLpt === true;
@@ -781,6 +820,11 @@
                 signalSource: document.getElementById('signalSource').value,
                 scannerTimeframe: parseInt(document.getElementById('scannerTimeframe').value) || 15,
                 enableAtpCheck: document.getElementById('enableAtpCheck').checked,
+                scanIncludeNS: document.getElementById('scanIncludeNS').checked,
+                scanIncludeNL: document.getElementById('scanIncludeNL').checked,
+                scanIncludeIS: document.getElementById('scanIncludeIS').checked,
+                scanIncludeIL: document.getElementById('scanIncludeIL').checked,
+                scanIncludeWeeklyNarrow: document.getElementById('scanIncludeWeeklyNarrow').checked,
                 enableHpt: document.getElementById('enableHpt').checked,
                 enableMpt: document.getElementById('enableMpt').checked,
                 enableLpt: document.getElementById('enableLpt').checked,

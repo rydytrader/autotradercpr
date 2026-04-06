@@ -66,6 +66,12 @@ public class RiskSettingsStore {
         volatile boolean enableLpt      = false; // Low Probable Trade signals
         volatile double mptQtyFactor    = 0.5;   // MPT qty multiplier (0.5 = half)
         volatile double lptQtyFactor    = 0.25;  // LPT qty multiplier (0.25 = quarter)
+        // CPR Width scanner group toggles
+        volatile boolean scanIncludeNS = true;   // Narrow + Small Range (z < -1.5)
+        volatile boolean scanIncludeNL = true;   // Narrow + Large Range
+        volatile boolean scanIncludeIS = true;   // Inside + Small Range
+        volatile boolean scanIncludeIL = false;  // Inside + Large Range
+        volatile boolean scanIncludeWeeklyNarrow = true; // Weekly Narrow CPR
     }
 
     private final Cfg live = new Cfg();
@@ -129,6 +135,11 @@ public class RiskSettingsStore {
     public boolean isEnableLpt()          { return cfg().enableLpt; }
     public double getMptQtyFactor()       { return cfg().mptQtyFactor; }
     public double getLptQtyFactor()       { return cfg().lptQtyFactor; }
+    public boolean isScanIncludeNS() { return cfg().scanIncludeNS; }
+    public boolean isScanIncludeNL() { return cfg().scanIncludeNL; }
+    public boolean isScanIncludeIS() { return cfg().scanIncludeIS; }
+    public boolean isScanIncludeIL() { return cfg().scanIncludeIL; }
+    public boolean isScanIncludeWeeklyNarrow() { return cfg().scanIncludeWeeklyNarrow; }
     public void setSignalSource(String v)      { cfg().signalSource = v; }
     public void setScannerTimeframe(int v)     { cfg().scannerTimeframe = v; }
     public void setEnableAtpCheck(boolean v)  { cfg().enableAtpCheck = v; }
@@ -137,6 +148,11 @@ public class RiskSettingsStore {
     public void setEnableLpt(boolean v)        { cfg().enableLpt = v; }
     public void setMptQtyFactor(double v)      { cfg().mptQtyFactor = v; }
     public void setLptQtyFactor(double v)      { cfg().lptQtyFactor = v; }
+    public void setScanIncludeNS(boolean v) { cfg().scanIncludeNS = v; }
+    public void setScanIncludeNL(boolean v) { cfg().scanIncludeNL = v; }
+    public void setScanIncludeIS(boolean v) { cfg().scanIncludeIS = v; }
+    public void setScanIncludeIL(boolean v) { cfg().scanIncludeIL = v; }
+    public void setScanIncludeWeeklyNarrow(boolean v) { cfg().scanIncludeWeeklyNarrow = v; }
     public void setTradingStartTime(String v)  { cfg().tradingStartTime = v; }
     public void setTradingEndTime(String v)    { cfg().tradingEndTime = v; }
     public void setTotalCapital(double v)       { cfg().totalCapital = v; }
@@ -294,6 +310,11 @@ public class RiskSettingsStore {
             upsert("enableLpt", String.valueOf(c.enableLpt));
             upsert("mptQtyFactor", String.valueOf(c.mptQtyFactor));
             upsert("lptQtyFactor", String.valueOf(c.lptQtyFactor));
+            upsert("scanIncludeNS", String.valueOf(c.scanIncludeNS));
+            upsert("scanIncludeNL", String.valueOf(c.scanIncludeNL));
+            upsert("scanIncludeIS", String.valueOf(c.scanIncludeIS));
+            upsert("scanIncludeIL", String.valueOf(c.scanIncludeIL));
+            upsert("scanIncludeWeeklyNarrow", String.valueOf(c.scanIncludeWeeklyNarrow));
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to save {}: {}", mode, e.getMessage());
         }
@@ -358,6 +379,11 @@ public class RiskSettingsStore {
                     case "enableLpt"         -> c.enableLpt = Boolean.parseBoolean(v);
                     case "mptQtyFactor"      -> c.mptQtyFactor = Double.parseDouble(v);
                     case "lptQtyFactor"      -> c.lptQtyFactor = Double.parseDouble(v);
+                    case "scanIncludeNS" -> c.scanIncludeNS = Boolean.parseBoolean(v);
+                    case "scanIncludeNL" -> c.scanIncludeNL = Boolean.parseBoolean(v);
+                    case "scanIncludeIS" -> c.scanIncludeIS = Boolean.parseBoolean(v);
+                    case "scanIncludeIL" -> c.scanIncludeIL = Boolean.parseBoolean(v);
+                    case "scanIncludeWeeklyNarrow" -> c.scanIncludeWeeklyNarrow = Boolean.parseBoolean(v);
                 }
             }
             log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} enableR4S4={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} chandelier={}x{}", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.enableR4S4, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.chandelierPeriod, c.chandelierMultiplier);
