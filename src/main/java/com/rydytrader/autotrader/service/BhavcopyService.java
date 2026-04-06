@@ -83,6 +83,8 @@ public class BhavcopyService {
                     log.error("[BhavcopyService] Failed to backfill history: {}", e.getMessage());
                 }
             }
+            // Classify narrow/inside range types from loaded cache + history
+            classifyNarrowRangeTypes(cache);
             long narrowCount = cache.values().stream().filter(CprLevels::isNarrowCpr).count();
             long insideCount = getInsideCprStocks().size();
             log.info("[BhavcopyService] Loaded {} NFO stocks from cache for {} ({} narrow, {} inside CPR)", cache.size(), cachedDate, narrowCount, insideCount);
