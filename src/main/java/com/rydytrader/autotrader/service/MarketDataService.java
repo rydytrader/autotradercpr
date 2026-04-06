@@ -55,6 +55,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     private final BhavcopyService     bhavcopyService;
     private final SwingCandleAggregator swingCandleAggregator;
     private final SwingScanner        swingScanner;
+    private final SwingPositionManager swingPositionManager;
     private final MonthlyCprService   monthlyCprService;
     private final WeeklyAtrService    weeklyAtrService;
     private final WeeklyVwapService   weeklyVwapService;
@@ -143,6 +144,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                               BhavcopyService bhavcopyService,
                               SwingCandleAggregator swingCandleAggregator,
                               SwingScanner swingScanner,
+                              SwingPositionManager swingPositionManager,
                               MonthlyCprService monthlyCprService,
                               WeeklyAtrService weeklyAtrService,
                               WeeklyVwapService weeklyVwapService) {
@@ -160,6 +162,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         this.bhavcopyService = bhavcopyService;
         this.swingCandleAggregator = swingCandleAggregator;
         this.swingScanner = swingScanner;
+        this.swingPositionManager = swingPositionManager;
         this.monthlyCprService = monthlyCprService;
         this.weeklyAtrService = weeklyAtrService;
         this.weeklyVwapService = weeklyVwapService;
@@ -194,6 +197,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         candleAggregator.addListener(swingCandleAggregator);
         // Swing scanner listens to 75-min candle closes
         swingCandleAggregator.addListener(swingScanner);
+        // Swing position manager trails SL on 75-min candle closes
+        swingCandleAggregator.addListener(swingPositionManager);
         candleAggregator.start();
 
         // Schedule scanner pre-market data fetch
@@ -345,6 +350,38 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         List<CandleAggregator.CandleBar> recent = candles.subList(candles.size() - period, candles.size());
 
         // ATR via Wilder's smoothing
+        double atr = 0;
+        for (int i = 0; i < recent.size(); i++) {
+            CandleAggregator.CandleBar c = recent.get(i);
+            CandleAggregator.CandleBar prev = i > 0 ? recent.get(i - 1) : null;
+            double tr = c.trueRange(prev);
+            atr = (i == 0) ? tr : (atr * (period - 1) + tr) / period;
+        }
+        if (atr <= 0) return 0;
+
+        if ("LONG".equals(side)) {
+            double highestHigh = recent.stream().mapToDouble(c -> c.high).max().orElse(0);
+            return highestHigh - atr * multiplier;
+        } else if ("SHORT".equals(side)) {
+            double lowestLow = recent.stream().mapToDouble(c -> c.low).min().orElse(0);
+            return lowestLow + atr * multiplier;
+        }
+        return 0;
+    }
+
+    /**
+     * Calculate Chandelier Exit SL for swing positions using 75-min candles.
+     * Same formula as daily, but on the swing candle aggregator's completed candles.
+     */
+    public double calculateSwingChandelierSl(String fyersSymbol, String side) {
+        List<CandleAggregator.CandleBar> candles = swingCandleAggregator.getCompletedCandles(fyersSymbol);
+        int period = riskSettings.getChandelierPeriod();
+        double multiplier = riskSettings.getChandelierMultiplier();
+
+        if (candles.size() < period) return 0;
+
+        List<CandleAggregator.CandleBar> recent = candles.subList(candles.size() - period, candles.size());
+
         double atr = 0;
         for (int i = 0; i < recent.size(); i++) {
             CandleAggregator.CandleBar c = recent.get(i);

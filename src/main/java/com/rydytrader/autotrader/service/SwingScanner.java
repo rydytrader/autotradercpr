@@ -193,10 +193,75 @@ public class SwingScanner implements SwingCandleAggregator.SwingCandleCloseListe
         return null;
     }
 
+    /**
+     * Compute swing target based on the breakout setup and weekly levels.
+     * Target = next weekly level in the breakout direction.
+     */
+    public double computeSwingTarget(String setup, WeeklyCprService.WeeklyLevels wl, double weeklyAtr) {
+        return switch (setup) {
+            case "SWING_BUY_S1"  -> wl.bot;                    // S1 → CPR bottom
+            case "SWING_BUY_CPR" -> Math.min(wl.r1, wl.ph);   // CPR → R1/PWH
+            case "SWING_BUY_R1"  -> wl.r2;
+            case "SWING_BUY_R2"  -> wl.r3;
+            case "SWING_BUY_R3"  -> wl.r4;
+            case "SWING_BUY_R4"  -> wl.r4 + weeklyAtr;        // no level above, use ATR extension
+            case "SWING_SELL_R1" -> wl.top;                    // R1 → CPR top
+            case "SWING_SELL_CPR"-> Math.max(wl.s1, wl.pl);   // CPR → S1/PWL
+            case "SWING_SELL_S1" -> wl.s2;
+            case "SWING_SELL_S2" -> wl.s3;
+            case "SWING_SELL_S3" -> wl.s4;
+            case "SWING_SELL_S4" -> wl.s4 - weeklyAtr;        // no level below
+            default -> 0;
+        };
+    }
+
+    /**
+     * Compute swing SL based on weekly ATR and direction.
+     * SL = entry ± (weeklyAtr × multiplier), capped at nearest opposite weekly level.
+     */
+    public double computeSwingSl(String side, double entryPrice, double weeklyAtr,
+                                  double atrMultiplier, WeeklyCprService.WeeklyLevels wl) {
+        double slOffset = weeklyAtr * atrMultiplier;
+        if ("BUY".equals(side)) {
+            double sl = entryPrice - slOffset;
+            // Cap: SL should not be below the nearest support level below entry
+            double nearestSupport = findNearestSupportBelow(entryPrice, wl);
+            if (nearestSupport > 0 && sl < nearestSupport) sl = nearestSupport;
+            return sl;
+        } else {
+            double sl = entryPrice + slOffset;
+            double nearestResistance = findNearestResistanceAbove(entryPrice, wl);
+            if (nearestResistance > 0 && sl > nearestResistance) sl = nearestResistance;
+            return sl;
+        }
+    }
+
+    private double findNearestSupportBelow(double price, WeeklyCprService.WeeklyLevels wl) {
+        double[] supports = {wl.s4, wl.s3, wl.s2, wl.s1, wl.pl, wl.bot, wl.top, wl.r1, wl.ph};
+        double nearest = 0;
+        for (double s : supports) {
+            if (s > 0 && s < price && s > nearest) nearest = s;
+        }
+        return nearest;
+    }
+
+    private double findNearestResistanceAbove(double price, WeeklyCprService.WeeklyLevels wl) {
+        double[] resistances = {wl.r4, wl.r3, wl.r2, wl.r1, wl.ph, wl.top, wl.bot, wl.s1, wl.pl};
+        double nearest = Double.MAX_VALUE;
+        for (double r : resistances) {
+            if (r > 0 && r > price && r < nearest) nearest = r;
+        }
+        return nearest == Double.MAX_VALUE ? 0 : nearest;
+    }
+
     private void recordSignal(String fyersSymbol, String setup, String side, double close,
                               double weeklyAtr, String probability, CandleAggregator.CandleBar candle) {
         // Mark level as broken
         brokenWeeklyLevels.computeIfAbsent(fyersSymbol, k -> ConcurrentHashMap.newKeySet()).add(setup);
+
+        WeeklyCprService.WeeklyLevels wl = weeklyCprService.getWeeklyLevels(fyersSymbol);
+        double target = wl != null ? computeSwingTarget(setup, wl, weeklyAtr) : 0;
+        double sl = wl != null ? computeSwingSl(side, close, weeklyAtr, riskSettings.getAtrMultiplier(), wl) : 0;
 
         String time = ZonedDateTime.now(IST).toLocalTime().format(TIME_FMT);
         SwingSignalInfo info = new SwingSignalInfo();
@@ -206,6 +271,8 @@ public class SwingScanner implements SwingCandleAggregator.SwingCandleCloseListe
         info.probability = probability;
         info.close = close;
         info.weeklyAtr = weeklyAtr;
+        info.target = target;
+        info.sl = sl;
         info.status = "DETECTED";
 
         lastSwingSignal.put(fyersSymbol, info);
@@ -213,6 +280,8 @@ public class SwingScanner implements SwingCandleAggregator.SwingCandleCloseListe
 
         String logMsg = "[SWING] " + setup + " for " + fyersSymbol
             + " @ " + String.format("%.2f", close)
+            + " | SL=" + String.format("%.2f", sl)
+            + " | Target=" + String.format("%.2f", target)
             + " | ATR=" + String.format("%.2f", weeklyAtr)
             + " | " + probability
             + " | 75min O=" + String.format("%.2f", candle.open)
@@ -222,7 +291,7 @@ public class SwingScanner implements SwingCandleAggregator.SwingCandleCloseListe
         log.info(logMsg);
         eventService.log(logMsg);
 
-        // TODO: Phase 4 — feed into SignalProcessor with strategy=SWING, productType=CNC
+        // TODO: feed into order placement with strategy=SWING, productType=CNC
         tradedCountThisWeek++;
     }
 
@@ -264,6 +333,8 @@ public class SwingScanner implements SwingCandleAggregator.SwingCandleCloseListe
         public String probability;
         public double close;
         public double weeklyAtr;
+        public double target;
+        public double sl;
         public String status; // DETECTED, TRADED, FILTERED
     }
 }

@@ -999,6 +999,12 @@ public class PollingService {
             String symbol = pos.getSymbol();
             int qty = Math.abs(pos.getQty());
             if (qty == 0) continue;
+            // Skip CNC (swing) positions — those are managed by SwingPositionManager
+            Map<String, Object> state = positionStateStore.load(symbol, "CNC");
+            if (state != null) {
+                log.info("[AUTO] Skipping CNC position {} (swing managed)", symbol);
+                continue;
+            }
             try {
                 boolean ok = squareOff(symbol, qty, "AUTO_SQUAREOFF");
                 if (!ok) {
