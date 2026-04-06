@@ -211,7 +211,7 @@
                 </thead>
                 <tbody id="positionsTableBody">
                     <tr>
-                        <td colspan="13">
+                        <td colspan="14">
                             <div class="empty-state">
                                 <div class="empty-icon">◎</div>
                                 No active positions
@@ -548,7 +548,7 @@
         positions.sort((a, b) => (b.entryTime || '').localeCompare(a.entryTime || ''));
         const tbody = document.getElementById('positionsTableBody');
         if (positions.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="13"><div class="empty-state"><div class="empty-icon">◎</div>No active positions${filter ? ' for ' + filter : ''}</div></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="14"><div class="empty-state"><div class="empty-icon">◎</div>No active positions${filter ? ' for ' + filter : ''}</div></td></tr>`;
             return;
         }
         tbody.innerHTML = positions.map((pos, idx) => {
