@@ -693,8 +693,22 @@
             + '  <div class="scan-data-item"><div class="scan-data-label">ATP</div><div class="scan-data-value">' + fmt(d.atp) + '</div></div>'
             + '  <div class="scan-data-item"><div class="scan-data-label">ATR</div><div class="scan-data-value">' + fmt(d.atr) + '</div></div>'
             + '  <div class="scan-data-item"><div class="scan-data-label">CSL</div><div class="scan-data-value scan-csl" style="font-size:0.68rem;">' + (d.chandelierSl ? '<span style="color:' + (d.chandelierSlSide === 'LONG' ? 'var(--accent-green)' : 'var(--accent-red)') + ';">' + (d.chandelierSlSide === 'LONG' ? '\u2191' : '\u2193') + fmt(d.chandelierSl) + '</span>' : '<span style="color:var(--text-muted);">\u2014</span>') + '</div></div>'
-            + '</div>'
-            + '<div class="scan-trend-row">'
+            + '</div>';
+
+            // Swing data row for WN/WI stocks
+            if (d.weeklyNarrow || d.weeklyInside) {
+                var mTrend = d.monthlyTrend || 'NEUTRAL';
+                var mClass = mTrend === 'BULLISH' ? 'trend-bullish' : mTrend === 'BEARISH' ? 'trend-bearish' : 'trend-neutral';
+                var mArrow = mTrend === 'BULLISH' ? '&#9650;' : mTrend === 'BEARISH' ? '&#9660;' : '&#9644;';
+                html += '<div class="scan-data-grid" style="background:rgba(139,92,246,0.04); border-top:1px dashed rgba(139,92,246,0.2);">'
+                    + '  <div class="scan-data-item"><div class="scan-data-label" style="color:#a78bfa;">Wk Open</div><div class="scan-data-value">' + fmt(d.weekOpen || 0) + '</div></div>'
+                    + '  <div class="scan-data-item"><div class="scan-data-label" style="color:#a78bfa;">Wk ATP</div><div class="scan-data-value">' + fmt(d.weeklyVwap || 0) + '</div></div>'
+                    + '  <div class="scan-data-item"><div class="scan-data-label" style="color:#a78bfa;">Wk ATR</div><div class="scan-data-value">' + fmt(d.weeklyAtr || 0) + '</div></div>'
+                    + '  <div class="scan-data-item"><div class="scan-data-label" style="color:#a78bfa;">M:</div><div class="scan-data-value"><span class="' + mClass + '">' + mArrow + ' ' + mTrend.charAt(0) + mTrend.slice(1).toLowerCase() + '</span></div></div>'
+                    + '</div>';
+            }
+
+            html += '<div class="scan-trend-row">'
             + '  <span class="scan-trend"><span class="label">W:</span> <span class="' + wClass + '">' + wArrow + ' ' + wLabel + '</span></span>'
             + '  <span class="scan-trend"><span class="label">D:</span> <span class="' + dClass + '">' + dArrow + ' ' + dLabel + '</span></span>'
             + '  <span class="scan-badge ' + probClass + '">' + d.probability + '</span>'
@@ -702,8 +716,44 @@
             + '<div class="scan-levels">'
             + '  <div class="scan-levels-title" onclick="this.parentElement.classList.toggle(\'expanded\')">CPR Levels <span class="toggle-arrow">&#9654;</span></div>'
             + '  <div class="scan-levels-body">' + levelsHtml + '</div>'
-            + '</div>'
-            + '<div style="border-top:1px solid var(--border);"></div>'
+            + '</div>';
+
+            // Weekly CPR levels for WN/WI stocks
+            if ((d.weeklyNarrow || d.weeklyInside) && d.weeklyLevels) {
+                var wl = d.weeklyLevels;
+                var wkLevelsHtml = '<table style="width:100%;font-size:0.7rem;border-collapse:collapse;">';
+                var wkLevels = [['R4', wl.r4], ['R3', wl.r3], ['R2', wl.r2], ['R1', wl.r1], ['PWH', wl.ph],
+                    ['TC', wl.tc], ['Pivot', wl.pivot], ['BC', wl.bc],
+                    ['PWL', wl.pl], ['S1', wl.s1], ['S2', wl.s2], ['S3', wl.s3], ['S4', wl.s4]];
+                wkLevels.forEach(function(l) {
+                    if (l[1] > 0) {
+                        var c = l[0].startsWith('R') || l[0] === 'PWH' ? 'var(--accent-green)' : l[0].startsWith('S') || l[0] === 'PWL' ? 'var(--accent-red)' : 'var(--accent-cyan)';
+                        wkLevelsHtml += '<tr><td style="padding:2px 8px;color:var(--text-muted);">' + l[0] + '</td><td style="padding:2px 8px;text-align:right;color:' + c + ';">' + fmt(l[1]) + '</td></tr>';
+                    }
+                });
+                wkLevelsHtml += '</table>';
+                html += '<div class="scan-levels">'
+                    + '  <div class="scan-levels-title" style="color:#a78bfa;" onclick="this.parentElement.classList.toggle(\'expanded\')">Weekly CPR Levels <span class="toggle-arrow">&#9654;</span></div>'
+                    + '  <div class="scan-levels-body">' + wkLevelsHtml + '</div>'
+                    + '</div>';
+            }
+
+            // Swing signal section for WN/WI stocks
+            if ((d.weeklyNarrow || d.weeklyInside) && d.swingSignal) {
+                var ss = d.swingSignal;
+                html += '<div style="border-top:1px dashed rgba(139,92,246,0.3); padding:6px 16px; font-size:0.7rem; background:rgba(139,92,246,0.04);">'
+                    + '<span style="color:#a78bfa; font-weight:700;">SWING</span> '
+                    + '<span style="color:var(--text-secondary);">' + ss.setup + '</span> '
+                    + '<span style="color:' + (ss.side === 'BUY' ? 'var(--accent-green)' : 'var(--accent-red)') + '; font-weight:600;">' + ss.side + '</span> '
+                    + '@ ' + fmt(ss.close || 0)
+                    + ' | SL=' + fmt(ss.sl || 0)
+                    + ' | Tgt=' + fmt(ss.target || 0)
+                    + ' | ' + ss.probability
+                    + ' <span style="color:var(--text-muted);">(' + ss.time + ')</span>'
+                    + '</div>';
+            }
+
+            html += '<div style="border-top:1px solid var(--border);"></div>'
             + '<div class="scan-levels">'
             + '  <div class="scan-levels-title" onclick="this.parentElement.classList.toggle(\'expanded\')">'
             + (d.lastSignal

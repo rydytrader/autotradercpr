@@ -26,6 +26,10 @@ public class ScannerController {
     private final BreakoutScanner breakoutScanner;
     private final RiskSettingsStore riskSettings;
     private final MarginDataService marginDataService;
+    private final WeeklyAtrService weeklyAtrService;
+    private final WeeklyVwapService weeklyVwapService;
+    private final MonthlyCprService monthlyCprService;
+    private final SwingScanner swingScanner;
 
     public ScannerController(MarketDataService marketDataService,
                              BhavcopyService bhavcopyService,
@@ -34,7 +38,11 @@ public class ScannerController {
                              CandleAggregator candleAggregator,
                              BreakoutScanner breakoutScanner,
                              RiskSettingsStore riskSettings,
-                             MarginDataService marginDataService) {
+                             MarginDataService marginDataService,
+                             WeeklyAtrService weeklyAtrService,
+                             WeeklyVwapService weeklyVwapService,
+                             MonthlyCprService monthlyCprService,
+                             SwingScanner swingScanner) {
         this.marketDataService = marketDataService;
         this.bhavcopyService = bhavcopyService;
         this.atrService = atrService;
@@ -43,6 +51,10 @@ public class ScannerController {
         this.breakoutScanner = breakoutScanner;
         this.riskSettings = riskSettings;
         this.marginDataService = marginDataService;
+        this.weeklyAtrService = weeklyAtrService;
+        this.weeklyVwapService = weeklyVwapService;
+        this.monthlyCprService = monthlyCprService;
+        this.swingScanner = swingScanner;
     }
 
     @GetMapping("/api/scanner/watchlist")
@@ -233,6 +245,33 @@ public class ScannerController {
         card.put("weeklyLevels", weeklyCprService.getWeeklyLevelsMap(fyersSymbol));
         card.put("hasPosition", positionSymbols.contains(fyersSymbol));
         card.put("cprWidthPct", Math.round(levels.getCprWidthPct() * 1000.0) / 1000.0);
+
+        // Swing-specific fields for WN/WI stocks
+        double weeklyAtr = weeklyAtrService.getWeeklyAtr(fyersSymbol);
+        if (weeklyAtr > 0) card.put("weeklyAtr", r(weeklyAtr));
+        double weeklyVwap = weeklyVwapService.getWeeklyVwap(fyersSymbol);
+        if (weeklyVwap > 0) card.put("weeklyVwap", r(weeklyVwap));
+        double weekOpen = weeklyVwapService.getWeekOpen(fyersSymbol);
+        if (weekOpen > 0) card.put("weekOpen", r(weekOpen));
+        double ltp = candleAggregator.getLtp(fyersSymbol);
+        if (ltp <= 0) ltp = levels.getClose();
+        String monthlyTrend = monthlyCprService.getMonthlyTrend(fyersSymbol, ltp);
+        card.put("monthlyTrend", monthlyTrend);
+        card.put("monthlyLevels", monthlyCprService.getMonthlyLevelsMap(fyersSymbol));
+
+        // Swing signal
+        SwingScanner.SwingSignalInfo swingSig = swingScanner.getLastSwingSignal(fyersSymbol);
+        if (swingSig != null) {
+            Map<String, Object> ss = new LinkedHashMap<>();
+            ss.put("setup", swingSig.setup);
+            ss.put("side", swingSig.side);
+            ss.put("time", swingSig.time);
+            ss.put("probability", swingSig.probability);
+            ss.put("sl", swingSig.sl);
+            ss.put("target", swingSig.target);
+            ss.put("status", swingSig.status);
+            card.put("swingSignal", ss);
+        }
 
         return card;
     }

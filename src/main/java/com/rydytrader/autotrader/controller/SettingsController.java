@@ -81,6 +81,9 @@ public class SettingsController {
         result.put("scanIncludeIL", riskSettings.isScanIncludeIL());
         result.put("scanIncludeWeeklyNarrow", riskSettings.isScanIncludeWeeklyNarrow());
         result.put("scanIncludeWeeklyInside", riskSettings.isScanIncludeWeeklyInside());
+        result.put("enableSwingTrading", riskSettings.isEnableSwingTrading());
+        result.put("maxSwingPositions", riskSettings.getMaxSwingPositions());
+        result.put("enableFridaySquareoff", riskSettings.isEnableFridaySquareoff());
         result.put("enableHpt", riskSettings.isEnableHpt());
         result.put("enableMpt", riskSettings.isEnableMpt());
         result.put("enableLpt", riskSettings.isEnableLpt());
@@ -141,6 +144,9 @@ public class SettingsController {
             if (body.containsKey("scanIncludeIL")) riskSettings.setScanIncludeIL(Boolean.parseBoolean(body.get("scanIncludeIL").toString()));
             if (body.containsKey("scanIncludeWeeklyNarrow")) riskSettings.setScanIncludeWeeklyNarrow(Boolean.parseBoolean(body.get("scanIncludeWeeklyNarrow").toString()));
             if (body.containsKey("scanIncludeWeeklyInside")) riskSettings.setScanIncludeWeeklyInside(Boolean.parseBoolean(body.get("scanIncludeWeeklyInside").toString()));
+            if (body.containsKey("enableSwingTrading")) riskSettings.setEnableSwingTrading(Boolean.parseBoolean(body.get("enableSwingTrading").toString()));
+            if (body.containsKey("maxSwingPositions")) riskSettings.setMaxSwingPositions(Integer.parseInt(body.get("maxSwingPositions").toString()));
+            if (body.containsKey("enableFridaySquareoff")) riskSettings.setEnableFridaySquareoff(Boolean.parseBoolean(body.get("enableFridaySquareoff").toString()));
             if (body.containsKey("enableHpt")) riskSettings.setEnableHpt(Boolean.parseBoolean(body.get("enableHpt").toString()));
             if (body.containsKey("enableMpt")) riskSettings.setEnableMpt(Boolean.parseBoolean(body.get("enableMpt").toString()));
             if (body.containsKey("enableLpt")) riskSettings.setEnableLpt(Boolean.parseBoolean(body.get("enableLpt").toString()));

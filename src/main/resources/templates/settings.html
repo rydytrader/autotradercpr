@@ -464,6 +464,39 @@
         </div>
     </div>
 
+    <!-- SWING TRADING -->
+    <div class="section-card fade-in" style="margin-top:16px;">
+        <div class="section-header">
+            <div class="section-title">
+                <div class="section-title-dot" style="background: #8b5cf6;"></div>
+                Swing Trading (75-min)
+            </div>
+        </div>
+        <div class="section-body">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label">Enable Swing Scanner</label>
+                    <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
+                        <input type="checkbox" id="enableSwingTrading" style="width:18px;height:18px;accent-color:var(--accent-cyan);">
+                        <span style="color:var(--text-secondary);font-size:0.82rem;font-family:var(--font-mono);">Detect breakouts on 75-min candles vs weekly CPR</span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Max Swing Positions</label>
+                    <input type="number" id="maxSwingPositions" class="form-control" min="1" max="20" step="1" placeholder="5">
+                    <div class="form-hint">Maximum concurrent CNC swing positions</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Friday Squareoff</label>
+                    <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
+                        <input type="checkbox" id="enableFridaySquareoff" style="width:18px;height:18px;accent-color:var(--accent-cyan);">
+                        <span style="color:var(--text-secondary);font-size:0.82rem;font-family:var(--font-mono);">Close all swing positions Friday 3:25 PM</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
         <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
     </div><!-- /tab-scanner -->
 
@@ -731,6 +764,9 @@
             document.getElementById('scanIncludeIL').checked = d.scanIncludeIL === true;
             document.getElementById('scanIncludeWeeklyNarrow').checked = d.scanIncludeWeeklyNarrow !== false;
             document.getElementById('scanIncludeWeeklyInside').checked = d.scanIncludeWeeklyInside !== false;
+            document.getElementById('enableSwingTrading').checked = d.enableSwingTrading === true;
+            document.getElementById('maxSwingPositions').value = d.maxSwingPositions || 5;
+            document.getElementById('enableFridaySquareoff').checked = d.enableFridaySquareoff !== false;
             document.getElementById('enableHpt').checked = d.enableHpt !== false;
             document.getElementById('enableMpt').checked = d.enableMpt === true;
             document.getElementById('enableLpt').checked = d.enableLpt === true;
@@ -830,6 +866,9 @@
                 scanIncludeIL: document.getElementById('scanIncludeIL').checked,
                 scanIncludeWeeklyNarrow: document.getElementById('scanIncludeWeeklyNarrow').checked,
                 scanIncludeWeeklyInside: document.getElementById('scanIncludeWeeklyInside').checked,
+                enableSwingTrading: document.getElementById('enableSwingTrading').checked,
+                maxSwingPositions: parseInt(document.getElementById('maxSwingPositions').value) || 5,
+                enableFridaySquareoff: document.getElementById('enableFridaySquareoff').checked,
                 enableHpt: document.getElementById('enableHpt').checked,
                 enableMpt: document.getElementById('enableMpt').checked,
                 enableLpt: document.getElementById('enableLpt').checked,

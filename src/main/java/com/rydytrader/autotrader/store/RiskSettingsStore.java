@@ -73,6 +73,10 @@ public class RiskSettingsStore {
         volatile boolean scanIncludeIL = false;  // Inside + Large Range
         volatile boolean scanIncludeWeeklyNarrow = true; // Weekly Narrow CPR
         volatile boolean scanIncludeWeeklyInside = true; // Weekly Inside CPR
+        // Swing trading settings
+        volatile boolean enableSwingTrading = false;
+        volatile int maxSwingPositions = 5;
+        volatile boolean enableFridaySquareoff = true;
     }
 
     private final Cfg live = new Cfg();
@@ -142,6 +146,9 @@ public class RiskSettingsStore {
     public boolean isScanIncludeIL() { return cfg().scanIncludeIL; }
     public boolean isScanIncludeWeeklyNarrow() { return cfg().scanIncludeWeeklyNarrow; }
     public boolean isScanIncludeWeeklyInside() { return cfg().scanIncludeWeeklyInside; }
+    public boolean isEnableSwingTrading() { return cfg().enableSwingTrading; }
+    public int getMaxSwingPositions() { return cfg().maxSwingPositions; }
+    public boolean isEnableFridaySquareoff() { return cfg().enableFridaySquareoff; }
     public void setSignalSource(String v)      { cfg().signalSource = v; }
     public void setScannerTimeframe(int v)     { cfg().scannerTimeframe = v; }
     public void setEnableAtpCheck(boolean v)  { cfg().enableAtpCheck = v; }
@@ -156,6 +163,9 @@ public class RiskSettingsStore {
     public void setScanIncludeIL(boolean v) { cfg().scanIncludeIL = v; }
     public void setScanIncludeWeeklyNarrow(boolean v) { cfg().scanIncludeWeeklyNarrow = v; }
     public void setScanIncludeWeeklyInside(boolean v) { cfg().scanIncludeWeeklyInside = v; }
+    public void setEnableSwingTrading(boolean v) { cfg().enableSwingTrading = v; }
+    public void setMaxSwingPositions(int v) { cfg().maxSwingPositions = v; }
+    public void setEnableFridaySquareoff(boolean v) { cfg().enableFridaySquareoff = v; }
     public void setTradingStartTime(String v)  { cfg().tradingStartTime = v; }
     public void setTradingEndTime(String v)    { cfg().tradingEndTime = v; }
     public void setTotalCapital(double v)       { cfg().totalCapital = v; }
@@ -319,6 +329,9 @@ public class RiskSettingsStore {
             upsert("scanIncludeIL", String.valueOf(c.scanIncludeIL));
             upsert("scanIncludeWeeklyNarrow", String.valueOf(c.scanIncludeWeeklyNarrow));
             upsert("scanIncludeWeeklyInside", String.valueOf(c.scanIncludeWeeklyInside));
+            upsert("enableSwingTrading", String.valueOf(c.enableSwingTrading));
+            upsert("maxSwingPositions", String.valueOf(c.maxSwingPositions));
+            upsert("enableFridaySquareoff", String.valueOf(c.enableFridaySquareoff));
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to save {}: {}", mode, e.getMessage());
         }
@@ -389,6 +402,9 @@ public class RiskSettingsStore {
                     case "scanIncludeIL" -> c.scanIncludeIL = Boolean.parseBoolean(v);
                     case "scanIncludeWeeklyNarrow" -> c.scanIncludeWeeklyNarrow = Boolean.parseBoolean(v);
                     case "scanIncludeWeeklyInside" -> c.scanIncludeWeeklyInside = Boolean.parseBoolean(v);
+                    case "enableSwingTrading" -> c.enableSwingTrading = Boolean.parseBoolean(v);
+                    case "maxSwingPositions" -> c.maxSwingPositions = Integer.parseInt(v);
+                    case "enableFridaySquareoff" -> c.enableFridaySquareoff = Boolean.parseBoolean(v);
                 }
             }
             log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} enableR4S4={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} chandelier={}x{}", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.enableR4S4, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.chandelierPeriod, c.chandelierMultiplier);
