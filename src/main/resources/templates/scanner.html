@@ -552,7 +552,12 @@
                 }
             }
             if (probFilter && d.probability !== probFilter) return false;
-            if (weeklyFilter && !d.weeklyNarrow && !d.weeklyInside) return false;
+            if (weeklyFilter) {
+                var types = d.cprTypes || [d.cprType];
+                var hasDaily = types.includes('NARROW') || types.includes('INSIDE');
+                var hasWeekly = d.weeklyNarrow || d.weeklyInside;
+                if (!hasDaily || !hasWeekly) return false;
+            }
             if (signalFilter && (!d.lastSignal || d.lastSignal.status !== 'TRADED')) return false;
             if (filteredFilter && (!d.lastSignal || d.lastSignal.status !== 'FILTERED')) return false;
             if (timeFilter && d.lastSignal && d.lastSignal.time) {
