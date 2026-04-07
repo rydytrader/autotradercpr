@@ -318,7 +318,7 @@ public class ScannerController {
                 csv.append(s).append(",");
             }
         }
-        String filename = "watchlist-" + bhavcopyService.getCachedDate() + ".txt";
+        String filename = "watchlist-" + java.time.LocalDate.now() + ".txt";
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
             .contentType(MediaType.TEXT_PLAIN)
