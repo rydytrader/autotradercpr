@@ -1051,28 +1051,6 @@ function showChart(symbol, shortName) {
                 }
             });
 
-            // CSL lines
-            if (data.chandelierSlLong > 0) {
-                candleSeries.createPriceLine({
-                    price: data.chandelierSlLong,
-                    color: '#fbbf24',
-                    lineWidth: 1,
-                    lineStyle: LightweightCharts.LineStyle.Dotted,
-                    axisLabelVisible: true,
-                    title: 'CSL\u2191'
-                });
-            }
-            if (data.chandelierSlShort > 0) {
-                candleSeries.createPriceLine({
-                    price: data.chandelierSlShort,
-                    color: '#fbbf24',
-                    lineWidth: 1,
-                    lineStyle: LightweightCharts.LineStyle.Dotted,
-                    axisLabelVisible: true,
-                    title: 'CSL\u2193'
-                });
-            }
-
             chart.timeScale().fitContent();
 
             // Resize handler
