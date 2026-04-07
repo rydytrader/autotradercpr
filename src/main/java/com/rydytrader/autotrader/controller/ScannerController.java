@@ -204,6 +204,64 @@ public class ScannerController {
         return status;
     }
 
+    @GetMapping("/api/scanner/chart-data")
+    public Map<String, Object> getChartData(@org.springframework.web.bind.annotation.RequestParam String symbol) {
+        Map<String, Object> result = new LinkedHashMap<>();
+
+        // Completed + current candles → convert startMinute to epoch seconds
+        java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
+        long dayStartEpoch = today.atStartOfDay(java.time.ZoneId.of("Asia/Kolkata")).toEpochSecond();
+
+        List<Map<String, Object>> candles = new ArrayList<>();
+        for (CandleAggregator.CandleBar bar : candleAggregator.getCompletedCandles(symbol)) {
+            Map<String, Object> c = new LinkedHashMap<>();
+            c.put("time", dayStartEpoch + bar.startMinute * 60);
+            c.put("open", r(bar.open));
+            c.put("high", r(bar.high));
+            c.put("low", r(bar.low));
+            c.put("close", r(bar.close));
+            c.put("volume", bar.volume);
+            candles.add(c);
+        }
+        CandleAggregator.CandleBar current = candleAggregator.getCurrentCandle(symbol);
+        if (current != null && current.open > 0) {
+            Map<String, Object> c = new LinkedHashMap<>();
+            c.put("time", dayStartEpoch + current.startMinute * 60);
+            c.put("open", r(current.open));
+            c.put("high", r(current.high));
+            c.put("low", r(current.low));
+            c.put("close", r(current.close));
+            c.put("volume", current.volume);
+            candles.add(c);
+        }
+        result.put("candles", candles);
+
+        // CPR levels
+        String ticker = symbol.replaceAll("^(NSE|BSE|MCX):", "").replaceAll("-(EQ|INDEX)$", "");
+        CprLevels levels = bhavcopyService.getCprLevels(ticker);
+        if (levels != null) {
+            Map<String, Double> lvls = new LinkedHashMap<>();
+            lvls.put("r4", r(levels.getR4())); lvls.put("r3", r(levels.getR3()));
+            lvls.put("r2", r(levels.getR2())); lvls.put("r1", r(levels.getR1()));
+            lvls.put("ph", r(levels.getPh())); lvls.put("pivot", r(levels.getPivot()));
+            lvls.put("tc", r(levels.getTc())); lvls.put("bc", r(levels.getBc()));
+            lvls.put("s1", r(levels.getS1())); lvls.put("pl", r(levels.getPl()));
+            lvls.put("s2", r(levels.getS2())); lvls.put("s3", r(levels.getS3()));
+            lvls.put("s4", r(levels.getS4()));
+            result.put("levels", lvls);
+        }
+
+        // CSL (Chandelier SL)
+        double cslLong = marketDataService.calculateChandelierSl(symbol, "LONG");
+        double cslShort = marketDataService.calculateChandelierSl(symbol, "SHORT");
+        if (cslLong > 0) result.put("chandelierSlLong", r(cslLong));
+        if (cslShort > 0) result.put("chandelierSlShort", r(cslShort));
+
+        result.put("symbol", symbol);
+        result.put("shortName", ticker);
+        return result;
+    }
+
     @GetMapping("/api/scanner/tv-watchlist")
     public ResponseEntity<String> getTvWatchlist() {
         // Export exactly what's shown on the Watchlist page (same filters applied)
