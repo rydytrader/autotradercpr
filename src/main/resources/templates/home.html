@@ -497,14 +497,28 @@
             fyLine.style.display = 'none';
             initDashboard();
         } else if (d.fyersConnected) {
-            // Trader + Fyers connected — show loading then dashboard
+            // Trader + Fyers connected — check if scanner already initialized
             document.getElementById('fyersGate').style.display = 'none';
-            document.getElementById('dashboardContent').style.display = 'none';
-            document.getElementById('loadingOverlay').style.display = 'block';
             fetch('/api/profile').then(r => r.json()).then(p => {
                 fyLine.innerHTML = 'Fyers ID: <span style="color:var(--accent-blue);font-weight:600;">' + (p.fyId || '—') + '</span>';
             }).catch(() => { fyLine.innerHTML = 'Fyers: <span style="color:var(--accent-green)">Connected</span>'; });
-            pollScannerReady();
+            // Check if scanner is already ready (returning visit, not first login)
+            fetch('/api/scanner/status').then(function(r) { return r.json(); }).then(function(s) {
+                if ((s.atrLoaded || 0) > 0 && (s.watchlistCount || 0) > 0) {
+                    // Already initialized — show dashboard directly
+                    document.getElementById('dashboardContent').style.display = 'block';
+                    initDashboard();
+                } else {
+                    // First time after login — show loading overlay
+                    document.getElementById('dashboardContent').style.display = 'none';
+                    document.getElementById('loadingOverlay').style.display = 'block';
+                    pollScannerReady();
+                }
+            }).catch(function() {
+                // Fallback — show dashboard
+                document.getElementById('dashboardContent').style.display = 'block';
+                initDashboard();
+            });
         } else {
             // Trader but Fyers not connected — show gate, hide dashboard
             document.getElementById('fyersGate').style.display = 'block';
