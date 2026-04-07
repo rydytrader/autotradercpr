@@ -424,6 +424,15 @@
                         </label>
                     </div>
                     <div class="form-hint">Enable/disable signal categories. MPT/LPT qty factors reduce position size.</div>
+                    <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+                        <label class="form-check-label" style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem;">
+                            <span style="color:var(--text-secondary);">R3/S3 Qty ×</span>
+                            <input type="number" id="r3s3QtyFactor" step="0.05" min="0.1" max="1.0" style="width:55px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;">
+                            <span style="color:var(--text-secondary);">R4/S4 Qty ×</span>
+                            <input type="number" id="r4s4QtyFactor" step="0.05" min="0.1" max="1.0" style="width:55px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;">
+                        </label>
+                        <div class="form-hint">Reduce qty for extended level breakouts (R3/S3, R4/S4). Set to 1.0 for full qty.</div>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">ATP Check</label>
@@ -739,6 +748,8 @@
             document.getElementById('enableLpt').checked = d.enableLpt === true;
             document.getElementById('mptQtyFactor').value = d.mptQtyFactor || 0.5;
             document.getElementById('lptQtyFactor').value = d.lptQtyFactor || 0.25;
+            document.getElementById('r3s3QtyFactor').value = d.r3s3QtyFactor || 0.75;
+            document.getElementById('r4s4QtyFactor').value = d.r4s4QtyFactor || 0.5;
 
             const pnl    = d.todayPnl    || 0;
             const trades = d.todayTrades || 0;
@@ -838,6 +849,8 @@
                 enableLpt: document.getElementById('enableLpt').checked,
                 mptQtyFactor: parseFloat(document.getElementById('mptQtyFactor').value) || 0.5,
                 lptQtyFactor: parseFloat(document.getElementById('lptQtyFactor').value) || 0.25,
+                r3s3QtyFactor: parseFloat(document.getElementById('r3s3QtyFactor').value) || 0.75,
+                r4s4QtyFactor: parseFloat(document.getElementById('r4s4QtyFactor').value) || 0.5,
             };
             const r = await fetch('/api/settings/risk', {
                 method: 'POST',

@@ -190,6 +190,23 @@ public class SignalProcessor {
             qty = reduced;
         }
 
+        // ── 4i3. Level-based qty adjustment (R3/S3 and R4/S4 extended levels) ──
+        if (setup.contains("R3") || setup.contains("S3")) {
+            double factor = riskSettings.getR3s3QtyFactor();
+            if (factor < 1.0) {
+                int reduced = Math.max(2, ((int)(qty * factor) / 2) * 2);
+                eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (R3/S3 ×" + factor + "): " + qty + " -> " + reduced);
+                qty = reduced;
+            }
+        } else if (setup.contains("R4") || setup.contains("S4")) {
+            double factor = riskSettings.getR4s4QtyFactor();
+            if (factor < 1.0) {
+                int reduced = Math.max(2, ((int)(qty * factor) / 2) * 2);
+                eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (R4/S4 ×" + factor + "): " + qty + " -> " + reduced);
+                qty = reduced;
+            }
+        }
+
         // ── 4j. Build description ─────────────────────────────────────────────
         StringBuilder desc = new StringBuilder();
 
