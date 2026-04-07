@@ -1014,6 +1014,8 @@ function showChart(symbol, shortName) {
                     timeVisible: true,
                     secondsVisible: false,
                     borderColor: 'rgba(255,255,255,0.1)',
+                    barSpacing: 8,
+                    minBarSpacing: 4,
                     tickMarkFormatter: function(time) {
                         var d = new Date(time * 1000);
                         var h = d.getUTCHours() + 5;
