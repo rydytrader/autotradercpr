@@ -354,13 +354,26 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         try { currentSlPrice = Double.parseDouble(state.getOrDefault("slPrice", "0").toString()); }
         catch (NumberFormatException ignored) {}
 
+        // Only start trailing after price has moved 1× ATR in the right direction
+        double avgPrice = 0;
+        try { avgPrice = Double.parseDouble(state.getOrDefault("avgPrice", "0").toString()); }
+        catch (NumberFormatException ignored) {}
+        double atr = atrService.getAtr(fyersSymbol);
+        double ltp = getLtp(fyersSymbol);
+        if (avgPrice > 0 && atr > 0 && ltp > 0) {
+            double moveFromEntry = "LONG".equals(side) ? ltp - avgPrice : avgPrice - ltp;
+            if (moveFromEntry < atr) return; // not enough profit yet — keep initial SL
+        }
+
         double newSl = calculateChandelierSl(fyersSymbol, side);
         if (newSl <= 0) return;
 
         // Round to tick size
         newSl = Math.round(newSl * 20.0) / 20.0;
 
-        // Only move SL in favorable direction (tighter)
+        // Only move SL if it tightens (reduces distance between SL and current price)
+        // LONG: SL below price → tighter = SL moves UP
+        // SHORT: SL above price → tighter = SL moves DOWN
         if ("LONG".equals(side) && newSl <= currentSlPrice) return;
         if ("SHORT".equals(side) && newSl >= currentSlPrice) return;
 
