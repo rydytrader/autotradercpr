@@ -674,10 +674,12 @@ public class PollingService {
         int handedOff = 0;
         for (Map.Entry<String, Map<String, Object>> entry : allSaved.entrySet()) {
             Map<String, Object> saved = entry.getValue();
-            String symbol = saved.get("symbol").toString();
-            String slOrderId = saved.getOrDefault("slOrderId", "").toString();
-            String targetOrderId = saved.getOrDefault("targetOrderId", "").toString();
-            if (slOrderId.isEmpty() || targetOrderId.isEmpty()) continue;
+            Object symObj = saved.get("symbol");
+            if (symObj == null) continue;
+            String symbol = symObj.toString();
+            String slOrderId = saved.get("slOrderId") != null ? saved.get("slOrderId").toString() : "";
+            String targetOrderId = saved.get("targetOrderId") != null ? saved.get("targetOrderId").toString() : "";
+            if (slOrderId.isEmpty()) continue;
 
             // Skip if position is already closed
             if ("NONE".equals(PositionManager.getPosition(symbol))) {
@@ -685,13 +687,14 @@ public class PollingService {
                 continue;
             }
 
-            String side = saved.get("side").toString();
-            int qty = Integer.parseInt(saved.get("qty").toString());
-            double avgPrice = Double.parseDouble(saved.get("avgPrice").toString());
-            String setup = saved.getOrDefault("setup", "").toString();
+            String side = saved.get("side") != null ? saved.get("side").toString() : "";
+            if (side.isEmpty()) continue;
+            int qty = saved.get("qty") != null ? Integer.parseInt(saved.get("qty").toString()) : 0;
+            double avgPrice = saved.get("avgPrice") != null ? Double.parseDouble(saved.get("avgPrice").toString()) : 0;
+            String setup = saved.get("setup") != null ? saved.get("setup").toString() : "";
             int exitSide = "LONG".equals(side) ? -1 : 1;
-            double slPrice = Double.parseDouble(saved.getOrDefault("slPrice", "0").toString());
-            double targetPrice = Double.parseDouble(saved.getOrDefault("targetPrice", "0").toString());
+            double slPrice = saved.get("slPrice") != null ? Double.parseDouble(saved.get("slPrice").toString()) : 0;
+            double targetPrice = saved.get("targetPrice") != null ? Double.parseDouble(saved.get("targetPrice").toString()) : 0;
 
             boolean tracked = orderEventService.trackOcoOrders(slOrderId, targetOrderId,
                 symbol, qty, side, exitSide, setup, avgPrice, slPrice, targetPrice);
