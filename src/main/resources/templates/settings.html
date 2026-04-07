@@ -177,7 +177,6 @@
     <!-- TABS -->
     <div class="settings-tabs fade-in">
         <button class="settings-tab active" onclick="switchTab('risk', this)">Risk</button>
-        <button class="settings-tab" onclick="switchTab('trade', this)">Trade</button>
         <button class="settings-tab" onclick="switchTab('filters', this)">Filters</button>
         <button class="settings-tab" onclick="switchTab('scanner', this)">Scanner</button>
         <button class="settings-tab" onclick="switchTab('hours', this)">Hours</button>
@@ -233,17 +232,11 @@
         </div>
     </div>
 
-        <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
-    </div><!-- /tab-risk -->
-
-    <!-- TAB: TRADE -->
-    <div class="tab-content" id="tab-trade">
-
     <!-- RISK CONTROLS -->
-    <div class="section-card fade-in">
+    <div class="section-card fade-in" style="margin-top:16px;">
         <div class="section-header">
             <div class="section-title">
-                <div class="section-title-dot" style="background: var(--accent-red);"></div>
+                <div class="section-title-dot" style="background: var(--accent-yellow);"></div>
                 Risk Controls
             </div>
         </div>
@@ -303,7 +296,7 @@
     </div>
 
         <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
-    </div><!-- /tab-trade -->
+    </div><!-- /tab-risk -->
 
     <!-- TAB: FILTERS -->
     <div class="tab-content" id="tab-filters">
