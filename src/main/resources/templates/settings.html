@@ -178,6 +178,7 @@
     <div class="settings-tabs fade-in">
         <button class="settings-tab active" onclick="switchTab('risk', this)">Risk</button>
         <button class="settings-tab" onclick="switchTab('trade', this)">Trade</button>
+        <button class="settings-tab" onclick="switchTab('filters', this)">Filters</button>
         <button class="settings-tab" onclick="switchTab('scanner', this)">Scanner</button>
         <button class="settings-tab" onclick="switchTab('hours', this)">Hours</button>
         <button class="settings-tab" onclick="switchTab('charges', this)">Charges</button>
@@ -301,8 +302,14 @@
         </div>
     </div>
 
+        <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
+    </div><!-- /tab-trade -->
+
+    <!-- TAB: FILTERS -->
+    <div class="tab-content" id="tab-filters">
+
     <!-- TRADE FILTERS -->
-    <div class="section-card fade-in" style="margin-top:16px;">
+    <div class="section-card fade-in">
         <div class="section-header">
             <div class="section-title">
                 <div class="section-title-dot" style="background: var(--accent-blue);"></div>
@@ -364,7 +371,7 @@
     </div>
 
         <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
-    </div><!-- /tab-trade -->
+    </div><!-- /tab-filters -->
 
     <!-- TAB: HOURS -->
     <div class="tab-content" id="tab-hours">
