@@ -77,10 +77,13 @@ public class ScannerController {
             seen.add(fyers);
         }
 
-        // Collect inside-only CPR stocks — filtered by IS/IL toggles
+        // Collect inside-only CPR stocks — filtered by IS/IL toggles + width filter
+        double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
         for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
             String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
             if (seen.contains(fyers)) continue;
+            // Width filter: skip if CPR width exceeds threshold (0 = no filter)
+            if (insideMaxWidth > 0 && cpr.getCprWidthPct() > insideMaxWidth) continue;
             String nrt = cpr.getNarrowRangeType();
             boolean rangeMatches = ("SMALL".equals(nrt) && riskSettings.isScanIncludeIS())
                                 || ("LARGE".equals(nrt) && riskSettings.isScanIncludeIL())

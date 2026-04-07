@@ -312,6 +312,14 @@
         <div class="section-body">
             <div class="form-grid">
                 <div class="form-group">
+                    <label class="form-label">Inside CPR Max Width (%)</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="number" id="insideCprMaxWidth" class="form-control" step="0.1" min="0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">% of close price</span>
+                    </div>
+                    <div class="form-hint">Only include inside CPR stocks with width below this %. Set to 0 to disable filter.</div>
+                </div>
+                <div class="form-group">
                     <label class="form-label">Large Candle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableLargeCandleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
@@ -752,6 +760,7 @@
             document.getElementById('signalSource').value = d.signalSource || 'TRADINGVIEW';
             document.getElementById('scannerTimeframe').value = d.scannerTimeframe != null ? d.scannerTimeframe : 15;
             document.getElementById('enableAtpCheck').checked = d.enableAtpCheck !== false;
+            document.getElementById('insideCprMaxWidth').value = d.insideCprMaxWidth || 0.5;
             document.getElementById('scanIncludeNS').checked = d.scanIncludeNS !== false;
             document.getElementById('scanIncludeNL').checked = d.scanIncludeNL !== false;
             document.getElementById('scanIncludeIS').checked = d.scanIncludeIS !== false;
@@ -854,6 +863,7 @@
                 signalSource: document.getElementById('signalSource').value,
                 scannerTimeframe: parseInt(document.getElementById('scannerTimeframe').value) || 15,
                 enableAtpCheck: document.getElementById('enableAtpCheck').checked,
+                insideCprMaxWidth: parseFloat(document.getElementById('insideCprMaxWidth').value) || 0,
                 scanIncludeNS: document.getElementById('scanIncludeNS').checked,
                 scanIncludeNL: document.getElementById('scanIncludeNL').checked,
                 scanIncludeIS: document.getElementById('scanIncludeIS').checked,

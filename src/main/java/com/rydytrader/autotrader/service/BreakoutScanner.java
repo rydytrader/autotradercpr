@@ -425,8 +425,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             if ("LARGE".equals(nrt) && riskSettings.isScanIncludeNL()) return true;
             if (nrt == null && (riskSettings.isScanIncludeNS() || riskSettings.isScanIncludeNL())) return true;
         }
-        // Inside-only CPR → IS/IL toggles
-        if (!isNarrow && isInside) {
+        // Inside-only CPR → IS/IL toggles + width filter
+        double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
+        if (!isNarrow && isInside && (insideMaxWidth <= 0 || cpr.getCprWidthPct() <= insideMaxWidth)) {
             if ("SMALL".equals(nrt) && riskSettings.isScanIncludeIS()) return true;
             if ("LARGE".equals(nrt) && riskSettings.isScanIncludeIL()) return true;
             if (nrt == null && (riskSettings.isScanIncludeIS() || riskSettings.isScanIncludeIL())) return true;

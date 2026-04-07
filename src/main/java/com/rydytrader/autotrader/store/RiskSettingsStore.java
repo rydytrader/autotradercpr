@@ -72,6 +72,7 @@ public class RiskSettingsStore {
         volatile double mptQtyFactor    = 0.5;   // MPT qty multiplier (0.5 = half)
         volatile double lptQtyFactor    = 0.25;  // LPT qty multiplier (0.25 = quarter)
         // CPR Width scanner group toggles
+        volatile double insideCprMaxWidth = 0.5;  // max CPR width % for inside CPR stocks (0 = no filter)
         volatile boolean scanIncludeNS = true;   // Narrow + Small Range (z < -1.5)
         volatile boolean scanIncludeNL = true;   // Narrow + Large Range
         volatile boolean scanIncludeIS = true;   // Inside + Small Range
@@ -144,6 +145,7 @@ public class RiskSettingsStore {
     public boolean isEnableLpt()          { return cfg().enableLpt; }
     public double getMptQtyFactor()       { return cfg().mptQtyFactor; }
     public double getLptQtyFactor()       { return cfg().lptQtyFactor; }
+    public double getInsideCprMaxWidth() { return cfg().insideCprMaxWidth; }
     public boolean isScanIncludeNS() { return cfg().scanIncludeNS; }
     public boolean isScanIncludeNL() { return cfg().scanIncludeNL; }
     public boolean isScanIncludeIS() { return cfg().scanIncludeIS; }
@@ -156,6 +158,7 @@ public class RiskSettingsStore {
     public void setEnableLpt(boolean v)        { cfg().enableLpt = v; }
     public void setMptQtyFactor(double v)      { cfg().mptQtyFactor = v; }
     public void setLptQtyFactor(double v)      { cfg().lptQtyFactor = v; }
+    public void setInsideCprMaxWidth(double v) { cfg().insideCprMaxWidth = v; }
     public void setScanIncludeNS(boolean v) { cfg().scanIncludeNS = v; }
     public void setScanIncludeNL(boolean v) { cfg().scanIncludeNL = v; }
     public void setScanIncludeIS(boolean v) { cfg().scanIncludeIS = v; }
@@ -327,6 +330,7 @@ public class RiskSettingsStore {
             upsert("enableLpt", String.valueOf(c.enableLpt));
             upsert("mptQtyFactor", String.valueOf(c.mptQtyFactor));
             upsert("lptQtyFactor", String.valueOf(c.lptQtyFactor));
+            upsert("insideCprMaxWidth", String.valueOf(c.insideCprMaxWidth));
             upsert("scanIncludeNS", String.valueOf(c.scanIncludeNS));
             upsert("scanIncludeNL", String.valueOf(c.scanIncludeNL));
             upsert("scanIncludeIS", String.valueOf(c.scanIncludeIS));
@@ -400,6 +404,7 @@ public class RiskSettingsStore {
                     case "enableLpt"         -> c.enableLpt = Boolean.parseBoolean(v);
                     case "mptQtyFactor"      -> c.mptQtyFactor = Double.parseDouble(v);
                     case "lptQtyFactor"      -> c.lptQtyFactor = Double.parseDouble(v);
+                    case "insideCprMaxWidth" -> c.insideCprMaxWidth = Double.parseDouble(v);
                     case "scanIncludeNS" -> c.scanIncludeNS = Boolean.parseBoolean(v);
                     case "scanIncludeNL" -> c.scanIncludeNL = Boolean.parseBoolean(v);
                     case "scanIncludeIS" -> c.scanIncludeIS = Boolean.parseBoolean(v);
