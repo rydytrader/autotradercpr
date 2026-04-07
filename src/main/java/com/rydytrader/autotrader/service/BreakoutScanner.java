@@ -95,6 +95,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (!"INTERNAL".equalsIgnoreCase(riskSettings.getSignalSource())) return;
         if (!watchlistSymbols.contains(fyersSymbol)) return;
 
+        // Check if stock passes the CPR Width Scanner settings (NS/NL/IS/IL/WN/WI)
+        if (!isBreakoutEligible(fyersSymbol)) return;
+
         // Skip candles that started before market open
         if (completedCandle.startMinute < MarketHolidayService.MARKET_OPEN_MINUTE) return;
 
@@ -386,6 +389,44 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             case "LPT" -> riskSettings.isEnableLpt();
             default -> false;
         };
+    }
+
+    /**
+     * Check if a stock passes the CPR Width Scanner settings.
+     * A stock must match at least one enabled group to be eligible for breakout signals.
+     */
+    private boolean isBreakoutEligible(String fyersSymbol) {
+        String ticker = extractTicker(fyersSymbol);
+        com.rydytrader.autotrader.dto.CprLevels cpr = bhavcopyService.getCprLevels(ticker);
+        if (cpr == null) return false;
+
+        boolean isNarrow = cpr.isNarrowCpr();
+        boolean isInside = bhavcopyService.getInsideCprStocks().stream()
+                .anyMatch(c -> c.getSymbol().equals(ticker));
+        boolean isWeeklyNarrow = bhavcopyService.getWeeklyNarrowCprStocks().stream()
+                .anyMatch(c -> c.getSymbol().equals(ticker));
+        boolean isWeeklyInside = bhavcopyService.getWeeklyInsideCprStocks().stream()
+                .anyMatch(c -> c.getSymbol().equals(ticker));
+        String nrt = cpr.getNarrowRangeType();
+
+        // Narrow CPR → NS/NL toggles
+        if (isNarrow) {
+            if ("SMALL".equals(nrt) && riskSettings.isScanIncludeNS()) return true;
+            if ("LARGE".equals(nrt) && riskSettings.isScanIncludeNL()) return true;
+            if (nrt == null && (riskSettings.isScanIncludeNS() || riskSettings.isScanIncludeNL())) return true;
+        }
+        // Inside-only CPR → IS/IL toggles
+        if (!isNarrow && isInside) {
+            if ("SMALL".equals(nrt) && riskSettings.isScanIncludeIS()) return true;
+            if ("LARGE".equals(nrt) && riskSettings.isScanIncludeIL()) return true;
+            if (nrt == null && (riskSettings.isScanIncludeIS() || riskSettings.isScanIncludeIL())) return true;
+        }
+        // Weekly narrow
+        if (isWeeklyNarrow && riskSettings.isScanIncludeWeeklyNarrow()) return true;
+        // Weekly inside
+        if (isWeeklyInside && riskSettings.isScanIncludeWeeklyInside()) return true;
+
+        return false;
     }
 
     private String extractTicker(String fyersSymbol) {
