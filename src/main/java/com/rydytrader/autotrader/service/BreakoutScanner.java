@@ -264,7 +264,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (close > cprTop
                 && ((open < pp || open < tc || open < bc || low < pp || low < tc || low < bc) || (low < cprBot && open > cprBot && close > cprTop))
                 && !broken.contains("BUY_ABOVE_CPR")) return "BUY_ABOVE_CPR";
-        // BUY_ABOVE_S1_PDL removed — counter-trend buy below CPR is too risky
+        // CPR Magnet: bounce UP from S1/PDL toward CPR (close must still be below CPR)
+        double s1pl = Math.max(s1, pl);
+        if (close > s1pl && close < cprBot
+                && ((open < s1 || open < pl || low < s1 || low < pl) || (low < Math.min(s1, pl) && open > Math.min(s1, pl)))
+                && !broken.contains("BUY_ABOVE_S1_PDL")) return "BUY_ABOVE_S1_PDL";
 
         return null;
     }
@@ -306,7 +310,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (close < cprBot
                 && ((open > pp || open > tc || open > bc || high > pp || high > tc || high > bc) || (high > cprTop && open < cprTop && close < cprBot))
                 && !broken.contains("SELL_BELOW_CPR")) return "SELL_BELOW_CPR";
-        // SELL_BELOW_R1_PDH removed — counter-trend sell above CPR is too risky
+        // CPR Magnet: rejection DOWN from R1/PDH toward CPR (close must still be above CPR)
+        double r1ph = Math.min(r1, ph);
+        if (close < r1ph && close > cprTop
+                && ((open > r1 || open > ph || high > r1 || high > ph) || (high > Math.max(r1, ph) && open < Math.max(r1, ph)))
+                && !broken.contains("SELL_BELOW_R1_PDH")) return "SELL_BELOW_R1_PDH";
 
         return null;
     }
