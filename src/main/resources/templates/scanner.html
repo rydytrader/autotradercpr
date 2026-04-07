@@ -993,7 +993,9 @@ function showChart(symbol, shortName) {
                 height: container.clientHeight,
                 layout: {
                     background: { type: 'solid', color: getComputedStyle(document.documentElement).getPropertyValue('--bg-card').trim() || '#111827' },
-                    textColor: getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim() || '#8b8b9e'
+                    textColor: getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim() || '#8b8b9e',
+                    fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-mono').trim() || "'Roboto Mono', monospace",
+                    fontSize: 11
                 },
                 grid: {
                     vertLines: { color: 'rgba(255,255,255,0.04)' },
