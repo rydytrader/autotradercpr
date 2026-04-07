@@ -171,6 +171,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             String buySetup = detectBuyBreakout(open, high, low, close, levels, atp, broken);
             if (buySetup != null) {
                 String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, true);
+                // Magnet (mean-reversion) trades require HPT only — no neutral/counter-trend
+                if ("BUY_ABOVE_S1_PDL".equals(buySetup) && !"HPT".equals(prob)) {
+                    eventService.log("[SCANNER] " + buySetup + " for " + fyersSymbol + " — skipped, magnet trade requires HPT (got " + prob + ")");
+                    return;
+                }
                 if (!isProbabilityEnabled(prob)) {
                     eventService.log("[SCANNER] " + buySetup + " for " + fyersSymbol + " — skipped, " + prob + " not enabled");
                     return;
@@ -205,6 +210,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             String sellSetup = detectSellBreakout(open, high, low, close, levels, atp, broken);
             if (sellSetup != null) {
                 String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, false);
+                // Magnet (mean-reversion) trades require HPT only — no neutral/counter-trend
+                if ("SELL_BELOW_R1_PDH".equals(sellSetup) && !"HPT".equals(prob)) {
+                    eventService.log("[SCANNER] " + sellSetup + " for " + fyersSymbol + " — skipped, magnet trade requires HPT (got " + prob + ")");
+                    return;
+                }
                 if (!isProbabilityEnabled(prob)) {
                     eventService.log("[SCANNER] " + sellSetup + " for " + fyersSymbol + " — skipped, " + prob + " not enabled");
                     return;
