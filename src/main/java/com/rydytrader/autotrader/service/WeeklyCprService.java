@@ -266,23 +266,6 @@ public class WeeklyCprService {
         return s;
     }
 
-    /** Debug: return weekly levels for a symbol as a map. */
-    public Map<String, Double> getWeeklyLevelsMap(String symbol) {
-        WeeklyLevels wl = weeklyLevels.get(symbol);
-        if (wl == null) return Collections.emptyMap();
-        Map<String, Double> m = new LinkedHashMap<>();
-        m.put("pivot", Math.round(wl.pivot * 100.0) / 100.0);
-        m.put("tc", Math.round(wl.tc * 100.0) / 100.0);
-        m.put("bc", Math.round(wl.bc * 100.0) / 100.0);
-        m.put("top", Math.round(wl.top * 100.0) / 100.0);
-        m.put("bot", Math.round(wl.bot * 100.0) / 100.0);
-        m.put("r1", Math.round(wl.r1 * 100.0) / 100.0);
-        m.put("s1", Math.round(wl.s1 * 100.0) / 100.0);
-        m.put("ph", Math.round(wl.ph * 100.0) / 100.0);
-        m.put("pl", Math.round(wl.pl * 100.0) / 100.0);
-        return m;
-    }
-
     // ── Inner class for weekly CPR levels ────────────────────────────────────
 
     private static class WeeklyLevels {

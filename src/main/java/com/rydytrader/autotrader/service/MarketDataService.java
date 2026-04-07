@@ -824,7 +824,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     }
 
     /**
-     * Build watchlist from narrow + inside + weekly narrow CPR stocks.
+     * Build watchlist from narrow + inside CPR stocks.
      * Returns Fyers symbols (e.g., "NSE:RELIANCE-EQ").
      */
     private List<String> buildWatchlist() {
@@ -834,12 +834,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
         }
         for (var cpr : bhavcopyService.getInsideCprStocks()) {
-            symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
-        }
-        for (var cpr : bhavcopyService.getWeeklyNarrowCprStocks()) {
-            symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
-        }
-        for (var cpr : bhavcopyService.getWeeklyInsideCprStocks()) {
             symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
         }
         return new ArrayList<>(symbols);

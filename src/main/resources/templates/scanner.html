@@ -69,8 +69,6 @@
         .scan-badge.inside { background: rgba(251,191,36,0.12); color: var(--accent-yellow); }
         .scan-badge.inside-small { background: rgba(52,211,153,0.15); color: var(--accent-green); font-weight: 700; }
         .scan-badge.inside-large { background: rgba(251,146,60,0.15); color: #fb923c; font-weight: 700; }
-        .scan-badge.weekly-narrow { background: rgba(52,211,153,0.15); color: var(--accent-green); font-weight: 700; }
-        .scan-badge.weekly-inside { background: rgba(139,92,246,0.15); color: #8b5cf6; font-weight: 700; }
 
         .scan-price-row {
             display: flex; align-items: baseline; gap: 10px;
@@ -320,22 +318,6 @@
             " onmouseover="this.style.background='rgba(251,191,36,0.18)'" onmouseout="this.style.background='rgba(251,191,36,0.1)'">
                 Inside CPR Stocks
             </button>
-            <button onclick="showWeeklyNarrowCpr()" style="
-                background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.3);
-                color: var(--accent-green); padding: 6px 14px; border-radius: 8px;
-                font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
-                cursor: pointer; transition: all 0.2s;
-            " onmouseover="this.style.background='rgba(52,211,153,0.18)'" onmouseout="this.style.background='rgba(52,211,153,0.1)'">
-                Weekly Narrow CPR Stocks
-            </button>
-            <button onclick="showWeeklyInsideCpr()" style="
-                background: rgba(139,92,246,0.1); border: 1px solid rgba(139,92,246,0.3);
-                color: #a78bfa; padding: 6px 14px; border-radius: 8px;
-                font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
-                cursor: pointer; transition: all 0.2s;
-            " onmouseover="this.style.background='rgba(139,92,246,0.18)'" onmouseout="this.style.background='rgba(139,92,246,0.1)'">
-                Weekly Inside CPR Stocks
-            </button>
             <a href="/api/scanner/tv-watchlist" style="
                 background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.3);
                 color: var(--accent-green); padding: 6px 14px; border-radius: 8px;
@@ -389,9 +371,6 @@
 
             <button class="filter-btn" onclick="setFilter('NARROW', this)">Narrow</button>
             <button class="filter-btn" onclick="setFilter('INSIDE', this)">Inside</button>
-            <button class="filter-btn" onclick="setFilter('WEEKLY_NARROW', this)">W Narrow</button>
-            <button class="filter-btn" onclick="setFilter('WEEKLY_INSIDE', this)">W Inside</button>
-            <button class="filter-btn" onclick="toggleWeeklyFilter(this)">Daily + Weekly</button>
         </span>
         <div class="filter-sep"></div>
         <span class="prob-filter-group">
@@ -445,7 +424,6 @@
     var allData = [];
     var cprFilter = 'all';
     var probFilter = null;
-    var weeklyFilter = false;
     var signalFilter = false;
     var filteredFilter = false;
     var timeFilter = '';
@@ -487,12 +465,6 @@
             });
             btn.classList.add('active');
         }
-        renderCards();
-    };
-
-    window.toggleWeeklyFilter = function(btn) {
-        weeklyFilter = !weeklyFilter;
-        btn.classList.toggle('active', weeklyFilter);
         renderCards();
     };
 
@@ -543,21 +515,11 @@
                 var types = d.cprTypes || [d.cprType];
                 if (cprFilter === 'CPR') {
                     if (!types.includes('NARROW') && !types.includes('INSIDE')) return false;
-                } else if (cprFilter === 'WEEKLY_NARROW') {
-                    if (!d.weeklyNarrow) return false;
-                } else if (cprFilter === 'WEEKLY_INSIDE') {
-                    if (!d.weeklyInside) return false;
                 } else {
                     if (types.indexOf(cprFilter) === -1) return false;
                 }
             }
             if (probFilter && d.probability !== probFilter) return false;
-            if (weeklyFilter) {
-                var types = d.cprTypes || [d.cprType];
-                var hasDaily = types.includes('NARROW') || types.includes('INSIDE');
-                var hasWeekly = d.weeklyNarrow || d.weeklyInside;
-                if (!hasDaily || !hasWeekly) return false;
-            }
             if (signalFilter && (!d.lastSignal || d.lastSignal.status !== 'TRADED')) return false;
             if (filteredFilter && (!d.lastSignal || d.lastSignal.status !== 'FILTERED')) return false;
             if (timeFilter && d.lastSignal && d.lastSignal.time) {
@@ -679,8 +641,6 @@
                 var ittl = 'Inside CPR' + (nrt ? ' — ' + (nrt === 'SMALL' ? 'small range (z=' : 'large range (z=') + zs + ')' : '');
                 return '<span class="scan-badge ' + icls + '" title="' + ittl + '">' + ilbl + '</span>';
             }).join(''))
-            + (d.weeklyNarrow ? '<span class="scan-badge weekly-narrow">WN</span>' : '')
-            + (d.weeklyInside ? '<span class="scan-badge weekly-inside">WI</span>' : '')
             + '  </span>'
             + '</div>'
             + '<div class="scan-price-row">'
@@ -948,114 +908,7 @@ function showInsideCpr() {
         .catch(err => { document.getElementById('insideCprBody').innerHTML = '<tr><td colspan="9" style="padding:30px; text-align:center; color:var(--accent-red);">Failed to load: ' + err.message + '</td></tr>'; });
 }
 
-function showWeeklyNarrowCpr() {
-    document.getElementById('weeklyNarrowCprModal').style.display = 'block';
-    document.getElementById('weeklyNarrowCprBody').innerHTML = '<tr><td colspan="9" style="padding:30px; text-align:center; color:var(--text-muted);">Loading...</td></tr>';
-    document.getElementById('weeklyNarrowCprEmpty').style.display = 'none';
-    document.getElementById('weeklyNarrowCprSubtitle').textContent = '';
-    fetch('/api/weekly-narrow-cpr')
-        .then(r => r.json())
-        .then(data => {
-            const subtitle = 'Week: ' + (data.weekDates || '\u2014') + ' | History: ' + (data.historyDays || 0) + ' days | NFO Stocks: ' + (data.totalNfoStocks || 0) + ' | Narrow: ' + (data.narrowCount || 0);
-            document.getElementById('weeklyNarrowCprSubtitle').textContent = subtitle;
-            const stocks = data.stocks || [];
-            if (stocks.length === 0) { document.getElementById('weeklyNarrowCprBody').innerHTML = ''; document.getElementById('weeklyNarrowCprEmpty').style.display = 'block'; return; }
-            document.getElementById('weeklyNarrowCprEmpty').style.display = 'none';
-            let html = '';
-            stocks.forEach((s, i) => {
-                html += '<tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 14px; color:var(--text-muted);">' + (i+1) + '</td><td style="padding:8px 14px; color:var(--accent-cyan); font-weight:600;">' + s.symbol + '</td><td style="padding:8px 14px; text-align:right; color:var(--text-primary);">' + s.close.toFixed(2) + '</td><td style="padding:8px 14px; text-align:right; color:var(--accent-yellow); font-weight:600;">' + s.cprWidthPct.toFixed(3) + '%</td><td style="padding:8px 14px; text-align:right; color:var(--text-secondary);">' + s.pivot.toFixed(2) + '</td><td style="padding:8px 14px; text-align:right; color:var(--text-secondary);">' + s.tc.toFixed(2) + '</td><td style="padding:8px 14px; text-align:right; color:var(--text-secondary);">' + s.bc.toFixed(2) + '</td><td style="padding:8px 14px; text-align:right; color:var(--accent-green);">' + s.r1.toFixed(2) + '</td><td style="padding:8px 14px; text-align:right; color:var(--accent-red);">' + s.s1.toFixed(2) + '</td></tr>';
-            });
-            document.getElementById('weeklyNarrowCprBody').innerHTML = html;
-        })
-        .catch(err => { document.getElementById('weeklyNarrowCprBody').innerHTML = '<tr><td colspan="9" style="padding:30px; text-align:center; color:var(--accent-red);">Failed to load: ' + err.message + '</td></tr>'; });
-}
-
-function showWeeklyInsideCpr() {
-    document.getElementById('weeklyInsideCprModal').style.display = 'block';
-    document.getElementById('weeklyInsideCprBody').innerHTML = '<tr><td colspan="9" style="padding:30px; text-align:center; color:var(--text-muted);">Loading...</td></tr>';
-    document.getElementById('weeklyInsideCprEmpty').style.display = 'none';
-    document.getElementById('weeklyInsideCprSubtitle').textContent = '';
-    fetch('/api/weekly-inside-cpr')
-        .then(r => r.json())
-        .then(data => {
-            const subtitle = 'Week: ' + (data.weekDates || '\u2014') + ' | History: ' + (data.historyDays || 0) + ' days | NFO Stocks: ' + (data.totalNfoStocks || 0) + ' | Inside: ' + (data.insideCount || 0);
-            document.getElementById('weeklyInsideCprSubtitle').textContent = subtitle;
-            const stocks = data.stocks || [];
-            if (stocks.length === 0) { document.getElementById('weeklyInsideCprBody').innerHTML = ''; document.getElementById('weeklyInsideCprEmpty').style.display = 'block'; return; }
-            document.getElementById('weeklyInsideCprEmpty').style.display = 'none';
-            let html = '';
-            stocks.forEach((s, i) => {
-                html += '<tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 14px; color:var(--text-muted);">' + (i+1) + '</td><td style="padding:8px 14px; color:var(--accent-cyan); font-weight:600;">' + s.symbol + '</td><td style="padding:8px 14px; text-align:right; color:var(--text-primary);">' + s.close.toFixed(2) + '</td><td style="padding:8px 14px; text-align:right; color:var(--accent-yellow); font-weight:600;">' + s.cprWidthPct.toFixed(3) + '%</td><td style="padding:8px 14px; text-align:right; color:var(--text-secondary);">' + s.pivot.toFixed(2) + '</td><td style="padding:8px 14px; text-align:right; color:var(--text-secondary);">' + s.tc.toFixed(2) + '</td><td style="padding:8px 14px; text-align:right; color:var(--text-secondary);">' + s.bc.toFixed(2) + '</td><td style="padding:8px 14px; text-align:right; color:var(--accent-green);">' + s.r1.toFixed(2) + '</td><td style="padding:8px 14px; text-align:right; color:var(--accent-red);">' + s.s1.toFixed(2) + '</td></tr>';
-            });
-            document.getElementById('weeklyInsideCprBody').innerHTML = html;
-        })
-        .catch(err => { document.getElementById('weeklyInsideCprBody').innerHTML = '<tr><td colspan="9" style="padding:30px; text-align:center; color:var(--accent-red);">Failed to load: ' + err.message + '</td></tr>'; });
-}
 </script>
-
-<!-- Weekly Narrow CPR Modal -->
-<div id="weeklyNarrowCprModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px);" onclick="if(event.target===this)this.style.display='none'">
-    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:90%; max-width:800px; max-height:80vh; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border); background:var(--bg-section-header);">
-            <div>
-                <div style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:var(--text-primary);">WEEKLY NARROW CPR STOCKS</div>
-                <div id="weeklyNarrowCprSubtitle" style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); margin-top:2px;"></div>
-            </div>
-            <button onclick="document.getElementById('weeklyNarrowCprModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
-        </div>
-        <div style="overflow-y:auto; padding:0;">
-            <table style="width:100%; border-collapse:collapse; font-family:var(--font-mono); font-size:0.78rem;">
-                <thead>
-                    <tr style="background:var(--bg-surface); position:sticky; top:0;">
-                        <th style="padding:10px 14px; text-align:left; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">#</th>
-                        <th style="padding:10px 14px; text-align:left; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Symbol</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Close</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">CPR %</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Pivot</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">TC</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">BC</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">R1</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">S1</th>
-                    </tr>
-                </thead>
-                <tbody id="weeklyNarrowCprBody"></tbody>
-            </table>
-            <div id="weeklyNarrowCprEmpty" style="display:none; padding:40px; text-align:center; color:var(--text-muted); font-family:var(--font-mono); font-size:0.85rem;">No weekly narrow CPR stocks found (need 4+ days of history)</div>
-        </div>
-    </div>
-</div>
-
-<!-- Weekly Inside CPR Modal -->
-<div id="weeklyInsideCprModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px);" onclick="if(event.target===this)this.style.display='none'">
-    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:90%; max-width:800px; max-height:80vh; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border); background:var(--bg-section-header);">
-            <div>
-                <div style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:var(--text-primary);">WEEKLY INSIDE CPR STOCKS</div>
-                <div id="weeklyInsideCprSubtitle" style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); margin-top:2px;"></div>
-            </div>
-            <button onclick="document.getElementById('weeklyInsideCprModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
-        </div>
-        <div style="overflow-y:auto; padding:0;">
-            <table style="width:100%; border-collapse:collapse; font-family:var(--font-mono); font-size:0.78rem;">
-                <thead>
-                    <tr style="background:var(--bg-surface); position:sticky; top:0;">
-                        <th style="padding:8px 14px; text-align:left; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">#</th>
-                        <th style="padding:8px 14px; text-align:left; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Symbol</th>
-                        <th style="padding:8px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Close</th>
-                        <th style="padding:8px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Width%</th>
-                        <th style="padding:8px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Pivot</th>
-                        <th style="padding:8px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">TC</th>
-                        <th style="padding:8px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">BC</th>
-                        <th style="padding:8px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">R1</th>
-                        <th style="padding:8px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">S1</th>
-                    </tr>
-                </thead>
-                <tbody id="weeklyInsideCprBody"></tbody>
-            </table>
-            <div id="weeklyInsideCprEmpty" style="display:none; padding:40px; text-align:center; color:var(--text-muted); font-family:var(--font-mono); font-size:0.85rem;">No weekly inside CPR stocks found (need 2+ weeks of history)</div>
-        </div>
-    </div>
-</div>
 
 <!-- Simulate Qty Modal -->
 
@@ -1080,8 +933,6 @@ function showWeeklyInsideCpr() {
                     <div><span class="scan-badge narrow-large" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NL</span> Narrow + Large Range</div>
                     <div><span class="scan-badge inside-small" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">IS</span> Inside + Small Range (z &lt; −1.5)</div>
                     <div><span class="scan-badge inside-large" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">IL</span> Inside + Large Range</div>
-                    <div><span class="scan-badge weekly-narrow" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">WN</span> Weekly Narrow CPR</div>
-                    <div><span class="scan-badge weekly-inside" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">WI</span> Weekly Inside CPR (this week's CPR inside previous week's)</div>
                 </div>
             </div>
 

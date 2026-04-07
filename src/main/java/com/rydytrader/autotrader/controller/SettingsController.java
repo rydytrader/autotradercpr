@@ -79,8 +79,6 @@ public class SettingsController {
         result.put("scanIncludeNL", riskSettings.isScanIncludeNL());
         result.put("scanIncludeIS", riskSettings.isScanIncludeIS());
         result.put("scanIncludeIL", riskSettings.isScanIncludeIL());
-        result.put("scanIncludeWeeklyNarrow", riskSettings.isScanIncludeWeeklyNarrow());
-        result.put("scanIncludeWeeklyInside", riskSettings.isScanIncludeWeeklyInside());
         result.put("enableHpt", riskSettings.isEnableHpt());
         result.put("enableMpt", riskSettings.isEnableMpt());
         result.put("enableLpt", riskSettings.isEnableLpt());
@@ -139,8 +137,6 @@ public class SettingsController {
             if (body.containsKey("scanIncludeNL")) riskSettings.setScanIncludeNL(Boolean.parseBoolean(body.get("scanIncludeNL").toString()));
             if (body.containsKey("scanIncludeIS")) riskSettings.setScanIncludeIS(Boolean.parseBoolean(body.get("scanIncludeIS").toString()));
             if (body.containsKey("scanIncludeIL")) riskSettings.setScanIncludeIL(Boolean.parseBoolean(body.get("scanIncludeIL").toString()));
-            if (body.containsKey("scanIncludeWeeklyNarrow")) riskSettings.setScanIncludeWeeklyNarrow(Boolean.parseBoolean(body.get("scanIncludeWeeklyNarrow").toString()));
-            if (body.containsKey("scanIncludeWeeklyInside")) riskSettings.setScanIncludeWeeklyInside(Boolean.parseBoolean(body.get("scanIncludeWeeklyInside").toString()));
             if (body.containsKey("enableHpt")) riskSettings.setEnableHpt(Boolean.parseBoolean(body.get("enableHpt").toString()));
             if (body.containsKey("enableMpt")) riskSettings.setEnableMpt(Boolean.parseBoolean(body.get("enableMpt").toString()));
             if (body.containsKey("enableLpt")) riskSettings.setEnableLpt(Boolean.parseBoolean(body.get("enableLpt").toString()));

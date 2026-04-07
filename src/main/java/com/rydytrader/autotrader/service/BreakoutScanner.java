@@ -95,7 +95,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (!"INTERNAL".equalsIgnoreCase(riskSettings.getSignalSource())) return;
         if (!watchlistSymbols.contains(fyersSymbol)) return;
 
-        // Check if stock passes the CPR Width Scanner settings (NS/NL/IS/IL/WN/WI)
+        // Check if stock passes the CPR Width Scanner settings (NS/NL/IS/IL)
         if (!isBreakoutEligible(fyersSymbol)) return;
 
         // Skip candles that started before market open
@@ -403,10 +403,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         boolean isNarrow = cpr.isNarrowCpr();
         boolean isInside = bhavcopyService.getInsideCprStocks().stream()
                 .anyMatch(c -> c.getSymbol().equals(ticker));
-        boolean isWeeklyNarrow = bhavcopyService.getWeeklyNarrowCprStocks().stream()
-                .anyMatch(c -> c.getSymbol().equals(ticker));
-        boolean isWeeklyInside = bhavcopyService.getWeeklyInsideCprStocks().stream()
-                .anyMatch(c -> c.getSymbol().equals(ticker));
         String nrt = cpr.getNarrowRangeType();
 
         // Narrow CPR → NS/NL toggles
@@ -421,10 +417,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             if ("LARGE".equals(nrt) && riskSettings.isScanIncludeIL()) return true;
             if (nrt == null && (riskSettings.isScanIncludeIS() || riskSettings.isScanIncludeIL())) return true;
         }
-        // Weekly narrow
-        if (isWeeklyNarrow && riskSettings.isScanIncludeWeeklyNarrow()) return true;
-        // Weekly inside
-        if (isWeeklyInside && riskSettings.isScanIncludeWeeklyInside()) return true;
 
         return false;
     }

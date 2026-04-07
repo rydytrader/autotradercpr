@@ -50,31 +50,20 @@ public class ScannerController {
         List<Map<String, Object>> result = new ArrayList<>();
         Set<String> positionSymbols = PositionManager.getAllSymbols();
 
-        // Build sets for cross-referencing
-        Set<String> weeklyNarrowSymbols = new HashSet<>();
-        for (CprLevels cpr : bhavcopyService.getWeeklyNarrowCprStocks()) {
-            weeklyNarrowSymbols.add(cpr.getSymbol());
-        }
-        Set<String> weeklyInsideSymbols = new HashSet<>();
-        for (CprLevels cpr : bhavcopyService.getWeeklyInsideCprStocks()) {
-            weeklyInsideSymbols.add(cpr.getSymbol());
-        }
+        // Build set of inside CPR symbols for cross-referencing
         Set<String> insideSymbols = new HashSet<>();
         for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
             insideSymbols.add(cpr.getSymbol());
         }
 
-        // Collect narrow CPR stocks (mark if also inside / weekly narrow)
         // Collect narrow CPR stocks — filtered by NS/NL toggles
         Set<String> seen = new HashSet<>();
         for (CprLevels cpr : bhavcopyService.getNarrowCprStocks()) {
-            boolean isWeekly = weeklyNarrowSymbols.contains(cpr.getSymbol());
             String nrt = cpr.getNarrowRangeType();
             boolean rangeMatches = ("SMALL".equals(nrt) && riskSettings.isScanIncludeNS())
                                 || ("LARGE".equals(nrt) && riskSettings.isScanIncludeNL())
                                 || (nrt == null && (riskSettings.isScanIncludeNS() || riskSettings.isScanIncludeNL()));
-            boolean weeklyMatches = isWeekly && riskSettings.isScanIncludeWeeklyNarrow();
-            if (!rangeMatches && !weeklyMatches) continue;
+            if (!rangeMatches) continue;
 
             String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
             List<String> types = new ArrayList<>();
@@ -82,31 +71,10 @@ public class ScannerController {
             if (insideSymbols.contains(cpr.getSymbol())) types.add("INSIDE");
             Map<String, Object> card = buildCard(fyers, cpr, "NARROW", positionSymbols);
             card.put("cprTypes", types);
-            card.put("weeklyNarrow", isWeekly);
             card.put("narrowRangeType", nrt);
             card.put("rangeZScore", cpr.getRangeZScore());
             result.add(card);
             seen.add(fyers);
-        }
-
-        // Collect weekly-narrow-only CPR stocks (those not already added via daily narrow)
-        if (riskSettings.isScanIncludeWeeklyNarrow()) {
-            for (CprLevels cpr : bhavcopyService.getWeeklyNarrowCprStocks()) {
-                String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
-                if (seen.contains(fyers)) continue;
-                CprLevels dailyCpr = bhavcopyService.getCprLevels(cpr.getSymbol());
-                if (dailyCpr == null) dailyCpr = cpr;
-                List<String> types = new ArrayList<>();
-                if (insideSymbols.contains(cpr.getSymbol())) types.add("INSIDE");
-                Map<String, Object> card = buildCard(fyers, dailyCpr, types.isEmpty() ? "WEEKLY_NARROW" : "INSIDE", positionSymbols);
-                card.put("cprTypes", types);
-                card.put("weeklyNarrow", true);
-                card.put("weeklyInside", weeklyInsideSymbols.contains(cpr.getSymbol()));
-                card.put("narrowRangeType", dailyCpr.getNarrowRangeType());
-                card.put("rangeZScore", dailyCpr.getRangeZScore());
-                result.add(card);
-                seen.add(fyers);
-            }
         }
 
         // Collect inside-only CPR stocks — filtered by IS/IL toggles
@@ -123,31 +91,10 @@ public class ScannerController {
             types.add("INSIDE");
             Map<String, Object> card = buildCard(fyers, cpr, "INSIDE", positionSymbols);
             card.put("cprTypes", types);
-            card.put("weeklyNarrow", weeklyNarrowSymbols.contains(cpr.getSymbol()));
-            card.put("weeklyInside", weeklyInsideSymbols.contains(cpr.getSymbol()));
             card.put("narrowRangeType", nrt);
             card.put("rangeZScore", cpr.getRangeZScore());
             result.add(card);
             seen.add(fyers);
-        }
-
-        // Collect weekly-inside-only CPR stocks (not already added)
-        if (riskSettings.isScanIncludeWeeklyInside()) {
-            for (CprLevels cpr : bhavcopyService.getWeeklyInsideCprStocks()) {
-                String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
-                if (seen.contains(fyers)) continue;
-                CprLevels dailyCpr = bhavcopyService.getCprLevels(cpr.getSymbol());
-                if (dailyCpr == null) dailyCpr = cpr;
-                List<String> types = new ArrayList<>();
-                Map<String, Object> card = buildCard(fyers, dailyCpr, "WEEKLY_INSIDE", positionSymbols);
-                card.put("cprTypes", types);
-                card.put("weeklyNarrow", weeklyNarrowSymbols.contains(cpr.getSymbol()));
-                card.put("weeklyInside", true);
-                card.put("narrowRangeType", dailyCpr.getNarrowRangeType());
-                card.put("rangeZScore", dailyCpr.getRangeZScore());
-                result.add(card);
-                seen.add(fyers);
-            }
         }
 
         return result;
@@ -230,7 +177,6 @@ public class ScannerController {
         }
         card.put("signalHistory", histList);
 
-        card.put("weeklyLevels", weeklyCprService.getWeeklyLevelsMap(fyersSymbol));
         card.put("hasPosition", positionSymbols.contains(fyersSymbol));
         card.put("cprWidthPct", Math.round(levels.getCprWidthPct() * 1000.0) / 1000.0);
 
@@ -251,60 +197,6 @@ public class ScannerController {
         status.put("enableAtp", riskSettings.isEnableAtpCheck());
         status.put("timeframe", riskSettings.getScannerTimeframe());
         return status;
-    }
-
-    @GetMapping("/api/weekly-narrow-cpr")
-    public Map<String, Object> getWeeklyNarrowCpr() {
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("weekDates", bhavcopyService.getWeekDateRange());
-        result.put("historyDays", bhavcopyService.getHistoryDays());
-        result.put("totalNfoStocks", bhavcopyService.getLoadedCount());
-
-        var stocks = bhavcopyService.getWeeklyNarrowCprStocks();
-        result.put("narrowCount", stocks.size());
-
-        List<Map<String, Object>> stockList = new ArrayList<>();
-        for (var cpr : stocks) {
-            Map<String, Object> s = new LinkedHashMap<>();
-            s.put("symbol", cpr.getSymbol());
-            s.put("close", r(cpr.getClose()));
-            s.put("cprWidthPct", Math.round(cpr.getCprWidthPct() * 1000.0) / 1000.0);
-            s.put("pivot", r(cpr.getPivot()));
-            s.put("tc", r(cpr.getTc()));
-            s.put("bc", r(cpr.getBc()));
-            s.put("r1", r(cpr.getR1()));
-            s.put("s1", r(cpr.getS1()));
-            stockList.add(s);
-        }
-        result.put("stocks", stockList);
-        return result;
-    }
-
-    @GetMapping("/api/weekly-inside-cpr")
-    public Map<String, Object> getWeeklyInsideCpr() {
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("weekDates", bhavcopyService.getWeekDateRange());
-        result.put("historyDays", bhavcopyService.getHistoryDays());
-        result.put("totalNfoStocks", bhavcopyService.getLoadedCount());
-
-        var stocks = bhavcopyService.getWeeklyInsideCprStocks();
-        result.put("insideCount", stocks.size());
-
-        List<Map<String, Object>> stockList = new ArrayList<>();
-        for (var cpr : stocks) {
-            Map<String, Object> s = new LinkedHashMap<>();
-            s.put("symbol", cpr.getSymbol());
-            s.put("close", r(cpr.getClose()));
-            s.put("cprWidthPct", Math.round(cpr.getCprWidthPct() * 1000.0) / 1000.0);
-            s.put("pivot", r(cpr.getPivot()));
-            s.put("tc", r(cpr.getTc()));
-            s.put("bc", r(cpr.getBc()));
-            s.put("r1", r(cpr.getR1()));
-            s.put("s1", r(cpr.getS1()));
-            stockList.add(s);
-        }
-        result.put("stocks", stockList);
-        return result;
     }
 
     @GetMapping("/api/scanner/tv-watchlist")
