@@ -986,7 +986,7 @@ function showChart(symbol, shortName) {
                 return;
             }
 
-            document.getElementById('chartSubtitle').textContent = data.candles.length + ' candles | CPR levels shown';
+            document.getElementById('chartSubtitle').textContent = '';
 
             // Create chart
             var chart = LightweightCharts.createChart(container, {
