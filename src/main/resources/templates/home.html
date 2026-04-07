@@ -145,6 +145,27 @@
     <!-- FOUR SECTION CARDS -->
     <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:20px;" class="fade-in">
 
+        <!-- Trade Summary -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Trade Summary</div>
+            </div>
+            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Total Trades</span>
+                    <span class="stat-value" id="summaryTotalTrades" style="font-size:1rem;">0</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Gross Profit</span>
+                    <span class="stat-value pnl-positive" id="summaryGrossProfit" style="font-size:1rem;">0.00</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Gross Loss</span>
+                    <span class="stat-value pnl-negative" id="summaryGrossLoss" style="font-size:1rem;">0.00</span>
+                </div>
+            </div>
+        </div>
+
         <!-- Trade Details -->
         <div class="section-card" style="margin-bottom:0;">
             <div class="section-header">
@@ -209,27 +230,6 @@
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;">Profit Factor</span>
                     <span class="stat-value" id="profitFactor" style="font-size:1rem;">--</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Trade Summary -->
-        <div class="section-card" style="margin-bottom:0;">
-            <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Trade Summary</div>
-            </div>
-            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Total Trades</span>
-                    <span class="stat-value" id="summaryTotalTrades" style="font-size:1rem;">0</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Gross Profit</span>
-                    <span class="stat-value pnl-positive" id="summaryGrossProfit" style="font-size:1rem;">0.00</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Gross Loss</span>
-                    <span class="stat-value pnl-negative" id="summaryGrossLoss" style="font-size:1rem;">0.00</span>
                 </div>
             </div>
         </div>
