@@ -26,6 +26,7 @@ public class ScannerController {
     private final BreakoutScanner breakoutScanner;
     private final RiskSettingsStore riskSettings;
     private final MarginDataService marginDataService;
+    private final TradeHistoryService tradeHistoryService;
 
     public ScannerController(MarketDataService marketDataService,
                              BhavcopyService bhavcopyService,
@@ -34,7 +35,8 @@ public class ScannerController {
                              CandleAggregator candleAggregator,
                              BreakoutScanner breakoutScanner,
                              RiskSettingsStore riskSettings,
-                             MarginDataService marginDataService) {
+                             MarginDataService marginDataService,
+                             TradeHistoryService tradeHistoryService) {
         this.marketDataService = marketDataService;
         this.bhavcopyService = bhavcopyService;
         this.atrService = atrService;
@@ -43,6 +45,7 @@ public class ScannerController {
         this.breakoutScanner = breakoutScanner;
         this.riskSettings = riskSettings;
         this.marginDataService = marginDataService;
+        this.tradeHistoryService = tradeHistoryService;
     }
 
     @GetMapping("/api/scanner/watchlist")
@@ -283,6 +286,21 @@ public class ScannerController {
             }
             result.put("signals", sigList);
         }
+
+        // Completed trades for this symbol today (SL/Target exits)
+        List<Map<String, Object>> trades = new ArrayList<>();
+        for (var t : tradeHistoryService.getTrades()) {
+            if (symbol.equals(t.getSymbol()) || ticker.equals(t.getSymbol())) {
+                Map<String, Object> tr = new LinkedHashMap<>();
+                tr.put("time", t.getTimestamp());
+                tr.put("side", t.getSide());
+                tr.put("exitPrice", t.getExitPrice());
+                tr.put("exitReason", t.getExitReason());
+                tr.put("pnl", t.getNetPnl());
+                trades.add(tr);
+            }
+        }
+        if (!trades.isEmpty()) result.put("trades", trades);
 
         result.put("symbol", symbol);
         result.put("shortName", ticker);

@@ -1148,6 +1148,36 @@ function showChart(symbol, shortName) {
                         text: (isTraded ? '' : '[F] ') + sig.setup.replace('BUY_ABOVE_', 'B:').replace('SELL_BELOW_', 'S:')
                     });
                 });
+                // Add exit markers (SL/Target hits)
+                if (data.trades) {
+                    data.trades.forEach(function(tr) {
+                        if (!tr.time) return;
+                        var parts = tr.time.split(':');
+                        if (parts.length < 2) return;
+                        var h = parseInt(parts[0]), m = parseInt(parts[1]);
+                        var minuteSinceMidnight = h * 60 + m;
+                        if (minuteSinceMidnight < 555 || minuteSinceMidnight > 930) return;
+                        var tf = data.candles.length > 1 ? (data.candles[1].time - data.candles[0].time) : 300;
+                        var tfMin = tf / 60;
+                        var candleStartMin = Math.floor(minuteSinceMidnight / tfMin) * tfMin;
+                        var exitEpoch = data.candles[0].time + (candleStartMin - 555) * 60;
+                        var closest = data.candles[0].time;
+                        data.candles.forEach(function(c) {
+                            if (Math.abs(c.time - exitEpoch) < Math.abs(closest - exitEpoch)) closest = c.time;
+                        });
+                        var isProfit = tr.pnl >= 0;
+                        var reason = tr.exitReason || '';
+                        var label = reason === 'SL' ? 'SL' : reason === 'TARGET' ? 'TGT' : reason === 'TRAILING_SL' ? 'TSL' : reason;
+                        markers.push({
+                            time: closest,
+                            position: tr.side === 'LONG' ? 'aboveBar' : 'belowBar',
+                            color: isProfit ? '#34d399' : '#f87171',
+                            shape: 'circle',
+                            text: label + ' ' + (isProfit ? '+' : '') + tr.pnl.toFixed(0)
+                        });
+                    });
+                }
+
                 if (markers.length > 0) {
                     markers.sort(function(a, b) { return a.time - b.time; });
                     candleSeries.setMarkers(markers);
