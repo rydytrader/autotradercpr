@@ -1039,7 +1039,11 @@ function showChart(symbol, shortName) {
                 borderUpColor: '#34d399',
                 borderDownColor: '#f87171',
                 wickUpColor: '#34d399',
-                wickDownColor: '#f87171'
+                wickDownColor: '#f87171',
+                lastValueVisible: true,
+                priceLineColor: '#38bdf8',
+                priceLineWidth: 1,
+                priceLineStyle: LightweightCharts.LineStyle.Dotted
             });
             candleSeries.setData(data.candles);
 
