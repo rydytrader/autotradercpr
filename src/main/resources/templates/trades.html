@@ -91,12 +91,12 @@
         <div class="stat-card fade-in" style="--accent-color: var(--accent-green)">
             <div class="stat-label">Profitable</div>
             <div class="stat-value positive" id="statWins">—</div>
-            <div class="stat-sub">Win count</div>
+            <div class="stat-sub" id="statWinsSub">Win count</div>
         </div>
         <div class="stat-card fade-in" style="--accent-color: var(--accent-red)">
             <div class="stat-label">Loss</div>
             <div class="stat-value negative" id="statLosses">—</div>
-            <div class="stat-sub">Loss count</div>
+            <div class="stat-sub" id="statLossesSub">Loss count</div>
         </div>
         <div class="stat-card fade-in" style="--accent-color: var(--accent-cyan)">
             <div class="stat-label">Net P&amp;L</div>
@@ -295,11 +295,15 @@
 
         const wins   = trades.filter(t => t.result === 'PROFIT').length;
         const losses = trades.filter(t => t.result === 'LOSS').length;
+        const totalProfit = trades.filter(t => t.result === 'PROFIT').reduce((sum, t) => sum + (t.netPnl || 0), 0);
+        const totalLoss = trades.filter(t => t.result === 'LOSS').reduce((sum, t) => sum + (t.netPnl || 0), 0);
         const netPnl = trades.reduce((sum, t) => sum + (t.netPnl != null ? t.netPnl : t.pnl || 0), 0);
 
         document.getElementById('statTotal').textContent  = trades.length;
         document.getElementById('statWins').textContent   = wins;
+        document.getElementById('statWinsSub').textContent = fmtPnl(totalProfit);
         document.getElementById('statLosses').textContent = losses;
+        document.getElementById('statLossesSub').textContent = fmtPnl(totalLoss);
 
         const pnlEl = document.getElementById('statNetPnl');
         pnlEl.textContent = fmtPnl(netPnl);
