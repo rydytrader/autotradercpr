@@ -956,9 +956,10 @@ function showInsideCpr() {
 <div id="chartModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.7); backdrop-filter:blur(4px);" onclick="if(event.target===this){this.style.display='none';if(window._chart){window._chart.remove();window._chart=null;}}">
     <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:1200px; height:75vh; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
         <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 20px; border-bottom:1px solid var(--border); background:var(--bg-section-header);">
-            <div>
+            <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
                 <span id="chartTitle" style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:var(--accent-cyan);"></span>
-                <span id="chartSubtitle" style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); margin-left:12px;"></span>
+                <span id="chartOhlc" style="font-family:var(--font-mono); font-size:0.75rem; color:var(--text-secondary);"></span>
+                <span id="chartSubtitle" style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted);"></span>
             </div>
             <button onclick="document.getElementById('chartModal').style.display='none';if(window._chart){window._chart.remove();window._chart=null;}" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
         </div>
@@ -1078,6 +1079,30 @@ function showChart(symbol, shortName) {
             });
 
             chart.timeScale().fitContent();
+
+            // OHLC display — update on crosshair move
+            function formatOhlc(d) {
+                if (!d) return '';
+                var chg = d.close - d.open;
+                var chgPct = d.open > 0 ? (chg / d.open * 100).toFixed(2) : '0.00';
+                var color = chg >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+                return 'O: ' + d.open.toFixed(2) + '  H: ' + d.high.toFixed(2) + '  L: ' + d.low.toFixed(2) + '  C: <span style="color:' + color + ';font-weight:600;">' + d.close.toFixed(2) + '</span>  <span style="color:' + color + ';">(' + (chg >= 0 ? '+' : '') + chgPct + '%)</span>';
+            }
+            // Show latest candle OHLC on load
+            var lastCandle = data.candles[data.candles.length - 1];
+            if (lastCandle) document.getElementById('chartOhlc').innerHTML = formatOhlc(lastCandle);
+
+            chart.subscribeCrosshairMove(function(param) {
+                var ohlcEl = document.getElementById('chartOhlc');
+                if (!param || !param.seriesData || param.seriesData.size === 0) {
+                    if (lastCandle) ohlcEl.innerHTML = formatOhlc(lastCandle);
+                    return;
+                }
+                var d = param.seriesData.get(candleSeries);
+                if (d) {
+                    ohlcEl.innerHTML = formatOhlc(d);
+                }
+            });
             chart.timeScale().applyOptions({ rightOffset: 5, fixLeftEdge: true, fixRightEdge: true });
 
             // Resize handler
