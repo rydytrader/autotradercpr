@@ -424,10 +424,9 @@
                 ? Math.abs(avgWin / avgLoss).toFixed(2) + ' : 1' : '--';
             document.getElementById('rrOverview').textContent = rr;
 
-            // Profit factor
-            const grossProfit = wins.reduce((s, t) => s + t.netPnl, 0);
-            const grossLoss = Math.abs(losses.reduce((s, t) => s + t.netPnl, 0));
-            const pf = grossLoss > 0 ? (grossProfit / grossLoss) : (grossProfit > 0 ? '∞' : '--');
+            // Profit factor (reuse grossProfit/grossLoss from Trade Summary above)
+            const grossLossAbs = Math.abs(grossLoss);
+            const pf = grossLossAbs > 0 ? (grossProfit / grossLossAbs) : (grossProfit > 0 ? '∞' : '--');
             document.getElementById('profitFactor').textContent = typeof pf === 'number' ? pf.toFixed(2) : pf;
 
             // Equity curve
