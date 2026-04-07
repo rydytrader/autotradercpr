@@ -607,6 +607,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             pos.put("entryTime", state.getOrDefault("entryTime", ""));
             try { pos.put("slPrice", Double.parseDouble(state.getOrDefault("slPrice", "0").toString())); } catch (NumberFormatException e) { pos.put("slPrice", 0.0); }
             try { pos.put("targetPrice", Double.parseDouble(state.getOrDefault("targetPrice", "0").toString())); } catch (NumberFormatException e) { pos.put("targetPrice", 0.0); }
+            pos.put("slTrailed", isTrailed(symbol));
             positions.add(pos);
         }
 

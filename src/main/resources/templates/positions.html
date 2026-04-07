@@ -561,6 +561,9 @@
             const tgt = pos.targetPrice || 0;
             const slStr = sl > 0 ? sl.toFixed(2) : '—';
             const tgtStr = tgt > 0 ? tgt.toFixed(2) : 'Trail';
+            const trailArrow = pos.slTrailed
+                ? (pos.side === 'LONG' ? ' <span style="color:var(--accent-green);" title="Trailing SL tightened">&#9650;</span>' : ' <span style="color:var(--accent-red);" title="Trailing SL tightened">&#9660;</span>')
+                : '';
             return `<tr>
                 <td style="font-family:var(--font-mono);color:var(--text-muted);font-size:0.75rem;">${idx + 1}</td>
                 <td style="font-family:var(--font-mono);color:var(--text-secondary)">${pos.entryTime || '—'}</td>
@@ -570,7 +573,7 @@
                 <td class="text-center">${renderSetup(pos.setup)}</td>
                 <td class="text-center">${renderProb(pos.probability)}</td>
                 <td class="text-right">${pos.avgPrice.toFixed(2)}</td>
-                <td class="text-right" style="color:var(--accent-red);">${slStr}</td>
+                <td class="text-right" style="color:var(--accent-red);">${slStr}${trailArrow}</td>
                 <td class="text-right" style="color:var(--accent-green);">${tgtStr}</td>
                 <td class="text-right">${pos.ltp.toFixed(2)}</td>
                 <td class="text-right"><span class="${pnlClass}">${fmtPnl(pos.pnl)}</span></td>
@@ -716,6 +719,7 @@
                                     pos.pnl = live.pnl;
                                     if (live.slPrice) pos.slPrice = live.slPrice;
                                     if (live.targetPrice !== undefined) pos.targetPrice = live.targetPrice;
+                                    if (live.slTrailed !== undefined) pos.slTrailed = live.slTrailed;
                                 }
                             });
                             renderPositionsTable();

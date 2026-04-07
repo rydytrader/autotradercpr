@@ -256,6 +256,7 @@ public class TradingController {
                 m.put("targetPrice", 0.0);
             }
             m.put("leverage", marginDataService.getLeverage(p.getSymbol()));
+            m.put("slTrailed", marketDataService.isTrailed(p.getSymbol()));
             return m;
         }).collect(java.util.stream.Collectors.toList());
         double realizedPnl   = tradeHistoryService.getTrades().stream()
