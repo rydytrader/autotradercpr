@@ -1072,6 +1072,7 @@ function showChart(symbol, shortName) {
             });
 
             chart.timeScale().fitContent();
+            chart.timeScale().applyOptions({ rightOffset: 5, fixLeftEdge: true, fixRightEdge: true });
 
             // Resize handler
             var resizeObserver = new ResizeObserver(function() {
