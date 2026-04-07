@@ -254,7 +254,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         }
         if (close > r3
                 && ((open < r3 || low < r3) || (low < r3 && open > r3))
-                && !broken.contains("BUY_ABOVE_R3")) return "BUY_ABOVE_R3";
+                && !broken.contains("BUY_ABOVE_R3")) {
+            if (!riskSettings.isEnableR3S3()) { eventService.log("[SCANNER] BUY_ABOVE_R3 for " + levels.getSymbol() + " — skipped, R3/S3 disabled"); }
+            else return "BUY_ABOVE_R3";
+        }
         if (close > r2
                 && ((open < r2 || low < r2) || (low < r2 && open > r2))
                 && !broken.contains("BUY_ABOVE_R2")) return "BUY_ABOVE_R2";
@@ -300,7 +303,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         }
         if (close < s3
                 && ((open > s3 || high > s3) || (high > s3 && open < s3))
-                && !broken.contains("SELL_BELOW_S3")) return "SELL_BELOW_S3";
+                && !broken.contains("SELL_BELOW_S3")) {
+            if (!riskSettings.isEnableR3S3()) { eventService.log("[SCANNER] SELL_BELOW_S3 for " + levels.getSymbol() + " — skipped, R3/S3 disabled"); }
+            else return "SELL_BELOW_S3";
+        }
         if (close < s2
                 && ((open > s2 || high > s2) || (high > s2 && open < s2))
                 && !broken.contains("SELL_BELOW_S2")) return "SELL_BELOW_S2";

@@ -55,6 +55,7 @@ public class RiskSettingsStore {
         volatile int volumeLookback = 20; // average volume over last N candles (max 20)
         volatile boolean enableTrailingSl = true; // enable Chandelier Exit trailing SL
         volatile boolean trailingSlNoTarget = false; // when true + trailing SL enabled: skip fixed target, let trailing SL close the trade
+        volatile boolean enableR3S3 = true;      // enable R3/S3 breakouts
         volatile double r3s3QtyFactor = 0.75;   // R3/S3 qty multiplier
         volatile double r4s4QtyFactor = 0.5;    // R4/S4 qty multiplier
         volatile int    atrPeriod = 14;        // ATR lookback period for initial SL
@@ -121,6 +122,7 @@ public class RiskSettingsStore {
     public boolean isEnableSmallCandleFilter() { return cfg().enableSmallCandleFilter; }
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
     public boolean isTrailingSlNoTarget() { return cfg().trailingSlNoTarget; }
+    public boolean isEnableR3S3() { return cfg().enableR3S3; }
     public double getR3s3QtyFactor() { return cfg().r3s3QtyFactor; }
     public double getR4s4QtyFactor() { return cfg().r4s4QtyFactor; }
     public int getAtrPeriod() { return cfg().atrPeriod; }
@@ -184,6 +186,7 @@ public class RiskSettingsStore {
     public void setEnableSmallCandleFilter(boolean v) { cfg().enableSmallCandleFilter = v; }
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
     public void setTrailingSlNoTarget(boolean v) { cfg().trailingSlNoTarget = v; }
+    public void setEnableR3S3(boolean v) { cfg().enableR3S3 = v; }
     public void setR3s3QtyFactor(double v) { cfg().r3s3QtyFactor = v; }
     public void setR4s4QtyFactor(double v) { cfg().r4s4QtyFactor = v; }
     public void setAtrPeriod(int v) { cfg().atrPeriod = v; }
@@ -309,6 +312,7 @@ public class RiskSettingsStore {
             upsert("volumeLookback", String.valueOf(c.volumeLookback));
             upsert("enableTrailingSl", String.valueOf(c.enableTrailingSl));
             upsert("trailingSlNoTarget", String.valueOf(c.trailingSlNoTarget));
+            upsert("enableR3S3", String.valueOf(c.enableR3S3));
             upsert("r3s3QtyFactor", String.valueOf(c.r3s3QtyFactor));
             upsert("r4s4QtyFactor", String.valueOf(c.r4s4QtyFactor));
             upsert("atrPeriod", String.valueOf(c.atrPeriod));
@@ -381,6 +385,7 @@ public class RiskSettingsStore {
                     case "volumeLookback" -> c.volumeLookback = Integer.parseInt(v);
                     case "enableTrailingSl"   -> c.enableTrailingSl = Boolean.parseBoolean(v);
                     case "trailingSlNoTarget" -> c.trailingSlNoTarget = Boolean.parseBoolean(v);
+                    case "enableR3S3" -> c.enableR3S3 = Boolean.parseBoolean(v);
                     case "r3s3QtyFactor" -> c.r3s3QtyFactor = Double.parseDouble(v);
                     case "r4s4QtyFactor" -> c.r4s4QtyFactor = Double.parseDouble(v);
                     case "atrPeriod" -> c.atrPeriod = Integer.parseInt(v);

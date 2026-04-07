@@ -70,6 +70,7 @@ public class SettingsController {
         result.put("volumeLookback", riskSettings.getVolumeLookback(effectiveMode));
         result.put("enableTrailingSl", riskSettings.isEnableTrailingSl(effectiveMode));
         result.put("trailingSlNoTarget", riskSettings.isTrailingSlNoTarget());
+        result.put("enableR3S3", riskSettings.isEnableR3S3());
         result.put("r3s3QtyFactor", riskSettings.getR3s3QtyFactor());
         result.put("r4s4QtyFactor", riskSettings.getR4s4QtyFactor());
         result.put("atrPeriod", riskSettings.getAtrPeriod());
@@ -132,6 +133,7 @@ public class SettingsController {
             if (body.containsKey("volumeLookback")) riskSettings.setVolumeLookback(effectiveMode, Integer.parseInt(body.get("volumeLookback").toString()));
             if (body.containsKey("enableTrailingSl")) riskSettings.setEnableTrailingSl(effectiveMode, Boolean.parseBoolean(body.get("enableTrailingSl").toString()));
             if (body.containsKey("trailingSlNoTarget")) riskSettings.setTrailingSlNoTarget(Boolean.parseBoolean(body.get("trailingSlNoTarget").toString()));
+            if (body.containsKey("enableR3S3")) riskSettings.setEnableR3S3(Boolean.parseBoolean(body.get("enableR3S3").toString()));
             if (body.containsKey("r3s3QtyFactor")) riskSettings.setR3s3QtyFactor(Double.parseDouble(body.get("r3s3QtyFactor").toString()));
             if (body.containsKey("r4s4QtyFactor")) riskSettings.setR4s4QtyFactor(Double.parseDouble(body.get("r4s4QtyFactor").toString()));
             if (body.containsKey("atrPeriod")) riskSettings.setAtrPeriod(Integer.parseInt(body.get("atrPeriod").toString()));

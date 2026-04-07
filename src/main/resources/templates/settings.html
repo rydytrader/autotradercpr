@@ -264,11 +264,20 @@
                     <div class="disabled-note">Set to 0 to disable</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Enable R4/S4 Signals</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableR4S4" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Allow BUY_ABOVE_R4 and SELL_BELOW_S4 breakout signals</span>
+                    <label class="form-label">Extended Level Signals</label>
+                    <div style="display:flex; flex-direction:column; gap:8px; margin-top:4px;">
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="enableR3S3" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> R3/S3
+                            <span style="color:var(--text-muted);font-size:0.72rem;margin-left:4px;">Qty ×</span>
+                            <input type="number" id="r3s3QtyFactor" step="0.05" min="0.1" max="1.0" style="width:55px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;">
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
+                            <input type="checkbox" id="enableR4S4" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> R4/S4
+                            <span style="color:var(--text-muted);font-size:0.72rem;margin-left:4px;">Qty ×</span>
+                            <input type="number" id="r4s4QtyFactor" step="0.05" min="0.1" max="1.0" style="width:55px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;">
+                        </label>
                     </div>
+                    <div class="form-hint">Enable extended levels and set qty factor (1.0 = full qty)</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Large Candle Filter</label>
@@ -424,15 +433,6 @@
                         </label>
                     </div>
                     <div class="form-hint">Enable/disable signal categories. MPT/LPT qty factors reduce position size.</div>
-                    <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
-                        <label class="form-check-label" style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem;">
-                            <span style="color:var(--text-secondary);">R3/S3 Qty ×</span>
-                            <input type="number" id="r3s3QtyFactor" step="0.05" min="0.1" max="1.0" style="width:55px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;">
-                            <span style="color:var(--text-secondary);">R4/S4 Qty ×</span>
-                            <input type="number" id="r4s4QtyFactor" step="0.05" min="0.1" max="1.0" style="width:55px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;">
-                        </label>
-                        <div class="form-hint">Reduce qty for extended level breakouts (R3/S3, R4/S4). Set to 1.0 for full qty.</div>
-                    </div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">ATP Check</label>
@@ -748,6 +748,7 @@
             document.getElementById('enableLpt').checked = d.enableLpt === true;
             document.getElementById('mptQtyFactor').value = d.mptQtyFactor || 0.5;
             document.getElementById('lptQtyFactor').value = d.lptQtyFactor || 0.25;
+            document.getElementById('enableR3S3').checked = d.enableR3S3 !== false;
             document.getElementById('r3s3QtyFactor').value = d.r3s3QtyFactor || 0.75;
             document.getElementById('r4s4QtyFactor').value = d.r4s4QtyFactor || 0.5;
 
@@ -849,6 +850,7 @@
                 enableLpt: document.getElementById('enableLpt').checked,
                 mptQtyFactor: parseFloat(document.getElementById('mptQtyFactor').value) || 0.5,
                 lptQtyFactor: parseFloat(document.getElementById('lptQtyFactor').value) || 0.25,
+                enableR3S3: document.getElementById('enableR3S3').checked,
                 r3s3QtyFactor: parseFloat(document.getElementById('r3s3QtyFactor').value) || 0.75,
                 r4s4QtyFactor: parseFloat(document.getElementById('r4s4QtyFactor').value) || 0.5,
             };
