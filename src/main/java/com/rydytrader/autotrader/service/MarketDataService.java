@@ -395,8 +395,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                 + " (period=" + riskSettings.getChandelierPeriod()
                 + " mult=" + riskSettings.getChandelierMultiplier() + ")");
 
-            eventService.log("[SUCCESS] Chandelier Exit for " + fyersSymbol + ": SL → "
-                + String.format("%.2f", newSl) + " (was " + String.format("%.2f", currentSlPrice) + ")");
+            String direction = "LONG".equals(side) ? "up" : "down";
+            eventService.log("[SUCCESS] Chandelier Exit SL moved " + direction + " for " + fyersSymbol + ": "
+                + String.format("%.2f", currentSlPrice) + " → " + String.format("%.2f", newSl));
         } else {
             eventService.log("[ERROR] Chandelier Exit failed for " + fyersSymbol
                 + " — could not modify SL to " + String.format("%.2f", newSl));
