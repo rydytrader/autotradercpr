@@ -1119,7 +1119,7 @@ function showChart(symbol, shortName) {
             if (data.signals && data.signals.length > 0) {
                 var markers = [];
                 data.signals.forEach(function(sig) {
-                    if (!sig.time) return;
+                    if (!sig.time || sig.status !== 'TRADED') return;
                     // Parse time "HH:mm" to epoch
                     var parts = sig.time.split(':');
                     if (parts.length < 2) return;
