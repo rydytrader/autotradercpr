@@ -1093,6 +1093,23 @@ function showChart(symbol, shortName) {
                 }
             });
 
+            // ATP (VWAP) line in pink
+            if (data.atp && data.atp > 0) {
+                var atpSeries = chart.addLineSeries({
+                    color: '#ec4899',
+                    lineWidth: 1,
+                    lineStyle: LightweightCharts.LineStyle.Solid,
+                    lastValueVisible: true,
+                    priceLineVisible: false,
+                    crosshairMarkerVisible: false,
+                    title: 'ATP'
+                });
+                atpSeries.setData([
+                    { time: marketOpen, value: data.atp },
+                    { time: marketClose, value: data.atp }
+                ]);
+            }
+
             chart.timeScale().fitContent();
 
             // OHLC display — update on crosshair move

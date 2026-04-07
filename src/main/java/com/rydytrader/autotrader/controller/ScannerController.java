@@ -264,6 +264,10 @@ public class ScannerController {
         if (cslLong > 0) result.put("chandelierSlLong", r(cslLong));
         if (cslShort > 0) result.put("chandelierSlShort", r(cslShort));
 
+        // ATP (VWAP)
+        double atp = candleAggregator.getAtp(symbol);
+        if (atp > 0) result.put("atp", r(atp));
+
         result.put("symbol", symbol);
         result.put("shortName", ticker);
         return result;
