@@ -362,7 +362,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         double ltp = getLtp(fyersSymbol);
         if (avgPrice > 0 && atr > 0 && ltp > 0) {
             double moveFromEntry = "LONG".equals(side) ? ltp - avgPrice : avgPrice - ltp;
-            if (moveFromEntry < atr) return; // not enough profit yet — keep initial SL
+            double activationThreshold = atr * riskSettings.getTrailingSlActivationAtr();
+            if (moveFromEntry < activationThreshold) return; // not enough profit yet — keep initial SL
         }
 
         double newSl = calculateChandelierSl(fyersSymbol, side);

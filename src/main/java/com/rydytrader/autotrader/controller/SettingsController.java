@@ -70,6 +70,7 @@ public class SettingsController {
         result.put("volumeLookback", riskSettings.getVolumeLookback(effectiveMode));
         result.put("enableTrailingSl", riskSettings.isEnableTrailingSl(effectiveMode));
         result.put("trailingSlNoTarget", riskSettings.isTrailingSlNoTarget());
+        result.put("trailingSlActivationAtr", riskSettings.getTrailingSlActivationAtr());
         result.put("chandelierPeriod", riskSettings.getChandelierPeriod(effectiveMode));
         result.put("chandelierMultiplier", riskSettings.getChandelierMultiplier(effectiveMode));
         result.put("signalSource", riskSettings.getSignalSource());
@@ -128,6 +129,7 @@ public class SettingsController {
             if (body.containsKey("volumeLookback")) riskSettings.setVolumeLookback(effectiveMode, Integer.parseInt(body.get("volumeLookback").toString()));
             if (body.containsKey("enableTrailingSl")) riskSettings.setEnableTrailingSl(effectiveMode, Boolean.parseBoolean(body.get("enableTrailingSl").toString()));
             if (body.containsKey("trailingSlNoTarget")) riskSettings.setTrailingSlNoTarget(Boolean.parseBoolean(body.get("trailingSlNoTarget").toString()));
+            if (body.containsKey("trailingSlActivationAtr")) riskSettings.setTrailingSlActivationAtr(Double.parseDouble(body.get("trailingSlActivationAtr").toString()));
             if (body.containsKey("chandelierPeriod")) riskSettings.setChandelierPeriod(effectiveMode, Integer.parseInt(body.get("chandelierPeriod").toString()));
             if (body.containsKey("chandelierMultiplier")) riskSettings.setChandelierMultiplier(effectiveMode, Double.parseDouble(body.get("chandelierMultiplier").toString()));
             if (body.containsKey("signalSource")) riskSettings.setSignalSource(body.get("signalSource").toString());

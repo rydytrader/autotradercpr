@@ -327,6 +327,11 @@
                         <input type="checkbox" id="trailingSlNoTarget" style="width: 16px; height: 16px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">No fixed target (trailing SL closes the trade)</span>
                     </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Activation:</span>
+                        <input type="number" id="trailingSlActivationAtr" class="form-control" step="0.5" min="0.5" max="5.0" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">× ATR profit before trailing starts</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -712,6 +717,7 @@
             document.getElementById('volumeLookback').value = d.volumeLookback || 20;
             document.getElementById('enableTrailingSl').checked = d.enableTrailingSl != null ? d.enableTrailingSl : true;
             document.getElementById('trailingSlNoTarget').checked = d.trailingSlNoTarget === true;
+            document.getElementById('trailingSlActivationAtr').value = d.trailingSlActivationAtr || 1.0;
             document.getElementById('chandelierPeriod').value = d.chandelierPeriod || 14;
             document.getElementById('chandelierMultiplier').value = d.chandelierMultiplier || 2.0;
 
@@ -811,6 +817,7 @@
                 volumeLookback: parseInt(document.getElementById('volumeLookback').value) || 20,
                 enableTrailingSl: document.getElementById('enableTrailingSl').checked,
                 trailingSlNoTarget: document.getElementById('trailingSlNoTarget').checked,
+                trailingSlActivationAtr: parseFloat(document.getElementById('trailingSlActivationAtr').value) || 1.0,
                 chandelierPeriod: parseInt(document.getElementById('chandelierPeriod').value) || 22,
                 chandelierMultiplier: parseFloat(document.getElementById('chandelierMultiplier').value) || 3.0,
                 signalSource: document.getElementById('signalSource').value,
