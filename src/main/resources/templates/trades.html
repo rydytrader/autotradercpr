@@ -101,7 +101,7 @@
         <div class="stat-card fade-in" style="--accent-color: var(--accent-cyan)">
             <div class="stat-label">Net P&amp;L</div>
             <div class="stat-value" id="statNetPnl">—</div>
-            <div class="stat-sub">Realised today</div>
+            <div class="stat-sub" id="statNetPnlSub">Realised today</div>
         </div>
     </div>
 
@@ -305,9 +305,13 @@
         document.getElementById('statLosses').textContent = losses;
         document.getElementById('statLossesSub').textContent = fmtPnl(totalLoss);
 
+        const grossPnl = trades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+        const totalCharges = trades.reduce((sum, t) => sum + (t.charges || 0), 0);
+
         const pnlEl = document.getElementById('statNetPnl');
         pnlEl.textContent = fmtPnl(netPnl);
         pnlEl.className   = 'stat-value ' + (netPnl > 0 ? 'positive' : netPnl < 0 ? 'negative' : '');
+        document.getElementById('statNetPnlSub').textContent = 'Gross: ' + fmtPnl(grossPnl) + ' | Charges: ' + fmtPnl(-totalCharges);
 
         const tbody = document.getElementById('tradesTableBody');
         if (trades.length === 0) {
