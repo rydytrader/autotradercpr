@@ -1003,7 +1003,14 @@ function showChart(symbol, shortName) {
                 timeScale: {
                     timeVisible: true,
                     secondsVisible: false,
-                    borderColor: 'rgba(255,255,255,0.1)'
+                    borderColor: 'rgba(255,255,255,0.1)',
+                    tickMarkFormatter: function(time) {
+                        var d = new Date(time * 1000);
+                        var h = d.getUTCHours() + 5;
+                        var m = d.getUTCMinutes() + 30;
+                        if (m >= 60) { h++; m -= 60; }
+                        return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+                    }
                 },
                 rightPriceScale: {
                     borderColor: 'rgba(255,255,255,0.1)'

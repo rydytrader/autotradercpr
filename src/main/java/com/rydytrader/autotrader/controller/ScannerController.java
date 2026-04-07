@@ -208,12 +208,14 @@ public class ScannerController {
     public Map<String, Object> getChartData(@org.springframework.web.bind.annotation.RequestParam String symbol) {
         Map<String, Object> result = new LinkedHashMap<>();
 
-        // Completed + current candles → convert startMinute to epoch seconds
-        java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
-        long dayStartEpoch = today.atStartOfDay(java.time.ZoneId.of("Asia/Kolkata")).toEpochSecond();
+        // Use CandleAggregator data — only today's candles (startMinute 555-930 = 9:15-15:30)
+        java.time.ZoneId IST = java.time.ZoneId.of("Asia/Kolkata");
+        java.time.LocalDate today = java.time.LocalDate.now(IST);
+        long dayStartEpoch = today.atStartOfDay(IST).toEpochSecond();
 
         List<Map<String, Object>> candles = new ArrayList<>();
         for (CandleAggregator.CandleBar bar : candleAggregator.getCompletedCandles(symbol)) {
+            if (bar.startMinute < 555 || bar.startMinute > 930) continue; // only market hours
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("time", dayStartEpoch + bar.startMinute * 60);
             c.put("open", r(bar.open));
@@ -224,7 +226,7 @@ public class ScannerController {
             candles.add(c);
         }
         CandleAggregator.CandleBar current = candleAggregator.getCurrentCandle(symbol);
-        if (current != null && current.open > 0) {
+        if (current != null && current.open > 0 && current.startMinute >= 555 && current.startMinute <= 930) {
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("time", dayStartEpoch + current.startMinute * 60);
             c.put("open", r(current.open));
