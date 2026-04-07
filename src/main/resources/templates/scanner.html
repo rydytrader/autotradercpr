@@ -1065,16 +1065,31 @@ function showChart(symbol, shortName) {
                 { key: 's3', label: 'S3', color: '#f87171' },
                 { key: 's4', label: 'S4', color: '#f87171' }
             ];
+            // Market hours epoch for line series (9:15 to 15:30 IST)
+            var marketOpen = data.candles.length > 0 ? data.candles[0].time : 0;
+            var marketClose = data.candles.length > 0 ? data.candles[data.candles.length - 1].time : 0;
+            if (marketOpen === 0) {
+                var ist = new Date();
+                var dayStart = new Date(ist.getFullYear(), ist.getMonth(), ist.getDate()).getTime() / 1000;
+                marketOpen = dayStart + (9 * 60 + 15 - 330) * 60; // approx
+                marketClose = dayStart + (15 * 60 + 30 - 330) * 60;
+            }
+
             levelConfig.forEach(function(l) {
                 if (levels[l.key] && levels[l.key] > 0) {
-                    candleSeries.createPriceLine({
-                        price: levels[l.key],
+                    var lineSeries = chart.addLineSeries({
                         color: l.color,
                         lineWidth: 1,
                         lineStyle: LightweightCharts.LineStyle.Dashed,
-                        axisLabelVisible: true,
+                        lastValueVisible: false,
+                        priceLineVisible: false,
+                        crosshairMarkerVisible: false,
                         title: l.label
                     });
+                    lineSeries.setData([
+                        { time: marketOpen, value: levels[l.key] },
+                        { time: marketClose, value: levels[l.key] }
+                    ]);
                 }
             });
 
