@@ -238,18 +238,18 @@
     <!-- TAB: TRADE -->
     <div class="tab-content" id="tab-trade">
 
-    <!-- TRADE PARAMETERS -->
+    <!-- RISK CONTROLS -->
     <div class="section-card fade-in">
         <div class="section-header">
             <div class="section-title">
-                <div class="section-title-dot" style="background: var(--accent-blue);"></div>
-                Trade Parameters
+                <div class="section-title-dot" style="background: var(--accent-red);"></div>
+                Risk Controls
             </div>
         </div>
         <div class="section-body">
             <div class="form-grid">
                 <div class="form-group">
-                    <label class="form-label">ATR Period / Multiplier</label>
+                    <label class="form-label">Fixed SL (ATR Period / Multiplier)</label>
                     <div style="display:flex; align-items:center; gap:8px;">
                         <input type="number" id="atrPeriod" class="form-control" min="5" max="50" step="1" style="width:75px; text-align:center;" placeholder="14">
                         <span style="color:var(--text-muted); font-family:var(--font-mono); font-size:0.82rem;">×</span>
@@ -258,10 +258,23 @@
                     <div class="form-hint">SL = Entry ± ATR(period) × multiplier</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Session Move Limit (%)</label>
-                    <input type="number" id="sessionMoveLimit" class="form-control" min="0" max="10" step="0.1" placeholder="2.0">
-                    <div class="form-hint">Halve quantity when session move exceeds this %</div>
-                    <div class="disabled-note">Set to 0 to disable</div>
+                    <label class="form-label">Chandelier Exit (Trailing SL)</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
+                        <input type="checkbox" id="enableTrailingSl" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink:0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Period</span>
+                        <input type="number" id="chandelierPeriod" class="form-control" step="1" min="5" max="50" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR x</span>
+                        <input type="number" id="chandelierMultiplier" class="form-control" step="0.5" min="1.0" max="10.0" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="trailingSlNoTarget" style="width: 16px; height: 16px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">No fixed target (trailing SL closes the trade)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Activation:</span>
+                        <input type="number" id="trailingSlActivationAtr" class="form-control" step="0.5" min="0.5" max="5.0" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">× ATR profit before trailing starts</span>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Extended Level Signals</label>
@@ -280,6 +293,25 @@
                     <div class="form-hint">Enable extended levels and set qty factor (1.0 = full qty)</div>
                 </div>
                 <div class="form-group">
+                    <label class="form-label">Session Move Limit (%)</label>
+                    <input type="number" id="sessionMoveLimit" class="form-control" min="0" max="10" step="0.1" placeholder="2.0">
+                    <div class="form-hint">Halve quantity when session move exceeds this %. Set to 0 to disable.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TRADE FILTERS -->
+    <div class="section-card fade-in" style="margin-top:16px;">
+        <div class="section-header">
+            <div class="section-title">
+                <div class="section-title-dot" style="background: var(--accent-blue);"></div>
+                Trade Filters
+            </div>
+        </div>
+        <div class="section-body">
+            <div class="form-grid">
+                <div class="form-group">
                     <label class="form-label">Large Candle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableLargeCandleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
@@ -294,7 +326,7 @@
                         <input type="checkbox" id="enableSmallCandleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject if move &lt;</span>
                         <input type="number" id="smallCandleAtrThreshold" class="form-control" step="0.1" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR from breakout level, or candle body &lt; threshold x ATR</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR from breakout level</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px; padding-left: 28px;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Breakout wick ratio:</span>
@@ -325,25 +357,6 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift target to next level if default target &lt;</span>
                         <input type="number" id="targetShiftAtrThreshold" class="form-control" step="0.5" min="0.5" max="5.0" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR, else set default target</span>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Chandelier Exit (Trailing SL)</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
-                        <input type="checkbox" id="enableTrailingSl" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink:0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Period</span>
-                        <input type="number" id="chandelierPeriod" class="form-control" step="1" min="5" max="50" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR x</span>
-                        <input type="number" id="chandelierMultiplier" class="form-control" step="0.5" min="1.0" max="10.0" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="trailingSlNoTarget" style="width: 16px; height: 16px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">No fixed target (trailing SL closes the trade)</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Activation:</span>
-                        <input type="number" id="trailingSlActivationAtr" class="form-control" step="0.5" min="0.5" max="5.0" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">× ATR profit before trailing starts</span>
                     </div>
                 </div>
             </div>
