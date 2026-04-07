@@ -295,8 +295,8 @@
 
         const wins   = trades.filter(t => t.result === 'PROFIT').length;
         const losses = trades.filter(t => t.result === 'LOSS').length;
-        const totalProfit = trades.filter(t => t.result === 'PROFIT').reduce((sum, t) => sum + (t.netPnl || 0), 0);
-        const totalLoss = trades.filter(t => t.result === 'LOSS').reduce((sum, t) => sum + (t.netPnl || 0), 0);
+        const totalProfit = trades.filter(t => t.result === 'PROFIT').reduce((sum, t) => sum + (t.pnl || 0), 0);
+        const totalLoss = trades.filter(t => t.result === 'LOSS').reduce((sum, t) => sum + (t.pnl || 0), 0);
         const netPnl = trades.reduce((sum, t) => sum + (t.netPnl != null ? t.netPnl : t.pnl || 0), 0);
 
         document.getElementById('statTotal').textContent  = trades.length;
