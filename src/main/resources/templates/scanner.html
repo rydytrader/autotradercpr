@@ -992,8 +992,8 @@ function showChart(symbol, shortName) {
                 width: container.clientWidth,
                 height: container.clientHeight,
                 layout: {
-                    background: { type: 'solid', color: '#1a1a2e' },
-                    textColor: '#8b8b9e'
+                    background: { type: 'solid', color: getComputedStyle(document.documentElement).getPropertyValue('--bg-card').trim() || '#111827' },
+                    textColor: getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim() || '#8b8b9e'
                 },
                 grid: {
                     vertLines: { color: 'rgba(255,255,255,0.04)' },
