@@ -283,10 +283,11 @@ public class TradingController {
                 openRisk += risk;
             }
         }
-        double consumedRisk = tradeHistoryService.getTrades().stream()
-            .filter(t -> t.getNetPnl() < 0)
-            .mapToDouble(t -> Math.abs(t.getNetPnl()))
-            .sum();
+        // Consumed risk = net realized P&L (negative = risk consumed, positive = risk recovered)
+        // If net P&L is positive (winning day), consumed risk is 0
+        double netRealizedPnl = tradeHistoryService.getTrades().stream()
+            .mapToDouble(t -> t.getNetPnl()).sum();
+        double consumedRisk = netRealizedPnl < 0 ? Math.abs(netRealizedPnl) : 0;
         double maxDailyLoss = riskSettings.getMaxDailyLoss();
 
         Map<String, Object> result = new java.util.LinkedHashMap<>();
