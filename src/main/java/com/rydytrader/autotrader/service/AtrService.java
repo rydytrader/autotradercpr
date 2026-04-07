@@ -27,7 +27,12 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
 
     private static final Logger log = LoggerFactory.getLogger(AtrService.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    private static final int ATR_PERIOD = 14;
+    private static final int DEFAULT_ATR_PERIOD = 14;
+
+    private int getAtrPeriod() {
+        int period = riskSettings.getAtrPeriod();
+        return period > 0 ? period : DEFAULT_ATR_PERIOD;
+    }
 
     private final TokenStore tokenStore;
     private final FyersProperties fyersProperties;
@@ -59,21 +64,21 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
         String authHeader = fyersProperties.getClientId() + ":" + accessToken;
         int timeframe = riskSettings.getScannerTimeframe();
 
-        log.info("[AtrService] Fetching ATR({}) for {} symbols ({}min candles)", ATR_PERIOD, fyersSymbols.size(), timeframe);
+        log.info("[AtrService] Fetching ATR({}) for {} symbols ({}min candles)", getAtrPeriod(), fyersSymbols.size(), timeframe);
 
         int success = 0;
         List<String> failed = new ArrayList<>();
         for (String symbol : fyersSymbols) {
             try {
                 List<CandleAggregator.CandleBar> candles = fetchHistoricalCandles(symbol, timeframe, authHeader);
-                if (candles.size() >= ATR_PERIOD) {
-                    double atr = calculateAtr(candles, ATR_PERIOD);
+                if (candles.size() >= getAtrPeriod()) {
+                    double atr = calculateAtr(candles, getAtrPeriod());
                     atrBySymbol.put(symbol, atr);
                     // Seed candle aggregator with historical candles
                     candleAggregator.seedCandles(symbol, candles);
                     success++;
                 } else {
-                    log.warn("[AtrService] Only {} candles for {} (need {})", candles.size(), symbol, ATR_PERIOD);
+                    log.warn("[AtrService] Only {} candles for {} (need {})", candles.size(), symbol, getAtrPeriod());
                     failed.add(symbol);
                 }
                 Thread.sleep(300);
@@ -90,8 +95,8 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
             for (String symbol : failed) {
                 try {
                     List<CandleAggregator.CandleBar> candles = fetchHistoricalCandles(symbol, timeframe, authHeader);
-                    if (candles.size() >= ATR_PERIOD) {
-                        double atr = calculateAtr(candles, ATR_PERIOD);
+                    if (candles.size() >= getAtrPeriod()) {
+                        double atr = calculateAtr(candles, getAtrPeriod());
                         atrBySymbol.put(symbol, atr);
                         candleAggregator.seedCandles(symbol, candles);
                         success++;
@@ -207,8 +212,8 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
     @Override
     public void onCandleClose(String fyersSymbol, CandleAggregator.CandleBar completedCandle) {
         List<CandleAggregator.CandleBar> candles = candleAggregator.getCompletedCandles(fyersSymbol);
-        if (candles.size() >= ATR_PERIOD) {
-            double atr = calculateAtr(candles, ATR_PERIOD);
+        if (candles.size() >= getAtrPeriod()) {
+            double atr = calculateAtr(candles, getAtrPeriod());
             atrBySymbol.put(fyersSymbol, atr);
         }
     }

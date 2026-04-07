@@ -55,6 +55,7 @@ public class RiskSettingsStore {
         volatile int volumeLookback = 20; // average volume over last N candles (max 20)
         volatile boolean enableTrailingSl = true; // enable Chandelier Exit trailing SL
         volatile boolean trailingSlNoTarget = false; // when true + trailing SL enabled: skip fixed target, let trailing SL close the trade
+        volatile int    atrPeriod = 14;        // ATR lookback period for initial SL
         volatile double trailingSlActivationAtr = 1.0; // trailing SL only activates after price moves this × ATR in profit
         volatile int    chandelierPeriod = 14;  // lookback period for highest high / lowest low (same as ATR)
         volatile double chandelierMultiplier = 2.0; // ATR multiplier for Chandelier Exit
@@ -118,6 +119,7 @@ public class RiskSettingsStore {
     public boolean isEnableSmallCandleFilter() { return cfg().enableSmallCandleFilter; }
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
     public boolean isTrailingSlNoTarget() { return cfg().trailingSlNoTarget; }
+    public int getAtrPeriod() { return cfg().atrPeriod; }
     public double getTrailingSlActivationAtr() { return cfg().trailingSlActivationAtr; }
     public int    getChandelierPeriod() { return cfg().chandelierPeriod; }
     public double getChandelierMultiplier() { return cfg().chandelierMultiplier; }
@@ -178,6 +180,7 @@ public class RiskSettingsStore {
     public void setEnableSmallCandleFilter(boolean v) { cfg().enableSmallCandleFilter = v; }
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
     public void setTrailingSlNoTarget(boolean v) { cfg().trailingSlNoTarget = v; }
+    public void setAtrPeriod(int v) { cfg().atrPeriod = v; }
     public void setTrailingSlActivationAtr(double v) { cfg().trailingSlActivationAtr = v; }
     public void setChandelierPeriod(int v) { cfg().chandelierPeriod = v; }
     public void setChandelierMultiplier(double v) { cfg().chandelierMultiplier = v; }
@@ -300,6 +303,7 @@ public class RiskSettingsStore {
             upsert("volumeLookback", String.valueOf(c.volumeLookback));
             upsert("enableTrailingSl", String.valueOf(c.enableTrailingSl));
             upsert("trailingSlNoTarget", String.valueOf(c.trailingSlNoTarget));
+            upsert("atrPeriod", String.valueOf(c.atrPeriod));
             upsert("trailingSlActivationAtr", String.valueOf(c.trailingSlActivationAtr));
             upsert("chandelierPeriod", String.valueOf(c.chandelierPeriod));
             upsert("chandelierMultiplier", String.valueOf(c.chandelierMultiplier));
@@ -369,6 +373,7 @@ public class RiskSettingsStore {
                     case "volumeLookback" -> c.volumeLookback = Integer.parseInt(v);
                     case "enableTrailingSl"   -> c.enableTrailingSl = Boolean.parseBoolean(v);
                     case "trailingSlNoTarget" -> c.trailingSlNoTarget = Boolean.parseBoolean(v);
+                    case "atrPeriod" -> c.atrPeriod = Integer.parseInt(v);
                     case "trailingSlActivationAtr" -> c.trailingSlActivationAtr = Double.parseDouble(v);
                     case "chandelierPeriod"  -> c.chandelierPeriod = Integer.parseInt(v);
                     case "chandelierMultiplier" -> c.chandelierMultiplier = Double.parseDouble(v);

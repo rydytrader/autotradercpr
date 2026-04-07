@@ -249,9 +249,13 @@
         <div class="section-body">
             <div class="form-grid">
                 <div class="form-group">
-                    <label class="form-label">ATR Multiplier</label>
-                    <input type="number" id="atrMultiplier" class="form-control" min="0.5" max="5" step="0.1" placeholder="1.5">
-                    <div class="form-hint">Stop loss = Entry ± (ATR × multiplier)</div>
+                    <label class="form-label">ATR Period / Multiplier</label>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <input type="number" id="atrPeriod" class="form-control" min="5" max="50" step="1" style="width:60px; text-align:center;" placeholder="14">
+                        <span style="color:var(--text-muted); font-family:var(--font-mono); font-size:0.82rem;">×</span>
+                        <input type="number" id="atrMultiplier" class="form-control" min="0.5" max="5" step="0.1" style="width:60px; text-align:center;" placeholder="2.0">
+                    </div>
+                    <div class="form-hint">SL = Entry ± ATR(period) × multiplier</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Session Move Limit (%)</label>
@@ -691,6 +695,7 @@
             document.getElementById('totalCapital').value       = d.totalCapital      || 0;
             document.getElementById('maxRiskPerDayPct').value  = d.maxRiskPerDayPct  != null ? d.maxRiskPerDayPct : 1.0;
             document.getElementById('riskPerTrade').value      = d.riskPerTrade      || 1000;
+            document.getElementById('atrPeriod').value          = d.atrPeriod         || 14;
             document.getElementById('atrMultiplier').value     = d.atrMultiplier     || 1.5;
             document.getElementById('sessionMoveLimit').value   = d.sessionMoveLimit  != null ? d.sessionMoveLimit : 2.0;
             document.getElementById('brokeragePerOrder').value  = d.brokeragePerOrder != null ? d.brokeragePerOrder : 20;
@@ -791,6 +796,7 @@
                 totalCapital:      parseFloat(document.getElementById('totalCapital').value) || 0,
                 maxRiskPerDayPct:  parseFloat(document.getElementById('maxRiskPerDayPct').value) || 0,
                 riskPerTrade:      parseFloat(document.getElementById('riskPerTrade').value) || 0,
+                atrPeriod:         parseInt(document.getElementById('atrPeriod').value) || 14,
                 atrMultiplier:     parseFloat(document.getElementById('atrMultiplier').value) || 2.0,
                 sessionMoveLimit:  parseFloat(document.getElementById('sessionMoveLimit').value) || 0,
                 brokeragePerOrder: parseFloat(document.getElementById('brokeragePerOrder').value) || 20,
