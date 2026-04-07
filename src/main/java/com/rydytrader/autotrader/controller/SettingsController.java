@@ -80,6 +80,7 @@ public class SettingsController {
         result.put("signalSource", riskSettings.getSignalSource());
         result.put("scannerTimeframe", riskSettings.getScannerTimeframe());
         result.put("enableAtpCheck", riskSettings.isEnableAtpCheck());
+        result.put("narrowCprMaxWidth", riskSettings.getNarrowCprMaxWidth());
         result.put("insideCprMaxWidth", riskSettings.getInsideCprMaxWidth());
         result.put("scanIncludeNS", riskSettings.isScanIncludeNS());
         result.put("scanIncludeNL", riskSettings.isScanIncludeNL());
@@ -144,6 +145,7 @@ public class SettingsController {
             if (body.containsKey("signalSource")) riskSettings.setSignalSource(body.get("signalSource").toString());
             if (body.containsKey("scannerTimeframe")) riskSettings.setScannerTimeframe(Integer.parseInt(body.get("scannerTimeframe").toString()));
             if (body.containsKey("enableAtpCheck")) riskSettings.setEnableAtpCheck(Boolean.parseBoolean(body.get("enableAtpCheck").toString()));
+            if (body.containsKey("narrowCprMaxWidth")) riskSettings.setNarrowCprMaxWidth(Double.parseDouble(body.get("narrowCprMaxWidth").toString()));
             if (body.containsKey("insideCprMaxWidth")) riskSettings.setInsideCprMaxWidth(Double.parseDouble(body.get("insideCprMaxWidth").toString()));
             if (body.containsKey("scanIncludeNS")) riskSettings.setScanIncludeNS(Boolean.parseBoolean(body.get("scanIncludeNS").toString()));
             if (body.containsKey("scanIncludeNL")) riskSettings.setScanIncludeNL(Boolean.parseBoolean(body.get("scanIncludeNL").toString()));

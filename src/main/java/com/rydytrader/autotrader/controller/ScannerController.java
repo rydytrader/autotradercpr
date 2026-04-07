@@ -56,9 +56,11 @@ public class ScannerController {
             insideSymbols.add(cpr.getSymbol());
         }
 
-        // Collect narrow CPR stocks — filtered by NS/NL toggles
+        // Collect narrow CPR stocks — use configurable width threshold + NS/NL toggles
+        double narrowMaxWidth = riskSettings.getNarrowCprMaxWidth();
         Set<String> seen = new HashSet<>();
-        for (CprLevels cpr : bhavcopyService.getNarrowCprStocks()) {
+        for (CprLevels cpr : bhavcopyService.getAllCprLevels().values()) {
+            if (cpr.getCprWidthPct() >= narrowMaxWidth) continue; // not narrow enough
             String nrt = cpr.getNarrowRangeType();
             boolean rangeMatches = ("SMALL".equals(nrt) && riskSettings.isScanIncludeNS())
                                 || ("LARGE".equals(nrt) && riskSettings.isScanIncludeNL())
