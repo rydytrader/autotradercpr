@@ -166,7 +166,11 @@ public class SettingsController {
     // ── NARROW CPR STOCKS ─────────────────────────────────────────────────────
     @GetMapping("/api/narrow-cpr")
     public Map<String, Object> getNarrowCprStocks() {
-        List<CprLevels> narrow = bhavcopyService.getNarrowCprStocks();
+        double maxWidth = riskSettings.getNarrowCprMaxWidth();
+        List<CprLevels> narrow = bhavcopyService.getAllCprLevels().values().stream()
+            .filter(c -> c.getCprWidthPct() < maxWidth)
+            .sorted(java.util.Comparator.comparingDouble(CprLevels::getCprWidthPct))
+            .collect(Collectors.toList());
         List<Map<String, Object>> list = narrow.stream().map(c -> {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("symbol", c.getSymbol());
@@ -191,7 +195,10 @@ public class SettingsController {
     // ── INSIDE CPR STOCKS ─────────────────────────────────────────────────────
     @GetMapping("/api/inside-cpr")
     public Map<String, Object> getInsideCprStocks() {
-        List<CprLevels> inside = bhavcopyService.getInsideCprStocks();
+        double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
+        List<CprLevels> inside = bhavcopyService.getInsideCprStocks().stream()
+            .filter(c -> insideMaxWidth <= 0 || c.getCprWidthPct() < insideMaxWidth)
+            .collect(Collectors.toList());
         List<Map<String, Object>> list = inside.stream().map(c -> {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("symbol", c.getSymbol());
