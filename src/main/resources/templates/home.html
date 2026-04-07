@@ -99,8 +99,8 @@
         </div>
     </div>
 
-    <!-- MAIN DASHBOARD CONTENT (hidden by default, shown by JS after user/fyers check) -->
-    <div id="dashboardContent" style="display:none;">
+    <!-- MAIN DASHBOARD CONTENT (shown by JS after user/fyers check) -->
+    <div id="dashboardContent">
 
     <!-- HERO CARD: Net Day P&L -->
     <div class="section-card fade-in" style="margin-bottom:20px;">
@@ -496,7 +496,11 @@
             document.getElementById('dashboardContent').style.display = 'none';
             fyLine.innerHTML = 'Fyers: <span style="color:var(--accent-red);font-weight:600;">Not logged in</span>';
         }
-    }).catch(() => {});
+    }).catch(() => {
+        // If user API fails, show dashboard anyway
+        document.getElementById('dashboardContent').style.display = 'block';
+        initDashboard();
+    });
 
     function initDashboard() {
         loadPositions();
