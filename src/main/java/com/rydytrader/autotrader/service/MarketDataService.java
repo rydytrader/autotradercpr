@@ -830,12 +830,18 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
      */
     private List<String> buildWatchlist() {
         Set<String> symbols = new LinkedHashSet<>();
+        double narrowMax = riskSettings.getNarrowCprMaxWidth();
+        double insideMax = riskSettings.getInsideCprMaxWidth();
 
-        for (var cpr : bhavcopyService.getNarrowCprStocks()) {
-            symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
+        for (var cpr : bhavcopyService.getAllCprLevels().values()) {
+            if (cpr.getCprWidthPct() < narrowMax) {
+                symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
+            }
         }
         for (var cpr : bhavcopyService.getInsideCprStocks()) {
-            symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
+            if (insideMax <= 0 || cpr.getCprWidthPct() < insideMax) {
+                symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
+            }
         }
         return new ArrayList<>(symbols);
     }
