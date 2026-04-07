@@ -311,7 +311,7 @@
         const pnlEl = document.getElementById('statNetPnl');
         pnlEl.textContent = fmtPnl(netPnl);
         pnlEl.className   = 'stat-value ' + (netPnl > 0 ? 'positive' : netPnl < 0 ? 'negative' : '');
-        document.getElementById('statNetPnlSub').textContent = 'Gross: ' + fmtPnl(grossPnl) + ' | Charges: ' + fmtPnl(-totalCharges);
+        document.getElementById('statNetPnlSub').textContent = 'Total Gross: ' + fmtPnl(grossPnl) + ' | Total Charges: ' + fmtPnl(-totalCharges);
 
         const tbody = document.getElementById('tradesTableBody');
         if (trades.length === 0) {
