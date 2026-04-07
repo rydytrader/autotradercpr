@@ -1110,6 +1110,43 @@ function showChart(symbol, shortName) {
                 ]);
             }
 
+            // Trade markers
+            if (data.signals && data.signals.length > 0) {
+                var markers = [];
+                data.signals.forEach(function(sig) {
+                    if (!sig.time || sig.price <= 0) return;
+                    // Parse time "HH:mm" to epoch
+                    var parts = sig.time.split(':');
+                    if (parts.length < 2) return;
+                    var h = parseInt(parts[0]), m = parseInt(parts[1]);
+                    var minuteSinceMidnight = h * 60 + m;
+                    if (minuteSinceMidnight < 555 || minuteSinceMidnight > 930) return;
+                    // Find nearest candle time
+                    var tf = data.candles.length > 1 ? data.candles[1].time - data.candles[0].time : 300;
+                    var candleStart = Math.floor(minuteSinceMidnight / (tf / 60)) * (tf / 60);
+                    var sigEpoch = data.candles[0].time + (candleStart - 555) * 60;
+                    // Find closest candle
+                    var closest = data.candles[0].time;
+                    data.candles.forEach(function(c) {
+                        if (Math.abs(c.time - sigEpoch) < Math.abs(closest - sigEpoch)) closest = c.time;
+                    });
+
+                    var isBuy = sig.setup.includes('BUY');
+                    var isTraded = sig.status === 'TRADED';
+                    markers.push({
+                        time: closest,
+                        position: isBuy ? 'belowBar' : 'aboveBar',
+                        color: isTraded ? (isBuy ? '#34d399' : '#f87171') : '#fbbf24',
+                        shape: isBuy ? 'arrowUp' : 'arrowDown',
+                        text: (isTraded ? '' : '[F] ') + sig.setup.replace('BUY_ABOVE_', 'B:').replace('SELL_BELOW_', 'S:')
+                    });
+                });
+                if (markers.length > 0) {
+                    markers.sort(function(a, b) { return a.time - b.time; });
+                    candleSeries.setMarkers(markers);
+                }
+            }
+
             chart.timeScale().fitContent();
 
             // OHLC display — update on crosshair move

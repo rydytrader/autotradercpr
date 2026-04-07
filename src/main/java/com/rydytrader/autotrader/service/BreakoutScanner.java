@@ -370,6 +370,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             SignalInfo info = new SignalInfo();
             info.setup = setup;
             info.time = timeStr;
+            info.price = close;
             boolean filtered = status.contains("failed") || status.contains("filtered") || status.contains("ignored");
             info.status = filtered ? "FILTERED" : "TRADED";
             if (filtered) filteredCountToday++; else tradedCountToday++;
@@ -618,5 +619,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         public String time;
         public String status; // TRADED, FILTERED, ERROR
         public String detail;
+        public double price;  // candle close at signal time
     }
 }

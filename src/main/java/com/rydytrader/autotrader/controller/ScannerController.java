@@ -268,6 +268,22 @@ public class ScannerController {
         double atp = candleAggregator.getAtp(symbol);
         if (atp > 0) result.put("atp", r(atp));
 
+        // Signal history for markers
+        List<BreakoutScanner.SignalInfo> signals = breakoutScanner.getSignalHistory(symbol);
+        if (signals != null && !signals.isEmpty()) {
+            List<Map<String, Object>> sigList = new ArrayList<>();
+            for (BreakoutScanner.SignalInfo sig : signals) {
+                Map<String, Object> s = new LinkedHashMap<>();
+                s.put("setup", sig.setup);
+                s.put("time", sig.time);
+                s.put("price", sig.price);
+                s.put("status", sig.status);
+                s.put("detail", sig.detail);
+                sigList.add(s);
+            }
+            result.put("signals", sigList);
+        }
+
         result.put("symbol", symbol);
         result.put("shortName", ticker);
         return result;
