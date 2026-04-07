@@ -301,9 +301,9 @@
 
         document.getElementById('statTotal').textContent  = trades.length;
         document.getElementById('statWins').textContent   = wins;
-        document.getElementById('statWinsSub').textContent = fmtPnl(totalProfit);
+        document.getElementById('statWinsSub').textContent = 'Gross: ' + fmtPnl(totalProfit);
         document.getElementById('statLosses').textContent = losses;
-        document.getElementById('statLossesSub').textContent = fmtPnl(totalLoss);
+        document.getElementById('statLossesSub').textContent = 'Gross: ' + fmtPnl(totalLoss);
 
         const grossPnl = trades.reduce((sum, t) => sum + (t.pnl || 0), 0);
         const totalCharges = trades.reduce((sum, t) => sum + (t.charges || 0), 0);
