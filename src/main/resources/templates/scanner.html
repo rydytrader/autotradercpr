@@ -1126,10 +1126,12 @@ function showChart(symbol, shortName) {
                     var h = parseInt(parts[0]), m = parseInt(parts[1]);
                     var minuteSinceMidnight = h * 60 + m;
                     if (minuteSinceMidnight < 555 || minuteSinceMidnight > 930) return;
-                    // Find nearest candle time
-                    var tf = data.candles.length > 1 ? data.candles[1].time - data.candles[0].time : 300;
-                    var candleStart = Math.floor(minuteSinceMidnight / (tf / 60)) * (tf / 60);
-                    var sigEpoch = data.candles[0].time + (candleStart - 555) * 60;
+                    // Signal fires on candle CLOSE — subtract one timeframe to get the breakout candle
+                    var tf = data.candles.length > 1 ? (data.candles[1].time - data.candles[0].time) : 300;
+                    var tfMin = tf / 60;
+                    var candleStartMin = Math.floor((minuteSinceMidnight - tfMin) / tfMin) * tfMin;
+                    if (candleStartMin < 555) candleStartMin = 555;
+                    var sigEpoch = data.candles[0].time + (candleStartMin - 555) * 60;
                     // Find closest candle
                     var closest = data.candles[0].time;
                     data.candles.forEach(function(c) {
