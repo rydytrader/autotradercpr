@@ -214,6 +214,27 @@
         </div>
     </div>
 
+    <!-- Trade Summary -->
+    <div class="section-card fade-in" style="margin-bottom:16px;">
+        <div class="section-header">
+            <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Trade Summary</div>
+        </div>
+        <div style="padding:12px 22px; display:flex; gap:32px; align-items:center; flex-wrap:wrap; font-family:var(--font-mono); font-size:0.85rem;">
+            <div>
+                <span class="stat-label" style="margin:0; margin-right:8px;">Total Trades</span>
+                <span class="stat-value" id="summaryTotalTrades" style="font-size:1rem; font-weight:700;">0</span>
+            </div>
+            <div>
+                <span class="stat-label" style="margin:0; margin-right:8px;">Gross Profit</span>
+                <span class="stat-value pnl-positive" id="summaryGrossProfit" style="font-size:1rem; font-weight:700;">0.00</span>
+            </div>
+            <div>
+                <span class="stat-label" style="margin:0; margin-right:8px;">Gross Loss</span>
+                <span class="stat-value pnl-negative" id="summaryGrossLoss" style="font-size:1rem; font-weight:700;">0.00</span>
+            </div>
+        </div>
+    </div>
+
     <!-- Equity Curve Chart -->
     <div class="section-card fade-in" style="margin-bottom:0;">
         <div class="section-header">
@@ -375,6 +396,13 @@
             grossEl.textContent = (grossPnl >= 0 ? '+' : '') + fmt(grossPnl);
             setPnlClass(grossEl, grossPnl);
             document.getElementById('totalCharges').textContent = fmt(charges);
+
+            // Trade Summary section
+            const grossProfit = wins.reduce((s, t) => s + (t.pnl || 0), 0);
+            const grossLoss = losses.reduce((s, t) => s + (t.pnl || 0), 0);
+            document.getElementById('summaryTotalTrades').textContent = trades.length;
+            document.getElementById('summaryGrossProfit').textContent = '+' + fmt(grossProfit);
+            document.getElementById('summaryGrossLoss').textContent = fmt(grossLoss);
 
             // Avg win / avg loss
             const avgWin = wins.length > 0 ? wins.reduce((s, t) => s + t.netPnl, 0) / wins.length : 0;
