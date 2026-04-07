@@ -1000,6 +1000,16 @@ function showChart(symbol, shortName) {
                     horzLines: { color: 'rgba(255,255,255,0.04)' }
                 },
                 crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+                localization: {
+                    timeFormatter: function(time) {
+                        var d = new Date(time * 1000);
+                        var h = d.getUTCHours() + 5;
+                        var m = d.getUTCMinutes() + 30;
+                        if (m >= 60) { h++; m -= 60; }
+                        if (h >= 24) h -= 24;
+                        return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+                    }
+                },
                 timeScale: {
                     timeVisible: true,
                     secondsVisible: false,
@@ -1009,6 +1019,7 @@ function showChart(symbol, shortName) {
                         var h = d.getUTCHours() + 5;
                         var m = d.getUTCMinutes() + 30;
                         if (m >= 60) { h++; m -= 60; }
+                        if (h >= 24) h -= 24;
                         return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
                     }
                 },
