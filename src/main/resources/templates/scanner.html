@@ -1093,21 +1093,26 @@ function showChart(symbol, shortName) {
                 }
             });
 
-            // ATP (VWAP) line in pink
-            if (data.atp && data.atp > 0) {
+            // ATP (VWAP) curve in pink — compute running VWAP from candle data
+            if (data.candles.length > 1) {
+                var vwapData = [];
+                var cumTpVol = 0, cumVol = 0;
+                data.candles.forEach(function(c) {
+                    var tp = (c.high + c.low + c.close) / 3;
+                    var vol = c.volume || 1;
+                    cumTpVol += tp * vol;
+                    cumVol += vol;
+                    vwapData.push({ time: c.time, value: Math.round(cumTpVol / cumVol * 100) / 100 });
+                });
                 var atpSeries = chart.addLineSeries({
                     color: '#ec4899',
-                    lineWidth: 1,
-                    lineStyle: LightweightCharts.LineStyle.Solid,
+                    lineWidth: 2,
                     lastValueVisible: true,
                     priceLineVisible: false,
                     crosshairMarkerVisible: false,
-                    title: 'ATP'
+                    title: 'VWAP'
                 });
-                atpSeries.setData([
-                    { time: marketOpen, value: data.atp },
-                    { time: marketClose, value: data.atp }
-                ]);
+                atpSeries.setData(vwapData);
             }
 
             // Trade markers
