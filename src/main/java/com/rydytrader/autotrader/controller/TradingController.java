@@ -139,11 +139,10 @@ public class TradingController {
                     openRisk += risk;
                 }
             }
-            // Consumed risk: sum of absolute losses from today's losing trades
-            double consumedRisk = tradeHistoryService.getTrades().stream()
-                .filter(t -> t.getNetPnl() < 0)
-                .mapToDouble(t -> Math.abs(t.getNetPnl()))
-                .sum();
+            // Consumed risk: net realized P&L (wins offset losses)
+            double netPnl = tradeHistoryService.getTrades().stream()
+                .mapToDouble(t -> t.getNetPnl()).sum();
+            double consumedRisk = netPnl < 0 ? Math.abs(netPnl) : 0;
             double totalRisk = openRisk + consumedRisk;
             if (totalRisk + riskPerTrade > maxLoss) {
                 String msg = "Signal ignored — risk exposure limit reached (open: ₹" + (int)openRisk
