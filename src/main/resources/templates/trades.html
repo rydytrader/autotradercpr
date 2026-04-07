@@ -300,10 +300,10 @@
         const netPnl = trades.reduce((sum, t) => sum + (t.netPnl != null ? t.netPnl : t.pnl || 0), 0);
 
         document.getElementById('statTotal').textContent  = trades.length;
-        document.getElementById('statWins').textContent   = wins;
-        document.getElementById('statWinsSub').textContent = 'Gross: ' + fmtPnl(totalProfit);
-        document.getElementById('statLosses').textContent = losses;
-        document.getElementById('statLossesSub').textContent = 'Gross: ' + fmtPnl(totalLoss);
+        document.getElementById('statWins').textContent   = fmtPnl(totalProfit);
+        document.getElementById('statWinsSub').textContent = wins + ' trade' + (wins !== 1 ? 's' : '');
+        document.getElementById('statLosses').textContent = fmtPnl(totalLoss);
+        document.getElementById('statLossesSub').textContent = losses + ' trade' + (losses !== 1 ? 's' : '');
 
         const grossPnl = trades.reduce((sum, t) => sum + (t.pnl || 0), 0);
         const totalCharges = trades.reduce((sum, t) => sum + (t.charges || 0), 0);
