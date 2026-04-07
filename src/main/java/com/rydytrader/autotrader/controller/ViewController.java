@@ -78,10 +78,17 @@ public class ViewController {
         String token = loginService.generateAccessToken(authCode);
         if (token != null) {
             tokenStore.setAccessToken(token);
-            pollingService.syncPositionOnce();
-            pollingService.startPositionSync();
-            marketDataService.start();
-            orderEventService.start();
+            // Start services in background so redirect happens immediately
+            new Thread(() -> {
+                try {
+                    pollingService.syncPositionOnce();
+                    pollingService.startPositionSync();
+                    marketDataService.start();
+                    orderEventService.start();
+                } catch (Exception e) {
+                    log.error("Error starting services after Fyers login: {}", e.getMessage());
+                }
+            }, "fyers-init").start();
             return "redirect:/home";
         }
         log.error("Fyers login callback error");
