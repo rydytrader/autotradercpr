@@ -99,6 +99,21 @@
         </div>
     </div>
 
+    <!-- LOADING OVERLAY -->
+    <div id="loadingOverlay" style="display:none;">
+        <div class="section-card fade-in" style="margin-bottom:20px;">
+            <div style="padding:60px 28px; text-align:center;">
+                <div style="font-size:2rem; margin-bottom:16px; animation:spin 1.5s linear infinite;">&#9881;</div>
+                <div style="font-family:var(--font-mono); font-size:1rem; color:var(--text-primary); font-weight:600; margin-bottom:12px;">Initializing Scanner</div>
+                <div id="loadingMessage" style="font-family:var(--font-mono); font-size:0.82rem; color:var(--text-muted);">Connecting to broker...</div>
+                <div style="margin-top:20px; width:200px; height:4px; background:var(--border); border-radius:2px; display:inline-block; overflow:hidden;">
+                    <div id="loadingBar" style="width:10%; height:100%; background:var(--accent-cyan); border-radius:2px; transition:width 0.5s ease;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <style>@keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }</style>
+
     <!-- MAIN DASHBOARD CONTENT (shown by JS after user/fyers check) -->
     <div id="dashboardContent">
 
@@ -482,13 +497,14 @@
             fyLine.style.display = 'none';
             initDashboard();
         } else if (d.fyersConnected) {
-            // Trader + Fyers connected — show dashboard with Fyers ID
+            // Trader + Fyers connected — show loading then dashboard
             document.getElementById('fyersGate').style.display = 'none';
-            document.getElementById('dashboardContent').style.display = 'block';
+            document.getElementById('dashboardContent').style.display = 'none';
+            document.getElementById('loadingOverlay').style.display = 'block';
             fetch('/api/profile').then(r => r.json()).then(p => {
                 fyLine.innerHTML = 'Fyers ID: <span style="color:var(--accent-blue);font-weight:600;">' + (p.fyId || '—') + '</span>';
             }).catch(() => { fyLine.innerHTML = 'Fyers: <span style="color:var(--accent-green)">Connected</span>'; });
-            initDashboard();
+            pollScannerReady();
         } else {
             // Trader but Fyers not connected — show gate, hide dashboard
             document.getElementById('fyersGate').style.display = 'block';
@@ -500,6 +516,62 @@
         document.getElementById('dashboardContent').style.display = 'block';
         initDashboard();
     });
+
+    function pollScannerReady() {
+        var messages = [
+            { check: 'connecting', text: 'Connecting to broker...', pct: 10 },
+            { check: 'atr', text: 'Loading ATR data...', pct: 30 },
+            { check: 'trends', text: 'Calculating weekly trends...', pct: 50 },
+            { check: 'subscribing', text: 'Subscribing to market data...', pct: 70 },
+            { check: 'ready', text: 'Scanner ready!', pct: 100 }
+        ];
+        var msgIdx = 0;
+        var msgEl = document.getElementById('loadingMessage');
+        var barEl = document.getElementById('loadingBar');
+
+        // Cycle through messages while polling
+        var msgTimer = setInterval(function() {
+            if (msgIdx < messages.length - 1) {
+                msgIdx++;
+                msgEl.textContent = messages[msgIdx].text;
+                barEl.style.width = messages[msgIdx].pct + '%';
+            }
+        }, 3000);
+
+        // Poll scanner status every 2s until watchlist is loaded
+        var pollTimer = setInterval(function() {
+            fetch('/api/scanner/status').then(function(r) { return r.json(); }).then(function(s) {
+                var atrLoaded = s.atrLoaded || 0;
+                var watchlist = s.watchlistCount || 0;
+                if (atrLoaded > 0 && watchlist > 0) {
+                    clearInterval(pollTimer);
+                    clearInterval(msgTimer);
+                    msgEl.textContent = 'Scanner ready — ' + watchlist + ' stocks, ATR loaded';
+                    barEl.style.width = '100%';
+                    setTimeout(function() {
+                        document.getElementById('loadingOverlay').style.display = 'none';
+                        document.getElementById('dashboardContent').style.display = 'block';
+                        initDashboard();
+                    }, 500);
+                } else if (atrLoaded > 0) {
+                    msgEl.textContent = 'ATR loaded for ' + atrLoaded + ' stocks, subscribing...';
+                    barEl.style.width = '70%';
+                } else if (watchlist > 0) {
+                    msgEl.textContent = 'Watchlist: ' + watchlist + ' stocks, loading ATR...';
+                    barEl.style.width = '40%';
+                }
+            }).catch(function() {});
+        }, 2000);
+
+        // Fallback: show dashboard after 30s regardless
+        setTimeout(function() {
+            clearInterval(pollTimer);
+            clearInterval(msgTimer);
+            document.getElementById('loadingOverlay').style.display = 'none';
+            document.getElementById('dashboardContent').style.display = 'block';
+            initDashboard();
+        }, 30000);
+    }
 
     function initDashboard() {
         loadPositions();
