@@ -1110,7 +1110,7 @@ function showChart(symbol, shortName) {
                     lastValueVisible: true,
                     priceLineVisible: false,
                     crosshairMarkerVisible: false,
-                    title: 'VWAP'
+                    title: 'ATP'
                 });
                 atpSeries.setData(vwapData);
             }
@@ -1119,7 +1119,7 @@ function showChart(symbol, shortName) {
             if (data.signals && data.signals.length > 0) {
                 var markers = [];
                 data.signals.forEach(function(sig) {
-                    if (!sig.time || sig.price <= 0) return;
+                    if (!sig.time) return;
                     // Parse time "HH:mm" to epoch
                     var parts = sig.time.split(':');
                     if (parts.length < 2) return;

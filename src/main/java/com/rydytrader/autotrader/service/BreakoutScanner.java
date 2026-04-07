@@ -502,13 +502,14 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             state.put("date", ZonedDateTime.now(IST).toLocalDate().toString());
 
             // Save lastSignal
-            Map<String, Map<String, String>> signals = new LinkedHashMap<>();
+            Map<String, Map<String, Object>> signals = new LinkedHashMap<>();
             for (var entry : lastSignal.entrySet()) {
-                Map<String, String> sig = new LinkedHashMap<>();
+                Map<String, Object> sig = new LinkedHashMap<>();
                 sig.put("setup", entry.getValue().setup);
                 sig.put("time", entry.getValue().time);
                 sig.put("status", entry.getValue().status);
                 sig.put("detail", entry.getValue().detail);
+                sig.put("price", entry.getValue().price);
                 signals.put(entry.getKey(), sig);
             }
             state.put("signals", signals);
@@ -523,15 +524,16 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             state.put("filteredCountToday", filteredCountToday);
 
             // Save signalHistory (all signals per symbol for the day)
-            Map<String, List<Map<String, String>>> history = new LinkedHashMap<>();
+            Map<String, List<Map<String, Object>>> history = new LinkedHashMap<>();
             for (var entry : signalHistory.entrySet()) {
-                List<Map<String, String>> list = new ArrayList<>();
+                List<Map<String, Object>> list = new ArrayList<>();
                 for (SignalInfo si : entry.getValue()) {
-                    Map<String, String> sig = new LinkedHashMap<>();
+                    Map<String, Object> sig = new LinkedHashMap<>();
                     sig.put("setup", si.setup);
                     sig.put("time", si.time);
                     sig.put("status", si.status);
                     sig.put("detail", si.detail);
+                    sig.put("price", si.price);
                     list.add(sig);
                 }
                 history.put(entry.getKey(), list);
@@ -570,6 +572,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     info.time = v.has("time") ? v.get("time").asText() : "";
                     info.status = v.has("status") ? v.get("status").asText() : "";
                     info.detail = v.has("detail") ? v.get("detail").asText() : "";
+                    info.price = v.has("price") ? v.get("price").asDouble() : 0;
                     lastSignal.put(entry.getKey(), info);
                 });
             }
@@ -595,6 +598,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                         si.time = node.has("time") ? node.get("time").asText() : "";
                         si.status = node.has("status") ? node.get("status").asText() : "";
                         si.detail = node.has("detail") ? node.get("detail").asText() : "";
+                        si.price = node.has("price") ? node.get("price").asDouble() : 0;
                         list.add(si);
                     });
                     signalHistory.put(entry.getKey(), list);
