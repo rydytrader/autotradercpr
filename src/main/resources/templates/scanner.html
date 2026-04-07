@@ -1103,7 +1103,7 @@ function showChart(symbol, shortName) {
                     ohlcEl.innerHTML = formatOhlc(d);
                 }
             });
-            chart.timeScale().applyOptions({ rightOffset: 5, fixLeftEdge: true, fixRightEdge: true });
+            chart.timeScale().applyOptions({ rightOffset: 8, fixLeftEdge: false, fixRightEdge: true });
 
             // Resize handler
             var resizeObserver = new ResizeObserver(function() {
