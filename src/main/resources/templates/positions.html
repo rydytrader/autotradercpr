@@ -573,8 +573,8 @@
                 <td class="text-center">${renderSetup(pos.setup)}</td>
                 <td class="text-center">${renderProb(pos.probability)}</td>
                 <td class="text-right">${pos.avgPrice.toFixed(2)}</td>
-                <td class="text-right" style="color:var(--accent-red);">${slStr}${trailArrow}</td>
-                <td class="text-right" style="color:var(--accent-green);">${tgtStr}</td>
+                <td class="text-right">${slStr}${trailArrow}</td>
+                <td class="text-right">${tgtStr}</td>
                 <td class="text-right">${pos.ltp.toFixed(2)}</td>
                 <td class="text-right"><span class="${pnlClass}">${fmtPnl(pos.pnl)}</span></td>
                 <td class="text-center admin-only"><button onclick="squareOffSymbol('${sym}',${Math.abs(pos.qty)})" style="background:none;border:1px solid rgba(248,113,113,0.3);border-radius:6px;color:var(--accent-red);cursor:pointer;padding:4px 8px;font-size:0.85rem;line-height:1;" title="Square off ${pos.symbol}">&#x2715;</button></td>
