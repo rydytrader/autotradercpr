@@ -668,8 +668,9 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         if (ctx.description != null && !ctx.description.isEmpty()) {
             positionStateStore.appendDescription(symbol, ctx.description);
         }
+        String ts = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
         positionStateStore.appendDescription(symbol,
-            "[FILL] " + (ctx.position.equals("LONG") ? "BUY" : "SELL") + " filled @ "
+            ts + " [FILL] " + (ctx.position.equals("LONG") ? "BUY" : "SELL") + " filled @ "
             + String.format("%.2f", entryPrice) + ". SL recalculated → " + String.format("%.2f", adjustedSl) + ".");
 
         marketDataService.updateSubscriptions();
@@ -707,12 +708,14 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
                 } else {
                     double roundedTgt = orderService.roundToTick(ctx.targetPrice, symbol);
                     eventService.log("[SUCCESS] [WS] Target placed for " + symbol + " at " + roundedTgt + " [ID: " + tgtId + "]");
+                    String ts2 = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
                     positionStateStore.appendDescription(symbol,
-                        "[TGT_PLACED] @ " + String.format("%.2f", roundedTgt) + " [" + tgtId + "]");
+                        ts2 + " [TGT_PLACED] @ " + String.format("%.2f", roundedTgt) + " [" + tgtId + "]");
                 }
                 positionStateStore.saveOcoState(symbol, slOrder.getId(), tgtId, slPrice, tgtPrice);
+                String ts3 = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
                 positionStateStore.appendDescription(symbol,
-                    "[SL_PLACED] @ " + String.format("%.2f", roundedSl) + " [" + slOrder.getId() + "]");
+                    ts3 + " [SL_PLACED] @ " + String.format("%.2f", roundedSl) + " [" + slOrder.getId() + "]");
 
                 // Track SL + Target for fill detection via WebSocket
                 trackOcoOrders(slOrder.getId(), tgtId,
@@ -776,8 +779,9 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             + " — cancelling " + ("SL".equals(ctx.type) ? "target" : "SL"));
 
         // Append [EXIT] to description and pass to trade record
+        String tsExit = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
         positionStateStore.appendDescription(symbol,
-            "[EXIT] " + exitReason + " @ " + String.format("%.2f", finalExit)
+            tsExit + " [EXIT] " + exitReason + " @ " + String.format("%.2f", finalExit)
             + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl)));
         String desc = positionStateStore.getDescription(symbol);
 

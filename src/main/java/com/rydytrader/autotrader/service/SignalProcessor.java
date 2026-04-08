@@ -4,6 +4,9 @@ import com.rydytrader.autotrader.dto.ProcessedSignal;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
 @Service
@@ -238,39 +241,45 @@ public class SignalProcessor {
         }
 
         // ── 4j. Build description ─────────────────────────────────────────────
+        String ts = LocalTime.now(ZoneId.of("Asia/Kolkata")).format(DateTimeFormatter.ofPattern("HH:mm:ss"));
         StringBuilder desc = new StringBuilder();
+
+        // Header
+        desc.append("═══ TRADE DETAILS ═══");
 
         // [ENTRY] line
         String levelName = levelNameForSetup(setup);
-        desc.append("[ENTRY] ").append(setup).append(" | ").append(probability)
+        desc.append("\n").append(ts).append(" [ENTRY] ").append(setup).append(" | ").append(probability)
             .append(" — Close ").append(fmt(close))
             .append(" broke ").append(levelName)
             .append(" (").append(fmt(breakoutLevel)).append(").");
 
+        // [SL] line
+        desc.append("\n").append(ts).append(" [SL] ").append(fmt(sl))
+            .append(" (ATR ").append(fmt(atr)).append(" × ").append(riskSettings.getAtrMultiplier()).append(").");
+
+        // [TARGET] line
+        desc.append("\n").append(ts).append(" [TARGET] ").append(fmt(target));
+        if (shifted) {
+            desc.append(" (shifted from ").append(fmt(defaultTarget))
+                .append(", default < ").append(targetShiftThreshold).append(" ATR).");
+        }
+
         // [QTY] line
         int fixedQty = riskSettings.getFixedQuantity();
         if (fixedQty != -1) {
-            desc.append("\n[QTY] Fixed: ").append(baseQty).append(".");
+            desc.append("\n").append(ts).append(" [QTY] Fixed: ").append(baseQty).append(".");
         } else {
             double riskPerTrade = riskSettings.getRiskPerTrade();
             double riskPerShare = Math.abs(close - sl);
             int riskQty = riskPerShare > 0 ? (int)(riskPerTrade / riskPerShare) : 0;
-            desc.append("\n[QTY] Risk: ₹").append(fmt(riskPerTrade))
+            desc.append("\n").append(ts).append(" [QTY] Risk: ₹").append(fmt(riskPerTrade))
                 .append(" / ₹").append(fmt(riskPerShare))
                 .append(" = ").append(riskQty)
-                .append(". Final: ").append(baseQty).append(".");
+                .append(". Final: ").append(qty).append(".");
         }
-        if (isExtreme) {
-            desc.append(" Halved → ").append(qty).append(" (extreme level).");
-        } else if (qtyLog != null && qty != baseQty) {
-            desc.append(" Halved → ").append(qty).append(" (session move limit).");
-        }
-
-        // [TARGET] line (only if shifted)
-        if (shifted) {
-            desc.append("\n[TARGET] Shifted ").append(fmt(defaultTarget))
-                .append(" → ").append(fmt(shiftTarget))
-                .append(" (default < ").append(targetShiftThreshold).append(" ATR from entry).");
+        if (qtyLog != null && qty != baseQty) {
+            desc.append(" (reduced from ").append(baseQty).append(")");
         }
 
         String description = desc.toString();

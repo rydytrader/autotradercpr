@@ -371,8 +371,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
 
             if (orderEventService != null) orderEventService.markAsTrailed(slOrderId);
 
+            String tsTrail = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
             positionStateStore.appendDescription(fyersSymbol,
-                "[TRAILING_SL] SL → " + String.format("%.2f", newSl)
+                tsTrail + " [TRAILING_SL] SL → " + String.format("%.2f", newSl)
                 + " (ATR=" + String.format("%.2f", atr) + " mult=" + multiplier + ")");
 
             String direction = "LONG".equals(side) ? "up" : "down";
