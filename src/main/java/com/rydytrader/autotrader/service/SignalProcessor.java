@@ -181,7 +181,7 @@ public class SignalProcessor {
             qty = Math.max(1, qty / 2);
             qtyLog = "[INFO] " + symbol + " " + setup + " qty halved (extreme level): " + baseQty + " -> " + qty;
         }
-        // ── Session move limit: reduce qty if price moved too far from day open or PDC ──
+        // ── Session move limit: reduce qty if price moved too far from day open/PDC OR gapped above R2/below S2 ──
         double sessionMoveLimit = riskSettings.getSessionMoveLimit() / 100.0; // e.g. 2.0 → 0.02
         if (!isExtreme && sessionMoveLimit > 0) {
             double pivot = (tc + bc) / 2.0;
@@ -190,10 +190,16 @@ public class SignalProcessor {
             double moveFromPdc  = pdc > 0 ? Math.abs(close - pdc) / pdc : 0;
             double movePct = Math.max(moveFromOpen, moveFromPdc) * 100;
             String moveSource = moveFromOpen >= moveFromPdc ? "day open " + fmt(dayOpen) : "PDC " + fmt(pdc);
-            if (Math.max(moveFromOpen, moveFromPdc) > sessionMoveLimit) {
+            boolean sessionMoveExceeded = Math.max(moveFromOpen, moveFromPdc) > sessionMoveLimit;
+            // Gap check: first candle or any candle closing beyond R2 (buy) or S2 (sell) = extended move
+            boolean gapBeyondR2S2 = (isBuy && r2 > 0 && close > r2) || (!isBuy && s2 > 0 && close < s2);
+
+            if (sessionMoveExceeded || gapBeyondR2S2) {
                 int reduced = Math.max(1, qty / 2);
-                qtyLog = "[INFO] " + symbol + " " + setup + " qty halved (moved " + fmt(movePct)
-                    + "% from " + moveSource + " > " + fmt(riskSettings.getSessionMoveLimit()) + "% limit): " + qty + " -> " + reduced;
+                String reason = sessionMoveExceeded
+                    ? "moved " + fmt(movePct) + "% from " + moveSource + " > " + fmt(riskSettings.getSessionMoveLimit()) + "% limit"
+                    : "price " + fmt(close) + (isBuy ? " above R2 " + fmt(r2) : " below S2 " + fmt(s2)) + " (gap/extended move)";
+                qtyLog = "[INFO] " + symbol + " " + setup + " qty halved (" + reason + "): " + qty + " -> " + reduced;
                 qty = reduced;
             }
         }
