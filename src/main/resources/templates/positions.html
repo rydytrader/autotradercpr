@@ -147,27 +147,83 @@
         </div>
     </div>
 
-    <div class="stat-grid">
-        <div class="stat-card fade-in" style="--accent-color: var(--accent-cyan)">
-            <div class="stat-label">Open Positions</div>
-            <div class="stat-value" id="statCount">0</div>
-            <div class="stat-sub">Active contracts</div>
+    <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:20px;" class="fade-in">
+
+        <!-- Positions -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Positions</div>
+                <span class="section-badge" id="positionsBadge">0 active</span>
+            </div>
+            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Open</span>
+                    <span class="stat-value" id="statCount" style="font-size:1rem;">0</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Capital Deployed</span>
+                    <span class="stat-value" id="statCapital" style="font-size:1rem;">₹0</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Notional</span>
+                    <span class="stat-value" id="statCapitalSub" style="font-size:0.85rem; color:var(--text-muted);">₹0</span>
+                </div>
+            </div>
         </div>
-        <div class="stat-card fade-in" style="--accent-color: var(--accent-green)">
-            <div class="stat-label">Net Day P&amp;L</div>
-            <div class="stat-value" id="statPnl">—</div>
-            <div class="stat-sub" id="statPnlSub">Realized + Unrealized</div>
+
+        <!-- Day P&L -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Day P&amp;L</div>
+            </div>
+            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Net P&amp;L</span>
+                    <span class="stat-value" id="statPnl" style="font-size:1rem;">—</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Realized</span>
+                    <span class="stat-value" id="statRealized" style="font-size:0.85rem;">—</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Unrealized</span>
+                    <span class="stat-value" id="statUnrealized" style="font-size:0.85rem;">—</span>
+                </div>
+            </div>
         </div>
-        <div class="stat-card fade-in" style="--accent-color: var(--accent-blue)">
-            <div class="stat-label">Capital Deployed</div>
-            <div class="stat-value" id="statCapital">₹0</div>
-            <div class="stat-sub" id="statCapitalSub">0 positions</div>
+
+        <!-- Risk Budget -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-red);"></div> Risk Budget</div>
+            </div>
+            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Exposed Risk</span>
+                    <span class="stat-value" id="exposedRiskBadge" style="font-size:0.85rem; color:#f6ad55;">₹0</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Consumed Risk</span>
+                    <span class="stat-value" id="consumedRiskBadge" style="font-size:0.85rem; color:#fc8181;">₹0</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Budget</span>
+                    <span class="stat-value" id="riskBudgetBadge" style="font-size:0.85rem; color:#68d391;">₹0 / ₹0</span>
+                </div>
+            </div>
         </div>
-        <div class="stat-card fade-in" style="--accent-color: var(--accent-yellow)">
-            <div class="stat-label">Market Clock</div>
-            <div class="stat-value" id="marketClock">—</div>
-            <div class="stat-sub" id="marketClockSub">Checking...</div>
+
+        <!-- Market Clock -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> Market Clock</div>
+            </div>
+            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px; align-items:center; justify-content:center;">
+                <div class="stat-value" id="marketClock" style="font-size:1.8rem;">—</div>
+                <div class="stat-sub" id="marketClockSub" style="font-size:0.75rem;">Checking...</div>
+            </div>
         </div>
+
     </div>
 
     <div class="section-card fixed-card fade-in">
@@ -490,7 +546,7 @@
                     totalMargin += lev > 0 ? notional / lev : notional;
                 });
                 document.getElementById('statCapital').textContent = '\u20B9' + Math.round(totalMargin).toLocaleString('en-IN');
-                document.getElementById('statCapitalSub').textContent = 'Notional: \u20B9' + Math.round(totalNotional).toLocaleString('en-IN');
+                document.getElementById('statCapitalSub').textContent = '\u20B9' + Math.round(totalNotional).toLocaleString('en-IN');
 
                 // Enable/disable Square Off button based on open positions
                 currentPositions = positions;
@@ -502,23 +558,27 @@
                 const pnlEl = document.getElementById('statPnl');
                 pnlEl.textContent = fmtPnl(netDayPnl);
                 pnlEl.className = 'stat-value ' + (netDayPnl >= 0 ? 'positive' : 'negative');
-                document.getElementById('statPnlSub').textContent =
-                    'R: ' + fmtPnl(realizedPnl) + '  |  U: ' + fmtPnl(unrealizedPnl);
+                const realEl = document.getElementById('statRealized');
+                realEl.textContent = fmtPnl(realizedPnl);
+                realEl.className = 'stat-value ' + (realizedPnl >= 0 ? 'positive' : 'negative');
+                const unrealEl = document.getElementById('statUnrealized');
+                unrealEl.textContent = fmtPnl(unrealizedPnl);
+                unrealEl.className = 'stat-value ' + (unrealizedPnl >= 0 ? 'positive' : 'negative');
                 document.getElementById('positionsBadge').textContent = positions.length + ' active';
-                // Risk budget badges
+                // Risk budget
                 const openRisk = data.openRisk || 0;
                 const consumedRisk = data.consumedRisk || 0;
                 const maxDailyLoss = data.maxDailyLoss || 0;
                 const totalRisk = openRisk + consumedRisk;
-                document.getElementById('exposedRiskBadge').textContent = 'Exposed Risk: ₹' + Math.round(openRisk);
-                document.getElementById('consumedRiskBadge').textContent = 'Consumed Risk: ₹' + Math.round(consumedRisk);
+                document.getElementById('exposedRiskBadge').textContent = '\u20B9' + Math.round(openRisk).toLocaleString('en-IN');
+                document.getElementById('consumedRiskBadge').textContent = '\u20B9' + Math.round(consumedRisk).toLocaleString('en-IN');
                 const budgetBadge = document.getElementById('riskBudgetBadge');
-                budgetBadge.textContent = 'Risk Budget: ₹' + Math.round(totalRisk) + ' / ₹' + Math.round(maxDailyLoss);
+                budgetBadge.textContent = '\u20B9' + Math.round(totalRisk).toLocaleString('en-IN') + ' / \u20B9' + Math.round(maxDailyLoss).toLocaleString('en-IN');
                 if (maxDailyLoss > 0) {
                     const pct = totalRisk / maxDailyLoss;
-                    if (pct >= 1) { budgetBadge.style.color = '#fc8181'; budgetBadge.style.background = 'rgba(252,129,129,0.10)'; budgetBadge.style.borderColor = 'rgba(252,129,129,0.25)'; }
-                    else if (pct >= 0.8) { budgetBadge.style.color = '#f6ad55'; budgetBadge.style.background = 'rgba(246,173,85,0.10)'; budgetBadge.style.borderColor = 'rgba(246,173,85,0.25)'; }
-                    else { budgetBadge.style.color = '#68d391'; budgetBadge.style.background = 'rgba(104,211,145,0.10)'; budgetBadge.style.borderColor = 'rgba(104,211,145,0.25)'; }
+                    if (pct >= 1) { budgetBadge.style.color = '#fc8181'; }
+                    else if (pct >= 0.8) { budgetBadge.style.color = '#f6ad55'; }
+                    else { budgetBadge.style.color = '#68d391'; }
                 }
                 allPositions = positions;
                 updatePosSymbolFilter(positions);
