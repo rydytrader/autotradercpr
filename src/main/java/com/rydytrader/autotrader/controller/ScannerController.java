@@ -312,7 +312,7 @@ public class ScannerController {
         for (Map<String, Object> card : getWatchlist()) {
             Object sym = card.get("symbol");
             if (sym != null) {
-                String s = sym.toString().replaceAll("-EQ$", "");
+                String s = sym.toString().replaceAll("-EQ$", "").replace("-", "_");
                 csv.append(s).append(",");
             }
         }
