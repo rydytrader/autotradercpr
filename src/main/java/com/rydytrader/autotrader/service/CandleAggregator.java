@@ -29,6 +29,7 @@ public class CandleAggregator {
 
     // Day open price per symbol
     private final ConcurrentHashMap<String, Double> dayOpen = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Double> firstCandleClose = new ConcurrentHashMap<>();
 
     // Latest ATP per symbol (from exchange avg_trade_price)
     private final ConcurrentHashMap<String, Double> latestAtp = new ConcurrentHashMap<>();
@@ -116,6 +117,7 @@ public class CandleAggregator {
         currentCandles.clear();
         completedCandles.clear();
         dayOpen.clear();
+        firstCandleClose.clear();
         latestAtp.clear();
         latestLtp.clear();
         latestChangePct.clear();
@@ -255,7 +257,12 @@ public class CandleAggregator {
         Long prev = lastFinalizedMinute.put(symbol, candle.startMinute);
         if (prev != null && prev == candle.startMinute) return; // already finalized
 
-        // Add to completed candles buffer (keep last 20)
+        // Capture first candle close of the day (only once per symbol per day)
+        if (candle.startMinute >= 555 && candle.close > 0) { // 555 = 9:15 AM
+            firstCandleClose.putIfAbsent(symbol, candle.close);
+        }
+
+        // Add to completed candles buffer (keep last 30)
         completedCandles.computeIfAbsent(symbol, k -> new ConcurrentLinkedDeque<>());
         Deque<CandleBar> history = completedCandles.get(symbol);
         history.addLast(candle);
@@ -284,6 +291,11 @@ public class CandleAggregator {
 
     public double getDayOpen(String symbol) {
         return dayOpen.getOrDefault(symbol, 0.0);
+    }
+
+    /** Get the close price of the first completed candle of the day for a symbol. */
+    public double getFirstCandleClose(String symbol) {
+        return firstCandleClose.getOrDefault(symbol, 0.0);
     }
 
     public double getAtp(String symbol) {
@@ -381,6 +393,7 @@ public class CandleAggregator {
     private void clearDaily() {
         currentCandles.clear();
         dayOpen.clear();
+        firstCandleClose.clear();
         latestAtp.clear();
         latestLtp.clear();
         latestChangePct.clear();
@@ -409,6 +422,7 @@ public class CandleAggregator {
         currentCandles.clear();
         completedCandles.clear();
         dayOpen.clear();
+        firstCandleClose.clear();
         latestAtp.clear();
         latestLtp.clear();
         latestChangePct.clear();

@@ -344,6 +344,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         payload.put("avgVolume", candleAggregator.getAvgVolume(fyersSymbol, riskSettings.getVolumeLookback()));
         payload.put("atr", atr);
         payload.put("dayOpen", candleAggregator.getDayOpen(fyersSymbol));
+        payload.put("firstCandleClose", candleAggregator.getFirstCandleClose(fyersSymbol));
         payload.put("probability", prob);
         payload.put("r1", levels.getR1());
         payload.put("r2", levels.getR2());

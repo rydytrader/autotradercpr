@@ -191,14 +191,16 @@ public class SignalProcessor {
             double movePct = Math.max(moveFromOpen, moveFromPdc) * 100;
             String moveSource = moveFromOpen >= moveFromPdc ? "day open " + fmt(dayOpen) : "PDC " + fmt(pdc);
             boolean sessionMoveExceeded = Math.max(moveFromOpen, moveFromPdc) > sessionMoveLimit;
-            // Gap check: first candle or any candle closing beyond R2 (buy) or S2 (sell) = extended move
-            boolean gapBeyondR2S2 = (isBuy && r2 > 0 && close > r2) || (!isBuy && s2 > 0 && close < s2);
+            // Gap check: first candle of the day closed beyond R2 (buy) or S2 (sell) = gap-up/gap-down
+            double firstClose = dbl(alert, "firstCandleClose");
+            boolean gapBeyondR2S2 = (isBuy && r2 > 0 && firstClose > 0 && firstClose > r2)
+                                 || (!isBuy && s2 > 0 && firstClose > 0 && firstClose < s2);
 
             if (sessionMoveExceeded || gapBeyondR2S2) {
                 int reduced = Math.max(1, qty / 2);
                 String reason = sessionMoveExceeded
                     ? "moved " + fmt(movePct) + "% from " + moveSource + " > " + fmt(riskSettings.getSessionMoveLimit()) + "% limit"
-                    : "price " + fmt(close) + (isBuy ? " above R2 " + fmt(r2) : " below S2 " + fmt(s2)) + " (gap/extended move)";
+                    : "1st candle close " + fmt(firstClose) + (isBuy ? " above R2 " + fmt(r2) : " below S2 " + fmt(s2)) + " (gap/extended move)";
                 qtyLog = "[INFO] " + symbol + " " + setup + " qty halved (" + reason + "): " + qty + " -> " + reduced;
                 qty = reduced;
             }
