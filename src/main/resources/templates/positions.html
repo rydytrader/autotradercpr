@@ -165,7 +165,7 @@
                     <span class="stat-value" id="statCapital" style="font-size:1rem;">₹0</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Notional</span>
+                    <span class="stat-label" style="margin:0;">Leveraged Capital</span>
                     <span class="stat-value" id="statCapitalSub" style="font-size:0.85rem; color:var(--text-muted);">₹0</span>
                 </div>
             </div>
@@ -534,15 +534,15 @@
                 document.getElementById('statCount').textContent = positions.length;
 
                 // Capital deployed: margin = notional / leverage
-                let totalNotional = 0, totalMargin = 0;
+                let totalLeveraged Capital = 0, totalMargin = 0;
                 positions.forEach(p => {
                     let notional = Math.abs(p.qty) * p.avgPrice;
                     let lev = p.leverage || 1;
-                    totalNotional += notional;
+                    totalLeveraged Capital += notional;
                     totalMargin += lev > 0 ? notional / lev : notional;
                 });
                 document.getElementById('statCapital').textContent = '\u20B9' + Math.round(totalMargin).toLocaleString('en-IN');
-                document.getElementById('statCapitalSub').textContent = '\u20B9' + Math.round(totalNotional).toLocaleString('en-IN');
+                document.getElementById('statCapitalSub').textContent = '\u20B9' + Math.round(totalLeveraged Capital).toLocaleString('en-IN');
 
                 // Enable/disable Square Off button based on open positions
                 currentPositions = positions;
