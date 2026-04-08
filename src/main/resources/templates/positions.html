@@ -152,34 +152,41 @@
 
         <!-- Open Positions -->
         <div class="section-card" style="margin-bottom:0;">
-            <div style="padding:20px 22px; text-align:center;">
-                <div class="stat-label" style="margin-bottom:8px;">Open Positions</div>
-                <div class="stat-value" id="statCount" style="font-size:2rem; color:var(--accent-cyan);">0</div>
-                <div class="stat-sub" style="margin-top:8px;">
-                    Capital: <span id="statCapital">₹0</span>
-                    <span style="color:var(--text-muted); margin-left:4px;" id="statCapitalSub">Notional: ₹0</span>
+            <div style="padding:16px 22px; display:flex; align-items:center; gap:20px;">
+                <div>
+                    <div class="stat-label" style="margin-bottom:4px;">Open</div>
+                    <div class="stat-value" id="statCount" style="font-size:2rem; color:var(--accent-cyan);">0</div>
+                </div>
+                <div style="border-left:1px solid var(--border); padding-left:16px; font-family:var(--font-mono); font-size:0.75rem; color:var(--text-secondary); display:flex; flex-direction:column; gap:4px;">
+                    <div>Capital: <span id="statCapital" style="color:var(--text-primary);">₹0</span></div>
+                    <div id="statCapitalSub" style="color:var(--text-muted); font-size:0.68rem;">Notional: ₹0</div>
                 </div>
             </div>
         </div>
 
         <!-- Net Day P&L -->
         <div class="section-card" style="margin-bottom:0;">
-            <div style="padding:20px 22px; text-align:center;">
-                <div class="stat-label" style="margin-bottom:8px;">Net Day P&amp;L</div>
-                <div class="stat-value" id="statPnl" style="font-size:2rem;">—</div>
-                <div class="stat-sub" id="statPnlSub" style="margin-top:8px;">Realized + Unrealized</div>
+            <div style="padding:16px 22px; display:flex; align-items:center; gap:20px;">
+                <div>
+                    <div class="stat-label" style="margin-bottom:4px;">Net P&amp;L</div>
+                    <div class="stat-value" id="statPnl" style="font-size:2rem;">—</div>
+                </div>
+                <div style="border-left:1px solid var(--border); padding-left:16px; font-family:var(--font-mono); font-size:0.75rem; color:var(--text-secondary);">
+                    <div id="statPnlSub">Realized + Unrealized</div>
+                </div>
             </div>
         </div>
 
         <!-- Exposed Risk -->
         <div class="section-card" style="margin-bottom:0;">
-            <div style="padding:20px 22px; text-align:center;">
-                <div class="stat-label" style="margin-bottom:8px;">Exposed Risk</div>
-                <div class="stat-value" id="exposedRiskVal" style="font-size:2rem; color:#f6ad55;">₹0</div>
-                <div class="stat-sub" style="margin-top:8px;">
-                    Consumed: <span id="consumedRiskVal" style="color:#fc8181;">₹0</span>
-                    <span style="color:var(--text-muted); margin-left:6px;">Budget:</span>
-                    <span id="riskBudgetVal" style="color:#68d391;">—</span>
+            <div style="padding:16px 22px; display:flex; align-items:center; gap:20px;">
+                <div>
+                    <div class="stat-label" style="margin-bottom:4px;">Exposed</div>
+                    <div class="stat-value" id="exposedRiskVal" style="font-size:2rem; color:#f6ad55;">₹0</div>
+                </div>
+                <div style="border-left:1px solid var(--border); padding-left:16px; font-family:var(--font-mono); font-size:0.75rem; color:var(--text-secondary); display:flex; flex-direction:column; gap:4px;">
+                    <div>Consumed: <span id="consumedRiskVal" style="color:#fc8181;">₹0</span></div>
+                    <div>Budget: <span id="riskBudgetVal" style="color:#68d391;">—</span></div>
                 </div>
             </div>
         </div>
