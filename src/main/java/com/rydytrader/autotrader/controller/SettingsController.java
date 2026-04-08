@@ -84,6 +84,7 @@ public class SettingsController {
         result.put("narrowCprMaxWidth", riskSettings.getNarrowCprMaxWidth());
         result.put("insideCprMaxWidth", riskSettings.getInsideCprMaxWidth());
         result.put("scanMinPrice", riskSettings.getScanMinPrice());
+        result.put("openingRangeMinutes", riskSettings.getOpeningRangeMinutes());
         result.put("scanIncludeNS", riskSettings.isScanIncludeNS());
         result.put("scanIncludeNL", riskSettings.isScanIncludeNL());
         result.put("scanIncludeIS", riskSettings.isScanIncludeIS());
@@ -151,6 +152,7 @@ public class SettingsController {
             if (body.containsKey("narrowCprMaxWidth")) riskSettings.setNarrowCprMaxWidth(Double.parseDouble(body.get("narrowCprMaxWidth").toString()));
             if (body.containsKey("insideCprMaxWidth")) riskSettings.setInsideCprMaxWidth(Double.parseDouble(body.get("insideCprMaxWidth").toString()));
             if (body.containsKey("scanMinPrice")) riskSettings.setScanMinPrice(Double.parseDouble(body.get("scanMinPrice").toString()));
+            if (body.containsKey("openingRangeMinutes")) riskSettings.setOpeningRangeMinutes(Integer.parseInt(body.get("openingRangeMinutes").toString()));
             if (body.containsKey("scanIncludeNS")) riskSettings.setScanIncludeNS(Boolean.parseBoolean(body.get("scanIncludeNS").toString()));
             if (body.containsKey("scanIncludeNL")) riskSettings.setScanIncludeNL(Boolean.parseBoolean(body.get("scanIncludeNL").toString()));
             if (body.containsKey("scanIncludeIS")) riskSettings.setScanIncludeIS(Boolean.parseBoolean(body.get("scanIncludeIS").toString()));

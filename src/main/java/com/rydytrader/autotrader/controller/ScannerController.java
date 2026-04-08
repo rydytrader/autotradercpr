@@ -140,6 +140,24 @@ public class ScannerController {
         card.put("dailyTrend", weeklyCprService.getDailyTrend(fyersSymbol));
         card.put("probability", weeklyCprService.getProbability(fyersSymbol));
 
+        // Opening Range status
+        String orStatus = null;
+        if (riskSettings.getOpeningRangeMinutes() > 0) {
+            double orHigh = candleAggregator.getOpeningRangeHigh(fyersSymbol);
+            double orLow  = candleAggregator.getOpeningRangeLow(fyersSymbol);
+            boolean orLocked = candleAggregator.isOpeningRangeLocked(fyersSymbol);
+            if (!orLocked) {
+                orStatus = "FORMING";
+            } else if (orHigh > 0 && orLow > 0) {
+                if (ltp > orHigh) orStatus = "BULLISH";
+                else if (ltp < orLow) orStatus = "BEARISH";
+                else orStatus = "NEUTRAL";
+            }
+            card.put("orHigh", r(orHigh));
+            card.put("orLow", r(orLow));
+        }
+        card.put("orStatus", orStatus);
+
         // CPR levels
         Map<String, Object> lvls = new LinkedHashMap<>();
         lvls.put("r4", r(levels.getR4())); lvls.put("r3", r(levels.getR3()));

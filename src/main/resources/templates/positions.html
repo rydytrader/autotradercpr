@@ -121,7 +121,7 @@
             <div class="ticker-track" id="tickerTrack"></div>
         </div>
         <div class="nav-right">
-            <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
+<button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
             <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
         </div>
     </div>
@@ -157,7 +157,8 @@
                 <div class="stat-value" id="statCount" style="font-size:2rem; color:var(--accent-cyan);">0</div>
                 <div class="stat-sub" style="margin-top:8px;">
                     Capital: <span id="statCapital">₹0</span>
-                    <span style="color:var(--text-muted); margin-left:4px;" id="statCapitalSub">Notional: ₹0</span>
+                    <span style="color:var(--border); margin:0 6px;">|</span>
+                    <span style="color:var(--text-muted);" id="statCapitalSub">Notional: ₹0</span>
                 </div>
             </div>
         </div>
@@ -296,6 +297,7 @@
 
 <script src="/js/common.js?v=5"></script>
 <script src="/js/ticker.js?v=3"></script>
+
 <script>
     // ── FORMATTERS ────────────────────────────────
     const inr = v => new Intl.NumberFormat('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}).format(Math.abs(v));
@@ -525,7 +527,7 @@
                 pnlEl.textContent = fmtPnl(netDayPnl);
                 pnlEl.className = 'stat-value ' + (netDayPnl >= 0 ? 'positive' : 'negative');
                 document.getElementById('statPnlSub').textContent =
-                    'R: ' + fmtPnl(realizedPnl) + '  |  U: ' + fmtPnl(unrealizedPnl);
+                    'Realized: ' + fmtPnl(realizedPnl) + '  |  Unrealized: ' + fmtPnl(unrealizedPnl);
                 document.getElementById('positionsBadge').textContent = positions.length + ' active';
                 // Risk budget badges
                 const openRisk = data.openRisk || 0;
@@ -543,6 +545,7 @@
                     else { budgetEl.style.color = '#68d391'; }
                 }
                 allPositions = positions;
+
                 updatePosSymbolFilter(positions);
                 renderPositionsTable();
 
@@ -756,8 +759,9 @@
                             }
                             var subEl = document.getElementById('statPnlSub');
                             if (subEl) {
-                                subEl.textContent = 'R: ' + fmtPnl(data.realizedPnl || 0) + '  |  U: ' + fmtPnl(data.unrealizedPnl || 0);
+                                subEl.textContent = 'Realized: ' + fmtPnl(data.realizedPnl || 0) + '  |  Unrealized: ' + fmtPnl(data.unrealizedPnl || 0);
                             }
+
                         }
                     } catch (e) { /* ignore parse errors */ }
                 });

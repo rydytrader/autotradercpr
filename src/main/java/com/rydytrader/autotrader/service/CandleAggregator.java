@@ -1,5 +1,6 @@
 package com.rydytrader.autotrader.service;
 
+import com.rydytrader.autotrader.store.RiskSettingsStore;
 import com.rydytrader.autotrader.websocket.HsmBinaryParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,6 +32,11 @@ public class CandleAggregator {
     private final ConcurrentHashMap<String, Double> dayOpen = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Double> firstCandleClose = new ConcurrentHashMap<>();
 
+    // Opening Range tracking
+    private final ConcurrentHashMap<String, Double> openingRangeHigh = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Double> openingRangeLow = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Boolean> openingRangeLocked = new ConcurrentHashMap<>();
+
     // Latest ATP per symbol (from exchange avg_trade_price)
     private final ConcurrentHashMap<String, Double> latestAtp = new ConcurrentHashMap<>();
 
@@ -43,12 +49,18 @@ public class CandleAggregator {
     // Latest change % per symbol
     private final ConcurrentHashMap<String, Double> latestChangePct = new ConcurrentHashMap<>();
 
+    private final RiskSettingsStore riskSettings;
+
     // Candle close listeners
     private final List<CandleCloseListener> listeners = new CopyOnWriteArrayList<>();
 
     // Last candle close cycle stats
     private volatile int lastCycleProcessed = 0;
     private volatile String lastCycleTime = "";
+
+    public CandleAggregator(RiskSettingsStore riskSettings) {
+        this.riskSettings = riskSettings;
+    }
 
     // Daily reset tracker
     private volatile String currentTradingDate = "";
@@ -143,6 +155,25 @@ public class CandleAggregator {
 
         // Track day open from HSM open_price field
         if (raw.open > 0) dayOpen.putIfAbsent(symbol, raw.open);
+
+        // Track Opening Range high/low from live ticks
+        int orMinutes = riskSettings.getOpeningRangeMinutes();
+        if (orMinutes > 0 && !openingRangeLocked.getOrDefault(symbol, false)) {
+            long orEnd = MarketHolidayService.MARKET_OPEN_MINUTE + orMinutes;
+            if (nowMinute >= MarketHolidayService.MARKET_OPEN_MINUTE && nowMinute < orEnd) {
+                openingRangeHigh.merge(symbol, ltp, Math::max);
+                openingRangeLow.merge(symbol, ltp, Math::min);
+            } else if (nowMinute >= orEnd) {
+                // OR window passed — if we have data, lock it; if not (late start), build from day high/low
+                if (!openingRangeHigh.containsKey(symbol) && raw.high > 0 && raw.low > 0) {
+                    openingRangeHigh.put(symbol, raw.high);
+                    openingRangeLow.put(symbol, raw.low);
+                    log.info("[CandleAggregator] {} OR late-start fallback: using day high/low H={} L={}",
+                        symbol, raw.high, raw.low);
+                }
+                openingRangeLocked.put(symbol, true);
+            }
+        }
 
         // Track ATP from exchange avg_trade_price
         if (raw.atp > 0) latestAtp.put(symbol, raw.atp);
@@ -262,6 +293,20 @@ public class CandleAggregator {
             firstCandleClose.putIfAbsent(symbol, candle.close);
         }
 
+        // Update Opening Range from completed candle high/low
+        int orMinutes = riskSettings.getOpeningRangeMinutes();
+        if (orMinutes > 0 && !openingRangeLocked.getOrDefault(symbol, false)) {
+            long orEnd = MarketHolidayService.MARKET_OPEN_MINUTE + orMinutes;
+            if (candle.startMinute >= MarketHolidayService.MARKET_OPEN_MINUTE && candle.startMinute < orEnd) {
+                if (candle.high > 0) openingRangeHigh.merge(symbol, candle.high, Math::max);
+                if (candle.low > 0) openingRangeLow.merge(symbol, candle.low, Math::min);
+            }
+            // Lock OR when candle starts at or after OR end
+            if (candle.startMinute >= orEnd) {
+                openingRangeLocked.put(symbol, true);
+            }
+        }
+
         // Add to completed candles buffer (keep last 30)
         completedCandles.computeIfAbsent(symbol, k -> new ConcurrentLinkedDeque<>());
         Deque<CandleBar> history = completedCandles.get(symbol);
@@ -296,6 +341,21 @@ public class CandleAggregator {
     /** Get the close price of the first completed candle of the day for a symbol. */
     public double getFirstCandleClose(String symbol) {
         return firstCandleClose.getOrDefault(symbol, 0.0);
+    }
+
+    /** Opening Range high (highest price in first N minutes). */
+    public double getOpeningRangeHigh(String symbol) {
+        return openingRangeHigh.getOrDefault(symbol, 0.0);
+    }
+
+    /** Opening Range low (lowest price in first N minutes). */
+    public double getOpeningRangeLow(String symbol) {
+        return openingRangeLow.getOrDefault(symbol, 0.0);
+    }
+
+    /** Whether the Opening Range period has completed and range is locked. */
+    public boolean isOpeningRangeLocked(String symbol) {
+        return openingRangeLocked.getOrDefault(symbol, false);
     }
 
     public double getAtp(String symbol) {
@@ -394,6 +454,9 @@ public class CandleAggregator {
         currentCandles.clear();
         dayOpen.clear();
         firstCandleClose.clear();
+        openingRangeHigh.clear();
+        openingRangeLow.clear();
+        openingRangeLocked.clear();
         latestAtp.clear();
         latestLtp.clear();
         latestChangePct.clear();

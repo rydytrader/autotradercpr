@@ -95,7 +95,7 @@
 
         .scan-data-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr 1fr;
             gap: 0;
             padding: 6px 16px 10px;
         }
@@ -288,7 +288,7 @@
             <div class="ticker-track" id="tickerTrack"></div>
         </div>
         <div class="nav-right">
-            <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">&#127769;</button>
+<button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">&#127769;</button>
             <button class="logout-btn" title="Logout" onclick="logout()">&#9211;</button>
         </div>
     </div>
@@ -419,6 +419,7 @@
 
 <script src="/js/common.js?v=5"></script>
 <script src="/js/ticker.js?v=3"></script>
+
 <script>
 (function() {
     var allData = [];
@@ -652,6 +653,7 @@
             + '  <div class="scan-data-item"><div class="scan-data-label">Day Open</div><div class="scan-data-value">' + fmt(d.dayOpen) + '</div></div>'
             + '  <div class="scan-data-item"><div class="scan-data-label">ATP</div><div class="scan-data-value">' + fmt(d.atp) + '</div></div>'
             + '  <div class="scan-data-item"><div class="scan-data-label">ATR</div><div class="scan-data-value">' + fmt(d.atr) + '</div></div>'
+            + (d.orStatus ? '  <div class="scan-data-item"><div class="scan-data-label">OR</div><div class="scan-data-value">' + d.orStatus + '</div></div>' : '')
             + '</div>'
             + '<div class="scan-trend-row">'
             + '  <span class="scan-trend"><span class="label">W:</span> <span class="' + wClass + '">' + wArrow + ' ' + wLabel + '</span></span>'

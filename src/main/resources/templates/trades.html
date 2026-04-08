@@ -66,7 +66,7 @@
             <div class="ticker-track" id="tickerTrack"></div>
         </div>
         <div class="nav-right">
-            <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
+<button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
             <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
         </div>
     </div>
@@ -81,28 +81,45 @@
         </div>
     </div>
 
-    <!-- Summary Stats -->
-    <div class="stat-grid">
-        <div class="stat-card fade-in" style="--accent-color: var(--accent-blue)">
-            <div class="stat-label">Total Trades</div>
-            <div class="stat-value" id="statTotal">—</div>
-            <div class="stat-sub">Today</div>
+    <!-- Summary Stats — Hero Cards -->
+    <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:20px;" class="fade-in">
+
+        <!-- Total Trades -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div style="padding:20px 22px; text-align:center;">
+                <div class="stat-label" style="margin-bottom:8px;">Total Trades</div>
+                <div class="stat-value" id="statTotal" style="font-size:2rem; color:var(--accent-blue);">0</div>
+                <div class="stat-sub" style="margin-top:8px;">Today</div>
+            </div>
         </div>
-        <div class="stat-card fade-in" style="--accent-color: var(--accent-green)">
-            <div class="stat-label">Profitable</div>
-            <div class="stat-value positive" id="statWins">—</div>
-            <div class="stat-sub" id="statWinsSub">Win count</div>
+
+        <!-- Profitable -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div style="padding:20px 22px; text-align:center;">
+                <div class="stat-label" style="margin-bottom:8px;">Profitable</div>
+                <div class="stat-value positive" id="statWins" style="font-size:2rem;">—</div>
+                <div class="stat-sub" id="statWinsSub" style="margin-top:8px;">Win count</div>
+            </div>
         </div>
-        <div class="stat-card fade-in" style="--accent-color: var(--accent-red)">
-            <div class="stat-label">Loss</div>
-            <div class="stat-value negative" id="statLosses">—</div>
-            <div class="stat-sub" id="statLossesSub">Loss count</div>
+
+        <!-- Loss -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div style="padding:20px 22px; text-align:center;">
+                <div class="stat-label" style="margin-bottom:8px;">Loss</div>
+                <div class="stat-value negative" id="statLosses" style="font-size:2rem;">—</div>
+                <div class="stat-sub" id="statLossesSub" style="margin-top:8px;">Loss count</div>
+            </div>
         </div>
-        <div class="stat-card fade-in" style="--accent-color: var(--accent-cyan)">
-            <div class="stat-label">Net P&amp;L</div>
-            <div class="stat-value" id="statNetPnl">—</div>
-            <div class="stat-sub" id="statNetPnlSub">Realised today</div>
+
+        <!-- Net P&L -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div style="padding:20px 22px; text-align:center;">
+                <div class="stat-label" style="margin-bottom:8px;">Net P&amp;L</div>
+                <div class="stat-value" id="statNetPnl" style="font-size:2rem;">—</div>
+                <div class="stat-sub" id="statNetPnlSub" style="margin-top:8px;">Realised today</div>
+            </div>
         </div>
+
     </div>
 
     <!-- Trade Table -->
@@ -187,6 +204,7 @@
 
 <script src="/js/common.js?v=5"></script>
 <script src="/js/ticker.js?v=3"></script>
+
 <script>
     // ── FORMATTERS ────────────────────────────────
     const inr = v => new Intl.NumberFormat('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}).format(Math.abs(v));
@@ -298,6 +316,7 @@
         const totalProfit = trades.filter(t => t.result === 'PROFIT').reduce((sum, t) => sum + (t.pnl || 0), 0);
         const totalLoss = trades.filter(t => t.result === 'LOSS').reduce((sum, t) => sum + (t.pnl || 0), 0);
         const netPnl = trades.reduce((sum, t) => sum + (t.netPnl != null ? t.netPnl : t.pnl || 0), 0);
+
 
         document.getElementById('statTotal').textContent  = trades.length;
         document.getElementById('statWins').textContent   = fmtPnl(totalProfit);

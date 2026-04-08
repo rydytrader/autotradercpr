@@ -442,6 +442,7 @@ button.admin-only.admin-visible { display: inline-flex !important; }
     transform: scale(1.05);
 }
 
+
 /* ── LAYOUT ────────────────────────────── */
 .page-wrap { width: 100%; max-width: 100%; margin: 0; padding: 24px 2rem 60px; }
 

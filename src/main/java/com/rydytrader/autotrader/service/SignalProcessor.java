@@ -16,13 +16,16 @@ public class SignalProcessor {
     private final EventService     eventService;
     private final QuantityService  quantityService;
     private final MarketDataService marketDataService;
+    private final CandleAggregator candleAggregator;
 
     public SignalProcessor(RiskSettingsStore riskSettings, EventService eventService,
-                           QuantityService quantityService, MarketDataService marketDataService) {
+                           QuantityService quantityService, MarketDataService marketDataService,
+                           CandleAggregator candleAggregator) {
         this.riskSettings = riskSettings;
         this.eventService = eventService;
         this.quantityService = quantityService;
         this.marketDataService = marketDataService;
+        this.candleAggregator = candleAggregator;
     }
 
     public ProcessedSignal process(Map<String, Object> alert) {
@@ -138,6 +141,35 @@ public class SignalProcessor {
             }
         }
 
+        // ── 4e2. Opening Range gap filter — skip counter-OR trades when first candle closed beyond R2/S2 ──
+        int orMinutes = riskSettings.getOpeningRangeMinutes();
+        if (orMinutes > 0) {
+            double firstClose = candleAggregator.getFirstCandleClose(symbol);
+            boolean gapUp   = firstClose > 0 && r2 > 0 && firstClose >= r2;
+            boolean gapDown = firstClose > 0 && s2 > 0 && firstClose <= s2;
+            if (gapUp || gapDown) {
+                if (!candleAggregator.isOpeningRangeLocked(symbol)) {
+                    return ProcessedSignal.rejected(setup, symbol,
+                        "Gap " + (gapUp ? "up" : "down") + " detected (1st candle close " + fmt(firstClose)
+                        + (gapUp ? " >= R2 " + fmt(r2) : " <= S2 " + fmt(s2))
+                        + ") but Opening Range still forming — skipped");
+                }
+                double orHigh = candleAggregator.getOpeningRangeHigh(symbol);
+                double orLow  = candleAggregator.getOpeningRangeLow(symbol);
+                boolean orBullish = close > orHigh;
+                boolean orBearish = close < orLow;
+                boolean aligned = (isBuy && orBullish) || (!isBuy && orBearish);
+                if (!aligned) {
+                    String orStatus = orBullish ? "Bullish" : orBearish ? "Bearish" : "Neutral";
+                    return ProcessedSignal.rejected(setup, symbol,
+                        "Gap " + (gapUp ? "up" : "down") + " (1st close " + fmt(firstClose) + ") — OR " + orStatus
+                        + " (H:" + fmt(orHigh) + " L:" + fmt(orLow) + ") not aligned with " + signal + " — skipped");
+                }
+                eventService.log("[INFO] " + symbol + " " + setup + " gap " + (gapUp ? "up" : "down")
+                    + " — OR " + (orBullish ? "Bullish" : "Bearish") + " confirmed, proceeding");
+            }
+        }
+
         // ── 4f. Compute target ──────────────────────────────────────────────────
         double[] targets = computeTargets(setup, close, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
         double defaultTarget = targets[0];
@@ -184,7 +216,7 @@ public class SignalProcessor {
             qty = Math.max(1, qty / 2);
             qtyLog = "[INFO] " + symbol + " " + setup + " qty halved (extreme level): " + baseQty + " -> " + qty;
         }
-        // ── Session move limit: reduce qty if price moved too far from day open/PDC OR gapped above R2/below S2 ──
+        // ── Session move limit: reduce qty if price moved too far from day open/PDC ──
         double sessionMoveLimit = riskSettings.getSessionMoveLimit() / 100.0; // e.g. 2.0 → 0.02
         if (sessionMoveLimit > 0) {
             double pivot = (tc + bc) / 2.0;
@@ -194,17 +226,10 @@ public class SignalProcessor {
             double movePct = Math.max(moveFromOpen, moveFromPdc) * 100;
             String moveSource = moveFromOpen >= moveFromPdc ? "day open " + fmt(dayOpen) : "PDC " + fmt(pdc);
             boolean sessionMoveExceeded = Math.max(moveFromOpen, moveFromPdc) > sessionMoveLimit;
-            // Gap check: first candle opened OR closed beyond R2 (buy) or S2 (sell) = gap-up/gap-down
-            double firstClose = dbl(alert, "firstCandleClose");
-            boolean gapBeyondR2S2 = riskSettings.isEnableGapCheck()
-                && ((isBuy && r2 > 0 && ((firstClose > 0 && firstClose > r2) || (dayOpen > 0 && dayOpen > r2)))
-                 || (!isBuy && s2 > 0 && ((firstClose > 0 && firstClose < s2) || (dayOpen > 0 && dayOpen < s2))));
 
-            if (sessionMoveExceeded || gapBeyondR2S2) {
+            if (sessionMoveExceeded) {
                 int reduced = Math.max(1, qty / 2);
-                String reason = sessionMoveExceeded
-                    ? "moved " + fmt(movePct) + "% from " + moveSource + " > " + fmt(riskSettings.getSessionMoveLimit()) + "% limit"
-                    : "1st candle open " + fmt(dayOpen) + " / close " + fmt(firstClose) + (isBuy ? " above R2 " + fmt(r2) : " below S2 " + fmt(s2)) + " (gap/extended move)";
+                String reason = "moved " + fmt(movePct) + "% from " + moveSource + " > " + fmt(riskSettings.getSessionMoveLimit()) + "% limit";
                 qtyLog = "[INFO] " + symbol + " " + setup + " qty halved (" + reason + "): " + qty + " -> " + reduced;
                 qty = reduced;
             }
@@ -237,6 +262,22 @@ public class SignalProcessor {
                 int reduced = Math.max(2, ((int)(qty * factor) / 2) * 2);
                 eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (R4/S4 ×" + factor + "): " + qty + " -> " + reduced);
                 qty = reduced;
+            }
+        }
+
+        // ── 4i4. Opening Range neutral qty reduction — half qty if gap day and price inside OR range ──
+        if (orMinutes > 0 && candleAggregator.isOpeningRangeLocked(symbol)) {
+            double firstCloseForOr = candleAggregator.getFirstCandleClose(symbol);
+            boolean isGapDay = (firstCloseForOr > 0 && r2 > 0 && firstCloseForOr >= r2)
+                            || (firstCloseForOr > 0 && s2 > 0 && firstCloseForOr <= s2);
+            if (isGapDay) {
+                double orHigh = candleAggregator.getOpeningRangeHigh(symbol);
+                double orLow  = candleAggregator.getOpeningRangeLow(symbol);
+                if (orHigh > 0 && orLow > 0 && close >= orLow && close <= orHigh) {
+                    int reduced = Math.max(2, (qty / 4) * 2); // halve and round to even
+                    eventService.log("[INFO] " + symbol + " " + setup + " qty halved (gap day, inside OR range H:" + fmt(orHigh) + " L:" + fmt(orLow) + "): " + qty + " -> " + reduced);
+                    qty = reduced;
+                }
             }
         }
 

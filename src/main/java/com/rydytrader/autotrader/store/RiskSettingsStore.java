@@ -80,6 +80,8 @@ public class RiskSettingsStore {
         volatile boolean scanIncludeNL = true;   // Narrow + Large Range
         volatile boolean scanIncludeIS = true;   // Inside + Small Range
         volatile boolean scanIncludeIL = false;  // Inside + Large Range
+        // Opening Range
+        volatile int openingRangeMinutes = 30; // 0=disabled, 15/30/45/60
     }
 
     private final Cfg live = new Cfg();
@@ -156,6 +158,7 @@ public class RiskSettingsStore {
     public boolean isScanIncludeNL() { return cfg().scanIncludeNL; }
     public boolean isScanIncludeIS() { return cfg().scanIncludeIS; }
     public boolean isScanIncludeIL() { return cfg().scanIncludeIL; }
+    public int getOpeningRangeMinutes()        { return cfg().openingRangeMinutes; }
     public void setSignalSource(String v)      { cfg().signalSource = v; }
     public void setScannerTimeframe(int v)     { cfg().scannerTimeframe = v; }
     public void setEnableAtpCheck(boolean v)  { cfg().enableAtpCheck = v; }
@@ -171,6 +174,7 @@ public class RiskSettingsStore {
     public void setScanIncludeNL(boolean v) { cfg().scanIncludeNL = v; }
     public void setScanIncludeIS(boolean v) { cfg().scanIncludeIS = v; }
     public void setScanIncludeIL(boolean v) { cfg().scanIncludeIL = v; }
+    public void setOpeningRangeMinutes(int v)  { cfg().openingRangeMinutes = v; }
     public void setTradingStartTime(String v)  { cfg().tradingStartTime = v; }
     public void setTradingEndTime(String v)    { cfg().tradingEndTime = v; }
     public void setTotalCapital(double v)       { cfg().totalCapital = v; }
@@ -343,6 +347,7 @@ public class RiskSettingsStore {
             upsert("scanIncludeNL", String.valueOf(c.scanIncludeNL));
             upsert("scanIncludeIS", String.valueOf(c.scanIncludeIS));
             upsert("scanIncludeIL", String.valueOf(c.scanIncludeIL));
+            upsert("openingRangeMinutes", String.valueOf(c.openingRangeMinutes));
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to save {}: {}", mode, e.getMessage());
         }
@@ -420,6 +425,7 @@ public class RiskSettingsStore {
                     case "scanIncludeNL" -> c.scanIncludeNL = Boolean.parseBoolean(v);
                     case "scanIncludeIS" -> c.scanIncludeIS = Boolean.parseBoolean(v);
                     case "scanIncludeIL" -> c.scanIncludeIL = Boolean.parseBoolean(v);
+                    case "openingRangeMinutes" -> c.openingRangeMinutes = Integer.parseInt(v);
                 }
             }
             log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} enableR4S4={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} trailingSl={}", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.enableR4S4, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.enableTrailingSl);

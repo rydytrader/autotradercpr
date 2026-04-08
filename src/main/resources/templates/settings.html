@@ -135,7 +135,7 @@
             <div class="ticker-track" id="tickerTrack"></div>
         </div>
         <div class="nav-right">
-            <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
+<button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
             <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
         </div>
     </div>
@@ -150,28 +150,46 @@
         </div>
     </div>
 
-    <!-- TODAY'S STATUS -->
-    <div class="stat-grid fade-in">
-        <div class="stat-card" style="--accent-color: var(--accent-cyan)">
-            <div class="stat-label">Today's P&L</div>
-            <div class="stat-value" id="statPnl">—</div>
-            <div class="stat-sub" id="statPnlSub">Loading...</div>
+    <!-- STATUS HERO CARDS -->
+    <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:20px;" class="fade-in">
+
+        <!-- Default SL -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div style="padding:20px 22px; text-align:center;">
+                <div class="stat-label" style="margin-bottom:8px;">Default SL</div>
+                <div class="stat-value" id="statDefaultSl" style="font-size:2rem; color:var(--accent-red);">—</div>
+                <div class="stat-sub" id="statDefaultSlSub" style="margin-top:8px;">ATR × Multiplier</div>
+                <div class="stat-sub" id="statTrailSlSub" style="margin-top:4px;">Trailing SL status</div>
+            </div>
         </div>
-        <div class="stat-card" style="--accent-color: var(--accent-red)">
-            <div class="stat-label">Risk Budget</div>
-            <div class="stat-value" id="statLossLimit">—</div>
-            <div class="stat-sub" id="statLossLimitSub">Loading...</div>
+
+        <!-- Risk Budget -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div style="padding:20px 22px; text-align:center;">
+                <div class="stat-label" style="margin-bottom:8px;">Risk Budget</div>
+                <div class="stat-value" id="statLossLimit" style="font-size:2rem; color:#f6ad55;">—</div>
+                <div class="stat-sub" id="statLossLimitSub" style="margin-top:8px;">Loading...</div>
+            </div>
         </div>
-        <div class="stat-card" style="--accent-color: var(--accent-blue)">
-            <div class="stat-label">Session Move Limit</div>
-            <div class="stat-value" id="statSessionMove">—</div>
-            <div class="stat-sub" id="statSessionMoveSub">Qty halved if exceeded</div>
+
+        <!-- Session Move Limit -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div style="padding:20px 22px; text-align:center;">
+                <div class="stat-label" style="margin-bottom:8px;">Session Move Limit</div>
+                <div class="stat-value" id="statSessionMove" style="font-size:2rem; color:var(--accent-blue);">—</div>
+                <div class="stat-sub" id="statSessionMoveSub" style="margin-top:8px;">Qty halved if exceeded</div>
+            </div>
         </div>
-        <div class="stat-card" style="--accent-color: var(--accent-green)">
-            <div class="stat-label">Trailing SL</div>
-            <div class="stat-value" id="statTrailSl">—</div>
-            <div class="stat-sub" id="statTrailSlSub">Trailing stop-loss status</div>
+
+        <!-- Signal Source -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div style="padding:20px 22px; text-align:center;">
+                <div class="stat-label" style="margin-bottom:8px;">Signal Source</div>
+                <div class="stat-value" id="statSignalSource" style="font-size:2rem; color:var(--accent-cyan);">—</div>
+                <div class="stat-sub" id="statSignalSourceSub" style="margin-top:8px;">Probabilities</div>
+            </div>
         </div>
+
     </div>
 
     <!-- TABS -->
@@ -245,10 +263,13 @@
             <div style="font-weight:700; color:#fbbf24; margin-bottom:6px;">Quantity Stacking Order</div>
             <div>1. <b>Base qty</b> — risk-based (risk per trade / SL distance) or fixed quantity</div>
             <div>2. <b>Capital cap</b> — min(base qty, capital per trade / price)</div>
-            <div>3. <b>Session move / gap</b> — ÷2 if session move > N% OR day open/1st candle close beyond R2/S2</div>
-            <div>4. <b>Probability</b> — HPT = 1×, MPT = 0.5×, LPT = 0.25×</div>
-            <div>5. <b>Level factor</b> — R3/S3 = 0.75×, R4/S4 = 0.5×</div>
-            <div style="margin-top:6px; color:var(--text-muted); font-size:0.68rem;">Each step multiplies the running qty from the previous step.</div>
+            <div>3. <b>Extreme level</b> — ÷2 if R2+/S2+ breakout</div>
+            <div>4. <b>Session move %</b> — ÷2 if price moved > N% from day open / PDC</div>
+            <div>5. <b>Probability</b> — HPT = 1×, MPT = 0.5×, LPT = 0.25×</div>
+            <div>6. <b>Level factor</b> — R3/S3 = 0.75×, R4/S4 = 0.5×</div>
+            <div>7. <b>OR inside range</b> — ÷2 if gap day and price within Opening Range</div>
+            <div style="margin-top:6px; color:var(--text-muted); font-size:0.68rem;">Each step multiplies the running qty from the previous step. Min qty = 2 (even).</div>
+            <div style="margin-top:4px; color:var(--text-muted); font-size:0.68rem;"><b>OR skip filter</b> (before qty): gap day + OR counter/neutral → trade rejected.</div>
         </div>
         <div class="section-body">
             <div class="form-grid">
@@ -299,13 +320,13 @@
                     <div class="form-hint">Enable extended levels and set qty factor (1.0 = full qty)</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Session Move Limit (%)</label>
-                    <input type="number" id="sessionMoveLimit" class="form-control" min="0" max="10" step="0.1" placeholder="2.0">
-                    <div class="form-hint">Halve quantity when session move exceeds this %. Set to 0 to disable.</div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="enableGapCheck" style="width: 16px; height: 16px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Halve qty if day open or 1st candle close beyond R2/S2 (gap check)</span>
+                    <label class="form-label">Session Move Limit</label>
+                    <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Halve qty if price moved &gt;</span>
+                        <input type="number" id="sessionMoveLimit" step="0.1" min="0" max="10" style="width:60px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;" placeholder="2.0">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">% from day open / PDC</span>
                     </div>
+                    <div class="form-hint">Set to 0 to disable. Gap days (R2/S2) are handled by Opening Range filter.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Probability Qty Factors</label>
@@ -523,6 +544,17 @@
                     <div class="form-hint">Exclude stocks below this price. Set to 0 to disable. Restart required.</div>
                 </div>
                 <div class="form-group">
+                    <label class="form-label">Opening Range</label>
+                    <select id="openingRangeMinutes" class="form-control" style="width:120px;">
+                        <option value="0">Off</option>
+                        <option value="15">15 min</option>
+                        <option value="30">30 min</option>
+                        <option value="45">45 min</option>
+                        <option value="60">60 min</option>
+                    </select>
+                    <div class="form-hint">Track high/low of first N minutes. Shows OR badge on scanner. Filters gap trades (first candle beyond R2/S2) to only trade in OR direction.</div>
+                </div>
+                <div class="form-group">
                     <label class="form-label">Include in Watchlist</label>
                     <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
                         <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
@@ -697,6 +729,7 @@
 
 <script src="/js/common.js?v=5"></script>
 <script src="/js/ticker.js?v=3"></script>
+
 <script>
     // logout() provided by common.js
 
@@ -788,7 +821,7 @@
             document.getElementById('enableLargeCandleFilter').checked = d.enableLargeCandleFilter !== false;
             document.getElementById('largeCandleAtrThreshold').value = d.largeCandleAtrThreshold || 1.0;
             document.getElementById('enableTargetShift').checked = d.enableTargetShift !== false;
-            document.getElementById('enableGapCheck').checked = d.enableGapCheck !== false;
+            // enableGapCheck removed — replaced by Opening Range filter
             document.getElementById('enableDayHighLowTargetShift').checked = d.enableDayHighLowTargetShift !== false;
             document.getElementById('targetShiftAtrThreshold').value = d.targetShiftAtrThreshold || 1.0;
             document.getElementById('enableSmallCandleFilter').checked = d.enableSmallCandleFilter === true;
@@ -810,6 +843,7 @@
             document.getElementById('narrowCprMaxWidth').value = d.narrowCprMaxWidth || 0.1;
             document.getElementById('insideCprMaxWidth').value = d.insideCprMaxWidth || 0.5;
             document.getElementById('scanMinPrice').value = d.scanMinPrice || 300;
+            document.getElementById('openingRangeMinutes').value = d.openingRangeMinutes || 0;
             document.getElementById('scanIncludeNS').checked = d.scanIncludeNS !== false;
             document.getElementById('scanIncludeNL').checked = d.scanIncludeNL !== false;
             document.getElementById('scanIncludeIS').checked = d.scanIncludeIS !== false;
@@ -830,33 +864,41 @@
             // Update computed maxDailyLoss display
             updateMaxDailyLossDisplay();
 
-            // P&L stat
-            const pnlEl = document.getElementById('statPnl');
-            pnlEl.textContent = '₹' + pnl.toLocaleString('en-IN', {minimumFractionDigits: 0, maximumFractionDigits: 0});
-            pnlEl.className = 'stat-value ' + (pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : '');
-            document.getElementById('statPnlSub').textContent = 'Realized today';
+            // Default SL stat + trailing SL as sub
+            const atrPeriod = d.atrPeriod || 14;
+            const atrMult = d.atrMultiplier || 2.0;
+            document.getElementById('statDefaultSl').textContent = atrMult + ' ATR';
+            document.getElementById('statDefaultSlSub').style.display = 'none';
+            document.getElementById('statTrailSlSub').textContent = d.enableTrailingSl
+                ? 'Trailing SL: ON (×' + (d.trailingSlAtrMultiplier || 2.0) + ' after ' + (d.trailingSlActivationAtr || 1.0) + ' ATR profit)'
+                : 'Trailing SL: OFF';
 
             // Loss limit stat
             if (maxLoss > 0) {
                 document.getElementById('statLossLimit').textContent = '₹' + maxLoss.toLocaleString('en-IN');
-                const lossUsed = Math.min(Math.abs(Math.min(pnl, 0)) / maxLoss * 100, 100);
-                document.getElementById('statLossLimitSub').textContent = Math.round(lossUsed) + '% used';
             } else {
                 document.getElementById('statLossLimit').textContent = 'OFF';
-                document.getElementById('statLossLimitSub').textContent = 'Not configured';
             }
+            const riskPerTrade = d.riskPerTrade || 0;
+            document.getElementById('statLossLimitSub').textContent = riskPerTrade > 0
+                ? 'Risk/Trade: ₹' + riskPerTrade.toLocaleString('en-IN')
+                : 'Risk per trade not set';
 
             // Session move limit stat
             const moveLimit = d.sessionMoveLimit || 0;
             document.getElementById('statSessionMove').textContent = moveLimit > 0 ? moveLimit + '%' : 'OFF';
             document.getElementById('statSessionMoveSub').textContent = moveLimit > 0 ? 'Qty halved if exceeded' : 'No limit set';
 
-            // Trailing SL stat
-            const trailEl = document.getElementById('statTrailSl');
-            const trailSubEl = document.getElementById('statTrailSlSub');
-            if (trailEl) {
-                trailEl.textContent = d.enableTrailingSl ? 'ON' : 'OFF';
-                trailSubEl.textContent = d.enableTrailingSl ? 'Trailing stop-loss active' : 'Trailing SL disabled';
+            // Signal Source stat
+            const srcEl = document.getElementById('statSignalSource');
+            const srcSubEl = document.getElementById('statSignalSourceSub');
+            if (srcEl) {
+                srcEl.textContent = d.signalSource || 'INTERNAL';
+                var probs = [];
+                if (d.enableHpt) probs.push('HPT');
+                if (d.enableMpt) probs.push('MPT');
+                if (d.enableLpt) probs.push('LPT');
+                srcSubEl.textContent = probs.length > 0 ? probs.join(' + ') : 'No probabilities enabled';
             }
 
         } catch (e) {
@@ -894,7 +936,6 @@
                 enableLargeCandleFilter: document.getElementById('enableLargeCandleFilter').checked,
                 largeCandleAtrThreshold: parseFloat(document.getElementById('largeCandleAtrThreshold').value) || 1.0,
                 enableTargetShift: document.getElementById('enableTargetShift').checked,
-                enableGapCheck: document.getElementById('enableGapCheck').checked,
                 enableDayHighLowTargetShift: document.getElementById('enableDayHighLowTargetShift').checked,
                 targetShiftAtrThreshold: parseFloat(document.getElementById('targetShiftAtrThreshold').value) || 1.0,
                 enableSmallCandleFilter: document.getElementById('enableSmallCandleFilter').checked,
@@ -914,6 +955,7 @@
                 narrowCprMaxWidth: parseFloat(document.getElementById('narrowCprMaxWidth').value) || 0.1,
                 insideCprMaxWidth: parseFloat(document.getElementById('insideCprMaxWidth').value) || 0,
                 scanMinPrice: parseFloat(document.getElementById('scanMinPrice').value) || 0,
+                openingRangeMinutes: parseInt(document.getElementById('openingRangeMinutes').value) || 0,
                 scanIncludeNS: document.getElementById('scanIncludeNS').checked,
                 scanIncludeNL: document.getElementById('scanIncludeNL').checked,
                 scanIncludeIS: document.getElementById('scanIncludeIS').checked,
