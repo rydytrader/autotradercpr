@@ -297,6 +297,20 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Halve qty if day open or 1st candle beyond R2/S2 (gap check)</span>
                     </div>
                 </div>
+                <div class="form-group">
+                    <label class="form-label">Probability Qty Factors</label>
+                    <div style="display:flex; flex-direction:column; gap:8px; margin-top:4px;">
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
+                            MPT Qty ×
+                            <input type="number" id="mptQtyFactor" step="0.05" min="0.1" max="1.0" style="width:55px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;">
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
+                            LPT Qty ×
+                            <input type="number" id="lptQtyFactor" step="0.05" min="0.1" max="1.0" style="width:55px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;">
+                        </label>
+                    </div>
+                    <div class="form-hint">Reduce qty for medium/low probability trades. HPT = full qty.</div>
+                </div>
             </div>
         </div>
     </div>
@@ -446,16 +460,12 @@
                         </label>
                         <label class="form-check-label" style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem;">
                             <input type="checkbox" id="enableMpt" class="form-check-input"> MPT (Medium Probable)
-                            <span style="color:var(--text-muted);font-size:0.72rem;margin-left:4px;">Qty ×</span>
-                            <input type="number" id="mptQtyFactor" step="0.05" min="0.1" max="1.0" style="width:55px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;">
                         </label>
                         <label class="form-check-label" style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem;">
                             <input type="checkbox" id="enableLpt" class="form-check-input"> LPT (Low Probable)
-                            <span style="color:var(--text-muted);font-size:0.72rem;margin-left:4px;">Qty ×</span>
-                            <input type="number" id="lptQtyFactor" step="0.05" min="0.1" max="1.0" style="width:55px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;">
                         </label>
                     </div>
-                    <div class="form-hint">Enable/disable signal categories. MPT/LPT qty factors reduce position size.</div>
+                    <div class="form-hint">Enable/disable signal categories. Qty factors configured in Risk Controls.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">ATP Check</label>
