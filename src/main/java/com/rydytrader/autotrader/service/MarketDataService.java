@@ -986,6 +986,18 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         return (tick != null && tick.getLtp() > 0) ? tick.getLtp() : 0;
     }
 
+    /** Get today's session high for a symbol. */
+    public double getDayHigh(String fyersSymbol) {
+        TickData tick = currentTicks.get(fyersSymbol);
+        return (tick != null && tick.getHigh() > 0) ? tick.getHigh() : 0;
+    }
+
+    /** Get today's session low for a symbol. */
+    public double getDayLow(String fyersSymbol) {
+        TickData tick = currentTicks.get(fyersSymbol);
+        return (tick != null && tick.getLow() > 0) ? tick.getLow() : 0;
+    }
+
     /** Check if currently connected to WebSocket. */
     public boolean isConnected() {
         return wsClient != null && wsClient.isOpen();

@@ -12,12 +12,14 @@ public class SignalProcessor {
     private final RiskSettingsStore riskSettings;
     private final EventService     eventService;
     private final QuantityService  quantityService;
+    private final MarketDataService marketDataService;
 
     public SignalProcessor(RiskSettingsStore riskSettings, EventService eventService,
-                           QuantityService quantityService) {
+                           QuantityService quantityService, MarketDataService marketDataService) {
         this.riskSettings = riskSettings;
         this.eventService = eventService;
         this.quantityService = quantityService;
+        this.marketDataService = marketDataService;
     }
 
     public ProcessedSignal process(Map<String, Object> alert) {
@@ -151,6 +153,26 @@ public class SignalProcessor {
             }
         }
 
+
+        // ── 4g. Day high/low target shift ──────────────────────────────────────
+        // If today's session high (BUY) or low (SELL) is between entry and target,
+        // shift target to day high/low — it acts as intraday resistance/support
+        boolean isBuy = setup.contains("BUY");
+        if (isBuy) {
+            double dayHigh = marketDataService.getDayHigh(symbol);
+            if (dayHigh > 0 && dayHigh > close && dayHigh < target) {
+                eventService.log("[INFO] " + symbol + " " + setup + " target shifted to day high: "
+                    + fmt(target) + " → " + fmt(dayHigh) + " (session high between entry and target)");
+                target = dayHigh;
+            }
+        } else {
+            double dayLow = marketDataService.getDayLow(symbol);
+            if (dayLow > 0 && dayLow < close && dayLow > target) {
+                eventService.log("[INFO] " + symbol + " " + setup + " target shifted to day low: "
+                    + fmt(target) + " → " + fmt(dayLow) + " (session low between entry and target)");
+                target = dayLow;
+            }
+        }
 
         // ── 4i. Quantity ────────────────────────────────────────────────────────
         int qty = baseQty;
