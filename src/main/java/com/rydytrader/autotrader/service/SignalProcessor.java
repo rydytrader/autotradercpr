@@ -157,7 +157,6 @@ public class SignalProcessor {
         // ── 4g. Day high/low target shift ──────────────────────────────────────
         // If today's session high (BUY) or low (SELL) is between entry and target,
         // shift target to day high/low — it acts as intraday resistance/support
-        boolean isBuy = setup.contains("BUY");
         if (isBuy) {
             double dayHigh = marketDataService.getDayHigh(symbol);
             if (dayHigh > 0 && dayHigh > close && dayHigh < target) {
