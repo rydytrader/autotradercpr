@@ -336,8 +336,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             if (moveFromEntry < activationThreshold) return; // not enough profit yet
         }
 
-        // ATR trailing: SL = peak/trough - ATR × multiplier
-        double multiplier = riskSettings.getAtrMultiplier();
+        // ATR trailing: SL = peak/trough - ATR × trailing multiplier
+        double multiplier = riskSettings.getTrailingSlAtrMultiplier();
         if (atr <= 0) return;
 
         double newSl;

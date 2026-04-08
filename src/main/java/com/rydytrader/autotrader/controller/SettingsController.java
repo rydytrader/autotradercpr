@@ -74,6 +74,7 @@ public class SettingsController {
         result.put("r3s3QtyFactor", riskSettings.getR3s3QtyFactor());
         result.put("r4s4QtyFactor", riskSettings.getR4s4QtyFactor());
         result.put("atrPeriod", riskSettings.getAtrPeriod());
+        result.put("trailingSlAtrMultiplier", riskSettings.getTrailingSlAtrMultiplier());
         result.put("trailingSlActivationAtr", riskSettings.getTrailingSlActivationAtr());
         result.put("signalSource", riskSettings.getSignalSource());
         result.put("scannerTimeframe", riskSettings.getScannerTimeframe());
@@ -138,6 +139,7 @@ public class SettingsController {
             if (body.containsKey("r3s3QtyFactor")) riskSettings.setR3s3QtyFactor(Double.parseDouble(body.get("r3s3QtyFactor").toString()));
             if (body.containsKey("r4s4QtyFactor")) riskSettings.setR4s4QtyFactor(Double.parseDouble(body.get("r4s4QtyFactor").toString()));
             if (body.containsKey("atrPeriod")) riskSettings.setAtrPeriod(Integer.parseInt(body.get("atrPeriod").toString()));
+            if (body.containsKey("trailingSlAtrMultiplier")) riskSettings.setTrailingSlAtrMultiplier(Double.parseDouble(body.get("trailingSlAtrMultiplier").toString()));
             if (body.containsKey("trailingSlActivationAtr")) riskSettings.setTrailingSlActivationAtr(Double.parseDouble(body.get("trailingSlActivationAtr").toString()));
             if (body.containsKey("signalSource")) riskSettings.setSignalSource(body.get("signalSource").toString());
             if (body.containsKey("scannerTimeframe")) riskSettings.setScannerTimeframe(Integer.parseInt(body.get("scannerTimeframe").toString()));

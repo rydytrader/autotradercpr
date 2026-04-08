@@ -59,6 +59,7 @@ public class RiskSettingsStore {
         volatile double r3s3QtyFactor = 0.75;   // R3/S3 qty multiplier
         volatile double r4s4QtyFactor = 0.5;    // R4/S4 qty multiplier
         volatile int    atrPeriod = 14;        // ATR lookback period for initial SL
+        volatile double trailingSlAtrMultiplier = 2.0; // ATR multiplier for trailing SL (separate from initial SL)
         volatile double trailingSlActivationAtr = 1.0; // trailing SL only activates after price moves this × ATR in profit
         // Scanner settings
         volatile String signalSource    = "TRADINGVIEW"; // TRADINGVIEW or INTERNAL
@@ -127,6 +128,7 @@ public class RiskSettingsStore {
     public double getR3s3QtyFactor() { return cfg().r3s3QtyFactor; }
     public double getR4s4QtyFactor() { return cfg().r4s4QtyFactor; }
     public int getAtrPeriod() { return cfg().atrPeriod; }
+    public double getTrailingSlAtrMultiplier() { return cfg().trailingSlAtrMultiplier; }
     public double getTrailingSlActivationAtr() { return cfg().trailingSlActivationAtr; }
     public double getSmallCandleAtrThreshold() { return cfg().smallCandleAtrThreshold; }
     public double getWickRejectionRatio() { return cfg().wickRejectionRatio; }
@@ -195,6 +197,7 @@ public class RiskSettingsStore {
     public void setR3s3QtyFactor(double v) { cfg().r3s3QtyFactor = v; }
     public void setR4s4QtyFactor(double v) { cfg().r4s4QtyFactor = v; }
     public void setAtrPeriod(int v) { cfg().atrPeriod = v; }
+    public void setTrailingSlAtrMultiplier(double v) { cfg().trailingSlAtrMultiplier = v; }
     public void setTrailingSlActivationAtr(double v) { cfg().trailingSlActivationAtr = v; }
     public void setSmallCandleAtrThreshold(double v) { cfg().smallCandleAtrThreshold = v; }
     public void setWickRejectionRatio(double v) { cfg().wickRejectionRatio = v; }
@@ -315,6 +318,7 @@ public class RiskSettingsStore {
             upsert("r3s3QtyFactor", String.valueOf(c.r3s3QtyFactor));
             upsert("r4s4QtyFactor", String.valueOf(c.r4s4QtyFactor));
             upsert("atrPeriod", String.valueOf(c.atrPeriod));
+            upsert("trailingSlAtrMultiplier", String.valueOf(c.trailingSlAtrMultiplier));
             upsert("trailingSlActivationAtr", String.valueOf(c.trailingSlActivationAtr));
             upsert("signalSource", c.signalSource);
             upsert("scannerTimeframe", String.valueOf(c.scannerTimeframe));
@@ -389,6 +393,7 @@ public class RiskSettingsStore {
                     case "r3s3QtyFactor" -> c.r3s3QtyFactor = Double.parseDouble(v);
                     case "r4s4QtyFactor" -> c.r4s4QtyFactor = Double.parseDouble(v);
                     case "atrPeriod" -> c.atrPeriod = Integer.parseInt(v);
+                    case "trailingSlAtrMultiplier" -> c.trailingSlAtrMultiplier = Double.parseDouble(v);
                     case "trailingSlActivationAtr" -> c.trailingSlActivationAtr = Double.parseDouble(v);
                     case "signalSource"      -> c.signalSource = v;
                     case "scannerTimeframe"  -> c.scannerTimeframe = Integer.parseInt(v);
