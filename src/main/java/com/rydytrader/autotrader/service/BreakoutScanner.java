@@ -415,6 +415,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         com.rydytrader.autotrader.dto.CprLevels cpr = bhavcopyService.getCprLevels(ticker);
         if (cpr == null) return false;
 
+        // Price filter
+        double minPrice = riskSettings.getScanMinPrice();
+        if (minPrice > 0 && cpr.getClose() < minPrice) return false;
+
         boolean isNarrow = cpr.getCprWidthPct() < riskSettings.getNarrowCprMaxWidth();
         boolean isInside = bhavcopyService.getInsideCprStocks().stream()
                 .anyMatch(c -> c.getSymbol().equals(ticker));

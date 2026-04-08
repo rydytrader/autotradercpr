@@ -59,11 +59,13 @@ public class ScannerController {
             insideSymbols.add(cpr.getSymbol());
         }
 
-        // Collect narrow CPR stocks — use configurable width threshold + NS/NL toggles
+        // Collect narrow CPR stocks — use configurable width threshold + price filter + NS/NL toggles
         double narrowMaxWidth = riskSettings.getNarrowCprMaxWidth();
+        double minPrice = riskSettings.getScanMinPrice();
         Set<String> seen = new HashSet<>();
         for (CprLevels cpr : bhavcopyService.getAllCprLevels().values()) {
             if (cpr.getCprWidthPct() >= narrowMaxWidth) continue; // not narrow enough
+            if (minPrice > 0 && cpr.getClose() < minPrice) continue; // price too low
             String nrt = cpr.getNarrowRangeType();
             boolean rangeMatches = ("SMALL".equals(nrt) && riskSettings.isScanIncludeNS())
                                 || ("LARGE".equals(nrt) && riskSettings.isScanIncludeNL())
@@ -82,11 +84,12 @@ public class ScannerController {
             seen.add(fyers);
         }
 
-        // Collect inside-only CPR stocks — filtered by IS/IL toggles + width filter
+        // Collect inside-only CPR stocks — filtered by IS/IL toggles + width filter + price filter
         double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
         for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
             String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
             if (seen.contains(fyers)) continue;
+            if (minPrice > 0 && cpr.getClose() < minPrice) continue; // price too low
             // Width filter: skip if CPR width exceeds threshold (0 = no filter)
             if (insideMaxWidth > 0 && cpr.getCprWidthPct() > insideMaxWidth) continue;
             String nrt = cpr.getNarrowRangeType();

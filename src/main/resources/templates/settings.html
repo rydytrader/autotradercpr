@@ -482,6 +482,11 @@
                     <div class="form-hint">Width as % of close price. Stocks with CPR wider than threshold are excluded. Restart required for changes to take effect.</div>
                 </div>
                 <div class="form-group">
+                    <label class="form-label">Min Stock Price (₹)</label>
+                    <input type="number" id="scanMinPrice" class="form-control" min="0" max="10000" step="50" style="width:100px;" placeholder="300">
+                    <div class="form-hint">Exclude stocks below this price. Set to 0 to disable. Restart required.</div>
+                </div>
+                <div class="form-group">
                     <label class="form-label">Include in Watchlist</label>
                     <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
                         <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
@@ -765,6 +770,7 @@
             document.getElementById('enableAtpCheck').checked = d.enableAtpCheck !== false;
             document.getElementById('narrowCprMaxWidth').value = d.narrowCprMaxWidth || 0.1;
             document.getElementById('insideCprMaxWidth').value = d.insideCprMaxWidth || 0.5;
+            document.getElementById('scanMinPrice').value = d.scanMinPrice || 300;
             document.getElementById('scanIncludeNS').checked = d.scanIncludeNS !== false;
             document.getElementById('scanIncludeNL').checked = d.scanIncludeNL !== false;
             document.getElementById('scanIncludeIS').checked = d.scanIncludeIS !== false;
@@ -865,6 +871,7 @@
                 enableAtpCheck: document.getElementById('enableAtpCheck').checked,
                 narrowCprMaxWidth: parseFloat(document.getElementById('narrowCprMaxWidth').value) || 0.1,
                 insideCprMaxWidth: parseFloat(document.getElementById('insideCprMaxWidth').value) || 0,
+                scanMinPrice: parseFloat(document.getElementById('scanMinPrice').value) || 0,
                 scanIncludeNS: document.getElementById('scanIncludeNS').checked,
                 scanIncludeNL: document.getElementById('scanIncludeNL').checked,
                 scanIncludeIS: document.getElementById('scanIncludeIS').checked,

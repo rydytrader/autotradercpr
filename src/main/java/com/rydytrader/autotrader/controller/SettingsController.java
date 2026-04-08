@@ -80,6 +80,7 @@ public class SettingsController {
         result.put("enableAtpCheck", riskSettings.isEnableAtpCheck());
         result.put("narrowCprMaxWidth", riskSettings.getNarrowCprMaxWidth());
         result.put("insideCprMaxWidth", riskSettings.getInsideCprMaxWidth());
+        result.put("scanMinPrice", riskSettings.getScanMinPrice());
         result.put("scanIncludeNS", riskSettings.isScanIncludeNS());
         result.put("scanIncludeNL", riskSettings.isScanIncludeNL());
         result.put("scanIncludeIS", riskSettings.isScanIncludeIS());
@@ -143,6 +144,7 @@ public class SettingsController {
             if (body.containsKey("enableAtpCheck")) riskSettings.setEnableAtpCheck(Boolean.parseBoolean(body.get("enableAtpCheck").toString()));
             if (body.containsKey("narrowCprMaxWidth")) riskSettings.setNarrowCprMaxWidth(Double.parseDouble(body.get("narrowCprMaxWidth").toString()));
             if (body.containsKey("insideCprMaxWidth")) riskSettings.setInsideCprMaxWidth(Double.parseDouble(body.get("insideCprMaxWidth").toString()));
+            if (body.containsKey("scanMinPrice")) riskSettings.setScanMinPrice(Double.parseDouble(body.get("scanMinPrice").toString()));
             if (body.containsKey("scanIncludeNS")) riskSettings.setScanIncludeNS(Boolean.parseBoolean(body.get("scanIncludeNS").toString()));
             if (body.containsKey("scanIncludeNL")) riskSettings.setScanIncludeNL(Boolean.parseBoolean(body.get("scanIncludeNL").toString()));
             if (body.containsKey("scanIncludeIS")) riskSettings.setScanIncludeIS(Boolean.parseBoolean(body.get("scanIncludeIS").toString()));
@@ -163,8 +165,10 @@ public class SettingsController {
     @GetMapping("/api/narrow-cpr")
     public Map<String, Object> getNarrowCprStocks() {
         double maxWidth = riskSettings.getNarrowCprMaxWidth();
+        double minPrice = riskSettings.getScanMinPrice();
         List<CprLevels> narrow = bhavcopyService.getAllCprLevels().values().stream()
             .filter(c -> c.getCprWidthPct() < maxWidth)
+            .filter(c -> minPrice <= 0 || c.getClose() >= minPrice)
             .sorted(java.util.Comparator.comparingDouble(CprLevels::getCprWidthPct))
             .collect(Collectors.toList());
         List<Map<String, Object>> list = narrow.stream().map(c -> {
@@ -192,8 +196,10 @@ public class SettingsController {
     @GetMapping("/api/inside-cpr")
     public Map<String, Object> getInsideCprStocks() {
         double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
+        double minPrice = riskSettings.getScanMinPrice();
         List<CprLevels> inside = bhavcopyService.getInsideCprStocks().stream()
             .filter(c -> insideMaxWidth <= 0 || c.getCprWidthPct() < insideMaxWidth)
+            .filter(c -> minPrice <= 0 || c.getClose() >= minPrice)
             .collect(Collectors.toList());
         List<Map<String, Object>> list = inside.stream().map(c -> {
             Map<String, Object> m = new LinkedHashMap<>();

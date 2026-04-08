@@ -801,14 +801,15 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         Set<String> symbols = new LinkedHashSet<>();
         double narrowMax = riskSettings.getNarrowCprMaxWidth();
         double insideMax = riskSettings.getInsideCprMaxWidth();
+        double minPrice = riskSettings.getScanMinPrice();
 
         for (var cpr : bhavcopyService.getAllCprLevels().values()) {
-            if (cpr.getCprWidthPct() < narrowMax) {
+            if (cpr.getCprWidthPct() < narrowMax && (minPrice <= 0 || cpr.getClose() >= minPrice)) {
                 symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
             }
         }
         for (var cpr : bhavcopyService.getInsideCprStocks()) {
-            if (insideMax <= 0 || cpr.getCprWidthPct() < insideMax) {
+            if ((insideMax <= 0 || cpr.getCprWidthPct() < insideMax) && (minPrice <= 0 || cpr.getClose() >= minPrice)) {
                 symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
             }
         }
