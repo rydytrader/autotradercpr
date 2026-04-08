@@ -75,8 +75,6 @@ public class SettingsController {
         result.put("r4s4QtyFactor", riskSettings.getR4s4QtyFactor());
         result.put("atrPeriod", riskSettings.getAtrPeriod());
         result.put("trailingSlActivationAtr", riskSettings.getTrailingSlActivationAtr());
-        result.put("chandelierPeriod", riskSettings.getChandelierPeriod(effectiveMode));
-        result.put("chandelierMultiplier", riskSettings.getChandelierMultiplier(effectiveMode));
         result.put("signalSource", riskSettings.getSignalSource());
         result.put("scannerTimeframe", riskSettings.getScannerTimeframe());
         result.put("enableAtpCheck", riskSettings.isEnableAtpCheck());
@@ -140,8 +138,6 @@ public class SettingsController {
             if (body.containsKey("r4s4QtyFactor")) riskSettings.setR4s4QtyFactor(Double.parseDouble(body.get("r4s4QtyFactor").toString()));
             if (body.containsKey("atrPeriod")) riskSettings.setAtrPeriod(Integer.parseInt(body.get("atrPeriod").toString()));
             if (body.containsKey("trailingSlActivationAtr")) riskSettings.setTrailingSlActivationAtr(Double.parseDouble(body.get("trailingSlActivationAtr").toString()));
-            if (body.containsKey("chandelierPeriod")) riskSettings.setChandelierPeriod(effectiveMode, Integer.parseInt(body.get("chandelierPeriod").toString()));
-            if (body.containsKey("chandelierMultiplier")) riskSettings.setChandelierMultiplier(effectiveMode, Double.parseDouble(body.get("chandelierMultiplier").toString()));
             if (body.containsKey("signalSource")) riskSettings.setSignalSource(body.get("signalSource").toString());
             if (body.containsKey("scannerTimeframe")) riskSettings.setScannerTimeframe(Integer.parseInt(body.get("scannerTimeframe").toString()));
             if (body.containsKey("enableAtpCheck")) riskSettings.setEnableAtpCheck(Boolean.parseBoolean(body.get("enableAtpCheck").toString()));

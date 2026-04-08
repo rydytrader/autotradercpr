@@ -168,9 +168,9 @@
             <div class="stat-sub" id="statSessionMoveSub">Qty halved if exceeded</div>
         </div>
         <div class="stat-card" style="--accent-color: var(--accent-green)">
-            <div class="stat-label">Chandelier Exit</div>
+            <div class="stat-label">Trailing SL</div>
             <div class="stat-value" id="statTrailSl">—</div>
-            <div class="stat-sub" id="statTrailSlSub">Period / ATR multiplier</div>
+            <div class="stat-sub" id="statTrailSlSub">Trailing stop-loss status</div>
         </div>
     </div>
 
@@ -252,13 +252,10 @@
                     <div class="form-hint">SL = Entry ± ATR(period) × multiplier</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Chandelier Exit (Trailing SL)</label>
+                    <label class="form-label">Trailing SL</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
                         <input type="checkbox" id="enableTrailingSl" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink:0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Period</span>
-                        <input type="number" id="chandelierPeriod" class="form-control" step="1" min="5" max="50" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR x</span>
-                        <input type="number" id="chandelierMultiplier" class="form-control" step="0.5" min="1.0" max="10.0" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable trailing stop-loss</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="trailingSlNoTarget" style="width: 16px; height: 16px; accent-color: var(--accent-cyan);">
@@ -761,8 +758,6 @@
             document.getElementById('enableTrailingSl').checked = d.enableTrailingSl != null ? d.enableTrailingSl : true;
             document.getElementById('trailingSlNoTarget').checked = d.trailingSlNoTarget === true;
             document.getElementById('trailingSlActivationAtr').value = d.trailingSlActivationAtr || 1.0;
-            document.getElementById('chandelierPeriod').value = d.chandelierPeriod || 14;
-            document.getElementById('chandelierMultiplier').value = d.chandelierMultiplier || 2.0;
 
             // Scanner settings
             document.getElementById('signalSource').value = d.signalSource || 'TRADINGVIEW';
@@ -811,14 +806,12 @@
             document.getElementById('statSessionMove').textContent = moveLimit > 0 ? moveLimit + '%' : 'OFF';
             document.getElementById('statSessionMoveSub').textContent = moveLimit > 0 ? 'Qty halved if exceeded' : 'No limit set';
 
-            // Chandelier Exit stat
-            const chPeriod = d.chandelierPeriod || 22;
-            const chMult = d.chandelierMultiplier || 3.0;
+            // Trailing SL stat
             const trailEl = document.getElementById('statTrailSl');
             const trailSubEl = document.getElementById('statTrailSlSub');
             if (trailEl) {
-                trailEl.textContent = d.enableTrailingSl ? chPeriod + ' / ' + chMult + 'x' : 'OFF';
-                trailSubEl.textContent = d.enableTrailingSl ? 'Period / ATR multiplier' : 'Chandelier Exit disabled';
+                trailEl.textContent = d.enableTrailingSl ? 'ON' : 'OFF';
+                trailSubEl.textContent = d.enableTrailingSl ? 'Trailing stop-loss active' : 'Trailing SL disabled';
             }
 
         } catch (e) {
@@ -867,8 +860,6 @@
                 enableTrailingSl: document.getElementById('enableTrailingSl').checked,
                 trailingSlNoTarget: document.getElementById('trailingSlNoTarget').checked,
                 trailingSlActivationAtr: parseFloat(document.getElementById('trailingSlActivationAtr').value) || 1.0,
-                chandelierPeriod: parseInt(document.getElementById('chandelierPeriod').value) || 22,
-                chandelierMultiplier: parseFloat(document.getElementById('chandelierMultiplier').value) || 3.0,
                 signalSource: document.getElementById('signalSource').value,
                 scannerTimeframe: parseInt(document.getElementById('scannerTimeframe').value) || 15,
                 enableAtpCheck: document.getElementById('enableAtpCheck').checked,

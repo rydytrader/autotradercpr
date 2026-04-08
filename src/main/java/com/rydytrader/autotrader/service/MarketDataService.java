@@ -59,8 +59,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     @org.springframework.context.annotation.Lazy
     private OrderEventService orderEventService;
 
-    // Trailing SL: track symbols where SL has already been trailed (one-time per position)
+    // Trailing SL: track symbols where SL has already been trailed
     private final Set<String> trailedSymbols = ConcurrentHashMap.newKeySet();
+    // Peak/trough price since entry for ATR trailing SL
+    private final ConcurrentHashMap<String, Double> peakPrice = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Double> troughPrice = new ConcurrentHashMap<>();
 
     // Current tick state per Fyers symbol
     private final ConcurrentHashMap<String, TickData> currentTicks = new ConcurrentHashMap<>();
@@ -293,49 +296,16 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         // Route tick to candle aggregator for scanner
         candleAggregator.onTick(raw);
 
+        // Track peak/trough for ATR trailing SL
+        if (raw.ltp > 0 && !"NONE".equals(PositionManager.getPosition(raw.fyersSymbol))) {
+            peakPrice.merge(raw.fyersSymbol, raw.ltp, Math::max);
+            troughPrice.merge(raw.fyersSymbol, raw.ltp, Math::min);
+        }
+
         dirty = true;
     }
 
-    /**
-     * Trailing SL: when price moves 75% from entry toward target,
-     * move SL to entry + 10% of the range (one-time per position).
-     */
-    // ── CHANDELIER EXIT (called on every candle close) ─────────────────────────
-
-    /**
-     * Calculate Chandelier Exit SL for a symbol.
-     * LONG: Highest High(period) - ATR(period) * multiplier
-     * SHORT: Lowest Low(period) + ATR(period) * multiplier
-     * Returns 0 if insufficient data.
-     */
-    public double calculateChandelierSl(String fyersSymbol, String side) {
-        List<CandleAggregator.CandleBar> candles = candleAggregator.getCompletedCandles(fyersSymbol);
-        int period = riskSettings.getChandelierPeriod();
-        double multiplier = riskSettings.getChandelierMultiplier();
-
-        if (candles.size() < period) return 0;
-
-        List<CandleAggregator.CandleBar> recent = candles.subList(candles.size() - period, candles.size());
-
-        // ATR via Wilder's smoothing
-        double atr = 0;
-        for (int i = 0; i < recent.size(); i++) {
-            CandleAggregator.CandleBar c = recent.get(i);
-            CandleAggregator.CandleBar prev = i > 0 ? recent.get(i - 1) : null;
-            double tr = c.trueRange(prev);
-            atr = (i == 0) ? tr : (atr * (period - 1) + tr) / period;
-        }
-        if (atr <= 0) return 0;
-
-        if ("LONG".equals(side)) {
-            double highestHigh = recent.stream().mapToDouble(c -> c.high).max().orElse(0);
-            return highestHigh - atr * multiplier;
-        } else if ("SHORT".equals(side)) {
-            double lowestLow = recent.stream().mapToDouble(c -> c.low).min().orElse(0);
-            return lowestLow + atr * multiplier;
-        }
-        return 0;
-    }
+    // ── ATR TRAILING SL (called on every candle close) ─────────────────────────
 
     @Override
     public void onCandleClose(String fyersSymbol, CandleAggregator.CandleBar completedCandle) {
@@ -354,7 +324,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         try { currentSlPrice = Double.parseDouble(state.getOrDefault("slPrice", "0").toString()); }
         catch (NumberFormatException ignored) {}
 
-        // Only start trailing after price has moved 1× ATR in the right direction
+        // Only start trailing after price has moved activation × ATR in the right direction
         double avgPrice = 0;
         try { avgPrice = Double.parseDouble(state.getOrDefault("avgPrice", "0").toString()); }
         catch (NumberFormatException ignored) {}
@@ -363,56 +333,67 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         if (avgPrice > 0 && atr > 0 && ltp > 0) {
             double moveFromEntry = "LONG".equals(side) ? ltp - avgPrice : avgPrice - ltp;
             double activationThreshold = atr * riskSettings.getTrailingSlActivationAtr();
-            if (moveFromEntry < activationThreshold) return; // not enough profit yet — keep initial SL
+            if (moveFromEntry < activationThreshold) return; // not enough profit yet
         }
 
-        double newSl = calculateChandelierSl(fyersSymbol, side);
+        // ATR trailing: SL = peak/trough - ATR × multiplier
+        double multiplier = riskSettings.getAtrMultiplier();
+        if (atr <= 0) return;
+
+        double newSl;
+        if ("LONG".equals(side)) {
+            double peak = peakPrice.getOrDefault(fyersSymbol, ltp);
+            newSl = peak - atr * multiplier;
+        } else {
+            double trough = troughPrice.getOrDefault(fyersSymbol, ltp);
+            newSl = trough + atr * multiplier;
+        }
         if (newSl <= 0) return;
 
-        // Round to tick size
-        newSl = Math.round(newSl * 20.0) / 20.0;
+        newSl = orderService.roundToTick(newSl, fyersSymbol);
 
-        // Only move SL if it tightens (reduces distance between SL and current price)
-        // LONG: SL below price → tighter = SL moves UP
-        // SHORT: SL above price → tighter = SL moves DOWN
+        // Only tighten — LONG: SL moves UP, SHORT: SL moves DOWN
         if ("LONG".equals(side) && newSl <= currentSlPrice) return;
         if ("SHORT".equals(side) && newSl >= currentSlPrice) return;
 
-        log.info("[Chandelier] {} {} — new SL={} current={}", fyersSymbol, side,
-            String.format("%.2f", newSl), String.format("%.2f", currentSlPrice));
+        log.info("[TrailingSL] {} {} — new SL={} current={} peak={} atr={}",
+            fyersSymbol, side, String.format("%.2f", newSl), String.format("%.2f", currentSlPrice),
+            String.format("%.2f", "LONG".equals(side) ? peakPrice.getOrDefault(fyersSymbol, 0.0) : troughPrice.getOrDefault(fyersSymbol, 0.0)),
+            String.format("%.2f", atr));
 
         boolean ok = orderService.modifySlOrder(slOrderId, newSl, fyersSymbol);
         if (ok) {
             trailedSymbols.add(fyersSymbol);
 
-            String targetOrderId = state.getOrDefault("targetOrderId", "").toString();
-            double currentTarget = Double.parseDouble(state.getOrDefault("targetPrice", "0").toString());
+            String targetOrderId = state.get("targetOrderId") != null ? state.get("targetOrderId").toString() : "";
+            double currentTarget = state.get("targetPrice") != null ? Double.parseDouble(state.get("targetPrice").toString()) : 0;
             positionStateStore.saveOcoState(fyersSymbol, slOrderId, targetOrderId, newSl, currentTarget);
 
             if (orderEventService != null) orderEventService.markAsTrailed(slOrderId);
 
             positionStateStore.appendDescription(fyersSymbol,
-                "[CHANDELIER] SL → " + String.format("%.2f", newSl)
-                + " (period=" + riskSettings.getChandelierPeriod()
-                + " mult=" + riskSettings.getChandelierMultiplier() + ")");
+                "[TRAILING_SL] SL → " + String.format("%.2f", newSl)
+                + " (ATR=" + String.format("%.2f", atr) + " mult=" + multiplier + ")");
 
             String direction = "LONG".equals(side) ? "up" : "down";
-            eventService.log("[SUCCESS] Chandelier Exit SL moved " + direction + " for " + fyersSymbol + ": "
+            eventService.log("[SUCCESS] Trailing SL moved " + direction + " for " + fyersSymbol + ": "
                 + String.format("%.2f", currentSlPrice) + " → " + String.format("%.2f", newSl));
         } else {
-            eventService.log("[ERROR] Chandelier Exit failed for " + fyersSymbol
+            eventService.log("[ERROR] Trailing SL failed for " + fyersSymbol
                 + " — could not modify SL to " + String.format("%.2f", newSl));
         }
     }
 
-    /** Check if a symbol's SL has been trailed. Used during OCO handoff to preserve flag. */
+    /** Check if a symbol's SL has been trailed. */
     public boolean isTrailed(String symbol) {
         return trailedSymbols.contains(symbol);
     }
 
-    /** Clear trailing SL flag when a position is closed. Called from clearSymbolState flow. */
+    /** Clear trailing SL flag + peak/trough when a position is closed. */
     public void clearTrailedFlag(String symbol) {
         trailedSymbols.remove(symbol);
+        peakPrice.remove(symbol);
+        troughPrice.remove(symbol);
     }
 
     @Override
@@ -529,18 +510,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                         d.put("candleOpen", Math.round(cb.open * 100.0) / 100.0);
                         d.put("candleHigh", Math.round(cb.high * 100.0) / 100.0);
                         d.put("candleLow", Math.round(cb.low * 100.0) / 100.0);
-                    }
-                    if (riskSettings.isEnableTrailingSl()) {
-                        // Determine likely direction from LTP vs pivot
-                        String ticker = sym.replaceAll("^(NSE|BSE|MCX):", "").replaceAll("-(EQ|INDEX)$", "");
-                        com.rydytrader.autotrader.dto.CprLevels cprLvl = bhavcopyService.getCprLevels(ticker);
-                        boolean likelyLong = cprLvl == null || ltp >= cprLvl.getPivot();
-                        String cslSide = likelyLong ? "LONG" : "SHORT";
-                        double csl = calculateChandelierSl(sym, cslSide);
-                        if (csl > 0) {
-                            d.put("chandelierSl", Math.round(csl * 100.0) / 100.0);
-                            d.put("chandelierSlSide", cslSide);
-                        }
                     }
                     wlPayload.put(sym, d);
                 }

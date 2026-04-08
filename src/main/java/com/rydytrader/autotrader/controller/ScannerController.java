@@ -133,15 +133,6 @@ public class ScannerController {
         card.put("dayOpen", Math.round(candleAggregator.getDayOpen(fyersSymbol) * 100.0) / 100.0);
         card.put("candleVolume", candleAggregator.getCurrentCandleVolume(fyersSymbol));
         card.put("avgVolume", Math.round(candleAggregator.getAvgVolume(fyersSymbol, riskSettings.getVolumeLookback())));
-        // Chandelier Exit SL — show the relevant direction based on LTP vs pivot
-        if (riskSettings.isEnableTrailingSl()) {
-            boolean likelyLong = ltp >= levels.getPivot();
-            String cslSide = likelyLong ? "LONG" : "SHORT";
-            double csl = marketDataService.calculateChandelierSl(fyersSymbol, cslSide);
-            card.put("chandelierSl", csl > 0 ? r(csl) : 0);
-            card.put("chandelierSlSide", cslSide);
-        }
-
         card.put("weeklyTrend", weeklyCprService.getWeeklyTrend(fyersSymbol));
         card.put("dailyTrend", weeklyCprService.getDailyTrend(fyersSymbol));
         card.put("probability", weeklyCprService.getProbability(fyersSymbol));
@@ -262,10 +253,6 @@ public class ScannerController {
         }
 
         // CSL (Chandelier SL)
-        double cslLong = marketDataService.calculateChandelierSl(symbol, "LONG");
-        double cslShort = marketDataService.calculateChandelierSl(symbol, "SHORT");
-        if (cslLong > 0) result.put("chandelierSlLong", r(cslLong));
-        if (cslShort > 0) result.put("chandelierSlShort", r(cslShort));
 
         // ATP (VWAP)
         double atp = candleAggregator.getAtp(symbol);

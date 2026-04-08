@@ -95,7 +95,7 @@
 
         .scan-data-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr;
             gap: 0;
             padding: 6px 16px 10px;
         }
@@ -653,7 +653,6 @@
             + '  <div class="scan-data-item"><div class="scan-data-label">Day Open</div><div class="scan-data-value">' + fmt(d.dayOpen) + '</div></div>'
             + '  <div class="scan-data-item"><div class="scan-data-label">ATP</div><div class="scan-data-value">' + fmt(d.atp) + '</div></div>'
             + '  <div class="scan-data-item"><div class="scan-data-label">ATR</div><div class="scan-data-value">' + fmt(d.atr) + '</div></div>'
-            + '  <div class="scan-data-item"><div class="scan-data-label">CSL</div><div class="scan-data-value scan-csl" style="font-size:0.68rem;">' + (d.chandelierSl ? '<span style="color:' + (d.chandelierSlSide === 'LONG' ? 'var(--accent-green)' : 'var(--accent-red)') + ';">' + (d.chandelierSlSide === 'LONG' ? '\u2191' : '\u2193') + fmt(d.chandelierSl) + '</span>' : '<span style="color:var(--text-muted);">\u2014</span>') + '</div></div>'
             + '</div>'
             + '<div class="scan-trend-row">'
             + '  <span class="scan-trend"><span class="label">W:</span> <span class="' + wClass + '">' + wArrow + ' ' + wLabel + '</span></span>'
@@ -752,7 +751,6 @@
                         if (update.candleOpen) d.candleOpen = update.candleOpen;
                         if (update.candleHigh) d.candleHigh = update.candleHigh;
                         if (update.candleLow) d.candleLow = update.candleLow;
-                        if (update.chandelierSl) { d.chandelierSl = update.chandelierSl; d.chandelierSlSide = update.chandelierSlSide; }
 
                         // Update DOM in-place
                         var card = document.querySelector('[data-symbol="' + d.symbol + '"]');
@@ -774,16 +772,6 @@
                         var ohlEl = card.querySelector('.scan-ohl');
                         if (ohlEl && d.candleOpen) {
                             ohlEl.textContent = 'O:' + fmt(d.candleOpen) + ' H:' + fmt(d.candleHigh) + ' L:' + fmt(d.candleLow);
-                        }
-                        var cslEl = card.querySelector('.scan-csl');
-                        if (cslEl) {
-                            if (d.chandelierSl) {
-                                var cslColor = d.chandelierSlSide === 'LONG' ? 'var(--accent-green)' : 'var(--accent-red)';
-                                var cslArrow = d.chandelierSlSide === 'LONG' ? '\u2191' : '\u2193';
-                                cslEl.innerHTML = '<span style="color:' + cslColor + ';">' + cslArrow + fmt(d.chandelierSl) + '</span>';
-                            } else {
-                                cslEl.innerHTML = '<span style="color:var(--text-muted);">\u2014</span>';
-                            }
                         }
                     }
                 } catch (err) {}
