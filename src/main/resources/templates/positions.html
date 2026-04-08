@@ -147,26 +147,48 @@
         </div>
     </div>
 
-    <div class="stat-grid">
-        <div class="stat-card fade-in" style="--accent-color: var(--accent-cyan)">
-            <div class="stat-label">Open Positions</div>
-            <div class="stat-value" id="statCount">0</div>
-            <div class="stat-sub">Active contracts</div>
+    <!-- HERO OVERVIEW -->
+    <div class="section-card fade-in" style="margin-bottom:20px;">
+        <div class="section-header">
+            <div class="section-title"><div class="section-title-dot"></div> Overview</div>
+            <span class="section-badge" id="positionsBadge">0 active</span>
         </div>
-        <div class="stat-card fade-in" style="--accent-color: var(--accent-green)">
-            <div class="stat-label">Net Day P&amp;L</div>
-            <div class="stat-value" id="statPnl">—</div>
-            <div class="stat-sub" id="statPnlSub">Realized + Unrealized</div>
-        </div>
-        <div class="stat-card fade-in" style="--accent-color: var(--accent-blue)">
-            <div class="stat-label">Capital Deployed</div>
-            <div class="stat-value" id="statCapital">₹0</div>
-            <div class="stat-sub" id="statCapitalSub">0 positions</div>
-        </div>
-        <div class="stat-card fade-in" style="--accent-color: var(--accent-yellow)">
-            <div class="stat-label">Market Clock</div>
-            <div class="stat-value" id="marketClock">—</div>
-            <div class="stat-sub" id="marketClockSub">Checking...</div>
+        <div style="padding:20px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px;">
+            <!-- Net P&L — hero number -->
+            <div>
+                <div class="stat-label" style="margin-bottom:6px;">Net Day P&amp;L</div>
+                <div class="stat-value" id="statPnl" style="font-size:2.2rem;">—</div>
+                <div class="stat-sub" id="statPnlSub" style="margin-top:6px;">Realized + Unrealized</div>
+            </div>
+            <!-- Key stats -->
+            <div style="display:flex; gap:28px; flex-wrap:wrap;">
+                <div style="text-align:center;">
+                    <div class="stat-label">Open</div>
+                    <div class="stat-value" id="statCount" style="font-size:1.3rem; margin-top:4px; color:var(--accent-cyan);">0</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">Exposed Risk</div>
+                    <div class="stat-value" id="exposedRiskVal" style="font-size:1.3rem; margin-top:4px; color:#f6ad55;">₹0</div>
+                </div>
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;">
+                    <div class="stat-label">Capital</div>
+                    <div class="stat-value" id="statCapital" style="font-size:1rem; margin-top:4px;">₹0</div>
+                    <div class="stat-sub" id="statCapitalSub" style="font-size:0.68rem;">Notional: ₹0</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">Consumed</div>
+                    <div class="stat-value" id="consumedRiskVal" style="font-size:1rem; margin-top:4px; color:#fc8181;">₹0</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">Budget</div>
+                    <div class="stat-value" id="riskBudgetVal" style="font-size:1rem; margin-top:4px; color:#68d391;">—</div>
+                </div>
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;">
+                    <div class="stat-label">Clock</div>
+                    <div class="stat-value" id="marketClock" style="font-size:1.1rem; margin-top:4px;">—</div>
+                    <div class="stat-sub" id="marketClockSub" style="font-size:0.68rem;">Checking...</div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -184,9 +206,6 @@
     <option value="">All Symbols</option>
 </select>
 <span class="section-badge" id="positionsBadge">0 active</span>
-<span class="section-badge" id="exposedRiskBadge" style="background:rgba(246,173,85,0.10); color:#f6ad55; border-color:rgba(246,173,85,0.25);">Exposed Risk: ₹0</span>
-<span class="section-badge" id="consumedRiskBadge" style="background:rgba(252,129,129,0.10); color:#fc8181; border-color:rgba(252,129,129,0.25);">Consumed Risk: ₹0</span>
-<span class="section-badge" id="riskBudgetBadge" style="background:rgba(104,211,145,0.10); color:#68d391; border-color:rgba(104,211,145,0.25);">Risk Budget: ₹0 / ₹0</span>
             </div>
         </div>
         <div class="table-wrap">
@@ -510,15 +529,15 @@
                 const consumedRisk = data.consumedRisk || 0;
                 const maxDailyLoss = data.maxDailyLoss || 0;
                 const totalRisk = openRisk + consumedRisk;
-                document.getElementById('exposedRiskBadge').textContent = 'Exposed Risk: ₹' + Math.round(openRisk);
-                document.getElementById('consumedRiskBadge').textContent = 'Consumed Risk: ₹' + Math.round(consumedRisk);
-                const budgetBadge = document.getElementById('riskBudgetBadge');
-                budgetBadge.textContent = 'Risk Budget: ₹' + Math.round(totalRisk) + ' / ₹' + Math.round(maxDailyLoss);
+                document.getElementById('exposedRiskVal').textContent = '\u20B9' + Math.round(openRisk).toLocaleString('en-IN');
+                document.getElementById('consumedRiskVal').textContent = '\u20B9' + Math.round(consumedRisk).toLocaleString('en-IN');
+                const budgetEl = document.getElementById('riskBudgetVal');
+                budgetEl.textContent = '\u20B9' + Math.round(totalRisk).toLocaleString('en-IN') + ' / \u20B9' + Math.round(maxDailyLoss).toLocaleString('en-IN');
                 if (maxDailyLoss > 0) {
                     const pct = totalRisk / maxDailyLoss;
-                    if (pct >= 1) { budgetBadge.style.color = '#fc8181'; budgetBadge.style.background = 'rgba(252,129,129,0.10)'; budgetBadge.style.borderColor = 'rgba(252,129,129,0.25)'; }
-                    else if (pct >= 0.8) { budgetBadge.style.color = '#f6ad55'; budgetBadge.style.background = 'rgba(246,173,85,0.10)'; budgetBadge.style.borderColor = 'rgba(246,173,85,0.25)'; }
-                    else { budgetBadge.style.color = '#68d391'; budgetBadge.style.background = 'rgba(104,211,145,0.10)'; budgetBadge.style.borderColor = 'rgba(104,211,145,0.25)'; }
+                    if (pct >= 1) { budgetEl.style.color = '#fc8181'; }
+                    else if (pct >= 0.8) { budgetEl.style.color = '#f6ad55'; }
+                    else { budgetEl.style.color = '#68d391'; }
                 }
                 allPositions = positions;
                 updatePosSymbolFilter(positions);
