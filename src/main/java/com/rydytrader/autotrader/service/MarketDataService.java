@@ -790,7 +790,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             subscribeWatchlist(watchlist);
         }
 
-        eventService.log("[INFO] Scanner initialized: " + watchlist.size() + " symbols, ATR loaded, trends calculated");
+        double minPrice = riskSettings.getScanMinPrice();
+        double narrowMax = riskSettings.getNarrowCprMaxWidth();
+        double insideMax = riskSettings.getInsideCprMaxWidth();
+        eventService.log("[INFO] Scanner initialized: " + watchlist.size() + " symbols"
+            + " (filters: narrow<" + narrowMax + "%, inside<" + insideMax + "%, price≥₹" + (int)minPrice + ")"
+            + " | ATR loaded, trends calculated");
     }
 
     /**
