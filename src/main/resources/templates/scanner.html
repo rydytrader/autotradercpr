@@ -974,12 +974,8 @@ function showChart(symbol, shortName) {
             var container = document.getElementById('chartContainer');
             container.innerHTML = '';
 
-            if (!data.candles || data.candles.length === 0) {
-                document.getElementById('chartSubtitle').textContent = 'No candle data available';
-                return;
-            }
-
-            document.getElementById('chartSubtitle').textContent = '';
+            var hasCandles = data.candles && data.candles.length > 0;
+            document.getElementById('chartSubtitle').textContent = hasCandles ? '' : 'Pre-market — CPR levels shown';
 
             // Create chart
             var chart = LightweightCharts.createChart(container, {
@@ -1039,7 +1035,7 @@ function showChart(symbol, shortName) {
                 priceLineWidth: 1,
                 priceLineStyle: LightweightCharts.LineStyle.Dotted
             });
-            candleSeries.setData(data.candles);
+            if (hasCandles) candleSeries.setData(data.candles);
 
             // CPR level lines
             var levels = data.levels || {};
@@ -1188,7 +1184,7 @@ function showChart(symbol, shortName) {
                 return 'O: ' + d.open.toFixed(2) + '  H: ' + d.high.toFixed(2) + '  L: ' + d.low.toFixed(2) + '  C: <span style="color:' + color + ';font-weight:600;">' + d.close.toFixed(2) + '</span>  <span style="color:' + color + ';">(' + (chg >= 0 ? '+' : '') + chgPct + '%)</span>';
             }
             // Show latest candle OHLC on load
-            var lastCandle = data.candles[data.candles.length - 1];
+            var lastCandle = hasCandles ? data.candles[data.candles.length - 1] : null;
             if (lastCandle) document.getElementById('chartOhlc').innerHTML = formatOhlc(lastCandle);
 
             chart.subscribeCrosshairMove(function(param) {

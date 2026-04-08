@@ -205,39 +205,47 @@ public class ScannerController {
     public Map<String, Object> getChartData(@org.springframework.web.bind.annotation.RequestParam String symbol) {
         Map<String, Object> result = new LinkedHashMap<>();
 
-        // Use CandleAggregator data — only today's candles (startMinute 555-930 = 9:15-15:30)
+        // Only show candles during market hours (9:15-15:30 IST)
         java.time.ZoneId IST = java.time.ZoneId.of("Asia/Kolkata");
         java.time.LocalDate today = java.time.LocalDate.now(IST);
         long dayStartEpoch = today.atStartOfDay(IST).toEpochSecond();
+        int nowMinute = java.time.LocalTime.now(IST).getHour() * 60 + java.time.LocalTime.now(IST).getMinute();
 
-        // Deduplicate by startMinute — last occurrence wins (today's live candle overrides seeded)
-        java.util.LinkedHashMap<Long, Map<String, Object>> candleMap = new java.util.LinkedHashMap<>();
-        for (CandleAggregator.CandleBar bar : candleAggregator.getCompletedCandles(symbol)) {
-            if (bar.startMinute < 555 || bar.startMinute > 930) continue; // only market hours
-            Map<String, Object> c = new LinkedHashMap<>();
-            long time = dayStartEpoch + bar.startMinute * 60;
-            c.put("time", time);
-            c.put("open", r(bar.open));
-            c.put("high", r(bar.high));
-            c.put("low", r(bar.low));
-            c.put("close", r(bar.close));
-            c.put("volume", bar.volume);
-            candleMap.put(bar.startMinute, c);
+        List<Map<String, Object>> candles = new ArrayList<>();
+        // Before market open (9:15 = 555 minutes) — return empty candles, just CPR levels
+        if (nowMinute >= 555) {
+            // Only include candles that have been created AFTER today's market open
+            // Use current candle as anchor — if it exists, market is live and we trust the buffer
+            CandleAggregator.CandleBar current = candleAggregator.getCurrentCandle(symbol);
+            boolean marketLive = current != null && current.open > 0 && current.startMinute >= 555;
+
+            if (marketLive) {
+                java.util.LinkedHashMap<Long, Map<String, Object>> candleMap = new java.util.LinkedHashMap<>();
+                for (CandleAggregator.CandleBar bar : candleAggregator.getCompletedCandles(symbol)) {
+                    if (bar.startMinute < 555 || bar.startMinute > 930) continue;
+                    Map<String, Object> c = new LinkedHashMap<>();
+                    c.put("time", dayStartEpoch + bar.startMinute * 60);
+                    c.put("open", r(bar.open));
+                    c.put("high", r(bar.high));
+                    c.put("low", r(bar.low));
+                    c.put("close", r(bar.close));
+                    c.put("volume", bar.volume);
+                    candleMap.put(bar.startMinute, c);
+                }
+                // Add current forming candle
+                Map<String, Object> cc = new LinkedHashMap<>();
+                cc.put("time", dayStartEpoch + current.startMinute * 60);
+                cc.put("open", r(current.open));
+                cc.put("high", r(current.high));
+                cc.put("low", r(current.low));
+                cc.put("close", r(current.close));
+                cc.put("volume", current.volume);
+                candleMap.put(current.startMinute, cc);
+
+                candles = new ArrayList<>(candleMap.values());
+                candles.sort((a, b) -> Long.compare((long) a.get("time"), (long) b.get("time")));
+            }
         }
-        CandleAggregator.CandleBar current = candleAggregator.getCurrentCandle(symbol);
-        if (current != null && current.open > 0 && current.startMinute >= 555 && current.startMinute <= 930) {
-            Map<String, Object> c = new LinkedHashMap<>();
-            c.put("time", dayStartEpoch + current.startMinute * 60);
-            c.put("open", r(current.open));
-            c.put("high", r(current.high));
-            c.put("low", r(current.low));
-            c.put("close", r(current.close));
-            c.put("volume", current.volume);
-            candleMap.put(current.startMinute, c);
-        }
-        // Sort by time ascending
-        List<Map<String, Object>> candles = new ArrayList<>(candleMap.values());
-        candles.sort((a, b) -> Long.compare((long) a.get("time"), (long) b.get("time")));
         result.put("candles", candles);
 
         // CPR levels
