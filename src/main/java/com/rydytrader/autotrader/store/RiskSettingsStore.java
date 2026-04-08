@@ -45,6 +45,7 @@ public class RiskSettingsStore {
         volatile boolean enableLargeCandleFilter = true; // reject trade if candle > largeCandleAtrThreshold ATR from breakout level
         volatile double largeCandleAtrThreshold = 1.0; // ATR multiplier for large candle filter
         volatile boolean enableTargetShift = true; // shift target to next level if default target < threshold ATR. If false, skip the entry.
+        volatile boolean enableGapCheck = true;     // halve qty if day open or first candle beyond R2/S2
         volatile boolean enableDayHighLowTargetShift = true; // shift target to day high/low if between entry and target
         volatile double targetShiftAtrThreshold = 1.0; // shift target if distance < this × ATR
         volatile boolean enableSmallCandleFilter = false; // reject if candle move from breakout level < smallCandleAtrThreshold ATR
@@ -120,6 +121,7 @@ public class RiskSettingsStore {
     public int    getTelegramAlertFrequency() { return cfg().telegramAlertFrequency; }
     public boolean isEnableLargeCandleFilter() { return cfg().enableLargeCandleFilter; }
     public double getLargeCandleAtrThreshold() { return cfg().largeCandleAtrThreshold; }
+    public boolean isEnableGapCheck() { return cfg().enableGapCheck; }
     public boolean isEnableDayHighLowTargetShift() { return cfg().enableDayHighLowTargetShift; }
     public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
     public double getTargetShiftAtrThreshold() { return cfg().targetShiftAtrThreshold; }
@@ -190,6 +192,7 @@ public class RiskSettingsStore {
     public void setTelegramAlertFrequency(int v) { cfg().telegramAlertFrequency = v; }
     public void setEnableLargeCandleFilter(boolean v) { cfg().enableLargeCandleFilter = v; }
     public void setLargeCandleAtrThreshold(double v) { cfg().largeCandleAtrThreshold = v; }
+    public void setEnableGapCheck(boolean v) { cfg().enableGapCheck = v; }
     public void setEnableDayHighLowTargetShift(boolean v) { cfg().enableDayHighLowTargetShift = v; }
     public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
     public void setTargetShiftAtrThreshold(double v) { cfg().targetShiftAtrThreshold = v; }
@@ -306,6 +309,7 @@ public class RiskSettingsStore {
             upsert("telegramAlertFrequency", String.valueOf(c.telegramAlertFrequency));
             upsert("enableLargeCandleFilter", String.valueOf(c.enableLargeCandleFilter));
             upsert("largeCandleAtrThreshold", String.valueOf(c.largeCandleAtrThreshold));
+            upsert("enableGapCheck", String.valueOf(c.enableGapCheck));
             upsert("enableDayHighLowTargetShift", String.valueOf(c.enableDayHighLowTargetShift));
             upsert("enableTargetShift", String.valueOf(c.enableTargetShift));
             upsert("targetShiftAtrThreshold", String.valueOf(c.targetShiftAtrThreshold));
@@ -382,6 +386,7 @@ public class RiskSettingsStore {
                     case "telegramAlertFrequency" -> c.telegramAlertFrequency = Integer.parseInt(v);
                     case "enableLargeCandleFilter" -> c.enableLargeCandleFilter = Boolean.parseBoolean(v);
                     case "largeCandleAtrThreshold" -> c.largeCandleAtrThreshold = Double.parseDouble(v);
+                    case "enableGapCheck" -> c.enableGapCheck = Boolean.parseBoolean(v);
                     case "enableDayHighLowTargetShift" -> c.enableDayHighLowTargetShift = Boolean.parseBoolean(v);
                     case "enableTargetShift" -> c.enableTargetShift = Boolean.parseBoolean(v);
                     case "targetShiftAtrThreshold" -> c.targetShiftAtrThreshold = Double.parseDouble(v);

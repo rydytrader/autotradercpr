@@ -193,8 +193,9 @@ public class SignalProcessor {
             boolean sessionMoveExceeded = Math.max(moveFromOpen, moveFromPdc) > sessionMoveLimit;
             // Gap check: first candle opened OR closed beyond R2 (buy) or S2 (sell) = gap-up/gap-down
             double firstClose = dbl(alert, "firstCandleClose");
-            boolean gapBeyondR2S2 = (isBuy && r2 > 0 && ((firstClose > 0 && firstClose > r2) || (dayOpen > 0 && dayOpen > r2)))
-                                 || (!isBuy && s2 > 0 && ((firstClose > 0 && firstClose < s2) || (dayOpen > 0 && dayOpen < s2)));
+            boolean gapBeyondR2S2 = riskSettings.isEnableGapCheck()
+                && ((isBuy && r2 > 0 && ((firstClose > 0 && firstClose > r2) || (dayOpen > 0 && dayOpen > r2)))
+                 || (!isBuy && s2 > 0 && ((firstClose > 0 && firstClose < s2) || (dayOpen > 0 && dayOpen < s2))));
 
             if (sessionMoveExceeded || gapBeyondR2S2) {
                 int reduced = Math.max(1, qty / 2);
