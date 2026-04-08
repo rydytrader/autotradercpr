@@ -59,6 +59,7 @@ public class SettingsController {
         result.put("telegramAlertFrequency", riskSettings.getTelegramAlertFrequency(effectiveMode));
         result.put("enableLargeCandleFilter", riskSettings.isEnableLargeCandleFilter(effectiveMode));
         result.put("largeCandleAtrThreshold", riskSettings.getLargeCandleAtrThreshold(effectiveMode));
+        result.put("enableDayHighLowTargetShift", riskSettings.isEnableDayHighLowTargetShift());
         result.put("enableTargetShift", riskSettings.isEnableTargetShift(effectiveMode));
         result.put("targetShiftAtrThreshold", riskSettings.getTargetShiftAtrThreshold(effectiveMode));
         result.put("enableSmallCandleFilter", riskSettings.isEnableSmallCandleFilter(effectiveMode));
@@ -124,6 +125,7 @@ public class SettingsController {
             if (body.containsKey("telegramAlertFrequency")) riskSettings.setTelegramAlertFrequency(effectiveMode, Integer.parseInt(body.get("telegramAlertFrequency").toString()));
             if (body.containsKey("enableLargeCandleFilter")) riskSettings.setEnableLargeCandleFilter(effectiveMode, Boolean.parseBoolean(body.get("enableLargeCandleFilter").toString()));
             if (body.containsKey("largeCandleAtrThreshold")) riskSettings.setLargeCandleAtrThreshold(effectiveMode, Double.parseDouble(body.get("largeCandleAtrThreshold").toString()));
+            if (body.containsKey("enableDayHighLowTargetShift")) riskSettings.setEnableDayHighLowTargetShift(Boolean.parseBoolean(body.get("enableDayHighLowTargetShift").toString()));
             if (body.containsKey("enableTargetShift")) riskSettings.setEnableTargetShift(effectiveMode, Boolean.parseBoolean(body.get("enableTargetShift").toString()));
             if (body.containsKey("targetShiftAtrThreshold")) riskSettings.setTargetShiftAtrThreshold(effectiveMode, Double.parseDouble(body.get("targetShiftAtrThreshold").toString()));
             if (body.containsKey("enableSmallCandleFilter")) riskSettings.setEnableSmallCandleFilter(effectiveMode, Boolean.parseBoolean(body.get("enableSmallCandleFilter").toString()));

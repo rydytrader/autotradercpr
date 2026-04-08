@@ -157,14 +157,14 @@ public class SignalProcessor {
         // ── 4g. Day high/low target shift ──────────────────────────────────────
         // If today's session high (BUY) or low (SELL) is between entry and target,
         // shift target to day high/low — it acts as intraday resistance/support
-        if (isBuy) {
+        if (riskSettings.isEnableDayHighLowTargetShift() && isBuy) {
             double dayHigh = marketDataService.getDayHigh(symbol);
             if (dayHigh > 0 && dayHigh > close && dayHigh < target) {
                 eventService.log("[INFO] " + symbol + " " + setup + " target shifted to day high: "
                     + fmt(target) + " → " + fmt(dayHigh) + " (session high between entry and target)");
                 target = dayHigh;
             }
-        } else {
+        } else if (riskSettings.isEnableDayHighLowTargetShift()) {
             double dayLow = marketDataService.getDayLow(symbol);
             if (dayLow > 0 && dayLow < close && dayLow > target) {
                 eventService.log("[INFO] " + symbol + " " + setup + " target shifted to day low: "
