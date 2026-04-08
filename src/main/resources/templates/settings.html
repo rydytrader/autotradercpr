@@ -238,7 +238,17 @@
             <div class="section-title">
                 <div class="section-title-dot" style="background: var(--accent-yellow);"></div>
                 Risk Controls
+                <span onclick="document.getElementById('qtyStackInfo').style.display=document.getElementById('qtyStackInfo').style.display==='none'?'block':'none'" title="Quantity stacking order" style="display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; margin-left:8px; border-radius:50%; background:rgba(251,191,36,0.15); border:1px solid rgba(251,191,36,0.35); color:#fbbf24; font-family:var(--font-mono); font-size:0.68rem; font-weight:700; cursor:pointer;">?</span>
             </div>
+        </div>
+        <div id="qtyStackInfo" style="display:none; padding:12px 22px; background:rgba(251,191,36,0.05); border-bottom:1px solid var(--border); font-family:var(--font-mono); font-size:0.75rem; line-height:1.8; color:var(--text-secondary);">
+            <div style="font-weight:700; color:#fbbf24; margin-bottom:6px;">Quantity Stacking Order</div>
+            <div>1. <b>Base qty</b> — risk-based (risk per trade / SL distance) or fixed quantity</div>
+            <div>2. <b>Capital cap</b> — min(base qty, capital per trade / price)</div>
+            <div>3. <b>Session move / gap</b> — ÷2 if session move > N% OR day open/1st candle close beyond R2/S2</div>
+            <div>4. <b>Probability</b> — HPT = 1×, MPT = 0.5×, LPT = 0.25×</div>
+            <div>5. <b>Level factor</b> — R3/S3 = 0.75×, R4/S4 = 0.5×</div>
+            <div style="margin-top:6px; color:var(--text-muted); font-size:0.68rem;">Each step multiplies the running qty from the previous step.</div>
         </div>
         <div class="section-body">
             <div class="form-grid">
