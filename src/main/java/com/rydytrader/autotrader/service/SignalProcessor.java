@@ -46,6 +46,8 @@ public class SignalProcessor {
         double candleOpen = dbl(alert, "candleOpen");
         double candleHigh = dbl(alert, "candleHigh");
         double candleLow  = dbl(alert, "candleLow");
+        double dayHigh = dbl(alert, "dayHigh");
+        double dayLow  = dbl(alert, "dayLow");
 
         // ── Reject if ATR is invalid (NaN or zero — Pine Script may send NaN for insufficient bars)
         if (Double.isNaN(atr) || atr <= 0) {
@@ -63,7 +65,7 @@ public class SignalProcessor {
         }
 
         // ── 4c. Compute breakout level ──────────────────────────────────────────
-        double breakoutLevel = computeBreakoutLevel(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
+        double breakoutLevel = computeBreakoutLevel(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc, dayHigh, dayLow);
 
         // ── 4c2. Compute stop loss (needed for risk-based qty) ─────────────────
         double atrMultiplier = riskSettings.getAtrMultiplier();
@@ -185,22 +187,24 @@ public class SignalProcessor {
         if (isReversal) {
             targets = computeReversalTargets(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
         } else {
-            targets = computeTargets(setup, close, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
+            targets = computeTargets(setup, close, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc, dayHigh, dayLow);
         }
         double defaultTarget = targets[0];
         double target = defaultTarget;
 
-        // ── 4g. Day high/low target shift (always on) ─────────────────────────
+        // ── 4g. Day high/low target shift (always on, except DH/DL setups) ────
         // If today's session high (BUY) or low (SELL) is between entry and target,
         // shift target to day high/low — it acts as intraday resistance/support
-        if (isBuy) {
+        // Skip for DH/DL setups: breakout candle creates new day high/low, would shift target to near entry
+        boolean isDhDl = "BUY_ABOVE_DH".equals(setup) || "SELL_BELOW_DL".equals(setup);
+        if (!isDhDl && isBuy) {
             double dayHigh = marketDataService.getDayHigh(symbol);
             if (dayHigh > 0 && dayHigh > close && dayHigh < target) {
                 eventService.log("[INFO] " + symbol + " " + setup + " target shifted to day high: "
                     + fmt(target) + " → " + fmt(dayHigh) + " (session high between entry and target)");
                 target = dayHigh;
             }
-        } else {
+        } else if (!isDhDl) {
             double dayLow = marketDataService.getDayLow(symbol);
             if (dayLow > 0 && dayLow < close && dayLow > target) {
                 eventService.log("[INFO] " + symbol + " " + setup + " target shifted to day low: "
@@ -373,7 +377,8 @@ public class SignalProcessor {
     private double computeBreakoutLevel(String setup,
             double r1, double r2, double r3, double r4,
             double s1, double s2, double s3, double s4,
-            double ph, double pl, double tc, double bc) {
+            double ph, double pl, double tc, double bc,
+            double dayHigh, double dayLow) {
         return switch (setup) {
             case "BUY_ABOVE_CPR"    -> Math.max(tc, bc);
             case "BUY_ABOVE_R1_PDH" -> Math.max(r1, ph);
@@ -381,12 +386,14 @@ public class SignalProcessor {
             case "BUY_ABOVE_R3"     -> r3;
             case "BUY_ABOVE_R4"     -> r4;
             case "BUY_ABOVE_S1_PDL" -> Math.max(s1, pl);
+            case "BUY_ABOVE_DH"     -> dayHigh;
             case "SELL_BELOW_CPR"    -> Math.min(tc, bc);
             case "SELL_BELOW_S1_PDL" -> Math.min(s1, pl);
             case "SELL_BELOW_S2"     -> s2;
             case "SELL_BELOW_S3"     -> s3;
             case "SELL_BELOW_S4"     -> s4;
             case "SELL_BELOW_R1_PDH" -> Math.min(r1, ph);
+            case "SELL_BELOW_DL"     -> dayLow;
             default -> 0;
         };
     }
@@ -395,7 +402,8 @@ public class SignalProcessor {
     private double[] computeTargets(String setup, double close,
             double r1, double r2, double r3, double r4,
             double s1, double s2, double s3, double s4,
-            double ph, double pl, double tc, double bc) {
+            double ph, double pl, double tc, double bc,
+            double dayHigh, double dayLow) {
         return switch (setup) {
             case "BUY_ABOVE_CPR"     -> new double[]{ Math.min(r1, ph), r2 };
             case "BUY_ABOVE_R1_PDH"  -> new double[]{ r2, r3 };
@@ -403,14 +411,42 @@ public class SignalProcessor {
             case "BUY_ABOVE_R3"      -> new double[]{ r4, r4 };
             case "BUY_ABOVE_R4"      -> { double r5 = r4 + (r4 - r3); yield new double[]{ r5, r5 }; }
             case "BUY_ABOVE_S1_PDL"  -> new double[]{ Math.min(tc, bc), Math.min(r1, ph) };
+            case "BUY_ABOVE_DH"      -> { yield new double[]{ nextLevelAbove(dayHigh, r1, r2, r3, r4, ph, tc, bc), 0 }; }
             case "SELL_BELOW_CPR"     -> new double[]{ Math.max(s1, pl), s2 };
             case "SELL_BELOW_S1_PDL"  -> new double[]{ s2, s3 };
             case "SELL_BELOW_S2"      -> new double[]{ s3, s4 };
             case "SELL_BELOW_S3"      -> new double[]{ s4, s4 };
             case "SELL_BELOW_S4"      -> { double s5 = s4 - (s3 - s4); yield new double[]{ s5, s5 }; }
             case "SELL_BELOW_R1_PDH"  -> new double[]{ Math.max(tc, bc), Math.max(s1, pl) };
+            case "SELL_BELOW_DL"      -> { yield new double[]{ nextLevelBelow(dayLow, s1, s2, s3, s4, pl, tc, bc), 0 }; }
             default -> new double[]{ 0, 0 };
         };
+    }
+
+    /** Find the next CPR level above dayHigh for BUY_ABOVE_DH target. */
+    private double nextLevelAbove(double dh, double r1, double r2, double r3, double r4,
+                                   double ph, double tc, double bc) {
+        double cprTop = Math.max(tc, bc);
+        double r1ph = Math.max(r1, ph);
+        if (dh >= r4) return r4 + (r4 - r3); // projected R5
+        if (dh >= r3) return r4;
+        if (dh >= r2) return r3;
+        if (dh >= r1ph) return r2;
+        if (dh >= cprTop) return r1ph;
+        return r1ph; // fallback
+    }
+
+    /** Find the next CPR level below dayLow for SELL_BELOW_DL target. */
+    private double nextLevelBelow(double dl, double s1, double s2, double s3, double s4,
+                                   double pl, double tc, double bc) {
+        double cprBot = Math.min(tc, bc);
+        double s1pl = Math.min(s1, pl);
+        if (dl <= s4) return s4 - (s3 - s4); // projected S5
+        if (dl <= s3) return s4;
+        if (dl <= s2) return s3;
+        if (dl <= s1pl) return s2;
+        if (dl <= cprBot) return s1pl;
+        return s1pl; // fallback
     }
 
     /**
@@ -453,6 +489,8 @@ public class SignalProcessor {
             case "SELL_BELOW_S3"     -> "S3";
             case "SELL_BELOW_S4"     -> "S4";
             case "SELL_BELOW_R1_PDH" -> "R1+PDH";
+            case "BUY_ABOVE_DH"     -> "Day High";
+            case "SELL_BELOW_DL"    -> "Day Low";
             default -> setup;
         };
     }

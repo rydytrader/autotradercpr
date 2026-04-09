@@ -185,6 +185,7 @@
                 <tr><td>BUY_ABOVE_R2</td><td>Close above R2</td><td>R3</td><td>R4</td></tr>
                 <tr><td>BUY_ABOVE_R3</td><td>Close above R3</td><td>R4</td><td>R4</td></tr>
                 <tr><td>BUY_ABOVE_R4</td><td>Close above R4</td><td>Projected R5</td><td>R5</td></tr>
+                <tr><td>BUY_ABOVE_DH</td><td>Close above session high (after OR locks)</td><td>Next CPR level above day high</td><td>—</td></tr>
             </table>
 
             <h4>Sell Setups & Targets</h4>
@@ -195,6 +196,7 @@
                 <tr><td>SELL_BELOW_S2</td><td>Close below S2</td><td>S3</td><td>S4</td></tr>
                 <tr><td>SELL_BELOW_S3</td><td>Close below S3</td><td>S4</td><td>S4</td></tr>
                 <tr><td>SELL_BELOW_S4</td><td>Close below S4</td><td>Projected S5</td><td>S5</td></tr>
+                <tr><td>SELL_BELOW_DL</td><td>Close below session low (after OR locks)</td><td>Next CPR level below day low</td><td>—</td></tr>
             </table>
 
             <h4>Breakout Rules</h4>
@@ -202,14 +204,19 @@
                 <li>Green candle required for buys (close &gt; open), red candle for sells</li>
                 <li>Priority: highest level wins (R4 &gt; R3 &gt; R2 &gt; R1/PDH &gt; CPR)</li>
                 <li>Each level fires only once per day per symbol — cleared when position closes to allow re-entry</li>
+                <li><strong>Day High/Low breakouts</strong>: when price breaks the session high/low without a CPR level break, fires BUY_ABOVE_DH or SELL_BELOW_DL. Lowest priority — CPR breakouts take precedence. Only after Opening Range locks.</li>
                 <li>VWAP/ATP check (if enabled): buy requires close &gt; ATP, sell requires close &lt; ATP</li>
             </ul>
 
-            <h4>Target Shift</h4>
-            <p>If default target distance is less than N x ATR (configurable), target shifts to the next level up. This avoids tiny targets on tight setups.</p>
-
-            <h4>Day High/Low Shift</h4>
-            <p>If today's session high (for buys) or low (for sells) is between entry and target, the target shifts to the day high/low — it acts as intraday resistance/support.</p>
+            <h4>Target Calculation Flow</h4>
+            <p>Targets go through a two-step process before the trade is accepted:</p>
+            <table>
+                <tr><th>Step</th><th>What Happens</th><th>Example (BUY)</th></tr>
+                <tr><td><strong>1. CPR Target</strong></td><td>Default target set from CPR level (R1, R2, etc.)</td><td>Entry 1850, target R2 = 1875</td></tr>
+                <tr><td><strong>2. Day High/Low Shift</strong></td><td>If session high is between entry and target, shift target to day high (always on, no toggle)</td><td>Day high 1865 is between 1850-1875 → target shifts to 1865</td></tr>
+                <tr><td><strong>3. Small Target Filter</strong></td><td>If final target &lt; N x ATR from entry → <strong>skip trade</strong> (configurable, can disable)</td><td>ATR=20, threshold=1.0. Distance 1865-1850=15 &lt; 20 → <strong>SKIP</strong></td></tr>
+            </table>
+            <p>This ensures every trade has enough profit room to justify the risk. Day high/low acts as an intraday resistance — even if the CPR target is further away, the day high/low is the realistic barrier price needs to overcome first.</p>
         </div>
     </div>
 
@@ -357,6 +364,7 @@
                 <li><strong>Large candle filter</strong> — reject if candle move &gt; N x ATR from level</li>
                 <li><strong>Small candle filter</strong> — reject if candle move &lt; N x ATR</li>
                 <li><strong>Volume filter</strong> — reject if candle volume &lt; N x average volume</li>
+                <li><strong>Small target filter</strong> — reject if final target &lt; N x ATR from entry (after day high/low shift)</li>
                 <li><strong>R4/S4 disabled</strong> — reject R4/S4 signals</li>
                 <li><strong>ATR invalid</strong> — reject if ATR is zero or NaN</li>
             </ul>
@@ -812,7 +820,7 @@
                 <tr><td>Large Candle Filter</td><td>ON, 1.0 ATR</td><td>Reject if candle move exceeds N x ATR from breakout level</td></tr>
                 <tr><td>Small Candle Filter</td><td>OFF, 0.5 ATR</td><td>Reject if candle body smaller than N x ATR</td></tr>
                 <tr><td>Volume Filter</td><td>ON, 1.0x avg</td><td>Reject if candle volume below N x average volume</td></tr>
-                <tr><td>Target Shift</td><td>ON, 1.0 ATR</td><td>Shift target to next level if default target &lt; N x ATR. If disabled, skip trade when target too close.</td></tr>
+                <tr><td>Small Target Filter</td><td>ON, 1.0 ATR</td><td>Skip trade if final target (after day high/low shift) is &lt; N x ATR from entry</td></tr>
                 <tr><td>Day High/Low Shift</td><td>ON</td><td>Shift target to session high/low if between entry and target</td></tr>
                 <tr><td>Split Targets</td><td>ON, 50%, 0 ATR</td><td>T1 at N% of target distance, T2 at full. Min distance to split.</td></tr>
             </table>
