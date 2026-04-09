@@ -196,6 +196,7 @@
     <!-- TABS -->
     <div class="settings-tabs fade-in">
         <button class="settings-tab active" onclick="switchTab('risk', this)">Risk</button>
+        <button class="settings-tab" onclick="switchTab('signals', this)">Signals</button>
         <button class="settings-tab" onclick="switchTab('scanner', this)">Scanner</button>
         <button class="settings-tab" onclick="switchTab('filters', this)">Filters</button>
         <button class="settings-tab" onclick="switchTab('hours', this)">Hours</button>
@@ -510,14 +511,13 @@
     </div><!-- /tab-hours -->
 
     <!-- TAB: SCANNER -->
-    <div class="tab-content" id="tab-scanner">
-
-    <!-- SIGNAL SOURCE -->
+    <!-- TAB: SIGNALS -->
+    <div class="tab-content" id="tab-signals">
     <div class="section-card fade-in">
         <div class="section-header">
             <div class="section-title">
-                <div class="section-title-dot" style="background: var(--accent-cyan, var(--accent-blue));"></div>
-                Signal Source
+                <div class="section-title-dot" style="background: var(--accent-cyan);"></div>
+                Signal Configuration
             </div>
         </div>
         <div class="section-body">
@@ -531,9 +531,9 @@
                     <div class="form-hint">TRADINGVIEW = alerts via webhook, INTERNAL = bot scans CPR levels</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Scanner Timeframe</label>
-                    <input type="number" id="scannerTimeframe" class="form-control" min="1" max="60" step="1" placeholder="15">
-                    <div class="form-hint">Candle timeframe in minutes for breakout detection</div>
+                    <label class="form-label">Trading Timeframe</label>
+                    <input type="number" id="scannerTimeframe" class="form-control" min="1" max="60" step="1" placeholder="5">
+                    <div class="form-hint">Candle timeframe in minutes for breakout detection, ATR and EMA calculation</div>
                 </div>
                 <div class="form-group" style="grid-column: 1 / -1;">
                     <label class="form-label">Signal Probability</label>
@@ -553,6 +553,11 @@
             </div>
         </div>
     </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
+    </div><!-- /tab-signals -->
+
+    <!-- TAB: SCANNER -->
+    <div class="tab-content" id="tab-scanner">
 
     <!-- CPR WIDTH SCANNER -->
     <div class="section-card fade-in" style="margin-top:16px;">
