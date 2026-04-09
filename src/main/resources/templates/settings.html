@@ -373,6 +373,13 @@
         <div class="section-body">
             <div class="form-grid">
                 <div class="form-group">
+                    <label class="form-label">VWAP / ATP Confirmation</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableAtpCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only above ATP (VWAP), sell only below ATP</span>
+                    </div>
+                </div>
+                <div class="form-group">
                     <label class="form-label">Large Candle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableLargeCandleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
@@ -542,13 +549,6 @@
                         </label>
                     </div>
                     <div class="form-hint">Enable/disable signal categories. Qty factors configured in Risk Controls.</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">ATP Check</label>
-                    <label class="form-check-label" style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem; margin-top:6px;">
-                        <input type="checkbox" id="enableAtpCheck" class="form-check-input"> Require ATP confirmation
-                    </label>
-                    <div class="form-hint">Buy only above ATP, sell only below ATP</div>
                 </div>
             </div>
         </div>
