@@ -266,25 +266,6 @@
                 <div class="section-title-dot" style="background: var(--accent-yellow);"></div>
                 Risk Controls
             </div>
-            <span onclick="document.getElementById('qtyStackInfo').style.display=document.getElementById('qtyStackInfo').style.display==='none'?'block':'none'" style="font-family:var(--font-mono); font-size:0.68rem; color:#fbbf24; cursor:pointer; font-weight:600; letter-spacing:0.03em;">Quantity Stacking Order &#9654;</span>
-        </div>
-        <div id="qtyStackInfo" style="display:none; padding:12px 22px; background:rgba(251,191,36,0.05); border-bottom:1px solid var(--border); font-family:var(--font-mono); font-size:0.75rem; line-height:1.8; color:var(--text-secondary);">
-            <div style="font-weight:700; color:#fbbf24; margin-bottom:6px;">Quantity Stacking Order</div>
-            <div>1. <b>Base qty</b> — risk-based (risk per trade / SL distance) or fixed quantity</div>
-            <div>2. <b>Capital cap</b> — min(base qty, capital per trade / price)</div>
-            <div>3. <b>Extreme level</b> — ÷2 if R2+/S2+ breakout</div>
-            <div>4. <b>Session move %</b> — ÷2 if price moved > N% from day open / PDC</div>
-            <div>5. <b>Probability</b> — HPT = 1×, MPT = 0.5×, LPT = 0.25×</div>
-            <div>6. <b>Level factor</b> — R3/S3 = 0.75×, R4/S4 = 0.5×</div>
-            <div>7. <b>Mean-reversion</b> — ÷2 for all EV reversals + OV magnet trades</div>
-            <div style="margin-top:6px; color:var(--text-muted); font-size:0.68rem;">Each step multiplies the running qty from the previous step. Min qty = 2 (even).</div>
-            <div style="margin-top:8px; font-weight:700; color:#fbbf24; margin-bottom:4px;">Open Classification</div>
-            <div><b>IV</b> (Inside Value) — 1st candle close between S1/PDL and R1/PDH</div>
-            <div><b>OV</b> (Outside Value) — 1st candle close above R1/PDH or below S1/PDL</div>
-            <div><b>EV</b> (Extended Value) — 1st candle close above R2 or below S2</div>
-            <div style="margin-top:8px; font-weight:700; color:#fbbf24; margin-bottom:4px;">EV Day Rules</div>
-            <div>OR aligned → trend trade (full qty) | OR counter → mean-reversion (÷2, closer targets) | Inside OR → skip</div>
-            <div style="margin-top:4px; color:var(--text-muted); font-size:0.68rem;">Reversal targets: R4→R3, R3→R2, R2→R1/PDH, R1/PDH→magnet (CPR)</div>
         </div>
         <div class="section-body">
             <div class="form-grid">
