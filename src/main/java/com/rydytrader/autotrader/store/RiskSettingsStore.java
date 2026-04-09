@@ -49,6 +49,10 @@ public class RiskSettingsStore {
         volatile boolean enableDayHighLowTargetShift = true; // shift target to day high/low if between entry and target
         volatile double dayHighLowMinAtr = 0.5; // min distance in ATR for day high/low shifted target (0 = no check)
         volatile boolean enableSmallTargetFilter = true; // skip trade if target < N ATR from entry
+        // 20 EMA distance filter
+        volatile boolean enableEmaFilter = true;
+        volatile double emaLevelDistanceAtr = 0.5;   // max breakout level to EMA distance in ATR
+        volatile double emaCloseDistanceAtr = 0.75;  // max candle close to EMA distance in ATR
         volatile double targetShiftAtrThreshold = 1.0; // shift target if distance < this × ATR
         volatile boolean enableSmallCandleFilter = false; // reject if candle move from breakout level < smallCandleAtrThreshold ATR
         volatile double smallCandleAtrThreshold = 0.5; // ATR multiplier for small candle filter
@@ -133,6 +137,9 @@ public class RiskSettingsStore {
     public boolean isEnableDayHighLowTargetShift() { return cfg().enableDayHighLowTargetShift; }
     public double getDayHighLowMinAtr()            { return cfg().dayHighLowMinAtr; }
     public boolean isEnableSmallTargetFilter()     { return cfg().enableSmallTargetFilter; }
+    public boolean isEnableEmaFilter()             { return cfg().enableEmaFilter; }
+    public double getEmaLevelDistanceAtr()         { return cfg().emaLevelDistanceAtr; }
+    public double getEmaCloseDistanceAtr()         { return cfg().emaCloseDistanceAtr; }
     public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
     public double getTargetShiftAtrThreshold() { return cfg().targetShiftAtrThreshold; }
     public boolean isEnableSmallCandleFilter() { return cfg().enableSmallCandleFilter; }
@@ -214,6 +221,9 @@ public class RiskSettingsStore {
     public void setEnableDayHighLowTargetShift(boolean v) { cfg().enableDayHighLowTargetShift = v; }
     public void setDayHighLowMinAtr(double v)              { cfg().dayHighLowMinAtr = v; }
     public void setEnableSmallTargetFilter(boolean v)      { cfg().enableSmallTargetFilter = v; }
+    public void setEnableEmaFilter(boolean v)              { cfg().enableEmaFilter = v; }
+    public void setEmaLevelDistanceAtr(double v)           { cfg().emaLevelDistanceAtr = v; }
+    public void setEmaCloseDistanceAtr(double v)           { cfg().emaCloseDistanceAtr = v; }
     public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
     public void setTargetShiftAtrThreshold(double v) { cfg().targetShiftAtrThreshold = v; }
     public void setEnableSmallCandleFilter(boolean v) { cfg().enableSmallCandleFilter = v; }
@@ -333,6 +343,9 @@ public class RiskSettingsStore {
             upsert("enableDayHighLowTargetShift", String.valueOf(c.enableDayHighLowTargetShift));
             upsert("dayHighLowMinAtr", String.valueOf(c.dayHighLowMinAtr));
             upsert("enableSmallTargetFilter", String.valueOf(c.enableSmallTargetFilter));
+            upsert("enableEmaFilter", String.valueOf(c.enableEmaFilter));
+            upsert("emaLevelDistanceAtr", String.valueOf(c.emaLevelDistanceAtr));
+            upsert("emaCloseDistanceAtr", String.valueOf(c.emaCloseDistanceAtr));
             upsert("enableTargetShift", String.valueOf(c.enableTargetShift));
             upsert("targetShiftAtrThreshold", String.valueOf(c.targetShiftAtrThreshold));
             upsert("enableSmallCandleFilter", String.valueOf(c.enableSmallCandleFilter));
@@ -416,6 +429,9 @@ public class RiskSettingsStore {
                     case "enableDayHighLowTargetShift" -> c.enableDayHighLowTargetShift = Boolean.parseBoolean(v);
                     case "dayHighLowMinAtr" -> c.dayHighLowMinAtr = Double.parseDouble(v);
                     case "enableSmallTargetFilter" -> c.enableSmallTargetFilter = Boolean.parseBoolean(v);
+                    case "enableEmaFilter" -> c.enableEmaFilter = Boolean.parseBoolean(v);
+                    case "emaLevelDistanceAtr" -> c.emaLevelDistanceAtr = Double.parseDouble(v);
+                    case "emaCloseDistanceAtr" -> c.emaCloseDistanceAtr = Double.parseDouble(v);
                     case "enableTargetShift" -> c.enableTargetShift = Boolean.parseBoolean(v);
                     case "targetShiftAtrThreshold" -> c.targetShiftAtrThreshold = Double.parseDouble(v);
                     case "enableSmallCandleFilter" -> c.enableSmallCandleFilter = Boolean.parseBoolean(v);

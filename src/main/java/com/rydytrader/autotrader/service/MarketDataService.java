@@ -50,6 +50,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     private final RiskSettingsStore   riskSettings;
     private final CandleAggregator    candleAggregator;
     private final AtrService          atrService;
+    private final EmaService          emaService;
     private final WeeklyCprService    weeklyCprService;
     private final BreakoutScanner     breakoutScanner;
     private final BhavcopyService     bhavcopyService;
@@ -138,7 +139,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                               AtrService atrService,
                               WeeklyCprService weeklyCprService,
                               BreakoutScanner breakoutScanner,
-                              BhavcopyService bhavcopyService) {
+                              BhavcopyService bhavcopyService,
+                              EmaService emaService) {
         this.tokenStore = tokenStore;
         this.fyersProperties = fyersProperties;
         this.positionStateStore = positionStateStore;
@@ -151,6 +153,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         this.weeklyCprService = weeklyCprService;
         this.breakoutScanner = breakoutScanner;
         this.bhavcopyService = bhavcopyService;
+        this.emaService = emaService;
         candleAggregator.addListener(this);
     }
 
@@ -174,6 +177,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         // Register candle close listeners
         candleAggregator.setTimeframe(riskSettings.getScannerTimeframe());
         candleAggregator.addListener(atrService);
+        candleAggregator.addListener(emaService);
         candleAggregator.addListener(breakoutScanner);
         candleAggregator.start();
 

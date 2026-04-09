@@ -63,6 +63,9 @@ public class SettingsController {
         result.put("enableDayHighLowTargetShift", riskSettings.isEnableDayHighLowTargetShift());
         result.put("dayHighLowMinAtr", riskSettings.getDayHighLowMinAtr());
         result.put("enableSmallTargetFilter", riskSettings.isEnableSmallTargetFilter());
+        result.put("enableEmaFilter", riskSettings.isEnableEmaFilter());
+        result.put("emaLevelDistanceAtr", riskSettings.getEmaLevelDistanceAtr());
+        result.put("emaCloseDistanceAtr", riskSettings.getEmaCloseDistanceAtr());
         result.put("enableTargetShift", riskSettings.isEnableTargetShift(effectiveMode));
         result.put("targetShiftAtrThreshold", riskSettings.getTargetShiftAtrThreshold(effectiveMode));
         result.put("enableSplitTarget", riskSettings.isEnableSplitTarget());
@@ -136,6 +139,9 @@ public class SettingsController {
             if (body.containsKey("enableDayHighLowTargetShift")) riskSettings.setEnableDayHighLowTargetShift(Boolean.parseBoolean(body.get("enableDayHighLowTargetShift").toString()));
             if (body.containsKey("dayHighLowMinAtr")) riskSettings.setDayHighLowMinAtr(Double.parseDouble(body.get("dayHighLowMinAtr").toString()));
             if (body.containsKey("enableSmallTargetFilter")) riskSettings.setEnableSmallTargetFilter(Boolean.parseBoolean(body.get("enableSmallTargetFilter").toString()));
+            if (body.containsKey("enableEmaFilter")) riskSettings.setEnableEmaFilter(Boolean.parseBoolean(body.get("enableEmaFilter").toString()));
+            if (body.containsKey("emaLevelDistanceAtr")) riskSettings.setEmaLevelDistanceAtr(Double.parseDouble(body.get("emaLevelDistanceAtr").toString()));
+            if (body.containsKey("emaCloseDistanceAtr")) riskSettings.setEmaCloseDistanceAtr(Double.parseDouble(body.get("emaCloseDistanceAtr").toString()));
             if (body.containsKey("enableTargetShift")) riskSettings.setEnableTargetShift(effectiveMode, Boolean.parseBoolean(body.get("enableTargetShift").toString()));
             if (body.containsKey("targetShiftAtrThreshold")) riskSettings.setTargetShiftAtrThreshold(effectiveMode, Double.parseDouble(body.get("targetShiftAtrThreshold").toString()));
             if (body.containsKey("enableSplitTarget")) riskSettings.setEnableSplitTarget(Boolean.parseBoolean(body.get("enableSplitTarget").toString()));

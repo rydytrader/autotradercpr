@@ -42,6 +42,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     private final RiskSettingsStore riskSettings;
     private final EventService eventService;
     private final LatencyTracker latencyTracker;
+    private final EmaService emaService;
 
     @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.context.annotation.Lazy
@@ -76,7 +77,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                            CandleAggregator candleAggregator,
                            RiskSettingsStore riskSettings,
                            EventService eventService,
-                           LatencyTracker latencyTracker) {
+                           LatencyTracker latencyTracker,
+                           EmaService emaService) {
         this.bhavcopyService = bhavcopyService;
         this.atrService = atrService;
         this.weeklyCprService = weeklyCprService;
@@ -84,6 +86,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         this.riskSettings = riskSettings;
         this.eventService = eventService;
         this.latencyTracker = latencyTracker;
+        this.emaService = emaService;
         loadState();
     }
 
@@ -179,6 +182,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     eventService.log("[SCANNER] " + buySetup + " for " + fyersSymbol + " — skipped, " + prob + " not enabled");
                     return;
                 }
+                // EMA distance filter
+                if (isEmaFilterBlocked(fyersSymbol, buySetup, close, levels, atr)) return;
                 // Log co-occurrence: CPR breakout + Day High break on same candle
                 if (!"BUY_ABOVE_DH".equals(buySetup)) {
                     double dh = marketDataService.getDayHigh(fyersSymbol);
@@ -220,6 +225,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     eventService.log("[SCANNER] " + sellSetup + " for " + fyersSymbol + " — skipped, " + prob + " not enabled");
                     return;
                 }
+                // EMA distance filter
+                if (isEmaFilterBlocked(fyersSymbol, sellSetup, close, levels, atr)) return;
                 // Log co-occurrence: CPR breakout + Day Low break on same candle
                 if (!"SELL_BELOW_DL".equals(sellSetup)) {
                     double dl = marketDataService.getDayLow(fyersSymbol);
@@ -472,6 +479,61 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         }
 
         return false;
+    }
+
+    /**
+     * EMA distance filter: returns true if trade should be SKIPPED (too far from EMA).
+     */
+    private boolean isEmaFilterBlocked(String fyersSymbol, String setup, double close,
+                                        CprLevels levels, double atr) {
+        if (!riskSettings.isEnableEmaFilter()) return false;
+        double ema = emaService.getEma(fyersSymbol);
+        if (ema <= 0 || atr <= 0) return false; // no EMA data, allow trade
+
+        double breakoutLevel = getBreakoutLevelPrice(setup, levels, fyersSymbol);
+        if (breakoutLevel <= 0) return false;
+
+        double levelDist = Math.abs(breakoutLevel - ema);
+        double closeDist = Math.abs(close - ema);
+        double maxLevelDist = atr * riskSettings.getEmaLevelDistanceAtr();
+        double maxCloseDist = atr * riskSettings.getEmaCloseDistanceAtr();
+
+        if (levelDist > maxLevelDist) {
+            eventService.log("[SCANNER] " + setup + " for " + fyersSymbol
+                + " — skipped, breakout level " + String.format("%.2f", breakoutLevel)
+                + " too far from EMA(" + String.format("%.2f", ema) + ")"
+                + " dist=" + String.format("%.2f", levelDist) + " > " + String.format("%.2f", maxLevelDist) + " ATR");
+            return true;
+        }
+        if (closeDist > maxCloseDist) {
+            eventService.log("[SCANNER] " + setup + " for " + fyersSymbol
+                + " — skipped, close " + String.format("%.2f", close)
+                + " too far from EMA(" + String.format("%.2f", ema) + ")"
+                + " dist=" + String.format("%.2f", closeDist) + " > " + String.format("%.2f", maxCloseDist) + " ATR");
+            return true;
+        }
+        return false;
+    }
+
+    /** Get the breakout level price for a given setup name. */
+    private double getBreakoutLevelPrice(String setup, CprLevels levels, String fyersSymbol) {
+        return switch (setup) {
+            case "BUY_ABOVE_CPR"    -> Math.max(levels.getTc(), levels.getBc());
+            case "BUY_ABOVE_R1_PDH" -> Math.max(levels.getR1(), levels.getPh());
+            case "BUY_ABOVE_R2"     -> levels.getR2();
+            case "BUY_ABOVE_R3"     -> levels.getR3();
+            case "BUY_ABOVE_R4"     -> levels.getR4();
+            case "BUY_ABOVE_S1_PDL" -> Math.max(levels.getS1(), levels.getPl());
+            case "BUY_ABOVE_DH"     -> marketDataService.getDayHigh(fyersSymbol);
+            case "SELL_BELOW_CPR"    -> Math.min(levels.getTc(), levels.getBc());
+            case "SELL_BELOW_S1_PDL" -> Math.min(levels.getS1(), levels.getPl());
+            case "SELL_BELOW_S2"     -> levels.getS2();
+            case "SELL_BELOW_S3"     -> levels.getS3();
+            case "SELL_BELOW_S4"     -> levels.getS4();
+            case "SELL_BELOW_R1_PDH" -> Math.min(levels.getR1(), levels.getPh());
+            case "SELL_BELOW_DL"     -> marketDataService.getDayLow(fyersSymbol);
+            default -> 0;
+        };
     }
 
     private String extractTicker(String fyersSymbol) {

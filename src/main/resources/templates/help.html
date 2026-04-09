@@ -381,6 +381,7 @@
                 <li><strong>Small candle filter</strong> — reject if candle move &lt; N x ATR</li>
                 <li><strong>Volume filter</strong> — reject if candle volume &lt; N x average volume</li>
                 <li><strong>Small target filter</strong> — reject if final target &lt; N x ATR from entry (after day high/low shift)</li>
+                <li><strong>20 EMA distance filter</strong> — reject if breakout level &gt; 0.5 ATR from 20 EMA OR candle close &gt; 0.75 ATR from 20 EMA (overextended breakout)</li>
                 <li><strong>R4/S4 disabled</strong> — reject R4/S4 signals</li>
                 <li><strong>ATR invalid</strong> — reject if ATR is zero or NaN</li>
             </ul>
@@ -839,6 +840,7 @@
                 <tr><td>Small Candle Filter</td><td>OFF, 0.5 ATR</td><td>Reject if candle body smaller than N x ATR</td></tr>
                 <tr><td>Volume Filter</td><td>ON, 1.0x avg</td><td>Reject if candle volume below N x average volume</td></tr>
                 <tr><td>Small Target Filter</td><td>ON, 1.0 ATR</td><td>Skip trade if final target (after day high/low shift) is &lt; N x ATR from entry</td></tr>
+                <tr><td>20 EMA Distance Filter</td><td>ON, 0.5 / 0.75 ATR</td><td>Skip if breakout level &gt; 0.5 ATR from 20 EMA or close &gt; 0.75 ATR from 20 EMA</td></tr>
                 <tr><td>Day High/Low Shift</td><td>ON</td><td>Shift target to session high/low if between entry and target</td></tr>
                 <tr><td>Split Targets</td><td>ON, 50%, 0 ATR</td><td>T1 at N% of target distance, T2 at full. Min distance to split.</td></tr>
             </table>
