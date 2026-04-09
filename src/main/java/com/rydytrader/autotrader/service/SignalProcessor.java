@@ -17,15 +17,17 @@ public class SignalProcessor {
     private final QuantityService  quantityService;
     private final MarketDataService marketDataService;
     private final CandleAggregator candleAggregator;
+    private final WeeklyCprService weeklyCprService;
 
     public SignalProcessor(RiskSettingsStore riskSettings, EventService eventService,
                            QuantityService quantityService, MarketDataService marketDataService,
-                           CandleAggregator candleAggregator) {
+                           CandleAggregator candleAggregator, WeeklyCprService weeklyCprService) {
         this.riskSettings = riskSettings;
         this.eventService = eventService;
         this.quantityService = quantityService;
         this.marketDataService = marketDataService;
         this.candleAggregator = candleAggregator;
+        this.weeklyCprService = weeklyCprService;
     }
 
     public ProcessedSignal process(Map<String, Object> alert) {
@@ -173,6 +175,12 @@ public class SignalProcessor {
                 if (counter) {
                     // Counter-OR on EV day = mean-reversion trade
                     isReversal = true;
+                    // Recalculate probability: reversals use weekly-only (like magnets — counter-daily is expected)
+                    String oldProb = probability;
+                    probability = weeklyCprService.getProbabilityForDirection(symbol, isBuy, true);
+                    if (!oldProb.equals(probability)) {
+                        eventService.log("[INFO] " + symbol + " " + setup + " probability recalculated for reversal: " + oldProb + " → " + probability);
+                    }
                     eventService.log("[INFO] " + symbol + " " + setup + " EV " + (gapUp ? "up" : "down")
                         + " — OR " + (orBullish ? "Bullish" : "Bearish") + " reversal, mean-reversion targets");
                 } else {
