@@ -345,15 +345,25 @@
     <div class="section-card help-section fade-in" style="margin-bottom:16px;">
         <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Probability Classification</div></div>
         <div class="help-body">
-            <p>Probability is determined by <strong>breakout direction vs both weekly AND daily trends</strong>. HPT requires both timeframes aligned.</p>
+            <p>Probability depends on the <strong>setup type</strong>. Trend breakouts require both weekly + daily alignment. Magnet trades only check weekly (counter-daily is expected).</p>
 
+            <h4>Trend Breakouts (CPR, R1-R4, S1-S4, DH/DL)</h4>
+            <p>HPT requires weekly AND daily AND breakout direction all aligned.</p>
             <table>
                 <tr><th>Weekly</th><th>Daily</th><th>Breakout</th><th>Category</th><th>Qty Factor</th></tr>
-                <tr><td>Bullish</td><td>Bullish</td><td>Buy</td><td><span class="badge-example bg">HPT</span> High Probable Trade</td><td>1.0x</td></tr>
+                <tr><td>Bullish</td><td>Bullish</td><td>Buy</td><td><span class="badge-example bg">HPT</span></td><td>1.0x</td></tr>
                 <tr><td>Bearish</td><td>Bearish</td><td>Sell</td><td><span class="badge-example bg">HPT</span></td><td>1.0x</td></tr>
-                <tr><td>Neutral</td><td>Any</td><td>Either</td><td><span class="badge-example bb">MPT</span> Medium Probable Trade</td><td>configurable (default 0.5x)</td></tr>
-                <tr><td>Bullish</td><td>Bearish</td><td>Buy</td><td><span class="badge-example by">LPT</span> Low Probable Trade</td><td>configurable (default 0.25x)</td></tr>
-                <tr><td>Bearish</td><td>Bullish</td><td>Sell</td><td><span class="badge-example by">LPT</span></td><td>configurable (default 0.25x)</td></tr>
+                <tr><td>Neutral</td><td>Any</td><td>Either</td><td><span class="badge-example bb">MPT</span></td><td>configurable (default 0.5x)</td></tr>
+                <tr><td colspan="3">Anything else (weekly or daily not aligned)</td><td><span class="badge-example by">LPT</span></td><td>configurable (default 0.25x)</td></tr>
+            </table>
+
+            <h4>Magnet Trades (BUY_ABOVE_S1_PDL, SELL_BELOW_R1_PDH)</h4>
+            <p>HPT requires weekly aligned only. Daily is intentionally opposed (buying a pullback / selling a bounce) — daily check is skipped.</p>
+            <table>
+                <tr><th>Weekly</th><th>Daily</th><th>Breakout</th><th>Category</th><th>Qty Factor</th></tr>
+                <tr><td>Bullish</td><td>Bearish (always)</td><td>Buy</td><td><span class="badge-example bg">HPT</span></td><td>1.0x</td></tr>
+                <tr><td>Bearish</td><td>Bullish (always)</td><td>Sell</td><td><span class="badge-example bg">HPT</span></td><td>1.0x</td></tr>
+                <tr><td>Neutral</td><td>Any</td><td>Either</td><td><span class="badge-example bb">MPT</span></td><td>configurable (default 0.5x)</td></tr>
                 <tr><td>Bearish</td><td>Any</td><td>Buy</td><td><span class="badge-example by">LPT</span></td><td>configurable (default 0.25x)</td></tr>
                 <tr><td>Bullish</td><td>Any</td><td>Sell</td><td><span class="badge-example by">LPT</span></td><td>configurable (default 0.25x)</td></tr>
             </table>
@@ -685,29 +695,30 @@
                 <tr><td><span class="badge-example br">Strong Bearish</span></td><td>LTP &lt; S1 AND LTP &lt; PDL</td><td>Price well below today's value — strong intraday momentum down</td></tr>
             </table>
 
-            <h4>Trend Alignment</h4>
-            <p>When the weekly trend and the breakout direction agree, the trade has <strong>higher conviction</strong>. When they disagree, conviction is lower. The daily trend is informational — it shows where price is right now relative to today's CPR, but does NOT affect probability classification.</p>
+            <h4>Trend Alignment & Probability</h4>
+            <p>Probability rules differ by setup type:</p>
 
-            <table>
-                <tr><th>Weekly Trend</th><th>Daily Trend</th><th>Breakout</th><th>Alignment</th><th>Interpretation</th></tr>
-                <tr><td><span class="badge-example bg">Bullish</span></td><td><span class="badge-example bg">Bullish</span></td><td>Buy</td><td><strong>Full alignment</strong></td><td>Strongest setup — both timeframes + breakout agree. HPT.</td></tr>
-                <tr><td><span class="badge-example bg">Bullish</span></td><td><span class="badge-example br">Bearish</span></td><td>Buy</td><td>Partial</td><td>Weekly says up but today is weak. Could be a dip-buy opportunity. Still HPT (weekly drives probability).</td></tr>
-                <tr><td><span class="badge-example br">Bearish</span></td><td><span class="badge-example br">Bearish</span></td><td>Buy</td><td><strong>Full misalignment</strong></td><td>Both timeframes bearish but buying. Counter-trend. LPT.</td></tr>
-                <tr><td><span class="badge-example bb">Neutral</span></td><td>Any</td><td>Either</td><td>Neutral</td><td>Weekly has no bias. Breakout could go either way. MPT.</td></tr>
-            </table>
-
-            <h4>Probability = Weekly + Daily Trend Alignment</h4>
-            <p>HPT requires <strong>both weekly AND daily trends aligned</strong> with the breakout direction. If either opposes, probability drops.</p>
-
+            <h4>Trend Breakouts (CPR, R1-R4, S1-S4, DH/DL)</h4>
+            <p>HPT requires <strong>weekly + daily + breakout all aligned</strong>. Daily check ensures the stock is trending in the breakout direction today, not just on the weekly timeframe.</p>
             <table>
                 <tr><th>Weekly</th><th>Daily</th><th>Breakout</th><th>Probability</th><th>Why</th></tr>
-                <tr><td><span class="badge-example bg">Bullish</span></td><td><span class="badge-example bg">Bullish</span></td><td>Buy</td><td><span class="badge-example bg">HPT</span></td><td>Both timeframes + breakout aligned — highest conviction</td></tr>
-                <tr><td><span class="badge-example br">Bearish</span></td><td><span class="badge-example br">Bearish</span></td><td>Sell</td><td><span class="badge-example bg">HPT</span></td><td>Both timeframes + breakout aligned — highest conviction</td></tr>
-                <tr><td><span class="badge-example bb">Neutral</span></td><td>Any</td><td>Either</td><td><span class="badge-example bb">MPT</span></td><td>No weekly bias — could go either way</td></tr>
+                <tr><td><span class="badge-example bg">Bullish</span></td><td><span class="badge-example bg">Bullish</span></td><td>Buy</td><td><span class="badge-example bg">HPT</span></td><td>All three aligned — highest conviction</td></tr>
+                <tr><td><span class="badge-example br">Bearish</span></td><td><span class="badge-example br">Bearish</span></td><td>Sell</td><td><span class="badge-example bg">HPT</span></td><td>All three aligned — highest conviction</td></tr>
+                <tr><td><span class="badge-example bb">Neutral</span></td><td>Any</td><td>Either</td><td><span class="badge-example bb">MPT</span></td><td>No weekly bias</td></tr>
                 <tr><td><span class="badge-example bg">Bullish</span></td><td><span class="badge-example br">Bearish</span></td><td>Buy</td><td><span class="badge-example by">LPT</span></td><td>Weekly supports but daily opposes — mixed signals</td></tr>
-                <tr><td><span class="badge-example br">Bearish</span></td><td><span class="badge-example bg">Bullish</span></td><td>Sell</td><td><span class="badge-example by">LPT</span></td><td>Weekly supports but daily opposes — mixed signals</td></tr>
-                <tr><td><span class="badge-example br">Bearish</span></td><td>Any</td><td>Buy</td><td><span class="badge-example by">LPT</span></td><td>Buying against weekly downtrend — counter-trend</td></tr>
-                <tr><td><span class="badge-example bg">Bullish</span></td><td>Any</td><td>Sell</td><td><span class="badge-example by">LPT</span></td><td>Selling against weekly uptrend — counter-trend</td></tr>
+                <tr><td><span class="badge-example br">Bearish</span></td><td>Any</td><td>Buy</td><td><span class="badge-example by">LPT</span></td><td>Buying against weekly downtrend</td></tr>
+                <tr><td><span class="badge-example bg">Bullish</span></td><td>Any</td><td>Sell</td><td><span class="badge-example by">LPT</span></td><td>Selling against weekly uptrend</td></tr>
+            </table>
+
+            <h4>Magnet Trades (BUY_ABOVE_S1_PDL, SELL_BELOW_R1_PDH)</h4>
+            <p>HPT requires <strong>weekly aligned only</strong>. Daily check is skipped because magnet trades are intentionally counter-daily — you're buying a pullback (daily bearish) or selling a bounce (daily bullish) expecting price to return to CPR.</p>
+            <table>
+                <tr><th>Weekly</th><th>Daily (always opposed)</th><th>Breakout</th><th>Probability</th><th>Why</th></tr>
+                <tr><td><span class="badge-example bg">Bullish</span></td><td><span class="badge-example br">Bearish</span></td><td>Buy (magnet)</td><td><span class="badge-example bg">HPT</span></td><td>Weekly supports the bounce back to CPR</td></tr>
+                <tr><td><span class="badge-example br">Bearish</span></td><td><span class="badge-example bg">Bullish</span></td><td>Sell (magnet)</td><td><span class="badge-example bg">HPT</span></td><td>Weekly supports the fade back to CPR</td></tr>
+                <tr><td><span class="badge-example bb">Neutral</span></td><td>Any</td><td>Either</td><td><span class="badge-example bb">MPT</span></td><td>No weekly bias</td></tr>
+                <tr><td><span class="badge-example br">Bearish</span></td><td>Any</td><td>Buy (magnet)</td><td><span class="badge-example by">LPT</span></td><td>Weekly opposes the bounce</td></tr>
+                <tr><td><span class="badge-example bg">Bullish</span></td><td>Any</td><td>Sell (magnet)</td><td><span class="badge-example by">LPT</span></td><td>Weekly opposes the fade</td></tr>
             </table>
 
             <h4>Why Weekly Trend Matters More Than Daily</h4>
