@@ -30,6 +30,15 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
         return emaBySymbol.getOrDefault(symbol, 0.0);
     }
 
+    /** Seed EMA from historical candles (called after AtrService fetches history). */
+    public void seedFromHistory(String symbol) {
+        List<CandleAggregator.CandleBar> candles = candleAggregator.getCompletedCandles(symbol);
+        if (candles.size() >= EMA_PERIOD) {
+            double ema = calculateEma(candles, EMA_PERIOD);
+            emaBySymbol.put(symbol, ema);
+        }
+    }
+
     /** Get all EMA values (for monitoring/debugging). */
     public Map<String, Double> getAllEma() {
         return emaBySymbol;

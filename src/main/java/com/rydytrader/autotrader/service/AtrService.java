@@ -38,6 +38,9 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
     private final FyersProperties fyersProperties;
     private final RiskSettingsStore riskSettings;
     private final CandleAggregator candleAggregator;
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private EmaService emaService;
     private final ObjectMapper mapper = new ObjectMapper();
 
     private final ConcurrentHashMap<String, Double> atrBySymbol = new ConcurrentHashMap<>();
@@ -76,6 +79,8 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
                     atrBySymbol.put(symbol, atr);
                     // Seed candle aggregator with historical candles
                     candleAggregator.seedCandles(symbol, candles);
+                    // Seed EMA from historical candles
+                    if (emaService != null) emaService.seedFromHistory(symbol);
                     success++;
                 } else {
                     log.warn("[AtrService] Only {} candles for {} (need {})", candles.size(), symbol, getAtrPeriod());
@@ -99,6 +104,7 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
                         double atr = calculateAtr(candles, getAtrPeriod());
                         atrBySymbol.put(symbol, atr);
                         candleAggregator.seedCandles(symbol, candles);
+                        if (emaService != null) emaService.seedFromHistory(symbol);
                         success++;
                         log.info("[AtrService] Retry succeeded for {}", symbol);
                     }
