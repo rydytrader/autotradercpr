@@ -263,6 +263,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                                       CprLevels levels, double atp, Set<String> broken, String fyersSymbol) {
         // ATP check for buys: close must be above ATP
         if (riskSettings.isEnableAtpCheck() && atp > 0 && close < atp) return null;
+        // EMA direction check for buys: close must be above 20 EMA
+        double ema = emaService.getEma(fyersSymbol);
+        if (riskSettings.isEnableEmaDirectionCheck() && ema > 0 && close < ema) return null;
 
         double r4 = levels.getR4(), r3 = levels.getR3(), r2 = levels.getR2();
         double r1 = levels.getR1(), ph = levels.getPh();
@@ -318,6 +321,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                                        CprLevels levels, double atp, Set<String> broken, String fyersSymbol) {
         // ATP check for sells: close must be below ATP
         if (riskSettings.isEnableAtpCheck() && atp > 0 && close > atp) return null;
+        // EMA direction check for sells: close must be below 20 EMA
+        double ema = emaService.getEma(fyersSymbol);
+        if (riskSettings.isEnableEmaDirectionCheck() && ema > 0 && close > ema) return null;
 
         double s4 = levels.getS4(), s3 = levels.getS3(), s2 = levels.getS2();
         double s1 = levels.getS1(), pl = levels.getPl();

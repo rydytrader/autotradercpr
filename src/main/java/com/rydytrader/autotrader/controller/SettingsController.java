@@ -63,6 +63,7 @@ public class SettingsController {
         result.put("enableDayHighLowTargetShift", riskSettings.isEnableDayHighLowTargetShift());
         result.put("dayHighLowMinAtr", riskSettings.getDayHighLowMinAtr());
         result.put("enableSmallTargetFilter", riskSettings.isEnableSmallTargetFilter());
+        result.put("enableEmaDirectionCheck", riskSettings.isEnableEmaDirectionCheck());
         result.put("enableEmaFilter", riskSettings.isEnableEmaFilter());
         result.put("emaLevelDistanceAtr", riskSettings.getEmaLevelDistanceAtr());
         result.put("emaCloseDistanceAtr", riskSettings.getEmaCloseDistanceAtr());
@@ -139,6 +140,7 @@ public class SettingsController {
             if (body.containsKey("enableDayHighLowTargetShift")) riskSettings.setEnableDayHighLowTargetShift(Boolean.parseBoolean(body.get("enableDayHighLowTargetShift").toString()));
             if (body.containsKey("dayHighLowMinAtr")) riskSettings.setDayHighLowMinAtr(Double.parseDouble(body.get("dayHighLowMinAtr").toString()));
             if (body.containsKey("enableSmallTargetFilter")) riskSettings.setEnableSmallTargetFilter(Boolean.parseBoolean(body.get("enableSmallTargetFilter").toString()));
+            if (body.containsKey("enableEmaDirectionCheck")) riskSettings.setEnableEmaDirectionCheck(Boolean.parseBoolean(body.get("enableEmaDirectionCheck").toString()));
             if (body.containsKey("enableEmaFilter")) riskSettings.setEnableEmaFilter(Boolean.parseBoolean(body.get("enableEmaFilter").toString()));
             if (body.containsKey("emaLevelDistanceAtr")) riskSettings.setEmaLevelDistanceAtr(Double.parseDouble(body.get("emaLevelDistanceAtr").toString()));
             if (body.containsKey("emaCloseDistanceAtr")) riskSettings.setEmaCloseDistanceAtr(Double.parseDouble(body.get("emaCloseDistanceAtr").toString()));

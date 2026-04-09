@@ -422,8 +422,12 @@
                     <div class="form-hint">Target is shifted to day high/low automatically if it falls between entry and CPR target.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">20 EMA Large Distance Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
+                    <label class="form-label">20 EMA Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableEmaDirectionCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy requires close above 20 EMA, sell requires close below 20 EMA</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap;">
                         <input type="checkbox" id="enableEmaFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip if breakout level &gt;</span>
                         <input type="number" id="emaLevelDistanceAtr" class="form-control" step="0.1" min="0.1" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
@@ -863,6 +867,7 @@
             // enableDayHighLowTargetShift removed — always on
             // dayHighLowMinAtr removed — single min target distance check handles both
             document.getElementById('enableSmallTargetFilter').checked = d.enableSmallTargetFilter !== false;
+            document.getElementById('enableEmaDirectionCheck').checked = d.enableEmaDirectionCheck !== false;
             document.getElementById('enableEmaFilter').checked = d.enableEmaFilter !== false;
             document.getElementById('emaLevelDistanceAtr').value = d.emaLevelDistanceAtr || 0.5;
             document.getElementById('emaCloseDistanceAtr').value = d.emaCloseDistanceAtr || 0.75;
@@ -985,6 +990,7 @@
                 // enableDayHighLowTargetShift removed — always on
                 // dayHighLowMinAtr removed
                 enableSmallTargetFilter: document.getElementById('enableSmallTargetFilter').checked,
+                enableEmaDirectionCheck: document.getElementById('enableEmaDirectionCheck').checked,
                 enableEmaFilter: document.getElementById('enableEmaFilter').checked,
                 emaLevelDistanceAtr: parseFloat(document.getElementById('emaLevelDistanceAtr').value) || 0.5,
                 emaCloseDistanceAtr: parseFloat(document.getElementById('emaCloseDistanceAtr').value) || 0.75,
