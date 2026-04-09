@@ -121,21 +121,22 @@
     <div class="section-card fade-in" style="margin-bottom:20px;">
         <div class="section-header">
             <div class="section-title"><div class="section-title-dot"></div> Overview</div>
+            <button onclick="document.getElementById('strategyModal').style.display='flex'" style="background:none;border:1px solid var(--border);border-radius:50%;width:26px;height:26px;color:var(--text-muted);cursor:pointer;font-size:0.8rem;font-weight:700;display:flex;align-items:center;justify-content:center;margin-left:auto;" title="Trading Strategy Guide">?</button>
         </div>
         <div style="padding:20px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px;">
             <div>
                 <div class="stat-label" style="margin-bottom:6px;">Net Day P&L</div>
                 <div class="stat-value" id="netDayPnl" style="font-size:2.2rem;">0.00</div>
-                <div class="stat-sub" id="netDayPnlSub" style="margin-top:6px;">Realized + Unrealized</div>
+                <div class="stat-sub" id="netDayPnlSub" style="margin-top:6px;">Gross P&L − Charges</div>
             </div>
             <div style="display:flex; gap:32px; flex-wrap:wrap;">
                 <div style="text-align:center;">
-                    <div class="stat-label">Realized</div>
-                    <div class="stat-value" id="realizedPnl" style="font-size:1.1rem; margin-top:4px;">0.00</div>
+                    <div class="stat-label">Gross P&L</div>
+                    <div class="stat-value" id="heroGrossPnl" style="font-size:1.1rem; margin-top:4px;">0.00</div>
                 </div>
                 <div style="text-align:center;">
-                    <div class="stat-label">Unrealized</div>
-                    <div class="stat-value" id="unrealizedPnl" style="font-size:1.1rem; margin-top:4px;">0.00</div>
+                    <div class="stat-label">Charges</div>
+                    <div class="stat-value" id="heroCharges" style="font-size:1.1rem; margin-top:4px; color:var(--text-muted);">0.00</div>
                 </div>
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
                     <div class="stat-label">Open</div>
@@ -167,16 +168,16 @@
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Total Trades</span>
-                    <span class="stat-value" id="summaryTotalTrades" style="font-size:1rem;">0</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;">Gross Profit</span>
                     <span class="stat-value pnl-positive" id="summaryGrossProfit" style="font-size:1rem;">0.00</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;">Gross Loss</span>
                     <span class="stat-value pnl-negative" id="summaryGrossLoss" style="font-size:1rem;">0.00</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Profit Factor</span>
+                    <span class="stat-value" id="profitFactor" style="font-size:1rem;">--</span>
                 </div>
             </div>
         </div>
@@ -235,16 +236,16 @@
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Gross P&L</span>
-                    <span class="stat-value" id="grossPnl" style="font-size:1rem;">0.00</span>
+                    <span class="stat-label" style="margin:0;">Total Trades</span>
+                    <span class="stat-value" id="summaryTotalTrades" style="font-size:1rem;">0</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Total Charges</span>
-                    <span class="stat-value" id="totalCharges" style="font-size:1rem;">0.00</span>
+                    <span class="stat-label" style="margin:0;">Realized</span>
+                    <span class="stat-value" id="breakdownRealized" style="font-size:1rem;">0.00</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Profit Factor</span>
-                    <span class="stat-value" id="profitFactor" style="font-size:1rem;">--</span>
+                    <span class="stat-label" style="margin:0;">Unrealized</span>
+                    <span class="stat-value" id="breakdownUnrealized" style="font-size:1rem;">0.00</span>
                 </div>
             </div>
         </div>
@@ -274,6 +275,65 @@
     </footer>
 
 </div>
+<!-- Strategy Guide Modal -->
+<div id="strategyModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+  <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:28px; max-width:750px; width:90%; max-height:85vh; overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--border) transparent;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+      <h3 style="font-family:var(--font-mono); font-size:1rem; color:var(--text-primary); margin:0;">Trading Strategy Guide</h3>
+      <button onclick="document.getElementById('strategyModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;">&#x2715;</button>
+    </div>
+    <div style="font-family:var(--font-mono); font-size:0.75rem; line-height:1.9; color:var(--text-secondary);">
+
+      <div style="font-weight:700; color:var(--accent-cyan); margin-bottom:8px; font-size:0.85rem;">Open Classification</div>
+      <div style="margin-bottom:16px; padding-left:12px;">
+        <div><span style="color:var(--accent-green); font-weight:700;">IV</span> (Inside Value) — 1st candle close between S1/PDL and R1/PDH</div>
+        <div><span style="color:var(--accent-yellow); font-weight:700;">OV</span> (Outside Value) — 1st candle close above R1/PDH or below S1/PDL</div>
+        <div><span style="color:var(--accent-red); font-weight:700;">EV</span> (Extended Value) — 1st candle close above R2 or below S2</div>
+      </div>
+
+      <div style="font-weight:700; color:var(--accent-green); margin-bottom:8px; font-size:0.85rem;">Trend Following Setups</div>
+      <div style="margin-bottom:16px; padding-left:12px;">
+        <div style="margin-bottom:4px;">CPR level breakouts in the direction of the move:</div>
+        <div>BUY: CPR &rarr; R1/PDH &rarr; R2 &rarr; R3 &rarr; R4 (targets: next level up)</div>
+        <div>SELL: CPR &rarr; S1/PDL &rarr; S2 &rarr; S3 &rarr; S4 (targets: next level down)</div>
+        <div style="margin-top:6px; color:var(--text-muted);">IV/OV days: all breakouts active</div>
+        <div style="color:var(--text-muted);">EV days: only OR-aligned breakouts (continuation of gap)</div>
+      </div>
+
+      <div style="font-weight:700; color:var(--accent-blue); margin-bottom:8px; font-size:0.85rem;">Magnet Trades (IV/OV Days)</div>
+      <div style="margin-bottom:16px; padding-left:12px;">
+        <div>BUY above S1/PDL &rarr; target CPR (price pulled back to value)</div>
+        <div>SELL below R1/PDH &rarr; target CPR (price pulled back to value)</div>
+        <div style="margin-top:6px; color:var(--text-muted);">IV: full qty | OV: half qty (momentum may resist)</div>
+      </div>
+
+      <div style="font-weight:700; color:#fb923c; margin-bottom:8px; font-size:0.85rem;">Mean Reversion (EV Days)</div>
+      <div style="margin-bottom:16px; padding-left:12px;">
+        <div style="margin-bottom:4px;">When OR is counter to gap direction, trade back toward value:</div>
+        <div>Gap Up + OR Bearish (sell reversals):</div>
+        <div style="padding-left:12px;">R4 &rarr; target R3 | R3 &rarr; target R2 | R2 &rarr; target R1/PDH | R1/PDH &rarr; magnet (CPR)</div>
+        <div style="margin-top:4px;">Gap Down + OR Bullish (buy reversals):</div>
+        <div style="padding-left:12px;">S4 &rarr; target S3 | S3 &rarr; target S2 | S2 &rarr; target S1/PDL | S1/PDL &rarr; magnet (CPR)</div>
+        <div style="margin-top:6px; color:var(--text-muted);">All reversals: half qty (counter daily trend)</div>
+        <div style="color:var(--text-muted);">Inside OR range on EV day: trade skipped</div>
+      </div>
+
+      <div style="font-weight:700; color:#fbbf24; margin-bottom:8px; font-size:0.85rem;">Quantity Stacking</div>
+      <div style="padding-left:12px;">
+        <div>1. Base qty (risk-based or fixed)</div>
+        <div>2. Capital cap</div>
+        <div>3. Extreme level (R2+ ÷2)</div>
+        <div>4. Session move % (÷2 if exceeded)</div>
+        <div>5. Probability (HPT 1x | MPT 0.5x | LPT 0.25x)</div>
+        <div>6. Level factor (R3/S3 0.75x | R4/S4 0.5x)</div>
+        <div>7. Mean-reversion (÷2 for EV reversals + OV magnets)</div>
+        <div style="margin-top:4px; color:var(--text-muted);">Min qty = 2 (even). Each step multiplies running qty.</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 </div><!-- /app-main -->
 </div><!-- /app-layout -->
 
@@ -366,13 +426,15 @@
             netEl.textContent = (netPnl >= 0 ? '+' : '') + fmt(netPnl);
             setPnlClass(netEl, netPnl);
 
-            const realEl = document.getElementById('realizedPnl');
-            realEl.textContent = (d.realizedPnl >= 0 ? '+' : '') + fmt(d.realizedPnl);
-            setPnlClass(realEl, d.realizedPnl);
-
-            const unrEl = document.getElementById('unrealizedPnl');
-            unrEl.textContent = (d.unrealizedPnl >= 0 ? '+' : '') + fmt(d.unrealizedPnl);
-            setPnlClass(unrEl, d.unrealizedPnl);
+            // P&L Breakdown: Realized and Unrealized
+            const realVal = d.realizedPnl || 0;
+            const unrVal = d.unrealizedPnl || 0;
+            const brkRealEl = document.getElementById('breakdownRealized');
+            brkRealEl.textContent = (realVal >= 0 ? '+' : '') + fmt(realVal);
+            setPnlClass(brkRealEl, realVal);
+            const brkUnrEl = document.getElementById('breakdownUnrealized');
+            brkUnrEl.textContent = (unrVal >= 0 ? '+' : '') + fmt(unrVal);
+            setPnlClass(brkUnrEl, unrVal);
 
             document.getElementById('exposedRisk').textContent = fmt(d.openRisk);
             document.getElementById('consumedRisk').textContent = fmt(d.consumedRisk);
@@ -406,13 +468,15 @@
             const wr = trades.length > 0 ? (wins.length / trades.length * 100) : 0;
             document.getElementById('winRate').textContent = trades.length > 0 ? wr.toFixed(1) + '%' : '--';
 
-            // Gross P&L & charges
+            // Gross P&L & charges (for hero card)
             const grossPnl = trades.reduce((s, t) => s + (t.pnl || 0), 0);
             const charges = trades.reduce((s, t) => s + (t.charges || 0), 0);
-            const grossEl = document.getElementById('grossPnl');
-            grossEl.textContent = (grossPnl >= 0 ? '+' : '') + fmt(grossPnl);
-            setPnlClass(grossEl, grossPnl);
-            document.getElementById('totalCharges').textContent = fmt(charges);
+
+            // Hero Gross P&L and Charges
+            const heroGrossEl = document.getElementById('heroGrossPnl');
+            heroGrossEl.textContent = (grossPnl >= 0 ? '+' : '') + fmt(grossPnl);
+            setPnlClass(heroGrossEl, grossPnl);
+            document.getElementById('heroCharges').textContent = fmt(charges);
 
             // Trade Summary section
             const grossProfit = wins.reduce((s, t) => s + (t.pnl || 0), 0);
@@ -608,13 +672,14 @@
                         var netEl = document.getElementById('netDayPnl');
                         if (netEl) { netEl.textContent = (d.netDayPnl >= 0 ? '+' : '') + fmt(d.netDayPnl); setPnlClass(netEl, d.netDayPnl); }
                     }
-                    if (d.unrealizedPnl !== undefined) {
-                        var unrEl = document.getElementById('unrealizedPnl');
-                        if (unrEl) { unrEl.textContent = (d.unrealizedPnl >= 0 ? '+' : '') + fmt(d.unrealizedPnl); setPnlClass(unrEl, d.unrealizedPnl); }
-                    }
+                    // Update P&L Breakdown realized/unrealized from SSE
                     if (d.realizedPnl !== undefined) {
-                        var realEl = document.getElementById('realizedPnl');
-                        if (realEl) { realEl.textContent = (d.realizedPnl >= 0 ? '+' : '') + fmt(d.realizedPnl); setPnlClass(realEl, d.realizedPnl); }
+                        var brkR = document.getElementById('breakdownRealized');
+                        if (brkR) { brkR.textContent = (d.realizedPnl >= 0 ? '+' : '') + fmt(d.realizedPnl); setPnlClass(brkR, d.realizedPnl); }
+                    }
+                    if (d.unrealizedPnl !== undefined) {
+                        var brkU = document.getElementById('breakdownUnrealized');
+                        if (brkU) { brkU.textContent = (d.unrealizedPnl >= 0 ? '+' : '') + fmt(d.unrealizedPnl); setPnlClass(brkU, d.unrealizedPnl); }
                     }
                 } catch (e) {}
             });

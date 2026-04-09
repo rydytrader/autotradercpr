@@ -134,6 +134,26 @@ public class ScannerController {
         card.put("atp", Math.round(candleAggregator.getAtp(fyersSymbol) * 100.0) / 100.0);
         card.put("atr", Math.round(atrService.getAtr(fyersSymbol) * 100.0) / 100.0);
         card.put("dayOpen", Math.round(candleAggregator.getDayOpen(fyersSymbol) * 100.0) / 100.0);
+
+        // Open classification: IV (Inside Value), OV (Outside Value), EV (Extended Value)
+        double firstClose = candleAggregator.getFirstCandleClose(fyersSymbol);
+        String openClass = null;
+        if (firstClose > 0) {
+            double r1 = levels.getR1(), r2 = levels.getR2();
+            double s1 = levels.getS1(), s2 = levels.getS2();
+            double pdh = levels.getPh(), pdl = levels.getPl();
+            double upperBound = Math.max(r1, pdh);
+            double lowerBound = Math.min(s1, pdl);
+            if (firstClose >= r2 || firstClose <= s2) {
+                openClass = "EV";
+            } else if (firstClose > upperBound || firstClose < lowerBound) {
+                openClass = "OV";
+            } else {
+                openClass = "IV";
+            }
+        }
+        card.put("openClass", openClass);
+
         card.put("candleVolume", candleAggregator.getCurrentCandleVolume(fyersSymbol));
         card.put("avgVolume", Math.round(candleAggregator.getAvgVolume(fyersSymbol, riskSettings.getVolumeLookback())));
         card.put("weeklyTrend", weeklyCprService.getWeeklyTrend(fyersSymbol));

@@ -267,9 +267,15 @@
             <div>4. <b>Session move %</b> — ÷2 if price moved > N% from day open / PDC</div>
             <div>5. <b>Probability</b> — HPT = 1×, MPT = 0.5×, LPT = 0.25×</div>
             <div>6. <b>Level factor</b> — R3/S3 = 0.75×, R4/S4 = 0.5×</div>
-            <div>7. <b>OR inside range</b> — ÷2 if gap day and price within Opening Range</div>
+            <div>7. <b>Mean-reversion</b> — ÷2 for all EV reversals + OV magnet trades</div>
             <div style="margin-top:6px; color:var(--text-muted); font-size:0.68rem;">Each step multiplies the running qty from the previous step. Min qty = 2 (even).</div>
-            <div style="margin-top:4px; color:var(--text-muted); font-size:0.68rem;"><b>OR skip filter</b> (before qty): gap day + OR counter/neutral → trade rejected.</div>
+            <div style="margin-top:8px; font-weight:700; color:#fbbf24; margin-bottom:4px;">Open Classification</div>
+            <div><b>IV</b> (Inside Value) — 1st candle close between S1/PDL and R1/PDH</div>
+            <div><b>OV</b> (Outside Value) — 1st candle close above R1/PDH or below S1/PDL</div>
+            <div><b>EV</b> (Extended Value) — 1st candle close above R2 or below S2</div>
+            <div style="margin-top:8px; font-weight:700; color:#fbbf24; margin-bottom:4px;">EV Day Rules</div>
+            <div>OR aligned → trend trade (full qty) | OR counter → mean-reversion (÷2, closer targets) | Inside OR → skip</div>
+            <div style="margin-top:4px; color:var(--text-muted); font-size:0.68rem;">Reversal targets: R4→R3, R3→R2, R2→R1/PDH, R1/PDH→magnet (CPR)</div>
         </div>
         <div class="section-body">
             <div class="form-grid">

@@ -141,8 +141,9 @@ public class SignalProcessor {
             }
         }
 
-        // ── 4e2. Opening Range gap filter — skip counter-OR trades when first candle closed beyond R2/S2 ──
+        // ── 4e2. Opening Range EV filter — on Extended Value days, only trade OR-aligned or mean-reversion ──
         int orMinutes = riskSettings.getOpeningRangeMinutes();
+        boolean isReversal = false;
         if (orMinutes > 0) {
             double firstClose = candleAggregator.getFirstCandleClose(symbol);
             boolean gapUp   = firstClose > 0 && r2 > 0 && firstClose >= r2;
@@ -150,7 +151,7 @@ public class SignalProcessor {
             if (gapUp || gapDown) {
                 if (!candleAggregator.isOpeningRangeLocked(symbol)) {
                     return ProcessedSignal.rejected(setup, symbol,
-                        "Gap " + (gapUp ? "up" : "down") + " detected (1st candle close " + fmt(firstClose)
+                        "EV " + (gapUp ? "up" : "down") + " detected (1st candle close " + fmt(firstClose)
                         + (gapUp ? " >= R2 " + fmt(r2) : " <= S2 " + fmt(s2))
                         + ") but Opening Range still forming — skipped");
                 }
@@ -159,19 +160,33 @@ public class SignalProcessor {
                 boolean orBullish = close > orHigh;
                 boolean orBearish = close < orLow;
                 boolean aligned = (isBuy && orBullish) || (!isBuy && orBearish);
-                if (!aligned) {
-                    String orStatus = orBullish ? "Bullish" : orBearish ? "Bearish" : "Neutral";
+                boolean counter = (isBuy && orBearish) || (!isBuy && orBullish);
+
+                if (!aligned && !counter) {
+                    // Inside OR range — skip
                     return ProcessedSignal.rejected(setup, symbol,
-                        "Gap " + (gapUp ? "up" : "down") + " (1st close " + fmt(firstClose) + ") — OR " + orStatus
-                        + " (H:" + fmt(orHigh) + " L:" + fmt(orLow) + ") not aligned with " + signal + " — skipped");
+                        "EV " + (gapUp ? "up" : "down") + " (1st close " + fmt(firstClose) + ") — price inside OR range"
+                        + " (H:" + fmt(orHigh) + " L:" + fmt(orLow) + ") — skipped");
                 }
-                eventService.log("[INFO] " + symbol + " " + setup + " gap " + (gapUp ? "up" : "down")
-                    + " — OR " + (orBullish ? "Bullish" : "Bearish") + " confirmed, proceeding");
+                if (counter) {
+                    // Counter-OR on EV day = mean-reversion trade
+                    isReversal = true;
+                    eventService.log("[INFO] " + symbol + " " + setup + " EV " + (gapUp ? "up" : "down")
+                        + " — OR " + (orBullish ? "Bullish" : "Bearish") + " reversal, mean-reversion targets");
+                } else {
+                    eventService.log("[INFO] " + symbol + " " + setup + " EV " + (gapUp ? "up" : "down")
+                        + " — OR " + (orBullish ? "Bullish" : "Bearish") + " aligned, proceeding");
+                }
             }
         }
 
         // ── 4f. Compute target ──────────────────────────────────────────────────
-        double[] targets = computeTargets(setup, close, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
+        double[] targets;
+        if (isReversal) {
+            targets = computeReversalTargets(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
+        } else {
+            targets = computeTargets(setup, close, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
+        }
         double defaultTarget = targets[0];
         double shiftTarget   = targets[1];
         double target = defaultTarget;
@@ -265,19 +280,24 @@ public class SignalProcessor {
             }
         }
 
-        // ── 4i4. Opening Range neutral qty reduction — half qty if gap day and price inside OR range ──
-        if (orMinutes > 0 && candleAggregator.isOpeningRangeLocked(symbol)) {
-            double firstCloseForOr = candleAggregator.getFirstCandleClose(symbol);
-            boolean isGapDay = (firstCloseForOr > 0 && r2 > 0 && firstCloseForOr >= r2)
-                            || (firstCloseForOr > 0 && s2 > 0 && firstCloseForOr <= s2);
-            if (isGapDay) {
-                double orHigh = candleAggregator.getOpeningRangeHigh(symbol);
-                double orLow  = candleAggregator.getOpeningRangeLow(symbol);
-                if (orHigh > 0 && orLow > 0 && close >= orLow && close <= orHigh) {
-                    int reduced = Math.max(2, (qty / 4) * 2); // halve and round to even
-                    eventService.log("[INFO] " + symbol + " " + setup + " qty halved (gap day, inside OR range H:" + fmt(orHigh) + " L:" + fmt(orLow) + "): " + qty + " -> " + reduced);
-                    qty = reduced;
+        // ── 4i4. Mean-reversion qty reduction — half qty for all counter-trend trades ──
+        boolean isMagnet = "BUY_ABOVE_S1_PDL".equals(setup) || "SELL_BELOW_R1_PDH".equals(setup);
+        if (isReversal || (isMagnet && !isReversal)) {
+            // Check if OV magnet (not EV — EV magnets are already isReversal)
+            boolean shouldHalve = isReversal; // all EV reversals get halved
+            if (!shouldHalve && isMagnet) {
+                double firstCloseOv = candleAggregator.getFirstCandleClose(symbol);
+                if (firstCloseOv > 0) {
+                    double upperBound = Math.max(r1, ph);
+                    double lowerBound = Math.min(s1, pl);
+                    shouldHalve = firstCloseOv > upperBound || firstCloseOv < lowerBound;
                 }
+            }
+            if (shouldHalve) {
+                int reduced = Math.max(2, (qty / 4) * 2); // halve and round to even
+                String reason = isReversal ? "EV mean-reversion (counter daily trend)" : "OV magnet (outside value)";
+                eventService.log("[INFO] " + symbol + " " + setup + " qty halved (" + reason + "): " + qty + " -> " + reduced);
+                qty = reduced;
             }
         }
 
@@ -287,6 +307,7 @@ public class SignalProcessor {
 
         // Header
         desc.append("═══ TRADE DETAILS ═══");
+        if (isReversal) desc.append("\n").append(ts).append(" [REVERSAL] EV mean-reversion trade — OR counter-trend");
 
         // [ENTRY] line
         String levelName = levelNameForSetup(setup);
@@ -393,6 +414,31 @@ public class SignalProcessor {
             case "SELL_BELOW_S3"      -> new double[]{ s4, s4 };
             case "SELL_BELOW_S4"      -> { double s5 = s4 - (s3 - s4); yield new double[]{ s5, s5 }; }
             case "SELL_BELOW_R1_PDH"  -> new double[]{ Math.max(tc, bc), Math.max(s1, pl) };
+            default -> new double[]{ 0, 0 };
+        };
+    }
+
+    /**
+     * Mean-reversion targets for EV reversal trades.
+     * Gap up + OR bearish: sell breakdowns target the next level back toward value.
+     * Gap down + OR bullish: buy breakouts target the next level back toward value.
+     */
+    private double[] computeReversalTargets(String setup,
+            double r1, double r2, double r3, double r4,
+            double s1, double s2, double s3, double s4,
+            double ph, double pl, double tc, double bc) {
+        return switch (setup) {
+            // Gap up reversal (selling back down)
+            case "SELL_BELOW_R4"      -> new double[]{ r3, r3 };
+            case "SELL_BELOW_R3"      -> new double[]{ r2, r2 };
+            case "SELL_BELOW_R2"      -> new double[]{ Math.max(r1, ph), Math.max(r1, ph) };
+            case "SELL_BELOW_R1_PDH"  -> new double[]{ Math.max(tc, bc), Math.max(s1, pl) }; // magnet target
+            // Gap down reversal (buying back up)
+            case "BUY_ABOVE_S4"       -> new double[]{ s3, s3 };
+            case "BUY_ABOVE_S3"       -> new double[]{ s2, s2 };
+            case "BUY_ABOVE_S2"       -> new double[]{ Math.min(s1, pl), Math.min(s1, pl) };
+            case "BUY_ABOVE_S1_PDL"   -> new double[]{ Math.min(tc, bc), Math.min(r1, ph) }; // magnet target
+            // Other setups — fall back to normal targets (shouldn't reach here in EV reversal)
             default -> new double[]{ 0, 0 };
         };
     }
