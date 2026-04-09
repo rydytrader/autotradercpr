@@ -1,11 +1,16 @@
 package com.rydytrader.autotrader.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import com.rydytrader.autotrader.websocket.HsmBinaryParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -21,6 +26,8 @@ public class CandleAggregator {
 
     private static final Logger log = LoggerFactory.getLogger(CandleAggregator.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+    private static final String OR_STATE_FILE = "../store/config/or-state.json";
+    private static final ObjectMapper mapper = new ObjectMapper();
 
     // Current forming candle per symbol
     private final ConcurrentHashMap<String, CandleBar> currentCandles = new ConcurrentHashMap<>();
@@ -90,6 +97,7 @@ public class CandleAggregator {
     private volatile int restartCount = 0;
 
     public void start() {
+        loadOrState();
         boolean isRestart = scheduler != null;
         if (scheduler != null && !scheduler.isShutdown()) {
             scheduler.shutdownNow();
@@ -172,6 +180,7 @@ public class CandleAggregator {
                         symbol, raw.high, raw.low);
                 }
                 openingRangeLocked.put(symbol, true);
+                saveOrState();
             }
         }
 
@@ -290,7 +299,9 @@ public class CandleAggregator {
 
         // Capture first candle close of the day (only once per symbol per day)
         if (candle.startMinute >= 555 && candle.close > 0) { // 555 = 9:15 AM
-            firstCandleClose.putIfAbsent(symbol, candle.close);
+            if (firstCandleClose.putIfAbsent(symbol, candle.close) == null) {
+                saveOrState();
+            }
         }
 
         // Update Opening Range from completed candle high/low
@@ -304,6 +315,7 @@ public class CandleAggregator {
             // Lock OR when candle starts at or after OR end
             if (candle.startMinute >= orEnd) {
                 openingRangeLocked.put(symbol, true);
+                saveOrState();
             }
         }
 
@@ -356,6 +368,75 @@ public class CandleAggregator {
     /** Whether the Opening Range period has completed and range is locked. */
     public boolean isOpeningRangeLocked(String symbol) {
         return openingRangeLocked.getOrDefault(symbol, false);
+    }
+
+    // ── OR State Persistence ─────────────────────────────────────────────────
+    public void saveOrState() {
+        try {
+            Map<String, Object> state = new LinkedHashMap<>();
+            state.put("date", ZonedDateTime.now(IST).toLocalDate().toString());
+
+            Map<String, Double> fcMap = new LinkedHashMap<>(firstCandleClose);
+            state.put("firstCandleClose", fcMap);
+
+            Map<String, Double> orHighMap = new LinkedHashMap<>(openingRangeHigh);
+            state.put("openingRangeHigh", orHighMap);
+
+            Map<String, Double> orLowMap = new LinkedHashMap<>(openingRangeLow);
+            state.put("openingRangeLow", orLowMap);
+
+            Map<String, Boolean> orLockedMap = new LinkedHashMap<>(openingRangeLocked);
+            state.put("openingRangeLocked", orLockedMap);
+
+            Map<String, Double> dayOpenMap = new LinkedHashMap<>(dayOpen);
+            state.put("dayOpen", dayOpenMap);
+
+            Files.writeString(Paths.get(OR_STATE_FILE),
+                mapper.writerWithDefaultPrettyPrinter().writeValueAsString(state));
+        } catch (Exception e) {
+            log.error("[CandleAggregator] Failed to save OR state: {}", e.getMessage());
+        }
+    }
+
+    public void loadOrState() {
+        try {
+            Path path = Paths.get(OR_STATE_FILE);
+            if (!Files.exists(path)) return;
+
+            JsonNode root = mapper.readTree(Files.readString(path));
+            String savedDate = root.has("date") ? root.get("date").asText() : "";
+            String today = ZonedDateTime.now(IST).toLocalDate().toString();
+            if (!today.equals(savedDate)) {
+                log.info("[CandleAggregator] OR state from {} — stale, starting fresh", savedDate);
+                return;
+            }
+
+            JsonNode fcNode = root.get("firstCandleClose");
+            if (fcNode != null) {
+                fcNode.fields().forEachRemaining(e -> firstCandleClose.putIfAbsent(e.getKey(), e.getValue().asDouble()));
+            }
+            JsonNode orHNode = root.get("openingRangeHigh");
+            if (orHNode != null) {
+                orHNode.fields().forEachRemaining(e -> openingRangeHigh.putIfAbsent(e.getKey(), e.getValue().asDouble()));
+            }
+            JsonNode orLNode = root.get("openingRangeLow");
+            if (orLNode != null) {
+                orLNode.fields().forEachRemaining(e -> openingRangeLow.putIfAbsent(e.getKey(), e.getValue().asDouble()));
+            }
+            JsonNode orLockedNode = root.get("openingRangeLocked");
+            if (orLockedNode != null) {
+                orLockedNode.fields().forEachRemaining(e -> openingRangeLocked.putIfAbsent(e.getKey(), e.getValue().asBoolean()));
+            }
+            JsonNode dayOpenNode = root.get("dayOpen");
+            if (dayOpenNode != null) {
+                dayOpenNode.fields().forEachRemaining(e -> dayOpen.putIfAbsent(e.getKey(), e.getValue().asDouble()));
+            }
+
+            log.info("[CandleAggregator] Loaded OR state: {} symbols, OR locked: {}",
+                firstCandleClose.size(), openingRangeLocked.values().stream().filter(b -> b).count());
+        } catch (Exception e) {
+            log.error("[CandleAggregator] Failed to load OR state: {}", e.getMessage());
+        }
     }
 
     public double getAtp(String symbol) {

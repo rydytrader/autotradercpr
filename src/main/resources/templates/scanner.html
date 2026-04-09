@@ -379,6 +379,18 @@
             <button class="filter-btn" onclick="toggleProbFilter('LPT', this)">LPT</button>
         </span>
         <div class="filter-sep"></div>
+        <div class="filter-sep"></div>
+        <span class="or-filter-group">
+            <button class="filter-btn" onclick="toggleOrFilter('BULLISH', this)">OR Bull</button>
+            <button class="filter-btn" onclick="toggleOrFilter('BEARISH', this)">OR Bear</button>
+        </span>
+        <div class="filter-sep"></div>
+        <span class="ov-filter-group">
+            <button class="filter-btn" onclick="toggleOvFilter('IV', this)">IV</button>
+            <button class="filter-btn" onclick="toggleOvFilter('OV', this)">OV</button>
+            <button class="filter-btn" onclick="toggleOvFilter('EV', this)">EV</button>
+        </span>
+        <div class="filter-sep"></div>
         <button class="filter-btn" onclick="toggleSignalFilter(this)">Has Signal</button>
         <button class="filter-btn" onclick="toggleFilteredFilter(this)">Filtered</button>
         <select id="timeFilter" onchange="applyTimeFilter()" style="
@@ -425,6 +437,8 @@
     var allData = [];
     var cprFilter = 'all';
     var probFilter = null;
+    var orFilter = null;
+    var ovFilter = null;
     var signalFilter = false;
     var filteredFilter = false;
     var timeFilter = '';
@@ -481,6 +495,34 @@
         renderCards();
     };
 
+    window.toggleOrFilter = function(type, btn) {
+        if (orFilter === type) {
+            orFilter = null;
+            btn.classList.remove('active');
+        } else {
+            orFilter = type;
+            document.querySelectorAll('.or-filter-group .filter-btn').forEach(function(b) {
+                b.classList.remove('active');
+            });
+            btn.classList.add('active');
+        }
+        renderCards();
+    };
+
+    window.toggleOvFilter = function(type, btn) {
+        if (ovFilter === type) {
+            ovFilter = null;
+            btn.classList.remove('active');
+        } else {
+            ovFilter = type;
+            document.querySelectorAll('.ov-filter-group .filter-btn').forEach(function(b) {
+                b.classList.remove('active');
+            });
+            btn.classList.add('active');
+        }
+        renderCards();
+    };
+
     window.applyTimeFilter = function() {
         timeFilter = document.getElementById('timeFilter').value;
         renderCards();
@@ -521,6 +563,8 @@
                 }
             }
             if (probFilter && d.probability !== probFilter) return false;
+            if (orFilter && d.orStatus !== orFilter) return false;
+            if (ovFilter && d.openClass !== ovFilter) return false;
             if (signalFilter && (!d.lastSignal || d.lastSignal.status !== 'TRADED')) return false;
             if (filteredFilter && (!d.lastSignal || d.lastSignal.status !== 'FILTERED')) return false;
             if (timeFilter && d.lastSignal && d.lastSignal.time) {
@@ -653,7 +697,7 @@
             + '  <div class="scan-data-item"><div class="scan-data-label">Day Open</div><div class="scan-data-value">' + fmt(d.dayOpen) + (d.openClass ? ' <span style="font-size:0.65rem;color:var(--text-muted);">(' + d.openClass + ')</span>' : '') + '</div></div>'
             + '  <div class="scan-data-item"><div class="scan-data-label">ATP</div><div class="scan-data-value">' + fmt(d.atp) + '</div></div>'
             + '  <div class="scan-data-item"><div class="scan-data-label">ATR</div><div class="scan-data-value">' + fmt(d.atr) + '</div></div>'
-            + (d.orStatus ? '  <div class="scan-data-item"><div class="scan-data-label">OR</div><div class="scan-data-value">' + d.orStatus + '</div></div>' : '')
+            + '  <div class="scan-data-item"><div class="scan-data-label">OR</div><div class="scan-data-value">' + (d.orStatus || '--') + '</div></div>'
             + '</div>'
             + '<div class="scan-trend-row">'
             + '  <span class="scan-trend"><span class="label">W:</span> <span class="' + wClass + '">' + wArrow + ' ' + wLabel + '</span></span>'
