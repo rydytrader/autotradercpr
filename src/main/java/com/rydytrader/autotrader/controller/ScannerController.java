@@ -27,6 +27,7 @@ public class ScannerController {
     private final RiskSettingsStore riskSettings;
     private final MarginDataService marginDataService;
     private final TradeHistoryService tradeHistoryService;
+    private final EmaService emaService;
 
     public ScannerController(MarketDataService marketDataService,
                              BhavcopyService bhavcopyService,
@@ -36,7 +37,8 @@ public class ScannerController {
                              BreakoutScanner breakoutScanner,
                              RiskSettingsStore riskSettings,
                              MarginDataService marginDataService,
-                             TradeHistoryService tradeHistoryService) {
+                             TradeHistoryService tradeHistoryService,
+                             EmaService emaService) {
         this.marketDataService = marketDataService;
         this.bhavcopyService = bhavcopyService;
         this.atrService = atrService;
@@ -46,6 +48,7 @@ public class ScannerController {
         this.riskSettings = riskSettings;
         this.marginDataService = marginDataService;
         this.tradeHistoryService = tradeHistoryService;
+        this.emaService = emaService;
     }
 
     @GetMapping("/api/scanner/watchlist")
@@ -133,6 +136,7 @@ public class ScannerController {
 
         card.put("atp", Math.round(candleAggregator.getAtp(fyersSymbol) * 100.0) / 100.0);
         card.put("atr", Math.round(atrService.getAtr(fyersSymbol) * 100.0) / 100.0);
+        card.put("ema20", Math.round(emaService.getEma(fyersSymbol) * 100.0) / 100.0);
         card.put("dayOpen", Math.round(candleAggregator.getDayOpen(fyersSymbol) * 100.0) / 100.0);
 
         // Open classification: IV (Inside Value), OV (Outside Value), EV (Extended Value)
