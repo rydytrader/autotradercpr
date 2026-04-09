@@ -204,6 +204,7 @@ public class ScannerController {
             sigMap.put("setup", sig.setup);
             sigMap.put("time", sig.time);
             sigMap.put("status", sig.status);
+            sigMap.put("detail", sig.detail != null ? sig.detail : "");
             card.put("lastSignal", sigMap);
         } else {
             card.put("lastSignal", null);
@@ -217,6 +218,7 @@ public class ScannerController {
             hm.put("setup", h.setup);
             hm.put("time", h.time);
             hm.put("status", h.status);
+            hm.put("detail", h.detail != null ? h.detail : "");
             histList.add(hm);
         }
         card.put("signalHistory", histList);

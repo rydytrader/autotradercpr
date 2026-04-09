@@ -658,10 +658,11 @@
         if (sigs.length > 1) {
             sigHtml = sigs.slice(0, -1).map(function(s) {
                 var stClass = s.status.toLowerCase();
+                var detailTip = s.detail ? ' title="' + s.detail.replace(/"/g, '&quot;') + '"' : '';
                 return '<div style="display:flex;align-items:center;gap:6px;padding:1px 0;">'
                     + '<span class="sig-setup">' + s.setup + '</span>'
                     + '<span class="sig-time"><span class="sig-at">@ </span>' + s.time + '</span>'
-                    + '<span class="scan-signal-status ' + stClass + '" style="margin-left:auto;">' + s.status + '</span>'
+                    + '<span class="scan-signal-status ' + stClass + '" style="margin-left:auto;cursor:help;"' + detailTip + '>' + s.status + '</span>'
                     + '</div>';
             }).join('');
         } else {
@@ -716,7 +717,7 @@
             + (d.lastSignal
                 ? 'Latest Signal &#9654; <span class="sig-setup" style="margin-left:4px;">' + d.lastSignal.setup + '</span>'
                   + '<span class="sig-time" style="margin-left:4px;">@ ' + d.lastSignal.time + '</span>'
-                  + '<span class="scan-signal-status ' + d.lastSignal.status.toLowerCase() + '" style="margin-left:auto;">' + d.lastSignal.status + '</span>'
+                  + '<span class="scan-signal-status ' + d.lastSignal.status.toLowerCase() + '" style="margin-left:auto;cursor:help;"' + (d.lastSignal.detail ? ' title="' + d.lastSignal.detail.replace(/"/g, '&quot;') + '"' : '') + '>' + d.lastSignal.status + '</span>'
                 : 'Latest Signal &#9654; <span style="color:var(--text-muted); margin-left:4px;">No breakout yet</span>')
             + '</div>'
             + '  <div class="scan-levels-body"><div class="scan-signal-row">' + sigHtml + '</div></div>'
