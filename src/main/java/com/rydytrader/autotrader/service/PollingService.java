@@ -301,6 +301,74 @@ public class PollingService {
 
                     holder.ocoRetries++;
                     boolean skipTarget = riskSettings.isEnableTrailingSl() && riskSettings.isTrailingSlNoTarget();
+
+                    // Check if we should split targets
+                    double targetDist = Math.abs(targetPrice - holder.entryFillPrice);
+                    double entryAtr = atr > 0 ? atr : 1;
+                    boolean shouldSplit = riskSettings.isEnableSplitTarget() && !skipTarget
+                        && quantity >= 4
+                        && (riskSettings.getSplitMinDistanceAtr() <= 0 || targetDist > entryAtr * riskSettings.getSplitMinDistanceAtr());
+
+                    if (shouldSplit) {
+                        // Split target placement: SL (full) + T1 (half) + T2 (half)
+                        int t1Qty = (quantity / 4) * 2;
+                        int t2Qty = quantity - t1Qty;
+                        double t1Pct = riskSettings.getT1DistancePct() / 100.0;
+                        boolean isBuy = "LONG".equals(position);
+                        double t1Price = isBuy
+                            ? holder.entryFillPrice + t1Pct * (targetPrice - holder.entryFillPrice)
+                            : holder.entryFillPrice - t1Pct * (holder.entryFillPrice - targetPrice);
+                        t1Price = orderService.roundToTick(t1Price, symbol);
+                        double t2Price = orderService.roundToTick(targetPrice, symbol);
+
+                        OrderDTO slOrder = orderService.placeStopLoss(symbol, quantity, exitSide, holder.adjustedSl);
+                        OrderDTO t1Order = orderService.placeTarget(symbol, t1Qty, exitSide, t1Price);
+                        OrderDTO t2Order = orderService.placeTarget(symbol, t2Qty, exitSide, t2Price);
+
+                        boolean slOk = slOrder != null && slOrder.getId() != null && !slOrder.getId().isEmpty();
+                        boolean t1Ok = t1Order != null && t1Order.getId() != null && !t1Order.getId().isEmpty();
+                        boolean t2Ok = t2Order != null && t2Order.getId() != null && !t2Order.getId().isEmpty();
+
+                        if (slOk && t1Ok && t2Ok) {
+                            double rSl = orderService.roundToTick(holder.adjustedSl, symbol);
+                            eventService.log("[SUCCESS] Split targets for " + symbol
+                                + " — SL: " + rSl + " [" + slOrder.getId() + "]"
+                                + " | T1: " + t1Price + " qty=" + t1Qty + " [" + t1Order.getId() + "]"
+                                + " | T2: " + t2Price + " qty=" + t2Qty + " [" + t2Order.getId() + "]");
+                            positionStateStore.appendDescription(symbol,
+                                "[SPLIT_TARGETS] T1 @ " + String.format("%.2f", t1Price) + " qty=" + t1Qty
+                                + " | T2 @ " + String.format("%.2f", t2Price) + " qty=" + t2Qty);
+                            positionStateStore.appendDescription(symbol,
+                                "[SL_PLACED] @ " + String.format("%.2f", rSl) + " qty=" + quantity);
+                            positionStateStore.saveSplitOcoState(symbol, slOrder.getId(),
+                                t1Order.getId(), t2Order.getId(), holder.adjustedSl, t1Price, t2Price);
+
+                            boolean wsTracked = orderEventService.trackSplitOcoOrders(
+                                slOrder.getId(), t1Order.getId(), t2Order.getId(),
+                                symbol, quantity, t1Qty, t2Qty,
+                                position, exitSide, setup, holder.entryFillPrice,
+                                holder.adjustedSl, t1Price, t2Price);
+                            if (!wsTracked) {
+                                monitorSplitOCO(slOrder.getId(), t1Order.getId(), t2Order.getId(),
+                                    symbol, quantity, t1Qty, t2Qty, exitSide,
+                                    holder.adjustedSl, t1Price, t2Price, position, setup, holder.entryFillPrice);
+                            }
+                            if (holder.future != null) holder.future.cancel(false);
+                        } else {
+                            if (slOk) orderService.cancelOrder(slOrder.getId());
+                            if (t1Ok) orderService.cancelOrder(t1Order.getId());
+                            if (t2Ok) orderService.cancelOrder(t2Order.getId());
+                            eventService.log("[ERROR] Split target placement failed for " + symbol
+                                + " (attempt " + holder.ocoRetries + ") SL=" + slOk + " T1=" + t1Ok + " T2=" + t2Ok);
+                            if (holder.ocoRetries >= Holder.MAX_OCO_RETRIES) {
+                                eventService.log("[WARNING] Falling back to single target for " + symbol);
+                                // Fall through to single-target retry on next tick
+                                // (shouldSplit will be re-evaluated)
+                                if (holder.future != null) holder.future.cancel(false);
+                            }
+                        }
+                    } else {
+                    // Single target placement (existing logic)
                     OrderDTO slOrder     = orderService.placeStopLoss(symbol, quantity, exitSide, holder.adjustedSl);
                     OrderDTO targetOrder = skipTarget ? null : orderService.placeTarget(symbol, quantity, exitSide, targetPrice);
 
@@ -321,7 +389,6 @@ public class PollingService {
                         }
                         positionStateStore.saveOcoState(symbol, slOrder.getId(), tgtId, holder.adjustedSl, tgtPrice);
                         positionStateStore.appendDescription(symbol, "[SL_PLACED] @ " + String.format("%.2f", rSl) + " [" + slOrder.getId() + "]");
-                        // Try WebSocket OCO tracking first, fall back to polling monitor
                         boolean wsTracked = orderEventService.trackOcoOrders(slOrder.getId(), tgtId,
                             symbol, quantity, position, exitSide, setup, holder.entryFillPrice);
                         if (!wsTracked) {
@@ -330,7 +397,6 @@ public class PollingService {
                         }
                         if (holder.future != null) holder.future.cancel(false);
                     } else {
-                        // Cancel whichever succeeded to avoid a half-OCO state
                         if (slOk)  orderService.cancelOrder(slOrder.getId());
                         if (!skipTarget && targetOrder != null && targetOrder.getId() != null && !targetOrder.getId().isEmpty())
                             orderService.cancelOrder(targetOrder.getId());
@@ -346,9 +412,9 @@ public class PollingService {
                         } else {
                             eventService.log("[WARNING] Retrying SL/Target placement for " + symbol
                                 + " (attempt " + holder.ocoRetries + "/" + Holder.MAX_OCO_RETRIES + ")");
-                            // do not cancel — next tick will retry
                         }
                     }
+                    } // end single-target else
 
                 } else if ("5".equals(status)) {
                     pendingEntrySymbols.remove(symbol);
@@ -615,6 +681,142 @@ public class PollingService {
             } catch (Exception e) {
                 eventService.log("[ERROR] OCO monitor exception for " + symbol + ": " + e.getMessage());
                 log.error("[PollingService] OCO monitor exception for {}", symbol, e);
+            }
+        }, 5, 5, TimeUnit.SECONDS);
+        ocoPollingFutures.put(symbol, s.future);
+    }
+
+    /** Split target OCO monitor — polls SL + T1 + T2 orders. */
+    private void monitorSplitOCO(String slId, String t1Id, String t2Id,
+                                  String symbol, int totalQty, int t1Qty, int t2Qty,
+                                  int exitSide, double slPrice, double t1Price, double t2Price,
+                                  String positionSide, String setup, double entryFillPrice) {
+        if (ocoMonitoredSymbols.contains(symbol)) return;
+        ocoMonitoredSymbols.add(symbol);
+
+        class State {
+            ScheduledFuture<?> future;
+            boolean handled = false;
+            boolean t1Hit = false;
+            String currentSlId;
+            int remainingQty;
+            int ticks = 0;
+            State() { currentSlId = slId; remainingQty = totalQty; }
+        }
+        State s = new State();
+
+        s.future = scheduler.scheduleAtFixedRate(() -> {
+            try {
+                if (s.handled || ++s.ticks > 4680) {
+                    if (s.ticks > 4680) eventService.log("[WARNING] Split OCO monitor timed out for " + symbol);
+                    ocoMonitoredSymbols.remove(symbol);
+                    ocoPollingFutures.remove(symbol);
+                    if (s.future != null) s.future.cancel(false);
+                    return;
+                }
+
+                String slStatus = getOrderStatus(s.currentSlId);
+                String t1Status = !s.t1Hit ? getOrderStatus(t1Id) : "2"; // already filled
+                String t2Status = getOrderStatus(t2Id);
+
+                // T1 filled (before T2 and SL)
+                if (!s.t1Hit && "2".equals(t1Status) && !"2".equals(slStatus)) {
+                    s.t1Hit = true;
+                    s.remainingQty = totalQty - t1Qty;
+
+                    double exitPrice = orderService.getFilledPriceByOrderId(t1Id);
+                    double pnl = "LONG".equals(positionSide) ? (exitPrice - entryFillPrice) * t1Qty
+                                                              : (entryFillPrice - exitPrice) * t1Qty;
+                    eventService.log("[SUCCESS] T1 hit for " + symbol + " @ " + exitPrice + " qty=" + t1Qty
+                        + " P&L ₹" + String.format("%.2f", pnl));
+
+                    positionStateStore.appendDescription(symbol,
+                        "[T1_HIT] @ " + String.format("%.2f", exitPrice) + " qty=" + t1Qty);
+                    String desc = positionStateStore.getDescription(symbol);
+                    String prob = probabilityBySymbol.getOrDefault(symbol, "");
+                    tradeHistoryService.record(symbol, positionSide, t1Qty, entryFillPrice, exitPrice, "TARGET_1", setup, desc, prob);
+
+                    // Cancel old SL, place new SL at breakeven
+                    orderService.cancelOrder(s.currentSlId);
+                    double breakeven = orderService.roundToTick(entryFillPrice, symbol);
+                    OrderDTO newSl = orderService.placeStopLoss(symbol, s.remainingQty, exitSide, breakeven);
+                    if (newSl != null && newSl.getId() != null && !newSl.getId().isEmpty()) {
+                        s.currentSlId = newSl.getId();
+                        positionStateStore.saveT1FilledState(symbol, s.currentSlId, breakeven, s.remainingQty);
+                        positionStateStore.appendDescription(symbol,
+                            "[SL_BREAKEVEN] New SL @ " + String.format("%.2f", breakeven) + " qty=" + s.remainingQty);
+                        eventService.log("[SUCCESS] SL moved to breakeven " + breakeven + " for " + symbol + " remaining qty=" + s.remainingQty);
+                    } else {
+                        eventService.log("[ERROR] Failed to place breakeven SL for " + symbol + " — UNPROTECTED");
+                    }
+
+                    try {
+                        telegramService.sendMessage("T1 hit for " + symbol + " @ " + String.format("%.2f", exitPrice)
+                            + " | P&L: " + String.format("%.2f", pnl) + " | SL → breakeven for remaining " + s.remainingQty);
+                    } catch (Exception ignored) {}
+                }
+
+                // T2 filled
+                if ("2".equals(t2Status) && !s.handled) {
+                    s.handled = true;
+                    orderService.cancelOrder(s.currentSlId);
+                    double exitPrice = orderService.getFilledPriceByOrderId(t2Id);
+                    int exitQty = s.t1Hit ? t2Qty : totalQty; // shouldn't happen: T2 without T1
+                    double pnl = "LONG".equals(positionSide) ? (exitPrice - entryFillPrice) * exitQty
+                                                              : (entryFillPrice - exitPrice) * exitQty;
+                    eventService.log("[SUCCESS] T2 hit for " + symbol + " @ " + exitPrice + " — fully closed");
+
+                    positionStateStore.appendDescription(symbol,
+                        "[T2_HIT] @ " + String.format("%.2f", exitPrice) + " qty=" + exitQty);
+                    String desc = positionStateStore.getDescription(symbol);
+                    String prob = probabilityBySymbol.getOrDefault(symbol, "");
+                    tradeHistoryService.record(symbol, positionSide, exitQty, entryFillPrice, exitPrice, "TARGET_2", setup, desc, prob);
+
+                    try {
+                        telegramService.sendMessage("T2 hit for " + symbol + " @ " + String.format("%.2f", exitPrice)
+                            + " | P&L: " + String.format("%.2f", pnl) + " — fully closed");
+                    } catch (Exception ignored) {}
+
+                    clearSymbolState(symbol);
+                    ocoMonitoredSymbols.remove(symbol);
+                    ocoPollingFutures.remove(symbol);
+                    if (s.future != null) s.future.cancel(false);
+                }
+
+                // SL filled
+                if ("2".equals(slStatus) && !s.handled) {
+                    s.handled = true;
+                    if (!s.t1Hit) orderService.cancelOrder(t1Id);
+                    orderService.cancelOrder(t2Id);
+
+                    double exitPrice = orderService.getFilledPriceByOrderId(s.currentSlId);
+                    int exitQty = s.t1Hit ? s.remainingQty : totalQty;
+                    double pnl = "LONG".equals(positionSide) ? (exitPrice - entryFillPrice) * exitQty
+                                                              : (entryFillPrice - exitPrice) * exitQty;
+                    String reason = s.t1Hit ? "SL_BREAKEVEN" : "SL";
+                    eventService.log("[SUCCESS] " + reason + " for " + symbol + " @ " + exitPrice
+                        + " qty=" + exitQty + (s.t1Hit ? " (after T1, breakeven)" : " (before T1)"));
+
+                    positionStateStore.appendDescription(symbol,
+                        "[EXIT] " + reason + " @ " + String.format("%.2f", exitPrice) + " qty=" + exitQty);
+                    String desc = positionStateStore.getDescription(symbol);
+                    String prob = probabilityBySymbol.getOrDefault(symbol, "");
+                    tradeHistoryService.record(symbol, positionSide, exitQty, entryFillPrice, exitPrice, reason, setup, desc, prob);
+
+                    try {
+                        telegramService.sendMessage(reason + " for " + symbol + " @ " + String.format("%.2f", exitPrice)
+                            + " | P&L: " + String.format("%.2f", pnl));
+                    } catch (Exception ignored) {}
+
+                    clearSymbolState(symbol);
+                    ocoMonitoredSymbols.remove(symbol);
+                    ocoPollingFutures.remove(symbol);
+                    if (s.future != null) s.future.cancel(false);
+                }
+
+            } catch (Exception e) {
+                eventService.log("[ERROR] Split OCO monitor exception for " + symbol + ": " + e.getMessage());
+                log.error("[PollingService] Split OCO monitor exception for {}", symbol, e);
             }
         }, 5, 5, TimeUnit.SECONDS);
         ocoPollingFutures.put(symbol, s.future);

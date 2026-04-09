@@ -606,8 +606,17 @@
             const sym = pos.symbol.replace(/'/g, "\\'");
             const sl = pos.slPrice || 0;
             const tgt = pos.targetPrice || 0;
+            const t1 = pos.target1Price || 0;
+            const t2 = pos.target2Price || 0;
             const slStr = sl > 0 ? sl.toFixed(2) : '—';
-            const tgtStr = tgt > 0 ? tgt.toFixed(2) : 'Trail';
+            let tgtStr;
+            if (t1 > 0 && t2 > 0 && !pos.t1Filled) {
+                tgtStr = '<span style="font-size:0.7rem;">T1:</span>' + t1.toFixed(2) + ' <span style="font-size:0.7rem;">T2:</span>' + t2.toFixed(2);
+            } else if (pos.t1Filled && t2 > 0) {
+                tgtStr = '<span style="color:var(--accent-green);font-size:0.65rem;">T1 HIT</span> T2:' + t2.toFixed(2);
+            } else {
+                tgtStr = tgt > 0 ? tgt.toFixed(2) : 'Trail';
+            }
             const trailArrow = pos.slTrailed
                 ? (pos.side === 'LONG' ? ' <span style="color:var(--accent-green);" title="Trailing SL tightened">&#9650;</span>' : ' <span style="color:var(--accent-red);" title="Trailing SL tightened">&#9660;</span>')
                 : '';

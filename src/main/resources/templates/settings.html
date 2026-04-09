@@ -423,6 +423,25 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift target to day high/low if between entry and target</span>
                     </div>
                 </div>
+                <div class="form-group">
+                    <label class="form-label">Split Targets (T1 + T2)</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableSplitTarget" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">T1 at</span>
+                        <select id="t1DistancePct" style="width:65px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;">
+                            <option value="25">25%</option>
+                            <option value="50">50%</option>
+                            <option value="75">75%</option>
+                        </select>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">of target, T2 at full target (half qty each)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min distance:</span>
+                        <input type="number" id="splitMinDistanceAtr" step="0.5" min="0" max="5.0" style="width:60px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR (0 = always split)</span>
+                    </div>
+                    <div class="form-hint">When T1 hits, SL moves to breakeven for remaining half. Min qty 4 required for split.</div>
+                </div>
             </div>
         </div>
     </div>
@@ -830,6 +849,9 @@
             // enableGapCheck removed — replaced by Opening Range filter
             document.getElementById('enableDayHighLowTargetShift').checked = d.enableDayHighLowTargetShift !== false;
             document.getElementById('targetShiftAtrThreshold').value = d.targetShiftAtrThreshold || 1.0;
+            document.getElementById('enableSplitTarget').checked = d.enableSplitTarget !== false;
+            document.getElementById('t1DistancePct').value = d.t1DistancePct || 50;
+            document.getElementById('splitMinDistanceAtr').value = d.splitMinDistanceAtr || 0;
             document.getElementById('enableSmallCandleFilter').checked = d.enableSmallCandleFilter === true;
             document.getElementById('smallCandleAtrThreshold').value = d.smallCandleAtrThreshold || 0.5;
             document.getElementById('wickRejectionRatio').value = d.wickRejectionRatio || 1.5;
@@ -944,6 +966,9 @@
                 enableTargetShift: document.getElementById('enableTargetShift').checked,
                 enableDayHighLowTargetShift: document.getElementById('enableDayHighLowTargetShift').checked,
                 targetShiftAtrThreshold: parseFloat(document.getElementById('targetShiftAtrThreshold').value) || 1.0,
+                enableSplitTarget: document.getElementById('enableSplitTarget').checked,
+                t1DistancePct: parseInt(document.getElementById('t1DistancePct').value) || 50,
+                splitMinDistanceAtr: parseFloat(document.getElementById('splitMinDistanceAtr').value) || 0,
                 enableSmallCandleFilter: document.getElementById('enableSmallCandleFilter').checked,
                 smallCandleAtrThreshold: parseFloat(document.getElementById('smallCandleAtrThreshold').value) || 0.5,
                 wickRejectionRatio: parseFloat(document.getElementById('wickRejectionRatio').value) || 1.5,

@@ -255,6 +255,13 @@ public class TradingController {
                 m.put("slPrice", 0.0);
                 m.put("targetPrice", 0.0);
             }
+            // Split target fields
+            if (state != null) {
+                try { m.put("target1Price", Double.parseDouble(state.getOrDefault("target1Price", "0").toString())); } catch (NumberFormatException e) { m.put("target1Price", 0.0); }
+                try { m.put("target2Price", Double.parseDouble(state.getOrDefault("target2Price", "0").toString())); } catch (NumberFormatException e) { m.put("target2Price", 0.0); }
+                m.put("t1Filled", Boolean.TRUE.equals(state.get("t1Filled")));
+                try { m.put("remainingQty", Integer.parseInt(state.getOrDefault("remainingQty", "0").toString())); } catch (NumberFormatException e) { m.put("remainingQty", 0); }
+            }
             m.put("leverage", marginDataService.getLeverage(p.getSymbol()));
             m.put("slTrailed", marketDataService.isTrailed(p.getSymbol()));
             return m;

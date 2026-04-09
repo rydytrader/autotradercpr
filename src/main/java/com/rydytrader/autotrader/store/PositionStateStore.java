@@ -111,6 +111,7 @@ public class PositionStateStore {
             entity.setSlOrderId(newSlOrderId);
             entity.setSlPrice(breakevenPrice);
             entity.setTarget1OrderId(null); // T1 already filled
+            entity.setTargetOrderId(entity.getTarget2OrderId()); // backward compat: now T2 is the active target
             entity.setT1Filled(true);
             entity.setRemainingQty(remainingQty);
             positionRepo.save(entity);
