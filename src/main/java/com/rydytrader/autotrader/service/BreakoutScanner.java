@@ -42,7 +42,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     private final RiskSettingsStore riskSettings;
     private final EventService eventService;
     private final LatencyTracker latencyTracker;
-    private final MarketDataService marketDataService;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private MarketDataService marketDataService;
 
     @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.context.annotation.Lazy
@@ -73,8 +76,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                            CandleAggregator candleAggregator,
                            RiskSettingsStore riskSettings,
                            EventService eventService,
-                           LatencyTracker latencyTracker,
-                           MarketDataService marketDataService) {
+                           LatencyTracker latencyTracker) {
         this.bhavcopyService = bhavcopyService;
         this.atrService = atrService;
         this.weeklyCprService = weeklyCprService;
@@ -82,7 +84,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         this.riskSettings = riskSettings;
         this.eventService = eventService;
         this.latencyTracker = latencyTracker;
-        this.marketDataService = marketDataService;
         loadState();
     }
 
