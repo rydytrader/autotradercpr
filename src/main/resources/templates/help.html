@@ -368,6 +368,15 @@
                 <tr><td>Bullish</td><td>Any</td><td>Sell</td><td><span class="badge-example by">LPT</span></td><td>configurable (default 0.25x)</td></tr>
             </table>
 
+            <h4>Summary</h4>
+            <table>
+                <tr><th>Setup Type</th><th>HPT Rule</th><th>Daily Check</th><th>When Daily Opposes</th></tr>
+                <tr><td><strong>CPR breakouts</strong> (CPR, R1-R4, S1-S4)</td><td>Weekly + daily aligned</td><td>Yes</td><td>LPT (0.25x qty)</td></tr>
+                <tr><td><strong>DH/DL breakouts</strong> (Day High, Day Low)</td><td>Weekly + daily aligned</td><td>Yes</td><td>LPT (0.25x qty)</td></tr>
+                <tr><td><strong>Magnet trades</strong> (S1/PDL buy, R1/PDH sell)</td><td>Weekly aligned only</td><td>Skipped</td><td>N/A — daily always opposed</td></tr>
+                <tr><td><strong>EV reversals</strong> (mean-reversion on gap days)</td><td>Weekly aligned only</td><td>Skipped</td><td>N/A — daily always opposed</td></tr>
+            </table>
+
             <p>Each category is independently toggleable in Settings. If HPT is disabled, no HPT signals fire.</p>
         </div>
     </div>
@@ -719,6 +728,15 @@
                 <tr><td><span class="badge-example bb">Neutral</span></td><td>Any</td><td>Either</td><td><span class="badge-example bb">MPT</span></td><td>No weekly bias</td></tr>
                 <tr><td><span class="badge-example br">Bearish</span></td><td>Any</td><td>Buy (magnet)</td><td><span class="badge-example by">LPT</span></td><td>Weekly opposes the bounce</td></tr>
                 <tr><td><span class="badge-example bg">Bullish</span></td><td>Any</td><td>Sell (magnet)</td><td><span class="badge-example by">LPT</span></td><td>Weekly opposes the fade</td></tr>
+            </table>
+
+            <h4>Probability Rules Summary</h4>
+            <table>
+                <tr><th>Setup Type</th><th>HPT Rule</th><th>Daily Check</th><th>When Daily Opposes</th></tr>
+                <tr><td><strong>CPR breakouts</strong> (CPR, R1-R4, S1-S4)</td><td>Weekly + daily aligned</td><td>Yes</td><td>LPT (0.25x qty)</td></tr>
+                <tr><td><strong>DH/DL breakouts</strong> (Day High, Day Low)</td><td>Weekly + daily aligned</td><td>Yes</td><td>LPT (0.25x qty)</td></tr>
+                <tr><td><strong>Magnet trades</strong> (S1/PDL buy, R1/PDH sell)</td><td>Weekly aligned only</td><td>Skipped</td><td>N/A — daily always opposed</td></tr>
+                <tr><td><strong>EV reversals</strong> (mean-reversion on gap days)</td><td>Weekly aligned only</td><td>Skipped</td><td>N/A — daily always opposed</td></tr>
             </table>
 
             <h4>Why Weekly Trend Matters More Than Daily</h4>
