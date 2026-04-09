@@ -188,7 +188,6 @@ public class SignalProcessor {
             targets = computeTargets(setup, close, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
         }
         double defaultTarget = targets[0];
-        double shiftTarget   = targets[1];
         double target = defaultTarget;
 
         // ── 4g. Day high/low target shift (always on) ─────────────────────────
@@ -320,9 +319,8 @@ public class SignalProcessor {
 
         // [TARGET] line
         desc.append("\n").append(ts).append(" [TARGET] ").append(fmt(target));
-        if (shifted) {
-            desc.append(" (shifted from ").append(fmt(defaultTarget))
-                .append(", default < ").append(targetShiftThreshold).append(" ATR).");
+        if (target != defaultTarget) {
+            desc.append(" (shifted from ").append(fmt(defaultTarget)).append(" to day high/low).");
         }
 
         // [QTY] line
@@ -352,9 +350,8 @@ public class SignalProcessor {
         if (qtyLog != null) {
             eventService.log(qtyLog);
         }
-        if (shifted) {
-            eventService.log("[INFO] " + symbol + " " + setup + " target shifted: " + fmt(defaultTarget) + " -> " + fmt(shiftTarget)
-                + " (default was < " + targetShiftThreshold + " ATR from entry)");
+        if (target != defaultTarget) {
+            eventService.log("[INFO] " + symbol + " " + setup + " target shifted to day high/low: " + fmt(defaultTarget) + " -> " + fmt(target));
         }
 
         return new ProcessedSignal.Builder()
