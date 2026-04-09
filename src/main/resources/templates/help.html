@@ -227,7 +227,7 @@
             <table>
                 <tr><th>Filter</th><th>Rule</th><th>Purpose</th></tr>
                 <tr><td><strong>EMA Direction Check</strong></td><td>Buy requires close &gt; 20 EMA. Sell requires close &lt; 20 EMA.</td><td>Ensures you're trading in the direction of the short-term trend. Same concept as VWAP/ATP check but using EMA.</td></tr>
-                <tr><td><strong>EMA Distance Filter</strong></td><td>Breakout level must be within 0.5 ATR of EMA. Close must be within 0.75 ATR of EMA.</td><td>Filters overextended breakouts where price has moved too far from the mean — likely to revert rather than continue.</td></tr>
+                <tr><td><strong>EMA Distance Filter</strong></td><td>Breakout level must be within N ATR of EMA (configurable, default 0.5). Close must be within N ATR of EMA (configurable, default 0.75).</td><td>Filters overextended breakouts where price has moved too far from the mean — likely to revert rather than continue.</td></tr>
             </table>
             <p>Both can be enabled/disabled independently. EMA is seeded from historical candles at startup so it's available from the first candle close. Shown on scanner cards in the data grid.</p>
 
