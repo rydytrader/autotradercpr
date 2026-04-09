@@ -368,6 +368,17 @@
                 <tr><td>Bullish</td><td>Any</td><td>Sell</td><td><span class="badge-example by">LPT</span></td><td>configurable (default 0.25x)</td></tr>
             </table>
 
+            <h4>EV Reversals (Mean-Reversion on Gap Days)</h4>
+            <p>Same as magnet trades — HPT requires weekly aligned only. These are counter-daily by design (trading against the gap direction when OR confirms reversal). Probability is recalculated from the original signal when reversal is detected.</p>
+            <table>
+                <tr><th>Weekly</th><th>Daily</th><th>Breakout</th><th>Category</th><th>Qty Factor</th></tr>
+                <tr><td>Bearish</td><td>Bullish (gap up)</td><td>Sell (reversal)</td><td><span class="badge-example bg">HPT</span></td><td>1.0x</td></tr>
+                <tr><td>Bullish</td><td>Bearish (gap down)</td><td>Buy (reversal)</td><td><span class="badge-example bg">HPT</span></td><td>1.0x</td></tr>
+                <tr><td>Neutral</td><td>Any</td><td>Either</td><td><span class="badge-example bb">MPT</span></td><td>configurable (default 0.5x)</td></tr>
+                <tr><td>Bullish</td><td>Any</td><td>Sell (reversal)</td><td><span class="badge-example by">LPT</span></td><td>configurable (default 0.25x)</td></tr>
+                <tr><td>Bearish</td><td>Any</td><td>Buy (reversal)</td><td><span class="badge-example by">LPT</span></td><td>configurable (default 0.25x)</td></tr>
+            </table>
+
             <h4>Summary</h4>
             <table>
                 <tr><th>Setup Type</th><th>HPT Rule</th><th>Daily Check</th><th>When Daily Opposes</th></tr>
@@ -728,6 +739,17 @@
                 <tr><td><span class="badge-example bb">Neutral</span></td><td>Any</td><td>Either</td><td><span class="badge-example bb">MPT</span></td><td>No weekly bias</td></tr>
                 <tr><td><span class="badge-example br">Bearish</span></td><td>Any</td><td>Buy (magnet)</td><td><span class="badge-example by">LPT</span></td><td>Weekly opposes the bounce</td></tr>
                 <tr><td><span class="badge-example bg">Bullish</span></td><td>Any</td><td>Sell (magnet)</td><td><span class="badge-example by">LPT</span></td><td>Weekly opposes the fade</td></tr>
+            </table>
+
+            <h4>EV Reversals (Mean-Reversion on Gap Days)</h4>
+            <p>Same as magnet trades — weekly aligned only. Counter-daily is expected (selling a gap up / buying a gap down).</p>
+            <table>
+                <tr><th>Weekly</th><th>Daily (gap direction)</th><th>Breakout</th><th>Probability</th><th>Why</th></tr>
+                <tr><td><span class="badge-example br">Bearish</span></td><td><span class="badge-example bg">Bullish</span> (gap up)</td><td>Sell (reversal)</td><td><span class="badge-example bg">HPT</span></td><td>Weekly supports the fade</td></tr>
+                <tr><td><span class="badge-example bg">Bullish</span></td><td><span class="badge-example br">Bearish</span> (gap down)</td><td>Buy (reversal)</td><td><span class="badge-example bg">HPT</span></td><td>Weekly supports the bounce</td></tr>
+                <tr><td><span class="badge-example bb">Neutral</span></td><td>Any</td><td>Either</td><td><span class="badge-example bb">MPT</span></td><td>No weekly bias</td></tr>
+                <tr><td><span class="badge-example bg">Bullish</span></td><td>Any</td><td>Sell (reversal)</td><td><span class="badge-example by">LPT</span></td><td>Weekly opposes the fade</td></tr>
+                <tr><td><span class="badge-example br">Bearish</span></td><td>Any</td><td>Buy (reversal)</td><td><span class="badge-example by">LPT</span></td><td>Weekly opposes the bounce</td></tr>
             </table>
 
             <h4>Probability Rules Summary</h4>
