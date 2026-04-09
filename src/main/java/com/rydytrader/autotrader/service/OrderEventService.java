@@ -105,21 +105,41 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     /** Context for a tracked OCO (SL or Target) order. */
     public static class OcoContext {
         public final String symbol;
-        public final int quantity;
+        public final int quantity;        // qty for THIS order (may be half for split targets)
+        public final int totalQuantity;   // total entry qty (for reference)
         public final String positionSide; // LONG or SHORT
         public final int exitSide;
-        public final String counterpartOrderId; // cancel this when fill detected
-        public final String type; // "SL" or "TARGET"
+        public final String counterpartOrderId; // cancel this when fill detected (null for T1)
+        public final String type; // "SL", "TARGET", "TARGET_1", "TARGET_2"
         public final String setup;
         public final double entryFillPrice;
         public volatile boolean handled = false;
         public volatile double currentPrice; // tracks current SL stop price or target limit price
         public volatile boolean trailed = false; // true if SL was moved by trailing logic
+        // Split target: IDs of all related orders (for SL to cancel both T1+T2)
+        public volatile String target1OrderId;
+        public volatile String target2OrderId;
+        public volatile String slOrderId;
+        public volatile boolean t1Filled = false; // T1 already hit
 
         public OcoContext(String symbol, int quantity, String positionSide, int exitSide,
                          String counterpartOrderId, String type, String setup, double entryFillPrice) {
             this.symbol = symbol;
             this.quantity = quantity;
+            this.totalQuantity = quantity;
+            this.positionSide = positionSide;
+            this.exitSide = exitSide;
+            this.counterpartOrderId = counterpartOrderId;
+            this.type = type;
+            this.setup = setup;
+            this.entryFillPrice = entryFillPrice;
+        }
+
+        public OcoContext(String symbol, int quantity, int totalQuantity, String positionSide, int exitSide,
+                         String counterpartOrderId, String type, String setup, double entryFillPrice) {
+            this.symbol = symbol;
+            this.quantity = quantity;
+            this.totalQuantity = totalQuantity;
             this.positionSide = positionSide;
             this.exitSide = exitSide;
             this.counterpartOrderId = counterpartOrderId;
@@ -288,6 +308,43 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         trackedOcoOrders.put(slOrderId, slCtx);
         trackedOcoOrders.put(targetOrderId, tgtCtx);
         log.info("[OrderEventSvc] Tracking OCO for {} — SL: {} ({}) | Target: {} ({})", symbol, slOrderId, slPrice, targetOrderId, targetPrice);
+        return true;
+    }
+
+    /** Register SL + T1 + T2 split target orders for WebSocket tracking. */
+    public boolean trackSplitOcoOrders(String slOrderId, String target1OrderId, String target2OrderId,
+                                       String symbol, int totalQty, int t1Qty, int t2Qty,
+                                       String positionSide, int exitSide,
+                                       String setup, double entryFillPrice,
+                                       double slPrice, double target1Price, double target2Price) {
+        if (!connected) return false;
+
+        // SL context: cancels both T1 and T2 on fill
+        OcoContext slCtx = new OcoContext(symbol, totalQty, totalQty, positionSide, exitSide, null, "SL", setup, entryFillPrice);
+        slCtx.currentPrice = slPrice;
+        slCtx.target1OrderId = target1OrderId;
+        slCtx.target2OrderId = target2OrderId;
+        slCtx.slOrderId = slOrderId;
+
+        // T1 context: does NOT cancel anything on fill (T2 and SL stay alive, SL gets replaced)
+        OcoContext t1Ctx = new OcoContext(symbol, t1Qty, totalQty, positionSide, exitSide, null, "TARGET_1", setup, entryFillPrice);
+        t1Ctx.currentPrice = target1Price;
+        t1Ctx.target1OrderId = target1OrderId;
+        t1Ctx.target2OrderId = target2OrderId;
+        t1Ctx.slOrderId = slOrderId;
+
+        // T2 context: cancels SL on fill
+        OcoContext t2Ctx = new OcoContext(symbol, t2Qty, totalQty, positionSide, exitSide, null, "TARGET_2", setup, entryFillPrice);
+        t2Ctx.currentPrice = target2Price;
+        t2Ctx.target1OrderId = target1OrderId;
+        t2Ctx.target2OrderId = target2OrderId;
+        t2Ctx.slOrderId = slOrderId;
+
+        trackedOcoOrders.put(slOrderId, slCtx);
+        trackedOcoOrders.put(target1OrderId, t1Ctx);
+        trackedOcoOrders.put(target2OrderId, t2Ctx);
+        log.info("[OrderEventSvc] Tracking split OCO for {} — SL: {} ({}) | T1: {} ({}) qty={} | T2: {} ({}) qty={}",
+            symbol, slOrderId, slPrice, target1OrderId, target1Price, t1Qty, target2OrderId, target2Price, t2Qty);
         return true;
     }
 
@@ -685,6 +742,18 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         final int MAX_RETRIES = 3;
         boolean skipTarget = riskSettings.isEnableTrailingSl() && riskSettings.isTrailingSlNoTarget();
 
+        // Determine if we should split targets
+        double targetDist = Math.abs(ctx.targetPrice - entryFillPrice);
+        double atr = ctx.atr > 0 ? ctx.atr : 1; // safety
+        boolean shouldSplit = riskSettings.isEnableSplitTarget() && !skipTarget
+            && ctx.quantity >= 4 // need at least 4 for even split
+            && (riskSettings.getSplitMinDistanceAtr() <= 0 || targetDist > atr * riskSettings.getSplitMinDistanceAtr());
+
+        if (shouldSplit) {
+            placeSplitOcoOrders(ctx, entryFillPrice, slPrice);
+            return;
+        }
+
         while (retries < MAX_RETRIES) {
             retries++;
             OrderDTO slOrder = orderService.placeStopLoss(symbol, ctx.quantity, ctx.exitSide, slPrice);
@@ -743,29 +812,106 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         }
     }
 
-    private void handleOcoFill(OcoContext ctx, String orderId, double tradedPrice) {
+    /** Place split target orders: SL (full qty) + T1 (half qty) + T2 (half qty). */
+    private void placeSplitOcoOrders(EntryContext ctx, double entryFillPrice, double slPrice) {
         String symbol = ctx.symbol;
+        int totalQty = ctx.quantity;
+        int t1Qty = (totalQty / 4) * 2; // half, rounded to even
+        int t2Qty = totalQty - t1Qty;
 
-        // Mark as recently handled to prevent duplicate recording from position event
+        // Calculate T1 price
+        double t1Pct = riskSettings.getT1DistancePct() / 100.0;
+        boolean isBuy = "LONG".equals(ctx.position);
+        double t1Price = isBuy
+            ? entryFillPrice + t1Pct * (ctx.targetPrice - entryFillPrice)
+            : entryFillPrice - t1Pct * (entryFillPrice - ctx.targetPrice);
+        t1Price = orderService.roundToTick(t1Price, symbol);
+        double t2Price = orderService.roundToTick(ctx.targetPrice, symbol);
+
+        int retries = 0;
+        final int MAX_RETRIES = 3;
+
+        while (retries < MAX_RETRIES) {
+            retries++;
+
+            OrderDTO slOrder = orderService.placeStopLoss(symbol, totalQty, ctx.exitSide, slPrice);
+            OrderDTO t1Order = orderService.placeTarget(symbol, t1Qty, ctx.exitSide, t1Price);
+            OrderDTO t2Order = orderService.placeTarget(symbol, t2Qty, ctx.exitSide, t2Price);
+
+            boolean slOk = slOrder != null && slOrder.getId() != null && !slOrder.getId().isEmpty();
+            boolean t1Ok = t1Order != null && t1Order.getId() != null && !t1Order.getId().isEmpty();
+            boolean t2Ok = t2Order != null && t2Order.getId() != null && !t2Order.getId().isEmpty();
+
+            if (slOk && t1Ok && t2Ok) {
+                double roundedSl = orderService.roundToTick(slPrice, symbol);
+                String ts = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
+
+                eventService.log("[SUCCESS] [WS] Split targets for " + symbol
+                    + " — SL: " + roundedSl + " [" + slOrder.getId() + "]"
+                    + " | T1: " + t1Price + " qty=" + t1Qty + " [" + t1Order.getId() + "]"
+                    + " | T2: " + t2Price + " qty=" + t2Qty + " [" + t2Order.getId() + "]");
+
+                positionStateStore.appendDescription(symbol,
+                    ts + " [SPLIT_TARGETS] T1 @ " + String.format("%.2f", t1Price) + " qty=" + t1Qty
+                    + " | T2 @ " + String.format("%.2f", t2Price) + " qty=" + t2Qty);
+                positionStateStore.appendDescription(symbol,
+                    ts + " [SL_PLACED] @ " + String.format("%.2f", roundedSl) + " qty=" + totalQty + " [" + slOrder.getId() + "]");
+
+                positionStateStore.saveSplitOcoState(symbol, slOrder.getId(),
+                    t1Order.getId(), t2Order.getId(), slPrice, t1Price, t2Price);
+
+                trackSplitOcoOrders(slOrder.getId(), t1Order.getId(), t2Order.getId(),
+                    symbol, totalQty, t1Qty, t2Qty,
+                    ctx.position, ctx.exitSide, ctx.setup, entryFillPrice,
+                    slPrice, t1Price, t2Price);
+                return;
+            }
+
+            // Cancel whichever succeeded
+            if (slOk) orderService.cancelOrder(slOrder.getId());
+            if (t1Ok) orderService.cancelOrder(t1Order.getId());
+            if (t2Ok) orderService.cancelOrder(t2Order.getId());
+
+            eventService.log("[ERROR] Split target placement failed for " + symbol + " (attempt " + retries
+                + ") SL=" + slOk + " T1=" + t1Ok + " T2=" + t2Ok);
+
+            try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
+        }
+
+        eventService.log("[WARNING] Could not place split SL/T1/T2 for " + symbol + " — falling back to single target");
+        // Fallback: place single target instead of failing completely
+        placeOcoOrders(ctx, entryFillPrice, slPrice);
+    }
+
+    private void handleOcoFill(OcoContext ctx, String orderId, double tradedPrice) {
+        // Route to split handler if this is a T1/T2 or split SL
+        if ("TARGET_1".equals(ctx.type)) {
+            handleT1Fill(ctx, orderId, tradedPrice);
+            return;
+        }
+        if ("TARGET_2".equals(ctx.type)) {
+            handleT2Fill(ctx, orderId, tradedPrice);
+            return;
+        }
+        if ("SL".equals(ctx.type) && ctx.target1OrderId != null) {
+            handleSplitSlFill(ctx, orderId, tradedPrice);
+            return;
+        }
+
+        // ── Standard single-target OCO fill (unchanged) ──
+        String symbol = ctx.symbol;
         recentlyHandled.put(symbol, System.currentTimeMillis());
 
-        // Remove counterpart from tracking
         OcoContext counterpart = trackedOcoOrders.remove(ctx.counterpartOrderId);
-
-        // Cancel the counterpart order
         if (!orderService.cancelOrder(ctx.counterpartOrderId)) {
             eventService.log("[WARNING] Failed to cancel " + ("SL".equals(ctx.type) ? "target" : "SL")
                 + " order " + ctx.counterpartOrderId + " for " + symbol);
         }
 
         double exitPrice = tradedPrice > 0 ? tradedPrice : 0;
-        if (exitPrice <= 0) {
-            exitPrice = orderService.getFilledPriceByOrderId(orderId);
-        }
+        if (exitPrice <= 0) exitPrice = orderService.getFilledPriceByOrderId(orderId);
         double entryPrice = ctx.entryFillPrice > 0 ? ctx.entryFillPrice : 0;
-        if (entryPrice <= 0 && pollingService != null) {
-            entryPrice = pollingService.getEntryAvg(symbol);
-        }
+        if (entryPrice <= 0 && pollingService != null) entryPrice = pollingService.getEntryAvg(symbol);
 
         double finalEntry = entryPrice > 0 ? entryPrice : exitPrice;
         double finalExit = exitPrice > 0 ? exitPrice : 0;
@@ -778,7 +924,6 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl))
             + " — cancelling " + ("SL".equals(ctx.type) ? "target" : "SL"));
 
-        // Append [EXIT] to description and pass to trade record
         String tsExit = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
         positionStateStore.appendDescription(symbol,
             tsExit + " [EXIT] " + exitReason + " @ " + String.format("%.2f", finalExit)
@@ -788,7 +933,6 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         String prob = pollingService != null ? pollingService.getProbability(symbol) : "";
         tradeHistoryService.record(symbol, ctx.positionSide, ctx.quantity, finalEntry, finalExit, exitReason, ctx.setup, desc, prob);
 
-        // Telegram notification
         try {
             String pnlSign = pnl >= 0 ? "+" : "";
             telegramService.sendMessage("[WS] " + ctx.type + " hit for " + symbol
@@ -797,7 +941,182 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
                 + " | P&L: " + pnlSign + String.format("%.2f", pnl));
         } catch (Exception ignored) {}
 
-        // Clear all state
+        if (pollingService != null) {
+            pollingService.clearSymbolStateFromWs(symbol);
+            pollingService.updateLastSyncTime();
+        }
+    }
+
+    // ── Split target T1 fill: partial exit, SL moves to breakeven ──
+    private void handleT1Fill(OcoContext ctx, String orderId, double tradedPrice) {
+        String symbol = ctx.symbol;
+        log.info("[OrderEventSvc] T1 fill for {} — cancelling SL, placing breakeven SL", symbol);
+
+        double exitPrice = tradedPrice > 0 ? tradedPrice : orderService.getFilledPriceByOrderId(orderId);
+        double entryPrice = ctx.entryFillPrice > 0 ? ctx.entryFillPrice : 0;
+        if (entryPrice <= 0 && pollingService != null) entryPrice = pollingService.getEntryAvg(symbol);
+        double finalEntry = entryPrice > 0 ? entryPrice : exitPrice;
+        double finalExit = exitPrice > 0 ? exitPrice : 0;
+
+        double pnl = "LONG".equals(ctx.positionSide) ? (finalExit - finalEntry) * ctx.quantity
+                                                      : (finalEntry - finalExit) * ctx.quantity;
+
+        // Record partial trade for T1 qty
+        String tsExit = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
+        positionStateStore.appendDescription(symbol,
+            tsExit + " [T1_HIT] @ " + String.format("%.2f", finalExit)
+            + " | qty=" + ctx.quantity + " | P&L ₹" + String.format("%.2f", pnl));
+
+        String desc = positionStateStore.getDescription(symbol);
+        String prob = pollingService != null ? pollingService.getProbability(symbol) : "";
+        tradeHistoryService.record(symbol, ctx.positionSide, ctx.quantity, finalEntry, finalExit, "TARGET_1", ctx.setup, desc, prob);
+
+        // Cancel existing SL (full qty)
+        trackedOcoOrders.remove(ctx.slOrderId);
+        orderService.cancelOrder(ctx.slOrderId);
+
+        // Remove T1 from tracking
+        trackedOcoOrders.remove(orderId);
+
+        // Place new SL at breakeven for remaining qty
+        int remainingQty = ctx.totalQuantity - ctx.quantity;
+        double breakevenPrice = orderService.roundToTick(finalEntry, symbol);
+        int exitSide = ctx.exitSide;
+
+        OrderDTO newSlOrder = orderService.placeStopLoss(symbol, remainingQty, exitSide, breakevenPrice);
+        String newSlId = (newSlOrder != null && newSlOrder.getId() != null) ? newSlOrder.getId() : "";
+
+        if (!newSlId.isEmpty()) {
+            eventService.log("[SUCCESS] [WS] T1 hit for " + symbol + " — SL moved to breakeven "
+                + String.format("%.2f", breakevenPrice) + " for remaining qty=" + remainingQty + " [" + newSlId + "]");
+            positionStateStore.appendDescription(symbol,
+                tsExit + " [SL_BREAKEVEN] New SL @ " + String.format("%.2f", breakevenPrice) + " qty=" + remainingQty);
+
+            // Update position state
+            positionStateStore.saveT1FilledState(symbol, newSlId, breakevenPrice, remainingQty);
+
+            // Re-track: new SL + existing T2
+            OcoContext t2Ctx = trackedOcoOrders.get(ctx.target2OrderId);
+            OcoContext newSlCtx = new OcoContext(symbol, remainingQty, ctx.totalQuantity, ctx.positionSide, exitSide,
+                null, "SL", ctx.setup, ctx.entryFillPrice);
+            newSlCtx.currentPrice = breakevenPrice;
+            newSlCtx.target2OrderId = ctx.target2OrderId;
+            newSlCtx.slOrderId = newSlId;
+            newSlCtx.t1Filled = true;
+            trackedOcoOrders.put(newSlId, newSlCtx);
+
+            // Update T2 context with new SL order ID
+            if (t2Ctx != null) {
+                t2Ctx.slOrderId = newSlId;
+                t2Ctx.t1Filled = true;
+            }
+        } else {
+            eventService.log("[ERROR] [WS] T1 hit for " + symbol + " but failed to place breakeven SL — position UNPROTECTED");
+        }
+
+        // Telegram notification
+        try {
+            telegramService.sendMessage("[WS] T1 hit for " + symbol
+                + " | " + ctx.positionSide + " | Exit: " + String.format("%.2f", finalExit)
+                + " | P&L: " + String.format("%.2f", pnl)
+                + " | SL → breakeven for remaining " + remainingQty);
+        } catch (Exception ignored) {}
+    }
+
+    // ── Split target T2 fill: final exit, cancel SL, clear position ──
+    private void handleT2Fill(OcoContext ctx, String orderId, double tradedPrice) {
+        String symbol = ctx.symbol;
+        recentlyHandled.put(symbol, System.currentTimeMillis());
+
+        double exitPrice = tradedPrice > 0 ? tradedPrice : orderService.getFilledPriceByOrderId(orderId);
+        double entryPrice = ctx.entryFillPrice > 0 ? ctx.entryFillPrice : 0;
+        if (entryPrice <= 0 && pollingService != null) entryPrice = pollingService.getEntryAvg(symbol);
+        double finalEntry = entryPrice > 0 ? entryPrice : exitPrice;
+        double finalExit = exitPrice > 0 ? exitPrice : 0;
+
+        double pnl = "LONG".equals(ctx.positionSide) ? (finalExit - finalEntry) * ctx.quantity
+                                                      : (finalEntry - finalExit) * ctx.quantity;
+
+        // Cancel SL
+        String slId = ctx.slOrderId;
+        trackedOcoOrders.remove(slId);
+        trackedOcoOrders.remove(orderId);
+        orderService.cancelOrder(slId);
+
+        String tsExit = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
+        positionStateStore.appendDescription(symbol,
+            tsExit + " [T2_HIT] @ " + String.format("%.2f", finalExit)
+            + " | qty=" + ctx.quantity + " | P&L ₹" + String.format("%.2f", pnl));
+        String desc = positionStateStore.getDescription(symbol);
+
+        String prob = pollingService != null ? pollingService.getProbability(symbol) : "";
+        tradeHistoryService.record(symbol, ctx.positionSide, ctx.quantity, finalEntry, finalExit, "TARGET_2", ctx.setup, desc, prob);
+
+        eventService.log("[SUCCESS] [WS] T2 hit for " + symbol + " at " + finalExit
+            + " | P&L ₹" + String.format("%.2f", pnl) + " — position fully closed");
+
+        try {
+            telegramService.sendMessage("[WS] T2 hit for " + symbol
+                + " | " + ctx.positionSide + " | Exit: " + String.format("%.2f", finalExit)
+                + " | P&L: " + String.format("%.2f", pnl) + " — fully closed");
+        } catch (Exception ignored) {}
+
+        if (pollingService != null) {
+            pollingService.clearSymbolStateFromWs(symbol);
+            pollingService.updateLastSyncTime();
+        }
+    }
+
+    // ── Split SL fill: cancel remaining targets, record trade ──
+    private void handleSplitSlFill(OcoContext ctx, String orderId, double tradedPrice) {
+        String symbol = ctx.symbol;
+        recentlyHandled.put(symbol, System.currentTimeMillis());
+
+        double exitPrice = tradedPrice > 0 ? tradedPrice : orderService.getFilledPriceByOrderId(orderId);
+        double entryPrice = ctx.entryFillPrice > 0 ? ctx.entryFillPrice : 0;
+        if (entryPrice <= 0 && pollingService != null) entryPrice = pollingService.getEntryAvg(symbol);
+        double finalEntry = entryPrice > 0 ? entryPrice : exitPrice;
+        double finalExit = exitPrice > 0 ? exitPrice : 0;
+
+        int exitQty = ctx.t1Filled ? (ctx.totalQuantity - ctx.quantity) : ctx.totalQuantity;
+        // After T1, SL qty = remaining qty. Before T1, SL qty = total qty.
+        exitQty = ctx.quantity; // use the actual SL order qty
+
+        double pnl = "LONG".equals(ctx.positionSide) ? (finalExit - finalEntry) * exitQty
+                                                      : (finalEntry - finalExit) * exitQty;
+        String exitReason = ctx.t1Filled ? "SL_BREAKEVEN" : (ctx.trailed ? "TRAILING_SL" : "SL");
+
+        // Cancel remaining targets
+        if (!ctx.t1Filled && ctx.target1OrderId != null) {
+            trackedOcoOrders.remove(ctx.target1OrderId);
+            orderService.cancelOrder(ctx.target1OrderId);
+        }
+        if (ctx.target2OrderId != null) {
+            trackedOcoOrders.remove(ctx.target2OrderId);
+            orderService.cancelOrder(ctx.target2OrderId);
+        }
+        trackedOcoOrders.remove(orderId);
+
+        String pnlTag = pnl >= 0 ? "PROFIT" : "LOSS";
+        String tsExit = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
+        positionStateStore.appendDescription(symbol,
+            tsExit + " [EXIT] " + exitReason + " @ " + String.format("%.2f", finalExit)
+            + " | qty=" + exitQty + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl)));
+        String desc = positionStateStore.getDescription(symbol);
+
+        String prob = pollingService != null ? pollingService.getProbability(symbol) : "";
+        tradeHistoryService.record(symbol, ctx.positionSide, exitQty, finalEntry, finalExit, exitReason, ctx.setup, desc, prob);
+
+        eventService.log("[SUCCESS] [WS] " + exitReason + " triggered for " + symbol + " at " + finalExit
+            + " | qty=" + exitQty + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl))
+            + (ctx.t1Filled ? " (after T1, breakeven SL)" : " (before T1, full loss)"));
+
+        try {
+            telegramService.sendMessage("[WS] " + exitReason + " for " + symbol
+                + " | " + ctx.positionSide + " | Exit: " + String.format("%.2f", finalExit)
+                + " | P&L: " + (pnl >= 0 ? "+" : "") + String.format("%.2f", pnl));
+        } catch (Exception ignored) {}
+
         if (pollingService != null) {
             pollingService.clearSymbolStateFromWs(symbol);
             pollingService.updateLastSyncTime();

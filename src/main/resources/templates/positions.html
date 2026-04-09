@@ -202,12 +202,29 @@
                 <div class="section-title-dot"></div>
                 Live Positions
             </div>
-            <div style="display:flex; gap:12px; align-items:center;">
+            <div style="display:flex; gap:8px; align-items:center;">
 <select id="posSymbolFilter" onchange="filterPositions()" style="
     background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
     border-radius:4px;padding:2px 8px;font-size:0.65rem;font-family:var(--font-mono);
     outline:none;cursor:pointer;min-width:100px;">
     <option value="">All Symbols</option>
+</select>
+<select id="posSideFilter" onchange="filterPositions()" style="
+    background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
+    border-radius:4px;padding:2px 8px;font-size:0.65rem;font-family:var(--font-mono);
+    outline:none;cursor:pointer;">
+    <option value="">All Sides</option>
+    <option value="LONG">Long</option>
+    <option value="SHORT">Short</option>
+</select>
+<select id="posProbFilter" onchange="filterPositions()" style="
+    background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
+    border-radius:4px;padding:2px 8px;font-size:0.65rem;font-family:var(--font-mono);
+    outline:none;cursor:pointer;">
+    <option value="">All Prob</option>
+    <option value="HPT">HPT</option>
+    <option value="MPT">MPT</option>
+    <option value="LPT">LPT</option>
 </select>
 <span class="section-badge" id="positionsBadge">0 active</span>
             </div>
@@ -568,7 +585,12 @@
 
     function renderPositionsTable() {
         const filter = document.getElementById('posSymbolFilter').value;
-        const positions = filter ? allPositions.filter(p => p.symbol === filter) : [...allPositions];
+        const sideFilter = document.getElementById('posSideFilter').value;
+        const probFilter = document.getElementById('posProbFilter').value;
+        var positions = [...allPositions];
+        if (filter) positions = positions.filter(p => p.symbol === filter);
+        if (sideFilter) positions = positions.filter(p => p.side === sideFilter);
+        if (probFilter) positions = positions.filter(p => p.probability === probFilter);
         // Sort by entry time descending (latest first)
         positions.sort((a, b) => (b.entryTime || '').localeCompare(a.entryTime || ''));
         const tbody = document.getElementById('positionsTableBody');

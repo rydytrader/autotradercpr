@@ -63,7 +63,7 @@ public class PositionStateStore {
         }
     }
 
-    /** Updates persisted state with OCO order IDs and prices. */
+    /** Updates persisted state with OCO order IDs and prices (single target). */
     public void saveOcoState(String symbol, String slOrderId, String targetOrderId,
                              double slPrice, double targetPrice) {
         try {
@@ -77,6 +77,45 @@ public class PositionStateStore {
             positionRepo.save(entity);
         } catch (Exception e) {
             log.error("[PositionStateStore] Failed to save OCO state for {}: {}", symbol, e.getMessage());
+        }
+    }
+
+    /** Updates persisted state with split target OCO order IDs and prices (T1 + T2). */
+    public void saveSplitOcoState(String symbol, String slOrderId,
+                                  String target1OrderId, String target2OrderId,
+                                  double slPrice, double target1Price, double target2Price) {
+        try {
+            Optional<PositionEntity> opt = positionRepo.findBySymbol(symbol);
+            if (opt.isEmpty()) return;
+            PositionEntity entity = opt.get();
+            entity.setSlOrderId(slOrderId);
+            entity.setTarget1OrderId(target1OrderId);
+            entity.setTarget2OrderId(target2OrderId);
+            entity.setTargetOrderId(target1OrderId); // backward compat: targetOrderId = T1
+            entity.setSlPrice(slPrice);
+            entity.setTarget1Price(target1Price);
+            entity.setTarget2Price(target2Price);
+            entity.setTargetPrice(target2Price); // backward compat: targetPrice = T2 (full target)
+            positionRepo.save(entity);
+        } catch (Exception e) {
+            log.error("[PositionStateStore] Failed to save split OCO state for {}: {}", symbol, e.getMessage());
+        }
+    }
+
+    /** Updates state after T1 fill: new SL at breakeven, reduced qty, T1 marked filled. */
+    public void saveT1FilledState(String symbol, String newSlOrderId, double breakevenPrice, int remainingQty) {
+        try {
+            Optional<PositionEntity> opt = positionRepo.findBySymbol(symbol);
+            if (opt.isEmpty()) return;
+            PositionEntity entity = opt.get();
+            entity.setSlOrderId(newSlOrderId);
+            entity.setSlPrice(breakevenPrice);
+            entity.setTarget1OrderId(null); // T1 already filled
+            entity.setT1Filled(true);
+            entity.setRemainingQty(remainingQty);
+            positionRepo.save(entity);
+        } catch (Exception e) {
+            log.error("[PositionStateStore] Failed to save T1 filled state for {}: {}", symbol, e.getMessage());
         }
     }
 
@@ -127,18 +166,25 @@ public class PositionStateStore {
 
     private Map<String, Object> entityToMap(PositionEntity e) {
         Map<String, Object> map = new LinkedHashMap<>();
-        map.put("symbol",        e.getSymbol());
-        map.put("side",          e.getSide());
-        map.put("qty",           e.getQty());
-        map.put("avgPrice",      e.getAvgPrice());
-        map.put("setup",         e.getSetup());
-        map.put("entryTime",     e.getEntryTime());
-        map.put("slPrice",       e.getSlPrice());
-        map.put("targetPrice",   e.getTargetPrice());
-        map.put("slOrderId",     e.getSlOrderId());
-        map.put("targetOrderId", e.getTargetOrderId());
-        map.put("description",   e.getDescription());
-        map.put("probability",   e.getProbability());
+        map.put("symbol",          e.getSymbol());
+        map.put("side",            e.getSide());
+        map.put("qty",             e.getQty());
+        map.put("avgPrice",        e.getAvgPrice());
+        map.put("setup",           e.getSetup());
+        map.put("entryTime",       e.getEntryTime());
+        map.put("slPrice",         e.getSlPrice());
+        map.put("targetPrice",     e.getTargetPrice());
+        map.put("slOrderId",       e.getSlOrderId());
+        map.put("targetOrderId",   e.getTargetOrderId());
+        map.put("description",     e.getDescription());
+        map.put("probability",     e.getProbability());
+        // Split target fields
+        map.put("target1OrderId",  e.getTarget1OrderId());
+        map.put("target2OrderId",  e.getTarget2OrderId());
+        map.put("target1Price",    e.getTarget1Price());
+        map.put("target2Price",    e.getTarget2Price());
+        map.put("remainingQty",    e.getRemainingQty());
+        map.put("t1Filled",        e.isT1Filled());
         return map;
     }
 

@@ -771,6 +771,38 @@ public class PollingService {
         return null;
     }
 
+    /**
+     * Find the latest filled (status=2) order for a symbol and return its tradedPrice.
+     * Scans order book for BUY orders if side=LONG, SELL orders if side=SHORT.
+     */
+    private double getLatestFilledPrice(String symbol, String side) {
+        try {
+            JsonNode orderBook = getOrderBook();
+            if (orderBook == null) return 0;
+            // Fyers side: 1=BUY, -1=SELL
+            int expectedSide = "LONG".equals(side) ? 1 : -1;
+            double latestPrice = 0;
+            String latestTime = "";
+            for (JsonNode order : orderBook) {
+                String sym = order.has("symbol") ? order.get("symbol").asText() : "";
+                int status = order.has("status") ? order.get("status").asInt() : 0;
+                int orderSide = order.has("side") ? order.get("side").asInt() : 0;
+                if (sym.equals(symbol) && status == 2 && orderSide == expectedSide) {
+                    double tp = order.has("tradedPrice") ? order.get("tradedPrice").asDouble() : 0;
+                    String time = order.has("orderDateTime") ? order.get("orderDateTime").asText() : "";
+                    if (tp > 0 && time.compareTo(latestTime) > 0) {
+                        latestPrice = tp;
+                        latestTime = time;
+                    }
+                }
+            }
+            return latestPrice;
+        } catch (Exception e) {
+            log.error("[SyncPosition] Error finding fill price for {}: {}", symbol, e.getMessage());
+            return 0;
+        }
+    }
+
     // ── SQUARE OFF ────────────────────────────────────────────────────────────
     public boolean squareOff(String symbol, int quantity) {
         return squareOff(symbol, quantity, "MANUAL");
@@ -1070,14 +1102,25 @@ public class PollingService {
                         if (resolvedEntryTime.isEmpty())
                             entryTimeBySymbol.put(symbol, resolvedEntryTime);
 
-                        // Prefer bot's recorded fill price over Fyers' potentially blended netAvgPrice
-                        double resolvedAvg = avg;
+                        // Resolve entry price — never use Fyers netAvgPrice (blended across day's trades)
+                        double resolvedAvg = 0;
                         double inMemAvg = entryAvgBySymbol.getOrDefault(symbol, 0.0);
                         if (inMemAvg > 0) {
                             resolvedAvg = inMemAvg;
                         } else if (saved != null && saved.containsKey("avgPrice")) {
                             double savedAvg = Double.parseDouble(saved.get("avgPrice").toString());
                             if (savedAvg > 0) resolvedAvg = savedAvg;
+                        }
+                        // Fallback: find the latest filled order for this symbol from order book
+                        if (resolvedAvg <= 0) {
+                            resolvedAvg = getLatestFilledPrice(symbol, posSide);
+                            if (resolvedAvg > 0) {
+                                log.info("[SyncPosition] {} resolved entry from order book: {}", symbol, String.format("%.2f", resolvedAvg));
+                            } else {
+                                // Last resort: use Fyers position avg (better than 0)
+                                resolvedAvg = avg;
+                                log.warn("[SyncPosition] {} no fill price found — using Fyers netAvgPrice {} as last resort", symbol, String.format("%.2f", avg));
+                            }
                         }
 
                         String setup = setupBySymbol.getOrDefault(symbol, "");

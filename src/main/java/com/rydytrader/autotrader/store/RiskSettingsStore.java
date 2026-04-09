@@ -82,6 +82,10 @@ public class RiskSettingsStore {
         volatile boolean scanIncludeIL = false;  // Inside + Large Range
         // Opening Range
         volatile int openingRangeMinutes = 30; // 0=disabled, 15/30/45/60
+        // Split Targets (T1/T2)
+        volatile boolean enableSplitTarget = true;
+        volatile int t1DistancePct = 50;           // T1 at N% of target distance (25/50/75)
+        volatile double splitMinDistanceAtr = 0;   // min distance in ATR multiples to split (0 = always)
     }
 
     private final Cfg live = new Cfg();
@@ -159,6 +163,9 @@ public class RiskSettingsStore {
     public boolean isScanIncludeIS() { return cfg().scanIncludeIS; }
     public boolean isScanIncludeIL() { return cfg().scanIncludeIL; }
     public int getOpeningRangeMinutes()        { return cfg().openingRangeMinutes; }
+    public boolean isEnableSplitTarget()       { return cfg().enableSplitTarget; }
+    public int getT1DistancePct()              { return cfg().t1DistancePct; }
+    public double getSplitMinDistanceAtr()     { return cfg().splitMinDistanceAtr; }
     public void setSignalSource(String v)      { cfg().signalSource = v; }
     public void setScannerTimeframe(int v)     { cfg().scannerTimeframe = v; }
     public void setEnableAtpCheck(boolean v)  { cfg().enableAtpCheck = v; }
@@ -175,6 +182,9 @@ public class RiskSettingsStore {
     public void setScanIncludeIS(boolean v) { cfg().scanIncludeIS = v; }
     public void setScanIncludeIL(boolean v) { cfg().scanIncludeIL = v; }
     public void setOpeningRangeMinutes(int v)  { cfg().openingRangeMinutes = v; }
+    public void setEnableSplitTarget(boolean v) { cfg().enableSplitTarget = v; }
+    public void setT1DistancePct(int v)        { cfg().t1DistancePct = v; }
+    public void setSplitMinDistanceAtr(double v) { cfg().splitMinDistanceAtr = v; }
     public void setTradingStartTime(String v)  { cfg().tradingStartTime = v; }
     public void setTradingEndTime(String v)    { cfg().tradingEndTime = v; }
     public void setTotalCapital(double v)       { cfg().totalCapital = v; }
@@ -348,6 +358,9 @@ public class RiskSettingsStore {
             upsert("scanIncludeIS", String.valueOf(c.scanIncludeIS));
             upsert("scanIncludeIL", String.valueOf(c.scanIncludeIL));
             upsert("openingRangeMinutes", String.valueOf(c.openingRangeMinutes));
+            upsert("enableSplitTarget", String.valueOf(c.enableSplitTarget));
+            upsert("t1DistancePct", String.valueOf(c.t1DistancePct));
+            upsert("splitMinDistanceAtr", String.valueOf(c.splitMinDistanceAtr));
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to save {}: {}", mode, e.getMessage());
         }
@@ -426,6 +439,9 @@ public class RiskSettingsStore {
                     case "scanIncludeIS" -> c.scanIncludeIS = Boolean.parseBoolean(v);
                     case "scanIncludeIL" -> c.scanIncludeIL = Boolean.parseBoolean(v);
                     case "openingRangeMinutes" -> c.openingRangeMinutes = Integer.parseInt(v);
+                    case "enableSplitTarget" -> c.enableSplitTarget = Boolean.parseBoolean(v);
+                    case "t1DistancePct" -> c.t1DistancePct = Integer.parseInt(v);
+                    case "splitMinDistanceAtr" -> c.splitMinDistanceAtr = Double.parseDouble(v);
                 }
             }
             log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} enableR4S4={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} trailingSl={}", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.enableR4S4, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.enableTrailingSl);
