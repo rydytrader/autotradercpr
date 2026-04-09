@@ -47,6 +47,8 @@ public class RiskSettingsStore {
         volatile boolean enableTargetShift = true; // shift target to next level if default target < threshold ATR. If false, skip the entry.
         volatile boolean enableGapCheck = true;     // halve qty if day open or first candle beyond R2/S2
         volatile boolean enableDayHighLowTargetShift = true; // shift target to day high/low if between entry and target
+        volatile double dayHighLowMinAtr = 0.5; // min distance in ATR for day high/low shifted target (0 = no check)
+        volatile boolean enableSmallTargetFilter = true; // skip trade if target < N ATR from entry
         volatile double targetShiftAtrThreshold = 1.0; // shift target if distance < this × ATR
         volatile boolean enableSmallCandleFilter = false; // reject if candle move from breakout level < smallCandleAtrThreshold ATR
         volatile double smallCandleAtrThreshold = 0.5; // ATR multiplier for small candle filter
@@ -129,6 +131,8 @@ public class RiskSettingsStore {
     public double getLargeCandleAtrThreshold() { return cfg().largeCandleAtrThreshold; }
     public boolean isEnableGapCheck() { return cfg().enableGapCheck; }
     public boolean isEnableDayHighLowTargetShift() { return cfg().enableDayHighLowTargetShift; }
+    public double getDayHighLowMinAtr()            { return cfg().dayHighLowMinAtr; }
+    public boolean isEnableSmallTargetFilter()     { return cfg().enableSmallTargetFilter; }
     public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
     public double getTargetShiftAtrThreshold() { return cfg().targetShiftAtrThreshold; }
     public boolean isEnableSmallCandleFilter() { return cfg().enableSmallCandleFilter; }
@@ -208,6 +212,8 @@ public class RiskSettingsStore {
     public void setLargeCandleAtrThreshold(double v) { cfg().largeCandleAtrThreshold = v; }
     public void setEnableGapCheck(boolean v) { cfg().enableGapCheck = v; }
     public void setEnableDayHighLowTargetShift(boolean v) { cfg().enableDayHighLowTargetShift = v; }
+    public void setDayHighLowMinAtr(double v)              { cfg().dayHighLowMinAtr = v; }
+    public void setEnableSmallTargetFilter(boolean v)      { cfg().enableSmallTargetFilter = v; }
     public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
     public void setTargetShiftAtrThreshold(double v) { cfg().targetShiftAtrThreshold = v; }
     public void setEnableSmallCandleFilter(boolean v) { cfg().enableSmallCandleFilter = v; }
@@ -325,6 +331,8 @@ public class RiskSettingsStore {
             upsert("largeCandleAtrThreshold", String.valueOf(c.largeCandleAtrThreshold));
             upsert("enableGapCheck", String.valueOf(c.enableGapCheck));
             upsert("enableDayHighLowTargetShift", String.valueOf(c.enableDayHighLowTargetShift));
+            upsert("dayHighLowMinAtr", String.valueOf(c.dayHighLowMinAtr));
+            upsert("enableSmallTargetFilter", String.valueOf(c.enableSmallTargetFilter));
             upsert("enableTargetShift", String.valueOf(c.enableTargetShift));
             upsert("targetShiftAtrThreshold", String.valueOf(c.targetShiftAtrThreshold));
             upsert("enableSmallCandleFilter", String.valueOf(c.enableSmallCandleFilter));
@@ -406,6 +414,8 @@ public class RiskSettingsStore {
                     case "largeCandleAtrThreshold" -> c.largeCandleAtrThreshold = Double.parseDouble(v);
                     case "enableGapCheck" -> c.enableGapCheck = Boolean.parseBoolean(v);
                     case "enableDayHighLowTargetShift" -> c.enableDayHighLowTargetShift = Boolean.parseBoolean(v);
+                    case "dayHighLowMinAtr" -> c.dayHighLowMinAtr = Double.parseDouble(v);
+                    case "enableSmallTargetFilter" -> c.enableSmallTargetFilter = Boolean.parseBoolean(v);
                     case "enableTargetShift" -> c.enableTargetShift = Boolean.parseBoolean(v);
                     case "targetShiftAtrThreshold" -> c.targetShiftAtrThreshold = Double.parseDouble(v);
                     case "enableSmallCandleFilter" -> c.enableSmallCandleFilter = Boolean.parseBoolean(v);

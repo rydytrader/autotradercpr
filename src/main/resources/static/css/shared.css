@@ -441,6 +441,18 @@ button.admin-only.admin-visible { display: inline-flex !important; }
     color: var(--accent-blue);
     transform: scale(1.05);
 }
+.help-btn {
+    display: flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px;
+    background: rgba(99,179,237,0.08); border: 1px solid rgba(99,179,237,0.2);
+    border-radius: 8px; color: var(--accent-blue);
+    font-family: var(--font-mono); font-size: 0.9rem; font-weight: 700;
+    cursor: pointer; text-decoration: none; transition: all 0.2s;
+}
+.help-btn:hover {
+    background: rgba(99,179,237,0.15); border-color: rgba(99,179,237,0.4);
+    transform: scale(1.05); color: var(--accent-blue);
+}
 
 
 /* ── LAYOUT ────────────────────────────── */

@@ -361,9 +361,12 @@ public class PollingService {
                             eventService.log("[ERROR] Split target placement failed for " + symbol
                                 + " (attempt " + holder.ocoRetries + ") SL=" + slOk + " T1=" + t1Ok + " T2=" + t2Ok);
                             if (holder.ocoRetries >= Holder.MAX_OCO_RETRIES) {
-                                eventService.log("[WARNING] Falling back to single target for " + symbol);
-                                // Fall through to single-target retry on next tick
-                                // (shouldSplit will be re-evaluated)
+                                eventService.log("[ERROR] Split target failed for " + symbol
+                                    + " — squaring off to avoid unprotected position");
+                                boolean closed = squareOff(symbol, quantity, "SL_TARGET_FAILED");
+                                if (!closed) eventService.log("[ERROR] Emergency squareoff FAILED for " + symbol);
+                                try { telegramService.sendMessage("[ALERT] Split target failed for " + symbol
+                                    + ". " + (closed ? "Squared off." : "SQUAREOFF FAILED")); } catch (Exception ignored) {}
                                 if (holder.future != null) holder.future.cancel(false);
                             }
                         }
@@ -405,9 +408,18 @@ public class PollingService {
                         if (!skipTarget && !tgtOk) eventService.log("[ERROR] Target order placement failed for " + symbol + " at " + targetPrice);
 
                         if (holder.ocoRetries >= Holder.MAX_OCO_RETRIES) {
-                            eventService.log("[WARNING] Could not place SL/Target for " + symbol
-                                + " after " + Holder.MAX_OCO_RETRIES + " attempts — scanning for manually placed orders");
-                            scanForManualOCO(symbol, quantity, exitSide, position, setup, holder.entryFillPrice);
+                            eventService.log("[ERROR] Could not place SL/Target for " + symbol
+                                + " after " + Holder.MAX_OCO_RETRIES + " attempts — squaring off to avoid unprotected position");
+                            boolean closed = squareOff(symbol, quantity, "SL_TARGET_FAILED");
+                            if (closed) {
+                                eventService.log("[SUCCESS] Emergency squareoff for " + symbol + " — unprotected position closed");
+                            } else {
+                                eventService.log("[ERROR] Emergency squareoff FAILED for " + symbol + " — POSITION UNPROTECTED");
+                            }
+                            try {
+                                telegramService.sendMessage("[ALERT] SL/Target failed for " + symbol
+                                    + ". " + (closed ? "Position squared off." : "SQUAREOFF FAILED — MANUAL ACTION NEEDED"));
+                            } catch (Exception ignored) {}
                             if (holder.future != null) holder.future.cancel(false);
                         } else {
                             eventService.log("[WARNING] Retrying SL/Target placement for " + symbol

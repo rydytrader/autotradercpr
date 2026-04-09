@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TraderEdge - Help & Strategy Guide</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/shared.css?v=5">
+    <style>
+        .help-section { margin-bottom: 0; }
+        .help-body { padding: 20px 24px; font-family: var(--font-mono); font-size: 0.78rem; line-height: 1.9; color: var(--text-secondary); }
+        .help-body h4 { color: var(--text-primary); font-size: 0.88rem; font-weight: 700; margin: 18px 0 8px; }
+        .help-body h4:first-child { margin-top: 0; }
+        .help-body p { margin: 4px 0 10px; }
+        .help-body ul { margin: 4px 0 10px; padding-left: 20px; }
+        .help-body li { margin-bottom: 4px; }
+        .help-body code { background: var(--bg-surface); padding: 1px 6px; border-radius: 4px; color: var(--accent-cyan); font-size: 0.76rem; }
+        .help-body .badge-example { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.68rem; font-weight: 700; margin: 0 2px; }
+        .help-body .bg { background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.25); color: var(--accent-green); }
+        .help-body .br { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.25); color: var(--accent-red); }
+        .help-body .bb { background: rgba(99,179,237,0.1); border: 1px solid rgba(99,179,237,0.25); color: var(--accent-blue); }
+        .help-body .by { background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.25); color: var(--accent-yellow); }
+        .help-body .bo { background: rgba(251,146,60,0.1); border: 1px solid rgba(251,146,60,0.25); color: #fb923c; }
+        .help-body table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; font-size: 0.75rem; }
+        .help-body th { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); color: var(--text-primary); font-weight: 600; }
+        .help-body td { padding: 5px 10px; border-bottom: 1px solid rgba(128,128,128,0.1); }
+        .help-tabs { display: flex; flex-wrap: wrap; gap: 0; position: sticky; top: 0; z-index: 10; background: var(--bg-main); margin: 0 -2rem 20px; padding: 0 2rem; border-bottom: 1px solid var(--border); }
+        .help-tab { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted); text-decoration: none; padding: 10px 14px; border-bottom: 2px solid transparent; cursor: pointer; transition: all 0.2s; background: none; border-top: none; border-left: none; border-right: none; }
+        .help-tab:hover { color: var(--accent-blue); }
+        .help-tab.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); }
+        .help-content { display: none; }
+        .help-content.active { display: block; }
+        .page-wrap { scroll-padding-top: 60px; }
+    </style>
+    <script>
+        (function() {
+            const t = localStorage.getItem('traderedge-theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', t);
+        })();
+    </script>
+</head>
+
+<body>
+<div class="app-layout">
+
+<aside class="sidebar">
+    <div class="sidebar-brand">
+        <div class="brand-icon">⚡</div>
+        <div class="sidebar-brand-text">
+            <div class="brand-name">TRADER<span>EDGE</span><div style="font-size:0.65rem;font-weight:500;letter-spacing:0.12em;color:var(--text-secondary);margin-top:4px;opacity:0.7;">AutoTrader BOT</div></div>
+        </div>
+    </div>
+    <nav class="sidebar-nav">
+        <div class="sidebar-nav-section" style="display:flex;align-items:center;justify-content:space-between;"><button class="sidebar-collapse-btn" onclick="toggleSidebar()" title="Toggle sidebar" style="margin:0;padding:2px 6px;border:none;">☰</button></div>
+        <a href="/home" data-tooltip="Home" class="sidebar-nav-item"><span class="sidebar-nav-icon" style="font-size:1.3rem;">⌂</span><span class="sidebar-nav-label">Home</span></a>
+        <a href="/scanner" data-tooltip="Scanner" class="sidebar-nav-item"><span class="sidebar-nav-icon">◎</span><span class="sidebar-nav-label">Scanner</span></a>
+        <a href="/positions" data-tooltip="Positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
+        <a href="/trades" data-tooltip="Trade Log" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
+        <a href="/journal" data-tooltip="Journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">☷</span><span class="sidebar-nav-label">Journal</span></a>
+        <a href="/settings" data-tooltip="Settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
+        <div class="sidebar-nav-section">Operations</div>
+        <a href="/console" data-tooltip="Console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
+        <a href="/monitoring" data-tooltip="Monitoring" class="sidebar-nav-item"><span class="sidebar-nav-icon">◉</span><span class="sidebar-nav-label">Monitoring</span></a>
+        <a href="/help" data-tooltip="Help" class="sidebar-nav-item active"><span class="sidebar-nav-icon">?</span><span class="sidebar-nav-label">Help</span></a>
+    </nav>
+    <div class="sidebar-footer">
+        <div class="status-pill">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="connectionStatus" style="color: var(--text-secondary);">—</span>
+        </div>
+    </div>
+</aside>
+
+<div class="app-main">
+<nav class="navbar">
+    <div class="navbar-inner">
+        <div class="ticker-wrap" id="tickerWrap">
+            <div class="ticker-track" id="tickerTrack"></div>
+        </div>
+        <div class="nav-right">
+            <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
+            <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
+        </div>
+    </div>
+</nav>
+
+<div class="page-wrap">
+
+    <div class="page-header fade-in">
+        <div>
+            <div class="page-title">Help & Strategy Guide</div>
+            <div class="page-subtitle">Trading strategy, setup rules, quantity management & page documentation</div>
+        </div>
+    </div>
+
+    <!-- TABS (sticky) -->
+    <div class="help-tabs fade-in">
+        <button class="help-tab active" onclick="switchHelpTab('strategy', this)">STRATEGY</button>
+        <button class="help-tab" onclick="switchHelpTab('orders', this)">ORDER MANAGEMENT</button>
+        <button class="help-tab" onclick="switchHelpTab('open-class', this)">OPEN CLASSIFICATION</button>
+        <button class="help-tab" onclick="switchHelpTab('trend', this)">TREND FOLLOWING</button>
+        <button class="help-tab" onclick="switchHelpTab('magnet', this)">MAGNET TRADES</button>
+        <button class="help-tab" onclick="switchHelpTab('reversal', this)">MEAN REVERSION</button>
+        <button class="help-tab" onclick="switchHelpTab('or', this)">OPENING RANGE</button>
+        <button class="help-tab" onclick="switchHelpTab('trends', this)">TREND &amp; ALIGNMENT</button>
+        <button class="help-tab" onclick="switchHelpTab('probability', this)">PROBABILITY</button>
+        <button class="help-tab" onclick="switchHelpTab('qty', this)">QTY STACKING</button>
+        <button class="help-tab" onclick="switchHelpTab('split', this)">SPLIT TARGETS</button>
+        <button class="help-tab" onclick="switchHelpTab('sl', this)">STOP LOSS</button>
+        <button class="help-tab" onclick="switchHelpTab('timing', this)">TRADE TIMING</button>
+        <button class="help-tab" onclick="switchHelpTab('risk', this)">RISK MANAGEMENT</button>
+        <button class="help-tab" onclick="switchHelpTab('settings-ref', this)">SETTINGS</button>
+    </div>
+
+    <!-- TRADING STRATEGY OVERVIEW -->
+    <div id="tab-strategy" class="help-content active">
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Trading Strategy Overview</div></div>
+        <div class="help-body">
+            <p>TraderEdge is a CPR (Central Pivot Range) breakout trading bot for NSE F&O stocks. It scans for narrow and inside CPR stocks from the daily bhavcopy, monitors real-time price action on configurable timeframe candles, and enters trades when CPR levels are broken with confirming conditions.</p>
+
+            <h4>How It Works</h4>
+            <ul>
+                <li><strong>Daily Setup:</strong> Downloads NSE bhavcopy, computes CPR levels (Pivot, TC, BC, R1-R4, S1-S4, PDH, PDL) for all F&O stocks</li>
+                <li><strong>Filtering:</strong> Selects stocks with narrow CPR (high breakout potential) and inside CPR (price compressed within prior day's range)</li>
+                <li><strong>Z-Score Classification:</strong> Each stock's daily range is classified using 20-day history:
+                    <span class="badge-example bg">NS</span> Narrow + Small Range (z &lt; -1.5) |
+                    <span class="badge-example bo">NL</span> Narrow + Large Range |
+                    <span class="badge-example bb">IS</span> Inside + Small Range |
+                    <span class="badge-example by">IL</span> Inside + Large Range
+                </li>
+                <li><strong>Breakout Detection:</strong> On each candle close, checks if price broke above/below CPR levels with green/red candle confirmation</li>
+                <li><strong>Entry:</strong> Market order placed, SL + Target(s) placed on fill</li>
+                <li><strong>Exit:</strong> SL hit, target hit, trailing SL, or auto squareoff at configured time</li>
+            </ul>
+
+            <h4>Two Trading Modes</h4>
+            <table>
+                <tr><th>Mode</th><th>Description</th></tr>
+                <tr><td><strong>Trend Following</strong></td><td>Trade in the direction of the breakout. Standard CPR level breakouts.</td></tr>
+                <tr><td><strong>Mean Reversion</strong></td><td>Trade back toward value. Magnet trades (IV/OV days) and EV reversal trades.</td></tr>
+            </table>
+
+            <h4>Signal Source</h4>
+            <p>All signals are generated by the bot's internal breakout scanner (CandleAggregator + BreakoutScanner). Real-time WebSocket ticks are aggregated into configurable timeframe candles, and breakouts are detected on each candle close.</p>
+        </div>
+    </div>
+
+    </div><!-- /tab-strategy -->
+
+    <!-- OPEN CLASSIFICATION -->
+    <div id="tab-open-class" class="help-content">
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Open Classification (IV / OV / EV)</div></div>
+        <div class="help-body">
+            <p>The first candle close of the day determines the open classification, which drives how the bot trades for the rest of the session.</p>
+
+            <table>
+                <tr><th>Class</th><th>Condition</th><th>Meaning</th><th>Trading Impact</th></tr>
+                <tr><td><span class="badge-example bg">IV</span></td><td>1st candle close between S1/PDL and R1/PDH</td><td>Inside Value — stock opened within the core trading range</td><td>All breakouts active. Magnet trades at full qty.</td></tr>
+                <tr><td><span class="badge-example by">OV</span></td><td>1st candle close above R1/PDH or below S1/PDL (but not R2/S2)</td><td>Outside Value — stock opened with momentum beyond value area</td><td>All breakouts active. Magnet trades at <strong>half qty</strong> (momentum may resist).</td></tr>
+                <tr><td><span class="badge-example br">EV</span></td><td>1st candle close above R2 or below S2</td><td>Extended Value — significant gap or move at open</td><td>Opening Range (OR) filter activates. Only OR-aligned or reversal trades.</td></tr>
+            </table>
+
+            <p>The classification is shown on the scanner card next to Day Open: e.g., <code>1855.20 (IV)</code></p>
+        </div>
+    </div>
+
+    </div><!-- /tab-open-class -->
+
+    <!-- TREND FOLLOWING -->
+    <div id="tab-trend" class="help-content">
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Trend Following Setups</div></div>
+        <div class="help-body">
+            <p>Standard CPR level breakouts. Trade in the direction of the move.</p>
+
+            <h4>Buy Setups & Targets</h4>
+            <table>
+                <tr><th>Setup</th><th>Trigger</th><th>Default Target</th><th>Shift Target</th></tr>
+                <tr><td>BUY_ABOVE_CPR</td><td>Close above TC (top of CPR)</td><td>min(R1, PDH)</td><td>R2</td></tr>
+                <tr><td>BUY_ABOVE_R1_PDH</td><td>Close above R1 and PDH</td><td>R2</td><td>R3</td></tr>
+                <tr><td>BUY_ABOVE_R2</td><td>Close above R2</td><td>R3</td><td>R4</td></tr>
+                <tr><td>BUY_ABOVE_R3</td><td>Close above R3</td><td>R4</td><td>R4</td></tr>
+                <tr><td>BUY_ABOVE_R4</td><td>Close above R4</td><td>Projected R5</td><td>R5</td></tr>
+            </table>
+
+            <h4>Sell Setups & Targets</h4>
+            <table>
+                <tr><th>Setup</th><th>Trigger</th><th>Default Target</th><th>Shift Target</th></tr>
+                <tr><td>SELL_BELOW_CPR</td><td>Close below BC (bottom of CPR)</td><td>max(S1, PDL)</td><td>S2</td></tr>
+                <tr><td>SELL_BELOW_S1_PDL</td><td>Close below S1 and PDL</td><td>S2</td><td>S3</td></tr>
+                <tr><td>SELL_BELOW_S2</td><td>Close below S2</td><td>S3</td><td>S4</td></tr>
+                <tr><td>SELL_BELOW_S3</td><td>Close below S3</td><td>S4</td><td>S4</td></tr>
+                <tr><td>SELL_BELOW_S4</td><td>Close below S4</td><td>Projected S5</td><td>S5</td></tr>
+            </table>
+
+            <h4>Breakout Rules</h4>
+            <ul>
+                <li>Green candle required for buys (close &gt; open), red candle for sells</li>
+                <li>Priority: highest level wins (R4 &gt; R3 &gt; R2 &gt; R1/PDH &gt; CPR)</li>
+                <li>Each level fires only once per day per symbol — cleared when position closes to allow re-entry</li>
+                <li>VWAP/ATP check (if enabled): buy requires close &gt; ATP, sell requires close &lt; ATP</li>
+            </ul>
+
+            <h4>Target Shift</h4>
+            <p>If default target distance is less than N x ATR (configurable), target shifts to the next level up. This avoids tiny targets on tight setups.</p>
+
+            <h4>Day High/Low Shift</h4>
+            <p>If today's session high (for buys) or low (for sells) is between entry and target, the target shifts to the day high/low — it acts as intraday resistance/support.</p>
+        </div>
+    </div>
+
+    </div><!-- /tab-trend -->
+
+    <!-- MAGNET TRADES -->
+    <div id="tab-magnet" class="help-content">
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-blue);"></div> Magnet Trades (Mean Reversion)</div></div>
+        <div class="help-body">
+            <p>Magnet trades are mean-reversion setups where price is pulled back toward the CPR (the "magnet"). Active on IV and OV days.</p>
+
+            <table>
+                <tr><th>Setup</th><th>Trigger</th><th>Target</th><th>Logic</th></tr>
+                <tr><td>BUY_ABOVE_S1_PDL</td><td>Close above S1 and PDL (from below)</td><td>CPR (min TC/BC)</td><td>Price pulled back from below value, bouncing toward CPR</td></tr>
+                <tr><td>SELL_BELOW_R1_PDH</td><td>Close below R1 and PDH (from above)</td><td>CPR (max TC/BC)</td><td>Price pulled back from above value, falling toward CPR</td></tr>
+            </table>
+
+            <h4>Quantity Rules</h4>
+            <ul>
+                <li><span class="badge-example bg">IV</span> magnet — <strong>full qty</strong> (stock within value, high conviction)</li>
+                <li><span class="badge-example by">OV</span> magnet — <strong>half qty</strong> (stock has momentum, magnet may fail)</li>
+            </ul>
+
+            <h4>Guard</h4>
+            <p>Close must be between S1/R1 and CPR — the target (CPR) must still be ahead, not already passed.</p>
+        </div>
+    </div>
+
+    </div><!-- /tab-magnet -->
+
+    <!-- MEAN REVERSION (EV) -->
+    <div id="tab-reversal" class="help-content">
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:#fb923c;"></div> Mean Reversion — EV Days</div></div>
+        <div class="help-body">
+            <p>On Extended Value (EV) days, when the Opening Range (OR) breaks <strong>counter</strong> to the gap direction, the bot trades mean-reversion back toward value with closer targets.</p>
+
+            <h4>Gap Up + OR Bearish (Sell Reversals)</h4>
+            <table>
+                <tr><th>Breakdown Level</th><th>Reversal Target</th></tr>
+                <tr><td>SELL_BELOW_R4</td><td>R3</td></tr>
+                <tr><td>SELL_BELOW_R3</td><td>R2</td></tr>
+                <tr><td>SELL_BELOW_R2</td><td>max(R1, PDH)</td></tr>
+                <tr><td>SELL_BELOW_R1_PDH</td><td>CPR (magnet)</td></tr>
+            </table>
+
+            <h4>Gap Down + OR Bullish (Buy Reversals)</h4>
+            <table>
+                <tr><th>Breakout Level</th><th>Reversal Target</th></tr>
+                <tr><td>BUY_ABOVE_S4</td><td>S3</td></tr>
+                <tr><td>BUY_ABOVE_S3</td><td>S2</td></tr>
+                <tr><td>BUY_ABOVE_S2</td><td>min(S1, PDL)</td></tr>
+                <tr><td>BUY_ABOVE_S1_PDL</td><td>CPR (magnet)</td></tr>
+            </table>
+
+            <h4>Rules</h4>
+            <ul>
+                <li>All EV reversals get <strong>half qty</strong> (counter daily trend)</li>
+                <li>Level factors (R3/S3, R4/S4) still apply and stack with reversal half</li>
+                <li>Price inside OR range on EV day = <strong>trade skipped</strong></li>
+                <li>OR still forming = <strong>trade skipped</strong></li>
+            </ul>
+        </div>
+    </div>
+
+    </div><!-- /tab-reversal -->
+
+    <!-- OPENING RANGE -->
+    <div id="tab-or" class="help-content">
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> Opening Range (OR)</div></div>
+        <div class="help-body">
+            <p>The Opening Range is the high and low of the first N minutes after market open (configurable: 15/30/45/60 min). Shown on scanner cards as OR status.</p>
+
+            <h4>OR Status</h4>
+            <table>
+                <tr><th>Status</th><th>Condition</th></tr>
+                <tr><td><span class="badge-example bg">BULLISH</span></td><td>LTP &gt; OR High</td></tr>
+                <tr><td><span class="badge-example br">BEARISH</span></td><td>LTP &lt; OR Low</td></tr>
+                <tr><td>NEUTRAL</td><td>LTP between OR High and Low</td></tr>
+                <tr><td><span class="badge-example by">FORMING</span></td><td>OR period not yet complete</td></tr>
+            </table>
+
+            <h4>Impact on Trading</h4>
+            <table>
+                <tr><th>Day Type</th><th>OR Impact</th></tr>
+                <tr><td><span class="badge-example bg">IV</span> / <span class="badge-example by">OV</span></td><td>OR is <strong>informational only</strong> — no trade impact</td></tr>
+                <tr><td><span class="badge-example br">EV</span> + OR aligned</td><td>Trend trade — full qty, normal targets</td></tr>
+                <tr><td><span class="badge-example br">EV</span> + OR counter</td><td>Mean-reversion trade — half qty, closer targets</td></tr>
+                <tr><td><span class="badge-example br">EV</span> + inside OR</td><td><strong>Skip</strong> — no trade</td></tr>
+                <tr><td><span class="badge-example br">EV</span> + OR forming</td><td><strong>Skip</strong> — wait for OR to lock</td></tr>
+            </table>
+
+            <p>OR state persists across restarts (saved to <code>store/config/or-state.json</code>).</p>
+        </div>
+    </div>
+
+    </div><!-- /tab-or -->
+
+    <!-- PROBABILITY -->
+    <div id="tab-probability" class="help-content">
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Probability Classification</div></div>
+        <div class="help-body">
+            <p>Probability is determined by <strong>breakout direction vs weekly trend</strong> (not daily trend).</p>
+
+            <table>
+                <tr><th>Weekly Trend</th><th>Breakout Direction</th><th>Category</th><th>Qty Factor</th></tr>
+                <tr><td>Bullish</td><td>Buy</td><td><span class="badge-example bg">HPT</span> High Probable Trade</td><td>1.0x</td></tr>
+                <tr><td>Bearish</td><td>Sell</td><td><span class="badge-example bg">HPT</span></td><td>1.0x</td></tr>
+                <tr><td>Neutral</td><td>Buy or Sell</td><td><span class="badge-example bb">MPT</span> Medium Probable Trade</td><td>configurable (default 0.5x)</td></tr>
+                <tr><td>Bearish</td><td>Buy</td><td><span class="badge-example by">LPT</span> Low Probable Trade</td><td>configurable (default 0.25x)</td></tr>
+                <tr><td>Bullish</td><td>Sell</td><td><span class="badge-example by">LPT</span></td><td>configurable (default 0.25x)</td></tr>
+            </table>
+
+            <p>Each category is independently toggleable in Settings. If HPT is disabled, no HPT signals fire.</p>
+        </div>
+    </div>
+
+    </div><!-- /tab-probability -->
+
+    <!-- QUANTITY STACKING -->
+    <div id="tab-qty" class="help-content">
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> Quantity Stacking Order</div></div>
+        <div class="help-body">
+            <p>Each step multiplies the running qty from the previous step. Minimum qty = 2 (rounded to even).</p>
+
+            <table>
+                <tr><th>#</th><th>Step</th><th>Logic</th></tr>
+                <tr><td>1</td><td><strong>Base qty</strong></td><td>risk per trade / SL distance. Or fixed qty if configured.</td></tr>
+                <tr><td>2</td><td><strong>Capital cap</strong></td><td>min(base qty, (capital per trade x leverage) / price)</td></tr>
+                <tr><td>3</td><td><strong>Extreme level</strong></td><td>÷2 if breakout at R2+ / S2+ level</td></tr>
+                <tr><td>4</td><td><strong>Session move %</strong></td><td>÷2 if price moved &gt; N% from day open / PDC</td></tr>
+                <tr><td>5</td><td><strong>Probability</strong></td><td>HPT = 1x, MPT = configurable, LPT = configurable</td></tr>
+                <tr><td>6</td><td><strong>Level factor</strong></td><td>R3/S3 = configurable (0.75x), R4/S4 = configurable (0.5x)</td></tr>
+                <tr><td>7</td><td><strong>Mean-reversion</strong></td><td>÷2 for all EV reversals + OV magnet trades</td></tr>
+            </table>
+
+            <h4>Pre-Qty Filters (reject before qty calculation)</h4>
+            <ul>
+                <li><strong>EV day + inside OR range</strong> — trade skipped entirely</li>
+                <li><strong>EV day + OR still forming</strong> — trade skipped</li>
+                <li><strong>Large candle filter</strong> — reject if candle move &gt; N x ATR from level</li>
+                <li><strong>Small candle filter</strong> — reject if candle move &lt; N x ATR</li>
+                <li><strong>Volume filter</strong> — reject if candle volume &lt; N x average volume</li>
+                <li><strong>R4/S4 disabled</strong> — reject R4/S4 signals</li>
+                <li><strong>ATR invalid</strong> — reject if ATR is zero or NaN</li>
+            </ul>
+        </div>
+    </div>
+
+    </div><!-- /tab-qty -->
+
+    <!-- SPLIT TARGETS -->
+    <div id="tab-split" class="help-content">
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Split Targets (T1 + T2)</div></div>
+        <div class="help-body">
+            <p>When enabled, every position gets two target orders: T1 at a partial distance and T2 at the full target. Each gets half the quantity.</p>
+
+            <h4>How It Works</h4>
+            <ul>
+                <li><strong>T1 price</strong> = entry + (target distance x T1%) — e.g., 50% of the way to target</li>
+                <li><strong>T2 price</strong> = full target (100%)</li>
+                <li><strong>T1 qty</strong> = total / 2 (rounded to even)</li>
+                <li><strong>T2 qty</strong> = total - T1 qty</li>
+            </ul>
+
+            <h4>Fill Scenarios</h4>
+            <table>
+                <tr><th>Event</th><th>Action</th><th>Trade Record</th></tr>
+                <tr><td>T1 hits</td><td>Cancel SL, place new SL at entry (breakeven) for remaining qty</td><td>Partial: T1 qty, reason=TARGET_1</td></tr>
+                <tr><td>T2 hits</td><td>Cancel SL, position fully closed</td><td>Partial: T2 qty, reason=TARGET_2</td></tr>
+                <tr><td>SL before T1</td><td>Cancel both T1 and T2</td><td>Full qty, reason=SL</td></tr>
+                <tr><td>SL after T1 (breakeven)</td><td>Cancel T2</td><td>Remaining qty, reason=SL_BREAKEVEN</td></tr>
+            </table>
+
+            <h4>Settings</h4>
+            <ul>
+                <li><strong>Enable Split Targets</strong> — toggle on/off</li>
+                <li><strong>T1 Distance</strong> — 25% / 50% / 75% of target distance</li>
+                <li><strong>Min Distance</strong> — only split when target distance &gt; N x ATR (0 = always split)</li>
+                <li>Requires qty &ge; 4 for split (otherwise single target)</li>
+            </ul>
+
+            <p>After T1 hit, trailing SL continues from breakeven and keeps tightening.</p>
+        </div>
+    </div>
+
+    </div><!-- /tab-split -->
+
+    <!-- STOP LOSS & TRAILING -->
+    <div id="tab-sl" class="help-content">
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-red);"></div> Stop Loss & Trailing SL</div></div>
+        <div class="help-body">
+            <h4>Initial SL</h4>
+            <p>SL = Entry ± ATR(period) x Multiplier. Recalculated from actual fill price (not signal close price).</p>
+
+            <h4>Trailing SL (ATR Peak-Based)</h4>
+            <ul>
+                <li>Tracks peak price (LONG) or trough price (SHORT) since entry</li>
+                <li>New SL = peak - ATR x trailing multiplier (LONG) or trough + ATR x trailing multiplier (SHORT)</li>
+                <li><strong>Activation threshold</strong>: trailing only starts after price moves N x ATR in profit (default 1.0 ATR)</li>
+                <li>SL only tightens — never loosens (LONG: SL moves up, SHORT: SL moves down)</li>
+                <li>Modified on Fyers via order modification API (not cancel/replace)</li>
+            </ul>
+
+            <h4>Auto Square Off</h4>
+            <p>All open positions squared off at configured time (e.g., 15:10). SL and target orders cancelled, market exit orders placed.</p>
+        </div>
+    </div>
+
+    </div><!-- /tab-sl -->
+
+    <!-- TRADE TIMING -->
+    <div id="tab-timing" class="help-content">
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> Trade Timing</div></div>
+        <div class="help-body">
+            <h4>Trading Window</h4>
+            <table>
+                <tr><th>Event</th><th>Default Time</th><th>What Happens</th></tr>
+                <tr><td><strong>Market Open</strong></td><td>09:15</td><td>NSE market opens. WebSocket ticks start flowing. Candle aggregation begins. Opening Range tracking starts.</td></tr>
+                <tr><td><strong>First Candle Close</strong></td><td>09:20 / 09:30</td><td>Depends on scanner timeframe (5 min = 09:20, 15 min = 09:30). Open classification (IV/OV/EV) is determined. First candle close persisted for OR and gap detection.</td></tr>
+                <tr><td><strong>Trading Start</strong></td><td>09:20 (configurable)</td><td>First signal accepted. Signals before this time are ignored. Set this after the first candle closes to ensure open classification is ready.</td></tr>
+                <tr><td><strong>OR Locks</strong></td><td>09:45 (for 30 min OR)</td><td>Opening Range period ends. OR High/Low are locked. EV day filter becomes active (was skipping during "FORMING").</td></tr>
+                <tr><td><strong>Trading End</strong></td><td>14:45 (configurable)</td><td>No new entry signals accepted after this time. Existing positions continue to be managed (SL/target/trailing).</td></tr>
+                <tr><td><strong>Auto Square Off</strong></td><td>15:10 (configurable)</td><td>All open positions force-closed via market orders. SL and target orders cancelled. Trades recorded with reason "AUTO_SQUAREOFF".</td></tr>
+                <tr><td><strong>Market Close</strong></td><td>15:30</td><td>NSE market closes. No more ticks. Daily state cleared for next day.</td></tr>
+            </table>
+
+            <h4>Timeline</h4>
+            <p style="font-size:0.72rem; color:var(--text-muted); line-height:2.2;">
+                09:15 <span style="color:var(--accent-cyan);">OPEN</span>
+                &rarr; 09:20-09:30 <span style="color:var(--accent-green);">1st CANDLE</span> (IV/OV/EV set)
+                &rarr; 09:20 <span style="color:var(--accent-green);">TRADING START</span>
+                &rarr; 09:45 <span style="color:var(--accent-yellow);">OR LOCKS</span>
+                &rarr; 09:20-14:45 <span style="color:var(--accent-blue);">ACTIVE TRADING</span>
+                &rarr; 14:45 <span style="color:#fb923c;">TRADING END</span>
+                &rarr; 15:10 <span style="color:var(--accent-red);">AUTO SQUAREOFF</span>
+                &rarr; 15:30 <span style="color:var(--text-muted);">MARKET CLOSE</span>
+            </p>
+
+            <h4>Key Timing Rules</h4>
+            <ul>
+                <li><strong>Before trading start:</strong> signals are rejected ("outside trading hours")</li>
+                <li><strong>Before first candle close:</strong> open classification is unknown, OR is "FORMING". Non-EV trades proceed normally. EV detection not yet possible.</li>
+                <li><strong>Before OR locks (EV day):</strong> EV signals are skipped ("OR still forming"). Non-EV signals are unaffected.</li>
+                <li><strong>After trading end:</strong> no new entries. Trailing SL continues. SL/target orders remain active until hit or squareoff.</li>
+                <li><strong>Auto squareoff:</strong> runs once at configured time. Cancels all pending SL/target orders, then places market exit orders for each open position.</li>
+            </ul>
+
+            <h4>Configuring Times</h4>
+            <p>All times are configurable in Settings &gt; Hours tab. Set trading start after your scanner timeframe's first candle (e.g., 15-min candles = start at 09:30+ to ensure first candle has closed). Set auto squareoff before 15:30 to avoid exchange-level forced closure.</p>
+        </div>
+    </div>
+    </div><!-- /tab-timing -->
+
+    <!-- ORDER MANAGEMENT -->
+    <div id="tab-orders" class="help-content">
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Order Management & Trade Lifecycle</div></div>
+        <div class="help-body">
+
+            <h4>1. Signal to Order</h4>
+            <p>When the breakout scanner detects a valid signal, it passes through SignalProcessor for validation and quantity calculation. If approved:</p>
+            <ul>
+                <li>A <strong>market order</strong> (MPP — Market Protection Price) is placed via Fyers API</li>
+                <li>Order type: 2 (Market) | Side: 1 (BUY) or -1 (SELL) | Product: INTRADAY</li>
+                <li>The entry order ID is registered for fill monitoring</li>
+            </ul>
+
+            <h4>2. Entry Fill Detection</h4>
+            <p>Two parallel paths monitor the entry order:</p>
+            <table>
+                <tr><th>Path</th><th>How</th><th>Speed</th><th>When Active</th></tr>
+                <tr><td><strong>WebSocket</strong> (OrderEventService)</td><td>Fyers Order WebSocket pushes order status changes in real-time</td><td>Instant (~100ms)</td><td>When Order WS is connected</td></tr>
+                <tr><td><strong>Polling</strong> (PollingService)</td><td>Polls Fyers order book every 2 seconds checking order status</td><td>2-10 seconds</td><td>Fallback when WS is down</td></tr>
+            </table>
+            <p>On fill detection (status = 2 / Traded):</p>
+            <ul>
+                <li>Actual fill price (<code>tradedPrice</code>) extracted from order book — never uses Fyers blended <code>netAvgPrice</code></li>
+                <li>SL recalculated from actual fill price: <code>SL = fillPrice ± ATR × multiplier</code></li>
+                <li>Position state saved to database (symbol, side, qty, entry, SL, target)</li>
+                <li>PositionManager updated (LONG/SHORT/NONE tracker)</li>
+                <li>Market data subscriptions updated to include new symbol</li>
+            </ul>
+
+            <h4>3. SL + Target Placement (OCO)</h4>
+            <p>Immediately after entry fill, SL and target orders are placed:</p>
+            <table>
+                <tr><th>Order</th><th>Type</th><th>Qty</th><th>Price</th></tr>
+                <tr><td><strong>Stop Loss</strong></td><td>Type 3 (Stop-Market)</td><td>Full qty</td><td>Entry ± ATR × multiplier (rounded to tick)</td></tr>
+                <tr><td><strong>Target</strong> (single)</td><td>Type 1 (Limit)</td><td>Full qty</td><td>Computed target price (rounded to tick)</td></tr>
+                <tr><td><strong>T1</strong> (split)</td><td>Type 1 (Limit)</td><td>Half qty</td><td>Entry + N% of target distance</td></tr>
+                <tr><td><strong>T2</strong> (split)</td><td>Type 1 (Limit)</td><td>Half qty</td><td>Full target price</td></tr>
+            </table>
+            <ul>
+                <li><strong>Retry logic:</strong> up to 3 attempts. If one order succeeds and the other fails, the successful one is cancelled and both retried together.</li>
+                <li><strong>Fallback:</strong> if all retries fail, <code>scanForManualOCO()</code> scans the order book for manually placed SL/target orders matching the symbol.</li>
+                <li>Order IDs saved to position state for tracking and restart recovery.</li>
+            </ul>
+
+            <h4>4. OCO Monitoring (One-Cancels-Other)</h4>
+            <p>Once SL + Target are placed, they are monitored as an OCO pair — when one fills, the other is cancelled.</p>
+            <table>
+                <tr><th>Path</th><th>How</th><th>What It Detects</th></tr>
+                <tr><td><strong>WebSocket</strong></td><td>Order status push events from Fyers</td><td>Fill (status 2), cancellation (status 1), rejection (status 5), modification (price change on status 6)</td></tr>
+                <tr><td><strong>Polling</strong></td><td>Polls order book every 5 seconds</td><td>Same statuses, plus detects manual price modifications</td></tr>
+            </table>
+
+            <h4>5. Fyers Order Status Codes</h4>
+            <table>
+                <tr><th>Code</th><th>Meaning</th><th>Bot Action</th></tr>
+                <tr><td><code>1</code></td><td>Cancelled</td><td>Order was cancelled (by bot, user, or exchange). If SL cancelled without fill, position may be unprotected.</td></tr>
+                <tr><td><code>2</code></td><td>Traded (Filled)</td><td>Order executed. For entry: place SL+Target. For SL/Target: cancel counterpart, record trade.</td></tr>
+                <tr><td><code>5</code></td><td>Rejected</td><td>Order rejected by exchange. Logged as error. Entry rejection stops the trade. SL rejection = unprotected position.</td></tr>
+                <tr><td><code>6</code></td><td>Pending (Open)</td><td>Order is live, waiting to fill. Bot monitors for status change. Detects price modifications.</td></tr>
+            </table>
+
+            <h4>6. OCO Fill Handling</h4>
+
+            <p><strong>Single Target Mode:</strong></p>
+            <table>
+                <tr><th>Event</th><th>Action</th></tr>
+                <tr><td>SL fills</td><td>Cancel target order. Record trade (reason: SL or TRAILING_SL). Clear position state.</td></tr>
+                <tr><td>Target fills</td><td>Cancel SL order. Record trade (reason: TARGET). Clear position state.</td></tr>
+            </table>
+
+            <p><strong>Split Target Mode (T1 + T2):</strong></p>
+            <table>
+                <tr><th>Event</th><th>Action</th></tr>
+                <tr><td>T1 fills</td><td>Cancel current SL (full qty). Place new SL at breakeven (entry price) for remaining qty. Record partial trade (TARGET_1). Update position state.</td></tr>
+                <tr><td>T2 fills</td><td>Cancel SL. Record partial trade (TARGET_2). Clear position state.</td></tr>
+                <tr><td>SL fills (before T1)</td><td>Cancel both T1 and T2. Record full trade (SL). Clear position state.</td></tr>
+                <tr><td>SL fills (after T1)</td><td>Cancel T2. Record remaining qty trade (SL_BREAKEVEN). Clear position state.</td></tr>
+            </table>
+
+            <h4>7. Trailing SL Modification</h4>
+            <ul>
+                <li>MarketDataService monitors LTP on every WebSocket tick</li>
+                <li>Tracks peak price (LONG) or trough price (SHORT) since entry</li>
+                <li>When profit exceeds activation threshold (N × ATR), trailing begins</li>
+                <li>New SL = peak - ATR × trailing multiplier (only tightens, never loosens)</li>
+                <li>Fyers API: <code>PUT /api/v3/orders/sync</code> modifies the SL order price in-place (no cancel/replace)</li>
+                <li>Updated SL price saved to position state and tracked in OCO context</li>
+            </ul>
+
+            <h4>8. Manual Modifications</h4>
+            <p>If you manually modify SL or target price on Fyers terminal:</p>
+            <ul>
+                <li>Both WebSocket and polling paths detect price changes on pending orders (status 6)</li>
+                <li>New prices are synced back to position state (<code>saveOcoState()</code>)</li>
+                <li>OCO context updated so cancellation uses correct counterpart</li>
+                <li>Trailing SL respects manual SL — it only tightens from the current price, never loosens it</li>
+            </ul>
+
+            <h4>9. Position Sync (Safety Net)</h4>
+            <p>Every 10 seconds, <code>syncPosition()</code> compares broker positions with bot state:</p>
+            <ul>
+                <li>Detects new positions opened outside the bot (manual trades)</li>
+                <li>Detects positions closed externally (manual squareoff)</li>
+                <li>Resolves entry price: in-memory → disk → order book lookup → Fyers avg (last resort)</li>
+                <li>Auto-scans for SL/target orders on newly detected positions</li>
+                <li>Skipped entirely when both WebSockets are connected (zero API polling)</li>
+            </ul>
+
+            <h4>10. Square Off Process</h4>
+            <p>Triggered manually (button) or automatically at configured time:</p>
+            <ul>
+                <li>For each open position: cancel all pending SL/target orders first</li>
+                <li>Place market exit order (opposite side of position)</li>
+                <li>Wait for exit fill, record trade with reason "AUTO_SQUAREOFF" or "MANUAL"</li>
+                <li>Clear all position state</li>
+                <li>Telegram notification sent</li>
+            </ul>
+
+            <h4>11. Crash Recovery</h4>
+            <p>On restart, the bot recovers state from the database:</p>
+            <ul>
+                <li>Position state (symbol, side, qty, entry, SL, target, order IDs) loaded from SQLite</li>
+                <li>OR state (opening range, first candle close, day open) loaded from JSON file</li>
+                <li>Scanner state (broken levels, signal history) loaded from JSON file</li>
+                <li>Active positions re-detected via <code>syncPosition()</code></li>
+                <li>OCO monitoring resumed for positions with saved SL/target order IDs</li>
+                <li>Split target state (T1 filled, remaining qty) preserved</li>
+            </ul>
+
+            <h4>Order Flow Diagram</h4>
+            <p style="font-size:0.72rem; color:var(--text-muted); line-height:2.2;">
+                SIGNAL &rarr; SignalProcessor (validate, qty, target)
+                &rarr; <span style="color:var(--accent-cyan);">MARKET ORDER</span> placed
+                &rarr; <span style="color:var(--accent-yellow);">WAIT FOR FILL</span> (WS push or 2s poll)
+                &rarr; <span style="color:var(--accent-green);">FILLED</span> (extract tradedPrice)
+                &rarr; Recalculate SL from fill price
+                &rarr; <span style="color:var(--accent-cyan);">PLACE SL + TARGET</span> (retry x3)
+                &rarr; <span style="color:var(--accent-yellow);">MONITOR OCO</span> (WS push or 5s poll)
+                &rarr; <span style="color:var(--accent-green);">SL/TARGET FILLS</span>
+                &rarr; Cancel counterpart &rarr; Record trade &rarr; Clear state
+            </p>
+        </div>
+    </div>
+    </div><!-- /tab-orders -->
+
+    <!-- TREND & ALIGNMENT -->
+    <div id="tab-trends" class="help-content">
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Trend, Alignment & Probability</div></div>
+        <div class="help-body">
+            <h4>Two Timeframes</h4>
+            <p>The bot uses two timeframes to determine trade quality:</p>
+            <table>
+                <tr><th>Timeframe</th><th>Source</th><th>What It Tells You</th></tr>
+                <tr><td><strong>Weekly Trend</strong> (Larger)</td><td>LTP vs weekly CPR levels (weekly OHLC aggregated from daily candles)</td><td>The bigger picture — is the stock in a multi-day uptrend, downtrend, or range?</td></tr>
+                <tr><td><strong>Daily Trend</strong> (Smaller)</td><td>LTP vs today's daily CPR levels (TC, BC, Pivot)</td><td>Today's intraday bias — is price above or below today's value area?</td></tr>
+            </table>
+
+            <h4>How Weekly Trend Is Calculated</h4>
+            <table>
+                <tr><th>Trend</th><th>Condition</th><th>Meaning</th></tr>
+                <tr><td><span class="badge-example bg">Strong Bullish</span></td><td>LTP &gt; weekly R1 AND LTP &gt; previous week high</td><td>Stock has broken above weekly resistance — very strong uptrend</td></tr>
+                <tr><td><span class="badge-example bg">Bullish</span></td><td>LTP &gt; weekly CPR top (TC)</td><td>Stock above weekly value area — uptrend</td></tr>
+                <tr><td><span class="badge-example bb">Neutral</span></td><td>LTP within weekly CPR range</td><td>No clear directional bias</td></tr>
+                <tr><td><span class="badge-example br">Bearish</span></td><td>LTP &lt; weekly CPR bottom (BC)</td><td>Stock below weekly value area — downtrend</td></tr>
+                <tr><td><span class="badge-example br">Strong Bearish</span></td><td>LTP &lt; weekly S1 AND LTP &lt; previous week low</td><td>Stock has broken below weekly support — very strong downtrend</td></tr>
+            </table>
+
+            <h4>How Daily Trend Is Calculated</h4>
+            <table>
+                <tr><th>Trend</th><th>Condition</th><th>Meaning</th></tr>
+                <tr><td><span class="badge-example bg">Strong Bullish</span></td><td>LTP &gt; R1 AND LTP &gt; PDH</td><td>Price well above today's value — strong intraday momentum up</td></tr>
+                <tr><td><span class="badge-example bg">Bullish</span></td><td>LTP &gt; daily CPR top (TC)</td><td>Price above today's value area</td></tr>
+                <tr><td><span class="badge-example bb">Neutral</span></td><td>LTP within daily CPR range</td><td>Price inside today's value — no intraday bias</td></tr>
+                <tr><td><span class="badge-example br">Bearish</span></td><td>LTP &lt; daily CPR bottom (BC)</td><td>Price below today's value area</td></tr>
+                <tr><td><span class="badge-example br">Strong Bearish</span></td><td>LTP &lt; S1 AND LTP &lt; PDL</td><td>Price well below today's value — strong intraday momentum down</td></tr>
+            </table>
+
+            <h4>Trend Alignment</h4>
+            <p>When the weekly trend and the breakout direction agree, the trade has <strong>higher conviction</strong>. When they disagree, conviction is lower. The daily trend is informational — it shows where price is right now relative to today's CPR, but does NOT affect probability classification.</p>
+
+            <table>
+                <tr><th>Weekly Trend</th><th>Daily Trend</th><th>Breakout</th><th>Alignment</th><th>Interpretation</th></tr>
+                <tr><td><span class="badge-example bg">Bullish</span></td><td><span class="badge-example bg">Bullish</span></td><td>Buy</td><td><strong>Full alignment</strong></td><td>Strongest setup — both timeframes + breakout agree. HPT.</td></tr>
+                <tr><td><span class="badge-example bg">Bullish</span></td><td><span class="badge-example br">Bearish</span></td><td>Buy</td><td>Partial</td><td>Weekly says up but today is weak. Could be a dip-buy opportunity. Still HPT (weekly drives probability).</td></tr>
+                <tr><td><span class="badge-example br">Bearish</span></td><td><span class="badge-example br">Bearish</span></td><td>Buy</td><td><strong>Full misalignment</strong></td><td>Both timeframes bearish but buying. Counter-trend. LPT.</td></tr>
+                <tr><td><span class="badge-example bb">Neutral</span></td><td>Any</td><td>Either</td><td>Neutral</td><td>Weekly has no bias. Breakout could go either way. MPT.</td></tr>
+            </table>
+
+            <h4>Probability = Weekly Trend vs Breakout Direction</h4>
+            <p>The probability classification is <strong>only based on weekly trend vs breakout direction</strong>. Daily trend is NOT used. Both "Bullish" and "Strong Bullish" count as bullish for probability (same for bearish).</p>
+
+            <table>
+                <tr><th>Weekly Trend</th><th>Breakout Direction</th><th>Probability</th><th>Why</th></tr>
+                <tr><td><span class="badge-example bg">Strong Bullish / Bullish</span></td><td>Buy</td><td><span class="badge-example bg">HPT</span></td><td>Buying with the larger trend — highest conviction</td></tr>
+                <tr><td><span class="badge-example br">Strong Bearish / Bearish</span></td><td>Sell</td><td><span class="badge-example bg">HPT</span></td><td>Selling with the larger trend — highest conviction</td></tr>
+                <tr><td><span class="badge-example bb">Neutral</span></td><td>Either</td><td><span class="badge-example bb">MPT</span></td><td>No weekly bias — could go either way</td></tr>
+                <tr><td><span class="badge-example br">Strong Bearish / Bearish</span></td><td>Buy</td><td><span class="badge-example by">LPT</span></td><td>Buying against the weekly downtrend — counter-trend</td></tr>
+                <tr><td><span class="badge-example bg">Strong Bullish / Bullish</span></td><td>Sell</td><td><span class="badge-example by">LPT</span></td><td>Selling against the weekly uptrend — counter-trend</td></tr>
+            </table>
+
+            <h4>Why Weekly Trend Matters More Than Daily</h4>
+            <ul>
+                <li><strong>Weekly trend</strong> reflects the structural bias over 5 trading days — institutional flows, sector rotation, multi-day momentum</li>
+                <li><strong>Daily trend</strong> is just where price is right now vs today's pivot — it can flip multiple times in a day</li>
+                <li>A stock can be daily bearish (price below today's CPR) but weekly bullish (above weekly CPR) — this means today is a pullback in an uptrend, which is actually a buying opportunity</li>
+                <li>The reverse is also true: daily bullish but weekly bearish = a bounce in a downtrend, selling opportunity</li>
+            </ul>
+
+            <h4>Practical Examples</h4>
+            <table>
+                <tr><th>Scenario</th><th>Weekly</th><th>Daily</th><th>Signal</th><th>Probability</th><th>Action</th></tr>
+                <tr><td>Strong uptrend, buying breakout</td><td><span class="badge-example bg">Bull</span></td><td><span class="badge-example bg">Bull</span></td><td>BUY_ABOVE_R1</td><td><span class="badge-example bg">HPT</span></td><td>Full qty — everything aligned</td></tr>
+                <tr><td>Uptrend, today's pullback, bounce</td><td><span class="badge-example bg">Bull</span></td><td><span class="badge-example br">Bear</span></td><td>BUY_ABOVE_S1_PDL</td><td><span class="badge-example bg">HPT</span></td><td>Full qty — weekly supports the bounce</td></tr>
+                <tr><td>Downtrend, selling breakdown</td><td><span class="badge-example br">Bear</span></td><td><span class="badge-example br">Bear</span></td><td>SELL_BELOW_S1</td><td><span class="badge-example bg">HPT</span></td><td>Full qty — everything aligned</td></tr>
+                <tr><td>Downtrend, trying to buy a bounce</td><td><span class="badge-example br">Bear</span></td><td><span class="badge-example bg">Bull</span></td><td>BUY_ABOVE_R1</td><td><span class="badge-example by">LPT</span></td><td>0.25x qty — counter weekly trend</td></tr>
+                <tr><td>No trend, breakout either way</td><td><span class="badge-example bb">Neutral</span></td><td>Any</td><td>Any</td><td><span class="badge-example bb">MPT</span></td><td>0.5x qty — no weekly conviction</td></tr>
+            </table>
+
+            <h4>Scanner Display</h4>
+            <p>On the scanner card, trends are shown as: <code>W: ▲ Bullish</code> (weekly) and <code>D: ▼ Bearish</code> (daily). The probability badge (<span class="badge-example bg">HPT</span> / <span class="badge-example bb">MPT</span> / <span class="badge-example by">LPT</span>) is computed from weekly trend + breakout direction, not daily trend.</p>
+        </div>
+    </div>
+
+    </div><!-- /tab-trends -->
+
+    <!-- RISK MANAGEMENT -->
+    <div id="tab-risk" class="help-content">
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-red);"></div> Risk Management</div></div>
+        <div class="help-body">
+
+            <h4>Risk Budget</h4>
+            <p>The bot enforces a daily risk budget to prevent catastrophic losses.</p>
+            <table>
+                <tr><th>Parameter</th><th>Formula</th><th>Example</th></tr>
+                <tr><td><strong>Max Daily Loss</strong></td><td>Total Capital x Max Risk Per Day %</td><td>₹5,00,000 x 2% = ₹10,000</td></tr>
+                <tr><td><strong>Exposed Risk</strong></td><td>Sum of (entry - SL) x qty for all open positions</td><td>3 positions = ₹2,000 + ₹1,500 + ₹1,800 = ₹5,300</td></tr>
+                <tr><td><strong>Consumed Risk</strong></td><td>Realized losses from closed trades today</td><td>2 losing trades = ₹1,200 + ₹800 = ₹2,000</td></tr>
+                <tr><td><strong>Total Risk</strong></td><td>Exposed + Consumed</td><td>₹5,300 + ₹2,000 = ₹7,300</td></tr>
+                <tr><td><strong>Remaining Budget</strong></td><td>Max Daily Loss - Total Risk</td><td>₹10,000 - ₹7,300 = ₹2,700 remaining</td></tr>
+            </table>
+            <p>When total risk reaches the daily limit, <strong>new signals are rejected</strong> ("risk exposure limit reached"). Existing positions continue to be managed.</p>
+
+            <h4>Risk Per Trade</h4>
+            <p>Each trade's risk is capped at a fixed rupee amount:</p>
+            <ul>
+                <li><strong>Base qty</strong> = Risk Per Trade / SL Distance</li>
+                <li>Example: Risk ₹500, SL distance ₹20 → qty = 25</li>
+                <li>This ensures no single trade can lose more than the configured amount (before slippage)</li>
+            </ul>
+
+            <h4>Capital Per Trade</h4>
+            <p>A secondary cap on position size:</p>
+            <ul>
+                <li><strong>Capital cap qty</strong> = (Capital Per Trade x Leverage) / LTP</li>
+                <li>Final qty = min(risk qty, capital cap qty)</li>
+                <li>Prevents outsized positions on low-price stocks where risk-based qty might be very large</li>
+            </ul>
+
+            <h4>Exposed Risk Updates</h4>
+            <p>Exposed risk is <strong>recalculated in real-time</strong> as SL prices change:</p>
+            <ul>
+                <li>Trailing SL tightens → exposed risk decreases</li>
+                <li>SL moves above entry (breakeven) → exposed risk = 0 for that position</li>
+                <li>T1 hit → SL at breakeven, remaining position is risk-free</li>
+                <li>Displayed on Home dashboard and Positions page hero cards</li>
+            </ul>
+
+            <h4>Risk Layers</h4>
+            <table>
+                <tr><th>Layer</th><th>What It Protects Against</th></tr>
+                <tr><td><strong>SL per trade</strong></td><td>Single trade max loss (ATR-based)</td></tr>
+                <tr><td><strong>Risk per trade</strong></td><td>Position sizing — limits qty so max loss = configured amount</td></tr>
+                <tr><td><strong>Capital per trade</strong></td><td>Prevents outsized positions on cheap stocks</td></tr>
+                <tr><td><strong>Daily risk budget</strong></td><td>Stops new trades when cumulative risk exceeds limit</td></tr>
+                <tr><td><strong>Trailing SL</strong></td><td>Locks in profit, reduces exposed risk dynamically</td></tr>
+                <tr><td><strong>Split targets (T1)</strong></td><td>Books partial profit early, moves SL to breakeven</td></tr>
+                <tr><td><strong>Qty stacking</strong></td><td>Reduces size for low-conviction setups (LPT, extended levels, mean reversion)</td></tr>
+                <tr><td><strong>Auto squareoff</strong></td><td>Forces exit before market close — no overnight risk</td></tr>
+                <tr><td><strong>Emergency squareoff</strong></td><td>Closes position immediately if SL/target placement fails</td></tr>
+            </table>
+
+            <h4>Safety Guards</h4>
+            <ul>
+                <li><strong>Kill switch</strong> — admin toggle on Positions page. When OFF, no new trades accepted. Existing positions still managed.</li>
+                <li><strong>Dedup guard</strong> — 5-second window prevents duplicate trade recordings from race conditions</li>
+                <li><strong>Min qty = 2</strong> — positions always have at least 2 shares (allows even split for T1/T2)</li>
+                <li><strong>Tick rounding</strong> — all prices rounded to exchange tick size (from Fyers symbol master)</li>
+                <li><strong>Crash recovery</strong> — position state persisted to SQLite, OCO order IDs survive restarts</li>
+            </ul>
+        </div>
+    </div>
+    </div><!-- /tab-risk -->
+
+    <!-- SETTINGS REFERENCE -->
+    <div id="tab-settings-ref" class="help-content">
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Settings Reference</div></div>
+        <div class="help-body">
+
+            <h4>Risk Tab</h4>
+            <table>
+                <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
+                <tr><td>Total Capital</td><td>—</td><td>Total trading capital for daily risk budget calculation</td></tr>
+                <tr><td>Max Risk Per Day (%)</td><td>—</td><td>Max daily risk as % of total capital. Auto-calculates daily loss limit.</td></tr>
+                <tr><td>Capital Per Trade</td><td>—</td><td>Max capital per trade. Qty capped by (this x leverage) / price.</td></tr>
+                <tr><td>Risk Per Trade</td><td>—</td><td>Max loss per trade in rupees. Base qty = risk / SL distance.</td></tr>
+                <tr><td>Fixed Quantity</td><td>-1 (auto)</td><td>Override qty calculation with fixed number. -1 = use risk-based.</td></tr>
+                <tr><td>ATR Period</td><td>14</td><td>Number of daily candles for ATR calculation</td></tr>
+                <tr><td>ATR Multiplier</td><td>2.0</td><td>SL = entry ± ATR x this value</td></tr>
+                <tr><td>Trailing SL</td><td>ON</td><td>Enable ATR peak-based trailing stop loss</td></tr>
+                <tr><td>Trailing SL Multiplier</td><td>2.0</td><td>Trailing SL = peak - ATR x this value</td></tr>
+                <tr><td>Trailing Activation</td><td>1.0</td><td>Trailing only activates after N x ATR profit from entry</td></tr>
+                <tr><td>R3/S3 Enable + Factor</td><td>ON, 0.75</td><td>Enable R3/S3 level signals. Qty multiplied by factor.</td></tr>
+                <tr><td>R4/S4 Enable + Factor</td><td>ON, 0.5</td><td>Enable R4/S4 level signals. Qty multiplied by factor.</td></tr>
+                <tr><td>Session Move Limit</td><td>2.0%</td><td>Halve qty if price moved more than this % from day open/PDC</td></tr>
+                <tr><td>MPT Qty Factor</td><td>0.5</td><td>Multiply qty by this for Medium Probable Trades</td></tr>
+                <tr><td>LPT Qty Factor</td><td>0.25</td><td>Multiply qty by this for Low Probable Trades</td></tr>
+            </table>
+
+            <h4>Scanner Tab</h4>
+            <table>
+                <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
+                <tr><td>Scanner Timeframe</td><td>15 min</td><td>Candle timeframe for breakout detection (5/15/30 min)</td></tr>
+                <tr><td>ATP Check</td><td>ON</td><td>Require close above/below VWAP for buy/sell signals</td></tr>
+                <tr><td>HPT / MPT / LPT</td><td>HPT ON</td><td>Enable/disable each probability category independently</td></tr>
+                <tr><td>Narrow CPR Width</td><td>0.1%</td><td>Max CPR width % for narrow classification</td></tr>
+                <tr><td>Inside CPR Width</td><td>0.5%</td><td>Max CPR width % for inside classification (0 = no filter)</td></tr>
+                <tr><td>Min Stock Price</td><td>₹300</td><td>Exclude stocks below this price from watchlist</td></tr>
+                <tr><td>Opening Range</td><td>30 min</td><td>OR period: Off / 15 / 30 / 45 / 60 min</td></tr>
+                <tr><td>NS / NL / IS / IL</td><td>NS+NL+IS ON</td><td>Which z-score range types to include in watchlist</td></tr>
+            </table>
+
+            <h4>Filters Tab</h4>
+            <table>
+                <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
+                <tr><td>Large Candle Filter</td><td>ON, 1.0 ATR</td><td>Reject if candle move exceeds N x ATR from breakout level</td></tr>
+                <tr><td>Small Candle Filter</td><td>OFF, 0.5 ATR</td><td>Reject if candle body smaller than N x ATR</td></tr>
+                <tr><td>Volume Filter</td><td>ON, 1.0x avg</td><td>Reject if candle volume below N x average volume</td></tr>
+                <tr><td>Target Shift</td><td>ON, 1.0 ATR</td><td>Shift target to next level if default target &lt; N x ATR. If disabled, skip trade when target too close.</td></tr>
+                <tr><td>Day High/Low Shift</td><td>ON</td><td>Shift target to session high/low if between entry and target</td></tr>
+                <tr><td>Split Targets</td><td>ON, 50%, 0 ATR</td><td>T1 at N% of target distance, T2 at full. Min distance to split.</td></tr>
+            </table>
+
+            <h4>Hours Tab</h4>
+            <table>
+                <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
+                <tr><td>Trading Start</td><td>09:20</td><td>First signal accepted after this time</td></tr>
+                <tr><td>Trading End</td><td>14:45</td><td>No new signals after this time</td></tr>
+                <tr><td>Auto Square Off</td><td>15:10</td><td>All positions force-closed at this time</td></tr>
+            </table>
+
+            <h4>Charges Tab</h4>
+            <table>
+                <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
+                <tr><td>Brokerage Per Order</td><td>₹20</td><td>Flat brokerage per order (entry + exit = 2 orders). Used for net P&amp;L calculation.</td></tr>
+            </table>
+        </div>
+    </div>
+    </div><!-- /tab-settings-ref -->
+
+    <footer class="page-footer">
+        <div class="footer-copy">
+            &copy; <span id="footerYear"></span> TraderEdge. All rights reserved.
+        </div>
+        <div class="footer-author">
+            Built by <strong style="color: var(--text-secondary); margin: 0 4px;">Prabhu Arumugham</strong>
+            <span class="footer-tag">rydytrader</span>
+        </div>
+    </footer>
+
+</div>
+
+<script src="/js/common.js?v=5"></script>
+<script src="/js/ticker.js?v=3"></script>
+<script>
+    document.getElementById('footerYear').textContent = new Date().getFullYear();
+
+    // Tab switching
+    window.switchHelpTab = function(id, btn) {
+        document.querySelectorAll('.help-content').forEach(function(el) { el.classList.remove('active'); });
+        document.querySelectorAll('.help-tab').forEach(function(el) { el.classList.remove('active'); });
+        var tab = document.getElementById('tab-' + id);
+        if (tab) tab.classList.add('active');
+        btn.classList.add('active');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+</script>
+
+</div><!-- /app-main -->
+</div><!-- /app-layout -->
+
+</body>
+</html>

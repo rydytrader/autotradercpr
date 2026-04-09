@@ -61,6 +61,8 @@ public class SettingsController {
         result.put("largeCandleAtrThreshold", riskSettings.getLargeCandleAtrThreshold(effectiveMode));
         result.put("enableGapCheck", riskSettings.isEnableGapCheck());
         result.put("enableDayHighLowTargetShift", riskSettings.isEnableDayHighLowTargetShift());
+        result.put("dayHighLowMinAtr", riskSettings.getDayHighLowMinAtr());
+        result.put("enableSmallTargetFilter", riskSettings.isEnableSmallTargetFilter());
         result.put("enableTargetShift", riskSettings.isEnableTargetShift(effectiveMode));
         result.put("targetShiftAtrThreshold", riskSettings.getTargetShiftAtrThreshold(effectiveMode));
         result.put("enableSplitTarget", riskSettings.isEnableSplitTarget());
@@ -132,6 +134,8 @@ public class SettingsController {
             if (body.containsKey("largeCandleAtrThreshold")) riskSettings.setLargeCandleAtrThreshold(effectiveMode, Double.parseDouble(body.get("largeCandleAtrThreshold").toString()));
             if (body.containsKey("enableGapCheck")) riskSettings.setEnableGapCheck(Boolean.parseBoolean(body.get("enableGapCheck").toString()));
             if (body.containsKey("enableDayHighLowTargetShift")) riskSettings.setEnableDayHighLowTargetShift(Boolean.parseBoolean(body.get("enableDayHighLowTargetShift").toString()));
+            if (body.containsKey("dayHighLowMinAtr")) riskSettings.setDayHighLowMinAtr(Double.parseDouble(body.get("dayHighLowMinAtr").toString()));
+            if (body.containsKey("enableSmallTargetFilter")) riskSettings.setEnableSmallTargetFilter(Boolean.parseBoolean(body.get("enableSmallTargetFilter").toString()));
             if (body.containsKey("enableTargetShift")) riskSettings.setEnableTargetShift(effectiveMode, Boolean.parseBoolean(body.get("enableTargetShift").toString()));
             if (body.containsKey("targetShiftAtrThreshold")) riskSettings.setTargetShiftAtrThreshold(effectiveMode, Double.parseDouble(body.get("targetShiftAtrThreshold").toString()));
             if (body.containsKey("enableSplitTarget")) riskSettings.setEnableSplitTarget(Boolean.parseBoolean(body.get("enableSplitTarget").toString()));

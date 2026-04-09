@@ -212,4 +212,7 @@ public class ViewController {
 
     @GetMapping("/settings")
     public String settings() { return "settings"; }
+
+    @GetMapping("/help")
+    public String help() { return "help"; }
 }

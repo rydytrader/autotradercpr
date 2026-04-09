@@ -804,11 +804,20 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
         }
 
-        // All retries failed — fallback to manual OCO scan
-        eventService.log("[WARNING] Could not place SL/Target for " + symbol + " after " + MAX_RETRIES + " attempts via WS handler");
+        // All retries failed — square off immediately to avoid unprotected position
+        eventService.log("[ERROR] Could not place SL/Target for " + symbol + " after " + MAX_RETRIES
+            + " attempts — squaring off to avoid unprotected position");
         if (pollingService != null) {
-            pollingService.scanForManualOCO(symbol, ctx.quantity, ctx.exitSide,
-                ctx.position, ctx.setup, entryFillPrice);
+            boolean closed = pollingService.squareOff(symbol, ctx.quantity, "SL_TARGET_FAILED");
+            if (closed) {
+                eventService.log("[SUCCESS] Emergency squareoff for " + symbol + " — unprotected position closed");
+            } else {
+                eventService.log("[ERROR] Emergency squareoff FAILED for " + symbol + " — POSITION UNPROTECTED, manual intervention needed");
+            }
+            try {
+                telegramService.sendMessage("[ALERT] SL/Target placement failed for " + symbol
+                    + " after " + MAX_RETRIES + " attempts. " + (closed ? "Position squared off." : "SQUAREOFF FAILED — MANUAL ACTION NEEDED"));
+            } catch (Exception ignored) {}
         }
     }
 

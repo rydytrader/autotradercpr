@@ -9,6 +9,7 @@ import java.nio.file.*;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -28,7 +29,9 @@ public class EventService {
         this.telegramService = telegramService;
         ensureLogDir();
         clearIfStale();
+        // Load last 500 entries immediately for fast startup, then load all async
         loadLogsFromFile();
+        loadRemainingAsync();
     }
 
     public void log(String message) {
@@ -96,17 +99,51 @@ public class EventService {
         }
     }
 
+    private static final int FAST_LOAD_ENTRIES = 500;
+    private volatile List<String> skippedEntries = null; // entries skipped during fast load
+
     private void loadLogsFromFile() {
         File file = new File(LOG_FILE);
         if (!file.exists()) return;
         try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            List<String> all = new ArrayList<>();
             String line;
             while ((line = reader.readLine()) != null)
-                if (!line.isBlank()) tradeLogs.add(line);
-            log.info("Loaded {} log entries from {}", tradeLogs.size(), file.getPath());
+                if (!line.isBlank()) all.add(line);
+            int total = all.size();
+            if (total <= FAST_LOAD_ENTRIES) {
+                tradeLogs.addAll(all);
+                skippedEntries = null;
+            } else {
+                // Fast load: last N entries, save earlier ones for async
+                skippedEntries = new ArrayList<>(all.subList(0, total - FAST_LOAD_ENTRIES));
+                for (int i = total - FAST_LOAD_ENTRIES; i < total; i++) tradeLogs.add(all.get(i));
+            }
+            log.info("Fast-loaded {} log entries from {} (total: {}, deferred: {})",
+                tradeLogs.size(), file.getPath(), total, skippedEntries != null ? skippedEntries.size() : 0);
         } catch (IOException e) {
             log.error("Failed to load logs: {}", e.getMessage());
         }
+    }
+
+    private void loadRemainingAsync() {
+        if (skippedEntries == null || skippedEntries.isEmpty()) return;
+        new Thread(() -> {
+            try {
+                Thread.sleep(5000); // wait for server to finish starting
+                List<String> deferred = skippedEntries;
+                skippedEntries = null;
+                // Prepend older entries before the fast-loaded ones
+                List<String> merged = new ArrayList<>(deferred.size() + tradeLogs.size());
+                merged.addAll(deferred);
+                merged.addAll(tradeLogs);
+                tradeLogs.clear();
+                tradeLogs.addAll(merged);
+                log.info("Async-loaded remaining {} log entries (total now: {})", deferred.size(), tradeLogs.size());
+            } catch (Exception e) {
+                log.error("Failed to async-load remaining logs: {}", e.getMessage());
+            }
+        }, "event-log-async-loader").start();
     }
 
     private void writeToFile(String entry) {

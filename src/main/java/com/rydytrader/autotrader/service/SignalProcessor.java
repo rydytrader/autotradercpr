@@ -191,35 +191,33 @@ public class SignalProcessor {
         double shiftTarget   = targets[1];
         double target = defaultTarget;
 
-        boolean shifted = false;
-        double targetShiftThreshold = riskSettings.getTargetShiftAtrThreshold();
-        if (Math.abs(close - defaultTarget) < atr * targetShiftThreshold) {
-            if (riskSettings.isEnableTargetShift()) {
-                target = shiftTarget;
-                shifted = true;
-            } else {
-                // Target shift disabled — use the small target as-is
-                eventService.log("[INFO] " + symbol + " " + setup + " target close (< " + targetShiftThreshold + " ATR) but shift disabled — using default: " + fmt(defaultTarget));
-            }
-        }
-
-
-        // ── 4g. Day high/low target shift ──────────────────────────────────────
+        // ── 4g. Day high/low target shift (always on) ─────────────────────────
         // If today's session high (BUY) or low (SELL) is between entry and target,
         // shift target to day high/low — it acts as intraday resistance/support
-        if (riskSettings.isEnableDayHighLowTargetShift() && isBuy) {
+        if (isBuy) {
             double dayHigh = marketDataService.getDayHigh(symbol);
             if (dayHigh > 0 && dayHigh > close && dayHigh < target) {
                 eventService.log("[INFO] " + symbol + " " + setup + " target shifted to day high: "
                     + fmt(target) + " → " + fmt(dayHigh) + " (session high between entry and target)");
                 target = dayHigh;
             }
-        } else if (riskSettings.isEnableDayHighLowTargetShift()) {
+        } else {
             double dayLow = marketDataService.getDayLow(symbol);
             if (dayLow > 0 && dayLow < close && dayLow > target) {
                 eventService.log("[INFO] " + symbol + " " + setup + " target shifted to day low: "
                     + fmt(target) + " → " + fmt(dayLow) + " (session low between entry and target)");
                 target = dayLow;
+            }
+        }
+
+        // ── 4g2. Small target filter — skip if target < N ATR from entry ──
+        double minTargetAtr = riskSettings.getTargetShiftAtrThreshold();
+        if (riskSettings.isEnableSmallTargetFilter() && minTargetAtr > 0 && atr > 0) {
+            double targetDist = Math.abs(target - close);
+            if (targetDist < atr * minTargetAtr) {
+                return ProcessedSignal.rejected(setup, symbol,
+                    "Target " + fmt(target) + " too close to entry " + fmt(close)
+                    + " (" + fmt(targetDist) + " < " + fmt(atr * minTargetAtr) + " = " + minTargetAtr + " ATR) — insufficient profit room");
             }
         }
 
