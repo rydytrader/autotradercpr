@@ -198,18 +198,18 @@ public class SignalProcessor {
         // Skip for DH/DL setups: breakout candle creates new day high/low, would shift target to near entry
         boolean isDhDl = "BUY_ABOVE_DH".equals(setup) || "SELL_BELOW_DL".equals(setup);
         if (!isDhDl && isBuy) {
-            double dayHigh = marketDataService.getDayHigh(symbol);
-            if (dayHigh > 0 && dayHigh > close && dayHigh < target) {
+            double sessionHigh = marketDataService.getDayHigh(symbol);
+            if (sessionHigh > 0 && sessionHigh > close && sessionHigh < target) {
                 eventService.log("[INFO] " + symbol + " " + setup + " target shifted to day high: "
-                    + fmt(target) + " → " + fmt(dayHigh) + " (session high between entry and target)");
-                target = dayHigh;
+                    + fmt(target) + " → " + fmt(sessionHigh) + " (session high between entry and target)");
+                target = sessionHigh;
             }
         } else if (!isDhDl) {
-            double dayLow = marketDataService.getDayLow(symbol);
-            if (dayLow > 0 && dayLow < close && dayLow > target) {
+            double sessionLow = marketDataService.getDayLow(symbol);
+            if (sessionLow > 0 && sessionLow < close && sessionLow > target) {
                 eventService.log("[INFO] " + symbol + " " + setup + " target shifted to day low: "
-                    + fmt(target) + " → " + fmt(dayLow) + " (session low between entry and target)");
-                target = dayLow;
+                    + fmt(target) + " → " + fmt(sessionLow) + " (session low between entry and target)");
+                target = sessionLow;
             }
         }
 
