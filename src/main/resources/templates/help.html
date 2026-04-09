@@ -208,6 +208,20 @@
                 <li>VWAP/ATP check (if enabled): buy requires close &gt; ATP, sell requires close &lt; ATP</li>
             </ul>
 
+            <h4>Day High / Day Low Breakouts</h4>
+            <p>In addition to CPR levels, the bot also detects breakouts of the current session high and low.</p>
+            <table>
+                <tr><th>Feature</th><th>Detail</th></tr>
+                <tr><td><strong>BUY_ABOVE_DH</strong></td><td>Candle closes above current session high with green candle</td></tr>
+                <tr><td><strong>SELL_BELOW_DL</strong></td><td>Candle closes below current session low with red candle</td></tr>
+                <tr><td><strong>Priority</strong></td><td>Lowest — only fires when NO CPR level was broken on the same candle. If both CPR and DH break, CPR takes precedence (logged as "CPR + DH breakout").</td></tr>
+                <tr><td><strong>OR Lock Guard</strong></td><td>DH/DL only fires after the Opening Range locks. During the OR forming period, day high/low is still being established.</td></tr>
+                <tr><td><strong>Target</strong></td><td>Next CPR level above day high (for buy) or below day low (for sell). If beyond R4/S4, uses projected R5/S5.</td></tr>
+                <tr><td><strong>Re-fire</strong></td><td>One signal per day per symbol. Even if stock makes new highs later, DH won't fire again. Cleared on position close.</td></tr>
+                <tr><td><strong>Day H/L Target Shift</strong></td><td>Skipped for DH/DL setups — the breakout candle creates a new day high/low which would shift the target to near entry.</td></tr>
+                <tr><td><strong>All other filters</strong></td><td>VWAP/ATP, candle size, volume, small target, probability, qty stacking — all apply identically to CPR breakouts.</td></tr>
+            </table>
+
             <h4>Target Calculation Flow</h4>
             <p>Targets go through a two-step process before the trade is accepted:</p>
             <table>
