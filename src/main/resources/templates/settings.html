@@ -195,7 +195,8 @@
 
     <!-- TABS -->
     <div class="settings-tabs fade-in">
-        <button class="settings-tab active" onclick="switchTab('risk', this)">Risk</button>
+        <button class="settings-tab active" onclick="switchTab('money', this)">Money</button>
+        <button class="settings-tab" onclick="switchTab('risk', this)">Risk</button>
         <button class="settings-tab" onclick="switchTab('signals', this)">Signals</button>
         <button class="settings-tab" onclick="switchTab('scanner', this)">Scanner</button>
         <button class="settings-tab" onclick="switchTab('filters', this)">Filters</button>
@@ -204,15 +205,15 @@
         <button class="settings-tab" onclick="switchTab('users', this)">Users</button>
     </div>
 
-    <!-- TAB: RISK -->
-    <div class="tab-content active" id="tab-risk">
+    <!-- TAB: MONEY -->
+    <div class="tab-content active" id="tab-money">
 
-    <!-- RISK SETTINGS -->
+    <!-- MONEY MANAGEMENT -->
     <div class="section-card fade-in">
         <div class="section-header">
             <div class="section-title">
-                <div class="section-title-dot" style="background: var(--accent-red);"></div>
-                Risk Settings
+                <div class="section-title-dot" style="background: var(--accent-green);"></div>
+                Money Management
             </div>
         </div>
         <div class="section-body">
@@ -252,8 +253,14 @@
         </div>
     </div>
 
+        <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
+    </div><!-- /tab-money -->
+
+    <!-- TAB: RISK -->
+    <div class="tab-content" id="tab-risk">
+
     <!-- RISK CONTROLS -->
-    <div class="section-card fade-in" style="margin-top:16px;">
+    <div class="section-card fade-in">
         <div class="section-header">
             <div class="section-title">
                 <div class="section-title-dot" style="background: var(--accent-yellow);"></div>
