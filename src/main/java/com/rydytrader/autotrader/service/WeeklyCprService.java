@@ -154,6 +154,18 @@ public class WeeklyCprService {
      * @param isBuy true for buy breakout, false for sell breakout
      */
     public String getProbabilityForDirection(String symbol, boolean isBuy) {
+        return getProbabilityForDirection(symbol, isBuy, false);
+    }
+
+    /**
+     * Get probability based on breakout direction + weekly trend + daily trend.
+     * For trend breakouts: HPT requires weekly AND daily aligned.
+     * For magnet trades: HPT requires weekly aligned only (daily is intentionally opposed).
+     * MPT: weekly neutral. LPT: everything else.
+     * @param isBuy true for buy breakout, false for sell breakout
+     * @param isMagnet true for magnet/mean-reversion trades (skip daily check for HPT)
+     */
+    public String getProbabilityForDirection(String symbol, boolean isBuy, boolean isMagnet) {
         String weekly = getWeeklyTrend(symbol);
         String daily = getDailyTrend(symbol);
         boolean wBull = weekly.contains("BULLISH");
@@ -163,13 +175,23 @@ public class WeeklyCprService {
         boolean dBear = daily.contains("BEARISH");
 
         if (isBuy) {
-            if (wBull && dBull) return "HPT";   // both aligned with buy
-            if (wNeutral) return "MPT";          // weekly neutral
-            return "LPT";                        // weekly opposed OR daily not aligned
+            if (isMagnet) {
+                if (wBull) return "HPT";         // weekly supports the bounce
+                if (wNeutral) return "MPT";
+                return "LPT";                    // weekly opposes the bounce
+            }
+            if (wBull && dBull) return "HPT";    // both aligned with buy
+            if (wNeutral) return "MPT";
+            return "LPT";
         } else {
-            if (wBear && dBear) return "HPT";   // both aligned with sell
-            if (wNeutral) return "MPT";          // weekly neutral
-            return "LPT";                        // weekly opposed OR daily not aligned
+            if (isMagnet) {
+                if (wBear) return "HPT";         // weekly supports the fade
+                if (wNeutral) return "MPT";
+                return "LPT";                    // weekly opposes the fade
+            }
+            if (wBear && dBear) return "HPT";    // both aligned with sell
+            if (wNeutral) return "MPT";
+            return "LPT";
         }
     }
 
