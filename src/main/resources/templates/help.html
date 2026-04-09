@@ -810,15 +810,21 @@
         <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Settings Reference</div></div>
         <div class="help-body">
 
-            <h4>Risk Tab</h4>
+            <h4>Money Tab</h4>
             <table>
                 <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
                 <tr><td>Total Capital</td><td>—</td><td>Total trading capital for daily risk budget calculation</td></tr>
                 <tr><td>Max Risk Per Day (%)</td><td>—</td><td>Max daily risk as % of total capital. Auto-calculates daily loss limit.</td></tr>
                 <tr><td>Capital Per Trade</td><td>—</td><td>Max capital per trade. Qty capped by (this x leverage) / price.</td></tr>
+                <tr><td>Max Daily Loss</td><td>auto</td><td>Auto-calculated: Total Capital x Max Risk %</td></tr>
                 <tr><td>Risk Per Trade</td><td>—</td><td>Max loss per trade in rupees. Base qty = risk / SL distance.</td></tr>
                 <tr><td>Fixed Quantity</td><td>-1 (auto)</td><td>Override qty calculation with fixed number. -1 = use risk-based.</td></tr>
-                <tr><td>ATR Period</td><td>14</td><td>Number of daily candles for ATR calculation</td></tr>
+            </table>
+
+            <h4>Risk Tab</h4>
+            <table>
+                <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
+                <tr><td>ATR Period</td><td>14</td><td>Number of candles for ATR calculation (uses trading timeframe)</td></tr>
                 <tr><td>ATR Multiplier</td><td>2.0</td><td>SL = entry ± ATR x this value</td></tr>
                 <tr><td>Trailing SL</td><td>ON</td><td>Enable ATR peak-based trailing stop loss</td></tr>
                 <tr><td>Trailing SL Multiplier</td><td>2.0</td><td>Trailing SL = peak - ATR x this value</td></tr>
