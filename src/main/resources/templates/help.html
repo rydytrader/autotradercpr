@@ -322,15 +322,17 @@
     <div class="section-card help-section fade-in" style="margin-bottom:16px;">
         <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Probability Classification</div></div>
         <div class="help-body">
-            <p>Probability is determined by <strong>breakout direction vs weekly trend</strong> (not daily trend).</p>
+            <p>Probability is determined by <strong>breakout direction vs both weekly AND daily trends</strong>. HPT requires both timeframes aligned.</p>
 
             <table>
-                <tr><th>Weekly Trend</th><th>Breakout Direction</th><th>Category</th><th>Qty Factor</th></tr>
-                <tr><td>Bullish</td><td>Buy</td><td><span class="badge-example bg">HPT</span> High Probable Trade</td><td>1.0x</td></tr>
-                <tr><td>Bearish</td><td>Sell</td><td><span class="badge-example bg">HPT</span></td><td>1.0x</td></tr>
-                <tr><td>Neutral</td><td>Buy or Sell</td><td><span class="badge-example bb">MPT</span> Medium Probable Trade</td><td>configurable (default 0.5x)</td></tr>
-                <tr><td>Bearish</td><td>Buy</td><td><span class="badge-example by">LPT</span> Low Probable Trade</td><td>configurable (default 0.25x)</td></tr>
-                <tr><td>Bullish</td><td>Sell</td><td><span class="badge-example by">LPT</span></td><td>configurable (default 0.25x)</td></tr>
+                <tr><th>Weekly</th><th>Daily</th><th>Breakout</th><th>Category</th><th>Qty Factor</th></tr>
+                <tr><td>Bullish</td><td>Bullish</td><td>Buy</td><td><span class="badge-example bg">HPT</span> High Probable Trade</td><td>1.0x</td></tr>
+                <tr><td>Bearish</td><td>Bearish</td><td>Sell</td><td><span class="badge-example bg">HPT</span></td><td>1.0x</td></tr>
+                <tr><td>Neutral</td><td>Any</td><td>Either</td><td><span class="badge-example bb">MPT</span> Medium Probable Trade</td><td>configurable (default 0.5x)</td></tr>
+                <tr><td>Bullish</td><td>Bearish</td><td>Buy</td><td><span class="badge-example by">LPT</span> Low Probable Trade</td><td>configurable (default 0.25x)</td></tr>
+                <tr><td>Bearish</td><td>Bullish</td><td>Sell</td><td><span class="badge-example by">LPT</span></td><td>configurable (default 0.25x)</td></tr>
+                <tr><td>Bearish</td><td>Any</td><td>Buy</td><td><span class="badge-example by">LPT</span></td><td>configurable (default 0.25x)</td></tr>
+                <tr><td>Bullish</td><td>Any</td><td>Sell</td><td><span class="badge-example by">LPT</span></td><td>configurable (default 0.25x)</td></tr>
             </table>
 
             <p>Each category is independently toggleable in Settings. If HPT is disabled, no HPT signals fire.</p>
@@ -669,16 +671,18 @@
                 <tr><td><span class="badge-example bb">Neutral</span></td><td>Any</td><td>Either</td><td>Neutral</td><td>Weekly has no bias. Breakout could go either way. MPT.</td></tr>
             </table>
 
-            <h4>Probability = Weekly Trend vs Breakout Direction</h4>
-            <p>The probability classification is <strong>only based on weekly trend vs breakout direction</strong>. Daily trend is NOT used. Both "Bullish" and "Strong Bullish" count as bullish for probability (same for bearish).</p>
+            <h4>Probability = Weekly + Daily Trend Alignment</h4>
+            <p>HPT requires <strong>both weekly AND daily trends aligned</strong> with the breakout direction. If either opposes, probability drops.</p>
 
             <table>
-                <tr><th>Weekly Trend</th><th>Breakout Direction</th><th>Probability</th><th>Why</th></tr>
-                <tr><td><span class="badge-example bg">Strong Bullish / Bullish</span></td><td>Buy</td><td><span class="badge-example bg">HPT</span></td><td>Buying with the larger trend — highest conviction</td></tr>
-                <tr><td><span class="badge-example br">Strong Bearish / Bearish</span></td><td>Sell</td><td><span class="badge-example bg">HPT</span></td><td>Selling with the larger trend — highest conviction</td></tr>
-                <tr><td><span class="badge-example bb">Neutral</span></td><td>Either</td><td><span class="badge-example bb">MPT</span></td><td>No weekly bias — could go either way</td></tr>
-                <tr><td><span class="badge-example br">Strong Bearish / Bearish</span></td><td>Buy</td><td><span class="badge-example by">LPT</span></td><td>Buying against the weekly downtrend — counter-trend</td></tr>
-                <tr><td><span class="badge-example bg">Strong Bullish / Bullish</span></td><td>Sell</td><td><span class="badge-example by">LPT</span></td><td>Selling against the weekly uptrend — counter-trend</td></tr>
+                <tr><th>Weekly</th><th>Daily</th><th>Breakout</th><th>Probability</th><th>Why</th></tr>
+                <tr><td><span class="badge-example bg">Bullish</span></td><td><span class="badge-example bg">Bullish</span></td><td>Buy</td><td><span class="badge-example bg">HPT</span></td><td>Both timeframes + breakout aligned — highest conviction</td></tr>
+                <tr><td><span class="badge-example br">Bearish</span></td><td><span class="badge-example br">Bearish</span></td><td>Sell</td><td><span class="badge-example bg">HPT</span></td><td>Both timeframes + breakout aligned — highest conviction</td></tr>
+                <tr><td><span class="badge-example bb">Neutral</span></td><td>Any</td><td>Either</td><td><span class="badge-example bb">MPT</span></td><td>No weekly bias — could go either way</td></tr>
+                <tr><td><span class="badge-example bg">Bullish</span></td><td><span class="badge-example br">Bearish</span></td><td>Buy</td><td><span class="badge-example by">LPT</span></td><td>Weekly supports but daily opposes — mixed signals</td></tr>
+                <tr><td><span class="badge-example br">Bearish</span></td><td><span class="badge-example bg">Bullish</span></td><td>Sell</td><td><span class="badge-example by">LPT</span></td><td>Weekly supports but daily opposes — mixed signals</td></tr>
+                <tr><td><span class="badge-example br">Bearish</span></td><td>Any</td><td>Buy</td><td><span class="badge-example by">LPT</span></td><td>Buying against weekly downtrend — counter-trend</td></tr>
+                <tr><td><span class="badge-example bg">Bullish</span></td><td>Any</td><td>Sell</td><td><span class="badge-example by">LPT</span></td><td>Selling against weekly uptrend — counter-trend</td></tr>
             </table>
 
             <h4>Why Weekly Trend Matters More Than Daily</h4>

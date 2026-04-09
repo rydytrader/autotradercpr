@@ -147,24 +147,29 @@ public class WeeklyCprService {
     }
 
     /**
-     * Get probability based on breakout direction + weekly trend.
-     * HPT: weekly aligned with direction. MPT: weekly neutral. LPT: weekly opposed.
+     * Get probability based on breakout direction + weekly trend + daily trend.
+     * HPT: weekly AND daily aligned with direction.
+     * MPT: weekly neutral (any daily).
+     * LPT: weekly opposed OR weekly aligned but daily opposed.
      * @param isBuy true for buy breakout, false for sell breakout
      */
     public String getProbabilityForDirection(String symbol, boolean isBuy) {
         String weekly = getWeeklyTrend(symbol);
+        String daily = getDailyTrend(symbol);
         boolean wBull = weekly.contains("BULLISH");
         boolean wBear = weekly.contains("BEARISH");
         boolean wNeutral = "NEUTRAL".equals(weekly);
+        boolean dBull = daily.contains("BULLISH");
+        boolean dBear = daily.contains("BEARISH");
 
         if (isBuy) {
-            if (wBull) return "HPT";
-            if (wNeutral) return "MPT";
-            return "LPT"; // weekly bearish, buying
+            if (wBull && dBull) return "HPT";   // both aligned with buy
+            if (wNeutral) return "MPT";          // weekly neutral
+            return "LPT";                        // weekly opposed OR daily not aligned
         } else {
-            if (wBear) return "HPT";
-            if (wNeutral) return "MPT";
-            return "LPT"; // weekly bullish, selling
+            if (wBear && dBear) return "HPT";   // both aligned with sell
+            if (wNeutral) return "MPT";          // weekly neutral
+            return "LPT";                        // weekly opposed OR daily not aligned
         }
     }
 
