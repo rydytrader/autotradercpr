@@ -52,7 +52,7 @@ public class LiveFyersClient implements FyersClient {
 
     @Override
     public JsonNode getOptionChain(String symbol, int strikeCount, String authHeader) throws Exception {
-        String url = "https://api-t1.fyers.in/data/options-chain-v3?symbol=" + symbol + "&strikecount=" + strikeCount + "&timestamp=";
+        String url = "https://api-t1.fyers.in/data/options-chain-v3?symbol=" + java.net.URLEncoder.encode(symbol, java.nio.charset.StandardCharsets.UTF_8) + "&strikecount=" + strikeCount + "&timestamp=";
         return get(url, authHeader);
     }
 
