@@ -694,7 +694,6 @@
             + '  <span class="scan-ltp">' + fmt(d.ltp) + '</span>'
             + '  <span class="scan-change ' + chClass + '">' + chArrow + ' ' + d.changePercent.toFixed(2) + '%</span>'
             + '  <span style="font-family:var(--font-mono);font-size:0.68rem;color:var(--text-muted);">O:' + fmt(d.dayOpen) + (d.openClass ? ' <span style="font-size:0.6rem;">(' + d.openClass + ')</span>' : '') + '</span>'
-            + '  <span class="scan-vol' + (d.avgVolume > 0 && d.candleVolume >= d.avgVolume * 2 ? ' vol-high' : '') + '">' + fmtVol(d.candleVolume) + ' / ' + fmtVol(d.avgVolume) + '</span>'
             + '</div>'
             + '<div class="scan-data-grid">'
             + '  <div class="scan-data-item"><div class="scan-data-label">EMA</div><div class="scan-data-value">' + (d.ema20 > 0 ? fmt(d.ema20) : '--') + '</div></div>'
@@ -810,12 +809,6 @@
                             var up = d.changePercent >= 0;
                             chEl.className = 'scan-change ' + (up ? 'up' : 'down');
                             chEl.innerHTML = (up ? '&#9650;' : '&#9660;') + ' ' + d.changePercent.toFixed(2) + '%';
-                        }
-                        var volEl = card.querySelector('.scan-vol');
-                        if (volEl && d.candleVolume > 0) {
-                            var isHigh = d.avgVolume > 0 && d.candleVolume >= d.avgVolume * 2;
-                            volEl.className = 'scan-vol' + (isHigh ? ' vol-high' : '');
-                            volEl.textContent = fmtVol(d.candleVolume) + ' / ' + fmtVol(d.avgVolume);
                         }
                         var ohlEl = card.querySelector('.scan-ohl');
                         if (ohlEl && d.candleOpen) {
