@@ -111,6 +111,7 @@ public class MarginDataService {
             String msg = "[MarginData] Loaded " + count + " equity margin entries from Fyers";
             log.info(msg);
             eventService.log(msg);
+            eventService.log("[INFO] Waiting for Fyers login to load ATR, EMA and weekly trends...");
 
         } catch (Exception e) {
             log.error("[MarginData] Failed to load margin data: {}", e.getMessage());
