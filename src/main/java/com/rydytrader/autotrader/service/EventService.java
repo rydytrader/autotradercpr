@@ -102,9 +102,10 @@ public class EventService {
             LocalDate fileDate = LocalDate.ofInstant(
                     Files.getLastModifiedTime(path).toInstant(), ist);
             LocalDate today = LocalDate.now(ist);
+            log.info("Event log file date: {} | today IST: {} | match: {}", fileDate, today, fileDate.equals(today));
             if (!fileDate.equals(today)) {
-                Files.deleteIfExists(path);
-                log.info("Cleared stale event log from {} (today IST: {})", fileDate, today);
+                boolean deleted = Files.deleteIfExists(path);
+                log.info("Cleared stale event log from {} (today IST: {}) — deleted: {}", fileDate, today, deleted);
             }
         } catch (IOException e) {
             log.error("Error checking event log date", e);
