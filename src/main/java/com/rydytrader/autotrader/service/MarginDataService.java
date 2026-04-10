@@ -47,6 +47,11 @@ public class MarginDataService {
     @Scheduled(cron = "0 0 9 * * MON-FRI")
     public void reloadAtMarketOpen() {
         load();
+        // Log readiness only if logged in (otherwise startup flow will log it)
+        String token = tokenStore != null ? tokenStore.getAccessToken() : null;
+        if (token != null && !token.isEmpty()) {
+            eventService.log("[SUCCESS] Market open — all prerequisites re-loaded, ready for trading");
+        }
     }
 
     /**
