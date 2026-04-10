@@ -763,6 +763,7 @@ public class PollingService {
                     if (newSl != null && newSl.getId() != null && !newSl.getId().isEmpty()) {
                         s.currentSlId = newSl.getId();
                         positionStateStore.saveT1FilledState(symbol, s.currentSlId, breakeven, s.remainingQty);
+                        updateCachedPositionQty(symbol, s.remainingQty);
                         positionStateStore.appendDescription(symbol,
                             "[SL_BREAKEVEN] New SL @ " + String.format("%.2f", breakeven) + " qty=" + s.remainingQty);
                         eventService.log("[SUCCESS] SL moved to breakeven " + breakeven + " for " + symbol + " remaining qty=" + s.remainingQty);
@@ -870,6 +871,15 @@ public class PollingService {
     /** Called by OrderEventService to add a position to the cached positions map. */
     public void addCachedPosition(String symbol, int qty, String side, double avgPrice, String setup, String entryTime) {
         cachedPositions.put(symbol, new PositionsDTO(symbol, qty, side, avgPrice, avgPrice, 0.0, setup, entryTime));
+    }
+
+    /** Update qty of an existing cached position (e.g., after T1 partial fill). */
+    public void updateCachedPositionQty(String symbol, int newQty) {
+        PositionsDTO existing = cachedPositions.get(symbol);
+        if (existing != null) {
+            cachedPositions.put(symbol, new PositionsDTO(symbol, newQty, existing.getSide(),
+                existing.getAvgPrice(), existing.getLtp(), 0.0, existing.getSetup(), existing.getEntryTime()));
+        }
     }
 
     /** Called by OrderEventService to remove a position from the cached positions map. */

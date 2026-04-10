@@ -1013,6 +1013,11 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             // Update position state
             positionStateStore.saveT1FilledState(symbol, newSlId, breakevenPrice, remainingQty);
 
+            // Update in-memory position cache to reflect reduced qty
+            if (pollingService != null) {
+                pollingService.updateCachedPositionQty(symbol, remainingQty);
+            }
+
             // Re-track: new SL + existing T2
             OcoContext t2Ctx = trackedOcoOrders.get(ctx.target2OrderId);
             OcoContext newSlCtx = new OcoContext(symbol, remainingQty, ctx.totalQuantity, ctx.positionSide, exitSide,
