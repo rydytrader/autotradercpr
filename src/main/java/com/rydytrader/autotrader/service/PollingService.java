@@ -230,11 +230,18 @@ public class PollingService {
                                         int quantity, String position,
                                         int exitSide, double slPrice, double targetPrice, String setup,
                                         double atr, double atrMultiplier, String description) {
+        monitorEntryAndPlaceOCO(entry, symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, false);
+    }
+
+    public void monitorEntryAndPlaceOCO(OrderDTO entry, String symbol,
+                                        int quantity, String position,
+                                        int exitSide, double slPrice, double targetPrice, String setup,
+                                        double atr, double atrMultiplier, String description, boolean dayHighLowShifted) {
 
         // ── Try WebSocket-based tracking first (WS connected) ──
         if (orderEventService.isConnected()) {
             boolean tracked = orderEventService.trackEntryOrder(entry.getId(),
-                new OrderEventService.EntryContext(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description));
+                new OrderEventService.EntryContext(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, dayHighLowShifted));
             if (tracked) {
                 eventService.log("[INFO] Entry order " + entry.getId() + " tracked via WebSocket for " + symbol);
                 return; // WebSocket will handle fill detection — no polling needed
@@ -306,6 +313,7 @@ public class PollingService {
                     double targetDist = Math.abs(targetPrice - holder.entryFillPrice);
                     double entryAtr = atr > 0 ? atr : 1;
                     boolean shouldSplit = riskSettings.isEnableSplitTarget() && !skipTarget
+                        && !dayHighLowShifted // skip split if target was shifted to day high/low
                         && quantity >= 4
                         && (riskSettings.getSplitMinDistanceAtr() <= 0 || targetDist > entryAtr * riskSettings.getSplitMinDistanceAtr());
 

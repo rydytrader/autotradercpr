@@ -73,22 +73,29 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         public final double atr;
         public final double atrMultiplier;
         public final String description;
+        public final boolean dayHighLowShifted;
         public volatile boolean handled = false;
 
         public EntryContext(String symbol, int quantity, String position,
                            int exitSide, double slPrice, double targetPrice, String setup) {
-            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, 0, 0, null);
+            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, 0, 0, null, false);
         }
 
         public EntryContext(String symbol, int quantity, String position,
                            int exitSide, double slPrice, double targetPrice, String setup,
                            double atr, double atrMultiplier) {
-            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, null);
+            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, null, false);
         }
 
         public EntryContext(String symbol, int quantity, String position,
                            int exitSide, double slPrice, double targetPrice, String setup,
                            double atr, double atrMultiplier, String description) {
+            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, false);
+        }
+
+        public EntryContext(String symbol, int quantity, String position,
+                           int exitSide, double slPrice, double targetPrice, String setup,
+                           double atr, double atrMultiplier, String description, boolean dayHighLowShifted) {
             this.symbol = symbol;
             this.quantity = quantity;
             this.position = position;
@@ -99,6 +106,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             this.atr = atr;
             this.atrMultiplier = atrMultiplier;
             this.description = description;
+            this.dayHighLowShifted = dayHighLowShifted;
         }
     }
 
@@ -746,6 +754,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         double targetDist = Math.abs(ctx.targetPrice - entryFillPrice);
         double atr = ctx.atr > 0 ? ctx.atr : 1; // safety
         boolean shouldSplit = riskSettings.isEnableSplitTarget() && !skipTarget
+            && !ctx.dayHighLowShifted // skip split if target was shifted to day high/low
             && ctx.quantity >= 4 // need at least 4 for even split
             && (riskSettings.getSplitMinDistanceAtr() <= 0 || targetDist > atr * riskSettings.getSplitMinDistanceAtr());
 

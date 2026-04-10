@@ -171,6 +171,7 @@ public class TradingController {
         double atr         = ps.getAtr();
         double atrMult     = ps.getAtrMultiplier();
         String description = ps.getDescription();
+        boolean dayHighLowShifted = ps.isDayHighLowShifted();
 
         log.info("Signal received: {} | SL: {} | Target: {} | Setup: {}", signal, stoploss, target, setup);
 
@@ -187,7 +188,7 @@ public class TradingController {
 
             // Monitor entry fill, then place SL + Target OCO
             // exitSide = -1 (SELL to exit a LONG)
-            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "LONG", -1, stoploss, target, setup, atr, atrMult, description);
+            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "LONG", -1, stoploss, target, setup, atr, atrMult, description, dayHighLowShifted);
             pollingService.setProbability(symbol, probability);
 
         } else if (signal.equals("SELL") && !PositionManager.getPosition(symbol).equals("SHORT")) {
@@ -202,7 +203,7 @@ public class TradingController {
             }
 
             // exitSide = 1 (BUY to exit a SHORT)
-            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "SHORT", 1, stoploss, target, setup, atr, atrMult, description);
+            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "SHORT", 1, stoploss, target, setup, atr, atrMult, description, dayHighLowShifted);
             pollingService.setProbability(symbol, probability);
 
         } else {
