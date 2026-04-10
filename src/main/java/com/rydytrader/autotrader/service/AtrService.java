@@ -129,7 +129,7 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
         long toEpoch = Instant.now().getEpochSecond();
         long fromEpoch = toEpoch - (7 * 24 * 3600); // 7 days back
 
-        String urlStr = "https://api-t1.fyers.in/data/history?symbol=" + symbol
+        String urlStr = "https://api-t1.fyers.in/data/history?symbol=" + java.net.URLEncoder.encode(symbol, java.nio.charset.StandardCharsets.UTF_8)
             + "&resolution=" + resolution
             + "&date_format=0"
             + "&range_from=" + fromEpoch
