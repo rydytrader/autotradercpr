@@ -763,13 +763,19 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             return;
         }
 
+        // Apply target tolerance: structural CPR target → discounted price slightly inside the level.
+        // Always rounds AWAY from the level. Only used for the actual order; ctx.targetPrice (the
+        // original structural value) is preserved for logging and downstream consumers.
+        boolean isBuyForTol = "LONG".equals(ctx.position);
+        double placedTargetPrice = orderService.applyTargetTolerance(ctx.targetPrice, isBuyForTol, ctx.atr, symbol);
+
         while (retries < MAX_RETRIES) {
             retries++;
             OrderDTO slOrder = orderService.placeStopLoss(symbol, ctx.quantity, ctx.exitSide, slPrice);
 
             OrderDTO targetOrder = null;
             if (!skipTarget) {
-                targetOrder = orderService.placeTarget(symbol, ctx.quantity, ctx.exitSide, ctx.targetPrice);
+                targetOrder = orderService.placeTarget(symbol, ctx.quantity, ctx.exitSide, placedTargetPrice);
             }
 
             boolean slOk = slOrder != null && slOrder.getId() != null && !slOrder.getId().isEmpty();
@@ -778,17 +784,21 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             if (slOk && tgtOk) {
                 double roundedSl = orderService.roundToTick(slPrice, symbol);
                 String tgtId = skipTarget ? "" : targetOrder.getId();
-                double tgtPrice = skipTarget ? 0 : ctx.targetPrice;
+                double tgtPrice = skipTarget ? 0 : placedTargetPrice;
 
                 eventService.log("[SUCCESS] [WS] SL placed for " + symbol + " at " + roundedSl + " [ID: " + slOrder.getId() + "]");
                 if (skipTarget) {
                     eventService.log("[INFO] [WS] No fixed target for " + symbol + " — trailing SL will close the trade");
                 } else {
-                    double roundedTgt = orderService.roundToTick(ctx.targetPrice, symbol);
-                    eventService.log("[SUCCESS] [WS] Target placed for " + symbol + " at " + roundedTgt + " [ID: " + tgtId + "]");
+                    if (Math.abs(placedTargetPrice - ctx.targetPrice) > 0.001) {
+                        eventService.log("[SUCCESS] [WS] Target placed for " + symbol + " at " + String.format("%.2f", placedTargetPrice)
+                            + " (structural " + String.format("%.2f", ctx.targetPrice) + " - tolerance) [ID: " + tgtId + "]");
+                    } else {
+                        eventService.log("[SUCCESS] [WS] Target placed for " + symbol + " at " + String.format("%.2f", placedTargetPrice) + " [ID: " + tgtId + "]");
+                    }
                     String ts2 = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
                     positionStateStore.appendDescription(symbol,
-                        ts2 + " [TGT_PLACED] @ " + String.format("%.2f", roundedTgt) + " [" + tgtId + "]");
+                        ts2 + " [TGT_PLACED] @ " + String.format("%.2f", placedTargetPrice) + " [" + tgtId + "]");
                 }
                 positionStateStore.saveOcoState(symbol, slOrder.getId(), tgtId, slPrice, tgtPrice);
                 String ts3 = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
@@ -837,14 +847,15 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         int t1Qty = (totalQty / 4) * 2; // half, rounded to even
         int t2Qty = totalQty - t1Qty;
 
-        // Calculate T1 price
+        // Calculate T1 price — uses ORIGINAL structural target so T1 stays where math says
         double t1Pct = riskSettings.getT1DistancePct() / 100.0;
         boolean isBuy = "LONG".equals(ctx.position);
         double t1Price = isBuy
             ? entryFillPrice + t1Pct * (ctx.targetPrice - entryFillPrice)
             : entryFillPrice - t1Pct * (entryFillPrice - ctx.targetPrice);
         t1Price = orderService.roundToTick(t1Price, symbol);
-        double t2Price = orderService.roundToTick(ctx.targetPrice, symbol);
+        // T2 uses the DISCOUNTED target (tolerance applied) — T2 sits at the CPR level itself
+        double t2Price = orderService.applyTargetTolerance(ctx.targetPrice, isBuy, ctx.atr, symbol);
 
         int retries = 0;
         final int MAX_RETRIES = 3;

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.dto.OrderDTO;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
+import com.rydytrader.autotrader.store.RiskSettingsStore;
 import com.rydytrader.autotrader.store.TokenStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,15 +19,18 @@ public class OrderService {
     private final FyersProperties     fyersProperties;
     private final FyersClientRouter   fyersClient;
     private final SymbolMasterService symbolMaster;
+    private final RiskSettingsStore   riskSettings;
 
     public OrderService(TokenStore tokenStore,
                         FyersProperties fyersProperties,
                         FyersClientRouter fyersClient,
-                        SymbolMasterService symbolMaster) {
+                        SymbolMasterService symbolMaster,
+                        RiskSettingsStore riskSettings) {
         this.tokenStore      = tokenStore;
         this.fyersProperties = fyersProperties;
         this.fyersClient     = fyersClient;
         this.symbolMaster    = symbolMaster;
+        this.riskSettings    = riskSettings;
     }
 
     // ── ENTRY ORDER (Market) ──────────────────────────────────────────────────
@@ -334,5 +338,39 @@ public class OrderService {
         }
         // Round price to nearest tick: e.g. tick=0.05 → nearest 0.05, tick=5.0 → nearest 5
         return Math.round(price / tick) * tick;
+    }
+
+    /** Round DOWN to the nearest valid tick (used for buy-side target tolerance — discount further from level). */
+    public double roundToTickFloor(double price, String symbol) {
+        double tick = symbolMaster.getTickSize(symbol);
+        if (Double.isNaN(tick) || tick <= 0) tick = 0.05;
+        return Math.floor(price / tick) * tick;
+    }
+
+    /** Round UP to the nearest valid tick (used for sell-side target tolerance). */
+    public double roundToTickCeil(double price, String symbol) {
+        double tick = symbolMaster.getTickSize(symbol);
+        if (Double.isNaN(tick) || tick <= 0) tick = 0.05;
+        return Math.ceil(price / tick) * tick;
+    }
+
+    /**
+     * Apply target tolerance to a structural target (CPR level / day H/L).
+     * Discounts the target inward (toward entry) by `atr × toleranceAtr`, rounding
+     * AWAY from the level so the actual discount is at least the requested amount.
+     *
+     * @param target the structural target price (untouched if tolerance disabled)
+     * @param isBuy  true for long trades (discount goes DOWN), false for shorts
+     * @param atr    ATR at the time of trade (drives the discount magnitude)
+     * @param symbol used for tick size lookup
+     * @return discounted target price aligned to tick, or original if tolerance disabled or atr<=0
+     */
+    public double applyTargetTolerance(double target, boolean isBuy, double atr, String symbol) {
+        if (target <= 0 || atr <= 0) return target;
+        if (!riskSettings.isEnableTargetTolerance()) return target;
+        double tol = atr * riskSettings.getTargetToleranceAtr();
+        if (tol <= 0) return target;
+        double raw = isBuy ? target - tol : target + tol;
+        return isBuy ? roundToTickFloor(raw, symbol) : roundToTickCeil(raw, symbol);
     }
 }

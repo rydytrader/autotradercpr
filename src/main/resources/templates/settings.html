@@ -456,6 +456,16 @@
                     </div>
                     <div class="form-hint">When T1 hits, SL moves to breakeven for remaining half. Min qty 4 required for split.</div>
                 </div>
+                <div class="form-group">
+                    <label class="form-label">Target Tolerance</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableTargetTolerance" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Discount target by</span>
+                        <input type="number" id="targetToleranceAtr" step="0.05" min="0" max="1.0" style="width:60px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR (places target inside the level)</span>
+                    </div>
+                    <div class="form-hint">Markets often reverse just before touching CPR levels. The target order is placed slightly inside the level so near-miss reversals still fill. Applies to single targets and the T2 leg of split trades — T1 is unaffected.</div>
+                </div>
             </div>
         </div>
     </div>
@@ -870,6 +880,8 @@
             document.getElementById('enableSplitTarget').checked = d.enableSplitTarget !== false;
             document.getElementById('t1DistancePct').value = d.t1DistancePct || 50;
             document.getElementById('splitMinDistanceAtr').value = d.splitMinDistanceAtr || 0;
+            document.getElementById('enableTargetTolerance').checked = d.enableTargetTolerance !== false;
+            document.getElementById('targetToleranceAtr').value = (d.targetToleranceAtr != null ? d.targetToleranceAtr : 0.10);
             document.getElementById('enableSmallCandleFilter').checked = d.enableSmallCandleFilter === true;
             document.getElementById('smallCandleAtrThreshold').value = d.smallCandleAtrThreshold || 0.5;
             document.getElementById('wickRejectionRatio').value = d.wickRejectionRatio || 1.5;
@@ -886,10 +898,10 @@
             document.getElementById('signalSource').value = d.signalSource || 'TRADINGVIEW';
             document.getElementById('scannerTimeframe').value = d.scannerTimeframe != null ? d.scannerTimeframe : 15;
             document.getElementById('enableAtpCheck').checked = d.enableAtpCheck !== false;
-            document.getElementById('narrowCprMaxWidth').value = d.narrowCprMaxWidth || 0.1;
-            document.getElementById('insideCprMaxWidth').value = d.insideCprMaxWidth || 0.5;
-            document.getElementById('scanMinPrice').value = d.scanMinPrice || 300;
-            document.getElementById('openingRangeMinutes').value = d.openingRangeMinutes || 0;
+            document.getElementById('narrowCprMaxWidth').value = d.narrowCprMaxWidth != null ? d.narrowCprMaxWidth : 0.1;
+            document.getElementById('insideCprMaxWidth').value = d.insideCprMaxWidth != null ? d.insideCprMaxWidth : 0.5;
+            document.getElementById('scanMinPrice').value = d.scanMinPrice != null ? d.scanMinPrice : 300;
+            document.getElementById('openingRangeMinutes').value = d.openingRangeMinutes != null ? d.openingRangeMinutes : 0;
             document.getElementById('scanIncludeNS').checked = d.scanIncludeNS !== false;
             document.getElementById('scanIncludeNL').checked = d.scanIncludeNL !== false;
             document.getElementById('scanIncludeIS').checked = d.scanIncludeIS !== false;
@@ -994,6 +1006,8 @@
                 enableSplitTarget: document.getElementById('enableSplitTarget').checked,
                 t1DistancePct: parseInt(document.getElementById('t1DistancePct').value) || 50,
                 splitMinDistanceAtr: parseFloat(document.getElementById('splitMinDistanceAtr').value) || 0,
+                enableTargetTolerance: document.getElementById('enableTargetTolerance').checked,
+                targetToleranceAtr: parseFloat(document.getElementById('targetToleranceAtr').value) || 0,
                 enableSmallCandleFilter: document.getElementById('enableSmallCandleFilter').checked,
                 smallCandleAtrThreshold: parseFloat(document.getElementById('smallCandleAtrThreshold').value) || 0.5,
                 wickRejectionRatio: parseFloat(document.getElementById('wickRejectionRatio').value) || 1.5,

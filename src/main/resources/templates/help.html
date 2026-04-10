@@ -521,6 +521,42 @@
         </div>
     </div>
 
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> Target Tolerance</div></div>
+        <div class="help-body">
+            <p>Markets often reverse 0.10–0.50 points before touching the exact CPR level. With tolerance enabled, the bot places the target order slightly inside the level so near-miss reversals still fill the trade — converting watch-it-reverse scenarios into actual wins.</p>
+
+            <h4>How It Works</h4>
+            <ul>
+                <li>Discount = ATR × <code>targetToleranceAtr</code> (default 0.10 → 2 points on ATR=20)</li>
+                <li>For buys: target order placed at <code>structuralTarget − discount</code></li>
+                <li>For sells: target order placed at <code>structuralTarget + discount</code></li>
+                <li>Always rounded AWAY from the level (floor for buys, ceil for sells) so the actual discount is at least the requested amount</li>
+                <li>Scales naturally with stock volatility — small moves on quiet stocks, larger on volatile ones</li>
+            </ul>
+
+            <h4>Where It Applies</h4>
+            <table>
+                <tr><th>Target Type</th><th>Tolerance Applied?</th><th>Reason</th></tr>
+                <tr><td>Single target trade (split disabled / qty &lt; 4 / split distance not met)</td><td>YES</td><td>Sits at the CPR level</td></tr>
+                <tr><td>T2 leg of split target trade</td><td>YES</td><td>T2 is the structural CPR level</td></tr>
+                <tr><td>Day H/L shifted target</td><td>YES</td><td>Day H/L is a magnet level</td></tr>
+                <tr><td>DH/DL breakout target</td><td>YES</td><td>Targets next CPR level</td></tr>
+                <tr><td><strong>T1 leg of split target trade</strong></td><td><strong>NO</strong></td><td>T1 is a calculated mid-point, not a structural level</td></tr>
+            </table>
+
+            <h4>Example</h4>
+            <p>R2 = 1880 (structural target), entry = 1860, ATR = 20, tolerance = 0.10 ATR = 2 points.</p>
+            <ul>
+                <li><strong>Without tolerance:</strong> target order at 1880. Price spikes to 1879.5, reverses, eventually hits SL. Loss recorded.</li>
+                <li><strong>With tolerance:</strong> target order at <strong>1878</strong>. Price reaches 1878 first → fills, profit booked.</li>
+            </ul>
+
+            <h4>Why No SL Tolerance?</h4>
+            <p>Targets and SLs need opposite treatment. With targets you want to be conservative (take the win early). With SL you want to give the trade maximum benefit of the doubt — moving SL closer means tighter risk and more whipsaws. ATR-based SL placement is the right defense against stop-runs, not tolerance.</p>
+        </div>
+    </div>
+
     </div><!-- /tab-split -->
 
     <!-- STOP LOSS & TRAILING -->
@@ -972,6 +1008,7 @@
                 <tr><td>20 EMA Distance Filter</td><td>ON, 0.5 / 0.75 ATR</td><td>Skip if breakout level &gt; 0.5 ATR from 20 EMA or close &gt; 0.75 ATR from 20 EMA</td></tr>
                 <tr><td>Day High/Low Shift</td><td>ON</td><td>Shift target to session high/low if between entry and target</td></tr>
                 <tr><td>Split Targets</td><td>ON, 50%, 0 ATR</td><td>T1 at N% of target distance, T2 at full. Min distance to split.</td></tr>
+                <tr><td>Target Tolerance</td><td>ON, 0.10 ATR</td><td>Discount target inside the CPR level by this fraction of ATR so near-miss reversals fill. T1 unaffected.</td></tr>
             </table>
 
             <h4>Hours Tab</h4>

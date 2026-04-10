@@ -329,11 +329,13 @@ public class PollingService {
                         int t2Qty = quantity - t1Qty;
                         double t1Pct = riskSettings.getT1DistancePct() / 100.0;
                         boolean isBuy = "LONG".equals(position);
+                        // T1 uses ORIGINAL structural target — not the discounted value
                         double t1Price = isBuy
                             ? holder.entryFillPrice + t1Pct * (targetPrice - holder.entryFillPrice)
                             : holder.entryFillPrice - t1Pct * (holder.entryFillPrice - targetPrice);
                         t1Price = orderService.roundToTick(t1Price, symbol);
-                        double t2Price = orderService.roundToTick(targetPrice, symbol);
+                        // T2 sits at the structural CPR level — apply tolerance discount
+                        double t2Price = orderService.applyTargetTolerance(targetPrice, isBuy, atr, symbol);
 
                         OrderDTO slOrder = orderService.placeStopLoss(symbol, quantity, exitSide, holder.adjustedSl);
                         OrderDTO t1Order = orderService.placeTarget(symbol, t1Qty, exitSide, t1Price);
@@ -386,8 +388,11 @@ public class PollingService {
                         }
                     } else {
                     // Single target placement (existing logic)
+                    boolean isBuyForTol = "LONG".equals(position);
+                    double placedTargetPrice = orderService.applyTargetTolerance(targetPrice, isBuyForTol, atr, symbol);
+
                     OrderDTO slOrder     = orderService.placeStopLoss(symbol, quantity, exitSide, holder.adjustedSl);
-                    OrderDTO targetOrder = skipTarget ? null : orderService.placeTarget(symbol, quantity, exitSide, targetPrice);
+                    OrderDTO targetOrder = skipTarget ? null : orderService.placeTarget(symbol, quantity, exitSide, placedTargetPrice);
 
                     boolean slOk  = slOrder     != null && slOrder.getId()     != null && !slOrder.getId().isEmpty();
                     boolean tgtOk = skipTarget || (targetOrder != null && targetOrder.getId() != null && !targetOrder.getId().isEmpty());
@@ -395,14 +400,18 @@ public class PollingService {
                     if (slOk && tgtOk) {
                         double rSl = orderService.roundToTick(holder.adjustedSl, symbol);
                         String tgtId = skipTarget ? "" : targetOrder.getId();
-                        double tgtPrice = skipTarget ? 0 : targetPrice;
+                        double tgtPrice = skipTarget ? 0 : placedTargetPrice;
                         eventService.log("[SUCCESS] SL order placed for " + symbol + " at " + rSl + " [ID: " + slOrder.getId() + "]");
                         if (skipTarget) {
                             eventService.log("[INFO] No fixed target for " + symbol + " — trailing SL will close the trade");
                         } else {
-                            double rTgt = orderService.roundToTick(targetPrice, symbol);
-                            eventService.log("[SUCCESS] Target order placed for " + symbol + " at " + rTgt + " [ID: " + tgtId + "]");
-                            positionStateStore.appendDescription(symbol, "[TGT_PLACED] @ " + String.format("%.2f", rTgt) + " [" + tgtId + "]");
+                            if (Math.abs(placedTargetPrice - targetPrice) > 0.001) {
+                                eventService.log("[SUCCESS] Target order placed for " + symbol + " at " + String.format("%.2f", placedTargetPrice)
+                                    + " (structural " + String.format("%.2f", targetPrice) + " - tolerance) [ID: " + tgtId + "]");
+                            } else {
+                                eventService.log("[SUCCESS] Target order placed for " + symbol + " at " + String.format("%.2f", placedTargetPrice) + " [ID: " + tgtId + "]");
+                            }
+                            positionStateStore.appendDescription(symbol, "[TGT_PLACED] @ " + String.format("%.2f", placedTargetPrice) + " [" + tgtId + "]");
                         }
                         positionStateStore.saveOcoState(symbol, slOrder.getId(), tgtId, holder.adjustedSl, tgtPrice);
                         positionStateStore.appendDescription(symbol, "[SL_PLACED] @ " + String.format("%.2f", rSl) + " [" + slOrder.getId() + "]");

@@ -94,6 +94,9 @@ public class RiskSettingsStore {
         volatile boolean enableSplitTarget = true;
         volatile int t1DistancePct = 50;           // T1 at N% of target distance (25/50/75)
         volatile double splitMinDistanceAtr = 0;   // min distance in ATR multiples to split (0 = always)
+        // Target Tolerance — discount structural target by ATR fraction so near-miss reversals fill
+        volatile boolean enableTargetTolerance = true;
+        volatile double targetToleranceAtr = 0.10; // discount structural target by this fraction of ATR
     }
 
     private final Cfg live = new Cfg();
@@ -181,6 +184,8 @@ public class RiskSettingsStore {
     public boolean isEnableSplitTarget()       { return cfg().enableSplitTarget; }
     public int getT1DistancePct()              { return cfg().t1DistancePct; }
     public double getSplitMinDistanceAtr()     { return cfg().splitMinDistanceAtr; }
+    public boolean isEnableTargetTolerance()   { return cfg().enableTargetTolerance; }
+    public double getTargetToleranceAtr()      { return cfg().targetToleranceAtr; }
     public void setSignalSource(String v)      { cfg().signalSource = v; }
     public void setScannerTimeframe(int v)     { cfg().scannerTimeframe = v; }
     public void setEnableAtpCheck(boolean v)  { cfg().enableAtpCheck = v; }
@@ -200,6 +205,8 @@ public class RiskSettingsStore {
     public void setEnableSplitTarget(boolean v) { cfg().enableSplitTarget = v; }
     public void setT1DistancePct(int v)        { cfg().t1DistancePct = v; }
     public void setSplitMinDistanceAtr(double v) { cfg().splitMinDistanceAtr = v; }
+    public void setEnableTargetTolerance(boolean v) { cfg().enableTargetTolerance = v; }
+    public void setTargetToleranceAtr(double v) { cfg().targetToleranceAtr = v; }
     public void setTradingStartTime(String v)  { cfg().tradingStartTime = v; }
     public void setTradingEndTime(String v)    { cfg().tradingEndTime = v; }
     public void setTotalCapital(double v)       { cfg().totalCapital = v; }
@@ -390,6 +397,8 @@ public class RiskSettingsStore {
             upsert("enableSplitTarget", String.valueOf(c.enableSplitTarget));
             upsert("t1DistancePct", String.valueOf(c.t1DistancePct));
             upsert("splitMinDistanceAtr", String.valueOf(c.splitMinDistanceAtr));
+            upsert("enableTargetTolerance", String.valueOf(c.enableTargetTolerance));
+            upsert("targetToleranceAtr", String.valueOf(c.targetToleranceAtr));
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to save {}: {}", mode, e.getMessage());
         }
@@ -478,6 +487,8 @@ public class RiskSettingsStore {
                     case "enableSplitTarget" -> c.enableSplitTarget = Boolean.parseBoolean(v);
                     case "t1DistancePct" -> c.t1DistancePct = Integer.parseInt(v);
                     case "splitMinDistanceAtr" -> c.splitMinDistanceAtr = Double.parseDouble(v);
+                    case "enableTargetTolerance" -> c.enableTargetTolerance = Boolean.parseBoolean(v);
+                    case "targetToleranceAtr" -> c.targetToleranceAtr = Double.parseDouble(v);
                 }
             }
             log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} enableR4S4={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} trailingSl={}", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.enableR4S4, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.enableTrailingSl);

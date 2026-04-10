@@ -73,6 +73,8 @@ public class SettingsController {
         result.put("enableSplitTarget", riskSettings.isEnableSplitTarget());
         result.put("t1DistancePct", riskSettings.getT1DistancePct());
         result.put("splitMinDistanceAtr", riskSettings.getSplitMinDistanceAtr());
+        result.put("enableTargetTolerance", riskSettings.isEnableTargetTolerance());
+        result.put("targetToleranceAtr", riskSettings.getTargetToleranceAtr());
         result.put("enableSmallCandleFilter", riskSettings.isEnableSmallCandleFilter(effectiveMode));
         result.put("smallCandleAtrThreshold", riskSettings.getSmallCandleAtrThreshold(effectiveMode));
         result.put("wickRejectionRatio", riskSettings.getWickRejectionRatio(effectiveMode));
@@ -151,6 +153,8 @@ public class SettingsController {
             if (body.containsKey("enableSplitTarget")) riskSettings.setEnableSplitTarget(Boolean.parseBoolean(body.get("enableSplitTarget").toString()));
             if (body.containsKey("t1DistancePct")) riskSettings.setT1DistancePct(Integer.parseInt(body.get("t1DistancePct").toString()));
             if (body.containsKey("splitMinDistanceAtr")) riskSettings.setSplitMinDistanceAtr(Double.parseDouble(body.get("splitMinDistanceAtr").toString()));
+            if (body.containsKey("enableTargetTolerance")) riskSettings.setEnableTargetTolerance(Boolean.parseBoolean(body.get("enableTargetTolerance").toString()));
+            if (body.containsKey("targetToleranceAtr")) riskSettings.setTargetToleranceAtr(Double.parseDouble(body.get("targetToleranceAtr").toString()));
             if (body.containsKey("enableSmallCandleFilter")) riskSettings.setEnableSmallCandleFilter(effectiveMode, Boolean.parseBoolean(body.get("enableSmallCandleFilter").toString()));
             if (body.containsKey("smallCandleAtrThreshold")) riskSettings.setSmallCandleAtrThreshold(effectiveMode, Double.parseDouble(body.get("smallCandleAtrThreshold").toString()));
             if (body.containsKey("wickRejectionRatio")) riskSettings.setWickRejectionRatio(effectiveMode, Double.parseDouble(body.get("wickRejectionRatio").toString()));
