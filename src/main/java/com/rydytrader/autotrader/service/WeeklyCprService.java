@@ -32,6 +32,8 @@ public class WeeklyCprService {
     private final FyersProperties fyersProperties;
     private final BhavcopyService bhavcopyService;
     private final CandleAggregator candleAggregator;
+    @org.springframework.beans.factory.annotation.Autowired
+    private EventService eventService;
     private final ObjectMapper mapper = new ObjectMapper();
 
     // Weekly CPR levels per symbol (fixed for the week, fetched once)
@@ -85,6 +87,7 @@ public class WeeklyCprService {
             }
         }
         log.info("[WeeklyCpr] Weekly levels loaded for {}/{} symbols", success, fyersSymbols.size());
+        eventService.log("[INFO] Weekly trends loaded for " + success + "/" + fyersSymbols.size() + " symbols");
     }
 
     // ── Real-time trend calculation using LTP ────────────────────────────────

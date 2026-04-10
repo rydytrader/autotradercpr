@@ -41,6 +41,8 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
     @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.context.annotation.Lazy
     private EmaService emaService;
+    @org.springframework.beans.factory.annotation.Autowired
+    private EventService eventService;
     private final ObjectMapper mapper = new ObjectMapper();
 
     private final ConcurrentHashMap<String, Double> atrBySymbol = new ConcurrentHashMap<>();
@@ -116,6 +118,8 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
         }
 
         log.info("[AtrService] ATR loaded for {}/{} symbols", success, fyersSymbols.size());
+        eventService.log("[INFO] ATR + EMA loaded for " + success + "/" + fyersSymbols.size() + " symbols ("
+            + riskSettings.getScannerTimeframe() + "min candles)");
     }
 
     /**

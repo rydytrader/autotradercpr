@@ -167,6 +167,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         running = true;
         reconnectAttempts = 0;
         scheduler = Executors.newScheduledThreadPool(3);
+        eventService.log("[INFO] Bot starting — initializing services");
 
         // SSE flush every 500ms
         scheduler.scheduleAtFixedRate(this::flushSse, 500, 500, TimeUnit.MILLISECONDS);
@@ -799,8 +800,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         double narrowMax = riskSettings.getNarrowCprMaxWidth();
         double insideMax = riskSettings.getInsideCprMaxWidth();
         eventService.log("[INFO] Scanner initialized: " + watchlist.size() + " symbols"
-            + " (filters: narrow<" + narrowMax + "%, inside<" + insideMax + "%, price≥₹" + (int)minPrice + ")"
-            + " | ATR loaded, trends calculated");
+            + " (filters: narrow<" + narrowMax + "%, inside<" + insideMax + "%, price≥₹" + (int)minPrice + ")");
+        eventService.log("[SUCCESS] All prerequisites loaded — system ready for trading");
     }
 
     /**

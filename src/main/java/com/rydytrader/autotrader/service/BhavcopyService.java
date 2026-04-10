@@ -106,6 +106,8 @@ public class BhavcopyService {
             long narrowCount = cache.values().stream().filter(CprLevels::isNarrowCpr).count();
             long insideCount = getInsideCprStocks().size();
             log.info("[BhavcopyService] Loaded {} NFO stocks from cache for {} ({} narrow, {} inside CPR, {} history days)", cache.size(), cachedDate, narrowCount, insideCount, dailyHistory.size());
+            eventService.log("[INFO] CPR data loaded from cache: " + cache.size() + " stocks for " + cachedDate
+                + " (" + narrowCount + " narrow, " + insideCount + " inside)");
         }
     }
 
