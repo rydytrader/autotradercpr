@@ -34,11 +34,12 @@ public class EventService {
         loadRemainingAsync();
     }
 
-    private volatile LocalDate lastLogDate = LocalDate.now();
+    private static final java.time.ZoneId IST = java.time.ZoneId.of("Asia/Kolkata");
+    private volatile LocalDate lastLogDate = LocalDate.now(IST);
 
     public void log(String message) {
         // Daily reset check: if date changed since last log, clear the file
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(IST);
         if (!today.equals(lastLogDate)) {
             log.info("New trading day detected ({} → {}), clearing event log", lastLogDate, today);
             tradeLogs.clear();
@@ -92,17 +93,18 @@ public class EventService {
         } catch (IOException e) { log.error("Error creating log directory", e); }
     }
 
-    /** If the log file's last modified date is not today, clear it. */
+    /** If the log file's last modified date (IST) is not today, clear it. */
     private void clearIfStale() {
         try {
             Path path = Paths.get(LOG_FILE);
             if (!Files.exists(path)) return;
+            java.time.ZoneId ist = java.time.ZoneId.of("Asia/Kolkata");
             LocalDate fileDate = LocalDate.ofInstant(
-                    Files.getLastModifiedTime(path).toInstant(),
-                    java.time.ZoneId.systemDefault());
-            if (!fileDate.equals(LocalDate.now())) {
+                    Files.getLastModifiedTime(path).toInstant(), ist);
+            LocalDate today = LocalDate.now(ist);
+            if (!fileDate.equals(today)) {
                 Files.deleteIfExists(path);
-                log.info("Cleared stale event log from {}", fileDate);
+                log.info("Cleared stale event log from {} (today IST: {})", fileDate, today);
             }
         } catch (IOException e) {
             log.error("Error checking event log date", e);
