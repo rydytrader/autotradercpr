@@ -44,6 +44,7 @@ public class EventService {
             log.info("New trading day detected ({} → {}), clearing event log", lastLogDate, today);
             tradeLogs.clear();
             try { Files.deleteIfExists(Paths.get(LOG_FILE)); } catch (IOException e) { log.error("Error clearing event log on day change", e); }
+            updateLogDate();
             lastLogDate = today;
         }
         String entry = LocalTime.now().format(TIME_FMT) + " - " + message;
@@ -93,23 +94,35 @@ public class EventService {
         } catch (IOException e) { log.error("Error creating log directory", e); }
     }
 
-    /** If the log file's last modified date (IST) is not today, clear it. */
+    private static final String LOG_DATE_FILE = "../store/event-log.date";
+
+    /** Clear log if the recorded trading date is not today. */
     private void clearIfStale() {
         try {
-            Path path = Paths.get(LOG_FILE);
-            if (!Files.exists(path)) return;
+            Path datePath = Paths.get(LOG_DATE_FILE);
+            Path logPath = Paths.get(LOG_FILE);
             java.time.ZoneId ist = java.time.ZoneId.of("Asia/Kolkata");
-            LocalDate fileDate = LocalDate.ofInstant(
-                    Files.getLastModifiedTime(path).toInstant(), ist);
             LocalDate today = LocalDate.now(ist);
-            log.info("Event log file date: {} | today IST: {} | match: {}", fileDate, today, fileDate.equals(today));
-            if (!fileDate.equals(today)) {
-                boolean deleted = Files.deleteIfExists(path);
-                log.info("Cleared stale event log from {} (today IST: {}) — deleted: {}", fileDate, today, deleted);
+            String storedDate = Files.exists(datePath) ? Files.readString(datePath).trim() : "";
+            log.info("Event log stored date: '{}' | today IST: {}", storedDate, today);
+            if (!today.toString().equals(storedDate)) {
+                if (Files.exists(logPath)) {
+                    Files.deleteIfExists(logPath);
+                    log.info("Cleared stale event log (was: '{}', now: '{}')", storedDate, today);
+                }
+                Files.writeString(datePath, today.toString());
             }
         } catch (IOException e) {
             log.error("Error checking event log date", e);
         }
+    }
+
+    /** Update the stored date marker when log is written today. */
+    private void updateLogDate() {
+        try {
+            java.time.ZoneId ist = java.time.ZoneId.of("Asia/Kolkata");
+            Files.writeString(Paths.get(LOG_DATE_FILE), LocalDate.now(ist).toString());
+        } catch (IOException ignored) {}
     }
 
     private static final int FAST_LOAD_ENTRIES = 500;
