@@ -30,7 +30,8 @@ public class RiskSettingsStore {
         volatile String autoSquareOffTime = "";  // empty = disabled, e.g. "15:15"
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile boolean enableR4S4       = false; // allow BUY_ABOVE_R4 / SELL_BELOW_S4
-        volatile double sessionMoveLimit = 2.0;   // qty halved if session move exceeds this % (0 = disabled)
+        volatile boolean enableSessionMoveLimit = true;
+        volatile double sessionMoveLimit = 2.0;   // qty halved if session move exceeds this %
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
         // Charges rates (regulatory — rarely change)
         volatile double sttRate           = 0.025;   // STT % on sell side
@@ -121,6 +122,7 @@ public class RiskSettingsStore {
     public String getAutoSquareOffTime() { return cfg().autoSquareOffTime; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public boolean isEnableR4S4()        { return cfg().enableR4S4; }
+    public boolean isEnableSessionMoveLimit() { return cfg().enableSessionMoveLimit; }
     public double getSessionMoveLimit() { return cfg().sessionMoveLimit; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getSttRate()         { return cfg().sttRate; }
@@ -206,6 +208,7 @@ public class RiskSettingsStore {
     public void setAutoSquareOffTime(String v) { cfg().autoSquareOffTime = v; }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setEnableR4S4(boolean v)       { cfg().enableR4S4 = v; }
+    public void setEnableSessionMoveLimit(boolean v) { cfg().enableSessionMoveLimit = v; }
     public void setSessionMoveLimit(double v) { cfg().sessionMoveLimit = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setSttRate(double v)         { cfg().sttRate = v; }
@@ -329,6 +332,7 @@ public class RiskSettingsStore {
             upsert("autoSquareOffTime", c.autoSquareOffTime);
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("enableR4S4", String.valueOf(c.enableR4S4));
+            upsert("enableSessionMoveLimit", String.valueOf(c.enableSessionMoveLimit));
             upsert("sessionMoveLimit", String.valueOf(c.sessionMoveLimit));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("sttRate", String.valueOf(c.sttRate));
@@ -416,6 +420,7 @@ public class RiskSettingsStore {
                     case "autoSquareOffTime" -> c.autoSquareOffTime = v;
                     case "atrMultiplier"     -> c.atrMultiplier = Double.parseDouble(v);
                     case "enableR4S4"        -> c.enableR4S4 = Boolean.parseBoolean(v);
+                    case "enableSessionMoveLimit" -> c.enableSessionMoveLimit = Boolean.parseBoolean(v);
                     case "sessionMoveLimit"  -> c.sessionMoveLimit = Double.parseDouble(v);
                     case "brokeragePerOrder" -> c.brokeragePerOrder = Double.parseDouble(v);
                     case "sttRate"           -> c.sttRate = Double.parseDouble(v);

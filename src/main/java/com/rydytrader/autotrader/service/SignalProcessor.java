@@ -242,7 +242,7 @@ public class SignalProcessor {
         }
         // ── Session move limit: reduce qty if price moved too far from day open/PDC ──
         double sessionMoveLimit = riskSettings.getSessionMoveLimit() / 100.0; // e.g. 2.0 → 0.02
-        if (sessionMoveLimit > 0) {
+        if (riskSettings.isEnableSessionMoveLimit() && sessionMoveLimit > 0) {
             double pivot = (tc + bc) / 2.0;
             double pdc = pivot * 3 - ph - pl;
             double moveFromOpen = dayOpen > 0 ? Math.abs(close - dayOpen) / dayOpen : 0;

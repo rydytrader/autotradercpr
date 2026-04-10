@@ -317,9 +317,10 @@
                 </div>
                 <div class="form-group">
                     <label class="form-label">Session Move Limit</label>
-                    <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+                    <div style="display:flex; align-items:center; gap:8px; margin-top:4px; flex-wrap:wrap;">
+                        <input type="checkbox" id="enableSessionMoveLimit" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Halve qty if price moved &gt;</span>
-                        <input type="number" id="sessionMoveLimit" step="0.1" min="0" max="10" style="width:60px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;" placeholder="2.0">
+                        <input type="number" id="sessionMoveLimit" class="form-control" step="0.1" min="0.1" max="10" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;" placeholder="2.0">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">% from day open / PDC</span>
                     </div>
                     <div class="form-hint">Set to 0 to disable. Gap days (R2/S2) are handled by Opening Range filter.</div>
@@ -841,6 +842,7 @@
             document.getElementById('riskPerTrade').value      = d.riskPerTrade      || 1000;
             document.getElementById('atrPeriod').value          = d.atrPeriod         || 14;
             document.getElementById('atrMultiplier').value     = d.atrMultiplier     || 1.5;
+            document.getElementById('enableSessionMoveLimit').checked = d.enableSessionMoveLimit !== false;
             document.getElementById('sessionMoveLimit').value   = d.sessionMoveLimit  != null ? d.sessionMoveLimit : 2.0;
             document.getElementById('brokeragePerOrder').value  = d.brokeragePerOrder != null ? d.brokeragePerOrder : 20;
             document.getElementById('brokeragePct').value      = d.brokeragePct != null ? d.brokeragePct : 0.03;
@@ -965,7 +967,8 @@
                 riskPerTrade:      parseFloat(document.getElementById('riskPerTrade').value) || 0,
                 atrPeriod:         parseInt(document.getElementById('atrPeriod').value) || 14,
                 atrMultiplier:     parseFloat(document.getElementById('atrMultiplier').value) || 2.0,
-                sessionMoveLimit:  parseFloat(document.getElementById('sessionMoveLimit').value) || 0,
+                enableSessionMoveLimit: document.getElementById('enableSessionMoveLimit').checked,
+                sessionMoveLimit:  parseFloat(document.getElementById('sessionMoveLimit').value) || 2.0,
                 brokeragePerOrder: parseFloat(document.getElementById('brokeragePerOrder').value) || 20,
                 brokeragePct:    parseFloat(document.getElementById('brokeragePct').value) || 0.03,
                 sttRate:         parseFloat(document.getElementById('sttRate').value) || 0.025,
