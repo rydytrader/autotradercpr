@@ -32,6 +32,10 @@ public class EventService {
         // Load last 500 entries immediately for fast startup, then load all async
         loadLogsFromFile();
         loadRemainingAsync();
+        // First log entry of the day (only if log was cleared / fresh)
+        if (tradeLogs.isEmpty()) {
+            log("[INFO] Bot starting — initializing services");
+        }
     }
 
     private static final java.time.ZoneId IST = java.time.ZoneId.of("Asia/Kolkata");
