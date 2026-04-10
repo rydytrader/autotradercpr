@@ -34,7 +34,17 @@ public class EventService {
         loadRemainingAsync();
     }
 
+    private volatile LocalDate lastLogDate = LocalDate.now();
+
     public void log(String message) {
+        // Daily reset check: if date changed since last log, clear the file
+        LocalDate today = LocalDate.now();
+        if (!today.equals(lastLogDate)) {
+            log.info("New trading day detected ({} → {}), clearing event log", lastLogDate, today);
+            tradeLogs.clear();
+            try { Files.deleteIfExists(Paths.get(LOG_FILE)); } catch (IOException e) { log.error("Error clearing event log on day change", e); }
+            lastLogDate = today;
+        }
         String entry = LocalTime.now().format(TIME_FMT) + " - " + message;
         tradeLogs.add(entry);
         writeToFile(entry);
