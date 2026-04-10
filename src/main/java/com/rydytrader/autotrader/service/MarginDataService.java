@@ -32,6 +32,8 @@ public class MarginDataService {
     private final ConcurrentHashMap<String, Integer> leverageMap = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final EventService eventService;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.rydytrader.autotrader.store.TokenStore tokenStore;
 
     public MarginDataService(EventService eventService) {
         this.eventService = eventService;
@@ -111,7 +113,11 @@ public class MarginDataService {
             String msg = "[MarginData] Loaded " + count + " equity margin entries from Fyers";
             log.info(msg);
             eventService.log(msg);
-            eventService.log("[INFO] Waiting for Fyers login to load ATR, EMA and weekly trends...");
+            // Only show "waiting for login" message if NOT already logged in
+            String token = tokenStore != null ? tokenStore.getAccessToken() : null;
+            if (token == null || token.isEmpty()) {
+                eventService.log("[INFO] Waiting for Fyers login to load ATR, EMA and weekly trends...");
+            }
 
         } catch (Exception e) {
             log.error("[MarginData] Failed to load margin data: {}", e.getMessage());
