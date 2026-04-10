@@ -60,6 +60,10 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     @org.springframework.context.annotation.Lazy
     private OrderEventService orderEventService;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private PollingService pollingService;
+
     // Trailing SL: track symbols where SL has already been trailed
     private final Set<String> trailedSymbols = ConcurrentHashMap.newKeySet();
     // Peak/trough price since entry for ATR trailing SL
@@ -365,7 +369,17 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             String.format("%.2f", "LONG".equals(side) ? peakPrice.getOrDefault(fyersSymbol, 0.0) : troughPrice.getOrDefault(fyersSymbol, 0.0)),
             String.format("%.2f", atr));
 
-        boolean ok = orderService.modifySlOrder(slOrderId, newSl, fyersSymbol);
+        int modResult = orderService.modifySlOrder(slOrderId, newSl, fyersSymbol);
+        boolean ok = modResult == 1;
+        if (modResult == -1) {
+            // SL order is gone (already filled/cancelled). Trigger position sync to clean up local state.
+            eventService.log("[INFO] Trailing SL skipped for " + fyersSymbol
+                + " — SL order already filled/cancelled, syncing position state");
+            if (pollingService != null) {
+                pollingService.syncPositionOnce();
+            }
+            return;
+        }
         if (ok) {
             trailedSymbols.add(fyersSymbol);
 

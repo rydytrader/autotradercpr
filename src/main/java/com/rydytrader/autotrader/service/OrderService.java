@@ -53,7 +53,8 @@ public class OrderService {
     }
 
     // ── MODIFY SL ORDER (change stop price) ────────────────────────────────────
-    public boolean modifySlOrder(String orderId, double newSlPrice, String symbol) {
+    /** @return 1 = success, 0 = failed (other reason), -1 = order gone (Fyers code -52) */
+    public int modifySlOrder(String orderId, double newSlPrice, String symbol) {
         try {
             double rounded = roundToTick(newSlPrice, symbol);
             // Format price to avoid floating point noise (e.g. 465.70000000000005 → 465.70)
@@ -65,13 +66,19 @@ public class OrderService {
             boolean ok = resp != null && resp.has("s") && "ok".equals(resp.get("s").asText());
             if (ok) {
                 log.info("[OrderService] SL modified successfully: {} → {}", orderId, rounded);
-            } else {
-                log.error("[OrderService] SL modify failed | Response: {} | OrderId: {} | Body: {}", resp, orderId, json);
+                return 1;
             }
-            return ok;
+            int code = (resp != null && resp.has("code")) ? resp.get("code").asInt() : 0;
+            if (code == -52) {
+                // Order no longer pending — likely already filled or cancelled. Not an error.
+                log.warn("[OrderService] SL modify skipped — order {} no longer pending (likely already filled)", orderId);
+                return -1;
+            }
+            log.error("[OrderService] SL modify failed | Response: {} | OrderId: {} | Body: {}", resp, orderId, json);
+            return 0;
         } catch (Exception e) {
             log.error("[OrderService] Error modifying SL order {}", orderId, e);
-            return false;
+            return 0;
         }
     }
 

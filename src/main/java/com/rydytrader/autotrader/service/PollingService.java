@@ -103,7 +103,13 @@ public class PollingService {
                 Map<String, Object> saved = entry.getValue();
                 String symbol    = saved.get("symbol").toString();
                 String side      = saved.get("side").toString();
-                int    qty       = Integer.parseInt(saved.get("qty").toString());
+                int    origQty   = Integer.parseInt(saved.get("qty").toString());
+                // After T1 partial fill, remaining qty is what's actually held at broker
+                boolean t1Filled = Boolean.parseBoolean(String.valueOf(saved.getOrDefault("t1Filled", "false")));
+                int remQty = 0;
+                try { remQty = Integer.parseInt(String.valueOf(saved.getOrDefault("remainingQty", "0"))); }
+                catch (NumberFormatException ignored) {}
+                int qty = (t1Filled && remQty > 0) ? remQty : origQty;
                 double avgPrice  = Double.parseDouble(saved.get("avgPrice").toString());
                 String setup     = saved.getOrDefault("setup", "").toString();
                 String entryTime = saved.getOrDefault("entryTime", "").toString();

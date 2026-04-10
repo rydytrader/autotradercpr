@@ -148,6 +148,51 @@
         </div>
     </div>
 
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> Risk Philosophy: Choppy Days Small, Trending Days Large</div></div>
+        <div class="help-body">
+            <p>The core risk principle: <strong>quantity scales with conviction</strong>. Choppy/range-bound conditions get small bets that survive whipsaws. Strong trending conditions get full size to capture the move. The filter stack enforces this automatically across multiple dimensions.</p>
+
+            <h4>Choppy / Range-Bound Conditions → Reduce Quantity</h4>
+            <table>
+                <tr><th>Condition</th><th>Effect</th></tr>
+                <tr><td>Inside OR range on IV/OV day</td><td>Probability downgraded to LPT (~0.25x qty)</td></tr>
+                <tr><td>Counter weekly/daily trend</td><td>LPT (~0.25x qty)</td></tr>
+                <tr><td>Far levels (R3/S3, R4/S4)</td><td>0.5x – 0.75x level factor</td></tr>
+                <tr><td>OV magnet (mean reversion to value)</td><td>0.5x</td></tr>
+                <tr><td>EV reversal (counter-gap mean reversion)</td><td>0.5x</td></tr>
+                <tr><td>Session moved too far from open / PDC</td><td>0.5x session move factor</td></tr>
+            </table>
+
+            <h4>Trending / High-Conviction Conditions → Full Quantity</h4>
+            <table>
+                <tr><th>Condition</th><th>Effect</th></tr>
+                <tr><td>Weekly + daily trend aligned with breakout</td><td>HPT (1.0x qty)</td></tr>
+                <tr><td>Breakout closes decisively outside OR</td><td>No probability downgrade</td></tr>
+                <tr><td>Close near 20 EMA (not overextended)</td><td>EMA distance filter passes</td></tr>
+                <tr><td>Reasonable distance from breakout level</td><td>Not flagged as large candle</td></tr>
+                <tr><td>VWAP/ATP confirms direction</td><td>Direction filter passes</td></tr>
+            </table>
+
+            <h4>Pure Chop / Overextended → Skip Entirely</h4>
+            <table>
+                <tr><th>Condition</th><th>Reason</th></tr>
+                <tr><td>EV day + breakout inside OR</td><td>Gap day chop — highest risk, no trade</td></tr>
+                <tr><td>Large candle (move &gt; N ATR past level)</td><td>Vertical run, likely reverts</td></tr>
+                <tr><td>Breakout level &gt; 0.5 ATR from 20 EMA</td><td>Level itself is overextended</td></tr>
+                <tr><td>Close &gt; 0.75 ATR from 20 EMA</td><td>Candle ran too far from mean</td></tr>
+                <tr><td>VWAP/ATP wrong side</td><td>No intraday confirmation</td></tr>
+                <tr><td>OR still forming on EV day</td><td>Wait for opening range to lock</td></tr>
+                <tr><td>Small candle (close too near level)</td><td>Weak breakout, unclear conviction</td></tr>
+            </table>
+
+            <h4>The Combined Effect</h4>
+            <p>On a sideways day, multiple filters compound: a counter-trend breakout inside OR with the close far from EMA might get LPT downgrade (×0.25), session move halving (×0.5), and a level factor (×0.75) — final size becomes a small fraction of base, or the trade gets skipped entirely. On a clean trending day, a weekly+daily aligned breakout with a tight candle close near EMA passes every filter at full HPT sizing.</p>
+
+            <p>You don't need to manually decide "is this a chop day?" The filters look at OR position, trend alignment, EMA distance, candle structure, session move, and gap classification independently — and the qty stack multiplies the results. Conviction signals get full size; weak signals get either reduced size or no trade.</p>
+        </div>
+    </div>
+
     </div><!-- /tab-strategy -->
 
     <!-- OPEN CLASSIFICATION -->
@@ -301,6 +346,7 @@
                 <li>All EV reversals get <strong>half qty</strong> (counter daily trend)</li>
                 <li>Level factors (R3/S3, R4/S4) still apply and stack with reversal half</li>
                 <li>Price inside OR range on EV day = <strong>trade skipped</strong></li>
+                <li>Price inside OR range on IV/OV day = <strong>probability downgraded to LPT</strong> (still trading in range — weak breakout)</li>
                 <li>OR still forming = <strong>trade skipped</strong></li>
             </ul>
         </div>
@@ -327,7 +373,8 @@
             <h4>Impact on Trading</h4>
             <table>
                 <tr><th>Day Type</th><th>OR Impact</th></tr>
-                <tr><td><span class="badge-example bg">IV</span> / <span class="badge-example by">OV</span></td><td>OR is <strong>informational only</strong> — no trade impact</td></tr>
+                <tr><td><span class="badge-example bg">IV</span> / <span class="badge-example by">OV</span> + breakout outside OR</td><td>Normal trade — probability unchanged</td></tr>
+                <tr><td><span class="badge-example bg">IV</span> / <span class="badge-example by">OV</span> + breakout inside OR</td><td><strong>Probability downgraded to LPT</strong> — close still inside opening range, weak breakout (still trading in range)</td></tr>
                 <tr><td><span class="badge-example br">EV</span> + OR aligned</td><td>Trend trade — full qty, normal targets</td></tr>
                 <tr><td><span class="badge-example br">EV</span> + OR counter</td><td>Mean-reversion trade — half qty, closer targets</td></tr>
                 <tr><td><span class="badge-example br">EV</span> + inside OR</td><td><strong>Skip</strong> — no trade</td></tr>
@@ -389,6 +436,14 @@
             </table>
 
             <p>Each category is independently toggleable in Settings. If HPT is disabled, no HPT signals fire.</p>
+
+            <h4>Probability Downgrades</h4>
+            <p>An otherwise HPT/MPT trade can be downgraded to LPT after the initial classification:</p>
+            <table>
+                <tr><th>Condition</th><th>Effect</th><th>Reason</th></tr>
+                <tr><td><span class="badge-example bg">IV</span> / <span class="badge-example by">OV</span> day + breakout candle close inside OR range</td><td>HPT/MPT → <span class="badge-example br">LPT</span></td><td>Still trading inside opening range — weak breakout, price hasn't broken out of the day's initial range</td></tr>
+            </table>
+            <p>Applies uniformly to all setup types (CPR, R1-R4, S1-S4, magnets, DH/DL). DH/DL setups never trip this rule because their close always exceeds OR high/low by definition.</p>
         </div>
     </div>
 

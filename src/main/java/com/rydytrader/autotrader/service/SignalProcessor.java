@@ -187,6 +187,22 @@ public class SignalProcessor {
                     eventService.log("[INFO] " + symbol + " " + setup + " EV " + (gapUp ? "up" : "down")
                         + " — OR " + (orBullish ? "Bullish" : "Bearish") + " aligned, proceeding");
                 }
+            } else {
+                // ── IV/OV day: if breakout candle is inside OR range, downgrade prob to LPT ──
+                // (still trading inside the opening range — weak breakout)
+                if (candleAggregator.isOpeningRangeLocked(symbol)) {
+                    double orHigh = candleAggregator.getOpeningRangeHigh(symbol);
+                    double orLow  = candleAggregator.getOpeningRangeLow(symbol);
+                    if (orHigh > 0 && orLow > 0 && close >= orLow && close <= orHigh) {
+                        if ("HPT".equals(probability) || "MPT".equals(probability)) {
+                            String oldProb = probability;
+                            probability = "LPT";
+                            eventService.log("[INFO] " + symbol + " " + setup
+                                + " probability downgraded " + oldProb + " → LPT — close " + fmt(close)
+                                + " inside OR range (H:" + fmt(orHigh) + " L:" + fmt(orLow) + ") — still trading in range");
+                        }
+                    }
+                }
             }
         }
 

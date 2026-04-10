@@ -968,6 +968,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     // ── Split target T1 fill: partial exit, SL moves to breakeven ──
     private void handleT1Fill(OcoContext ctx, String orderId, double tradedPrice) {
         String symbol = ctx.symbol;
+        recentlyHandled.put(symbol, System.currentTimeMillis());
         log.info("[OrderEventSvc] T1 fill for {} — cancelling SL, placing breakeven SL", symbol);
 
         double exitPrice = tradedPrice > 0 ? tradedPrice : orderService.getFilledPriceByOrderId(orderId);
@@ -1023,6 +1024,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             OcoContext newSlCtx = new OcoContext(symbol, remainingQty, ctx.totalQuantity, ctx.positionSide, exitSide,
                 null, "SL", ctx.setup, ctx.entryFillPrice);
             newSlCtx.currentPrice = breakevenPrice;
+            newSlCtx.target1OrderId = ctx.target1OrderId; // marker so SL fill routes to handleSplitSlFill
             newSlCtx.target2OrderId = ctx.target2OrderId;
             newSlCtx.slOrderId = newSlId;
             newSlCtx.t1Filled = true;
@@ -1187,6 +1189,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
 
     /** Detect manual SL/Target price modifications on pending orders. */
     private void handleModification(String orderId, String symbol, double stopPrice, double limitPrice) {
+        if (orderId == null) return;
         OcoContext oco = trackedOcoOrders.get(orderId);
         if (oco == null || oco.handled) return;
 
