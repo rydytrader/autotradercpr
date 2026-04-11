@@ -159,7 +159,7 @@
                 <tr><td>Inside OR range on IV/OV day</td><td>Probability downgraded to LPT (~0.25x qty)</td></tr>
                 <tr><td>Counter weekly/daily trend</td><td>LPT (~0.25x qty)</td></tr>
                 <tr><td>Far levels (R3/S3, R4/S4)</td><td>0.5x – 0.75x level factor</td></tr>
-                <tr><td>OV magnet (mean reversion to value)</td><td>0.5x</td></tr>
+                <tr><td>Magnet trade (mean reversion to value)</td><td>0.5x (LPT — fires on all day types)</td></tr>
                 <tr><td>EV reversal (counter-gap mean reversion)</td><td>0.5x</td></tr>
                 <tr><td>Session moved too far from open / PDC</td><td>0.5x session move factor</td></tr>
             </table>
@@ -204,8 +204,8 @@
 
             <table>
                 <tr><th>Class</th><th>Condition</th><th>Meaning</th><th>Trading Impact</th></tr>
-                <tr><td><span class="badge-example bg">IV</span></td><td>1st candle close between S1/PDL and R1/PDH</td><td>Inside Value — stock opened within the core trading range</td><td>All breakouts active. Magnet trades at full qty.</td></tr>
-                <tr><td><span class="badge-example by">OV</span></td><td>1st candle close above R1/PDH or below S1/PDL (but not R2/S2)</td><td>Outside Value — stock opened with momentum beyond value area</td><td>All breakouts active. Magnet trades at <strong>half qty</strong> (momentum may resist).</td></tr>
+                <tr><td><span class="badge-example bg">IV</span></td><td>1st candle close between S1/PDL and R1/PDH</td><td>Inside Value — stock opened within the core trading range</td><td>All breakouts active. Magnet trades fire at half qty (LPT).</td></tr>
+                <tr><td><span class="badge-example by">OV</span></td><td>1st candle close above R1/PDH or below S1/PDL (but not R2/S2)</td><td>Outside Value — stock opened with momentum beyond value area</td><td>All breakouts active. Magnet trades fire at half qty (LPT).</td></tr>
                 <tr><td><span class="badge-example br">EV</span></td><td>1st candle close above R2 or below S2</td><td>Extended Value — significant gap or move at open</td><td>Opening Range (OR) filter activates. Only OR-aligned or reversal trades.</td></tr>
             </table>
 
@@ -295,19 +295,18 @@
     <div class="section-card help-section fade-in" style="margin-bottom:16px;">
         <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-blue);"></div> Magnet Trades (Mean Reversion)</div></div>
         <div class="help-body">
-            <p>Magnet trades are mean-reversion setups where price is pulled back toward the CPR (the "magnet"). Active on IV and OV days.</p>
+            <p>Magnet trades are mean-reversion setups where price is pulled back toward the CPR (the "magnet"). Active on <strong>all day types — EV, IV, and OV</strong>.</p>
+
+            <p><strong>Strategy: "Buy the dips, sell the rips."</strong> When a stock in a bullish bias dips down to S1/PDL, you buy that pullback expecting it to bounce back toward CPR. When a stock in a bearish bias rallies up to R1/PDH, you sell that rip expecting it to fade back to CPR. The CPR acts as the magnet that price gravitates toward in both directions.</p>
 
             <table>
                 <tr><th>Setup</th><th>Trigger</th><th>Target</th><th>Logic</th></tr>
-                <tr><td>BUY_ABOVE_S1_PDL</td><td>Close above S1 and PDL (from below)</td><td>CPR (min TC/BC)</td><td>Price pulled back from below value, bouncing toward CPR</td></tr>
-                <tr><td>SELL_BELOW_R1_PDH</td><td>Close below R1 and PDH (from above)</td><td>CPR (max TC/BC)</td><td>Price pulled back from above value, falling toward CPR</td></tr>
+                <tr><td>BUY_ABOVE_S1_PDL</td><td>Close above S1 and PDL (from below)</td><td>CPR (min TC/BC)</td><td>Buy the dip — bouncing toward CPR</td></tr>
+                <tr><td>SELL_BELOW_R1_PDH</td><td>Close below R1 and PDH (from above)</td><td>CPR (max TC/BC)</td><td>Sell the rip — fading toward CPR</td></tr>
             </table>
 
             <h4>Quantity Rules</h4>
-            <ul>
-                <li><span class="badge-example bg">IV</span> magnet — <strong>full qty</strong> (stock within value, high conviction)</li>
-                <li><span class="badge-example by">OV</span> magnet — <strong>half qty</strong> (stock has momentum, magnet may fail)</li>
-            </ul>
+            <p>All magnets are classified as <span class="badge-example by">LPT</span> regardless of day type. Quantity is reduced to <strong>half size</strong> (LPT factor 0.5x) because the trade is <strong>misaligned with the prevailing trend</strong> — you're fading a move rather than riding it. The strict HPT rule requires weekly + daily + breakout direction all aligned, which a counter-trend dip-buy or rip-sell can never satisfy. Half size reflects the lower conviction of trading against the dominant bias.</p>
 
             <h4>Guard</h4>
             <p>Close must be between S1/R1 and CPR — the target (CPR) must still be ahead, not already passed.</p>
@@ -343,8 +342,10 @@
 
             <h4>Rules</h4>
             <ul>
-                <li>All EV reversals get <strong>half qty</strong> (counter daily trend)</li>
+                <li>R2+/S2+ mean-reversion setups fire <strong>only on EV days</strong> — rejected on IV/OV days</li>
+                <li>All EV reversals get <strong>half qty</strong> (LPT, counter daily trend)</li>
                 <li>Level factors (R3/S3, R4/S4) still apply and stack with reversal half</li>
+                <li>Trade direction must match OR break direction — counter-direction trades skipped</li>
                 <li>Price inside OR range on EV day = <strong>trade skipped</strong></li>
                 <li>Price inside OR range on IV/OV day = <strong>probability downgraded to LPT</strong> (still trading in range — weak breakout)</li>
                 <li>OR still forming = <strong>trade skipped</strong></li>
@@ -375,8 +376,11 @@
                 <tr><th>Day Type</th><th>OR Impact</th></tr>
                 <tr><td><span class="badge-example bg">IV</span> / <span class="badge-example by">OV</span> + breakout outside OR</td><td>Normal trade — probability unchanged</td></tr>
                 <tr><td><span class="badge-example bg">IV</span> / <span class="badge-example by">OV</span> + breakout inside OR</td><td><strong>Probability downgraded to LPT</strong> — close still inside opening range, weak breakout (still trading in range)</td></tr>
-                <tr><td><span class="badge-example br">EV</span> + OR aligned</td><td>Trend trade — full qty, normal targets</td></tr>
-                <tr><td><span class="badge-example br">EV</span> + OR counter</td><td>Mean-reversion trade — half qty, closer targets</td></tr>
+                <tr><td><span class="badge-example br">EV up</span> + OR breaks UP</td><td>Trend continuation — buy setups fire normally</td></tr>
+                <tr><td><span class="badge-example br">EV up</span> + OR breaks DOWN</td><td>Gap fade mean-reversion — sell setups fire as reversal (LPT half qty, reversal targets)</td></tr>
+                <tr><td><span class="badge-example br">EV down</span> + OR breaks DOWN</td><td>Trend continuation — sell setups fire normally</td></tr>
+                <tr><td><span class="badge-example br">EV down</span> + OR breaks UP</td><td>Gap fade mean-reversion — buy setups fire as reversal (LPT half qty, reversal targets)</td></tr>
+                <tr><td><span class="badge-example br">EV</span> + counter direction</td><td><strong>Skip</strong> — trade direction opposes OR break</td></tr>
                 <tr><td><span class="badge-example br">EV</span> + inside OR</td><td><strong>Skip</strong> — no trade</td></tr>
                 <tr><td><span class="badge-example br">EV</span> + OR forming</td><td><strong>Skip</strong> — wait for OR to lock</td></tr>
             </table>

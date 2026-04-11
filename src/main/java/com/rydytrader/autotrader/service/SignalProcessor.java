@@ -163,17 +163,31 @@ public class SignalProcessor {
                 double orLow  = candleAggregator.getOpeningRangeLow(symbol);
                 boolean orBullish = close > orHigh;
                 boolean orBearish = close < orLow;
-                boolean aligned = (isBuy && orBullish) || (!isBuy && orBearish);
-                boolean counter = (isBuy && orBearish) || (!isBuy && orBullish);
 
-                if (!aligned && !counter) {
+                if (!orBullish && !orBearish) {
                     // Inside OR range — skip
                     return ProcessedSignal.rejected(setup, symbol,
                         "EV " + (gapUp ? "up" : "down") + " (1st close " + fmt(firstClose) + ") — price inside OR range"
                         + " (H:" + fmt(orHigh) + " L:" + fmt(orLow) + ") — skipped");
                 }
-                if (counter) {
-                    // Counter-OR on EV day = mean-reversion trade — always LPT (counter-daily by design)
+
+                // Trade direction must match OR break direction.
+                // Gap up + OR breaks up = continuation (buy trend) — buy setups OK, sell setups rejected.
+                // Gap up + OR breaks down = reversal (sell mean-reversion) — sell setups OK, buy setups rejected.
+                // Gap down + OR breaks down = continuation (sell trend) — sell setups OK, buy setups rejected.
+                // Gap down + OR breaks up = reversal (buy mean-reversion) — buy setups OK, sell setups rejected.
+                boolean directionMatchesOR = (isBuy && orBullish) || (!isBuy && orBearish);
+                if (!directionMatchesOR) {
+                    return ProcessedSignal.rejected(setup, symbol,
+                        "EV " + (gapUp ? "up" : "down") + " — trade direction opposes OR break ("
+                        + (orBullish ? "OR Bullish" : "OR Bearish") + ") — skipped");
+                }
+
+                // Gap-fade scenarios fire as mean-reversion (reversal targets, LPT):
+                //   gap up + sell aligned with OR bearish = sell the rip (reversal of gap)
+                //   gap down + buy aligned with OR bullish = buy the dip (reversal of gap)
+                boolean isGapFade = (gapUp && !isBuy) || (gapDown && isBuy);
+                if (isGapFade) {
                     isReversal = true;
                     String oldProb = probability;
                     probability = "LPT";
@@ -181,12 +195,17 @@ public class SignalProcessor {
                         eventService.log("[INFO] " + symbol + " " + setup + " probability set to LPT for EV reversal (was " + oldProb + ")");
                     }
                     eventService.log("[INFO] " + symbol + " " + setup + " EV " + (gapUp ? "up" : "down")
-                        + " — OR " + (orBullish ? "Bullish" : "Bearish") + " reversal, mean-reversion targets");
+                        + " — OR " + (orBullish ? "Bullish" : "Bearish") + " gap fade, mean-reversion targets");
                 } else {
                     eventService.log("[INFO] " + symbol + " " + setup + " EV " + (gapUp ? "up" : "down")
-                        + " — OR " + (orBullish ? "Bullish" : "Bearish") + " aligned, proceeding");
+                        + " — OR " + (orBullish ? "Bullish" : "Bearish") + " continuation, proceeding");
                 }
             } else {
+                // ── IV/OV day: mean-reversion setups not allowed (only fire on EV days) ──
+                if (isMeanReversionSetup(setup)) {
+                    return ProcessedSignal.rejected(setup, symbol,
+                        "Mean-reversion setup only allowed on EV days (gap up/down) — today is IV/OV");
+                }
                 // ── IV/OV day: if breakout candle is inside OR range, downgrade prob to LPT ──
                 // (still trading inside the opening range — weak breakout)
                 if (candleAggregator.isOpeningRangeLocked(symbol)) {
@@ -439,6 +458,14 @@ public class SignalProcessor {
             case "SELL_BELOW_S3"      -> new double[]{ s4, s4 };
             case "SELL_BELOW_S4"      -> { double s5 = s4 - (s3 - s4); yield new double[]{ s5, s5 }; }
             case "SELL_BELOW_R1_PDH"  -> new double[]{ Math.max(tc, bc), Math.max(s1, pl) };
+            // Mean-reversion fades from above R-levels (gap-up reversal pattern, also valid intraday)
+            case "SELL_BELOW_R4"      -> new double[]{ r3, r3 };
+            case "SELL_BELOW_R3"      -> new double[]{ r2, r2 };
+            case "SELL_BELOW_R2"      -> new double[]{ Math.max(r1, ph), Math.max(r1, ph) };
+            // Mean-reversion bounces from below S-levels (gap-down reversal pattern, also valid intraday)
+            case "BUY_ABOVE_S4"       -> new double[]{ s3, s3 };
+            case "BUY_ABOVE_S3"       -> new double[]{ s2, s2 };
+            case "BUY_ABOVE_S2"       -> new double[]{ Math.min(s1, pl), Math.min(s1, pl) };
             case "SELL_BELOW_DL"      -> { yield new double[]{ nextLevelBelow(dayLow, s1, s2, s3, s4, pl, tc, bc), 0 }; }
             default -> new double[]{ 0, 0 };
         };
@@ -495,6 +522,19 @@ public class SignalProcessor {
         };
     }
 
+    /**
+     * R2+/S2+ mean-reversion fades — only valid on EV (gap) days.
+     * Magnets (SELL_BELOW_R1_PDH, BUY_ABOVE_S1_PDL) are excluded — they fire on all day types.
+     */
+    private static boolean isMeanReversionSetup(String setup) {
+        return "SELL_BELOW_R2".equals(setup)
+            || "SELL_BELOW_R3".equals(setup)
+            || "SELL_BELOW_R4".equals(setup)
+            || "BUY_ABOVE_S2".equals(setup)
+            || "BUY_ABOVE_S3".equals(setup)
+            || "BUY_ABOVE_S4".equals(setup);
+    }
+
     // ── Level name for description ──────────────────────────────────────────────
     private static String levelNameForSetup(String setup) {
         return switch (setup) {
@@ -510,6 +550,12 @@ public class SignalProcessor {
             case "SELL_BELOW_S3"     -> "S3";
             case "SELL_BELOW_S4"     -> "S4";
             case "SELL_BELOW_R1_PDH" -> "R1+PDH";
+            case "SELL_BELOW_R2"     -> "R2";
+            case "SELL_BELOW_R3"     -> "R3";
+            case "SELL_BELOW_R4"     -> "R4";
+            case "BUY_ABOVE_S2"      -> "S2";
+            case "BUY_ABOVE_S3"      -> "S3";
+            case "BUY_ABOVE_S4"      -> "S4";
             case "BUY_ABOVE_DH"     -> "Day High";
             case "SELL_BELOW_DL"    -> "Day Low";
             default -> setup;

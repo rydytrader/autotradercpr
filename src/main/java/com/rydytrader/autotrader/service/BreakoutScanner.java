@@ -181,7 +181,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
             String buySetup = detectBuyBreakout(open, high, low, close, levels, atp, broken, fyersSymbol);
             if (buySetup != null) {
-                boolean isMagnet = "BUY_ABOVE_S1_PDL".equals(buySetup);
+                boolean isMagnet = "BUY_ABOVE_S1_PDL".equals(buySetup)
+                    || "BUY_ABOVE_S2".equals(buySetup)
+                    || "BUY_ABOVE_S3".equals(buySetup)
+                    || "BUY_ABOVE_S4".equals(buySetup);
                 String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, true, isMagnet);
                 if (!isProbabilityEnabled(prob)) {
                     eventService.log("[SCANNER] " + buySetup + " for " + fyersSymbol + " — skipped, " + prob + " not enabled");
@@ -232,7 +235,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
             String sellSetup = detectSellBreakout(open, high, low, close, levels, atp, broken, fyersSymbol);
             if (sellSetup != null) {
-                boolean isMagnet = "SELL_BELOW_R1_PDH".equals(sellSetup);
+                boolean isMagnet = "SELL_BELOW_R1_PDH".equals(sellSetup)
+                    || "SELL_BELOW_R2".equals(sellSetup)
+                    || "SELL_BELOW_R3".equals(sellSetup)
+                    || "SELL_BELOW_R4".equals(sellSetup);
                 String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, false, isMagnet);
                 if (!isProbabilityEnabled(prob)) {
                     eventService.log("[SCANNER] " + sellSetup + " for " + fyersSymbol + " — skipped, " + prob + " not enabled");
@@ -320,6 +326,18 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (close > s1pl && close < cprBot
                 && ((open < s1 || open < pl || low < s1 || low < pl) || (low < Math.min(s1, pl) && open > Math.min(s1, pl)))
                 && !broken.contains("BUY_ABOVE_S1_PDL")) return "BUY_ABOVE_S1_PDL";
+        // Mean-reversion bounces from below S-levels (gap-down reversals).
+        // Pattern: candle opened below the level (price was extended down) and closed above it.
+        double s2 = levels.getS2(), s3 = levels.getS3(), s4 = levels.getS4();
+        if (open <= s4 && close > s4 && !broken.contains("BUY_ABOVE_S4")) {
+            if (!riskSettings.isEnableR4S4()) { eventService.log("[SCANNER] BUY_ABOVE_S4 for " + levels.getSymbol() + " — skipped, R4/S4 disabled"); }
+            else return "BUY_ABOVE_S4";
+        }
+        if (open <= s3 && close > s3 && !broken.contains("BUY_ABOVE_S3")) {
+            if (!riskSettings.isEnableR3S3()) { eventService.log("[SCANNER] BUY_ABOVE_S3 for " + levels.getSymbol() + " — skipped, R3/S3 disabled"); }
+            else return "BUY_ABOVE_S3";
+        }
+        if (open <= s2 && close > s2 && !broken.contains("BUY_ABOVE_S2")) return "BUY_ABOVE_S2";
 
         // Day High breakout (lowest priority — only after OR locks)
         double dayHigh = marketDataService.getDayHigh(fyersSymbol);
@@ -367,6 +385,18 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (close < s2
                 && ((open > s2 || high > s2) || (high > s2 && open < s2))
                 && !broken.contains("SELL_BELOW_S2")) return "SELL_BELOW_S2";
+        // Mean-reversion fades from above R-levels (gap-up reversals).
+        // Pattern: candle opened above the level (price was extended) and closed below it.
+        double r2 = levels.getR2(), r3 = levels.getR3(), r4 = levels.getR4();
+        if (open >= r4 && close < r4 && !broken.contains("SELL_BELOW_R4")) {
+            if (!riskSettings.isEnableR4S4()) { eventService.log("[SCANNER] SELL_BELOW_R4 for " + levels.getSymbol() + " — skipped, R4/S4 disabled"); }
+            else return "SELL_BELOW_R4";
+        }
+        if (open >= r3 && close < r3 && !broken.contains("SELL_BELOW_R3")) {
+            if (!riskSettings.isEnableR3S3()) { eventService.log("[SCANNER] SELL_BELOW_R3 for " + levels.getSymbol() + " — skipped, R3/S3 disabled"); }
+            else return "SELL_BELOW_R3";
+        }
+        if (open >= r2 && close < r2 && !broken.contains("SELL_BELOW_R2")) return "SELL_BELOW_R2";
         if (close < s1 && close < pl
                 && ((open > s1 || open > pl || high > s1 || high > pl) || (high > Math.max(s1, pl) && open < Math.max(s1, pl)))
                 && !broken.contains("SELL_BELOW_S1_PDL")) return "SELL_BELOW_S1_PDL";
@@ -599,6 +629,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             case "SELL_BELOW_S3"     -> levels.getS3();
             case "SELL_BELOW_S4"     -> levels.getS4();
             case "SELL_BELOW_R1_PDH" -> Math.min(levels.getR1(), levels.getPh());
+            case "SELL_BELOW_R2"     -> levels.getR2();
+            case "SELL_BELOW_R3"     -> levels.getR3();
+            case "SELL_BELOW_R4"     -> levels.getR4();
+            case "BUY_ABOVE_S2"      -> levels.getS2();
+            case "BUY_ABOVE_S3"      -> levels.getS3();
+            case "BUY_ABOVE_S4"      -> levels.getS4();
             case "SELL_BELOW_DL"     -> marketDataService.getDayLow(fyersSymbol);
             default -> 0;
         };
