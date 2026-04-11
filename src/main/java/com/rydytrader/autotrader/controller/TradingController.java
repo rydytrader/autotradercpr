@@ -676,9 +676,9 @@ public class TradingController {
         }
         result.put("timeBreakdown", timeMap);
 
-        // Probability breakdown — HPT / MPT / LPT
+        // Probability breakdown — HPT / LPT
         Map<String, Object> probMap = new java.util.LinkedHashMap<>();
-        for (String p : new String[]{"HPT","MPT","LPT"}) {
+        for (String p : new String[]{"HPT","LPT"}) {
             final String pf2 = p;
             var pt = trades.stream().filter(t -> pf2.equals(t.getProbability())).collect(java.util.stream.Collectors.toList());
             if (pt.isEmpty()) continue;

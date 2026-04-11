@@ -23,7 +23,7 @@ public class EventService {
 
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
-    private static final String LOG_FILE = "../store/event-log.txt";
+    private static final String LOG_FILE = "../store/events/event-log.txt";
 
     public EventService(TelegramService telegramService) {
         this.telegramService = telegramService;
@@ -98,7 +98,7 @@ public class EventService {
         } catch (IOException e) { log.error("Error creating log directory", e); }
     }
 
-    private static final String LOG_DATE_FILE = "../store/event-log.date";
+    private static final String LOG_DATE_FILE = "../store/events/event-log.date";
 
     /** Clear log if the recorded trading date is not today. */
     private void clearIfStale() {

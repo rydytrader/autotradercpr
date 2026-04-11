@@ -52,6 +52,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     @org.springframework.context.annotation.Lazy
     private TradingController tradingController;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private IndexTrendService indexTrendService;
+
     // Track which levels have been broken today per symbol (prevents re-fire)
     private final ConcurrentHashMap<String, Set<String>> brokenLevels = new ConcurrentHashMap<>();
 
@@ -185,6 +189,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 }
                 // EMA distance filter
                 if (isEmaFilterBlocked(fyersSymbol, buySetup, close, levels, atr)) return;
+                // NIFTY index alignment filter — null = hard skip, otherwise possibly downgraded prob
+                prob = applyIndexAlignmentDowngrade(fyersSymbol, buySetup, prob, true);
+                if (prob == null) return;  // hard skip mode
+                if (!isProbabilityEnabled(prob)) {
+                    eventService.log("[SCANNER] " + buySetup + " for " + fyersSymbol + " — skipped after NIFTY downgrade, " + prob + " not enabled");
+                    return;
+                }
                 // Log co-occurrence: CPR breakout + Day High break on same candle
                 if (!"BUY_ABOVE_DH".equals(buySetup)) {
                     double dh = marketDataService.getDayHigh(fyersSymbol);
@@ -229,6 +240,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 }
                 // EMA distance filter
                 if (isEmaFilterBlocked(fyersSymbol, sellSetup, close, levels, atr)) return;
+                // NIFTY index alignment filter — null = hard skip, otherwise possibly downgraded prob
+                prob = applyIndexAlignmentDowngrade(fyersSymbol, sellSetup, prob, false);
+                if (prob == null) return;  // hard skip mode
+                if (!isProbabilityEnabled(prob)) {
+                    eventService.log("[SCANNER] " + sellSetup + " for " + fyersSymbol + " — skipped after NIFTY downgrade, " + prob + " not enabled");
+                    return;
+                }
                 // Log co-occurrence: CPR breakout + Day Low break on same candle
                 if (!"SELL_BELOW_DL".equals(sellSetup)) {
                     double dl = marketDataService.getDayLow(fyersSymbol);
@@ -445,10 +463,52 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         }
     }
 
+    /**
+     * NIFTY index alignment filter. Two modes (controlled by riskSettings.isIndexAlignmentHardSkip):
+     *
+     *   Soft mode (default): downgrades HPT trades to LPT when trade direction opposes NIFTY.
+     *                        LPT trades pass through unchanged.
+     *   Hard skip mode:      returns null (signal to caller: skip the trade entirely) when ANY
+     *                        trade (HPT or LPT) opposes NIFTY. Skips magnets/reversals too if
+     *                        they happen to be in the opposition direction — by design.
+     *
+     * Returns the (possibly modified) probability string, or null to signal "skip this trade".
+     */
+    private String applyIndexAlignmentDowngrade(String fyersSymbol, String setup, String probability, boolean isBuy) {
+        if (!riskSettings.isEnableIndexAlignment()) return probability;
+        if (indexTrendService == null) return probability;
+        try {
+            com.rydytrader.autotrader.dto.IndexTrend nifty = indexTrendService.getNiftyTrend();
+            if (!nifty.isDataAvailable()) return probability;
+            String state = nifty.getState();
+            boolean opposed = isBuy
+                ? ("BEARISH".equals(state) || "STRONG_BEARISH".equals(state))
+                : ("BULLISH".equals(state) || "STRONG_BULLISH".equals(state));
+            if (!opposed) return probability;
+
+            // Opposed — apply either hard skip or soft downgrade
+            if (riskSettings.isIndexAlignmentHardSkip()) {
+                eventService.log("[SCANNER] " + fyersSymbol + " " + setup
+                    + " SKIPPED — NIFTY " + state + " (score " + nifty.getTotalScore() + ") opposes "
+                    + (isBuy ? "buy" : "sell") + " [hard skip mode]");
+                return null;  // signal: skip the trade
+            }
+            // Soft mode — only downgrades HPT to LPT; leaves LPT as LPT
+            if ("HPT".equals(probability)) {
+                eventService.log("[SCANNER] " + fyersSymbol + " " + setup
+                    + " HPT → LPT — NIFTY " + state + " (score " + nifty.getTotalScore() + ") opposes "
+                    + (isBuy ? "buy" : "sell"));
+                return "LPT";
+            }
+        } catch (Exception e) {
+            log.warn("[BreakoutScanner] Index alignment check failed for {}: {}", fyersSymbol, e.getMessage());
+        }
+        return probability;
+    }
+
     private boolean isProbabilityEnabled(String prob) {
         return switch (prob) {
             case "HPT" -> riskSettings.isEnableHpt();
-            case "MPT" -> riskSettings.isEnableMpt();
             case "LPT" -> riskSettings.isEnableLpt();
             default -> false;
         };

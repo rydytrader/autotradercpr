@@ -173,13 +173,12 @@ public class SignalProcessor {
                         + " (H:" + fmt(orHigh) + " L:" + fmt(orLow) + ") — skipped");
                 }
                 if (counter) {
-                    // Counter-OR on EV day = mean-reversion trade
+                    // Counter-OR on EV day = mean-reversion trade — always LPT (counter-daily by design)
                     isReversal = true;
-                    // Recalculate probability: reversals use weekly-only (like magnets — counter-daily is expected)
                     String oldProb = probability;
-                    probability = weeklyCprService.getProbabilityForDirection(symbol, isBuy, true);
+                    probability = "LPT";
                     if (!oldProb.equals(probability)) {
-                        eventService.log("[INFO] " + symbol + " " + setup + " probability recalculated for reversal: " + oldProb + " → " + probability);
+                        eventService.log("[INFO] " + symbol + " " + setup + " probability set to LPT for EV reversal (was " + oldProb + ")");
                     }
                     eventService.log("[INFO] " + symbol + " " + setup + " EV " + (gapUp ? "up" : "down")
                         + " — OR " + (orBullish ? "Bullish" : "Bearish") + " reversal, mean-reversion targets");
@@ -194,11 +193,10 @@ public class SignalProcessor {
                     double orHigh = candleAggregator.getOpeningRangeHigh(symbol);
                     double orLow  = candleAggregator.getOpeningRangeLow(symbol);
                     if (orHigh > 0 && orLow > 0 && close >= orLow && close <= orHigh) {
-                        if ("HPT".equals(probability) || "MPT".equals(probability)) {
-                            String oldProb = probability;
+                        if ("HPT".equals(probability)) {
                             probability = "LPT";
                             eventService.log("[INFO] " + symbol + " " + setup
-                                + " probability downgraded " + oldProb + " → LPT — close " + fmt(close)
+                                + " probability downgraded HPT → LPT — close " + fmt(close)
                                 + " inside OR range (H:" + fmt(orHigh) + " L:" + fmt(orLow) + ") — still trading in range");
                         }
                     }
@@ -278,15 +276,10 @@ public class SignalProcessor {
             }
         }
 
-        // ── 4i2. Probability-based qty adjustment (MPT = half, LPT = quarter, configurable) ──
-        if ("MPT".equals(probability)) {
-            double factor = riskSettings.getMptQtyFactor();
-            int reduced = Math.max(2, ((int)(qty * factor) / 2) * 2); // apply factor, round to even
-            eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (MPT ×" + factor + "): " + qty + " -> " + reduced);
-            qty = reduced;
-        } else if ("LPT".equals(probability)) {
+        // ── 4i2. Probability-based qty adjustment (LPT = configurable, default 0.50) ──
+        if ("LPT".equals(probability)) {
             double factor = riskSettings.getLptQtyFactor();
-            int reduced = Math.max(2, ((int)(qty * factor) / 2) * 2);
+            int reduced = Math.max(2, ((int)(qty * factor) / 2) * 2); // apply factor, round to even
             eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (LPT ×" + factor + "): " + qty + " -> " + reduced);
             qty = reduced;
         }

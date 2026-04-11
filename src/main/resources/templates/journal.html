@@ -395,6 +395,7 @@
                 const lbl = document.getElementById('connectionStatus');
                 dot.className = 'status-dot';
                 if (data.status.includes('WS CONNECTED')) { dot.classList.add('connected'); lbl.textContent = data.status; lbl.style.color = 'var(--accent-green)'; }
+                else if (data.status.includes('CONNECTING') || data.status.includes('RECONNECTING')) { dot.classList.add('syncing'); lbl.textContent = data.status; lbl.style.color = 'var(--accent-yellow)'; }
                 else if (data.status === 'POLLING' || data.status === 'SYNCING') { dot.classList.add('syncing'); lbl.textContent = data.status; lbl.style.color = 'var(--accent-yellow)'; }
                 else                                { dot.classList.add('disconnected'); lbl.textContent = 'DISCONNECTED'; lbl.style.color = 'var(--accent-red)'; }
             })
@@ -603,7 +604,7 @@
 
         // Probability breakdown
         const probb = d.probabilityBreakdown || {};
-        const pbadge = p => p==='HPT' ? '<span class="b-hpt">HPT</span>' : p==='MPT' ? '<span class="b-mpt">MPT</span>' : '<span class="b-lpt">LPT</span>';
+        const pbadge = p => p==='HPT' ? '<span class="b-hpt">HPT</span>' : '<span class="b-lpt">LPT</span>';
         g('probTable').innerHTML = Object.entries(probb).filter(([,v])=>v.count>0).map(([p,s]) =>
             `<tr><td>${pbadge(p)}</td><td class="tr">${s.count}</td><td class="tr"><span class="${s.winRate>=50?'pos':'neg'}">${s.winRate}%</span></td><td class="tr">${s.profitFactor}</td><td class="tr"><span class="${s.avgPnl>=0?'pos':'neg'}">${fmtPnl(s.avgPnl)}</span></td><td class="tr"><span class="${s.pnl>=0?'pos':'neg'}">${fmtPnl(s.pnl)}</span></td></tr>`
         ).join('') || '<tr><td colspan="6"><div class="empty-state" style="padding:20px">No data</div></td></tr>';

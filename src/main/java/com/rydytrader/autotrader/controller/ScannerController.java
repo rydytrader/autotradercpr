@@ -238,7 +238,6 @@ public class ScannerController {
         status.put("watchlistCount", marketDataService.getWatchlist().size());
         status.put("atrLoaded", atrService.getAllAtr().size());
         status.put("enableHpt", riskSettings.isEnableHpt());
-        status.put("enableMpt", riskSettings.isEnableMpt());
         status.put("enableLpt", riskSettings.isEnableLpt());
         status.put("enableAtp", riskSettings.isEnableAtpCheck());
         status.put("timeframe", riskSettings.getScannerTimeframe());

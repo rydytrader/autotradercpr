@@ -1487,6 +1487,8 @@ public class PollingService {
         if (orderWs && !dataWs) return "RECONNECTING (Data)";
         if (!orderWs && dataWs) return "RECONNECTING (Order)";
         if (marketDataService.isReconnecting() || orderEventService.isReconnecting()) return "RECONNECTING";
+        // Initial post-login window: both WS clients running but not yet connected and no failed attempts yet.
+        if (marketDataService.isConnecting() || orderEventService.isConnecting()) return "CONNECTING";
         return connectionStatus; // POLLING / SYNCING / DISCONNECTED
     }
 

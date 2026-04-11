@@ -325,7 +325,7 @@
         <div>2. Capital cap</div>
         <div>3. Extreme level (R2+ ÷2)</div>
         <div>4. Session move % (÷2 if exceeded)</div>
-        <div>5. Probability (HPT 1x | MPT 0.5x | LPT 0.25x)</div>
+        <div>5. Probability (HPT 1x | LPT 0.5x default)</div>
         <div>6. Level factor (R3/S3 0.75x | R4/S4 0.5x)</div>
         <div>7. Mean-reversion (÷2 for EV reversals + OV magnets)</div>
         <div style="margin-top:4px; color:var(--text-muted);">Min qty = 2 (even). Each step multiplies running qty.</div>
@@ -347,10 +347,19 @@
         fetch('/status', {signal:ctrl.signal}).then(r => { clearTimeout(tid); return r.json(); }).then(d => {
             const dot = document.getElementById('statusDot');
             const label = document.getElementById('connectionStatus');
-            if (d.status && d.status.toLowerCase().includes('connect')) {
+            var status = d.status || 'DISCONNECTED';
+            if (status.includes('WS CONNECTED')) {
                 dot.className = 'status-dot connected';
-                label.textContent = d.status;
+                label.textContent = status;
                 label.style.color = 'var(--accent-green)';
+            } else if (status.includes('CONNECTING') || status.includes('RECONNECTING')) {
+                dot.className = 'status-dot syncing';
+                label.textContent = status;
+                label.style.color = 'var(--accent-yellow)';
+            } else if (status === 'POLLING' || status === 'SYNCING') {
+                dot.className = 'status-dot syncing';
+                label.textContent = status;
+                label.style.color = 'var(--accent-yellow)';
             } else {
                 dot.className = 'status-dot disconnected';
                 label.textContent = 'DISCONNECTED';

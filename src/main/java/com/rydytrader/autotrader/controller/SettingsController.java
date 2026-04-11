@@ -75,6 +75,12 @@ public class SettingsController {
         result.put("splitMinDistanceAtr", riskSettings.getSplitMinDistanceAtr());
         result.put("enableTargetTolerance", riskSettings.isEnableTargetTolerance());
         result.put("targetToleranceAtr", riskSettings.getTargetToleranceAtr());
+        result.put("enableIndexAlignment", riskSettings.isEnableIndexAlignment());
+        result.put("indexAlignmentHardSkip", riskSettings.isIndexAlignmentHardSkip());
+        result.put("indexBullishThreshold", riskSettings.getIndexBullishThreshold());
+        result.put("indexStrongBullishThreshold", riskSettings.getIndexStrongBullishThreshold());
+        result.put("indexBearishThreshold", riskSettings.getIndexBearishThreshold());
+        result.put("indexStrongBearishThreshold", riskSettings.getIndexStrongBearishThreshold());
         result.put("enableSmallCandleFilter", riskSettings.isEnableSmallCandleFilter(effectiveMode));
         result.put("smallCandleAtrThreshold", riskSettings.getSmallCandleAtrThreshold(effectiveMode));
         result.put("wickRejectionRatio", riskSettings.getWickRejectionRatio(effectiveMode));
@@ -102,9 +108,7 @@ public class SettingsController {
         result.put("scanIncludeIS", riskSettings.isScanIncludeIS());
         result.put("scanIncludeIL", riskSettings.isScanIncludeIL());
         result.put("enableHpt", riskSettings.isEnableHpt());
-        result.put("enableMpt", riskSettings.isEnableMpt());
         result.put("enableLpt", riskSettings.isEnableLpt());
-        result.put("mptQtyFactor", riskSettings.getMptQtyFactor());
         result.put("lptQtyFactor", riskSettings.getLptQtyFactor());
         result.put("todayPnl",         Math.round(todayPnl * 100.0) / 100.0);
         result.put("todayTrades",      todayTrades);
@@ -155,6 +159,12 @@ public class SettingsController {
             if (body.containsKey("splitMinDistanceAtr")) riskSettings.setSplitMinDistanceAtr(Double.parseDouble(body.get("splitMinDistanceAtr").toString()));
             if (body.containsKey("enableTargetTolerance")) riskSettings.setEnableTargetTolerance(Boolean.parseBoolean(body.get("enableTargetTolerance").toString()));
             if (body.containsKey("targetToleranceAtr")) riskSettings.setTargetToleranceAtr(Double.parseDouble(body.get("targetToleranceAtr").toString()));
+            if (body.containsKey("enableIndexAlignment")) riskSettings.setEnableIndexAlignment(Boolean.parseBoolean(body.get("enableIndexAlignment").toString()));
+            if (body.containsKey("indexAlignmentHardSkip")) riskSettings.setIndexAlignmentHardSkip(Boolean.parseBoolean(body.get("indexAlignmentHardSkip").toString()));
+            if (body.containsKey("indexBullishThreshold")) riskSettings.setIndexBullishThreshold(Integer.parseInt(body.get("indexBullishThreshold").toString()));
+            if (body.containsKey("indexStrongBullishThreshold")) riskSettings.setIndexStrongBullishThreshold(Integer.parseInt(body.get("indexStrongBullishThreshold").toString()));
+            if (body.containsKey("indexBearishThreshold")) riskSettings.setIndexBearishThreshold(Integer.parseInt(body.get("indexBearishThreshold").toString()));
+            if (body.containsKey("indexStrongBearishThreshold")) riskSettings.setIndexStrongBearishThreshold(Integer.parseInt(body.get("indexStrongBearishThreshold").toString()));
             if (body.containsKey("enableSmallCandleFilter")) riskSettings.setEnableSmallCandleFilter(effectiveMode, Boolean.parseBoolean(body.get("enableSmallCandleFilter").toString()));
             if (body.containsKey("smallCandleAtrThreshold")) riskSettings.setSmallCandleAtrThreshold(effectiveMode, Double.parseDouble(body.get("smallCandleAtrThreshold").toString()));
             if (body.containsKey("wickRejectionRatio")) riskSettings.setWickRejectionRatio(effectiveMode, Double.parseDouble(body.get("wickRejectionRatio").toString()));
@@ -182,9 +192,7 @@ public class SettingsController {
             if (body.containsKey("scanIncludeIS")) riskSettings.setScanIncludeIS(Boolean.parseBoolean(body.get("scanIncludeIS").toString()));
             if (body.containsKey("scanIncludeIL")) riskSettings.setScanIncludeIL(Boolean.parseBoolean(body.get("scanIncludeIL").toString()));
             if (body.containsKey("enableHpt")) riskSettings.setEnableHpt(Boolean.parseBoolean(body.get("enableHpt").toString()));
-            if (body.containsKey("enableMpt")) riskSettings.setEnableMpt(Boolean.parseBoolean(body.get("enableMpt").toString()));
             if (body.containsKey("enableLpt")) riskSettings.setEnableLpt(Boolean.parseBoolean(body.get("enableLpt").toString()));
-            if (body.containsKey("mptQtyFactor")) riskSettings.setMptQtyFactor(Double.parseDouble(body.get("mptQtyFactor").toString()));
             if (body.containsKey("lptQtyFactor")) riskSettings.setLptQtyFactor(Double.parseDouble(body.get("lptQtyFactor").toString()));
             riskSettings.saveFor(effectiveMode);
             return ResponseEntity.ok(Map.of("ok", true, "message", "Settings saved"));

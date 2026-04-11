@@ -224,7 +224,6 @@
     outline:none;cursor:pointer;">
     <option value="">All Prob</option>
     <option value="HPT">HPT</option>
-    <option value="MPT">MPT</option>
     <option value="LPT">LPT</option>
 </select>
 <span class="section-badge" id="positionsBadge">0 active</span>
@@ -372,6 +371,11 @@
                     label.style.color = 'var(--accent-green)';
                     if (!isConnected) pollData();
                     isConnected = true;
+                } else if (data.status.includes('CONNECTING')) {
+                    dot.classList.add('syncing');
+                    label.textContent = data.status;
+                    label.style.color = 'var(--accent-yellow)';
+                    isConnected = false;
                 } else if (data.status.includes('RECONNECTING')) {
                     dot.classList.add('syncing');
                     label.textContent = data.status;
@@ -497,7 +501,6 @@
     function renderProb(v) {
         if (!v) return '<span style="color:var(--text-muted)">—</span>';
         if (v === 'HPT') return '<span style="background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.25);color:var(--accent-green);padding:2px 8px;border-radius:4px;font-size:.67rem;font-weight:700;">HPT</span>';
-        if (v === 'MPT') return '<span style="background:rgba(99,179,237,.1);border:1px solid rgba(99,179,237,.25);color:var(--accent-blue);padding:2px 8px;border-radius:4px;font-size:.67rem;font-weight:700;">MPT</span>';
         if (v === 'LPT') return '<span style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25);color:var(--accent-yellow);padding:2px 8px;border-radius:4px;font-size:.67rem;font-weight:700;">LPT</span>';
         return v;
     }

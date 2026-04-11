@@ -31,6 +31,22 @@ public class BhavcopyService {
         "https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_%s_F_0000.csv.zip";
     private static final String FO_URL_TEMPLATE =
         "https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_%s_F_0000.csv.zip";
+    // NSE index daily close file (DDMMYYYY format, plain CSV not zipped)
+    private static final String IDX_URL_TEMPLATE =
+        "https://nsearchives.nseindia.com/content/indices/ind_close_all_%s.csv";
+    private static final DateTimeFormatter IDX_DATE_FMT = DateTimeFormatter.ofPattern("ddMMyyyy");
+
+    /**
+     * Indices we want CPR levels for. Map: bhavcopy "Index Name" → ticker key used in cache.
+     * The ticker key must match what extractTicker() produces from the Fyers symbol so
+     * downstream lookups (e.g. getCprLevels(extractTicker("NSE:NIFTY50-INDEX"))) work.
+     * extractTicker strips the "NSE:" prefix and the "-INDEX" suffix → "NIFTY50".
+     */
+    private static final Map<String, String> SUPPORTED_INDICES = Map.of(
+        "Nifty 50",       "NIFTY50",
+        "Nifty Bank",     "NIFTYBANK",
+        "Nifty Fin Service", "FINNIFTY"
+    );
     private static final String STORE_FILE = "../store/config/cpr-data.json";
     private static final String NSE_BASE_URL = "https://www.nseindia.com/";
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
@@ -260,6 +276,14 @@ public class BhavcopyService {
                 // Purge empty history snapshots and backfill before classification
                 dailyHistory.removeIf(snap -> snap.symbols.isEmpty());
 
+                // Fetch index bhavcopy and merge into the cache so NIFTY etc. live alongside stocks.
+                // Failure here is non-fatal — index alignment filter will fall back to NEUTRAL if missing.
+                Map<String, CprLevels> indexLevels = fetchIndexLevels(targetDate, cookies);
+                if (!indexLevels.isEmpty()) {
+                    newCache.putAll(indexLevels);
+                    log.info("[BhavcopyService] Loaded {} index CPR levels from index bhavcopy", indexLevels.size());
+                }
+
                 cache.clear();
                 cache.putAll(newCache);
                 cachedDate = targetDate.toString();
@@ -382,10 +406,23 @@ public class BhavcopyService {
                     }
                     snapshot.symbols.put(entry.getKey(), lvl);
                 }
+                // Also fetch index bhavcopy for this day so NIFTY/BANKNIFTY/FINNIFTY have
+                // historical daily CPR, enabling weekly CPR aggregation for indices.
+                try {
+                    Map<String, CprLevels> idxLevels = fetchIndexLevels(date, cookies);
+                    if (!idxLevels.isEmpty()) {
+                        snapshot.symbols.putAll(idxLevels);
+                        log.info("[BhavcopyService] Backfilled indices for {}: {} indices",
+                            date, idxLevels.size());
+                    }
+                } catch (Exception e) {
+                    log.warn("[BhavcopyService] Index backfill failed for {}: {}", date, e.getMessage());
+                    // non-fatal — stock data is still valid, just missing indices for this day
+                }
                 dailyHistory.addLast(snapshot);
                 existingDates.add(date.toString());
                 fetched++;
-                log.info("[BhavcopyService] Backfilled {} ({} stocks)", date, snapshot.symbols.size());
+                log.info("[BhavcopyService] Backfilled {} ({} symbols)", date, snapshot.symbols.size());
             } catch (Exception e) {
                 log.error("[BhavcopyService] Error backfilling {}: {}", date, e.getMessage());
                 failures++;
@@ -526,6 +563,102 @@ public class BhavcopyService {
         // Remove "FUT" suffix, then strip trailing date portion (e.g. "26MAR2026" or "24MAR25")
         String s = ticker.replaceAll("\\d{2}[A-Z]{3}\\d{2,4}FUT$", "");
         return s.isEmpty() ? ticker : s;
+    }
+
+    // ── Index Bhavcopy ─────────────────────────────────────────────────────────
+
+    /**
+     * Fetch the NSE index daily-close CSV (plain CSV, not zipped) and extract OHLC for the
+     * indices we care about (NIFTY 50, NIFTY BANK, FIN NIFTY). Returns a map keyed by ticker
+     * (matching extractTicker() output for the corresponding Fyers symbol) so the caller can
+     * merge them straight into the equity cache.
+     */
+    private Map<String, CprLevels> fetchIndexLevels(LocalDate targetDate, String cookies) {
+        Map<String, CprLevels> result = new LinkedHashMap<>();
+        String dateStr = IDX_DATE_FMT.format(targetDate);
+        String url = String.format(IDX_URL_TEMPLATE, dateStr);
+
+        try {
+            byte[] csvBytes = downloadPlain(url, cookies);
+            if (csvBytes == null || csvBytes.length == 0) {
+                log.warn("[BhavcopyService] Index bhavcopy not available for {} (URL {})", targetDate, url);
+                return result;
+            }
+
+            BufferedReader br = new BufferedReader(new InputStreamReader(new ByteArrayInputStream(csvBytes)));
+            String header = br.readLine();
+            if (header == null) return result;
+
+            // Header columns vary slightly across NSE versions — match defensively.
+            String[] cols = header.split(",");
+            int nameIdx = -1, openIdx = -1, highIdx = -1, lowIdx = -1, closeIdx = -1;
+            for (int i = 0; i < cols.length; i++) {
+                String c = cols[i].trim().replace("\"", "").toLowerCase();
+                if (nameIdx == -1 && c.contains("index name")) nameIdx = i;
+                if (openIdx == -1 && c.contains("open")) openIdx = i;
+                if (highIdx == -1 && c.contains("high")) highIdx = i;
+                if (lowIdx == -1 && c.contains("low")) lowIdx = i;
+                if (closeIdx == -1 && (c.contains("closing") || c.equals("close"))) closeIdx = i;
+            }
+            if (nameIdx == -1 || highIdx == -1 || lowIdx == -1 || closeIdx == -1) {
+                log.error("[BhavcopyService] Index bhavcopy header not recognized: {}", header);
+                return result;
+            }
+
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] parts = line.split(",");
+                if (parts.length <= Math.max(highIdx, Math.max(lowIdx, Math.max(closeIdx, nameIdx)))) continue;
+                String name = parts[nameIdx].trim().replace("\"", "");
+                String ticker = SUPPORTED_INDICES.get(name);
+                if (ticker == null) continue;
+                try {
+                    double h = Double.parseDouble(parts[highIdx].trim().replace("\"", ""));
+                    double l = Double.parseDouble(parts[lowIdx].trim().replace("\"", ""));
+                    double c = Double.parseDouble(parts[closeIdx].trim().replace("\"", ""));
+                    if (h <= 0 || l <= 0 || c <= 0) continue;
+                    CprLevels lvl = new CprLevels(ticker, h, l, c);
+                    result.put(ticker, lvl);
+                    log.info("[BhavcopyService] Index {} → {} (H={} L={} C={})", name, ticker, h, l, c);
+                } catch (NumberFormatException e) {
+                    log.warn("[BhavcopyService] Skipping malformed index row: {}", line);
+                }
+            }
+        } catch (Exception e) {
+            log.error("[BhavcopyService] Failed to fetch index bhavcopy from {}: {}", url, e.getMessage());
+        }
+        return result;
+    }
+
+    /** Download a plain (non-zipped) CSV from NSE with the same browser-like headers as the zip download. */
+    private byte[] downloadPlain(String urlStr, String cookies) {
+        try {
+            HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("User-Agent", USER_AGENT);
+            conn.setRequestProperty("Accept", "text/csv,application/csv,*/*");
+            conn.setRequestProperty("Referer", NSE_BASE_URL);
+            if (cookies != null && !cookies.isEmpty()) conn.setRequestProperty("Cookie", cookies);
+            conn.setConnectTimeout(15_000);
+            conn.setReadTimeout(20_000);
+            conn.setInstanceFollowRedirects(true);
+
+            int code = conn.getResponseCode();
+            if (code != 200) {
+                log.warn("[BhavcopyService] downloadPlain HTTP {} for {}", code, urlStr);
+                return null;
+            }
+            try (InputStream in = conn.getInputStream();
+                 ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) > 0) baos.write(buf, 0, n);
+                return baos.toByteArray();
+            }
+        } catch (Exception e) {
+            log.error("[BhavcopyService] downloadPlain error: {}", e.getMessage());
+            return null;
+        }
     }
 
     // ── Parse CM Bhavcopy OHLC ─────────────────────────────────────────────────
@@ -724,8 +857,7 @@ public class BhavcopyService {
         String s = fyersSymbol;
         int colon = s.indexOf(':');
         if (colon >= 0) s = s.substring(colon + 1);
-        int dash = s.indexOf('-');
-        if (dash >= 0) s = s.substring(0, dash);
+        s = s.replaceAll("-(EQ|INDEX|MF|BE|BL|SM)$", "");
         return s;
     }
 }

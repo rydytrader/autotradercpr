@@ -332,15 +332,11 @@
                             HPT Qty × 1.0 (full)
                         </label>
                         <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
-                            MPT Qty ×
-                            <input type="number" id="mptQtyFactor" step="0.05" min="0.1" max="1.0" style="width:55px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;">
-                        </label>
-                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
                             LPT Qty ×
                             <input type="number" id="lptQtyFactor" step="0.05" min="0.1" max="1.0" style="width:55px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;">
                         </label>
                     </div>
-                    <div class="form-hint">Reduce qty for medium/low probability trades. HPT = full qty.</div>
+                    <div class="form-hint">LPT = weekly+daily not aligned, magnets, EV reversals, or HPT downgraded inside OR. HPT = full qty (always 1.0×).</div>
                 </div>
             </div>
         </div>
@@ -442,7 +438,7 @@
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableSplitTarget" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">T1 at</span>
-                        <select id="t1DistancePct" style="width:65px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;">
+                        <select id="t1DistancePct" class="form-control" style="width:75px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                             <option value="25">25%</option>
                             <option value="50">50%</option>
                             <option value="75">75%</option>
@@ -451,7 +447,7 @@
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min distance:</span>
-                        <input type="number" id="splitMinDistanceAtr" step="0.5" min="0" max="5.0" style="width:60px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;">
+                        <input type="number" id="splitMinDistanceAtr" class="form-control" step="0.5" min="0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR (0 = always split)</span>
                     </div>
                     <div class="form-hint">When T1 hits, SL moves to breakeven for remaining half. Min qty 4 required for split.</div>
@@ -461,10 +457,34 @@
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableTargetTolerance" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Discount target by</span>
-                        <input type="number" id="targetToleranceAtr" step="0.05" min="0" max="1.0" style="width:60px;padding:2px 4px;font-size:0.78rem;font-family:var(--font-mono);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;text-align:center;">
+                        <input type="number" id="targetToleranceAtr" class="form-control" step="0.05" min="0" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR (places target inside the level)</span>
                     </div>
                     <div class="form-hint">Markets often reverse just before touching CPR levels. The target order is placed slightly inside the level so near-miss reversals still fill. Applies to single targets and the T2 leg of split trades — T1 is unaffected.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">NIFTY Index Alignment Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableIndexAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable NIFTY composite trend filter</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px; padding-left: 28px;">
+                        <input type="checkbox" id="indexAlignmentHardSkip" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Hard skip mode — skip opposed trades entirely (default: soft mode = HPT → LPT downgrade)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Bullish:</span>
+                        <input type="number" id="indexBullishThreshold" class="form-control" step="1" min="-10" max="10" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Strong bullish:</span>
+                        <input type="number" id="indexStrongBullishThreshold" class="form-control" step="1" min="-10" max="10" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Bearish:</span>
+                        <input type="number" id="indexBearishThreshold" class="form-control" step="1" min="-10" max="10" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Strong bearish:</span>
+                        <input type="number" id="indexStrongBearishThreshold" class="form-control" step="1" min="-10" max="10" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    </div>
+                    <div class="form-hint">Composite NIFTY score from weekly CPR + daily CPR + 20 EMA position + 20 EMA slope (range -7 to +7). Score thresholds map to 5 trend states. Trades opposing the NIFTY trend get downgraded from HPT to LPT (half qty). LPT trades unaffected. No hard skips. The NIFTY card on the scanner page shows the live state regardless of this toggle.</div>
                 </div>
             </div>
         </div>
@@ -541,13 +561,10 @@
                             <input type="checkbox" id="enableHpt" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> HPT (High Probable)
                         </label>
                         <label style="display:flex; align-items:center; gap:8px; font-family:var(--font-mono); font-size:0.82rem; color:var(--text-secondary); cursor:pointer;">
-                            <input type="checkbox" id="enableMpt" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> MPT (Medium Probable)
-                        </label>
-                        <label style="display:flex; align-items:center; gap:8px; font-family:var(--font-mono); font-size:0.82rem; color:var(--text-secondary); cursor:pointer;">
                             <input type="checkbox" id="enableLpt" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> LPT (Low Probable)
                         </label>
                     </div>
-                    <div class="form-hint">Enable/disable signal categories. Qty factors configured in Risk Controls.</div>
+                    <div class="form-hint">HPT = weekly+daily+direction aligned. LPT = everything else (half qty by default). Qty factor configured in Risk Controls.</div>
                 </div>
             </div>
         </div>
@@ -794,6 +811,10 @@
                     dot.classList.add('connected');
                     label.textContent = data.status;
                     label.style.color = 'var(--accent-green)';
+                } else if (data.status.includes('CONNECTING') || data.status.includes('RECONNECTING')) {
+                    dot.classList.add('syncing');
+                    label.textContent = data.status;
+                    label.style.color = 'var(--accent-yellow)';
                 } else if (data.status === 'POLLING' || data.status === 'SYNCING') {
                     dot.classList.add('syncing');
                     label.textContent = data.status;
@@ -882,6 +903,12 @@
             document.getElementById('splitMinDistanceAtr').value = d.splitMinDistanceAtr || 0;
             document.getElementById('enableTargetTolerance').checked = d.enableTargetTolerance !== false;
             document.getElementById('targetToleranceAtr').value = (d.targetToleranceAtr != null ? d.targetToleranceAtr : 0.10);
+            document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
+            document.getElementById('indexAlignmentHardSkip').checked = d.indexAlignmentHardSkip === true;
+            document.getElementById('indexBullishThreshold').value = (d.indexBullishThreshold != null ? d.indexBullishThreshold : 2);
+            document.getElementById('indexStrongBullishThreshold').value = (d.indexStrongBullishThreshold != null ? d.indexStrongBullishThreshold : 5);
+            document.getElementById('indexBearishThreshold').value = (d.indexBearishThreshold != null ? d.indexBearishThreshold : -2);
+            document.getElementById('indexStrongBearishThreshold').value = (d.indexStrongBearishThreshold != null ? d.indexStrongBearishThreshold : -5);
             document.getElementById('enableSmallCandleFilter').checked = d.enableSmallCandleFilter === true;
             document.getElementById('smallCandleAtrThreshold').value = d.smallCandleAtrThreshold || 0.5;
             document.getElementById('wickRejectionRatio').value = d.wickRejectionRatio || 1.5;
@@ -907,10 +934,8 @@
             document.getElementById('scanIncludeIS').checked = d.scanIncludeIS !== false;
             document.getElementById('scanIncludeIL').checked = d.scanIncludeIL === true;
             document.getElementById('enableHpt').checked = d.enableHpt !== false;
-            document.getElementById('enableMpt').checked = d.enableMpt === true;
-            document.getElementById('enableLpt').checked = d.enableLpt === true;
-            document.getElementById('mptQtyFactor').value = d.mptQtyFactor || 0.5;
-            document.getElementById('lptQtyFactor').value = d.lptQtyFactor || 0.25;
+            document.getElementById('enableLpt').checked = d.enableLpt !== false;
+            document.getElementById('lptQtyFactor').value = d.lptQtyFactor != null ? d.lptQtyFactor : 0.50;
             document.getElementById('enableR3S3').checked = d.enableR3S3 !== false;
             document.getElementById('r3s3QtyFactor').value = d.r3s3QtyFactor || 0.75;
             document.getElementById('r4s4QtyFactor').value = d.r4s4QtyFactor || 0.5;
@@ -954,7 +979,6 @@
                 srcEl.textContent = d.signalSource || 'INTERNAL';
                 var probs = [];
                 if (d.enableHpt) probs.push('HPT');
-                if (d.enableMpt) probs.push('MPT');
                 if (d.enableLpt) probs.push('LPT');
                 srcSubEl.textContent = probs.length > 0 ? probs.join(' + ') : 'No probabilities enabled';
             }
@@ -1008,6 +1032,12 @@
                 splitMinDistanceAtr: parseFloat(document.getElementById('splitMinDistanceAtr').value) || 0,
                 enableTargetTolerance: document.getElementById('enableTargetTolerance').checked,
                 targetToleranceAtr: parseFloat(document.getElementById('targetToleranceAtr').value) || 0,
+                enableIndexAlignment: document.getElementById('enableIndexAlignment').checked,
+                indexAlignmentHardSkip: document.getElementById('indexAlignmentHardSkip').checked,
+                indexBullishThreshold: parseInt(document.getElementById('indexBullishThreshold').value) || 2,
+                indexStrongBullishThreshold: parseInt(document.getElementById('indexStrongBullishThreshold').value) || 5,
+                indexBearishThreshold: parseInt(document.getElementById('indexBearishThreshold').value) || -2,
+                indexStrongBearishThreshold: parseInt(document.getElementById('indexStrongBearishThreshold').value) || -5,
                 enableSmallCandleFilter: document.getElementById('enableSmallCandleFilter').checked,
                 smallCandleAtrThreshold: parseFloat(document.getElementById('smallCandleAtrThreshold').value) || 0.5,
                 wickRejectionRatio: parseFloat(document.getElementById('wickRejectionRatio').value) || 1.5,
@@ -1031,10 +1061,8 @@
                 scanIncludeIS: document.getElementById('scanIncludeIS').checked,
                 scanIncludeIL: document.getElementById('scanIncludeIL').checked,
                 enableHpt: document.getElementById('enableHpt').checked,
-                enableMpt: document.getElementById('enableMpt').checked,
                 enableLpt: document.getElementById('enableLpt').checked,
-                mptQtyFactor: parseFloat(document.getElementById('mptQtyFactor').value) || 0.5,
-                lptQtyFactor: parseFloat(document.getElementById('lptQtyFactor').value) || 0.25,
+                lptQtyFactor: parseFloat(document.getElementById('lptQtyFactor').value) || 0.50,
                 enableR3S3: document.getElementById('enableR3S3').checked,
                 r3s3QtyFactor: parseFloat(document.getElementById('r3s3QtyFactor').value) || 0.75,
                 r4s4QtyFactor: parseFloat(document.getElementById('r4s4QtyFactor').value) || 0.5,

@@ -284,6 +284,8 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     /** Is the Order WebSocket connected? Used by PollingService to decide polling vs push. */
     public boolean isConnected() { return connected && wsClient != null && wsClient.isOpen(); }
     public boolean isReconnecting() { return running && !isConnected() && reconnectAttempts > 0; }
+    /** True when started post-login but WS not yet connected (initial connect OR retrying). */
+    public boolean isConnecting() { return running && !isConnected(); }
 
     // ────────────────────────────────────────────────────────────────────────────
     // Order tracking — called by PollingService after placing orders

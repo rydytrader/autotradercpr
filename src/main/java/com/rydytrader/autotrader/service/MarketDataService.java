@@ -790,12 +790,19 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         log.info("[MarketData] Initializing scanner with {} watchlist symbols", watchlist.size());
         breakoutScanner.setWatchlistSymbols(watchlist);
 
-        // Fetch ATR and weekly trends (throttled API calls)
-        atrService.fetchAtrForSymbols(watchlist);
-        weeklyCprService.fetchWeeklyTrends(watchlist);
+        // Always include NIFTY 50 index for the index alignment filter — fetched and subscribed
+        // alongside the watchlist but NOT passed to the breakout scanner (it's reference data only).
+        List<String> watchlistWithIndex = new ArrayList<>(watchlist);
+        if (!watchlistWithIndex.contains("NSE:NIFTY50-INDEX")) {
+            watchlistWithIndex.add("NSE:NIFTY50-INDEX");
+        }
 
-        // Subscribe watchlist to WebSocket (after API calls give WS time to connect)
-        subscribeWatchlist(watchlist);
+        // Fetch ATR and weekly trends (throttled API calls)
+        atrService.fetchAtrForSymbols(watchlistWithIndex);
+        weeklyCprService.fetchWeeklyTrends(watchlistWithIndex);
+
+        // Subscribe watchlist + NIFTY to WebSocket (after API calls give WS time to connect)
+        subscribeWatchlist(watchlistWithIndex);
 
         // Verify all symbols subscribed — retry if some failed
         int subscribed = 0;
@@ -1024,6 +1031,15 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
 
     public boolean isReconnecting() {
         return running && !isConnected() && reconnectAttempts > 0;
+    }
+
+    /**
+     * True when the service has been started (login complete) but the WS isn't connected yet.
+     * Covers both the initial post-login connection attempt AND post-disconnect retries.
+     * Used by status display to show "CONNECTING" instead of "DISCONNECTED" while we wait.
+     */
+    public boolean isConnecting() {
+        return running && !isConnected();
     }
 
     public int getEmitterCount() { return emitters.size(); }

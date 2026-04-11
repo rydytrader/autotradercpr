@@ -75,11 +75,9 @@ public class RiskSettingsStore {
         volatile String signalSource    = "TRADINGVIEW"; // TRADINGVIEW or INTERNAL
         volatile int    scannerTimeframe = 15;  // candle timeframe in minutes
         volatile boolean enableAtpCheck = true; // require ATP confirmation for scanner signals
-        volatile boolean enableHpt      = true;  // High Probable Trade signals
-        volatile boolean enableMpt      = false; // Medium Probable Trade signals
-        volatile boolean enableLpt      = false; // Low Probable Trade signals
-        volatile double mptQtyFactor    = 0.5;   // MPT qty multiplier (0.5 = half)
-        volatile double lptQtyFactor    = 0.25;  // LPT qty multiplier (0.25 = quarter)
+        volatile boolean enableHpt      = true;  // High Probable Trade signals (weekly+daily aligned)
+        volatile boolean enableLpt      = true;  // Low Probable Trade signals (everything else, half qty)
+        volatile double lptQtyFactor    = 0.50;  // LPT qty multiplier (0.50 = half)
         // CPR Width scanner group toggles
         volatile double narrowCprMaxWidth = 0.1;  // CPR width % threshold for narrow CPR stocks
         volatile double insideCprMaxWidth = 0.5;  // max CPR width % for inside CPR stocks (0 = no filter)
@@ -97,6 +95,13 @@ public class RiskSettingsStore {
         // Target Tolerance — discount structural target by ATR fraction so near-miss reversals fill
         volatile boolean enableTargetTolerance = true;
         volatile double targetToleranceAtr = 0.10; // discount structural target by this fraction of ATR
+        // NIFTY Index Alignment Filter — downgrade HPT → LPT for trades opposed to NIFTY trend
+        volatile boolean enableIndexAlignment = false;        // master toggle, opt-in
+        volatile boolean indexAlignmentHardSkip = false;      // true = hard skip opposed trades; false = HPT→LPT downgrade
+        volatile int indexBullishThreshold = 2;               // score >= this → BULLISH
+        volatile int indexStrongBullishThreshold = 5;         // score >= this → STRONG_BULLISH
+        volatile int indexBearishThreshold = -2;              // score <= this → BEARISH
+        volatile int indexStrongBearishThreshold = -5;        // score <= this → STRONG_BEARISH
     }
 
     private final Cfg live = new Cfg();
@@ -169,9 +174,7 @@ public class RiskSettingsStore {
     public int     getScannerTimeframe()  { return cfg().scannerTimeframe; }
     public boolean isEnableAtpCheck()    { return cfg().enableAtpCheck; }
     public boolean isEnableHpt()          { return cfg().enableHpt; }
-    public boolean isEnableMpt()          { return cfg().enableMpt; }
     public boolean isEnableLpt()          { return cfg().enableLpt; }
-    public double getMptQtyFactor()       { return cfg().mptQtyFactor; }
     public double getLptQtyFactor()       { return cfg().lptQtyFactor; }
     public double getNarrowCprMaxWidth() { return cfg().narrowCprMaxWidth; }
     public double getInsideCprMaxWidth() { return cfg().insideCprMaxWidth; }
@@ -186,13 +189,17 @@ public class RiskSettingsStore {
     public double getSplitMinDistanceAtr()     { return cfg().splitMinDistanceAtr; }
     public boolean isEnableTargetTolerance()   { return cfg().enableTargetTolerance; }
     public double getTargetToleranceAtr()      { return cfg().targetToleranceAtr; }
+    public boolean isEnableIndexAlignment()    { return cfg().enableIndexAlignment; }
+    public boolean isIndexAlignmentHardSkip()  { return cfg().indexAlignmentHardSkip; }
+    public int getIndexBullishThreshold()       { return cfg().indexBullishThreshold; }
+    public int getIndexStrongBullishThreshold() { return cfg().indexStrongBullishThreshold; }
+    public int getIndexBearishThreshold()       { return cfg().indexBearishThreshold; }
+    public int getIndexStrongBearishThreshold() { return cfg().indexStrongBearishThreshold; }
     public void setSignalSource(String v)      { cfg().signalSource = v; }
     public void setScannerTimeframe(int v)     { cfg().scannerTimeframe = v; }
     public void setEnableAtpCheck(boolean v)  { cfg().enableAtpCheck = v; }
     public void setEnableHpt(boolean v)        { cfg().enableHpt = v; }
-    public void setEnableMpt(boolean v)        { cfg().enableMpt = v; }
     public void setEnableLpt(boolean v)        { cfg().enableLpt = v; }
-    public void setMptQtyFactor(double v)      { cfg().mptQtyFactor = v; }
     public void setLptQtyFactor(double v)      { cfg().lptQtyFactor = v; }
     public void setNarrowCprMaxWidth(double v) { cfg().narrowCprMaxWidth = v; }
     public void setInsideCprMaxWidth(double v) { cfg().insideCprMaxWidth = v; }
@@ -207,6 +214,12 @@ public class RiskSettingsStore {
     public void setSplitMinDistanceAtr(double v) { cfg().splitMinDistanceAtr = v; }
     public void setEnableTargetTolerance(boolean v) { cfg().enableTargetTolerance = v; }
     public void setTargetToleranceAtr(double v) { cfg().targetToleranceAtr = v; }
+    public void setEnableIndexAlignment(boolean v)        { cfg().enableIndexAlignment = v; }
+    public void setIndexAlignmentHardSkip(boolean v)      { cfg().indexAlignmentHardSkip = v; }
+    public void setIndexBullishThreshold(int v)           { cfg().indexBullishThreshold = v; }
+    public void setIndexStrongBullishThreshold(int v)     { cfg().indexStrongBullishThreshold = v; }
+    public void setIndexBearishThreshold(int v)           { cfg().indexBearishThreshold = v; }
+    public void setIndexStrongBearishThreshold(int v)     { cfg().indexStrongBearishThreshold = v; }
     public void setTradingStartTime(String v)  { cfg().tradingStartTime = v; }
     public void setTradingEndTime(String v)    { cfg().tradingEndTime = v; }
     public void setTotalCapital(double v)       { cfg().totalCapital = v; }
@@ -382,9 +395,7 @@ public class RiskSettingsStore {
             upsert("scannerTimeframe", String.valueOf(c.scannerTimeframe));
             upsert("enableAtpCheck", String.valueOf(c.enableAtpCheck));
             upsert("enableHpt", String.valueOf(c.enableHpt));
-            upsert("enableMpt", String.valueOf(c.enableMpt));
             upsert("enableLpt", String.valueOf(c.enableLpt));
-            upsert("mptQtyFactor", String.valueOf(c.mptQtyFactor));
             upsert("lptQtyFactor", String.valueOf(c.lptQtyFactor));
             upsert("narrowCprMaxWidth", String.valueOf(c.narrowCprMaxWidth));
             upsert("insideCprMaxWidth", String.valueOf(c.insideCprMaxWidth));
@@ -399,6 +410,12 @@ public class RiskSettingsStore {
             upsert("splitMinDistanceAtr", String.valueOf(c.splitMinDistanceAtr));
             upsert("enableTargetTolerance", String.valueOf(c.enableTargetTolerance));
             upsert("targetToleranceAtr", String.valueOf(c.targetToleranceAtr));
+            upsert("enableIndexAlignment", String.valueOf(c.enableIndexAlignment));
+            upsert("indexAlignmentHardSkip", String.valueOf(c.indexAlignmentHardSkip));
+            upsert("indexBullishThreshold", String.valueOf(c.indexBullishThreshold));
+            upsert("indexStrongBullishThreshold", String.valueOf(c.indexStrongBullishThreshold));
+            upsert("indexBearishThreshold", String.valueOf(c.indexBearishThreshold));
+            upsert("indexStrongBearishThreshold", String.valueOf(c.indexStrongBearishThreshold));
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to save {}: {}", mode, e.getMessage());
         }
@@ -472,9 +489,7 @@ public class RiskSettingsStore {
                     case "scannerTimeframe"  -> c.scannerTimeframe = Integer.parseInt(v);
                     case "enableAtpCheck"   -> c.enableAtpCheck = Boolean.parseBoolean(v);
                     case "enableHpt"         -> c.enableHpt = Boolean.parseBoolean(v);
-                    case "enableMpt"         -> c.enableMpt = Boolean.parseBoolean(v);
                     case "enableLpt"         -> c.enableLpt = Boolean.parseBoolean(v);
-                    case "mptQtyFactor"      -> c.mptQtyFactor = Double.parseDouble(v);
                     case "lptQtyFactor"      -> c.lptQtyFactor = Double.parseDouble(v);
                     case "narrowCprMaxWidth" -> c.narrowCprMaxWidth = Double.parseDouble(v);
                     case "insideCprMaxWidth" -> c.insideCprMaxWidth = Double.parseDouble(v);
@@ -489,6 +504,12 @@ public class RiskSettingsStore {
                     case "splitMinDistanceAtr" -> c.splitMinDistanceAtr = Double.parseDouble(v);
                     case "enableTargetTolerance" -> c.enableTargetTolerance = Boolean.parseBoolean(v);
                     case "targetToleranceAtr" -> c.targetToleranceAtr = Double.parseDouble(v);
+                    case "enableIndexAlignment" -> c.enableIndexAlignment = Boolean.parseBoolean(v);
+                    case "indexAlignmentHardSkip" -> c.indexAlignmentHardSkip = Boolean.parseBoolean(v);
+                    case "indexBullishThreshold" -> c.indexBullishThreshold = Integer.parseInt(v);
+                    case "indexStrongBullishThreshold" -> c.indexStrongBullishThreshold = Integer.parseInt(v);
+                    case "indexBearishThreshold" -> c.indexBearishThreshold = Integer.parseInt(v);
+                    case "indexStrongBearishThreshold" -> c.indexStrongBearishThreshold = Integer.parseInt(v);
                 }
             }
             log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} enableR4S4={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} trailingSl={}", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.enableR4S4, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.enableTrailingSl);

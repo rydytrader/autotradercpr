@@ -78,8 +78,7 @@ public class MarginDataService {
         String s = fyersSymbol;
         int colon = s.indexOf(':');
         if (colon >= 0) s = s.substring(colon + 1);
-        int dash = s.indexOf('-');
-        if (dash >= 0) s = s.substring(0, dash);
+        s = s.replaceAll("-(EQ|INDEX|MF|BE|BL|SM)$", "");
         return s;
     }
 

@@ -223,6 +223,7 @@ function updateStatus() {
             var label = document.getElementById('connectionStatus');
             dot.className = 'status-dot';
             if (data.status.includes('RECONNECTING')) { dot.classList.add('syncing'); label.textContent = data.status; label.style.color = '#f97316'; }
+            else if (data.status.includes('CONNECTING')) { dot.classList.add('syncing'); label.textContent = data.status; label.style.color = 'var(--accent-yellow)'; }
             else if (data.status.includes('WS CONNECTED')) { dot.classList.add('connected'); label.textContent = data.status; label.style.color = 'var(--accent-green)'; }
             else if (data.status === 'POLLING' || data.status === 'SYNCING') { dot.classList.add('syncing'); label.textContent = data.status; label.style.color = 'var(--accent-yellow)'; }
             else { dot.classList.add('disconnected'); label.textContent = 'DISCONNECTED'; label.style.color = 'var(--accent-red)'; }

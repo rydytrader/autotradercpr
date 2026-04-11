@@ -392,58 +392,44 @@
     <div class="section-card help-section fade-in" style="margin-bottom:16px;">
         <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Probability Classification</div></div>
         <div class="help-body">
-            <p>Probability depends on the <strong>setup type</strong>. Trend breakouts require both weekly + daily alignment. Magnet trades only check weekly (counter-daily is expected).</p>
+            <p>Every trade is classified into one of <strong>two tiers</strong> based on weekly + daily trend alignment with the breakout direction.</p>
 
-            <h4>Trend Breakouts (CPR, R1-R4, S1-S4, DH/DL)</h4>
-            <p>HPT requires weekly AND daily AND breakout direction all aligned.</p>
+            <h4>Two-Tier Classification</h4>
             <table>
-                <tr><th>Weekly</th><th>Daily</th><th>Breakout</th><th>Category</th><th>Qty Factor</th></tr>
-                <tr><td>Bullish</td><td>Bullish</td><td>Buy</td><td><span class="badge-example bg">HPT</span></td><td>1.0x</td></tr>
-                <tr><td>Bearish</td><td>Bearish</td><td>Sell</td><td><span class="badge-example bg">HPT</span></td><td>1.0x</td></tr>
-                <tr><td>Neutral</td><td>Any</td><td>Either</td><td><span class="badge-example bb">MPT</span></td><td>configurable (default 0.5x)</td></tr>
-                <tr><td colspan="3">Anything else (weekly or daily not aligned)</td><td><span class="badge-example by">LPT</span></td><td>configurable (default 0.25x)</td></tr>
+                <tr><th>Tier</th><th>Rule</th><th>Qty Factor</th></tr>
+                <tr><td><span class="badge-example bg">HPT</span> High Probable Trade</td><td>Weekly trend AND daily trend AND breakout direction <strong>all aligned</strong></td><td><strong>1.0x (full qty)</strong></td></tr>
+                <tr><td><span class="badge-example by">LPT</span> Low Probable Trade</td><td>Everything else</td><td>configurable (default 0.5x)</td></tr>
             </table>
 
-            <h4>Magnet Trades (BUY_ABOVE_S1_PDL, SELL_BELOW_R1_PDH)</h4>
-            <p>HPT requires weekly aligned only. Daily is intentionally opposed (buying a pullback / selling a bounce) — daily check is skipped.</p>
+            <h4>What Falls into LPT</h4>
+            <ul>
+                <li>Weekly trend is neutral</li>
+                <li>Weekly trend opposes the breakout direction</li>
+                <li>Daily trend opposes the breakout direction</li>
+                <li><strong>Magnet trades</strong> (BUY_ABOVE_S1_PDL, SELL_BELOW_R1_PDH) — counter-daily by design, can never satisfy the strict HPT rule</li>
+                <li><strong>EV reversals</strong> (mean-reversion on gap days) — counter-daily by design, always LPT</li>
+                <li>HPT trades downgraded by the IV/OV inside-OR rule (see below)</li>
+            </ul>
+
+            <h4>HPT Examples</h4>
             <table>
-                <tr><th>Weekly</th><th>Daily</th><th>Breakout</th><th>Category</th><th>Qty Factor</th></tr>
-                <tr><td>Bullish</td><td>Bearish (always)</td><td>Buy</td><td><span class="badge-example bg">HPT</span></td><td>1.0x</td></tr>
-                <tr><td>Bearish</td><td>Bullish (always)</td><td>Sell</td><td><span class="badge-example bg">HPT</span></td><td>1.0x</td></tr>
-                <tr><td>Neutral</td><td>Any</td><td>Either</td><td><span class="badge-example bb">MPT</span></td><td>configurable (default 0.5x)</td></tr>
-                <tr><td>Bearish</td><td>Any</td><td>Buy</td><td><span class="badge-example by">LPT</span></td><td>configurable (default 0.25x)</td></tr>
-                <tr><td>Bullish</td><td>Any</td><td>Sell</td><td><span class="badge-example by">LPT</span></td><td>configurable (default 0.25x)</td></tr>
+                <tr><th>Weekly</th><th>Daily</th><th>Breakout</th><th>Category</th></tr>
+                <tr><td>Bullish</td><td>Bullish</td><td>Buy</td><td><span class="badge-example bg">HPT</span></td></tr>
+                <tr><td>Bearish</td><td>Bearish</td><td>Sell</td><td><span class="badge-example bg">HPT</span></td></tr>
+                <tr><td>Bullish</td><td>Bearish</td><td>Buy</td><td><span class="badge-example by">LPT</span> (daily opposes)</td></tr>
+                <tr><td>Neutral</td><td>Bullish</td><td>Buy</td><td><span class="badge-example by">LPT</span> (weekly not aligned)</td></tr>
+                <tr><td>Bearish</td><td>Bullish</td><td>Buy</td><td><span class="badge-example by">LPT</span> (weekly opposes)</td></tr>
             </table>
 
-            <h4>EV Reversals (Mean-Reversion on Gap Days)</h4>
-            <p>Same as magnet trades — HPT requires weekly aligned only. These are counter-daily by design (trading against the gap direction when OR confirms reversal). Probability is recalculated from the original signal when reversal is detected.</p>
-            <table>
-                <tr><th>Weekly</th><th>Daily</th><th>Breakout</th><th>Category</th><th>Qty Factor</th></tr>
-                <tr><td>Bearish</td><td>Bullish (gap up)</td><td>Sell (reversal)</td><td><span class="badge-example bg">HPT</span></td><td>1.0x</td></tr>
-                <tr><td>Bullish</td><td>Bearish (gap down)</td><td>Buy (reversal)</td><td><span class="badge-example bg">HPT</span></td><td>1.0x</td></tr>
-                <tr><td>Neutral</td><td>Any</td><td>Either</td><td><span class="badge-example bb">MPT</span></td><td>configurable (default 0.5x)</td></tr>
-                <tr><td>Bullish</td><td>Any</td><td>Sell (reversal)</td><td><span class="badge-example by">LPT</span></td><td>configurable (default 0.25x)</td></tr>
-                <tr><td>Bearish</td><td>Any</td><td>Buy (reversal)</td><td><span class="badge-example by">LPT</span></td><td>configurable (default 0.25x)</td></tr>
-            </table>
+            <p>Each tier is independently toggleable in Settings. Disable LPT to trade only the strictest setups; disable HPT to trade only the weaker / counter-trend setups (unusual).</p>
 
-            <h4>Summary</h4>
-            <table>
-                <tr><th>Setup Type</th><th>HPT Rule</th><th>Daily Check</th><th>When Daily Opposes</th></tr>
-                <tr><td><strong>CPR breakouts</strong> (CPR, R1-R4, S1-S4)</td><td>Weekly + daily aligned</td><td>Yes</td><td>LPT (0.25x qty)</td></tr>
-                <tr><td><strong>DH/DL breakouts</strong> (Day High, Day Low)</td><td>Weekly + daily aligned</td><td>Yes</td><td>LPT (0.25x qty)</td></tr>
-                <tr><td><strong>Magnet trades</strong> (S1/PDL buy, R1/PDH sell)</td><td>Weekly aligned only</td><td>Skipped</td><td>N/A — daily always opposed</td></tr>
-                <tr><td><strong>EV reversals</strong> (mean-reversion on gap days)</td><td>Weekly aligned only</td><td>Skipped</td><td>N/A — daily always opposed</td></tr>
-            </table>
-
-            <p>Each category is independently toggleable in Settings. If HPT is disabled, no HPT signals fire.</p>
-
-            <h4>Probability Downgrades</h4>
-            <p>An otherwise HPT/MPT trade can be downgraded to LPT after the initial classification:</p>
+            <h4>Probability Downgrade — IV/OV Inside-OR Rule</h4>
+            <p>An otherwise HPT trade can be downgraded to LPT after initial classification if the breakout candle is still trading inside the day's opening range:</p>
             <table>
                 <tr><th>Condition</th><th>Effect</th><th>Reason</th></tr>
-                <tr><td><span class="badge-example bg">IV</span> / <span class="badge-example by">OV</span> day + breakout candle close inside OR range</td><td>HPT/MPT → <span class="badge-example br">LPT</span></td><td>Still trading inside opening range — weak breakout, price hasn't broken out of the day's initial range</td></tr>
+                <tr><td><span class="badge-example bg">IV</span> / <span class="badge-example by">OV</span> day + breakout candle close inside OR range</td><td>HPT → <span class="badge-example by">LPT</span></td><td>Still trading inside opening range — weak breakout, price hasn't broken out of the day's initial range</td></tr>
             </table>
-            <p>Applies uniformly to all setup types (CPR, R1-R4, S1-S4, magnets, DH/DL). DH/DL setups never trip this rule because their close always exceeds OR high/low by definition.</p>
+            <p>Applies uniformly to all setup types (CPR, R1-R4, S1-S4, DH/DL). DH/DL setups never trip this rule because their close always exceeds OR high/low by definition. On EV days, an inside-OR breakout is hard-skipped instead.</p>
         </div>
     </div>
 
@@ -462,7 +448,7 @@
                 <tr><td>2</td><td><strong>Capital cap</strong></td><td>min(base qty, (capital per trade x leverage) / price)</td></tr>
                 <tr><td>3</td><td><strong>Extreme level</strong></td><td>÷2 if breakout at R2+ / S2+ level</td></tr>
                 <tr><td>4</td><td><strong>Session move %</strong></td><td>÷2 if price moved &gt; N% from day open / PDC</td></tr>
-                <tr><td>5</td><td><strong>Probability</strong></td><td>HPT = 1x, MPT = configurable, LPT = configurable</td></tr>
+                <tr><td>5</td><td><strong>Probability</strong></td><td>HPT = 1x, LPT = configurable (default 0.5x)</td></tr>
                 <tr><td>6</td><td><strong>Level factor</strong></td><td>R3/S3 = configurable (0.75x), R4/S4 = configurable (0.5x)</td></tr>
                 <tr><td>7</td><td><strong>Mean-reversion</strong></td><td>÷2 for all EV reversals + OV magnet trades</td></tr>
             </table>
@@ -554,6 +540,56 @@
 
             <h4>Why No SL Tolerance?</h4>
             <p>Targets and SLs need opposite treatment. With targets you want to be conservative (take the win early). With SL you want to give the trade maximum benefit of the doubt — moving SL closer means tighter risk and more whipsaws. ATR-based SL placement is the right defense against stop-runs, not tolerance.</p>
+        </div>
+    </div>
+
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> NIFTY Index Alignment Filter</div></div>
+        <div class="help-body">
+            <p>Most stock breakouts have ~20 percentage points higher win rate when the trade direction aligns with NIFTY's intraday trend. A "clean" stock breakout that fights NIFTY tends to fail. This filter computes a composite NIFTY trend score and downgrades opposed trades from HPT to LPT (half qty). LPT trades are unaffected.</p>
+
+            <h4>Composite Score (range -7 to +7)</h4>
+            <table>
+                <tr><th>Signal</th><th>Bullish</th><th>Bearish</th></tr>
+                <tr><td>Weekly CPR trend</td><td>+1 / +2 (strong)</td><td>-1 / -2 (strong)</td></tr>
+                <tr><td>Daily CPR trend</td><td>+1 / +2 (strong)</td><td>-1 / -2 (strong)</td></tr>
+                <tr><td>20 EMA position (LTP vs current EMA value)</td><td>+1 (LTP &gt; EMA)</td><td>-1 (LTP &lt; EMA)</td></tr>
+                <tr><td>20 EMA slope (% per candle)</td><td>+1 (mild) / +2 (steep ≥ 0.02%)</td><td>-1 (mild) / -2 (steep ≤ -0.02%)</td></tr>
+            </table>
+
+            <h4>State Classification (configurable thresholds)</h4>
+            <table>
+                <tr><th>Score</th><th>Default state</th><th>Effect on trade</th></tr>
+                <tr><td>≥ +5</td><td><span class="badge-example bg">STRONG_BULLISH</span></td><td>HPT sells → LPT</td></tr>
+                <tr><td>+2 to +4</td><td><span class="badge-example bg">BULLISH</span></td><td>HPT sells → LPT</td></tr>
+                <tr><td>-1 to +1</td><td><span class="badge-example bb">NEUTRAL</span></td><td>No change</td></tr>
+                <tr><td>-4 to -2</td><td><span class="badge-example br">BEARISH</span></td><td>HPT buys → LPT</td></tr>
+                <tr><td>≤ -5</td><td><span class="badge-example br">STRONG_BEARISH</span></td><td>HPT buys → LPT</td></tr>
+            </table>
+
+            <h4>Two Modes</h4>
+            <table>
+                <tr><th>Mode</th><th>Behavior</th><th>Use when</th></tr>
+                <tr><td><strong>Soft (default)</strong></td><td>HPT trades opposing NIFTY are downgraded to LPT (half qty). LPT trades unaffected. Trade still fires at reduced size.</td><td>You want to keep capturing opposed trades but with smaller commitment.</td></tr>
+                <tr><td><strong>Hard skip</strong></td><td>ANY trade (HPT or LPT) opposing NIFTY is skipped entirely. Magnets and EV reversals also skipped if they happen to fall in the opposed direction.</td><td>You want to completely avoid fighting NIFTY's tide. Cleaner but lower trade count.</td></tr>
+            </table>
+
+            <h4>Behavior Rules</h4>
+            <ul>
+                <li>Soft mode: only HPT trades can be downgraded — LPT trades that oppose NIFTY stay LPT (no double-downgrade)</li>
+                <li>Hard skip mode: opposed trades are completely skipped regardless of probability tier</li>
+                <li>NIFTY card on the scanner page shows the live state regardless of whether the filter is enabled</li>
+                <li>Card background and border color reflect the trend state (vivid green → soft green → neutral → soft red → vivid red)</li>
+            </ul>
+
+            <h4>Example</h4>
+            <p>NIFTY at 11:45: weekly BULLISH (+1), daily BULLISH (+1), LTP &gt; ATP (+1), EMA slope +0.04% (+2). Total score = <strong>+5 → STRONG_BULLISH</strong>.</p>
+            <ul>
+                <li>A buy signal on HDFC fires → aligned with NIFTY → HPT stays HPT, full qty</li>
+                <li>A sell signal on TCS fires → opposed to NIFTY → HPT downgraded to LPT, half qty (event log: "TCS HPT → LPT — NIFTY STRONG_BULLISH (score +5) opposes sell")</li>
+            </ul>
+
+            <p>The filter is opt-in (default OFF). Run in observation mode for a few weeks to see if your journal shows the expected win rate gap before relying on it.</p>
         </div>
     </div>
 
@@ -815,42 +851,15 @@
                 <tr><th>Weekly</th><th>Daily</th><th>Breakout</th><th>Probability</th><th>Why</th></tr>
                 <tr><td><span class="badge-example bg">Bullish</span></td><td><span class="badge-example bg">Bullish</span></td><td>Buy</td><td><span class="badge-example bg">HPT</span></td><td>All three aligned — highest conviction</td></tr>
                 <tr><td><span class="badge-example br">Bearish</span></td><td><span class="badge-example br">Bearish</span></td><td>Sell</td><td><span class="badge-example bg">HPT</span></td><td>All three aligned — highest conviction</td></tr>
-                <tr><td><span class="badge-example bb">Neutral</span></td><td>Any</td><td>Either</td><td><span class="badge-example bb">MPT</span></td><td>No weekly bias</td></tr>
+                <tr><td><span class="badge-example bb">Neutral</span></td><td>Any</td><td>Either</td><td><span class="badge-example by">LPT</span></td><td>No weekly bias — strict HPT rule not met</td></tr>
                 <tr><td><span class="badge-example bg">Bullish</span></td><td><span class="badge-example br">Bearish</span></td><td>Buy</td><td><span class="badge-example by">LPT</span></td><td>Weekly supports but daily opposes — mixed signals</td></tr>
                 <tr><td><span class="badge-example br">Bearish</span></td><td>Any</td><td>Buy</td><td><span class="badge-example by">LPT</span></td><td>Buying against weekly downtrend</td></tr>
                 <tr><td><span class="badge-example bg">Bullish</span></td><td>Any</td><td>Sell</td><td><span class="badge-example by">LPT</span></td><td>Selling against weekly uptrend</td></tr>
             </table>
 
-            <h4>Magnet Trades (BUY_ABOVE_S1_PDL, SELL_BELOW_R1_PDH)</h4>
-            <p>HPT requires <strong>weekly aligned only</strong>. Daily check is skipped because magnet trades are intentionally counter-daily — you're buying a pullback (daily bearish) or selling a bounce (daily bullish) expecting price to return to CPR.</p>
-            <table>
-                <tr><th>Weekly</th><th>Daily (always opposed)</th><th>Breakout</th><th>Probability</th><th>Why</th></tr>
-                <tr><td><span class="badge-example bg">Bullish</span></td><td><span class="badge-example br">Bearish</span></td><td>Buy (magnet)</td><td><span class="badge-example bg">HPT</span></td><td>Weekly supports the bounce back to CPR</td></tr>
-                <tr><td><span class="badge-example br">Bearish</span></td><td><span class="badge-example bg">Bullish</span></td><td>Sell (magnet)</td><td><span class="badge-example bg">HPT</span></td><td>Weekly supports the fade back to CPR</td></tr>
-                <tr><td><span class="badge-example bb">Neutral</span></td><td>Any</td><td>Either</td><td><span class="badge-example bb">MPT</span></td><td>No weekly bias</td></tr>
-                <tr><td><span class="badge-example br">Bearish</span></td><td>Any</td><td>Buy (magnet)</td><td><span class="badge-example by">LPT</span></td><td>Weekly opposes the bounce</td></tr>
-                <tr><td><span class="badge-example bg">Bullish</span></td><td>Any</td><td>Sell (magnet)</td><td><span class="badge-example by">LPT</span></td><td>Weekly opposes the fade</td></tr>
-            </table>
-
-            <h4>EV Reversals (Mean-Reversion on Gap Days)</h4>
-            <p>Same as magnet trades — weekly aligned only. Counter-daily is expected (selling a gap up / buying a gap down).</p>
-            <table>
-                <tr><th>Weekly</th><th>Daily (gap direction)</th><th>Breakout</th><th>Probability</th><th>Why</th></tr>
-                <tr><td><span class="badge-example br">Bearish</span></td><td><span class="badge-example bg">Bullish</span> (gap up)</td><td>Sell (reversal)</td><td><span class="badge-example bg">HPT</span></td><td>Weekly supports the fade</td></tr>
-                <tr><td><span class="badge-example bg">Bullish</span></td><td><span class="badge-example br">Bearish</span> (gap down)</td><td>Buy (reversal)</td><td><span class="badge-example bg">HPT</span></td><td>Weekly supports the bounce</td></tr>
-                <tr><td><span class="badge-example bb">Neutral</span></td><td>Any</td><td>Either</td><td><span class="badge-example bb">MPT</span></td><td>No weekly bias</td></tr>
-                <tr><td><span class="badge-example bg">Bullish</span></td><td>Any</td><td>Sell (reversal)</td><td><span class="badge-example by">LPT</span></td><td>Weekly opposes the fade</td></tr>
-                <tr><td><span class="badge-example br">Bearish</span></td><td>Any</td><td>Buy (reversal)</td><td><span class="badge-example by">LPT</span></td><td>Weekly opposes the bounce</td></tr>
-            </table>
-
-            <h4>Probability Rules Summary</h4>
-            <table>
-                <tr><th>Setup Type</th><th>HPT Rule</th><th>Daily Check</th><th>When Daily Opposes</th></tr>
-                <tr><td><strong>CPR breakouts</strong> (CPR, R1-R4, S1-S4)</td><td>Weekly + daily aligned</td><td>Yes</td><td>LPT (0.25x qty)</td></tr>
-                <tr><td><strong>DH/DL breakouts</strong> (Day High, Day Low)</td><td>Weekly + daily aligned</td><td>Yes</td><td>LPT (0.25x qty)</td></tr>
-                <tr><td><strong>Magnet trades</strong> (S1/PDL buy, R1/PDH sell)</td><td>Weekly aligned only</td><td>Skipped</td><td>N/A — daily always opposed</td></tr>
-                <tr><td><strong>EV reversals</strong> (mean-reversion on gap days)</td><td>Weekly aligned only</td><td>Skipped</td><td>N/A — daily always opposed</td></tr>
-            </table>
+            <h4>Magnet Trades & EV Reversals — Always LPT</h4>
+            <p>Magnet trades (BUY_ABOVE_S1_PDL, SELL_BELOW_R1_PDH) and EV reversal trades (mean-reversion on gap days) are <strong>counter-daily by design</strong> — you're buying a pullback or selling a bounce. They can never satisfy the strict HPT rule (weekly+daily+direction aligned), so they're always classified as <span class="badge-example by">LPT</span> with the configured LPT qty factor (default 0.5x).</p>
+            <p>This is intentional. The HPT/LPT split is binary: either everything is aligned (HPT, full size) or it's not (LPT, half size). Magnet and reversal setups are valid trades but inherently weaker conviction — appropriate for half size, not full.</p>
 
             <h4>Why Weekly Trend Matters More Than Daily</h4>
             <ul>
@@ -864,14 +873,14 @@
             <table>
                 <tr><th>Scenario</th><th>Weekly</th><th>Daily</th><th>Signal</th><th>Probability</th><th>Action</th></tr>
                 <tr><td>Strong uptrend, buying breakout</td><td><span class="badge-example bg">Bull</span></td><td><span class="badge-example bg">Bull</span></td><td>BUY_ABOVE_R1</td><td><span class="badge-example bg">HPT</span></td><td>Full qty — everything aligned</td></tr>
-                <tr><td>Uptrend, today's pullback, bounce</td><td><span class="badge-example bg">Bull</span></td><td><span class="badge-example br">Bear</span></td><td>BUY_ABOVE_S1_PDL</td><td><span class="badge-example bg">HPT</span></td><td>Full qty — weekly supports the bounce</td></tr>
+                <tr><td>Uptrend, today's pullback, magnet bounce</td><td><span class="badge-example bg">Bull</span></td><td><span class="badge-example br">Bear</span></td><td>BUY_ABOVE_S1_PDL</td><td><span class="badge-example by">LPT</span></td><td>0.5x qty — magnet, counter-daily by design</td></tr>
                 <tr><td>Downtrend, selling breakdown</td><td><span class="badge-example br">Bear</span></td><td><span class="badge-example br">Bear</span></td><td>SELL_BELOW_S1</td><td><span class="badge-example bg">HPT</span></td><td>Full qty — everything aligned</td></tr>
-                <tr><td>Downtrend, trying to buy a bounce</td><td><span class="badge-example br">Bear</span></td><td><span class="badge-example bg">Bull</span></td><td>BUY_ABOVE_R1</td><td><span class="badge-example by">LPT</span></td><td>0.25x qty — counter weekly trend</td></tr>
-                <tr><td>No trend, breakout either way</td><td><span class="badge-example bb">Neutral</span></td><td>Any</td><td>Any</td><td><span class="badge-example bb">MPT</span></td><td>0.5x qty — no weekly conviction</td></tr>
+                <tr><td>Downtrend, trying to buy a bounce</td><td><span class="badge-example br">Bear</span></td><td><span class="badge-example bg">Bull</span></td><td>BUY_ABOVE_R1</td><td><span class="badge-example by">LPT</span></td><td>0.5x qty — weekly opposes</td></tr>
+                <tr><td>No trend, breakout either way</td><td><span class="badge-example bb">Neutral</span></td><td>Any</td><td>Any</td><td><span class="badge-example by">LPT</span></td><td>0.5x qty — no weekly conviction</td></tr>
             </table>
 
             <h4>Scanner Display</h4>
-            <p>On the scanner card, trends are shown as: <code>W: ▲ Bullish</code> (weekly) and <code>D: ▼ Bearish</code> (daily). The probability badge (<span class="badge-example bg">HPT</span> / <span class="badge-example bb">MPT</span> / <span class="badge-example by">LPT</span>) is computed from weekly trend + breakout direction, not daily trend.</p>
+            <p>On the scanner card, trends are shown as: <code>W: ▲ Bullish</code> (weekly) and <code>D: ▼ Bearish</code> (daily). The probability badge (<span class="badge-example bg">HPT</span> / <span class="badge-example by">LPT</span>) is computed from weekly + daily + breakout direction alignment.</p>
         </div>
     </div>
 
@@ -974,8 +983,7 @@
                 <tr><td>R3/S3 Enable + Factor</td><td>ON, 0.75</td><td>Enable R3/S3 level signals. Qty multiplied by factor.</td></tr>
                 <tr><td>R4/S4 Enable + Factor</td><td>ON, 0.5</td><td>Enable R4/S4 level signals. Qty multiplied by factor.</td></tr>
                 <tr><td>Session Move Limit</td><td>2.0%</td><td>Halve qty if price moved more than this % from day open/PDC</td></tr>
-                <tr><td>MPT Qty Factor</td><td>0.5</td><td>Multiply qty by this for Medium Probable Trades</td></tr>
-                <tr><td>LPT Qty Factor</td><td>0.25</td><td>Multiply qty by this for Low Probable Trades</td></tr>
+                <tr><td>LPT Qty Factor</td><td>0.5</td><td>Multiply qty by this for Low Probable Trades. HPT always trades at 1.0x.</td></tr>
             </table>
 
             <h4>Signals Tab</h4>
@@ -983,7 +991,7 @@
                 <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
                 <tr><td>Signal Source</td><td>INTERNAL</td><td>Bot Managed (internal scanner) or TradingView (webhook)</td></tr>
                 <tr><td>Trading Timeframe</td><td>5 min</td><td>Candle timeframe for breakout detection, ATR and EMA calculation</td></tr>
-                <tr><td>HPT / MPT / LPT</td><td>HPT ON</td><td>Enable/disable each probability category independently</td></tr>
+                <tr><td>HPT / LPT</td><td>Both ON</td><td>Enable/disable each probability tier independently. Disable LPT for strict HPT-only mode.</td></tr>
             </table>
 
             <h4>Scanner Tab</h4>
@@ -1009,6 +1017,7 @@
                 <tr><td>Day High/Low Shift</td><td>ON</td><td>Shift target to session high/low if between entry and target</td></tr>
                 <tr><td>Split Targets</td><td>ON, 50%, 0 ATR</td><td>T1 at N% of target distance, T2 at full. Min distance to split.</td></tr>
                 <tr><td>Target Tolerance</td><td>ON, 0.10 ATR</td><td>Discount target inside the CPR level by this fraction of ATR so near-miss reversals fill. T1 unaffected.</td></tr>
+                <tr><td>NIFTY Index Alignment</td><td>OFF, thresholds 2 / 5 / -2 / -5</td><td>Composite NIFTY trend score from weekly+daily CPR + 20 EMA position + 20 EMA slope. Trades opposing the trend get HPT→LPT downgrade. NIFTY card on scanner page shows live state.</td></tr>
             </table>
 
             <h4>Hours Tab</h4>
