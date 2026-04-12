@@ -202,6 +202,7 @@
         <button class="settings-tab" onclick="switchTab('signals', this)">Signals</button>
         <button class="settings-tab" onclick="switchTab('scanner', this)">Scanner</button>
         <button class="settings-tab" onclick="switchTab('filters', this)">Filters</button>
+        <button class="settings-tab" onclick="switchTab('targets', this)">Targets</button>
         <button class="settings-tab" onclick="switchTab('hours', this)">Hours</button>
         <button class="settings-tab" onclick="switchTab('charges', this)">Charges</button>
         <button class="settings-tab" onclick="switchTab('users', this)">Users</button>
@@ -412,16 +413,6 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Small Target Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
-                        <input type="checkbox" id="enableSmallTargetFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip trade if final target &lt;</span>
-                        <input type="number" id="targetShiftAtrThreshold" class="form-control" step="0.1" min="0.1" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR from entry</span>
-                    </div>
-                    <div class="form-hint">Target is shifted to day high/low automatically if it falls between entry and CPR target.</div>
-                </div>
-                <div class="form-group">
                     <label class="form-label">20 EMA Distance Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
                         <input type="checkbox" id="enableEmaFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
@@ -436,35 +427,6 @@
                     </div>
                     <div class="form-hint">Filters overextended breakouts where price has moved too far from the 20-period EMA.</div>
                     <div class="form-hint" style="color: var(--accent-yellow); margin-top: 4px;">Tip: keep this value &lt; ATR Multiplier (default 2.0). When close-distance &lt; ATR multiplier, the 20 EMA always sits between entry and SL — acting as a "soft floor" before the hard stop. At 0.75 (default), SL is at least 1.25 ATR beyond EMA. At 2.0 they meet. Above 2.0, SL ends up on the wrong side of EMA and the protection breaks.</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Split Targets (T1 + T2)</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableSplitTarget" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">T1 at</span>
-                        <select id="t1DistancePct" class="form-control" style="width:75px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                            <option value="25">25%</option>
-                            <option value="50">50%</option>
-                            <option value="75">75%</option>
-                        </select>
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">of target, T2 at full target (half qty each)</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min distance:</span>
-                        <input type="number" id="splitMinDistanceAtr" class="form-control" step="0.5" min="0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR (0 = always split)</span>
-                    </div>
-                    <div class="form-hint">When T1 hits, SL moves to breakeven for remaining half. Min qty 4 required for split.</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Target Tolerance</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableTargetTolerance" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Discount target by</span>
-                        <input type="number" id="targetToleranceAtr" class="form-control" step="0.05" min="0" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR (places target inside the level)</span>
-                    </div>
-                    <div class="form-hint">Markets often reverse just before touching CPR levels. The target order is placed slightly inside the level so near-miss reversals still fill. Applies to single targets and the T2 leg of split trades — T1 is unaffected.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Weekly Reversal Filter (75-min R1/PWH & S1/PWL)</label>
@@ -504,6 +466,57 @@
 
         <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
     </div><!-- /tab-filters -->
+
+    <!-- TAB: TARGETS -->
+    <div class="tab-content" id="tab-targets">
+    <div class="section-card fade-in">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Target Settings</div></div>
+        <div class="section-body">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label">Small Target Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
+                        <input type="checkbox" id="enableSmallTargetFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip trade if final target &lt;</span>
+                        <input type="number" id="targetShiftAtrThreshold" class="form-control" step="0.1" min="0.1" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR from entry</span>
+                    </div>
+                    <div class="form-hint">After target is shifted to the nearest resistance/support (session H/L + weekly CPR levels), skip the trade if the final target is too close to entry.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Split Targets (T1 + T2)</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableSplitTarget" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">T1 at</span>
+                        <select id="t1DistancePct" class="form-control" style="width:75px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                            <option value="25">25%</option>
+                            <option value="50">50%</option>
+                            <option value="75">75%</option>
+                        </select>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">of target, T2 at full target (half qty each)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min distance:</span>
+                        <input type="number" id="splitMinDistanceAtr" class="form-control" step="0.5" min="0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR (0 = always split)</span>
+                    </div>
+                    <div class="form-hint">When T1 hits, SL moves to breakeven for remaining half. Min qty 4 required for split. Skipped when target is shifted to a nearer level.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Target Tolerance</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableTargetTolerance" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Discount target by</span>
+                        <input type="number" id="targetToleranceAtr" class="form-control" step="0.05" min="0" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR (places target inside the level)</span>
+                    </div>
+                    <div class="form-hint">Markets often reverse just before touching CPR levels. The target order is placed slightly inside the level so near-miss reversals still fill. Applies to single targets and the T2 leg of split trades — T1 is unaffected.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
+    </div><!-- /tab-targets -->
 
     <!-- TAB: HOURS -->
     <div class="tab-content" id="tab-hours">
