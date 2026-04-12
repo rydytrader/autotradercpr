@@ -1275,7 +1275,7 @@
                 <tr><td>7</td><td><strong>MANUAL EXIT</strong></td><td>Manual squareoff from UI</td><td>User clicks squareoff on a position — sends exit price and P&L</td></tr>
                 <tr><td>8</td><td><strong>KILL SWITCH</strong></td><td>Kill switch toggled</td><td>Trading enabled/disabled — alerts whether new signals will be accepted or ignored</td></tr>
                 <tr><td>9</td><td><strong>AUTO SQUAREOFF</strong></td><td>Configured time (e.g. 15:10)</td><td>All open positions force-closed. Single message for all stocks.</td></tr>
-                <tr><td>10</td><td><strong>DAY SUMMARY</strong></td><td>3:30 PM (market close)</td><td>End-of-day stats: trades, win rate, P&L, charges</td></tr>
+                <tr><td>10</td><td><strong>DAY SUMMARY</strong></td><td>3:30 PM (market close, once per day)</td><td>End-of-day stats: trades, win rate, P&L, charges. Not re-sent on restart after 3:30.</td></tr>
             </table>
 
             <h4>Sample Messages</h4>
@@ -1339,6 +1339,7 @@ Net P&L: +2,720.00</div>
                 <li><strong>Bot Token + Chat ID</strong>: configured in application.properties</li>
                 <li>All notifications are <strong>async</strong> (non-blocking) — trade execution is never delayed by Telegram</li>
                 <li>If Telegram API fails, errors are logged but trading continues unaffected</li>
+                <li><strong>Day Summary</strong> sends once per day at 3:30 PM — not re-sent on server restart after market close</li>
             </ul>
         </div>
     </div>
