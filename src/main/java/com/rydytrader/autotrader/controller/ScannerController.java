@@ -246,6 +246,7 @@ public class ScannerController {
         status.put("minPrice", riskSettings.getScanMinPrice());
         status.put("maxPrice", riskSettings.getScanMaxPrice());
         status.put("minTurnover", riskSettings.getScanMinTurnover());
+        status.put("minVolume", riskSettings.getScanMinVolume());
         status.put("minBeta", riskSettings.getScanMinBeta());
         status.put("maxBeta", riskSettings.getScanMaxBeta());
         status.put("capFilter", riskSettings.getScanCapFilter());

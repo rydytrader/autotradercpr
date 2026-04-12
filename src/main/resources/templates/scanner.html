@@ -431,6 +431,10 @@
             <span class="ss-value" id="ssTurnover">--</span>
         </div>
         <div class="ss-item">
+            <span class="ss-label">Vol:</span>
+            <span class="ss-value" id="ssVolume">--</span>
+        </div>
+        <div class="ss-item">
             <span class="ss-label">Beta:</span>
             <span class="ss-value" id="ssBeta">--</span>
         </div>
@@ -857,6 +861,8 @@
 
             // Turnover
             document.getElementById('ssTurnover').textContent = s.minTurnover > 0 ? '≥' + s.minTurnover + 'Cr' : 'All';
+            var mv = s.minVolume || 0;
+            document.getElementById('ssVolume').textContent = mv > 0 ? '≥' + (mv >= 100000 ? (mv/100000).toFixed(0) + 'L' : mv >= 1000 ? (mv/1000).toFixed(0) + 'K' : mv) : 'All';
 
             // Beta
             var minB = s.minBeta || 0, maxB = s.maxBeta || 0;

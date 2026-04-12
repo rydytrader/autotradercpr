@@ -106,6 +106,7 @@ public class SettingsController {
         result.put("scanMinPrice", riskSettings.getScanMinPrice());
         result.put("scanMaxPrice", riskSettings.getScanMaxPrice());
         result.put("scanMinTurnover", riskSettings.getScanMinTurnover());
+        result.put("scanMinVolume", riskSettings.getScanMinVolume());
         result.put("scanMinBeta", riskSettings.getScanMinBeta());
         result.put("scanMaxBeta", riskSettings.getScanMaxBeta());
         result.put("scanCapFilter", riskSettings.getScanCapFilter());
@@ -197,6 +198,7 @@ public class SettingsController {
             if (body.containsKey("scanMinPrice")) riskSettings.setScanMinPrice(Double.parseDouble(body.get("scanMinPrice").toString()));
             if (body.containsKey("scanMaxPrice")) riskSettings.setScanMaxPrice(Double.parseDouble(body.get("scanMaxPrice").toString()));
             if (body.containsKey("scanMinTurnover")) riskSettings.setScanMinTurnover(Double.parseDouble(body.get("scanMinTurnover").toString()));
+            if (body.containsKey("scanMinVolume")) riskSettings.setScanMinVolume(Long.parseLong(body.get("scanMinVolume").toString()));
             if (body.containsKey("scanMinBeta")) riskSettings.setScanMinBeta(Double.parseDouble(body.get("scanMinBeta").toString()));
             if (body.containsKey("scanMaxBeta")) riskSettings.setScanMaxBeta(Double.parseDouble(body.get("scanMaxBeta").toString()));
             if (body.containsKey("scanCapFilter")) riskSettings.setScanCapFilter(body.get("scanCapFilter").toString());
