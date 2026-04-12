@@ -119,6 +119,13 @@ public class BhavcopyService {
             }
             // Classify narrow/inside range types from loaded cache + history
             classifyNarrowRangeTypes(cache);
+            computeBetas(cache);
+            try {
+                String cookies = getNseCookies();
+                if (cookies != null && !cookies.isEmpty()) fetchCapCategories(cookies, cache);
+            } catch (Exception e) {
+                log.warn("[BhavcopyService] Cap category fetch failed on cache load: {}", e.getMessage());
+            }
             long narrowCount = cache.values().stream().filter(CprLevels::isNarrowCpr).count();
             long insideCount = getInsideCprStocks().size();
             log.info("[BhavcopyService] Loaded {} NFO stocks from cache for {} ({} narrow, {} inside CPR, {} history days)", cache.size(), cachedDate, narrowCount, insideCount, dailyHistory.size());
