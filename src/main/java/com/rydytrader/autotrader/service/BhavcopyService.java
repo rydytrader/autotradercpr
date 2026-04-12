@@ -422,13 +422,13 @@ public class BhavcopyService {
 
     // ── Market cap classification from NSE index CSVs ───────────────────────
 
-    private static final String NIFTY50_URL = "https://nsearchives.nseindia.com/content/indices/ind_nifty50list.csv";
-    private static final String MIDCAP100_URL = "https://nsearchives.nseindia.com/content/indices/ind_niftymidcap100list.csv";
+    private static final String NIFTY100_URL = "https://nsearchives.nseindia.com/content/indices/ind_nifty100list.csv";
+    private static final String MIDCAP150_URL = "https://nsearchives.nseindia.com/content/indices/ind_niftymidcap150list.csv";
 
     private void fetchCapCategories(String cookies, Map<String, CprLevels> todayCache) {
         try {
-            Set<String> largeCaps = fetchIndexSymbols(NIFTY50_URL, cookies);
-            Set<String> midCaps = fetchIndexSymbols(MIDCAP100_URL, cookies);
+            Set<String> largeCaps = fetchIndexSymbols(NIFTY100_URL, cookies);
+            Set<String> midCaps = fetchIndexSymbols(MIDCAP150_URL, cookies);
             int lc = 0, mc = 0, sc = 0;
             for (CprLevels cpr : todayCache.values()) {
                 String sym = cpr.getSymbol();
