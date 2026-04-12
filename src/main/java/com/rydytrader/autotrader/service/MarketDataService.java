@@ -871,7 +871,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         return new ArrayList<>(symbols);
     }
 
-    private boolean passesWatchlistFilters(com.rydytrader.autotrader.dto.CprLevels cpr) {
+    public boolean passesWatchlistFilters(com.rydytrader.autotrader.dto.CprLevels cpr) {
         double minPrice = riskSettings.getScanMinPrice();
         double maxPrice = riskSettings.getScanMaxPrice();
         if (minPrice > 0 && cpr.getClose() < minPrice) return false;
