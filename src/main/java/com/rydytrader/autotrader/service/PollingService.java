@@ -1161,7 +1161,9 @@ public class PollingService {
     }
 
     // ── TELEGRAM END-OF-DAY SUMMARY ────────────────────────────────────────
-    private volatile LocalDate lastEodSummaryDate = null;
+    // Initialize to today if already past 3:30 PM so a restart after market close doesn't re-send
+    private volatile LocalDate lastEodSummaryDate =
+        LocalTime.now().isAfter(LocalTime.of(15, 30)) ? LocalDate.now() : null;
 
     private void startEodSummaryScheduler() {
         scheduler.scheduleAtFixedRate(() -> {
