@@ -399,7 +399,10 @@ public class BhavcopyService {
             niftyCloses[i] = (n != null) ? n.getClose() : 0;
         }
 
-        int computed = 0;
+        long niftyDays = java.util.Arrays.stream(niftyCloses).filter(v -> v > 0).count();
+        log.info("[BhavcopyService] Beta: NIFTY50 present in {}/{} history days", niftyDays, history.size());
+
+        int computed = 0, fallback = 0;
         for (CprLevels today : todayCache.values()) {
             String sym = today.getSymbol();
             List<Double> stockRet = new ArrayList<>();
@@ -412,7 +415,10 @@ public class BhavcopyService {
                 stockRet.add((s.getClose() - sNext.getClose()) / sNext.getClose());
                 niftyRet.add((niftyCloses[i] - niftyCloses[i + 1]) / niftyCloses[i + 1]);
             }
-            if (stockRet.size() < 10) { today.setBeta(1.0); continue; }
+            if (stockRet.size() < 10) {
+                if (stockRet.size() > 0) log.info("[BhavcopyService] Beta fallback for {} — only {} return pairs (need 10)", sym, stockRet.size());
+                today.setBeta(1.0); fallback++; continue;
+            }
 
             double sMean = stockRet.stream().mapToDouble(Double::doubleValue).average().orElse(0);
             double nMean = niftyRet.stream().mapToDouble(Double::doubleValue).average().orElse(0);
@@ -426,7 +432,7 @@ public class BhavcopyService {
             today.setBeta(nVar > 0 ? Math.round(cov / nVar * 100.0) / 100.0 : 1.0);
             computed++;
         }
-        log.info("[BhavcopyService] Computed beta for {} stocks", computed);
+        log.info("[BhavcopyService] Computed beta for {} stocks ({} fallback to 1.0)", computed, fallback);
     }
 
     // ── Market cap classification from NSE index CSVs ───────────────────────
