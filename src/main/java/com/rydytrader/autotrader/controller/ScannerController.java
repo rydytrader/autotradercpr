@@ -238,11 +238,20 @@ public class ScannerController {
         Map<String, Object> status = new LinkedHashMap<>();
         status.put("signalSource", riskSettings.getSignalSource());
         status.put("watchlistCount", marketDataService.getWatchlist().size());
-        status.put("atrLoaded", atrService.getAllAtr().size());
+        status.put("timeframe", riskSettings.getScannerTimeframe());
+        status.put("higherTimeframe", riskSettings.getHigherTimeframe());
         status.put("enableHpt", riskSettings.isEnableHpt());
         status.put("enableLpt", riskSettings.isEnableLpt());
         status.put("enableAtp", riskSettings.isEnableAtpCheck());
-        status.put("timeframe", riskSettings.getScannerTimeframe());
+        status.put("enableEmaDirection", riskSettings.isEnableEmaDirectionCheck());
+        status.put("minPrice", riskSettings.getScanMinPrice());
+        status.put("maxPrice", riskSettings.getScanMaxPrice());
+        status.put("minTurnover", riskSettings.getScanMinTurnover());
+        status.put("minBeta", riskSettings.getScanMinBeta());
+        status.put("maxBeta", riskSettings.getScanMaxBeta());
+        status.put("capFilter", riskSettings.getScanCapFilter());
+        status.put("narrowMaxWidth", riskSettings.getNarrowCprMaxWidth());
+        status.put("insideMaxWidth", riskSettings.getInsideCprMaxWidth());
         return status;
     }
 
