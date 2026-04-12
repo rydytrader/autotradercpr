@@ -18,15 +18,13 @@ public class EventService {
 
     private static final Logger log = LoggerFactory.getLogger(EventService.class);
 
-    private final TelegramService telegramService;
     private final List<String> tradeLogs = new CopyOnWriteArrayList<>();
 
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     private static final String LOG_FILE = "../store/events/event-log.txt";
 
-    public EventService(TelegramService telegramService) {
-        this.telegramService = telegramService;
+    public EventService() {
         ensureLogDir();
         clearIfStale();
         // Load last 500 entries immediately for fast startup, then load all async
@@ -54,16 +52,6 @@ public class EventService {
         String entry = LocalTime.now().format(TIME_FMT) + " - " + message;
         tradeLogs.add(entry);
         writeToFile(entry);
-        if (isTelegramWorthy(message)) {
-            telegramService.sendMessage(message);
-        }
-    }
-
-    private boolean isTelegramWorthy(String msg) {
-        if (msg.contains("[SUCCESS]") || msg.contains("[ERROR]")) return true;
-        if (msg.contains("PROFIT") || msg.contains("LOSS")) return true;
-        if (msg.contains("[WARNING]") && (msg.contains("UNPROTECTED") || msg.contains("failed") || msg.contains("rejected"))) return true;
-        return false;
     }
 
     public List<String> getTradeLogs() { return tradeLogs; }

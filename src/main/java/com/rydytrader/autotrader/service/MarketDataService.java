@@ -54,6 +54,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     private final WeeklyCprService    weeklyCprService;
     private final BreakoutScanner     breakoutScanner;
     private final BhavcopyService     bhavcopyService;
+    private final TelegramService     telegramService;
     private final ObjectMapper        mapper = new ObjectMapper();
     private CandleAggregator          htfAggregator; // higher timeframe (75-min) for weekly trend
 
@@ -145,7 +146,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                               WeeklyCprService weeklyCprService,
                               BreakoutScanner breakoutScanner,
                               BhavcopyService bhavcopyService,
-                              EmaService emaService) {
+                              EmaService emaService,
+                              TelegramService telegramService) {
         this.tokenStore = tokenStore;
         this.fyersProperties = fyersProperties;
         this.positionStateStore = positionStateStore;
@@ -159,6 +161,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         this.breakoutScanner = breakoutScanner;
         this.bhavcopyService = bhavcopyService;
         this.emaService = emaService;
+        this.telegramService = telegramService;
         candleAggregator.addListener(this);
     }
 
@@ -408,6 +411,10 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             String direction = "LONG".equals(side) ? "up" : "down";
             eventService.log("[SUCCESS] Trailing SL moved " + direction + " for " + fyersSymbol + ": "
                 + String.format("%.2f", currentSlPrice) + " → " + String.format("%.2f", newSl));
+            int qty = 0;
+            try { qty = Integer.parseInt(state.getOrDefault("qty", "0").toString()); } catch (NumberFormatException ignored) {}
+            double peak = "LONG".equals(side) ? peakPrice.getOrDefault(fyersSymbol, ltp) : troughPrice.getOrDefault(fyersSymbol, ltp);
+            telegramService.notifySlModified(fyersSymbol, side, qty, newSl, currentSlPrice, peak);
         } else {
             eventService.log("[ERROR] Trailing SL failed for " + fyersSymbol
                 + " — could not modify SL to " + String.format("%.2f", newSl));

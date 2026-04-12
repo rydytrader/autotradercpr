@@ -369,6 +369,9 @@ public class PollingService {
                                     symbol, quantity, t1Qty, t2Qty, exitSide,
                                     holder.adjustedSl, t1Price, t2Price, position, setup, holder.entryFillPrice);
                             }
+                            String prob = probabilityBySymbol.getOrDefault(symbol, "");
+                            telegramService.notifyTradeOpened(symbol, position, quantity,
+                                holder.entryFillPrice, holder.adjustedSl, t2Price, setup, prob);
                             if (holder.future != null) holder.future.cancel(false);
                         } else {
                             if (slOk) orderService.cancelOrder(slOrder.getId());
@@ -381,8 +384,7 @@ public class PollingService {
                                     + " — squaring off to avoid unprotected position");
                                 boolean closed = squareOff(symbol, quantity, "SL_TARGET_FAILED");
                                 if (!closed) eventService.log("[ERROR] Emergency squareoff FAILED for " + symbol);
-                                try { telegramService.sendMessage("[ALERT] Split target failed for " + symbol
-                                    + ". " + (closed ? "Squared off." : "SQUAREOFF FAILED")); } catch (Exception ignored) {}
+                                // Alert removed — emergency squareoff logged in event log
                                 if (holder.future != null) holder.future.cancel(false);
                             }
                         }
@@ -421,6 +423,9 @@ public class PollingService {
                             monitorOCO(slOrder.getId(), tgtId, symbol, quantity,
                                 exitSide, holder.adjustedSl, tgtPrice, position, setup, holder.entryFillPrice);
                         }
+                        String prob = probabilityBySymbol.getOrDefault(symbol, "");
+                        telegramService.notifyTradeOpened(symbol, position, quantity,
+                            holder.entryFillPrice, holder.adjustedSl, tgtPrice, setup, prob);
                         if (holder.future != null) holder.future.cancel(false);
                     } else {
                         if (slOk)  orderService.cancelOrder(slOrder.getId());
@@ -439,10 +444,7 @@ public class PollingService {
                             } else {
                                 eventService.log("[ERROR] Emergency squareoff FAILED for " + symbol + " — POSITION UNPROTECTED");
                             }
-                            try {
-                                telegramService.sendMessage("[ALERT] SL/Target failed for " + symbol
-                                    + ". " + (closed ? "Position squared off." : "SQUAREOFF FAILED — MANUAL ACTION NEEDED"));
-                            } catch (Exception ignored) {}
+                            // Alert removed — emergency squareoff logged in event log
                             if (holder.future != null) holder.future.cancel(false);
                         } else {
                             eventService.log("[WARNING] Retrying SL/Target placement for " + symbol
@@ -786,10 +788,7 @@ public class PollingService {
                         eventService.log("[ERROR] Failed to place breakeven SL for " + symbol + " — UNPROTECTED");
                     }
 
-                    try {
-                        telegramService.sendMessage("T1 hit for " + symbol + " @ " + String.format("%.2f", exitPrice)
-                            + " | P&L: " + String.format("%.2f", pnl) + " | SL → breakeven for remaining " + s.remainingQty);
-                    } catch (Exception ignored) {}
+                    telegramService.notifyT1Hit(symbol, positionSide, t1Qty, exitPrice, pnl, entryFillPrice, s.remainingQty);
                 }
 
                 // T2 filled
@@ -808,10 +807,7 @@ public class PollingService {
                     String prob = probabilityBySymbol.getOrDefault(symbol, "");
                     tradeHistoryService.record(symbol, positionSide, exitQty, entryFillPrice, exitPrice, "TARGET_2", setup, desc, prob);
 
-                    try {
-                        telegramService.sendMessage("T2 hit for " + symbol + " @ " + String.format("%.2f", exitPrice)
-                            + " | P&L: " + String.format("%.2f", pnl) + " — fully closed");
-                    } catch (Exception ignored) {}
+                    telegramService.notifyT2Hit(symbol, positionSide, exitQty, exitPrice, pnl);
 
                     clearSymbolState(symbol);
                     ocoMonitoredSymbols.remove(symbol);
@@ -839,10 +835,7 @@ public class PollingService {
                     String prob = probabilityBySymbol.getOrDefault(symbol, "");
                     tradeHistoryService.record(symbol, positionSide, exitQty, entryFillPrice, exitPrice, reason, setup, desc, prob);
 
-                    try {
-                        telegramService.sendMessage(reason + " for " + symbol + " @ " + String.format("%.2f", exitPrice)
-                            + " | P&L: " + String.format("%.2f", pnl));
-                    } catch (Exception ignored) {}
+                    telegramService.notifySlHit(symbol, positionSide, exitQty, exitPrice, pnl, reason);
 
                     clearSymbolState(symbol);
                     ocoMonitoredSymbols.remove(symbol);
@@ -1177,11 +1170,6 @@ public class PollingService {
 
                 lastEodSummaryDate = today;
                 List<com.rydytrader.autotrader.dto.TradeRecord> trades = tradeHistoryService.getTrades();
-                if (trades.isEmpty()) {
-                    telegramService.sendMessage("=== Day Summary ===\n\nNo trades today.");
-                    return;
-                }
-
                 int wins = 0, losses = 0;
                 double totalPnl = 0, totalCharges = 0, totalNetPnl = 0;
                 for (com.rydytrader.autotrader.dto.TradeRecord t : trades) {
@@ -1190,84 +1178,16 @@ public class PollingService {
                     totalCharges += t.getCharges();
                     totalNetPnl += t.getNetPnl();
                 }
-
-                StringBuilder sb = new StringBuilder();
-                sb.append("=== Day Summary ===\n\n");
-                sb.append("Total Trades: ").append(trades.size()).append("\n");
-                sb.append("Wins: ").append(wins).append(" | Losses: ").append(losses).append("\n");
-                sb.append("Win Rate: ").append(trades.size() > 0 ? String.format("%.0f", (wins * 100.0 / trades.size())) : "0").append("%\n\n");
-
-                for (com.rydytrader.autotrader.dto.TradeRecord t : trades) {
-                    String tag = t.getNetPnl() >= 0 ? "+" : "-";
-                    sb.append(t.getSymbol().replace("NSE:", ""))
-                      .append(" | ").append(t.getSide())
-                      .append(" | ").append(t.getExitReason())
-                      .append(" | ").append(tag).append("₹").append(String.format("%.2f", Math.abs(t.getNetPnl())))
-                      .append("\n");
-                }
-
-                sb.append("\nGross P&L: ₹").append(String.format("%.2f", totalPnl));
-                sb.append("\nCharges: ₹").append(String.format("%.2f", totalCharges));
-                sb.append("\nNet P&L: ₹").append(String.format("%.2f", totalNetPnl));
-
-                telegramService.sendMessage(sb.toString());
+                telegramService.notifyDaySummary(trades.size(), wins, losses, totalPnl, totalCharges, totalNetPnl);
             } catch (Exception e) {
                 log.error("[PollingService] EOD summary error: {}", e.getMessage());
             }
         }, 15, 15, TimeUnit.SECONDS);
     }
 
-    // ── TELEGRAM SUMMARY SCHEDULER ─────────────────────────────────────────
-    private volatile long lastTelegramSummaryTime = 0;
-
+    // Periodic portfolio summary removed — only event-driven notifications now
     private void startTelegramSummaryScheduler() {
-        scheduler.scheduleAtFixedRate(() -> {
-            try {
-                if (cachedPositions.isEmpty()) return;
-                int freqSeconds = riskSettings.getTelegramAlertFrequency();
-                if (freqSeconds <= 0) return; // disabled
-
-                long now = System.currentTimeMillis();
-                if ((now - lastTelegramSummaryTime) < freqSeconds * 1000L) return;
-                lastTelegramSummaryTime = now;
-
-                StringBuilder sb = new StringBuilder();
-                sb.append("--- Portfolio Update ---\n\n");
-                double totalUnrealizedPnl = 0;
-                for (PositionsDTO pos : cachedPositions.values()) {
-                    String arrow = pos.getPnl() >= 0 ? "+" : "-";
-                    sb.append(pos.getSymbol().replace("NSE:", ""))
-                      .append(" | ").append(pos.getSide())
-                      .append(" x").append(pos.getQty())
-                      .append(" @ ").append(String.format("%.2f", pos.getAvgPrice()))
-                      .append(" -> ").append(String.format("%.2f", pos.getLtp()))
-                      .append(" | ").append(arrow).append("₹").append(String.format("%.2f", Math.abs(pos.getPnl())))
-                      .append("\n");
-                    totalUnrealizedPnl += pos.getPnl();
-                }
-
-                List<com.rydytrader.autotrader.dto.TradeRecord> trades = tradeHistoryService.getTrades();
-                int wins = 0, losses = 0;
-                double realizedPnl = 0;
-                for (com.rydytrader.autotrader.dto.TradeRecord t : trades) {
-                    if (t.getNetPnl() >= 0) wins++; else losses++;
-                    realizedPnl += t.getNetPnl();
-                }
-
-                sb.append("\nOpen: ").append(cachedPositions.size())
-                  .append(" | Unrealized: ₹").append(String.format("%.2f", totalUnrealizedPnl));
-                if (!trades.isEmpty()) {
-                    sb.append("\nWins: ").append(wins)
-                      .append(" | Losses: ").append(losses)
-                      .append(" | Realized: ₹").append(String.format("%.2f", realizedPnl));
-                }
-                sb.append("\nNet: ₹").append(String.format("%.2f", realizedPnl + totalUnrealizedPnl));
-
-                telegramService.sendMessage(sb.toString());
-            } catch (Exception e) {
-                log.error("[PollingService] Telegram summary error: {}", e.getMessage());
-            }
-        }, 10, 10, TimeUnit.SECONDS);
+        // No-op: replaced by structured notifications (trade opened/T1/T2/SL/squareoff/EOD)
     }
 
     /** Squares off all open positions. */
@@ -1277,6 +1197,8 @@ public class PollingService {
             eventService.log("[AUTO] No open positions to square off");
             return;
         }
+        List<String> sqLines = new java.util.ArrayList<>();
+        double totalPnl = 0;
         for (PositionsDTO pos : positions) {
             String symbol = pos.getSymbol();
             int qty = Math.abs(pos.getQty());
@@ -1285,10 +1207,20 @@ public class PollingService {
                 boolean ok = squareOff(symbol, qty, "AUTO_SQUAREOFF");
                 if (!ok) {
                     eventService.log("[ERROR] Auto square off failed for " + symbol);
+                    sqLines.add(symbol.replace("NSE:", "") + " | FAILED");
+                } else {
+                    double pnl = pos.getPnl();
+                    totalPnl += pnl;
+                    sqLines.add(symbol.replace("NSE:", "") + " | " + pos.getSide() + " " + qty
+                        + " | P&L: " + (pnl >= 0 ? "+" : "") + String.format("%.2f", pnl));
                 }
             } catch (Exception e) {
                 eventService.log("[ERROR] Auto square off error for " + symbol + ": " + e.getMessage());
+                sqLines.add(symbol.replace("NSE:", "") + " | ERROR");
             }
+        }
+        if (!sqLines.isEmpty()) {
+            telegramService.notifyAutoSquareoff(sqLines, totalPnl);
         }
     }
 

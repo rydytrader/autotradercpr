@@ -654,10 +654,6 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             String prob = pollingService != null ? pollingService.getProbability(symbol) : "";
             tradeHistoryService.record(symbol, positionSide, qty, entryPrice, finalExit, exitReason, setup, desc, prob);
 
-            try {
-                telegramService.sendMessage("[WS] " + exitReason + " close for " + symbol
-                    + " | " + positionSide + " | P&L: " + (pnl >= 0 ? "+" : "") + String.format("%.2f", pnl));
-            } catch (Exception ignored) {}
         } else {
             eventService.log("[WS] External close detected for " + symbol + " — could not determine P&L");
         }
@@ -835,10 +831,6 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             } else {
                 eventService.log("[ERROR] Emergency squareoff FAILED for " + symbol + " — POSITION UNPROTECTED, manual intervention needed");
             }
-            try {
-                telegramService.sendMessage("[ALERT] SL/Target placement failed for " + symbol
-                    + " after " + MAX_RETRIES + " attempts. " + (closed ? "Position squared off." : "SQUAREOFF FAILED — MANUAL ACTION NEEDED"));
-            } catch (Exception ignored) {}
         }
     }
 
@@ -964,14 +956,6 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         String prob = pollingService != null ? pollingService.getProbability(symbol) : "";
         tradeHistoryService.record(symbol, ctx.positionSide, ctx.quantity, finalEntry, finalExit, exitReason, ctx.setup, desc, prob);
 
-        try {
-            String pnlSign = pnl >= 0 ? "+" : "";
-            telegramService.sendMessage("[WS] " + ctx.type + " hit for " + symbol
-                + " | " + ctx.positionSide + " | Entry: " + String.format("%.2f", finalEntry)
-                + " → Exit: " + String.format("%.2f", finalExit)
-                + " | P&L: " + pnlSign + String.format("%.2f", pnl));
-        } catch (Exception ignored) {}
-
         if (pollingService != null) {
             pollingService.clearSymbolStateFromWs(symbol);
             pollingService.updateLastSyncTime();
@@ -1052,13 +1036,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             eventService.log("[ERROR] [WS] T1 hit for " + symbol + " but failed to place breakeven SL — position UNPROTECTED");
         }
 
-        // Telegram notification
-        try {
-            telegramService.sendMessage("[WS] T1 hit for " + symbol
-                + " | " + ctx.positionSide + " | Exit: " + String.format("%.2f", finalExit)
-                + " | P&L: " + String.format("%.2f", pnl)
-                + " | SL → breakeven for remaining " + remainingQty);
-        } catch (Exception ignored) {}
+        telegramService.notifyT1Hit(symbol, ctx.positionSide, ctx.quantity, finalExit, pnl, ctx.entryFillPrice, remainingQty);
     }
 
     // ── Split target T2 fill: final exit, cancel SL, clear position ──
@@ -1094,9 +1072,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             + " | P&L ₹" + String.format("%.2f", pnl) + " — position fully closed");
 
         try {
-            telegramService.sendMessage("[WS] T2 hit for " + symbol
-                + " | " + ctx.positionSide + " | Exit: " + String.format("%.2f", finalExit)
-                + " | P&L: " + String.format("%.2f", pnl) + " — fully closed");
+            telegramService.notifyT2Hit(symbol, ctx.positionSide, ctx.quantity, finalExit, pnl);
         } catch (Exception ignored) {}
 
         if (pollingService != null) {
@@ -1149,11 +1125,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             + " | qty=" + exitQty + " | " + pnlTag + " ₹" + String.format("%.2f", Math.abs(pnl))
             + (ctx.t1Filled ? " (after T1, breakeven SL)" : " (before T1, full loss)"));
 
-        try {
-            telegramService.sendMessage("[WS] " + exitReason + " for " + symbol
-                + " | " + ctx.positionSide + " | Exit: " + String.format("%.2f", finalExit)
-                + " | P&L: " + (pnl >= 0 ? "+" : "") + String.format("%.2f", pnl));
-        } catch (Exception ignored) {}
+        telegramService.notifySlHit(symbol, ctx.positionSide, ctx.quantity, finalExit, pnl, exitReason);
 
         if (pollingService != null) {
             pollingService.clearSymbolStateFromWs(symbol);
