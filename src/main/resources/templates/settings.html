@@ -361,11 +361,16 @@
         <div class="section-body">
             <div class="form-grid">
                 <div class="form-group">
-                    <label class="form-label">VWAP / ATP Confirmation</label>
+                    <label class="form-label">Direction Confirmation (VWAP + EMA)</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableAtpCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only above ATP (VWAP), sell only below ATP</span>
                     </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="enableEmaDirectionCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only above 20 EMA, sell only below 20 EMA</span>
+                    </div>
+                    <div class="form-hint">Both filters confirm the breakout direction. VWAP uses the day's volume-weighted average. 20 EMA uses the candle-close-based moving average on the trading timeframe.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Large Candle Filter</label>
@@ -417,12 +422,8 @@
                     <div class="form-hint">Target is shifted to day high/low automatically if it falls between entry and CPR target.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">20 EMA Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableEmaDirectionCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy requires close above 20 EMA, sell requires close below 20 EMA</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap;">
+                    <label class="form-label">20 EMA Distance Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
                         <input type="checkbox" id="enableEmaFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip if breakout level &gt;</span>
                         <input type="number" id="emaLevelDistanceAtr" class="form-control" step="0.1" min="0.1" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
