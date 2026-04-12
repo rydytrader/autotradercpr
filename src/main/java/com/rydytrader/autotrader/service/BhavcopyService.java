@@ -416,7 +416,7 @@ public class BhavcopyService {
                 niftyRet.add((niftyCloses[i] - niftyCloses[i + 1]) / niftyCloses[i + 1]);
             }
             if (stockRet.size() < 10) {
-                if (stockRet.size() > 0) log.info("[BhavcopyService] Beta fallback for {} — only {} return pairs (need 10)", sym, stockRet.size());
+                log.info("[BhavcopyService] Beta fallback for {} — {} return pairs (need 10)", sym, stockRet.size());
                 today.setBeta(1.0); fallback++; continue;
             }
 
