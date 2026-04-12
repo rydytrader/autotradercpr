@@ -27,7 +27,8 @@
         .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
 
-        .form-group { display: flex; flex-direction: column; gap: 8px; }
+        .form-group { display: flex; flex-direction: column; gap: 8px; padding-bottom: 14px; border-bottom: 1px dashed var(--border); }
+        .form-group:last-child { border-bottom: none; padding-bottom: 0; }
         .form-label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); font-family: var(--font-mono); }
         .form-hint  { font-size: 0.7rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 4px; }
 
