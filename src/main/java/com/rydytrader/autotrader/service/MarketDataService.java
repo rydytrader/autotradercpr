@@ -857,25 +857,35 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         Set<String> symbols = new LinkedHashSet<>();
         double narrowMax = riskSettings.getNarrowCprMaxWidth();
         double insideMax = riskSettings.getInsideCprMaxWidth();
-        double minPrice = riskSettings.getScanMinPrice();
-        double maxPrice = riskSettings.getScanMaxPrice();
 
         for (var cpr : bhavcopyService.getAllCprLevels().values()) {
-            if (cpr.getCprWidthPct() < narrowMax && priceInRange(cpr.getClose(), minPrice, maxPrice)) {
+            if (cpr.getCprWidthPct() < narrowMax && passesWatchlistFilters(cpr)) {
                 symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
             }
         }
         for (var cpr : bhavcopyService.getInsideCprStocks()) {
-            if ((insideMax <= 0 || cpr.getCprWidthPct() < insideMax) && priceInRange(cpr.getClose(), minPrice, maxPrice)) {
+            if ((insideMax <= 0 || cpr.getCprWidthPct() < insideMax) && passesWatchlistFilters(cpr)) {
                 symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
             }
         }
         return new ArrayList<>(symbols);
     }
 
-    private static boolean priceInRange(double price, double min, double max) {
-        if (min > 0 && price < min) return false;
-        if (max > 0 && price > max) return false;
+    private boolean passesWatchlistFilters(com.rydytrader.autotrader.dto.CprLevels cpr) {
+        double minPrice = riskSettings.getScanMinPrice();
+        double maxPrice = riskSettings.getScanMaxPrice();
+        if (minPrice > 0 && cpr.getClose() < minPrice) return false;
+        if (maxPrice > 0 && cpr.getClose() > maxPrice) return false;
+        double minTurnover = riskSettings.getScanMinTurnover();
+        if (minTurnover > 0 && cpr.getTurnover() > 0 && cpr.getTurnover() / 1e7 < minTurnover) return false;
+        double minBeta = riskSettings.getScanMinBeta();
+        double maxBeta = riskSettings.getScanMaxBeta();
+        if (minBeta > 0 && cpr.getBeta() > 0 && cpr.getBeta() < minBeta) return false;
+        if (maxBeta > 0 && cpr.getBeta() > 0 && cpr.getBeta() > maxBeta) return false;
+        String capFilter = riskSettings.getScanCapFilter();
+        if (capFilter != null && !capFilter.isEmpty() && !"ALL".equals(capFilter)) {
+            if (!capFilter.equals(cpr.getCapCategory())) return false;
+        }
         return true;
     }
 

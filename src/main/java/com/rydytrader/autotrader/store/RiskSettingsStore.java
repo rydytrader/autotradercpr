@@ -84,6 +84,10 @@ public class RiskSettingsStore {
         volatile double insideCprMaxWidth = 0.5;  // max CPR width % for inside CPR stocks (0 = no filter)
         volatile double scanMinPrice = 300;      // min stock price filter (0 = no filter)
         volatile double scanMaxPrice = 0;        // max stock price filter (0 = no max)
+        volatile double scanMinTurnover = 0;     // min daily turnover in ₹ Cr (0 = no filter)
+        volatile double scanMinBeta = 0;         // min stock beta (0 = no filter)
+        volatile double scanMaxBeta = 0;         // max stock beta (0 = no filter)
+        volatile String scanCapFilter = "ALL";   // ALL, LARGE, MID, SMALL
         volatile boolean scanIncludeNS = true;   // Narrow + Small Range (z < -1.5)
         volatile boolean scanIncludeNL = true;   // Narrow + Large Range
         volatile boolean scanIncludeIS = true;   // Inside + Small Range
@@ -184,6 +188,10 @@ public class RiskSettingsStore {
     public double getInsideCprMaxWidth() { return cfg().insideCprMaxWidth; }
     public double getScanMinPrice() { return cfg().scanMinPrice; }
     public double getScanMaxPrice() { return cfg().scanMaxPrice; }
+    public double getScanMinTurnover() { return cfg().scanMinTurnover; }
+    public double getScanMinBeta() { return cfg().scanMinBeta; }
+    public double getScanMaxBeta() { return cfg().scanMaxBeta; }
+    public String getScanCapFilter() { return cfg().scanCapFilter; }
     public boolean isScanIncludeNS() { return cfg().scanIncludeNS; }
     public boolean isScanIncludeNL() { return cfg().scanIncludeNL; }
     public boolean isScanIncludeIS() { return cfg().scanIncludeIS; }
@@ -212,6 +220,10 @@ public class RiskSettingsStore {
     public void setInsideCprMaxWidth(double v) { cfg().insideCprMaxWidth = v; }
     public void setScanMinPrice(double v) { cfg().scanMinPrice = v; }
     public void setScanMaxPrice(double v) { cfg().scanMaxPrice = v; }
+    public void setScanMinTurnover(double v) { cfg().scanMinTurnover = v; }
+    public void setScanMinBeta(double v) { cfg().scanMinBeta = v; }
+    public void setScanMaxBeta(double v) { cfg().scanMaxBeta = v; }
+    public void setScanCapFilter(String v) { cfg().scanCapFilter = v; }
     public void setScanIncludeNS(boolean v) { cfg().scanIncludeNS = v; }
     public void setScanIncludeNL(boolean v) { cfg().scanIncludeNL = v; }
     public void setScanIncludeIS(boolean v) { cfg().scanIncludeIS = v; }
@@ -411,6 +423,10 @@ public class RiskSettingsStore {
             upsert("insideCprMaxWidth", String.valueOf(c.insideCprMaxWidth));
             upsert("scanMinPrice", String.valueOf(c.scanMinPrice));
             upsert("scanMaxPrice", String.valueOf(c.scanMaxPrice));
+            upsert("scanMinTurnover", String.valueOf(c.scanMinTurnover));
+            upsert("scanMinBeta", String.valueOf(c.scanMinBeta));
+            upsert("scanMaxBeta", String.valueOf(c.scanMaxBeta));
+            upsert("scanCapFilter", c.scanCapFilter);
             upsert("scanIncludeNS", String.valueOf(c.scanIncludeNS));
             upsert("scanIncludeNL", String.valueOf(c.scanIncludeNL));
             upsert("scanIncludeIS", String.valueOf(c.scanIncludeIS));
@@ -508,6 +524,10 @@ public class RiskSettingsStore {
                     case "insideCprMaxWidth" -> c.insideCprMaxWidth = Double.parseDouble(v);
                     case "scanMinPrice" -> c.scanMinPrice = Double.parseDouble(v);
                     case "scanMaxPrice" -> c.scanMaxPrice = Double.parseDouble(v);
+                    case "scanMinTurnover" -> c.scanMinTurnover = Double.parseDouble(v);
+                    case "scanMinBeta" -> c.scanMinBeta = Double.parseDouble(v);
+                    case "scanMaxBeta" -> c.scanMaxBeta = Double.parseDouble(v);
+                    case "scanCapFilter" -> c.scanCapFilter = v;
                     case "scanIncludeNS" -> c.scanIncludeNS = Boolean.parseBoolean(v);
                     case "scanIncludeNL" -> c.scanIncludeNL = Boolean.parseBoolean(v);
                     case "scanIncludeIS" -> c.scanIncludeIS = Boolean.parseBoolean(v);
