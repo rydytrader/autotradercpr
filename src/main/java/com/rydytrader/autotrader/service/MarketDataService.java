@@ -945,6 +945,22 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         return buildWatchlist();
     }
 
+    /** Rebuild watchlist from current settings without full re-init. Subscribes new symbols. */
+    public int rebuildWatchlist() {
+        List<String> watchlist = buildWatchlist();
+        if (watchlist.isEmpty()) {
+            log.warn("[MarketData] Rebuild: no watchlist symbols after filter");
+            return 0;
+        }
+        breakoutScanner.setWatchlistSymbols(watchlist);
+        List<String> withIndex = new ArrayList<>(watchlist);
+        if (!withIndex.contains("NSE:NIFTY50-INDEX")) withIndex.add("NSE:NIFTY50-INDEX");
+        subscribeWatchlist(withIndex);
+        log.info("[MarketData] Watchlist rebuilt: {} symbols", watchlist.size());
+        eventService.log("[INFO] Watchlist rebuilt: " + watchlist.size() + " symbols (filters updated)");
+        return watchlist.size();
+    }
+
     /** Build the full symbol list (base + position symbols). */
     private List<String> buildSymbolList() {
         Set<String> symbols = new LinkedHashSet<>();

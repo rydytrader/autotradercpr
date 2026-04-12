@@ -8,6 +8,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.*;
@@ -331,6 +332,12 @@ public class ScannerController {
         }
         result.put("stocks", stocks);
         return result;
+    }
+
+    @PostMapping("/api/scanner/rebuild")
+    public Map<String, Object> rebuildWatchlist() {
+        int count = marketDataService.rebuildWatchlist();
+        return Map.of("ok", true, "watchlistCount", count);
     }
 
 }
