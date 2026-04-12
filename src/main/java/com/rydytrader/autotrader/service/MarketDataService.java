@@ -815,9 +815,21 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             watchlistWithIndex.add("NSE:NIFTY50-INDEX");
         }
 
-        // Fetch ATR + seed EMA for all symbols including NIFTY (EMA seeding piggybacks on ATR fetch)
-        atrService.fetchAtrForSymbols(watchlistWithIndex);
-        weeklyCprService.fetchWeeklyTrends(watchlistWithIndex);
+        // Fetch ATR + seed EMA only for symbols not already loaded (skip on re-init after settings change)
+        List<String> needsAtr = watchlistWithIndex.stream()
+            .filter(s -> atrService.getAtr(s) <= 0)
+            .collect(java.util.stream.Collectors.toList());
+        if (!needsAtr.isEmpty()) {
+            log.info("[MarketData] Fetching ATR for {} new symbols ({} already loaded)", needsAtr.size(), watchlistWithIndex.size() - needsAtr.size());
+            atrService.fetchAtrForSymbols(needsAtr);
+        } else {
+            log.info("[MarketData] ATR already loaded for all {} symbols — skipping fetch", watchlistWithIndex.size());
+        }
+        if (weeklyCprService.getLoadedCount() == 0) {
+            weeklyCprService.fetchWeeklyTrends(watchlistWithIndex);
+        } else {
+            log.info("[MarketData] Weekly trends already loaded ({} symbols) — skipping fetch", weeklyCprService.getLoadedCount());
+        }
 
         // Subscribe watchlist + NIFTY to WebSocket (after API calls give WS time to connect)
         subscribeWatchlist(watchlistWithIndex);
