@@ -1004,7 +1004,7 @@
             <button onclick="document.getElementById('narrowCprModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
         </div>
         <!-- Filter bar -->
-        <div id="narrowFilters" style="padding:10px 16px; border-bottom:1px solid var(--border); display:flex; flex-wrap:nowrap; gap:10px; align-items:center; font-family:var(--font-mono); font-size:0.72rem; color:var(--text-secondary); overflow-x:auto;">
+        <div id="narrowFilters" style="padding:14px 16px; border-bottom:1px solid var(--border); display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center; font-family:var(--font-mono); font-size:0.72rem; color:var(--text-secondary); flex-shrink:0;">
             <span>Price:</span>
             <input type="number" id="nfMinPrice" placeholder="Min" style="width:65px; padding:4px 6px; font-size:0.72rem; background:var(--bg-base); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); text-align:center;" oninput="filterModalRows('narrow')">
             <span>–</span>
@@ -1054,7 +1054,7 @@
             <button onclick="document.getElementById('insideCprModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
         </div>
         <!-- Filter bar -->
-        <div id="insideFilters" style="padding:10px 16px; border-bottom:1px solid var(--border); display:flex; flex-wrap:nowrap; gap:10px; align-items:center; font-family:var(--font-mono); font-size:0.72rem; color:var(--text-secondary); overflow-x:auto;">
+        <div id="insideFilters" style="padding:14px 16px; border-bottom:1px solid var(--border); display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center; font-family:var(--font-mono); font-size:0.72rem; color:var(--text-secondary); flex-shrink:0;">
             <span>Price:</span>
             <input type="number" id="ifMinPrice" placeholder="Min" style="width:65px; padding:4px 6px; font-size:0.72rem; background:var(--bg-base); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); text-align:center;" oninput="filterModalRows('inside')">
             <span>–</span>
