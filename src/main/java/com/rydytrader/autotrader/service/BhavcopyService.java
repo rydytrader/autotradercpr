@@ -257,6 +257,7 @@ public class BhavcopyService {
                     if (hlc.length > 3) lvl.setVolume((long) hlc[3]);
                     if (hlc.length > 4) lvl.setFiftyTwoWeekHigh(hlc[4]);
                     if (hlc.length > 5) lvl.setFiftyTwoWeekLow(hlc[5]);
+                    if (hlc.length > 6) lvl.setTurnover(hlc[6]);
                     if (symbolMasterService != null) {
                         double tick = symbolMasterService.getTickSize("NSE:" + entry.getKey() + "-EQ");
                         lvl.roundToTick(tick);
@@ -295,6 +296,8 @@ public class BhavcopyService {
 
                 // Classify after backfill so z-score has sufficient history
                 classifyNarrowRangeTypes(cache);
+                computeBetas(cache);
+                fetchCapCategories(cookies, cache);
 
                 saveToFile();
 
@@ -359,6 +362,106 @@ public class BhavcopyService {
             classified++;
         }
         log.info("[BhavcopyService] Classified range z-score for {} stocks ({}-day history)", classified, window);
+    }
+
+    // ── Beta computation from 25-day daily history ────────────────────────────
+
+    private void computeBetas(Map<String, CprLevels> todayCache) {
+        List<Map<String, CprLevels>> history = new ArrayList<>();
+        if (!cache.isEmpty()) history.add(cache);
+        for (DaySnapshot snap : dailyHistory) history.add(snap.symbols);
+
+        if (history.size() < 10) {
+            log.info("[BhavcopyService] Insufficient history for beta ({} days, need 10+)", history.size());
+            return;
+        }
+
+        // Gather NIFTY daily closes
+        double[] niftyCloses = new double[history.size()];
+        for (int i = 0; i < history.size(); i++) {
+            CprLevels n = history.get(i).get("NIFTY50");
+            niftyCloses[i] = (n != null) ? n.getClose() : 0;
+        }
+
+        int computed = 0;
+        for (CprLevels today : todayCache.values()) {
+            String sym = today.getSymbol();
+            List<Double> stockRet = new ArrayList<>();
+            List<Double> niftyRet = new ArrayList<>();
+            for (int i = 0; i < history.size() - 1; i++) {
+                CprLevels s = history.get(i).get(sym);
+                CprLevels sNext = history.get(i + 1).get(sym);
+                if (s == null || sNext == null || sNext.getClose() <= 0) continue;
+                if (niftyCloses[i] <= 0 || niftyCloses[i + 1] <= 0) continue;
+                stockRet.add((s.getClose() - sNext.getClose()) / sNext.getClose());
+                niftyRet.add((niftyCloses[i] - niftyCloses[i + 1]) / niftyCloses[i + 1]);
+            }
+            if (stockRet.size() < 10) { today.setBeta(1.0); continue; }
+
+            double sMean = stockRet.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+            double nMean = niftyRet.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+            double cov = 0, nVar = 0;
+            for (int i = 0; i < stockRet.size(); i++) {
+                double sd = stockRet.get(i) - sMean;
+                double nd = niftyRet.get(i) - nMean;
+                cov += sd * nd;
+                nVar += nd * nd;
+            }
+            today.setBeta(nVar > 0 ? Math.round(cov / nVar * 100.0) / 100.0 : 1.0);
+            computed++;
+        }
+        log.info("[BhavcopyService] Computed beta for {} stocks", computed);
+    }
+
+    // ── Market cap classification from NSE index CSVs ───────────────────────
+
+    private static final String NIFTY50_URL = "https://nsearchives.nseindia.com/content/indices/ind_nifty50list.csv";
+    private static final String MIDCAP100_URL = "https://nsearchives.nseindia.com/content/indices/ind_niftymidcap100list.csv";
+
+    private void fetchCapCategories(String cookies, Map<String, CprLevels> todayCache) {
+        try {
+            Set<String> largeCaps = fetchIndexSymbols(NIFTY50_URL, cookies);
+            Set<String> midCaps = fetchIndexSymbols(MIDCAP100_URL, cookies);
+            int lc = 0, mc = 0, sc = 0;
+            for (CprLevels cpr : todayCache.values()) {
+                String sym = cpr.getSymbol();
+                if (largeCaps.contains(sym)) { cpr.setCapCategory("LARGE"); lc++; }
+                else if (midCaps.contains(sym)) { cpr.setCapCategory("MID"); mc++; }
+                else { cpr.setCapCategory("SMALL"); sc++; }
+            }
+            log.info("[BhavcopyService] Cap categories: {} large, {} mid, {} small", lc, mc, sc);
+        } catch (Exception e) {
+            log.warn("[BhavcopyService] Failed to fetch cap categories: {} — defaulting all to SMALL", e.getMessage());
+            todayCache.values().forEach(c -> { if (c.getCapCategory() == null) c.setCapCategory("SMALL"); });
+        }
+    }
+
+    private Set<String> fetchIndexSymbols(String url, String cookies) {
+        Set<String> symbols = new HashSet<>();
+        try {
+            byte[] data = downloadPlain(url, cookies);
+            if (data == null || data.length == 0) return symbols;
+            BufferedReader br = new BufferedReader(new InputStreamReader(new ByteArrayInputStream(data)));
+            String header = br.readLine();
+            if (header == null) return symbols;
+            // Find "Symbol" column
+            String[] cols = header.split(",");
+            int symIdx = -1;
+            for (int i = 0; i < cols.length; i++) {
+                if (cols[i].trim().replace("\"", "").equalsIgnoreCase("Symbol")) { symIdx = i; break; }
+            }
+            if (symIdx < 0) return symbols;
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] parts = line.split(",");
+                if (parts.length > symIdx) {
+                    symbols.add(parts[symIdx].trim().replace("\"", ""));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[BhavcopyService] Error fetching index CSV from {}: {}", url, e.getMessage());
+        }
+        return symbols;
     }
 
     // ── Backfill daily history from NSE archives ──────────────────────────────
@@ -678,7 +781,7 @@ public class BhavcopyService {
 
             String[] cols = header.split(",");
             int symIdx = -1, seriesIdx = -1, highIdx = -1, lowIdx = -1, closeIdx = -1;
-            int volumeIdx = -1, w52HighIdx = -1, w52LowIdx = -1;
+            int volumeIdx = -1, w52HighIdx = -1, w52LowIdx = -1, turnoverIdx = -1;
 
             for (int i = 0; i < cols.length; i++) {
                 String col = cols[i].trim().replace("\"", "");
@@ -691,6 +794,7 @@ public class BhavcopyService {
                     case "TtlTradgVol", "TtlTrdQty", "TradQnty" -> volumeIdx = i;
                     case "Hgh52Wk", "52WkHgh", "HghPric52Wk"  -> w52HighIdx = i;
                     case "Lw52Wk", "52WkLw", "LwPric52Wk"     -> w52LowIdx = i;
+                    case "TtlTrdVal", "TtlTradVal", "TrdVal", "TOTTRDVAL" -> turnoverIdx = i;
                     // Legacy fallbacks
                     case "SYMBOL"   -> { if (symIdx == -1) symIdx = i; }
                     case "SERIES"   -> { if (seriesIdx == -1) seriesIdx = i; }
@@ -712,11 +816,13 @@ public class BhavcopyService {
             if (volumeIdx >= 0) log.info("[BhavcopyService] Found volume column at index {}", volumeIdx);
             if (w52HighIdx >= 0) log.info("[BhavcopyService] Found 52W High column at index {}", w52HighIdx);
             if (w52LowIdx >= 0) log.info("[BhavcopyService] Found 52W Low column at index {}", w52LowIdx);
+            if (turnoverIdx >= 0) log.info("[BhavcopyService] Found turnover column at index {}", turnoverIdx);
 
             int maxIdx = Math.max(Math.max(symIdx, seriesIdx), Math.max(Math.max(highIdx, lowIdx), closeIdx));
             if (volumeIdx >= 0) maxIdx = Math.max(maxIdx, volumeIdx);
             if (w52HighIdx >= 0) maxIdx = Math.max(maxIdx, w52HighIdx);
             if (w52LowIdx >= 0) maxIdx = Math.max(maxIdx, w52LowIdx);
+            if (turnoverIdx >= 0) maxIdx = Math.max(maxIdx, turnoverIdx);
 
             String line;
             while ((line = br.readLine()) != null) {
@@ -745,8 +851,12 @@ public class BhavcopyService {
                     if (w52LowIdx >= 0 && w52LowIdx < parts.length) {
                         try { w52l = Double.parseDouble(parts[w52LowIdx].trim().replace("\"", "")); } catch (NumberFormatException ignored) {}
                     }
+                    double tov = 0;
+                    if (turnoverIdx >= 0 && turnoverIdx < parts.length) {
+                        try { tov = Double.parseDouble(parts[turnoverIdx].trim().replace("\"", "")); } catch (NumberFormatException ignored) {}
+                    }
                     if (h > 0 && l > 0 && c > 0) {
-                        result.put(sym, new double[]{h, l, c, vol, w52h, w52l});
+                        result.put(sym, new double[]{h, l, c, vol, w52h, w52l, tov});
                     }
                 } catch (NumberFormatException ignored) {}
             }

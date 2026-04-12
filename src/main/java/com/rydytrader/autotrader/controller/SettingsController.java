@@ -104,6 +104,7 @@ public class SettingsController {
         result.put("narrowCprMaxWidth", riskSettings.getNarrowCprMaxWidth());
         result.put("insideCprMaxWidth", riskSettings.getInsideCprMaxWidth());
         result.put("scanMinPrice", riskSettings.getScanMinPrice());
+        result.put("scanMaxPrice", riskSettings.getScanMaxPrice());
         result.put("openingRangeMinutes", riskSettings.getOpeningRangeMinutes());
         result.put("scanIncludeNS", riskSettings.isScanIncludeNS());
         result.put("scanIncludeNL", riskSettings.isScanIncludeNL());
@@ -190,6 +191,7 @@ public class SettingsController {
             if (body.containsKey("narrowCprMaxWidth")) riskSettings.setNarrowCprMaxWidth(Double.parseDouble(body.get("narrowCprMaxWidth").toString()));
             if (body.containsKey("insideCprMaxWidth")) riskSettings.setInsideCprMaxWidth(Double.parseDouble(body.get("insideCprMaxWidth").toString()));
             if (body.containsKey("scanMinPrice")) riskSettings.setScanMinPrice(Double.parseDouble(body.get("scanMinPrice").toString()));
+            if (body.containsKey("scanMaxPrice")) riskSettings.setScanMaxPrice(Double.parseDouble(body.get("scanMaxPrice").toString()));
             if (body.containsKey("openingRangeMinutes")) riskSettings.setOpeningRangeMinutes(Integer.parseInt(body.get("openingRangeMinutes").toString()));
             if (body.containsKey("scanIncludeNS")) riskSettings.setScanIncludeNS(Boolean.parseBoolean(body.get("scanIncludeNS").toString()));
             if (body.containsKey("scanIncludeNL")) riskSettings.setScanIncludeNL(Boolean.parseBoolean(body.get("scanIncludeNL").toString()));
@@ -215,18 +217,7 @@ public class SettingsController {
             .filter(c -> minPrice <= 0 || c.getClose() >= minPrice)
             .sorted(java.util.Comparator.comparingDouble(CprLevels::getCprWidthPct))
             .collect(Collectors.toList());
-        List<Map<String, Object>> list = narrow.stream().map(c -> {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("symbol", c.getSymbol());
-            m.put("close", Math.round(c.getClose() * 100.0) / 100.0);
-            m.put("pivot", Math.round(c.getPivot() * 100.0) / 100.0);
-            m.put("tc", Math.round(c.getTc() * 100.0) / 100.0);
-            m.put("bc", Math.round(c.getBc() * 100.0) / 100.0);
-            m.put("cprWidthPct", Math.round(c.getCprWidthPct() * 1000.0) / 1000.0);
-            m.put("r1", Math.round(c.getR1() * 100.0) / 100.0);
-            m.put("s1", Math.round(c.getS1() * 100.0) / 100.0);
-            return m;
-        }).collect(Collectors.toList());
+        List<Map<String, Object>> list = narrow.stream().map(c -> buildStockRow(c)).collect(Collectors.toList());
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("date", bhavcopyService.getCachedDate());
@@ -245,25 +236,7 @@ public class SettingsController {
             .filter(c -> insideMaxWidth <= 0 || c.getCprWidthPct() < insideMaxWidth)
             .filter(c -> minPrice <= 0 || c.getClose() >= minPrice)
             .collect(Collectors.toList());
-        List<Map<String, Object>> list = inside.stream().map(c -> {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("symbol", c.getSymbol());
-            m.put("close", Math.round(c.getClose() * 100.0) / 100.0);
-            m.put("pivot", Math.round(c.getPivot() * 100.0) / 100.0);
-            m.put("tc", Math.round(c.getTc() * 100.0) / 100.0);
-            m.put("bc", Math.round(c.getBc() * 100.0) / 100.0);
-            m.put("cprWidthPct", Math.round(c.getCprWidthPct() * 1000.0) / 1000.0);
-            m.put("r1", Math.round(c.getR1() * 100.0) / 100.0);
-            m.put("s1", Math.round(c.getS1() * 100.0) / 100.0);
-            // Previous day CPR for verification
-            CprLevels prev = bhavcopyService.getPreviousCpr(c.getSymbol());
-            if (prev != null) {
-                m.put("prevTc", Math.round(prev.getTc() * 100.0) / 100.0);
-                m.put("prevBc", Math.round(prev.getBc() * 100.0) / 100.0);
-                m.put("prevPivot", Math.round(prev.getPivot() * 100.0) / 100.0);
-            }
-            return m;
-        }).collect(Collectors.toList());
+        List<Map<String, Object>> list = inside.stream().map(c -> buildStockRow(c)).collect(Collectors.toList());
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("date", bhavcopyService.getCachedDate());
@@ -272,6 +245,18 @@ public class SettingsController {
         result.put("insideCount", inside.size());
         result.put("stocks", list);
         return result;
+    }
+
+    private Map<String, Object> buildStockRow(CprLevels c) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("symbol", c.getSymbol());
+        m.put("close", Math.round(c.getClose() * 100.0) / 100.0);
+        m.put("cprWidthPct", Math.round(c.getCprWidthPct() * 1000.0) / 1000.0);
+        m.put("volume", c.getVolume());
+        m.put("turnover", Math.round(c.getTurnover() / 100000.0) / 100.0); // ₹ Cr (divide by 1 Cr = 10^7, round 2dp)
+        m.put("beta", c.getBeta());
+        m.put("capCategory", c.getCapCategory() != null ? c.getCapCategory() : "SMALL");
+        return m;
     }
 
     private String resolveMode(String mode) {

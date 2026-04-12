@@ -858,18 +858,25 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         double narrowMax = riskSettings.getNarrowCprMaxWidth();
         double insideMax = riskSettings.getInsideCprMaxWidth();
         double minPrice = riskSettings.getScanMinPrice();
+        double maxPrice = riskSettings.getScanMaxPrice();
 
         for (var cpr : bhavcopyService.getAllCprLevels().values()) {
-            if (cpr.getCprWidthPct() < narrowMax && (minPrice <= 0 || cpr.getClose() >= minPrice)) {
+            if (cpr.getCprWidthPct() < narrowMax && priceInRange(cpr.getClose(), minPrice, maxPrice)) {
                 symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
             }
         }
         for (var cpr : bhavcopyService.getInsideCprStocks()) {
-            if ((insideMax <= 0 || cpr.getCprWidthPct() < insideMax) && (minPrice <= 0 || cpr.getClose() >= minPrice)) {
+            if ((insideMax <= 0 || cpr.getCprWidthPct() < insideMax) && priceInRange(cpr.getClose(), minPrice, maxPrice)) {
                 symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
             }
         }
         return new ArrayList<>(symbols);
+    }
+
+    private static boolean priceInRange(double price, double min, double max) {
+        if (min > 0 && price < min) return false;
+        if (max > 0 && price > max) return false;
+        return true;
     }
 
     /**

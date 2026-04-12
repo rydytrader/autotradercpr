@@ -14,6 +14,9 @@ public class CprLevels {
     private String narrowRangeType;   // "SMALL" / "LARGE" / null (only set for narrow/inside CPR)
     private long   volume;
     private double fiftyTwoWeekHigh, fiftyTwoWeekLow;
+    private double turnover;          // previous day total traded value (₹)
+    private double beta;              // stock beta vs NIFTY (25-day)
+    private String capCategory;       // "LARGE", "MID", "SMALL"
 
     /** No-arg constructor for Jackson deserialization. */
     public CprLevels() {}
@@ -103,4 +106,10 @@ public class CprLevels {
     public void    setFiftyTwoWeekHigh(double v) { this.fiftyTwoWeekHigh = v; }
     public double  getFiftyTwoWeekLow()    { return fiftyTwoWeekLow; }
     public void    setFiftyTwoWeekLow(double v)  { this.fiftyTwoWeekLow = v; }
+    public double  getTurnover()          { return turnover; }
+    public void    setTurnover(double v)  { this.turnover = v; }
+    public double  getBeta()              { return beta; }
+    public void    setBeta(double v)      { this.beta = v; }
+    public String  getCapCategory()       { return capCategory; }
+    public void    setCapCategory(String v) { this.capCategory = v; }
 }
