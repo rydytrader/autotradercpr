@@ -423,11 +423,6 @@
             <span class="ss-value" id="ssWatchlist">0</span>
         </div>
         <div class="ss-item">
-            <span class="ss-label">TF:</span>
-            <span class="ss-value" id="ssTimeframe">5</span><span class="ss-label">m /</span>
-            <span class="ss-value" id="ssHtf">75</span><span class="ss-label">m</span>
-        </div>
-        <div class="ss-item">
             <span class="ss-label">Price:</span>
             <span class="ss-value" id="ssPrice">--</span>
         </div>
@@ -446,14 +441,6 @@
         <div class="ss-item">
             <span class="ss-label">Signals:</span>
             <span id="ssSignals">--</span>
-        </div>
-        <div class="ss-item">
-            <span class="ss-label">VWAP:</span>
-            <span class="ss-value" id="ssAtp">--</span>
-        </div>
-        <div class="ss-item">
-            <span class="ss-label">EMA:</span>
-            <span class="ss-value" id="ssEma">--</span>
         </div>
         <div class="ss-item" style="margin-left:auto;">
             <span onclick="document.getElementById('legendModal').style.display='flex'" title="Classification Legend" style="display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border-radius:50%; background:rgba(251,191,36,0.15); border:1px solid rgba(251,191,36,0.35); color:#fbbf24; font-family:var(--font-mono); font-size:0.75rem; font-weight:700; cursor:pointer; transition:all 0.2s;" onmouseover="this.style.background='rgba(251,191,36,0.28)'" onmouseout="this.style.background='rgba(251,191,36,0.15)'">?</span>
@@ -860,8 +847,6 @@
 
         fetch('/api/scanner/status').then(function(r) { return r.json(); }).then(function(s) {
             document.getElementById('ssWatchlist').textContent = s.watchlistCount;
-            document.getElementById('ssTimeframe').textContent = s.timeframe;
-            document.getElementById('ssHtf').textContent = s.higherTimeframe || 75;
 
             // Price range
             var minP = s.minPrice || 0, maxP = s.maxPrice || 0;
@@ -892,9 +877,6 @@
                 ? sigs.map(function(p) { return '<span class="scan-badge ' + p.toLowerCase() + '" style="margin-left:2px;">' + p + '</span>'; }).join(' ')
                 : '<span style="color:var(--text-muted);">None</span>';
 
-            // Direction filters
-            document.getElementById('ssAtp').textContent = s.enableAtp ? 'ON' : 'OFF';
-            document.getElementById('ssEma').textContent = s.enableEmaDirection ? 'ON' : 'OFF';
         }).catch(function() {});
     }
 
