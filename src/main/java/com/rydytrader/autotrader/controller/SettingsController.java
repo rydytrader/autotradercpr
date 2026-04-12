@@ -219,10 +219,8 @@ public class SettingsController {
     @GetMapping("/api/narrow-cpr")
     public Map<String, Object> getNarrowCprStocks() {
         double maxWidth = riskSettings.getNarrowCprMaxWidth();
-        double minPrice = riskSettings.getScanMinPrice();
         List<CprLevels> narrow = bhavcopyService.getAllCprLevels().values().stream()
             .filter(c -> c.getCprWidthPct() < maxWidth)
-            .filter(c -> minPrice <= 0 || c.getClose() >= minPrice)
             .sorted(java.util.Comparator.comparingDouble(CprLevels::getCprWidthPct))
             .collect(Collectors.toList());
         List<Map<String, Object>> list = narrow.stream().map(c -> buildStockRow(c)).collect(Collectors.toList());
@@ -239,10 +237,8 @@ public class SettingsController {
     @GetMapping("/api/inside-cpr")
     public Map<String, Object> getInsideCprStocks() {
         double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
-        double minPrice = riskSettings.getScanMinPrice();
         List<CprLevels> inside = bhavcopyService.getInsideCprStocks().stream()
             .filter(c -> insideMaxWidth <= 0 || c.getCprWidthPct() < insideMaxWidth)
-            .filter(c -> minPrice <= 0 || c.getClose() >= minPrice)
             .collect(Collectors.toList());
         List<Map<String, Object>> list = inside.stream().map(c -> buildStockRow(c)).collect(Collectors.toList());
 

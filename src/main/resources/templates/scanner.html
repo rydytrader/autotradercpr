@@ -387,7 +387,7 @@
                 font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
                 cursor: pointer; transition: all 0.2s;
             " onmouseover="this.style.background='rgba(99,179,237,0.18)'" onmouseout="this.style.background='rgba(99,179,237,0.1)'">
-                Narrow CPR Stocks
+                All Narrow CPR Stocks
             </button>
             <button onclick="showInsideCpr()" style="
                 background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3);
@@ -395,7 +395,7 @@
                 font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
                 cursor: pointer; transition: all 0.2s;
             " onmouseover="this.style.background='rgba(251,191,36,0.18)'" onmouseout="this.style.background='rgba(251,191,36,0.1)'">
-                Inside CPR Stocks
+                All Inside CPR Stocks
             </button>
             <a href="/api/scanner/tv-watchlist" style="
                 background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.3);
@@ -992,7 +992,7 @@
     <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:90%; max-width:800px; max-height:80vh; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
         <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border); background:var(--bg-section-header);">
             <div>
-                <div style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:var(--text-primary);">NARROW CPR STOCKS</div>
+                <div style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:var(--text-primary);">ALL NARROW CPR STOCKS</div>
                 <div id="narrowCprSubtitle" style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); margin-top:2px;"></div>
             </div>
             <button onclick="document.getElementById('narrowCprModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
@@ -1042,7 +1042,7 @@
     <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:90%; max-width:800px; max-height:80vh; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
         <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border); background:var(--bg-section-header);">
             <div>
-                <div style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:var(--text-primary);">INSIDE CPR STOCKS</div>
+                <div style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:var(--text-primary);">ALL INSIDE CPR STOCKS</div>
                 <div id="insideCprSubtitle" style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); margin-top:2px;"></div>
             </div>
             <button onclick="document.getElementById('insideCprModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
