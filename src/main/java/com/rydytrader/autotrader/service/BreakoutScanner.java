@@ -186,6 +186,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     || "BUY_ABOVE_S3".equals(buySetup)
                     || "BUY_ABOVE_S4".equals(buySetup);
                 String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, true, isMagnet);
+                if ("SKIP".equals(prob)) {
+                    eventService.log("[SCANNER] " + buySetup + " for " + fyersSymbol
+                        + " SKIPPED — weekly R1/PWH reversal active (buy opposed)");
+                    return;
+                }
                 if (!isProbabilityEnabled(prob)) {
                     eventService.log("[SCANNER] " + buySetup + " for " + fyersSymbol + " — skipped, " + prob + " not enabled");
                     return;
@@ -240,6 +245,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     || "SELL_BELOW_R3".equals(sellSetup)
                     || "SELL_BELOW_R4".equals(sellSetup);
                 String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, false, isMagnet);
+                if ("SKIP".equals(prob)) {
+                    eventService.log("[SCANNER] " + sellSetup + " for " + fyersSymbol
+                        + " SKIPPED — weekly S1/PWL reversal active (sell opposed)");
+                    return;
+                }
                 if (!isProbabilityEnabled(prob)) {
                     eventService.log("[SCANNER] " + sellSetup + " for " + fyersSymbol + " — skipped, " + prob + " not enabled");
                     return;

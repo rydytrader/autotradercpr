@@ -161,6 +161,7 @@ public class ScannerController {
         card.put("candleVolume", candleAggregator.getCurrentCandleVolume(fyersSymbol));
         card.put("avgVolume", Math.round(candleAggregator.getAvgVolume(fyersSymbol, riskSettings.getVolumeLookback())));
         card.put("weeklyTrend", weeklyCprService.getWeeklyTrend(fyersSymbol));
+        card.put("weeklyReversalActive", !"NONE".equals(weeklyCprService.getWeeklyRejection(fyersSymbol)));
         card.put("dailyTrend", weeklyCprService.getDailyTrend(fyersSymbol));
         card.put("probability", weeklyCprService.getProbability(fyersSymbol));
 

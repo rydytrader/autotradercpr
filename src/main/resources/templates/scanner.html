@@ -345,6 +345,7 @@
         <a href="/positions" data-tooltip="Positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">&#11041;</span><span class="sidebar-nav-label">Positions</span></a>
         <a href="/trades" data-tooltip="Trade Log" class="sidebar-nav-item"><span class="sidebar-nav-icon">&#8862;</span><span class="sidebar-nav-label">Trade Log</span></a>
         <a href="/journal" data-tooltip="Journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">&#9783;</span><span class="sidebar-nav-label">Journal</span></a>
+        <a href="/calendar" data-tooltip="Calendar" class="sidebar-nav-item"><span class="sidebar-nav-icon">&#9638;</span><span class="sidebar-nav-label">Calendar</span></a>
         <a href="/settings" data-tooltip="Settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">&#9881;</span><span class="sidebar-nav-label">Settings</span></a>
         <div class="sidebar-nav-section">Operations</div>
         <a href="/console" data-tooltip="Console" class="sidebar-nav-item"><span class="sidebar-nav-icon">&#9636;</span><span class="sidebar-nav-label">Console</span></a>
@@ -693,6 +694,7 @@
         var wClass = wTrend.toLowerCase();
         var dClass = dTrend.toLowerCase();
         var wLabel = wTrend.replace('_', ' ');
+        if (d.weeklyReversalActive) wLabel += ' <span style="color:var(--accent-yellow);font-weight:700;">(R)</span>';
         var dLabel = dTrend.replace('_', ' ');
         var wArrow = wTrend.includes('BULLISH') ? '&#9650;' : wTrend.includes('BEARISH') ? '&#9660;' : '&#9644;';
         var dArrow = dTrend.includes('BULLISH') ? '&#9650;' : dTrend.includes('BEARISH') ? '&#9660;' : '&#9644;';
@@ -929,7 +931,10 @@
             document.getElementById('niftyLtp').textContent = d.ltp.toFixed(2);
             document.getElementById('niftyState').textContent = (d.state || 'NEUTRAL').replace('_', ' ');
             document.getElementById('niftyScore').textContent = '(score ' + (d.totalScore >= 0 ? '+' : '') + d.totalScore + ' / ±7)';
-            document.getElementById('niftyWeekly').textContent = d.weeklyTrend + ' (' + (d.weeklyScore >= 0 ? '+' : '') + d.weeklyScore + ')';
+            var niftyWeeklyEl = document.getElementById('niftyWeekly');
+            var niftyWeeklyText = d.weeklyTrend + ' (' + (d.weeklyScore >= 0 ? '+' : '') + d.weeklyScore + ')';
+            if (d.weeklyReversalActive) niftyWeeklyText += ' <span style="color:var(--accent-yellow);font-weight:700;">(R)</span>';
+            niftyWeeklyEl.innerHTML = niftyWeeklyText;
             document.getElementById('niftyDaily').textContent = d.dailyTrend + ' (' + (d.dailyScore >= 0 ? '+' : '') + d.dailyScore + ')';
             var emaPosText = d.ema > 0
                 ? (d.emaPositionScore > 0 ? 'Above' : (d.emaPositionScore < 0 ? 'Below' : 'At')) + ' ' + d.ema.toFixed(2) + ' (' + (d.emaPositionScore >= 0 ? '+' : '') + d.emaPositionScore + ')'

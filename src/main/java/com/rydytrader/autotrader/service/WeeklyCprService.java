@@ -29,14 +29,17 @@ import java.util.concurrent.ConcurrentHashMap;
  * (matching Pine Script logic: close > wTop = Bullish, etc.).
  */
 @Service
-public class WeeklyCprService {
+public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
+                                          CandleAggregator.DailyResetListener {
 
     private static final Logger log = LoggerFactory.getLogger(WeeklyCprService.class);
     private static final String STORE_FILE = "../store/config/weekly-cpr.json";
+    private static final String TF_CLOSE_FILE = "../store/config/tf-candle-close.json";
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     private final BhavcopyService bhavcopyService;
     private final CandleAggregator candleAggregator;
+    private final com.rydytrader.autotrader.store.RiskSettingsStore riskSettings;
     @org.springframework.beans.factory.annotation.Autowired
     private EventService eventService;
     private final ObjectMapper mapper = new ObjectMapper();
@@ -44,19 +47,36 @@ public class WeeklyCprService {
     // Weekly CPR levels per symbol (fixed for the week, fetched once)
     private final ConcurrentHashMap<String, WeeklyLevels> weeklyLevels = new ConcurrentHashMap<>();
 
+    // Per-symbol candle close prices for each timeframe — trends derived from these (stable between closes).
+    // Cleared on daily reset; first candle of each timeframe falls back to live LTP.
+    private final ConcurrentHashMap<String, Double> lastTradingTfClose = new ConcurrentHashMap<>();  // 5-min → daily trend
+    private final ConcurrentHashMap<String, Double> lastHigherTfClose = new ConcurrentHashMap<>();   // 75-min → weekly trend
+
+    // Weekly level rejection detection on 75-min timeframe
+    private final ConcurrentHashMap<String, RejectionState> weeklyRejection = new ConcurrentHashMap<>();
+
+    public static class RejectionState {
+        public String type = "NONE";      // NONE, WEEKLY_R1_PWH_REVERSAL, WEEKLY_S1_PWL_REVERSAL
+        public double rejectionPrice = 0; // high of rejection candle (resistance) or low (support)
+        public RejectionState() {}
+    }
+
     // Date on which the cached weekly levels were computed (= most recent Monday or earlier when
     // levels were fetched). Used for staleness check during loadFromFile.
     private volatile String cachedDate = "";
 
     public WeeklyCprService(BhavcopyService bhavcopyService,
-                            CandleAggregator candleAggregator) {
+                            CandleAggregator candleAggregator,
+                            com.rydytrader.autotrader.store.RiskSettingsStore riskSettings) {
         this.bhavcopyService = bhavcopyService;
         this.candleAggregator = candleAggregator;
+        this.riskSettings = riskSettings;
     }
 
     @PostConstruct
     public void init() {
         loadFromFile();
+        loadTfCloseFromFile();
         // If the cache was empty (first install) or stale (new trading week), compute fresh
         // weekly levels right now from BhavcopyService's local daily history. This used to
         // require a Fyers login to trigger, but since we removed the Fyers dependency the
@@ -229,7 +249,77 @@ public class WeeklyCprService {
         }
     }
 
-    // ── Persistence ──────────────────────────────────────────────────────────
+    // ── Persistence: timeframe candle close maps ─────────────────────────────
+
+    /**
+     * Save both TF candle-close maps to disk. Called on every candle close and daily reset.
+     * File includes today's date — stale on next day (daily reset clears the maps anyway).
+     */
+    private synchronized void saveTfCloseToFile() {
+        try {
+            File parent = new File(TF_CLOSE_FILE).getParentFile();
+            if (parent != null) parent.mkdirs();
+            ObjectNode root = mapper.createObjectNode();
+            root.put("date", LocalDate.now(IST).toString());
+            root.putPOJO("tradingTf", lastTradingTfClose);
+            root.putPOJO("higherTf", lastHigherTfClose);
+            root.putPOJO("rejections", weeklyRejection);
+            Files.writeString(Paths.get(TF_CLOSE_FILE),
+                mapper.writeValueAsString(root));
+        } catch (Exception e) {
+            log.error("[WeeklyCpr] Failed to save TF close data: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Load TF candle-close maps from disk on startup. Only loads if the stored date matches today
+     * (same trading day = mid-day restart). Otherwise maps start empty (first candle falls back to LTP).
+     */
+    private synchronized void loadTfCloseFromFile() {
+        Path path = Paths.get(TF_CLOSE_FILE);
+        if (!Files.exists(path)) return;
+        try {
+            JsonNode root = mapper.readTree(Files.readString(path));
+            String storedDate = root.has("date") ? root.get("date").asText("") : "";
+            if (!LocalDate.now(IST).toString().equals(storedDate)) {
+                log.info("[WeeklyCpr] TF close cache is from {} (not today) — starting fresh", storedDate);
+                return;
+            }
+            JsonNode tradingTf = root.get("tradingTf");
+            JsonNode higherTf = root.get("higherTf");
+            int count = 0;
+            if (tradingTf != null && tradingTf.isObject()) {
+                tradingTf.fields().forEachRemaining(e -> {
+                    try { lastTradingTfClose.put(e.getKey(), e.getValue().asDouble()); } catch (Exception ignored) {}
+                });
+                count += lastTradingTfClose.size();
+            }
+            if (higherTf != null && higherTf.isObject()) {
+                higherTf.fields().forEachRemaining(e -> {
+                    try { lastHigherTfClose.put(e.getKey(), e.getValue().asDouble()); } catch (Exception ignored) {}
+                });
+                count += lastHigherTfClose.size();
+            }
+            // Restore rejection states
+            JsonNode rejections = root.get("rejections");
+            if (rejections != null && rejections.isObject()) {
+                rejections.fields().forEachRemaining(e -> {
+                    try {
+                        RejectionState rs = mapper.treeToValue(e.getValue(), RejectionState.class);
+                        if (rs != null && !"NONE".equals(rs.type)) weeklyRejection.put(e.getKey(), rs);
+                    } catch (Exception ignored) {}
+                });
+            }
+            if (count > 0 || !weeklyRejection.isEmpty()) {
+                log.info("[WeeklyCpr] Restored mid-day cache: {} trading-TF + {} higher-TF + {} rejections",
+                    lastTradingTfClose.size(), lastHigherTfClose.size(), weeklyRejection.size());
+            }
+        } catch (Exception e) {
+            log.error("[WeeklyCpr] Failed to load TF close data: {}", e.getMessage());
+        }
+    }
+
+    // ── Persistence: weekly CPR levels ──────────────────────────────────────
 
     /**
      * Save all weekly CPR levels to disk as JSON. File includes a `cachedDate` marker so we
@@ -342,11 +432,102 @@ public class WeeklyCprService {
      * Matches Pine Script: close > wTop = Bullish, close < wBot = Bearish.
      * Strong Bullish = close > weekly R1 AND close > previous week high.
      */
+    // ── CandleCloseListener / DailyResetListener ─────────────────────────────
+
+    @Override
+    public void onCandleClose(String fyersSymbol, CandleAggregator.CandleBar completedCandle) {
+        if (completedCandle.close > 0) {
+            lastTradingTfClose.put(fyersSymbol, completedCandle.close);
+            saveTfCloseToFile();
+        }
+    }
+
+    public void onHigherTimeframeCandleClose(String fyersSymbol, double open, double high, double low, double close) {
+        if (close > 0) lastHigherTfClose.put(fyersSymbol, close);
+
+        WeeklyLevels wl = weeklyLevels.get(fyersSymbol);
+        if (wl == null) { saveTfCloseToFile(); return; }
+
+        RejectionState state = weeklyRejection.computeIfAbsent(fyersSymbol, k -> new RejectionState());
+
+        // Nullify existing rejection: (1) candle closes beyond rejection extreme, (2) price reaches CPR
+        if ("WEEKLY_R1_PWH_REVERSAL".equals(state.type)) {
+            if (close >= state.rejectionPrice) {
+                log.info("[WeeklyCpr] {} R1/PWH reversal NULLIFIED — close {} >= rejection high {}",
+                    fyersSymbol, String.format("%.2f", close), String.format("%.2f", state.rejectionPrice));
+                state.type = "NONE"; state.rejectionPrice = 0;
+            } else if (close <= wl.top) {
+                log.info("[WeeklyCpr] {} R1/PWH reversal NULLIFIED — close {} reached weekly CPR top {}",
+                    fyersSymbol, String.format("%.2f", close), String.format("%.2f", wl.top));
+                state.type = "NONE"; state.rejectionPrice = 0;
+            }
+        }
+        if ("WEEKLY_S1_PWL_REVERSAL".equals(state.type)) {
+            if (close <= state.rejectionPrice) {
+                log.info("[WeeklyCpr] {} S1/PWL reversal NULLIFIED — close {} <= rejection low {}",
+                    fyersSymbol, String.format("%.2f", close), String.format("%.2f", state.rejectionPrice));
+                state.type = "NONE"; state.rejectionPrice = 0;
+            } else if (close >= wl.bot) {
+                log.info("[WeeklyCpr] {} S1/PWL reversal NULLIFIED — close {} reached weekly CPR bot {}",
+                    fyersSymbol, String.format("%.2f", close), String.format("%.2f", wl.bot));
+                state.type = "NONE"; state.rejectionPrice = 0;
+            }
+        }
+
+        // Detect new resistance rejection (mirrors 5-min SELL_BELOW_R1_PDH magnet pattern)
+        double r1ph = Math.min(wl.r1, wl.ph);
+        if (close < r1ph && close > wl.top
+            && ((open > wl.r1 || open > wl.ph || high > wl.r1 || high > wl.ph)
+                || (high > Math.max(wl.r1, wl.ph) && open < Math.max(wl.r1, wl.ph)))) {
+            state.type = "WEEKLY_R1_PWH_REVERSAL";
+            state.rejectionPrice = high;
+            log.info("[WeeklyCpr] {} WEEKLY R1/PWH REVERSAL: O={} H={} L={} C={} (R1={} PH={} top={})",
+                fyersSymbol, String.format("%.2f", open), String.format("%.2f", high),
+                String.format("%.2f", low), String.format("%.2f", close),
+                String.format("%.2f", wl.r1), String.format("%.2f", wl.ph), String.format("%.2f", wl.top));
+        }
+
+        // Detect new support rejection (mirrors 5-min BUY_ABOVE_S1_PDL magnet pattern)
+        double s1pl = Math.max(wl.s1, wl.pl);
+        if (close > s1pl && close < wl.bot
+            && ((open < wl.s1 || open < wl.pl || low < wl.s1 || low < wl.pl)
+                || (low < Math.min(wl.s1, wl.pl) && open > Math.min(wl.s1, wl.pl)))) {
+            state.type = "WEEKLY_S1_PWL_REVERSAL";
+            state.rejectionPrice = low;
+            log.info("[WeeklyCpr] {} WEEKLY S1/PWL REVERSAL: O={} H={} L={} C={} (S1={} PL={} bot={})",
+                fyersSymbol, String.format("%.2f", open), String.format("%.2f", high),
+                String.format("%.2f", low), String.format("%.2f", close),
+                String.format("%.2f", wl.s1), String.format("%.2f", wl.pl), String.format("%.2f", wl.bot));
+        }
+
+        saveTfCloseToFile();
+    }
+
+    public String getWeeklyRejection(String symbol) {
+        RejectionState s = weeklyRejection.get(symbol);
+        return s != null ? s.type : "NONE";
+    }
+
+    @Override
+    public void onDailyReset() {
+        lastTradingTfClose.clear();
+        lastHigherTfClose.clear();
+        weeklyRejection.clear();
+        saveTfCloseToFile();
+    }
+
+    // ── Public accessors ────────────────────────────────────────────────────
+
+    /** Returns the weekly CPR levels for a symbol, or null if not loaded yet. */
+    public WeeklyLevels getWeeklyLevels(String fyersSymbol) {
+        return weeklyLevels.get(fyersSymbol);
+    }
+
     public String getWeeklyTrend(String symbol) {
         WeeklyLevels wl = weeklyLevels.get(symbol);
         if (wl == null) return "NEUTRAL";
 
-        double ltp = getPrice(symbol);
+        double ltp = getWeeklyPrice(symbol);
         if (ltp <= 0) return "NEUTRAL";
 
         if (ltp > wl.r1 && ltp > wl.ph) return "STRONG_BULLISH";
@@ -366,7 +547,7 @@ public class WeeklyCprService {
         CprLevels cpr = bhavcopyService.getCprLevels(ticker);
         if (cpr == null) return "NEUTRAL";
 
-        double ltp = getPrice(symbol);
+        double ltp = getDailyPrice(symbol);
         if (ltp <= 0) return "NEUTRAL";
 
         double dTop = Math.max(cpr.getTc(), cpr.getBc());
@@ -426,11 +607,22 @@ public class WeeklyCprService {
         boolean dBull = daily.contains("BULLISH");
         boolean dBear = daily.contains("BEARISH");
 
+        // Weekly reversal flag: if active and trade opposes it, skip or downgrade
+        String rejection = getWeeklyRejection(symbol);
+        if (isBuy && "WEEKLY_R1_PWH_REVERSAL".equals(rejection)) {
+            if (riskSettings.isWeeklyReversalHardSkip()) return "SKIP";
+            return "LPT";
+        }
+        if (!isBuy && "WEEKLY_S1_PWL_REVERSAL".equals(rejection)) {
+            if (riskSettings.isWeeklyReversalHardSkip()) return "SKIP";
+            return "LPT";
+        }
+
         if (isBuy) {
-            if (wBull && dBull) return "HPT";    // strict: weekly + daily + buy direction
+            if (wBull && dBull) return "HPT";
             return "LPT";
         } else {
-            if (wBear && dBear) return "HPT";    // strict: weekly + daily + sell direction
+            if (wBear && dBear) return "HPT";
             return "LPT";
         }
     }
@@ -439,10 +631,23 @@ public class WeeklyCprService {
      * Get current price: live LTP if available, fallback to previous close from bhavcopy
      * (for weekends/pre-market when no ticks are flowing).
      */
-    private double getPrice(String symbol) {
+    /** Price for daily trend: last trading-TF (5-min) candle close, LTP fallback for first candle. */
+    private double getDailyPrice(String symbol) {
+        Double cc = lastTradingTfClose.get(symbol);
+        if (cc != null && cc > 0) return cc;
         double ltp = candleAggregator.getLtp(symbol);
         if (ltp > 0) return ltp;
-        // Fallback to previous close from BhavcopyService
+        String ticker = extractTicker(symbol);
+        CprLevels cpr = bhavcopyService.getCprLevels(ticker);
+        return cpr != null ? cpr.getClose() : 0;
+    }
+
+    /** Price for weekly trend: last higher-TF (75-min) candle close, LTP fallback for first candle. */
+    private double getWeeklyPrice(String symbol) {
+        Double cc = lastHigherTfClose.get(symbol);
+        if (cc != null && cc > 0) return cc;
+        double ltp = candleAggregator.getLtp(symbol);
+        if (ltp > 0) return ltp;
         String ticker = extractTicker(symbol);
         CprLevels cpr = bhavcopyService.getCprLevels(ticker);
         return cpr != null ? cpr.getClose() : 0;

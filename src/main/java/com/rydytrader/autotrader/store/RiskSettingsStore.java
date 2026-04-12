@@ -74,6 +74,7 @@ public class RiskSettingsStore {
         // Scanner settings
         volatile String signalSource    = "TRADINGVIEW"; // TRADINGVIEW or INTERNAL
         volatile int    scannerTimeframe = 15;  // candle timeframe in minutes
+        volatile int    higherTimeframe  = 75;  // higher TF for weekly trend (minutes)
         volatile boolean enableAtpCheck = true; // require ATP confirmation for scanner signals
         volatile boolean enableHpt      = true;  // High Probable Trade signals (weekly+daily aligned)
         volatile boolean enableLpt      = true;  // Low Probable Trade signals (everything else, half qty)
@@ -98,6 +99,7 @@ public class RiskSettingsStore {
         // NIFTY Index Alignment Filter — downgrade HPT → LPT for trades opposed to NIFTY trend
         volatile boolean enableIndexAlignment = false;        // master toggle, opt-in
         volatile boolean indexAlignmentHardSkip = false;      // true = hard skip opposed trades; false = HPT→LPT downgrade
+        volatile boolean weeklyReversalHardSkip = true;        // true = skip trades opposed to weekly reversal; false = HPT→LPT
         volatile int indexBullishThreshold = 2;               // score >= this → BULLISH
         volatile int indexStrongBullishThreshold = 5;         // score >= this → STRONG_BULLISH
         volatile int indexBearishThreshold = -2;              // score <= this → BEARISH
@@ -172,6 +174,7 @@ public class RiskSettingsStore {
 
     public String  getSignalSource()      { return cfg().signalSource; }
     public int     getScannerTimeframe()  { return cfg().scannerTimeframe; }
+    public int     getHigherTimeframe()   { return cfg().higherTimeframe; }
     public boolean isEnableAtpCheck()    { return cfg().enableAtpCheck; }
     public boolean isEnableHpt()          { return cfg().enableHpt; }
     public boolean isEnableLpt()          { return cfg().enableLpt; }
@@ -191,12 +194,14 @@ public class RiskSettingsStore {
     public double getTargetToleranceAtr()      { return cfg().targetToleranceAtr; }
     public boolean isEnableIndexAlignment()    { return cfg().enableIndexAlignment; }
     public boolean isIndexAlignmentHardSkip()  { return cfg().indexAlignmentHardSkip; }
+    public boolean isWeeklyReversalHardSkip()  { return cfg().weeklyReversalHardSkip; }
     public int getIndexBullishThreshold()       { return cfg().indexBullishThreshold; }
     public int getIndexStrongBullishThreshold() { return cfg().indexStrongBullishThreshold; }
     public int getIndexBearishThreshold()       { return cfg().indexBearishThreshold; }
     public int getIndexStrongBearishThreshold() { return cfg().indexStrongBearishThreshold; }
     public void setSignalSource(String v)      { cfg().signalSource = v; }
     public void setScannerTimeframe(int v)     { cfg().scannerTimeframe = v; }
+    public void setHigherTimeframe(int v)      { cfg().higherTimeframe = v; }
     public void setEnableAtpCheck(boolean v)  { cfg().enableAtpCheck = v; }
     public void setEnableHpt(boolean v)        { cfg().enableHpt = v; }
     public void setEnableLpt(boolean v)        { cfg().enableLpt = v; }
@@ -216,6 +221,7 @@ public class RiskSettingsStore {
     public void setTargetToleranceAtr(double v) { cfg().targetToleranceAtr = v; }
     public void setEnableIndexAlignment(boolean v)        { cfg().enableIndexAlignment = v; }
     public void setIndexAlignmentHardSkip(boolean v)      { cfg().indexAlignmentHardSkip = v; }
+    public void setWeeklyReversalHardSkip(boolean v)     { cfg().weeklyReversalHardSkip = v; }
     public void setIndexBullishThreshold(int v)           { cfg().indexBullishThreshold = v; }
     public void setIndexStrongBullishThreshold(int v)     { cfg().indexStrongBullishThreshold = v; }
     public void setIndexBearishThreshold(int v)           { cfg().indexBearishThreshold = v; }
@@ -393,6 +399,7 @@ public class RiskSettingsStore {
             upsert("trailingSlActivationAtr", String.valueOf(c.trailingSlActivationAtr));
             upsert("signalSource", c.signalSource);
             upsert("scannerTimeframe", String.valueOf(c.scannerTimeframe));
+            upsert("higherTimeframe", String.valueOf(c.higherTimeframe));
             upsert("enableAtpCheck", String.valueOf(c.enableAtpCheck));
             upsert("enableHpt", String.valueOf(c.enableHpt));
             upsert("enableLpt", String.valueOf(c.enableLpt));
@@ -412,6 +419,7 @@ public class RiskSettingsStore {
             upsert("targetToleranceAtr", String.valueOf(c.targetToleranceAtr));
             upsert("enableIndexAlignment", String.valueOf(c.enableIndexAlignment));
             upsert("indexAlignmentHardSkip", String.valueOf(c.indexAlignmentHardSkip));
+            upsert("weeklyReversalHardSkip", String.valueOf(c.weeklyReversalHardSkip));
             upsert("indexBullishThreshold", String.valueOf(c.indexBullishThreshold));
             upsert("indexStrongBullishThreshold", String.valueOf(c.indexStrongBullishThreshold));
             upsert("indexBearishThreshold", String.valueOf(c.indexBearishThreshold));
@@ -487,6 +495,7 @@ public class RiskSettingsStore {
                     case "trailingSlActivationAtr" -> c.trailingSlActivationAtr = Double.parseDouble(v);
                     case "signalSource"      -> c.signalSource = v;
                     case "scannerTimeframe"  -> c.scannerTimeframe = Integer.parseInt(v);
+                    case "higherTimeframe"   -> c.higherTimeframe = Integer.parseInt(v);
                     case "enableAtpCheck"   -> c.enableAtpCheck = Boolean.parseBoolean(v);
                     case "enableHpt"         -> c.enableHpt = Boolean.parseBoolean(v);
                     case "enableLpt"         -> c.enableLpt = Boolean.parseBoolean(v);
@@ -506,6 +515,7 @@ public class RiskSettingsStore {
                     case "targetToleranceAtr" -> c.targetToleranceAtr = Double.parseDouble(v);
                     case "enableIndexAlignment" -> c.enableIndexAlignment = Boolean.parseBoolean(v);
                     case "indexAlignmentHardSkip" -> c.indexAlignmentHardSkip = Boolean.parseBoolean(v);
+                    case "weeklyReversalHardSkip" -> c.weeklyReversalHardSkip = Boolean.parseBoolean(v);
                     case "indexBullishThreshold" -> c.indexBullishThreshold = Integer.parseInt(v);
                     case "indexStrongBullishThreshold" -> c.indexStrongBullishThreshold = Integer.parseInt(v);
                     case "indexBearishThreshold" -> c.indexBearishThreshold = Integer.parseInt(v);

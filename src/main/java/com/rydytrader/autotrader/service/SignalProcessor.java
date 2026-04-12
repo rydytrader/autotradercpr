@@ -233,26 +233,56 @@ public class SignalProcessor {
         double defaultTarget = targets[0];
         double target = defaultTarget;
 
-        // ── 4g. Day high/low target shift (always on, except DH/DL setups) ────
-        // If today's session high (BUY) or low (SELL) is between entry and target,
-        // shift target to day high/low — it acts as intraday resistance/support
-        // Skip for DH/DL setups: breakout candle creates new day high/low, would shift target to near entry
+        // ── 4g. Target shift to nearest resistance/support ──────────────────────
+        // Candidates: session H/L + weekly CPR levels. Pick the nearest level strictly
+        // between entry (close) and the structural target. Single target (no T1/T2 split)
+        // when a shift occurs. DH/DL setups skip session H/L (breakout just created it)
+        // but still consider weekly levels.
         boolean isDhDl = "BUY_ABOVE_DH".equals(setup) || "SELL_BELOW_DL".equals(setup);
         boolean dayHighLowShifted = false;
-        if (!isDhDl && isBuy) {
-            double sessionHigh = marketDataService.getDayHigh(symbol);
-            if (sessionHigh > 0 && sessionHigh > close && sessionHigh < target) {
-                eventService.log("[INFO] " + symbol + " " + setup + " target shifted to day high: "
-                    + fmt(target) + " → " + fmt(sessionHigh) + " (session high between entry and target)");
-                target = sessionHigh;
-                dayHighLowShifted = true;
+        {
+            java.util.Map<Double, String> shiftCandidates = new java.util.LinkedHashMap<>();
+            if (!isDhDl) {
+                if (isBuy) {
+                    double sh = marketDataService.getDayHigh(symbol);
+                    if (sh > 0) shiftCandidates.put(sh, "session high");
+                } else {
+                    double sessionLow = marketDataService.getDayLow(symbol);
+                    if (sessionLow > 0) shiftCandidates.put(sessionLow, "session low");
+                }
             }
-        } else if (!isDhDl) {
-            double sessionLow = marketDataService.getDayLow(symbol);
-            if (sessionLow > 0 && sessionLow < close && sessionLow > target) {
-                eventService.log("[INFO] " + symbol + " " + setup + " target shifted to day low: "
-                    + fmt(target) + " → " + fmt(sessionLow) + " (session low between entry and target)");
-                target = sessionLow;
+            WeeklyCprService.WeeklyLevels wl = weeklyCprService.getWeeklyLevels(symbol);
+            if (wl != null) {
+                shiftCandidates.putIfAbsent(wl.r1,    "weekly R1");
+                shiftCandidates.putIfAbsent(wl.s1,    "weekly S1");
+                shiftCandidates.putIfAbsent(wl.ph,    "weekly PH");
+                shiftCandidates.putIfAbsent(wl.pl,    "weekly PL");
+                shiftCandidates.putIfAbsent(wl.tc,    "weekly TC");
+                shiftCandidates.putIfAbsent(wl.bc,    "weekly BC");
+                shiftCandidates.putIfAbsent(wl.pivot, "weekly Pivot");
+            }
+            Double bestLevel = null;
+            String bestName = null;
+            double bestDist = Double.MAX_VALUE;
+            for (java.util.Map.Entry<Double, String> e : shiftCandidates.entrySet()) {
+                double lvl = e.getKey();
+                if (lvl <= 0) continue;
+                boolean valid = isBuy
+                    ? (lvl > close && lvl < target)
+                    : (lvl < close && lvl > target);
+                if (!valid) continue;
+                double dist = Math.abs(lvl - close);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestLevel = lvl;
+                    bestName = e.getValue();
+                }
+            }
+            if (bestLevel != null) {
+                eventService.log("[INFO] " + symbol + " " + setup + " target shifted to "
+                    + bestName + ": " + fmt(target) + " → " + fmt(bestLevel)
+                    + " (nearest resistance/support between entry and target)");
+                target = bestLevel;
                 dayHighLowShifted = true;
             }
         }

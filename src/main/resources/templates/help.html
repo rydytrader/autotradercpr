@@ -59,6 +59,7 @@
         <a href="/positions" data-tooltip="Positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
         <a href="/trades" data-tooltip="Trade Log" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
         <a href="/journal" data-tooltip="Journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">☷</span><span class="sidebar-nav-label">Journal</span></a>
+        <a href="/calendar" data-tooltip="Calendar" class="sidebar-nav-item"><span class="sidebar-nav-icon">▦</span><span class="sidebar-nav-label">Calendar</span></a>
         <a href="/settings" data-tooltip="Settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
         <div class="sidebar-nav-section">Operations</div>
         <a href="/console" data-tooltip="Console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
@@ -263,7 +264,7 @@
                 <tr><td><strong>OR Lock Guard</strong></td><td>DH/DL only fires after the Opening Range locks. During the OR forming period, day high/low is still being established.</td></tr>
                 <tr><td><strong>Target</strong></td><td>Next CPR level above day high (for buy) or below day low (for sell). If beyond R4/S4, uses projected R5/S5.</td></tr>
                 <tr><td><strong>Re-fire</strong></td><td>One signal per day per symbol. Even if stock makes new highs later, DH won't fire again. Cleared on position close.</td></tr>
-                <tr><td><strong>Day H/L Target Shift</strong></td><td>Skipped for DH/DL setups — the breakout candle creates a new day high/low which would shift the target to near entry.</td></tr>
+                <tr><td><strong>Target Shift</strong></td><td>Session H/L skipped for DH/DL setups (breakout candle creates new H/L), but weekly CPR levels still apply as shift candidates.</td></tr>
                 <tr><td><strong>All other filters</strong></td><td>VWAP/ATP, candle size, volume, small target, probability, qty stacking — all apply identically to CPR breakouts.</td></tr>
             </table>
 
@@ -277,14 +278,16 @@
             <p>Both can be enabled/disabled independently. EMA is seeded from historical candles at startup so it's available from the first candle close. Shown on scanner cards in the data grid.</p>
 
             <h4>Target Calculation Flow</h4>
-            <p>Targets go through a two-step process before the trade is accepted:</p>
+            <p>Targets go through a multi-step process before the trade is accepted:</p>
             <table>
                 <tr><th>Step</th><th>What Happens</th><th>Example (BUY)</th></tr>
-                <tr><td><strong>1. CPR Target</strong></td><td>Default target set from CPR level (R1, R2, etc.)</td><td>Entry 1850, target R2 = 1875</td></tr>
-                <tr><td><strong>2. Day High/Low Shift</strong></td><td>If session high is between entry and target, shift target to day high (always on, no toggle)</td><td>Day high 1865 is between 1850-1875 → target shifts to 1865</td></tr>
-                <tr><td><strong>3. Small Target Filter</strong></td><td>If final target &lt; N x ATR from entry → <strong>skip trade</strong> (configurable, can disable)</td><td>ATR=20, threshold=1.0. Distance 1865-1850=15 &lt; 20 → <strong>SKIP</strong></td></tr>
+                <tr><td><strong>1. CPR Target</strong></td><td>Default target set from CPR level (R1, R2, etc.)</td><td>Entry 1850, target R2 = 1880</td></tr>
+                <tr><td><strong>2. Nearest Resistance/Support Shift</strong></td><td>If any session high/low or weekly CPR level (R1, S1, PH, PL, TC, BC, Pivot) sits between entry and target, shift target to the <strong>nearest</strong> one. Single target — no T1/T2 split when shifted.</td><td>Weekly R1=1858, session high=1865 — both between 1850-1880. Nearest is 1858 → target shifts to weekly R1</td></tr>
+                <tr><td><strong>3. Small Target Filter</strong></td><td>If final target &lt; N x ATR from entry → <strong>skip trade</strong> (configurable, can disable)</td><td>ATR=20, threshold=1.0. Distance 1858-1850=8 &lt; 20 → <strong>SKIP</strong></td></tr>
             </table>
-            <p>This ensures every trade has enough profit room to justify the risk. Day high/low acts as an intraday resistance — even if the CPR target is further away, the day high/low is the realistic barrier price needs to overcome first.</p>
+            <p>The shift picks the nearest resistance (buys) or support (sells) between entry and the structural CPR target. Candidates include today's session high/low plus all 7 weekly CPR levels. The nearest level is the realistic barrier price hits first — setting a tighter, higher-probability target.</p>
+            <p><strong>DH/DL setups</strong>: session high/low is skipped as a candidate (the breakout candle just created it), but weekly CPR levels still apply.</p>
+            <p><strong>When shifted</strong>: trade fires as a single full-qty OCO at the shifted target — no T1/T2 split. The shifted level is tight by design.</p>
         </div>
     </div>
 
@@ -464,7 +467,7 @@
                 <li><strong>Large candle filter</strong> — reject if candle move &gt; N x ATR from level</li>
                 <li><strong>Small candle filter</strong> — reject if candle move &lt; N x ATR</li>
                 <li><strong>Volume filter</strong> — reject if candle volume &lt; N x average volume</li>
-                <li><strong>Small target filter</strong> — reject if final target &lt; N x ATR from entry (after day high/low shift)</li>
+                <li><strong>Small target filter</strong> — reject if final target &lt; N x ATR from entry (after nearest-level shift)</li>
                 <li><strong>20 EMA direction check</strong> — reject buy if close &lt; 20 EMA, reject sell if close &gt; 20 EMA (same logic as VWAP/ATP check)</li>
                 <li><strong>20 EMA distance filter</strong> — reject if breakout level &gt; 0.5 ATR from 20 EMA OR candle close &gt; 0.75 ATR from 20 EMA (overextended breakout)</li>
                 <li><strong>R4/S4 disabled</strong> — reject R4/S4 signals</li>
@@ -530,7 +533,7 @@
                 <tr><th>Target Type</th><th>Tolerance Applied?</th><th>Reason</th></tr>
                 <tr><td>Single target trade (split disabled / qty &lt; 4 / split distance not met)</td><td>YES</td><td>Sits at the CPR level</td></tr>
                 <tr><td>T2 leg of split target trade</td><td>YES</td><td>T2 is the structural CPR level</td></tr>
-                <tr><td>Day H/L shifted target</td><td>YES</td><td>Day H/L is a magnet level</td></tr>
+                <tr><td>Nearest-level shifted target (session H/L or weekly CPR)</td><td>YES</td><td>Structural resistance/support level — single target, no split</td></tr>
                 <tr><td>DH/DL breakout target</td><td>YES</td><td>Targets next CPR level</td></tr>
                 <tr><td><strong>T1 leg of split target trade</strong></td><td><strong>NO</strong></td><td>T1 is a calculated mid-point, not a structural level</td></tr>
             </table>
@@ -555,7 +558,7 @@
             <h4>Composite Score (range -7 to +7)</h4>
             <table>
                 <tr><th>Signal</th><th>Bullish</th><th>Bearish</th></tr>
-                <tr><td>Weekly CPR trend</td><td>+1 / +2 (strong)</td><td>-1 / -2 (strong)</td></tr>
+                <tr><td>Weekly CPR trend</td><td>+1 / +2 (strong)</td><td>-1 / -2 (strong). <strong>0 when weekly reversal (R) active</strong></td></tr>
                 <tr><td>Daily CPR trend</td><td>+1 / +2 (strong)</td><td>-1 / -2 (strong)</td></tr>
                 <tr><td>20 EMA position (LTP vs current EMA value)</td><td>+1 (LTP &gt; EMA)</td><td>-1 (LTP &lt; EMA)</td></tr>
                 <tr><td>20 EMA slope (% per candle)</td><td>+1 (mild) / +2 (steep ≥ 0.02%)</td><td>-1 (mild) / -2 (steep ≤ -0.02%)</td></tr>
@@ -597,6 +600,58 @@
         </div>
     </div>
 
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> Weekly Level Reversal Detection</div></div>
+        <div class="help-body">
+            <p>On the higher timeframe (default 75 min), the bot detects when price <strong>rejects at weekly R1/PWH</strong> (resistance) or <strong>S1/PWL</strong> (support). A rejection means the level held — price tested it but couldn't break through. This signals a potential mean-reversion back toward weekly CPR.</p>
+
+            <h4>Detection (mirrors 5-min magnet pattern)</h4>
+            <table>
+                <tr><th>Reversal</th><th>Condition (75-min candle)</th><th>Meaning</th></tr>
+                <tr><td><span class="badge-example by">WEEKLY_R1_PWH_REVERSAL</span></td><td>High touches R1 or PWH zone, close below min(R1,PWH), still above weekly CPR top</td><td>Resistance held — upside capped, price likely to retrace toward CPR</td></tr>
+                <tr><td><span class="badge-example by">WEEKLY_S1_PWL_REVERSAL</span></td><td>Low touches S1 or PWL zone, close above max(S1,PWL), still below weekly CPR bot</td><td>Support held — downside capped, price likely to bounce toward CPR</td></tr>
+            </table>
+            <p>Both Path 1 (open in/above zone, close below) and Path 2 (wick through zone, close back below) are detected — same pattern as the 5-min magnet trades.</p>
+
+            <h4>Flag Behavior</h4>
+            <ul>
+                <li>Flag <strong>persists</strong> across subsequent 75-min candles until nullified</li>
+                <li><strong>Nullified</strong> when either:
+                    <ul>
+                        <li>A 75-min candle closes above the rejection candle's high (resistance) / below its low (support) — rejection overcome</li>
+                        <li>Price reaches weekly CPR top (resistance) / CPR bot (support) — magnet trade complete, reverted to value</li>
+                    </ul>
+                </li>
+                <li><strong>Re-triggered</strong> if another rejection candle appears</li>
+                <li><strong>Cleared</strong> on daily reset</li>
+                <li><strong>Persisted</strong> to disk for mid-day restart recovery</li>
+            </ul>
+
+            <h4>Impact on Trades</h4>
+            <table>
+                <tr><th>Reversal Active</th><th>Trade Direction</th><th>Effect (configurable)</th></tr>
+                <tr><td>R1/PWH reversal</td><td>Buy</td><td><strong>Skip</strong> (default) or HPT → LPT — buying into a proven ceiling</td></tr>
+                <tr><td>R1/PWH reversal</td><td>Sell</td><td>No change — aligned with reversal direction</td></tr>
+                <tr><td>S1/PWL reversal</td><td>Sell</td><td><strong>Skip</strong> (default) or HPT → LPT — selling into a proven floor</td></tr>
+                <tr><td>S1/PWL reversal</td><td>Buy</td><td>No change — aligned with reversal direction</td></tr>
+            </table>
+            <p>Applies to all trade types (trend, magnet, EV). The direction check is universal — any buy is penalized when R1/PWH reversal is active, any sell when S1/PWL.</p>
+            <p>Setting: <strong>Weekly Reversal Hard Skip</strong> (default ON). Disable to downgrade HPT → LPT instead of skipping.</p>
+
+            <h4>Impact on NIFTY Composite Score</h4>
+            <p>When weekly reversal is active for NIFTY, the <strong>weekly score component is set to 0</strong> in the NIFTY composite score. The weekly trend label (BULLISH/BEARISH) remains but the score contribution is neutralized. Scanner page shows <span style="color:var(--accent-yellow);font-weight:700;">(R)</span> in amber next to the weekly trend on both NIFTY card and individual stock cards.</p>
+
+            <h4>Example</h4>
+            <p>RELIANCE weekly trend = BULLISH. At 11:30 a 75-min candle's high reaches weekly R1 (2680) but closes at 2665 (below R1, above weekly CPR top 2640). Flag set: <strong>WEEKLY_R1_PWH_REVERSAL</strong>, rejection price = candle high.</p>
+            <ul>
+                <li>Next 5-min BUY_ABOVE_R1_PDH fires → <strong>SKIPPED</strong> (buying into the weekly ceiling that just rejected)</li>
+                <li>Next 5-min SELL_BELOW_CPR fires → <strong>no penalty</strong> (aligned with reversal — selling toward value)</li>
+                <li>At 14:15, 75-min candle closes at 2645 (still below rejection high) → flag persists</li>
+                <li>At 15:00, 75-min candle closes at 2638 (below weekly CPR top 2640) → flag <strong>NULLIFIED</strong> (magnet complete, price reverted to CPR)</li>
+            </ul>
+        </div>
+    </div>
+
     </div><!-- /tab-split -->
 
     <!-- STOP LOSS & TRAILING -->
@@ -606,6 +661,25 @@
         <div class="help-body">
             <h4>Initial SL</h4>
             <p>SL = Entry ± ATR(period) x Multiplier. Recalculated from actual fill price (not signal close price).</p>
+
+            <h4>EMA Distance Filter ↔ SL Relationship</h4>
+            <p>The 20 EMA distance filter and the SL ATR multiplier are linked by design. Setting the close-distance filter <strong>below</strong> the SL multiplier guarantees the 20 EMA always sits between entry and SL — acting as a "soft floor" before the hard stop.</p>
+            <p><strong>Worked example</strong> (BUY, defaults: <code>atrMultiplier=2.0</code>, <code>emaCloseDistanceAtr=0.75</code>):</p>
+            <ul>
+                <li>EMA filter: <code>close - ema ≤ 0.75 × ATR</code> (close at most 0.75 ATR above EMA)</li>
+                <li>SL placed at: <code>fillPrice - 2 × ATR ≈ close - 2 × ATR</code></li>
+                <li>Distance below EMA: <code>(close - 2×ATR) - ema = (close - ema) - 2×ATR ≤ 0.75×ATR - 2×ATR = -1.25 × ATR</code></li>
+                <li><strong>Result</strong>: SL sits at least <strong>1.25 ATR below the 20 EMA</strong> on every buy entry. Symmetric for sells (SL at least 1.25 ATR above EMA).</li>
+            </ul>
+            <p>Price would have to breach the EMA <em>before</em> reaching the hard SL — the EMA acts as an early warning level.</p>
+            <table>
+                <tr><th>emaCloseDistanceAtr</th><th>SL position relative to EMA (BUY)</th></tr>
+                <tr><td>0.75 (default)</td><td>SL at least 1.25 ATR below EMA — strong buffer</td></tr>
+                <tr><td>1.0</td><td>SL at least 1.0 ATR below EMA</td></tr>
+                <tr><td>2.0</td><td>SL meets EMA exactly in worst case (boundary)</td></tr>
+                <tr><td>&gt; 2.0</td><td><strong>Breaks property</strong> — SL can sit above EMA (close further from EMA than SL distance)</td></tr>
+            </table>
+            <p>Rule of thumb: keep <code>emaCloseDistanceAtr &lt; atrMultiplier</code> to preserve the EMA-as-soft-floor invariant.</p>
 
             <h4>Trailing SL (ATR Peak-Based)</h4>
             <ul>
@@ -818,33 +892,37 @@
     <div class="section-card help-section fade-in" style="margin-bottom:16px;">
         <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Trend, Alignment & Probability</div></div>
         <div class="help-body">
-            <h4>Two Timeframes</h4>
-            <p>The bot uses two timeframes to determine trade quality:</p>
+            <h4>Dual Timeframes for Trend</h4>
+            <p>The bot uses two independent timeframes to determine trend direction. Both trends are <strong>candle-close-based</strong> (not live LTP), updated once per candle close and stable between closes.</p>
             <table>
-                <tr><th>Timeframe</th><th>Source</th><th>What It Tells You</th></tr>
-                <tr><td><strong>Weekly Trend</strong> (Larger)</td><td>LTP vs weekly CPR levels (weekly OHLC aggregated from daily candles)</td><td>The bigger picture — is the stock in a multi-day uptrend, downtrend, or range?</td></tr>
-                <tr><td><strong>Daily Trend</strong> (Smaller)</td><td>LTP vs today's daily CPR levels (TC, BC, Pivot)</td><td>Today's intraday bias — is price above or below today's value area?</td></tr>
+                <tr><th>Trend</th><th>Candle Timeframe</th><th>Price Source</th><th>What It Tells You</th></tr>
+                <tr><td><strong>Daily Trend</strong></td><td>Trading TF (default 5 min)</td><td>Last 5-min candle close vs today's daily CPR levels</td><td>Today's intraday bias — is price above or below today's value area?</td></tr>
+                <tr><td><strong>Weekly Trend</strong></td><td>Higher TF (default 75 min)</td><td>Last 75-min candle close vs weekly CPR levels</td><td>The bigger picture — is the stock in a multi-day uptrend, downtrend, or range?</td></tr>
             </table>
+            <p><strong>Why candle-close-based?</strong> Live LTP can flip trends tick-by-tick during a candle. Candle-close-based trends update once per interval and remain stable — the BreakoutScanner always evaluates probability against a consistent trend, not a flickering one.</p>
+            <p><strong>First candle fallback:</strong> Before the first candle closes on each timeframe (5 min for daily, 75 min for weekly), the trend falls back to live LTP vs CPR levels. Once the first candle closes, trends lock to the closed price. On mid-day restart, persisted candle-close data is restored so trends resume immediately.</p>
 
-            <h4>How Weekly Trend Is Calculated</h4>
+            <h4>How Weekly Trend Is Calculated (75-min candle close)</h4>
             <table>
                 <tr><th>Trend</th><th>Condition</th><th>Meaning</th></tr>
-                <tr><td><span class="badge-example bg">Strong Bullish</span></td><td>LTP &gt; weekly R1 AND LTP &gt; previous week high</td><td>Stock has broken above weekly resistance — very strong uptrend</td></tr>
-                <tr><td><span class="badge-example bg">Bullish</span></td><td>LTP &gt; weekly CPR top (TC)</td><td>Stock above weekly value area — uptrend</td></tr>
-                <tr><td><span class="badge-example bb">Neutral</span></td><td>LTP within weekly CPR range</td><td>No clear directional bias</td></tr>
-                <tr><td><span class="badge-example br">Bearish</span></td><td>LTP &lt; weekly CPR bottom (BC)</td><td>Stock below weekly value area — downtrend</td></tr>
-                <tr><td><span class="badge-example br">Strong Bearish</span></td><td>LTP &lt; weekly S1 AND LTP &lt; previous week low</td><td>Stock has broken below weekly support — very strong downtrend</td></tr>
+                <tr><td><span class="badge-example bg">Strong Bullish</span></td><td>Close &gt; weekly R1 AND close &gt; previous week high</td><td>Stock has broken above weekly resistance — very strong uptrend</td></tr>
+                <tr><td><span class="badge-example bg">Bullish</span></td><td>Close &gt; weekly CPR top (TC)</td><td>Stock above weekly value area — uptrend</td></tr>
+                <tr><td><span class="badge-example bb">Neutral</span></td><td>Close within weekly CPR range</td><td>No clear directional bias</td></tr>
+                <tr><td><span class="badge-example br">Bearish</span></td><td>Close &lt; weekly CPR bottom (BC)</td><td>Stock below weekly value area — downtrend</td></tr>
+                <tr><td><span class="badge-example br">Strong Bearish</span></td><td>Close &lt; weekly S1 AND close &lt; previous week low</td><td>Stock has broken below weekly support — very strong downtrend</td></tr>
             </table>
+            <p>Updated every 75 minutes (higher timeframe candle close). Stable between closes. Falls back to LTP before first 75-min candle closes.</p>
 
-            <h4>How Daily Trend Is Calculated</h4>
+            <h4>How Daily Trend Is Calculated (5-min candle close)</h4>
             <table>
                 <tr><th>Trend</th><th>Condition</th><th>Meaning</th></tr>
-                <tr><td><span class="badge-example bg">Strong Bullish</span></td><td>LTP &gt; R1 AND LTP &gt; PDH</td><td>Price well above today's value — strong intraday momentum up</td></tr>
-                <tr><td><span class="badge-example bg">Bullish</span></td><td>LTP &gt; daily CPR top (TC)</td><td>Price above today's value area</td></tr>
-                <tr><td><span class="badge-example bb">Neutral</span></td><td>LTP within daily CPR range</td><td>Price inside today's value — no intraday bias</td></tr>
-                <tr><td><span class="badge-example br">Bearish</span></td><td>LTP &lt; daily CPR bottom (BC)</td><td>Price below today's value area</td></tr>
-                <tr><td><span class="badge-example br">Strong Bearish</span></td><td>LTP &lt; S1 AND LTP &lt; PDL</td><td>Price well below today's value — strong intraday momentum down</td></tr>
+                <tr><td><span class="badge-example bg">Strong Bullish</span></td><td>Close &gt; R1 AND close &gt; PDH</td><td>Price well above today's value — strong intraday momentum up</td></tr>
+                <tr><td><span class="badge-example bg">Bullish</span></td><td>Close &gt; daily CPR top (TC)</td><td>Price above today's value area</td></tr>
+                <tr><td><span class="badge-example bb">Neutral</span></td><td>Close within daily CPR range</td><td>Price inside today's value — no intraday bias</td></tr>
+                <tr><td><span class="badge-example br">Bearish</span></td><td>Close &lt; daily CPR bottom (BC)</td><td>Price below today's value area</td></tr>
+                <tr><td><span class="badge-example br">Strong Bearish</span></td><td>Close &lt; S1 AND close &lt; PDL</td><td>Price well below today's value — strong intraday momentum down</td></tr>
             </table>
+            <p>Updated every 5 minutes (trading timeframe candle close). Stable between closes. Falls back to LTP before first 5-min candle closes.</p>
 
             <h4>Trend Alignment & Probability</h4>
             <p>Probability rules differ by setup type:</p>
@@ -1015,13 +1093,15 @@
                 <tr><td>Large Candle Filter</td><td>ON, 1.0 ATR</td><td>Reject if candle move exceeds N x ATR from breakout level</td></tr>
                 <tr><td>Small Candle Filter</td><td>OFF, 0.5 ATR</td><td>Reject if candle body smaller than N x ATR</td></tr>
                 <tr><td>Volume Filter</td><td>ON, 1.0x avg</td><td>Reject if candle volume below N x average volume</td></tr>
-                <tr><td>Small Target Filter</td><td>ON, 1.0 ATR</td><td>Skip trade if final target (after day high/low shift) is &lt; N x ATR from entry</td></tr>
+                <tr><td>Small Target Filter</td><td>ON, 1.0 ATR</td><td>Skip trade if final target (after nearest-level shift) is &lt; N x ATR from entry</td></tr>
                 <tr><td>20 EMA Direction Check</td><td>ON</td><td>Buy requires close above 20 EMA, sell requires close below</td></tr>
                 <tr><td>20 EMA Distance Filter</td><td>ON, 0.5 / 0.75 ATR</td><td>Skip if breakout level &gt; 0.5 ATR from 20 EMA or close &gt; 0.75 ATR from 20 EMA</td></tr>
-                <tr><td>Day High/Low Shift</td><td>ON</td><td>Shift target to session high/low if between entry and target</td></tr>
+                <tr><td>Target Shift (Nearest Level)</td><td>ON</td><td>Shift target to nearest resistance/support (session H/L + weekly CPR levels) between entry and target. Single target when shifted.</td></tr>
+                <tr><td>Higher Timeframe</td><td>75 min</td><td>Candle timeframe for weekly trend calculation. Weekly trend updates on this interval.</td></tr>
                 <tr><td>Split Targets</td><td>ON, 50%, 0 ATR</td><td>T1 at N% of target distance, T2 at full. Min distance to split.</td></tr>
                 <tr><td>Target Tolerance</td><td>ON, 0.10 ATR</td><td>Discount target inside the CPR level by this fraction of ATR so near-miss reversals fill. T1 unaffected.</td></tr>
                 <tr><td>NIFTY Index Alignment</td><td>OFF, thresholds 2 / 5 / -2 / -5</td><td>Composite NIFTY trend score from weekly+daily CPR + 20 EMA position + 20 EMA slope. Trades opposing the trend get HPT→LPT downgrade. NIFTY card on scanner page shows live state.</td></tr>
+                <tr><td>Weekly Reversal Hard Skip</td><td>ON</td><td>Skip trades opposed to 75-min R1/PWH or S1/PWL reversal. Disable for HPT→LPT downgrade instead. Scanner shows (R) in amber.</td></tr>
             </table>
 
             <h4>Hours Tab</h4>
@@ -1071,6 +1151,40 @@
 
 </div><!-- /app-main -->
 </div><!-- /app-layout -->
+
+<script>
+function checkConnection() {
+    var ctrl = new AbortController(); var tid = setTimeout(function(){ ctrl.abort(); }, 3000);
+    fetch('/status', {signal:ctrl.signal}).then(r => { clearTimeout(tid); return r.json(); }).then(d => {
+        const dot = document.getElementById('statusDot');
+        const label = document.getElementById('connectionStatus');
+        var status = d.status || 'DISCONNECTED';
+        if (status.includes('WS CONNECTED')) {
+            dot.className = 'status-dot connected';
+            label.textContent = status;
+            label.style.color = 'var(--accent-green)';
+        } else if (status.includes('CONNECTING') || status.includes('RECONNECTING')) {
+            dot.className = 'status-dot syncing';
+            label.textContent = status;
+            label.style.color = 'var(--accent-yellow)';
+        } else if (status === 'POLLING' || status === 'SYNCING') {
+            dot.className = 'status-dot syncing';
+            label.textContent = status;
+            label.style.color = 'var(--accent-yellow)';
+        } else {
+            dot.className = 'status-dot disconnected';
+            label.textContent = 'DISCONNECTED';
+            label.style.color = 'var(--accent-red)';
+        }
+    }).catch(() => {
+        document.getElementById('statusDot').className = 'status-dot disconnected';
+        document.getElementById('connectionStatus').textContent = 'DISCONNECTED';
+        document.getElementById('connectionStatus').style.color = 'var(--accent-red)';
+    });
+}
+checkConnection();
+setInterval(checkConnection, 5000);
+</script>
 
 </body>
 </html>

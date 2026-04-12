@@ -77,6 +77,7 @@ public class SettingsController {
         result.put("targetToleranceAtr", riskSettings.getTargetToleranceAtr());
         result.put("enableIndexAlignment", riskSettings.isEnableIndexAlignment());
         result.put("indexAlignmentHardSkip", riskSettings.isIndexAlignmentHardSkip());
+        result.put("weeklyReversalHardSkip", riskSettings.isWeeklyReversalHardSkip());
         result.put("indexBullishThreshold", riskSettings.getIndexBullishThreshold());
         result.put("indexStrongBullishThreshold", riskSettings.getIndexStrongBullishThreshold());
         result.put("indexBearishThreshold", riskSettings.getIndexBearishThreshold());
@@ -98,6 +99,7 @@ public class SettingsController {
         result.put("trailingSlActivationAtr", riskSettings.getTrailingSlActivationAtr());
         result.put("signalSource", riskSettings.getSignalSource());
         result.put("scannerTimeframe", riskSettings.getScannerTimeframe());
+        result.put("higherTimeframe", riskSettings.getHigherTimeframe());
         result.put("enableAtpCheck", riskSettings.isEnableAtpCheck());
         result.put("narrowCprMaxWidth", riskSettings.getNarrowCprMaxWidth());
         result.put("insideCprMaxWidth", riskSettings.getInsideCprMaxWidth());
@@ -161,6 +163,7 @@ public class SettingsController {
             if (body.containsKey("targetToleranceAtr")) riskSettings.setTargetToleranceAtr(Double.parseDouble(body.get("targetToleranceAtr").toString()));
             if (body.containsKey("enableIndexAlignment")) riskSettings.setEnableIndexAlignment(Boolean.parseBoolean(body.get("enableIndexAlignment").toString()));
             if (body.containsKey("indexAlignmentHardSkip")) riskSettings.setIndexAlignmentHardSkip(Boolean.parseBoolean(body.get("indexAlignmentHardSkip").toString()));
+            if (body.containsKey("weeklyReversalHardSkip")) riskSettings.setWeeklyReversalHardSkip(Boolean.parseBoolean(body.get("weeklyReversalHardSkip").toString()));
             if (body.containsKey("indexBullishThreshold")) riskSettings.setIndexBullishThreshold(Integer.parseInt(body.get("indexBullishThreshold").toString()));
             if (body.containsKey("indexStrongBullishThreshold")) riskSettings.setIndexStrongBullishThreshold(Integer.parseInt(body.get("indexStrongBullishThreshold").toString()));
             if (body.containsKey("indexBearishThreshold")) riskSettings.setIndexBearishThreshold(Integer.parseInt(body.get("indexBearishThreshold").toString()));
@@ -182,6 +185,7 @@ public class SettingsController {
             if (body.containsKey("trailingSlActivationAtr")) riskSettings.setTrailingSlActivationAtr(Double.parseDouble(body.get("trailingSlActivationAtr").toString()));
             if (body.containsKey("signalSource")) riskSettings.setSignalSource(body.get("signalSource").toString());
             if (body.containsKey("scannerTimeframe")) riskSettings.setScannerTimeframe(Integer.parseInt(body.get("scannerTimeframe").toString()));
+            if (body.containsKey("higherTimeframe")) riskSettings.setHigherTimeframe(Integer.parseInt(body.get("higherTimeframe").toString()));
             if (body.containsKey("enableAtpCheck")) riskSettings.setEnableAtpCheck(Boolean.parseBoolean(body.get("enableAtpCheck").toString()));
             if (body.containsKey("narrowCprMaxWidth")) riskSettings.setNarrowCprMaxWidth(Double.parseDouble(body.get("narrowCprMaxWidth").toString()));
             if (body.containsKey("insideCprMaxWidth")) riskSettings.setInsideCprMaxWidth(Double.parseDouble(body.get("insideCprMaxWidth").toString()));

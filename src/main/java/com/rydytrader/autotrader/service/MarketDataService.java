@@ -55,6 +55,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     private final BreakoutScanner     breakoutScanner;
     private final BhavcopyService     bhavcopyService;
     private final ObjectMapper        mapper = new ObjectMapper();
+    private CandleAggregator          htfAggregator; // higher timeframe (75-min) for weekly trend
 
     @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.context.annotation.Lazy
@@ -182,8 +183,17 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         candleAggregator.setTimeframe(riskSettings.getScannerTimeframe());
         candleAggregator.addListener(atrService);
         candleAggregator.addListener(emaService);
+        candleAggregator.addListener(weeklyCprService);
         candleAggregator.addListener(breakoutScanner);
         candleAggregator.start();
+
+        // Higher timeframe aggregator for weekly trend (e.g. 75-min candles)
+        htfAggregator = new CandleAggregator(riskSettings);
+        htfAggregator.setTimeframe(riskSettings.getHigherTimeframe());
+        htfAggregator.addListener((symbol, candle) ->
+            weeklyCprService.onHigherTimeframeCandleClose(symbol, candle.open, candle.high, candle.low, candle.close));
+        htfAggregator.start();
+        log.info("[MarketData] Higher timeframe aggregator started: {}min", riskSettings.getHigherTimeframe());
 
         // Schedule scanner pre-market data fetch
         scheduleScannerInit();
@@ -301,8 +311,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
 
         // Chandelier Exit trailing SL is handled via onCandleClose callback (not per-tick)
 
-        // Route tick to candle aggregator for scanner
+        // Route tick to candle aggregators (trading TF + higher TF)
         candleAggregator.onTick(raw);
+        if (htfAggregator != null) htfAggregator.onTick(raw);
 
         // Track peak/trough for ATR trailing SL
         if (raw.ltp > 0 && !"NONE".equals(PositionManager.getPosition(raw.fyersSymbol))) {
@@ -797,7 +808,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             watchlistWithIndex.add("NSE:NIFTY50-INDEX");
         }
 
-        // Fetch ATR and weekly trends (throttled API calls)
+        // Fetch ATR + seed EMA for all symbols including NIFTY (EMA seeding piggybacks on ATR fetch)
         atrService.fetchAtrForSymbols(watchlistWithIndex);
         weeklyCprService.fetchWeeklyTrends(watchlistWithIndex);
 

@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TraderEdge - Calendar</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/shared.css?v=5">
+    <script>
+        (function() {
+            const t = localStorage.getItem('traderedge-theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', t);
+            document.addEventListener('DOMContentLoaded', function() {
+                const btn = document.getElementById('themeToggle');
+                if (btn) btn.textContent = t === 'light' ? '\u2600\uFE0F' : t === 'forest' ? '\uD83C\uDF32' : '\uD83C\uDF19';
+            });
+        })();
+    </script>
+    <style>
+        .cal-toolbar {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+        }
+        .cal-nav { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); }
+        .cal-nav-btn {
+            background: var(--bg-card); border: 1px solid var(--border);
+            color: var(--text-primary); width: 34px; height: 34px; border-radius: 8px;
+            cursor: pointer; font-size: 0.95rem; display: flex; align-items: center; justify-content: center;
+            transition: border-color 0.2s ease, background 0.2s ease;
+        }
+        .cal-nav-btn:hover { border-color: rgba(99,179,237,0.35); background: rgba(99,179,237,0.08); }
+        .cal-period {
+            font-family: var(--font-mono); font-size: 1.05rem; font-weight: 700;
+            color: var(--text-primary); min-width: 200px; text-align: center;
+            letter-spacing: 0.08em; text-transform: uppercase;
+        }
+        .cal-view-toggle { display: flex; gap: 6px; }
+        .cal-view-btn {
+            background: var(--bg-card); border: 1px solid var(--border);
+            color: var(--text-secondary); padding: 7px 18px; border-radius: 8px;
+            cursor: pointer; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+        }
+        .cal-view-btn:hover { border-color: rgba(99,179,237,0.35); }
+        .cal-view-btn.active {
+            background: rgba(99,179,237,0.12); border-color: rgba(99,179,237,0.35);
+            color: var(--accent-blue);
+        }
+
+        /* 6-column stat grid for calendar hero — reuses .stat-card styling */
+        .cal-stat-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; margin-bottom: 20px; }
+        @media (max-width: 1200px) { .cal-stat-grid { grid-template-columns: repeat(3, 1fr); } }
+        @media (max-width: 600px)  { .cal-stat-grid { grid-template-columns: repeat(2, 1fr); } }
+
+        /* ── MONTH VIEW: each day is its own card (scanner-style) ── */
+        .cal-weekday-row {
+            display: grid; grid-template-columns: repeat(7, 1fr); gap: 14px;
+            margin-bottom: 10px;
+        }
+        .cal-weekday {
+            font-family: var(--font-mono); font-size: 0.68rem; font-weight: 700;
+            color: var(--text-muted); letter-spacing: 0.12em; text-transform: uppercase;
+            text-align: center; padding: 4px 0;
+        }
+        .cal-day-grid {
+            display: grid; grid-template-columns: repeat(7, 1fr); gap: 14px;
+        }
+        .cal-day {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 12px; padding: 14px 16px;
+            display: flex; flex-direction: column; justify-content: space-between;
+            font-family: var(--font-mono); min-height: 110px;
+            box-shadow: var(--card-shadow);
+            transition: border-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease, background 0.3s ease;
+            overflow: hidden;
+        }
+        .cal-day:hover:not(.blank) {
+            border-color: var(--accent-blue);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+        .cal-day.blank {
+            background: transparent;
+            border: 1px dashed var(--border);
+            opacity: 0.25; box-shadow: none; pointer-events: none;
+        }
+        .cal-day.weekend, .cal-day.holiday { opacity: 0.55; }
+        .cal-day.holiday { background: rgba(251,191,36,0.04); }
+        .cal-holiday-tag {
+            font-size: 0.6rem; font-weight: 700; color: var(--accent-yellow);
+            letter-spacing: 0.04em; line-height: 1.2;
+            text-transform: uppercase; margin-top: 4px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .cal-day.today {
+            border-color: var(--accent-blue); border-width: 2px;
+        }
+        .cal-day.profit {
+            border-color: var(--accent-green); border-width: 2px;
+        }
+        .cal-day.loss {
+            border-color: var(--accent-red); border-width: 2px;
+        }
+        .cal-day-num {
+            font-size: 0.85rem; color: var(--text-secondary); font-weight: 700;
+            margin-bottom: 6px;
+        }
+        .cal-day.profit .cal-day-num, .cal-day.loss .cal-day-num, .cal-day.today .cal-day-num {
+            color: var(--text-primary);
+        }
+        .cal-day-pnl {
+            font-size: 1.05rem; font-weight: 700; color: var(--text-primary); line-height: 1;
+        }
+        .cal-day.profit .cal-day-pnl { color: var(--accent-green); }
+        .cal-day.loss   .cal-day-pnl { color: var(--accent-red); }
+        .cal-day-trades {
+            font-size: 0.62rem; color: var(--text-muted); letter-spacing: 0.04em; margin-top: 4px;
+        }
+
+        /* ── YEAR VIEW: each month is its own card (scanner-style) ── */
+        .cal-year-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 16px;
+        }
+        .cal-month-card {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 12px; padding: 16px 18px; cursor: pointer;
+            box-shadow: var(--card-shadow); overflow: hidden;
+            transition: border-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease, background 0.3s ease;
+        }
+        .cal-month-card:hover {
+            border-color: var(--accent-blue);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+        .cal-month-card.profit { border-color: var(--accent-green); border-width: 2px; }
+        .cal-month-card.loss   { border-color: var(--accent-red);   border-width: 2px; }
+        /* Empty months keep the same background as a regular trading-day card — no opacity fade */
+        .cal-month-name {
+            font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700;
+            color: var(--text-muted); letter-spacing: 0.12em; text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+        .cal-month-pnl {
+            font-family: var(--font-mono); font-size: 1.5rem; font-weight: 700;
+            color: var(--text-primary); margin-bottom: 14px; line-height: 1;
+        }
+        .cal-month-pnl.profit { color: var(--accent-green); }
+        .cal-month-pnl.loss   { color: var(--accent-red); }
+        .cal-month-stats {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px;
+            font-family: var(--font-mono); font-size: 0.7rem;
+            padding-top: 12px; border-top: 1px solid var(--border);
+        }
+        .cal-month-stat-label { color: var(--text-muted); letter-spacing: 0.04em; }
+        .cal-month-stat-value { color: var(--text-primary); font-weight: 700; text-align: right; }
+    </style>
+</head>
+<body>
+<div class="app-layout">
+<aside class="sidebar">
+    <div class="sidebar-brand">
+        <div class="brand-icon">⚡</div>
+        <div class="sidebar-brand-text">
+            <div class="brand-name">TRADER<span>EDGE</span><div style="font-size:0.65rem;font-weight:500;letter-spacing:0.12em;color:var(--text-secondary);margin-top:4px;opacity:0.7;">AutoTrader BOT</div></div>
+        </div>
+    </div>
+    <nav class="sidebar-nav">
+        <div class="sidebar-nav-section" style="display:flex;align-items:center;justify-content:space-between;"><button class="sidebar-collapse-btn" onclick="toggleSidebar()" title="Toggle sidebar" style="margin:0;padding:2px 6px;border:none;">☰</button></div>
+        <a href="/home" data-tooltip="Home" class="sidebar-nav-item"><span class="sidebar-nav-icon" style="font-size:1.3rem;">⌂</span><span class="sidebar-nav-label">Home</span></a>
+        <a href="/scanner" data-tooltip="Scanner" class="sidebar-nav-item"><span class="sidebar-nav-icon">◎</span><span class="sidebar-nav-label">Scanner</span></a>
+        <a href="/positions" data-tooltip="Positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
+        <a href="/trades" data-tooltip="Trade Log" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
+        <a href="/journal" data-tooltip="Journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">☷</span><span class="sidebar-nav-label">Journal</span></a>
+        <a href="/calendar" data-tooltip="Calendar" class="sidebar-nav-item active"><span class="sidebar-nav-icon">▦</span><span class="sidebar-nav-label">Calendar</span></a>
+        <a href="/settings" data-tooltip="Settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
+        <div class="sidebar-nav-section">Operations</div>
+        <a href="/console" data-tooltip="Console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
+        <a href="/monitoring" data-tooltip="Monitoring" class="sidebar-nav-item"><span class="sidebar-nav-icon">◉</span><span class="sidebar-nav-label">Monitoring</span></a>
+        <a href="/help" data-tooltip="Help" class="sidebar-nav-item"><span class="sidebar-nav-icon">?</span><span class="sidebar-nav-label">Help</span></a>
+    </nav>
+    <div class="sidebar-footer">
+        <div class="status-pill">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="connectionStatus" style="color: var(--text-secondary);">Checking...</span>
+        </div>
+    </div>
+</aside>
+
+<div class="app-main">
+<nav class="navbar">
+    <div class="navbar-inner">
+        <div class="ticker-wrap" id="tickerWrap">
+            <div class="ticker-track" id="tickerTrack"></div>
+        </div>
+        <div class="nav-right">
+            <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
+            <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
+        </div>
+    </div>
+</nav>
+
+<div class="page-wrap">
+
+    <div class="page-header">
+        <div>
+            <div class="page-title">Calendar</div>
+            <div class="page-subtitle">P&L calendar and monthly analytics</div>
+        </div>
+    </div>
+
+    <!-- Toolbar: nav + view toggle -->
+    <div class="cal-toolbar">
+        <div class="cal-nav">
+            <button class="cal-nav-btn" onclick="navPrev()" title="Previous">◀</button>
+            <div class="cal-period" id="calPeriodLabel">—</div>
+            <button class="cal-nav-btn" onclick="navNext()" title="Next">▶</button>
+            <button class="cal-nav-btn" onclick="navToday()" title="Current period" style="margin-left:8px; width:auto; padding:0 12px; font-size:0.75rem;">TODAY</button>
+        </div>
+        <div class="cal-view-toggle">
+            <button class="cal-view-btn active" id="btnMonthView" onclick="setView('month')">MONTH</button>
+            <button class="cal-view-btn" id="btnYearView" onclick="setView('year')">YEAR</button>
+        </div>
+    </div>
+
+    <!-- Summary card (hero P&L + stats) -->
+    <div class="section-card fade-in" style="margin-bottom:20px;">
+        <div class="section-header">
+            <div class="section-title"><div class="section-title-dot"></div> Summary</div>
+        </div>
+        <div style="padding:20px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px;">
+            <div>
+                <div class="stat-label" style="margin-bottom:6px;">Net P&L</div>
+                <div class="stat-value" id="heroNetPnl" style="font-size:2.2rem;">—</div>
+                <div class="stat-sub" id="heroNetPnlSub" style="margin-top:6px;">Gross P&L − Charges</div>
+            </div>
+            <div style="display:flex; gap:32px; flex-wrap:wrap;">
+                <div style="text-align:center;">
+                    <div class="stat-label">Total Trades</div>
+                    <div class="stat-value" id="heroTotalTrades" style="font-size:1.1rem; margin-top:4px;">—</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">Win Rate</div>
+                    <div class="stat-value" id="heroWinRate" style="font-size:1.1rem; margin-top:4px;">—</div>
+                </div>
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
+                    <div class="stat-label">Profit Factor</div>
+                    <div class="stat-value" id="heroProfitFactor" style="font-size:1.1rem; margin-top:4px;">—</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">Avg Win</div>
+                    <div class="stat-value" id="heroAvgWin" style="font-size:1.1rem; margin-top:4px;">—</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">Avg Loss</div>
+                    <div class="stat-value" id="heroAvgLoss" style="font-size:1.1rem; margin-top:4px;">—</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Month view: 7-col calendar grid (each day is its own card, scanner-style) -->
+    <div id="monthViewPanel" style="display:block;">
+        <div class="cal-weekday-row">
+            <div class="cal-weekday">Mon</div>
+            <div class="cal-weekday">Tue</div>
+            <div class="cal-weekday">Wed</div>
+            <div class="cal-weekday">Thu</div>
+            <div class="cal-weekday">Fri</div>
+            <div class="cal-weekday">Sat</div>
+            <div class="cal-weekday">Sun</div>
+        </div>
+        <div class="cal-day-grid" id="calDayGrid"></div>
+    </div>
+
+    <!-- Year view: 12 month cards (financial year: April → March) -->
+    <div id="yearViewPanel" style="display:none;">
+        <div class="cal-year-grid" id="calYearGrid"></div>
+    </div>
+
+</div><!-- /page-wrap -->
+</div><!-- /app-main -->
+</div><!-- /app-layout -->
+
+<script src="/js/common.js?v=4"></script>
+<script src="/js/ticker.js?v=4"></script>
+<script>
+(function(){
+    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    // Financial year month order: April → March
+    const FY_MONTH_ORDER = [4,5,6,7,8,9,10,11,12,1,2,3];
+
+    let view = 'month';
+    let curYear = new Date().getFullYear();
+    let curMonth = new Date().getMonth() + 1;
+    // Current FY start year: if today's month >= April, FY starts this year; else previous year
+    let curFyStart = (new Date().getMonth() + 1) >= 4
+        ? new Date().getFullYear()
+        : new Date().getFullYear() - 1;
+
+    function fmtMoney(n) {
+        if (n === 0 || n == null) return '₹0';
+        const sign = n < 0 ? '-' : '';
+        const abs = Math.abs(n);
+        return sign + '₹' + abs.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+    }
+    function pnlClass(v) { return v > 0 ? 'positive' : v < 0 ? 'negative' : ''; }
+
+    function setEl(id, value, cls) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = value;
+        el.classList.remove('positive', 'negative');
+        if (cls) el.classList.add(cls);
+    }
+    function renderHero(summary) {
+        const hasTrades = summary && summary.totalTrades > 0;
+        const net = hasTrades ? (summary.netPnl || 0) : null;
+        setEl('heroNetPnl',       hasTrades ? fmtMoney(net) : '—', hasTrades ? pnlClass(net) : '');
+        setEl('heroTotalTrades',  hasTrades ? (summary.totalTrades || 0) : '—');
+        setEl('heroWinRate',      hasTrades ? ((summary.winRate || 0).toFixed(1) + '%') : '—');
+        setEl('heroProfitFactor', hasTrades ? ((summary.profitFactor || 0).toFixed(2)) : '—');
+        setEl('heroAvgWin',       hasTrades ? fmtMoney(summary.avgWin || 0) : '—', hasTrades ? 'positive' : '');
+        setEl('heroAvgLoss',      hasTrades ? fmtMoney(summary.avgLoss || 0) : '—', hasTrades ? 'negative' : '');
+    }
+
+    function renderMonth(data) {
+        document.getElementById('calPeriodLabel').textContent = MONTH_NAMES[curMonth - 1] + ' ' + curYear;
+        renderHero(data.summary);
+
+        const grid = document.getElementById('calDayGrid');
+        const firstDayOfWeek = data.firstDayOfWeek; // 1=Mon..7=Sun
+        const daysInMonth = data.daysInMonth;
+        const dailyPnl = data.dailyPnl || {};
+        const holidays = data.holidays || {};
+        const todayStr = new Date().toISOString().substring(0, 10);
+
+        let html = '';
+        // Blank cells before first day
+        for (let i = 1; i < firstDayOfWeek; i++) {
+            html += '<div class="cal-day blank"></div>';
+        }
+        // Day cells
+        for (let d = 1; d <= daysInMonth; d++) {
+            const dateStr = curYear + '-' + String(curMonth).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+            const dayData = dailyPnl[dateStr];
+            const holidayName = holidays[dateStr];
+            const dow = ((firstDayOfWeek - 1 + d - 1) % 7) + 1;
+            const weekend = (dow === 6 || dow === 7);
+            const isHoliday = !!holidayName;
+            const isToday = dateStr === todayStr;
+            const hasPnl = dayData && dayData.trades > 0;
+            const cls = [
+                'cal-day',
+                weekend ? 'weekend' : '',
+                isHoliday ? 'holiday' : '',
+                isToday ? 'today' : '',
+                hasPnl ? (dayData.netPnl >= 0 ? 'profit' : 'loss') : ''
+            ].filter(Boolean).join(' ');
+
+            let body;
+            if (hasPnl) {
+                body = '<div><div class="cal-day-pnl">' + fmtMoney(dayData.netPnl) + '</div>' +
+                       '<div class="cal-day-trades">' + dayData.trades + ' trade' + (dayData.trades === 1 ? '' : 's') + '</div></div>';
+            } else if (isHoliday) {
+                body = '<div class="cal-holiday-tag" title="' + holidayName + '">' + holidayName + '</div>';
+            } else if (weekend) {
+                body = '<div class="cal-day-trades">' + (dow === 6 ? 'SAT' : 'SUN') + '</div>';
+            } else {
+                body = '<div class="cal-day-trades">—</div>';
+            }
+
+            html += '<div class="' + cls + '">' +
+                '<div class="cal-day-num">' + d + '</div>' +
+                body +
+            '</div>';
+        }
+        grid.innerHTML = html;
+    }
+
+    function renderYear(data) {
+        const fyEnd = curFyStart + 1;
+        document.getElementById('calPeriodLabel').textContent =
+            'FY ' + curFyStart + '–' + String(fyEnd).slice(2) + '  (Apr–Mar)';
+        renderHero(data.fySummary);
+
+        const grid = document.getElementById('calYearGrid');
+        const monthMap = {};
+        (data.months || []).forEach(m => { monthMap[m.month + '-' + m.year] = m; });
+
+        // Render in FY order: April(curFyStart) → March(curFyStart+1)
+        let html = '';
+        FY_MONTH_ORDER.forEach(mNum => {
+            const y = mNum >= 4 ? curFyStart : curFyStart + 1;
+            const m = monthMap[mNum + '-' + y] || { month: mNum, year: y, summary: {} };
+            const s = m.summary || {};
+            const net = s.netPnl || 0;
+            const hasTrades = s.totalTrades > 0;
+            const clsBase = ['cal-month-card'];
+            if (!hasTrades) clsBase.push('empty');
+            else if (net > 0) clsBase.push('profit');
+            else if (net < 0) clsBase.push('loss');
+            const pnlClsArr = ['cal-month-pnl'];
+            if (hasTrades && net > 0) pnlClsArr.push('profit');
+            else if (hasTrades && net < 0) pnlClsArr.push('loss');
+
+            html += '<div class="' + clsBase.join(' ') + '" onclick="jumpToMonth(' + mNum + ',' + y + ')">' +
+                '<div class="cal-month-name">' + MONTH_NAMES[mNum - 1] + ' ' + y + '</div>' +
+                '<div class="' + pnlClsArr.join(' ') + '">' + (hasTrades ? fmtMoney(net) : '—') + '</div>' +
+                '<div class="cal-month-stats">' +
+                  '<div class="cal-month-stat-label">Trades</div><div class="cal-month-stat-value">' + (hasTrades ? s.totalTrades : '—') + '</div>' +
+                  '<div class="cal-month-stat-label">Win %</div><div class="cal-month-stat-value">' + (hasTrades ? (s.winRate || 0).toFixed(1) + '%' : '—') + '</div>' +
+                  '<div class="cal-month-stat-label">PF</div><div class="cal-month-stat-value">' + (hasTrades ? (s.profitFactor || 0).toFixed(2) : '—') + '</div>' +
+                  '<div class="cal-month-stat-label">Avg Win</div><div class="cal-month-stat-value">' + (hasTrades ? fmtMoney(s.avgWin || 0) : '—') + '</div>' +
+                '</div>' +
+            '</div>';
+        });
+        grid.innerHTML = html;
+    }
+
+    async function loadMonth() {
+        const res = await fetch('/api/calendar/month?year=' + curYear + '&month=' + curMonth);
+        const data = await res.json();
+        renderMonth(data);
+    }
+    async function loadYear() {
+        const res = await fetch('/api/calendar/fy?fyStart=' + curFyStart);
+        const data = await res.json();
+        renderYear(data);
+    }
+    function reload() {
+        if (view === 'month') loadMonth();
+        else loadYear();
+    }
+
+    window.setView = function(v) {
+        view = v;
+        document.getElementById('btnMonthView').classList.toggle('active', v === 'month');
+        document.getElementById('btnYearView').classList.toggle('active', v === 'year');
+        document.getElementById('monthViewPanel').style.display = v === 'month' ? 'block' : 'none';
+        document.getElementById('yearViewPanel').style.display = v === 'year' ? 'block' : 'none';
+        reload();
+    };
+    window.navPrev = function() {
+        if (view === 'month') {
+            curMonth--;
+            if (curMonth < 1) { curMonth = 12; curYear--; }
+        } else {
+            curFyStart--;
+        }
+        reload();
+    };
+    window.navNext = function() {
+        if (view === 'month') {
+            curMonth++;
+            if (curMonth > 12) { curMonth = 1; curYear++; }
+        } else {
+            curFyStart++;
+        }
+        reload();
+    };
+    window.navToday = function() {
+        const now = new Date();
+        curYear = now.getFullYear();
+        curMonth = now.getMonth() + 1;
+        curFyStart = curMonth >= 4 ? curYear : curYear - 1;
+        reload();
+    };
+    window.jumpToMonth = function(m, y) {
+        curMonth = m;
+        curYear = y || curYear;
+        setView('month');
+    };
+
+    document.addEventListener('DOMContentLoaded', reload);
+})();
+
+// ── Connection status (same as other pages) ──
+function checkConnection() {
+    var ctrl = new AbortController(); var tid = setTimeout(function(){ ctrl.abort(); }, 3000);
+    fetch('/status', {signal:ctrl.signal}).then(r => { clearTimeout(tid); return r.json(); }).then(d => {
+        const dot = document.getElementById('statusDot');
+        const label = document.getElementById('connectionStatus');
+        var status = d.status || 'DISCONNECTED';
+        if (status.includes('WS CONNECTED')) {
+            dot.className = 'status-dot connected';
+            label.textContent = status;
+            label.style.color = 'var(--accent-green)';
+        } else if (status.includes('CONNECTING') || status.includes('RECONNECTING')) {
+            dot.className = 'status-dot syncing';
+            label.textContent = status;
+            label.style.color = 'var(--accent-yellow)';
+        } else if (status === 'POLLING' || status === 'SYNCING') {
+            dot.className = 'status-dot syncing';
+            label.textContent = status;
+            label.style.color = 'var(--accent-yellow)';
+        } else {
+            dot.className = 'status-dot disconnected';
+            label.textContent = 'DISCONNECTED';
+            label.style.color = 'var(--accent-red)';
+        }
+    }).catch(() => {
+        document.getElementById('statusDot').className = 'status-dot disconnected';
+        document.getElementById('connectionStatus').textContent = 'DISCONNECTED';
+        document.getElementById('connectionStatus').style.color = 'var(--accent-red)';
+    });
+}
+checkConnection();
+setInterval(checkConnection, 5000);
+</script>
+</body>
+</html>

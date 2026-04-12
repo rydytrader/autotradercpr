@@ -75,8 +75,12 @@ public class IndexTrendService {
         trend.setDailyTrend(daily);
         trend.setEmaSlopePct(slopePct);
 
+        // Weekly reversal flag — zero out weekly score when active
+        boolean reversalActive = !"NONE".equals(weeklyCprService.getWeeklyRejection(symbol));
+        trend.setWeeklyReversalActive(reversalActive);
+
         // Compute component scores
-        int weeklyScore = scoreTrend(weekly);
+        int weeklyScore = reversalActive ? 0 : scoreTrend(weekly);
         int dailyScore = scoreTrend(daily);
         int emaPositionScore = scoreEmaPosition(ltp, ema);
         int slopeScore = scoreSlope(slopePct);

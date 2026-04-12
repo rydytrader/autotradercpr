@@ -115,6 +115,7 @@
         <a href="/positions" data-tooltip="Positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
         <a href="/trades" data-tooltip="Trade Log" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
         <a href="/journal" data-tooltip="Journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">☷</span><span class="sidebar-nav-label">Journal</span></a>
+        <a href="/calendar" data-tooltip="Calendar" class="sidebar-nav-item"><span class="sidebar-nav-icon">▦</span><span class="sidebar-nav-label">Calendar</span></a>
         <a href="/settings" data-tooltip="Settings" class="sidebar-nav-item active"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
         <div class="sidebar-nav-section">Operations</div>
         <a href="/console" data-tooltip="Console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
@@ -432,6 +433,7 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR from 20 EMA</span>
                     </div>
                     <div class="form-hint">Filters overextended breakouts where price has moved too far from the 20-period EMA.</div>
+                    <div class="form-hint" style="color: var(--accent-yellow); margin-top: 4px;">Tip: keep this value &lt; ATR Multiplier (default 2.0). When close-distance &lt; ATR multiplier, the 20 EMA always sits between entry and SL — acting as a "soft floor" before the hard stop. At 0.75 (default), SL is at least 1.25 ATR beyond EMA. At 2.0 they meet. Above 2.0, SL ends up on the wrong side of EMA and the protection breaks.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Split Targets (T1 + T2)</label>
@@ -471,6 +473,10 @@
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px; padding-left: 28px;">
                         <input type="checkbox" id="indexAlignmentHardSkip" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Hard skip mode — skip opposed trades entirely (default: soft mode = HPT → LPT downgrade)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 10px; padding-left: 28px;">
+                        <input type="checkbox" id="weeklyReversalHardSkip" style="width: 18px; height: 18px; accent-color: var(--accent-yellow); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Weekly reversal hard skip — skip buy/sell trades opposed to 75-min R1/PWH or S1/PWL reversal (disable for HPT → LPT downgrade)</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Bullish:</span>
@@ -552,7 +558,12 @@
                 <div class="form-group">
                     <label class="form-label">Trading Timeframe</label>
                     <input type="number" id="scannerTimeframe" class="form-control" min="1" max="60" step="1" placeholder="5">
-                    <div class="form-hint">Candle timeframe in minutes for breakout detection, ATR and EMA calculation</div>
+                    <div class="form-hint">Candle timeframe in minutes for breakout detection, ATR, EMA and daily trend</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Higher Timeframe</label>
+                    <input type="number" id="higherTimeframe" class="form-control" min="15" max="375" step="5" placeholder="75">
+                    <div class="form-hint">Higher timeframe in minutes for weekly trend calculation (default 75)</div>
                 </div>
                 <div class="form-group" style="grid-column: 1 / -1;">
                     <label class="form-label">Signal Probability</label>
@@ -905,6 +916,7 @@
             document.getElementById('targetToleranceAtr').value = (d.targetToleranceAtr != null ? d.targetToleranceAtr : 0.10);
             document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
             document.getElementById('indexAlignmentHardSkip').checked = d.indexAlignmentHardSkip === true;
+            document.getElementById('weeklyReversalHardSkip').checked = d.weeklyReversalHardSkip !== false;
             document.getElementById('indexBullishThreshold').value = (d.indexBullishThreshold != null ? d.indexBullishThreshold : 2);
             document.getElementById('indexStrongBullishThreshold').value = (d.indexStrongBullishThreshold != null ? d.indexStrongBullishThreshold : 5);
             document.getElementById('indexBearishThreshold').value = (d.indexBearishThreshold != null ? d.indexBearishThreshold : -2);
@@ -924,6 +936,7 @@
             // Scanner settings
             document.getElementById('signalSource').value = d.signalSource || 'TRADINGVIEW';
             document.getElementById('scannerTimeframe').value = d.scannerTimeframe != null ? d.scannerTimeframe : 15;
+            document.getElementById('higherTimeframe').value = d.higherTimeframe != null ? d.higherTimeframe : 75;
             document.getElementById('enableAtpCheck').checked = d.enableAtpCheck !== false;
             document.getElementById('narrowCprMaxWidth').value = d.narrowCprMaxWidth != null ? d.narrowCprMaxWidth : 0.1;
             document.getElementById('insideCprMaxWidth').value = d.insideCprMaxWidth != null ? d.insideCprMaxWidth : 0.5;
@@ -1034,6 +1047,7 @@
                 targetToleranceAtr: parseFloat(document.getElementById('targetToleranceAtr').value) || 0,
                 enableIndexAlignment: document.getElementById('enableIndexAlignment').checked,
                 indexAlignmentHardSkip: document.getElementById('indexAlignmentHardSkip').checked,
+                weeklyReversalHardSkip: document.getElementById('weeklyReversalHardSkip').checked,
                 indexBullishThreshold: parseInt(document.getElementById('indexBullishThreshold').value) || 2,
                 indexStrongBullishThreshold: parseInt(document.getElementById('indexStrongBullishThreshold').value) || 5,
                 indexBearishThreshold: parseInt(document.getElementById('indexBearishThreshold').value) || -2,
@@ -1051,6 +1065,7 @@
                 trailingSlActivationAtr: parseFloat(document.getElementById('trailingSlActivationAtr').value) || 1.0,
                 signalSource: document.getElementById('signalSource').value,
                 scannerTimeframe: parseInt(document.getElementById('scannerTimeframe').value) || 15,
+                higherTimeframe: parseInt(document.getElementById('higherTimeframe').value) || 75,
                 enableAtpCheck: document.getElementById('enableAtpCheck').checked,
                 narrowCprMaxWidth: parseFloat(document.getElementById('narrowCprMaxWidth').value) || 0.1,
                 insideCprMaxWidth: parseFloat(document.getElementById('insideCprMaxWidth').value) || 0,
