@@ -409,12 +409,15 @@
 
             html += '<div class="' + clsBase.join(' ') + '" onclick="jumpToMonth(' + mNum + ',' + y + ')">' +
                 '<div class="cal-month-name">' + MONTH_NAMES[mNum - 1] + ' ' + y + '</div>' +
-                '<div class="' + pnlClsArr.join(' ') + '">' + (hasTrades ? fmtMoney(net) : '—') + '</div>' +
+                '<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:12px;">' +
+                  '<div class="' + pnlClsArr.join(' ') + '">' + (hasTrades ? fmtMoney(net) : '—') + '</div>' +
+                  '<div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted);">' + (hasTrades ? s.totalTrades + ' trade' + (s.totalTrades === 1 ? '' : 's') : '') + '</div>' +
+                '</div>' +
                 '<div class="cal-month-stats">' +
-                  '<div class="cal-month-stat-label">Trades</div><div class="cal-month-stat-value">' + (hasTrades ? s.totalTrades : '—') + '</div>' +
                   '<div class="cal-month-stat-label">Win %</div><div class="cal-month-stat-value">' + (hasTrades ? (s.winRate || 0).toFixed(1) + '%' : '—') + '</div>' +
                   '<div class="cal-month-stat-label">PF</div><div class="cal-month-stat-value">' + (hasTrades ? (s.profitFactor || 0).toFixed(2) : '—') + '</div>' +
                   '<div class="cal-month-stat-label">Avg Win</div><div class="cal-month-stat-value">' + (hasTrades ? fmtMoney(s.avgWin || 0) : '—') + '</div>' +
+                  '<div class="cal-month-stat-label">Avg Loss</div><div class="cal-month-stat-value">' + (hasTrades ? fmtMoney(s.avgLoss || 0) : '—') + '</div>' +
                 '</div>' +
             '</div>';
         });
