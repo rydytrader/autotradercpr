@@ -801,7 +801,7 @@ public class BhavcopyService {
                     case "TtlTradgVol", "TtlTrdQty", "TradQnty" -> volumeIdx = i;
                     case "Hgh52Wk", "52WkHgh", "HghPric52Wk"  -> w52HighIdx = i;
                     case "Lw52Wk", "52WkLw", "LwPric52Wk"     -> w52LowIdx = i;
-                    case "TtlTrdVal", "TtlTradVal", "TrdVal", "TOTTRDVAL" -> turnoverIdx = i;
+                    case "TtlTrdVal", "TtlTradVal", "TtlTrfVal", "TrdVal", "TOTTRDVAL" -> turnoverIdx = i;
                     // Legacy fallbacks
                     case "SYMBOL"   -> { if (symIdx == -1) symIdx = i; }
                     case "SERIES"   -> { if (seriesIdx == -1) seriesIdx = i; }
