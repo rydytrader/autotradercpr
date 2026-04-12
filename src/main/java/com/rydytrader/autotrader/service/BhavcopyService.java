@@ -119,12 +119,21 @@ public class BhavcopyService {
             }
             // Classify narrow/inside range types from loaded cache + history
             classifyNarrowRangeTypes(cache);
-            computeBetas(cache);
-            try {
-                String cookies = getNseCookies();
-                if (cookies != null && !cookies.isEmpty()) fetchCapCategories(cookies, cache);
-            } catch (Exception e) {
-                log.warn("[BhavcopyService] Cap category fetch failed on cache load: {}", e.getMessage());
+            // Only compute beta/cap if not already in the cached file (avoids slow NSE calls on restart)
+            boolean needsEnrichment = cache.values().stream()
+                .anyMatch(c -> c.getBeta() == 0 || c.getCapCategory() == null);
+            if (needsEnrichment) {
+                log.info("[BhavcopyService] Enriching cache: computing betas + fetching cap categories");
+                computeBetas(cache);
+                try {
+                    String cookies = getNseCookies();
+                    if (cookies != null && !cookies.isEmpty()) fetchCapCategories(cookies, cache);
+                } catch (Exception e) {
+                    log.warn("[BhavcopyService] Cap category fetch failed on cache load: {}", e.getMessage());
+                }
+                saveToFile();
+            } else {
+                log.info("[BhavcopyService] Beta + cap already cached — skipping enrichment");
             }
             long narrowCount = cache.values().stream().filter(CprLevels::isNarrowCpr).count();
             long insideCount = getInsideCprStocks().size();
