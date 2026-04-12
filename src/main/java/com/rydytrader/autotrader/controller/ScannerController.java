@@ -236,6 +236,7 @@ public class ScannerController {
         Map<String, Object> status = new LinkedHashMap<>();
         status.put("signalSource", riskSettings.getSignalSource());
         status.put("watchlistCount", marketDataService.getWatchlist().size());
+        status.put("atrLoaded", atrService.getLoadedCount());
         status.put("timeframe", riskSettings.getScannerTimeframe());
         status.put("higherTimeframe", riskSettings.getHigherTimeframe());
         status.put("enableHpt", riskSettings.isEnableHpt());
