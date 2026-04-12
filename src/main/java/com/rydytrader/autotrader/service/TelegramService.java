@@ -110,6 +110,16 @@ public class TelegramService {
         sendMessage(sb.toString());
     }
 
+    public void notifyBotReady(int watchlistCount, int narrowCount, int insideCount,
+                                int atrLoaded, int weeklyLevels, int higherTfMinutes) {
+        sendMessage("BOT READY\n"
+            + "Watchlist: " + watchlistCount + " symbols\n"
+            + "Narrow CPR: " + narrowCount + " | Inside CPR: " + insideCount + "\n"
+            + "ATR loaded: " + atrLoaded + " | Weekly levels: " + weeklyLevels + "\n"
+            + "Trading TF: 5 min | Higher TF: " + higherTfMinutes + " min\n"
+            + "System ready for trading");
+    }
+
     public void notifyDaySummary(int trades, int wins, int losses,
                                   double grossPnl, double charges, double netPnl) {
         if (trades == 0) {

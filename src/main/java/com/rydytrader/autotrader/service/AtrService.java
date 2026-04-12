@@ -234,6 +234,8 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
         return atrBySymbol.getOrDefault(symbol, 0.0);
     }
 
+    public int getLoadedCount() { return atrBySymbol.size(); }
+
     public Map<String, Double> getAllAtr() {
         return Collections.unmodifiableMap(atrBySymbol);
     }

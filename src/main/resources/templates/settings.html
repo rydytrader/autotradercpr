@@ -700,11 +700,7 @@
                     <input type="number" id="stampDutyRate" class="form-control" min="0" max="1" step="0.001" placeholder="0.003">
                     <div class="form-hint">On buy-side turnover</div>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Telegram Alert Frequency</label>
-                    <input type="number" id="telegramAlertFrequency" class="form-control" min="0" max="600" step="10" placeholder="60">
-                    <div class="form-hint">Seconds between Telegram updates (0 = off)</div>
-                </div>
+                <!-- Telegram alert frequency removed — notifications are event-driven only -->
             </div>
         </div>
     </div>
@@ -895,7 +891,7 @@
             document.getElementById('stampDutyRate').value      = d.stampDutyRate != null ? d.stampDutyRate : 0.003;
             document.getElementById('fixedQuantity').value     = d.fixedQuantity    != null ? d.fixedQuantity : 2;
             document.getElementById('capitalPerTrade').value   = d.capitalPerTrade  != null ? d.capitalPerTrade : 0;
-            document.getElementById('telegramAlertFrequency').value = d.telegramAlertFrequency != null ? d.telegramAlertFrequency : 60;
+            // telegramAlertFrequency removed — notifications are event-driven only
             document.getElementById('enableR4S4').checked      = d.enableR4S4        || false;
             document.getElementById('enableLargeCandleFilter').checked = d.enableLargeCandleFilter !== false;
             document.getElementById('largeCandleAtrThreshold').value = d.largeCandleAtrThreshold || 1.0;
@@ -1027,7 +1023,7 @@
                 stampDutyRate:   parseFloat(document.getElementById('stampDutyRate').value) || 0.003,
                 fixedQuantity:    parseInt(document.getElementById('fixedQuantity').value),
                 capitalPerTrade:  parseFloat(document.getElementById('capitalPerTrade').value) || 0,
-                telegramAlertFrequency: parseInt(document.getElementById('telegramAlertFrequency').value) || 60,
+                // telegramAlertFrequency removed
                 enableR4S4:        document.getElementById('enableR4S4').checked,
                 enableLargeCandleFilter: document.getElementById('enableLargeCandleFilter').checked,
                 largeCandleAtrThreshold: parseFloat(document.getElementById('largeCandleAtrThreshold').value) || 1.0,

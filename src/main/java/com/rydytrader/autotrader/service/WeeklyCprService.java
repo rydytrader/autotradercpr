@@ -518,6 +518,8 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
 
     // ── Public accessors ────────────────────────────────────────────────────
 
+    public int getLoadedCount() { return weeklyLevels.size(); }
+
     /** Returns the weekly CPR levels for a symbol, or null if not loaded yet. */
     public WeeklyLevels getWeeklyLevels(String fyersSymbol) {
         return weeklyLevels.get(fyersSymbol);

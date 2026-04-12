@@ -840,6 +840,13 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         eventService.log("[INFO] Scanner initialized: " + watchlist.size() + " symbols"
             + " (filters: narrow<" + narrowMax + "%, inside<" + insideMax + "%, price≥₹" + (int)minPrice + ")");
         eventService.log("[SUCCESS] All prerequisites loaded — system ready for trading");
+
+        int narrowCount = (int) bhavcopyService.getNarrowCprStocks().size();
+        int insideCount = (int) bhavcopyService.getInsideCprStocks().size();
+        int atrLoaded = atrService.getLoadedCount();
+        int weeklyCount = weeklyCprService.getLoadedCount();
+        telegramService.notifyBotReady(watchlist.size(), narrowCount, insideCount,
+            atrLoaded, weeklyCount, riskSettings.getHigherTimeframe());
     }
 
     /**
