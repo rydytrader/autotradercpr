@@ -114,6 +114,7 @@
         <button class="help-tab" onclick="switchHelpTab('timing', this)">TRADE TIMING</button>
         <button class="help-tab" onclick="switchHelpTab('risk', this)">RISK MANAGEMENT</button>
         <button class="help-tab" onclick="switchHelpTab('settings-ref', this)">SETTINGS</button>
+        <button class="help-tab" onclick="switchHelpTab('alerts', this)">TELEGRAM ALERTS</button>
     </div>
 
     <!-- TRADING STRATEGY OVERVIEW -->
@@ -1254,6 +1255,95 @@
         </div>
     </div>
     </div><!-- /tab-settings-ref -->
+
+    <!-- TELEGRAM ALERTS -->
+    <div id="tab-alerts" class="help-content">
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Telegram Alerts</div></div>
+        <div class="help-body">
+            <p>The bot sends <strong>10 structured Telegram notifications</strong> — one per meaningful event. No periodic updates, no event-log leakage. Each message is self-contained with all relevant trade details.</p>
+
+            <h4>Alert Types</h4>
+            <table>
+                <tr><th>#</th><th>Alert</th><th>When</th><th>Trigger</th></tr>
+                <tr><td>1</td><td><strong>BOT READY</strong></td><td>~9:00 AM (scanner init complete)</td><td>All prerequisites loaded: bhavcopy, ATR, weekly levels, WebSocket subscribed</td></tr>
+                <tr><td>2</td><td><strong>TRADE OPENED</strong></td><td>Entry fill + SL/Target placed</td><td>Market order filled, OCO orders confirmed on Fyers</td></tr>
+                <tr><td>3</td><td><strong>SL MODIFIED</strong></td><td>Trailing SL tightens</td><td>ATR peak-based trailing moves SL in profit direction</td></tr>
+                <tr><td>4</td><td><strong>TARGET 1 HIT</strong></td><td>T1 order filled</td><td>Split target T1 fills, SL moved to breakeven for remaining qty</td></tr>
+                <tr><td>5</td><td><strong>TARGET 2 HIT</strong></td><td>T2 order filled</td><td>Full position closed at structural target</td></tr>
+                <tr><td>6</td><td><strong>SL HIT</strong></td><td>SL order filled</td><td>Stop loss triggered (full loss or breakeven after T1)</td></tr>
+                <tr><td>7</td><td><strong>MANUAL EXIT</strong></td><td>Manual squareoff from UI</td><td>User clicks squareoff on a position — sends exit price and P&L</td></tr>
+                <tr><td>8</td><td><strong>KILL SWITCH</strong></td><td>Kill switch toggled</td><td>Trading enabled/disabled — alerts whether new signals will be accepted or ignored</td></tr>
+                <tr><td>9</td><td><strong>AUTO SQUAREOFF</strong></td><td>Configured time (e.g. 15:10)</td><td>All open positions force-closed. Single message for all stocks.</td></tr>
+                <tr><td>10</td><td><strong>DAY SUMMARY</strong></td><td>3:30 PM (market close)</td><td>End-of-day stats: trades, win rate, P&L, charges</td></tr>
+            </table>
+
+            <h4>Sample Messages</h4>
+
+            <div style="background:rgba(0,0,0,0.2); border:1px solid var(--border); border-radius:8px; padding:14px 18px; margin-bottom:14px; font-family:var(--font-mono); font-size:0.78rem; line-height:1.8; color:var(--text-secondary); white-space:pre-wrap;">BOT READY
+Watchlist: 42 symbols
+Narrow CPR: 31 | Inside CPR: 6
+ATR loaded: 43 | Weekly levels: 215
+Trading TF: 5 min | Higher TF: 75 min
+System ready for trading</div>
+
+            <div style="background:rgba(0,0,0,0.2); border:1px solid var(--border); border-radius:8px; padding:14px 18px; margin-bottom:14px; font-family:var(--font-mono); font-size:0.78rem; line-height:1.8; color:var(--text-secondary); white-space:pre-wrap;">TRADE OPENED
+RELIANCE | LONG | 50 qty
+Entry: 2,650.00
+SL: 2,610.00
+Target: 2,695.00
+Setup: BUY_ABOVE_R1_PDH | HPT</div>
+
+            <div style="background:rgba(0,0,0,0.2); border:1px solid var(--border); border-radius:8px; padding:14px 18px; margin-bottom:14px; font-family:var(--font-mono); font-size:0.78rem; line-height:1.8; color:var(--text-secondary); white-space:pre-wrap;">SL MODIFIED
+RELIANCE | LONG | 50 qty
+New SL: 2,635.00 (was 2,610.00)
+Peak: 2,680.00</div>
+
+            <div style="background:rgba(0,0,0,0.2); border:1px solid var(--border); border-radius:8px; padding:14px 18px; margin-bottom:14px; font-family:var(--font-mono); font-size:0.78rem; line-height:1.8; color:var(--text-secondary); white-space:pre-wrap;">TARGET 1 HIT
+RELIANCE | LONG | 25 qty closed
+Exit: 2,672.00 | P&L: +550.00
+SL moved to breakeven (2,650.00) for remaining 25 qty</div>
+
+            <div style="background:rgba(0,0,0,0.2); border:1px solid var(--border); border-radius:8px; padding:14px 18px; margin-bottom:14px; font-family:var(--font-mono); font-size:0.78rem; line-height:1.8; color:var(--text-secondary); white-space:pre-wrap;">TARGET 2 HIT
+RELIANCE | LONG | 25 qty closed
+Exit: 2,695.00 | P&L: +1,125.00
+Position fully closed</div>
+
+            <div style="background:rgba(0,0,0,0.2); border:1px solid var(--border); border-radius:8px; padding:14px 18px; margin-bottom:14px; font-family:var(--font-mono); font-size:0.78rem; line-height:1.8; color:var(--text-secondary); white-space:pre-wrap;">SL HIT
+TCS | SHORT | 30 qty closed
+Exit: 3,455.00 | P&L: -900.00</div>
+
+            <div style="background:rgba(0,0,0,0.2); border:1px solid var(--border); border-radius:8px; padding:14px 18px; margin-bottom:14px; font-family:var(--font-mono); font-size:0.78rem; line-height:1.8; color:var(--text-secondary); white-space:pre-wrap;">MANUAL
+HDFC | LONG | 40 qty closed
+Exit: 1,720.00 | P&L: +800.00</div>
+
+            <div style="background:rgba(0,0,0,0.2); border:1px solid var(--border); border-radius:8px; padding:14px 18px; margin-bottom:14px; font-family:var(--font-mono); font-size:0.78rem; line-height:1.8; color:var(--text-secondary); white-space:pre-wrap;">KILL SWITCH ACTIVATED
+Trading is now DISABLED — all new signals will be ignored</div>
+
+            <div style="background:rgba(0,0,0,0.2); border:1px solid var(--border); border-radius:8px; padding:14px 18px; margin-bottom:14px; font-family:var(--font-mono); font-size:0.78rem; line-height:1.8; color:var(--text-secondary); white-space:pre-wrap;">AUTO SQUAREOFF
+RELIANCE | LONG 50 | P&L: +750.00
+TCS | SHORT 30 | P&L: -300.00
+---
+Total: +450.00</div>
+
+            <div style="background:rgba(0,0,0,0.2); border:1px solid var(--border); border-radius:8px; padding:14px 18px; margin-bottom:14px; font-family:var(--font-mono); font-size:0.78rem; line-height:1.8; color:var(--text-secondary); white-space:pre-wrap;">DAY SUMMARY
+Trades: 8 | Wins: 5 | Losses: 3
+Win Rate: 62.5%
+Gross P&L: +3,200.00
+Charges: 480.00
+Net P&L: +2,720.00</div>
+
+            <h4>Configuration</h4>
+            <ul>
+                <li><strong>Enable/Disable</strong>: <code>telegram.enabled=true/false</code> in application.properties</li>
+                <li><strong>Bot Token + Chat ID</strong>: configured in application.properties</li>
+                <li>All notifications are <strong>async</strong> (non-blocking) — trade execution is never delayed by Telegram</li>
+                <li>If Telegram API fails, errors are logged but trading continues unaffected</li>
+            </ul>
+        </div>
+    </div>
+
+    </div><!-- /tab-alerts -->
 
     <footer class="page-footer">
         <div class="footer-copy">

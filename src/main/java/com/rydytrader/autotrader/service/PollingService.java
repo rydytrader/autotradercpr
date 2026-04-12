@@ -1114,6 +1114,9 @@ public class PollingService {
                 String desc = positionStateStore.getDescription(symbol);
                 String prob = probabilityBySymbol.getOrDefault(symbol, "");
                 tradeHistoryService.record(symbol, position, quantity, entryPrice, exitPrice, exitReason, setup, desc, prob);
+                if (!"AUTO_SQUAREOFF".equals(exitReason)) {
+                    telegramService.notifySlHit(symbol, position, quantity, exitPrice, pnl, exitReason);
+                }
             } else {
                 eventService.log("[SUCCESS] " + label + " executed for " + symbol + " — position closed");
                 positionStateStore.appendDescription(symbol, "[EXIT] " + exitReason + " — position closed.");

@@ -5,6 +5,7 @@ import com.rydytrader.autotrader.service.EventService;
 import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.OrderEventService;
 import com.rydytrader.autotrader.service.PollingService;
+import com.rydytrader.autotrader.service.TelegramService;
 import com.rydytrader.autotrader.store.TokenStore;
 import com.rydytrader.autotrader.store.TradingStateStore;
 import org.springframework.http.ResponseEntity;
@@ -21,18 +22,21 @@ public class SimulatorController {
     private final TradingStateStore    tradingState;
     private final MarketDataService    marketDataService;
     private final OrderEventService    orderEventService;
+    private final TelegramService      telegramService;
 
     public SimulatorController(TokenStore tokenStore,
                                 EventService eventService,
                                 PollingService pollingService,
                                 TradingStateStore tradingState,
                                 MarketDataService marketDataService,
-                                OrderEventService orderEventService) {
+                                OrderEventService orderEventService,
+                                TelegramService telegramService) {
         this.tokenStore          = tokenStore;
         this.eventService        = eventService;
         this.pollingService      = pollingService;
         this.tradingState        = tradingState;
         this.marketDataService   = marketDataService;
+        this.telegramService     = telegramService;
         this.orderEventService   = orderEventService;
     }
 
@@ -60,6 +64,9 @@ public class SimulatorController {
         eventService.log(newState
             ? "[SUCCESS] Trading ENABLED — kill switch deactivated"
             : "[WARNING] Trading DISABLED — kill switch activated");
+        telegramService.sendMessage(newState
+            ? "KILL SWITCH DEACTIVATED\nTrading is now ENABLED"
+            : "KILL SWITCH ACTIVATED\nTrading is now DISABLED — all new signals will be ignored");
         return Map.of("tradingEnabled", newState);
     }
 
