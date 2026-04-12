@@ -465,6 +465,14 @@
                     <div class="form-hint">Markets often reverse just before touching CPR levels. The target order is placed slightly inside the level so near-miss reversals still fill. Applies to single targets and the T2 leg of split trades — T1 is unaffected.</div>
                 </div>
                 <div class="form-group">
+                    <label class="form-label">Weekly Reversal Filter (75-min R1/PWH & S1/PWL)</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="weeklyReversalHardSkip" style="width: 18px; height: 18px; accent-color: var(--accent-yellow); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Hard skip trades opposed to weekly reversal (disable for HPT → LPT downgrade)</span>
+                    </div>
+                    <div class="form-hint">When a 75-min candle rejects at weekly R1/PWH or S1/PWL, buy/sell trades fighting the reversal are skipped (hard skip) or downgraded to LPT (soft mode). Applies to all stocks, not just NIFTY. Scanner shows (R) in amber.</div>
+                </div>
+                <div class="form-group">
                     <label class="form-label">NIFTY Index Alignment Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableIndexAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
@@ -473,10 +481,6 @@
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px; padding-left: 28px;">
                         <input type="checkbox" id="indexAlignmentHardSkip" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Hard skip mode — skip opposed trades entirely (default: soft mode = HPT → LPT downgrade)</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 10px; padding-left: 28px;">
-                        <input type="checkbox" id="weeklyReversalHardSkip" style="width: 18px; height: 18px; accent-color: var(--accent-yellow); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Weekly reversal hard skip — skip buy/sell trades opposed to 75-min R1/PWH or S1/PWL reversal (disable for HPT → LPT downgrade)</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Bullish:</span>
