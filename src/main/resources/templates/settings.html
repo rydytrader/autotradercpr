@@ -1162,7 +1162,7 @@
                 btns.forEach(b => { b.textContent = '✓ Saved!'; b.style.background = 'linear-gradient(135deg, #34d399, #059669)'; });
                 showToast('Settings saved');
                 // Auto-rebuild watchlist with new filters
-                try { await fetch('/api/scanner/rebuild', { method: 'POST' }); } catch (ignored) {}
+                try { await fetch('/api/scanner/rebuild', { method: 'POST', headers: csrfHeaders() }); } catch (ignored) {}
                 loadSettings();
                 setTimeout(() => {
                     btns.forEach(b => { b.style.background = ''; b.textContent = '✓ Save Settings'; b.disabled = false; });
