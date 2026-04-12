@@ -884,7 +884,13 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         if (maxBeta > 0 && cpr.getBeta() > 0 && cpr.getBeta() > maxBeta) return false;
         String capFilter = riskSettings.getScanCapFilter();
         if (capFilter != null && !capFilter.isEmpty() && !"ALL".equals(capFilter)) {
-            if (!capFilter.equals(cpr.getCapCategory())) return false;
+            String cap = cpr.getCapCategory();
+            if (cap == null) cap = "SMALL";
+            boolean match = false;
+            for (String allowed : capFilter.split(",")) {
+                if (allowed.trim().equals(cap)) { match = true; break; }
+            }
+            if (!match) return false;
         }
         return true;
     }

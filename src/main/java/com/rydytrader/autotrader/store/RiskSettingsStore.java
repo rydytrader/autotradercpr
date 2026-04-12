@@ -87,7 +87,7 @@ public class RiskSettingsStore {
         volatile double scanMinTurnover = 0;     // min daily turnover in ₹ Cr (0 = no filter)
         volatile double scanMinBeta = 0;         // min stock beta (0 = no filter)
         volatile double scanMaxBeta = 0;         // max stock beta (0 = no filter)
-        volatile String scanCapFilter = "ALL";   // ALL, LARGE, MID, SMALL
+        volatile String scanCapFilter = "ALL";   // ALL, or comma-separated: LARGE,MID,SMALL
         volatile boolean scanIncludeNS = true;   // Narrow + Small Range (z < -1.5)
         volatile boolean scanIncludeNL = true;   // Narrow + Large Range
         volatile boolean scanIncludeIS = true;   // Inside + Small Range

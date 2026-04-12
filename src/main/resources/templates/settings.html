@@ -658,13 +658,18 @@
                 </div>
                 <div class="form-group">
                     <label class="form-label">Market Cap Filter</label>
-                    <select id="scanCapFilter" class="form-control" style="width:130px; padding:5px 8px; font-size:0.82rem;">
-                        <option value="ALL">All</option>
-                        <option value="LARGE">Large Cap</option>
-                        <option value="MID">Mid Cap</option>
-                        <option value="SMALL">Small Cap</option>
-                    </select>
-                    <div class="form-hint">Only include stocks of the selected market cap category. Restart required.</div>
+                    <div style="display:flex; align-items:center; gap:14px; margin-top:4px;">
+                        <label style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem; color:var(--text-secondary); cursor:pointer;">
+                            <input type="checkbox" id="scanCapLarge" style="width:16px; height:16px; accent-color:var(--accent-green);"> Large
+                        </label>
+                        <label style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem; color:var(--text-secondary); cursor:pointer;">
+                            <input type="checkbox" id="scanCapMid" style="width:16px; height:16px; accent-color:var(--accent-blue);"> Mid
+                        </label>
+                        <label style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem; color:var(--text-secondary); cursor:pointer;">
+                            <input type="checkbox" id="scanCapSmall" style="width:16px; height:16px; accent-color:var(--accent-yellow);"> Small
+                        </label>
+                    </div>
+                    <div class="form-hint">Select one or more cap categories. All unchecked = no filter (all caps included).</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Opening Range</label>
@@ -990,7 +995,10 @@
             document.getElementById('scanMinTurnover').value = d.scanMinTurnover != null ? d.scanMinTurnover : 0;
             document.getElementById('scanMinBeta').value = d.scanMinBeta != null ? d.scanMinBeta : 0;
             document.getElementById('scanMaxBeta').value = d.scanMaxBeta != null ? d.scanMaxBeta : 0;
-            document.getElementById('scanCapFilter').value = d.scanCapFilter || 'ALL';
+            var capVal = d.scanCapFilter || 'ALL';
+            document.getElementById('scanCapLarge').checked = capVal === 'ALL' || capVal.includes('LARGE');
+            document.getElementById('scanCapMid').checked = capVal === 'ALL' || capVal.includes('MID');
+            document.getElementById('scanCapSmall').checked = capVal === 'ALL' || capVal.includes('SMALL');
             document.getElementById('openingRangeMinutes').value = d.openingRangeMinutes != null ? d.openingRangeMinutes : 0;
             document.getElementById('scanIncludeNS').checked = d.scanIncludeNS !== false;
             document.getElementById('scanIncludeNL').checked = d.scanIncludeNL !== false;
@@ -1124,7 +1132,13 @@
                 scanMinTurnover: parseFloat(document.getElementById('scanMinTurnover').value) || 0,
                 scanMinBeta: parseFloat(document.getElementById('scanMinBeta').value) || 0,
                 scanMaxBeta: parseFloat(document.getElementById('scanMaxBeta').value) || 0,
-                scanCapFilter: document.getElementById('scanCapFilter').value,
+                scanCapFilter: (function() {
+                    var caps = [];
+                    if (document.getElementById('scanCapLarge').checked) caps.push('LARGE');
+                    if (document.getElementById('scanCapMid').checked) caps.push('MID');
+                    if (document.getElementById('scanCapSmall').checked) caps.push('SMALL');
+                    return caps.length === 0 || caps.length === 3 ? 'ALL' : caps.join(',');
+                })(),
                 openingRangeMinutes: parseInt(document.getElementById('openingRangeMinutes').value) || 0,
                 scanIncludeNS: document.getElementById('scanIncludeNS').checked,
                 scanIncludeNL: document.getElementById('scanIncludeNL').checked,
