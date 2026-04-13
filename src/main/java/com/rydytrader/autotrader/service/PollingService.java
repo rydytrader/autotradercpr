@@ -236,18 +236,19 @@ public class PollingService {
                                         int quantity, String position,
                                         int exitSide, double slPrice, double targetPrice, String setup,
                                         double atr, double atrMultiplier, String description) {
-        monitorEntryAndPlaceOCO(entry, symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, false);
+        monitorEntryAndPlaceOCO(entry, symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, false, false);
     }
 
     public void monitorEntryAndPlaceOCO(OrderDTO entry, String symbol,
                                         int quantity, String position,
                                         int exitSide, double slPrice, double targetPrice, String setup,
-                                        double atr, double atrMultiplier, String description, boolean dayHighLowShifted) {
+                                        double atr, double atrMultiplier, String description,
+                                        boolean dayHighLowShifted, boolean useStructuralSl) {
 
         // ── Try WebSocket-based tracking first (WS connected) ──
         if (orderEventService.isConnected()) {
             boolean tracked = orderEventService.trackEntryOrder(entry.getId(),
-                new OrderEventService.EntryContext(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, dayHighLowShifted));
+                new OrderEventService.EntryContext(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, dayHighLowShifted, useStructuralSl));
             if (tracked) {
                 eventService.log("[INFO] Entry order " + entry.getId() + " tracked via WebSocket for " + symbol);
                 return; // WebSocket will handle fill detection — no polling needed
@@ -290,9 +291,12 @@ public class PollingService {
                             }
                         }
                         entryAvgBySymbol.put(symbol, holder.entryFillPrice);
-                        // Recalculate SL from actual fill price (always ATR-based at entry)
-                        // Chandelier Exit only adjusts SL later on candle-close events, not at initial placement
-                        if (holder.entryFillPrice > 0 && atr > 0 && atrMultiplier > 0) {
+                        // Recalculate SL from actual fill price (always ATR-based at entry), unless structural.
+                        // Structural SL is anchored to the S/R level — keep as-is regardless of fill price.
+                        // Chandelier Exit only adjusts SL later on candle-close events, not at initial placement.
+                        if (useStructuralSl) {
+                            holder.adjustedSl = orderService.roundToTick(slPrice, symbol);
+                        } else if (holder.entryFillPrice > 0 && atr > 0 && atrMultiplier > 0) {
                             holder.adjustedSl = "LONG".equals(position) ? holder.entryFillPrice - atr * atrMultiplier : holder.entryFillPrice + atr * atrMultiplier;
                             holder.adjustedSl = orderService.roundToTick(holder.adjustedSl, symbol);
                         }

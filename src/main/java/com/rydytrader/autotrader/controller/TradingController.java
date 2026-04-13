@@ -172,6 +172,7 @@ public class TradingController {
         double atrMult     = ps.getAtrMultiplier();
         String description = ps.getDescription();
         boolean dayHighLowShifted = ps.isDayHighLowShifted();
+        boolean useStructuralSl = ps.isUseStructuralSl();
 
         log.info("Signal received: {} | SL: {} | Target: {} | Setup: {}", signal, stoploss, target, setup);
 
@@ -188,7 +189,7 @@ public class TradingController {
 
             // Monitor entry fill, then place SL + Target OCO
             // exitSide = -1 (SELL to exit a LONG)
-            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "LONG", -1, stoploss, target, setup, atr, atrMult, description, dayHighLowShifted);
+            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "LONG", -1, stoploss, target, setup, atr, atrMult, description, dayHighLowShifted, useStructuralSl);
             pollingService.setProbability(symbol, probability);
 
         } else if (signal.equals("SELL") && !PositionManager.getPosition(symbol).equals("SHORT")) {
@@ -203,7 +204,7 @@ public class TradingController {
             }
 
             // exitSide = 1 (BUY to exit a SHORT)
-            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "SHORT", 1, stoploss, target, setup, atr, atrMult, description, dayHighLowShifted);
+            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "SHORT", 1, stoploss, target, setup, atr, atrMult, description, dayHighLowShifted, useStructuralSl);
             pollingService.setProbability(symbol, probability);
 
         } else {
@@ -446,7 +447,10 @@ public class TradingController {
     public List<Map<String, Object>> getTrades() {
         return tradeHistoryService.getTrades().stream().map(t -> {
             Map<String, Object> m = new java.util.LinkedHashMap<>();
-            m.put("timestamp",  t.getTimestamp());
+            // Frontend expects HH:mm:ss only — strip the optional yyyy-MM-dd prefix.
+            String ts = t.getTimestamp();
+            int spaceIdx = ts != null ? ts.indexOf(' ') : -1;
+            m.put("timestamp",  spaceIdx >= 0 ? ts.substring(spaceIdx + 1) : ts);
             m.put("symbol",     t.getSymbol());
             m.put("side",       t.getSide());
             m.put("qty",        t.getQty());
@@ -478,14 +482,16 @@ public class TradingController {
         int total  = trades.size();
         int wins   = (int) trades.stream().filter(t -> "PROFIT".equals(t.getResult())).count();
         int losses = (int) trades.stream().filter(t -> "LOSS".equals(t.getResult())).count();
+        int breakeven = (int) trades.stream().filter(t -> "BREAKEVEN".equals(t.getResult())).count();
         double netPnl  = trades.stream().mapToDouble(t -> t.getNetPnl()).sum();
         double totalCharges = trades.stream().mapToDouble(t -> t.getCharges()).sum();
         double grossPnl = trades.stream().mapToDouble(t -> t.getPnl()).sum();
         double winRate = total == 0 ? 0 : Math.round(wins * 1000.0 / total) / 10.0;
 
-        // Use netPnl (after charges) for all metrics — consistent with win/loss classification
-        double netWin    = trades.stream().filter(t -> t.getNetPnl() > 0).mapToDouble(t -> t.getNetPnl()).sum();
-        double netLoss   = Math.abs(trades.stream().filter(t -> t.getNetPnl() < 0).mapToDouble(t -> t.getNetPnl()).sum());
+        // Use netPnl (after charges). PROFIT (>0), LOSS (<0), BREAKEVEN (==0). Breakeven excluded
+        // from PF. Same classification used by JournalService.computeMetrics so all pages match.
+        double netWin    = trades.stream().filter(t -> "PROFIT".equals(t.getResult())).mapToDouble(t -> t.getNetPnl()).sum();
+        double netLoss   = Math.abs(trades.stream().filter(t -> "LOSS".equals(t.getResult())).mapToDouble(t -> t.getNetPnl()).sum());
         double pf        = netLoss == 0 ? (netWin > 0 ? 99 : 0) : Math.round(netWin / netLoss * 100.0) / 100.0;
 
         double avgWin  = wins == 0 ? 0 : Math.round(netWin / wins * 100.0) / 100.0;
@@ -495,11 +501,12 @@ public class TradingController {
         double avgRR   = avgLoss == 0 ? 0 : Math.round(Math.abs(avgWin / avgLoss) * 100.0) / 100.0;
         double expectancy = total == 0 ? 0 : Math.round(netPnl / total * 100.0) / 100.0;
 
-        // Consecutive wins/losses
+        // Consecutive wins/losses — BREAKEVEN trades break both streaks
         int maxCW = 0, maxCL = 0, cw = 0, cl = 0;
         for (var t : trades) {
-            if ("PROFIT".equals(t.getResult())) { cw++; cl = 0; maxCW = Math.max(maxCW, cw); }
-            else                                 { cl++; cw = 0; maxCL = Math.max(maxCL, cl); }
+            if      ("PROFIT".equals(t.getResult())) { cw++; cl = 0; maxCW = Math.max(maxCW, cw); }
+            else if ("LOSS".equals(t.getResult()))   { cl++; cw = 0; maxCL = Math.max(maxCL, cl); }
+            else                                      { cw = 0; cl = 0; }
         }
 
         // Equity curve
@@ -534,7 +541,7 @@ public class TradingController {
         Map<String, Long> rc = new java.util.LinkedHashMap<>();
         rc.put("PROFIT",    trades.stream().filter(t -> "PROFIT".equals(t.getResult())).count());
         rc.put("LOSS",      trades.stream().filter(t -> "LOSS".equals(t.getResult())).count());
-        rc.put("BREAKEVEN", trades.stream().filter(t -> t.getPnl() == 0).count());
+        rc.put("BREAKEVEN", trades.stream().filter(t -> "BREAKEVEN".equals(t.getResult())).count());
 
         // Side breakdown
         Map<String, Object> sb = new java.util.LinkedHashMap<>();
@@ -563,6 +570,7 @@ public class TradingController {
         result.put("totalTrades",    total);
         result.put("wins",           wins);
         result.put("losses",         losses);
+        result.put("breakeven",      breakeven);
         result.put("grossPnl",       Math.round(grossPnl*100.0)/100.0);
         result.put("totalCharges",   Math.round(totalCharges*100.0)/100.0);
         result.put("netPnl",         Math.round(netPnl*100.0)/100.0);
@@ -639,10 +647,13 @@ public class TradingController {
             timeMap.put(key, empty);
         }
         for (var t : trades) {
-            String ts = t.getTimestamp(); // HH:mm:ss
+            String ts = t.getTimestamp(); // HH:mm:ss or yyyy-MM-dd HH:mm:ss
             if (ts == null || ts.length() < 5) continue;
-            int hour = Integer.parseInt(ts.substring(0, 2));
-            int min = Integer.parseInt(ts.substring(3, 5));
+            int spaceIdx = ts.indexOf(' ');
+            String time = spaceIdx >= 0 ? ts.substring(spaceIdx + 1) : ts;
+            if (time.length() < 5) continue;
+            int hour = Integer.parseInt(time.substring(0, 2));
+            int min = Integer.parseInt(time.substring(3, 5));
             int totalMin = hour * 60 + min;
             // Find the matching 1-hour slot
             String bucket = null;

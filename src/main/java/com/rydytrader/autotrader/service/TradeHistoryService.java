@@ -137,7 +137,12 @@ public class TradeHistoryService {
     }
 
     private TradeRecord entityToRecord(TradeEntity e) {
-        return new TradeRecord(e.getTimestamp(), e.getSymbol(), e.getSide(),
+        // Combine tradeDate + time into a full yyyy-MM-dd HH:mm:ss timestamp so downstream
+        // code (JournalService.computeMetrics dailyPnl/equity) can extract the day key.
+        String fullTs = e.getTradeDate() != null
+            ? e.getTradeDate().toString() + " " + e.getTimestamp()
+            : e.getTimestamp();
+        return new TradeRecord(fullTs, e.getSymbol(), e.getSide(),
                 e.getQty(), e.getEntryPrice(), e.getExitPrice(),
                 e.getExitReason(), e.getSetup(), e.getCharges(), true, e.getDescription(), e.getProbability());
     }

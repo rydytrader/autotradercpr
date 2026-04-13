@@ -70,8 +70,33 @@ public class SignalProcessor {
         double breakoutLevel = computeBreakoutLevel(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc, dayHigh, dayLow);
 
         // ── 4c2. Compute stop loss (needed for risk-based qty) ─────────────────
+        // Always compute the close-based (default) SL. If structural SL is enabled for this
+        // setup, also compute the level-anchored SL and pick whichever is TIGHTER (smaller
+        // distance from entry). Structural SL is skipped for DH/DL — no real level to anchor to.
         double atrMultiplier = riskSettings.getAtrMultiplier();
-        double sl = isBuy ? (close - atr * atrMultiplier) : (close + atr * atrMultiplier);
+        double defaultSl = isBuy ? (close - atr * atrMultiplier) : (close + atr * atrMultiplier);
+        double sl = defaultSl;
+        boolean useStructuralSl = false;
+        if (riskSettings.isEnableStructuralSl() && !isDhDlSetup(setup)) {
+            double anchor = computeStructuralAnchor(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
+            if (anchor > 0) {
+                double buffer = riskSettings.getStructuralSlBufferAtr();
+                double structSl = isBuy ? (anchor - atr * buffer) : (anchor + atr * buffer);
+                double structDist = Math.abs(close - structSl);
+                double defaultDist = Math.abs(close - defaultSl);
+                if (structDist < defaultDist) {
+                    sl = structSl;
+                    useStructuralSl = true;
+                    eventService.log("[INFO] " + symbol + " " + setup + " using structural SL " + fmt(structSl)
+                        + " (dist " + fmt(structDist) + ") — tighter than default " + fmt(defaultSl)
+                        + " (dist " + fmt(defaultDist) + ")");
+                } else {
+                    eventService.log("[INFO] " + symbol + " " + setup + " using default SL " + fmt(defaultSl)
+                        + " (dist " + fmt(defaultDist) + ") — tighter than structural " + fmt(structSl)
+                        + " (dist " + fmt(structDist) + ")");
+                }
+            }
+        }
 
         // ── 4c3. Compute base quantity (uses SL for risk-based sizing) ─────────
         int baseQty = quantityService.computeBaseQty(symbol, close, sl);
@@ -242,16 +267,17 @@ public class SignalProcessor {
         boolean dayHighLowShifted = false;
         {
             java.util.Map<Double, String> shiftCandidates = new java.util.LinkedHashMap<>();
-            if (!isDhDl) {
+            if (!isDhDl && riskSettings.isEnableDayHighLowTargetShift()) {
                 if (isBuy) {
-                    double sh = marketDataService.getDayHigh(symbol);
+                    double sh = candleAggregator.getDayHighBeforeLast(symbol);
                     if (sh > 0) shiftCandidates.put(sh, "session high");
                 } else {
-                    double sessionLow = marketDataService.getDayLow(symbol);
+                    double sessionLow = candleAggregator.getDayLowBeforeLast(symbol);
                     if (sessionLow > 0) shiftCandidates.put(sessionLow, "session low");
                 }
             }
-            WeeklyCprService.WeeklyLevels wl = weeklyCprService.getWeeklyLevels(symbol);
+            WeeklyCprService.WeeklyLevels wl = riskSettings.isEnableWeeklyLevelTargetShift()
+                ? weeklyCprService.getWeeklyLevels(symbol) : null;
             if (wl != null) {
                 shiftCandidates.putIfAbsent(wl.r1,    "weekly R1");
                 shiftCandidates.putIfAbsent(wl.s1,    "weekly S1");
@@ -387,8 +413,15 @@ public class SignalProcessor {
             .append(" (").append(fmt(breakoutLevel)).append(").");
 
         // [SL] line
-        desc.append("\n").append(ts).append(" [SL] ").append(fmt(sl))
-            .append(" (ATR ").append(fmt(atr)).append(" × ").append(riskSettings.getAtrMultiplier()).append(").");
+        desc.append("\n").append(ts).append(" [SL] ").append(fmt(sl));
+        if (useStructuralSl) {
+            double anchor = computeStructuralAnchor(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
+            desc.append(" (structural anchor ").append(fmt(anchor))
+                .append(" ").append(isBuy ? "−" : "+").append(" ").append(riskSettings.getStructuralSlBufferAtr())
+                .append(" × ATR ").append(fmt(atr)).append(").");
+        } else {
+            desc.append(" (ATR ").append(fmt(atr)).append(" × ").append(riskSettings.getAtrMultiplier()).append(").");
+        }
 
         // [TARGET] line
         desc.append("\n").append(ts).append(" [TARGET] ").append(fmt(target));
@@ -440,7 +473,34 @@ public class SignalProcessor {
             .rejected(false)
             .description(description)
             .dayHighLowShifted(dayHighLowShifted)
+            .useStructuralSl(useStructuralSl)
             .build();
+    }
+
+    // ── Structural SL anchor per setup (outer edge of zone for pairs) ──────────
+    private static boolean isDhDlSetup(String setup) {
+        return "BUY_ABOVE_DH".equals(setup) || "SELL_BELOW_DL".equals(setup);
+    }
+
+    private static double computeStructuralAnchor(String setup,
+            double r1, double r2, double r3, double r4,
+            double s1, double s2, double s3, double s4,
+            double ph, double pl, double tc, double bc) {
+        return switch (setup) {
+            case "BUY_ABOVE_CPR"     -> Math.min(tc, bc);
+            case "SELL_BELOW_CPR"    -> Math.max(tc, bc);
+            case "BUY_ABOVE_R1_PDH"  -> Math.min(r1, ph);
+            case "SELL_BELOW_S1_PDL" -> Math.max(s1, pl);
+            case "BUY_ABOVE_S1_PDL"  -> Math.min(s1, pl); // magnet bounce — outer edge of support zone
+            case "SELL_BELOW_R1_PDH" -> Math.max(r1, ph); // magnet rejection — outer edge of resistance zone
+            case "BUY_ABOVE_R2", "SELL_BELOW_R2" -> r2;
+            case "BUY_ABOVE_R3", "SELL_BELOW_R3" -> r3;
+            case "BUY_ABOVE_R4", "SELL_BELOW_R4" -> r4;
+            case "BUY_ABOVE_S2", "SELL_BELOW_S2" -> s2;
+            case "BUY_ABOVE_S3", "SELL_BELOW_S3" -> s3;
+            case "BUY_ABOVE_S4", "SELL_BELOW_S4" -> s4;
+            default -> 0;
+        };
     }
 
     // ── Breakout level per setup ────────────────────────────────────────────────
@@ -456,6 +516,9 @@ public class SignalProcessor {
             case "BUY_ABOVE_R3"     -> r3;
             case "BUY_ABOVE_R4"     -> r4;
             case "BUY_ABOVE_S1_PDL" -> Math.max(s1, pl);
+            case "BUY_ABOVE_S2"     -> s2;
+            case "BUY_ABOVE_S3"     -> s3;
+            case "BUY_ABOVE_S4"     -> s4;
             case "BUY_ABOVE_DH"     -> dayHigh;
             case "SELL_BELOW_CPR"    -> Math.min(tc, bc);
             case "SELL_BELOW_S1_PDL" -> Math.min(s1, pl);
@@ -463,6 +526,9 @@ public class SignalProcessor {
             case "SELL_BELOW_S3"     -> s3;
             case "SELL_BELOW_S4"     -> s4;
             case "SELL_BELOW_R1_PDH" -> Math.min(r1, ph);
+            case "SELL_BELOW_R2"     -> r2;
+            case "SELL_BELOW_R3"     -> r3;
+            case "SELL_BELOW_R4"     -> r4;
             case "SELL_BELOW_DL"     -> dayLow;
             default -> 0;
         };
@@ -481,7 +547,7 @@ public class SignalProcessor {
             case "BUY_ABOVE_R3"      -> new double[]{ r4, r4 };
             case "BUY_ABOVE_R4"      -> { double r5 = r4 + (r4 - r3); yield new double[]{ r5, r5 }; }
             case "BUY_ABOVE_S1_PDL"  -> new double[]{ Math.min(tc, bc), Math.min(r1, ph) };
-            case "BUY_ABOVE_DH"      -> { yield new double[]{ nextLevelAbove(dayHigh, r1, r2, r3, r4, ph, tc, bc), 0 }; }
+            case "BUY_ABOVE_DH"      -> { yield new double[]{ nextLevelAbove(Math.max(close, dayHigh), r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc), 0 }; }
             case "SELL_BELOW_CPR"     -> new double[]{ Math.max(s1, pl), s2 };
             case "SELL_BELOW_S1_PDL"  -> new double[]{ s2, s3 };
             case "SELL_BELOW_S2"      -> new double[]{ s3, s4 };
@@ -496,35 +562,45 @@ public class SignalProcessor {
             case "BUY_ABOVE_S4"       -> new double[]{ s3, s3 };
             case "BUY_ABOVE_S3"       -> new double[]{ s2, s2 };
             case "BUY_ABOVE_S2"       -> new double[]{ Math.min(s1, pl), Math.min(s1, pl) };
-            case "SELL_BELOW_DL"      -> { yield new double[]{ nextLevelBelow(dayLow, s1, s2, s3, s4, pl, tc, bc), 0 }; }
+            case "SELL_BELOW_DL"      -> { yield new double[]{ nextLevelBelow(Math.min(close, dayLow), r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc), 0 }; }
             default -> new double[]{ 0, 0 };
         };
     }
 
-    /** Find the next CPR level above dayHigh for BUY_ABOVE_DH target. */
-    private double nextLevelAbove(double dh, double r1, double r2, double r3, double r4,
-                                   double ph, double tc, double bc) {
+    /** Find the nearest CPR/PDH/PDL level strictly above `from`. Includes S, CPR, and R levels. */
+    private double nextLevelAbove(double from, double r1, double r2, double r3, double r4,
+                                   double s1, double s2, double s3, double s4,
+                                   double ph, double pl, double tc, double bc) {
         double cprTop = Math.max(tc, bc);
-        double r1ph = Math.max(r1, ph);
-        if (dh >= r4) return r4 + (r4 - r3); // projected R5
-        if (dh >= r3) return r4;
-        if (dh >= r2) return r3;
-        if (dh >= r1ph) return r2;
-        if (dh >= cprTop) return r1ph;
-        return r1ph; // fallback
+        double cprBot = Math.min(tc, bc);
+        double pivot = (cprTop + cprBot) / 2.0;
+        double[] levels = { s4, s3, s2, Math.min(s1, pl), cprBot, pivot, cprTop, Math.max(r1, ph), r2, r3, r4 };
+        double best = Double.MAX_VALUE;
+        for (double lvl : levels) {
+            if (lvl > from && lvl < best) best = lvl;
+        }
+        if (best == Double.MAX_VALUE) {
+            return r4 > 0 && r3 > 0 ? r4 + (r4 - r3) : from; // projected R5 if above all known levels
+        }
+        return best;
     }
 
-    /** Find the next CPR level below dayLow for SELL_BELOW_DL target. */
-    private double nextLevelBelow(double dl, double s1, double s2, double s3, double s4,
-                                   double pl, double tc, double bc) {
+    /** Find the nearest CPR/PDH/PDL level strictly below `from`. Includes R, CPR, and S levels. */
+    private double nextLevelBelow(double from, double r1, double r2, double r3, double r4,
+                                   double s1, double s2, double s3, double s4,
+                                   double ph, double pl, double tc, double bc) {
+        double cprTop = Math.max(tc, bc);
         double cprBot = Math.min(tc, bc);
-        double s1pl = Math.min(s1, pl);
-        if (dl <= s4) return s4 - (s3 - s4); // projected S5
-        if (dl <= s3) return s4;
-        if (dl <= s2) return s3;
-        if (dl <= s1pl) return s2;
-        if (dl <= cprBot) return s1pl;
-        return s1pl; // fallback
+        double pivot = (cprTop + cprBot) / 2.0;
+        double[] levels = { r4, r3, r2, Math.max(r1, ph), cprTop, pivot, cprBot, Math.min(s1, pl), s2, s3, s4 };
+        double best = -1;
+        for (double lvl : levels) {
+            if (lvl > 0 && lvl < from && lvl > best) best = lvl;
+        }
+        if (best < 0) {
+            return s4 > 0 && s3 > 0 ? s4 - (s3 - s4) : from; // projected S5 if below all known levels
+        }
+        return best;
     }
 
     /**

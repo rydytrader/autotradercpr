@@ -277,9 +277,22 @@
                     <div style="display:flex; align-items:center; gap:8px;">
                         <input type="number" id="atrPeriod" class="form-control" min="5" max="50" step="1" style="width:75px; text-align:center;" placeholder="14">
                         <span style="color:var(--text-muted); font-family:var(--font-mono); font-size:0.82rem;">×</span>
-                        <input type="number" id="atrMultiplier" class="form-control" min="0.5" max="5" step="0.1" style="width:60px; text-align:center;" placeholder="2.0">
+                        <input type="number" id="atrMultiplier" class="form-control" min="0.5" max="5" step="0.1" style="width:75px; text-align:center;" placeholder="2.0">
                     </div>
                     <div class="form-hint">SL = Entry ± ATR(period) × multiplier</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Structural SL (level-anchored)</label>
+                    <div style="display:flex; align-items:center; gap:10px; margin-top:4px; flex-wrap:wrap;">
+                        <input type="checkbox" id="enableStructuralSl" style="width:18px;height:18px;accent-color:var(--accent-cyan);flex-shrink:0;">
+                        <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Enable structural SL</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap;">
+                        <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Buffer</span>
+                        <input type="number" id="structuralSlBufferAtr" class="form-control" min="0.1" max="3" step="0.1" style="width:75px; text-align:center;" placeholder="1.0">
+                        <span style="color:var(--text-secondary); font-size:0.82rem;">ATR</span>
+                    </div>
+                    <div class="form-hint">When enabled, computes the structural SL (level ∓ buffer × ATR) and picks the TIGHTER of structural vs Fixed SL on every signal. CPR and R/S breakouts anchor to the level being tested. Paired zones (R1+PDH, S1+PDL, CPR) anchor to the outer edge. Day High / Day Low breakouts always use Fixed SL above.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Trailing SL</label>
@@ -413,20 +426,12 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">20 EMA Distance Filter</label>
+                    <label class="form-label">20 EMA Level Count Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
-                        <input type="checkbox" id="enableEmaFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip if breakout level &gt;</span>
-                        <input type="number" id="emaLevelDistanceAtr" class="form-control" step="0.1" min="0.1" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR from 20 EMA</span>
+                        <input type="checkbox" id="enableEmaLevelCountFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip if any CPR zone sits between EMA and the broken level</span>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono); margin-left: 28px;">Skip if candle close &gt;</span>
-                        <input type="number" id="emaCloseDistanceAtr" class="form-control" step="0.1" min="0.1" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR from 20 EMA</span>
-                    </div>
-                    <div class="form-hint">Filters overextended breakouts where price has moved too far from the 20-period EMA.</div>
-                    <div class="form-hint" style="color: var(--accent-yellow); margin-top: 4px;">Tip: keep this value &lt; ATR Multiplier (default 2.0). When close-distance &lt; ATR multiplier, the 20 EMA always sits between entry and SL — acting as a "soft floor" before the hard stop. At 0.75 (default), SL is at least 1.25 ATR beyond EMA. At 2.0 they meet. Above 2.0, SL ends up on the wrong side of EMA and the protection breaks.</div>
+                    <div class="form-hint">Counts CPR zones (S4, S3, S2, S1/PDL, CPR, R1/PDH, R2, R3, R4) strictly between the 20 EMA and the breakout level. Pair zones (CPR, R1/PDH, S1/PDL) count as one. If the count is 0 (EMA is in the zone immediately adjacent to the broken level) the trade fires. If 1 or more zones sit between, the setup is stale and the trade is skipped. Day High / Day Low setups follow the same rule — no CPR zone exclusion.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Weekly Reversal Filter (75-min R1/PWH & S1/PWL)</label>
@@ -482,6 +487,18 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR from entry</span>
                     </div>
                     <div class="form-hint">After target is shifted to the nearest resistance/support (session H/L + weekly CPR levels), skip the trade if the final target is too close to entry.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Target Shift Sources</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableDayHighLowTargetShift" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift to session High / Low</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="enableWeeklyLevelTargetShift" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift to Weekly CPR levels</span>
+                    </div>
+                    <div class="form-hint">Toggle which level types are considered when shifting the structural target down to the nearest resistance/support between entry and target.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Split Targets (T1 + T2)</label>
@@ -956,13 +973,14 @@
             document.getElementById('largeCandleAtrThreshold').value = d.largeCandleAtrThreshold || 1.0;
             // enableTargetShift removed — replaced by min target distance check
             // enableGapCheck removed — replaced by Opening Range filter
-            // enableDayHighLowTargetShift removed — always on
+            document.getElementById('enableDayHighLowTargetShift').checked = d.enableDayHighLowTargetShift !== false;
+            document.getElementById('enableWeeklyLevelTargetShift').checked = d.enableWeeklyLevelTargetShift !== false;
+            document.getElementById('enableStructuralSl').checked = d.enableStructuralSl === true;
+            document.getElementById('structuralSlBufferAtr').value = d.structuralSlBufferAtr != null ? d.structuralSlBufferAtr : 1.0;
             // dayHighLowMinAtr removed — single min target distance check handles both
             document.getElementById('enableSmallTargetFilter').checked = d.enableSmallTargetFilter !== false;
             document.getElementById('enableEmaDirectionCheck').checked = d.enableEmaDirectionCheck !== false;
-            document.getElementById('enableEmaFilter').checked = d.enableEmaFilter !== false;
-            document.getElementById('emaLevelDistanceAtr').value = d.emaLevelDistanceAtr || 0.5;
-            document.getElementById('emaCloseDistanceAtr').value = d.emaCloseDistanceAtr || 0.75;
+            document.getElementById('enableEmaLevelCountFilter').checked = d.enableEmaLevelCountFilter !== false;
             document.getElementById('targetShiftAtrThreshold').value = d.targetShiftAtrThreshold || 1.0;
             document.getElementById('enableSplitTarget').checked = d.enableSplitTarget !== false;
             document.getElementById('t1DistancePct').value = d.t1DistancePct || 50;
@@ -1096,13 +1114,14 @@
                 enableLargeCandleFilter: document.getElementById('enableLargeCandleFilter').checked,
                 largeCandleAtrThreshold: parseFloat(document.getElementById('largeCandleAtrThreshold').value) || 1.0,
                 // enableTargetShift removed
-                // enableDayHighLowTargetShift removed — always on
+                enableDayHighLowTargetShift: document.getElementById('enableDayHighLowTargetShift').checked,
+                enableWeeklyLevelTargetShift: document.getElementById('enableWeeklyLevelTargetShift').checked,
+                enableStructuralSl: document.getElementById('enableStructuralSl').checked,
+                structuralSlBufferAtr: parseFloat(document.getElementById('structuralSlBufferAtr').value) || 1.0,
                 // dayHighLowMinAtr removed
                 enableSmallTargetFilter: document.getElementById('enableSmallTargetFilter').checked,
                 enableEmaDirectionCheck: document.getElementById('enableEmaDirectionCheck').checked,
-                enableEmaFilter: document.getElementById('enableEmaFilter').checked,
-                emaLevelDistanceAtr: parseFloat(document.getElementById('emaLevelDistanceAtr').value) || 0.5,
-                emaCloseDistanceAtr: parseFloat(document.getElementById('emaCloseDistanceAtr').value) || 0.75,
+                enableEmaLevelCountFilter: document.getElementById('enableEmaLevelCountFilter').checked,
                 targetShiftAtrThreshold: parseFloat(document.getElementById('targetShiftAtrThreshold').value) || 1.0,
                 enableSplitTarget: document.getElementById('enableSplitTarget').checked,
                 t1DistancePct: parseInt(document.getElementById('t1DistancePct').value) || 50,

@@ -33,13 +33,18 @@ public class JournalService {
         List<TradeRecord> trades = new ArrayList<>();
         Path path = Paths.get(LOG_DIR, FILE_PREFIX + date.format(DATE_FMT) + ".csv");
         if (!Files.exists(path)) return trades;
+        String dayPrefix = date.format(DATE_FMT) + " ";
         try {
             List<String> lines = Files.readAllLines(path);
             for (int i = 1; i < lines.size(); i++) {
                 String[] p = lines.get(i).split(",");
                 if (p.length < 7) continue;
                 try {
-                    trades.add(new TradeRecord(p[1], p[2],
+                    // CSV stores time-only timestamps (HH:mm:ss). Prefix with the file's
+                    // date so downstream code (computeMetrics dailyPnl/equity) can extract
+                    // a yyyy-MM-dd day key via substring(0, 10).
+                    String ts = p[0] != null && p[0].length() >= 10 ? p[0] : dayPrefix + p[0];
+                    trades.add(new TradeRecord(ts, p[1], p[2],
                             Integer.parseInt(p[3]),
                             Double.parseDouble(p[4]),
                             Double.parseDouble(p[5]),
@@ -55,12 +60,16 @@ public class JournalService {
         Map<String, Object> m = new LinkedHashMap<>();
         if (trades.isEmpty()) { m.put("totalTrades", 0); return m; }
 
-        List<TradeRecord> wins   = trades.stream().filter(t -> t.getPnl() > 0).collect(Collectors.toList());
-        List<TradeRecord> losses = trades.stream().filter(t -> t.getPnl() < 0).collect(Collectors.toList());
+        // All metrics use NET P&L (after charges). Classification matches TradeRecord.result:
+        // PROFIT (netPnl > 0), LOSS (netPnl < 0), BREAKEVEN (== 0). Breakeven trades excluded
+        // from win/loss counts and from profit factor (industry standard).
+        List<TradeRecord> wins   = trades.stream().filter(t -> "PROFIT".equals(t.getResult())).collect(Collectors.toList());
+        List<TradeRecord> losses = trades.stream().filter(t -> "LOSS".equals(t.getResult())).collect(Collectors.toList());
+        long breakeven = trades.stream().filter(t -> "BREAKEVEN".equals(t.getResult())).count();
 
-        double grossProfit  = wins.stream().mapToDouble(TradeRecord::getPnl).sum();
-        double grossLoss    = Math.abs(losses.stream().mapToDouble(TradeRecord::getPnl).sum());
-        double netPnl       = trades.stream().mapToDouble(TradeRecord::getPnl).sum();
+        double grossProfit  = wins.stream().mapToDouble(TradeRecord::getNetPnl).sum();
+        double grossLoss    = Math.abs(losses.stream().mapToDouble(TradeRecord::getNetPnl).sum());
+        double netPnl       = trades.stream().mapToDouble(TradeRecord::getNetPnl).sum();
         double avgWin       = wins.isEmpty()   ? 0 : grossProfit / wins.size();
         double avgLoss      = losses.isEmpty() ? 0 : grossLoss   / losses.size();
         double winRate      = (double) wins.size() / trades.size() * 100;
@@ -68,18 +77,20 @@ public class JournalService {
         double expectancy   = (winRate / 100 * avgWin) - ((1 - winRate / 100) * avgLoss);
         double rr           = avgLoss == 0 ? 0 : avgWin / avgLoss;
 
-        // Consecutive wins/losses
+        // Consecutive wins/losses — BREAKEVEN trades break both streaks
         int maxCW = 0, maxCL = 0, cw = 0, cl = 0;
         List<TradeRecord> chrono = new ArrayList<>(trades);
         Collections.reverse(chrono);
         for (TradeRecord t : chrono) {
-            if (t.getPnl() > 0)      { cw++; cl = 0; maxCW = Math.max(maxCW, cw); }
-            else if (t.getPnl() < 0) { cl++; cw = 0; maxCL = Math.max(maxCL, cl); }
+            if      ("PROFIT".equals(t.getResult())) { cw++; cl = 0; maxCW = Math.max(maxCW, cw); }
+            else if ("LOSS".equals(t.getResult()))   { cl++; cw = 0; maxCL = Math.max(maxCL, cl); }
+            else                                      { cw = 0; cl = 0; }
         }
 
         m.put("totalTrades",     trades.size());
         m.put("wins",            wins.size());
         m.put("losses",          losses.size());
+        m.put("breakeven",       breakeven);
         m.put("winRate",         round(winRate));
         m.put("netPnl",          round(netPnl));
         m.put("grossProfit",     round(grossProfit));
@@ -91,8 +102,8 @@ public class JournalService {
         m.put("riskReward",      round(rr));
         m.put("maxConsecWins",   maxCW);
         m.put("maxConsecLosses", maxCL);
-        m.put("bestTrade",       trades.stream().mapToDouble(TradeRecord::getPnl).max().orElse(0));
-        m.put("worstTrade",      trades.stream().mapToDouble(TradeRecord::getPnl).min().orElse(0));
+        m.put("bestTrade",       trades.stream().mapToDouble(TradeRecord::getNetPnl).max().orElse(0));
+        m.put("worstTrade",      trades.stream().mapToDouble(TradeRecord::getNetPnl).min().orElse(0));
 
         // By exit reason
         Map<String, Map<String, Object>> byReason = new LinkedHashMap<>();
@@ -100,8 +111,8 @@ public class JournalService {
             List<TradeRecord> g = trades.stream().filter(t -> reason.equals(t.getExitReason())).collect(Collectors.toList());
             Map<String, Object> r = new LinkedHashMap<>();
             r.put("count", g.size());
-            r.put("pnl",   round(g.stream().mapToDouble(TradeRecord::getPnl).sum()));
-            r.put("wins",  g.stream().filter(t -> t.getPnl() > 0).count());
+            r.put("pnl",   round(g.stream().mapToDouble(TradeRecord::getNetPnl).sum()));
+            r.put("wins",  g.stream().filter(t -> t.getNetPnl() > 0).count());
             byReason.put(reason, r);
         }
         m.put("byReason", byReason);
@@ -112,17 +123,18 @@ public class JournalService {
             List<TradeRecord> g = trades.stream().filter(t -> side.equals(t.getSide())).collect(Collectors.toList());
             Map<String, Object> r = new LinkedHashMap<>();
             r.put("count", g.size());
-            r.put("pnl",   round(g.stream().mapToDouble(TradeRecord::getPnl).sum()));
-            r.put("wins",  g.stream().filter(t -> t.getPnl() > 0).count());
+            r.put("pnl",   round(g.stream().mapToDouble(TradeRecord::getNetPnl).sum()));
+            r.put("wins",  g.stream().filter(t -> t.getNetPnl() > 0).count());
             bySide.put(side, r);
         }
         m.put("bySide", bySide);
 
-        // Daily P&L (bar chart)
+        // Daily P&L (bar chart) — handles both yyyy-MM-dd HH:mm:ss (full) and HH:mm:ss (live cache)
         Map<String, Double> dailyPnl = new LinkedHashMap<>();
         for (TradeRecord t : chrono) {
-            String day = t.getTimestamp().substring(0, 10); // dd-MM-yyyy
-            dailyPnl.merge(day, t.getPnl(), Double::sum);
+            String ts = t.getTimestamp();
+            String day = ts != null && ts.length() >= 10 ? ts.substring(0, 10) : "today";
+            dailyPnl.merge(day, t.getNetPnl(), Double::sum);
         }
         Map<String, Double> dailyRounded = new LinkedHashMap<>();
         dailyPnl.forEach((k, v) -> dailyRounded.put(k, round(v)));
@@ -132,9 +144,10 @@ public class JournalService {
         List<Map<String, Object>> equity = new ArrayList<>();
         double cum = 0;
         for (TradeRecord t : chrono) {
-            cum += t.getPnl();
+            cum += t.getNetPnl();
+            String ts = t.getTimestamp();
             Map<String, Object> pt = new LinkedHashMap<>();
-            pt.put("label", t.getTimestamp().substring(0, 10));
+            pt.put("label", ts != null && ts.length() >= 10 ? ts.substring(0, 10) : "");
             pt.put("value", round(cum));
             equity.add(pt);
         }

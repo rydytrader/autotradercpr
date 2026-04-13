@@ -153,6 +153,8 @@
                 <option value="SL">SL</option>
                 <option value="TRAILING_SL">Trailing SL</option>
                 <option value="TARGET">Target</option>
+                <option value="TARGET_1">T1</option>
+                <option value="TARGET_2">T2</option>
                 <option value="AUTO_SQUAREOFF">Auto SqOff</option>
                 <option value="MANUAL">Manual</option>
             </select>
@@ -280,6 +282,8 @@
             if (value === 'SL')              return `<span class="side-badge side-short">SL</span>`;
             if (value === 'TRAILING_SL')     return `<span class="side-badge" style="background:rgba(251,146,60,0.1);border:1px solid rgba(251,146,60,0.25);color:#fb923c">TRAILING SL</span>`;
             if (value === 'TARGET')          return `<span class="side-badge side-long">TARGET</span>`;
+            if (value === 'TARGET_1')        return `<span class="side-badge side-long">T1</span>`;
+            if (value === 'TARGET_2')        return `<span class="side-badge side-long">T2</span>`;
             if (value === 'AUTO_SQUAREOFF')  return `<span class="side-badge" style="background:rgba(99,179,237,0.1);border:1px solid rgba(99,179,237,0.25);color:var(--accent-blue)">AUTO SQOFF</span>`;
             return `<span class="side-badge" style="background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.25);color:var(--accent-yellow)">MANUAL</span>`;
         }

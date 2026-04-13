@@ -15,6 +15,7 @@ public class ProcessedSignal {
     private final double atrMultiplier;
     private final String description;
     private final boolean dayHighLowShifted;
+    private final boolean useStructuralSl;
 
     private ProcessedSignal(Builder b) {
         this.signal          = b.signal;
@@ -30,6 +31,7 @@ public class ProcessedSignal {
         this.atrMultiplier   = b.atrMultiplier;
         this.description     = b.description;
         this.dayHighLowShifted = b.dayHighLowShifted;
+        this.useStructuralSl = b.useStructuralSl;
     }
 
     public static ProcessedSignal rejected(String setup, String symbol, String reason) {
@@ -49,6 +51,7 @@ public class ProcessedSignal {
     public double  getAtrMultiplier()   { return atrMultiplier; }
     public String  getDescription()     { return description; }
     public boolean isDayHighLowShifted() { return dayHighLowShifted; }
+    public boolean isUseStructuralSl() { return useStructuralSl; }
 
     public static class Builder {
         private String signal;
@@ -64,6 +67,7 @@ public class ProcessedSignal {
         private double atrMultiplier;
         private String description;
         private boolean dayHighLowShifted;
+        private boolean useStructuralSl;
 
         public Builder signal(String v)          { this.signal = v; return this; }
         public Builder symbol(String v)          { this.symbol = v; return this; }
@@ -78,6 +82,7 @@ public class ProcessedSignal {
         public Builder atrMultiplier(double v)    { this.atrMultiplier = v; return this; }
         public Builder description(String v)     { this.description = v; return this; }
         public Builder dayHighLowShifted(boolean v) { this.dayHighLowShifted = v; return this; }
+        public Builder useStructuralSl(boolean v) { this.useStructuralSl = v; return this; }
 
         public ProcessedSignal build() { return new ProcessedSignal(this); }
     }

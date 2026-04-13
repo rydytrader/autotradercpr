@@ -170,11 +170,11 @@
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Gross Profit</span>
+                    <span class="stat-label" style="margin:0;">Net Profit</span>
                     <span class="stat-value pnl-positive" id="summaryGrossProfit" style="font-size:1rem;">0.00</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Gross Loss</span>
+                    <span class="stat-label" style="margin:0;">Net Loss</span>
                     <span class="stat-value pnl-negative" id="summaryGrossLoss" style="font-size:1rem;">0.00</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -470,8 +470,10 @@
             if (!Array.isArray(trades)) trades = [];
             document.getElementById('closedTrades').textContent = trades.length;
 
-            const wins = trades.filter(t => t.netPnl > 0);
-            const losses = trades.filter(t => t.netPnl < 0);
+            // Strict net-P&L classification matches server's getResult():
+            // PROFIT (>0), LOSS (<0), BREAKEVEN (==0). Breakeven excluded from PF / averages.
+            const wins = trades.filter(t => (t.netPnl || 0) > 0);
+            const losses = trades.filter(t => (t.netPnl || 0) < 0);
             document.getElementById('profitCount').textContent = wins.length;
             document.getElementById('lossCount').textContent = losses.length;
 
@@ -489,9 +491,9 @@
             setPnlClass(heroGrossEl, grossPnl);
             document.getElementById('heroCharges').textContent = fmt(charges);
 
-            // Trade Summary section
-            const grossProfit = wins.reduce((s, t) => s + (t.pnl || 0), 0);
-            const grossLoss = losses.reduce((s, t) => s + (t.pnl || 0), 0);
+            // Trade Summary section — net P&L (after charges) for consistency with journal/calendar
+            const grossProfit = wins.reduce((s, t) => s + (t.netPnl || 0), 0);
+            const grossLoss = losses.reduce((s, t) => s + (t.netPnl || 0), 0);
             document.getElementById('summaryTotalTrades').textContent = trades.length;
             document.getElementById('summaryGrossProfit').textContent = '+' + fmt(grossProfit);
             document.getElementById('summaryGrossLoss').textContent = fmt(grossLoss);

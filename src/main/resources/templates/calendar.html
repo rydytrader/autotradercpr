@@ -19,6 +19,11 @@
         })();
     </script>
     <style>
+        /* Mirror journal page metric-value coloring so Overview card matches */
+        .metric-value{font-family:var(--font-mono);font-size:1.5rem;font-weight:700;color:var(--text-primary);line-height:1;}
+        .metric-value.positive{color:var(--accent-green);}
+        .metric-value.negative{color:var(--accent-red);}
+        .metric-value.neutral{color:var(--accent-blue);}
         .cal-toolbar {
             display: flex; align-items: center; justify-content: space-between;
             gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
@@ -226,37 +231,41 @@
         </div>
     </div>
 
-    <!-- Summary card (hero P&L + stats) -->
+    <!-- Summary card (mirrors Trading Journal Overview) -->
     <div class="section-card fade-in" style="margin-bottom:20px;">
         <div class="section-header">
-            <div class="section-title"><div class="section-title-dot"></div> Summary</div>
+            <div class="section-title"><div class="section-title-dot"></div> Overview</div>
         </div>
         <div style="padding:20px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px;">
             <div>
                 <div class="stat-label" style="margin-bottom:6px;">Net P&L</div>
-                <div class="stat-value" id="heroNetPnl" style="font-size:2.2rem;">—</div>
-                <div class="stat-sub" id="heroNetPnlSub" style="margin-top:6px;">Gross P&L − Charges</div>
+                <div class="metric-value" id="heroNetPnl" style="font-size:2.2rem;">—</div>
+                <div class="stat-sub">Realised profit / loss</div>
             </div>
             <div style="display:flex; gap:32px; flex-wrap:wrap;">
                 <div style="text-align:center;">
-                    <div class="stat-label">Total Trades</div>
-                    <div class="stat-value" id="heroTotalTrades" style="font-size:1.1rem; margin-top:4px;">—</div>
+                    <div class="stat-label">Total</div>
+                    <div class="metric-value neutral" id="heroTotalTrades" style="font-size:1.1rem; margin-top:4px;">—</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">Wins</div>
+                    <div class="metric-value positive" id="heroWins" style="font-size:1.1rem; margin-top:4px;">—</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">Losses</div>
+                    <div class="metric-value negative" id="heroLosses" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center;">
                     <div class="stat-label">Win Rate</div>
-                    <div class="stat-value" id="heroWinRate" style="font-size:1.1rem; margin-top:4px;">—</div>
+                    <div class="metric-value" id="heroWinRate" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
                     <div class="stat-label">Profit Factor</div>
-                    <div class="stat-value" id="heroProfitFactor" style="font-size:1.1rem; margin-top:4px;">—</div>
+                    <div class="metric-value" id="heroProfitFactor" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center;">
-                    <div class="stat-label">Avg Win</div>
-                    <div class="stat-value" id="heroAvgWin" style="font-size:1.1rem; margin-top:4px;">—</div>
-                </div>
-                <div style="text-align:center;">
-                    <div class="stat-label">Avg Loss</div>
-                    <div class="stat-value" id="heroAvgLoss" style="font-size:1.1rem; margin-top:4px;">—</div>
+                    <div class="stat-label">Expectancy</div>
+                    <div class="metric-value" id="heroExpectancy" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
             </div>
         </div>
@@ -309,22 +318,44 @@
     }
     function pnlClass(v) { return v > 0 ? 'positive' : v < 0 ? 'negative' : ''; }
 
-    function setEl(id, value, cls) {
+    function setEl(id, value, baseClasses) {
         const el = document.getElementById(id);
         if (!el) return;
         el.textContent = value;
-        el.classList.remove('positive', 'negative');
-        if (cls) el.classList.add(cls);
+        if (baseClasses != null) el.className = baseClasses;
     }
     function renderHero(summary) {
         const hasTrades = summary && summary.totalTrades > 0;
-        const net = hasTrades ? (summary.netPnl || 0) : null;
-        setEl('heroNetPnl',       hasTrades ? fmtMoney(net) : '—', hasTrades ? pnlClass(net) : '');
-        setEl('heroTotalTrades',  hasTrades ? (summary.totalTrades || 0) : '—');
-        setEl('heroWinRate',      hasTrades ? ((summary.winRate || 0).toFixed(1) + '%') : '—');
-        setEl('heroProfitFactor', hasTrades ? ((summary.profitFactor || 0).toFixed(2)) : '—');
-        setEl('heroAvgWin',       hasTrades ? fmtMoney(summary.avgWin || 0) : '—', hasTrades ? 'positive' : '');
-        setEl('heroAvgLoss',      hasTrades ? fmtMoney(summary.avgLoss || 0) : '—', hasTrades ? 'negative' : '');
+        const noData = !hasTrades;
+        const net = hasTrades ? (summary.netPnl || 0) : 0;
+        const wr  = hasTrades ? (summary.winRate || 0) : 0;
+        const pf  = hasTrades ? (summary.profitFactor || 0) : 0;
+        const exp = hasTrades ? (summary.expectancy || 0) : 0;
+
+        setEl('heroNetPnl',
+            hasTrades ? fmtMoney(net) : '—',
+            'metric-value ' + (noData ? '' : net >= 0 ? 'positive' : 'negative'));
+        document.getElementById('heroNetPnl').style.fontSize = '2.2rem';
+
+        setEl('heroTotalTrades',  hasTrades ? (summary.totalTrades || 0) : '—', 'metric-value neutral');
+        setEl('heroWins',         hasTrades ? (summary.wins || 0) : '—',        'metric-value positive');
+        setEl('heroLosses',       hasTrades ? (summary.losses || 0) : '—',      'metric-value negative');
+
+        setEl('heroWinRate',
+            hasTrades ? (wr.toFixed(1) + '%') : '—',
+            'metric-value ' + (noData ? '' : wr >= 50 ? 'positive' : 'negative'));
+
+        setEl('heroProfitFactor',
+            hasTrades ? pf.toFixed(2) : '—',
+            'metric-value ' + (pf >= 1 ? 'positive' : pf > 0 ? 'negative' : ''));
+
+        setEl('heroExpectancy',
+            hasTrades ? fmtMoney(exp) : '—',
+            'metric-value ' + (noData ? '' : exp >= 0 ? 'positive' : 'negative'));
+
+        // Re-apply font-size after className reset (smaller for stat row vs hero)
+        ['heroTotalTrades','heroWins','heroLosses','heroWinRate','heroProfitFactor','heroExpectancy']
+            .forEach(id => { const el = document.getElementById(id); if (el) el.style.fontSize = '1.1rem'; });
     }
 
     function renderMonth(data) {

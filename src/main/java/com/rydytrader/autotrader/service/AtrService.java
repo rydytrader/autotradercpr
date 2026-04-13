@@ -171,6 +171,7 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
             long epochSec = c.get(0).asLong();
             LocalTime lt = Instant.ofEpochSecond(epochSec).atZone(IST).toLocalTime();
             bar.startMinute = lt.getHour() * 60L + lt.getMinute();
+            bar.epochSec = epochSec;
             bar.open = c.get(1).asDouble();
             bar.high = c.get(2).asDouble();
             bar.low = c.get(3).asDouble();

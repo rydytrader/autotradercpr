@@ -35,6 +35,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     private static final String SCANNER_STATE_FILE = "../store/config/scanner-state.json";
     private static final ObjectMapper mapper = new ObjectMapper();
 
+    // Holds the current candle being scanned — used by DH/DL detection to compute prior day H/L
+    private final ThreadLocal<CandleAggregator.CandleBar> currentCandle = new ThreadLocal<>();
+
     private final BhavcopyService bhavcopyService;
     private final AtrService atrService;
     private final WeeklyCprService weeklyCprService;
@@ -135,6 +138,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      * Check if a completed candle breaks any CPR level.
      */
     private void scanForBreakout(String fyersSymbol, CandleAggregator.CandleBar candle) {
+        currentCandle.set(candle);
+        try {
+            scanForBreakoutInner(fyersSymbol, candle);
+        } finally {
+            currentCandle.remove();
+        }
+    }
+
+    private void scanForBreakoutInner(String fyersSymbol, CandleAggregator.CandleBar candle) {
         String ticker = extractTicker(fyersSymbol);
         CprLevels levels = bhavcopyService.getCprLevels(ticker);
         if (levels == null) {
@@ -195,8 +207,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     eventService.log("[SCANNER] " + buySetup + " for " + fyersSymbol + " — skipped, " + prob + " not enabled");
                     return;
                 }
-                // EMA distance filter
-                if (isEmaFilterBlocked(fyersSymbol, buySetup, close, levels, atr)) return;
+                // EMA level-count filter: skip if any CPR zone sits between EMA and broken level
+                if (evaluateEmaFilter(fyersSymbol, buySetup, close, levels, atr) == 2) return;
                 // NIFTY index alignment filter — null = hard skip, otherwise possibly downgraded prob
                 prob = applyIndexAlignmentDowngrade(fyersSymbol, buySetup, prob, true);
                 if (prob == null) return;  // hard skip mode
@@ -254,8 +266,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     eventService.log("[SCANNER] " + sellSetup + " for " + fyersSymbol + " — skipped, " + prob + " not enabled");
                     return;
                 }
-                // EMA distance filter
-                if (isEmaFilterBlocked(fyersSymbol, sellSetup, close, levels, atr)) return;
+                // EMA level-count filter: skip if any CPR zone sits between EMA and broken level
+                if (evaluateEmaFilter(fyersSymbol, sellSetup, close, levels, atr) == 2) return;
                 // NIFTY index alignment filter — null = hard skip, otherwise possibly downgraded prob
                 prob = applyIndexAlignmentDowngrade(fyersSymbol, sellSetup, prob, false);
                 if (prob == null) return;  // hard skip mode
@@ -350,7 +362,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (open <= s2 && close > s2 && !broken.contains("BUY_ABOVE_S2")) return "BUY_ABOVE_S2";
 
         // Day High breakout (lowest priority — only after OR locks)
-        double dayHigh = marketDataService.getDayHigh(fyersSymbol);
+        double dayHigh = candleAggregator.getDayHighExcluding(fyersSymbol, currentCandle.get());
         if (dayHigh > 0 && candleAggregator.isOpeningRangeLocked(fyersSymbol)
                 && close > dayHigh && ((open < dayHigh || low < dayHigh) || (low < dayHigh && open > dayHigh))
                 && !broken.contains("BUY_ABOVE_DH")) return "BUY_ABOVE_DH";
@@ -420,7 +432,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 && !broken.contains("SELL_BELOW_R1_PDH")) return "SELL_BELOW_R1_PDH";
 
         // Day Low breakout (lowest priority — only after OR locks)
-        double dayLow = marketDataService.getDayLow(fyersSymbol);
+        double dayLow = candleAggregator.getDayLowExcluding(fyersSymbol, currentCandle.get());
         if (dayLow > 0 && candleAggregator.isOpeningRangeLocked(fyersSymbol)
                 && close < dayLow && ((open > dayLow || high > dayLow) || (high > dayLow && open < dayLow))
                 && !broken.contains("SELL_BELOW_DL")) return "SELL_BELOW_DL";
@@ -461,8 +473,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         payload.put("pl", levels.getPl());
         payload.put("tc", levels.getTc());
         payload.put("bc", levels.getBc());
-        payload.put("dayHigh", marketDataService.getDayHigh(fyersSymbol));
-        payload.put("dayLow", marketDataService.getDayLow(fyersSymbol));
+        payload.put("dayHigh", candleAggregator.getDayHighBeforeLast(fyersSymbol));
+        payload.put("dayLow", candleAggregator.getDayLowBeforeLast(fyersSymbol));
 
         eventService.log("[SCANNER] " + setup + " for " + fyersSymbol + " | close=" + String.format("%.2f", close)
             + " | ATR=" + String.format("%.2f", atr) + " | " + prob + " | " + timeStr);
@@ -590,38 +602,89 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     }
 
     /**
-     * EMA distance filter: returns true if trade should be SKIPPED (too far from EMA).
+     * EMA level-count filter. Counts CPR zones strictly between EMA and the broken level.
+     * Pair zones (CPR, R1/PDH, S1/PDL) are collapsed — each counted at most once.
+     * The setup's own zone is excluded (not counted). DH/DL setups have no exclusion
+     * (day high/low isn't a CPR zone), but the zone-counting logic applies identically.
+     *
+     * Returns 0 = pass, 2 = skip. No halve tier. If filter disabled, always returns 0.
      */
-    private boolean isEmaFilterBlocked(String fyersSymbol, String setup, double close,
-                                        CprLevels levels, double atr) {
-        if (!riskSettings.isEnableEmaFilter()) return false;
+    private int evaluateEmaFilter(String fyersSymbol, String setup, double close,
+                                   CprLevels levels, double atr) {
+        if (!riskSettings.isEnableEmaLevelCountFilter()) return 0;
+
         double ema = emaService.getEma(fyersSymbol);
-        if (ema <= 0 || atr <= 0) return false; // no EMA data, allow trade
+        if (ema <= 0) return 0;
+        double broken = getBreakoutLevelPrice(setup, levels, fyersSymbol);
+        if (broken <= 0) return 0;
 
-        double breakoutLevel = getBreakoutLevelPrice(setup, levels, fyersSymbol);
-        if (breakoutLevel <= 0) return false;
+        double lo = Math.min(ema, broken);
+        double hi = Math.max(ema, broken);
 
-        double levelDist = Math.abs(breakoutLevel - ema);
-        double closeDist = Math.abs(close - ema);
-        double maxLevelDist = atr * riskSettings.getEmaLevelDistanceAtr();
-        double maxCloseDist = atr * riskSettings.getEmaCloseDistanceAtr();
+        double cprBot = Math.min(levels.getTc(), levels.getBc());
+        double cprTop = Math.max(levels.getTc(), levels.getBc());
+        double r1lo   = Math.min(levels.getR1(), levels.getPh());
+        double r1hi   = Math.max(levels.getR1(), levels.getPh());
+        double s1lo   = Math.min(levels.getS1(), levels.getPl());
+        double s1hi   = Math.max(levels.getS1(), levels.getPl());
 
-        if (levelDist > maxLevelDist) {
-            eventService.log("[SCANNER] " + setup + " for " + fyersSymbol
-                + " — skipped, breakout level " + String.format("%.2f", breakoutLevel)
-                + " too far from EMA(" + String.format("%.2f", ema) + ")"
-                + " dist=" + String.format("%.2f", levelDist) + " > " + String.format("%.2f", maxLevelDist) + " ATR");
-            return true;
+        String excludedZone = excludedZoneFor(setup);
+
+        // Zone list, bottom-to-top. name → edges
+        String[] zoneNames = { "S4", "S3", "S2", "S1PDL", "CPR", "R1PDH", "R2", "R3", "R4" };
+        double[][] zoneEdges = {
+            { levels.getS4() },
+            { levels.getS3() },
+            { levels.getS2() },
+            { s1lo, s1hi },
+            { cprBot, cprTop },
+            { r1lo, r1hi },
+            { levels.getR2() },
+            { levels.getR3() },
+            { levels.getR4() }
+        };
+
+        int count = 0;
+        StringBuilder between = new StringBuilder();
+        for (int i = 0; i < zoneNames.length; i++) {
+            if (zoneNames[i].equals(excludedZone)) continue;
+            boolean anyEdgeInInterval = false;
+            for (double e : zoneEdges[i]) {
+                if (e > 0 && e > lo && e < hi) { anyEdgeInInterval = true; break; }
+            }
+            if (anyEdgeInInterval) {
+                count++;
+                if (between.length() > 0) between.append(", ");
+                between.append(zoneNames[i]);
+            }
         }
-        if (closeDist > maxCloseDist) {
+
+        if (count > 0) {
             eventService.log("[SCANNER] " + setup + " for " + fyersSymbol
-                + " — skipped, close " + String.format("%.2f", close)
-                + " too far from EMA(" + String.format("%.2f", ema) + ")"
-                + " dist=" + String.format("%.2f", closeDist) + " > " + String.format("%.2f", maxCloseDist) + " ATR");
-            return true;
+                + " — skipped, EMA(" + String.format("%.2f", ema) + ") is "
+                + count + " zone(s) away from broken " + String.format("%.2f", broken)
+                + " [zones between: " + between + "]");
+            return 2;
         }
-        return false;
+        return 0;
     }
+
+    /** Returns the zone name the setup is breaking — excluded from the "levels between" count. */
+    private static String excludedZoneFor(String setup) {
+        return switch (setup) {
+            case "BUY_ABOVE_CPR", "SELL_BELOW_CPR"       -> "CPR";
+            case "BUY_ABOVE_R1_PDH", "SELL_BELOW_R1_PDH" -> "R1PDH";
+            case "BUY_ABOVE_S1_PDL", "SELL_BELOW_S1_PDL" -> "S1PDL";
+            case "BUY_ABOVE_R2", "SELL_BELOW_R2"         -> "R2";
+            case "BUY_ABOVE_R3", "SELL_BELOW_R3"         -> "R3";
+            case "BUY_ABOVE_R4", "SELL_BELOW_R4"         -> "R4";
+            case "BUY_ABOVE_S2", "SELL_BELOW_S2"         -> "S2";
+            case "BUY_ABOVE_S3", "SELL_BELOW_S3"         -> "S3";
+            case "BUY_ABOVE_S4", "SELL_BELOW_S4"         -> "S4";
+            default -> "";  // DH/DL and any unknown setup — no exclusion
+        };
+    }
+
 
     /** Get the breakout level price for a given setup name. */
     private double getBreakoutLevelPrice(String setup, CprLevels levels, String fyersSymbol) {
@@ -632,7 +695,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             case "BUY_ABOVE_R3"     -> levels.getR3();
             case "BUY_ABOVE_R4"     -> levels.getR4();
             case "BUY_ABOVE_S1_PDL" -> Math.max(levels.getS1(), levels.getPl());
-            case "BUY_ABOVE_DH"     -> marketDataService.getDayHigh(fyersSymbol);
+            case "BUY_ABOVE_DH"     -> candleAggregator.getDayHighBeforeLast(fyersSymbol);
             case "SELL_BELOW_CPR"    -> Math.min(levels.getTc(), levels.getBc());
             case "SELL_BELOW_S1_PDL" -> Math.min(levels.getS1(), levels.getPl());
             case "SELL_BELOW_S2"     -> levels.getS2();
@@ -645,7 +708,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             case "BUY_ABOVE_S2"      -> levels.getS2();
             case "BUY_ABOVE_S3"      -> levels.getS3();
             case "BUY_ABOVE_S4"      -> levels.getS4();
-            case "SELL_BELOW_DL"     -> marketDataService.getDayLow(fyersSymbol);
+            case "SELL_BELOW_DL"     -> candleAggregator.getDayLowBeforeLast(fyersSymbol);
             default -> 0;
         };
     }

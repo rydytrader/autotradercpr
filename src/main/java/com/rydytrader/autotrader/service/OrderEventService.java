@@ -74,28 +74,36 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         public final double atrMultiplier;
         public final String description;
         public final boolean dayHighLowShifted;
+        public final boolean useStructuralSl;
         public volatile boolean handled = false;
 
         public EntryContext(String symbol, int quantity, String position,
                            int exitSide, double slPrice, double targetPrice, String setup) {
-            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, 0, 0, null, false);
+            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, 0, 0, null, false, false);
         }
 
         public EntryContext(String symbol, int quantity, String position,
                            int exitSide, double slPrice, double targetPrice, String setup,
                            double atr, double atrMultiplier) {
-            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, null, false);
+            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, null, false, false);
         }
 
         public EntryContext(String symbol, int quantity, String position,
                            int exitSide, double slPrice, double targetPrice, String setup,
                            double atr, double atrMultiplier, String description) {
-            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, false);
+            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, false, false);
         }
 
         public EntryContext(String symbol, int quantity, String position,
                            int exitSide, double slPrice, double targetPrice, String setup,
                            double atr, double atrMultiplier, String description, boolean dayHighLowShifted) {
+            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, dayHighLowShifted, false);
+        }
+
+        public EntryContext(String symbol, int quantity, String position,
+                           int exitSide, double slPrice, double targetPrice, String setup,
+                           double atr, double atrMultiplier, String description,
+                           boolean dayHighLowShifted, boolean useStructuralSl) {
             this.symbol = symbol;
             this.quantity = quantity;
             this.position = position;
@@ -107,6 +115,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             this.atrMultiplier = atrMultiplier;
             this.description = description;
             this.dayHighLowShifted = dayHighLowShifted;
+            this.useStructuralSl = useStructuralSl;
         }
     }
 
@@ -703,10 +712,13 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         // Mark as recently handled to prevent duplicate from position event
         recentlyHandled.put(symbol, System.currentTimeMillis());
 
-        // Recalculate SL from actual fill price (always ATR-based at entry)
-        // Chandelier Exit only adjusts SL later on candle-close events, not at initial placement
+        // Recalculate SL from actual fill price (always ATR-based at entry), unless structural.
+        // Structural SL is anchored to the S/R level — keep as-is regardless of fill price.
+        // Chandelier Exit only adjusts SL later on candle-close events, not at initial placement.
         double adjustedSl = ctx.slPrice;
-        if (entryPrice > 0 && ctx.atr > 0 && ctx.atrMultiplier > 0) {
+        if (ctx.useStructuralSl) {
+            adjustedSl = orderService.roundToTick(adjustedSl, symbol);
+        } else if (entryPrice > 0 && ctx.atr > 0 && ctx.atrMultiplier > 0) {
             adjustedSl = "LONG".equals(ctx.position) ? entryPrice - ctx.atr * ctx.atrMultiplier : entryPrice + ctx.atr * ctx.atrMultiplier;
             adjustedSl = orderService.roundToTick(adjustedSl, symbol);
         }
@@ -1186,10 +1198,12 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
                 positionStateStore.appendDescription(symbol,
                     "[SL_MODIFIED] " + String.format("%.2f", oco.currentPrice) + " → " + String.format("%.2f", stopPrice));
                 oco.currentPrice = stopPrice;
-                // Update disk state — find counterpart to get target price
-                OcoContext counter = trackedOcoOrders.get(oco.counterpartOrderId);
+                // Update disk state — find counterpart to get target price (split SL has null counterpart, use T1/T2)
+                String counterpartId = oco.counterpartOrderId != null ? oco.counterpartOrderId
+                    : (oco.target1OrderId != null ? oco.target1OrderId : oco.target2OrderId);
+                OcoContext counter = counterpartId != null ? trackedOcoOrders.get(counterpartId) : null;
                 double targetPrice = counter != null ? counter.currentPrice : 0;
-                positionStateStore.saveOcoState(symbol, orderId, oco.counterpartOrderId, stopPrice, targetPrice);
+                positionStateStore.saveOcoState(symbol, orderId, counterpartId, stopPrice, targetPrice);
             } else if (oco.currentPrice <= 0) {
                 oco.currentPrice = stopPrice; // initial sync
             }
@@ -1202,9 +1216,10 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
                     "[TGT_MODIFIED] " + String.format("%.2f", oco.currentPrice) + " → " + String.format("%.2f", limitPrice));
                 oco.currentPrice = limitPrice;
                 // Update disk state — find counterpart to get SL price
-                OcoContext counter = trackedOcoOrders.get(oco.counterpartOrderId);
+                String counterpartId = oco.counterpartOrderId != null ? oco.counterpartOrderId : oco.slOrderId;
+                OcoContext counter = counterpartId != null ? trackedOcoOrders.get(counterpartId) : null;
                 double slPrice = counter != null ? counter.currentPrice : 0;
-                positionStateStore.saveOcoState(symbol, oco.counterpartOrderId, orderId, slPrice, limitPrice);
+                positionStateStore.saveOcoState(symbol, counterpartId, orderId, slPrice, limitPrice);
             } else if (oco.currentPrice <= 0) {
                 oco.currentPrice = limitPrice; // initial sync
             }

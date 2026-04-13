@@ -78,7 +78,7 @@ public class TradeRecord {
         this.charges = ChargesCalculator.calculate(side, qty, entryPrice, exitPrice, brokeragePerOrder,
             sttRate, exchangeRate, gstRate, sebiRate, stampDutyRate, brokeragePct).totalCharges;
         this.netPnl  = Math.round((this.pnl - this.charges) * 100.0) / 100.0;
-        this.result  = this.netPnl >= 0 ? "PROFIT" : "LOSS";
+        this.result  = this.netPnl > 0 ? "PROFIT" : (this.netPnl < 0 ? "LOSS" : "BREAKEVEN");
     }
 
     // Used when reloading from CSV (timestamp already known)
@@ -121,7 +121,7 @@ public class TradeRecord {
         this.pnl     = Math.round(raw * 100.0) / 100.0;
         this.charges = ChargesCalculator.calculate(side, qty, entryPrice, exitPrice, brokeragePerOrder).totalCharges;
         this.netPnl  = Math.round((this.pnl - this.charges) * 100.0) / 100.0;
-        this.result  = this.netPnl >= 0 ? "PROFIT" : "LOSS";
+        this.result  = this.netPnl > 0 ? "PROFIT" : (this.netPnl < 0 ? "LOSS" : "BREAKEVEN");
     }
 
     // Used when reloading from DB with pre-computed charges
@@ -154,7 +154,7 @@ public class TradeRecord {
         this.pnl     = Math.round(raw * 100.0) / 100.0;
         this.charges = charges;
         this.netPnl  = Math.round((this.pnl - this.charges) * 100.0) / 100.0;
-        this.result  = this.netPnl >= 0 ? "PROFIT" : "LOSS";
+        this.result  = this.netPnl > 0 ? "PROFIT" : (this.netPnl < 0 ? "LOSS" : "BREAKEVEN");
     }
 
     public String getTimestamp()  { return timestamp; }

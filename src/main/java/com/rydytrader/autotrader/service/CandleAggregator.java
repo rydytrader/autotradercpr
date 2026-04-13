@@ -61,6 +61,13 @@ public class CandleAggregator {
     // Candle close listeners
     private final List<CandleCloseListener> listeners = new CopyOnWriteArrayList<>();
 
+    // First-bar diagnostic trace counter (per symbol)
+    private final ConcurrentHashMap<String, Integer> firstBarTraceCount = new ConcurrentHashMap<>();
+
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private EventService eventService;
+
     // Last candle close cycle stats
     private volatile int lastCycleProcessed = 0;
     private volatile String lastCycleTime = "";
@@ -161,6 +168,22 @@ public class CandleAggregator {
 
         // Skip candle aggregation / OR / ATP tracking for pre-market ticks
         if (nowMinute < MarketHolidayService.MARKET_OPEN_MINUTE) return;
+
+        // ── DIAGNOSTIC: first 5-min window tracing ──
+        // Log every tick a symbol receives in the 09:15-09:20 window so we can find
+        // out why firstCandleClose drifts from the actual session open. Limited to
+        // first 30 ticks per symbol per day to bound log volume.
+        if (nowMinute < MarketHolidayService.MARKET_OPEN_MINUTE + 5) {
+            int seen = firstBarTraceCount.merge(symbol, 1, Integer::sum);
+            if (seen <= 30) {
+                String time = ZonedDateTime.now(IST).toLocalTime()
+                    .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss.SSS"));
+                eventService.log("[FIRST_BAR_TRACE] " + symbol + " " + time
+                    + " ltp=" + ltp + " open=" + raw.open + " high=" + raw.high + " low=" + raw.low
+                    + " atp=" + raw.atp + " vol=" + raw.volume + " seq=" + seen);
+            }
+        }
+
         if (raw.changePercent != 0) latestChangePct.put(symbol, raw.changePercent);
 
         // Track day open from HSM open_price field
@@ -219,6 +242,7 @@ public class CandleAggregator {
                 // New candle period — start fresh
                 CandleBar c = new CandleBar();
                 c.startMinute = candleStart;
+                c.epochSec = ZonedDateTime.now(IST).toLocalDate().atStartOfDay(IST).toEpochSecond() + candleStart * 60L;
                 c.open = ltp;
                 c.high = ltp;
                 c.low = ltp;
@@ -274,6 +298,7 @@ public class CandleAggregator {
                     double ltp = candle.close;
                     CandleBar newCandle = new CandleBar();
                     newCandle.startMinute = currentStart;
+                    newCandle.epochSec = ZonedDateTime.now(IST).toLocalDate().atStartOfDay(IST).toEpochSecond() + currentStart * 60L;
                     newCandle.open = ltp;
                     newCandle.high = ltp;
                     newCandle.low = ltp;
@@ -350,6 +375,44 @@ public class CandleAggregator {
 
     public double getDayOpen(String symbol) {
         return dayOpen.getOrDefault(symbol, 0.0);
+    }
+
+    /** Day high from completed candles, excluding the given candle (used for DH breakout detection). */
+    public double getDayHighExcluding(String symbol, CandleBar excluding) {
+        java.util.Deque<CandleBar> candles = completedCandles.get(symbol);
+        if (candles == null || candles.isEmpty()) return 0;
+        double max = 0;
+        for (CandleBar c : candles) {
+            if (c == excluding) continue;
+            if (c.high > max) max = c.high;
+        }
+        return max;
+    }
+
+    /** Day low from completed candles, excluding the given candle (used for DL breakout detection). */
+    public double getDayLowExcluding(String symbol, CandleBar excluding) {
+        java.util.Deque<CandleBar> candles = completedCandles.get(symbol);
+        if (candles == null || candles.isEmpty()) return 0;
+        double min = Double.MAX_VALUE;
+        for (CandleBar c : candles) {
+            if (c == excluding) continue;
+            if (c.low > 0 && c.low < min) min = c.low;
+        }
+        return min == Double.MAX_VALUE ? 0 : min;
+    }
+
+    /** Day high excluding the most recent completed candle (for target shift after a breakout). */
+    public double getDayHighBeforeLast(String symbol) {
+        java.util.Deque<CandleBar> candles = completedCandles.get(symbol);
+        if (candles == null || candles.isEmpty()) return 0;
+        return getDayHighExcluding(symbol, candles.peekLast());
+    }
+
+    /** Day low excluding the most recent completed candle (for target shift after a breakout). */
+    public double getDayLowBeforeLast(String symbol) {
+        java.util.Deque<CandleBar> candles = completedCandles.get(symbol);
+        if (candles == null || candles.isEmpty()) return 0;
+        return getDayLowExcluding(symbol, candles.peekLast());
     }
 
     /** Get the close price of the first completed candle of the day for a symbol. */
@@ -491,25 +554,57 @@ public class CandleAggregator {
 
         if (candles.isEmpty()) return;
 
-        // Check if the last candle is the current forming period (mid-candle restart)
+        // Only today's bars belong in completedCandles — multi-day history is for ATR computation only.
+        long todayStartEpoch = ZonedDateTime.now(IST).toLocalDate().atStartOfDay(IST).toEpochSecond();
+        List<CandleBar> todays = new ArrayList<>();
+        for (CandleBar c : candles) {
+            if (c.epochSec >= todayStartEpoch) todays.add(c);
+        }
+        if (todays.isEmpty()) return;
+
+        // Check if the last today-bar is the current forming period (mid-candle restart)
         long currentStart = getCandleStartMinute(ZonedDateTime.now(IST).toLocalTime());
-        CandleBar lastCandle = candles.get(candles.size() - 1);
+        CandleBar lastCandle = todays.get(todays.size() - 1);
 
         if (lastCandle.startMinute == currentStart) {
-            // Last candle is partial (current period) — seed as current forming candle
-            // volAtStart will be adjusted on first tick (see onTick)
             lastCandle.volAtStart = -1; // sentinel: needs adjustment on first tick
             currentCandles.put(symbol, lastCandle);
-            // Add all except the last to completed history
-            for (int i = 0; i < candles.size() - 1; i++) {
-                history.addLast(candles.get(i));
+            for (int i = 0; i < todays.size() - 1; i++) {
+                history.addLast(todays.get(i));
             }
         } else {
-            // All candles are completed
-            for (CandleBar c : candles) {
+            for (CandleBar c : todays) {
                 history.addLast(c);
             }
         }
+
+        // Authoritatively (re)seed first-candle close, day open, and opening range from
+        // historical bars — these are the source of truth, overriding any earlier value
+        // that may have been captured incorrectly during a tick race at session start.
+        CandleBar firstBar = todays.get(0);
+        if (firstBar.startMinute >= MarketHolidayService.MARKET_OPEN_MINUTE && firstBar.close > 0) {
+            firstCandleClose.put(symbol, firstBar.close);
+            if (firstBar.open > 0) dayOpen.put(symbol, firstBar.open);
+        }
+        int orMinutes = riskSettings.getOpeningRangeMinutes();
+        if (orMinutes > 0) {
+            long orEnd = MarketHolidayService.MARKET_OPEN_MINUTE + orMinutes;
+            double orHi = 0, orLo = Double.MAX_VALUE;
+            for (CandleBar c : todays) {
+                if (c.startMinute >= MarketHolidayService.MARKET_OPEN_MINUTE && c.startMinute < orEnd) {
+                    if (c.high > orHi) orHi = c.high;
+                    if (c.low > 0 && c.low < orLo) orLo = c.low;
+                }
+            }
+            if (orHi > 0 && orLo < Double.MAX_VALUE) {
+                openingRangeHigh.put(symbol, orHi);
+                openingRangeLow.put(symbol, orLo);
+                long nowMinute = ZonedDateTime.now(IST).toLocalTime().getHour() * 60L
+                    + ZonedDateTime.now(IST).toLocalTime().getMinute();
+                if (nowMinute >= orEnd) openingRangeLocked.put(symbol, true);
+            }
+        }
+        saveOrState();
     }
 
     /** Get volume of the current forming candle (live, updates every tick). */
@@ -535,6 +630,8 @@ public class CandleAggregator {
     /** Clear daily state for new trading day (called automatically on date change). */
     private void clearDaily() {
         currentCandles.clear();
+        completedCandles.clear();
+        firstBarTraceCount.clear();
         dayOpen.clear();
         firstCandleClose.clear();
         openingRangeHigh.clear();
@@ -579,6 +676,7 @@ public class CandleAggregator {
 
     public static class CandleBar {
         public long startMinute; // minutes since midnight
+        public long epochSec;    // bar start epoch seconds (for date filtering across multi-day history)
         public double open;
         public double high;
         public double low;
