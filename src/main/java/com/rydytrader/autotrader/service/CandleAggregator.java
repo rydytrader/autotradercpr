@@ -153,12 +153,14 @@ public class CandleAggregator {
         double ltp = raw.ltp;
         if (ltp <= 0) return;
 
-        // Ignore pre-market ticks (before 9:15 AM)
         long nowMinute = ZonedDateTime.now(IST).toLocalTime().getHour() * 60L
             + ZonedDateTime.now(IST).toLocalTime().getMinute();
-        if (nowMinute < MarketHolidayService.MARKET_OPEN_MINUTE) return;
 
+        // Always update latestLtp so trend display reflects pre-market price
         latestLtp.put(symbol, ltp);
+
+        // Skip candle aggregation / OR / ATP tracking for pre-market ticks
+        if (nowMinute < MarketHolidayService.MARKET_OPEN_MINUTE) return;
         if (raw.changePercent != 0) latestChangePct.put(symbol, raw.changePercent);
 
         // Track day open from HSM open_price field
