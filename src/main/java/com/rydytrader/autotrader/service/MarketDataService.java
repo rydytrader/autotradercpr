@@ -889,9 +889,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         if (minPrice > 0 && cpr.getClose() < minPrice) return false;
         if (maxPrice > 0 && cpr.getClose() > maxPrice) return false;
         double minTurnover = riskSettings.getScanMinTurnover();
-        if (minTurnover > 0 && cpr.getTurnover() > 0 && cpr.getTurnover() / 1e7 < minTurnover) return false;
+        if (minTurnover > 0 && cpr.getAvgTurnover20() > 0 && cpr.getAvgTurnover20() / 1e7 < minTurnover) return false;
         long minVolume = riskSettings.getScanMinVolume();
-        if (minVolume > 0 && cpr.getVolume() > 0 && cpr.getVolume() < minVolume) return false;
+        if (minVolume > 0 && cpr.getAvgVolume20() > 0 && cpr.getAvgVolume20() < minVolume) return false;
         double minBeta = riskSettings.getScanMinBeta();
         double maxBeta = riskSettings.getScanMaxBeta();
         if (minBeta > 0 && cpr.getBeta() > 0 && cpr.getBeta() < minBeta) return false;
