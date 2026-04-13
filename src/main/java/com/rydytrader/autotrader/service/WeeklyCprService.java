@@ -187,12 +187,17 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
             return;
         }
 
-        // Determine target week. On weekdays the current week is in progress so use the
-        // second-to-last. On weekends the current week just ended so use the last.
+        // Determine target week — the LAST COMPLETED week, used to compute pivot levels for THIS week.
+        // If the latest week in our data is the current calendar week (mid-week or Friday EOD),
+        // skip it and use the prior week. Otherwise the latest week IS already the previous week
+        // (e.g. Monday morning before today's bhavcopy is added — latest data is Friday).
         LocalDate now = LocalDate.now(IST);
-        boolean weekend = now.getDayOfWeek() == DayOfWeek.SATURDAY || now.getDayOfWeek() == DayOfWeek.SUNDAY;
+        int currentWeekKey = now.getYear() * 100
+            + now.get(java.time.temporal.IsoFields.WEEK_OF_WEEK_BASED_YEAR);
         List<Integer> weekKeys = new ArrayList<>(datesByWeek.keySet());
-        int targetWeekIdx = weekend ? weekKeys.size() - 1 : weekKeys.size() - 2;
+        int latestIdx = weekKeys.size() - 1;
+        boolean latestIsCurrentWeek = !weekKeys.isEmpty() && weekKeys.get(latestIdx) == currentWeekKey;
+        int targetWeekIdx = latestIsCurrentWeek ? latestIdx - 1 : latestIdx;
         if (targetWeekIdx < 0) targetWeekIdx = 0;
         int targetWeek = weekKeys.get(targetWeekIdx);
         List<String> targetDates = datesByWeek.get(targetWeek);
