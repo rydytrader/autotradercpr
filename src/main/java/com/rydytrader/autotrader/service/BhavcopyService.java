@@ -119,12 +119,13 @@ public class BhavcopyService {
             }
             // Classify narrow/inside range types from loaded cache + history
             classifyNarrowRangeTypes(cache);
-            // Only compute beta/cap if not already in the cached file (avoids slow NSE calls on restart)
+            // Only compute beta/cap/avgs if not already in the cached file (avoids slow NSE calls on restart)
             boolean needsEnrichment = cache.values().stream()
-                .anyMatch(c -> c.getBeta() == 0 || c.getCapCategory() == null);
+                .anyMatch(c -> c.getBeta() == 0 || c.getCapCategory() == null || c.getAvgVolume20() == 0);
             if (needsEnrichment) {
-                log.info("[BhavcopyService] Enriching cache: computing betas + fetching cap categories");
+                log.info("[BhavcopyService] Enriching cache: betas + cap categories + vol/turnover averages");
                 computeBetas(cache);
+                computeVolumeTurnoverAverages(cache);
                 try {
                     String cookies = getNseCookies();
                     if (cookies != null && !cookies.isEmpty()) fetchCapCategories(cookies, cache);
@@ -133,7 +134,7 @@ public class BhavcopyService {
                 }
                 saveToFile();
             } else {
-                log.info("[BhavcopyService] Beta + cap already cached — skipping enrichment");
+                log.info("[BhavcopyService] Beta + cap + averages already cached — skipping enrichment");
             }
             long narrowCount = cache.values().stream().filter(CprLevels::isNarrowCpr).count();
             long insideCount = getInsideCprStocks().size();
@@ -313,6 +314,7 @@ public class BhavcopyService {
                 // Classify after backfill so z-score has sufficient history
                 classifyNarrowRangeTypes(cache);
                 computeBetas(cache);
+                computeVolumeTurnoverAverages(cache);
                 fetchCapCategories(cookies, cache);
 
                 saveToFile();
@@ -378,6 +380,45 @@ public class BhavcopyService {
             classified++;
         }
         log.info("[BhavcopyService] Classified range z-score for {} stocks ({}-day history)", classified, window);
+    }
+
+    // ── Volume/Turnover 20-day averages from daily history ───────────────────
+
+    private void computeVolumeTurnoverAverages(Map<String, CprLevels> todayCache) {
+        if (dailyHistory.size() < 5) {
+            log.info("[BhavcopyService] Insufficient history for vol/turnover avg ({} days)", dailyHistory.size());
+            return;
+        }
+        int window = Math.min(20, dailyHistory.size());
+        int computed = 0;
+        for (CprLevels today : todayCache.values()) {
+            String sym = today.getSymbol();
+            long volSum = 0;
+            double tovSum = 0;
+            int volDays = 0, tovDays = 0;
+            for (int i = 0; i < window && i < dailyHistory.size(); i++) {
+                CprLevels h = dailyHistory.get(i).symbols.get(sym);
+                if (h == null) continue;
+                if (h.getVolume() > 0) { volSum += h.getVolume(); volDays++; }
+                if (h.getTurnover() > 0) { tovSum += h.getTurnover(); tovDays++; }
+            }
+            if (volDays >= 5) {
+                long avgVol = volSum / volDays;
+                today.setAvgVolume20(avgVol);
+                if (avgVol > 0 && today.getVolume() > 0) {
+                    today.setVolumeMultiple(Math.round((double) today.getVolume() / avgVol * 100.0) / 100.0);
+                }
+            }
+            if (tovDays >= 5) {
+                double avgTov = tovSum / tovDays;
+                today.setAvgTurnover20(avgTov);
+                if (avgTov > 0 && today.getTurnover() > 0) {
+                    today.setTurnoverMultiple(Math.round(today.getTurnover() / avgTov * 100.0) / 100.0);
+                }
+            }
+            if (volDays >= 5 || tovDays >= 5) computed++;
+        }
+        log.info("[BhavcopyService] Computed vol/turnover averages for {} stocks ({}-day window)", computed, window);
     }
 
     // ── Beta computation from 25-day daily history ────────────────────────────

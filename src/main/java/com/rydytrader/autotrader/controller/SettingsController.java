@@ -259,7 +259,11 @@ public class SettingsController {
         m.put("close", Math.round(c.getClose() * 100.0) / 100.0);
         m.put("cprWidthPct", Math.round(c.getCprWidthPct() * 1000.0) / 1000.0);
         m.put("volume", c.getVolume());
-        m.put("turnover", Math.round(c.getTurnover() / 100000.0) / 100.0); // ₹ Cr (divide by 1 Cr = 10^7, round 2dp)
+        m.put("avgVolume20", c.getAvgVolume20());
+        m.put("volumeMultiple", c.getVolumeMultiple());
+        m.put("turnover", Math.round(c.getTurnover() / 100000.0) / 100.0); // ₹ Cr
+        m.put("avgTurnover20", Math.round(c.getAvgTurnover20() / 100000.0) / 100.0); // ₹ Cr
+        m.put("turnoverMultiple", c.getTurnoverMultiple());
         m.put("beta", c.getBeta());
         m.put("capCategory", c.getCapCategory() != null ? c.getCapCategory() : "SMALL");
         return m;

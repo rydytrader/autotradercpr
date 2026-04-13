@@ -15,6 +15,10 @@ public class CprLevels {
     private long   volume;
     private double fiftyTwoWeekHigh, fiftyTwoWeekLow;
     private double turnover;          // previous day total traded value (₹)
+    private double avgTurnover20;     // 20-day average turnover
+    private double turnoverMultiple;  // turnover / avgTurnover20
+    private long   avgVolume20;       // 20-day average volume
+    private double volumeMultiple;    // volume / avgVolume20
     private double beta;              // stock beta vs NIFTY (25-day)
     private String capCategory;       // "LARGE", "MID", "SMALL"
 
@@ -108,6 +112,14 @@ public class CprLevels {
     public void    setFiftyTwoWeekLow(double v)  { this.fiftyTwoWeekLow = v; }
     public double  getTurnover()          { return turnover; }
     public void    setTurnover(double v)  { this.turnover = v; }
+    public double  getAvgTurnover20()     { return avgTurnover20; }
+    public void    setAvgTurnover20(double v) { this.avgTurnover20 = v; }
+    public double  getTurnoverMultiple()  { return turnoverMultiple; }
+    public void    setTurnoverMultiple(double v) { this.turnoverMultiple = v; }
+    public long    getAvgVolume20()       { return avgVolume20; }
+    public void    setAvgVolume20(long v) { this.avgVolume20 = v; }
+    public double  getVolumeMultiple()    { return volumeMultiple; }
+    public void    setVolumeMultiple(double v) { this.volumeMultiple = v; }
     public double  getBeta()              { return beta; }
     public void    setBeta(double v)      { this.beta = v; }
     public String  getCapCategory()       { return capCategory; }
