@@ -566,6 +566,7 @@ public class BhavcopyService {
                     double[] hlc = entry.getValue();
                     CprLevels lvl = new CprLevels(entry.getKey(), hlc[0], hlc[1], hlc[2]);
                     if (hlc.length > 3) lvl.setVolume((long) hlc[3]);
+                    if (hlc.length > 6) lvl.setTurnover(hlc[6]);
                     if (symbolMasterService != null) {
                         double tick = symbolMasterService.getTickSize("NSE:" + entry.getKey() + "-EQ");
                         lvl.roundToTick(tick);
