@@ -647,9 +647,9 @@
                     <div class="form-hint">Exclude stocks with 20-day average turnover below this value. 0 = no filter.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Min Avg Volume (20d)</label>
-                    <input type="number" id="scanMinVolume" class="form-control" min="0" max="100000000" step="100000" style="width:130px; padding:5px 8px; font-size:0.82rem; text-align:center;" placeholder="0">
-                    <div class="form-hint">Exclude stocks with 20-day average volume below this value. E.g., 500000 = 5 lakh shares. 0 = no filter.</div>
+                    <label class="form-label">Min Avg Volume (20d, Lakhs)</label>
+                    <input type="number" id="scanMinVolume" class="form-control" min="0" max="10000" step="1" style="width:100px; padding:5px 8px; font-size:0.82rem; text-align:center;" placeholder="0">
+                    <div class="form-hint">Exclude stocks with 20-day average volume below this value (in lakhs). E.g., 5 = 5 lakh shares. 0 = no filter.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Beta Range</label>
@@ -998,7 +998,7 @@
             document.getElementById('scanMinPrice').value = d.scanMinPrice != null ? d.scanMinPrice : 300;
             document.getElementById('scanMaxPrice').value = d.scanMaxPrice != null ? d.scanMaxPrice : 0;
             document.getElementById('scanMinTurnover').value = d.scanMinTurnover != null ? d.scanMinTurnover : 0;
-            document.getElementById('scanMinVolume').value = d.scanMinVolume != null ? d.scanMinVolume : 0;
+            document.getElementById('scanMinVolume').value = d.scanMinVolume != null ? Math.round(d.scanMinVolume / 100000) : 0;
             document.getElementById('scanMinBeta').value = d.scanMinBeta != null ? d.scanMinBeta : 0;
             document.getElementById('scanMaxBeta').value = d.scanMaxBeta != null ? d.scanMaxBeta : 0;
             var capVal = d.scanCapFilter || 'ALL';
@@ -1136,7 +1136,7 @@
                 scanMinPrice: parseFloat(document.getElementById('scanMinPrice').value) || 0,
                 scanMaxPrice: parseFloat(document.getElementById('scanMaxPrice').value) || 0,
                 scanMinTurnover: parseFloat(document.getElementById('scanMinTurnover').value) || 0,
-                scanMinVolume: parseInt(document.getElementById('scanMinVolume').value) || 0,
+                scanMinVolume: (parseInt(document.getElementById('scanMinVolume').value) || 0) * 100000,
                 scanMinBeta: parseFloat(document.getElementById('scanMinBeta').value) || 0,
                 scanMaxBeta: parseFloat(document.getElementById('scanMaxBeta').value) || 0,
                 scanCapFilter: (function() {
