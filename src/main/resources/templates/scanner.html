@@ -1011,6 +1011,8 @@
             <input type="number" id="nfMaxPrice" placeholder="Max" style="width:65px; padding:4px 6px; font-size:0.72rem; background:var(--bg-base); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); text-align:center;" oninput="filterModalRows('narrow')">
             <span style="margin-left:6px;">T/O ₹Cr ≥</span>
             <input type="number" id="nfMinTurnover" placeholder="0" style="width:55px; padding:4px 6px; font-size:0.72rem; background:var(--bg-base); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); text-align:center;" oninput="filterModalRows('narrow')">
+            <span style="margin-left:6px;">Vol ≥</span>
+            <input type="number" id="nfMinVolume" placeholder="0" step="100000" style="width:75px; padding:4px 6px; font-size:0.72rem; background:var(--bg-base); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); text-align:center;" oninput="filterModalRows('narrow')">
             <span style="margin-left:6px;">Beta:</span>
             <input type="number" id="nfMinBeta" placeholder="0" step="0.1" style="width:45px; padding:4px 6px; font-size:0.72rem; background:var(--bg-base); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); text-align:center;" oninput="filterModalRows('narrow')">
             <span>–</span>
@@ -1065,6 +1067,8 @@
             <input type="number" id="ifMaxPrice" placeholder="Max" style="width:65px; padding:4px 6px; font-size:0.72rem; background:var(--bg-base); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); text-align:center;" oninput="filterModalRows('inside')">
             <span style="margin-left:6px;">T/O ₹Cr ≥</span>
             <input type="number" id="ifMinTurnover" placeholder="0" style="width:55px; padding:4px 6px; font-size:0.72rem; background:var(--bg-base); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); text-align:center;" oninput="filterModalRows('inside')">
+            <span style="margin-left:6px;">Vol ≥</span>
+            <input type="number" id="ifMinVolume" placeholder="0" step="100000" style="width:75px; padding:4px 6px; font-size:0.72rem; background:var(--bg-base); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); text-align:center;" oninput="filterModalRows('inside')">
             <span style="margin-left:6px;">Beta:</span>
             <input type="number" id="ifMinBeta" placeholder="0" step="0.1" style="width:45px; padding:4px 6px; font-size:0.72rem; background:var(--bg-base); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); text-align:center;" oninput="filterModalRows('inside')">
             <span>–</span>
@@ -1157,6 +1161,7 @@ function filterModalRows(type) {
     var minP = parseFloat(document.getElementById(prefix + 'MinPrice').value) || 0;
     var maxP = parseFloat(document.getElementById(prefix + 'MaxPrice').value) || 0;
     var minT = parseFloat(document.getElementById(prefix + 'MinTurnover').value) || 0;
+    var minV = parseFloat(document.getElementById(prefix + 'MinVolume').value) || 0;
     var minB = parseFloat(document.getElementById(prefix + 'MinBeta').value) || 0;
     var maxB = parseFloat(document.getElementById(prefix + 'MaxBeta').value) || 0;
     var capF = modalCapFilter[type] || 'ALL';
@@ -1167,12 +1172,14 @@ function filterModalRows(type) {
     rows.forEach(function(row) {
         var c = parseFloat(row.dataset.close);
         var t = parseFloat(row.dataset.turnover);
+        var v = parseFloat(row.dataset.volume);
         var b = parseFloat(row.dataset.beta);
         var cap = row.dataset.cap;
         var vis = true;
         if (minP > 0 && c < minP) vis = false;
         if (maxP > 0 && c > maxP) vis = false;
         if (minT > 0 && t < minT) vis = false;
+        if (minV > 0 && v < minV) vis = false;
         if (minB > 0 && b < minB) vis = false;
         if (maxB > 0 && b > maxB) vis = false;
         if (capF !== 'ALL' && cap !== capF) vis = false;
