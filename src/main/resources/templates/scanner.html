@@ -1030,8 +1030,8 @@
                         <th style="padding:10px 14px; text-align:left; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Symbol</th>
                         <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Close</th>
                         <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">CPR %</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Volume (20d avg)</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">T/O ₹Cr (20d avg)</th>
+                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Avg Volume (20d)</th>
+                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Avg T/O ₹Cr (20d)</th>
                         <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Beta</th>
                         <th style="padding:10px 14px; text-align:center; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Cap</th>
                     </tr>
@@ -1040,10 +1040,9 @@
             </table>
             <div id="narrowCprEmpty" style="display:none; padding:40px; text-align:center; color:var(--text-muted); font-family:var(--font-mono); font-size:0.85rem;">No narrow CPR stocks found</div>
         </div>
-        <div style="padding:10px 16px; border-top:1px solid var(--border); font-family:var(--font-mono); font-size:0.65rem; color:var(--text-muted); display:flex; gap:18px; flex-shrink:0; flex-wrap:wrap;">
-            <span>Vol/T/O Multiple: <span style="color:var(--accent-green);">&gt;2x Spike</span> <span style="color:var(--accent-yellow);">&gt;1.5x Above</span> <span style="color:var(--text-primary);">0.8–1.5x Normal</span> <span style="color:var(--accent-red);">&lt;0.8x Low</span></span>
-            <span>Beta: <span style="color:var(--accent-red);">&gt;1.2 High</span> <span style="color:var(--accent-yellow);">&gt;1.0 Above</span> <span style="color:var(--text-primary);">0.8–1.0 Mkt</span> <span style="color:var(--accent-blue);">&lt;0.8 Defensive</span></span>
-            <span>Cap: <span style="color:var(--accent-green); font-weight:700;">LRG</span> <span style="color:var(--accent-blue); font-weight:700;">MID</span> <span style="color:var(--accent-yellow); font-weight:700;">SML</span></span>
+        <div style="padding:10px 16px; border-top:1px solid var(--border); font-family:var(--font-mono); font-size:0.65rem; color:var(--text-muted); display:flex; gap:20px; flex-shrink:0; flex-wrap:wrap;">
+            <span>Beta: <span style="color:var(--accent-red);">&gt;1.2 High</span> <span style="color:var(--accent-yellow);">&gt;1.0 Above Mkt</span> <span style="color:var(--text-primary);">0.8–1.0 Market</span> <span style="color:var(--accent-blue);">&lt;0.8 Defensive</span></span>
+            <span>Cap: <span style="color:var(--accent-green); font-weight:700;">LRG</span> Large (NIFTY 100) <span style="color:var(--accent-blue); font-weight:700;">MID</span> Mid (MIDCAP 150) <span style="color:var(--accent-yellow); font-weight:700;">SML</span> Small</span>
         </div>
     </div>
 </div>
@@ -1085,8 +1084,8 @@
                         <th style="padding:10px 14px; text-align:left; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Symbol</th>
                         <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Close</th>
                         <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">CPR %</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Volume (20d avg)</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">T/O ₹Cr (20d avg)</th>
+                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Avg Volume (20d)</th>
+                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Avg T/O ₹Cr (20d)</th>
                         <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Beta</th>
                         <th style="padding:10px 14px; text-align:center; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Cap</th>
                     </tr>
@@ -1095,10 +1094,9 @@
             </table>
             <div id="insideCprEmpty" style="display:none; padding:40px; text-align:center; color:var(--text-muted); font-family:var(--font-mono); font-size:0.85rem;">No inside CPR stocks found</div>
         </div>
-        <div style="padding:10px 16px; border-top:1px solid var(--border); font-family:var(--font-mono); font-size:0.65rem; color:var(--text-muted); display:flex; gap:18px; flex-shrink:0; flex-wrap:wrap;">
-            <span>Vol/T/O Multiple: <span style="color:var(--accent-green);">&gt;2x Spike</span> <span style="color:var(--accent-yellow);">&gt;1.5x Above</span> <span style="color:var(--text-primary);">0.8–1.5x Normal</span> <span style="color:var(--accent-red);">&lt;0.8x Low</span></span>
-            <span>Beta: <span style="color:var(--accent-red);">&gt;1.2 High</span> <span style="color:var(--accent-yellow);">&gt;1.0 Above</span> <span style="color:var(--text-primary);">0.8–1.0 Mkt</span> <span style="color:var(--accent-blue);">&lt;0.8 Defensive</span></span>
-            <span>Cap: <span style="color:var(--accent-green); font-weight:700;">LRG</span> <span style="color:var(--accent-blue); font-weight:700;">MID</span> <span style="color:var(--accent-yellow); font-weight:700;">SML</span></span>
+        <div style="padding:10px 16px; border-top:1px solid var(--border); font-family:var(--font-mono); font-size:0.65rem; color:var(--text-muted); display:flex; gap:20px; flex-shrink:0; flex-wrap:wrap;">
+            <span>Beta: <span style="color:var(--accent-red);">&gt;1.2 High</span> <span style="color:var(--accent-yellow);">&gt;1.0 Above Mkt</span> <span style="color:var(--text-primary);">0.8–1.0 Market</span> <span style="color:var(--accent-blue);">&lt;0.8 Defensive</span></span>
+            <span>Cap: <span style="color:var(--accent-green); font-weight:700;">LRG</span> Large (NIFTY 100) <span style="color:var(--accent-blue); font-weight:700;">MID</span> Mid (MIDCAP 150) <span style="color:var(--accent-yellow); font-weight:700;">SML</span> Small</span>
         </div>
     </div>
 </div>
@@ -1137,26 +1135,20 @@ function fmtMultiple(m) {
 }
 
 function buildModalRow(s, i) {
-    var volCell = fmtVol(s.volume);
-    if (s.volumeMultiple > 0) {
-        volCell += '<br><span style="font-size:0.62rem; color:var(--text-muted);">avg ' + fmtVol(s.avgVolume20) + '</span> ' + fmtMultiple(s.volumeMultiple);
-    }
-    var tovCell = s.turnover > 0 ? s.turnover.toFixed(1) : '—';
-    if (s.turnoverMultiple > 0) {
-        tovCell += '<br><span style="font-size:0.62rem; color:var(--text-muted);">avg ' + s.avgTurnover20.toFixed(1) + '</span> ' + fmtMultiple(s.turnoverMultiple);
-    }
-    return '<tr class="modal-stock-row" data-close="' + s.close + '" data-turnover="' + (s.turnover||0)
+    var volCell = s.avgVolume20 > 0 ? fmtVol(s.avgVolume20) : '—';
+    var tovCell = s.avgTurnover20 > 0 ? s.avgTurnover20.toFixed(1) : '—';
+    return '<tr class="modal-stock-row" data-close="' + s.close + '" data-turnover="' + (s.avgTurnover20||0)
+        + '" data-volume="' + (s.avgVolume20||0)
         + '" data-beta="' + (s.beta||0) + '" data-cap="' + (s.capCategory||'SMALL')
-        + '" data-volmult="' + (s.volumeMultiple||0) + '" data-tovmult="' + (s.turnoverMultiple||0)
         + '" style="border-bottom:1px solid var(--border);">'
-        + '<td style="padding:8px 14px; color:var(--text-muted); vertical-align:top;">' + (i+1) + '</td>'
-        + '<td style="padding:8px 14px; color:var(--accent-cyan); font-weight:600; vertical-align:top;">' + s.symbol + '</td>'
-        + '<td style="padding:8px 14px; text-align:right; color:var(--text-primary); vertical-align:top;">' + s.close.toFixed(2) + '</td>'
-        + '<td style="padding:8px 14px; text-align:right; color:var(--accent-yellow); font-weight:600; vertical-align:top;">' + s.cprWidthPct.toFixed(3) + '%</td>'
-        + '<td style="padding:8px 14px; text-align:right; color:var(--text-secondary); vertical-align:top; line-height:1.4;">' + volCell + '</td>'
-        + '<td style="padding:8px 14px; text-align:right; color:var(--text-secondary); vertical-align:top; line-height:1.4;">' + tovCell + '</td>'
-        + '<td style="padding:8px 14px; text-align:right; color:' + betaColor(s.beta || 1) + '; vertical-align:top;">' + (s.beta > 0 ? s.beta.toFixed(2) : '1.00') + '</td>'
-        + '<td style="padding:8px 14px; text-align:center; vertical-align:top;">' + capBadge(s.capCategory) + '</td>'
+        + '<td style="padding:8px 14px; color:var(--text-muted);">' + (i+1) + '</td>'
+        + '<td style="padding:8px 14px; color:var(--accent-cyan); font-weight:600;">' + s.symbol + '</td>'
+        + '<td style="padding:8px 14px; text-align:right; color:var(--text-primary);">' + s.close.toFixed(2) + '</td>'
+        + '<td style="padding:8px 14px; text-align:right; color:var(--accent-yellow); font-weight:600;">' + s.cprWidthPct.toFixed(3) + '%</td>'
+        + '<td style="padding:8px 14px; text-align:right; color:var(--text-secondary);">' + volCell + '</td>'
+        + '<td style="padding:8px 14px; text-align:right; color:var(--text-secondary);">' + tovCell + '</td>'
+        + '<td style="padding:8px 14px; text-align:right; color:' + betaColor(s.beta || 1) + ';">' + (s.beta > 0 ? s.beta.toFixed(2) : '1.00') + '</td>'
+        + '<td style="padding:8px 14px; text-align:center;">' + capBadge(s.capCategory) + '</td>'
         + '</tr>';
 }
 
