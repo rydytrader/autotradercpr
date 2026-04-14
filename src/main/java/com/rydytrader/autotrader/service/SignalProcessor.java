@@ -313,14 +313,17 @@ public class SignalProcessor {
             }
         }
 
-        // ── 4g2. Small target filter — skip if target < N ATR from entry ──
-        double minTargetAtr = riskSettings.getTargetShiftAtrThreshold();
-        if (riskSettings.isEnableSmallTargetFilter() && minTargetAtr > 0 && atr > 0) {
-            double targetDist = Math.abs(target - close);
-            if (targetDist < atr * minTargetAtr) {
+        // ── 4g2. Risk/Reward filter — reject if reward < minRiskRewardRatio × risk ──
+        if (riskSettings.isEnableRiskRewardFilter()) {
+            double minRR = riskSettings.getMinRiskRewardRatio();
+            double risk   = Math.abs(close - sl);
+            double reward = Math.abs(target - close);
+            double rr = risk > 0 ? reward / risk : 0;
+            if (rr < minRR) {
                 return ProcessedSignal.rejected(setup, symbol,
-                    "Target " + fmt(target) + " too close to entry " + fmt(close)
-                    + " (" + fmt(targetDist) + " < " + fmt(atr * minTargetAtr) + " = " + minTargetAtr + " ATR) — insufficient profit room");
+                    "Risk/Reward " + fmt(rr) + ":1 < " + minRR + ":1 — "
+                    + "entry=" + fmt(close) + " SL=" + fmt(sl) + " target=" + fmt(target)
+                    + " risk=" + fmt(risk) + " reward=" + fmt(reward));
             }
         }
 

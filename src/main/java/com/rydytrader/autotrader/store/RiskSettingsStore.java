@@ -54,14 +54,15 @@ public class RiskSettingsStore {
         volatile boolean enableStructuralSl = false;   // when false, always use close ± atrMultiplier × ATR
         volatile double  structuralSlBufferAtr = 1.0;  // ATR multiplier added below/above the structural anchor
         volatile double dayHighLowMinAtr = 0.5; // min distance in ATR for day high/low shifted target (0 = no check)
-        volatile boolean enableSmallTargetFilter = true; // skip trade if target < N ATR from entry
+        // Risk/Reward filter — skip trade if |target−entry| / |entry−SL| < minRiskRewardRatio
+        volatile boolean enableRiskRewardFilter = true;
+        volatile double  minRiskRewardRatio     = 1.0;
         // 20 EMA filters
         volatile boolean enableEmaDirectionCheck = true; // buy requires close > EMA, sell requires close < EMA
         volatile double emaCloseDistanceAtr = 0.75;  // legacy — kept for backward compat with old risk-settings.json
         // EMA level-count filter — counts CPR zones strictly between EMA and the broken level.
         // Allow only when count == 0 (EMA is in the zone immediately adjacent to the broken level).
         volatile boolean enableEmaLevelCountFilter = true;
-        volatile double targetShiftAtrThreshold = 1.0; // shift target if distance < this × ATR
         volatile boolean enableSmallCandleFilter = false; // reject if candle move from breakout level < smallCandleAtrThreshold ATR
         volatile double smallCandleAtrThreshold = 0.5; // ATR multiplier for small candle filter
         volatile double wickRejectionRatio = 1.5; // breakout wick must be >= this * body to allow small body candle
@@ -164,12 +165,12 @@ public class RiskSettingsStore {
     public boolean isEnableStructuralSl()    { return cfg().enableStructuralSl; }
     public double  getStructuralSlBufferAtr(){ return cfg().structuralSlBufferAtr; }
     public double getDayHighLowMinAtr()            { return cfg().dayHighLowMinAtr; }
-    public boolean isEnableSmallTargetFilter()     { return cfg().enableSmallTargetFilter; }
+    public boolean isEnableRiskRewardFilter()      { return cfg().enableRiskRewardFilter; }
+    public double  getMinRiskRewardRatio()         { return cfg().minRiskRewardRatio; }
     public boolean isEnableEmaDirectionCheck()      { return cfg().enableEmaDirectionCheck; }
     public double getEmaCloseDistanceAtr()         { return cfg().emaCloseDistanceAtr; }
     public boolean isEnableEmaLevelCountFilter()   { return cfg().enableEmaLevelCountFilter; }
     public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
-    public double getTargetShiftAtrThreshold() { return cfg().targetShiftAtrThreshold; }
     public boolean isEnableSmallCandleFilter() { return cfg().enableSmallCandleFilter; }
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
     public boolean isTrailingSlNoTarget() { return cfg().trailingSlNoTarget; }
@@ -280,12 +281,12 @@ public class RiskSettingsStore {
     public void setEnableStructuralSl(boolean v)    { cfg().enableStructuralSl = v; }
     public void setStructuralSlBufferAtr(double v)  { cfg().structuralSlBufferAtr = v; }
     public void setDayHighLowMinAtr(double v)              { cfg().dayHighLowMinAtr = v; }
-    public void setEnableSmallTargetFilter(boolean v)      { cfg().enableSmallTargetFilter = v; }
+    public void setEnableRiskRewardFilter(boolean v)       { cfg().enableRiskRewardFilter = v; }
+    public void setMinRiskRewardRatio(double v)            { cfg().minRiskRewardRatio = v; }
     public void setEnableEmaDirectionCheck(boolean v)       { cfg().enableEmaDirectionCheck = v; }
     public void setEmaCloseDistanceAtr(double v)           { cfg().emaCloseDistanceAtr = v; }
     public void setEnableEmaLevelCountFilter(boolean v)    { cfg().enableEmaLevelCountFilter = v; }
     public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
-    public void setTargetShiftAtrThreshold(double v) { cfg().targetShiftAtrThreshold = v; }
     public void setEnableSmallCandleFilter(boolean v) { cfg().enableSmallCandleFilter = v; }
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
     public void setTrailingSlNoTarget(boolean v) { cfg().trailingSlNoTarget = v; }
@@ -326,7 +327,6 @@ public class RiskSettingsStore {
     public boolean isEnableLargeCandleFilter(String mode) { return cfgFor(mode).enableLargeCandleFilter; }
     public double getLargeCandleAtrThreshold(String mode) { return cfgFor(mode).largeCandleAtrThreshold; }
     public boolean isEnableTargetShift(String mode) { return cfgFor(mode).enableTargetShift; }
-    public double getTargetShiftAtrThreshold(String mode) { return cfgFor(mode).targetShiftAtrThreshold; }
     public boolean isEnableSmallCandleFilter(String mode) { return cfgFor(mode).enableSmallCandleFilter; }
     public boolean isEnableTrailingSl(String mode) { return cfgFor(mode).enableTrailingSl; }
     public double getSmallCandleAtrThreshold(String mode) { return cfgFor(mode).smallCandleAtrThreshold; }
@@ -358,7 +358,6 @@ public class RiskSettingsStore {
     public void setEnableLargeCandleFilter(String mode, boolean v) { cfgFor(mode).enableLargeCandleFilter = v; }
     public void setLargeCandleAtrThreshold(String mode, double v) { cfgFor(mode).largeCandleAtrThreshold = v; }
     public void setEnableTargetShift(String mode, boolean v) { cfgFor(mode).enableTargetShift = v; }
-    public void setTargetShiftAtrThreshold(String mode, double v) { cfgFor(mode).targetShiftAtrThreshold = v; }
     public void setEnableSmallCandleFilter(String mode, boolean v) { cfgFor(mode).enableSmallCandleFilter = v; }
     public void setEnableTrailingSl(String mode, boolean v) { cfgFor(mode).enableTrailingSl = v; }
     public void setSmallCandleAtrThreshold(String mode, double v) { cfgFor(mode).smallCandleAtrThreshold = v; }
@@ -406,12 +405,12 @@ public class RiskSettingsStore {
             upsert("enableStructuralSl", String.valueOf(c.enableStructuralSl));
             upsert("structuralSlBufferAtr", String.valueOf(c.structuralSlBufferAtr));
             upsert("dayHighLowMinAtr", String.valueOf(c.dayHighLowMinAtr));
-            upsert("enableSmallTargetFilter", String.valueOf(c.enableSmallTargetFilter));
+            upsert("enableRiskRewardFilter", String.valueOf(c.enableRiskRewardFilter));
+            upsert("minRiskRewardRatio", String.valueOf(c.minRiskRewardRatio));
             upsert("enableEmaDirectionCheck", String.valueOf(c.enableEmaDirectionCheck));
             upsert("emaCloseDistanceAtr", String.valueOf(c.emaCloseDistanceAtr));
             upsert("enableEmaLevelCountFilter", String.valueOf(c.enableEmaLevelCountFilter));
             upsert("enableTargetShift", String.valueOf(c.enableTargetShift));
-            upsert("targetShiftAtrThreshold", String.valueOf(c.targetShiftAtrThreshold));
             upsert("enableSmallCandleFilter", String.valueOf(c.enableSmallCandleFilter));
             upsert("smallCandleAtrThreshold", String.valueOf(c.smallCandleAtrThreshold));
             upsert("wickRejectionRatio", String.valueOf(c.wickRejectionRatio));
@@ -510,12 +509,12 @@ public class RiskSettingsStore {
                     case "enableStructuralSl"    -> c.enableStructuralSl = Boolean.parseBoolean(v);
                     case "structuralSlBufferAtr" -> c.structuralSlBufferAtr = Double.parseDouble(v);
                     case "dayHighLowMinAtr" -> c.dayHighLowMinAtr = Double.parseDouble(v);
-                    case "enableSmallTargetFilter" -> c.enableSmallTargetFilter = Boolean.parseBoolean(v);
+                    case "enableRiskRewardFilter" -> c.enableRiskRewardFilter = Boolean.parseBoolean(v);
+                    case "minRiskRewardRatio" -> c.minRiskRewardRatio = Double.parseDouble(v);
                     case "enableEmaDirectionCheck" -> c.enableEmaDirectionCheck = Boolean.parseBoolean(v);
                     case "emaCloseDistanceAtr" -> c.emaCloseDistanceAtr = Double.parseDouble(v);
                     case "enableEmaLevelCountFilter" -> c.enableEmaLevelCountFilter = Boolean.parseBoolean(v);
                     case "enableTargetShift" -> c.enableTargetShift = Boolean.parseBoolean(v);
-                    case "targetShiftAtrThreshold" -> c.targetShiftAtrThreshold = Double.parseDouble(v);
                     case "enableSmallCandleFilter" -> c.enableSmallCandleFilter = Boolean.parseBoolean(v);
                     case "smallCandleAtrThreshold" -> c.smallCandleAtrThreshold = Double.parseDouble(v);
                     case "wickRejectionRatio" -> c.wickRejectionRatio = Double.parseDouble(v);

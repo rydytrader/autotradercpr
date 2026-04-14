@@ -81,8 +81,9 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
                     atrBySymbol.put(symbol, atr);
                     // Seed candle aggregator with historical candles
                     candleAggregator.seedCandles(symbol, candles);
-                    // Seed EMA from historical candles
-                    if (emaService != null) emaService.seedFromHistory(symbol);
+                    // Seed EMA from the raw multi-day historical list (bypasses the
+                    // date-filtered completedCandles deque so slope/position work on holidays).
+                    if (emaService != null) emaService.seedFromCandles(symbol, candles);
                     success++;
                 } else {
                     log.warn("[AtrService] Only {} candles for {} (need {})", candles.size(), symbol, getAtrPeriod());
@@ -106,7 +107,7 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
                         double atr = calculateAtr(candles, getAtrPeriod());
                         atrBySymbol.put(symbol, atr);
                         candleAggregator.seedCandles(symbol, candles);
-                        if (emaService != null) emaService.seedFromHistory(symbol);
+                        if (emaService != null) emaService.seedFromCandles(symbol, candles);
                         success++;
                         log.info("[AtrService] Retry succeeded for {}", symbol);
                     }

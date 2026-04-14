@@ -273,7 +273,7 @@
               <rect x="640" y="310" width="240" height="22" rx="4" fill="rgba(99,179,237,0.06)" stroke="rgba(99,179,237,0.2)" stroke-width="0.8"/>
               <text x="760" y="325" text-anchor="middle" fill="rgba(99,179,237,0.7)" font-size="8">6. Compute Target + Nearest Level Shift</text>
               <rect x="640" y="337" width="240" height="22" rx="4" fill="rgba(99,179,237,0.06)" stroke="rgba(99,179,237,0.2)" stroke-width="0.8"/>
-              <text x="760" y="352" text-anchor="middle" fill="rgba(99,179,237,0.7)" font-size="8">7. Small Target Filter</text>
+              <text x="760" y="352" text-anchor="middle" fill="rgba(99,179,237,0.7)" font-size="8">7. Risk/Reward Filter</text>
               <rect x="640" y="364" width="240" height="22" rx="4" fill="rgba(52,211,153,0.06)" stroke="rgba(52,211,153,0.2)" stroke-width="0.8"/>
               <text x="760" y="379" text-anchor="middle" fill="rgba(52,211,153,0.7)" font-size="8">8. Qty (HPT/LPT + level + session move)</text>
               <!-- Arrow: scanner to signal processor -->
@@ -345,6 +345,155 @@
             </table>
 
             <p>The classification is shown on the scanner card next to Day Open: e.g., <code>1855.20 (IV)</code></p>
+
+            <h4>Visual Reference</h4>
+            <p>Where the first 5-min candle close lands on the CPR ladder determines the class. Pair zones (R1/PDH and S1/PDL) are treated as single bands — first close <em>inside</em> a pair zone is still IV.</p>
+
+            <div style="background:rgba(15,23,42,0.4);border:1px solid var(--border);border-radius:10px;padding:18px;margin:12px 0;">
+            <svg viewBox="0 0 720 540" style="width:100%;max-width:720px;display:block;margin:0 auto;font-family:'Roboto Mono',monospace;">
+                <!-- Background gradient bands -->
+                <defs>
+                    <linearGradient id="evUpGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="rgba(239,68,68,0.25)"/>
+                        <stop offset="100%" stop-color="rgba(239,68,68,0.10)"/>
+                    </linearGradient>
+                    <linearGradient id="ovUpGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="rgba(251,191,36,0.20)"/>
+                        <stop offset="100%" stop-color="rgba(251,191,36,0.08)"/>
+                    </linearGradient>
+                    <linearGradient id="ivGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="rgba(52,211,153,0.18)"/>
+                        <stop offset="100%" stop-color="rgba(52,211,153,0.10)"/>
+                    </linearGradient>
+                    <linearGradient id="ovDnGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="rgba(251,191,36,0.08)"/>
+                        <stop offset="100%" stop-color="rgba(251,191,36,0.20)"/>
+                    </linearGradient>
+                    <linearGradient id="evDnGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="rgba(239,68,68,0.10)"/>
+                        <stop offset="100%" stop-color="rgba(239,68,68,0.25)"/>
+                    </linearGradient>
+                </defs>
+
+                <!-- Zone bands (price ladder) -->
+                <!-- EV up: above R2 -->
+                <rect x="120" y="20" width="420" height="50" fill="url(#evUpGrad)" stroke="rgba(239,68,68,0.4)" stroke-width="1"/>
+                <!-- OV up: between max(R1,PDH) and R2 -->
+                <rect x="120" y="70" width="420" height="50" fill="url(#ovUpGrad)" stroke="rgba(251,191,36,0.4)" stroke-width="1"/>
+                <!-- IV: from min(S1,PDL) to max(R1,PDH) -->
+                <rect x="120" y="120" width="420" height="240" fill="url(#ivGrad)" stroke="rgba(52,211,153,0.4)" stroke-width="1"/>
+                <!-- OV down: between S2 and min(S1,PDL) -->
+                <rect x="120" y="360" width="420" height="50" fill="url(#ovDnGrad)" stroke="rgba(251,191,36,0.4)" stroke-width="1"/>
+                <!-- EV down: below S2 -->
+                <rect x="120" y="410" width="420" height="50" fill="url(#evDnGrad)" stroke="rgba(239,68,68,0.4)" stroke-width="1"/>
+
+                <!-- Level lines + labels (right side) -->
+                <!-- R2 line -->
+                <line x1="120" y1="70" x2="540" y2="70" stroke="rgba(239,68,68,0.7)" stroke-width="1.5" stroke-dasharray="3,2"/>
+                <text x="548" y="74" fill="rgba(239,68,68,0.95)" font-size="11" font-weight="700">R2</text>
+                <!-- R1 line (upper edge of R1/PDH pair) -->
+                <line x1="120" y1="120" x2="540" y2="120" stroke="rgba(251,191,36,0.7)" stroke-width="1.5" stroke-dasharray="3,2"/>
+                <text x="548" y="124" fill="rgba(251,191,36,0.95)" font-size="11" font-weight="700">R1</text>
+                <!-- PDH line (lower edge of R1/PDH pair) -->
+                <line x1="120" y1="155" x2="540" y2="155" stroke="rgba(251,191,36,0.7)" stroke-width="1.5" stroke-dasharray="3,2"/>
+                <text x="548" y="159" fill="rgba(251,191,36,0.95)" font-size="11" font-weight="700">PDH</text>
+                <!-- R1/PDH zone bracket -->
+                <line x1="115" y1="120" x2="115" y2="155" stroke="rgba(251,191,36,0.6)" stroke-width="2"/>
+                <text x="108" y="142" text-anchor="end" fill="rgba(251,191,36,0.7)" font-size="9" font-style="italic">R1+PDH</text>
+                <!-- CPR top -->
+                <line x1="120" y1="200" x2="540" y2="200" stroke="rgba(99,179,237,0.7)" stroke-width="1.5" stroke-dasharray="3,2"/>
+                <text x="548" y="204" fill="rgba(99,179,237,0.95)" font-size="11" font-weight="700">CPR top (TC)</text>
+                <!-- Pivot -->
+                <line x1="120" y1="240" x2="540" y2="240" stroke="rgba(99,179,237,0.7)" stroke-width="1.5" stroke-dasharray="3,2"/>
+                <text x="548" y="244" fill="rgba(99,179,237,0.95)" font-size="11" font-weight="700">Pivot</text>
+                <!-- CPR bot -->
+                <line x1="120" y1="280" x2="540" y2="280" stroke="rgba(99,179,237,0.7)" stroke-width="1.5" stroke-dasharray="3,2"/>
+                <text x="548" y="284" fill="rgba(99,179,237,0.95)" font-size="11" font-weight="700">CPR bot (BC)</text>
+                <!-- PDL line (upper edge of S1/PDL pair) -->
+                <line x1="120" y1="325" x2="540" y2="325" stroke="rgba(251,191,36,0.7)" stroke-width="1.5" stroke-dasharray="3,2"/>
+                <text x="548" y="329" fill="rgba(251,191,36,0.95)" font-size="11" font-weight="700">PDL</text>
+                <!-- S1 line (lower edge of S1/PDL pair) -->
+                <line x1="120" y1="360" x2="540" y2="360" stroke="rgba(251,191,36,0.7)" stroke-width="1.5" stroke-dasharray="3,2"/>
+                <text x="548" y="364" fill="rgba(251,191,36,0.95)" font-size="11" font-weight="700">S1</text>
+                <!-- S1/PDL zone bracket -->
+                <line x1="115" y1="325" x2="115" y2="360" stroke="rgba(251,191,36,0.6)" stroke-width="2"/>
+                <text x="108" y="347" text-anchor="end" fill="rgba(251,191,36,0.7)" font-size="9" font-style="italic">S1+PDL</text>
+                <!-- S2 -->
+                <line x1="120" y1="410" x2="540" y2="410" stroke="rgba(239,68,68,0.7)" stroke-width="1.5" stroke-dasharray="3,2"/>
+                <text x="548" y="414" fill="rgba(239,68,68,0.95)" font-size="11" font-weight="700">S2</text>
+
+                <!-- Zone labels (left side) -->
+                <text x="100" y="50" text-anchor="end" fill="rgba(239,68,68,0.95)" font-size="14" font-weight="800">EV ↑</text>
+                <text x="100" y="65" text-anchor="end" fill="rgba(239,68,68,0.7)" font-size="9">Extended Value Up</text>
+
+                <text x="100" y="100" text-anchor="end" fill="rgba(251,191,36,0.95)" font-size="14" font-weight="800">OV ↑</text>
+                <text x="100" y="115" text-anchor="end" fill="rgba(251,191,36,0.7)" font-size="9">Outside Value Up</text>
+
+                <text x="100" y="235" text-anchor="end" fill="rgba(52,211,153,0.95)" font-size="18" font-weight="800">IV</text>
+                <text x="100" y="252" text-anchor="end" fill="rgba(52,211,153,0.75)" font-size="10">Inside Value</text>
+                <text x="100" y="270" text-anchor="end" fill="rgba(52,211,153,0.55)" font-size="8">(S1 to R1, including pair zones)</text>
+
+                <text x="100" y="390" text-anchor="end" fill="rgba(251,191,36,0.95)" font-size="14" font-weight="800">OV ↓</text>
+                <text x="100" y="405" text-anchor="end" fill="rgba(251,191,36,0.7)" font-size="9">Outside Value Down</text>
+
+                <text x="100" y="440" text-anchor="end" fill="rgba(239,68,68,0.95)" font-size="14" font-weight="800">EV ↓</text>
+                <text x="100" y="455" text-anchor="end" fill="rgba(239,68,68,0.7)" font-size="9">Extended Value Down</text>
+
+                <!-- Example first close markers -->
+                <!-- IV example (inside CPR) -->
+                <circle cx="320" cy="220" r="5" fill="rgba(52,211,153,1)" stroke="white" stroke-width="1.5"/>
+                <text x="332" y="224" fill="rgba(52,211,153,1)" font-size="10" font-weight="700">IV (inside CPR)</text>
+
+                <!-- IV example (above CPR, below PDH/R1) -->
+                <circle cx="220" cy="178" r="5" fill="rgba(52,211,153,1)" stroke="white" stroke-width="1.5"/>
+                <text x="232" y="182" fill="rgba(52,211,153,1)" font-size="10" font-weight="700">IV (above CPR, below PDH)</text>
+
+                <!-- IV example (inside R1/PDH pair) -->
+                <circle cx="380" cy="138" r="5" fill="rgba(52,211,153,1)" stroke="white" stroke-width="1.5"/>
+                <text x="392" y="142" fill="rgba(52,211,153,1)" font-size="10" font-weight="700">IV (inside R1/PDH pair)</text>
+
+                <!-- OV up example -->
+                <circle cx="280" cy="92" r="5" fill="rgba(251,191,36,1)" stroke="white" stroke-width="1.5"/>
+                <text x="292" y="96" fill="rgba(251,191,36,1)" font-size="10" font-weight="700">OV ↑ (above R1, below R2)</text>
+
+                <!-- EV up example -->
+                <circle cx="220" cy="42" r="5" fill="rgba(239,68,68,1)" stroke="white" stroke-width="1.5"/>
+                <text x="232" y="46" fill="rgba(239,68,68,1)" font-size="10" font-weight="700">EV ↑ (above R2)</text>
+
+                <!-- IV example (below CPR, above PDL) -->
+                <circle cx="320" cy="302" r="5" fill="rgba(52,211,153,1)" stroke="white" stroke-width="1.5"/>
+                <text x="332" y="306" fill="rgba(52,211,153,1)" font-size="10" font-weight="700">IV (below CPR, above PDL)</text>
+
+                <!-- IV example (inside S1/PDL pair) -->
+                <circle cx="220" cy="342" r="5" fill="rgba(52,211,153,1)" stroke="white" stroke-width="1.5"/>
+                <text x="232" y="346" fill="rgba(52,211,153,1)" font-size="10" font-weight="700">IV (inside S1/PDL pair)</text>
+
+                <!-- OV down example -->
+                <circle cx="280" cy="388" r="5" fill="rgba(251,191,36,1)" stroke="white" stroke-width="1.5"/>
+                <text x="292" y="392" fill="rgba(251,191,36,1)" font-size="10" font-weight="700">OV ↓ (below S1, above S2)</text>
+
+                <!-- EV down example -->
+                <circle cx="220" cy="438" r="5" fill="rgba(239,68,68,1)" stroke="white" stroke-width="1.5"/>
+                <text x="232" y="442" fill="rgba(239,68,68,1)" font-size="10" font-weight="700">EV ↓ (below S2)</text>
+
+                <!-- Title at bottom -->
+                <text x="360" y="500" text-anchor="middle" fill="rgba(255,255,255,0.6)" font-size="11" font-style="italic">First 5-min candle close (09:15-09:20) determines the class for the entire day</text>
+                <text x="360" y="520" text-anchor="middle" fill="rgba(255,255,255,0.4)" font-size="10">Lock-once at 09:20 — never recomputed</text>
+            </svg>
+            </div>
+
+            <table style="margin-top:14px;">
+                <tr><th>If first close is...</th><th>Class</th></tr>
+                <tr><td>≥ R2 (gap up beyond extended)</td><td><span class="badge-example br">EV ↑</span></td></tr>
+                <tr><td>Above the R1/PDH pair (above whichever is higher) but below R2</td><td><span class="badge-example by">OV ↑</span></td></tr>
+                <tr><td>Inside the R1/PDH pair zone (between R1 and PDH)</td><td><span class="badge-example bg">IV</span></td></tr>
+                <tr><td>Above CPR top but below the lower edge of R1/PDH</td><td><span class="badge-example bg">IV</span></td></tr>
+                <tr><td>Inside CPR (between TC and BC)</td><td><span class="badge-example bg">IV</span></td></tr>
+                <tr><td>Below CPR bot but above the upper edge of S1/PDL</td><td><span class="badge-example bg">IV</span></td></tr>
+                <tr><td>Inside the S1/PDL pair zone (between S1 and PDL)</td><td><span class="badge-example bg">IV</span></td></tr>
+                <tr><td>Below the S1/PDL pair (below whichever is lower) but above S2</td><td><span class="badge-example by">OV ↓</span></td></tr>
+                <tr><td>≤ S2 (gap down beyond extended)</td><td><span class="badge-example br">EV ↓</span></td></tr>
+            </table>
         </div>
     </div>
 
@@ -478,7 +627,7 @@
                 <tr><th>Step</th><th>What Happens</th><th>Example (BUY)</th></tr>
                 <tr><td><strong>1. CPR Target</strong></td><td>Default target set from CPR level (R1, R2, etc.)</td><td>Entry 1850, target R2 = 1880</td></tr>
                 <tr><td><strong>2. Nearest Resistance/Support Shift</strong></td><td>If any session high/low or weekly CPR level (R1, S1, PH, PL, TC, BC, Pivot) sits between entry and target, shift target to the <strong>nearest</strong> one. Single target — no T1/T2 split when shifted.</td><td>Weekly R1=1858, session high=1865 — both between 1850-1880. Nearest is 1858 → target shifts to weekly R1</td></tr>
-                <tr><td><strong>3. Small Target Filter</strong></td><td>If final target &lt; N x ATR from entry → <strong>skip trade</strong> (configurable, can disable)</td><td>ATR=20, threshold=1.0. Distance 1858-1850=8 &lt; 20 → <strong>SKIP</strong></td></tr>
+                <tr><td><strong>3. Risk/Reward Filter</strong></td><td>After SL and final target are determined, compute R/R = |target − entry| / |entry − SL|. If R/R &lt; minRiskRewardRatio → <strong>skip trade</strong> (configurable, default 1.0:1). Uses the final SL (structural or default, whichever was picked) and the final target (T2 for split trades).</td><td>Entry 100, SL 97 (risk 3), target 102 (reward 2). R/R = 0.67 &lt; 1.0 → <strong>SKIP</strong></td></tr>
             </table>
             <p>The shift picks the nearest resistance (buys) or support (sells) between entry and the structural CPR target. Candidates include today's session high/low plus all 7 weekly CPR levels. The nearest level is the realistic barrier price hits first — setting a tighter, higher-probability target.</p>
             <p><strong>DH/DL setups</strong>: session high/low is skipped as a candidate (the breakout candle just created it), but weekly CPR levels still apply.</p>
@@ -1343,7 +1492,7 @@
             <h4>Targets Tab</h4>
             <table>
                 <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
-                <tr><td>Small Target Filter</td><td>ON, 1.0 ATR</td><td>Skip trade if final target (after nearest-level shift) &lt; N x ATR from entry</td></tr>
+                <tr><td>Risk/Reward Filter</td><td>ON, 1.0:1</td><td>Skip trade if |target − entry| / |entry − SL| &lt; minRiskRewardRatio. Uses final target (T2 for split trades) and final SL (structural or default).</td></tr>
                 <tr><td>Split Targets (T1 + T2)</td><td>ON, 50%, 0 ATR</td><td>T1 at N% of target distance, T2 at full. Min distance to split. Skipped when target shifted.</td></tr>
                 <tr><td>Target Tolerance</td><td>ON, 0.10 ATR</td><td>Discount target inside the CPR level. T1 unaffected.</td></tr>
             </table>

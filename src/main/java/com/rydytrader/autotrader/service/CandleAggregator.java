@@ -324,11 +324,13 @@ public class CandleAggregator {
         Long prev = lastFinalizedMinute.put(symbol, candle.startMinute);
         if (prev != null && prev == candle.startMinute) return; // already finalized
 
-        // Capture first candle close of the day (only once per symbol per day)
-        if (candle.startMinute >= 555 && candle.close > 0) { // 555 = 9:15 AM
-            if (firstCandleClose.putIfAbsent(symbol, candle.close) == null) {
-                saveOrState();
-            }
+        // Capture first candle close of the day — only the actual 9:15-9:20 candle is the writer.
+        // Strict equality on startMinute means no later candle (post-restart, mid-day) can poison
+        // this value. Uses put() rather than putIfAbsent so the legitimate 9:20 close always wins
+        // over any earlier wrong value loaded from disk or set by seedCandles' partial bar.
+        if (candle.startMinute == 555 && candle.close > 0) { // 555 = 9:15 AM, 9:15-9:20 candle
+            firstCandleClose.put(symbol, candle.close);
+            saveOrState();
         }
 
         // Update Opening Range from completed candle high/low

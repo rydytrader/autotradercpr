@@ -42,10 +42,22 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
      * buffer so the slope calculation has enough history immediately — without this, the ring
      * buffer would start with only 1 entry (the final EMA) and slope would be 0 for the first
      * few live candle closes (or forever on weekends when no live candles flow).
+     * Delegates to {@link #seedFromCandles(String, List)} which accepts a multi-day list
+     * directly — avoids reading from CandleAggregator.completedCandles which is now filtered
+     * to today only.
      */
     public void seedFromHistory(String symbol) {
         List<CandleAggregator.CandleBar> candles = candleAggregator.getCompletedCandles(symbol);
-        if (candles.size() < EMA_PERIOD) return;
+        seedFromCandles(symbol, candles);
+    }
+
+    /**
+     * Seed EMA + history ring buffer from an explicit list of candles (multi-day OK).
+     * Used by AtrService to pass the raw historical fetch directly, bypassing the
+     * date-filtered CandleAggregator.completedCandles deque.
+     */
+    public void seedFromCandles(String symbol, List<CandleAggregator.CandleBar> candles) {
+        if (candles == null || candles.size() < EMA_PERIOD) return;
 
         // Clear the ring buffer so re-seeding (e.g. at 9:00 AM reload) starts fresh.
         Deque<Double> history = emaHistoryBySymbol.computeIfAbsent(symbol, k -> new ArrayDeque<>());

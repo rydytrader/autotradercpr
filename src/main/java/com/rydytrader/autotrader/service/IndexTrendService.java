@@ -43,15 +43,18 @@ public class IndexTrendService {
     private final EmaService emaService;
     private final MarketDataService marketDataService;
     private final RiskSettingsStore riskSettings;
+    private final BhavcopyService bhavcopyService;
 
     public IndexTrendService(WeeklyCprService weeklyCprService,
                              EmaService emaService,
                              MarketDataService marketDataService,
-                             RiskSettingsStore riskSettings) {
+                             RiskSettingsStore riskSettings,
+                             BhavcopyService bhavcopyService) {
         this.weeklyCprService = weeklyCprService;
         this.emaService = emaService;
         this.marketDataService = marketDataService;
         this.riskSettings = riskSettings;
+        this.bhavcopyService = bhavcopyService;
     }
 
     public IndexTrend getNiftyTrend() {
@@ -63,7 +66,17 @@ public class IndexTrendService {
         trend.setSymbol(symbol);
         trend.setDisplayName(displayName);
 
+        // Live LTP from WS ticks, fall back to previous-day bhavcopy close on holidays / weekends
         double ltp = marketDataService.getLtp(symbol);
+        if (ltp <= 0) {
+            String ticker = symbol;
+            int colon = ticker.indexOf(':');
+            if (colon >= 0) ticker = ticker.substring(colon + 1);
+            if (ticker.endsWith("-INDEX")) ticker = ticker.substring(0, ticker.length() - 6);
+            else if (ticker.endsWith("-EQ")) ticker = ticker.substring(0, ticker.length() - 3);
+            var cpr = bhavcopyService.getCprLevels(ticker);
+            if (cpr != null) ltp = cpr.getClose();
+        }
         double ema = emaService.getEma(symbol);
         String weekly = weeklyCprService.getWeeklyTrend(symbol);
         String daily = weeklyCprService.getDailyTrend(symbol);

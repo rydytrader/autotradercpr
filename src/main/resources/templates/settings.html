@@ -396,6 +396,16 @@
                     </div>
                 </div>
                 <div class="form-group">
+                    <label class="form-label">Risk / Reward Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
+                        <input type="checkbox" id="enableRiskRewardFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip trade if reward/risk &lt;</span>
+                        <input type="number" id="minRiskRewardRatio" class="form-control" step="0.1" min="0.5" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">:1</span>
+                    </div>
+                    <div class="form-hint">Computed after SL and final target are determined. R/R = |target − entry| / |entry − SL|. Uses the final target (T2 for split trades) and the final SL (structural or default, whichever was picked). Default 1.0 means reject any trade where reward is less than risk.</div>
+                </div>
+                <div class="form-group">
                     <label class="form-label">Small Candle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableSmallCandleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
@@ -478,16 +488,6 @@
         <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Target Settings</div></div>
         <div class="section-body">
             <div class="form-grid">
-                <div class="form-group">
-                    <label class="form-label">Small Target Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
-                        <input type="checkbox" id="enableSmallTargetFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip trade if final target &lt;</span>
-                        <input type="number" id="targetShiftAtrThreshold" class="form-control" step="0.1" min="0.1" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR from entry</span>
-                    </div>
-                    <div class="form-hint">After target is shifted to the nearest resistance/support (session H/L + weekly CPR levels), skip the trade if the final target is too close to entry.</div>
-                </div>
                 <div class="form-group">
                     <label class="form-label">Target Shift Sources</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
@@ -978,10 +978,10 @@
             document.getElementById('enableStructuralSl').checked = d.enableStructuralSl === true;
             document.getElementById('structuralSlBufferAtr').value = d.structuralSlBufferAtr != null ? d.structuralSlBufferAtr : 1.0;
             // dayHighLowMinAtr removed — single min target distance check handles both
-            document.getElementById('enableSmallTargetFilter').checked = d.enableSmallTargetFilter !== false;
+            document.getElementById('enableRiskRewardFilter').checked = d.enableRiskRewardFilter !== false;
+            document.getElementById('minRiskRewardRatio').value = d.minRiskRewardRatio != null ? d.minRiskRewardRatio : 1.0;
             document.getElementById('enableEmaDirectionCheck').checked = d.enableEmaDirectionCheck !== false;
             document.getElementById('enableEmaLevelCountFilter').checked = d.enableEmaLevelCountFilter !== false;
-            document.getElementById('targetShiftAtrThreshold').value = d.targetShiftAtrThreshold || 1.0;
             document.getElementById('enableSplitTarget').checked = d.enableSplitTarget !== false;
             document.getElementById('t1DistancePct').value = d.t1DistancePct || 50;
             document.getElementById('splitMinDistanceAtr').value = d.splitMinDistanceAtr || 0;
@@ -1119,10 +1119,10 @@
                 enableStructuralSl: document.getElementById('enableStructuralSl').checked,
                 structuralSlBufferAtr: parseFloat(document.getElementById('structuralSlBufferAtr').value) || 1.0,
                 // dayHighLowMinAtr removed
-                enableSmallTargetFilter: document.getElementById('enableSmallTargetFilter').checked,
+                enableRiskRewardFilter: document.getElementById('enableRiskRewardFilter').checked,
+                minRiskRewardRatio: parseFloat(document.getElementById('minRiskRewardRatio').value) || 1.0,
                 enableEmaDirectionCheck: document.getElementById('enableEmaDirectionCheck').checked,
                 enableEmaLevelCountFilter: document.getElementById('enableEmaLevelCountFilter').checked,
-                targetShiftAtrThreshold: parseFloat(document.getElementById('targetShiftAtrThreshold').value) || 1.0,
                 enableSplitTarget: document.getElementById('enableSplitTarget').checked,
                 t1DistancePct: parseInt(document.getElementById('t1DistancePct').value) || 50,
                 splitMinDistanceAtr: parseFloat(document.getElementById('splitMinDistanceAtr').value) || 0,
