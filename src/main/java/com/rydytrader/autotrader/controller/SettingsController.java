@@ -113,6 +113,8 @@ public class SettingsController {
         result.put("scanMaxBeta", riskSettings.getScanMaxBeta());
         result.put("scanCapFilter", riskSettings.getScanCapFilter());
         result.put("openingRangeMinutes", riskSettings.getOpeningRangeMinutes());
+        result.put("enableOpeningRefresh", riskSettings.isEnableOpeningRefresh());
+        result.put("openingRefreshTime", riskSettings.getOpeningRefreshTime());
         result.put("scanIncludeNS", riskSettings.isScanIncludeNS());
         result.put("scanIncludeNL", riskSettings.isScanIncludeNL());
         result.put("scanIncludeIS", riskSettings.isScanIncludeIS());
@@ -120,6 +122,7 @@ public class SettingsController {
         result.put("enableHpt", riskSettings.isEnableHpt());
         result.put("enableLpt", riskSettings.isEnableLpt());
         result.put("lptQtyFactor", riskSettings.getLptQtyFactor());
+        result.put("neutralWeeklyQtyFactor", riskSettings.getNeutralWeeklyQtyFactor());
         result.put("todayPnl",         Math.round(todayPnl * 100.0) / 100.0);
         result.put("todayTrades",      todayTrades);
         return result;
@@ -207,6 +210,8 @@ public class SettingsController {
             if (body.containsKey("scanMaxBeta")) riskSettings.setScanMaxBeta(Double.parseDouble(body.get("scanMaxBeta").toString()));
             if (body.containsKey("scanCapFilter")) riskSettings.setScanCapFilter(body.get("scanCapFilter").toString());
             if (body.containsKey("openingRangeMinutes")) riskSettings.setOpeningRangeMinutes(Integer.parseInt(body.get("openingRangeMinutes").toString()));
+            if (body.containsKey("enableOpeningRefresh")) riskSettings.setEnableOpeningRefresh(Boolean.parseBoolean(body.get("enableOpeningRefresh").toString()));
+            if (body.containsKey("openingRefreshTime")) riskSettings.setOpeningRefreshTime(body.get("openingRefreshTime").toString());
             if (body.containsKey("scanIncludeNS")) riskSettings.setScanIncludeNS(Boolean.parseBoolean(body.get("scanIncludeNS").toString()));
             if (body.containsKey("scanIncludeNL")) riskSettings.setScanIncludeNL(Boolean.parseBoolean(body.get("scanIncludeNL").toString()));
             if (body.containsKey("scanIncludeIS")) riskSettings.setScanIncludeIS(Boolean.parseBoolean(body.get("scanIncludeIS").toString()));
@@ -214,6 +219,7 @@ public class SettingsController {
             if (body.containsKey("enableHpt")) riskSettings.setEnableHpt(Boolean.parseBoolean(body.get("enableHpt").toString()));
             if (body.containsKey("enableLpt")) riskSettings.setEnableLpt(Boolean.parseBoolean(body.get("enableLpt").toString()));
             if (body.containsKey("lptQtyFactor")) riskSettings.setLptQtyFactor(Double.parseDouble(body.get("lptQtyFactor").toString()));
+            if (body.containsKey("neutralWeeklyQtyFactor")) riskSettings.setNeutralWeeklyQtyFactor(Double.parseDouble(body.get("neutralWeeklyQtyFactor").toString()));
             riskSettings.saveFor(effectiveMode);
             return ResponseEntity.ok(Map.of("ok", true, "message", "Settings saved"));
         } catch (Exception e) {
@@ -227,7 +233,7 @@ public class SettingsController {
         double maxWidth = riskSettings.getNarrowCprMaxWidth();
         List<CprLevels> narrow = bhavcopyService.getAllCprLevels().values().stream()
             .filter(c -> c.getCprWidthPct() < maxWidth)
-            .sorted(java.util.Comparator.comparingDouble(CprLevels::getCprWidthPct))
+            .sorted(java.util.Comparator.comparing(CprLevels::getSymbol))
             .collect(Collectors.toList());
         List<Map<String, Object>> list = narrow.stream().map(c -> buildStockRow(c)).collect(Collectors.toList());
 
@@ -245,6 +251,7 @@ public class SettingsController {
         double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
         List<CprLevels> inside = bhavcopyService.getInsideCprStocks().stream()
             .filter(c -> insideMaxWidth <= 0 || c.getCprWidthPct() < insideMaxWidth)
+            .sorted(java.util.Comparator.comparing(CprLevels::getSymbol))
             .collect(Collectors.toList());
         List<Map<String, Object>> list = inside.stream().map(c -> buildStockRow(c)).collect(Collectors.toList());
 

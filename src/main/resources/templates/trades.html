@@ -152,6 +152,7 @@
                 <option value="">All Reasons</option>
                 <option value="SL">SL</option>
                 <option value="TRAILING_SL">Trailing SL</option>
+                <option value="SL_BREAKEVEN">SL Breakeven</option>
                 <option value="TARGET">Target</option>
                 <option value="TARGET_1">T1</option>
                 <option value="TARGET_2">T2</option>
@@ -281,6 +282,7 @@
         if (type === 'reason') {
             if (value === 'SL')              return `<span class="side-badge side-short">SL</span>`;
             if (value === 'TRAILING_SL')     return `<span class="side-badge" style="background:rgba(251,146,60,0.1);border:1px solid rgba(251,146,60,0.25);color:#fb923c">TRAILING SL</span>`;
+            if (value === 'SL_BREAKEVEN')    return `<span class="side-badge" style="background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.25);color:var(--accent-yellow)">SL BE</span>`;
             if (value === 'TARGET')          return `<span class="side-badge side-long">TARGET</span>`;
             if (value === 'TARGET_1')        return `<span class="side-badge side-long">T1</span>`;
             if (value === 'TARGET_2')        return `<span class="side-badge side-long">T2</span>`;
@@ -368,7 +370,7 @@
                         <td class="text-right"><span class="${pnlClass}">${fmtPnl(t.pnl)}</span></td>
                         <td class="text-right" style="color:var(--text-muted);font-size:0.8rem">₹${inr(charges)}</td>
                         <td class="text-right"><span class="${netClass}">${fmtPnl(netP)}</span></td>
-                        <td class="text-center"><button onclick="showDescription('${escapeForJs(t.description || '')}')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);cursor:pointer;padding:4px 8px;font-size:0.75rem;" title="Trade description">ℹ</button></td>
+                        <td class="text-center"><button onclick="showTradeInfo(${idx})" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);cursor:pointer;padding:4px 8px;font-size:0.75rem;" title="Trade description">ℹ</button></td>
                     </tr>`;
                 }).join('');
     }
@@ -399,12 +401,90 @@
         return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n').replace(/\r/g, '');
     }
 
+    // Parse [SL] and [TARGET] prices out of the trade description (written by SignalProcessor).
+    // Returns planned profit and loss in INR for this trade based on qty.
+    function computePlanned(t) {
+        const out = { profit: null, loss: null, sl: null, target: null };
+        if (!t || !t.description) return out;
+        const desc = t.description.replace(/\\n/g, '\n');
+        // Descriptions look like: "HH:MM:SS [SL] 1223.33 (..." and "HH:MM:SS [TARGET] 1231.30"
+        const slMatch  = desc.match(/\[SL\]\s*([\d.]+)/);
+        const tgtMatch = desc.match(/\[TARGET\]\s*([\d.]+)/);
+        if (slMatch)  out.sl     = parseFloat(slMatch[1]);
+        if (tgtMatch) out.target = parseFloat(tgtMatch[1]);
+        const entry = t.entryPrice || 0;
+        const qty   = t.qty || 0;
+        if (entry > 0 && qty > 0) {
+            const isLong = t.side === 'LONG';
+            if (out.target != null) {
+                out.profit = (isLong ? out.target - entry : entry - out.target) * qty;
+            }
+            if (out.sl != null) {
+                out.loss = Math.abs(isLong ? entry - out.sl : out.sl - entry) * qty;
+            }
+        }
+        return out;
+    }
+
     function showDescription(text) {
         document.getElementById('descContent').textContent = text ? text.replace(/\\n/g, '\n') : 'No description available';
         document.getElementById('descModal').style.display = 'flex';
     }
     function closeDescModal() {
         document.getElementById('descModal').style.display = 'none';
+    }
+
+    function showTradeInfo(idx) {
+        var symFilter    = document.getElementById('tradeSymbolFilter').value;
+        var resultFilter = document.getElementById('tradeResultFilter').value;
+        var reasonFilter = document.getElementById('tradeReasonFilter').value;
+        var trades = allTrades;
+        if (symFilter)    trades = trades.filter(t => t.symbol === symFilter);
+        if (resultFilter) trades = trades.filter(t => t.result === resultFilter);
+        if (reasonFilter) trades = trades.filter(t => t.exitReason === reasonFilter);
+        const t = trades[idx];
+        if (!t) return;
+
+        const entry = t.entryPrice || 0;
+        const exit  = t.exitPrice  || 0;
+        const qty   = t.qty        || 0;
+        const isLong = t.side === 'LONG';
+
+        const movePct = entry > 0 && exit > 0
+            ? ((isLong ? exit - entry : entry - exit) / entry * 100).toFixed(2)
+            : '—';
+        const grossPnl = t.pnl != null ? t.pnl : 0;
+        const charges  = t.charges != null ? t.charges : 0;
+        const netPnl   = t.netPnl != null ? t.netPnl : grossPnl;
+
+        const plan = computePlanned(t);
+        const fmtInr = v => (v >= 0 ? '+' : '') + '\u20B9' + Math.round(v).toLocaleString('en-IN');
+        const lines = [
+            t.symbol + ' | ' + t.side + ' | Qty: ' + qty,
+            '',
+            'Entry:       ' + entry.toFixed(2),
+            'Exit:        ' + (exit > 0 ? exit.toFixed(2) + '  (' + movePct + '% move)' : '—'),
+            'Setup:       ' + (t.setup || '—'),
+            'Probability: ' + (t.probability || '—'),
+            'Exit Reason: ' + (t.exitReason || '—'),
+            'Result:      ' + (t.result || '—'),
+            '',
+            'Planned SL:     ' + (plan.sl     != null ? plan.sl.toFixed(2)     : '—'),
+            'Planned Target: ' + (plan.target != null ? plan.target.toFixed(2) : '—'),
+            'Planned Profit: ' + (plan.profit != null ? fmtInr(plan.profit) + '  (if target hit)' : '—'),
+            'Planned Loss:   ' + (plan.loss   != null ? fmtInr(-plan.loss)   + '  (if SL hit)'    : '—'),
+            '',
+            'Gross P&L:   ' + fmtInr(grossPnl),
+            'Charges:     ' + fmtInr(-charges),
+            'Net P&L:     ' + fmtInr(netPnl),
+        ];
+
+        if (t.description) {
+            lines.push('', '--- Description ---', t.description.replace(/\\n/g, '\n'));
+        }
+
+        document.getElementById('descContent').textContent = lines.join('\n');
+        document.getElementById('descModal').style.display = 'flex';
     }
 
 </script>

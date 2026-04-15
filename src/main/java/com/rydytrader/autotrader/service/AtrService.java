@@ -126,6 +126,19 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
     /**
      * Fetch historical candles from Fyers /data/history API.
      */
+    /** Fetch today's morning candles (from market open to now) for validation. */
+    public List<CandleAggregator.CandleBar> fetchTodayCandles(String symbol) {
+        try {
+            String accessToken = tokenStore.getAccessToken();
+            if (accessToken == null || accessToken.isEmpty()) return Collections.emptyList();
+            String authHeader = fyersProperties.getClientId() + ":" + accessToken;
+            return fetchHistoricalCandles(symbol, riskSettings.getScannerTimeframe(), authHeader);
+        } catch (Exception e) {
+            log.error("[AtrService] fetchTodayCandles failed for {}: {}", symbol, e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
     private List<CandleAggregator.CandleBar> fetchHistoricalCandles(String symbol, int timeframeMin, String authHeader) throws Exception {
         // Resolution: "15" for 15-min candles
         String resolution = String.valueOf(timeframeMin);
@@ -223,11 +236,29 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
 
     @Override
     public void onCandleClose(String fyersSymbol, CandleAggregator.CandleBar completedCandle) {
+        // Incremental Wilder's ATR update: atr = ((prev_atr * (period-1)) + trueRange) / period
+        // Requires the seed ATR to already be in place (from fetchAtrForSymbols at startup).
+        // Recomputing from completedCandles is WRONG now that it's filtered to today — the
+        // multi-day history required for proper Wilder smoothing is no longer available there.
+        Double prev = atrBySymbol.get(fyersSymbol);
+        if (prev == null || prev <= 0) return; // not seeded yet
+        if (completedCandle == null) return;
+
+        // True range needs the PREVIOUS candle's close; take it from the last completed candle
+        // in the (today-only) deque. If today has only 1 candle, fall back to high-low (first TR).
         List<CandleAggregator.CandleBar> candles = candleAggregator.getCompletedCandles(fyersSymbol);
-        if (candles.size() >= getAtrPeriod()) {
-            double atr = calculateAtr(candles, getAtrPeriod());
-            atrBySymbol.put(fyersSymbol, atr);
+        double tr;
+        if (candles.size() >= 2) {
+            CandleAggregator.CandleBar prevBar = candles.get(candles.size() - 2);
+            tr = completedCandle.trueRange(prevBar);
+        } else {
+            tr = completedCandle.high - completedCandle.low;
         }
+        if (tr <= 0) return;
+
+        int period = getAtrPeriod();
+        double atr = ((prev * (period - 1)) + tr) / period;
+        atrBySymbol.put(fyersSymbol, atr);
     }
 
     // ── Public API ───────────────────────────────────────────────────────────

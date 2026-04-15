@@ -38,6 +38,11 @@ public class SignalProcessor {
         // TradingView uses _ in symbols (e.g. BAJAJ_AUTO), Fyers uses - (BAJAJ-AUTO)
         String symbol      = rawSymbol.replace("_", "-");
         String probability = str(alert, "probability");
+        // Accumulates every probability/qty adjustment for inclusion in the trade description.
+        java.util.List<String> adjustments = new java.util.ArrayList<>();
+        // Scanner may have already downgraded probability (e.g. NIFTY index alignment) — surface that note.
+        String scannerNote = str(alert, "scannerNote");
+        if (scannerNote != null && !scannerNote.isEmpty()) adjustments.add(scannerNote);
         double close       = dbl(alert, "close");
         double atr         = dbl(alert, "atr");
         double dayOpen     = dbl(alert, "dayOpen");
@@ -218,6 +223,7 @@ public class SignalProcessor {
                     probability = "LPT";
                     if (!oldProb.equals(probability)) {
                         eventService.log("[INFO] " + symbol + " " + setup + " probability set to LPT for EV reversal (was " + oldProb + ")");
+                        adjustments.add("Probability " + oldProb + " → LPT (EV " + (gapUp ? "gap-up" : "gap-down") + " reversal — mean-reversion)");
                     }
                     eventService.log("[INFO] " + symbol + " " + setup + " EV " + (gapUp ? "up" : "down")
                         + " — OR " + (orBullish ? "Bullish" : "Bearish") + " gap fade, mean-reversion targets");
@@ -242,6 +248,8 @@ public class SignalProcessor {
                             eventService.log("[INFO] " + symbol + " " + setup
                                 + " probability downgraded HPT → LPT — close " + fmt(close)
                                 + " inside OR range (H:" + fmt(orHigh) + " L:" + fmt(orLow) + ") — still trading in range");
+                            adjustments.add("Probability HPT → LPT (close " + fmt(close)
+                                + " inside OR range " + fmt(orLow) + "–" + fmt(orHigh) + " — range-bound)");
                         }
                     }
                 }
@@ -334,6 +342,7 @@ public class SignalProcessor {
         if (isExtreme) {
             qty = Math.max(1, qty / 2);
             qtyLog = "[INFO] " + symbol + " " + setup + " qty halved (extreme level): " + baseQty + " -> " + qty;
+            adjustments.add("Qty " + baseQty + " → " + qty + " (halved — extreme level R3/S3/R4/S4)");
         }
         // ── Session move limit: reduce qty if price moved too far from day open/PDC ──
         double sessionMoveLimit = riskSettings.getSessionMoveLimit() / 100.0; // e.g. 2.0 → 0.02
@@ -350,6 +359,7 @@ public class SignalProcessor {
                 int reduced = Math.max(1, qty / 2);
                 String reason = "moved " + fmt(movePct) + "% from " + moveSource + " > " + fmt(riskSettings.getSessionMoveLimit()) + "% limit";
                 qtyLog = "[INFO] " + symbol + " " + setup + " qty halved (" + reason + "): " + qty + " -> " + reduced;
+                adjustments.add("Qty " + qty + " → " + reduced + " (halved — session move " + fmt(movePct) + "% > " + fmt(riskSettings.getSessionMoveLimit()) + "% limit from " + moveSource + ")");
                 qty = reduced;
             }
         }
@@ -359,7 +369,21 @@ public class SignalProcessor {
             double factor = riskSettings.getLptQtyFactor();
             int reduced = Math.max(2, ((int)(qty * factor) / 2) * 2); // apply factor, round to even
             eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (LPT ×" + factor + "): " + qty + " -> " + reduced);
+            adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — LPT probability)");
             qty = reduced;
+        }
+
+        // ── 4i2a. Extra penalty when WEEKLY trend is NEUTRAL (stacks on LPT) ──
+        // Weekly neutral = no higher-timeframe conviction. Penalize these trades further.
+        String weeklyTrend = weeklyCprService.getWeeklyTrend(symbol);
+        if ("NEUTRAL".equals(weeklyTrend)) {
+            double factor = riskSettings.getNeutralWeeklyQtyFactor();
+            if (factor > 0 && factor < 1.0) {
+                int reduced = Math.max(2, ((int)(qty * factor) / 2) * 2);
+                eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (Weekly NEUTRAL ×" + factor + "): " + qty + " -> " + reduced);
+                adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — weekly trend NEUTRAL, no HTF conviction)");
+                qty = reduced;
+            }
         }
 
         // ── 4i3. Level-based qty adjustment (R3/S3 and R4/S4 extended levels) ──
@@ -368,6 +392,7 @@ public class SignalProcessor {
             if (factor < 1.0) {
                 int reduced = Math.max(2, ((int)(qty * factor) / 2) * 2);
                 eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (R3/S3 ×" + factor + "): " + qty + " -> " + reduced);
+                adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — R3/S3 extended level)");
                 qty = reduced;
             }
         } else if (setup.contains("R4") || setup.contains("S4")) {
@@ -375,6 +400,7 @@ public class SignalProcessor {
             if (factor < 1.0) {
                 int reduced = Math.max(2, ((int)(qty * factor) / 2) * 2);
                 eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (R4/S4 ×" + factor + "): " + qty + " -> " + reduced);
+                adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — R4/S4 extended level)");
                 qty = reduced;
             }
         }
@@ -396,6 +422,7 @@ public class SignalProcessor {
                 int reduced = Math.max(2, (qty / 4) * 2); // halve and round to even
                 String reason = isReversal ? "EV mean-reversion (counter daily trend)" : "OV magnet (outside value)";
                 eventService.log("[INFO] " + symbol + " " + setup + " qty halved (" + reason + "): " + qty + " -> " + reduced);
+                adjustments.add("Qty " + qty + " → " + reduced + " (halved — " + reason + ")");
                 qty = reduced;
             }
         }
@@ -447,6 +474,11 @@ public class SignalProcessor {
         }
         if (qtyLog != null && qty != baseQty) {
             desc.append(" (reduced from ").append(baseQty).append(")");
+        }
+
+        // [ADJUST] lines — every probability/qty change applied during signal processing
+        for (String note : adjustments) {
+            desc.append("\n").append(ts).append(" [ADJUST] ").append(note);
         }
 
         String description = desc.toString();

@@ -114,11 +114,16 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
 
     @Override
     public void onCandleClose(String fyersSymbol, CandleAggregator.CandleBar completedCandle) {
-        List<CandleAggregator.CandleBar> candles = candleAggregator.getCompletedCandles(fyersSymbol);
-        if (candles.size() >= EMA_PERIOD) {
-            double ema = calculateEma(candles, EMA_PERIOD);
-            storeEma(fyersSymbol, ema);
-        }
+        // Incremental EMA update: new_ema = close × k + prev_ema × (1 − k)
+        // Requires the seed EMA to already be in place (from seedFromCandles at startup).
+        // Recomputing from completedCandles is WRONG now that it's filtered to today —
+        // the multi-day history is no longer available via that path.
+        Double prev = emaBySymbol.get(fyersSymbol);
+        if (prev == null || prev <= 0) return; // not seeded yet; skip until seed is available
+        if (completedCandle == null || completedCandle.close <= 0) return;
+        double k = 2.0 / (EMA_PERIOD + 1);
+        double ema = completedCandle.close * k + prev * (1 - k);
+        storeEma(fyersSymbol, ema);
     }
 
     /** Update the current EMA value and append to the history ring buffer for slope tracking. */

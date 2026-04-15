@@ -60,6 +60,23 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     private final ConcurrentHashMap<String, OcoContext> trackedOcoOrders = new ConcurrentHashMap<>();
     // Recently handled symbols — prevents duplicate recording when position event arrives after OCO fill
     private final ConcurrentHashMap<String, Long> recentlyHandled = new ConcurrentHashMap<>();
+    // Fills that arrived before trackEntryOrder was called (WS fill raced REST response).
+    // Keyed by orderId → {price, tag, timestamp}. Replayed on trackEntryOrder; evicted after 10s.
+    private final ConcurrentHashMap<String, PendingFill> pendingFills = new ConcurrentHashMap<>();
+    private static final long PENDING_FILL_TTL_MS = 10_000;
+
+    private static class PendingFill {
+        final String symbol;
+        final double price;
+        final String tag;
+        final long timestamp;
+        PendingFill(String symbol, double price, String tag) {
+            this.symbol = symbol;
+            this.price = price;
+            this.tag = tag;
+            this.timestamp = System.currentTimeMillis();
+        }
+    }
 
     /** Context for a tracked entry order. */
     public static class EntryContext {
@@ -138,6 +155,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         public volatile String target2OrderId;
         public volatile String slOrderId;
         public volatile boolean t1Filled = false; // T1 already hit
+        public volatile boolean slAtBreakeven = false; // post-T1 SL was moved to breakeven (vs. kept at original price)
 
         public OcoContext(String symbol, int quantity, String positionSide, int exitSide,
                          String counterpartOrderId, String type, String setup, double entryFillPrice) {
@@ -305,7 +323,23 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         if (!connected || orderId == null || orderId.isEmpty()) return false;
         trackedEntries.put(orderId, ctx);
         log.info("[OrderEventSvc] Tracking entry order {} for {}", orderId, ctx.symbol);
+        // Race recovery: WS fill event may have arrived before this tracking call
+        // (ultra-fast market order on liquid stock where Fyers broadcasts fill
+        // before REST order-place response returns). Replay the buffered fill.
+        evictExpiredPendingFills();
+        PendingFill buffered = pendingFills.remove(orderId);
+        if (buffered != null) {
+            log.info("[OrderEventSvc] Replaying buffered fill for {} — fill event beat REST response by {}ms",
+                ctx.symbol, System.currentTimeMillis() - buffered.timestamp);
+            eventService.log("[INFO] " + ctx.symbol + " — replaying buffered fill (WS beat REST response)");
+            handleFill(orderId, buffered.symbol, buffered.price, buffered.tag);
+        }
         return true;
+    }
+
+    private void evictExpiredPendingFills() {
+        long now = System.currentTimeMillis();
+        pendingFills.entrySet().removeIf(e -> now - e.getValue().timestamp > PENDING_FILL_TTL_MS);
     }
 
     /** Register SL + Target orders for WebSocket tracking. Returns true if WS is connected. */
@@ -697,8 +731,16 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             return;
         }
 
-        // Untracked fill — log it
-        log.info("[OrderEventSvc] Untracked order filled: {} {} @ {} tag={}", orderId, symbol, tradedPrice, tag);
+        // Untracked fill — buffer it. This handles the race where Fyers broadcasts
+        // the fill event before the OrderService REST call returns and trackEntryOrder
+        // gets called. trackEntryOrder replays the buffered fill when it registers.
+        // Only buffer AutoTrader-tagged fills to avoid stashing unrelated manual orders.
+        if (tag != null && tag.contains("AutoTrader")) {
+            pendingFills.put(orderId, new PendingFill(symbol, tradedPrice, tag));
+            log.info("[OrderEventSvc] Buffered untracked fill for replay: {} {} @ {} tag={}", orderId, symbol, tradedPrice, tag);
+        } else {
+            log.info("[OrderEventSvc] Untracked order filled: {} {} @ {} tag={}", orderId, symbol, tradedPrice, tag);
+        }
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -764,7 +806,6 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         double targetDist = Math.abs(ctx.targetPrice - entryFillPrice);
         double atr = ctx.atr > 0 ? ctx.atr : 1; // safety
         boolean shouldSplit = riskSettings.isEnableSplitTarget() && !skipTarget
-            && !ctx.dayHighLowShifted // skip split if target was shifted to day high/low
             && ctx.quantity >= 4 // need at least 4 for even split
             && (riskSettings.getSplitMinDistanceAtr() <= 0 || targetDist > atr * riskSettings.getSplitMinDistanceAtr());
 
@@ -974,11 +1015,16 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         }
     }
 
-    // ── Split target T1 fill: partial exit, SL moves to breakeven ──
+    // ── Split target T1 fill: partial exit; SL is re-placed for remaining qty.
+    // If trailing SL is enabled, the new SL is placed at breakeven (entry). Otherwise
+    // the new SL stays at the original SL price — we just resize it to the remaining qty. ──
     private void handleT1Fill(OcoContext ctx, String orderId, double tradedPrice) {
         String symbol = ctx.symbol;
         recentlyHandled.put(symbol, System.currentTimeMillis());
-        log.info("[OrderEventSvc] T1 fill for {} — cancelling SL, placing breakeven SL", symbol);
+
+        boolean moveToBreakeven = riskSettings.isEnableTrailingSl();
+        log.info("[OrderEventSvc] T1 fill for {} — cancelling SL, placing {} SL",
+            symbol, moveToBreakeven ? "breakeven" : "resized original-price");
 
         double exitPrice = tradedPrice > 0 ? tradedPrice : orderService.getFilledPriceByOrderId(orderId);
         double entryPrice = ctx.entryFillPrice > 0 ? ctx.entryFillPrice : 0;
@@ -999,6 +1045,11 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         String prob = pollingService != null ? pollingService.getProbability(symbol) : "";
         tradeHistoryService.record(symbol, ctx.positionSide, ctx.quantity, finalEntry, finalExit, "TARGET_1", ctx.setup, desc, prob);
 
+        // Capture original SL price before removing from tracking so we can re-use it
+        // when trailing is disabled.
+        OcoContext oldSlCtx = trackedOcoOrders.get(ctx.slOrderId);
+        double originalSlPrice = oldSlCtx != null ? oldSlCtx.currentPrice : 0;
+
         // Cancel existing SL (full qty)
         trackedOcoOrders.remove(ctx.slOrderId);
         orderService.cancelOrder(ctx.slOrderId);
@@ -1006,22 +1057,26 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         // Remove T1 from tracking
         trackedOcoOrders.remove(orderId);
 
-        // Place new SL at breakeven for remaining qty
+        // Place new SL for remaining qty — at breakeven (if trailing) or at original SL price.
         int remainingQty = ctx.totalQuantity - ctx.quantity;
-        double breakevenPrice = orderService.roundToTick(finalEntry, symbol);
+        double newSlPrice = moveToBreakeven
+            ? orderService.roundToTick(finalEntry, symbol)
+            : (originalSlPrice > 0 ? orderService.roundToTick(originalSlPrice, symbol) : orderService.roundToTick(finalEntry, symbol));
         int exitSide = ctx.exitSide;
 
-        OrderDTO newSlOrder = orderService.placeStopLoss(symbol, remainingQty, exitSide, breakevenPrice);
+        OrderDTO newSlOrder = orderService.placeStopLoss(symbol, remainingQty, exitSide, newSlPrice);
         String newSlId = (newSlOrder != null && newSlOrder.getId() != null) ? newSlOrder.getId() : "";
 
         if (!newSlId.isEmpty()) {
-            eventService.log("[SUCCESS] [WS] T1 hit for " + symbol + " — SL moved to breakeven "
-                + String.format("%.2f", breakevenPrice) + " for remaining qty=" + remainingQty + " [" + newSlId + "]");
+            String slLabel = moveToBreakeven ? "breakeven" : "original price";
+            eventService.log("[SUCCESS] [WS] T1 hit for " + symbol + " — SL re-placed at " + slLabel + " "
+                + String.format("%.2f", newSlPrice) + " for remaining qty=" + remainingQty + " [" + newSlId + "]");
+            String descTag = moveToBreakeven ? "[SL_BREAKEVEN]" : "[SL_RESIZED]";
             positionStateStore.appendDescription(symbol,
-                tsExit + " [SL_BREAKEVEN] New SL @ " + String.format("%.2f", breakevenPrice) + " qty=" + remainingQty);
+                tsExit + " " + descTag + " New SL @ " + String.format("%.2f", newSlPrice) + " qty=" + remainingQty);
 
             // Update position state
-            positionStateStore.saveT1FilledState(symbol, newSlId, breakevenPrice, remainingQty);
+            positionStateStore.saveT1FilledState(symbol, newSlId, newSlPrice, remainingQty);
 
             // Update in-memory position cache to reflect reduced qty
             if (pollingService != null) {
@@ -1032,17 +1087,19 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             OcoContext t2Ctx = trackedOcoOrders.get(ctx.target2OrderId);
             OcoContext newSlCtx = new OcoContext(symbol, remainingQty, ctx.totalQuantity, ctx.positionSide, exitSide,
                 null, "SL", ctx.setup, ctx.entryFillPrice);
-            newSlCtx.currentPrice = breakevenPrice;
+            newSlCtx.currentPrice = newSlPrice;
             newSlCtx.target1OrderId = ctx.target1OrderId; // marker so SL fill routes to handleSplitSlFill
             newSlCtx.target2OrderId = ctx.target2OrderId;
             newSlCtx.slOrderId = newSlId;
             newSlCtx.t1Filled = true;
+            newSlCtx.slAtBreakeven = moveToBreakeven;
             trackedOcoOrders.put(newSlId, newSlCtx);
 
             // Update T2 context with new SL order ID
             if (t2Ctx != null) {
                 t2Ctx.slOrderId = newSlId;
                 t2Ctx.t1Filled = true;
+                t2Ctx.slAtBreakeven = moveToBreakeven;
             }
         } else {
             eventService.log("[ERROR] [WS] T1 hit for " + symbol + " but failed to place breakeven SL — position UNPROTECTED");
@@ -1110,7 +1167,15 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
 
         double pnl = "LONG".equals(ctx.positionSide) ? (finalExit - finalEntry) * exitQty
                                                       : (finalEntry - finalExit) * exitQty;
-        String exitReason = ctx.t1Filled ? "SL_BREAKEVEN" : (ctx.trailed ? "TRAILING_SL" : "SL");
+        // Post-T1 SL hit: only label as SL_BREAKEVEN if the SL was actually moved to
+        // breakeven (trailing SL enabled). If trailing is off, the new SL stayed at the
+        // original price — it's a plain SL hit for the remaining qty.
+        String exitReason;
+        if (ctx.t1Filled) {
+            exitReason = ctx.slAtBreakeven ? "SL_BREAKEVEN" : "SL";
+        } else {
+            exitReason = ctx.trailed ? "TRAILING_SL" : "SL";
+        }
 
         // Cancel remaining targets
         if (!ctx.t1Filled && ctx.target1OrderId != null) {

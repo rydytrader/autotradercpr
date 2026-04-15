@@ -323,7 +323,6 @@ public class PollingService {
                     double targetDist = Math.abs(targetPrice - holder.entryFillPrice);
                     double entryAtr = atr > 0 ? atr : 1;
                     boolean shouldSplit = riskSettings.isEnableSplitTarget() && !skipTarget
-                        && !dayHighLowShifted // skip split if target was shifted to day high/low
                         && quantity >= 4
                         && (riskSettings.getSplitMinDistanceAtr() <= 0 || targetDist > entryAtr * riskSettings.getSplitMinDistanceAtr());
 
@@ -739,6 +738,7 @@ public class PollingService {
             ScheduledFuture<?> future;
             boolean handled = false;
             boolean t1Hit = false;
+            boolean slAtBreakeven = false;
             String currentSlId;
             int remainingQty;
             int ticks = 0;
@@ -777,19 +777,27 @@ public class PollingService {
                     String prob = probabilityBySymbol.getOrDefault(symbol, "");
                     tradeHistoryService.record(symbol, positionSide, t1Qty, entryFillPrice, exitPrice, "TARGET_1", setup, desc, prob);
 
-                    // Cancel old SL, place new SL at breakeven
+                    // Cancel old SL and place a new SL for the remaining qty.
+                    // If trailing SL is enabled, move to breakeven. Otherwise keep at
+                    // the original SL price — just resize the order.
+                    boolean moveToBreakeven = riskSettings.isEnableTrailingSl();
+                    s.slAtBreakeven = moveToBreakeven;
                     orderService.cancelOrder(s.currentSlId);
-                    double breakeven = orderService.roundToTick(entryFillPrice, symbol);
-                    OrderDTO newSl = orderService.placeStopLoss(symbol, s.remainingQty, exitSide, breakeven);
+                    double newSlPrice = moveToBreakeven
+                        ? orderService.roundToTick(entryFillPrice, symbol)
+                        : orderService.roundToTick(slPrice, symbol);
+                    OrderDTO newSl = orderService.placeStopLoss(symbol, s.remainingQty, exitSide, newSlPrice);
                     if (newSl != null && newSl.getId() != null && !newSl.getId().isEmpty()) {
                         s.currentSlId = newSl.getId();
-                        positionStateStore.saveT1FilledState(symbol, s.currentSlId, breakeven, s.remainingQty);
+                        positionStateStore.saveT1FilledState(symbol, s.currentSlId, newSlPrice, s.remainingQty);
                         updateCachedPositionQty(symbol, s.remainingQty);
+                        String descTag = moveToBreakeven ? "[SL_BREAKEVEN]" : "[SL_RESIZED]";
                         positionStateStore.appendDescription(symbol,
-                            "[SL_BREAKEVEN] New SL @ " + String.format("%.2f", breakeven) + " qty=" + s.remainingQty);
-                        eventService.log("[SUCCESS] SL moved to breakeven " + breakeven + " for " + symbol + " remaining qty=" + s.remainingQty);
+                            descTag + " New SL @ " + String.format("%.2f", newSlPrice) + " qty=" + s.remainingQty);
+                        String slLabel = moveToBreakeven ? "breakeven" : "original price";
+                        eventService.log("[SUCCESS] SL re-placed at " + slLabel + " " + newSlPrice + " for " + symbol + " remaining qty=" + s.remainingQty);
                     } else {
-                        eventService.log("[ERROR] Failed to place breakeven SL for " + symbol + " — UNPROTECTED");
+                        eventService.log("[ERROR] Failed to place new SL for " + symbol + " — UNPROTECTED");
                     }
 
                     telegramService.notifyT1Hit(symbol, positionSide, t1Qty, exitPrice, pnl, entryFillPrice, s.remainingQty);
@@ -829,9 +837,10 @@ public class PollingService {
                     int exitQty = s.t1Hit ? s.remainingQty : totalQty;
                     double pnl = "LONG".equals(positionSide) ? (exitPrice - entryFillPrice) * exitQty
                                                               : (entryFillPrice - exitPrice) * exitQty;
-                    String reason = s.t1Hit ? "SL_BREAKEVEN" : "SL";
+                    String reason = (s.t1Hit && s.slAtBreakeven) ? "SL_BREAKEVEN" : "SL";
                     eventService.log("[SUCCESS] " + reason + " for " + symbol + " @ " + exitPrice
-                        + " qty=" + exitQty + (s.t1Hit ? " (after T1, breakeven)" : " (before T1)"));
+                        + " qty=" + exitQty
+                        + (s.t1Hit ? (s.slAtBreakeven ? " (after T1, breakeven)" : " (after T1, original SL)") : " (before T1)"));
 
                     positionStateStore.appendDescription(symbol,
                         "[EXIT] " + reason + " @ " + String.format("%.2f", exitPrice) + " qty=" + exitQty);

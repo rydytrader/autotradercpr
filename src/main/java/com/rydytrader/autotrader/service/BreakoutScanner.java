@@ -210,12 +210,14 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 // EMA level-count filter: skip if any CPR zone sits between EMA and broken level
                 if (evaluateEmaFilter(fyersSymbol, buySetup, close, levels, atr) == 2) return;
                 // NIFTY index alignment filter — null = hard skip, otherwise possibly downgraded prob
+                String priorProb = prob;
                 prob = applyIndexAlignmentDowngrade(fyersSymbol, buySetup, prob, true);
                 if (prob == null) return;  // hard skip mode
                 if (!isProbabilityEnabled(prob)) {
                     eventService.log("[SCANNER] " + buySetup + " for " + fyersSymbol + " — skipped after NIFTY downgrade, " + prob + " not enabled");
                     return;
                 }
+                String buyNote = !priorProb.equals(prob) ? "Probability " + priorProb + " → " + prob + " (NIFTY opposes buy)" : null;
                 // Log co-occurrence: CPR breakout + Day High break on same candle
                 if (!"BUY_ABOVE_DH".equals(buySetup)) {
                     double dh = marketDataService.getDayHigh(fyersSymbol);
@@ -223,7 +225,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                         eventService.log("[INFO] " + buySetup + " + DH breakout on same candle for " + fyersSymbol);
                     }
                 }
-                fireSignal(fyersSymbol, buySetup, open, high, low, close, candle.volume, atr, levels, prob);
+                fireSignal(fyersSymbol, buySetup, open, high, low, close, candle.volume, atr, levels, prob, buyNote);
                 return;
             } else {
                 if (!broken.isEmpty()) {
@@ -269,12 +271,14 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 // EMA level-count filter: skip if any CPR zone sits between EMA and broken level
                 if (evaluateEmaFilter(fyersSymbol, sellSetup, close, levels, atr) == 2) return;
                 // NIFTY index alignment filter — null = hard skip, otherwise possibly downgraded prob
+                String priorProbSell = prob;
                 prob = applyIndexAlignmentDowngrade(fyersSymbol, sellSetup, prob, false);
                 if (prob == null) return;  // hard skip mode
                 if (!isProbabilityEnabled(prob)) {
                     eventService.log("[SCANNER] " + sellSetup + " for " + fyersSymbol + " — skipped after NIFTY downgrade, " + prob + " not enabled");
                     return;
                 }
+                String sellNote = !priorProbSell.equals(prob) ? "Probability " + priorProbSell + " → " + prob + " (NIFTY opposes sell)" : null;
                 // Log co-occurrence: CPR breakout + Day Low break on same candle
                 if (!"SELL_BELOW_DL".equals(sellSetup)) {
                     double dl = marketDataService.getDayLow(fyersSymbol);
@@ -282,7 +286,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                         eventService.log("[INFO] " + sellSetup + " + DL breakout on same candle for " + fyersSymbol);
                     }
                 }
-                fireSignal(fyersSymbol, sellSetup, open, high, low, close, candle.volume, atr, levels, prob);
+                fireSignal(fyersSymbol, sellSetup, open, high, low, close, candle.volume, atr, levels, prob, sellNote);
             } else {
                 // No sell breakout detected — log if close is below a key level for debugging
                 if (!broken.isEmpty()) {
@@ -445,6 +449,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      */
     private void fireSignal(String fyersSymbol, String setup, double open, double high,
                             double low, double close, long candleVolume, double atr, CprLevels levels, String prob) {
+        fireSignal(fyersSymbol, setup, open, high, low, close, candleVolume, atr, levels, prob, null);
+    }
+
+    private void fireSignal(String fyersSymbol, String setup, double open, double high,
+                            double low, double close, long candleVolume, double atr, CprLevels levels,
+                            String prob, String scannerNote) {
         String timeStr = ZonedDateTime.now(IST).toLocalTime().format(TIME_FMT);
         latencyTracker.mark(fyersSymbol, setup, LatencyTracker.Stage.SIGNAL_DETECTED);
 
@@ -475,6 +485,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         payload.put("bc", levels.getBc());
         payload.put("dayHigh", candleAggregator.getDayHighBeforeLast(fyersSymbol));
         payload.put("dayLow", candleAggregator.getDayLowBeforeLast(fyersSymbol));
+        if (scannerNote != null && !scannerNote.isEmpty()) payload.put("scannerNote", scannerNote);
 
         eventService.log("[SCANNER] " + setup + " for " + fyersSymbol + " | close=" + String.format("%.2f", close)
             + " | ATR=" + String.format("%.2f", atr) + " | " + prob + " | " + timeStr);

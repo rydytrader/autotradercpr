@@ -351,8 +351,12 @@
                             LPT Qty ×
                             <input type="number" id="lptQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
+                            Weekly NEUTRAL extra ×
+                            <input type="number" id="neutralWeeklyQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        </label>
                     </div>
-                    <div class="form-hint">LPT = weekly+daily not aligned, magnets, EV reversals, or HPT downgraded inside OR. HPT = full qty (always 1.0×).</div>
+                    <div class="form-hint">LPT = weekly+daily not aligned, magnets, EV reversals, or HPT downgraded inside OR. HPT = full qty (always 1.0×). Weekly NEUTRAL extra stacks on LPT — a weekly-neutral LPT trade gets qty × LPT × this factor (default 0.5 × 0.5 = 0.25).</div>
                 </div>
             </div>
         </div>
@@ -600,6 +604,16 @@
                     <label class="form-label">Higher Timeframe</label>
                     <input type="number" id="higherTimeframe" class="form-control" min="15" max="375" step="5" placeholder="75">
                     <div class="form-hint">Higher timeframe in minutes for weekly trend calculation (default 75)</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Opening Candle Refresh</label>
+                    <div style="display:flex; align-items:center; gap:10px; margin-top:4px; flex-wrap:wrap;">
+                        <input type="checkbox" id="enableOpeningRefresh" style="width:18px;height:18px;accent-color:var(--accent-cyan);">
+                        <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Refetch from Fyers history at</span>
+                        <input type="time" id="openingRefreshTime" class="form-control" style="width:110px; padding:5px 8px; font-size:0.82rem; text-align:center;" placeholder="09:25">
+                        <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">IST</span>
+                    </div>
+                    <div class="form-hint">Fyers' live tick stream is unreliable during 9:15-9:25 per their own docs — the first 5-min candle built from ticks can have wrong open/high/low/close. At the configured time (default 09:25), the bot refetches today's candles from Fyers <code>/data/history</code> (authoritative exchange-aggregated bars) and overwrites firstCandleClose, dayOpen, OR high/low, EMA, ATR, and the completedCandles deque. This fixes IV/OV/EV classification, DH/DL breakout detection, target shift, and structural SL for late-subscribed symbols.</div>
                 </div>
                 <div class="form-group" style="grid-column: 1 / -1;">
                     <label class="form-label">Signal Probability</label>
@@ -1010,6 +1024,8 @@
             document.getElementById('signalSource').value = d.signalSource || 'TRADINGVIEW';
             document.getElementById('scannerTimeframe').value = d.scannerTimeframe != null ? d.scannerTimeframe : 15;
             document.getElementById('higherTimeframe').value = d.higherTimeframe != null ? d.higherTimeframe : 75;
+            document.getElementById('enableOpeningRefresh').checked = d.enableOpeningRefresh !== false;
+            document.getElementById('openingRefreshTime').value = d.openingRefreshTime || '09:25';
             document.getElementById('enableAtpCheck').checked = d.enableAtpCheck !== false;
             document.getElementById('narrowCprMaxWidth').value = d.narrowCprMaxWidth != null ? d.narrowCprMaxWidth : 0.1;
             document.getElementById('insideCprMaxWidth').value = d.insideCprMaxWidth != null ? d.insideCprMaxWidth : 0.5;
@@ -1031,6 +1047,7 @@
             document.getElementById('enableHpt').checked = d.enableHpt !== false;
             document.getElementById('enableLpt').checked = d.enableLpt !== false;
             document.getElementById('lptQtyFactor').value = d.lptQtyFactor != null ? d.lptQtyFactor : 0.50;
+            document.getElementById('neutralWeeklyQtyFactor').value = d.neutralWeeklyQtyFactor != null ? d.neutralWeeklyQtyFactor : 0.50;
             document.getElementById('enableR3S3').checked = d.enableR3S3 !== false;
             document.getElementById('r3s3QtyFactor').value = d.r3s3QtyFactor || 0.75;
             document.getElementById('r4s4QtyFactor').value = d.r4s4QtyFactor || 0.5;
@@ -1149,6 +1166,8 @@
                 signalSource: document.getElementById('signalSource').value,
                 scannerTimeframe: parseInt(document.getElementById('scannerTimeframe').value) || 15,
                 higherTimeframe: parseInt(document.getElementById('higherTimeframe').value) || 75,
+                enableOpeningRefresh: document.getElementById('enableOpeningRefresh').checked,
+                openingRefreshTime: document.getElementById('openingRefreshTime').value || '09:25',
                 enableAtpCheck: document.getElementById('enableAtpCheck').checked,
                 narrowCprMaxWidth: parseFloat(document.getElementById('narrowCprMaxWidth').value) || 0.1,
                 insideCprMaxWidth: parseFloat(document.getElementById('insideCprMaxWidth').value) || 0,
@@ -1173,6 +1192,7 @@
                 enableHpt: document.getElementById('enableHpt').checked,
                 enableLpt: document.getElementById('enableLpt').checked,
                 lptQtyFactor: parseFloat(document.getElementById('lptQtyFactor').value) || 0.50,
+                neutralWeeklyQtyFactor: parseFloat(document.getElementById('neutralWeeklyQtyFactor').value) || 0.50,
                 enableR3S3: document.getElementById('enableR3S3').checked,
                 r3s3QtyFactor: parseFloat(document.getElementById('r3s3QtyFactor').value) || 0.75,
                 r4s4QtyFactor: parseFloat(document.getElementById('r4s4QtyFactor').value) || 0.5,

@@ -86,6 +86,7 @@ public class RiskSettingsStore {
         volatile boolean enableHpt      = true;  // High Probable Trade signals (weekly+daily aligned)
         volatile boolean enableLpt      = true;  // Low Probable Trade signals (everything else, half qty)
         volatile double lptQtyFactor    = 0.50;  // LPT qty multiplier (0.50 = half)
+        volatile double neutralWeeklyQtyFactor = 0.50; // extra qty multiplier when weekly trend is NEUTRAL (stacks on LPT)
         // CPR Width scanner group toggles
         volatile double narrowCprMaxWidth = 0.1;  // CPR width % threshold for narrow CPR stocks
         volatile double insideCprMaxWidth = 0.5;  // max CPR width % for inside CPR stocks (0 = no filter)
@@ -102,6 +103,12 @@ public class RiskSettingsStore {
         volatile boolean scanIncludeIL = false;  // Inside + Large Range
         // Opening Range
         volatile int openingRangeMinutes = 30; // 0=disabled, 15/30/45/60
+        // Opening refresh — re-fetches today's candles from Fyers /data/history after
+        // 9:20 to correct any wrong live-tick-built first candle (Fyers' live WS data is
+        // unreliable during 9:15-9:25 per their own docs). Re-seeds completedCandles, EMA, ATR,
+        // firstCandleClose, dayOpen, OR. Configurable HH:mm time (IST).
+        volatile boolean enableOpeningRefresh = true;
+        volatile String  openingRefreshTime   = "09:25"; // IST, HH:mm
         // Split Targets (T1/T2)
         volatile boolean enableSplitTarget = true;
         volatile int t1DistancePct = 50;           // T1 at N% of target distance (25/50/75)
@@ -194,6 +201,7 @@ public class RiskSettingsStore {
     public boolean isEnableHpt()          { return cfg().enableHpt; }
     public boolean isEnableLpt()          { return cfg().enableLpt; }
     public double getLptQtyFactor()       { return cfg().lptQtyFactor; }
+    public double getNeutralWeeklyQtyFactor() { return cfg().neutralWeeklyQtyFactor; }
     public double getNarrowCprMaxWidth() { return cfg().narrowCprMaxWidth; }
     public double getInsideCprMaxWidth() { return cfg().insideCprMaxWidth; }
     public double getScanMinPrice() { return cfg().scanMinPrice; }
@@ -208,6 +216,8 @@ public class RiskSettingsStore {
     public boolean isScanIncludeIS() { return cfg().scanIncludeIS; }
     public boolean isScanIncludeIL() { return cfg().scanIncludeIL; }
     public int getOpeningRangeMinutes()        { return cfg().openingRangeMinutes; }
+    public boolean isEnableOpeningRefresh()    { return cfg().enableOpeningRefresh; }
+    public String  getOpeningRefreshTime()     { return cfg().openingRefreshTime; }
     public boolean isEnableSplitTarget()       { return cfg().enableSplitTarget; }
     public int getT1DistancePct()              { return cfg().t1DistancePct; }
     public double getSplitMinDistanceAtr()     { return cfg().splitMinDistanceAtr; }
@@ -227,6 +237,7 @@ public class RiskSettingsStore {
     public void setEnableHpt(boolean v)        { cfg().enableHpt = v; }
     public void setEnableLpt(boolean v)        { cfg().enableLpt = v; }
     public void setLptQtyFactor(double v)      { cfg().lptQtyFactor = v; }
+    public void setNeutralWeeklyQtyFactor(double v) { cfg().neutralWeeklyQtyFactor = v; }
     public void setNarrowCprMaxWidth(double v) { cfg().narrowCprMaxWidth = v; }
     public void setInsideCprMaxWidth(double v) { cfg().insideCprMaxWidth = v; }
     public void setScanMinPrice(double v) { cfg().scanMinPrice = v; }
@@ -241,6 +252,8 @@ public class RiskSettingsStore {
     public void setScanIncludeIS(boolean v) { cfg().scanIncludeIS = v; }
     public void setScanIncludeIL(boolean v) { cfg().scanIncludeIL = v; }
     public void setOpeningRangeMinutes(int v)  { cfg().openingRangeMinutes = v; }
+    public void setEnableOpeningRefresh(boolean v) { cfg().enableOpeningRefresh = v; }
+    public void setOpeningRefreshTime(String v)    { cfg().openingRefreshTime = v; }
     public void setEnableSplitTarget(boolean v) { cfg().enableSplitTarget = v; }
     public void setT1DistancePct(int v)        { cfg().t1DistancePct = v; }
     public void setSplitMinDistanceAtr(double v) { cfg().splitMinDistanceAtr = v; }
@@ -433,6 +446,7 @@ public class RiskSettingsStore {
             upsert("enableHpt", String.valueOf(c.enableHpt));
             upsert("enableLpt", String.valueOf(c.enableLpt));
             upsert("lptQtyFactor", String.valueOf(c.lptQtyFactor));
+            upsert("neutralWeeklyQtyFactor", String.valueOf(c.neutralWeeklyQtyFactor));
             upsert("narrowCprMaxWidth", String.valueOf(c.narrowCprMaxWidth));
             upsert("insideCprMaxWidth", String.valueOf(c.insideCprMaxWidth));
             upsert("scanMinPrice", String.valueOf(c.scanMinPrice));
@@ -447,6 +461,8 @@ public class RiskSettingsStore {
             upsert("scanIncludeIS", String.valueOf(c.scanIncludeIS));
             upsert("scanIncludeIL", String.valueOf(c.scanIncludeIL));
             upsert("openingRangeMinutes", String.valueOf(c.openingRangeMinutes));
+            upsert("enableOpeningRefresh", String.valueOf(c.enableOpeningRefresh));
+            upsert("openingRefreshTime", c.openingRefreshTime);
             upsert("enableSplitTarget", String.valueOf(c.enableSplitTarget));
             upsert("t1DistancePct", String.valueOf(c.t1DistancePct));
             upsert("splitMinDistanceAtr", String.valueOf(c.splitMinDistanceAtr));
@@ -537,6 +553,7 @@ public class RiskSettingsStore {
                     case "enableHpt"         -> c.enableHpt = Boolean.parseBoolean(v);
                     case "enableLpt"         -> c.enableLpt = Boolean.parseBoolean(v);
                     case "lptQtyFactor"      -> c.lptQtyFactor = Double.parseDouble(v);
+                    case "neutralWeeklyQtyFactor" -> c.neutralWeeklyQtyFactor = Double.parseDouble(v);
                     case "narrowCprMaxWidth" -> c.narrowCprMaxWidth = Double.parseDouble(v);
                     case "insideCprMaxWidth" -> c.insideCprMaxWidth = Double.parseDouble(v);
                     case "scanMinPrice" -> c.scanMinPrice = Double.parseDouble(v);
@@ -551,6 +568,8 @@ public class RiskSettingsStore {
                     case "scanIncludeIS" -> c.scanIncludeIS = Boolean.parseBoolean(v);
                     case "scanIncludeIL" -> c.scanIncludeIL = Boolean.parseBoolean(v);
                     case "openingRangeMinutes" -> c.openingRangeMinutes = Integer.parseInt(v);
+                    case "enableOpeningRefresh" -> c.enableOpeningRefresh = Boolean.parseBoolean(v);
+                    case "openingRefreshTime" -> c.openingRefreshTime = v;
                     case "enableSplitTarget" -> c.enableSplitTarget = Boolean.parseBoolean(v);
                     case "t1DistancePct" -> c.t1DistancePct = Integer.parseInt(v);
                     case "splitMinDistanceAtr" -> c.splitMinDistanceAtr = Double.parseDouble(v);

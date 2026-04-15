@@ -84,6 +84,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     // Schedulers
     private ScheduledExecutorService scheduler;
 
+    // Opening refresh: track last run date so we only fire once per day
+    private volatile java.time.LocalDate lastOpeningRefreshDate;
+
     // Symbol mappings
     private final Map<String, String> hsmToFyersSymbol = new ConcurrentHashMap<>();
     private final Map<String, String> fyersToHsmToken  = new ConcurrentHashMap<>();
@@ -181,6 +184,10 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
 
         // SSE keepalive every 15s
         scheduler.scheduleAtFixedRate(this::sendKeepalive, 15, 15, TimeUnit.SECONDS);
+
+        // Opening refresh check every 30s — re-seeds candles from Fyers history after
+        // 9:20 to correct wrong live-tick-built first candles (Fyers WS is unreliable 9:15-9:25)
+        scheduler.scheduleAtFixedRate(this::checkOpeningRefresh, 30, 30, TimeUnit.SECONDS);
 
         // Register candle close listeners
         candleAggregator.setTimeframe(riskSettings.getScannerTimeframe());
@@ -963,6 +970,180 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     /** Get watchlist for external use (scanner dashboard). */
     public List<String> getWatchlist() {
         return buildWatchlist();
+    }
+
+    /**
+     * Periodic check (every 30s) — triggers the opening refresh exactly once per trading day,
+     * at or shortly after the configured time (default 09:25 IST). Re-fetches today's candles
+     * from Fyers /data/history for every watchlist symbol and re-seeds firstCandleClose,
+     * dayOpen, openingRangeHigh/Low, EMA, ATR, and the completedCandles deque. This corrects
+     * any wrong values from the unreliable live tick stream during 9:15-9:25 (Fyers-documented
+     * issue — their live WS can't deliver ticks fast enough for all subscribed symbols in the
+     * first 5-10 minutes).
+     */
+    private void checkOpeningRefresh() {
+        try {
+            if (!riskSettings.isEnableOpeningRefresh()) return;
+
+            java.time.ZoneId ist = java.time.ZoneId.of("Asia/Kolkata");
+            java.time.LocalDate today = java.time.ZonedDateTime.now(ist).toLocalDate();
+
+            // Skip weekends and holidays
+            java.time.DayOfWeek dow = today.getDayOfWeek();
+            if (dow == java.time.DayOfWeek.SATURDAY || dow == java.time.DayOfWeek.SUNDAY) return;
+
+            // Only once per day
+            if (today.equals(lastOpeningRefreshDate)) return;
+
+            // Parse configured refresh time
+            String timeStr = riskSettings.getOpeningRefreshTime();
+            if (timeStr == null || timeStr.isEmpty()) return;
+            java.time.LocalTime refreshTime;
+            try {
+                refreshTime = java.time.LocalTime.parse(timeStr);
+            } catch (Exception e) {
+                log.warn("[OpeningRefresh] Invalid time format '{}', expected HH:mm", timeStr);
+                return;
+            }
+
+            java.time.LocalTime now = java.time.ZonedDateTime.now(ist).toLocalTime();
+            if (now.isBefore(refreshTime)) return;
+
+            // Fire the refresh
+            List<String> watchlist = buildWatchlist();
+            if (watchlist.isEmpty()) {
+                log.warn("[OpeningRefresh] Empty watchlist, skipping");
+                return;
+            }
+            List<String> withIndex = new ArrayList<>(watchlist);
+            if (!withIndex.contains("NSE:NIFTY50-INDEX")) withIndex.add("NSE:NIFTY50-INDEX");
+
+            eventService.log("[INFO] Opening refresh triggered — refetching today's candles from Fyers /data/history for "
+                + withIndex.size() + " symbols (fixes wrong live-tick-built first candles)");
+
+            // Reuse existing seeding path — fetchAtrForSymbols re-fetches history,
+            // re-computes ATR, re-seeds candleAggregator.completedCandles (today-only filter
+            // picks the correct 9:15-9:20 bar from history), and re-seeds EMA from the raw list.
+            // Also re-writes firstCandleClose, dayOpen, OR via seedCandles' direct put calls.
+            atrService.fetchAtrForSymbols(withIndex);
+
+            lastOpeningRefreshDate = today;
+            eventService.log("[SUCCESS] Opening refresh complete — firstCandleClose, dayOpen, OR, EMA, ATR all re-seeded from authoritative Fyers history");
+
+            // Schedule validation 30 seconds later — gives the refresh a moment to settle,
+            // then re-fetches 5 random watchlist symbols fresh from Fyers and diffs them
+            // against the in-memory values to confirm the refresh worked.
+            scheduler.schedule(() -> validateOpeningRefresh(watchlist), 30, TimeUnit.SECONDS);
+        } catch (Throwable t) {
+            log.error("[OpeningRefresh] Error: {}", t.getMessage(), t);
+        }
+    }
+
+    /** Validation: re-fetch 5 random watchlist symbols fresh from Fyers and compare
+     *  against the in-memory state populated by the opening refresh. Logs each check
+     *  to the event log so we can confirm the refresh produced clean data. */
+    private void validateOpeningRefresh(List<String> watchlist) {
+        try {
+            if (watchlist == null || watchlist.isEmpty()) return;
+            List<String> pool = new ArrayList<>(watchlist);
+            pool.removeIf(s -> s == null || s.contains("INDEX"));
+            Collections.shuffle(pool);
+            int n = Math.min(5, pool.size());
+            List<String> sample = pool.subList(0, n);
+
+            eventService.log("[INFO] [VALIDATE] Spot-checking " + n + " random symbols against fresh Fyers history...");
+            int pass = 0, fail = 0;
+            List<String> failLines = new ArrayList<>();
+            for (String symbol : sample) {
+                List<CandleAggregator.CandleBar> fyersBars = atrService.fetchTodayCandles(symbol);
+                if (fyersBars.isEmpty()) {
+                    eventService.log("[WARNING] [VALIDATE] " + symbol + " — Fyers history empty, skipping");
+                    continue;
+                }
+                // Filter to today's bars only
+                long todayStartEpoch = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata"))
+                    .toLocalDate().atStartOfDay(java.time.ZoneId.of("Asia/Kolkata")).toEpochSecond();
+                List<CandleAggregator.CandleBar> todayBars = new ArrayList<>();
+                for (CandleAggregator.CandleBar b : fyersBars) {
+                    if (b.epochSec >= todayStartEpoch) todayBars.add(b);
+                }
+                if (todayBars.isEmpty()) {
+                    eventService.log("[WARNING] [VALIDATE] " + symbol + " — no today bars from Fyers, skipping");
+                    continue;
+                }
+
+                // Reference: the two morning bars from Fyers (authoritative)
+                CandleAggregator.CandleBar fyersBar1 = todayBars.get(0); // 9:15-9:20
+                CandleAggregator.CandleBar fyersBar2 = todayBars.size() >= 2 ? todayBars.get(1) : null; // 9:20-9:25
+
+                // Bot state: firstCandleClose + dayOpen maps, plus the actual bars in completedCandles
+                double actualFirstClose = candleAggregator.getFirstCandleClose(symbol);
+                double actualDayOpen    = candleAggregator.getDayOpen(symbol);
+                List<CandleAggregator.CandleBar> botBars = candleAggregator.getCompletedCandles(symbol);
+                CandleAggregator.CandleBar botBar1 = botBars.size() >= 1 ? botBars.get(0) : null;
+                CandleAggregator.CandleBar botBar2 = botBars.size() >= 2 ? botBars.get(1) : null;
+
+                List<String> failures = new ArrayList<>();
+
+                // Check 1: firstCandleClose map
+                if (Math.abs(actualFirstClose - fyersBar1.close) >= 0.01) {
+                    failures.add("firstClose bot=" + String.format("%.2f", actualFirstClose) + " vs Fyers=" + String.format("%.2f", fyersBar1.close));
+                }
+                // Check 2: dayOpen map
+                if (Math.abs(actualDayOpen - fyersBar1.open) >= 0.01) {
+                    failures.add("dayOpen bot=" + String.format("%.2f", actualDayOpen) + " vs Fyers=" + String.format("%.2f", fyersBar1.open));
+                }
+                // Check 3: 9:15-9:20 bar full OHLC in completedCandles
+                if (botBar1 == null) {
+                    failures.add("bar1 missing from completedCandles");
+                } else {
+                    if (Math.abs(botBar1.open  - fyersBar1.open)  >= 0.01) failures.add("bar1.O bot=" + String.format("%.2f", botBar1.open)  + " vs Fyers=" + String.format("%.2f", fyersBar1.open));
+                    if (Math.abs(botBar1.high  - fyersBar1.high)  >= 0.01) failures.add("bar1.H bot=" + String.format("%.2f", botBar1.high)  + " vs Fyers=" + String.format("%.2f", fyersBar1.high));
+                    if (Math.abs(botBar1.low   - fyersBar1.low)   >= 0.01) failures.add("bar1.L bot=" + String.format("%.2f", botBar1.low)   + " vs Fyers=" + String.format("%.2f", fyersBar1.low));
+                    if (Math.abs(botBar1.close - fyersBar1.close) >= 0.01) failures.add("bar1.C bot=" + String.format("%.2f", botBar1.close) + " vs Fyers=" + String.format("%.2f", fyersBar1.close));
+                }
+                // Check 4: 9:20-9:25 bar full OHLC (if available from both sides)
+                if (fyersBar2 != null && botBar2 != null) {
+                    if (Math.abs(botBar2.open  - fyersBar2.open)  >= 0.01) failures.add("bar2.O bot=" + String.format("%.2f", botBar2.open)  + " vs Fyers=" + String.format("%.2f", fyersBar2.open));
+                    if (Math.abs(botBar2.high  - fyersBar2.high)  >= 0.01) failures.add("bar2.H bot=" + String.format("%.2f", botBar2.high)  + " vs Fyers=" + String.format("%.2f", fyersBar2.high));
+                    if (Math.abs(botBar2.low   - fyersBar2.low)   >= 0.01) failures.add("bar2.L bot=" + String.format("%.2f", botBar2.low)   + " vs Fyers=" + String.format("%.2f", fyersBar2.low));
+                    if (Math.abs(botBar2.close - fyersBar2.close) >= 0.01) failures.add("bar2.C bot=" + String.format("%.2f", botBar2.close) + " vs Fyers=" + String.format("%.2f", fyersBar2.close));
+                }
+
+                if (failures.isEmpty()) {
+                    eventService.log("[SUCCESS] [VALIDATE] " + symbol + " PASS — bar1 O=" + String.format("%.2f", fyersBar1.open)
+                        + " H=" + String.format("%.2f", fyersBar1.high)
+                        + " L=" + String.format("%.2f", fyersBar1.low)
+                        + " C=" + String.format("%.2f", fyersBar1.close)
+                        + (fyersBar2 != null ? " | bar2 C=" + String.format("%.2f", fyersBar2.close) : "")
+                        + " (matches Fyers history)");
+                    pass++;
+                } else {
+                    String failLine = symbol + " FAIL — " + String.join(" | ", failures);
+                    eventService.log("[ERROR] [VALIDATE] " + failLine);
+                    failLines.add(failLine);
+                    fail++;
+                }
+            }
+            String summary = "[INFO] [VALIDATE] Done — " + pass + " pass, " + fail + " fail out of " + n + " sampled";
+            eventService.log(fail == 0 ? "[SUCCESS] " + summary.substring(6) : summary);
+
+            // Telegram alert
+            StringBuilder tg = new StringBuilder();
+            tg.append(fail == 0 ? "OPENING REFRESH VALIDATION — OK\n" : "OPENING REFRESH VALIDATION — ISSUES\n");
+            tg.append("Sampled: ").append(n).append("\n");
+            tg.append("Pass: ").append(pass).append("\n");
+            tg.append("Fail: ").append(fail).append("\n");
+            if (!failLines.isEmpty()) {
+                tg.append("\nFailures:\n");
+                for (String f : failLines) tg.append("- ").append(f).append("\n");
+            }
+            telegramService.sendMessage(tg.toString());
+        } catch (Throwable t) {
+            log.error("[Validate] Error: {}", t.getMessage(), t);
+            eventService.log("[ERROR] [VALIDATE] Exception: " + t.getMessage());
+            telegramService.sendMessage("OPENING REFRESH VALIDATION — EXCEPTION\n" + t.getMessage());
+        }
     }
 
     /** Rebuild watchlist from current settings without full re-init. Subscribes new symbols. */

@@ -173,7 +173,9 @@ public class CandleAggregator {
         // Log every tick a symbol receives in the 09:15-09:20 window so we can find
         // out why firstCandleClose drifts from the actual session open. Limited to
         // first 30 ticks per symbol per day to bound log volume.
-        if (nowMinute < MarketHolidayService.MARKET_OPEN_MINUTE + 5) {
+        // eventService is null on the manually-constructed htfAggregator instance in
+        // MarketDataService (created via `new`, not Spring DI) — skip trace there.
+        if (eventService != null && nowMinute < MarketHolidayService.MARKET_OPEN_MINUTE + 5) {
             int seen = firstBarTraceCount.merge(symbol, 1, Integer::sum);
             if (seen <= 30) {
                 String time = ZonedDateTime.now(IST).toLocalTime()
@@ -348,11 +350,15 @@ public class CandleAggregator {
             }
         }
 
-        // Add to completed candles buffer (keep last 30)
+        // Add to completed candles buffer. Cap must cover a full trading session for
+        // DH/DL breakouts to see the true day high/low — 6h15m / 3-min = 125 candles,
+        // so 128 is safe for any timeframe ≥ 3 min. (Previously capped at 30, which
+        // evicted morning candles after ~2.5h and produced false DH/DL breakouts in
+        // the afternoon.)
         completedCandles.computeIfAbsent(symbol, k -> new ConcurrentLinkedDeque<>());
         Deque<CandleBar> history = completedCandles.get(symbol);
         history.addLast(candle);
-        while (history.size() > 30) history.pollFirst();
+        while (history.size() > 128) history.pollFirst();
 
         // Notify listeners
         for (CandleCloseListener listener : listeners) {

@@ -110,6 +110,8 @@ public class ScannerController {
             seen.add(fyers);
         }
 
+        // Default sort alphabetically by symbol for stable scanner ordering
+        result.sort((a, b) -> String.valueOf(a.get("symbol")).compareTo(String.valueOf(b.get("symbol"))));
         return result;
     }
 
