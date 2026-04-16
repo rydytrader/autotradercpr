@@ -159,6 +159,20 @@
                 <option value="AUTO_SQUAREOFF">Auto SqOff</option>
                 <option value="MANUAL">Manual</option>
             </select>
+            <select id="tradeProbFilter" onchange="filterTrades()" style="
+                background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
+                border-radius:4px;padding:2px 8px;font-size:0.72rem;font-family:var(--font-mono);
+                outline:none;cursor:pointer;margin-right:10px;">
+                <option value="">All Prob</option>
+                <option value="HPT">HPT</option>
+                <option value="LPT">LPT</option>
+            </select>
+            <select id="tradeSetupFilter" onchange="filterTrades()" style="
+                background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
+                border-radius:4px;padding:2px 8px;font-size:0.72rem;font-family:var(--font-mono);
+                outline:none;cursor:pointer;margin-right:10px;">
+                <option value="">All Setups</option>
+            </select>
             <span class="section-badge" id="tradesBadge">0 today</span>
         </div>
         <div class="table-wrap">
@@ -306,16 +320,27 @@
         sel.innerHTML = '<option value="">All Symbols</option>' + symbols.map(s =>
             '<option value="' + s + '"' + (s === current ? ' selected' : '') + '>' + s.replace(/^NSE:/, '').replace(/-EQ$/, '') + '</option>'
         ).join('');
+        // Populate setup filter dynamically
+        var setupSel = document.getElementById('tradeSetupFilter');
+        var currentSetup = setupSel.value;
+        var setups = [...new Set(trades.map(t => t.setup).filter(s => s))].sort();
+        setupSel.innerHTML = '<option value="">All Setups</option>' + setups.map(s =>
+            '<option value="' + s + '"' + (s === currentSetup ? ' selected' : '') + '>' + s.replace(/^(BUY_ABOVE_|SELL_BELOW_)/, '') + '</option>'
+        ).join('');
     }
 
     function filterTrades() {
         var symFilter = document.getElementById('tradeSymbolFilter').value;
         var resultFilter = document.getElementById('tradeResultFilter').value;
         var reasonFilter = document.getElementById('tradeReasonFilter').value;
+        var probFilter = document.getElementById('tradeProbFilter').value;
+        var setupFilter = document.getElementById('tradeSetupFilter').value;
         var trades = allTrades;
         if (symFilter) trades = trades.filter(t => t.symbol === symFilter);
         if (resultFilter) trades = trades.filter(t => t.result === resultFilter);
         if (reasonFilter) trades = trades.filter(t => t.exitReason === reasonFilter);
+        if (probFilter) trades = trades.filter(t => t.probability === probFilter);
+        if (setupFilter) trades = trades.filter(t => t.setup === setupFilter);
         renderTrades(trades);
     }
 
@@ -438,10 +463,14 @@
         var symFilter    = document.getElementById('tradeSymbolFilter').value;
         var resultFilter = document.getElementById('tradeResultFilter').value;
         var reasonFilter = document.getElementById('tradeReasonFilter').value;
+        var probFilter   = document.getElementById('tradeProbFilter').value;
+        var setupFilter  = document.getElementById('tradeSetupFilter').value;
         var trades = allTrades;
         if (symFilter)    trades = trades.filter(t => t.symbol === symFilter);
         if (resultFilter) trades = trades.filter(t => t.result === resultFilter);
         if (reasonFilter) trades = trades.filter(t => t.exitReason === reasonFilter);
+        if (probFilter)   trades = trades.filter(t => t.probability === probFilter);
+        if (setupFilter)  trades = trades.filter(t => t.setup === setupFilter);
         const t = trades[idx];
         if (!t) return;
 

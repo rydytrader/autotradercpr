@@ -227,6 +227,12 @@
     <option value="HPT">HPT</option>
     <option value="LPT">LPT</option>
 </select>
+<select id="posSetupFilter" onchange="filterPositions()" style="
+    background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
+    border-radius:4px;padding:2px 8px;font-size:0.65rem;font-family:var(--font-mono);
+    outline:none;cursor:pointer;">
+    <option value="">All Setups</option>
+</select>
 <span class="section-badge" id="positionsBadge">0 active</span>
             </div>
         </div>
@@ -584,6 +590,13 @@
         sel.innerHTML = '<option value="">All Symbols</option>' + symbols.map(s =>
             `<option value="${s}"${s === current ? ' selected' : ''}>${s.replace('NSE:','').replace('-EQ','')}</option>`
         ).join('');
+        // Populate setup filter dynamically
+        const setupSel = document.getElementById('posSetupFilter');
+        const currentSetup = setupSel.value;
+        const setups = [...new Set(positions.map(p => p.setup).filter(s => s))].sort();
+        setupSel.innerHTML = '<option value="">All Setups</option>' + setups.map(s =>
+            `<option value="${s}"${s === currentSetup ? ' selected' : ''}>${s.replace(/^(BUY_ABOVE_|SELL_BELOW_)/, '')}</option>`
+        ).join('');
     }
 
     function filterPositions() { renderPositionsTable(); }
@@ -592,10 +605,12 @@
         const filter = document.getElementById('posSymbolFilter').value;
         const sideFilter = document.getElementById('posSideFilter').value;
         const probFilter = document.getElementById('posProbFilter').value;
+        const setupFilter = document.getElementById('posSetupFilter').value;
         var positions = [...allPositions];
         if (filter) positions = positions.filter(p => p.symbol === filter);
         if (sideFilter) positions = positions.filter(p => p.side === sideFilter);
         if (probFilter) positions = positions.filter(p => p.probability === probFilter);
+        if (setupFilter) positions = positions.filter(p => p.setup === setupFilter);
         // Sort by entry time descending (latest first)
         positions.sort((a, b) => (b.entryTime || '').localeCompare(a.entryTime || ''));
         const tbody = document.getElementById('positionsTableBody');
@@ -848,7 +863,14 @@
 
     function showPosInfo(idx) {
         const filter = document.getElementById('posSymbolFilter').value;
-        const positions = filter ? allPositions.filter(p => p.symbol === filter) : [...allPositions];
+        const sideFilter = document.getElementById('posSideFilter').value;
+        const probFilter = document.getElementById('posProbFilter').value;
+        const setupFilter = document.getElementById('posSetupFilter').value;
+        var positions = [...allPositions];
+        if (filter) positions = positions.filter(p => p.symbol === filter);
+        if (sideFilter) positions = positions.filter(p => p.side === sideFilter);
+        if (probFilter) positions = positions.filter(p => p.probability === probFilter);
+        if (setupFilter) positions = positions.filter(p => p.setup === setupFilter);
         positions.sort((a, b) => (b.entryTime || '').localeCompare(a.entryTime || ''));
         const pos = positions[idx];
         if (!pos) return;
