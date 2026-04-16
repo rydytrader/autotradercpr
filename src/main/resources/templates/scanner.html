@@ -95,13 +95,14 @@
 
         .scan-data-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr 1fr;
+            grid-template-columns: 2fr 1fr 1fr;
             gap: 0;
             padding: 6px 16px 10px;
         }
         .scan-data-item {
             text-align: center;
             padding: 4px 0;
+            white-space: nowrap;
         }
         .scan-data-label {
             font-family: var(--font-mono);
@@ -141,6 +142,10 @@
 
         .scan-badge.hpt { background: rgba(52,211,153,0.12); color: var(--accent-green); }
         .scan-badge.lpt { background: rgba(251,191,36,0.12); color: var(--accent-yellow); }
+        .scan-badge.or-bullish { background: rgba(52,211,153,0.15); color: var(--accent-green); }
+        .scan-badge.or-bearish { background: rgba(239,68,68,0.15); color: var(--accent-red); }
+        .scan-badge.or-neutral { background: rgba(128,128,128,0.12); color: var(--text-muted); }
+        .scan-badge.or-forming { background: rgba(251,191,36,0.12); color: var(--accent-yellow); }
 
         .scan-levels {
             padding: 8px 16px 10px;
@@ -802,6 +807,14 @@
                 var ittl = 'Inside CPR' + (nrt ? ' — ' + (nrt === 'SMALL' ? 'small range (z=' : 'large range (z=') + zs + ')' : '');
                 return '<span class="scan-badge ' + icls + '" title="' + ittl + '">' + ilbl + '</span>';
             }).join(''))
+            + (function() {
+                var or = d.orStatus;
+                if (!or) return '';
+                var cls = or === 'BULLISH' ? 'or-bullish' : or === 'BEARISH' ? 'or-bearish' : or === 'FORMING' ? 'or-forming' : 'or-neutral';
+                var lbl = or === 'BULLISH' ? 'OR+' : or === 'BEARISH' ? 'OR-' : or === 'FORMING' ? 'OR?' : 'OR=';
+                var ttl = 'Opening Range ' + or + (d.orHigh > 0 ? ' (H:' + fmt(d.orHigh) + ' L:' + fmt(d.orLow) + ')' : '');
+                return '<span class="scan-badge ' + cls + '" title="' + ttl + '">' + lbl + '</span>';
+            })()
             + '  </span>'
             + '</div>'
             + '<div class="scan-price-row">'
@@ -813,7 +826,6 @@
             + '  <div class="scan-data-item"><div class="scan-data-label">EMA 20/200</div><div class="scan-data-value">' + (d.ema20 > 0 ? fmt(d.ema20) : '--') + ' / ' + (d.ema200 > 0 ? fmt(d.ema200) : '--') + '</div></div>'
             + '  <div class="scan-data-item"><div class="scan-data-label">ATP</div><div class="scan-data-value">' + fmt(d.atp) + '</div></div>'
             + '  <div class="scan-data-item"><div class="scan-data-label">ATR</div><div class="scan-data-value">' + fmt(d.atr) + '</div></div>'
-            + '  <div class="scan-data-item"><div class="scan-data-label">OR</div><div class="scan-data-value">' + (d.orStatus || '--') + '</div></div>'
             + '</div>'
             + '<div class="scan-trend-row">'
             + '  <span class="scan-trend"><span class="label">W:</span> <span class="' + wClass + '">' + wArrow + ' ' + wLabel + '</span></span>'
@@ -1277,9 +1289,21 @@ function showInsideCpr() {
                 </div>
             </div>
 
-            <!-- 2. Signal Probability -->
+            <!-- 2. Opening Range -->
+            <div style="margin-bottom:28px;">
+                <div style="font-weight:700; font-size:0.85rem; color:var(--accent-cyan); margin-bottom:10px;">2. Opening Range</div>
+                <div style="color:var(--text-secondary); margin-bottom:14px; font-size:0.72rem; line-height:1.6;">Tracks the first N minutes of trading (configurable, default 30 min). After the OR window locks, LTP vs OR High/Low determines the breakout direction. DH/DL breakouts only fire after OR locks.</div>
+                <div style="display:flex; flex-wrap:wrap; gap:12px 20px; font-size:0.72rem;">
+                    <div><span class="scan-badge or-bullish" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">OR+</span> Bullish — LTP above OR High</div>
+                    <div><span class="scan-badge or-bearish" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">OR-</span> Bearish — LTP below OR Low</div>
+                    <div><span class="scan-badge or-neutral" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">OR=</span> Neutral — LTP inside OR range</div>
+                    <div><span class="scan-badge or-forming" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">OR?</span> Forming — OR window still open</div>
+                </div>
+            </div>
+
+            <!-- 3. Signal Probability -->
             <div style="margin-bottom:12px;">
-                <div style="font-weight:700; font-size:0.85rem; color:var(--accent-cyan); margin-bottom:10px;">2. Signal Probability</div>
+                <div style="font-weight:700; font-size:0.85rem; color:var(--accent-cyan); margin-bottom:10px;">3. Signal Probability</div>
                 <div style="color:var(--text-secondary); margin-bottom:14px; font-size:0.72rem; line-height:1.6;">CPR breakout signals classified by alignment with weekly + daily trends. Two tiers: HPT (full qty) and LPT (half qty).</div>
                 <div style="display:flex; flex-wrap:wrap; gap:12px 20px; font-size:0.72rem;">
                     <div><span style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700; background:rgba(52,211,153,0.15); color:var(--accent-green); border:1px solid rgba(52,211,153,0.3);">HPT</span> High Probable Trade — weekly + daily + breakout direction all aligned (full qty)</div>

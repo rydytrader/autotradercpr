@@ -81,11 +81,12 @@ public class TelegramService {
 
     public void notifyT1Hit(String symbol, String side, int qty,
                              double exit, double pnl,
-                             double breakevenSl, int remainingQty) {
+                             double newSlPrice, int remainingQty, boolean movedToBreakeven) {
         sendMessage("TARGET 1 HIT\n"
             + symbol + " | " + side + " | " + qty + " qty closed\n"
             + "Exit: " + fmt(exit) + " | P&L: " + pnlFmt(pnl) + "\n"
-            + "SL moved to breakeven (" + fmt(breakevenSl) + ") for remaining " + remainingQty + " qty");
+            + "SL updated to " + fmt(newSlPrice) + (movedToBreakeven ? " (breakeven)" : " (original)")
+            + " for remaining " + remainingQty + " qty");
     }
 
     public void notifyT2Hit(String symbol, String side, int qty,

@@ -800,7 +800,7 @@ public class PollingService {
                         eventService.log("[ERROR] Failed to place new SL for " + symbol + " — UNPROTECTED");
                     }
 
-                    telegramService.notifyT1Hit(symbol, positionSide, t1Qty, exitPrice, pnl, entryFillPrice, s.remainingQty);
+                    telegramService.notifyT1Hit(symbol, positionSide, t1Qty, exitPrice, pnl, newSlPrice, s.remainingQty, moveToBreakeven);
                 }
 
                 // T2 filled
@@ -1222,15 +1222,23 @@ public class PollingService {
             int qty = Math.abs(pos.getQty());
             if (qty == 0) continue;
             try {
+                // Compute P&L from live LTP before squareoff (cached pnl may be stale/zero)
+                double ltp = marketDataService.getLtp(symbol);
+                double avgPrice = pos.getAvgPrice();
+                double livePnl = 0;
+                if (ltp > 0 && avgPrice > 0) {
+                    livePnl = "LONG".equals(pos.getSide())
+                        ? (ltp - avgPrice) * qty
+                        : (avgPrice - ltp) * qty;
+                }
                 boolean ok = squareOff(symbol, qty, "AUTO_SQUAREOFF");
                 if (!ok) {
                     eventService.log("[ERROR] Auto square off failed for " + symbol);
                     sqLines.add(symbol.replace("NSE:", "") + " | FAILED");
                 } else {
-                    double pnl = pos.getPnl();
-                    totalPnl += pnl;
+                    totalPnl += livePnl;
                     sqLines.add(symbol.replace("NSE:", "") + " | " + pos.getSide() + " " + qty
-                        + " | P&L: " + (pnl >= 0 ? "+" : "") + String.format("%.2f", pnl));
+                        + " | P&L: " + (livePnl >= 0 ? "+" : "") + String.format("%.2f", livePnl));
                 }
             } catch (Exception e) {
                 eventService.log("[ERROR] Auto square off error for " + symbol + ": " + e.getMessage());

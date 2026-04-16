@@ -1105,7 +1105,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             eventService.log("[ERROR] [WS] T1 hit for " + symbol + " but failed to place breakeven SL — position UNPROTECTED");
         }
 
-        telegramService.notifyT1Hit(symbol, ctx.positionSide, ctx.quantity, finalExit, pnl, ctx.entryFillPrice, remainingQty);
+        telegramService.notifyT1Hit(symbol, ctx.positionSide, ctx.quantity, finalExit, pnl, newSlPrice, remainingQty, moveToBreakeven);
     }
 
     // ── Split target T2 fill: final exit, cancel SL, clear position ──
