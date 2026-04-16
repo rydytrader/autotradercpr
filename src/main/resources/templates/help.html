@@ -181,7 +181,7 @@
             <table>
                 <tr><th>Condition</th><th>Reason</th></tr>
                 <tr><td>EV day + breakout inside OR</td><td>Gap day chop - highest risk, no trade</td></tr>
-                <tr><td>Large candle (move &gt; N ATR past level)</td><td>Vertical run, likely reverts</td></tr>
+                <tr><td>Wide candle (poor R/R due to wide SL)</td><td>R/R filter catches this — wide move → wide SL → bad reward:risk ratio</td></tr>
                 <tr><td>≥ 1 CPR zone sits between 20 EMA and broken level</td><td>Setup is stale (EMA is structurally too far)</td></tr>
                 <tr><td>VWAP/ATP wrong side</td><td>No intraday confirmation</td></tr>
                 <tr><td>OR still forming on EV day</td><td>Wait for opening range to lock</td></tr>
@@ -621,6 +621,16 @@
 
             <p>Both filters can be enabled/disabled independently. EMA is seeded from historical candles at startup so it's available from the first candle close. Shown on scanner cards in the data grid.</p>
 
+            <h4>200 EMA Filter</h4>
+            <p>A 200-period EMA provides a <strong>long-term trend reference</strong>. Seeded from 14 calendar days of Fyers history (~750 five-min candles) for proper convergence, then updated incrementally on each candle close.</p>
+            <p><strong>Two modes</strong> controlled by a single toggle (<code>enableEma200DirectionCheck</code>):</p>
+            <table>
+                <tr><th>Mode</th><th>Behaviour</th><th>Use when</th></tr>
+                <tr><td><strong>ON (hard gate)</strong></td><td>Buy requires close &gt; 200 EMA, sell requires close &lt; 200 EMA. Trade blocked otherwise.</td><td>You only want trades aligned with the long-term trend. Filters out counter-trend trades entirely.</td></tr>
+                <tr><td><strong>OFF (target shift)</strong></td><td>Trade fires regardless, but the 200 EMA is added as a <strong>target-shift candidate</strong>. If it sits between entry and the original target, the target is pulled back to the 200 EMA.</td><td>You want to trade both sides but respect the 200 EMA as resistance (buys) or support (sells) when setting targets.</td></tr>
+            </table>
+            <p>The 200 EMA joins the same target-shift candidate pool as day high/low and weekly CPR levels. The nearest candidate to entry wins. Shown on scanner cards as <code>EMA 20/200: X / Y</code>.</p>
+
             <h4>Target Calculation Flow</h4>
             <p>Targets go through a multi-step process before the trade is accepted:</p>
             <table>
@@ -629,9 +639,9 @@
                 <tr><td><strong>2. Nearest Resistance/Support Shift</strong></td><td>If any session high/low or weekly CPR level (R1, S1, PH, PL, TC, BC, Pivot) sits between entry and target, shift target to the <strong>nearest</strong> one. Single target — no T1/T2 split when shifted.</td><td>Weekly R1=1858, session high=1865 — both between 1850-1880. Nearest is 1858 → target shifts to weekly R1</td></tr>
                 <tr><td><strong>3. Risk/Reward Filter</strong></td><td>After SL and final target are determined, compute R/R = |target − entry| / |entry − SL|. If R/R &lt; minRiskRewardRatio → <strong>skip trade</strong> (configurable, default 1.0:1). Uses the final SL (structural or default, whichever was picked) and the final target (T2 for split trades).</td><td>Entry 100, SL 97 (risk 3), target 102 (reward 2). R/R = 0.67 &lt; 1.0 → <strong>SKIP</strong></td></tr>
             </table>
-            <p>The shift picks the nearest resistance (buys) or support (sells) between entry and the structural CPR target. Candidates include today's session high/low plus all 7 weekly CPR levels. The nearest level is the realistic barrier price hits first — setting a tighter, higher-probability target.</p>
-            <p><strong>DH/DL setups</strong>: session high/low is skipped as a candidate (the breakout candle just created it), but weekly CPR levels still apply.</p>
-            <p><strong>When shifted</strong>: trade fires as a single full-qty OCO at the shifted target — no T1/T2 split. The shifted level is tight by design.</p>
+            <p>The shift picks the nearest resistance (buys) or support (sells) between entry and the structural CPR target. Candidates include today's session high/low, all 7 weekly CPR levels, and the <strong>200 EMA</strong> (when the 200 EMA direction check is disabled — the 200 EMA acts as a target cap instead of a hard block). The nearest candidate wins.</p>
+            <p><strong>DH/DL setups</strong>: session high/low is skipped as a candidate (the breakout candle just created it), but weekly CPR levels and 200 EMA still apply.</p>
+            <p><strong>Split targets after shift</strong>: shifted trades are eligible for T1/T2 split if the final target distance still exceeds the <code>splitMinDistanceAtr</code> threshold. The split decision is based purely on qty (≥4) and target distance — the shift itself does not block the split.</p>
         </div>
     </div>
 
@@ -808,7 +818,6 @@
             <ul>
                 <li><strong>EV day + inside OR range</strong> — trade skipped entirely</li>
                 <li><strong>EV day + OR still forming</strong> — trade skipped</li>
-                <li><strong>Large candle filter</strong> — reject if candle move &gt; N x ATR from level</li>
                 <li><strong>Small candle filter</strong> — reject if candle move &lt; N x ATR</li>
                 <li><strong>Volume filter</strong> — reject if candle volume &lt; N x average volume</li>
                 <li><strong>Small target filter</strong> — reject if final target &lt; N x ATR from entry (after nearest-level shift)</li>
@@ -840,10 +849,12 @@
             <h4>Fill Scenarios</h4>
             <table>
                 <tr><th>Event</th><th>Action</th><th>Trade Record</th></tr>
-                <tr><td>T1 hits</td><td>Cancel SL, place new SL at entry (breakeven) for remaining qty</td><td>Partial: T1 qty, reason=TARGET_1</td></tr>
+                <tr><td>T1 hits (trailing ON)</td><td>Cancel SL, place new SL at <strong>entry price (breakeven)</strong> for remaining qty</td><td>Partial: T1 qty, reason=TARGET_1</td></tr>
+                <tr><td>T1 hits (trailing OFF)</td><td>Cancel SL, place new SL at <strong>original SL price</strong> for remaining qty (resized, not moved)</td><td>Partial: T1 qty, reason=TARGET_1</td></tr>
                 <tr><td>T2 hits</td><td>Cancel SL, position fully closed</td><td>Partial: T2 qty, reason=TARGET_2</td></tr>
                 <tr><td>SL before T1</td><td>Cancel both T1 and T2</td><td>Full qty, reason=SL</td></tr>
                 <tr><td>SL after T1 (breakeven)</td><td>Cancel T2</td><td>Remaining qty, reason=SL_BREAKEVEN</td></tr>
+                <tr><td>SL after T1 (original price)</td><td>Cancel T2</td><td>Remaining qty, reason=SL (not breakeven — trailing was off)</td></tr>
             </table>
 
             <h4>Settings</h4>
@@ -854,7 +865,7 @@
                 <li>Requires qty &ge; 4 for split (otherwise single target)</li>
             </ul>
 
-            <p>After T1 hit, trailing SL continues from breakeven and keeps tightening.</p>
+            <p><strong>Post-T1 SL behaviour depends on trailing SL setting:</strong> when trailing is ON, SL moves to breakeven (entry price) — risk-free remaining position. When trailing is OFF, SL stays at the original price — just resized for the remaining qty. The exit reason reflects this: SL_BREAKEVEN vs plain SL.</p>
         </div>
     </div>
 
@@ -877,7 +888,7 @@
                 <tr><th>Target Type</th><th>Tolerance Applied?</th><th>Reason</th></tr>
                 <tr><td>Single target trade (split disabled / qty &lt; 4 / split distance not met)</td><td>YES</td><td>Sits at the CPR level</td></tr>
                 <tr><td>T2 leg of split target trade</td><td>YES</td><td>T2 is the structural CPR level</td></tr>
-                <tr><td>Nearest-level shifted target (session H/L or weekly CPR)</td><td>YES</td><td>Structural resistance/support level — single target, no split</td></tr>
+                <tr><td>Nearest-level shifted target (session H/L, weekly CPR, or 200 EMA)</td><td>YES</td><td>Structural resistance/support level — eligible for split if distance still exceeds threshold</td></tr>
                 <tr><td>DH/DL breakout target</td><td>YES</td><td>Targets next CPR level</td></tr>
                 <tr><td><strong>T1 leg of split target trade</strong></td><td><strong>NO</strong></td><td>T1 is a calculated mid-point, not a structural level</td></tr>
             </table>
@@ -899,14 +910,17 @@
         <div class="help-body">
             <p>Most stock breakouts have ~20 percentage points higher win rate when the trade direction aligns with NIFTY's intraday trend. A "clean" stock breakout that fights NIFTY tends to fail. This filter computes a composite NIFTY trend score and downgrades opposed trades from HPT to LPT (half qty). LPT trades are unaffected.</p>
 
-            <h4>Composite Score (range -7 to +7)</h4>
+            <h4>Composite Score (range -9 to +9)</h4>
             <table>
                 <tr><th>Signal</th><th>Bullish</th><th>Bearish</th></tr>
                 <tr><td>Weekly CPR trend</td><td>+1 / +2 (strong)</td><td>-1 / -2 (strong). <strong>0 when weekly reversal (R) active</strong></td></tr>
                 <tr><td>Daily CPR trend</td><td>+1 / +2 (strong)</td><td>-1 / -2 (strong)</td></tr>
-                <tr><td>20 EMA position (LTP vs current EMA value)</td><td>+1 (LTP &gt; EMA)</td><td>-1 (LTP &lt; EMA)</td></tr>
+                <tr><td>20 EMA position (LTP vs 20 EMA)</td><td>+1 (LTP &gt; EMA)</td><td>-1 (LTP &lt; EMA)</td></tr>
                 <tr><td>20 EMA slope (% per candle)</td><td>+1 (mild) / +2 (steep ≥ 0.02%)</td><td>-1 (mild) / -2 (steep ≤ -0.02%)</td></tr>
+                <tr><td>200 EMA position (LTP vs 200 EMA)</td><td>+1 (LTP &gt; 200 EMA)</td><td>-1 (LTP &lt; 200 EMA)</td></tr>
+                <tr><td>Open=High / Open=Low (live day data)</td><td>+1 (O=L: price never below open)</td><td>-1 (O=H: price never above open)</td></tr>
             </table>
+            <p><strong>O=H / O=L</strong> are checked against the live day open, high, and low from the exchange tick feed (within 0.05% tolerance). O=H means the opening price is still the day's high — bearish. O=L means the opening price is still the day's low — bullish. Once broken (price exceeds the open), the signal is permanently gone for the rest of the day.</p>
 
             <h4>State Classification (configurable thresholds)</h4>
             <table>
@@ -1008,9 +1022,9 @@
             <p><strong>1. Fixed SL (default)</strong> — close-based, volatility-anchored.<br>
             <code>SL = Entry ± ATR(period) × Multiplier</code>. Recalculated from the actual fill price when the entry fills, so the SL distance is always exactly <code>atrMultiplier × ATR</code> regardless of where the candle closed vs the fill.</p>
             <p><strong>2. Structural SL (opt-in)</strong> — level-anchored, per-setup.<br>
-            When enabled, on every signal the bot computes <strong>both</strong> the Fixed SL and the structural SL (buffer default 1 ATR below/above the <em>level</em> the trade is reading) and picks the <strong>TIGHTER</strong> of the two — whichever sits closest to the entry. For paired zones (CPR, R1+PDH, S1+PDL) the structural anchor is the <em>outer edge</em> of the zone so the whole zone acts as the buffer. Day High / Day Low breakouts always use Fixed SL because a day high is just today's peak print, not a structural level to defend.</p>
-            <p><strong>When structural SL is picked, it is NOT recalculated from fill price</strong> — the anchor is the level, not the close. The signal-time SL stays as the final SL. When Fixed SL is picked (structural was wider), the normal fill-price recalc path runs.</p>
-            <p>Result: the bot always takes the best available stop. If the structural level is nearby, structural wins (tight level-based invalidation). If the structural level is too far, default volatility-based SL wins (avoids over-wide stops). No max-distance setting is needed — the Fixed SL serves as the natural cap.</p>
+            When enabled, the bot <strong>always uses the structural SL</strong> — the level-anchored SL computed as <code>anchor ± buffer × ATR</code>. This guarantees the SL sits on the correct side of the broken support/resistance level, not inside it. For paired zones (CPR, R1+PDH, S1+PDL) the structural anchor is the <em>outer edge</em> of the zone so the whole zone acts as the buffer. Day High / Day Low breakouts always use Fixed SL because a day high is just today's peak print, not a structural level to defend.</p>
+            <p><strong>When structural SL is used, it is NOT recalculated from fill price</strong> — the anchor is the level, not the close. The signal-time SL stays as the final SL.</p>
+            <p><strong>Why always structural (not "pick tighter")?</strong> The previous behaviour picked whichever SL was closer to entry. But the Fixed SL (ATR-based, anchored to close) could land <em>inside</em> the broken level's zone — e.g. for a SELL_BELOW_CPR, the Fixed SL could sit below CPR top instead of above it. This means a normal retest of CPR would trigger the SL before the level had a chance to reject. Structural SL prevents this by always anchoring beyond the level.</p>
 
             <h4>Structural SL anchors per setup family</h4>
             <table>
@@ -1423,7 +1437,7 @@
                 <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
                 <tr><td>ATR Period</td><td>14</td><td>Number of candles for ATR calculation (uses trading timeframe)</td></tr>
                 <tr><td>ATR Multiplier</td><td>2.0</td><td>Fixed SL = entry ± ATR × this value (when structural SL is off, or for DH/DL setups)</td></tr>
-                <tr><td>Enable Structural SL</td><td>OFF</td><td>When on, computes level-anchored SL per setup and picks the tighter of structural vs Fixed SL</td></tr>
+                <tr><td>Enable Structural SL</td><td>OFF</td><td>When on, always uses level-anchored SL per setup (guarantees SL is on the correct side of the broken level). DH/DL setups still use Fixed SL.</td></tr>
                 <tr><td>Structural SL Buffer (ATR)</td><td>1.0</td><td>ATR buffer added below/above the structural anchor (the level being tested)</td></tr>
                 <tr><td>Trailing SL</td><td>ON</td><td>Enable ATR peak-based trailing stop loss</td></tr>
                 <tr><td>Trailing SL Multiplier</td><td>2.0</td><td>Trailing SL = peak - ATR x this value</td></tr>
@@ -1432,6 +1446,8 @@
                 <tr><td>R4/S4 Enable + Factor</td><td>ON, 0.5</td><td>Enable R4/S4 level signals. Qty multiplied by factor.</td></tr>
                 <tr><td>Session Move Limit</td><td>2.0%</td><td>Halve qty if price moved more than this % from day open/PDC</td></tr>
                 <tr><td>LPT Qty Factor</td><td>0.5</td><td>Multiply qty by this for Low Probable Trades. HPT always trades at 1.0x.</td></tr>
+                <tr><td>Allow Weekly NEUTRAL Trades</td><td>ON</td><td>When OFF, skip all trades when the stock's weekly trend is NEUTRAL. When ON, trades fire as LPT with qty further reduced by the NEUTRAL qty factor.</td></tr>
+                <tr><td>Weekly NEUTRAL Qty Factor</td><td>0.5</td><td>Extra qty multiplier when weekly trend is NEUTRAL (stacks on LPT: 0.5 x 0.5 = 0.25 of base).</td></tr>
             </table>
 
             <h4>Signals Tab</h4>
@@ -1463,8 +1479,10 @@
                 <tr><th>Feature</th><th>Description</th></tr>
                 <tr><td><strong>All Narrow CPR Stocks</strong></td><td>Modal showing ALL narrow CPR stocks (unfiltered) with Volume, Turnover, Beta, Cap columns + interactive client-side filters</td></tr>
                 <tr><td><strong>All Inside CPR Stocks</strong></td><td>Modal showing ALL inside CPR stocks (unfiltered) with same enrichment + filters</td></tr>
-                <tr><td><strong>Export Filtered Watchlist</strong></td><td>Downloads the filtered watchlist (stocks matching all settings filters) as TradingView-compatible text</td></tr>
+                <tr><td><strong>Export TradingView</strong></td><td>Downloads the filtered watchlist as TradingView-compatible text (NSE:SYMBOL, comma-separated)</td></tr>
+                <tr><td><strong>Export Fyers</strong></td><td>Downloads the filtered watchlist in Fyers import format (NSE:SYMBOL-EQ, one per line)</td></tr>
                 <tr><td><strong>Status Bar</strong></td><td>Shows active filters: stock count, price range, turnover, volume, beta, cap, signals</td></tr>
+                <tr><td><strong>OR Badge</strong></td><td>Color-coded Opening Range badge on each card header: OR+ (green=bullish), OR- (red=bearish), OR= (gray=neutral), OR? (yellow=forming)</td></tr>
                 <tr><td><strong>Auto Rebuild</strong></td><td>Saving settings auto-rebuilds the watchlist — no restart required for filter changes</td></tr>
             </table>
 
@@ -1480,9 +1498,9 @@
             <h4>Filters Tab</h4>
             <table>
                 <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
-                <tr><td>Direction Confirmation (VWAP + EMA)</td><td>Both ON</td><td>VWAP: buy above ATP, sell below. EMA: buy above 20 EMA, sell below.</td></tr>
+                <tr><td>Direction Confirmation (VWAP + 20 EMA)</td><td>Both ON</td><td>VWAP: buy above ATP, sell below. 20 EMA: buy above 20 EMA, sell below.</td></tr>
+                <tr><td>200 EMA Direction Check</td><td>ON</td><td>Buy requires close &gt; 200 EMA, sell requires close &lt; 200 EMA. When OFF, 200 EMA becomes a target-shift candidate instead (caps target at the 200 EMA if it sits between entry and target).</td></tr>
                 <tr><td>20 EMA Level Count Filter</td><td>ON</td><td>Skip if any CPR zone (S2, S1/PDL, CPR, R1/PDH, R2, etc.) sits strictly between the 20 EMA and the broken level. Pair zones count once; setup's own zone is excluded.</td></tr>
-                <tr><td>Large Candle Filter</td><td>ON, 1.0 ATR</td><td>Reject if candle move exceeds N x ATR from breakout level</td></tr>
                 <tr><td>Small Candle Filter</td><td>OFF, 0.5 ATR</td><td>Reject if candle body smaller than N x ATR</td></tr>
                 <tr><td>Volume Filter</td><td>ON, 1.0x avg</td><td>Reject if candle volume below N x average volume</td></tr>
                 <tr><td>Weekly Reversal Filter</td><td>Hard Skip ON</td><td>Skip trades opposed to 75-min R1/PWH or S1/PWL reversal. Scanner shows (R) in amber.</td></tr>
@@ -1493,7 +1511,7 @@
             <table>
                 <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
                 <tr><td>Risk/Reward Filter</td><td>ON, 1.0:1</td><td>Skip trade if |target − entry| / |entry − SL| &lt; minRiskRewardRatio. Uses final target (T2 for split trades) and final SL (structural or default).</td></tr>
-                <tr><td>Split Targets (T1 + T2)</td><td>ON, 50%, 0 ATR</td><td>T1 at N% of target distance, T2 at full. Min distance to split. Skipped when target shifted.</td></tr>
+                <tr><td>Split Targets (T1 + T2)</td><td>ON, 50%, 0 ATR</td><td>T1 at N% of target distance, T2 at full. Min distance to split. Eligible even when target is shifted (split decided purely on distance).</td></tr>
                 <tr><td>Target Tolerance</td><td>ON, 0.10 ATR</td><td>Discount target inside the CPR level. T1 unaffected.</td></tr>
             </table>
 
@@ -1510,6 +1528,18 @@
                 <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
                 <tr><td>Brokerage Per Order</td><td>₹20</td><td>Flat brokerage per order (entry + exit = 2 orders). Used for net P&amp;L calculation.</td></tr>
             </table>
+
+            <h4>Monitoring Page — Scanner Health</h4>
+            <p>The Monitoring page (Operations → Monitoring) shows real-time health indicators in the Scanner section:</p>
+            <table>
+                <tr><th>Indicator</th><th>What it shows</th><th>Healthy state</th></tr>
+                <tr><td>ATR Loaded</td><td>Symbols with ATR(14) seeded / total watchlist</td><td>Green: X/X (all loaded)</td></tr>
+                <tr><td>EMA 20 Loaded</td><td>Symbols with 20 EMA seeded / total watchlist</td><td>Green: X/X</td></tr>
+                <tr><td>EMA 200 Loaded</td><td>Symbols with 200 EMA seeded / total watchlist</td><td>Green: X/X</td></tr>
+                <tr><td>1st Bar Close</td><td>Symbols with first 5-min candle close captured</td><td>Green after 09:20 (all captured)</td></tr>
+                <tr><td>Open Refresh Validate</td><td>5 random symbols spot-checked against Fyers history</td><td>Green: 5/5 OK (after 09:25 refresh)</td></tr>
+            </table>
+            <p>Yellow = partial (some missing). Red = zero loaded or validation failures. Pending = validation hasn't run yet (before 09:25).</p>
         </div>
     </div>
     </div><!-- /tab-settings-ref -->
@@ -1527,13 +1557,14 @@
                 <tr><td>1</td><td><strong>BOT READY</strong></td><td>~9:00 AM (scanner init complete)</td><td>All prerequisites loaded: bhavcopy, ATR, weekly levels, WebSocket subscribed</td></tr>
                 <tr><td>2</td><td><strong>TRADE OPENED</strong></td><td>Entry fill + SL/Target placed</td><td>Market order filled, OCO orders confirmed on Fyers</td></tr>
                 <tr><td>3</td><td><strong>SL MODIFIED</strong></td><td>Trailing SL tightens</td><td>ATR peak-based trailing moves SL in profit direction</td></tr>
-                <tr><td>4</td><td><strong>TARGET 1 HIT</strong></td><td>T1 order filled</td><td>Split target T1 fills, SL moved to breakeven for remaining qty</td></tr>
+                <tr><td>4</td><td><strong>TARGET 1 HIT</strong></td><td>T1 order filled</td><td>Split target T1 fills, SL updated to breakeven (trailing ON) or original price (trailing OFF) for remaining qty</td></tr>
                 <tr><td>5</td><td><strong>TARGET 2 HIT</strong></td><td>T2 order filled</td><td>Full position closed at structural target</td></tr>
-                <tr><td>6</td><td><strong>SL HIT</strong></td><td>SL order filled</td><td>Stop loss triggered (full loss or breakeven after T1)</td></tr>
+                <tr><td>6</td><td><strong>SL HIT</strong></td><td>SL order filled</td><td>Stop loss triggered — SL / SL_BREAKEVEN / TRAILING_SL depending on context</td></tr>
                 <tr><td>7</td><td><strong>MANUAL EXIT</strong></td><td>Manual squareoff from UI</td><td>User clicks squareoff on a position — sends exit price and P&L</td></tr>
                 <tr><td>8</td><td><strong>KILL SWITCH</strong></td><td>Kill switch toggled</td><td>Trading enabled/disabled — alerts whether new signals will be accepted or ignored</td></tr>
                 <tr><td>9</td><td><strong>AUTO SQUAREOFF</strong></td><td>Configured time (e.g. 15:10)</td><td>All open positions force-closed. Single message for all stocks.</td></tr>
                 <tr><td>10</td><td><strong>DAY SUMMARY</strong></td><td>3:30 PM (market close, once per day)</td><td>End-of-day stats: trades, win rate, P&L, charges. Not re-sent on restart after 3:30.</td></tr>
+                <tr><td>11</td><td><strong>OPENING REFRESH VALIDATION</strong></td><td>~9:25:30 AM</td><td>5 random watchlist symbols re-fetched from Fyers history and diffed against in-memory OHLC. Reports pass/fail count + details of any mismatches.</td></tr>
             </table>
 
             <h4>Sample Messages</h4>

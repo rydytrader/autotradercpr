@@ -20,7 +20,10 @@ public class IndexTrend {
     private int emaPositionScore;   // +1 if LTP > EMA(20), -1 if LTP < EMA(20), 0 otherwise
     private int slopeScore;
     private int ema200PositionScore; // +1 if LTP > EMA(200), -1 if LTP < EMA(200), 0 otherwise
-    private int totalScore;         // sum of weekly + daily + emaPosition + slope + ema200Position
+    private int openHlScore;        // -1 if O=H (bearish), +1 if O=L (bullish), 0 otherwise
+    private boolean openEqualsHigh; // true if day open ≈ day high (within 0.05%)
+    private boolean openEqualsLow;  // true if day open ≈ day low (within 0.05%)
+    private int totalScore;         // sum of all components
     private String state;           // STRONG_BULLISH, BULLISH, NEUTRAL, BEARISH, STRONG_BEARISH
     private boolean dataAvailable;  // false if any input is missing (e.g. before market open)
     private boolean weeklyReversalActive; // true if 75-min candle rejected at weekly R1/PWH or S1/PWL
@@ -53,6 +56,12 @@ public class IndexTrend {
     public void setSlopeScore(int v) { this.slopeScore = v; }
     public int getEma200PositionScore() { return ema200PositionScore; }
     public void setEma200PositionScore(int v) { this.ema200PositionScore = v; }
+    public int getOpenHlScore() { return openHlScore; }
+    public void setOpenHlScore(int v) { this.openHlScore = v; }
+    public boolean isOpenEqualsHigh() { return openEqualsHigh; }
+    public void setOpenEqualsHigh(boolean v) { this.openEqualsHigh = v; }
+    public boolean isOpenEqualsLow() { return openEqualsLow; }
+    public void setOpenEqualsLow(boolean v) { this.openEqualsLow = v; }
     public int getTotalScore() { return totalScore; }
     public void setTotalScore(int v) { this.totalScore = v; }
     public String getState() { return state; }

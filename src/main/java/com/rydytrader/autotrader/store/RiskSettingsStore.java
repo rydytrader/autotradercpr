@@ -43,8 +43,7 @@ public class RiskSettingsStore {
         volatile int    fixedQuantity    = 2;     // -1 = use capital-based calculation
         volatile double capitalPerTrade  = 0;     // ₹ per trade (used when fixedQuantity == -1)
         volatile int    telegramAlertFrequency = 60; // seconds between Telegram portfolio updates (0 = disabled)
-        volatile boolean enableLargeCandleFilter = true; // reject trade if candle > largeCandleAtrThreshold ATR from breakout level
-        volatile double largeCandleAtrThreshold = 1.0; // ATR multiplier for large candle filter
+        // Large candle filter removed — R/R filter now catches wide-candle trades (wide SL → bad R/R → rejected)
         volatile boolean enableTargetShift = true; // shift target to next level if default target < threshold ATR. If false, skip the entry.
         volatile boolean enableGapCheck = true;     // halve qty if day open or first candle beyond R2/S2
         volatile boolean enableDayHighLowTargetShift = true; // shift target to day high/low if between entry and target
@@ -166,8 +165,6 @@ public class RiskSettingsStore {
     public int    getFixedQuantity()   { return cfg().fixedQuantity; }
     public double getCapitalPerTrade() { return cfg().capitalPerTrade; }
     public int    getTelegramAlertFrequency() { return cfg().telegramAlertFrequency; }
-    public boolean isEnableLargeCandleFilter() { return cfg().enableLargeCandleFilter; }
-    public double getLargeCandleAtrThreshold() { return cfg().largeCandleAtrThreshold; }
     public boolean isEnableGapCheck() { return cfg().enableGapCheck; }
     public boolean isEnableDayHighLowTargetShift() { return cfg().enableDayHighLowTargetShift; }
     public boolean isEnableWeeklyLevelTargetShift() { return cfg().enableWeeklyLevelTargetShift; }
@@ -291,8 +288,6 @@ public class RiskSettingsStore {
     public void setFixedQuantity(int v)      { cfg().fixedQuantity = v; }
     public void setCapitalPerTrade(double v) { cfg().capitalPerTrade = v; }
     public void setTelegramAlertFrequency(int v) { cfg().telegramAlertFrequency = v; }
-    public void setEnableLargeCandleFilter(boolean v) { cfg().enableLargeCandleFilter = v; }
-    public void setLargeCandleAtrThreshold(double v) { cfg().largeCandleAtrThreshold = v; }
     public void setEnableGapCheck(boolean v) { cfg().enableGapCheck = v; }
     public void setEnableDayHighLowTargetShift(boolean v) { cfg().enableDayHighLowTargetShift = v; }
     public void setEnableWeeklyLevelTargetShift(boolean v) { cfg().enableWeeklyLevelTargetShift = v; }
@@ -343,8 +338,6 @@ public class RiskSettingsStore {
     public int    getFixedQuantity(String mode)   { return cfgFor(mode).fixedQuantity; }
     public double getCapitalPerTrade(String mode) { return cfgFor(mode).capitalPerTrade; }
     public int    getTelegramAlertFrequency(String mode) { return cfgFor(mode).telegramAlertFrequency; }
-    public boolean isEnableLargeCandleFilter(String mode) { return cfgFor(mode).enableLargeCandleFilter; }
-    public double getLargeCandleAtrThreshold(String mode) { return cfgFor(mode).largeCandleAtrThreshold; }
     public boolean isEnableTargetShift(String mode) { return cfgFor(mode).enableTargetShift; }
     public boolean isEnableSmallCandleFilter(String mode) { return cfgFor(mode).enableSmallCandleFilter; }
     public boolean isEnableTrailingSl(String mode) { return cfgFor(mode).enableTrailingSl; }
@@ -374,8 +367,6 @@ public class RiskSettingsStore {
     public void setFixedQuantity(String mode, int v)      { cfgFor(mode).fixedQuantity = v; }
     public void setCapitalPerTrade(String mode, double v) { cfgFor(mode).capitalPerTrade = v; }
     public void setTelegramAlertFrequency(String mode, int v) { cfgFor(mode).telegramAlertFrequency = v; }
-    public void setEnableLargeCandleFilter(String mode, boolean v) { cfgFor(mode).enableLargeCandleFilter = v; }
-    public void setLargeCandleAtrThreshold(String mode, double v) { cfgFor(mode).largeCandleAtrThreshold = v; }
     public void setEnableTargetShift(String mode, boolean v) { cfgFor(mode).enableTargetShift = v; }
     public void setEnableSmallCandleFilter(String mode, boolean v) { cfgFor(mode).enableSmallCandleFilter = v; }
     public void setEnableTrailingSl(String mode, boolean v) { cfgFor(mode).enableTrailingSl = v; }
@@ -416,8 +407,6 @@ public class RiskSettingsStore {
             upsert("fixedQuantity", String.valueOf(c.fixedQuantity));
             upsert("capitalPerTrade", String.valueOf(c.capitalPerTrade));
             upsert("telegramAlertFrequency", String.valueOf(c.telegramAlertFrequency));
-            upsert("enableLargeCandleFilter", String.valueOf(c.enableLargeCandleFilter));
-            upsert("largeCandleAtrThreshold", String.valueOf(c.largeCandleAtrThreshold));
             upsert("enableGapCheck", String.valueOf(c.enableGapCheck));
             upsert("enableDayHighLowTargetShift", String.valueOf(c.enableDayHighLowTargetShift));
             upsert("enableWeeklyLevelTargetShift", String.valueOf(c.enableWeeklyLevelTargetShift));
@@ -525,8 +514,7 @@ public class RiskSettingsStore {
                     case "fixedQuantity"     -> c.fixedQuantity = Integer.parseInt(v);
                     case "capitalPerTrade"   -> c.capitalPerTrade = Double.parseDouble(v);
                     case "telegramAlertFrequency" -> c.telegramAlertFrequency = Integer.parseInt(v);
-                    case "enableLargeCandleFilter" -> c.enableLargeCandleFilter = Boolean.parseBoolean(v);
-                    case "largeCandleAtrThreshold" -> c.largeCandleAtrThreshold = Double.parseDouble(v);
+                    // enableLargeCandleFilter / largeCandleAtrThreshold removed — legacy keys silently ignored
                     case "enableGapCheck" -> c.enableGapCheck = Boolean.parseBoolean(v);
                     case "enableDayHighLowTargetShift" -> c.enableDayHighLowTargetShift = Boolean.parseBoolean(v);
                     case "enableWeeklyLevelTargetShift" -> c.enableWeeklyLevelTargetShift = Boolean.parseBoolean(v);

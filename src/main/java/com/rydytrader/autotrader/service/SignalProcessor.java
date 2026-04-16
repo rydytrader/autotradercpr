@@ -108,18 +108,7 @@ public class SignalProcessor {
         // ── 4c3. Compute base quantity (uses SL for risk-based sizing) ─────────
         int baseQty = quantityService.computeBaseQty(symbol, close, sl);
 
-        // ── 4d. Large candle filter ─────────────────────────────────────────────
-        if (riskSettings.isEnableLargeCandleFilter()) {
-            double largeThreshold = riskSettings.getLargeCandleAtrThreshold();
-            if (isBuy && (close - breakoutLevel) > atr * largeThreshold) {
-                return ProcessedSignal.rejected(setup, symbol, "Large candle — move > " + largeThreshold + " ATR (" + fmt(atr * largeThreshold) + ") from breakout level");
-            }
-            if (!isBuy && (breakoutLevel - close) > atr * largeThreshold) {
-                return ProcessedSignal.rejected(setup, symbol, "Large candle — move > " + largeThreshold + " ATR (" + fmt(atr * largeThreshold) + ") from breakout level");
-            }
-        }
-
-        // ── 4d2. Small candle filter ────────────────────────────────────────────
+        // ── 4d. Small candle filter ─────────────────────────────────────────────
         if (riskSettings.isEnableSmallCandleFilter()) {
             double smallThreshold = riskSettings.getSmallCandleAtrThreshold();
             double wickRatio = riskSettings.getWickRejectionRatio();
@@ -378,7 +367,7 @@ public class SignalProcessor {
         // ── 4i2. Probability-based qty adjustment (LPT = configurable, default 0.50) ──
         if ("LPT".equals(probability)) {
             double factor = riskSettings.getLptQtyFactor();
-            int reduced = Math.max(2, ((int)(qty * factor) / 2) * 2); // apply factor, round to even
+            int reduced = Math.max(1, (int)(qty * factor)); // apply factor, round to even
             eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (LPT ×" + factor + "): " + qty + " -> " + reduced);
             adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — LPT probability)");
             qty = reduced;
@@ -390,7 +379,7 @@ public class SignalProcessor {
         if ("NEUTRAL".equals(weeklyTrend)) {
             double factor = riskSettings.getNeutralWeeklyQtyFactor();
             if (factor > 0 && factor < 1.0) {
-                int reduced = Math.max(2, ((int)(qty * factor) / 2) * 2);
+                int reduced = Math.max(1, (int)(qty * factor));
                 eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (Weekly NEUTRAL ×" + factor + "): " + qty + " -> " + reduced);
                 adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — weekly trend NEUTRAL, no HTF conviction)");
                 qty = reduced;
@@ -401,7 +390,7 @@ public class SignalProcessor {
         if (setup.contains("R3") || setup.contains("S3")) {
             double factor = riskSettings.getR3s3QtyFactor();
             if (factor < 1.0) {
-                int reduced = Math.max(2, ((int)(qty * factor) / 2) * 2);
+                int reduced = Math.max(1, (int)(qty * factor));
                 eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (R3/S3 ×" + factor + "): " + qty + " -> " + reduced);
                 adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — R3/S3 extended level)");
                 qty = reduced;
@@ -409,7 +398,7 @@ public class SignalProcessor {
         } else if (setup.contains("R4") || setup.contains("S4")) {
             double factor = riskSettings.getR4s4QtyFactor();
             if (factor < 1.0) {
-                int reduced = Math.max(2, ((int)(qty * factor) / 2) * 2);
+                int reduced = Math.max(1, (int)(qty * factor));
                 eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (R4/S4 ×" + factor + "): " + qty + " -> " + reduced);
                 adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — R4/S4 extended level)");
                 qty = reduced;
@@ -430,7 +419,7 @@ public class SignalProcessor {
                 }
             }
             if (shouldHalve) {
-                int reduced = Math.max(2, (qty / 4) * 2); // halve and round to even
+                int reduced = Math.max(1, qty / 2);
                 String reason = isReversal ? "EV mean-reversion (counter daily trend)" : "OV magnet (outside value)";
                 eventService.log("[INFO] " + symbol + " " + setup + " qty halved (" + reason + "): " + qty + " -> " + reduced);
                 adjustments.add("Qty " + qty + " → " + reduced + " (halved — " + reason + ")");

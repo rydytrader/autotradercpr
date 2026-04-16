@@ -399,15 +399,6 @@
                     <div class="form-hint">Both EMA filters confirm the breakout direction on different timeframes. 20 EMA captures short-term momentum, 200 EMA captures the long-term trend. VWAP uses the day's volume-weighted average.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Large Candle Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableLargeCandleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject if move &gt;</span>
-                        <input type="number" id="largeCandleAtrThreshold" class="form-control" step="0.1" min="0.5" max="3.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR from breakout level</span>
-                    </div>
-                </div>
-                <div class="form-group">
                     <label class="form-label">Risk / Reward Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
                         <input type="checkbox" id="enableRiskRewardFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
@@ -991,8 +982,6 @@
             document.getElementById('capitalPerTrade').value   = d.capitalPerTrade  != null ? d.capitalPerTrade : 0;
             // telegramAlertFrequency removed — notifications are event-driven only
             document.getElementById('enableR4S4').checked      = d.enableR4S4        || false;
-            document.getElementById('enableLargeCandleFilter').checked = d.enableLargeCandleFilter !== false;
-            document.getElementById('largeCandleAtrThreshold').value = d.largeCandleAtrThreshold || 1.0;
             // enableTargetShift removed — replaced by min target distance check
             // enableGapCheck removed — replaced by Opening Range filter
             document.getElementById('enableDayHighLowTargetShift').checked = d.enableDayHighLowTargetShift !== false;
@@ -1138,8 +1127,6 @@
                 capitalPerTrade:  parseFloat(document.getElementById('capitalPerTrade').value) || 0,
                 // telegramAlertFrequency removed
                 enableR4S4:        document.getElementById('enableR4S4').checked,
-                enableLargeCandleFilter: document.getElementById('enableLargeCandleFilter').checked,
-                largeCandleAtrThreshold: parseFloat(document.getElementById('largeCandleAtrThreshold').value) || 1.0,
                 // enableTargetShift removed
                 enableDayHighLowTargetShift: document.getElementById('enableDayHighLowTargetShift').checked,
                 enableWeeklyLevelTargetShift: document.getElementById('enableWeeklyLevelTargetShift').checked,

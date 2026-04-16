@@ -477,8 +477,9 @@
                 <div class="nifty-metric"><span class="nifty-metric-label">Weekly:</span> <span id="niftyWeekly" class="nifty-metric-value">—</span></div>
                 <div class="nifty-metric"><span class="nifty-metric-label">Daily:</span> <span id="niftyDaily" class="nifty-metric-value">—</span></div>
                 <div class="nifty-metric"><span class="nifty-metric-label">EMA 20:</span> <span id="niftyEmaPos" class="nifty-metric-value">—</span></div>
-                <div class="nifty-metric"><span class="nifty-metric-label">EMA slope:</span> <span id="niftyEmaSlope" class="nifty-metric-value">—</span></div>
                 <div class="nifty-metric"><span class="nifty-metric-label">EMA 200:</span> <span id="niftyEma200Pos" class="nifty-metric-value">—</span></div>
+                <div class="nifty-metric"><span class="nifty-metric-label">EMA slope:</span> <span id="niftyEmaSlope" class="nifty-metric-value">—</span></div>
+                <div class="nifty-metric"><span class="nifty-metric-label">O=H/L:</span> <span id="niftyOpenHL" class="nifty-metric-value">—</span></div>
             </div>
         </div>
     </div>
@@ -983,12 +984,13 @@
                 document.getElementById('niftyEmaPos').textContent = '—';
                 document.getElementById('niftyEmaSlope').textContent = '—';
                 document.getElementById('niftyEma200Pos').textContent = '—';
+                document.getElementById('niftyOpenHL').textContent = '—';
                 document.getElementById('niftyCard').className = 'nifty-card nifty-card-neutral';
                 return;
             }
             document.getElementById('niftyLtp').textContent = d.ltp.toFixed(2);
             document.getElementById('niftyState').textContent = (d.state || 'NEUTRAL').replace('_', ' ');
-            document.getElementById('niftyScore').textContent = '(score ' + (d.totalScore >= 0 ? '+' : '') + d.totalScore + ' / \u00B18)';
+            document.getElementById('niftyScore').textContent = '(score ' + (d.totalScore >= 0 ? '+' : '') + d.totalScore + ' / \u00B19)';
             var niftyWeeklyEl = document.getElementById('niftyWeekly');
             var niftyWeeklyText = d.weeklyTrend + ' (' + (d.weeklyScore >= 0 ? '+' : '') + d.weeklyScore + ')';
             if (d.weeklyReversalActive) niftyWeeklyText += ' <span style="color:var(--accent-yellow);font-weight:700;">(R)</span>';
@@ -1003,6 +1005,12 @@
                 ? (d.ema200PositionScore > 0 ? 'Above' : (d.ema200PositionScore < 0 ? 'Below' : 'At')) + ' ' + d.ema200.toFixed(2) + ' (' + (d.ema200PositionScore >= 0 ? '+' : '') + d.ema200PositionScore + ')'
                 : '—';
             document.getElementById('niftyEma200Pos').textContent = ema200PosText;
+            var ohlText = d.openEqualsHigh ? 'O=H (bearish, ' + (d.openHlScore >= 0 ? '+' : '') + d.openHlScore + ')'
+                        : d.openEqualsLow  ? 'O=L (bullish, +' + d.openHlScore + ')'
+                        : 'Neither (0)';
+            var ohlEl = document.getElementById('niftyOpenHL');
+            ohlEl.textContent = ohlText;
+            ohlEl.style.color = d.openEqualsHigh ? 'var(--accent-red)' : d.openEqualsLow ? 'var(--accent-green)' : 'var(--text-muted)';
             // Apply card color class based on state
             var stateLower = (d.state || 'neutral').toLowerCase().replace('_', '-');
             document.getElementById('niftyCard').className = 'nifty-card nifty-card-' + stateLower;

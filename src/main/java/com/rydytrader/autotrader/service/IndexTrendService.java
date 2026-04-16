@@ -23,8 +23,9 @@ import org.springframework.stereotype.Service;
  *   - EMA 20 position : ±1 (LTP above/below 20 EMA)
  *   - EMA 20 slope    : ±2 (steep) / ±1 (mild) / 0
  *   - EMA 200 position: ±1 (LTP above/below 200 EMA) — long-term trend
+ *   - Open=High/Low   : -1 (O=H, bearish) / +1 (O=L, bullish) / 0
  *
- * Score range: -8 to +8
+ * Score range: -9 to +9
  */
 @Service
 public class IndexTrendService {
@@ -84,12 +85,23 @@ public class IndexTrendService {
         String daily = weeklyCprService.getDailyTrend(symbol);
         double slopePct = emaService.getSlopePctPerCandle(symbol, SLOPE_LOOKBACK_CANDLES);
 
+        // Open = High / Open = Low detection from live tick data
+        double dayOpen = marketDataService.getDayOpen(symbol);
+        double dayHigh = marketDataService.getDayHigh(symbol);
+        double dayLow  = marketDataService.getDayLow(symbol);
+        // Tolerance: within 0.05% of open — exact equality is rare on live data
+        double tolerance = dayOpen > 0 ? dayOpen * 0.0005 : 0;
+        boolean openEqualsHigh = dayOpen > 0 && dayHigh > 0 && (dayHigh - dayOpen) <= tolerance;
+        boolean openEqualsLow  = dayOpen > 0 && dayLow > 0 && (dayOpen - dayLow) <= tolerance;
+
         trend.setLtp(ltp);
         trend.setEma(ema);
         trend.setEma200(ema200);
         trend.setWeeklyTrend(weekly);
         trend.setDailyTrend(daily);
         trend.setEmaSlopePct(slopePct);
+        trend.setOpenEqualsHigh(openEqualsHigh);
+        trend.setOpenEqualsLow(openEqualsLow);
 
         // Weekly reversal flag — zero out weekly score when active
         boolean reversalActive = !"NONE".equals(weeklyCprService.getWeeklyRejection(symbol));
@@ -101,13 +113,16 @@ public class IndexTrendService {
         int emaPositionScore = scoreEmaPosition(ltp, ema);
         int slopeScore = scoreSlope(slopePct);
         int ema200PositionScore = scoreEmaPosition(ltp, ema200);
-        int total = weeklyScore + dailyScore + emaPositionScore + slopeScore + ema200PositionScore;
+        // O=H (bearish: -1), O=L (bullish: +1), neither: 0
+        int openHlScore = openEqualsHigh ? -1 : (openEqualsLow ? 1 : 0);
+        int total = weeklyScore + dailyScore + emaPositionScore + slopeScore + ema200PositionScore + openHlScore;
 
         trend.setWeeklyScore(weeklyScore);
         trend.setDailyScore(dailyScore);
         trend.setEmaPositionScore(emaPositionScore);
         trend.setSlopeScore(slopeScore);
         trend.setEma200PositionScore(ema200PositionScore);
+        trend.setOpenHlScore(openHlScore);
         trend.setTotalScore(total);
 
         // Classify
