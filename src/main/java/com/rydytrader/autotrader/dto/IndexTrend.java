@@ -2,8 +2,8 @@ package com.rydytrader.autotrader.dto;
 
 /**
  * Composite trend snapshot for an index (NIFTY 50). Computed by IndexTrendService
- * from weekly CPR + daily CPR + 20 EMA position + 20 EMA slope. Returned via REST API
- * to drive the NIFTY card on the scanner page.
+ * from weekly CPR + daily CPR + 20 EMA position + 20 EMA slope + 200 EMA position.
+ * Returned via REST API to drive the NIFTY card on the scanner page.
  */
 public class IndexTrend {
 
@@ -11,14 +11,16 @@ public class IndexTrend {
     private String displayName;     // e.g. NIFTY 50
     private double ltp;
     private double ema;             // current 20 EMA value (for display + position check)
+    private double ema200;          // current 200 EMA value (long-term trend)
     private String weeklyTrend;     // STRONGLY_BULLISH, BULLISH, NEUTRAL, BEARISH, STRONGLY_BEARISH
     private String dailyTrend;
     private double emaSlopePct;     // % per candle
     private int weeklyScore;
     private int dailyScore;
-    private int emaPositionScore;   // +1 if LTP > EMA, -1 if LTP < EMA, 0 otherwise
+    private int emaPositionScore;   // +1 if LTP > EMA(20), -1 if LTP < EMA(20), 0 otherwise
     private int slopeScore;
-    private int totalScore;         // sum of weekly + daily + emaPosition + slope
+    private int ema200PositionScore; // +1 if LTP > EMA(200), -1 if LTP < EMA(200), 0 otherwise
+    private int totalScore;         // sum of weekly + daily + emaPosition + slope + ema200Position
     private String state;           // STRONG_BULLISH, BULLISH, NEUTRAL, BEARISH, STRONG_BEARISH
     private boolean dataAvailable;  // false if any input is missing (e.g. before market open)
     private boolean weeklyReversalActive; // true if 75-min candle rejected at weekly R1/PWH or S1/PWL
@@ -33,6 +35,8 @@ public class IndexTrend {
     public void setLtp(double v) { this.ltp = v; }
     public double getEma() { return ema; }
     public void setEma(double v) { this.ema = v; }
+    public double getEma200() { return ema200; }
+    public void setEma200(double v) { this.ema200 = v; }
     public String getWeeklyTrend() { return weeklyTrend; }
     public void setWeeklyTrend(String v) { this.weeklyTrend = v; }
     public String getDailyTrend() { return dailyTrend; }
@@ -47,6 +51,8 @@ public class IndexTrend {
     public void setEmaPositionScore(int v) { this.emaPositionScore = v; }
     public int getSlopeScore() { return slopeScore; }
     public void setSlopeScore(int v) { this.slopeScore = v; }
+    public int getEma200PositionScore() { return ema200PositionScore; }
+    public void setEma200PositionScore(int v) { this.ema200PositionScore = v; }
     public int getTotalScore() { return totalScore; }
     public void setTotalScore(int v) { this.totalScore = v; }
     public String getState() { return state; }

@@ -41,6 +41,16 @@ public class FyersDataWebSocket extends WebSocketClient {
     private volatile int ackCount = 0;
     private volatile int updateCount = 0;
 
+    // ── Diagnostic: pre-snapshot drop tracking ─────────────────────────────────
+    // Count of full-update (dataType=85) frames dropped because the topicId had no
+    // SymbolMeta yet (i.e. snapshot hadn't arrived). Populated by parseDataFeed.
+    private final Map<Integer, Integer> preSnapshotDropCounts = new ConcurrentHashMap<>();
+    // topicId → epochMillis of first snapshot, logged exactly once per topic.
+    private final Map<Integer, Long> firstSnapshotTimes = new ConcurrentHashMap<>();
+    private volatile long subscribeTime = 0;
+    // Event-log sink so we can write to the user-visible event log in addition to SLF4J.
+    private volatile java.util.function.Consumer<String> eventLogSink;
+
     public FyersDataWebSocket(String hsmKey,
                                List<String> hsmTokens,
                                Map<String, String> hsmToFyersSymbol,
@@ -89,7 +99,16 @@ public class FyersDataWebSocket extends WebSocketClient {
                     if (!hsmTokens.isEmpty()) {
                         byte[] subMsg = HsmBinaryParser.buildSubscribeMessage(hsmTokens, channelNum);
                         send(subMsg);
-                        log.info("[FyersWS] Subscribed to {} symbols", hsmTokens.size());
+                        subscribeTime = System.currentTimeMillis();
+                        String subAt = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata"))
+                            .toLocalTime()
+                            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss.SSS"));
+                        log.info("[FyersWS] Subscribed to {} symbols at {} — monitoring pre-snapshot drops",
+                            hsmTokens.size(), subAt);
+                        if (eventLogSink != null) {
+                            eventLogSink.accept("[INFO] [HsmParser] Subscribed to " + hsmTokens.size()
+                                + " symbols at " + subAt + " — monitoring pre-snapshot update drops");
+                        }
                     }
 
                     // Step 3: Switch to lite mode if requested
@@ -141,12 +160,73 @@ public class FyersDataWebSocket extends WebSocketClient {
             }
         }
 
-        // Parse ticks
+        // Parse ticks (diagnostic: pass the pre-snapshot drop counter so the parser
+        // records any dataType=85 frames that hit the meta==null branch).
         List<HsmBinaryParser.RawTick> ticks = HsmBinaryParser.parseDataFeed(
-            data, symbolMeta, hsmToFyersSymbol);
+            data, symbolMeta, hsmToFyersSymbol, preSnapshotDropCounts);
         for (HsmBinaryParser.RawTick tick : ticks) {
             callback.onTick(tick);
         }
+
+        // Diagnostic: any topic whose SymbolMeta just got populated by this frame and
+        // that we haven't logged yet is a "first snapshot arrival". Log it once with
+        // the accumulated drop count so we can see which symbols had pre-snapshot data loss.
+        for (Map.Entry<Integer, HsmBinaryParser.SymbolMeta> e : symbolMeta.entrySet()) {
+            Integer topicId = e.getKey();
+            if (firstSnapshotTimes.putIfAbsent(topicId, System.currentTimeMillis()) == null) {
+                String topicName = e.getValue().topicName;
+                String fyersSymbol = hsmToFyersSymbol.getOrDefault(topicName, topicName);
+                int dropped = preSnapshotDropCounts.getOrDefault(topicId, 0);
+                String arrivedAt = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata"))
+                    .toLocalTime()
+                    .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss.SSS"));
+                long delayMs = subscribeTime > 0 ? System.currentTimeMillis() - subscribeTime : 0;
+                String msg = "First snapshot for " + fyersSymbol + " (" + topicName
+                    + ") at " + arrivedAt + " — " + dropped + " pre-snapshot updates dropped"
+                    + (delayMs > 0 ? " (" + (delayMs / 1000) + "s after subscribe)" : "");
+                log.info("[HsmParser] {}", msg);
+                if (eventLogSink != null && dropped > 0) {
+                    // Only surface to event log when there's an actual drop — otherwise
+                    // this would spam 34+ "0 dropped" lines at startup.
+                    eventLogSink.accept("[WARNING] [HsmParser] " + msg);
+                }
+            }
+        }
+    }
+
+    /** Set a consumer that receives diagnostic messages for the user-visible event log. */
+    public void setEventLogSink(java.util.function.Consumer<String> sink) {
+        this.eventLogSink = sink;
+    }
+
+    /**
+     * Emit a one-line summary of pre-snapshot drops since the last reset (or since start).
+     * Called from MarketDataService at the end of the 9:25 opening refresh.
+     */
+    public String buildPreSnapshotDropSummary() {
+        int total = preSnapshotDropCounts.values().stream().mapToInt(Integer::intValue).sum();
+        int affectedSymbols = (int) preSnapshotDropCounts.values().stream().filter(v -> v > 0).count();
+        int totalSnapshots = firstSnapshotTimes.size();
+        if (totalSnapshots == 0) {
+            return "Pre-snapshot drop summary — no snapshots observed yet";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("Pre-snapshot drop summary — ").append(totalSnapshots).append(" symbols snapshotted, ")
+          .append(affectedSymbols).append(" with drops, ").append(total).append(" total updates dropped");
+        if (affectedSymbols > 0) {
+            sb.append(" [");
+            boolean first = true;
+            for (Map.Entry<Integer, Integer> e : preSnapshotDropCounts.entrySet()) {
+                if (e.getValue() <= 0) continue;
+                HsmBinaryParser.SymbolMeta meta = symbolMeta.get(e.getKey());
+                String name = meta != null ? hsmToFyersSymbol.getOrDefault(meta.topicName, meta.topicName) : ("topic=" + e.getKey());
+                if (!first) sb.append(", ");
+                sb.append(name).append("=").append(e.getValue());
+                first = false;
+            }
+            sb.append("]");
+        }
+        return sb.toString();
     }
 
     @Override
@@ -187,5 +267,9 @@ public class FyersDataWebSocket extends WebSocketClient {
     public void clearMeta() {
         symbolMeta.clear();
         updateCount = 0;
+        // Reset diagnostic state so reconnect scenarios are measured independently.
+        preSnapshotDropCounts.clear();
+        firstSnapshotTimes.clear();
+        subscribeTime = 0;
     }
 }

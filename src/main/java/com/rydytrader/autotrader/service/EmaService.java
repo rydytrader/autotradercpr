@@ -12,20 +12,25 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Calculates 20-period EMA on each candle close.
- * Used by BreakoutScanner for EMA distance filter.
+ * Calculates 20-period and 200-period EMA on each candle close.
+ * 20 EMA: short-term momentum filter + slope tracking.
+ * 200 EMA: long-term trend filter (value only, no slope).
+ * Used by BreakoutScanner for directional trade confirmation.
  */
 @Service
 public class EmaService implements CandleAggregator.CandleCloseListener {
 
     private static final Logger log = LoggerFactory.getLogger(EmaService.class);
     private static final int EMA_PERIOD = 20;
+    private static final int EMA_LONG_PERIOD = 200;
 
-    private static final int HISTORY_SIZE = 20;  // ring buffer of recent EMA values for slope calc
+    private static final int HISTORY_SIZE = 20;  // ring buffer of recent EMA(20) values for slope calc
 
     private final CandleAggregator candleAggregator;
     private final ConcurrentHashMap<String, Double> emaBySymbol = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Deque<Double>> emaHistoryBySymbol = new ConcurrentHashMap<>();
+    // 200 EMA: value only, no ring buffer / slope tracking
+    private final ConcurrentHashMap<String, Double> ema200BySymbol = new ConcurrentHashMap<>();
 
     public EmaService(CandleAggregator candleAggregator) {
         this.candleAggregator = candleAggregator;
@@ -80,11 +85,40 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
             ema = candles.get(i).close * k + ema * (1 - k);
             storeEma(symbol, ema);
         }
+
+        // Seed 200 EMA from the same candle list (needs ≥200 bars for proper convergence)
+        if (candles.size() >= EMA_LONG_PERIOD) {
+            double k200 = 2.0 / (EMA_LONG_PERIOD + 1);
+            double sum200 = 0;
+            for (int i = 0; i < EMA_LONG_PERIOD; i++) {
+                sum200 += candles.get(i).close;
+            }
+            double ema200 = sum200 / EMA_LONG_PERIOD;
+            for (int i = EMA_LONG_PERIOD; i < candles.size(); i++) {
+                ema200 = candles.get(i).close * k200 + ema200 * (1 - k200);
+            }
+            ema200BySymbol.put(symbol, ema200);
+        }
     }
 
     /** Get all EMA values (for monitoring/debugging). */
     public Map<String, Double> getAllEma() {
         return emaBySymbol;
+    }
+
+    /** Number of symbols with a loaded (non-zero) EMA(20) value. */
+    public int getLoadedCount() {
+        return (int) emaBySymbol.values().stream().filter(v -> v > 0).count();
+    }
+
+    /** Get current EMA(200) for a symbol. Returns 0 if not enough history to seed. */
+    public double getEma200(String symbol) {
+        return ema200BySymbol.getOrDefault(symbol, 0.0);
+    }
+
+    /** Number of symbols with a loaded (non-zero) EMA(200) value. */
+    public int getEma200LoadedCount() {
+        return (int) ema200BySymbol.values().stream().filter(v -> v > 0).count();
     }
 
     /**
@@ -118,12 +152,23 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
         // Requires the seed EMA to already be in place (from seedFromCandles at startup).
         // Recomputing from completedCandles is WRONG now that it's filtered to today —
         // the multi-day history is no longer available via that path.
-        Double prev = emaBySymbol.get(fyersSymbol);
-        if (prev == null || prev <= 0) return; // not seeded yet; skip until seed is available
         if (completedCandle == null || completedCandle.close <= 0) return;
-        double k = 2.0 / (EMA_PERIOD + 1);
-        double ema = completedCandle.close * k + prev * (1 - k);
-        storeEma(fyersSymbol, ema);
+
+        // 20 EMA incremental update
+        Double prev = emaBySymbol.get(fyersSymbol);
+        if (prev != null && prev > 0) {
+            double k = 2.0 / (EMA_PERIOD + 1);
+            double ema = completedCandle.close * k + prev * (1 - k);
+            storeEma(fyersSymbol, ema);
+        }
+
+        // 200 EMA incremental update
+        Double prev200 = ema200BySymbol.get(fyersSymbol);
+        if (prev200 != null && prev200 > 0) {
+            double k200 = 2.0 / (EMA_LONG_PERIOD + 1);
+            double ema200 = completedCandle.close * k200 + prev200 * (1 - k200);
+            ema200BySymbol.put(fyersSymbol, ema200);
+        }
     }
 
     /** Update the current EMA value and append to the history ring buffer for slope tracking. */

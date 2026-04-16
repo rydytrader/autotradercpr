@@ -69,6 +69,7 @@ public class SettingsController {
         result.put("enableRiskRewardFilter", riskSettings.isEnableRiskRewardFilter());
         result.put("minRiskRewardRatio", riskSettings.getMinRiskRewardRatio());
         result.put("enableEmaDirectionCheck", riskSettings.isEnableEmaDirectionCheck());
+        result.put("enableEma200DirectionCheck", riskSettings.isEnableEma200DirectionCheck());
         result.put("emaCloseDistanceAtr", riskSettings.getEmaCloseDistanceAtr());
         result.put("enableEmaLevelCountFilter", riskSettings.isEnableEmaLevelCountFilter());
         result.put("enableTargetShift", riskSettings.isEnableTargetShift(effectiveMode));
@@ -123,6 +124,7 @@ public class SettingsController {
         result.put("enableLpt", riskSettings.isEnableLpt());
         result.put("lptQtyFactor", riskSettings.getLptQtyFactor());
         result.put("neutralWeeklyQtyFactor", riskSettings.getNeutralWeeklyQtyFactor());
+        result.put("enableWeeklyNeutralTrades", riskSettings.isEnableWeeklyNeutralTrades());
         result.put("todayPnl",         Math.round(todayPnl * 100.0) / 100.0);
         result.put("todayTrades",      todayTrades);
         return result;
@@ -166,6 +168,7 @@ public class SettingsController {
             if (body.containsKey("enableRiskRewardFilter")) riskSettings.setEnableRiskRewardFilter(Boolean.parseBoolean(body.get("enableRiskRewardFilter").toString()));
             if (body.containsKey("minRiskRewardRatio")) riskSettings.setMinRiskRewardRatio(Double.parseDouble(body.get("minRiskRewardRatio").toString()));
             if (body.containsKey("enableEmaDirectionCheck")) riskSettings.setEnableEmaDirectionCheck(Boolean.parseBoolean(body.get("enableEmaDirectionCheck").toString()));
+            if (body.containsKey("enableEma200DirectionCheck")) riskSettings.setEnableEma200DirectionCheck(Boolean.parseBoolean(body.get("enableEma200DirectionCheck").toString()));
             if (body.containsKey("emaCloseDistanceAtr")) riskSettings.setEmaCloseDistanceAtr(Double.parseDouble(body.get("emaCloseDistanceAtr").toString()));
             if (body.containsKey("enableEmaLevelCountFilter")) riskSettings.setEnableEmaLevelCountFilter(Boolean.parseBoolean(body.get("enableEmaLevelCountFilter").toString()));
             if (body.containsKey("enableTargetShift")) riskSettings.setEnableTargetShift(effectiveMode, Boolean.parseBoolean(body.get("enableTargetShift").toString()));
@@ -220,6 +223,7 @@ public class SettingsController {
             if (body.containsKey("enableLpt")) riskSettings.setEnableLpt(Boolean.parseBoolean(body.get("enableLpt").toString()));
             if (body.containsKey("lptQtyFactor")) riskSettings.setLptQtyFactor(Double.parseDouble(body.get("lptQtyFactor").toString()));
             if (body.containsKey("neutralWeeklyQtyFactor")) riskSettings.setNeutralWeeklyQtyFactor(Double.parseDouble(body.get("neutralWeeklyQtyFactor").toString()));
+            if (body.containsKey("enableWeeklyNeutralTrades")) riskSettings.setEnableWeeklyNeutralTrades(Boolean.parseBoolean(body.get("enableWeeklyNeutralTrades").toString()));
             riskSettings.saveFor(effectiveMode);
             return ResponseEntity.ok(Map.of("ok", true, "message", "Settings saved"));
         } catch (Exception e) {

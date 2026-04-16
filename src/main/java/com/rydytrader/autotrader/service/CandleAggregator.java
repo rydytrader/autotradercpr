@@ -428,6 +428,11 @@ public class CandleAggregator {
         return firstCandleClose.getOrDefault(symbol, 0.0);
     }
 
+    /** Number of symbols that have a captured first-candle close (should match watchlist after 9:20). */
+    public int getFirstCandleCloseCount() {
+        return (int) firstCandleClose.values().stream().filter(v -> v > 0).count();
+    }
+
     /** Opening Range high (highest price in first N minutes). */
     public double getOpeningRangeHigh(String symbol) {
         return openingRangeHigh.getOrDefault(symbol, 0.0);

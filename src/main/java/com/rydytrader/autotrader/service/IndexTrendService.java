@@ -18,12 +18,13 @@ import org.springframework.stereotype.Service;
  *   2. BreakoutScanner index alignment filter (downgrade HPT → LPT when opposed)
  *
  * Score weighting:
- *   - weekly trend  : ±2 (strong) / ±1 (mild) / 0
- *   - daily trend   : ±2 (strong) / ±1 (mild) / 0
- *   - EMA position  : ±1 (LTP above/below 20 EMA)
- *   - EMA slope     : ±2 (steep) / ±1 (mild) / 0
+ *   - weekly trend    : ±2 (strong) / ±1 (mild) / 0
+ *   - daily trend     : ±2 (strong) / ±1 (mild) / 0
+ *   - EMA 20 position : ±1 (LTP above/below 20 EMA)
+ *   - EMA 20 slope    : ±2 (steep) / ±1 (mild) / 0
+ *   - EMA 200 position: ±1 (LTP above/below 200 EMA) — long-term trend
  *
- * Score range: -7 to +7
+ * Score range: -8 to +8
  */
 @Service
 public class IndexTrendService {
@@ -78,12 +79,14 @@ public class IndexTrendService {
             if (cpr != null) ltp = cpr.getClose();
         }
         double ema = emaService.getEma(symbol);
+        double ema200 = emaService.getEma200(symbol);
         String weekly = weeklyCprService.getWeeklyTrend(symbol);
         String daily = weeklyCprService.getDailyTrend(symbol);
         double slopePct = emaService.getSlopePctPerCandle(symbol, SLOPE_LOOKBACK_CANDLES);
 
         trend.setLtp(ltp);
         trend.setEma(ema);
+        trend.setEma200(ema200);
         trend.setWeeklyTrend(weekly);
         trend.setDailyTrend(daily);
         trend.setEmaSlopePct(slopePct);
@@ -97,12 +100,14 @@ public class IndexTrendService {
         int dailyScore = scoreTrend(daily);
         int emaPositionScore = scoreEmaPosition(ltp, ema);
         int slopeScore = scoreSlope(slopePct);
-        int total = weeklyScore + dailyScore + emaPositionScore + slopeScore;
+        int ema200PositionScore = scoreEmaPosition(ltp, ema200);
+        int total = weeklyScore + dailyScore + emaPositionScore + slopeScore + ema200PositionScore;
 
         trend.setWeeklyScore(weeklyScore);
         trend.setDailyScore(dailyScore);
         trend.setEmaPositionScore(emaPositionScore);
         trend.setSlopeScore(slopeScore);
+        trend.setEma200PositionScore(ema200PositionScore);
         trend.setTotalScore(total);
 
         // Classify

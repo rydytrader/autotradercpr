@@ -143,9 +143,10 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
         // Resolution: "15" for 15-min candles
         String resolution = String.valueOf(timeframeMin);
 
-        // Date range: last 5 trading days to ensure 14+ candles
+        // Date range: 14 calendar days (~10 trading days, ~750 five-min candles).
+        // Enough for 200 EMA convergence (needs ~600 bars) + ATR Wilder warmup.
         long toEpoch = Instant.now().getEpochSecond();
-        long fromEpoch = toEpoch - (7 * 24 * 3600); // 7 days back
+        long fromEpoch = toEpoch - (14 * 24 * 3600); // 14 days back
 
         String urlStr = "https://api-t1.fyers.in/data/history?symbol=" + java.net.URLEncoder.encode(symbol, java.nio.charset.StandardCharsets.UTF_8)
             + "&resolution=" + resolution

@@ -351,12 +351,16 @@
                             LPT Qty ×
                             <input type="number" id="lptQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         </label>
-                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
-                            Weekly NEUTRAL extra ×
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="enableWeeklyNeutralTrades" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Allow trades when weekly trend is NEUTRAL</span>
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);margin-left:16px;">
+                            Qty ×
                             <input type="number" id="neutralWeeklyQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         </label>
                     </div>
-                    <div class="form-hint">LPT = weekly+daily not aligned, magnets, EV reversals, or HPT downgraded inside OR. HPT = full qty (always 1.0×). Weekly NEUTRAL extra stacks on LPT — a weekly-neutral LPT trade gets qty × LPT × this factor (default 0.5 × 0.5 = 0.25).</div>
+                    <div class="form-hint">LPT = weekly+daily not aligned, magnets, EV reversals, or HPT downgraded inside OR. HPT = full qty (always 1.0×). When weekly NEUTRAL trades are allowed, qty is further reduced by the factor next to the checkbox (default 0.5, stacks on LPT: 0.5 × 0.5 = 0.25). Uncheck to skip all trades when weekly is NEUTRAL.</div>
                 </div>
             </div>
         </div>
@@ -388,7 +392,11 @@
                         <input type="checkbox" id="enableEmaDirectionCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only above 20 EMA, sell only below 20 EMA</span>
                     </div>
-                    <div class="form-hint">Both filters confirm the breakout direction. VWAP uses the day's volume-weighted average. 20 EMA uses the candle-close-based moving average on the trading timeframe.</div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="enableEma200DirectionCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only above 200 EMA, sell only below 200 EMA</span>
+                    </div>
+                    <div class="form-hint">Both EMA filters confirm the breakout direction on different timeframes. 20 EMA captures short-term momentum, 200 EMA captures the long-term trend. VWAP uses the day's volume-weighted average.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Large Candle Filter</label>
@@ -995,6 +1003,7 @@
             document.getElementById('enableRiskRewardFilter').checked = d.enableRiskRewardFilter !== false;
             document.getElementById('minRiskRewardRatio').value = d.minRiskRewardRatio != null ? d.minRiskRewardRatio : 1.0;
             document.getElementById('enableEmaDirectionCheck').checked = d.enableEmaDirectionCheck !== false;
+            document.getElementById('enableEma200DirectionCheck').checked = d.enableEma200DirectionCheck !== false;
             document.getElementById('enableEmaLevelCountFilter').checked = d.enableEmaLevelCountFilter !== false;
             document.getElementById('enableSplitTarget').checked = d.enableSplitTarget !== false;
             document.getElementById('t1DistancePct').value = d.t1DistancePct || 50;
@@ -1048,6 +1057,7 @@
             document.getElementById('enableLpt').checked = d.enableLpt !== false;
             document.getElementById('lptQtyFactor').value = d.lptQtyFactor != null ? d.lptQtyFactor : 0.50;
             document.getElementById('neutralWeeklyQtyFactor').value = d.neutralWeeklyQtyFactor != null ? d.neutralWeeklyQtyFactor : 0.50;
+            document.getElementById('enableWeeklyNeutralTrades').checked = d.enableWeeklyNeutralTrades !== false;
             document.getElementById('enableR3S3').checked = d.enableR3S3 !== false;
             document.getElementById('r3s3QtyFactor').value = d.r3s3QtyFactor || 0.75;
             document.getElementById('r4s4QtyFactor').value = d.r4s4QtyFactor || 0.5;
@@ -1139,6 +1149,7 @@
                 enableRiskRewardFilter: document.getElementById('enableRiskRewardFilter').checked,
                 minRiskRewardRatio: parseFloat(document.getElementById('minRiskRewardRatio').value) || 1.0,
                 enableEmaDirectionCheck: document.getElementById('enableEmaDirectionCheck').checked,
+                enableEma200DirectionCheck: document.getElementById('enableEma200DirectionCheck').checked,
                 enableEmaLevelCountFilter: document.getElementById('enableEmaLevelCountFilter').checked,
                 enableSplitTarget: document.getElementById('enableSplitTarget').checked,
                 t1DistancePct: parseInt(document.getElementById('t1DistancePct').value) || 50,
@@ -1193,6 +1204,7 @@
                 enableLpt: document.getElementById('enableLpt').checked,
                 lptQtyFactor: parseFloat(document.getElementById('lptQtyFactor').value) || 0.50,
                 neutralWeeklyQtyFactor: parseFloat(document.getElementById('neutralWeeklyQtyFactor').value) || 0.50,
+                enableWeeklyNeutralTrades: document.getElementById('enableWeeklyNeutralTrades').checked,
                 enableR3S3: document.getElementById('enableR3S3').checked,
                 r3s3QtyFactor: parseFloat(document.getElementById('r3s3QtyFactor').value) || 0.75,
                 r4s4QtyFactor: parseFloat(document.getElementById('r4s4QtyFactor').value) || 0.5,

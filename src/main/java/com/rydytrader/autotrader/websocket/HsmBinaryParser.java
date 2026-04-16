@@ -203,9 +203,25 @@ public class HsmBinaryParser {
      * Parse a data feed response (resp_type=6).
      * Updates symbolMeta map with multiplier/precision from snapshots.
      * Returns list of parsed ticks.
+     *
+     * Diagnostic overload forwards to the main implementation without a drop counter.
      */
     public static List<RawTick> parseDataFeed(byte[] data, Map<Integer, SymbolMeta> symbolMeta,
                                                Map<String, String> hsmToFyersSymbol) {
+        return parseDataFeed(data, symbolMeta, hsmToFyersSymbol, null);
+    }
+
+    /**
+     * Parse a data feed response (resp_type=6) with optional diagnostic drop tracking.
+     *
+     * If {@code preSnapshotDropCounts} is non-null, increments the count per topicId whenever
+     * a full-update (dataType=85) arrives for a topicId that has no SymbolMeta yet — which is
+     * the silent-drop branch that was suspected to cause 9:15-9:20 opening-candle data loss.
+     * Diagnostic purpose only: no behaviour change to the tick-emission path.
+     */
+    public static List<RawTick> parseDataFeed(byte[] data, Map<Integer, SymbolMeta> symbolMeta,
+                                               Map<String, String> hsmToFyersSymbol,
+                                               Map<Integer, Integer> preSnapshotDropCounts) {
         List<RawTick> ticks = new ArrayList<>();
         try {
             int messageNumber = readInt32(data, 3);
@@ -282,6 +298,12 @@ public class HsmBinaryParser {
                     offset++;
 
                     SymbolMeta meta = symbolMeta.get(topicId);
+                    // DIAGNOSTIC: if this topicId has no snapshot yet, count the drop. We still
+                    // advance the byte offset (so frame parsing continues correctly) but no fields
+                    // are recorded and no tick is emitted — the existing silent-drop behaviour.
+                    if (meta == null && preSnapshotDropCounts != null) {
+                        preSnapshotDropCounts.merge(topicId, 1, Integer::sum);
+                    }
                     String[] fields = (meta != null && "if".equals(meta.type)) ? INDEX_FIELDS : SCRIP_FIELDS;
                     boolean changed = false;
 

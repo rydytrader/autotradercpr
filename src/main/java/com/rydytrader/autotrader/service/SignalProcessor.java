@@ -18,15 +18,18 @@ public class SignalProcessor {
     private final MarketDataService marketDataService;
     private final CandleAggregator candleAggregator;
     private final WeeklyCprService weeklyCprService;
+    private final EmaService       emaService;
 
     public SignalProcessor(RiskSettingsStore riskSettings, EventService eventService,
                            QuantityService quantityService, MarketDataService marketDataService,
-                           CandleAggregator candleAggregator, WeeklyCprService weeklyCprService) {
+                           CandleAggregator candleAggregator, WeeklyCprService weeklyCprService,
+                           EmaService emaService) {
         this.riskSettings = riskSettings;
         this.eventService = eventService;
         this.quantityService = quantityService;
         this.marketDataService = marketDataService;
         this.candleAggregator = candleAggregator;
+        this.emaService = emaService;
         this.weeklyCprService = weeklyCprService;
     }
 
@@ -87,19 +90,18 @@ public class SignalProcessor {
             if (anchor > 0) {
                 double buffer = riskSettings.getStructuralSlBufferAtr();
                 double structSl = isBuy ? (anchor - atr * buffer) : (anchor + atr * buffer);
-                double structDist = Math.abs(close - structSl);
+                // Always use structural SL when enabled — it anchors to the broken level
+                // and guarantees the SL sits on the correct side of the support/resistance.
+                // The old "pick tighter" rule could place the default ATR-based SL inside
+                // the level's zone (e.g. below CPR top for a sell), causing premature stops
+                // on normal level retests.
+                sl = structSl;
+                useStructuralSl = true;
                 double defaultDist = Math.abs(close - defaultSl);
-                if (structDist < defaultDist) {
-                    sl = structSl;
-                    useStructuralSl = true;
-                    eventService.log("[INFO] " + symbol + " " + setup + " using structural SL " + fmt(structSl)
-                        + " (dist " + fmt(structDist) + ") — tighter than default " + fmt(defaultSl)
-                        + " (dist " + fmt(defaultDist) + ")");
-                } else {
-                    eventService.log("[INFO] " + symbol + " " + setup + " using default SL " + fmt(defaultSl)
-                        + " (dist " + fmt(defaultDist) + ") — tighter than structural " + fmt(structSl)
-                        + " (dist " + fmt(structDist) + ")");
-                }
+                double structDist = Math.abs(close - structSl);
+                eventService.log("[INFO] " + symbol + " " + setup + " using structural SL " + fmt(structSl)
+                    + " (dist " + fmt(structDist) + ", anchor " + fmt(anchor) + " ± " + buffer + "×ATR)"
+                    + " — default would be " + fmt(defaultSl) + " (dist " + fmt(defaultDist) + ")");
             }
         }
 
@@ -294,6 +296,15 @@ public class SignalProcessor {
                 shiftCandidates.putIfAbsent(wl.tc,    "weekly TC");
                 shiftCandidates.putIfAbsent(wl.bc,    "weekly BC");
                 shiftCandidates.putIfAbsent(wl.pivot, "weekly Pivot");
+            }
+            // 200 EMA as target shift candidate — only when the 200 EMA direction check
+            // is disabled (trade fires into the 200 EMA rather than being blocked by it).
+            // The 200 EMA acts as resistance (buys) or support (sells) for target capping.
+            if (!riskSettings.isEnableEma200DirectionCheck()) {
+                double ema200 = emaService.getEma200(symbol);
+                if (ema200 > 0) {
+                    shiftCandidates.putIfAbsent(ema200, "200 EMA");
+                }
             }
             Double bestLevel = null;
             String bestName = null;

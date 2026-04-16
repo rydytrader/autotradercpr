@@ -156,6 +156,21 @@ function renderMonitoring(d) {
     html += '<div style="border-top:1px dashed var(--border);margin:6px 0;"></div>';
     html += row('Traded Today', sc.tradedToday || 0, sc.tradedToday > 0 ? 'ok' : '');
     html += row('Filtered Today', sc.filteredToday || 0, sc.filteredToday > 0 ? 'warn' : '');
+    html += '<div style="border-top:1px dashed var(--border);margin:6px 0;"></div>';
+    var wc = sc.watchlistCount || 0;
+    var atrOk = (sc.atrLoaded || 0) >= wc && wc > 0;
+    var emaOk = (sc.emaLoaded || 0) >= wc && wc > 0;
+    var fcOk  = (sc.firstCandleLoaded || 0) >= wc && wc > 0;
+    html += row('EMA 20 Loaded', (sc.emaLoaded || 0) + '/' + wc, emaOk ? 'ok' : (sc.emaLoaded > 0 ? 'warn' : 'err'));
+    var ema200Ok = (sc.ema200Loaded || 0) >= wc && wc > 0;
+    html += row('EMA 200 Loaded', (sc.ema200Loaded || 0) + '/' + wc, ema200Ok ? 'ok' : (sc.ema200Loaded > 0 ? 'warn' : 'err'));
+    html += row('1st Bar Close', (sc.firstCandleLoaded || 0) + '/' + wc, fcOk ? 'ok' : (sc.firstCandleLoaded > 0 ? 'warn' : 'err'));
+    var vPass = sc.validationPass, vFail = sc.validationFail, vTotal = sc.validationTotal;
+    if (vTotal != null && vTotal >= 0) {
+        html += row('Open Refresh Validate', vFail === 0 ? vPass + '/' + vTotal + ' OK' : vFail + '/' + vTotal + ' FAIL', vFail === 0 ? 'ok' : 'err');
+    } else {
+        html += row('Open Refresh Validate', 'Pending', '');
+    }
     html += '</div>';
 
     // Trading card

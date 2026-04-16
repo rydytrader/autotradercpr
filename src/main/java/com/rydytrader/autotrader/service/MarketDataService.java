@@ -86,6 +86,10 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
 
     // Opening refresh: track last run date so we only fire once per day
     private volatile java.time.LocalDate lastOpeningRefreshDate;
+    // Opening refresh validation results (set by validateOpeningRefresh, read by status API)
+    private volatile int validationPass = -1;   // -1 = not run yet
+    private volatile int validationFail = -1;
+    private volatile int validationTotal = -1;
 
     // Symbol mappings
     private final Map<String, String> hsmToFyersSymbol = new ConcurrentHashMap<>();
@@ -269,6 +273,10 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                 // 4. Connect WebSocket
                 wsClient = new FyersDataWebSocket(hsmKey, hsmTokens, hsmToFyersSymbol,
                     false, CHANNEL_NUM, this);
+                // Diagnostic: route HSM parser drop-count messages to the event log
+                wsClient.setEventLogSink(msg -> {
+                    if (eventService != null) eventService.log(msg);
+                });
                 wsClient.connectBlocking();
 
                 // 5. Start ping scheduler (10s)
@@ -1030,6 +1038,15 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             lastOpeningRefreshDate = today;
             eventService.log("[SUCCESS] Opening refresh complete — firstCandleClose, dayOpen, OR, EMA, ATR all re-seeded from authoritative Fyers history");
 
+            // Diagnostic: log pre-snapshot drop summary captured by the HSM parser between
+            // subscribe-time and now. Tells us whether the 9:15-9:20 data loss came from
+            // updates arriving before their snapshot (parser-side drop) or from Fyers not
+            // sending any data at all (server-side rate limit).
+            if (wsClient != null) {
+                String summary = wsClient.buildPreSnapshotDropSummary();
+                eventService.log("[INFO] [HsmParser] " + summary);
+            }
+
             // Schedule validation 30 seconds later — gives the refresh a moment to settle,
             // then re-fetches 5 random watchlist symbols fresh from Fyers and diffs them
             // against the in-memory values to confirm the refresh worked.
@@ -1125,6 +1142,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                     fail++;
                 }
             }
+            // Store results for status API
+            validationPass = pass;
+            validationFail = fail;
+            validationTotal = n;
+
             String summary = "[INFO] [VALIDATE] Done — " + pass + " pass, " + fail + " fail out of " + n + " sampled";
             eventService.log(fail == 0 ? "[SUCCESS] " + summary.substring(6) : summary);
 
@@ -1302,6 +1324,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     }
 
     public int getEmitterCount() { return emitters.size(); }
+
+    /** Opening refresh validation results (-1 = not run yet). */
+    public int getValidationPass()  { return validationPass; }
+    public int getValidationFail()  { return validationFail; }
+    public int getValidationTotal() { return validationTotal; }
 
     /** Get current tick count (for debug/status). */
     public int getTickCount() {

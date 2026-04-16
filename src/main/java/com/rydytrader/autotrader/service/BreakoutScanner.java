@@ -318,6 +318,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // EMA direction check for buys: close must be above 20 EMA
         double ema = emaService.getEma(fyersSymbol);
         if (riskSettings.isEnableEmaDirectionCheck() && ema > 0 && close < ema) return null;
+        // 200 EMA direction check for buys: close must be above 200 EMA
+        double ema200 = emaService.getEma200(fyersSymbol);
+        if (riskSettings.isEnableEma200DirectionCheck() && ema200 > 0 && close < ema200) return null;
 
         double r4 = levels.getR4(), r3 = levels.getR3(), r2 = levels.getR2();
         double r1 = levels.getR1(), ph = levels.getPh();
@@ -388,6 +391,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // EMA direction check for sells: close must be below 20 EMA
         double ema = emaService.getEma(fyersSymbol);
         if (riskSettings.isEnableEmaDirectionCheck() && ema > 0 && close > ema) return null;
+        // 200 EMA direction check for sells: close must be below 200 EMA
+        double ema200 = emaService.getEma200(fyersSymbol);
+        if (riskSettings.isEnableEma200DirectionCheck() && ema200 > 0 && close > ema200) return null;
 
         double s4 = levels.getS4(), s3 = levels.getS3(), s2 = levels.getS2();
         double s1 = levels.getS1(), pl = levels.getPl();

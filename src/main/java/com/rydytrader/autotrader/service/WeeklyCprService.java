@@ -625,6 +625,11 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
             return "LPT";
         }
 
+        // Weekly NEUTRAL skip: if the flag is off, don't fire any trade when weekly is neutral
+        if (!wBull && !wBear && !riskSettings.isEnableWeeklyNeutralTrades()) {
+            return "SKIP";
+        }
+
         if (isBuy) {
             if (wBull && dBull) return "HPT";
             return "LPT";

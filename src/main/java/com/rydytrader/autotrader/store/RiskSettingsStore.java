@@ -57,8 +57,9 @@ public class RiskSettingsStore {
         // Risk/Reward filter — skip trade if |target−entry| / |entry−SL| < minRiskRewardRatio
         volatile boolean enableRiskRewardFilter = true;
         volatile double  minRiskRewardRatio     = 1.0;
-        // 20 EMA filters
-        volatile boolean enableEmaDirectionCheck = true; // buy requires close > EMA, sell requires close < EMA
+        // EMA filters
+        volatile boolean enableEmaDirectionCheck = true; // buy requires close > EMA(20), sell requires close < EMA(20)
+        volatile boolean enableEma200DirectionCheck = true; // buy requires close > EMA(200), sell requires close < EMA(200)
         volatile double emaCloseDistanceAtr = 0.75;  // legacy — kept for backward compat with old risk-settings.json
         // EMA level-count filter — counts CPR zones strictly between EMA and the broken level.
         // Allow only when count == 0 (EMA is in the zone immediately adjacent to the broken level).
@@ -87,6 +88,7 @@ public class RiskSettingsStore {
         volatile boolean enableLpt      = true;  // Low Probable Trade signals (everything else, half qty)
         volatile double lptQtyFactor    = 0.50;  // LPT qty multiplier (0.50 = half)
         volatile double neutralWeeklyQtyFactor = 0.50; // extra qty multiplier when weekly trend is NEUTRAL (stacks on LPT)
+        volatile boolean enableWeeklyNeutralTrades = true; // if false, skip all trades when weekly trend is NEUTRAL
         // CPR Width scanner group toggles
         volatile double narrowCprMaxWidth = 0.1;  // CPR width % threshold for narrow CPR stocks
         volatile double insideCprMaxWidth = 0.5;  // max CPR width % for inside CPR stocks (0 = no filter)
@@ -175,6 +177,7 @@ public class RiskSettingsStore {
     public boolean isEnableRiskRewardFilter()      { return cfg().enableRiskRewardFilter; }
     public double  getMinRiskRewardRatio()         { return cfg().minRiskRewardRatio; }
     public boolean isEnableEmaDirectionCheck()      { return cfg().enableEmaDirectionCheck; }
+    public boolean isEnableEma200DirectionCheck()   { return cfg().enableEma200DirectionCheck; }
     public double getEmaCloseDistanceAtr()         { return cfg().emaCloseDistanceAtr; }
     public boolean isEnableEmaLevelCountFilter()   { return cfg().enableEmaLevelCountFilter; }
     public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
@@ -202,6 +205,7 @@ public class RiskSettingsStore {
     public boolean isEnableLpt()          { return cfg().enableLpt; }
     public double getLptQtyFactor()       { return cfg().lptQtyFactor; }
     public double getNeutralWeeklyQtyFactor() { return cfg().neutralWeeklyQtyFactor; }
+    public boolean isEnableWeeklyNeutralTrades() { return cfg().enableWeeklyNeutralTrades; }
     public double getNarrowCprMaxWidth() { return cfg().narrowCprMaxWidth; }
     public double getInsideCprMaxWidth() { return cfg().insideCprMaxWidth; }
     public double getScanMinPrice() { return cfg().scanMinPrice; }
@@ -238,6 +242,7 @@ public class RiskSettingsStore {
     public void setEnableLpt(boolean v)        { cfg().enableLpt = v; }
     public void setLptQtyFactor(double v)      { cfg().lptQtyFactor = v; }
     public void setNeutralWeeklyQtyFactor(double v) { cfg().neutralWeeklyQtyFactor = v; }
+    public void setEnableWeeklyNeutralTrades(boolean v) { cfg().enableWeeklyNeutralTrades = v; }
     public void setNarrowCprMaxWidth(double v) { cfg().narrowCprMaxWidth = v; }
     public void setInsideCprMaxWidth(double v) { cfg().insideCprMaxWidth = v; }
     public void setScanMinPrice(double v) { cfg().scanMinPrice = v; }
@@ -297,6 +302,7 @@ public class RiskSettingsStore {
     public void setEnableRiskRewardFilter(boolean v)       { cfg().enableRiskRewardFilter = v; }
     public void setMinRiskRewardRatio(double v)            { cfg().minRiskRewardRatio = v; }
     public void setEnableEmaDirectionCheck(boolean v)       { cfg().enableEmaDirectionCheck = v; }
+    public void setEnableEma200DirectionCheck(boolean v)   { cfg().enableEma200DirectionCheck = v; }
     public void setEmaCloseDistanceAtr(double v)           { cfg().emaCloseDistanceAtr = v; }
     public void setEnableEmaLevelCountFilter(boolean v)    { cfg().enableEmaLevelCountFilter = v; }
     public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
@@ -421,6 +427,7 @@ public class RiskSettingsStore {
             upsert("enableRiskRewardFilter", String.valueOf(c.enableRiskRewardFilter));
             upsert("minRiskRewardRatio", String.valueOf(c.minRiskRewardRatio));
             upsert("enableEmaDirectionCheck", String.valueOf(c.enableEmaDirectionCheck));
+            upsert("enableEma200DirectionCheck", String.valueOf(c.enableEma200DirectionCheck));
             upsert("emaCloseDistanceAtr", String.valueOf(c.emaCloseDistanceAtr));
             upsert("enableEmaLevelCountFilter", String.valueOf(c.enableEmaLevelCountFilter));
             upsert("enableTargetShift", String.valueOf(c.enableTargetShift));
@@ -447,6 +454,7 @@ public class RiskSettingsStore {
             upsert("enableLpt", String.valueOf(c.enableLpt));
             upsert("lptQtyFactor", String.valueOf(c.lptQtyFactor));
             upsert("neutralWeeklyQtyFactor", String.valueOf(c.neutralWeeklyQtyFactor));
+            upsert("enableWeeklyNeutralTrades", String.valueOf(c.enableWeeklyNeutralTrades));
             upsert("narrowCprMaxWidth", String.valueOf(c.narrowCprMaxWidth));
             upsert("insideCprMaxWidth", String.valueOf(c.insideCprMaxWidth));
             upsert("scanMinPrice", String.valueOf(c.scanMinPrice));
@@ -528,6 +536,7 @@ public class RiskSettingsStore {
                     case "enableRiskRewardFilter" -> c.enableRiskRewardFilter = Boolean.parseBoolean(v);
                     case "minRiskRewardRatio" -> c.minRiskRewardRatio = Double.parseDouble(v);
                     case "enableEmaDirectionCheck" -> c.enableEmaDirectionCheck = Boolean.parseBoolean(v);
+                    case "enableEma200DirectionCheck" -> c.enableEma200DirectionCheck = Boolean.parseBoolean(v);
                     case "emaCloseDistanceAtr" -> c.emaCloseDistanceAtr = Double.parseDouble(v);
                     case "enableEmaLevelCountFilter" -> c.enableEmaLevelCountFilter = Boolean.parseBoolean(v);
                     case "enableTargetShift" -> c.enableTargetShift = Boolean.parseBoolean(v);
@@ -554,6 +563,7 @@ public class RiskSettingsStore {
                     case "enableLpt"         -> c.enableLpt = Boolean.parseBoolean(v);
                     case "lptQtyFactor"      -> c.lptQtyFactor = Double.parseDouble(v);
                     case "neutralWeeklyQtyFactor" -> c.neutralWeeklyQtyFactor = Double.parseDouble(v);
+                    case "enableWeeklyNeutralTrades" -> c.enableWeeklyNeutralTrades = Boolean.parseBoolean(v);
                     case "narrowCprMaxWidth" -> c.narrowCprMaxWidth = Double.parseDouble(v);
                     case "insideCprMaxWidth" -> c.insideCprMaxWidth = Double.parseDouble(v);
                     case "scanMinPrice" -> c.scanMinPrice = Double.parseDouble(v);

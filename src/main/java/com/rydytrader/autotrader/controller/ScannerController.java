@@ -138,6 +138,7 @@ public class ScannerController {
         card.put("atp", Math.round(candleAggregator.getAtp(fyersSymbol) * 100.0) / 100.0);
         card.put("atr", Math.round(atrService.getAtr(fyersSymbol) * 100.0) / 100.0);
         card.put("ema20", Math.round(emaService.getEma(fyersSymbol) * 100.0) / 100.0);
+        card.put("ema200", Math.round(emaService.getEma200(fyersSymbol) * 100.0) / 100.0);
         card.put("dayOpen", Math.round(candleAggregator.getDayOpen(fyersSymbol) * 100.0) / 100.0);
 
         // Open classification: IV (Inside Value), OV (Outside Value), EV (Extended Value)
@@ -239,6 +240,12 @@ public class ScannerController {
         status.put("signalSource", riskSettings.getSignalSource());
         status.put("watchlistCount", marketDataService.getWatchlist().size());
         status.put("atrLoaded", atrService.getLoadedCount());
+        status.put("emaLoaded", emaService.getLoadedCount());
+        status.put("ema200Loaded", emaService.getEma200LoadedCount());
+        status.put("firstCandleLoaded", candleAggregator.getFirstCandleCloseCount());
+        status.put("validationPass", marketDataService.getValidationPass());
+        status.put("validationFail", marketDataService.getValidationFail());
+        status.put("validationTotal", marketDataService.getValidationTotal());
         status.put("timeframe", riskSettings.getScannerTimeframe());
         status.put("higherTimeframe", riskSettings.getHigherTimeframe());
         status.put("enableHpt", riskSettings.isEnableHpt());
@@ -273,6 +280,23 @@ public class ScannerController {
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
             .contentType(MediaType.TEXT_PLAIN)
             .body(csv.toString());
+    }
+
+    @GetMapping("/api/scanner/fyers-watchlist")
+    public ResponseEntity<String> getFyersWatchlist() {
+        // Export in Fyers import format: one symbol per line, e.g. "NSE:RELIANCE-EQ"
+        StringBuilder sb = new StringBuilder();
+        for (Map<String, Object> card : getWatchlist()) {
+            Object sym = card.get("symbol");
+            if (sym != null) {
+                sb.append(sym.toString()).append("\n");
+            }
+        }
+        String filename = "fyers-watchlist-" + java.time.LocalDate.now() + ".txt";
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+            .contentType(MediaType.TEXT_PLAIN)
+            .body(sb.toString());
     }
 
     @GetMapping("/api/scanner/simulate-qty")
