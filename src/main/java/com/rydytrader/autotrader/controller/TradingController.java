@@ -143,10 +143,11 @@ public class TradingController {
                     openRisk += risk;
                 }
             }
-            // Consumed risk: net realized P&L (wins offset losses)
-            double netPnl = tradeHistoryService.getTrades().stream()
+            // Consumed risk: net realized P&L (profits replenish the budget)
+            // If net positive (winning day), consumed risk = 0 (full budget available)
+            double netRealizedPnl = tradeHistoryService.getTrades().stream()
                 .mapToDouble(t -> t.getNetPnl()).sum();
-            double consumedRisk = netPnl < 0 ? Math.abs(netPnl) : 0;
+            double consumedRisk = netRealizedPnl < 0 ? Math.abs(netRealizedPnl) : 0;
             double totalRisk = openRisk + consumedRisk;
             if (totalRisk + riskPerTrade > maxLoss) {
                 String msg = "Signal ignored — risk exposure limit reached (open: ₹" + (int)openRisk
@@ -235,22 +236,30 @@ public class TradingController {
     public Map<String, Object> getPositions() {
         List<Map<String, Object>> positions = pollingService.fetchPositions().stream().map(p -> {
             Map<String, Object> m = new java.util.LinkedHashMap<>();
+            // Load persisted state first — authoritative source for qty/SL/target after T1 fills
+            Map<String, Object> state = positionStateStore.load(p.getSymbol());
+            // Use remainingQty from positionStateStore after T1 fill (authoritative)
+            int displayQty = p.getQty();
+            if (state != null && Boolean.TRUE.equals(state.get("t1Filled"))) {
+                try {
+                    int remaining = Integer.parseInt(state.getOrDefault("remainingQty", "0").toString());
+                    if (remaining > 0) displayQty = remaining;
+                } catch (NumberFormatException ignored) {}
+            }
             // Overlay live LTP from WebSocket if available
             double liveLtp = marketDataService.getLtp(p.getSymbol());
             double ltp = liveLtp > 0 ? liveLtp : p.getLtp();
             double pnl = "LONG".equals(p.getSide())
-                ? (ltp - p.getAvgPrice()) * p.getQty()
-                : (p.getAvgPrice() - ltp) * p.getQty();
+                ? (ltp - p.getAvgPrice()) * displayQty
+                : (p.getAvgPrice() - ltp) * displayQty;
             m.put("symbol",    p.getSymbol());
-            m.put("qty",       p.getQty());
+            m.put("qty",       displayQty);
             m.put("side",      p.getSide());
             m.put("avgPrice",  p.getAvgPrice());
             m.put("ltp",       ltp);
             m.put("pnl",       pnl);
             m.put("setup",     p.getSetup());
             m.put("entryTime", p.getEntryTime());
-            // Include description and probability from persisted state
-            Map<String, Object> state = positionStateStore.load(p.getSymbol());
             m.put("description", state != null ? state.getOrDefault("description", "") : "");
             m.put("probability", pollingService.getProbability(p.getSymbol()));
             // SL and target prices from persisted state
@@ -296,11 +305,10 @@ public class TradingController {
                 openRisk += risk;
             }
         }
-        // Consumed risk = net realized P&L (negative = risk consumed, positive = risk recovered)
-        // If net P&L is positive (winning day), consumed risk is 0
-        double netRealizedPnl = tradeHistoryService.getTrades().stream()
+        // Consumed risk: net realized P&L (profits replenish the budget)
+        double netRealizedPnl2 = tradeHistoryService.getTrades().stream()
             .mapToDouble(t -> t.getNetPnl()).sum();
-        double consumedRisk = netRealizedPnl < 0 ? Math.abs(netRealizedPnl) : 0;
+        double consumedRisk = netRealizedPnl2 < 0 ? Math.abs(netRealizedPnl2) : 0;
         double maxDailyLoss = riskSettings.getMaxDailyLoss();
 
         Map<String, Object> result = new java.util.LinkedHashMap<>();
@@ -419,8 +427,8 @@ public class TradingController {
                 else if ("SHORT".equals(side) && sl > avg) openRisk += qty * (sl - avg);
             }
         }
-        consumedRisk = tradeHistoryService.getTrades().stream()
-            .filter(t -> t.getNetPnl() < 0).mapToDouble(t -> Math.abs(t.getNetPnl())).sum();
+        double netPnlAll = tradeHistoryService.getTrades().stream().mapToDouble(t -> t.getNetPnl()).sum();
+        consumedRisk = netPnlAll < 0 ? Math.abs(netPnlAll) : 0;
         double maxLoss = riskSettings.getMaxDailyLoss();
         trading.put("openRisk", Math.round(openRisk * 100.0) / 100.0);
         trading.put("consumedRisk", Math.round(consumedRisk * 100.0) / 100.0);

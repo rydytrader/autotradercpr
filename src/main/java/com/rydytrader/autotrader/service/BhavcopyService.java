@@ -73,6 +73,10 @@ public class BhavcopyService {
     @org.springframework.context.annotation.Lazy
     private SymbolMasterService symbolMasterService;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private com.rydytrader.autotrader.store.RiskSettingsStore riskSettings;
+
     public BhavcopyService(EventService eventService) {
         this.eventService = eventService;
         new File("../store").mkdirs();
@@ -341,45 +345,78 @@ public class BhavcopyService {
      * of the raw range x = High - Low: z = (x - μ) / σ. z < -1.5 → SMALL (genuinely
      * tight bar). Otherwise → LARGE.
      */
+    /**
+     * Classify narrow CPR stocks as SMALL or LARGE based on the ratio of prior day's
+     * range (PDH - PDL) to today's CPR width (|TC - BC|).
+     *
+     * SMALL = low ratio → yesterday was quiet, PDH/PDL close to CPR → coiled spring,
+     *         high breakout potential.
+     * LARGE = high ratio → yesterday was wild, PDH/PDL far from CPR → exhausted,
+     *         likely to stay range-bound.
+     *
+     * Threshold: ratio < 5.0 → SMALL, else LARGE. The rangeZScore field stores the
+     * raw ratio for display (not a z-score anymore despite the field name).
+     */
+    /** Re-run NS/NL classification on current cache (called when ratio threshold changes in settings). */
+    public void reclassifyNarrowRangeTypes() {
+        if (!cache.isEmpty()) {
+            classifyNarrowRangeTypes(cache);
+        }
+    }
+
+    /**
+     * Classify narrow CPR stocks as SMALL or LARGE using z-score of the PDH-PDL/CPR ratio
+     * against the stock's own 20-day history of the same ratio.
+     *
+     * z < 0  → SMALL (today's ratio is below the stock's own average = tighter than usual)
+     * z >= 0 → LARGE (today's ratio is at or above average = normal or wider than usual)
+     *
+     * Self-calibrating per stock — no fixed threshold needed. A banking stock with typically
+     * tight ratios (3-5) and a pharma stock with wide ratios (10-20) are each compared
+     * against their own norm.
+     */
     private void classifyNarrowRangeTypes(Map<String, CprLevels> todayCache) {
         List<Map<String, CprLevels>> history = new ArrayList<>();
         if (!cache.isEmpty()) history.add(cache);
         for (DaySnapshot snap : dailyHistory) history.add(snap.symbols);
 
         int window = Math.min(20, history.size());
-        if (window < 10) {
-            log.warn("[BhavcopyService] Only {} days of history — narrow range z-score skipped", window);
-            return;
-        }
-
         int classified = 0;
+
         for (CprLevels today : todayCache.values()) {
             String sym = today.getSymbol();
-            List<Double> ranges = new ArrayList<>();
+            double cprWidth = Math.abs(today.getTc() - today.getBc());
+            double pdRange = today.getPh() - today.getPl();
+            if (cprWidth <= 0 || pdRange <= 0) continue;
+            double todayRatio = pdRange / cprWidth;
+
+            // Collect 20-day ratio history for this stock
+            List<Double> ratios = new ArrayList<>();
             for (int i = 0; i < window; i++) {
                 CprLevels h = history.get(i).get(sym);
                 if (h != null) {
-                    double r = h.getHigh() - h.getLow();
-                    if (r > 0) ranges.add(r);
+                    double hw = Math.abs(h.getTc() - h.getBc());
+                    double hr = h.getPh() - h.getPl();
+                    if (hw > 0 && hr > 0) ratios.add(hr / hw);
                 }
             }
-            if (ranges.size() < 10) continue;
 
+            if (ratios.size() < 5) continue; // insufficient history — skip classification
+
+            // Compute mean and std of historical ratios
             double sum = 0;
-            for (double r : ranges) sum += r;
-            double mean = sum / ranges.size();
+            for (double r : ratios) sum += r;
+            double mean = sum / ratios.size();
             double sq = 0;
-            for (double r : ranges) { double d = r - mean; sq += d * d; }
-            double std = Math.sqrt(sq / ranges.size());
-            if (std <= 1e-9) continue;
+            for (double r : ratios) { double d = r - mean; sq += d * d; }
+            double std = Math.sqrt(sq / ratios.size());
 
-            double x = today.getHigh() - today.getLow();
-            double z = (x - mean) / std;
+            double z = std > 1e-9 ? (todayRatio - mean) / std : 0;
             today.setRangeZScore(Math.round(z * 100.0) / 100.0);
-            today.setNarrowRangeType(z < -1.5 ? "SMALL" : "LARGE");
+            today.setNarrowRangeType(z < 0.5 ? "SMALL" : "LARGE");
             classified++;
         }
-        log.info("[BhavcopyService] Classified range z-score for {} stocks ({}-day history)", classified, window);
+        log.info("[BhavcopyService] Classified narrow range type for {} stocks (z-score of PDH-PDL/CPR ratio, z<0=SMALL)", classified);
     }
 
     // ── Volume/Turnover 20-day averages from daily history ───────────────────

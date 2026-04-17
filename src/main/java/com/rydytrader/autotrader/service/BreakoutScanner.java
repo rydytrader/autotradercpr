@@ -218,13 +218,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     return;
                 }
                 String buyNote = !priorProb.equals(prob) ? "Probability " + priorProb + " → " + prob + " (NIFTY opposes buy)" : null;
-                // Log co-occurrence: CPR breakout + Day High break on same candle
-                if (!"BUY_ABOVE_DH".equals(buySetup)) {
-                    double dh = marketDataService.getDayHigh(fyersSymbol);
-                    if (dh > 0 && close > dh) {
-                        eventService.log("[INFO] " + buySetup + " + DH breakout on same candle for " + fyersSymbol);
-                    }
-                }
                 fireSignal(fyersSymbol, buySetup, open, high, low, close, candle.volume, atr, levels, prob, buyNote);
                 return;
             } else {
@@ -279,13 +272,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     return;
                 }
                 String sellNote = !priorProbSell.equals(prob) ? "Probability " + priorProbSell + " → " + prob + " (NIFTY opposes sell)" : null;
-                // Log co-occurrence: CPR breakout + Day Low break on same candle
-                if (!"SELL_BELOW_DL".equals(sellSetup)) {
-                    double dl = marketDataService.getDayLow(fyersSymbol);
-                    if (dl > 0 && close < dl) {
-                        eventService.log("[INFO] " + sellSetup + " + DL breakout on same candle for " + fyersSymbol);
-                    }
-                }
                 fireSignal(fyersSymbol, sellSetup, open, high, low, close, candle.volume, atr, levels, prob, sellNote);
             } else {
                 // No sell breakout detected — log if close is below a key level for debugging
@@ -716,7 +702,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             case "BUY_ABOVE_R3"     -> levels.getR3();
             case "BUY_ABOVE_R4"     -> levels.getR4();
             case "BUY_ABOVE_S1_PDL" -> Math.max(levels.getS1(), levels.getPl());
-            case "BUY_ABOVE_DH"     -> candleAggregator.getDayHighBeforeLast(fyersSymbol);
             case "SELL_BELOW_CPR"    -> Math.min(levels.getTc(), levels.getBc());
             case "SELL_BELOW_S1_PDL" -> Math.min(levels.getS1(), levels.getPl());
             case "SELL_BELOW_S2"     -> levels.getS2();
@@ -729,7 +714,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             case "BUY_ABOVE_S2"      -> levels.getS2();
             case "BUY_ABOVE_S3"      -> levels.getS3();
             case "BUY_ABOVE_S4"      -> levels.getS4();
-            case "SELL_BELOW_DL"     -> candleAggregator.getDayLowBeforeLast(fyersSymbol);
             default -> 0;
         };
     }

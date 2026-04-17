@@ -483,6 +483,11 @@
             <button class="filter-btn" onclick="setFilter('INSIDE', this)">Inside</button>
         </span>
         <div class="filter-sep"></div>
+        <span class="range-filter-group">
+            <button class="filter-btn" onclick="toggleRangeFilter('SMALL', this)">Small</button>
+            <button class="filter-btn" onclick="toggleRangeFilter('LARGE', this)">Large</button>
+        </span>
+        <div class="filter-sep"></div>
         <span class="prob-filter-group">
             <button class="filter-btn" onclick="toggleProbFilter('HPT', this)">HPT</button>
             <button class="filter-btn" onclick="toggleProbFilter('LPT', this)">LPT</button>
@@ -547,6 +552,7 @@
     var allData = [];
     var cprFilter = 'all';
     var probFilter = null;
+    var rangeFilter = null;
     var orFilter = null;
     var ovFilter = null;
     var signalFilter = false;
@@ -576,6 +582,20 @@
             b.classList.remove('active');
         });
         btn.classList.add('active');
+        renderCards();
+    };
+
+    window.toggleRangeFilter = function(type, btn) {
+        if (rangeFilter === type) {
+            rangeFilter = null;
+            btn.classList.remove('active');
+        } else {
+            rangeFilter = type;
+            document.querySelectorAll('.range-filter-group .filter-btn').forEach(function(b) {
+                b.classList.remove('active');
+            });
+            btn.classList.add('active');
+        }
         renderCards();
     };
 
@@ -673,6 +693,7 @@
                 }
             }
             if (probFilter && d.probability !== probFilter) return false;
+            if (rangeFilter && d.narrowRangeType !== rangeFilter) return false;
             if (orFilter && d.orStatus !== orFilter) return false;
             if (ovFilter && d.openClass !== ovFilter) return false;
             if (signalFilter && (!d.lastSignal || d.lastSignal.status !== 'TRADED')) return false;
@@ -1276,12 +1297,12 @@ function showInsideCpr() {
             <!-- 1. CPR Width -->
             <div style="margin-bottom:28px;">
                 <div style="font-weight:700; font-size:0.85rem; color:var(--accent-cyan); margin-bottom:10px;">1. CPR Width</div>
-                <div style="color:var(--text-secondary); margin-bottom:14px; font-size:0.72rem; line-height:1.6;">Scans FNO stocks with narrow or inside CPR. Both types split by range z-score vs the stock's own 20-day history: <b>z = (x − μ) / σ</b>, where x = prior day's (H − L). Small range (z &lt; −1.5) = genuine tight bar. Large range = normal/wide bar where close landed near the midpoint.</div>
+                <div style="color:var(--text-secondary); margin-bottom:14px; font-size:0.72rem; line-height:1.6;">Scans FNO stocks with narrow or inside CPR. Both types classified by <b>z-score of PDH-PDL/CPR ratio</b> vs the stock's own 20-day history. z &lt; 0 = Small (tighter than usual for this stock — coiled spring). z ≥ 0 = Large (normal or wider — exhausted). Self-calibrating per stock, no manual threshold.</div>
                 <div style="display:flex; flex-wrap:wrap; gap:12px 20px; font-size:0.72rem;">
-                    <div><span class="scan-badge narrow-small" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NS</span> Narrow + Small Range (z &lt; −1.5)</div>
-                    <div><span class="scan-badge narrow-large" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NL</span> Narrow + Large Range</div>
-                    <div><span class="scan-badge inside-small" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">IS</span> Inside + Small Range (z &lt; −1.5)</div>
-                    <div><span class="scan-badge inside-large" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">IL</span> Inside + Large Range</div>
+                    <div><span class="scan-badge narrow-small" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NS</span> Narrow + Small (coiled spring — yesterday quiet, high breakout potential)</div>
+                    <div><span class="scan-badge narrow-large" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NL</span> Narrow + Large (exhausted — yesterday wild, lower potential)</div>
+                    <div><span class="scan-badge inside-small" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">IS</span> Inside + Small (coiled spring — yesterday quiet, high breakout potential)</div>
+                    <div><span class="scan-badge inside-large" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">IL</span> Inside + Large (exhausted — yesterday wild, lower potential)</div>
                 </div>
             </div>
 

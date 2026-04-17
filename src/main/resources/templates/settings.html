@@ -159,9 +159,9 @@
         <!-- Default SL -->
         <div class="section-card" style="margin-bottom:0;">
             <div style="padding:20px 22px; text-align:center;">
-                <div class="stat-label" style="margin-bottom:8px;">Default SL</div>
+                <div class="stat-label" style="margin-bottom:8px;">Structural SL</div>
                 <div class="stat-value" id="statDefaultSl" style="font-size:2rem; color:var(--accent-red);">—</div>
-                <div class="stat-sub" id="statDefaultSlSub" style="margin-top:8px;">ATR × Multiplier</div>
+                <div class="stat-sub" id="statDefaultSlSub" style="margin-top:8px;">Level ± Buffer × ATR</div>
                 <div class="stat-sub" id="statTrailSlSub" style="margin-top:4px;">Trailing SL status</div>
             </div>
         </div>
@@ -273,26 +273,19 @@
         <div class="section-body">
             <div class="form-grid">
                 <div class="form-group">
-                    <label class="form-label">Fixed SL (ATR Period / Multiplier)</label>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <input type="number" id="atrPeriod" class="form-control" min="5" max="50" step="1" style="width:75px; text-align:center;" placeholder="14">
-                        <span style="color:var(--text-muted); font-family:var(--font-mono); font-size:0.82rem;">×</span>
-                        <input type="number" id="atrMultiplier" class="form-control" min="0.5" max="5" step="0.1" style="width:75px; text-align:center;" placeholder="2.0">
-                    </div>
-                    <div class="form-hint">SL = Entry ± ATR(period) × multiplier</div>
-                </div>
-                <div class="form-group">
                     <label class="form-label">Structural SL (level-anchored)</label>
                     <div style="display:flex; align-items:center; gap:10px; margin-top:4px; flex-wrap:wrap;">
                         <input type="checkbox" id="enableStructuralSl" style="width:18px;height:18px;accent-color:var(--accent-cyan);flex-shrink:0;">
                         <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Enable structural SL</span>
                     </div>
                     <div style="display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap;">
+                        <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">ATR Period</span>
+                        <input type="number" id="atrPeriod" class="form-control" min="5" max="50" step="1" style="width:75px; text-align:center;" placeholder="14">
                         <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Buffer</span>
                         <input type="number" id="structuralSlBufferAtr" class="form-control" min="0.1" max="3" step="0.1" style="width:75px; text-align:center;" placeholder="1.0">
-                        <span style="color:var(--text-secondary); font-size:0.82rem;">ATR</span>
+                        <span style="color:var(--text-secondary); font-size:0.82rem;">× ATR</span>
                     </div>
-                    <div class="form-hint">When enabled, computes the structural SL (level ∓ buffer × ATR) and picks the TIGHTER of structural vs Fixed SL on every signal. CPR and R/S breakouts anchor to the level being tested. Paired zones (R1+PDH, S1+PDL, CPR) anchor to the outer edge. Day High / Day Low breakouts always use Fixed SL above.</div>
+                    <div class="form-hint">SL = anchor ± buffer × ATR(period). Anchored to the broken level (CPR, R1/PDH, R2, etc.) or 20 EMA (for DH/DL breakouts). ATR period also used for candle filters and volatility measures.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Trailing SL</label>
@@ -360,12 +353,24 @@
                             <input type="number" id="neutralWeeklyQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         </label>
                     </div>
-                    <div class="form-hint">LPT = weekly+daily not aligned, magnets, EV reversals, or HPT downgraded inside OR. HPT = full qty (always 1.0×). When weekly NEUTRAL trades are allowed, qty is further reduced by the factor next to the checkbox (default 0.5, stacks on LPT: 0.5 × 0.5 = 0.25). Uncheck to skip all trades when weekly is NEUTRAL.</div>
+                    <div class="form-hint">Weekly NEUTRAL trades are always LPT (no weekly conviction). When allowed, qty = LPT × NEUTRAL factor (default 0.5 × 0.5 = 0.25 of base). Uncheck to skip all trades when weekly is NEUTRAL.</div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 10px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Inside OR on IV/OV days Qty ×</span>
+                        <input type="number" id="insideOrQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    </div>
+                    <div class="form-hint">On IV/OV days, if the breakout candle is inside the Opening Range (OR neutral), qty is reduced by this factor. Default 0.50. Set to 1.0 to disable (full qty even inside OR).</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Minimum Absolute Profit</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">₹</span>
+                        <input type="number" id="minAbsoluteProfit" class="form-control" step="50" min="0" max="5000" style="width:100px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    </div>
+                    <div class="form-hint">Skip trade if expected profit (qty × target distance) is below this amount. Catches trades where stacked qty reductions made the position too small. Set to 0 to disable.</div>
                 </div>
             </div>
         </div>
     </div>
-
         <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
     </div><!-- /tab-risk -->
 
@@ -430,6 +435,16 @@
                         <input type="number" id="oppositeWickRatio" class="form-control" step="0.1" min="1.0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-muted); font-size: 0.75rem; font-family: var(--font-mono);">wick/body to reject counter-pressure (default 2.0)</span>
                     </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Large Candle Body Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableLargeCandleBodyFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip if candle body &gt;</span>
+                        <input type="number" id="largeCandleBodyAtrThreshold" class="form-control" step="0.5" min="1.0" max="10.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">× ATR</span>
+                    </div>
+                    <div class="form-hint">Rejects breakout candles with excessively large body (|close − open|). Catches exhaustion moves where the stock has already run too far on a single candle. Default 4.0 ATR catches only extreme spikes.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Volume Filter</label>
@@ -663,7 +678,7 @@
                             % (0 = no filter)
                         </label>
                     </div>
-                    <div class="form-hint">Width as % of close price. Stocks with CPR wider than threshold are excluded. Restart required for changes to take effect.</div>
+                    <div class="form-hint">Width as % of close price. Stocks with CPR wider than threshold are excluded. You can tighten mid-day (fewer stocks from the existing set), but widening requires a restart (new stocks need WebSocket subscription + ATR/EMA seed).</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Stock Price Range (₹)</label>
@@ -725,16 +740,16 @@
                     <label class="form-label">Include in Watchlist</label>
                     <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
                         <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
-                            <input type="checkbox" id="scanIncludeNS" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:var(--accent-green);">NS</b> — Narrow + Small Range (z &lt; −1.5)
+                            <input type="checkbox" id="scanIncludeNS" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:var(--accent-green);">NS</b> — Narrow + Small (coiled spring — yesterday quiet)
                         </label>
                         <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
-                            <input type="checkbox" id="scanIncludeNL" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:#fb923c;">NL</b> — Narrow + Large Range
+                            <input type="checkbox" id="scanIncludeNL" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:#fb923c;">NL</b> — Narrow + Large (exhausted — yesterday wild)
                         </label>
                         <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
-                            <input type="checkbox" id="scanIncludeIS" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:var(--accent-green);">IS</b> — Inside + Small Range (z &lt; −1.5)
+                            <input type="checkbox" id="scanIncludeIS" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:var(--accent-green);">IS</b> — Inside + Small (coiled spring — yesterday quiet)
                         </label>
                         <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
-                            <input type="checkbox" id="scanIncludeIL" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:#fb923c;">IL</b> — Inside + Large Range
+                            <input type="checkbox" id="scanIncludeIL" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:#fb923c;">IL</b> — Inside + Large (exhausted — yesterday wild)
                         </label>
                     </div>
                 </div>
@@ -972,7 +987,7 @@
             document.getElementById('maxRiskPerDayPct').value  = d.maxRiskPerDayPct  != null ? d.maxRiskPerDayPct : 1.0;
             document.getElementById('riskPerTrade').value      = d.riskPerTrade      || 1000;
             document.getElementById('atrPeriod').value          = d.atrPeriod         || 14;
-            document.getElementById('atrMultiplier').value     = d.atrMultiplier     || 1.5;
+            // atrMultiplier removed from UI — structural SL always used, default SL is silent fallback only
             document.getElementById('enableSessionMoveLimit').checked = d.enableSessionMoveLimit !== false;
             document.getElementById('sessionMoveLimit').value   = d.sessionMoveLimit  != null ? d.sessionMoveLimit : 2.0;
             document.getElementById('brokeragePerOrder').value  = d.brokeragePerOrder != null ? d.brokeragePerOrder : 20;
@@ -994,6 +1009,8 @@
             document.getElementById('structuralSlBufferAtr').value = d.structuralSlBufferAtr != null ? d.structuralSlBufferAtr : 1.0;
             // dayHighLowMinAtr removed — single min target distance check handles both
             document.getElementById('enableRiskRewardFilter').checked = d.enableRiskRewardFilter !== false;
+            document.getElementById('enableLargeCandleBodyFilter').checked = d.enableLargeCandleBodyFilter !== false;
+            document.getElementById('largeCandleBodyAtrThreshold').value = d.largeCandleBodyAtrThreshold != null ? d.largeCandleBodyAtrThreshold : 4.0;
             document.getElementById('minRiskRewardRatio').value = d.minRiskRewardRatio != null ? d.minRiskRewardRatio : 1.0;
             document.getElementById('enableEmaDirectionCheck').checked = d.enableEmaDirectionCheck !== false;
             document.getElementById('enableEma200DirectionCheck').checked = d.enableEma200DirectionCheck !== false;
@@ -1052,6 +1069,8 @@
             document.getElementById('lptQtyFactor').value = d.lptQtyFactor != null ? d.lptQtyFactor : 0.50;
             document.getElementById('neutralWeeklyQtyFactor').value = d.neutralWeeklyQtyFactor != null ? d.neutralWeeklyQtyFactor : 0.50;
             document.getElementById('enableWeeklyNeutralTrades').checked = d.enableWeeklyNeutralTrades !== false;
+            document.getElementById('insideOrQtyFactor').value = d.insideOrQtyFactor != null ? d.insideOrQtyFactor : 0.50;
+            document.getElementById('minAbsoluteProfit').value = d.minAbsoluteProfit != null ? d.minAbsoluteProfit : 500;
             document.getElementById('enableR3S3').checked = d.enableR3S3 !== false;
             document.getElementById('r3s3QtyFactor').value = d.r3s3QtyFactor || 0.75;
             document.getElementById('r4s4QtyFactor').value = d.r4s4QtyFactor || 0.5;
@@ -1065,9 +1084,10 @@
 
             // Default SL stat + trailing SL as sub
             const atrPeriod = d.atrPeriod || 14;
-            const atrMult = d.atrMultiplier || 2.0;
-            document.getElementById('statDefaultSl').textContent = atrMult + ' ATR';
-            document.getElementById('statDefaultSlSub').style.display = 'none';
+            const slBuffer = d.structuralSlBufferAtr || 1.0;
+            var slEnabled = d.enableStructuralSl !== false;
+            document.getElementById('statDefaultSl').textContent = slEnabled ? slBuffer + ' × ATR' : 'OFF';
+            document.getElementById('statDefaultSlSub').textContent = slEnabled ? 'ATR(' + atrPeriod + ') anchored to level' : 'Structural SL disabled';
             document.getElementById('statTrailSlSub').textContent = d.enableTrailingSl
                 ? 'Trailing SL: ON (×' + (d.trailingSlAtrMultiplier || 2.0) + ' after ' + (d.trailingSlActivationAtr || 1.0) + ' ATR profit)'
                 : 'Trailing SL: OFF';
@@ -1118,7 +1138,6 @@
                 maxRiskPerDayPct:  parseFloat(document.getElementById('maxRiskPerDayPct').value) || 0,
                 riskPerTrade:      parseFloat(document.getElementById('riskPerTrade').value) || 0,
                 atrPeriod:         parseInt(document.getElementById('atrPeriod').value) || 14,
-                atrMultiplier:     parseFloat(document.getElementById('atrMultiplier').value) || 2.0,
                 enableSessionMoveLimit: document.getElementById('enableSessionMoveLimit').checked,
                 sessionMoveLimit:  parseFloat(document.getElementById('sessionMoveLimit').value) || 2.0,
                 brokeragePerOrder: parseFloat(document.getElementById('brokeragePerOrder').value) || 20,
@@ -1139,6 +1158,8 @@
                 structuralSlBufferAtr: parseFloat(document.getElementById('structuralSlBufferAtr').value) || 1.0,
                 // dayHighLowMinAtr removed
                 enableRiskRewardFilter: document.getElementById('enableRiskRewardFilter').checked,
+                enableLargeCandleBodyFilter: document.getElementById('enableLargeCandleBodyFilter').checked,
+                largeCandleBodyAtrThreshold: parseFloat(document.getElementById('largeCandleBodyAtrThreshold').value) || 4.0,
                 minRiskRewardRatio: parseFloat(document.getElementById('minRiskRewardRatio').value) || 1.0,
                 enableEmaDirectionCheck: document.getElementById('enableEmaDirectionCheck').checked,
                 enableEma200DirectionCheck: document.getElementById('enableEma200DirectionCheck').checked,
@@ -1198,6 +1219,8 @@
                 lptQtyFactor: parseFloat(document.getElementById('lptQtyFactor').value) || 0.50,
                 neutralWeeklyQtyFactor: parseFloat(document.getElementById('neutralWeeklyQtyFactor').value) || 0.50,
                 enableWeeklyNeutralTrades: document.getElementById('enableWeeklyNeutralTrades').checked,
+                insideOrQtyFactor: parseFloat(document.getElementById('insideOrQtyFactor').value) || 0.50,
+                minAbsoluteProfit: parseFloat(document.getElementById('minAbsoluteProfit').value) || 500,
                 enableR3S3: document.getElementById('enableR3S3').checked,
                 r3s3QtyFactor: parseFloat(document.getElementById('r3s3QtyFactor').value) || 0.75,
                 r4s4QtyFactor: parseFloat(document.getElementById('r4s4QtyFactor').value) || 0.5,

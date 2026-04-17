@@ -129,7 +129,7 @@
                 <li><strong>Daily Setup:</strong> Downloads NSE bhavcopy, computes CPR levels (Pivot, TC, BC, R1-R4, S1-S4, PDH, PDL) for all F&O stocks</li>
                 <li><strong>Filtering:</strong> Selects stocks with narrow CPR (high breakout potential) and inside CPR (price compressed within prior day's range)</li>
                 <li><strong>Z-Score Classification:</strong> Each stock's daily range is classified using 20-day history:
-                    <span class="badge-example bg">NS</span> Narrow + Small Range (z &lt; -1.5) |
+                    <span class="badge-example bg">NS</span> Narrow + Small (z &lt; 0 — tighter than stock's own 20-day average, coiled spring) |
                     <span class="badge-example bo">NL</span> Narrow + Large Range |
                     <span class="badge-example bb">IS</span> Inside + Small Range |
                     <span class="badge-example by">IL</span> Inside + Large Range
@@ -159,7 +159,7 @@
             <h4>Choppy / Range-Bound Conditions &rarr; Reduce Quantity</h4>
             <table>
                 <tr><th>Condition</th><th>Effect</th></tr>
-                <tr><td>Inside OR range on IV/OV day</td><td>Probability downgraded to LPT (~0.25x qty)</td></tr>
+                <tr><td>Inside OR range on IV/OV day</td><td>Qty reduced by insideOrQtyFactor (default 0.50). HPT stays HPT — no probability downgrade.</td></tr>
                 <tr><td>Counter weekly/daily trend</td><td>LPT (~0.25x qty)</td></tr>
                 <tr><td>Far levels (R3/S3, R4/S4)</td><td>0.5x - 0.75x level factor</td></tr>
                 <tr><td>Magnet trade (mean reversion to value)</td><td>0.5x (LPT - fires on all day types)</td></tr>
@@ -543,12 +543,12 @@
                 <tr><th>Feature</th><th>Detail</th></tr>
                 <tr><td><strong>BUY_ABOVE_DH</strong></td><td>Candle closes above current session high with green candle</td></tr>
                 <tr><td><strong>SELL_BELOW_DL</strong></td><td>Candle closes below current session low with red candle</td></tr>
-                <tr><td><strong>Priority</strong></td><td>Lowest — only fires when NO CPR level was broken on the same candle. If both CPR and DH break, CPR takes precedence (logged as "CPR + DH breakout").</td></tr>
-                <tr><td><strong>OR Lock Guard</strong></td><td>DH/DL only fires after the Opening Range locks. During the OR forming period, day high/low is still being established.</td></tr>
-                <tr><td><strong>Target</strong></td><td>Next CPR level above day high (for buy) or below day low (for sell). If beyond R4/S4, uses projected R5/S5.</td></tr>
-                <tr><td><strong>Re-fire</strong></td><td>One signal per day per symbol. Even if stock makes new highs later, DH won't fire again. Cleared on position close.</td></tr>
-                <tr><td><strong>Target Shift</strong></td><td>Session H/L skipped for DH/DL setups (breakout candle creates new H/L), but weekly CPR levels still apply as shift candidates.</td></tr>
-                <tr><td><strong>All other filters</strong></td><td>VWAP/ATP, candle size, volume, small target, probability, qty stacking — all apply identically to CPR breakouts.</td></tr>
+                <tr><td><strong>Priority</strong></td><td>Lowest — only fires when NO CPR level was broken on the same candle.</td></tr>
+                <tr><td><strong>OR Lock Guard</strong></td><td>DH/DL only fires after the Opening Range locks.</td></tr>
+                <tr><td><strong>Structural SL</strong></td><td>Anchored to the <strong>20 EMA</strong> (trend support/resistance) instead of a CPR level. SL = 20 EMA ± buffer × ATR. If price falls back through the EMA, the breakout has failed.</td></tr>
+                <tr><td><strong>Target</strong></td><td>Next CPR level above day high (for buy) or below day low (for sell). R1 and PDH are treated as separate levels — the nearer one is picked.</td></tr>
+                <tr><td><strong>Target Shift</strong></td><td>Session H/L skipped (breakout candle creates new H/L), but weekly CPR levels and 200 EMA still apply.</td></tr>
+                <tr><td><strong>All other filters</strong></td><td>VWAP/ATP, EMA direction, EMA crossover, candle size, volume, R/R, probability, qty stacking — all apply identically to CPR breakouts.</td></tr>
             </table>
 
             <h4>20 EMA Filter</h4>
@@ -630,6 +630,20 @@
                 <tr><td><strong>OFF (target shift)</strong></td><td>Trade fires regardless, but the 200 EMA is added as a <strong>target-shift candidate</strong>. If it sits between entry and the original target, the target is pulled back to the 200 EMA.</td><td>You want to trade both sides but respect the 200 EMA as resistance (buys) or support (sells) when setting targets.</td></tr>
             </table>
             <p>The 200 EMA joins the same target-shift candidate pool as day high/low and weekly CPR levels. The nearest candidate to entry wins. Shown on scanner cards as <code>EMA 20/200: X / Y</code>.</p>
+
+            <h4>EMA Crossover Filter (20 vs 200)</h4>
+            <p>In addition to individual EMA direction checks, the <strong>relative position of 20 EMA vs 200 EMA</strong> can be used as a trend structure filter:</p>
+            <ul>
+                <li><strong>Buy</strong>: requires 20 EMA &gt; 200 EMA (uptrend structure confirmed)</li>
+                <li><strong>Sell</strong>: requires 20 EMA &lt; 200 EMA (downtrend structure confirmed)</li>
+            </ul>
+            <p>Independently toggleable via <code>enableEmaCrossoverCheck</code>. Also used as a component (±1) in the NIFTY composite trend score.</p>
+
+            <h4>Large Candle Body Filter</h4>
+            <p>Rejects breakout candles with excessively large body (|close − open| &gt; N × ATR). Catches exhaustion moves where the stock has already run too far on a single candle — entering at the close is chasing. Default threshold 4.0 ATR catches only extreme spikes. Runs before R/R check.</p>
+
+            <h4>Minimum Absolute Profit Filter</h4>
+            <p>Rejects trades where <code>qty × target_distance &lt; ₹X</code> (default ₹500). Runs after all qty reductions (LPT, NEUTRAL, R3/S3, inside-OR, etc.) so it catches trades where stacked reductions made the position too small. Prevents tiny P&L trades that aren't worth the brokerage + slippage. Set to 0 to disable.</p>
 
             <h4>Target Calculation Flow</h4>
             <p>Targets go through a multi-step process before the trade is accepted:</p>
@@ -910,7 +924,7 @@
         <div class="help-body">
             <p>Most stock breakouts have ~20 percentage points higher win rate when the trade direction aligns with NIFTY's intraday trend. A "clean" stock breakout that fights NIFTY tends to fail. This filter computes a composite NIFTY trend score and downgrades opposed trades from HPT to LPT (half qty). LPT trades are unaffected.</p>
 
-            <h4>Composite Score (range -9 to +9)</h4>
+            <h4>Composite Score (range -10 to +10)</h4>
             <table>
                 <tr><th>Signal</th><th>Bullish</th><th>Bearish</th></tr>
                 <tr><td>Weekly CPR trend</td><td>+1 / +2 (strong)</td><td>-1 / -2 (strong). <strong>0 when weekly reversal (R) active</strong></td></tr>
@@ -918,6 +932,7 @@
                 <tr><td>20 EMA position (LTP vs 20 EMA)</td><td>+1 (LTP &gt; EMA)</td><td>-1 (LTP &lt; EMA)</td></tr>
                 <tr><td>20 EMA slope (% per candle)</td><td>+1 (mild) / +2 (steep ≥ 0.02%)</td><td>-1 (mild) / -2 (steep ≤ -0.02%)</td></tr>
                 <tr><td>200 EMA position (LTP vs 200 EMA)</td><td>+1 (LTP &gt; 200 EMA)</td><td>-1 (LTP &lt; 200 EMA)</td></tr>
+                <tr><td>EMA crossover (20 vs 200)</td><td>+1 (20 EMA &gt; 200 EMA)</td><td>-1 (20 EMA &lt; 200 EMA)</td></tr>
                 <tr><td>Open=High / Open=Low (live day data)</td><td>+1 (O=L: price never below open)</td><td>-1 (O=H: price never above open)</td></tr>
             </table>
             <p><strong>O=H / O=L</strong> are checked against the live day open, high, and low from the exchange tick feed (within 0.05% tolerance). O=H means the opening price is still the day's high — bearish. O=L means the opening price is still the day's low — bullish. Once broken (price exceeds the open), the signal is permanently gone for the rest of the day.</p>
@@ -1436,8 +1451,7 @@
             <table>
                 <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
                 <tr><td>ATR Period</td><td>14</td><td>Number of candles for ATR calculation (uses trading timeframe)</td></tr>
-                <tr><td>ATR Multiplier</td><td>2.0</td><td>Fixed SL = entry ± ATR × this value (when structural SL is off, or for DH/DL setups)</td></tr>
-                <tr><td>Enable Structural SL</td><td>OFF</td><td>When on, always uses level-anchored SL per setup (guarantees SL is on the correct side of the broken level). DH/DL setups still use Fixed SL.</td></tr>
+                <tr><td>Enable Structural SL</td><td>ON</td><td>SL anchored to the broken level (CPR, R/S levels) or 20 EMA (DH/DL setups). SL = anchor ± buffer × ATR.</td></tr>
                 <tr><td>Structural SL Buffer (ATR)</td><td>1.0</td><td>ATR buffer added below/above the structural anchor (the level being tested)</td></tr>
                 <tr><td>Trailing SL</td><td>ON</td><td>Enable ATR peak-based trailing stop loss</td></tr>
                 <tr><td>Trailing SL Multiplier</td><td>2.0</td><td>Trailing SL = peak - ATR x this value</td></tr>
@@ -1446,8 +1460,10 @@
                 <tr><td>R4/S4 Enable + Factor</td><td>ON, 0.5</td><td>Enable R4/S4 level signals. Qty multiplied by factor.</td></tr>
                 <tr><td>Session Move Limit</td><td>2.0%</td><td>Halve qty if price moved more than this % from day open/PDC</td></tr>
                 <tr><td>LPT Qty Factor</td><td>0.5</td><td>Multiply qty by this for Low Probable Trades. HPT always trades at 1.0x.</td></tr>
-                <tr><td>Allow Weekly NEUTRAL Trades</td><td>ON</td><td>When OFF, skip all trades when the stock's weekly trend is NEUTRAL. When ON, trades fire as LPT with qty further reduced by the NEUTRAL qty factor.</td></tr>
-                <tr><td>Weekly NEUTRAL Qty Factor</td><td>0.5</td><td>Extra qty multiplier when weekly trend is NEUTRAL (stacks on LPT: 0.5 x 0.5 = 0.25 of base).</td></tr>
+                <tr><td>Allow Weekly NEUTRAL Trades</td><td>ON</td><td>When OFF, skip all trades when weekly is NEUTRAL. When ON, fires as LPT with NEUTRAL qty factor.</td></tr>
+                <tr><td>Weekly NEUTRAL Qty Factor</td><td>0.5</td><td>Extra multiplier when weekly NEUTRAL (stacks on LPT: 0.5 × 0.5 = 0.25).</td></tr>
+                <tr><td>Inside OR Qty Factor (IV/OV)</td><td>0.5</td><td>Qty reduction when breakout candle is inside the Opening Range on IV/OV days. HPT stays HPT — just reduced size.</td></tr>
+                <tr><td>Min Absolute Profit</td><td>₹500</td><td>Skip if qty × target distance &lt; this amount. Catches trades where stacked qty reductions made position too small. Set to 0 to disable.</td></tr>
             </table>
 
             <h4>Signals Tab</h4>
@@ -1471,7 +1487,8 @@
                 <tr><td>Opening Range</td><td>30 min</td><td>OR period: Off / 15 / 30 / 45 / 60 min</td></tr>
                 <tr><td>Trading Timeframe</td><td>5 min</td><td>Candle timeframe for breakout detection, ATR, EMA, daily trend</td></tr>
                 <tr><td>Higher Timeframe</td><td>75 min</td><td>Candle timeframe for weekly trend. Weekly trend updates on this interval.</td></tr>
-                <tr><td>NS / NL / IS / IL</td><td>NS+NL+IS ON</td><td>Which z-score range types to include in watchlist</td></tr>
+                <tr><td>NS / NL / IS / IL</td><td>NS+NL+IS ON</td><td>Which range types to include. NS = Small (coiled spring, yesterday quiet). NL = Large (exhausted, yesterday wild).</td></tr>
+                <tr><td>NS/NL Classification</td><td>Auto</td><td>Z-score of PDH-PDL/CPR ratio vs stock's own 20-day history. z &lt; 0 = Small (tighter than usual), z ≥ 0 = Large. Self-calibrating per stock, no manual threshold.</td></tr>
             </table>
 
             <h4>Scanner Page Features</h4>
@@ -1483,7 +1500,7 @@
                 <tr><td><strong>Export Fyers</strong></td><td>Downloads the filtered watchlist in Fyers import format (NSE:SYMBOL-EQ, one per line)</td></tr>
                 <tr><td><strong>Status Bar</strong></td><td>Shows active filters: stock count, price range, turnover, volume, beta, cap, signals</td></tr>
                 <tr><td><strong>OR Badge</strong></td><td>Color-coded Opening Range badge on each card header: OR+ (green=bullish), OR- (red=bearish), OR= (gray=neutral), OR? (yellow=forming)</td></tr>
-                <tr><td><strong>Auto Rebuild</strong></td><td>Saving settings auto-rebuilds the watchlist — no restart required for filter changes</td></tr>
+                <tr><td><strong>Auto Rebuild</strong></td><td>Saving settings re-filters the scanner from existing loaded stocks. Tightening filters (fewer stocks) works mid-day. Widening filters (adding new stocks) requires restart — new stocks need WebSocket subscription + ATR/EMA seed which only happens at startup.</td></tr>
             </table>
 
             <h4>Stock Enrichment (computed daily from NSE data)</h4>
@@ -1500,9 +1517,11 @@
                 <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
                 <tr><td>Direction Confirmation (VWAP + 20 EMA)</td><td>Both ON</td><td>VWAP: buy above ATP, sell below. 20 EMA: buy above 20 EMA, sell below.</td></tr>
                 <tr><td>200 EMA Direction Check</td><td>ON</td><td>Buy requires close &gt; 200 EMA, sell requires close &lt; 200 EMA. When OFF, 200 EMA becomes a target-shift candidate instead (caps target at the 200 EMA if it sits between entry and target).</td></tr>
-                <tr><td>20 EMA Level Count Filter</td><td>ON</td><td>Skip if any CPR zone (S2, S1/PDL, CPR, R1/PDH, R2, etc.) sits strictly between the 20 EMA and the broken level. Pair zones count once; setup's own zone is excluded.</td></tr>
-                <tr><td>Small Candle Filter</td><td>OFF, 0.5 ATR</td><td>Reject if candle body smaller than N x ATR</td></tr>
-                <tr><td>Volume Filter</td><td>ON, 1.0x avg</td><td>Reject if candle volume below N x average volume</td></tr>
+                <tr><td>EMA Crossover Check</td><td>ON</td><td>Buy requires 20 EMA &gt; 200 EMA, sell requires 20 EMA &lt; 200 EMA. Confirms trend structure.</td></tr>
+                <tr><td>20 EMA Level Count Filter</td><td>ON</td><td>Skip if any CPR zone sits strictly between the 20 EMA and the broken level.</td></tr>
+                <tr><td>Small Candle Filter</td><td>OFF, 0.5 ATR</td><td>Reject if candle body smaller than N × ATR</td></tr>
+                <tr><td>Large Candle Body Filter</td><td>ON, 4.0 ATR</td><td>Reject if candle body (|close − open|) exceeds N × ATR. Catches exhaustion moves.</td></tr>
+                <tr><td>Volume Filter</td><td>ON, 1.0x avg</td><td>Reject if candle volume below N × average volume</td></tr>
                 <tr><td>Weekly Reversal Filter</td><td>Hard Skip ON</td><td>Skip trades opposed to 75-min R1/PWH or S1/PWL reversal. Scanner shows (R) in amber.</td></tr>
                 <tr><td>NIFTY Index Alignment</td><td>OFF, thresholds ±2/±5</td><td>Composite NIFTY trend score. Trades opposing get HPT→LPT downgrade.</td></tr>
             </table>

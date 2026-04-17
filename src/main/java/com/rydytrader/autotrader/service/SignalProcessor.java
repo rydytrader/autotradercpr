@@ -81,12 +81,17 @@ public class SignalProcessor {
         // Always compute the close-based (default) SL. If structural SL is enabled for this
         // setup, also compute the level-anchored SL and pick whichever is TIGHTER (smaller
         // distance from entry). Structural SL is skipped for DH/DL — no real level to anchor to.
+        boolean isDhDl = "BUY_ABOVE_DH".equals(setup) || "SELL_BELOW_DL".equals(setup);
         double atrMultiplier = riskSettings.getAtrMultiplier();
         double defaultSl = isBuy ? (close - atr * atrMultiplier) : (close + atr * atrMultiplier);
         double sl = defaultSl;
         boolean useStructuralSl = false;
-        if (riskSettings.isEnableStructuralSl() && !isDhDlSetup(setup)) {
-            double anchor = computeStructuralAnchor(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
+        if (riskSettings.isEnableStructuralSl()) {
+            // For DH/DL setups, the structural anchor is the 20 EMA (trend support/resistance)
+            // For all other setups, the anchor is the CPR/R/S level that was broken
+            double anchor = isDhDl
+                ? emaService.getEma(symbol)
+                : computeStructuralAnchor(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
             if (anchor > 0) {
                 double buffer = riskSettings.getStructuralSlBufferAtr();
                 double structSl = isBuy ? (anchor - atr * buffer) : (anchor + atr * buffer);
@@ -155,6 +160,16 @@ public class SignalProcessor {
             }
         }
 
+        // ── 4d2. Large candle body filter ──────────────────────────────────────
+        if (riskSettings.isEnableLargeCandleBodyFilter() && candleOpen > 0 && atr > 0) {
+            double candleBody = Math.abs(close - candleOpen);
+            double largeThreshold = riskSettings.getLargeCandleBodyAtrThreshold();
+            if (candleBody > atr * largeThreshold) {
+                return ProcessedSignal.rejected(setup, symbol,
+                    "Large candle body (" + fmt(candleBody) + ") > " + largeThreshold + " ATR (" + fmt(atr * largeThreshold) + ") — exhaustion risk");
+            }
+        }
+
         // ── 4e. Volume filter ─────────────────────────────────────────────────
         double candleVolume = dbl(alert, "candleVolume");
         double avgVolume = dbl(alert, "avgVolume");
@@ -169,6 +184,7 @@ public class SignalProcessor {
         // ── 4e2. Opening Range EV filter — on Extended Value days, only trade OR-aligned or mean-reversion ──
         int orMinutes = riskSettings.getOpeningRangeMinutes();
         boolean isReversal = false;
+        boolean insideOrOnIvOv = false; // set to true if IV/OV day and close is inside OR range
         if (orMinutes > 0) {
             double firstClose = candleAggregator.getFirstCandleClose(symbol);
             boolean gapUp   = firstClose > 0 && r2 > 0 && firstClose >= r2;
@@ -228,20 +244,13 @@ public class SignalProcessor {
                     return ProcessedSignal.rejected(setup, symbol,
                         "Mean-reversion setup only allowed on EV days (gap up/down) — today is IV/OV");
                 }
-                // ── IV/OV day: if breakout candle is inside OR range, downgrade prob to LPT ──
-                // (still trading inside the opening range — weak breakout)
+                // IV/OV: if breakout candle is inside OR range, reduce qty (not downgrade probability)
+                // Target shift to session H/L handles the target side; this handles position sizing.
                 if (candleAggregator.isOpeningRangeLocked(symbol)) {
                     double orHigh = candleAggregator.getOpeningRangeHigh(symbol);
                     double orLow  = candleAggregator.getOpeningRangeLow(symbol);
                     if (orHigh > 0 && orLow > 0 && close >= orLow && close <= orHigh) {
-                        if ("HPT".equals(probability)) {
-                            probability = "LPT";
-                            eventService.log("[INFO] " + symbol + " " + setup
-                                + " probability downgraded HPT → LPT — close " + fmt(close)
-                                + " inside OR range (H:" + fmt(orHigh) + " L:" + fmt(orLow) + ") — still trading in range");
-                            adjustments.add("Probability HPT → LPT (close " + fmt(close)
-                                + " inside OR range " + fmt(orLow) + "–" + fmt(orHigh) + " — range-bound)");
-                        }
+                        insideOrOnIvOv = true;
                     }
                 }
             }
@@ -271,7 +280,6 @@ public class SignalProcessor {
         // between entry (close) and the structural target. Single target (no T1/T2 split)
         // when a shift occurs. DH/DL setups skip session H/L (breakout just created it)
         // but still consider weekly levels.
-        boolean isDhDl = "BUY_ABOVE_DH".equals(setup) || "SELL_BELOW_DL".equals(setup);
         boolean dayHighLowShifted = false;
         {
             java.util.Map<Double, String> shiftCandidates = new java.util.LinkedHashMap<>();
@@ -395,6 +403,17 @@ public class SignalProcessor {
             }
         }
 
+        // ── 4i2b. IV/OV inside-OR qty reduction — still range-bound, reduce size ──
+        if (insideOrOnIvOv) {
+            double factor = riskSettings.getInsideOrQtyFactor();
+            if (factor > 0 && factor < 1.0) {
+                int reduced = Math.max(1, (int)(qty * factor));
+                eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (inside OR on IV/OV ×" + factor + "): " + qty + " -> " + reduced);
+                adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — inside OR range on IV/OV day)");
+                qty = reduced;
+            }
+        }
+
         // ── 4i3. Level-based qty adjustment (R3/S3 and R4/S4 extended levels) ──
         if (setup.contains("R3") || setup.contains("S3")) {
             double factor = riskSettings.getR3s3QtyFactor();
@@ -433,6 +452,17 @@ public class SignalProcessor {
                 eventService.log("[INFO] " + symbol + " " + setup + " qty halved (" + reason + "): " + qty + " -> " + reduced);
                 adjustments.add("Qty " + qty + " → " + reduced + " (halved — " + reason + ")");
                 qty = reduced;
+            }
+        }
+
+        // ── 4i6. Minimum absolute profit filter ────────────────────────────────
+        double minProfit = riskSettings.getMinAbsoluteProfit();
+        if (minProfit > 0) {
+            double expectedProfit = qty * Math.abs(target - close);
+            if (expectedProfit < minProfit) {
+                return ProcessedSignal.rejected(setup, symbol,
+                    "Absolute profit too low — ₹" + fmt(expectedProfit) + " < ₹" + fmt(minProfit)
+                    + " (qty=" + qty + " × dist=" + fmt(Math.abs(target - close)) + ")");
             }
         }
 
@@ -611,14 +641,15 @@ public class SignalProcessor {
         };
     }
 
-    /** Find the nearest CPR/PDH/PDL level strictly above `from`. Includes S, CPR, and R levels. */
+    /** Find the nearest CPR/PDH/PDL level strictly above `from`. Includes all individual levels
+     *  (R1 and PDH separate, S1 and PDL separate) so the nearest one is picked as target. */
     private double nextLevelAbove(double from, double r1, double r2, double r3, double r4,
                                    double s1, double s2, double s3, double s4,
                                    double ph, double pl, double tc, double bc) {
         double cprTop = Math.max(tc, bc);
         double cprBot = Math.min(tc, bc);
         double pivot = (cprTop + cprBot) / 2.0;
-        double[] levels = { s4, s3, s2, Math.min(s1, pl), cprBot, pivot, cprTop, Math.max(r1, ph), r2, r3, r4 };
+        double[] levels = { s4, s3, s2, s1, pl, cprBot, pivot, cprTop, r1, ph, r2, r3, r4 };
         double best = Double.MAX_VALUE;
         for (double lvl : levels) {
             if (lvl > from && lvl < best) best = lvl;
@@ -629,14 +660,15 @@ public class SignalProcessor {
         return best;
     }
 
-    /** Find the nearest CPR/PDH/PDL level strictly below `from`. Includes R, CPR, and S levels. */
+    /** Find the nearest CPR/PDH/PDL level strictly below `from`. Includes all individual levels
+     *  (R1 and PDH separate, S1 and PDL separate) so the nearest one is picked as target. */
     private double nextLevelBelow(double from, double r1, double r2, double r3, double r4,
                                    double s1, double s2, double s3, double s4,
                                    double ph, double pl, double tc, double bc) {
         double cprTop = Math.max(tc, bc);
         double cprBot = Math.min(tc, bc);
         double pivot = (cprTop + cprBot) / 2.0;
-        double[] levels = { r4, r3, r2, Math.max(r1, ph), cprTop, pivot, cprBot, Math.min(s1, pl), s2, s3, s4 };
+        double[] levels = { r4, r3, r2, r1, ph, cprTop, pivot, cprBot, s1, pl, s2, s3, s4 };
         double best = -1;
         for (double lvl : levels) {
             if (lvl > 0 && lvl < from && lvl > best) best = lvl;

@@ -278,14 +278,7 @@ public class ScannerController {
         // 7. NIFTY alignment
         if (riskSettings.isEnableIndexAlignment() && indexTrendService.isOpposedToNifty(isBuy)) return "LPT";
 
-        // 8. Inside OR range check (IV/OV days — downgrade if still inside OR)
-        if (candleAggregator.isOpeningRangeLocked(symbol)) {
-            double orHigh = candleAggregator.getOpeningRangeHigh(symbol);
-            double orLow = candleAggregator.getOpeningRangeLow(symbol);
-            if (orHigh > 0 && orLow > 0 && ltp >= orLow && ltp <= orHigh) return "LPT";
-        }
-
-        return "HPT"; // all 8 pre-checkable gates passed
+        return "HPT"; // all 7 pre-checkable gates passed
     }
 
     @GetMapping("/api/scanner/status")

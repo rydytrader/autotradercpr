@@ -85,6 +85,8 @@ public class SettingsController {
         result.put("indexBearishThreshold", riskSettings.getIndexBearishThreshold());
         result.put("indexStrongBearishThreshold", riskSettings.getIndexStrongBearishThreshold());
         result.put("enableSmallCandleFilter", riskSettings.isEnableSmallCandleFilter(effectiveMode));
+        result.put("enableLargeCandleBodyFilter", riskSettings.isEnableLargeCandleBodyFilter());
+        result.put("largeCandleBodyAtrThreshold", riskSettings.getLargeCandleBodyAtrThreshold());
         result.put("smallCandleAtrThreshold", riskSettings.getSmallCandleAtrThreshold(effectiveMode));
         result.put("wickRejectionRatio", riskSettings.getWickRejectionRatio(effectiveMode));
         result.put("oppositeWickRatio", riskSettings.getOppositeWickRatio(effectiveMode));
@@ -124,6 +126,8 @@ public class SettingsController {
         result.put("lptQtyFactor", riskSettings.getLptQtyFactor());
         result.put("neutralWeeklyQtyFactor", riskSettings.getNeutralWeeklyQtyFactor());
         result.put("enableWeeklyNeutralTrades", riskSettings.isEnableWeeklyNeutralTrades());
+        result.put("insideOrQtyFactor", riskSettings.getInsideOrQtyFactor());
+        result.put("minAbsoluteProfit", riskSettings.getMinAbsoluteProfit());
         result.put("todayPnl",         Math.round(todayPnl * 100.0) / 100.0);
         result.put("todayTrades",      todayTrades);
         return result;
@@ -183,6 +187,8 @@ public class SettingsController {
             if (body.containsKey("indexBearishThreshold")) riskSettings.setIndexBearishThreshold(Integer.parseInt(body.get("indexBearishThreshold").toString()));
             if (body.containsKey("indexStrongBearishThreshold")) riskSettings.setIndexStrongBearishThreshold(Integer.parseInt(body.get("indexStrongBearishThreshold").toString()));
             if (body.containsKey("enableSmallCandleFilter")) riskSettings.setEnableSmallCandleFilter(effectiveMode, Boolean.parseBoolean(body.get("enableSmallCandleFilter").toString()));
+            if (body.containsKey("enableLargeCandleBodyFilter")) riskSettings.setEnableLargeCandleBodyFilter(Boolean.parseBoolean(body.get("enableLargeCandleBodyFilter").toString()));
+            if (body.containsKey("largeCandleBodyAtrThreshold")) riskSettings.setLargeCandleBodyAtrThreshold(Double.parseDouble(body.get("largeCandleBodyAtrThreshold").toString()));
             if (body.containsKey("smallCandleAtrThreshold")) riskSettings.setSmallCandleAtrThreshold(effectiveMode, Double.parseDouble(body.get("smallCandleAtrThreshold").toString()));
             if (body.containsKey("wickRejectionRatio")) riskSettings.setWickRejectionRatio(effectiveMode, Double.parseDouble(body.get("wickRejectionRatio").toString()));
             if (body.containsKey("oppositeWickRatio")) riskSettings.setOppositeWickRatio(effectiveMode, Double.parseDouble(body.get("oppositeWickRatio").toString()));
@@ -222,6 +228,8 @@ public class SettingsController {
             if (body.containsKey("lptQtyFactor")) riskSettings.setLptQtyFactor(Double.parseDouble(body.get("lptQtyFactor").toString()));
             if (body.containsKey("neutralWeeklyQtyFactor")) riskSettings.setNeutralWeeklyQtyFactor(Double.parseDouble(body.get("neutralWeeklyQtyFactor").toString()));
             if (body.containsKey("enableWeeklyNeutralTrades")) riskSettings.setEnableWeeklyNeutralTrades(Boolean.parseBoolean(body.get("enableWeeklyNeutralTrades").toString()));
+            if (body.containsKey("insideOrQtyFactor")) riskSettings.setInsideOrQtyFactor(Double.parseDouble(body.get("insideOrQtyFactor").toString()));
+            if (body.containsKey("minAbsoluteProfit")) riskSettings.setMinAbsoluteProfit(Double.parseDouble(body.get("minAbsoluteProfit").toString()));
             riskSettings.saveFor(effectiveMode);
             return ResponseEntity.ok(Map.of("ok", true, "message", "Settings saved"));
         } catch (Exception e) {

@@ -43,7 +43,8 @@ public class RiskSettingsStore {
         volatile int    fixedQuantity    = 2;     // -1 = use capital-based calculation
         volatile double capitalPerTrade  = 0;     // ₹ per trade (used when fixedQuantity == -1)
         volatile int    telegramAlertFrequency = 60; // seconds between Telegram portfolio updates (0 = disabled)
-        // Large candle filter removed — R/R filter now catches wide-candle trades (wide SL → bad R/R → rejected)
+        volatile boolean enableLargeCandleBodyFilter = true;
+        volatile double largeCandleBodyAtrThreshold = 4.0; // skip if candle body > N × ATR (exhaustion risk)
         volatile boolean enableTargetShift = true; // shift target to next level if default target < threshold ATR. If false, skip the entry.
         volatile boolean enableGapCheck = true;     // halve qty if day open or first candle beyond R2/S2
         volatile boolean enableDayHighLowTargetShift = true; // shift target to day high/low if between entry and target
@@ -89,8 +90,11 @@ public class RiskSettingsStore {
         volatile double lptQtyFactor    = 0.50;  // LPT qty multiplier (0.50 = half)
         volatile double neutralWeeklyQtyFactor = 0.50; // extra qty multiplier when weekly trend is NEUTRAL (stacks on LPT)
         volatile boolean enableWeeklyNeutralTrades = true; // if false, skip all trades when weekly trend is NEUTRAL
+        volatile double insideOrQtyFactor = 0.50; // qty multiplier when breakout is inside OR range on IV/OV days
+        volatile double minAbsoluteProfit = 500; // skip if qty × target_distance < this amount (₹)
         // CPR Width scanner group toggles
         volatile double narrowCprMaxWidth = 0.1;  // CPR width % threshold for narrow CPR stocks
+        // narrowRangeRatioThreshold removed — z-score of PDH-PDL/CPR ratio is self-calibrating
         volatile double insideCprMaxWidth = 0.5;  // max CPR width % for inside CPR stocks (0 = no filter)
         volatile double scanMinPrice = 300;      // min stock price filter (0 = no filter)
         volatile double scanMaxPrice = 0;        // max stock price filter (0 = no max)
@@ -181,6 +185,8 @@ public class RiskSettingsStore {
     public boolean isEnableEmaLevelCountFilter()   { return cfg().enableEmaLevelCountFilter; }
     public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
     public boolean isEnableSmallCandleFilter() { return cfg().enableSmallCandleFilter; }
+    public boolean isEnableLargeCandleBodyFilter() { return cfg().enableLargeCandleBodyFilter; }
+    public double getLargeCandleBodyAtrThreshold() { return cfg().largeCandleBodyAtrThreshold; }
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
     public boolean isTrailingSlNoTarget() { return cfg().trailingSlNoTarget; }
     public boolean isEnableR3S3() { return cfg().enableR3S3; }
@@ -205,6 +211,8 @@ public class RiskSettingsStore {
     public double getLptQtyFactor()       { return cfg().lptQtyFactor; }
     public double getNeutralWeeklyQtyFactor() { return cfg().neutralWeeklyQtyFactor; }
     public boolean isEnableWeeklyNeutralTrades() { return cfg().enableWeeklyNeutralTrades; }
+    public double getInsideOrQtyFactor() { return cfg().insideOrQtyFactor; }
+    public double getMinAbsoluteProfit() { return cfg().minAbsoluteProfit; }
     public double getNarrowCprMaxWidth() { return cfg().narrowCprMaxWidth; }
     public double getInsideCprMaxWidth() { return cfg().insideCprMaxWidth; }
     public double getScanMinPrice() { return cfg().scanMinPrice; }
@@ -242,6 +250,8 @@ public class RiskSettingsStore {
     public void setLptQtyFactor(double v)      { cfg().lptQtyFactor = v; }
     public void setNeutralWeeklyQtyFactor(double v) { cfg().neutralWeeklyQtyFactor = v; }
     public void setEnableWeeklyNeutralTrades(boolean v) { cfg().enableWeeklyNeutralTrades = v; }
+    public void setInsideOrQtyFactor(double v) { cfg().insideOrQtyFactor = v; }
+    public void setMinAbsoluteProfit(double v) { cfg().minAbsoluteProfit = v; }
     public void setNarrowCprMaxWidth(double v) { cfg().narrowCprMaxWidth = v; }
     public void setInsideCprMaxWidth(double v) { cfg().insideCprMaxWidth = v; }
     public void setScanMinPrice(double v) { cfg().scanMinPrice = v; }
@@ -305,6 +315,8 @@ public class RiskSettingsStore {
     public void setEnableEmaLevelCountFilter(boolean v)    { cfg().enableEmaLevelCountFilter = v; }
     public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
     public void setEnableSmallCandleFilter(boolean v) { cfg().enableSmallCandleFilter = v; }
+    public void setEnableLargeCandleBodyFilter(boolean v) { cfg().enableLargeCandleBodyFilter = v; }
+    public void setLargeCandleBodyAtrThreshold(double v) { cfg().largeCandleBodyAtrThreshold = v; }
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
     public void setTrailingSlNoTarget(boolean v) { cfg().trailingSlNoTarget = v; }
     public void setEnableR3S3(boolean v) { cfg().enableR3S3 = v; }
@@ -425,6 +437,8 @@ public class RiskSettingsStore {
             upsert("enableEmaLevelCountFilter", String.valueOf(c.enableEmaLevelCountFilter));
             upsert("enableTargetShift", String.valueOf(c.enableTargetShift));
             upsert("enableSmallCandleFilter", String.valueOf(c.enableSmallCandleFilter));
+            upsert("enableLargeCandleBodyFilter", String.valueOf(c.enableLargeCandleBodyFilter));
+            upsert("largeCandleBodyAtrThreshold", String.valueOf(c.largeCandleBodyAtrThreshold));
             upsert("smallCandleAtrThreshold", String.valueOf(c.smallCandleAtrThreshold));
             upsert("wickRejectionRatio", String.valueOf(c.wickRejectionRatio));
             upsert("oppositeWickRatio", String.valueOf(c.oppositeWickRatio));
@@ -448,7 +462,10 @@ public class RiskSettingsStore {
             upsert("lptQtyFactor", String.valueOf(c.lptQtyFactor));
             upsert("neutralWeeklyQtyFactor", String.valueOf(c.neutralWeeklyQtyFactor));
             upsert("enableWeeklyNeutralTrades", String.valueOf(c.enableWeeklyNeutralTrades));
+            upsert("insideOrQtyFactor", String.valueOf(c.insideOrQtyFactor));
+            upsert("minAbsoluteProfit", String.valueOf(c.minAbsoluteProfit));
             upsert("narrowCprMaxWidth", String.valueOf(c.narrowCprMaxWidth));
+            // narrowRangeRatioThreshold removed — z-score is self-calibrating
             upsert("insideCprMaxWidth", String.valueOf(c.insideCprMaxWidth));
             upsert("scanMinPrice", String.valueOf(c.scanMinPrice));
             upsert("scanMaxPrice", String.valueOf(c.scanMaxPrice));
@@ -534,6 +551,8 @@ public class RiskSettingsStore {
                     case "enableEmaLevelCountFilter" -> c.enableEmaLevelCountFilter = Boolean.parseBoolean(v);
                     case "enableTargetShift" -> c.enableTargetShift = Boolean.parseBoolean(v);
                     case "enableSmallCandleFilter" -> c.enableSmallCandleFilter = Boolean.parseBoolean(v);
+                    case "enableLargeCandleBodyFilter" -> c.enableLargeCandleBodyFilter = Boolean.parseBoolean(v);
+                    case "largeCandleBodyAtrThreshold" -> c.largeCandleBodyAtrThreshold = Double.parseDouble(v);
                     case "smallCandleAtrThreshold" -> c.smallCandleAtrThreshold = Double.parseDouble(v);
                     case "wickRejectionRatio" -> c.wickRejectionRatio = Double.parseDouble(v);
                     case "oppositeWickRatio" -> c.oppositeWickRatio = Double.parseDouble(v);
@@ -557,7 +576,10 @@ public class RiskSettingsStore {
                     case "lptQtyFactor"      -> c.lptQtyFactor = Double.parseDouble(v);
                     case "neutralWeeklyQtyFactor" -> c.neutralWeeklyQtyFactor = Double.parseDouble(v);
                     case "enableWeeklyNeutralTrades" -> c.enableWeeklyNeutralTrades = Boolean.parseBoolean(v);
+                    case "insideOrQtyFactor" -> c.insideOrQtyFactor = Double.parseDouble(v);
+                    case "minAbsoluteProfit" -> c.minAbsoluteProfit = Double.parseDouble(v);
                     case "narrowCprMaxWidth" -> c.narrowCprMaxWidth = Double.parseDouble(v);
+                    // narrowRangeRatioThreshold — legacy key, silently ignored
                     case "insideCprMaxWidth" -> c.insideCprMaxWidth = Double.parseDouble(v);
                     case "scanMinPrice" -> c.scanMinPrice = Double.parseDouble(v);
                     case "scanMaxPrice" -> c.scanMaxPrice = Double.parseDouble(v);
