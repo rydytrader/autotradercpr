@@ -48,6 +48,7 @@ public class RiskSettingsStore {
         volatile boolean enableTargetShift = true; // shift target to next level if default target < threshold ATR. If false, skip the entry.
         volatile boolean enableGapCheck = true;     // halve qty if day open or first candle beyond R2/S2
         volatile boolean enableDayHighLowTargetShift = true; // shift target to day high/low if between entry and target
+        volatile double dayHighLowShiftMinDistAtr = 1.0; // skip day H/L shift if distance < N ATR from close
         volatile boolean enableWeeklyLevelTargetShift = true; // shift target to weekly CPR levels if between entry and target
         // Structural SL — opt-in, anchors SL to the S/R level the trade is testing (per setup family)
         // When on, we compute both structural and default SL and pick the TIGHTER one.
@@ -172,6 +173,7 @@ public class RiskSettingsStore {
     public int    getTelegramAlertFrequency() { return cfg().telegramAlertFrequency; }
     public boolean isEnableGapCheck() { return cfg().enableGapCheck; }
     public boolean isEnableDayHighLowTargetShift() { return cfg().enableDayHighLowTargetShift; }
+    public double getDayHighLowShiftMinDistAtr() { return cfg().dayHighLowShiftMinDistAtr; }
     public boolean isEnableWeeklyLevelTargetShift() { return cfg().enableWeeklyLevelTargetShift; }
     public boolean isEnableStructuralSl()    { return cfg().enableStructuralSl; }
     public double  getStructuralSlBufferAtr(){ return cfg().structuralSlBufferAtr; }
@@ -302,6 +304,7 @@ public class RiskSettingsStore {
     public void setTelegramAlertFrequency(int v) { cfg().telegramAlertFrequency = v; }
     public void setEnableGapCheck(boolean v) { cfg().enableGapCheck = v; }
     public void setEnableDayHighLowTargetShift(boolean v) { cfg().enableDayHighLowTargetShift = v; }
+    public void setDayHighLowShiftMinDistAtr(double v) { cfg().dayHighLowShiftMinDistAtr = v; }
     public void setEnableWeeklyLevelTargetShift(boolean v) { cfg().enableWeeklyLevelTargetShift = v; }
     public void setEnableStructuralSl(boolean v)    { cfg().enableStructuralSl = v; }
     public void setStructuralSlBufferAtr(double v)  { cfg().structuralSlBufferAtr = v; }
@@ -424,6 +427,7 @@ public class RiskSettingsStore {
             upsert("telegramAlertFrequency", String.valueOf(c.telegramAlertFrequency));
             upsert("enableGapCheck", String.valueOf(c.enableGapCheck));
             upsert("enableDayHighLowTargetShift", String.valueOf(c.enableDayHighLowTargetShift));
+            upsert("dayHighLowShiftMinDistAtr", String.valueOf(c.dayHighLowShiftMinDistAtr));
             upsert("enableWeeklyLevelTargetShift", String.valueOf(c.enableWeeklyLevelTargetShift));
             upsert("enableStructuralSl", String.valueOf(c.enableStructuralSl));
             upsert("structuralSlBufferAtr", String.valueOf(c.structuralSlBufferAtr));
@@ -538,6 +542,7 @@ public class RiskSettingsStore {
                     // enableLargeCandleFilter / largeCandleAtrThreshold removed — legacy keys silently ignored
                     case "enableGapCheck" -> c.enableGapCheck = Boolean.parseBoolean(v);
                     case "enableDayHighLowTargetShift" -> c.enableDayHighLowTargetShift = Boolean.parseBoolean(v);
+                    case "dayHighLowShiftMinDistAtr" -> c.dayHighLowShiftMinDistAtr = Double.parseDouble(v);
                     case "enableWeeklyLevelTargetShift" -> c.enableWeeklyLevelTargetShift = Boolean.parseBoolean(v);
                     case "enableStructuralSl"    -> c.enableStructuralSl = Boolean.parseBoolean(v);
                     case "structuralSlBufferAtr" -> c.structuralSlBufferAtr = Double.parseDouble(v);

@@ -514,7 +514,9 @@
                     <label class="form-label">Target Shift Sources</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableDayHighLowTargetShift" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift to session High / Low</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift to session High / Low (skip if within</span>
+                        <input type="number" id="dayHighLowShiftMinDistAtr" class="form-control" step="0.5" min="0" max="5.0" style="width:60px; padding:4px 6px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR)</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="enableWeeklyLevelTargetShift" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
@@ -1004,6 +1006,7 @@
             // enableTargetShift removed — replaced by min target distance check
             // enableGapCheck removed — replaced by Opening Range filter
             document.getElementById('enableDayHighLowTargetShift').checked = d.enableDayHighLowTargetShift !== false;
+            document.getElementById('dayHighLowShiftMinDistAtr').value = d.dayHighLowShiftMinDistAtr != null ? d.dayHighLowShiftMinDistAtr : 1.0;
             document.getElementById('enableWeeklyLevelTargetShift').checked = d.enableWeeklyLevelTargetShift !== false;
             document.getElementById('enableStructuralSl').checked = d.enableStructuralSl === true;
             document.getElementById('structuralSlBufferAtr').value = d.structuralSlBufferAtr != null ? d.structuralSlBufferAtr : 1.0;
@@ -1153,6 +1156,7 @@
                 enableR4S4:        document.getElementById('enableR4S4').checked,
                 // enableTargetShift removed
                 enableDayHighLowTargetShift: document.getElementById('enableDayHighLowTargetShift').checked,
+                dayHighLowShiftMinDistAtr: parseFloat(document.getElementById('dayHighLowShiftMinDistAtr').value) || 1.0,
                 enableWeeklyLevelTargetShift: document.getElementById('enableWeeklyLevelTargetShift').checked,
                 enableStructuralSl: document.getElementById('enableStructuralSl').checked,
                 structuralSlBufferAtr: parseFloat(document.getElementById('structuralSlBufferAtr').value) || 1.0,

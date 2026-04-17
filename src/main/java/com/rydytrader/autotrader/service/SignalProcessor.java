@@ -284,12 +284,13 @@ public class SignalProcessor {
         {
             java.util.Map<Double, String> shiftCandidates = new java.util.LinkedHashMap<>();
             if (!isDhDl && riskSettings.isEnableDayHighLowTargetShift()) {
+                double minDist = riskSettings.getDayHighLowShiftMinDistAtr() * atr;
                 if (isBuy) {
                     double sh = candleAggregator.getDayHighBeforeLast(symbol);
-                    if (sh > 0) shiftCandidates.put(sh, "session high");
+                    if (sh > 0 && (sh - close) >= minDist) shiftCandidates.put(sh, "session high");
                 } else {
                     double sessionLow = candleAggregator.getDayLowBeforeLast(symbol);
-                    if (sessionLow > 0) shiftCandidates.put(sessionLow, "session low");
+                    if (sessionLow > 0 && (close - sessionLow) >= minDist) shiftCandidates.put(sessionLow, "session low");
                 }
             }
             WeeklyCprService.WeeklyLevels wl = riskSettings.isEnableWeeklyLevelTargetShift()

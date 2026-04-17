@@ -60,6 +60,7 @@ public class SettingsController {
         result.put("telegramAlertFrequency", riskSettings.getTelegramAlertFrequency(effectiveMode));
         result.put("enableGapCheck", riskSettings.isEnableGapCheck());
         result.put("enableDayHighLowTargetShift", riskSettings.isEnableDayHighLowTargetShift());
+        result.put("dayHighLowShiftMinDistAtr", riskSettings.getDayHighLowShiftMinDistAtr());
         result.put("enableWeeklyLevelTargetShift", riskSettings.isEnableWeeklyLevelTargetShift());
         result.put("enableStructuralSl",    riskSettings.isEnableStructuralSl());
         result.put("structuralSlBufferAtr", riskSettings.getStructuralSlBufferAtr());
@@ -162,6 +163,7 @@ public class SettingsController {
             if (body.containsKey("telegramAlertFrequency")) riskSettings.setTelegramAlertFrequency(effectiveMode, Integer.parseInt(body.get("telegramAlertFrequency").toString()));
             if (body.containsKey("enableGapCheck")) riskSettings.setEnableGapCheck(Boolean.parseBoolean(body.get("enableGapCheck").toString()));
             if (body.containsKey("enableDayHighLowTargetShift")) riskSettings.setEnableDayHighLowTargetShift(Boolean.parseBoolean(body.get("enableDayHighLowTargetShift").toString()));
+            if (body.containsKey("dayHighLowShiftMinDistAtr")) riskSettings.setDayHighLowShiftMinDistAtr(Double.parseDouble(body.get("dayHighLowShiftMinDistAtr").toString()));
             if (body.containsKey("enableWeeklyLevelTargetShift")) riskSettings.setEnableWeeklyLevelTargetShift(Boolean.parseBoolean(body.get("enableWeeklyLevelTargetShift").toString()));
             if (body.containsKey("enableStructuralSl")) riskSettings.setEnableStructuralSl(Boolean.parseBoolean(body.get("enableStructuralSl").toString()));
             if (body.containsKey("structuralSlBufferAtr")) riskSettings.setStructuralSlBufferAtr(Double.parseDouble(body.get("structuralSlBufferAtr").toString()));
