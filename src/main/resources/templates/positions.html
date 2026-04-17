@@ -595,7 +595,7 @@
         const currentSetup = setupSel.value;
         const setups = [...new Set(positions.map(p => p.setup).filter(s => s))].sort();
         setupSel.innerHTML = '<option value="">All Setups</option>' + setups.map(s =>
-            `<option value="${s}"${s === currentSetup ? ' selected' : ''}>${s.replace(/^(BUY_ABOVE_|SELL_BELOW_)/, '')}</option>`
+            `<option value="${s}"${s === currentSetup ? ' selected' : ''}>${s}</option>`
         ).join('');
     }
 

@@ -29,6 +29,7 @@ public class ScannerController {
     private final MarginDataService marginDataService;
     private final TradeHistoryService tradeHistoryService;
     private final EmaService emaService;
+    private final IndexTrendService indexTrendService;
 
     public ScannerController(MarketDataService marketDataService,
                              BhavcopyService bhavcopyService,
@@ -39,7 +40,8 @@ public class ScannerController {
                              RiskSettingsStore riskSettings,
                              MarginDataService marginDataService,
                              TradeHistoryService tradeHistoryService,
-                             EmaService emaService) {
+                             EmaService emaService,
+                             IndexTrendService indexTrendService) {
         this.marketDataService = marketDataService;
         this.bhavcopyService = bhavcopyService;
         this.atrService = atrService;
@@ -50,6 +52,7 @@ public class ScannerController {
         this.marginDataService = marginDataService;
         this.tradeHistoryService = tradeHistoryService;
         this.emaService = emaService;
+        this.indexTrendService = indexTrendService;
     }
 
     @GetMapping("/api/scanner/watchlist")
@@ -165,7 +168,7 @@ public class ScannerController {
         card.put("weeklyTrend", weeklyCprService.getWeeklyTrend(fyersSymbol));
         card.put("weeklyReversalActive", !"NONE".equals(weeklyCprService.getWeeklyRejection(fyersSymbol)));
         card.put("dailyTrend", weeklyCprService.getDailyTrend(fyersSymbol));
-        card.put("probability", weeklyCprService.getProbability(fyersSymbol));
+        card.put("probability", computeCardProbability(fyersSymbol, ltp));
 
         // Opening Range status
         String orStatus = null;
@@ -233,6 +236,57 @@ public class ScannerController {
     }
 
     private double r(double v) { return Math.round(v * 100.0) / 100.0; }
+
+    /**
+     * Compute card-level probability preview using all pre-checkable conditions (8 of 10).
+     * More accurate than the basic weekly+daily check — includes EMA, VWAP, crossover, NIFTY.
+     * Direction derived from daily trend (bullish → buy preview, bearish → sell preview).
+     */
+    private String computeCardProbability(String symbol, double ltp) {
+        String daily = weeklyCprService.getDailyTrend(symbol);
+        boolean isBuy = daily.contains("BULLISH");
+        boolean isSell = daily.contains("BEARISH");
+        if (!isBuy && !isSell) return "--"; // daily neutral — direction unknown
+
+        // 1-2. Weekly + daily alignment
+        String baseProb = weeklyCprService.getProbabilityForDirection(symbol, isBuy);
+        if (!"HPT".equals(baseProb)) return baseProb; // already LPT or SKIP from weekly
+
+        // 3. 20 EMA direction
+        double ema = emaService.getEma(symbol);
+        if (riskSettings.isEnableEmaDirectionCheck() && ema > 0) {
+            if ((isBuy && ltp < ema) || (isSell && ltp > ema)) return "LPT";
+        }
+
+        // 4. 200 EMA direction
+        double ema200 = emaService.getEma200(symbol);
+        if (riskSettings.isEnableEma200DirectionCheck() && ema200 > 0) {
+            if ((isBuy && ltp < ema200) || (isSell && ltp > ema200)) return "LPT";
+        }
+
+        // 5. EMA crossover (20 vs 200)
+        if (riskSettings.isEnableEmaCrossoverCheck() && ema > 0 && ema200 > 0) {
+            if ((isBuy && ema < ema200) || (isSell && ema > ema200)) return "LPT";
+        }
+
+        // 6. VWAP/ATP
+        double atp = candleAggregator.getAtp(symbol);
+        if (riskSettings.isEnableAtpCheck() && atp > 0) {
+            if ((isBuy && ltp < atp) || (isSell && ltp > atp)) return "LPT";
+        }
+
+        // 7. NIFTY alignment
+        if (riskSettings.isEnableIndexAlignment() && indexTrendService.isOpposedToNifty(isBuy)) return "LPT";
+
+        // 8. Inside OR range check (IV/OV days — downgrade if still inside OR)
+        if (candleAggregator.isOpeningRangeLocked(symbol)) {
+            double orHigh = candleAggregator.getOpeningRangeHigh(symbol);
+            double orLow = candleAggregator.getOpeningRangeLow(symbol);
+            if (orHigh > 0 && orLow > 0 && ltp >= orLow && ltp <= orHigh) return "LPT";
+        }
+
+        return "HPT"; // all 8 pre-checkable gates passed
+    }
 
     @GetMapping("/api/scanner/status")
     public Map<String, Object> getScannerStatus() {

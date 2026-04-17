@@ -325,7 +325,7 @@
         var currentSetup = setupSel.value;
         var setups = [...new Set(trades.map(t => t.setup).filter(s => s))].sort();
         setupSel.innerHTML = '<option value="">All Setups</option>' + setups.map(s =>
-            '<option value="' + s + '"' + (s === currentSetup ? ' selected' : '') + '>' + s.replace(/^(BUY_ABOVE_|SELL_BELOW_)/, '') + '</option>'
+            '<option value="' + s + '"' + (s === currentSetup ? ' selected' : '') + '>' + s + '</option>'
         ).join('');
     }
 

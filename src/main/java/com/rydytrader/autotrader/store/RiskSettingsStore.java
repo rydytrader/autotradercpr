@@ -59,6 +59,7 @@ public class RiskSettingsStore {
         // EMA filters
         volatile boolean enableEmaDirectionCheck = true; // buy requires close > EMA(20), sell requires close < EMA(20)
         volatile boolean enableEma200DirectionCheck = true; // buy requires close > EMA(200), sell requires close < EMA(200)
+        volatile boolean enableEmaCrossoverCheck = true; // buy requires 20 EMA > 200 EMA, sell requires 20 EMA < 200 EMA
         volatile double emaCloseDistanceAtr = 0.75;  // legacy — kept for backward compat with old risk-settings.json
         // EMA level-count filter — counts CPR zones strictly between EMA and the broken level.
         // Allow only when count == 0 (EMA is in the zone immediately adjacent to the broken level).
@@ -175,6 +176,7 @@ public class RiskSettingsStore {
     public double  getMinRiskRewardRatio()         { return cfg().minRiskRewardRatio; }
     public boolean isEnableEmaDirectionCheck()      { return cfg().enableEmaDirectionCheck; }
     public boolean isEnableEma200DirectionCheck()   { return cfg().enableEma200DirectionCheck; }
+    public boolean isEnableEmaCrossoverCheck()     { return cfg().enableEmaCrossoverCheck; }
     public double getEmaCloseDistanceAtr()         { return cfg().emaCloseDistanceAtr; }
     public boolean isEnableEmaLevelCountFilter()   { return cfg().enableEmaLevelCountFilter; }
     public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
@@ -298,6 +300,7 @@ public class RiskSettingsStore {
     public void setMinRiskRewardRatio(double v)            { cfg().minRiskRewardRatio = v; }
     public void setEnableEmaDirectionCheck(boolean v)       { cfg().enableEmaDirectionCheck = v; }
     public void setEnableEma200DirectionCheck(boolean v)   { cfg().enableEma200DirectionCheck = v; }
+    public void setEnableEmaCrossoverCheck(boolean v)     { cfg().enableEmaCrossoverCheck = v; }
     public void setEmaCloseDistanceAtr(double v)           { cfg().emaCloseDistanceAtr = v; }
     public void setEnableEmaLevelCountFilter(boolean v)    { cfg().enableEmaLevelCountFilter = v; }
     public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
@@ -417,6 +420,7 @@ public class RiskSettingsStore {
             upsert("minRiskRewardRatio", String.valueOf(c.minRiskRewardRatio));
             upsert("enableEmaDirectionCheck", String.valueOf(c.enableEmaDirectionCheck));
             upsert("enableEma200DirectionCheck", String.valueOf(c.enableEma200DirectionCheck));
+            upsert("enableEmaCrossoverCheck", String.valueOf(c.enableEmaCrossoverCheck));
             upsert("emaCloseDistanceAtr", String.valueOf(c.emaCloseDistanceAtr));
             upsert("enableEmaLevelCountFilter", String.valueOf(c.enableEmaLevelCountFilter));
             upsert("enableTargetShift", String.valueOf(c.enableTargetShift));
@@ -525,6 +529,7 @@ public class RiskSettingsStore {
                     case "minRiskRewardRatio" -> c.minRiskRewardRatio = Double.parseDouble(v);
                     case "enableEmaDirectionCheck" -> c.enableEmaDirectionCheck = Boolean.parseBoolean(v);
                     case "enableEma200DirectionCheck" -> c.enableEma200DirectionCheck = Boolean.parseBoolean(v);
+                    case "enableEmaCrossoverCheck" -> c.enableEmaCrossoverCheck = Boolean.parseBoolean(v);
                     case "emaCloseDistanceAtr" -> c.emaCloseDistanceAtr = Double.parseDouble(v);
                     case "enableEmaLevelCountFilter" -> c.enableEmaLevelCountFilter = Boolean.parseBoolean(v);
                     case "enableTargetShift" -> c.enableTargetShift = Boolean.parseBoolean(v);

@@ -21,6 +21,7 @@ public class IndexTrend {
     private int slopeScore;
     private int ema200PositionScore; // +1 if LTP > EMA(200), -1 if LTP < EMA(200), 0 otherwise
     private int openHlScore;        // -1 if O=H (bearish), +1 if O=L (bullish), 0 otherwise
+    private int emaCrossoverScore;  // +1 if 20 EMA > 200 EMA, -1 if below, 0 if data missing
     private boolean openEqualsHigh; // true if day open ≈ day high (within 0.05%)
     private boolean openEqualsLow;  // true if day open ≈ day low (within 0.05%)
     private int totalScore;         // sum of all components
@@ -62,6 +63,8 @@ public class IndexTrend {
     public void setOpenEqualsHigh(boolean v) { this.openEqualsHigh = v; }
     public boolean isOpenEqualsLow() { return openEqualsLow; }
     public void setOpenEqualsLow(boolean v) { this.openEqualsLow = v; }
+    public int getEmaCrossoverScore() { return emaCrossoverScore; }
+    public void setEmaCrossoverScore(int v) { this.emaCrossoverScore = v; }
     public int getTotalScore() { return totalScore; }
     public void setTotalScore(int v) { this.totalScore = v; }
     public String getState() { return state; }

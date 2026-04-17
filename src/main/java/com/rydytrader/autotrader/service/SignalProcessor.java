@@ -247,6 +247,15 @@ public class SignalProcessor {
             }
         }
 
+        // ── 4e3. Re-check probability after all downgrades ─────────────────────
+        // BreakoutScanner checked isProbabilityEnabled at signal time, but SignalProcessor
+        // may have downgraded HPT → LPT (inside-OR, EV reversal, etc.). If LPT is disabled
+        // and the probability was just downgraded, reject the trade here.
+        if ("LPT".equals(probability) && !riskSettings.isEnableLpt()) {
+            return ProcessedSignal.rejected(setup, symbol,
+                "Probability downgraded to LPT after scanner — LPT trades disabled");
+        }
+
         // ── 4f. Compute target ──────────────────────────────────────────────────
         double[] targets;
         if (isReversal) {

@@ -24,8 +24,9 @@ import org.springframework.stereotype.Service;
  *   - EMA 20 slope    : ±2 (steep) / ±1 (mild) / 0
  *   - EMA 200 position: ±1 (LTP above/below 200 EMA) — long-term trend
  *   - Open=High/Low   : -1 (O=H, bearish) / +1 (O=L, bullish) / 0
+ *   - EMA crossover   : +1 (20 EMA > 200 EMA) / -1 (20 EMA < 200 EMA) / 0
  *
- * Score range: -9 to +9
+ * Score range: -10 to +10
  */
 @Service
 public class IndexTrendService {
@@ -115,7 +116,9 @@ public class IndexTrendService {
         int ema200PositionScore = scoreEmaPosition(ltp, ema200);
         // O=H (bearish: -1), O=L (bullish: +1), neither: 0
         int openHlScore = openEqualsHigh ? -1 : (openEqualsLow ? 1 : 0);
-        int total = weeklyScore + dailyScore + emaPositionScore + slopeScore + ema200PositionScore + openHlScore;
+        // EMA crossover: +1 if 20 EMA > 200 EMA (golden cross), -1 if below (death cross)
+        int emaCrossoverScore = (ema > 0 && ema200 > 0) ? (ema > ema200 ? 1 : (ema < ema200 ? -1 : 0)) : 0;
+        int total = weeklyScore + dailyScore + emaPositionScore + slopeScore + ema200PositionScore + openHlScore + emaCrossoverScore;
 
         trend.setWeeklyScore(weeklyScore);
         trend.setDailyScore(dailyScore);
@@ -123,6 +126,7 @@ public class IndexTrendService {
         trend.setSlopeScore(slopeScore);
         trend.setEma200PositionScore(ema200PositionScore);
         trend.setOpenHlScore(openHlScore);
+        trend.setEmaCrossoverScore(emaCrossoverScore);
         trend.setTotalScore(total);
 
         // Classify

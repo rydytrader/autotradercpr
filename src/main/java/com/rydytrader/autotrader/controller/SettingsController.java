@@ -68,6 +68,7 @@ public class SettingsController {
         result.put("minRiskRewardRatio", riskSettings.getMinRiskRewardRatio());
         result.put("enableEmaDirectionCheck", riskSettings.isEnableEmaDirectionCheck());
         result.put("enableEma200DirectionCheck", riskSettings.isEnableEma200DirectionCheck());
+        result.put("enableEmaCrossoverCheck", riskSettings.isEnableEmaCrossoverCheck());
         result.put("emaCloseDistanceAtr", riskSettings.getEmaCloseDistanceAtr());
         result.put("enableEmaLevelCountFilter", riskSettings.isEnableEmaLevelCountFilter());
         result.put("enableTargetShift", riskSettings.isEnableTargetShift(effectiveMode));
@@ -165,6 +166,7 @@ public class SettingsController {
             if (body.containsKey("minRiskRewardRatio")) riskSettings.setMinRiskRewardRatio(Double.parseDouble(body.get("minRiskRewardRatio").toString()));
             if (body.containsKey("enableEmaDirectionCheck")) riskSettings.setEnableEmaDirectionCheck(Boolean.parseBoolean(body.get("enableEmaDirectionCheck").toString()));
             if (body.containsKey("enableEma200DirectionCheck")) riskSettings.setEnableEma200DirectionCheck(Boolean.parseBoolean(body.get("enableEma200DirectionCheck").toString()));
+            if (body.containsKey("enableEmaCrossoverCheck")) riskSettings.setEnableEmaCrossoverCheck(Boolean.parseBoolean(body.get("enableEmaCrossoverCheck").toString()));
             if (body.containsKey("emaCloseDistanceAtr")) riskSettings.setEmaCloseDistanceAtr(Double.parseDouble(body.get("emaCloseDistanceAtr").toString()));
             if (body.containsKey("enableEmaLevelCountFilter")) riskSettings.setEnableEmaLevelCountFilter(Boolean.parseBoolean(body.get("enableEmaLevelCountFilter").toString()));
             if (body.containsKey("enableTargetShift")) riskSettings.setEnableTargetShift(effectiveMode, Boolean.parseBoolean(body.get("enableTargetShift").toString()));

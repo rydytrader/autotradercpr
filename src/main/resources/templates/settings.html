@@ -396,7 +396,11 @@
                         <input type="checkbox" id="enableEma200DirectionCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only above 200 EMA, sell only below 200 EMA</span>
                     </div>
-                    <div class="form-hint">Both EMA filters confirm the breakout direction on different timeframes. 20 EMA captures short-term momentum, 200 EMA captures the long-term trend. VWAP uses the day's volume-weighted average.</div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="enableEmaCrossoverCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only when 20 EMA &gt; 200 EMA, sell only when 20 EMA &lt; 200 EMA</span>
+                    </div>
+                    <div class="form-hint">Both EMA filters confirm the breakout direction on different timeframes. 20 EMA captures short-term momentum, 200 EMA captures the long-term trend. VWAP uses the day's volume-weighted average. When the 200 EMA check is disabled, the 200 EMA becomes a target-shift candidate instead — if it sits between entry and the original target, the target is pulled back to the 200 EMA (treating it as resistance for buys or support for sells). The R/R filter then evaluates the compressed target.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Risk / Reward Filter</label>
@@ -993,6 +997,7 @@
             document.getElementById('minRiskRewardRatio').value = d.minRiskRewardRatio != null ? d.minRiskRewardRatio : 1.0;
             document.getElementById('enableEmaDirectionCheck').checked = d.enableEmaDirectionCheck !== false;
             document.getElementById('enableEma200DirectionCheck').checked = d.enableEma200DirectionCheck !== false;
+            document.getElementById('enableEmaCrossoverCheck').checked = d.enableEmaCrossoverCheck !== false;
             document.getElementById('enableEmaLevelCountFilter').checked = d.enableEmaLevelCountFilter !== false;
             document.getElementById('enableSplitTarget').checked = d.enableSplitTarget !== false;
             document.getElementById('t1DistancePct').value = d.t1DistancePct || 50;
@@ -1137,6 +1142,7 @@
                 minRiskRewardRatio: parseFloat(document.getElementById('minRiskRewardRatio').value) || 1.0,
                 enableEmaDirectionCheck: document.getElementById('enableEmaDirectionCheck').checked,
                 enableEma200DirectionCheck: document.getElementById('enableEma200DirectionCheck').checked,
+                enableEmaCrossoverCheck: document.getElementById('enableEmaCrossoverCheck').checked,
                 enableEmaLevelCountFilter: document.getElementById('enableEmaLevelCountFilter').checked,
                 enableSplitTarget: document.getElementById('enableSplitTarget').checked,
                 t1DistancePct: parseInt(document.getElementById('t1DistancePct').value) || 50,
