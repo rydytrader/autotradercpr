@@ -611,8 +611,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     /**
      * EMA level-count filter. Counts CPR zones strictly between EMA and the broken level.
      * Pair zones (CPR, R1/PDH, S1/PDL) are collapsed — each counted at most once.
-     * The setup's own zone is excluded (not counted). DH/DL setups have no exclusion
-     * (day high/low isn't a CPR zone), but the zone-counting logic applies identically.
+     * The setup's own zone is excluded. For DH/DL, the highest R-zone (or lowest S-zone)
+     * that price has already passed is excluded — e.g. if DH is above R3, R3 is excluded.
      *
      * Returns 0 = pass, 2 = skip. No halve tier. If filter disabled, always returns 0.
      */
@@ -635,7 +635,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double s1lo   = Math.min(levels.getS1(), levels.getPl());
         double s1hi   = Math.max(levels.getS1(), levels.getPl());
 
-        String excludedZone = excludedZoneFor(setup);
+        String excludedZone = excludedZoneFor(setup, levels, fyersSymbol);
 
         // Zone list, bottom-to-top. name → edges
         String[] zoneNames = { "S4", "S3", "S2", "S1PDL", "CPR", "R1PDH", "R2", "R3", "R4" };
@@ -677,7 +677,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     }
 
     /** Returns the zone name the setup is breaking — excluded from the "levels between" count. */
-    private static String excludedZoneFor(String setup) {
+    private String excludedZoneFor(String setup, CprLevels levels, String fyersSymbol) {
         return switch (setup) {
             case "BUY_ABOVE_CPR", "SELL_BELOW_CPR"       -> "CPR";
             case "BUY_ABOVE_R1_PDH", "SELL_BELOW_R1_PDH" -> "R1PDH";
@@ -688,7 +688,26 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             case "BUY_ABOVE_S2", "SELL_BELOW_S2"         -> "S2";
             case "BUY_ABOVE_S3", "SELL_BELOW_S3"         -> "S3";
             case "BUY_ABOVE_S4", "SELL_BELOW_S4"         -> "S4";
-            default -> "";  // DH/DL and any unknown setup — no exclusion
+            // DH/DL: find the highest R-zone (buy) or lowest S-zone (sell) that price has passed
+            case "BUY_ABOVE_DH" -> {
+                double dh = candleAggregator.getDayHighBeforeLast(fyersSymbol);
+                if (dh > levels.getR4()) yield "R4";
+                if (dh > levels.getR3()) yield "R3";
+                if (dh > levels.getR2()) yield "R2";
+                if (dh > Math.max(levels.getR1(), levels.getPh())) yield "R1PDH";
+                if (dh > Math.max(levels.getTc(), levels.getBc())) yield "CPR";
+                yield "";
+            }
+            case "SELL_BELOW_DL" -> {
+                double dl = candleAggregator.getDayLowBeforeLast(fyersSymbol);
+                if (dl < levels.getS4()) yield "S4";
+                if (dl < levels.getS3()) yield "S3";
+                if (dl < levels.getS2()) yield "S2";
+                if (dl < Math.min(levels.getS1(), levels.getPl())) yield "S1PDL";
+                if (dl < Math.min(levels.getTc(), levels.getBc())) yield "CPR";
+                yield "";
+            }
+            default -> "";
         };
     }
 
