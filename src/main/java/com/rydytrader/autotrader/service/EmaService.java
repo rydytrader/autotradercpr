@@ -160,6 +160,7 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
             double k = 2.0 / (EMA_PERIOD + 1);
             double ema = completedCandle.close * k + prev * (1 - k);
             storeEma(fyersSymbol, ema);
+            completedCandle.ema20 = ema; // snapshot on the bar for chart history
         }
 
         // 200 EMA incremental update
@@ -168,6 +169,7 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
             double k200 = 2.0 / (EMA_LONG_PERIOD + 1);
             double ema200 = completedCandle.close * k200 + prev200 * (1 - k200);
             ema200BySymbol.put(fyersSymbol, ema200);
+            completedCandle.ema200 = ema200; // snapshot on the bar for chart history
         }
     }
 

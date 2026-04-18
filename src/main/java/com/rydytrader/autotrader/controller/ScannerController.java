@@ -9,6 +9,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.*;
@@ -30,6 +31,7 @@ public class ScannerController {
     private final TradeHistoryService tradeHistoryService;
     private final EmaService emaService;
     private final IndexTrendService indexTrendService;
+    private final MarketHolidayService marketHolidayService;
 
     public ScannerController(MarketDataService marketDataService,
                              BhavcopyService bhavcopyService,
@@ -41,7 +43,8 @@ public class ScannerController {
                              MarginDataService marginDataService,
                              TradeHistoryService tradeHistoryService,
                              EmaService emaService,
-                             IndexTrendService indexTrendService) {
+                             IndexTrendService indexTrendService,
+                             MarketHolidayService marketHolidayService) {
         this.marketDataService = marketDataService;
         this.bhavcopyService = bhavcopyService;
         this.atrService = atrService;
@@ -53,6 +56,7 @@ public class ScannerController {
         this.tradeHistoryService = tradeHistoryService;
         this.emaService = emaService;
         this.indexTrendService = indexTrendService;
+        this.marketHolidayService = marketHolidayService;
     }
 
     @GetMapping("/api/scanner/watchlist")
@@ -237,6 +241,79 @@ public class ScannerController {
 
     private double r(double v) { return Math.round(v * 100.0) / 100.0; }
 
+    private Map<String, Object> barToMap(CandleAggregator.CandleBar c, boolean forming) {
+        Map<String, Object> bar = new LinkedHashMap<>();
+        bar.put("t", c.epochSec * 1000L);
+        bar.put("o", r(c.open));
+        bar.put("h", r(c.high));
+        bar.put("l", r(c.low));
+        bar.put("c", r(c.close));
+        bar.put("v", c.volume);
+        if (forming) bar.put("forming", true);
+        return bar;
+    }
+
+    private Map<String, Object> point(long tMs, double value) {
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("t", tMs);
+        p.put("v", r(value));
+        return p;
+    }
+
+    private void addIndicatorPoints(CandleAggregator.CandleBar c,
+                                    List<Map<String, Object>> vwapSeries,
+                                    List<Map<String, Object>> ema20Series,
+                                    List<Map<String, Object>> ema200Series) {
+        long tMs = c.epochSec * 1000L;
+        if (c.vwap > 0) vwapSeries.add(point(tMs, c.vwap));
+        if (c.ema20 > 0) ema20Series.add(point(tMs, c.ema20));
+        if (c.ema200 > 0) ema200Series.add(point(tMs, c.ema200));
+    }
+
+    private void computeIndicatorsAndBuild(List<CandleAggregator.CandleBar> history,
+                                           java.time.LocalDate displayDate,
+                                           java.time.ZoneId ist,
+                                           List<Map<String, Object>> candleList,
+                                           List<Map<String, Object>> vwapSeries,
+                                           List<Map<String, Object>> ema20Series,
+                                           List<Map<String, Object>> ema200Series) {
+        final double k20 = 2.0 / 21.0;
+        final double k200 = 2.0 / 201.0;
+        double ema20 = 0, ema200 = 0;
+        boolean firstBar = true;
+        double dayCumPV = 0, dayCumV = 0;
+        java.time.LocalDate curDay = null;
+        for (CandleAggregator.CandleBar c : history) {
+            java.time.LocalDate d = java.time.Instant.ofEpochSecond(c.epochSec).atZone(ist).toLocalDate();
+            if (!d.equals(curDay)) {
+                dayCumPV = 0;
+                dayCumV = 0;
+                curDay = d;
+            }
+            double tp = (c.high + c.low + c.close) / 3.0;
+            if (c.volume > 0) {
+                dayCumPV += tp * c.volume;
+                dayCumV += c.volume;
+            }
+            double vwap = dayCumV > 0 ? dayCumPV / dayCumV : c.close;
+            if (firstBar) {
+                ema20 = c.close;
+                ema200 = c.close;
+                firstBar = false;
+            } else {
+                ema20 = c.close * k20 + ema20 * (1 - k20);
+                ema200 = c.close * k200 + ema200 * (1 - k200);
+            }
+            if (d.equals(displayDate)) {
+                candleList.add(barToMap(c, false));
+                long tMs = c.epochSec * 1000L;
+                vwapSeries.add(point(tMs, vwap));
+                ema20Series.add(point(tMs, ema20));
+                ema200Series.add(point(tMs, ema200));
+            }
+        }
+    }
+
     /**
      * Compute card-level probability preview using all pre-checkable conditions (8 of 10).
      * More accurate than the basic weekly+daily check — includes EMA, VWAP, crossover, NIFTY.
@@ -309,6 +386,186 @@ public class ScannerController {
         status.put("narrowMaxWidth", riskSettings.getNarrowCprMaxWidth());
         status.put("insideMaxWidth", riskSettings.getInsideCprMaxWidth());
         return status;
+    }
+
+    @GetMapping("/api/scanner/chart")
+    public Map<String, Object> getChartData(@RequestParam String symbol) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("symbol", symbol);
+
+        boolean tradingDay = marketHolidayService.isTradingDay();
+        List<Map<String, Object>> candleList = new ArrayList<>();
+        List<Map<String, Object>> vwapSeries = new ArrayList<>();
+        List<Map<String, Object>> ema20Series = new ArrayList<>();
+        List<Map<String, Object>> ema200Series = new ArrayList<>();
+
+        if (tradingDay) {
+            // Live path: read stored indicator values per-candle from aggregator
+            List<CandleAggregator.CandleBar> candles = candleAggregator.getCompletedCandles(symbol);
+            for (CandleAggregator.CandleBar c : candles) {
+                candleList.add(barToMap(c, false));
+                addIndicatorPoints(c, vwapSeries, ema20Series, ema200Series);
+            }
+            CandleAggregator.CandleBar current = candleAggregator.getCurrentCandle(symbol);
+            if (current != null && current.open > 0) {
+                candleList.add(barToMap(current, true));
+                // Forming candle uses current live indicator values
+                long tMs = current.epochSec * 1000L;
+                double liveVwap = candleAggregator.getAtp(symbol);
+                double liveEma20 = emaService.getEma(symbol);
+                double liveEma200 = emaService.getEma200(symbol);
+                if (liveVwap > 0) vwapSeries.add(point(tMs, liveVwap));
+                if (liveEma20 > 0) ema20Series.add(point(tMs, liveEma20));
+                if (liveEma200 > 0) ema200Series.add(point(tMs, liveEma200));
+            }
+            result.put("dataSource", "live");
+        } else {
+            // Non-trading day: fetch multi-day historical, compute indicators progressively, show most recent trading day
+            try {
+                List<CandleAggregator.CandleBar> hist = atrService.fetchTodayCandles(symbol);
+                if (!hist.isEmpty()) {
+                    java.time.ZoneId ist = java.time.ZoneId.of("Asia/Kolkata");
+                    java.time.LocalDate latestDate = null;
+                    for (CandleAggregator.CandleBar c : hist) {
+                        java.time.LocalDate d = java.time.Instant.ofEpochSecond(c.epochSec).atZone(ist).toLocalDate();
+                        if (latestDate == null || d.isAfter(latestDate)) latestDate = d;
+                    }
+                    if (latestDate != null) {
+                        // Compute indicators progressively (Fyers API doesn't return them)
+                        computeIndicatorsAndBuild(hist, latestDate, ist, candleList, vwapSeries, ema20Series, ema200Series);
+                        result.put("dataDate", latestDate.toString());
+                    }
+                }
+                result.put("dataSource", "historical");
+            } catch (Exception e) {
+                result.put("dataSource", "error");
+                result.put("error", e.getMessage());
+            }
+        }
+        result.put("candles", candleList);
+        result.put("vwapSeries", vwapSeries);
+        result.put("ema20Series", ema20Series);
+        result.put("ema200Series", ema200Series);
+        result.put("tradingDay", tradingDay);
+
+        // CPR levels:
+        //   Live (trading day): use cache — it's the CPR active for today (computed from yesterday's OHLC)
+        //   Historical: use getPreviousCpr — cache is "next day's CPR", we want the CPR that was active
+        //   on the historical trading day we're displaying.
+        CprLevels lv = tradingDay ? bhavcopyService.getCprLevels(symbol) : bhavcopyService.getPreviousCpr(symbol);
+        if (lv != null) {
+            Map<String, Object> cpr = new LinkedHashMap<>();
+            cpr.put("top", r(Math.max(lv.getTc(), lv.getBc())));
+            cpr.put("pivot", r(lv.getPivot()));
+            cpr.put("bottom", r(Math.min(lv.getTc(), lv.getBc())));
+            cpr.put("r1", r(lv.getR1()));
+            cpr.put("r2", r(lv.getR2()));
+            cpr.put("r3", r(lv.getR3()));
+            cpr.put("r4", r(lv.getR4()));
+            cpr.put("s1", r(lv.getS1()));
+            cpr.put("s2", r(lv.getS2()));
+            cpr.put("s3", r(lv.getS3()));
+            cpr.put("s4", r(lv.getS4()));
+            cpr.put("pdh", r(lv.getPh()));
+            cpr.put("pdl", r(lv.getPl()));
+            result.put("cpr", cpr);
+        }
+
+        // Indicators (current values)
+        result.put("ltp", r(candleAggregator.getLtp(symbol)));
+        result.put("vwap", r(candleAggregator.getAtp(symbol)));
+        result.put("ema20", r(emaService.getEma(symbol)));
+        result.put("ema200", r(emaService.getEma200(symbol)));
+
+        // Opening Range (high/low for the OR window, plus time bounds)
+        Map<String, Object> or = new LinkedHashMap<>();
+        int orMinutes = riskSettings.getOpeningRangeMinutes();
+        double orHigh = 0, orLow = 0;
+        java.time.ZoneId orIst = java.time.ZoneId.of("Asia/Kolkata");
+        java.time.LocalDate orDate = null;
+        if (tradingDay) {
+            orHigh = candleAggregator.getOpeningRangeHigh(symbol);
+            orLow = candleAggregator.getOpeningRangeLow(symbol);
+            orDate = java.time.LocalDate.now(orIst);
+        } else {
+            // Historical: compute OR from display day's first N candles
+            if (!candleList.isEmpty()) {
+                try {
+                    long firstTs = (long) candleList.get(0).get("t");
+                    orDate = java.time.Instant.ofEpochMilli(firstTs).atZone(orIst).toLocalDate();
+                    int orEndMin = com.rydytrader.autotrader.service.MarketHolidayService.MARKET_OPEN_MINUTE + orMinutes;
+                    double hi = 0, lo = Double.MAX_VALUE;
+                    for (Map<String, Object> bar : candleList) {
+                        long tMs = (long) bar.get("t");
+                        java.time.LocalTime lt = java.time.Instant.ofEpochMilli(tMs).atZone(orIst).toLocalTime();
+                        int barMin = lt.getHour() * 60 + lt.getMinute();
+                        if (barMin >= com.rydytrader.autotrader.service.MarketHolidayService.MARKET_OPEN_MINUTE
+                            && barMin < orEndMin) {
+                            double h = ((Number) bar.get("h")).doubleValue();
+                            double l = ((Number) bar.get("l")).doubleValue();
+                            if (h > hi) hi = h;
+                            if (l < lo) lo = l;
+                        }
+                    }
+                    if (hi > 0 && lo < Double.MAX_VALUE) { orHigh = hi; orLow = lo; }
+                } catch (Exception ignored) {}
+            }
+        }
+        if (orHigh > 0 && orLow > 0 && orDate != null && orMinutes > 0) {
+            long orStartSec = orDate.atTime(9, 15).atZone(orIst).toEpochSecond();
+            long orEndSec = orStartSec + (orMinutes * 60L);
+            or.put("high", r(orHigh));
+            or.put("low", r(orLow));
+            or.put("startMs", orStartSec * 1000L);
+            or.put("endMs", orEndSec * 1000L);
+            result.put("or", or);
+        }
+
+        // Trades for this symbol (today's trades only, for live mode)
+        List<Map<String, Object>> trades = new ArrayList<>();
+        if (tradingDay) {
+            for (com.rydytrader.autotrader.dto.TradeRecord tr : tradeHistoryService.getTrades()) {
+                if (!symbol.equals(tr.getSymbol())) continue;
+                Map<String, Object> t = new LinkedHashMap<>();
+                t.put("setup", tr.getSetup());
+                t.put("side", tr.getSide());
+                t.put("entryPrice", tr.getEntryPrice());
+                t.put("exitPrice", tr.getExitPrice());
+                t.put("exitReason", tr.getExitReason());
+                t.put("netPnl", tr.getNetPnl());
+                t.put("qty", tr.getQty());
+                // exit time from timestamp (format "HH:mm:ss")
+                t.put("exitTime", timeToEpochMs(tr.getTimestamp()));
+                // entry time — try to parse from description first line like "HH:mm:ss [ENTRY]"
+                t.put("entryTime", extractEntryTimeMs(tr.getDescription(), tr.getTimestamp()));
+                trades.add(t);
+            }
+        }
+        result.put("trades", trades);
+
+        // Timeframe minutes (for client to know candle duration)
+        result.put("timeframeMinutes", riskSettings.getScannerTimeframe());
+        return result;
+    }
+
+    private long timeToEpochMs(String hms) {
+        if (hms == null || hms.isEmpty()) return 0L;
+        try {
+            java.time.ZoneId ist = java.time.ZoneId.of("Asia/Kolkata");
+            java.time.LocalDate today = java.time.LocalDate.now(ist);
+            java.time.LocalTime t = java.time.LocalTime.parse(hms);
+            return today.atTime(t).atZone(ist).toEpochSecond() * 1000L;
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    private long extractEntryTimeMs(String description, String fallbackTimestamp) {
+        if (description != null) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d{2}:\\d{2}:\\d{2})\\s+\\[ENTRY\\]").matcher(description);
+            if (m.find()) return timeToEpochMs(m.group(1));
+        }
+        return timeToEpochMs(fallbackTimestamp);
     }
 
     @GetMapping("/api/scanner/tv-watchlist")

@@ -218,7 +218,7 @@ public class BhavcopyService {
     }
     public CprLevels getPreviousCpr(String symbol) {
         Map<String, CprLevels> prev = getPreviousDaySymbols();
-        return prev.get(symbol);
+        return prev.get(extractTicker(symbol));
     }
 
     // ── Core fetch logic ───────────────────────────────────────────────────────

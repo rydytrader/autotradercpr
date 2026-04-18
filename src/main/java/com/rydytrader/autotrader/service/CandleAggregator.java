@@ -350,6 +350,10 @@ public class CandleAggregator {
         Long prev = lastFinalizedMinute.put(symbol, candle.startMinute);
         if (prev != null && prev == candle.startMinute) return; // already finalized
 
+        // Snapshot VWAP (Fyers exchange-provided ATP) on the candle
+        Double atpAtClose = latestAtp.get(symbol);
+        if (atpAtClose != null && atpAtClose > 0) candle.vwap = atpAtClose;
+
         // Capture first candle close of the day — only the actual 9:15-9:20 candle is the writer.
         // Strict equality on startMinute means no later candle (post-restart, mid-day) can poison
         // this value. Uses put() rather than putIfAbsent so the legitimate 9:20 close always wins
@@ -721,6 +725,10 @@ public class CandleAggregator {
         public double close;
         public long volume;      // candle volume (delta of cumulative vol)
         public long volAtStart;  // cumulative vol when candle opened (internal)
+        // Snapshot of indicator values at candle close (populated by CandleAggregator.finalizeCandle + EmaService.onCandleClose)
+        public double vwap;      // exchange-provided ATP at candle close (Fyers)
+        public double ema20;     // 20-period EMA after this candle was included
+        public double ema200;    // 200-period EMA after this candle was included
         public double trueRange(CandleBar prev) {
             if (prev == null) return high - low;
             return Math.max(high - low, Math.max(Math.abs(high - prev.close), Math.abs(low - prev.close)));
