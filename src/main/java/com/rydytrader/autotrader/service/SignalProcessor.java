@@ -202,10 +202,14 @@ public class SignalProcessor {
                 boolean orBearish = close < orLow;
 
                 if (!orBullish && !orBearish) {
-                    // Inside OR range — skip
-                    return ProcessedSignal.rejected(setup, symbol,
-                        "EV " + (gapUp ? "up" : "down") + " (1st close " + fmt(firstClose) + ") — price inside OR range"
-                        + " (H:" + fmt(orHigh) + " L:" + fmt(orLow) + ") — skipped");
+                    if (riskSettings.isSkipInsideOrOnEv()) {
+                        return ProcessedSignal.rejected(setup, symbol,
+                            "EV " + (gapUp ? "up" : "down") + " (1st close " + fmt(firstClose) + ") — price inside OR range"
+                            + " (H:" + fmt(orHigh) + " L:" + fmt(orLow) + ") — skipped (EV inside-OR skip enabled)");
+                    }
+                    // EV skip is OFF — allow with qty reduction only (no LPT downgrade).
+                    // Gap direction gives conviction — continuation breakouts stay HPT.
+                    insideOrOnIvOv = true;
                 }
 
                 // Trade direction must match OR break direction.
@@ -244,13 +248,41 @@ public class SignalProcessor {
                     return ProcessedSignal.rejected(setup, symbol,
                         "Mean-reversion setup only allowed on EV days (gap up/down) — today is IV/OV");
                 }
-                // IV/OV: if breakout candle is inside OR range, reduce qty (not downgrade probability)
-                // Target shift to session H/L handles the target side; this handles position sizing.
+                // IV/OV: if breakout candle is inside OR range, skip or reduce qty
                 if (candleAggregator.isOpeningRangeLocked(symbol)) {
                     double orHigh = candleAggregator.getOpeningRangeHigh(symbol);
                     double orLow  = candleAggregator.getOpeningRangeLow(symbol);
                     if (orHigh > 0 && orLow > 0 && close >= orLow && close <= orHigh) {
+                        // Determine if IV or OV
+                        boolean isOv = firstClose > 0 && ((firstClose > Math.max(r1, ph) && firstClose < r2)
+                                                       || (firstClose < Math.min(s1, pl) && firstClose > s2));
+                        if (isOv && riskSettings.isSkipInsideOrOnOv()) {
+                            return ProcessedSignal.rejected(setup, symbol,
+                                "OV day — price inside OR range (H:" + fmt(orHigh) + " L:" + fmt(orLow)
+                                + ") — skipped (OV inside-OR skip enabled)");
+                        }
+                        if (!isOv && riskSettings.isSkipInsideOrOnIv()) {
+                            return ProcessedSignal.rejected(setup, symbol,
+                                "IV day — price inside OR range (H:" + fmt(orHigh) + " L:" + fmt(orLow)
+                                + ") — skipped (IV inside-OR skip enabled)");
+                        }
                         insideOrOnIvOv = true;
+                        if (!isOv) {
+                            // IV: no gap, no directional signal → LPT
+                            if ("HPT".equals(probability)) {
+                                probability = "LPT";
+                                adjustments.add("Probability HPT → LPT (inside OR on IV day — no directional conviction)");
+                            }
+                        } else {
+                            // OV: gap-fade check — if trade opposes the gap direction → LPT
+                            boolean ovGapUp = firstClose > Math.max(r1, ph);
+                            boolean ovGapDown = firstClose < Math.min(s1, pl);
+                            boolean ovGapFade = (ovGapUp && !isBuy) || (ovGapDown && isBuy);
+                            if (ovGapFade && "HPT".equals(probability)) {
+                                probability = "LPT";
+                                adjustments.add("Probability HPT → LPT (inside OR on OV day — trade opposes gap " + (ovGapUp ? "up" : "down") + ")");
+                            }
+                        }
                     }
                 }
             }

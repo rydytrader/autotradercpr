@@ -461,8 +461,10 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         validationTotal = -1;
         // Reload today's trades from DB (clears yesterday's in-memory list, loads any trades already recorded today)
         tradeHistoryService.reloadForCurrentMode();
-        log.info("[MarketData] Daily reset — cleared trailing state, opening refresh, reloaded trade history");
-        eventService.log("[INFO] Daily reset — dashboard, trailing SL, and trade history refreshed for new day");
+        // Clear auth token so user must re-login for the new day (Fyers tokens are day-scoped)
+        tokenStore.setAccessToken(null);
+        log.info("[MarketData] Daily reset — cleared trailing state, opening refresh, auth token, reloaded trade history");
+        eventService.log("[INFO] Daily reset — dashboard, trailing SL, trade history, and auth token cleared for new day. Please re-login.");
     }
 
     @Override

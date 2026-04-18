@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Instant;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -63,6 +64,8 @@ public class CandleAggregator {
 
     // First-bar diagnostic trace counter (per symbol)
     private final ConcurrentHashMap<String, Integer> firstBarTraceCount = new ConcurrentHashMap<>();
+    // Track which symbols have logged their time source (one-time per symbol per day)
+    private final Set<String> timeSourceLogged = ConcurrentHashMap.newKeySet();
 
     @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.context.annotation.Lazy
@@ -160,14 +163,26 @@ public class CandleAggregator {
         double ltp = raw.ltp;
         if (ltp <= 0) return;
 
-        long nowMinute = ZonedDateTime.now(IST).toLocalTime().getHour() * 60L
-            + ZonedDateTime.now(IST).toLocalTime().getMinute();
+        long nowMinute;
+        if (raw.exchFeedTime > 0) {
+            LocalTime t = Instant.ofEpochSecond(raw.exchFeedTime).atZone(IST).toLocalTime();
+            nowMinute = t.getHour() * 60L + t.getMinute();
+        } else {
+            LocalTime t = ZonedDateTime.now(IST).toLocalTime();
+            nowMinute = t.getHour() * 60L + t.getMinute();
+        }
 
         // Always update latestLtp so trend display reflects pre-market price
         latestLtp.put(symbol, ltp);
 
         // Skip candle aggregation / OR / ATP tracking for pre-market ticks
         if (nowMinute < MarketHolidayService.MARKET_OPEN_MINUTE) return;
+
+        // One-time log per symbol: which time source is used for candle assignment
+        if (timeSourceLogged.add(symbol)) {
+            String src = raw.exchFeedTime > 0 ? "exchange feed time (exchFeedTime=" + raw.exchFeedTime + ")" : "system clock fallback (exchFeedTime=0)";
+            log.info("[CandleAggregator] {} using {} for candle assignment", symbol, src);
+        }
 
         // ── DIAGNOSTIC: first 5-min window tracing ──
         // Log every tick a symbol receives in the 09:15-09:20 window so we can find
@@ -178,9 +193,13 @@ public class CandleAggregator {
         if (eventService != null && nowMinute < MarketHolidayService.MARKET_OPEN_MINUTE + 5) {
             int seen = firstBarTraceCount.merge(symbol, 1, Integer::sum);
             if (seen <= 30) {
-                String time = ZonedDateTime.now(IST).toLocalTime()
+                String sysTime = ZonedDateTime.now(IST).toLocalTime()
                     .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss.SSS"));
-                eventService.log("[FIRST_BAR_TRACE] " + symbol + " " + time
+                String exchTime = raw.exchFeedTime > 0
+                    ? Instant.ofEpochSecond(raw.exchFeedTime).atZone(IST).toLocalTime()
+                        .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))
+                    : "N/A";
+                eventService.log("[FIRST_BAR_TRACE] " + symbol + " sys=" + sysTime + " exch=" + exchTime
                     + " ltp=" + ltp + " open=" + raw.open + " high=" + raw.high + " low=" + raw.low
                     + " atp=" + raw.atp + " vol=" + raw.volume + " seq=" + seen);
             }
@@ -231,9 +250,14 @@ public class CandleAggregator {
         }
         long cumVol = lastCumulativeVol.getOrDefault(symbol, 0L);
 
-        // Update current forming candle
-        LocalTime now = ZonedDateTime.now(IST).toLocalTime();
-        long candleStart = getCandleStartMinute(now);
+        // Use exchange timestamp for candle assignment (falls back to system clock)
+        LocalTime tickTime;
+        if (raw.exchFeedTime > 0) {
+            tickTime = Instant.ofEpochSecond(raw.exchFeedTime).atZone(IST).toLocalTime();
+        } else {
+            tickTime = ZonedDateTime.now(IST).toLocalTime();
+        }
+        long candleStart = getCandleStartMinute(tickTime);
 
         currentCandles.compute(symbol, (k, existing) -> {
             if (existing == null || existing.startMinute != candleStart) {
@@ -645,6 +669,7 @@ public class CandleAggregator {
         currentCandles.clear();
         completedCandles.clear();
         firstBarTraceCount.clear();
+        timeSourceLogged.clear();
         dayOpen.clear();
         firstCandleClose.clear();
         openingRangeHigh.clear();

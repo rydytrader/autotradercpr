@@ -354,11 +354,26 @@
                         </label>
                     </div>
                     <div class="form-hint">Weekly NEUTRAL trades are always LPT (no weekly conviction). When allowed, qty = LPT × NEUTRAL factor (default 0.5 × 0.5 = 0.25 of base). Uncheck to skip all trades when weekly is NEUTRAL.</div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 10px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Inside OR on IV/OV days Qty ×</span>
-                        <input type="number" id="insideOrQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
+                        <div style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono); font-weight: 600;">Skip inside-OR neutral breakouts:</div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="skipInsideOrOnEv" style="width: 16px; height: 16px; accent-color: var(--accent-cyan);">
+                            <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">EV days (gap up/down)</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="skipInsideOrOnIv" style="width: 16px; height: 16px; accent-color: var(--accent-cyan);">
+                            <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">IV days (inside value)</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="skipInsideOrOnOv" style="width: 16px; height: 16px; accent-color: var(--accent-cyan);">
+                            <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">OV days (outside value)</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                            <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">If not skipped, qty ×</span>
+                            <input type="number" id="insideOrQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        </div>
                     </div>
-                    <div class="form-hint">On IV/OV days, if the breakout candle is inside the Opening Range (OR neutral), qty is reduced by this factor. Default 0.50. Set to 1.0 to disable (full qty even inside OR).</div>
+                    <div class="form-hint">When checked, inside-OR breakouts are skipped entirely for that day type. When unchecked, they fire with qty reduced by the factor above. EV skip is ON by default (gap days inside OR = no conviction).</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Minimum Absolute Profit</label>
@@ -1073,6 +1088,9 @@
             document.getElementById('neutralWeeklyQtyFactor').value = d.neutralWeeklyQtyFactor != null ? d.neutralWeeklyQtyFactor : 0.50;
             document.getElementById('enableWeeklyNeutralTrades').checked = d.enableWeeklyNeutralTrades !== false;
             document.getElementById('insideOrQtyFactor').value = d.insideOrQtyFactor != null ? d.insideOrQtyFactor : 0.50;
+            document.getElementById('skipInsideOrOnEv').checked = d.skipInsideOrOnEv !== false;
+            document.getElementById('skipInsideOrOnIv').checked = d.skipInsideOrOnIv === true;
+            document.getElementById('skipInsideOrOnOv').checked = d.skipInsideOrOnOv === true;
             document.getElementById('minAbsoluteProfit').value = d.minAbsoluteProfit != null ? d.minAbsoluteProfit : 500;
             document.getElementById('enableR3S3').checked = d.enableR3S3 !== false;
             document.getElementById('r3s3QtyFactor').value = d.r3s3QtyFactor || 0.75;
@@ -1224,6 +1242,9 @@
                 neutralWeeklyQtyFactor: parseFloat(document.getElementById('neutralWeeklyQtyFactor').value) || 0.50,
                 enableWeeklyNeutralTrades: document.getElementById('enableWeeklyNeutralTrades').checked,
                 insideOrQtyFactor: parseFloat(document.getElementById('insideOrQtyFactor').value) || 0.50,
+                skipInsideOrOnEv: document.getElementById('skipInsideOrOnEv').checked,
+                skipInsideOrOnIv: document.getElementById('skipInsideOrOnIv').checked,
+                skipInsideOrOnOv: document.getElementById('skipInsideOrOnOv').checked,
                 minAbsoluteProfit: parseFloat(document.getElementById('minAbsoluteProfit').value) || 500,
                 enableR3S3: document.getElementById('enableR3S3').checked,
                 r3s3QtyFactor: parseFloat(document.getElementById('r3s3QtyFactor').value) || 0.75,

@@ -92,6 +92,9 @@ public class RiskSettingsStore {
         volatile double neutralWeeklyQtyFactor = 0.50; // extra qty multiplier when weekly trend is NEUTRAL (stacks on LPT)
         volatile boolean enableWeeklyNeutralTrades = true; // if false, skip all trades when weekly trend is NEUTRAL
         volatile double insideOrQtyFactor = 0.50; // qty multiplier when breakout is inside OR range on IV/OV days
+        volatile boolean skipInsideOrOnEv = true;  // skip inside-OR breakouts on EV days
+        volatile boolean skipInsideOrOnIv = false; // skip inside-OR breakouts on IV days
+        volatile boolean skipInsideOrOnOv = false; // skip inside-OR breakouts on OV days
         volatile double minAbsoluteProfit = 500; // skip if qty × target_distance < this amount (₹)
         // CPR Width scanner group toggles
         volatile double narrowCprMaxWidth = 0.1;  // CPR width % threshold for narrow CPR stocks
@@ -214,6 +217,9 @@ public class RiskSettingsStore {
     public double getNeutralWeeklyQtyFactor() { return cfg().neutralWeeklyQtyFactor; }
     public boolean isEnableWeeklyNeutralTrades() { return cfg().enableWeeklyNeutralTrades; }
     public double getInsideOrQtyFactor() { return cfg().insideOrQtyFactor; }
+    public boolean isSkipInsideOrOnEv() { return cfg().skipInsideOrOnEv; }
+    public boolean isSkipInsideOrOnIv() { return cfg().skipInsideOrOnIv; }
+    public boolean isSkipInsideOrOnOv() { return cfg().skipInsideOrOnOv; }
     public double getMinAbsoluteProfit() { return cfg().minAbsoluteProfit; }
     public double getNarrowCprMaxWidth() { return cfg().narrowCprMaxWidth; }
     public double getInsideCprMaxWidth() { return cfg().insideCprMaxWidth; }
@@ -253,6 +259,9 @@ public class RiskSettingsStore {
     public void setNeutralWeeklyQtyFactor(double v) { cfg().neutralWeeklyQtyFactor = v; }
     public void setEnableWeeklyNeutralTrades(boolean v) { cfg().enableWeeklyNeutralTrades = v; }
     public void setInsideOrQtyFactor(double v) { cfg().insideOrQtyFactor = v; }
+    public void setSkipInsideOrOnEv(boolean v) { cfg().skipInsideOrOnEv = v; }
+    public void setSkipInsideOrOnIv(boolean v) { cfg().skipInsideOrOnIv = v; }
+    public void setSkipInsideOrOnOv(boolean v) { cfg().skipInsideOrOnOv = v; }
     public void setMinAbsoluteProfit(double v) { cfg().minAbsoluteProfit = v; }
     public void setNarrowCprMaxWidth(double v) { cfg().narrowCprMaxWidth = v; }
     public void setInsideCprMaxWidth(double v) { cfg().insideCprMaxWidth = v; }
@@ -467,6 +476,9 @@ public class RiskSettingsStore {
             upsert("neutralWeeklyQtyFactor", String.valueOf(c.neutralWeeklyQtyFactor));
             upsert("enableWeeklyNeutralTrades", String.valueOf(c.enableWeeklyNeutralTrades));
             upsert("insideOrQtyFactor", String.valueOf(c.insideOrQtyFactor));
+            upsert("skipInsideOrOnEv", String.valueOf(c.skipInsideOrOnEv));
+            upsert("skipInsideOrOnIv", String.valueOf(c.skipInsideOrOnIv));
+            upsert("skipInsideOrOnOv", String.valueOf(c.skipInsideOrOnOv));
             upsert("minAbsoluteProfit", String.valueOf(c.minAbsoluteProfit));
             upsert("narrowCprMaxWidth", String.valueOf(c.narrowCprMaxWidth));
             // narrowRangeRatioThreshold removed — z-score is self-calibrating
@@ -582,6 +594,9 @@ public class RiskSettingsStore {
                     case "neutralWeeklyQtyFactor" -> c.neutralWeeklyQtyFactor = Double.parseDouble(v);
                     case "enableWeeklyNeutralTrades" -> c.enableWeeklyNeutralTrades = Boolean.parseBoolean(v);
                     case "insideOrQtyFactor" -> c.insideOrQtyFactor = Double.parseDouble(v);
+                    case "skipInsideOrOnEv" -> c.skipInsideOrOnEv = Boolean.parseBoolean(v);
+                    case "skipInsideOrOnIv" -> c.skipInsideOrOnIv = Boolean.parseBoolean(v);
+                    case "skipInsideOrOnOv" -> c.skipInsideOrOnOv = Boolean.parseBoolean(v);
                     case "minAbsoluteProfit" -> c.minAbsoluteProfit = Double.parseDouble(v);
                     case "narrowCprMaxWidth" -> c.narrowCprMaxWidth = Double.parseDouble(v);
                     // narrowRangeRatioThreshold — legacy key, silently ignored

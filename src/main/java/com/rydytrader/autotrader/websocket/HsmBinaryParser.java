@@ -405,6 +405,9 @@ public class HsmBinaryParser {
         Integer volRaw = meta.rawValues.get("vol_traded_today");
         if (volRaw != null) tick.volume = volRaw;
 
+        Integer eftRaw = meta.rawValues.get("exch_feed_time");
+        if (eftRaw != null) tick.exchFeedTime = eftRaw;
+
         return tick;
     }
 
@@ -472,6 +475,7 @@ public class HsmBinaryParser {
         public double low;
         public double atp;
         public long volume;
+        public long exchFeedTime; // epoch seconds — when exchange disseminated the update
         public int messageNumber;
     }
 }
