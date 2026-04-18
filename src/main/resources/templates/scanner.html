@@ -813,16 +813,16 @@
             + '</button>'
             + ((d.cprTypes || [d.cprType]).filter(function(t){ return ['NARROW','INSIDE'].includes(t); }).map(function(t) {
                 var nrt = d.narrowRangeType;
-                var zs = d.rangeZScore != null ? d.rangeZScore : '?';
+                var rp = d.rangeAdrPct != null ? d.rangeAdrPct : '?';
                 if (t === 'NARROW') {
                     var cls = nrt === 'SMALL' ? 'narrow-small' : nrt === 'LARGE' ? 'narrow-large' : 'narrow';
                     var lbl = nrt === 'SMALL' ? 'NS' : nrt === 'LARGE' ? 'NL' : 'N';
-                    var ttl = 'Narrow CPR' + (nrt ? ' — ' + (nrt === 'SMALL' ? 'small range (z=' : 'large range (z=') + zs + ')' : '');
+                    var ttl = 'Narrow CPR' + (nrt ? ' — ' + (nrt === 'SMALL' ? 'prev day range ' : 'prev day range ') + rp + '% of 20d ADR — ' + (nrt === 'SMALL' ? 'compressed (coiled spring)' : 'expanded') : '');
                     return '<span class="scan-badge ' + cls + '" title="' + ttl + '">' + lbl + '</span>';
                 }
                 var icls = nrt === 'SMALL' ? 'inside-small' : nrt === 'LARGE' ? 'inside-large' : 'inside';
                 var ilbl = nrt === 'SMALL' ? 'IS' : nrt === 'LARGE' ? 'IL' : 'I';
-                var ittl = 'Inside CPR' + (nrt ? ' — ' + (nrt === 'SMALL' ? 'small range (z=' : 'large range (z=') + zs + ')' : '');
+                var ittl = 'Inside CPR' + (nrt ? ' — ' + (nrt === 'SMALL' ? 'prev day range ' : 'prev day range ') + rp + '% of 20d ADR — ' + (nrt === 'SMALL' ? 'compressed (coiled spring)' : 'expanded') : '');
                 return '<span class="scan-badge ' + icls + '" title="' + ittl + '">' + ilbl + '</span>';
             }).join(''))
             + (function() {
@@ -836,7 +836,7 @@
                 else if (d.orType === 'WIDE') prefix = 'WOR';
                 var lbl = prefix + suffix;
                 var widthPart = d.orType
-                    ? (' — ' + d.orType + ' (range ' + (d.orRange || '?') + ' = ' + (d.orAtrRatio || '?') + ' × ATR)')
+                    ? (' — ' + d.orType + ' (range ' + (d.orRange || '?') + ' = ' + (d.orAdrPct || '?') + '% of 20d ADR ' + (d.orAdr || '?') + ')')
                     : '';
                 var ttl = 'Opening Range ' + or + (d.orHigh > 0 ? ' (H:' + fmt(d.orHigh) + ' L:' + fmt(d.orLow) + ')' : '') + widthPart;
                 return '<span class="scan-badge ' + cls + '" title="' + ttl + '">' + lbl + '</span>';
@@ -1311,7 +1311,7 @@ function showInsideCpr() {
             <!-- 1. CPR Width -->
             <div style="margin-bottom:28px;">
                 <div style="font-weight:700; font-size:0.85rem; color:var(--accent-cyan); margin-bottom:10px;">1. CPR Width</div>
-                <div style="color:var(--text-secondary); margin-bottom:14px; font-size:0.72rem; line-height:1.6;">Scans FNO stocks with narrow or inside CPR. Both types classified by <b>z-score of PDH-PDL/CPR ratio</b> vs the stock's own 20-day history. z &lt; 0 = Small (tighter than usual for this stock — coiled spring). z ≥ 0 = Large (normal or wider — exhausted). Self-calibrating per stock, no manual threshold.</div>
+                <div style="color:var(--text-secondary); margin-bottom:14px; font-size:0.72rem; line-height:1.6;">Scans FNO stocks with narrow or inside CPR. Both types classified by <b>previous day's range as % of 20-day ADR</b> (Average Daily Range). If prev day range ≤ threshold% of ADR (default 50%) → Small (compressed, coiled spring). Else → Large (expanded, possibly exhausted). Configurable threshold in Settings.</div>
                 <div style="display:flex; flex-wrap:wrap; gap:12px 20px; font-size:0.72rem;">
                     <div><span class="scan-badge narrow-small" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NS</span> Narrow + Small (coiled spring — yesterday quiet, high breakout potential)</div>
                     <div><span class="scan-badge narrow-large" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NL</span> Narrow + Large (exhausted — yesterday wild, lower potential)</div>
@@ -1323,7 +1323,7 @@ function showInsideCpr() {
             <!-- 2. Opening Range -->
             <div style="margin-bottom:28px;">
                 <div style="font-weight:700; font-size:0.85rem; color:var(--accent-cyan); margin-bottom:10px;">2. Opening Range</div>
-                <div style="color:var(--text-secondary); margin-bottom:14px; font-size:0.72rem; line-height:1.6;">Tracks the first N minutes of trading (configurable, default 15 min). After OR locks, each card shows a combined badge: <code>NOR</code> (narrow OR, range ≤ threshold × ATR) or <code>WOR</code> (wide OR) + price-status suffix <code>+</code> (bullish), <code>-</code> (bearish), <code>=</code> (inside OR). Before lock: <code>OR?</code>.</div>
+                <div style="color:var(--text-secondary); margin-bottom:14px; font-size:0.72rem; line-height:1.6;">Tracks the first N minutes of trading (configurable, default 15 min). After OR locks, each card shows a combined badge: <code>NOR</code> (narrow OR, range ≤ threshold % of 20-day ADR) or <code>WOR</code> (wide OR) + price-status suffix <code>+</code> (bullish), <code>-</code> (bearish), <code>=</code> (inside OR). Before lock: <code>OR?</code>.</div>
                 <div style="display:flex; flex-wrap:wrap; gap:12px 20px; font-size:0.72rem; margin-bottom:14px;">
                     <div><span class="scan-badge or-forming" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">OR?</span> Forming — OR window still open (before 9:30)</div>
                     <div><span class="scan-badge or-bullish" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NOR+ / WOR+</span> Bullish — LTP above OR High</div>
@@ -1332,8 +1332,8 @@ function showInsideCpr() {
                 </div>
                 <div style="color:var(--text-secondary); margin-bottom:6px; font-size:0.72rem; font-weight:700;">Width classification (after OR locks)</div>
                 <div style="display:flex; flex-wrap:wrap; gap:12px 20px; font-size:0.72rem;">
-                    <div><span class="scan-badge or-narrow" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NOR</span> Narrow OR — range ≤ threshold × ATR (default 1.5). Compression setup: inside-OR breakouts on IV/OV continuation fire as HPT full qty.</div>
-                    <div><span class="scan-badge or-wide" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">WOR</span> Wide OR — range &gt; threshold × ATR. Inside-OR breakouts follow skip toggles / LPT + qty reduction per settings.</div>
+                    <div><span class="scan-badge or-narrow" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NOR</span> Narrow OR — range ≤ threshold % of 20-day ADR (default 15%). Compression setup: inside-OR breakouts on IV/OV continuation fire as HPT full qty.</div>
+                    <div><span class="scan-badge or-wide" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">WOR</span> Wide OR — range &gt; threshold % of ADR. Inside-OR breakouts follow skip toggles / LPT + qty reduction per settings.</div>
                 </div>
             </div>
 

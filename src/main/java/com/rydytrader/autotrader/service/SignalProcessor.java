@@ -19,11 +19,12 @@ public class SignalProcessor {
     private final CandleAggregator candleAggregator;
     private final WeeklyCprService weeklyCprService;
     private final EmaService       emaService;
+    private final BhavcopyService  bhavcopyService;
 
     public SignalProcessor(RiskSettingsStore riskSettings, EventService eventService,
                            QuantityService quantityService, MarketDataService marketDataService,
                            CandleAggregator candleAggregator, WeeklyCprService weeklyCprService,
-                           EmaService emaService) {
+                           EmaService emaService, BhavcopyService bhavcopyService) {
         this.riskSettings = riskSettings;
         this.eventService = eventService;
         this.quantityService = quantityService;
@@ -31,6 +32,7 @@ public class SignalProcessor {
         this.candleAggregator = candleAggregator;
         this.emaService = emaService;
         this.weeklyCprService = weeklyCprService;
+        this.bhavcopyService = bhavcopyService;
     }
 
     public ProcessedSignal process(Map<String, Object> alert) {
@@ -261,17 +263,20 @@ public class SignalProcessor {
                         boolean ovGapDown = isOv && firstClose < Math.min(s1, pl);
                         boolean ovGapFade = (ovGapUp && !isBuy) || (ovGapDown && isBuy);
 
-                        // Narrow-OR override: if OR range is narrow AND trade is NOT gap-fade,
+                        // Narrow-OR override: if OR range is narrow (% of 20-day ADR) AND trade is NOT gap-fade,
                         // treat as HPT full qty (bypass skip/LPT/qty-reduction).
                         double orRange = orHigh - orLow;
+                        double adr = bhavcopyService.getAverageDailyRange(symbol, 20);
+                        double orAdrPct = (adr > 0 && orRange > 0) ? (orRange / adr) * 100.0 : -1;
                         boolean isNarrowOr = riskSettings.isEnableNarrowOrOverride()
-                            && atr > 0 && orRange > 0
-                            && orRange <= riskSettings.getNarrowOrMaxAtr() * atr;
+                            && orAdrPct > 0
+                            && orAdrPct <= riskSettings.getNarrowOrMaxAdrPct();
 
                         if (isNarrowOr && !ovGapFade) {
                             // Narrow-OR continuation — fire as HPT full qty, no downgrades
                             adjustments.add("Narrow OR override (range " + fmt(orRange) + " = "
-                                + fmt(orRange / atr) + " × ATR) — inside-OR breakout treated as HPT");
+                                + String.format("%.1f%%", orAdrPct) + " of 20d ADR " + fmt(adr)
+                                + ") — inside-OR breakout treated as HPT");
                         } else {
                             // Wide OR OR gap-fade (counter-trend) — existing behavior applies
                             if (isOv && riskSettings.isSkipInsideOrOnOv()) {

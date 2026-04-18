@@ -128,11 +128,12 @@
             <ul>
                 <li><strong>Daily Setup:</strong> Downloads NSE bhavcopy, computes CPR levels (Pivot, TC, BC, R1-R4, S1-S4, PDH, PDL) for all F&O stocks</li>
                 <li><strong>Filtering:</strong> Selects stocks with narrow CPR (high breakout potential) and inside CPR (price compressed within prior day's range)</li>
-                <li><strong>Z-Score Classification:</strong> Each stock's daily range is classified using 20-day history:
-                    <span class="badge-example bg">NS</span> Narrow + Small (z &lt; 0 — tighter than stock's own 20-day average, coiled spring) |
-                    <span class="badge-example bo">NL</span> Narrow + Large Range |
-                    <span class="badge-example bb">IS</span> Inside + Small Range |
-                    <span class="badge-example by">IL</span> Inside + Large Range
+                <li><strong>Range Classification (ADR-based):</strong> Each stock classified by previous day's range as % of 20-day Average Daily Range (ADR):
+                    <span class="badge-example bg">NS</span> Narrow CPR + Small (prev day range ≤ 50% of ADR — compressed, coiled spring) |
+                    <span class="badge-example bo">NL</span> Narrow CPR + Large (prev day range &gt; 50% of ADR — expanded, possibly exhausted) |
+                    <span class="badge-example bb">IS</span> Inside CPR + Small |
+                    <span class="badge-example by">IL</span> Inside CPR + Large.
+                    Threshold (default 50%) configurable in Scanner settings.
                 </li>
                 <li><strong>Breakout Detection:</strong> On each candle close, checks if price broke above/below CPR levels with green/red candle confirmation</li>
                 <li><strong>Entry:</strong> Market order placed, SL + Target(s) placed on fill</li>
@@ -747,10 +748,11 @@
             </table>
 
             <h4>Narrow vs Wide OR Classification</h4>
-            <p>After OR locks, the bot classifies the OR range against the stock's ATR:</p>
+            <p>After OR locks, the bot classifies the OR range as a percentage of the stock's 20-day Average Daily Range (ADR):</p>
             <ul>
-                <li><strong>NARROW OR</strong>: <code>OR range ≤ narrowOrMaxAtr × ATR</code> (default 1.5) — compressed first 15 min = accumulation thesis, high breakout probability</li>
-                <li><strong>WIDE OR</strong>: <code>OR range &gt; narrowOrMaxAtr × ATR</code> — price already moved, inside-OR breakouts are noise</li>
+                <li><strong>NARROW OR</strong>: <code>OR range ≤ narrowOrMaxAdrPct % of 20-day ADR</code> (default 15%) — compressed first 15 min relative to stock's normal daily move = accumulation thesis, high breakout probability</li>
+                <li><strong>WIDE OR</strong>: <code>OR range &gt; narrowOrMaxAdrPct % of ADR</code> — price already moved a meaningful portion of a normal day, inside-OR breakouts are noise</li>
+                <li><strong>ADR</strong>: average of <code>(high - low)</code> over the last 20 trading days (requires ≥ 5 days of history)</li>
             </ul>
 
             <h4>Impact on Trading</h4>
@@ -774,9 +776,9 @@
             <h4>Recommended settings pairing</h4>
             <p>Narrow OR breakouts can get R/R-rejected if the target gets shifted to session high/low (which is close by definition of narrow OR). Pair these settings:</p>
             <ul>
-                <li><code>narrowOrMaxAtr</code> = 1.5 (OR range ≤ 1.5 × ATR = narrow)</li>
+                <li><code>narrowOrMaxAdrPct</code> = 15 (OR range ≤ 15% of 20-day ADR = narrow)</li>
                 <li><code>dayHighLowShiftMinDistAtr</code> = 2.0 (skip day H/L target shift when distance &lt; 2 × ATR)</li>
-                <li>The 0.5 × ATR buffer ensures narrow-OR inside-OR breakouts preserve their CPR target and pass R/R</li>
+                <li>Ensures narrow-OR inside-OR breakouts preserve their CPR target and pass R/R</li>
             </ul>
 
             <p>OR state persists across restarts (saved to <code>store/config/or-state.json</code>).</p>
@@ -1488,7 +1490,7 @@
                 <tr><td>Inside OR Qty Factor (IV/OV)</td><td>0.5</td><td>Qty reduction when breakout candle is inside the Opening Range on IV/OV days. HPT stays HPT — just reduced size.</td></tr>
                 <tr><td>Skip Inside-OR on EV / IV / OV</td><td>EV: ON, IV/OV: OFF</td><td>Skip inside-OR neutral breakouts entirely for the chosen day type. When OFF, trades fire with qty × factor.</td></tr>
                 <tr><td>Narrow OR Override</td><td>ON</td><td>When enabled, classifies OR as NARROW or WIDE after lock. Narrow-OR inside-OR breakouts on IV/OV continuation trades fire as HPT full qty (bypasses skip/LPT/qty-reduction). OV gap-fade still downgrades. EV rules unchanged.</td></tr>
-                <tr><td>Narrow OR Max ATR</td><td>1.5</td><td>Threshold: OR range ≤ this × ATR = NARROW. Pair with Day H/L Shift Min Dist (≥ this + 0.5) to preserve target.</td></tr>
+                <tr><td>Narrow OR Max ADR %</td><td>15</td><td>Threshold: OR range ≤ this % of 20-day Average Daily Range = NARROW. Example: if 20d ADR = 100 pts, OR range ≤ 15 pts = narrow.</td></tr>
                 <tr><td>Day H/L Shift Min Dist (ATR)</td><td>2.0</td><td>Skip session-high/low target shift when distance &lt; this × ATR. Prevents R/R compression on tight setups.</td></tr>
                 <tr><td>Min Absolute Profit</td><td>₹500</td><td>Skip if qty × target distance &lt; this amount. Catches trades where stacked qty reductions made position too small. Set to 0 to disable.</td></tr>
             </table>
@@ -1514,8 +1516,8 @@
                 <tr><td>Opening Range</td><td>30 min</td><td>OR period: Off / 15 / 30 / 45 / 60 min</td></tr>
                 <tr><td>Trading Timeframe</td><td>5 min</td><td>Candle timeframe for breakout detection, ATR, EMA, daily trend</td></tr>
                 <tr><td>Higher Timeframe</td><td>75 min</td><td>Candle timeframe for weekly trend. Weekly trend updates on this interval.</td></tr>
-                <tr><td>NS / NL / IS / IL</td><td>NS+NL+IS ON</td><td>Which range types to include. NS = Small (coiled spring, yesterday quiet). NL = Large (exhausted, yesterday wild).</td></tr>
-                <tr><td>NS/NL Classification</td><td>Auto</td><td>Z-score of PDH-PDL/CPR ratio vs stock's own 20-day history. z &lt; 0 = Small (tighter than usual), z ≥ 0 = Large. Self-calibrating per stock, no manual threshold.</td></tr>
+                <tr><td>NS / NL / IS / IL</td><td>NS+NL+IS ON</td><td>Which range types to include in the watchlist. NS/IS = Small (compressed). NL/IL = Large (expanded).</td></tr>
+                <tr><td>Small Range Threshold</td><td>50%</td><td>Stock classified SMALL if previous day's range (H-L) ≤ this % of its 20-day Average Daily Range (ADR). Default 50% means stock moved half or less than usual = compressed coiled spring. Lower = stricter (fewer SMALL classifications). Reclassifies live when changed.</td></tr>
             </table>
 
             <h4>Scanner Page Features</h4>

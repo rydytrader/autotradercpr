@@ -95,8 +95,9 @@ public class RiskSettingsStore {
         volatile boolean skipInsideOrOnEv = true;  // skip inside-OR breakouts on EV days
         volatile boolean skipInsideOrOnIv = false; // skip inside-OR breakouts on IV days
         volatile boolean skipInsideOrOnOv = false; // skip inside-OR breakouts on OV days
-        volatile boolean enableNarrowOrOverride = true; // when OR range is narrow (< threshold × ATR), allow inside-OR breakouts as HPT
-        volatile double narrowOrMaxAtr = 1.5; // OR range ≤ this × ATR = narrow OR
+        volatile boolean enableNarrowOrOverride = true; // when OR range is narrow (< threshold % of ADR), allow inside-OR breakouts as HPT
+        volatile double narrowOrMaxAdrPct = 15.0; // OR range ≤ this % of 20-day ADR = narrow OR
+        volatile double smallRangeAdrPct = 50.0; // prev day's range ≤ this % of 20-day ADR → SMALL classification (NS / IS)
         volatile double minAbsoluteProfit = 500; // skip if qty × target_distance < this amount (₹)
         // CPR Width scanner group toggles
         volatile double narrowCprMaxWidth = 0.1;  // CPR width % threshold for narrow CPR stocks
@@ -223,7 +224,8 @@ public class RiskSettingsStore {
     public boolean isSkipInsideOrOnIv() { return cfg().skipInsideOrOnIv; }
     public boolean isSkipInsideOrOnOv() { return cfg().skipInsideOrOnOv; }
     public boolean isEnableNarrowOrOverride() { return cfg().enableNarrowOrOverride; }
-    public double getNarrowOrMaxAtr() { return cfg().narrowOrMaxAtr; }
+    public double getNarrowOrMaxAdrPct() { return cfg().narrowOrMaxAdrPct; }
+    public double getSmallRangeAdrPct() { return cfg().smallRangeAdrPct; }
     public double getMinAbsoluteProfit() { return cfg().minAbsoluteProfit; }
     public double getNarrowCprMaxWidth() { return cfg().narrowCprMaxWidth; }
     public double getInsideCprMaxWidth() { return cfg().insideCprMaxWidth; }
@@ -267,7 +269,8 @@ public class RiskSettingsStore {
     public void setSkipInsideOrOnIv(boolean v) { cfg().skipInsideOrOnIv = v; }
     public void setSkipInsideOrOnOv(boolean v) { cfg().skipInsideOrOnOv = v; }
     public void setEnableNarrowOrOverride(boolean v) { cfg().enableNarrowOrOverride = v; }
-    public void setNarrowOrMaxAtr(double v) { cfg().narrowOrMaxAtr = v; }
+    public void setNarrowOrMaxAdrPct(double v) { cfg().narrowOrMaxAdrPct = v; }
+    public void setSmallRangeAdrPct(double v) { cfg().smallRangeAdrPct = v; }
     public void setMinAbsoluteProfit(double v) { cfg().minAbsoluteProfit = v; }
     public void setNarrowCprMaxWidth(double v) { cfg().narrowCprMaxWidth = v; }
     public void setInsideCprMaxWidth(double v) { cfg().insideCprMaxWidth = v; }
@@ -486,7 +489,8 @@ public class RiskSettingsStore {
             upsert("skipInsideOrOnIv", String.valueOf(c.skipInsideOrOnIv));
             upsert("skipInsideOrOnOv", String.valueOf(c.skipInsideOrOnOv));
             upsert("enableNarrowOrOverride", String.valueOf(c.enableNarrowOrOverride));
-            upsert("narrowOrMaxAtr", String.valueOf(c.narrowOrMaxAtr));
+            upsert("narrowOrMaxAdrPct", String.valueOf(c.narrowOrMaxAdrPct));
+            upsert("smallRangeAdrPct", String.valueOf(c.smallRangeAdrPct));
             upsert("minAbsoluteProfit", String.valueOf(c.minAbsoluteProfit));
             upsert("narrowCprMaxWidth", String.valueOf(c.narrowCprMaxWidth));
             // narrowRangeRatioThreshold removed — z-score is self-calibrating
@@ -606,7 +610,9 @@ public class RiskSettingsStore {
                     case "skipInsideOrOnIv" -> c.skipInsideOrOnIv = Boolean.parseBoolean(v);
                     case "skipInsideOrOnOv" -> c.skipInsideOrOnOv = Boolean.parseBoolean(v);
                     case "enableNarrowOrOverride" -> c.enableNarrowOrOverride = Boolean.parseBoolean(v);
-                    case "narrowOrMaxAtr" -> c.narrowOrMaxAtr = Double.parseDouble(v);
+                    case "narrowOrMaxAdrPct" -> c.narrowOrMaxAdrPct = Double.parseDouble(v);
+                    case "narrowOrMaxAtr" -> { /* legacy — migrated to narrowOrMaxAdrPct */ }
+                    case "smallRangeAdrPct" -> c.smallRangeAdrPct = Double.parseDouble(v);
                     case "minAbsoluteProfit" -> c.minAbsoluteProfit = Double.parseDouble(v);
                     case "narrowCprMaxWidth" -> c.narrowCprMaxWidth = Double.parseDouble(v);
                     // narrowRangeRatioThreshold — legacy key, silently ignored

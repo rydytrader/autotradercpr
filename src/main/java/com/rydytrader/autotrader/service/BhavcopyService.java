@@ -221,6 +221,29 @@ public class BhavcopyService {
         return prev.get(extractTicker(symbol));
     }
 
+    /**
+     * Average Daily Range (ADR) = average of (high - low) over the last N trading days.
+     * Uses snapshots in dailyHistory (excludes today's in-progress day).
+     * Returns 0 if fewer than minDays of data available.
+     */
+    public double getAverageDailyRange(String symbol, int days) {
+        String ticker = extractTicker(symbol);
+        int minDays = Math.max(5, days / 4); // need at least 5 days to be meaningful
+        double sum = 0;
+        int count = 0;
+        for (DaySnapshot snap : dailyHistory) {
+            if (count >= days) break;
+            CprLevels lv = snap.symbols.get(ticker);
+            if (lv == null) continue;
+            double range = lv.getHigh() - lv.getLow();
+            if (range <= 0) continue;
+            sum += range;
+            count++;
+        }
+        if (count < minDays) return 0;
+        return sum / count;
+    }
+
     // ── Core fetch logic ───────────────────────────────────────────────────────
 
     private void fetchAndCompute() {
@@ -365,58 +388,50 @@ public class BhavcopyService {
     }
 
     /**
-     * Classify narrow CPR stocks as SMALL or LARGE using z-score of the PDH-PDL/CPR ratio
-     * against the stock's own 20-day history of the same ratio.
+     * Classify narrow/inside CPR stocks as SMALL or LARGE based on previous day's range
+     * as a percentage of the stock's 20-day Average Daily Range (ADR).
      *
-     * z < 0  → SMALL (today's ratio is below the stock's own average = tighter than usual)
-     * z >= 0 → LARGE (today's ratio is at or above average = normal or wider than usual)
-     *
-     * Self-calibrating per stock — no fixed threshold needed. A banking stock with typically
-     * tight ratios (3-5) and a pharma stock with wide ratios (10-20) are each compared
-     * against their own norm.
+     * SMALL (compressed): prev day range ≤ smallRangeAdrPct% of 20-day ADR
+     *   → stock moved less than usual = coiled spring, high breakout potential
+     * LARGE (expanded):   prev day range > smallRangeAdrPct% of 20-day ADR
+     *   → stock already made a big move = possibly exhausted
      */
     private void classifyNarrowRangeTypes(Map<String, CprLevels> todayCache) {
-        List<Map<String, CprLevels>> history = new ArrayList<>();
-        if (!cache.isEmpty()) history.add(cache);
-        for (DaySnapshot snap : dailyHistory) history.add(snap.symbols);
-
-        int window = Math.min(20, history.size());
+        double threshold = riskSettings != null ? riskSettings.getSmallRangeAdrPct() : 50.0;
         int classified = 0;
+        int skipped = 0;
 
         for (CprLevels today : todayCache.values()) {
             String sym = today.getSymbol();
-            double cprWidth = Math.abs(today.getTc() - today.getBc());
-            double pdRange = today.getPh() - today.getPl();
-            if (cprWidth <= 0 || pdRange <= 0) continue;
-            double todayRatio = pdRange / cprWidth;
+            double prevRange = today.getHigh() - today.getLow();
+            if (prevRange <= 0) { skipped++; continue; }
 
-            // Collect 20-day ratio history for this stock
-            List<Double> ratios = new ArrayList<>();
-            for (int i = 0; i < window; i++) {
-                CprLevels h = history.get(i).get(sym);
+            // 20-day ADR from dailyHistory (excludes today's cached data, which IS the "prev day")
+            double adrSum = 0;
+            int adrCount = 0;
+            int window = Math.min(20, dailyHistory.size());
+            int idx = 0;
+            for (DaySnapshot snap : dailyHistory) {
+                if (idx >= window) break;
+                CprLevels h = snap.symbols.get(sym);
                 if (h != null) {
-                    double hw = Math.abs(h.getTc() - h.getBc());
-                    double hr = h.getPh() - h.getPl();
-                    if (hw > 0 && hr > 0) ratios.add(hr / hw);
+                    double r = h.getHigh() - h.getLow();
+                    if (r > 0) { adrSum += r; adrCount++; }
                 }
+                idx++;
             }
 
-            if (ratios.size() < 5) continue; // insufficient history — skip classification
+            if (adrCount < 5) { skipped++; continue; } // insufficient history
 
-            // Compute mean and std of historical ratios
-            double sum = 0;
-            for (double r : ratios) sum += r;
-            double mean = sum / ratios.size();
-            double sq = 0;
-            for (double r : ratios) { double d = r - mean; sq += d * d; }
-            double std = Math.sqrt(sq / ratios.size());
-
-            double z = std > 1e-9 ? (todayRatio - mean) / std : 0;
-            today.setRangeZScore(Math.round(z * 100.0) / 100.0);
-            today.setNarrowRangeType(z < 0.5 ? "SMALL" : "LARGE");
+            double adr = adrSum / adrCount;
+            double pct = (prevRange / adr) * 100.0;
+            today.setRangeAdrPct(Math.round(pct * 10.0) / 10.0);
+            today.setRangeZScore(0); // legacy — keep at 0, display uses rangeAdrPct
+            today.setNarrowRangeType(pct <= threshold ? "SMALL" : "LARGE");
             classified++;
         }
-        log.info("[BhavcopyService] Classified narrow range type for {} stocks (z-score of PDH-PDL/CPR ratio, z<0=SMALL)", classified);
+        log.info("[BhavcopyService] Classified narrow range type for {} stocks (prev day range ≤ {}% of 20d ADR = SMALL, {} skipped for insufficient history)",
+            classified, threshold, skipped);
     }
 
     // ── Volume/Turnover 20-day averages from daily history ───────────────────
