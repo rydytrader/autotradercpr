@@ -131,6 +131,8 @@ public class SettingsController {
         result.put("skipInsideOrOnEv", riskSettings.isSkipInsideOrOnEv());
         result.put("skipInsideOrOnIv", riskSettings.isSkipInsideOrOnIv());
         result.put("skipInsideOrOnOv", riskSettings.isSkipInsideOrOnOv());
+        result.put("enableNarrowOrOverride", riskSettings.isEnableNarrowOrOverride());
+        result.put("narrowOrMaxAtr", riskSettings.getNarrowOrMaxAtr());
         result.put("minAbsoluteProfit", riskSettings.getMinAbsoluteProfit());
         result.put("todayPnl",         Math.round(todayPnl * 100.0) / 100.0);
         result.put("todayTrades",      todayTrades);
@@ -237,6 +239,8 @@ public class SettingsController {
             if (body.containsKey("skipInsideOrOnEv")) riskSettings.setSkipInsideOrOnEv(Boolean.parseBoolean(body.get("skipInsideOrOnEv").toString()));
             if (body.containsKey("skipInsideOrOnIv")) riskSettings.setSkipInsideOrOnIv(Boolean.parseBoolean(body.get("skipInsideOrOnIv").toString()));
             if (body.containsKey("skipInsideOrOnOv")) riskSettings.setSkipInsideOrOnOv(Boolean.parseBoolean(body.get("skipInsideOrOnOv").toString()));
+            if (body.containsKey("enableNarrowOrOverride")) riskSettings.setEnableNarrowOrOverride(Boolean.parseBoolean(body.get("enableNarrowOrOverride").toString()));
+            if (body.containsKey("narrowOrMaxAtr")) riskSettings.setNarrowOrMaxAtr(Double.parseDouble(body.get("narrowOrMaxAtr").toString()));
             if (body.containsKey("minAbsoluteProfit")) riskSettings.setMinAbsoluteProfit(Double.parseDouble(body.get("minAbsoluteProfit").toString()));
             riskSettings.saveFor(effectiveMode);
             return ResponseEntity.ok(Map.of("ok", true, "message", "Settings saved"));

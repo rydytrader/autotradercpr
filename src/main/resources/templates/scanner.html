@@ -145,6 +145,8 @@
         .scan-badge.lpt { background: rgba(251,191,36,0.12); color: var(--accent-yellow); }
         .scan-badge.or-bullish { background: rgba(52,211,153,0.15); color: var(--accent-green); }
         .scan-badge.or-bearish { background: rgba(239,68,68,0.15); color: var(--accent-red); }
+        .scan-badge.or-narrow { background: rgba(38,166,154,0.2); color: #26a69a; }
+        .scan-badge.or-wide { background: rgba(255,167,38,0.2); color: #ffa726; }
         .scan-badge.or-neutral { background: rgba(128,128,128,0.12); color: var(--text-muted); }
         .scan-badge.or-forming { background: rgba(251,191,36,0.12); color: var(--accent-yellow); }
 
@@ -827,8 +829,16 @@
                 var or = d.orStatus;
                 if (!or) return '';
                 var cls = or === 'BULLISH' ? 'or-bullish' : or === 'BEARISH' ? 'or-bearish' : or === 'FORMING' ? 'or-forming' : 'or-neutral';
-                var lbl = or === 'BULLISH' ? 'OR+' : or === 'BEARISH' ? 'OR-' : or === 'FORMING' ? 'OR?' : 'OR=';
-                var ttl = 'Opening Range ' + or + (d.orHigh > 0 ? ' (H:' + fmt(d.orHigh) + ' L:' + fmt(d.orLow) + ')' : '');
+                var suffix = or === 'BULLISH' ? '+' : or === 'BEARISH' ? '-' : or === 'FORMING' ? '?' : '=';
+                // Combine width classification into the label: NOR+/WOR+/NOR-/WOR-/NOR=/WOR=, or OR? while forming
+                var prefix = 'OR';
+                if (d.orType === 'NARROW') prefix = 'NOR';
+                else if (d.orType === 'WIDE') prefix = 'WOR';
+                var lbl = prefix + suffix;
+                var widthPart = d.orType
+                    ? (' — ' + d.orType + ' (range ' + (d.orRange || '?') + ' = ' + (d.orAtrRatio || '?') + ' × ATR)')
+                    : '';
+                var ttl = 'Opening Range ' + or + (d.orHigh > 0 ? ' (H:' + fmt(d.orHigh) + ' L:' + fmt(d.orLow) + ')' : '') + widthPart;
                 return '<span class="scan-badge ' + cls + '" title="' + ttl + '">' + lbl + '</span>';
             })()
             + '  </span>'
@@ -1313,12 +1323,17 @@ function showInsideCpr() {
             <!-- 2. Opening Range -->
             <div style="margin-bottom:28px;">
                 <div style="font-weight:700; font-size:0.85rem; color:var(--accent-cyan); margin-bottom:10px;">2. Opening Range</div>
-                <div style="color:var(--text-secondary); margin-bottom:14px; font-size:0.72rem; line-height:1.6;">Tracks the first N minutes of trading (configurable, default 30 min). After the OR window locks, LTP vs OR High/Low determines the breakout direction. DH/DL breakouts only fire after OR locks.</div>
+                <div style="color:var(--text-secondary); margin-bottom:14px; font-size:0.72rem; line-height:1.6;">Tracks the first N minutes of trading (configurable, default 15 min). After OR locks, each card shows a combined badge: <code>NOR</code> (narrow OR, range ≤ threshold × ATR) or <code>WOR</code> (wide OR) + price-status suffix <code>+</code> (bullish), <code>-</code> (bearish), <code>=</code> (inside OR). Before lock: <code>OR?</code>.</div>
+                <div style="display:flex; flex-wrap:wrap; gap:12px 20px; font-size:0.72rem; margin-bottom:14px;">
+                    <div><span class="scan-badge or-forming" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">OR?</span> Forming — OR window still open (before 9:30)</div>
+                    <div><span class="scan-badge or-bullish" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NOR+ / WOR+</span> Bullish — LTP above OR High</div>
+                    <div><span class="scan-badge or-bearish" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NOR- / WOR-</span> Bearish — LTP below OR Low</div>
+                    <div><span class="scan-badge or-neutral" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NOR= / WOR=</span> Neutral — LTP inside OR range</div>
+                </div>
+                <div style="color:var(--text-secondary); margin-bottom:6px; font-size:0.72rem; font-weight:700;">Width classification (after OR locks)</div>
                 <div style="display:flex; flex-wrap:wrap; gap:12px 20px; font-size:0.72rem;">
-                    <div><span class="scan-badge or-bullish" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">OR+</span> Bullish — LTP above OR High</div>
-                    <div><span class="scan-badge or-bearish" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">OR-</span> Bearish — LTP below OR Low</div>
-                    <div><span class="scan-badge or-neutral" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">OR=</span> Neutral — LTP inside OR range</div>
-                    <div><span class="scan-badge or-forming" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">OR?</span> Forming — OR window still open</div>
+                    <div><span class="scan-badge or-narrow" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NOR</span> Narrow OR — range ≤ threshold × ATR (default 1.5). Compression setup: inside-OR breakouts on IV/OV continuation fire as HPT full qty.</div>
+                    <div><span class="scan-badge or-wide" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">WOR</span> Wide OR — range &gt; threshold × ATR. Inside-OR breakouts follow skip toggles / LPT + qty reduction per settings.</div>
                 </div>
             </div>
 

@@ -48,7 +48,7 @@ public class RiskSettingsStore {
         volatile boolean enableTargetShift = true; // shift target to next level if default target < threshold ATR. If false, skip the entry.
         volatile boolean enableGapCheck = true;     // halve qty if day open or first candle beyond R2/S2
         volatile boolean enableDayHighLowTargetShift = true; // shift target to day high/low if between entry and target
-        volatile double dayHighLowShiftMinDistAtr = 1.0; // skip day H/L shift if distance < N ATR from close
+        volatile double dayHighLowShiftMinDistAtr = 2.0; // skip day H/L shift if distance < N ATR from close
         volatile boolean enableWeeklyLevelTargetShift = true; // shift target to weekly CPR levels if between entry and target
         // Structural SL — opt-in, anchors SL to the S/R level the trade is testing (per setup family)
         // When on, we compute both structural and default SL and pick the TIGHTER one.
@@ -95,6 +95,8 @@ public class RiskSettingsStore {
         volatile boolean skipInsideOrOnEv = true;  // skip inside-OR breakouts on EV days
         volatile boolean skipInsideOrOnIv = false; // skip inside-OR breakouts on IV days
         volatile boolean skipInsideOrOnOv = false; // skip inside-OR breakouts on OV days
+        volatile boolean enableNarrowOrOverride = true; // when OR range is narrow (< threshold × ATR), allow inside-OR breakouts as HPT
+        volatile double narrowOrMaxAtr = 1.5; // OR range ≤ this × ATR = narrow OR
         volatile double minAbsoluteProfit = 500; // skip if qty × target_distance < this amount (₹)
         // CPR Width scanner group toggles
         volatile double narrowCprMaxWidth = 0.1;  // CPR width % threshold for narrow CPR stocks
@@ -220,6 +222,8 @@ public class RiskSettingsStore {
     public boolean isSkipInsideOrOnEv() { return cfg().skipInsideOrOnEv; }
     public boolean isSkipInsideOrOnIv() { return cfg().skipInsideOrOnIv; }
     public boolean isSkipInsideOrOnOv() { return cfg().skipInsideOrOnOv; }
+    public boolean isEnableNarrowOrOverride() { return cfg().enableNarrowOrOverride; }
+    public double getNarrowOrMaxAtr() { return cfg().narrowOrMaxAtr; }
     public double getMinAbsoluteProfit() { return cfg().minAbsoluteProfit; }
     public double getNarrowCprMaxWidth() { return cfg().narrowCprMaxWidth; }
     public double getInsideCprMaxWidth() { return cfg().insideCprMaxWidth; }
@@ -262,6 +266,8 @@ public class RiskSettingsStore {
     public void setSkipInsideOrOnEv(boolean v) { cfg().skipInsideOrOnEv = v; }
     public void setSkipInsideOrOnIv(boolean v) { cfg().skipInsideOrOnIv = v; }
     public void setSkipInsideOrOnOv(boolean v) { cfg().skipInsideOrOnOv = v; }
+    public void setEnableNarrowOrOverride(boolean v) { cfg().enableNarrowOrOverride = v; }
+    public void setNarrowOrMaxAtr(double v) { cfg().narrowOrMaxAtr = v; }
     public void setMinAbsoluteProfit(double v) { cfg().minAbsoluteProfit = v; }
     public void setNarrowCprMaxWidth(double v) { cfg().narrowCprMaxWidth = v; }
     public void setInsideCprMaxWidth(double v) { cfg().insideCprMaxWidth = v; }
@@ -479,6 +485,8 @@ public class RiskSettingsStore {
             upsert("skipInsideOrOnEv", String.valueOf(c.skipInsideOrOnEv));
             upsert("skipInsideOrOnIv", String.valueOf(c.skipInsideOrOnIv));
             upsert("skipInsideOrOnOv", String.valueOf(c.skipInsideOrOnOv));
+            upsert("enableNarrowOrOverride", String.valueOf(c.enableNarrowOrOverride));
+            upsert("narrowOrMaxAtr", String.valueOf(c.narrowOrMaxAtr));
             upsert("minAbsoluteProfit", String.valueOf(c.minAbsoluteProfit));
             upsert("narrowCprMaxWidth", String.valueOf(c.narrowCprMaxWidth));
             // narrowRangeRatioThreshold removed — z-score is self-calibrating
@@ -597,6 +605,8 @@ public class RiskSettingsStore {
                     case "skipInsideOrOnEv" -> c.skipInsideOrOnEv = Boolean.parseBoolean(v);
                     case "skipInsideOrOnIv" -> c.skipInsideOrOnIv = Boolean.parseBoolean(v);
                     case "skipInsideOrOnOv" -> c.skipInsideOrOnOv = Boolean.parseBoolean(v);
+                    case "enableNarrowOrOverride" -> c.enableNarrowOrOverride = Boolean.parseBoolean(v);
+                    case "narrowOrMaxAtr" -> c.narrowOrMaxAtr = Double.parseDouble(v);
                     case "minAbsoluteProfit" -> c.minAbsoluteProfit = Double.parseDouble(v);
                     case "narrowCprMaxWidth" -> c.narrowCprMaxWidth = Double.parseDouble(v);
                     // narrowRangeRatioThreshold — legacy key, silently ignored

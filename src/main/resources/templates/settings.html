@@ -374,6 +374,18 @@
                         </div>
                     </div>
                     <div class="form-hint">When checked, inside-OR breakouts are skipped entirely for that day type. When unchecked, they fire with qty reduced by the factor above. EV skip is ON by default (gap days inside OR = no conviction).</div>
+                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border);">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="enableNarrowOrOverride" style="width: 16px; height: 16px; accent-color: var(--accent-cyan);">
+                            <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono); font-weight: 600;">Narrow OR override (IV/OV continuation)</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Narrow OR if range ≤</span>
+                            <input type="number" id="narrowOrMaxAtr" class="form-control" step="0.1" min="0.1" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                            <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">× ATR</span>
+                        </div>
+                    </div>
+                    <div class="form-hint">When enabled, stocks with narrow OR (compressed first 15 min) get a NOR badge on the scanner. Inside-OR breakouts on IV/OV days fire as HPT with full qty (skipping skip/LPT/qty-reduction downgrades). OV gap-fade trades still downgrade (counter-trend). EV rules unchanged.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Minimum Absolute Profit</label>
@@ -1021,7 +1033,7 @@
             // enableTargetShift removed — replaced by min target distance check
             // enableGapCheck removed — replaced by Opening Range filter
             document.getElementById('enableDayHighLowTargetShift').checked = d.enableDayHighLowTargetShift !== false;
-            document.getElementById('dayHighLowShiftMinDistAtr').value = d.dayHighLowShiftMinDistAtr != null ? d.dayHighLowShiftMinDistAtr : 1.0;
+            document.getElementById('dayHighLowShiftMinDistAtr').value = d.dayHighLowShiftMinDistAtr != null ? d.dayHighLowShiftMinDistAtr : 2.0;
             document.getElementById('enableWeeklyLevelTargetShift').checked = d.enableWeeklyLevelTargetShift !== false;
             document.getElementById('enableStructuralSl').checked = d.enableStructuralSl === true;
             document.getElementById('structuralSlBufferAtr').value = d.structuralSlBufferAtr != null ? d.structuralSlBufferAtr : 1.0;
@@ -1091,6 +1103,8 @@
             document.getElementById('skipInsideOrOnEv').checked = d.skipInsideOrOnEv !== false;
             document.getElementById('skipInsideOrOnIv').checked = d.skipInsideOrOnIv === true;
             document.getElementById('skipInsideOrOnOv').checked = d.skipInsideOrOnOv === true;
+            document.getElementById('enableNarrowOrOverride').checked = d.enableNarrowOrOverride !== false;
+            document.getElementById('narrowOrMaxAtr').value = d.narrowOrMaxAtr != null ? d.narrowOrMaxAtr : 1.5;
             document.getElementById('minAbsoluteProfit').value = d.minAbsoluteProfit != null ? d.minAbsoluteProfit : 500;
             document.getElementById('enableR3S3').checked = d.enableR3S3 !== false;
             document.getElementById('r3s3QtyFactor').value = d.r3s3QtyFactor || 0.75;
@@ -1245,6 +1259,8 @@
                 skipInsideOrOnEv: document.getElementById('skipInsideOrOnEv').checked,
                 skipInsideOrOnIv: document.getElementById('skipInsideOrOnIv').checked,
                 skipInsideOrOnOv: document.getElementById('skipInsideOrOnOv').checked,
+                enableNarrowOrOverride: document.getElementById('enableNarrowOrOverride').checked,
+                narrowOrMaxAtr: parseFloat(document.getElementById('narrowOrMaxAtr').value) || 1.5,
                 minAbsoluteProfit: parseFloat(document.getElementById('minAbsoluteProfit').value) || 500,
                 enableR3S3: document.getElementById('enableR3S3').checked,
                 r3s3QtyFactor: parseFloat(document.getElementById('r3s3QtyFactor').value) || 0.75,

@@ -733,28 +733,51 @@
         <div class="help-body">
             <p>The Opening Range is the high and low of the first N minutes after market open (configurable: 15/30/45/60 min). Shown on scanner cards as OR status.</p>
 
-            <h4>OR Status</h4>
+            <h4>OR Status (combined badge on scanner card)</h4>
+            <p>After OR locks, each card shows a single combined badge with price status (+/-/=) and OR width classification (NOR/WOR). Before OR locks, it shows <code>OR?</code>.</p>
             <table>
-                <tr><th>Status</th><th>Condition</th></tr>
-                <tr><td><span class="badge-example bg">BULLISH</span></td><td>LTP &gt; OR High</td></tr>
-                <tr><td><span class="badge-example br">BEARISH</span></td><td>LTP &lt; OR Low</td></tr>
-                <tr><td>NEUTRAL</td><td>LTP between OR High and Low</td></tr>
-                <tr><td><span class="badge-example by">FORMING</span></td><td>OR period not yet complete</td></tr>
+                <tr><th>Badge</th><th>Meaning</th></tr>
+                <tr><td><code>OR?</code></td><td>OR still forming (before 9:30)</td></tr>
+                <tr><td><span class="badge-example bg">NOR+</span></td><td>Narrow OR + LTP above OR High (bullish breakout)</td></tr>
+                <tr><td><span class="badge-example br">NOR-</span></td><td>Narrow OR + LTP below OR Low (bearish breakout)</td></tr>
+                <tr><td>NOR=</td><td>Narrow OR + LTP inside OR (neutral, compressed)</td></tr>
+                <tr><td><span class="badge-example bg">WOR+</span></td><td>Wide OR + bullish breakout</td></tr>
+                <tr><td><span class="badge-example br">WOR-</span></td><td>Wide OR + bearish breakout</td></tr>
+                <tr><td>WOR=</td><td>Wide OR + LTP inside OR</td></tr>
             </table>
+
+            <h4>Narrow vs Wide OR Classification</h4>
+            <p>After OR locks, the bot classifies the OR range against the stock's ATR:</p>
+            <ul>
+                <li><strong>NARROW OR</strong>: <code>OR range ≤ narrowOrMaxAtr × ATR</code> (default 1.5) — compressed first 15 min = accumulation thesis, high breakout probability</li>
+                <li><strong>WIDE OR</strong>: <code>OR range &gt; narrowOrMaxAtr × ATR</code> — price already moved, inside-OR breakouts are noise</li>
+            </ul>
 
             <h4>Impact on Trading</h4>
             <table>
-                <tr><th>Day Type</th><th>OR Impact</th></tr>
+                <tr><th>Scenario</th><th>Behavior</th></tr>
                 <tr><td><span class="badge-example bg">IV</span> / <span class="badge-example by">OV</span> + breakout outside OR</td><td>Normal trade — probability unchanged</td></tr>
-                <tr><td><span class="badge-example bg">IV</span> / <span class="badge-example by">OV</span> + breakout inside OR</td><td><strong>Probability downgraded to LPT</strong> — close still inside opening range, weak breakout (still trading in range)</td></tr>
+                <tr><td><span class="badge-example bg">IV</span> + <strong>NOR</strong> inside-OR (narrow override ON)</td><td><strong>Fires as HPT full qty</strong> — compression breakout, high probability</td></tr>
+                <tr><td><span class="badge-example bg">IV</span> + <strong>WOR</strong> inside-OR</td><td>Skipped (if skipInsideOrOnIv=true) OR LPT + qty reduction</td></tr>
+                <tr><td><span class="badge-example by">OV</span> + <strong>NOR</strong> inside-OR continuation (direction matches gap)</td><td><strong>Fires as HPT full qty</strong></td></tr>
+                <tr><td><span class="badge-example by">OV</span> + <strong>NOR</strong> inside-OR gap-fade (direction opposes gap)</td><td><strong>LPT + qty reduction</strong> — counter-trend, narrow override does NOT apply</td></tr>
+                <tr><td><span class="badge-example by">OV</span> + <strong>WOR</strong> inside-OR</td><td>Skipped (if skipInsideOrOnOv=true) OR LPT + qty reduction</td></tr>
                 <tr><td><span class="badge-example br">EV up</span> + OR breaks UP</td><td>Trend continuation — buy setups fire normally</td></tr>
                 <tr><td><span class="badge-example br">EV up</span> + OR breaks DOWN</td><td>Gap fade mean-reversion — sell setups fire as reversal (LPT half qty, reversal targets)</td></tr>
                 <tr><td><span class="badge-example br">EV down</span> + OR breaks DOWN</td><td>Trend continuation — sell setups fire normally</td></tr>
                 <tr><td><span class="badge-example br">EV down</span> + OR breaks UP</td><td>Gap fade mean-reversion — buy setups fire as reversal (LPT half qty, reversal targets)</td></tr>
                 <tr><td><span class="badge-example br">EV</span> + counter direction</td><td><strong>Skip</strong> — trade direction opposes OR break</td></tr>
-                <tr><td><span class="badge-example br">EV</span> + inside OR</td><td><strong>Skip</strong> — no trade</td></tr>
+                <tr><td><span class="badge-example br">EV</span> + inside OR</td><td><strong>Skip</strong> (if skipInsideOrOnEv=true) — narrow OR override does NOT apply to EV</td></tr>
                 <tr><td><span class="badge-example br">EV</span> + OR forming</td><td><strong>Skip</strong> — wait for OR to lock</td></tr>
             </table>
+
+            <h4>Recommended settings pairing</h4>
+            <p>Narrow OR breakouts can get R/R-rejected if the target gets shifted to session high/low (which is close by definition of narrow OR). Pair these settings:</p>
+            <ul>
+                <li><code>narrowOrMaxAtr</code> = 1.5 (OR range ≤ 1.5 × ATR = narrow)</li>
+                <li><code>dayHighLowShiftMinDistAtr</code> = 2.0 (skip day H/L target shift when distance &lt; 2 × ATR)</li>
+                <li>The 0.5 × ATR buffer ensures narrow-OR inside-OR breakouts preserve their CPR target and pass R/R</li>
+            </ul>
 
             <p>OR state persists across restarts (saved to <code>store/config/or-state.json</code>).</p>
         </div>
@@ -1463,6 +1486,10 @@
                 <tr><td>Allow Weekly NEUTRAL Trades</td><td>ON</td><td>When OFF, skip all trades when weekly is NEUTRAL. When ON, fires as LPT with NEUTRAL qty factor.</td></tr>
                 <tr><td>Weekly NEUTRAL Qty Factor</td><td>0.5</td><td>Extra multiplier when weekly NEUTRAL (stacks on LPT: 0.5 × 0.5 = 0.25).</td></tr>
                 <tr><td>Inside OR Qty Factor (IV/OV)</td><td>0.5</td><td>Qty reduction when breakout candle is inside the Opening Range on IV/OV days. HPT stays HPT — just reduced size.</td></tr>
+                <tr><td>Skip Inside-OR on EV / IV / OV</td><td>EV: ON, IV/OV: OFF</td><td>Skip inside-OR neutral breakouts entirely for the chosen day type. When OFF, trades fire with qty × factor.</td></tr>
+                <tr><td>Narrow OR Override</td><td>ON</td><td>When enabled, classifies OR as NARROW or WIDE after lock. Narrow-OR inside-OR breakouts on IV/OV continuation trades fire as HPT full qty (bypasses skip/LPT/qty-reduction). OV gap-fade still downgrades. EV rules unchanged.</td></tr>
+                <tr><td>Narrow OR Max ATR</td><td>1.5</td><td>Threshold: OR range ≤ this × ATR = NARROW. Pair with Day H/L Shift Min Dist (≥ this + 0.5) to preserve target.</td></tr>
+                <tr><td>Day H/L Shift Min Dist (ATR)</td><td>2.0</td><td>Skip session-high/low target shift when distance &lt; this × ATR. Prevents R/R compression on tight setups.</td></tr>
                 <tr><td>Min Absolute Profit</td><td>₹500</td><td>Skip if qty × target distance &lt; this amount. Catches trades where stacked qty reductions made position too small. Set to 0 to disable.</td></tr>
             </table>
 
@@ -1499,7 +1526,8 @@
                 <tr><td><strong>Export TradingView</strong></td><td>Downloads the filtered watchlist as TradingView-compatible text (NSE:SYMBOL, comma-separated)</td></tr>
                 <tr><td><strong>Export Fyers</strong></td><td>Downloads the filtered watchlist in Fyers import format (NSE:SYMBOL-EQ, one per line)</td></tr>
                 <tr><td><strong>Status Bar</strong></td><td>Shows active filters: stock count, price range, turnover, volume, beta, cap, signals</td></tr>
-                <tr><td><strong>OR Badge</strong></td><td>Color-coded Opening Range badge on each card header: OR+ (green=bullish), OR- (red=bearish), OR= (gray=neutral), OR? (yellow=forming)</td></tr>
+                <tr><td><strong>OR Badge</strong></td><td>Combined Opening Range badge. Before lock: OR? (yellow=forming). After lock: NOR+/NOR-/NOR= (narrow OR, green/red/gray) or WOR+/WOR-/WOR= (wide OR, same colors). Hover for full tooltip with range and ATR ratio.</td></tr>
+                <tr><td><strong>Chart Icon</strong></td><td>Click to open a live TradingView-style candlestick chart with CPR bands, R/S levels, VWAP, EMA20/EMA200, OR band, and trade markers. Gear icon inside modal toggles individual levels/bands on/off (preferences persist across sessions).</td></tr>
                 <tr><td><strong>Auto Rebuild</strong></td><td>Saving settings re-filters the scanner from existing loaded stocks. Tightening filters (fewer stocks) works mid-day. Widening filters (adding new stocks) requires restart — new stocks need WebSocket subscription + ATR/EMA seed which only happens at startup.</td></tr>
             </table>
 

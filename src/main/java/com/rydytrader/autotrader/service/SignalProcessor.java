@@ -256,29 +256,43 @@ public class SignalProcessor {
                         // Determine if IV or OV
                         boolean isOv = firstClose > 0 && ((firstClose > Math.max(r1, ph) && firstClose < r2)
                                                        || (firstClose < Math.min(s1, pl) && firstClose > s2));
-                        if (isOv && riskSettings.isSkipInsideOrOnOv()) {
-                            return ProcessedSignal.rejected(setup, symbol,
-                                "OV day — price inside OR range (H:" + fmt(orHigh) + " L:" + fmt(orLow)
-                                + ") — skipped (OV inside-OR skip enabled)");
-                        }
-                        if (!isOv && riskSettings.isSkipInsideOrOnIv()) {
-                            return ProcessedSignal.rejected(setup, symbol,
-                                "IV day — price inside OR range (H:" + fmt(orHigh) + " L:" + fmt(orLow)
-                                + ") — skipped (IV inside-OR skip enabled)");
-                        }
-                        insideOrOnIvOv = true;
-                        if (!isOv) {
-                            // IV: no gap, no directional signal → LPT
-                            if ("HPT".equals(probability)) {
-                                probability = "LPT";
-                                adjustments.add("Probability HPT → LPT (inside OR on IV day — no directional conviction)");
-                            }
+                        // OV gap-fade check — trade opposes the gap direction
+                        boolean ovGapUp = isOv && firstClose > Math.max(r1, ph);
+                        boolean ovGapDown = isOv && firstClose < Math.min(s1, pl);
+                        boolean ovGapFade = (ovGapUp && !isBuy) || (ovGapDown && isBuy);
+
+                        // Narrow-OR override: if OR range is narrow AND trade is NOT gap-fade,
+                        // treat as HPT full qty (bypass skip/LPT/qty-reduction).
+                        double orRange = orHigh - orLow;
+                        boolean isNarrowOr = riskSettings.isEnableNarrowOrOverride()
+                            && atr > 0 && orRange > 0
+                            && orRange <= riskSettings.getNarrowOrMaxAtr() * atr;
+
+                        if (isNarrowOr && !ovGapFade) {
+                            // Narrow-OR continuation — fire as HPT full qty, no downgrades
+                            adjustments.add("Narrow OR override (range " + fmt(orRange) + " = "
+                                + fmt(orRange / atr) + " × ATR) — inside-OR breakout treated as HPT");
                         } else {
-                            // OV: gap-fade check — if trade opposes the gap direction → LPT
-                            boolean ovGapUp = firstClose > Math.max(r1, ph);
-                            boolean ovGapDown = firstClose < Math.min(s1, pl);
-                            boolean ovGapFade = (ovGapUp && !isBuy) || (ovGapDown && isBuy);
-                            if (ovGapFade && "HPT".equals(probability)) {
+                            // Wide OR OR gap-fade (counter-trend) — existing behavior applies
+                            if (isOv && riskSettings.isSkipInsideOrOnOv()) {
+                                return ProcessedSignal.rejected(setup, symbol,
+                                    "OV day — price inside OR range (H:" + fmt(orHigh) + " L:" + fmt(orLow)
+                                    + ") — skipped (OV inside-OR skip enabled)");
+                            }
+                            if (!isOv && riskSettings.isSkipInsideOrOnIv()) {
+                                return ProcessedSignal.rejected(setup, symbol,
+                                    "IV day — price inside OR range (H:" + fmt(orHigh) + " L:" + fmt(orLow)
+                                    + ") — skipped (IV inside-OR skip enabled)");
+                            }
+                            insideOrOnIvOv = true;
+                            if (!isOv) {
+                                // IV: no gap, no directional signal → LPT
+                                if ("HPT".equals(probability)) {
+                                    probability = "LPT";
+                                    adjustments.add("Probability HPT → LPT (inside OR on IV day — no directional conviction)");
+                                }
+                            } else if (ovGapFade && "HPT".equals(probability)) {
+                                // OV gap-fade — LPT even if narrow (counter-trend)
                                 probability = "LPT";
                                 adjustments.add("Probability HPT → LPT (inside OR on OV day — trade opposes gap " + (ovGapUp ? "up" : "down") + ")");
                             }
