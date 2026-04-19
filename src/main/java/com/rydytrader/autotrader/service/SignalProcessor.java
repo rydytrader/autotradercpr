@@ -19,12 +19,11 @@ public class SignalProcessor {
     private final CandleAggregator candleAggregator;
     private final WeeklyCprService weeklyCprService;
     private final EmaService       emaService;
-    private final BhavcopyService  bhavcopyService;
 
     public SignalProcessor(RiskSettingsStore riskSettings, EventService eventService,
                            QuantityService quantityService, MarketDataService marketDataService,
                            CandleAggregator candleAggregator, WeeklyCprService weeklyCprService,
-                           EmaService emaService, BhavcopyService bhavcopyService) {
+                           EmaService emaService) {
         this.riskSettings = riskSettings;
         this.eventService = eventService;
         this.quantityService = quantityService;
@@ -32,7 +31,6 @@ public class SignalProcessor {
         this.candleAggregator = candleAggregator;
         this.emaService = emaService;
         this.weeklyCprService = weeklyCprService;
-        this.bhavcopyService = bhavcopyService;
     }
 
     public ProcessedSignal process(Map<String, Object> alert) {
@@ -183,127 +181,67 @@ public class SignalProcessor {
             }
         }
 
-        // ── 4e2. Opening Range EV filter — on Extended Value days, only trade OR-aligned or mean-reversion ──
+        // ── 4e2. Opening Range filter ──
+        // On EV days: if OR is broken, trade direction must match OR break. Gap-fade (counter-gap) still fires
+        //   as LPT mean-reversion (isReversal=true) to use reversal targets.
+        // Any day type (EV/IV/OV): if breakout close is INSIDE the OR range, downgrade HPT→LPT and proceed
+        //   (no skip, no qty reduction — just LPT).
         int orMinutes = riskSettings.getOpeningRangeMinutes();
         boolean isReversal = false;
-        boolean insideOrOnIvOv = false; // set to true if IV/OV day and close is inside OR range
         if (orMinutes > 0) {
             double firstClose = candleAggregator.getFirstCandleClose(symbol);
             boolean gapUp   = firstClose > 0 && r2 > 0 && firstClose >= r2;
             boolean gapDown = firstClose > 0 && s2 > 0 && firstClose <= s2;
-            if (gapUp || gapDown) {
-                if (!candleAggregator.isOpeningRangeLocked(symbol)) {
-                    return ProcessedSignal.rejected(setup, symbol,
-                        "EV " + (gapUp ? "up" : "down") + " detected (1st candle close " + fmt(firstClose)
-                        + (gapUp ? " >= R2 " + fmt(r2) : " <= S2 " + fmt(s2))
-                        + ") but Opening Range still forming — skipped");
-                }
+            boolean isEv = gapUp || gapDown;
+
+            // IV/OV days: mean-reversion setups not allowed (only fire on EV days)
+            if (!isEv && isMeanReversionSetup(setup)) {
+                return ProcessedSignal.rejected(setup, symbol,
+                    "Mean-reversion setup only allowed on EV days (gap up/down) — today is IV/OV");
+            }
+
+            if (candleAggregator.isOpeningRangeLocked(symbol)) {
                 double orHigh = candleAggregator.getOpeningRangeHigh(symbol);
                 double orLow  = candleAggregator.getOpeningRangeLow(symbol);
-                boolean orBullish = close > orHigh;
-                boolean orBearish = close < orLow;
 
-                if (!orBullish && !orBearish) {
-                    if (riskSettings.isSkipInsideOrOnEv()) {
-                        return ProcessedSignal.rejected(setup, symbol,
-                            "EV " + (gapUp ? "up" : "down") + " (1st close " + fmt(firstClose) + ") — price inside OR range"
-                            + " (H:" + fmt(orHigh) + " L:" + fmt(orLow) + ") — skipped (EV inside-OR skip enabled)");
-                    }
-                    // EV skip is OFF — allow with qty reduction only (no LPT downgrade).
-                    // Gap direction gives conviction — continuation breakouts stay HPT.
-                    insideOrOnIvOv = true;
-                }
+                if (isEv) {
+                    boolean orBullish = close > orHigh;
+                    boolean orBearish = close < orLow;
 
-                // Trade direction must match OR break direction.
-                // Gap up + OR breaks up = continuation (buy trend) — buy setups OK, sell setups rejected.
-                // Gap up + OR breaks down = reversal (sell mean-reversion) — sell setups OK, buy setups rejected.
-                // Gap down + OR breaks down = continuation (sell trend) — sell setups OK, buy setups rejected.
-                // Gap down + OR breaks up = reversal (buy mean-reversion) — buy setups OK, sell setups rejected.
-                boolean directionMatchesOR = (isBuy && orBullish) || (!isBuy && orBearish);
-                if (!directionMatchesOR) {
-                    return ProcessedSignal.rejected(setup, symbol,
-                        "EV " + (gapUp ? "up" : "down") + " — trade direction opposes OR break ("
-                        + (orBullish ? "OR Bullish" : "OR Bearish") + ") — skipped");
-                }
-
-                // Gap-fade scenarios fire as mean-reversion (reversal targets, LPT):
-                //   gap up + sell aligned with OR bearish = sell the rip (reversal of gap)
-                //   gap down + buy aligned with OR bullish = buy the dip (reversal of gap)
-                boolean isGapFade = (gapUp && !isBuy) || (gapDown && isBuy);
-                if (isGapFade) {
-                    isReversal = true;
-                    String oldProb = probability;
-                    probability = "LPT";
-                    if (!oldProb.equals(probability)) {
-                        eventService.log("[INFO] " + symbol + " " + setup + " probability set to LPT for EV reversal (was " + oldProb + ")");
-                        adjustments.add("Probability " + oldProb + " → LPT (EV " + (gapUp ? "gap-up" : "gap-down") + " reversal — mean-reversion)");
-                    }
-                    eventService.log("[INFO] " + symbol + " " + setup + " EV " + (gapUp ? "up" : "down")
-                        + " — OR " + (orBullish ? "Bullish" : "Bearish") + " gap fade, mean-reversion targets");
-                } else {
-                    eventService.log("[INFO] " + symbol + " " + setup + " EV " + (gapUp ? "up" : "down")
-                        + " — OR " + (orBullish ? "Bullish" : "Bearish") + " continuation, proceeding");
-                }
-            } else {
-                // ── IV/OV day: mean-reversion setups not allowed (only fire on EV days) ──
-                if (isMeanReversionSetup(setup)) {
-                    return ProcessedSignal.rejected(setup, symbol,
-                        "Mean-reversion setup only allowed on EV days (gap up/down) — today is IV/OV");
-                }
-                // IV/OV: if breakout candle is inside OR range, skip or reduce qty
-                if (candleAggregator.isOpeningRangeLocked(symbol)) {
-                    double orHigh = candleAggregator.getOpeningRangeHigh(symbol);
-                    double orLow  = candleAggregator.getOpeningRangeLow(symbol);
-                    if (orHigh > 0 && orLow > 0 && close >= orLow && close <= orHigh) {
-                        // Determine if IV or OV
-                        boolean isOv = firstClose > 0 && ((firstClose > Math.max(r1, ph) && firstClose < r2)
-                                                       || (firstClose < Math.min(s1, pl) && firstClose > s2));
-                        // OV gap-fade check — trade opposes the gap direction
-                        boolean ovGapUp = isOv && firstClose > Math.max(r1, ph);
-                        boolean ovGapDown = isOv && firstClose < Math.min(s1, pl);
-                        boolean ovGapFade = (ovGapUp && !isBuy) || (ovGapDown && isBuy);
-
-                        // Narrow-OR override: if OR range is narrow (% of 20-day ADR) AND trade is NOT gap-fade,
-                        // treat as HPT full qty (bypass skip/LPT/qty-reduction).
-                        double orRange = orHigh - orLow;
-                        double adr = bhavcopyService.getAverageDailyRange(symbol, 20);
-                        double orAdrPct = (adr > 0 && orRange > 0) ? (orRange / adr) * 100.0 : -1;
-                        boolean isNarrowOr = riskSettings.isEnableNarrowOrOverride()
-                            && orAdrPct > 0
-                            && orAdrPct <= riskSettings.getNarrowOrMaxAdrPct();
-
-                        if (isNarrowOr && !ovGapFade) {
-                            // Narrow-OR continuation — fire as HPT full qty, no downgrades
-                            adjustments.add("Narrow OR override (range " + fmt(orRange) + " = "
-                                + String.format("%.1f%%", orAdrPct) + " of 20d ADR " + fmt(adr)
-                                + ") — inside-OR breakout treated as HPT");
-                        } else {
-                            // Wide OR OR gap-fade (counter-trend) — existing behavior applies
-                            if (isOv && riskSettings.isSkipInsideOrOnOv()) {
-                                return ProcessedSignal.rejected(setup, symbol,
-                                    "OV day — price inside OR range (H:" + fmt(orHigh) + " L:" + fmt(orLow)
-                                    + ") — skipped (OV inside-OR skip enabled)");
-                            }
-                            if (!isOv && riskSettings.isSkipInsideOrOnIv()) {
-                                return ProcessedSignal.rejected(setup, symbol,
-                                    "IV day — price inside OR range (H:" + fmt(orHigh) + " L:" + fmt(orLow)
-                                    + ") — skipped (IV inside-OR skip enabled)");
-                            }
-                            insideOrOnIvOv = true;
-                            if (!isOv) {
-                                // IV: no gap, no directional signal → LPT
-                                if ("HPT".equals(probability)) {
-                                    probability = "LPT";
-                                    adjustments.add("Probability HPT → LPT (inside OR on IV day — no directional conviction)");
-                                }
-                            } else if (ovGapFade && "HPT".equals(probability)) {
-                                // OV gap-fade — LPT even if narrow (counter-trend)
+                    // EV + OR broken: direction must match the break
+                    if (orBullish || orBearish) {
+                        boolean directionMatchesOR = (isBuy && orBullish) || (!isBuy && orBearish);
+                        if (!directionMatchesOR) {
+                            return ProcessedSignal.rejected(setup, symbol,
+                                "EV " + (gapUp ? "up" : "down") + " — trade direction opposes OR break ("
+                                + (orBullish ? "OR Bullish" : "OR Bearish") + ") — skipped");
+                        }
+                        // Gap-fade (counter-gap direction): mean-reversion (LPT + reversal targets)
+                        boolean isGapFade = (gapUp && !isBuy) || (gapDown && isBuy);
+                        if (isGapFade) {
+                            isReversal = true;
+                            if (!"LPT".equals(probability)) {
+                                adjustments.add("Probability " + probability + " → LPT (EV "
+                                    + (gapUp ? "gap-up" : "gap-down") + " reversal — mean-reversion)");
                                 probability = "LPT";
-                                adjustments.add("Probability HPT → LPT (inside OR on OV day — trade opposes gap " + (ovGapUp ? "up" : "down") + ")");
                             }
                         }
                     }
                 }
+
+                // Any day type: inside OR range → LPT, proceed as-is (no skip, no qty reduction)
+                if (orHigh > 0 && orLow > 0 && close >= orLow && close <= orHigh) {
+                    if ("HPT".equals(probability)) {
+                        probability = "LPT";
+                        adjustments.add("Probability HPT → LPT (inside OR range)");
+                    }
+                }
+            } else if (isEv) {
+                // EV detected but OR still forming — skip trade
+                return ProcessedSignal.rejected(setup, symbol,
+                    "EV " + (gapUp ? "up" : "down") + " detected (1st candle close " + fmt(firstClose)
+                    + (gapUp ? " >= R2 " + fmt(r2) : " <= S2 " + fmt(s2))
+                    + ") but Opening Range still forming — skipped");
             }
         }
 
@@ -442,29 +380,7 @@ public class SignalProcessor {
             qty = reduced;
         }
 
-        // ── 4i2a. Extra penalty when WEEKLY trend is NEUTRAL (stacks on LPT) ──
-        // Weekly neutral = no higher-timeframe conviction. Penalize these trades further.
-        String weeklyTrend = weeklyCprService.getWeeklyTrend(symbol);
-        if ("NEUTRAL".equals(weeklyTrend)) {
-            double factor = riskSettings.getNeutralWeeklyQtyFactor();
-            if (factor > 0 && factor < 1.0) {
-                int reduced = Math.max(1, (int)(qty * factor));
-                eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (Weekly NEUTRAL ×" + factor + "): " + qty + " -> " + reduced);
-                adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — weekly trend NEUTRAL, no HTF conviction)");
-                qty = reduced;
-            }
-        }
-
-        // ── 4i2b. IV/OV inside-OR qty reduction — still range-bound, reduce size ──
-        if (insideOrOnIvOv) {
-            double factor = riskSettings.getInsideOrQtyFactor();
-            if (factor > 0 && factor < 1.0) {
-                int reduced = Math.max(1, (int)(qty * factor));
-                eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (inside OR on IV/OV ×" + factor + "): " + qty + " -> " + reduced);
-                adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — inside OR range on IV/OV day)");
-                qty = reduced;
-            }
-        }
+        // Weekly NEUTRAL trades are always LPT (downgraded in BreakoutScanner) — no additional qty reduction.
 
         // ── 4i3. Level-based qty adjustment (R3/S3 and R4/S4 extended levels) ──
         if (setup.contains("R3") || setup.contains("S3")) {

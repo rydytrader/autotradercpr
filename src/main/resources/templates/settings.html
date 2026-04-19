@@ -345,47 +345,6 @@
                             <input type="number" id="lptQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         </label>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="enableWeeklyNeutralTrades" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Allow trades when weekly trend is NEUTRAL</span>
-                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);margin-left:16px;">
-                            Qty ×
-                            <input type="number" id="neutralWeeklyQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        </label>
-                    </div>
-                    <div class="form-hint">Weekly NEUTRAL trades are always LPT (no weekly conviction). When allowed, qty = LPT × NEUTRAL factor (default 0.5 × 0.5 = 0.25 of base). Uncheck to skip all trades when weekly is NEUTRAL.</div>
-                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
-                        <div style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono); font-weight: 600;">Skip inside-OR neutral breakouts:</div>
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <input type="checkbox" id="skipInsideOrOnEv" style="width: 16px; height: 16px; accent-color: var(--accent-cyan);">
-                            <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">EV days (gap up/down)</span>
-                        </div>
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <input type="checkbox" id="skipInsideOrOnIv" style="width: 16px; height: 16px; accent-color: var(--accent-cyan);">
-                            <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">IV days (inside value)</span>
-                        </div>
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <input type="checkbox" id="skipInsideOrOnOv" style="width: 16px; height: 16px; accent-color: var(--accent-cyan);">
-                            <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">OV days (outside value)</span>
-                        </div>
-                        <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                            <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">If not skipped, qty ×</span>
-                            <input type="number" id="insideOrQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        </div>
-                    </div>
-                    <div class="form-hint">When checked, inside-OR breakouts are skipped entirely for that day type. When unchecked, they fire with qty reduced by the factor above. EV skip is ON by default (gap days inside OR = no conviction).</div>
-                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border);">
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <input type="checkbox" id="enableNarrowOrOverride" style="width: 16px; height: 16px; accent-color: var(--accent-cyan);">
-                            <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono); font-weight: 600;">Narrow OR override (IV/OV continuation)</span>
-                        </div>
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Narrow OR if range ≤</span>
-                            <input type="number" id="narrowOrMaxAdrPct" class="form-control" step="1" min="1" max="50" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                            <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">% of 20d ADR</span>
-                        </div>
-                    </div>
-                    <div class="form-hint">When enabled, stocks with narrow OR (OR range small relative to 20-day Average Daily Range) get a NOR badge on the scanner. Inside-OR breakouts on IV/OV days fire as HPT with full qty (skipping skip/LPT/qty-reduction downgrades). OV gap-fade trades still downgrade (counter-trend). EV rules unchanged.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Minimum Absolute Profit</label>
@@ -1104,14 +1063,6 @@
             document.getElementById('enableHpt').checked = d.enableHpt !== false;
             document.getElementById('enableLpt').checked = d.enableLpt !== false;
             document.getElementById('lptQtyFactor').value = d.lptQtyFactor != null ? d.lptQtyFactor : 0.50;
-            document.getElementById('neutralWeeklyQtyFactor').value = d.neutralWeeklyQtyFactor != null ? d.neutralWeeklyQtyFactor : 0.50;
-            document.getElementById('enableWeeklyNeutralTrades').checked = d.enableWeeklyNeutralTrades !== false;
-            document.getElementById('insideOrQtyFactor').value = d.insideOrQtyFactor != null ? d.insideOrQtyFactor : 0.50;
-            document.getElementById('skipInsideOrOnEv').checked = d.skipInsideOrOnEv !== false;
-            document.getElementById('skipInsideOrOnIv').checked = d.skipInsideOrOnIv === true;
-            document.getElementById('skipInsideOrOnOv').checked = d.skipInsideOrOnOv === true;
-            document.getElementById('enableNarrowOrOverride').checked = d.enableNarrowOrOverride !== false;
-            document.getElementById('narrowOrMaxAdrPct').value = d.narrowOrMaxAdrPct != null ? d.narrowOrMaxAdrPct : 15.0;
             document.getElementById('minAbsoluteProfit').value = d.minAbsoluteProfit != null ? d.minAbsoluteProfit : 500;
             document.getElementById('enableR3S3').checked = d.enableR3S3 !== false;
             document.getElementById('r3s3QtyFactor').value = d.r3s3QtyFactor || 0.75;
@@ -1261,14 +1212,6 @@
                 enableHpt: document.getElementById('enableHpt').checked,
                 enableLpt: document.getElementById('enableLpt').checked,
                 lptQtyFactor: parseFloat(document.getElementById('lptQtyFactor').value) || 0.50,
-                neutralWeeklyQtyFactor: parseFloat(document.getElementById('neutralWeeklyQtyFactor').value) || 0.50,
-                enableWeeklyNeutralTrades: document.getElementById('enableWeeklyNeutralTrades').checked,
-                insideOrQtyFactor: parseFloat(document.getElementById('insideOrQtyFactor').value) || 0.50,
-                skipInsideOrOnEv: document.getElementById('skipInsideOrOnEv').checked,
-                skipInsideOrOnIv: document.getElementById('skipInsideOrOnIv').checked,
-                skipInsideOrOnOv: document.getElementById('skipInsideOrOnOv').checked,
-                enableNarrowOrOverride: document.getElementById('enableNarrowOrOverride').checked,
-                narrowOrMaxAdrPct: parseFloat(document.getElementById('narrowOrMaxAdrPct').value) || 15.0,
                 minAbsoluteProfit: parseFloat(document.getElementById('minAbsoluteProfit').value) || 500,
                 enableR3S3: document.getElementById('enableR3S3').checked,
                 r3s3QtyFactor: parseFloat(document.getElementById('r3s3QtyFactor').value) || 0.75,

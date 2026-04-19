@@ -125,14 +125,6 @@ public class SettingsController {
         result.put("enableHpt", riskSettings.isEnableHpt());
         result.put("enableLpt", riskSettings.isEnableLpt());
         result.put("lptQtyFactor", riskSettings.getLptQtyFactor());
-        result.put("neutralWeeklyQtyFactor", riskSettings.getNeutralWeeklyQtyFactor());
-        result.put("enableWeeklyNeutralTrades", riskSettings.isEnableWeeklyNeutralTrades());
-        result.put("insideOrQtyFactor", riskSettings.getInsideOrQtyFactor());
-        result.put("skipInsideOrOnEv", riskSettings.isSkipInsideOrOnEv());
-        result.put("skipInsideOrOnIv", riskSettings.isSkipInsideOrOnIv());
-        result.put("skipInsideOrOnOv", riskSettings.isSkipInsideOrOnOv());
-        result.put("enableNarrowOrOverride", riskSettings.isEnableNarrowOrOverride());
-        result.put("narrowOrMaxAdrPct", riskSettings.getNarrowOrMaxAdrPct());
         result.put("smallRangeAdrPct", riskSettings.getSmallRangeAdrPct());
         result.put("minAbsoluteProfit", riskSettings.getMinAbsoluteProfit());
         result.put("todayPnl",         Math.round(todayPnl * 100.0) / 100.0);
@@ -234,14 +226,6 @@ public class SettingsController {
             if (body.containsKey("enableHpt")) riskSettings.setEnableHpt(Boolean.parseBoolean(body.get("enableHpt").toString()));
             if (body.containsKey("enableLpt")) riskSettings.setEnableLpt(Boolean.parseBoolean(body.get("enableLpt").toString()));
             if (body.containsKey("lptQtyFactor")) riskSettings.setLptQtyFactor(Double.parseDouble(body.get("lptQtyFactor").toString()));
-            if (body.containsKey("neutralWeeklyQtyFactor")) riskSettings.setNeutralWeeklyQtyFactor(Double.parseDouble(body.get("neutralWeeklyQtyFactor").toString()));
-            if (body.containsKey("enableWeeklyNeutralTrades")) riskSettings.setEnableWeeklyNeutralTrades(Boolean.parseBoolean(body.get("enableWeeklyNeutralTrades").toString()));
-            if (body.containsKey("insideOrQtyFactor")) riskSettings.setInsideOrQtyFactor(Double.parseDouble(body.get("insideOrQtyFactor").toString()));
-            if (body.containsKey("skipInsideOrOnEv")) riskSettings.setSkipInsideOrOnEv(Boolean.parseBoolean(body.get("skipInsideOrOnEv").toString()));
-            if (body.containsKey("skipInsideOrOnIv")) riskSettings.setSkipInsideOrOnIv(Boolean.parseBoolean(body.get("skipInsideOrOnIv").toString()));
-            if (body.containsKey("skipInsideOrOnOv")) riskSettings.setSkipInsideOrOnOv(Boolean.parseBoolean(body.get("skipInsideOrOnOv").toString()));
-            if (body.containsKey("enableNarrowOrOverride")) riskSettings.setEnableNarrowOrOverride(Boolean.parseBoolean(body.get("enableNarrowOrOverride").toString()));
-            if (body.containsKey("narrowOrMaxAdrPct")) riskSettings.setNarrowOrMaxAdrPct(Double.parseDouble(body.get("narrowOrMaxAdrPct").toString()));
             if (body.containsKey("smallRangeAdrPct")) {
                 riskSettings.setSmallRangeAdrPct(Double.parseDouble(body.get("smallRangeAdrPct").toString()));
                 bhavcopyService.reclassifyNarrowRangeTypes();

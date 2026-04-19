@@ -54,6 +54,10 @@ public class CandleAggregator {
     // Latest cumulative volume per symbol (for computing candle volume deltas)
     private final ConcurrentHashMap<String, Long> lastCumulativeVol = new ConcurrentHashMap<>();
 
+    // Prior-day candles (newest last) — seeded from multi-day Fyers history, used only for
+    // volume average fallback when today's completed candle count is insufficient.
+    private final ConcurrentHashMap<String, List<CandleBar>> priorDayCandles = new ConcurrentHashMap<>();
+
     // Latest change % per symbol
     private final ConcurrentHashMap<String, Double> latestChangePct = new ConcurrentHashMap<>();
 
@@ -598,9 +602,17 @@ public class CandleAggregator {
         // Only today's bars belong in completedCandles — multi-day history is for ATR computation only.
         long todayStartEpoch = ZonedDateTime.now(IST).toLocalDate().atStartOfDay(IST).toEpochSecond();
         List<CandleBar> todays = new ArrayList<>();
+        List<CandleBar> priors = new ArrayList<>();
         for (CandleBar c : candles) {
             if (c.epochSec >= todayStartEpoch) todays.add(c);
+            else priors.add(c);
         }
+
+        // Keep last N prior-day candles for volume-avg fallback (ordered oldest → newest)
+        int keepPriors = 25;
+        if (priors.size() > keepPriors) priors = priors.subList(priors.size() - keepPriors, priors.size());
+        priorDayCandles.put(symbol, new ArrayList<>(priors));
+
         if (todays.isEmpty()) return;
 
         // Check if the last today-bar is the current forming period (mid-candle restart)
@@ -654,22 +666,45 @@ public class CandleAggregator {
         return c != null ? c.volume : 0;
     }
 
-    /** Get average volume of the last N completed candles. */
+    /** Get average volume of the last N candles — uses today's completed candles first,
+     *  then backfills with prior-day history so average is available from market open. */
     public double getAvgVolume(String symbol, int periods) {
-        Deque<CandleBar> history = completedCandles.get(symbol);
-        if (history == null || history.isEmpty()) return 0;
         long sum = 0;
         int count = 0;
-        Iterator<CandleBar> it = history.descendingIterator();
-        while (it.hasNext() && count < periods) {
-            sum += it.next().volume;
-            count++;
+        Deque<CandleBar> today = completedCandles.get(symbol);
+        if (today != null) {
+            Iterator<CandleBar> it = today.descendingIterator();
+            while (it.hasNext() && count < periods) {
+                sum += it.next().volume;
+                count++;
+            }
+        }
+        if (count < periods) {
+            List<CandleBar> prior = priorDayCandles.get(symbol);
+            if (prior != null && !prior.isEmpty()) {
+                for (int i = prior.size() - 1; i >= 0 && count < periods; i--) {
+                    sum += prior.get(i).volume;
+                    count++;
+                }
+            }
         }
         return count > 0 ? (double) sum / count : 0;
     }
 
     /** Clear daily state for new trading day (called automatically on date change). */
     private void clearDaily() {
+        // Roll today's completed candles into priorDayCandles before clearing.
+        // Keeps the volume-avg baseline fresh without requiring bot restart.
+        for (Map.Entry<String, Deque<CandleBar>> entry : completedCandles.entrySet()) {
+            Deque<CandleBar> today = entry.getValue();
+            if (today == null || today.isEmpty()) continue;
+            List<CandleBar> priors = priorDayCandles.computeIfAbsent(entry.getKey(), k -> new ArrayList<>());
+            priors.addAll(today);
+            int keepPriors = 25;
+            if (priors.size() > keepPriors) {
+                priorDayCandles.put(entry.getKey(), new ArrayList<>(priors.subList(priors.size() - keepPriors, priors.size())));
+            }
+        }
         currentCandles.clear();
         completedCandles.clear();
         firstBarTraceCount.clear();

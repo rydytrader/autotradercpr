@@ -189,21 +189,6 @@ public class ScannerController {
             }
             card.put("orHigh", r(orHigh));
             card.put("orLow", r(orLow));
-
-            // Narrow-OR / Wide-OR classification (after OR locks)
-            // Uses 20-day Average Daily Range (ADR): OR range as % of ADR
-            if (orLocked && orHigh > 0 && orLow > 0 && riskSettings.isEnableNarrowOrOverride()) {
-                double adr = bhavcopyService.getAverageDailyRange(fyersSymbol, 20);
-                if (adr > 0) {
-                    double range = orHigh - orLow;
-                    double pct = (range / adr) * 100.0;
-                    boolean narrow = pct <= riskSettings.getNarrowOrMaxAdrPct();
-                    card.put("orType", narrow ? "NARROW" : "WIDE");
-                    card.put("orRange", r(range));
-                    card.put("orAdr", r(adr));
-                    card.put("orAdrPct", Math.round(pct * 10.0) / 10.0);
-                }
-            }
         }
         card.put("orStatus", orStatus);
 

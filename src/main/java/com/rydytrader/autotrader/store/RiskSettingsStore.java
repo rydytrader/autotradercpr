@@ -89,14 +89,8 @@ public class RiskSettingsStore {
         volatile boolean enableHpt      = true;  // High Probable Trade signals (weekly+daily aligned)
         volatile boolean enableLpt      = true;  // Low Probable Trade signals (everything else, half qty)
         volatile double lptQtyFactor    = 0.50;  // LPT qty multiplier (0.50 = half)
-        volatile double neutralWeeklyQtyFactor = 0.50; // extra qty multiplier when weekly trend is NEUTRAL (stacks on LPT)
-        volatile boolean enableWeeklyNeutralTrades = true; // if false, skip all trades when weekly trend is NEUTRAL
-        volatile double insideOrQtyFactor = 0.50; // qty multiplier when breakout is inside OR range on IV/OV days
-        volatile boolean skipInsideOrOnEv = true;  // skip inside-OR breakouts on EV days
-        volatile boolean skipInsideOrOnIv = false; // skip inside-OR breakouts on IV days
-        volatile boolean skipInsideOrOnOv = false; // skip inside-OR breakouts on OV days
-        volatile boolean enableNarrowOrOverride = true; // when OR range is narrow (< threshold % of ADR), allow inside-OR breakouts as HPT
-        volatile double narrowOrMaxAdrPct = 15.0; // OR range ≤ this % of 20-day ADR = narrow OR
+        // Weekly NEUTRAL trades → LPT. Use enableLpt toggle to skip them.
+        // Inside-OR breakouts are always downgraded to LPT (no skip toggles, no qty reduction)
         volatile double smallRangeAdrPct = 50.0; // prev day's range ≤ this % of 20-day ADR → SMALL classification (NS / IS)
         volatile double minAbsoluteProfit = 500; // skip if qty × target_distance < this amount (₹)
         // CPR Width scanner group toggles
@@ -217,14 +211,6 @@ public class RiskSettingsStore {
     public boolean isEnableHpt()          { return cfg().enableHpt; }
     public boolean isEnableLpt()          { return cfg().enableLpt; }
     public double getLptQtyFactor()       { return cfg().lptQtyFactor; }
-    public double getNeutralWeeklyQtyFactor() { return cfg().neutralWeeklyQtyFactor; }
-    public boolean isEnableWeeklyNeutralTrades() { return cfg().enableWeeklyNeutralTrades; }
-    public double getInsideOrQtyFactor() { return cfg().insideOrQtyFactor; }
-    public boolean isSkipInsideOrOnEv() { return cfg().skipInsideOrOnEv; }
-    public boolean isSkipInsideOrOnIv() { return cfg().skipInsideOrOnIv; }
-    public boolean isSkipInsideOrOnOv() { return cfg().skipInsideOrOnOv; }
-    public boolean isEnableNarrowOrOverride() { return cfg().enableNarrowOrOverride; }
-    public double getNarrowOrMaxAdrPct() { return cfg().narrowOrMaxAdrPct; }
     public double getSmallRangeAdrPct() { return cfg().smallRangeAdrPct; }
     public double getMinAbsoluteProfit() { return cfg().minAbsoluteProfit; }
     public double getNarrowCprMaxWidth() { return cfg().narrowCprMaxWidth; }
@@ -262,14 +248,6 @@ public class RiskSettingsStore {
     public void setEnableHpt(boolean v)        { cfg().enableHpt = v; }
     public void setEnableLpt(boolean v)        { cfg().enableLpt = v; }
     public void setLptQtyFactor(double v)      { cfg().lptQtyFactor = v; }
-    public void setNeutralWeeklyQtyFactor(double v) { cfg().neutralWeeklyQtyFactor = v; }
-    public void setEnableWeeklyNeutralTrades(boolean v) { cfg().enableWeeklyNeutralTrades = v; }
-    public void setInsideOrQtyFactor(double v) { cfg().insideOrQtyFactor = v; }
-    public void setSkipInsideOrOnEv(boolean v) { cfg().skipInsideOrOnEv = v; }
-    public void setSkipInsideOrOnIv(boolean v) { cfg().skipInsideOrOnIv = v; }
-    public void setSkipInsideOrOnOv(boolean v) { cfg().skipInsideOrOnOv = v; }
-    public void setEnableNarrowOrOverride(boolean v) { cfg().enableNarrowOrOverride = v; }
-    public void setNarrowOrMaxAdrPct(double v) { cfg().narrowOrMaxAdrPct = v; }
     public void setSmallRangeAdrPct(double v) { cfg().smallRangeAdrPct = v; }
     public void setMinAbsoluteProfit(double v) { cfg().minAbsoluteProfit = v; }
     public void setNarrowCprMaxWidth(double v) { cfg().narrowCprMaxWidth = v; }
@@ -482,14 +460,6 @@ public class RiskSettingsStore {
             upsert("enableHpt", String.valueOf(c.enableHpt));
             upsert("enableLpt", String.valueOf(c.enableLpt));
             upsert("lptQtyFactor", String.valueOf(c.lptQtyFactor));
-            upsert("neutralWeeklyQtyFactor", String.valueOf(c.neutralWeeklyQtyFactor));
-            upsert("enableWeeklyNeutralTrades", String.valueOf(c.enableWeeklyNeutralTrades));
-            upsert("insideOrQtyFactor", String.valueOf(c.insideOrQtyFactor));
-            upsert("skipInsideOrOnEv", String.valueOf(c.skipInsideOrOnEv));
-            upsert("skipInsideOrOnIv", String.valueOf(c.skipInsideOrOnIv));
-            upsert("skipInsideOrOnOv", String.valueOf(c.skipInsideOrOnOv));
-            upsert("enableNarrowOrOverride", String.valueOf(c.enableNarrowOrOverride));
-            upsert("narrowOrMaxAdrPct", String.valueOf(c.narrowOrMaxAdrPct));
             upsert("smallRangeAdrPct", String.valueOf(c.smallRangeAdrPct));
             upsert("minAbsoluteProfit", String.valueOf(c.minAbsoluteProfit));
             upsert("narrowCprMaxWidth", String.valueOf(c.narrowCprMaxWidth));
@@ -603,15 +573,14 @@ public class RiskSettingsStore {
                     case "enableHpt"         -> c.enableHpt = Boolean.parseBoolean(v);
                     case "enableLpt"         -> c.enableLpt = Boolean.parseBoolean(v);
                     case "lptQtyFactor"      -> c.lptQtyFactor = Double.parseDouble(v);
-                    case "neutralWeeklyQtyFactor" -> c.neutralWeeklyQtyFactor = Double.parseDouble(v);
-                    case "enableWeeklyNeutralTrades" -> c.enableWeeklyNeutralTrades = Boolean.parseBoolean(v);
-                    case "insideOrQtyFactor" -> c.insideOrQtyFactor = Double.parseDouble(v);
-                    case "skipInsideOrOnEv" -> c.skipInsideOrOnEv = Boolean.parseBoolean(v);
-                    case "skipInsideOrOnIv" -> c.skipInsideOrOnIv = Boolean.parseBoolean(v);
-                    case "skipInsideOrOnOv" -> c.skipInsideOrOnOv = Boolean.parseBoolean(v);
-                    case "enableNarrowOrOverride" -> c.enableNarrowOrOverride = Boolean.parseBoolean(v);
-                    case "narrowOrMaxAdrPct" -> c.narrowOrMaxAdrPct = Double.parseDouble(v);
-                    case "narrowOrMaxAtr" -> { /* legacy — migrated to narrowOrMaxAdrPct */ }
+                    case "neutralWeeklyQtyFactor" -> { /* removed — weekly NEUTRAL is plain LPT now */ }
+                    case "enableWeeklyNeutralTrades" -> { /* removed — weekly NEUTRAL is LPT; use enableLpt to skip */ }
+                    case "insideOrQtyFactor", "skipInsideOrOnEv", "skipInsideOrOnIv", "skipInsideOrOnOv" -> {
+                        /* removed — inside-OR breakouts always just become LPT, no skip/qty-reduction */
+                    }
+                    case "enableNarrowOrOverride", "narrowOrMaxAdrPct", "narrowOrMaxAtr" -> {
+                        /* removed — narrow OR override feature deleted */
+                    }
                     case "smallRangeAdrPct" -> c.smallRangeAdrPct = Double.parseDouble(v);
                     case "minAbsoluteProfit" -> c.minAbsoluteProfit = Double.parseDouble(v);
                     case "narrowCprMaxWidth" -> c.narrowCprMaxWidth = Double.parseDouble(v);

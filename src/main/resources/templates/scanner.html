@@ -96,7 +96,7 @@
 
         .scan-data-grid {
             display: grid;
-            grid-template-columns: 2fr 1fr 1fr;
+            grid-template-columns: 2fr 1fr 1fr 1.5fr;
             gap: 0;
             padding: 6px 16px 10px;
         }
@@ -145,8 +145,6 @@
         .scan-badge.lpt { background: rgba(251,191,36,0.12); color: var(--accent-yellow); }
         .scan-badge.or-bullish { background: rgba(52,211,153,0.15); color: var(--accent-green); }
         .scan-badge.or-bearish { background: rgba(239,68,68,0.15); color: var(--accent-red); }
-        .scan-badge.or-narrow { background: rgba(38,166,154,0.2); color: #26a69a; }
-        .scan-badge.or-wide { background: rgba(255,167,38,0.2); color: #ffa726; }
         .scan-badge.or-neutral { background: rgba(128,128,128,0.12); color: var(--text-muted); }
         .scan-badge.or-forming { background: rgba(251,191,36,0.12); color: var(--accent-yellow); }
 
@@ -806,7 +804,6 @@
         return '<div class="' + cardClass + '" data-symbol="' + d.symbol + '">'
             + '<div class="scan-card-header">'
             + '  <span class="scan-symbol">' + d.shortName + '</span>'
-            + '<span class="scan-ohl" style="font-family:var(--font-mono);font-size:0.62rem;color:var(--text-secondary);margin-left:6px;">' + (d.candleOpen ? 'O:' + fmt(d.candleOpen) + ' H:' + fmt(d.candleHigh) + ' L:' + fmt(d.candleLow) : '') + '</span>'
             + '  <span style="display:flex; gap:4px; align-items:center;">'
             + '    <button class="chart-icon-btn" onclick="openChartModal(\'' + d.symbol + '\', \'' + d.shortName + '\')" title="View chart" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:3px 6px;cursor:pointer;color:var(--text-secondary);line-height:0;display:inline-flex;align-items:center;">'
             + '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="1.5" y="9" width="3" height="5.5" rx="0.5"/><rect x="6.5" y="5" width="3" height="9.5" rx="0.5"/><rect x="11.5" y="7" width="3" height="7.5" rx="0.5"/></svg>'
@@ -829,16 +826,8 @@
                 var or = d.orStatus;
                 if (!or) return '';
                 var cls = or === 'BULLISH' ? 'or-bullish' : or === 'BEARISH' ? 'or-bearish' : or === 'FORMING' ? 'or-forming' : 'or-neutral';
-                var suffix = or === 'BULLISH' ? '+' : or === 'BEARISH' ? '-' : or === 'FORMING' ? '?' : '=';
-                // Combine width classification into the label: NOR+/WOR+/NOR-/WOR-/NOR=/WOR=, or OR? while forming
-                var prefix = 'OR';
-                if (d.orType === 'NARROW') prefix = 'NOR';
-                else if (d.orType === 'WIDE') prefix = 'WOR';
-                var lbl = prefix + suffix;
-                var widthPart = d.orType
-                    ? (' — ' + d.orType + ' (range ' + (d.orRange || '?') + ' = ' + (d.orAdrPct || '?') + '% of 20d ADR ' + (d.orAdr || '?') + ')')
-                    : '';
-                var ttl = 'Opening Range ' + or + (d.orHigh > 0 ? ' (H:' + fmt(d.orHigh) + ' L:' + fmt(d.orLow) + ')' : '') + widthPart;
+                var lbl = or === 'BULLISH' ? 'OR+' : or === 'BEARISH' ? 'OR-' : or === 'FORMING' ? 'OR?' : 'OR=';
+                var ttl = 'Opening Range ' + or + (d.orHigh > 0 ? ' (H:' + fmt(d.orHigh) + ' L:' + fmt(d.orLow) + ')' : '');
                 return '<span class="scan-badge ' + cls + '" title="' + ttl + '">' + lbl + '</span>';
             })()
             + '  </span>'
@@ -846,12 +835,18 @@
             + '<div class="scan-price-row">'
             + '  <span class="scan-ltp">' + fmt(d.ltp) + '</span>'
             + '  <span class="scan-change ' + chClass + '">' + chArrow + ' ' + d.changePercent.toFixed(2) + '%</span>'
-            + '  <span style="font-family:var(--font-mono);font-size:0.68rem;color:var(--text-muted);">O:' + fmt(d.dayOpen) + (d.openClass ? ' <span style="font-size:0.6rem;">(' + d.openClass + ')</span>' : '') + '</span>'
+            + (d.openClass ? '  <span style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);margin-left:auto;">Day Open: ' + d.openClass + '</span>' : '')
             + '</div>'
             + '<div class="scan-data-grid">'
             + '  <div class="scan-data-item"><div class="scan-data-label">EMA 20/200</div><div class="scan-data-value">' + (d.ema20 > 0 ? fmt(d.ema20) : '--') + ' / ' + (d.ema200 > 0 ? fmt(d.ema200) : '--') + '</div></div>'
             + '  <div class="scan-data-item"><div class="scan-data-label">ATP</div><div class="scan-data-value">' + fmt(d.atp) + '</div></div>'
             + '  <div class="scan-data-item"><div class="scan-data-label">ATR</div><div class="scan-data-value">' + fmt(d.atr) + '</div></div>'
+            + (function() {
+                var ratio = (d.avgVolume > 0 && d.candleVolume > 0) ? (d.candleVolume / d.avgVolume) : 0;
+                var color = ratio >= 1.5 ? 'var(--accent-green)' : ratio >= 1.0 ? 'var(--text-primary)' : 'var(--text-muted)';
+                var ratioText = ratio > 0 ? ' (' + ratio.toFixed(1) + 'x)' : '';
+                return '  <div class="scan-data-item"><div class="scan-data-label">Vol / 20-Avg</div><div class="scan-data-value" style="color:' + color + ';">' + (d.candleVolume > 0 ? fmtVol(d.candleVolume) : '--') + ' / ' + (d.avgVolume > 0 ? fmtVol(d.avgVolume) : '--') + ratioText + '</div></div>';
+            })()
             + '</div>'
             + '<div class="scan-trend-row">'
             + '  <span class="scan-trend"><span class="label">W:</span> <span class="' + wClass + '">' + wArrow + ' ' + wLabel + '</span></span>'
@@ -1323,17 +1318,12 @@ function showInsideCpr() {
             <!-- 2. Opening Range -->
             <div style="margin-bottom:28px;">
                 <div style="font-weight:700; font-size:0.85rem; color:var(--accent-cyan); margin-bottom:10px;">2. Opening Range</div>
-                <div style="color:var(--text-secondary); margin-bottom:14px; font-size:0.72rem; line-height:1.6;">Tracks the first N minutes of trading (configurable, default 15 min). After OR locks, each card shows a combined badge: <code>NOR</code> (narrow OR, range ≤ threshold % of 20-day ADR) or <code>WOR</code> (wide OR) + price-status suffix <code>+</code> (bullish), <code>-</code> (bearish), <code>=</code> (inside OR). Before lock: <code>OR?</code>.</div>
-                <div style="display:flex; flex-wrap:wrap; gap:12px 20px; font-size:0.72rem; margin-bottom:14px;">
-                    <div><span class="scan-badge or-forming" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">OR?</span> Forming — OR window still open (before 9:30)</div>
-                    <div><span class="scan-badge or-bullish" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NOR+ / WOR+</span> Bullish — LTP above OR High</div>
-                    <div><span class="scan-badge or-bearish" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NOR- / WOR-</span> Bearish — LTP below OR Low</div>
-                    <div><span class="scan-badge or-neutral" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NOR= / WOR=</span> Neutral — LTP inside OR range</div>
-                </div>
-                <div style="color:var(--text-secondary); margin-bottom:6px; font-size:0.72rem; font-weight:700;">Width classification (after OR locks)</div>
+                <div style="color:var(--text-secondary); margin-bottom:14px; font-size:0.72rem; line-height:1.6;">Tracks the first N minutes of trading (configurable, default 15 min). After the OR window locks, LTP vs OR High/Low determines the breakout direction. DH/DL breakouts only fire after OR locks.</div>
                 <div style="display:flex; flex-wrap:wrap; gap:12px 20px; font-size:0.72rem;">
-                    <div><span class="scan-badge or-narrow" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NOR</span> Narrow OR — range ≤ threshold % of 20-day ADR (default 15%). Compression setup: inside-OR breakouts on IV/OV continuation fire as HPT full qty.</div>
-                    <div><span class="scan-badge or-wide" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">WOR</span> Wide OR — range &gt; threshold % of ADR. Inside-OR breakouts follow skip toggles / LPT + qty reduction per settings.</div>
+                    <div><span class="scan-badge or-bullish" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">OR+</span> Bullish — LTP above OR High</div>
+                    <div><span class="scan-badge or-bearish" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">OR-</span> Bearish — LTP below OR Low</div>
+                    <div><span class="scan-badge or-neutral" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">OR=</span> Neutral — LTP inside OR range</div>
+                    <div><span class="scan-badge or-forming" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">OR?</span> Forming — OR window still open</div>
                 </div>
             </div>
 
@@ -1691,6 +1681,22 @@ function toLwcBars(ohlc) {
     }).sort(function(a, b) { return a.time - b.time; });
 }
 
+function buildVolumeMap(ohlc) {
+    var m = {};
+    (ohlc || []).forEach(function(c) {
+        m[Math.floor(c.t / 1000)] = c.v || 0;
+    });
+    return m;
+}
+
+function fmtChartVol(v) {
+    if (v == null || v <= 0) return '--';
+    if (v >= 10000000) return (v / 10000000).toFixed(2) + ' Cr';
+    if (v >= 100000) return (v / 100000).toFixed(2) + ' L';
+    if (v >= 1000) return (v / 1000).toFixed(1) + ' K';
+    return String(Math.round(v));
+}
+
 function toLwcLine(series) {
     if (!series || !series.length) return [];
     var seen = {};
@@ -1720,6 +1726,8 @@ function renderChart(d, isFirst) {
     }
 
     var bars = toLwcBars(candles);
+    var volMap = buildVolumeMap(candles);
+    chartState.volMap = volMap;
     var vwapLine = toLwcLine(d.vwapSeries);
     var ema20Line = toLwcLine(d.ema20Series);
     var ema200Line = toLwcLine(d.ema200Series);
@@ -1817,12 +1825,14 @@ function renderChart(d, isFirst) {
             var ema200Data = param.seriesData.get(chartState.ema200Series);
             var changePct = priceData.open > 0 ? ((priceData.close - priceData.open) / priceData.open * 100) : 0;
             var changeColor = priceData.close >= priceData.open ? '#26a69a' : '#ef5350';
+            var vol = chartState.volMap ? chartState.volMap[param.time] : null;
             var html =
                 '<div style="color:' + (dark ? '#aab0b6' : '#666') + ';margin-bottom:3px;">' + istDateTime(param.time) + '</div>' +
                 '<div>O: <span style="color:' + changeColor + ';">' + priceData.open.toFixed(2) + '</span></div>' +
                 '<div>H: <span style="color:' + changeColor + ';">' + priceData.high.toFixed(2) + '</span></div>' +
                 '<div>L: <span style="color:' + changeColor + ';">' + priceData.low.toFixed(2) + '</span></div>' +
-                '<div>C: <span style="color:' + changeColor + ';">' + priceData.close.toFixed(2) + '</span> <span style="color:' + changeColor + ';font-size:10px;">(' + (changePct >= 0 ? '+' : '') + changePct.toFixed(2) + '%)</span></div>';
+                '<div>C: <span style="color:' + changeColor + ';">' + priceData.close.toFixed(2) + '</span> <span style="color:' + changeColor + ';font-size:10px;">(' + (changePct >= 0 ? '+' : '') + changePct.toFixed(2) + '%)</span></div>' +
+                '<div style="color:' + (dark ? '#aab0b6' : '#666') + ';">Vol: ' + fmtChartVol(vol) + '</div>';
             if (vwapData && vwapData.value) html += '<div style="color:#ec407a;">VWAP: ' + vwapData.value.toFixed(2) + '</div>';
             if (ema20Data && ema20Data.value) html += '<div style="color:#66bb6a;">EMA20: ' + ema20Data.value.toFixed(2) + '</div>';
             if (ema200Data && ema200Data.value) html += '<div style="color:' + (dark ? '#ffffff' : '#000000') + ';">EMA200: ' + ema200Data.value.toFixed(2) + '</div>';
