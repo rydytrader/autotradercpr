@@ -320,10 +320,10 @@ public class SignalProcessor {
                 shiftCandidates.putIfAbsent(wl.bc,    "weekly BC");
                 shiftCandidates.putIfAbsent(wl.pivot, "weekly Pivot");
             }
-            // 200 EMA as target shift candidate — only when the 200 EMA direction check
-            // is disabled (trade fires into the 200 EMA rather than being blocked by it).
+            // 200 EMA as target shift candidate — only when the EMA trend gate is disabled
+            // (trade fires into the 200 EMA rather than being blocked by it).
             // The 200 EMA acts as resistance (buys) or support (sells) for target capping.
-            if (!riskSettings.isEnableEma200DirectionCheck()) {
+            if (!riskSettings.isEnableEmaTrendCheck()) {
                 double ema200 = emaService.getEma200(symbol);
                 if (ema200 > 0) {
                     shiftCandidates.putIfAbsent(ema200, "200 EMA");

@@ -622,15 +622,16 @@
 
             <p>Both filters can be enabled/disabled independently. EMA is seeded from historical candles at startup so it's available from the first candle close. Shown on scanner cards in the data grid.</p>
 
-            <h4>200 EMA Filter</h4>
-            <p>A 200-period EMA provides a <strong>long-term trend reference</strong>. Seeded from 14 calendar days of Fyers history (~750 five-min candles) for proper convergence, then updated incrementally on each candle close.</p>
-            <p><strong>Two modes</strong> controlled by a single toggle (<code>enableEma200DirectionCheck</code>):</p>
+            <h4>5-min EMA Trend Filter (20 / 50 / 200)</h4>
+            <p>A single unified trend gate replaces the earlier standalone direction checks. Controlled by <code>enableEmaTrendCheck</code>. Classifies a symbol's 5-min trend by price position relative to all three EMAs simultaneously — the same rule that drives the BULL/BEAR/NEUTRAL chip on the scanner card's EMA Levels section.</p>
+            <p><strong>Two modes</strong>:</p>
             <table>
                 <tr><th>Mode</th><th>Behaviour</th><th>Use when</th></tr>
-                <tr><td><strong>ON (hard gate)</strong></td><td>Buy requires close &gt; 200 EMA, sell requires close &lt; 200 EMA. Trade blocked otherwise.</td><td>You only want trades aligned with the long-term trend. Filters out counter-trend trades entirely.</td></tr>
+                <tr><td><strong>ON (hard gate)</strong></td><td>Buy requires close &gt; 20 EMA <em>AND</em> close &gt; 50 EMA <em>AND</em> close &gt; 200 EMA (= 5-min BULLISH). Sell symmetric (close below all three = 5-min BEARISH). Trade blocked otherwise — logged as <code>[SCANNER] &lt;SYM&gt; blocked by 5-min EMA trend</code>.</td><td>You only want trades with all three EMAs aligned on the trade side. Filters both counter-trend trades and "price-between-EMAs" early-momentum entries.</td></tr>
                 <tr><td><strong>OFF (target shift)</strong></td><td>Trade fires regardless, but the 200 EMA is added as a <strong>target-shift candidate</strong>. If it sits between entry and the original target, the target is pulled back to the 200 EMA.</td><td>You want to trade both sides but respect the 200 EMA as resistance (buys) or support (sells) when setting targets.</td></tr>
             </table>
-            <p>The 200 EMA joins the same target-shift candidate pool as day high/low and weekly CPR levels. The nearest candidate to entry wins. Shown on scanner cards in the price row header (<code>EMA 200: X</code>) next to the Day Open classification.</p>
+            <p>Fail-open semantics: if any of the three EMAs hasn't loaded yet (=0), the gate is skipped — a symbol mid-warm-up won't be silently rejected. 200 EMA is seeded from 14 calendar days of Fyers history (~750 five-min bars) for proper convergence, then rolls forward incrementally on every 5-min candle close.</p>
+            <p>The 200 EMA (when trend gate is OFF) joins the same target-shift candidate pool as day high/low and weekly CPR levels. The nearest candidate to entry wins.</p>
 
             <h4>50 EMA + Pattern Detection (R-RTP / F-RTP / ZIG ZAG)</h4>
             <p>A 50-period EMA is calculated and shown on scanner cards as <code>EMA 20/50: X / Y</code>. The relative behaviour of the 20 EMA vs the 50 EMA over the last 10 × 5-min candles (50 min rolling window) is classified into one of three patterns, displayed inline with the EMA 20/50 label:</p>
@@ -648,8 +649,7 @@
             <p>Three independent toggles gate breakouts by EMA 20/50 pattern:</p>
             <table>
                 <tr><th>Toggle</th><th>Effect when ON</th></tr>
-                <tr><td><code>buyRequiresRrtp</code></td><td>Buy breakouts fire <strong>only</strong> when pattern is R-RTP (rising railway). F-RTP / ZIG ZAG / transitional all block buys. Strict bullish confirmation.</td></tr>
-                <tr><td><code>sellRequiresFrtp</code></td><td>Sell breakouts fire <strong>only</strong> when pattern is F-RTP (falling railway). R-RTP / ZIG ZAG / transitional all block sells.</td></tr>
+                <tr><td><code>requireRtpPattern</code></td><td>Direction-matched pattern required: buys fire <strong>only</strong> when pattern is R-RTP (rising railway), sells fire <strong>only</strong> when pattern is F-RTP (falling railway). Transitional / ZIG ZAG / opposite pattern all block the trade.</td></tr>
                 <tr><td><code>skipTradesInZigZag</code> (default ON)</td><td>Skip <strong>any</strong> trade (buy or sell) when pattern is ZIG ZAG. Keeps RTP and transitional trades flowing.</td></tr>
             </table>
             <p><strong>Combined modes:</strong></p>
@@ -664,13 +664,9 @@
             <h4>20 EMA vs ATP (VWAP) Filter</h4>
             <p>Short-term momentum check: buy requires <code>20 EMA &gt; ATP</code>, sell requires <code>20 EMA &lt; ATP</code>. Confirms short-term trend is on the right side of the day's volume-weighted average price before allowing a breakout. Independently toggleable via <code>enableEmaVsAtpCheck</code>.</p>
 
-            <h4>EMA Crossover Filter (20 vs 200)</h4>
-            <p>In addition to individual EMA direction checks, the <strong>relative position of 20 EMA vs 200 EMA</strong> can be used as a trend structure filter:</p>
-            <ul>
-                <li><strong>Buy</strong>: requires 20 EMA &gt; 200 EMA (uptrend structure confirmed)</li>
-                <li><strong>Sell</strong>: requires 20 EMA &lt; 200 EMA (downtrend structure confirmed)</li>
-            </ul>
-            <p>Independently toggleable via <code>enableEmaCrossoverCheck</code>. Also used as a component (±2) in the NIFTY composite trend score — graded by whether both 20 and 50 EMA are on the same side of 200, or only 20.</p>
+            <h4>EMA Crossover (20 vs 200) — NIFTY composite only</h4>
+            <p>The standalone "20 EMA vs 200 EMA" trade gate has been absorbed into the 5-min EMA Trend Filter above. The relative position of 20 vs 200 is still surfaced as a component (±2) in the <strong>NIFTY composite trend score</strong>, graded by whether both 20 and 50 EMA are on the same side of 200, or only 20 — but it no longer blocks individual stock trades on its own.</p>
+            <p>For stock trades, the equivalent constraint now lives implicitly inside the R-RTP / F-RTP pattern classifier, which requires EMA(20) on the right side of EMA(200) before classifying a rising / falling railway.</p>
 
             <h4>Large Candle Body Filter</h4>
             <p>Rejects breakout candles with excessively large body (|close − open| &gt; N × ATR). Catches exhaustion moves where the stock has already run too far on a single candle — entering at the close is chasing. Default threshold 4.0 ATR catches only extreme spikes. Runs before R/R check.</p>

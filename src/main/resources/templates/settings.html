@@ -376,46 +376,32 @@
         <div class="section-body">
             <div class="form-grid">
                 <div class="form-group">
-                    <label class="form-label">Direction Confirmation (VWAP + EMA)</label>
+                    <label class="form-label">EMA Price and Pattern Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableEmaTrendCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Price</b>: 5-min EMA trend — close above/below EMA 20, 50, 200 together</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="requireRtpPattern" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Pattern</b>: require direction-matched 5-min pattern — <b style="color:var(--accent-green);">R-RTP</b> for buys, <b style="color:var(--accent-red);">F-RTP</b> for sells</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="skipTradesInZigZag" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Pattern</b>: skip trades when 5-min pattern is <b style="color:var(--accent-red);">ZIG ZAG</b> (choppy)</span>
+                    </div>
+                    <div class="form-hint">Two dimensions gate an entry: <b>price position</b> vs EMAs and <b>pattern</b> of the 20/50 EMAs. Combine them for stricter setups — e.g. price gate + R-RTP for buy = 5-min STRONG BULLISH only. Each can run independently: RRTP alone allows pullback entries (valid trend structure, price may be inside the EMAs); price-only allows trades without pattern confirmation. Fail-open when any EMA is warming up. When the price gate is OFF, the 200 EMA becomes a target-shift candidate.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">VWAP Confirmation (ATP)</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableAtpCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only above ATP (VWAP), sell only below ATP</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="enableEmaDirectionCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only above 20 EMA, sell only below 20 EMA</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="enableEma200DirectionCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only above 200 EMA, sell only below 200 EMA</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="enableEmaCrossoverCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only when 20 EMA &gt; 200 EMA, sell only when 20 EMA &lt; 200 EMA</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="enableEmaVsAtpCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only when 20 EMA &gt; ATP (VWAP), sell only when 20 EMA &lt; ATP</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only when 20 EMA &gt; ATP, sell only when 20 EMA &lt; ATP</span>
                     </div>
-                    <div class="form-hint">EMA filters confirm breakout direction on different timeframes. 20 EMA captures short-term momentum, 200 EMA captures long-term trend, ATP (VWAP) captures the day's volume-weighted fair price. When the 200 EMA check is disabled, the 200 EMA becomes a target-shift candidate instead — if it sits between entry and the original target, the target is pulled back (resistance for buys, support for sells). The R/R filter then evaluates the compressed target.</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">EMA 20/50 Pattern Filter</label>
-                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <input type="checkbox" id="buyRequiresRrtp" style="width: 16px; height: 16px; accent-color: var(--accent-cyan);">
-                            <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only when pattern is <b style="color:var(--accent-green);">R-RTP</b> (rising railway)</span>
-                        </div>
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <input type="checkbox" id="sellRequiresFrtp" style="width: 16px; height: 16px; accent-color: var(--accent-cyan);">
-                            <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Sell only when pattern is <b style="color:var(--accent-red);">F-RTP</b> (falling railway)</span>
-                        </div>
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <input type="checkbox" id="skipTradesInZigZag" style="width: 16px; height: 16px; accent-color: var(--accent-cyan);">
-                            <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip trades when pattern is <b style="color:var(--accent-red);">ZIG ZAG</b> (choppy)</span>
-                        </div>
-                    </div>
-                    <div class="form-hint">Gate breakouts by EMA 20/50 pattern. First two toggles require the pattern to match trade direction (transitional/neutral state also blocks when ON). Third toggle ON (default) skips all trades during ZIG ZAG; uncheck to allow trades during choppy conditions.</div>
+                    <div class="form-hint">ATP is the exchange's VWAP — today's volume-weighted average price. Resets daily, independent of EMAs (which span days). Captures intraday sentiment: price above ATP = bulls in control today, below = bears. Complements the EMA filter above.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Small Candle Filter</label>
@@ -1029,12 +1015,9 @@
             document.getElementById('enableLargeCandleBodyFilter').checked = d.enableLargeCandleBodyFilter !== false;
             document.getElementById('largeCandleBodyAtrThreshold').value = d.largeCandleBodyAtrThreshold != null ? d.largeCandleBodyAtrThreshold : 4.0;
             document.getElementById('minRiskRewardRatio').value = d.minRiskRewardRatio != null ? d.minRiskRewardRatio : 1.0;
-            document.getElementById('enableEmaDirectionCheck').checked = d.enableEmaDirectionCheck !== false;
-            document.getElementById('enableEma200DirectionCheck').checked = d.enableEma200DirectionCheck !== false;
-            document.getElementById('enableEmaCrossoverCheck').checked = d.enableEmaCrossoverCheck !== false;
+            document.getElementById('enableEmaTrendCheck').checked = d.enableEmaTrendCheck !== false;
             document.getElementById('enableEmaVsAtpCheck').checked = d.enableEmaVsAtpCheck !== false;
-            document.getElementById('buyRequiresRrtp').checked = d.buyRequiresRrtp === true;
-            document.getElementById('sellRequiresFrtp').checked = d.sellRequiresFrtp === true;
+            document.getElementById('requireRtpPattern').checked = d.requireRtpPattern === true;
             document.getElementById('skipTradesInZigZag').checked = d.skipTradesInZigZag !== false;
             document.getElementById('enableEmaLevelCountFilter').checked = d.enableEmaLevelCountFilter !== false;
             document.getElementById('enableSplitTarget').checked = d.enableSplitTarget !== false;
@@ -1181,12 +1164,9 @@
                 enableLargeCandleBodyFilter: document.getElementById('enableLargeCandleBodyFilter').checked,
                 largeCandleBodyAtrThreshold: parseFloat(document.getElementById('largeCandleBodyAtrThreshold').value) || 4.0,
                 minRiskRewardRatio: parseFloat(document.getElementById('minRiskRewardRatio').value) || 1.0,
-                enableEmaDirectionCheck: document.getElementById('enableEmaDirectionCheck').checked,
-                enableEma200DirectionCheck: document.getElementById('enableEma200DirectionCheck').checked,
-                enableEmaCrossoverCheck: document.getElementById('enableEmaCrossoverCheck').checked,
+                enableEmaTrendCheck: document.getElementById('enableEmaTrendCheck').checked,
                 enableEmaVsAtpCheck: document.getElementById('enableEmaVsAtpCheck').checked,
-                buyRequiresRrtp: document.getElementById('buyRequiresRrtp').checked,
-                sellRequiresFrtp: document.getElementById('sellRequiresFrtp').checked,
+                requireRtpPattern: document.getElementById('requireRtpPattern').checked,
                 skipTradesInZigZag: document.getElementById('skipTradesInZigZag').checked,
                 enableEmaLevelCountFilter: document.getElementById('enableEmaLevelCountFilter').checked,
                 enableSplitTarget: document.getElementById('enableSplitTarget').checked,

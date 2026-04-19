@@ -301,18 +301,23 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                                       CprLevels levels, double atp, Set<String> broken, String fyersSymbol) {
         // ATP check for buys: close must be above ATP
         if (riskSettings.isEnableAtpCheck() && atp > 0 && close < atp) return null;
-        // EMA direction check for buys: close must be above 20 EMA
-        double ema = emaService.getEma(fyersSymbol);
-        if (riskSettings.isEnableEmaDirectionCheck() && ema > 0 && close < ema) return null;
-        // 200 EMA direction check for buys: close must be above 200 EMA
+        // 5-min EMA trend check for buys: close must be above EMA(20), EMA(50), EMA(200).
+        // Mirrors the "5m" BULLISH chip on scanner cards (scanner.html emaTrendObj).
+        double ema    = emaService.getEma(fyersSymbol);      // also used by isEnableEmaVsAtpCheck below
+        double ema50  = emaService.getEma50(fyersSymbol);
         double ema200 = emaService.getEma200(fyersSymbol);
-        if (riskSettings.isEnableEma200DirectionCheck() && ema200 > 0 && close < ema200) return null;
-        // EMA crossover check for buys: 20 EMA must be above 200 EMA (golden cross)
-        if (riskSettings.isEnableEmaCrossoverCheck() && ema > 0 && ema200 > 0 && ema < ema200) return null;
+        if (riskSettings.isEnableEmaTrendCheck()
+                && ema > 0 && ema50 > 0 && ema200 > 0
+                && !(close > ema && close > ema50 && close > ema200)) {
+            eventService.log("[SCANNER] " + fyersSymbol + " blocked by 5-min EMA trend (not BULLISH): close="
+                + String.format("%.2f", close) + " ema20=" + String.format("%.2f", ema)
+                + " ema50=" + String.format("%.2f", ema50) + " ema200=" + String.format("%.2f", ema200));
+            return null;
+        }
         // 20 EMA vs ATP/VWAP check for buys: 20 EMA must be above ATP
         if (riskSettings.isEnableEmaVsAtpCheck() && ema > 0 && atp > 0 && ema < atp) return null;
         // EMA 20/50 pattern filters for buys
-        if (riskSettings.isBuyRequiresRrtp() || riskSettings.isSkipTradesInZigZag()) {
+        if (riskSettings.isRequireRtpPattern() || riskSettings.isSkipTradesInZigZag()) {
             double atrForPattern = atrService.getAtr(fyersSymbol);
             if (atrForPattern > 0) {
                 String pat = emaService.getEmaPattern(fyersSymbol,
@@ -320,7 +325,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     riskSettings.getBraidedMinCrossovers(), riskSettings.getBraidedMaxSpreadAtr(),
                     riskSettings.getRailwayMaxCv(), riskSettings.getRailwayMinSpreadAtr());
                 if (riskSettings.isSkipTradesInZigZag() && "BRAIDED".equals(pat)) return null;
-                if (riskSettings.isBuyRequiresRrtp() && !"RAILWAY_UP".equals(pat)) return null;
+                if (riskSettings.isRequireRtpPattern() && !"RAILWAY_UP".equals(pat)) return null;
             }
         }
 
@@ -390,18 +395,23 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                                        CprLevels levels, double atp, Set<String> broken, String fyersSymbol) {
         // ATP check for sells: close must be below ATP
         if (riskSettings.isEnableAtpCheck() && atp > 0 && close > atp) return null;
-        // EMA direction check for sells: close must be below 20 EMA
-        double ema = emaService.getEma(fyersSymbol);
-        if (riskSettings.isEnableEmaDirectionCheck() && ema > 0 && close > ema) return null;
-        // 200 EMA direction check for sells: close must be below 200 EMA
+        // 5-min EMA trend check for sells: close must be below EMA(20), EMA(50), EMA(200).
+        // Mirrors the "5m" BEARISH chip on scanner cards (scanner.html emaTrendObj).
+        double ema    = emaService.getEma(fyersSymbol);      // also used by isEnableEmaVsAtpCheck below
+        double ema50  = emaService.getEma50(fyersSymbol);
         double ema200 = emaService.getEma200(fyersSymbol);
-        if (riskSettings.isEnableEma200DirectionCheck() && ema200 > 0 && close > ema200) return null;
-        // EMA crossover check for sells: 20 EMA must be below 200 EMA (death cross)
-        if (riskSettings.isEnableEmaCrossoverCheck() && ema > 0 && ema200 > 0 && ema > ema200) return null;
+        if (riskSettings.isEnableEmaTrendCheck()
+                && ema > 0 && ema50 > 0 && ema200 > 0
+                && !(close < ema && close < ema50 && close < ema200)) {
+            eventService.log("[SCANNER] " + fyersSymbol + " blocked by 5-min EMA trend (not BEARISH): close="
+                + String.format("%.2f", close) + " ema20=" + String.format("%.2f", ema)
+                + " ema50=" + String.format("%.2f", ema50) + " ema200=" + String.format("%.2f", ema200));
+            return null;
+        }
         // 20 EMA vs ATP/VWAP check for sells: 20 EMA must be below ATP
         if (riskSettings.isEnableEmaVsAtpCheck() && ema > 0 && atp > 0 && ema > atp) return null;
         // EMA 20/50 pattern filters for sells
-        if (riskSettings.isSellRequiresFrtp() || riskSettings.isSkipTradesInZigZag()) {
+        if (riskSettings.isRequireRtpPattern() || riskSettings.isSkipTradesInZigZag()) {
             double atrForPattern = atrService.getAtr(fyersSymbol);
             if (atrForPattern > 0) {
                 String pat = emaService.getEmaPattern(fyersSymbol,
@@ -409,7 +419,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     riskSettings.getBraidedMinCrossovers(), riskSettings.getBraidedMaxSpreadAtr(),
                     riskSettings.getRailwayMaxCv(), riskSettings.getRailwayMinSpreadAtr());
                 if (riskSettings.isSkipTradesInZigZag() && "BRAIDED".equals(pat)) return null;
-                if (riskSettings.isSellRequiresFrtp() && !"RAILWAY_DOWN".equals(pat)) return null;
+                if (riskSettings.isRequireRtpPattern() && !"RAILWAY_DOWN".equals(pat)) return null;
             }
         }
 
@@ -511,8 +521,30 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         payload.put("dayLow", candleAggregator.getDayLowBeforeLast(fyersSymbol));
         if (scannerNote != null && !scannerNote.isEmpty()) payload.put("scannerNote", scannerNote);
 
+        // 5-min EMA trend + pattern snapshot at signal time
+        double ema20Now  = emaService.getEma(fyersSymbol);
+        double ema50Now  = emaService.getEma50(fyersSymbol);
+        double ema200Now = emaService.getEma200(fyersSymbol);
+        String trend = "--";
+        if (ema20Now > 0 && ema50Now > 0 && ema200Now > 0) {
+            boolean allAbove = close > ema20Now && close > ema50Now && close > ema200Now;
+            boolean allBelow = close < ema20Now && close < ema50Now && close < ema200Now;
+            trend = allAbove ? "BULLISH" : allBelow ? "BEARISH" : "NEUTRAL";
+        }
+        String pattern5m = "";
+        if (ema20Now > 0 && ema50Now > 0 && atr > 0) {
+            pattern5m = emaService.getEmaPattern(fyersSymbol,
+                riskSettings.getEmaPatternLookback(), atr,
+                riskSettings.getBraidedMinCrossovers(), riskSettings.getBraidedMaxSpreadAtr(),
+                riskSettings.getRailwayMaxCv(), riskSettings.getRailwayMinSpreadAtr());
+        }
+        String patternLabel = "RAILWAY_UP".equals(pattern5m) ? "R-RTP"
+                            : "RAILWAY_DOWN".equals(pattern5m) ? "F-RTP"
+                            : "BRAIDED".equals(pattern5m) ? "ZIG ZAG"
+                            : "--";
         eventService.log("[SCANNER] " + setup + " for " + fyersSymbol + " | close=" + String.format("%.2f", close)
-            + " | ATR=" + String.format("%.2f", atr) + " | " + prob + " | " + timeStr);
+            + " | ATR=" + String.format("%.2f", atr) + " | " + prob
+            + " | 5m trend=" + trend + " pattern=" + patternLabel + " | " + timeStr);
 
         // Feed into TradingController (same pipeline as TradingView webhook)
         try {

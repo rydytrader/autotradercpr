@@ -364,33 +364,27 @@ public class ScannerController {
         String baseProb = weeklyCprService.getProbabilityForDirection(symbol, isBuy);
         if (!"HPT".equals(baseProb)) return baseProb; // already LPT or SKIP from weekly
 
-        // 3. 20 EMA direction
-        double ema = emaService.getEma(symbol);
-        if (riskSettings.isEnableEmaDirectionCheck() && ema > 0) {
-            if ((isBuy && ltp < ema) || (isSell && ltp > ema)) return "LPT";
-        }
-
-        // 4. 200 EMA direction
+        // 3. 5-min EMA trend alignment (price above/below all of EMA 20/50/200)
+        double ema    = emaService.getEma(symbol);
+        double ema50  = emaService.getEma50(symbol);
         double ema200 = emaService.getEma200(symbol);
-        if (riskSettings.isEnableEma200DirectionCheck() && ema200 > 0) {
-            if ((isBuy && ltp < ema200) || (isSell && ltp > ema200)) return "LPT";
+        if (riskSettings.isEnableEmaTrendCheck() && ema > 0 && ema50 > 0 && ema200 > 0) {
+            boolean bullishAligned = ltp > ema && ltp > ema50 && ltp > ema200;
+            boolean bearishAligned = ltp < ema && ltp < ema50 && ltp < ema200;
+            if (isBuy  && !bullishAligned) return "LPT";
+            if (isSell && !bearishAligned) return "LPT";
         }
 
-        // 5. EMA crossover (20 vs 200)
-        if (riskSettings.isEnableEmaCrossoverCheck() && ema > 0 && ema200 > 0) {
-            if ((isBuy && ema < ema200) || (isSell && ema > ema200)) return "LPT";
-        }
-
-        // 6. VWAP/ATP
+        // 4. VWAP/ATP
         double atp = candleAggregator.getAtp(symbol);
         if (riskSettings.isEnableAtpCheck() && atp > 0) {
             if ((isBuy && ltp < atp) || (isSell && ltp > atp)) return "LPT";
         }
 
-        // 7. NIFTY alignment
+        // 5. NIFTY alignment
         if (riskSettings.isEnableIndexAlignment() && indexTrendService.isOpposedToNifty(isBuy)) return "LPT";
 
-        return "HPT"; // all 7 pre-checkable gates passed
+        return "HPT"; // all pre-checkable gates passed
     }
 
     @GetMapping("/api/scanner/status")
@@ -410,7 +404,7 @@ public class ScannerController {
         status.put("enableHpt", riskSettings.isEnableHpt());
         status.put("enableLpt", riskSettings.isEnableLpt());
         status.put("enableAtp", riskSettings.isEnableAtpCheck());
-        status.put("enableEmaDirection", riskSettings.isEnableEmaDirectionCheck());
+        status.put("enableEmaTrend", riskSettings.isEnableEmaTrendCheck());
         status.put("minPrice", riskSettings.getScanMinPrice());
         status.put("maxPrice", riskSettings.getScanMaxPrice());
         status.put("minTurnover", riskSettings.getScanMinTurnover());

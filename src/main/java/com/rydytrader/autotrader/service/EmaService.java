@@ -316,12 +316,38 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
                 double ema20Latest = ema20Arr[lookback - 1];
                 double ema200Latest = ema200BySymbol.getOrDefault(symbol, 0.0);
                 if (ema200Latest <= 0) return "";  // need 200 EMA loaded to confirm
-                if (latestSpread > 0 && ema20Latest > ema200Latest) return "RAILWAY_UP";
-                if (latestSpread < 0 && ema20Latest < ema200Latest) return "RAILWAY_DOWN";
+                // Slope filter via least-squares linear regression across all lookback bars.
+                // Catches mid-window reversals that simple first/last comparison would miss
+                // (e.g. EMA rose 8 bars then rolled over the last 3 — total rise positive,
+                // but regression slope reveals the weakening trend).
+                // Threshold: total projected rise = slope_per_bar × (lookback − 1) ≥ minSlopeAtr × ATR.
+                double minTotalRise = riskSettings != null ? riskSettings.getRailwayMinSlopeAtr() * atr : 0;
+                double ema20Slope = linearSlope(ema20Arr) * (lookback - 1);
+                double ema50Slope = linearSlope(ema50Arr) * (lookback - 1);
+                if (latestSpread > 0 && ema20Latest > ema200Latest
+                        && ema20Slope >= minTotalRise && ema50Slope >= minTotalRise) return "RAILWAY_UP";
+                if (latestSpread < 0 && ema20Latest < ema200Latest
+                        && ema20Slope <= -minTotalRise && ema50Slope <= -minTotalRise) return "RAILWAY_DOWN";
             }
         }
 
         return "";
+    }
+
+    /** Least-squares slope of y against x=0..n-1. Returns slope in value-units per bar. */
+    private static double linearSlope(double[] y) {
+        int n = y.length;
+        if (n < 2) return 0;
+        double sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+        for (int i = 0; i < n; i++) {
+            sumX  += i;
+            sumY  += y[i];
+            sumXY += (double) i * y[i];
+            sumX2 += (double) i * i;
+        }
+        double denom = n * sumX2 - sumX * sumX;
+        if (denom == 0) return 0;
+        return (n * sumXY - sumX * sumY) / denom;
     }
 
     /** Extract the last N values from a deque as an ordered array (oldest → newest). */

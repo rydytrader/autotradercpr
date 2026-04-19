@@ -59,9 +59,9 @@ public class RiskSettingsStore {
         volatile boolean enableRiskRewardFilter = true;
         volatile double  minRiskRewardRatio     = 1.0;
         // EMA filters
-        volatile boolean enableEmaDirectionCheck = true; // buy requires close > EMA(20), sell requires close < EMA(20)
-        volatile boolean enableEma200DirectionCheck = true; // buy requires close > EMA(200), sell requires close < EMA(200)
-        volatile boolean enableEmaCrossoverCheck = true; // buy requires 20 EMA > 200 EMA, sell requires 20 EMA < 200 EMA
+        // 5-min EMA trend gate: buy requires close above EMA(20/50/200), sell requires below all three.
+        // Matches the BULL/BEAR chip on scanner cards. Fail-open if any EMA not loaded.
+        volatile boolean enableEmaTrendCheck = true;
         volatile boolean enableEmaVsAtpCheck = true; // buy requires 20 EMA > ATP (VWAP), sell requires 20 EMA < ATP
         // EMA 20/50 pattern detection thresholds (Braided vs Railway Track)
         volatile int emaPatternLookback = 10;        // candles used for pattern detection (10 × 5min = 50 min window)
@@ -69,9 +69,11 @@ public class RiskSettingsStore {
         volatile double braidedMaxSpreadAtr = 0.3;   // mean|spread| ≤ this × ATR = BRAIDED (EMAs overlapping)
         volatile double railwayMaxCv = 0.25;         // stddev/mean ratio for RAILWAY (stability)
         volatile double railwayMinSpreadAtr = 0.3;   // mean|spread| ≥ this × ATR for RAILWAY (meaningful separation)
+        volatile double railwayMinSlopeAtr = 0.3;    // (ema[last]−ema[first])/ATR ≥ this for R-RTP (both 20 & 50 must actually rise; symmetric for F-RTP)
         // EMA pattern trade filters
-        volatile boolean buyRequiresRrtp = false;    // when ON, buy trades only fire if pattern is R-RTP
-        volatile boolean sellRequiresFrtp = false;   // when ON, sell trades only fire if pattern is F-RTP
+        // When ON, buys require R-RTP pattern and sells require F-RTP pattern (direction-matched).
+        // Single toggle replaces the old buyRequiresRrtp + sellRequiresFrtp pair.
+        volatile boolean requireRtpPattern = false;
         volatile boolean skipTradesInZigZag = true; // when ON (default), all trades (buy & sell) blocked when pattern is ZIG ZAG
         volatile double emaCloseDistanceAtr = 0.75;  // legacy — kept for backward compat with old risk-settings.json
         // EMA level-count filter — counts CPR zones strictly between EMA and the broken level.
@@ -191,17 +193,15 @@ public class RiskSettingsStore {
     public double getDayHighLowMinAtr()            { return cfg().dayHighLowMinAtr; }
     public boolean isEnableRiskRewardFilter()      { return cfg().enableRiskRewardFilter; }
     public double  getMinRiskRewardRatio()         { return cfg().minRiskRewardRatio; }
-    public boolean isEnableEmaDirectionCheck()      { return cfg().enableEmaDirectionCheck; }
-    public boolean isEnableEma200DirectionCheck()   { return cfg().enableEma200DirectionCheck; }
-    public boolean isEnableEmaCrossoverCheck()     { return cfg().enableEmaCrossoverCheck; }
+    public boolean isEnableEmaTrendCheck()          { return cfg().enableEmaTrendCheck; }
     public boolean isEnableEmaVsAtpCheck()          { return cfg().enableEmaVsAtpCheck; }
     public int    getEmaPatternLookback()           { return cfg().emaPatternLookback; }
     public int    getBraidedMinCrossovers()         { return cfg().braidedMinCrossovers; }
     public double getBraidedMaxSpreadAtr()          { return cfg().braidedMaxSpreadAtr; }
     public double getRailwayMaxCv()                 { return cfg().railwayMaxCv; }
     public double getRailwayMinSpreadAtr()          { return cfg().railwayMinSpreadAtr; }
-    public boolean isBuyRequiresRrtp()              { return cfg().buyRequiresRrtp; }
-    public boolean isSellRequiresFrtp()             { return cfg().sellRequiresFrtp; }
+    public double getRailwayMinSlopeAtr()           { return cfg().railwayMinSlopeAtr; }
+    public boolean isRequireRtpPattern()            { return cfg().requireRtpPattern; }
     public boolean isSkipTradesInZigZag()           { return cfg().skipTradesInZigZag; }
     public double getEmaCloseDistanceAtr()         { return cfg().emaCloseDistanceAtr; }
     public boolean isEnableEmaLevelCountFilter()   { return cfg().enableEmaLevelCountFilter; }
@@ -327,12 +327,9 @@ public class RiskSettingsStore {
     public void setDayHighLowMinAtr(double v)              { cfg().dayHighLowMinAtr = v; }
     public void setEnableRiskRewardFilter(boolean v)       { cfg().enableRiskRewardFilter = v; }
     public void setMinRiskRewardRatio(double v)            { cfg().minRiskRewardRatio = v; }
-    public void setEnableEmaDirectionCheck(boolean v)       { cfg().enableEmaDirectionCheck = v; }
-    public void setEnableEma200DirectionCheck(boolean v)   { cfg().enableEma200DirectionCheck = v; }
-    public void setEnableEmaCrossoverCheck(boolean v)     { cfg().enableEmaCrossoverCheck = v; }
+    public void setEnableEmaTrendCheck(boolean v)         { cfg().enableEmaTrendCheck = v; }
     public void setEnableEmaVsAtpCheck(boolean v)         { cfg().enableEmaVsAtpCheck = v; }
-    public void setBuyRequiresRrtp(boolean v)             { cfg().buyRequiresRrtp = v; }
-    public void setSellRequiresFrtp(boolean v)            { cfg().sellRequiresFrtp = v; }
+    public void setRequireRtpPattern(boolean v)           { cfg().requireRtpPattern = v; }
     public void setSkipTradesInZigZag(boolean v)          { cfg().skipTradesInZigZag = v; }
     public void setEmaCloseDistanceAtr(double v)           { cfg().emaCloseDistanceAtr = v; }
     public void setEnableEmaLevelCountFilter(boolean v)    { cfg().enableEmaLevelCountFilter = v; }
@@ -454,12 +451,9 @@ public class RiskSettingsStore {
             upsert("dayHighLowMinAtr", String.valueOf(c.dayHighLowMinAtr));
             upsert("enableRiskRewardFilter", String.valueOf(c.enableRiskRewardFilter));
             upsert("minRiskRewardRatio", String.valueOf(c.minRiskRewardRatio));
-            upsert("enableEmaDirectionCheck", String.valueOf(c.enableEmaDirectionCheck));
-            upsert("enableEma200DirectionCheck", String.valueOf(c.enableEma200DirectionCheck));
-            upsert("enableEmaCrossoverCheck", String.valueOf(c.enableEmaCrossoverCheck));
+            upsert("enableEmaTrendCheck", String.valueOf(c.enableEmaTrendCheck));
             upsert("enableEmaVsAtpCheck", String.valueOf(c.enableEmaVsAtpCheck));
-            upsert("buyRequiresRrtp", String.valueOf(c.buyRequiresRrtp));
-            upsert("sellRequiresFrtp", String.valueOf(c.sellRequiresFrtp));
+            upsert("requireRtpPattern", String.valueOf(c.requireRtpPattern));
             upsert("skipTradesInZigZag", String.valueOf(c.skipTradesInZigZag));
             upsert("emaCloseDistanceAtr", String.valueOf(c.emaCloseDistanceAtr));
             upsert("enableEmaLevelCountFilter", String.valueOf(c.enableEmaLevelCountFilter));
@@ -571,12 +565,13 @@ public class RiskSettingsStore {
                     case "dayHighLowMinAtr" -> c.dayHighLowMinAtr = Double.parseDouble(v);
                     case "enableRiskRewardFilter" -> c.enableRiskRewardFilter = Boolean.parseBoolean(v);
                     case "minRiskRewardRatio" -> c.minRiskRewardRatio = Double.parseDouble(v);
-                    case "enableEmaDirectionCheck" -> c.enableEmaDirectionCheck = Boolean.parseBoolean(v);
-                    case "enableEma200DirectionCheck" -> c.enableEma200DirectionCheck = Boolean.parseBoolean(v);
-                    case "enableEmaCrossoverCheck" -> c.enableEmaCrossoverCheck = Boolean.parseBoolean(v);
+                    case "enableEmaTrendCheck" -> c.enableEmaTrendCheck = Boolean.parseBoolean(v);
+                    // Legacy keys — silently ignored (semantics differ, no safe fold).
+                    case "enableEmaDirectionCheck", "enableEma200DirectionCheck", "enableEmaCrossoverCheck" -> { /* legacy */ }
                     case "enableEmaVsAtpCheck" -> c.enableEmaVsAtpCheck = Boolean.parseBoolean(v);
-                    case "buyRequiresRrtp" -> c.buyRequiresRrtp = Boolean.parseBoolean(v);
-                    case "sellRequiresFrtp" -> c.sellRequiresFrtp = Boolean.parseBoolean(v);
+                    case "requireRtpPattern" -> c.requireRtpPattern = Boolean.parseBoolean(v);
+                    // Legacy: if either old toggle was ON, new combined toggle is ON.
+                    case "buyRequiresRrtp", "sellRequiresFrtp" -> { if (Boolean.parseBoolean(v)) c.requireRtpPattern = true; }
                     case "skipTradesInZigZag" -> c.skipTradesInZigZag = Boolean.parseBoolean(v);
                     case "allowTradesInZigZag" -> c.skipTradesInZigZag = !Boolean.parseBoolean(v); // legacy (inverted semantic)
                     case "emaCloseDistanceAtr" -> c.emaCloseDistanceAtr = Double.parseDouble(v);
