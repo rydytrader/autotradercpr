@@ -71,6 +71,9 @@ public class SettingsController {
         result.put("enableEma200DirectionCheck", riskSettings.isEnableEma200DirectionCheck());
         result.put("enableEmaCrossoverCheck", riskSettings.isEnableEmaCrossoverCheck());
         result.put("enableEmaVsAtpCheck", riskSettings.isEnableEmaVsAtpCheck());
+        result.put("buyRequiresRrtp", riskSettings.isBuyRequiresRrtp());
+        result.put("sellRequiresFrtp", riskSettings.isSellRequiresFrtp());
+        result.put("skipTradesInZigZag", riskSettings.isSkipTradesInZigZag());
         result.put("emaCloseDistanceAtr", riskSettings.getEmaCloseDistanceAtr());
         result.put("enableEmaLevelCountFilter", riskSettings.isEnableEmaLevelCountFilter());
         result.put("enableTargetShift", riskSettings.isEnableTargetShift(effectiveMode));
@@ -173,6 +176,9 @@ public class SettingsController {
             if (body.containsKey("enableEma200DirectionCheck")) riskSettings.setEnableEma200DirectionCheck(Boolean.parseBoolean(body.get("enableEma200DirectionCheck").toString()));
             if (body.containsKey("enableEmaCrossoverCheck")) riskSettings.setEnableEmaCrossoverCheck(Boolean.parseBoolean(body.get("enableEmaCrossoverCheck").toString()));
             if (body.containsKey("enableEmaVsAtpCheck")) riskSettings.setEnableEmaVsAtpCheck(Boolean.parseBoolean(body.get("enableEmaVsAtpCheck").toString()));
+            if (body.containsKey("buyRequiresRrtp")) riskSettings.setBuyRequiresRrtp(Boolean.parseBoolean(body.get("buyRequiresRrtp").toString()));
+            if (body.containsKey("sellRequiresFrtp")) riskSettings.setSellRequiresFrtp(Boolean.parseBoolean(body.get("sellRequiresFrtp").toString()));
+            if (body.containsKey("skipTradesInZigZag")) riskSettings.setSkipTradesInZigZag(Boolean.parseBoolean(body.get("skipTradesInZigZag").toString()));
             if (body.containsKey("emaCloseDistanceAtr")) riskSettings.setEmaCloseDistanceAtr(Double.parseDouble(body.get("emaCloseDistanceAtr").toString()));
             if (body.containsKey("enableEmaLevelCountFilter")) riskSettings.setEnableEmaLevelCountFilter(Boolean.parseBoolean(body.get("enableEmaLevelCountFilter").toString()));
             if (body.containsKey("enableTargetShift")) riskSettings.setEnableTargetShift(effectiveMode, Boolean.parseBoolean(body.get("enableTargetShift").toString()));

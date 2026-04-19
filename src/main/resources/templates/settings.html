@@ -288,6 +288,16 @@
                     <div class="form-hint">SL = anchor ± buffer × ATR(period). Anchored to the broken level (CPR, R1/PDH, R2, etc.) or 20 EMA (for DH/DL breakouts). ATR period also used for candle filters and volatility measures.</div>
                 </div>
                 <div class="form-group">
+                    <label class="form-label">Risk / Reward Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
+                        <input type="checkbox" id="enableRiskRewardFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip trade if reward/risk &lt;</span>
+                        <input type="number" id="minRiskRewardRatio" class="form-control" step="0.1" min="0.5" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">:1</span>
+                    </div>
+                    <div class="form-hint">Computed after SL and final target are determined. R/R = |target − entry| / |entry − SL|. Uses the final target (T2 for split trades) and the final SL (structural or default, whichever was picked). Default 1.0 means reject any trade where reward is less than risk.</div>
+                </div>
+                <div class="form-group">
                     <label class="form-label">Trailing SL</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
                         <input type="checkbox" id="enableTrailingSl" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink:0;">
@@ -346,14 +356,6 @@
                         </label>
                     </div>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Minimum Absolute Profit</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">₹</span>
-                        <input type="number" id="minAbsoluteProfit" class="form-control" step="50" min="0" max="5000" style="width:100px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                    </div>
-                    <div class="form-hint">Skip trade if expected profit (qty × target distance) is below this amount. Catches trades where stacked qty reductions made the position too small. Set to 0 to disable.</div>
-                </div>
             </div>
         </div>
     </div>
@@ -398,14 +400,22 @@
                     <div class="form-hint">EMA filters confirm breakout direction on different timeframes. 20 EMA captures short-term momentum, 200 EMA captures long-term trend, ATP (VWAP) captures the day's volume-weighted fair price. When the 200 EMA check is disabled, the 200 EMA becomes a target-shift candidate instead — if it sits between entry and the original target, the target is pulled back (resistance for buys, support for sells). The R/R filter then evaluates the compressed target.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Risk / Reward Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
-                        <input type="checkbox" id="enableRiskRewardFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip trade if reward/risk &lt;</span>
-                        <input type="number" id="minRiskRewardRatio" class="form-control" step="0.1" min="0.5" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">:1</span>
+                    <label class="form-label">EMA 20/50 Pattern Filter</label>
+                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="buyRequiresRrtp" style="width: 16px; height: 16px; accent-color: var(--accent-cyan);">
+                            <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only when pattern is <b style="color:var(--accent-green);">R-RTP</b> (rising railway)</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="sellRequiresFrtp" style="width: 16px; height: 16px; accent-color: var(--accent-cyan);">
+                            <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Sell only when pattern is <b style="color:var(--accent-red);">F-RTP</b> (falling railway)</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="skipTradesInZigZag" style="width: 16px; height: 16px; accent-color: var(--accent-cyan);">
+                            <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip trades when pattern is <b style="color:var(--accent-red);">ZIG ZAG</b> (choppy)</span>
+                        </div>
                     </div>
-                    <div class="form-hint">Computed after SL and final target are determined. R/R = |target − entry| / |entry − SL|. Uses the final target (T2 for split trades) and the final SL (structural or default, whichever was picked). Default 1.0 means reject any trade where reward is less than risk.</div>
+                    <div class="form-hint">Gate breakouts by EMA 20/50 pattern. First two toggles require the pattern to match trade direction (transitional/neutral state also blocks when ON). Third toggle ON (default) skips all trades during ZIG ZAG; uncheck to allow trades during choppy conditions.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Small Candle Filter</label>
@@ -542,6 +552,14 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR (places target inside the level)</span>
                     </div>
                     <div class="form-hint">Markets often reverse just before touching CPR levels. The target order is placed slightly inside the level so near-miss reversals still fill. Applies to single targets and the T2 leg of split trades — T1 is unaffected.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Minimum Absolute Profit</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">₹</span>
+                        <input type="number" id="minAbsoluteProfit" class="form-control" step="50" min="0" max="5000" style="width:100px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    </div>
+                    <div class="form-hint">Skip trade if expected profit (qty × target distance) is below this amount. Catches trades where stacked qty reductions made the position too small. Set to 0 to disable.</div>
                 </div>
             </div>
         </div>
@@ -1015,6 +1033,9 @@
             document.getElementById('enableEma200DirectionCheck').checked = d.enableEma200DirectionCheck !== false;
             document.getElementById('enableEmaCrossoverCheck').checked = d.enableEmaCrossoverCheck !== false;
             document.getElementById('enableEmaVsAtpCheck').checked = d.enableEmaVsAtpCheck !== false;
+            document.getElementById('buyRequiresRrtp').checked = d.buyRequiresRrtp === true;
+            document.getElementById('sellRequiresFrtp').checked = d.sellRequiresFrtp === true;
+            document.getElementById('skipTradesInZigZag').checked = d.skipTradesInZigZag !== false;
             document.getElementById('enableEmaLevelCountFilter').checked = d.enableEmaLevelCountFilter !== false;
             document.getElementById('enableSplitTarget').checked = d.enableSplitTarget !== false;
             document.getElementById('t1DistancePct').value = d.t1DistancePct || 50;
@@ -1164,6 +1185,9 @@
                 enableEma200DirectionCheck: document.getElementById('enableEma200DirectionCheck').checked,
                 enableEmaCrossoverCheck: document.getElementById('enableEmaCrossoverCheck').checked,
                 enableEmaVsAtpCheck: document.getElementById('enableEmaVsAtpCheck').checked,
+                buyRequiresRrtp: document.getElementById('buyRequiresRrtp').checked,
+                sellRequiresFrtp: document.getElementById('sellRequiresFrtp').checked,
+                skipTradesInZigZag: document.getElementById('skipTradesInZigZag').checked,
                 enableEmaLevelCountFilter: document.getElementById('enableEmaLevelCountFilter').checked,
                 enableSplitTarget: document.getElementById('enableSplitTarget').checked,
                 t1DistancePct: parseInt(document.getElementById('t1DistancePct').value) || 50,

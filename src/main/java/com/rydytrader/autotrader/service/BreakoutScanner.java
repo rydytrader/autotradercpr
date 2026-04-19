@@ -311,6 +311,18 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (riskSettings.isEnableEmaCrossoverCheck() && ema > 0 && ema200 > 0 && ema < ema200) return null;
         // 20 EMA vs ATP/VWAP check for buys: 20 EMA must be above ATP
         if (riskSettings.isEnableEmaVsAtpCheck() && ema > 0 && atp > 0 && ema < atp) return null;
+        // EMA 20/50 pattern filters for buys
+        if (riskSettings.isBuyRequiresRrtp() || riskSettings.isSkipTradesInZigZag()) {
+            double atrForPattern = atrService.getAtr(fyersSymbol);
+            if (atrForPattern > 0) {
+                String pat = emaService.getEmaPattern(fyersSymbol,
+                    riskSettings.getEmaPatternLookback(), atrForPattern,
+                    riskSettings.getBraidedMinCrossovers(), riskSettings.getBraidedMaxSpreadAtr(),
+                    riskSettings.getRailwayMaxCv(), riskSettings.getRailwayMinSpreadAtr());
+                if (riskSettings.isSkipTradesInZigZag() && "BRAIDED".equals(pat)) return null;
+                if (riskSettings.isBuyRequiresRrtp() && !"RAILWAY_UP".equals(pat)) return null;
+            }
+        }
 
         double r4 = levels.getR4(), r3 = levels.getR3(), r2 = levels.getR2();
         double r1 = levels.getR1(), ph = levels.getPh();
@@ -388,6 +400,18 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (riskSettings.isEnableEmaCrossoverCheck() && ema > 0 && ema200 > 0 && ema > ema200) return null;
         // 20 EMA vs ATP/VWAP check for sells: 20 EMA must be below ATP
         if (riskSettings.isEnableEmaVsAtpCheck() && ema > 0 && atp > 0 && ema > atp) return null;
+        // EMA 20/50 pattern filters for sells
+        if (riskSettings.isSellRequiresFrtp() || riskSettings.isSkipTradesInZigZag()) {
+            double atrForPattern = atrService.getAtr(fyersSymbol);
+            if (atrForPattern > 0) {
+                String pat = emaService.getEmaPattern(fyersSymbol,
+                    riskSettings.getEmaPatternLookback(), atrForPattern,
+                    riskSettings.getBraidedMinCrossovers(), riskSettings.getBraidedMaxSpreadAtr(),
+                    riskSettings.getRailwayMaxCv(), riskSettings.getRailwayMinSpreadAtr());
+                if (riskSettings.isSkipTradesInZigZag() && "BRAIDED".equals(pat)) return null;
+                if (riskSettings.isSellRequiresFrtp() && !"RAILWAY_DOWN".equals(pat)) return null;
+            }
+        }
 
         double s4 = levels.getS4(), s3 = levels.getS3(), s2 = levels.getS2();
         double s1 = levels.getS1(), pl = levels.getPl();

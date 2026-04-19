@@ -644,7 +644,22 @@
             <p><strong>Live updates</strong>: pattern is re-classified on every 5-min candle close as new EMA values roll into the window and old ones fall off.</p>
             <p><strong>Historical seeding</strong>: EMA(50) ring buffer is populated from 14 days of Fyers historical candles at startup, so patterns classify immediately at market open — no warm-up wait.</p>
             <p><strong>Per-candle persistence</strong>: every closed 5-min candle stores <code>ema20</code>, <code>ema50</code>, <code>ema200</code>, <code>atr</code>, <code>vwap</code>, and <code>emaPattern</code> for post-trade analysis ("what was the pattern when this breakout fired?").</p>
-            <p><strong>Informational only</strong>: pattern is displayed and logged but does not currently filter trades. Use it to visually assess conditions before taking an entry, or review trade performance by pattern over time.</p>
+            <h5>Pattern Filter (optional, Filters tab)</h5>
+            <p>Three independent toggles gate breakouts by EMA 20/50 pattern:</p>
+            <table>
+                <tr><th>Toggle</th><th>Effect when ON</th></tr>
+                <tr><td><code>buyRequiresRrtp</code></td><td>Buy breakouts fire <strong>only</strong> when pattern is R-RTP (rising railway). F-RTP / ZIG ZAG / transitional all block buys. Strict bullish confirmation.</td></tr>
+                <tr><td><code>sellRequiresFrtp</code></td><td>Sell breakouts fire <strong>only</strong> when pattern is F-RTP (falling railway). R-RTP / ZIG ZAG / transitional all block sells.</td></tr>
+                <tr><td><code>skipTradesInZigZag</code> (default ON)</td><td>Skip <strong>any</strong> trade (buy or sell) when pattern is ZIG ZAG. Keeps RTP and transitional trades flowing.</td></tr>
+            </table>
+            <p><strong>Combined modes:</strong></p>
+            <table>
+                <tr><th>Mode</th><th>Buy RRTP</th><th>Sell FRTP</th><th>Skip ZIG ZAG</th><th>Effect</th></tr>
+                <tr><td>No filter</td><td>OFF</td><td>OFF</td><td>OFF</td><td>All breakouts fire, no pattern gate</td></tr>
+                <tr><td>Moderate (default)</td><td>OFF</td><td>OFF</td><td>ON</td><td>ZIG ZAG blocked, RTP and transitional allowed</td></tr>
+                <tr><td>Strict</td><td>ON</td><td>ON</td><td>ON</td><td>Only R-RTP buys and F-RTP sells — cleanest trend confirmation, lowest trade count</td></tr>
+            </table>
+            <p>Default: only <code>skipTradesInZigZag</code> is ON. Trades fire normally unless a clear ZIG ZAG state is active.</p>
 
             <h4>20 EMA vs ATP (VWAP) Filter</h4>
             <p>Short-term momentum check: buy requires <code>20 EMA &gt; ATP</code>, sell requires <code>20 EMA &lt; ATP</code>. Confirms short-term trend is on the right side of the day's volume-weighted average price before allowing a breakout. Independently toggleable via <code>enableEmaVsAtpCheck</code>.</p>

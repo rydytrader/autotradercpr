@@ -69,6 +69,10 @@ public class RiskSettingsStore {
         volatile double braidedMaxSpreadAtr = 0.3;   // mean|spread| ≤ this × ATR = BRAIDED (EMAs overlapping)
         volatile double railwayMaxCv = 0.25;         // stddev/mean ratio for RAILWAY (stability)
         volatile double railwayMinSpreadAtr = 0.3;   // mean|spread| ≥ this × ATR for RAILWAY (meaningful separation)
+        // EMA pattern trade filters
+        volatile boolean buyRequiresRrtp = false;    // when ON, buy trades only fire if pattern is R-RTP
+        volatile boolean sellRequiresFrtp = false;   // when ON, sell trades only fire if pattern is F-RTP
+        volatile boolean skipTradesInZigZag = true; // when ON (default), all trades (buy & sell) blocked when pattern is ZIG ZAG
         volatile double emaCloseDistanceAtr = 0.75;  // legacy — kept for backward compat with old risk-settings.json
         // EMA level-count filter — counts CPR zones strictly between EMA and the broken level.
         // Allow only when count == 0 (EMA is in the zone immediately adjacent to the broken level).
@@ -196,6 +200,9 @@ public class RiskSettingsStore {
     public double getBraidedMaxSpreadAtr()          { return cfg().braidedMaxSpreadAtr; }
     public double getRailwayMaxCv()                 { return cfg().railwayMaxCv; }
     public double getRailwayMinSpreadAtr()          { return cfg().railwayMinSpreadAtr; }
+    public boolean isBuyRequiresRrtp()              { return cfg().buyRequiresRrtp; }
+    public boolean isSellRequiresFrtp()             { return cfg().sellRequiresFrtp; }
+    public boolean isSkipTradesInZigZag()           { return cfg().skipTradesInZigZag; }
     public double getEmaCloseDistanceAtr()         { return cfg().emaCloseDistanceAtr; }
     public boolean isEnableEmaLevelCountFilter()   { return cfg().enableEmaLevelCountFilter; }
     public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
@@ -324,6 +331,9 @@ public class RiskSettingsStore {
     public void setEnableEma200DirectionCheck(boolean v)   { cfg().enableEma200DirectionCheck = v; }
     public void setEnableEmaCrossoverCheck(boolean v)     { cfg().enableEmaCrossoverCheck = v; }
     public void setEnableEmaVsAtpCheck(boolean v)         { cfg().enableEmaVsAtpCheck = v; }
+    public void setBuyRequiresRrtp(boolean v)             { cfg().buyRequiresRrtp = v; }
+    public void setSellRequiresFrtp(boolean v)            { cfg().sellRequiresFrtp = v; }
+    public void setSkipTradesInZigZag(boolean v)          { cfg().skipTradesInZigZag = v; }
     public void setEmaCloseDistanceAtr(double v)           { cfg().emaCloseDistanceAtr = v; }
     public void setEnableEmaLevelCountFilter(boolean v)    { cfg().enableEmaLevelCountFilter = v; }
     public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
@@ -448,6 +458,9 @@ public class RiskSettingsStore {
             upsert("enableEma200DirectionCheck", String.valueOf(c.enableEma200DirectionCheck));
             upsert("enableEmaCrossoverCheck", String.valueOf(c.enableEmaCrossoverCheck));
             upsert("enableEmaVsAtpCheck", String.valueOf(c.enableEmaVsAtpCheck));
+            upsert("buyRequiresRrtp", String.valueOf(c.buyRequiresRrtp));
+            upsert("sellRequiresFrtp", String.valueOf(c.sellRequiresFrtp));
+            upsert("skipTradesInZigZag", String.valueOf(c.skipTradesInZigZag));
             upsert("emaCloseDistanceAtr", String.valueOf(c.emaCloseDistanceAtr));
             upsert("enableEmaLevelCountFilter", String.valueOf(c.enableEmaLevelCountFilter));
             upsert("enableTargetShift", String.valueOf(c.enableTargetShift));
@@ -562,6 +575,10 @@ public class RiskSettingsStore {
                     case "enableEma200DirectionCheck" -> c.enableEma200DirectionCheck = Boolean.parseBoolean(v);
                     case "enableEmaCrossoverCheck" -> c.enableEmaCrossoverCheck = Boolean.parseBoolean(v);
                     case "enableEmaVsAtpCheck" -> c.enableEmaVsAtpCheck = Boolean.parseBoolean(v);
+                    case "buyRequiresRrtp" -> c.buyRequiresRrtp = Boolean.parseBoolean(v);
+                    case "sellRequiresFrtp" -> c.sellRequiresFrtp = Boolean.parseBoolean(v);
+                    case "skipTradesInZigZag" -> c.skipTradesInZigZag = Boolean.parseBoolean(v);
+                    case "allowTradesInZigZag" -> c.skipTradesInZigZag = !Boolean.parseBoolean(v); // legacy (inverted semantic)
                     case "emaCloseDistanceAtr" -> c.emaCloseDistanceAtr = Double.parseDouble(v);
                     case "enableEmaLevelCountFilter" -> c.enableEmaLevelCountFilter = Boolean.parseBoolean(v);
                     case "enableTargetShift" -> c.enableTargetShift = Boolean.parseBoolean(v);
