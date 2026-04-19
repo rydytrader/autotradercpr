@@ -30,6 +30,7 @@ public class ScannerController {
     private final MarginDataService marginDataService;
     private final TradeHistoryService tradeHistoryService;
     private final EmaService emaService;
+    private final HtfEmaService htfEmaService;
     private final IndexTrendService indexTrendService;
     private final MarketHolidayService marketHolidayService;
 
@@ -43,6 +44,7 @@ public class ScannerController {
                              MarginDataService marginDataService,
                              TradeHistoryService tradeHistoryService,
                              EmaService emaService,
+                             HtfEmaService htfEmaService,
                              IndexTrendService indexTrendService,
                              MarketHolidayService marketHolidayService) {
         this.marketDataService = marketDataService;
@@ -55,6 +57,7 @@ public class ScannerController {
         this.marginDataService = marginDataService;
         this.tradeHistoryService = tradeHistoryService;
         this.emaService = emaService;
+        this.htfEmaService = htfEmaService;
         this.indexTrendService = indexTrendService;
         this.marketHolidayService = marketHolidayService;
     }
@@ -148,14 +151,36 @@ public class ScannerController {
         card.put("ema50", Math.round(emaService.getEma50(fyersSymbol) * 100.0) / 100.0);
         card.put("ema200", Math.round(emaService.getEma200(fyersSymbol) * 100.0) / 100.0);
         // Classify EMA 20/50 pattern over recent candles: BRAIDED (zigzag/choppy), RAILWAY (parallel/trending), or ""
+        double atrVal = atrService.getAtr(fyersSymbol);
         String emaPattern = emaService.getEmaPattern(fyersSymbol,
             riskSettings.getEmaPatternLookback(),
-            atrService.getAtr(fyersSymbol),
+            atrVal,
             riskSettings.getBraidedMinCrossovers(),
             riskSettings.getBraidedMaxSpreadAtr(),
             riskSettings.getRailwayMaxCv(),
             riskSettings.getRailwayMinSpreadAtr());
         card.put("emaPattern", emaPattern);
+        // HTF (75-min) EMAs — display only, long-term trend
+        double htfEma20 = htfEmaService.getEma(fyersSymbol);
+        double htfEma50 = htfEmaService.getEma50(fyersSymbol);
+        double htfEma200 = htfEmaService.getEma200(fyersSymbol);
+        card.put("htfEma20", Math.round(htfEma20 * 100.0) / 100.0);
+        card.put("htfEma50", Math.round(htfEma50 * 100.0) / 100.0);
+        card.put("htfEma200", Math.round(htfEma200 * 100.0) / 100.0);
+        String htfPattern = (htfEma20 > 0 && htfEma50 > 0)
+            ? htfEmaService.getEmaPattern(fyersSymbol,
+                riskSettings.getEmaPatternLookback(),
+                atrVal,
+                riskSettings.getBraidedMinCrossovers(),
+                riskSettings.getBraidedMaxSpreadAtr(),
+                riskSettings.getRailwayMaxCv(),
+                riskSettings.getRailwayMinSpreadAtr())
+            : "";
+        card.put("htfEmaPattern", htfPattern);
+        // EMA-trend reference price: last completed candle close, LTP fallback for the
+        // first candle of the day. Mirrors how WeeklyCprService computes daily/weekly trend.
+        card.put("price5m",  Math.round(weeklyCprService.getDailyPrice(fyersSymbol)  * 100.0) / 100.0);
+        card.put("price60m", Math.round(weeklyCprService.getWeeklyPrice(fyersSymbol) * 100.0) / 100.0);
         card.put("dayOpen", Math.round(candleAggregator.getDayOpen(fyersSymbol) * 100.0) / 100.0);
 
         // Open classification: IV (Inside Value), OV (Outside Value), EV (Extended Value)

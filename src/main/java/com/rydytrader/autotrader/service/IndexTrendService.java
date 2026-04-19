@@ -42,19 +42,22 @@ public class IndexTrendService {
     private final RiskSettingsStore riskSettings;
     private final BhavcopyService bhavcopyService;
     private final AtrService atrService;
+    private final HtfEmaService htfEmaService;
 
     public IndexTrendService(WeeklyCprService weeklyCprService,
                              EmaService emaService,
                              MarketDataService marketDataService,
                              RiskSettingsStore riskSettings,
                              BhavcopyService bhavcopyService,
-                             AtrService atrService) {
+                             AtrService atrService,
+                             HtfEmaService htfEmaService) {
         this.weeklyCprService = weeklyCprService;
         this.emaService = emaService;
         this.marketDataService = marketDataService;
         this.riskSettings = riskSettings;
         this.bhavcopyService = bhavcopyService;
         this.atrService = atrService;
+        this.htfEmaService = htfEmaService;
     }
 
     public IndexTrend getNiftyTrend() {
@@ -139,6 +142,24 @@ public class IndexTrendService {
         trend.setEmaPattern(emaPattern);
         trend.setEmaPatternScore(emaPatternScore);
         trend.setTotalScore(total);
+
+        // HTF (75-min) EMAs — display only, no score contribution
+        double htfEma20 = htfEmaService.getEma(symbol);
+        double htfEma50 = htfEmaService.getEma50(symbol);
+        double htfEma200 = htfEmaService.getEma200(symbol);
+        String htfPat = (htfEma20 > 0 && htfEma50 > 0)
+            ? htfEmaService.getEmaPattern(symbol,
+                riskSettings.getEmaPatternLookback(),
+                atrService.getAtr(symbol),
+                riskSettings.getBraidedMinCrossovers(),
+                riskSettings.getBraidedMaxSpreadAtr(),
+                riskSettings.getRailwayMaxCv(),
+                riskSettings.getRailwayMinSpreadAtr())
+            : "";
+        trend.setHtfEma20(htfEma20);
+        trend.setHtfEma50(htfEma50);
+        trend.setHtfEma200(htfEma200);
+        trend.setHtfEmaPattern(htfPat);
 
         // Classify
         trend.setState(classify(total));

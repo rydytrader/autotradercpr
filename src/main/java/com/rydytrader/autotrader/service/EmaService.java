@@ -309,9 +309,15 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
             double std = Math.sqrt(sumSqDev / lookback);
             double cv = meanAbs > 0 ? std / meanAbs : Double.POSITIVE_INFINITY;
             if (cv <= railwayMaxCv) {
-                // Determine direction from the most recent spread: 20>50 = rising (bullish), 20<50 = falling (bearish)
+                // Direction from latest spread: 20>50 = rising, 20<50 = falling.
+                // Long-term confirmation: 20 must also be on the right side of 200 — otherwise
+                // it's just a short-term ripple against the dominant trend, not a true railway.
                 double latestSpread = spread[lookback - 1];
-                return latestSpread > 0 ? "RAILWAY_UP" : "RAILWAY_DOWN";
+                double ema20Latest = ema20Arr[lookback - 1];
+                double ema200Latest = ema200BySymbol.getOrDefault(symbol, 0.0);
+                if (ema200Latest <= 0) return "";  // need 200 EMA loaded to confirm
+                if (latestSpread > 0 && ema20Latest > ema200Latest) return "RAILWAY_UP";
+                if (latestSpread < 0 && ema20Latest < ema200Latest) return "RAILWAY_DOWN";
             }
         }
 

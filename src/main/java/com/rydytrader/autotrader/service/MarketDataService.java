@@ -55,6 +55,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     private final BreakoutScanner     breakoutScanner;
     private final BhavcopyService     bhavcopyService;
     private final TelegramService     telegramService;
+    private final HtfEmaService       htfEmaService;
     private final ObjectMapper        mapper = new ObjectMapper();
     private CandleAggregator          htfAggregator; // higher timeframe (75-min) for weekly trend
 
@@ -154,7 +155,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                               BreakoutScanner breakoutScanner,
                               BhavcopyService bhavcopyService,
                               EmaService emaService,
-                              TelegramService telegramService) {
+                              TelegramService telegramService,
+                              HtfEmaService htfEmaService) {
         this.tokenStore = tokenStore;
         this.fyersProperties = fyersProperties;
         this.positionStateStore = positionStateStore;
@@ -169,6 +171,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         this.bhavcopyService = bhavcopyService;
         this.emaService = emaService;
         this.telegramService = telegramService;
+        this.htfEmaService = htfEmaService;
         candleAggregator.addListener(this);
     }
 
@@ -206,8 +209,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         htfAggregator.setTimeframe(riskSettings.getHigherTimeframe());
         htfAggregator.addListener((symbol, candle) ->
             weeklyCprService.onHigherTimeframeCandleClose(symbol, candle.open, candle.high, candle.low, candle.close));
+        htfAggregator.addListener(htfEmaService);
         htfAggregator.start();
-        log.info("[MarketData] Higher timeframe aggregator started: {}min", riskSettings.getHigherTimeframe());
+        log.info("[MarketData] Higher timeframe aggregator started: {}min (listeners: WeeklyCpr, HtfEma)", riskSettings.getHigherTimeframe());
 
         // Schedule scanner pre-market data fetch
         scheduleScannerInit();
@@ -863,6 +867,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             weeklyCprService.fetchWeeklyTrends(watchlistWithIndex);
         } else {
             log.info("[MarketData] Weekly trends already loaded ({} symbols) — skipping fetch", weeklyCprService.getLoadedCount());
+        }
+        // Seed HTF (75-min) EMAs from historical Fyers data
+        if (htfEmaService.getLoadedCount() == 0) {
+            atrService.fetchHtfEmaForSymbols(watchlistWithIndex, htfEmaService);
+        } else {
+            log.info("[MarketData] HTF EMAs already loaded ({} symbols) — skipping fetch", htfEmaService.getLoadedCount());
         }
 
         // Subscribe watchlist + NIFTY to WebSocket (after API calls give WS time to connect)

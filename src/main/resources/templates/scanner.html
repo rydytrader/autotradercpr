@@ -100,6 +100,9 @@
             gap: 0;
             padding: 6px 16px 10px;
         }
+        .scan-data-grid.scan-data-grid-3 {
+            grid-template-columns: 1fr 1fr 1.5fr;
+        }
         .scan-data-item {
             text-align: center;
             padding: 4px 0;
@@ -139,7 +142,7 @@
         .scan-trend .strong_bullish { color: var(--accent-green); font-weight: bold; }
         .scan-trend .bearish { color: var(--accent-red); }
         .scan-trend .strong_bearish { color: var(--accent-red); font-weight: bold; }
-        .scan-trend .neutral { color: var(--accent-yellow); }
+        .scan-trend .neutral { color: var(--accent-yellow); font-weight: 700; }
 
         .scan-badge.hpt { background: rgba(52,211,153,0.12); color: var(--accent-green); }
         .scan-badge.lpt { background: rgba(251,191,36,0.12); color: var(--accent-yellow); }
@@ -733,11 +736,36 @@
         var dTrend = d.dailyTrend || 'NEUTRAL';
         var wClass = wTrend.toLowerCase();
         var dClass = dTrend.toLowerCase();
-        var wLabel = wTrend.replace('_', ' ');
+        function shortTrendLabel(t) {
+            if (t === 'STRONG_BULLISH') return 'S.BULLISH';
+            if (t === 'STRONG_BEARISH') return 'S.BEARISH';
+            return t.replace('_', ' ');
+        }
+        var wLabel = shortTrendLabel(wTrend);
         if (d.weeklyReversalActive) wLabel += ' <span style="color:var(--accent-yellow);font-weight:700;">(R)</span>';
-        var dLabel = dTrend.replace('_', ' ');
+        var dLabel = shortTrendLabel(dTrend);
         var wArrow = wTrend.includes('BULLISH') ? '&#9650;' : wTrend.includes('BEARISH') ? '&#9660;' : '&#9644;';
         var dArrow = dTrend.includes('BULLISH') ? '&#9650;' : dTrend.includes('BEARISH') ? '&#9660;' : '&#9644;';
+
+        // EMA trend per timeframe — shown in EMA Levels title and body
+        function emaTrendObj(price, e20, e50, e200, pattern) {
+            if (price <= 0 || e20 <= 0 || e50 <= 0 || e200 <= 0) {
+                return { label: '--', shortLabel: '--', cls: 'neutral', arrow: '&#9644;' };
+            }
+            var allAbove = price > e20 && price > e50 && price > e200;
+            var allBelow = price < e20 && price < e50 && price < e200;
+            if (allAbove) {
+                if (pattern === 'RAILWAY_UP') return { label: 'S.BULLISH', shortLabel: 'S.BULL', cls: 'strong_bullish', arrow: '&#9650;' };
+                return { label: 'BULLISH', shortLabel: 'BULL', cls: 'bullish', arrow: '&#9650;' };
+            }
+            if (allBelow) {
+                if (pattern === 'RAILWAY_DOWN') return { label: 'S.BEARISH', shortLabel: 'S.BEAR', cls: 'strong_bearish', arrow: '&#9660;' };
+                return { label: 'BEARISH', shortLabel: 'BEAR', cls: 'bearish', arrow: '&#9660;' };
+            }
+            return { label: 'NEUTRAL', shortLabel: 'NEU', cls: 'neutral', arrow: '&#9644;' };
+        }
+        var em5  = emaTrendObj((d.price5m  > 0 ? d.price5m  : d.ltp), d.ema20,    d.ema50,    d.ema200,    d.emaPattern);
+        var em60 = emaTrendObj((d.price60m > 0 ? d.price60m : d.ltp), d.htfEma20, d.htfEma50, d.htfEma200, d.htfEmaPattern);
 
         var probClass = (d.probability || 'lpt').toLowerCase();
 
@@ -830,28 +858,17 @@
                 var ttl = 'Opening Range ' + or + (d.orHigh > 0 ? ' (H:' + fmt(d.orHigh) + ' L:' + fmt(d.orLow) + ')' : '');
                 return '<span class="scan-badge ' + cls + '" title="' + ttl + '">' + lbl + '</span>';
             })()
+            + '<span class="scan-badge ' + probClass + '" title="Signal probability">' + d.probability + '</span>'
             + '  </span>'
             + '</div>'
             + '<div class="scan-price-row">'
             + '  <span class="scan-ltp">' + fmt(d.ltp) + '</span>'
             + '  <span class="scan-change ' + chClass + '">' + chArrow + ' ' + d.changePercent.toFixed(2) + '%</span>'
             + '  <span style="font-family:var(--font-mono);font-size:0.75rem;font-weight:600;color:var(--text-secondary);margin-left:auto;">'
-            +     (d.ema200 > 0 ? 'EMA 200: ' + fmt(d.ema200) : '')
-            +     (d.openClass ? (d.ema200 > 0 ? ' | ' : '') + 'Day Open: ' + d.openClass : '')
+            +     (d.openClass ? 'Day Open: ' + d.openClass : '')
             + '  </span>'
             + '</div>'
-            + '<div class="scan-data-grid">'
-            + (function() {
-                var labelSuffix = '';
-                if (d.emaPattern === 'RAILWAY_UP') {
-                    labelSuffix = ' <span style="color:var(--accent-green);font-weight:700;" title="Rising Railway Track — 20 EMA above 50 EMA, parallel, bullish trend">R-RTP</span>';
-                } else if (d.emaPattern === 'RAILWAY_DOWN') {
-                    labelSuffix = ' <span style="color:var(--accent-red);font-weight:700;" title="Falling Railway Track — 20 EMA below 50 EMA, parallel, bearish trend">F-RTP</span>';
-                } else if (d.emaPattern === 'BRAIDED') {
-                    labelSuffix = ' <span style="color:var(--accent-red);font-weight:700;" title="Braided — zigzag, choppy">ZIG ZAG</span>';
-                }
-                return '  <div class="scan-data-item"><div class="scan-data-label">EMA 20/50' + labelSuffix + '</div><div class="scan-data-value">' + (d.ema20 > 0 ? fmt(d.ema20) : '--') + ' / ' + (d.ema50 > 0 ? fmt(d.ema50) : '--') + '</div></div>';
-            })()
+            + '<div class="scan-data-grid scan-data-grid-3">'
             + '  <div class="scan-data-item"><div class="scan-data-label">ATP</div><div class="scan-data-value">' + fmt(d.atp) + '</div></div>'
             + '  <div class="scan-data-item"><div class="scan-data-label">ATR</div><div class="scan-data-value">' + fmt(d.atr) + '</div></div>'
             + (function() {
@@ -861,14 +878,61 @@
                 return '  <div class="scan-data-item"><div class="scan-data-label">Vol / 20-Avg</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + (d.candleVolume > 0 ? fmtVol(d.candleVolume) : '--') + ' / ' + (d.avgVolume > 0 ? fmtVol(d.avgVolume) : '--') + ratioText + '</div></div>';
             })()
             + '</div>'
-            + '<div class="scan-trend-row">'
-            + '  <span class="scan-trend"><span class="label">W:</span> <span class="' + wClass + '">' + wArrow + ' ' + wLabel + '</span></span>'
-            + '  <span class="scan-trend"><span class="label">D:</span> <span class="' + dClass + '">' + dArrow + ' ' + dLabel + '</span></span>'
-            + '  <span class="scan-badge ' + probClass + '">' + d.probability + '</span>'
-            + '</div>'
+            + '<div style="border-top:1px solid var(--border);"></div>'
             + '<div class="scan-levels">'
-            + '  <div class="scan-levels-title" onclick="this.parentElement.classList.toggle(\'expanded\')">CPR Levels <span class="toggle-arrow">&#9654;</span></div>'
+            + '  <div class="scan-levels-title" onclick="this.parentElement.classList.toggle(\'expanded\')">'
+            + '    <span>CPR Levels</span>'
+            + '    <span style="display:flex; gap:8px; margin-left:auto; align-items:center; font-size:0.7rem;">'
+            + '      <span class="scan-trend"><span class="label">D:</span> <span class="' + dClass + '">' + dArrow + ' ' + dLabel + '</span></span>'
+            + '      <span class="scan-trend"><span class="label">W:</span> <span class="' + wClass + '">' + wArrow + ' ' + wLabel + '</span></span>'
+            + '      <span class="toggle-arrow">&#9654;</span>'
+            + '    </span>'
+            + '  </div>'
             + '  <div class="scan-levels-body">' + levelsHtml + '</div>'
+            + '</div>'
+            + '<div style="border-top:1px solid var(--border);"></div>'
+            + '<div class="scan-levels">'
+            + '  <div class="scan-levels-title" onclick="this.parentElement.classList.toggle(\'expanded\')">'
+            + '    <span>EMA Levels</span>'
+            + '    <span style="display:flex; gap:8px; margin-left:auto; align-items:center; font-size:0.7rem;">'
+            + '      <span class="scan-trend"><span class="label">5m:</span> <span class="' + em5.cls  + '">' + em5.arrow  + ' ' + em5.label  + '</span></span>'
+            + '      <span class="scan-trend"><span class="label">1h:</span> <span class="' + em60.cls + '">' + em60.arrow + ' ' + em60.label + '</span></span>'
+            + '      <span class="toggle-arrow">&#9654;</span>'
+            + '    </span>'
+            + '  </div>'
+            + (function() {
+                function patCell(p) {
+                    if (p === 'RAILWAY_UP')   return '<span style="color:var(--accent-green);font-weight:700;">R-RTP</span>';
+                    if (p === 'RAILWAY_DOWN') return '<span style="color:var(--accent-red);font-weight:700;">F-RTP</span>';
+                    if (p === 'BRAIDED')      return '<span style="color:var(--accent-red);font-weight:700;">ZIG ZAG</span>';
+                    return '<span style="color:var(--text-muted);">--</span>';
+                }
+                function valCell(v) { return v > 0 ? fmt(v) : '<span style="color:var(--text-muted);">--</span>'; }
+                function trendBadge(t) {
+                    return '<span class="scan-trend"><span class="' + t.cls + '">' + t.arrow + ' ' + t.shortLabel + '</span></span>';
+                }
+                var gridStyle = 'display:grid; grid-template-columns:38px 60px 1fr 1fr 1fr 70px; gap:6px; align-items:center; font-size:0.7rem; padding:4px 6px;';
+                var headStyle = gridStyle + ' color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; font-size:0.6rem; font-weight:700; border-bottom:1px solid var(--border);';
+                return '<div class="scan-levels-body">'
+                    + '<div style="' + headStyle + '"><span>TF</span><span>Trend</span><span style="text-align:right;">20</span><span style="text-align:right;">50</span><span style="text-align:right;">200</span><span style="text-align:right;">Pattern</span></div>'
+                    + '<div style="' + gridStyle + '">'
+                    +   '<span style="font-weight:700; color:var(--text-muted);">5m</span>'
+                    +   '<span>' + trendBadge(em5) + '</span>'
+                    +   '<span style="text-align:right;">' + valCell(d.ema20) + '</span>'
+                    +   '<span style="text-align:right;">' + valCell(d.ema50) + '</span>'
+                    +   '<span style="text-align:right;">' + valCell(d.ema200) + '</span>'
+                    +   '<span style="text-align:right;">' + patCell(d.emaPattern) + '</span>'
+                    + '</div>'
+                    + '<div style="' + gridStyle + '">'
+                    +   '<span style="font-weight:700; color:var(--text-muted);">60m</span>'
+                    +   '<span>' + trendBadge(em60) + '</span>'
+                    +   '<span style="text-align:right;">' + valCell(d.htfEma20) + '</span>'
+                    +   '<span style="text-align:right;">' + valCell(d.htfEma50) + '</span>'
+                    +   '<span style="text-align:right;">' + valCell(d.htfEma200) + '</span>'
+                    +   '<span style="text-align:right;">' + patCell(d.htfEmaPattern) + '</span>'
+                    + '</div>'
+                    + '</div>';
+            })()
             + '</div>'
             + '<div style="border-top:1px solid var(--border);"></div>'
             + '<div class="scan-levels">'
@@ -1045,14 +1109,99 @@
                            : '— 0';
             var ohlVal = d.openEqualsHigh ? 'O=H ' + sc(d.openHlScore) : d.openEqualsLow ? 'O=L ' + sc(d.openHlScore) : '— 0';
 
+            // HTF (75-min) values — display only, no score contribution
+            var htfE20Val = d.htfEma20 > 0 ? d.htfEma20.toFixed(1) : '—';
+            var htfE50Val = d.htfEma50 > 0 ? d.htfEma50.toFixed(1) : '—';
+            var htfE200Val = d.htfEma200 > 0 ? d.htfEma200.toFixed(1) : '—';
+            var htfPatternVal = d.htfEmaPattern === 'RAILWAY_UP' ? 'R-RTP'
+                             : d.htfEmaPattern === 'RAILWAY_DOWN' ? 'F-RTP'
+                             : d.htfEmaPattern === 'BRAIDED' ? 'ZIG ZAG'
+                             : '—';
+            var htfPatternScore = d.htfEmaPattern === 'RAILWAY_UP' ? 1 : d.htfEmaPattern === 'RAILWAY_DOWN' ? -1 : 0;
+
+            // Position-arrow helper for HTF EMAs (display-only, no score)
+            function arrow(ltp, val) { return (ltp > 0 && val > 0) ? (ltp > val ? '▲ ' : ltp < val ? '▼ ' : '= ') : ''; }
+            var htfE20Disp  = d.htfEma20  > 0 ? arrow(d.ltp, d.htfEma20)  + d.htfEma20.toFixed(1)  : '—';
+            var htfE50Disp  = d.htfEma50  > 0 ? arrow(d.ltp, d.htfEma50)  + d.htfEma50.toFixed(1)  : '—';
+            var htfE200Disp = d.htfEma200 > 0 ? arrow(d.ltp, d.htfEma200) + d.htfEma200.toFixed(1) : '—';
+
+            // Cross labels (5m comes with score, HTF computed display-only)
+            function crossLabel(e20, e50, e200) {
+                if (!(e20 > 0 && e200 > 0)) return '—';
+                var b20 = e20 > e200, b50 = e50 > 0 && e50 > e200;
+                var b20bear = e20 < e200, b50bear = e50 > 0 && e50 < e200;
+                if (b20 && b50)         return '20&50>200';
+                if (b20)                return '20>200';
+                if (b20bear && b50bear) return '20&50<200';
+                if (b20bear)            return '20<200';
+                return '=';
+            }
+            function crossScore(e20, e50, e200) {
+                if (!(e20 > 0 && e200 > 0)) return 0;
+                if (e20 > e200 && e50 > 0 && e50 > e200) return 2;
+                if (e20 > e200) return 1;
+                if (e20 < e200 && e50 > 0 && e50 < e200) return -2;
+                if (e20 < e200) return -1;
+                return 0;
+            }
+            var htfCrossLabel = crossLabel(d.htfEma20, d.htfEma50, d.htfEma200);
+            var htfCrossScore = crossScore(d.htfEma20, d.htfEma50, d.htfEma200);
+
+            var gridStyle = 'display:grid; grid-template-columns:42px 130px 1.1fr 1.1fr 1.1fr 130px 130px; gap:18px; align-items:center; font-size:0.72rem; padding:5px 8px;';
+            var headStyle = gridStyle + ' color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; font-size:0.6rem; font-weight:700; border-bottom:1px solid var(--border);';
+
+            // Trend cell uses the same scan-trend CSS as stock cards (W/D badges).
+            // Score (+N) shown for weekly trend only; daily and below have no inline score number
+            // but composite contribution still flows through totalScore (shown in card header).
+            function trendCell(trendStr, score, reversal, showScore) {
+                var trend = (trendStr || 'NEUTRAL').toUpperCase();
+                var cls = trend.toLowerCase();
+                var arrow = trend.includes('BULLISH') ? '&#9650;' : trend.includes('BEARISH') ? '&#9660;' : '&#9644;';
+                var label = trend.replace('_', ' ');
+                var html = '<span class="scan-trend"><span class="' + cls + '">' + arrow + ' ' + label
+                         + (showScore ? ' ' + sc(score) : '') + '</span></span>';
+                if (reversal) html += ' <span style="color:var(--accent-yellow);font-weight:700;">(R)</span>';
+                return html;
+            }
+            function emaCell(disp, score) {
+                return '<span style="color:' + clr(score) + ';font-weight:600;">' + disp + ' ' + sc(score) + '</span>';
+            }
+            function patCell(label, score) {
+                return '<span style="color:' + clr(score) + ';font-weight:600;">' + label + ' ' + sc(score) + '</span>';
+            }
+
             document.getElementById('niftyMetrics').innerHTML =
-                seg('W', wVal, d.weeklyScore) + sep +
-                seg('D', ts(d.dailyTrend) + ' ' + sc(d.dailyScore), d.dailyScore) + sep +
-                seg('E20', e20Val, d.emaPositionScore) + sep +
-                seg('E50', e50Val, e50Pos) + sep +
-                seg('E200', e200Val, d.ema200PositionScore) + sep +
-                seg('Cross', crossVal, d.emaCrossoverScore) + sep +
-                seg('Pattern', patternVal, d.emaPatternScore);
+                '<div style="' + headStyle + '">'
+                +   '<span>TF</span>'
+                +   '<span>Trend</span>'
+                +   '<span style="text-align:right;">E20</span>'
+                +   '<span style="text-align:right;">E50</span>'
+                +   '<span style="text-align:right;">E200</span>'
+                +   '<span style="text-align:right;">Pattern</span>'
+                +   '<span style="text-align:right;">Cross</span>'
+                + '</div>'
+                + '<div style="' + gridStyle + '">'
+                +   '<span style="font-weight:700;color:var(--text-muted);">D</span>'
+                +   '<span>' + trendCell(d.dailyTrend, d.dailyScore, false, true) + '</span>'
+                +   '<span style="text-align:right;">' + emaCell(d.ema > 0 ? arrow(d.ltp, d.ema) + d.ema.toFixed(1) : '—', d.emaPositionScore) + '</span>'
+                +   '<span style="text-align:right;">' + emaCell(d.ema50 > 0 ? arrow(d.ltp, d.ema50) + d.ema50.toFixed(1) : '—', e50Pos) + '</span>'
+                +   '<span style="text-align:right;">' + emaCell(d.ema200 > 0 ? arrow(d.ltp, d.ema200) + d.ema200.toFixed(1) : '—', d.ema200PositionScore) + '</span>'
+                +   '<span style="text-align:right;">' + patCell(
+                        d.emaPattern === 'RAILWAY_UP' ? 'R-RTP'
+                        : d.emaPattern === 'RAILWAY_DOWN' ? 'F-RTP'
+                        : d.emaPattern === 'BRAIDED' ? 'ZIG ZAG' : '—',
+                        d.emaPatternScore) + '</span>'
+                +   '<span style="text-align:right;">' + patCell(crossLabel(d.ema, d.ema50, d.ema200), d.emaCrossoverScore) + '</span>'
+                + '</div>'
+                + '<div style="' + gridStyle + '">'
+                +   '<span style="font-weight:700;color:var(--text-muted);">W</span>'
+                +   '<span>' + trendCell(d.weeklyTrend, d.weeklyScore, d.weeklyReversalActive, true) + '</span>'
+                +   '<span style="text-align:right;">' + emaCell(htfE20Disp, 0) + '</span>'
+                +   '<span style="text-align:right;">' + emaCell(htfE50Disp, 0) + '</span>'
+                +   '<span style="text-align:right;">' + emaCell(htfE200Disp, 0) + '</span>'
+                +   '<span style="text-align:right;"><span style="color:' + clr(htfPatternScore) + ';font-weight:600;">' + htfPatternVal + '</span></span>'
+                +   '<span style="text-align:right;"><span style="color:' + clr(htfCrossScore) + ';font-weight:600;">' + htfCrossLabel + '</span></span>'
+                + '</div>';
             // Apply card color class based on state
             var stateLower = (d.state || 'neutral').toLowerCase().replace('_', '-');
             document.getElementById('niftyCard').className = 'nifty-card nifty-card-' + stateLower;

@@ -640,7 +640,7 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
      * (for weekends/pre-market when no ticks are flowing).
      */
     /** Price for daily trend: last trading-TF (5-min) candle close, LTP fallback for first candle. */
-    private double getDailyPrice(String symbol) {
+    public double getDailyPrice(String symbol) {
         Double cc = lastTradingTfClose.get(symbol);
         if (cc != null && cc > 0) return cc;
         double ltp = candleAggregator.getLtp(symbol);
@@ -650,8 +650,8 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
         return cpr != null ? cpr.getClose() : 0;
     }
 
-    /** Price for weekly trend: last higher-TF (75-min) candle close, LTP fallback for first candle. */
-    private double getWeeklyPrice(String symbol) {
+    /** Price for weekly trend: last higher-TF (60-min) candle close, LTP fallback for first candle. */
+    public double getWeeklyPrice(String symbol) {
         Double cc = lastHigherTfClose.get(symbol);
         if (cc != null && cc > 0) return cc;
         double ltp = candleAggregator.getLtp(symbol);

@@ -139,14 +139,173 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
         }
     }
 
+    /**
+     * Fetch HTF candles for all watchlist symbols and seed HtfEmaService.
+     * Fyers /data/history only supports standard resolutions (1,2,3,5,10,15,20,30,45,60,120,180,240,D),
+     * so we fetch 15-min bars and locally aggregate into HTF bars using the same
+     * bucket alignment as CandleAggregator (minuteOfDay / htfMin * htfMin).
+     * 60 days back → ~200 HTF bars for EMA(200) convergence.
+     */
+    public void fetchHtfEmaForSymbols(List<String> fyersSymbols, HtfEmaService htfEmaService) {
+        String accessToken = tokenStore.getAccessToken();
+        if (accessToken == null || accessToken.isEmpty()) {
+            log.warn("[AtrService] No access token, cannot fetch HTF EMAs");
+            return;
+        }
+        String authHeader = fyersProperties.getClientId() + ":" + accessToken;
+        int htfTimeframe = riskSettings.getHigherTimeframe();
+        // Fyers /data/history natively supports these intraday resolutions.
+        // For supported values we fetch directly (no aggregation), with a longer
+        // window for EMA(200) to fully converge (~3× period after SMA seed).
+        // For unsupported values (e.g. 75) we fall back to fetching 15-min and aggregating.
+        Set<Integer> nativeResolutions = Set.of(1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 120, 180, 240);
+        boolean nativeFetch = nativeResolutions.contains(htfTimeframe);
+        int baseTimeframe = nativeFetch ? htfTimeframe : 15;
+        // Fyers /data/history caps intraday requests at ~100 days per call regardless of
+        // resolution — going beyond returns HTTP 422. Stay under that limit.
+        // 60-min × 100 days ≈ 700 bars → EMA(200) gets ~500 iterations past SMA seed (well-converged).
+        // 15-min × 90 days for the aggregated 75-min path.
+        int daysBack = nativeFetch && htfTimeframe >= 60 ? 100 : 90;
+
+        if (!nativeFetch && (htfTimeframe % baseTimeframe != 0 || htfTimeframe < baseTimeframe)) {
+            log.warn("[AtrService] HTF timeframe {} not a multiple of {} — cannot seed HTF EMAs",
+                htfTimeframe, baseTimeframe);
+            return;
+        }
+
+        // Native long-history calls (365 days of 60-min) are heavier; pace slower to stay under
+        // Fyers' rate limit. Aggregated path uses smaller (90-day) responses, can go a bit faster.
+        long perCallDelayMs = nativeFetch ? 700L : 350L;
+
+        log.info("[AtrService] Fetching {}min bars for HTF({}min) EMAs — {} mode, {} symbols, {} days back, {}ms gap",
+            baseTimeframe, htfTimeframe, nativeFetch ? "native" : "aggregated",
+            fyersSymbols.size(), daysBack, perCallDelayMs);
+
+        int success = 0;
+        List<String> failed = new ArrayList<>();
+        for (String symbol : fyersSymbols) {
+            boolean rateLimited = false;
+            try {
+                List<CandleAggregator.CandleBar> base = fetchHistoricalCandles(symbol, baseTimeframe, authHeader, daysBack);
+                List<CandleAggregator.CandleBar> htf = nativeFetch ? base : aggregateToHtf(base, htfTimeframe);
+                if (htf.size() >= 20) {
+                    htfEmaService.seedFromCandles(symbol, htf);
+                    success++;
+                } else {
+                    log.warn("[AtrService] Only {} HTF bars for {} (need ≥20)", htf.size(), symbol);
+                    failed.add(symbol);
+                }
+            } catch (Exception e) {
+                String msg = e.getMessage();
+                if (msg != null && msg.startsWith("HTTP 422")) {
+                    log.warn("[AtrService] Skipping HTF seed for {} — {}", symbol, msg);
+                } else if (msg != null && msg.startsWith("HTTP 429")) {
+                    log.warn("[AtrService] Rate-limited on {} — backing off 5s", symbol);
+                    failed.add(symbol);
+                    rateLimited = true;
+                } else {
+                    log.error("[AtrService] Failed to fetch HTF EMA for {}: {}", symbol, msg);
+                    failed.add(symbol);
+                }
+            }
+            // Always pace, even on failure — back-to-back failures otherwise hammer the API.
+            try { Thread.sleep(rateLimited ? 5000L : perCallDelayMs); } catch (InterruptedException ignored) {}
+        }
+
+        if (!failed.isEmpty()) {
+            log.info("[AtrService] {} symbols failed first pass — retrying after 10s with 1.5s gap", failed.size());
+            try { Thread.sleep(10000); } catch (InterruptedException ignored) {}
+            List<String> retryList = new ArrayList<>(failed);
+            for (String symbol : retryList) {
+                boolean rateLimited = false;
+                try {
+                    List<CandleAggregator.CandleBar> base = fetchHistoricalCandles(symbol, baseTimeframe, authHeader, daysBack);
+                    List<CandleAggregator.CandleBar> htf = nativeFetch ? base : aggregateToHtf(base, htfTimeframe);
+                    if (htf.size() >= 20) {
+                        htfEmaService.seedFromCandles(symbol, htf);
+                        success++;
+                    }
+                } catch (Exception e) {
+                    String msg = e.getMessage();
+                    if (msg != null && msg.startsWith("HTTP 429")) {
+                        log.warn("[AtrService] Retry rate-limited for HTF {} — backing off 8s", symbol);
+                        rateLimited = true;
+                    } else {
+                        log.error("[AtrService] Retry failed for HTF {}: {}", symbol, msg);
+                    }
+                }
+                try { Thread.sleep(rateLimited ? 8000L : 1500L); } catch (InterruptedException ignored) {}
+            }
+        }
+
+        log.info("[AtrService] Seeded HTF EMAs for {}/{} symbols (20: {} loaded, 50: {}, 200: {})",
+            success, fyersSymbols.size(),
+            htfEmaService.getLoadedCount(),
+            htfEmaService.getEma50LoadedCount(),
+            htfEmaService.getEma200LoadedCount());
+    }
+
+    /**
+     * Aggregate base-timeframe bars into HTF bars session-aligned to 9:15 (market open).
+     * Matches CandleAggregator.getCandleStartMinute() exactly so seed and live HTF bars
+     * share the same bucket boundaries.
+     *   htf=60: 9:15, 10:15, 11:15, 12:15, 13:15, 14:15, 15:15 (15-min tail)
+     *   htf=75: 9:15, 10:30, 11:45, 13:00, 14:15 (75-min tail ends at 15:30)
+     */
+    private List<CandleAggregator.CandleBar> aggregateToHtf(List<CandleAggregator.CandleBar> base, int htfMin) {
+        if (base == null || base.isEmpty()) return Collections.emptyList();
+        final long marketOpen = MarketHolidayService.MARKET_OPEN_MINUTE;
+        List<CandleAggregator.CandleBar> result = new ArrayList<>();
+        CandleAggregator.CandleBar current = null;
+        long currentKey = Long.MIN_VALUE;
+
+        for (CandleAggregator.CandleBar c : base) {
+            if (c == null || c.open <= 0) continue;
+            LocalDate date = Instant.ofEpochSecond(c.epochSec).atZone(IST).toLocalDate();
+            long dayEpoch = date.atStartOfDay(IST).toEpochSecond();
+            long bucketStartMin;
+            if (c.startMinute < marketOpen) {
+                bucketStartMin = (c.startMinute / htfMin) * htfMin;
+            } else {
+                long offset = c.startMinute - marketOpen;
+                bucketStartMin = marketOpen + (offset / htfMin) * htfMin;
+            }
+            long key = dayEpoch * 10000L + bucketStartMin;
+
+            if (current == null || key != currentKey) {
+                if (current != null) result.add(current);
+                current = new CandleAggregator.CandleBar();
+                current.startMinute = bucketStartMin;
+                current.epochSec = dayEpoch + bucketStartMin * 60L;
+                current.open = c.open;
+                current.high = c.high;
+                current.low = c.low;
+                current.close = c.close;
+                current.volume = c.volume;
+                currentKey = key;
+            } else {
+                current.high = Math.max(current.high, c.high);
+                current.low = Math.min(current.low, c.low);
+                current.close = c.close;
+                current.volume += c.volume;
+            }
+        }
+        if (current != null) result.add(current);
+        return result;
+    }
+
     private List<CandleAggregator.CandleBar> fetchHistoricalCandles(String symbol, int timeframeMin, String authHeader) throws Exception {
-        // Resolution: "15" for 15-min candles
+        return fetchHistoricalCandles(symbol, timeframeMin, authHeader, 14);
+    }
+
+    private List<CandleAggregator.CandleBar> fetchHistoricalCandles(String symbol, int timeframeMin, String authHeader, int daysBack) throws Exception {
+        // Resolution: "15" for 15-min candles, "75" for HTF
         String resolution = String.valueOf(timeframeMin);
 
-        // Date range: 14 calendar days (~10 trading days, ~750 five-min candles).
-        // Enough for 200 EMA convergence (needs ~600 bars) + ATR Wilder warmup.
+        // Date range: caller-configurable. 14 days default for 5-min (~750 candles).
+        // HTF 75-min needs ~60 days for 200 EMA convergence (~200 bars).
         long toEpoch = Instant.now().getEpochSecond();
-        long fromEpoch = toEpoch - (14 * 24 * 3600); // 14 days back
+        long fromEpoch = toEpoch - ((long) daysBack * 24 * 3600);
 
         String urlStr = "https://api-t1.fyers.in/data/history?symbol=" + java.net.URLEncoder.encode(symbol, java.nio.charset.StandardCharsets.UTF_8)
             + "&resolution=" + resolution

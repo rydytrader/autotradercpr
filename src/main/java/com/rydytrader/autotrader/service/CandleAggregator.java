@@ -403,12 +403,20 @@ public class CandleAggregator {
     }
 
     /**
-     * Get the candle start minute for a given time.
-     * E.g., for 15-min candles: 09:15→555, 09:30→570, 09:45→585
+     * Get the candle start minute for a given time, session-aligned to 9:15 (market open).
+     * For 15-min: 09:15→555, 09:30→570, 09:45→585.
+     * For 60-min: 09:15→555, 10:15→615, 11:15→675 … 15:15→915 (partial 15-min tail).
+     * For 75-min: 09:15→555, 10:30→630, 11:45→705, 13:00→780, 14:15→855 (partial 75-min tail).
+     * Pre-market ticks (if any) fall back to floor-division from midnight.
      */
     private long getCandleStartMinute(LocalTime time) {
         long totalMinutes = time.getHour() * 60L + time.getMinute();
-        return (totalMinutes / timeframeMinutes) * timeframeMinutes;
+        long marketOpen = MarketHolidayService.MARKET_OPEN_MINUTE;
+        if (totalMinutes < marketOpen) {
+            return (totalMinutes / timeframeMinutes) * timeframeMinutes;
+        }
+        long offset = totalMinutes - marketOpen;
+        return marketOpen + (offset / timeframeMinutes) * timeframeMinutes;
     }
 
     // ── Public accessors ──────────────────────────────────────────────────────

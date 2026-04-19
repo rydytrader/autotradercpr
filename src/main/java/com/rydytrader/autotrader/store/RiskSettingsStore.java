@@ -95,7 +95,7 @@ public class RiskSettingsStore {
         // Scanner settings
         volatile String signalSource    = "TRADINGVIEW"; // TRADINGVIEW or INTERNAL
         volatile int    scannerTimeframe = 15;  // candle timeframe in minutes
-        volatile int    higherTimeframe  = 75;  // higher TF for weekly trend (minutes)
+        volatile int    higherTimeframe  = 60;  // higher TF for weekly trend (minutes) — Fyers native resolution
         volatile boolean enableAtpCheck = true; // require ATP confirmation for scanner signals
         volatile boolean enableHpt      = true;  // High Probable Trade signals (weekly+daily aligned)
         volatile boolean enableLpt      = true;  // Low Probable Trade signals (everything else, half qty)

@@ -14,6 +14,11 @@ public class IndexTrend {
     private double ema50;           // current 50 EMA value (medium-term trend)
     private double ema200;          // current 200 EMA value (long-term trend)
     private String emaPattern;      // "RAILWAY_UP", "RAILWAY_DOWN", "BRAIDED", or ""
+    // HTF (75-min) EMAs — display only, long-term trend
+    private double htfEma20;
+    private double htfEma50;
+    private double htfEma200;
+    private String htfEmaPattern;
     private String weeklyTrend;     // STRONGLY_BULLISH, BULLISH, NEUTRAL, BEARISH, STRONGLY_BEARISH
     private String dailyTrend;
     private double emaSlopePct;     // % per candle
@@ -48,6 +53,14 @@ public class IndexTrend {
     public void setEma200(double v) { this.ema200 = v; }
     public String getEmaPattern() { return emaPattern; }
     public void setEmaPattern(String v) { this.emaPattern = v; }
+    public double getHtfEma20() { return htfEma20; }
+    public void setHtfEma20(double v) { this.htfEma20 = v; }
+    public double getHtfEma50() { return htfEma50; }
+    public void setHtfEma50(double v) { this.htfEma50 = v; }
+    public double getHtfEma200() { return htfEma200; }
+    public void setHtfEma200(double v) { this.htfEma200 = v; }
+    public String getHtfEmaPattern() { return htfEmaPattern; }
+    public void setHtfEmaPattern(String v) { this.htfEmaPattern = v; }
     public String getWeeklyTrend() { return weeklyTrend; }
     public void setWeeklyTrend(String v) { this.weeklyTrend = v; }
     public String getDailyTrend() { return dailyTrend; }
