@@ -145,7 +145,17 @@ public class ScannerController {
         card.put("atp", Math.round(candleAggregator.getAtp(fyersSymbol) * 100.0) / 100.0);
         card.put("atr", Math.round(atrService.getAtr(fyersSymbol) * 100.0) / 100.0);
         card.put("ema20", Math.round(emaService.getEma(fyersSymbol) * 100.0) / 100.0);
+        card.put("ema50", Math.round(emaService.getEma50(fyersSymbol) * 100.0) / 100.0);
         card.put("ema200", Math.round(emaService.getEma200(fyersSymbol) * 100.0) / 100.0);
+        // Classify EMA 20/50 pattern over recent candles: BRAIDED (zigzag/choppy), RAILWAY (parallel/trending), or ""
+        String emaPattern = emaService.getEmaPattern(fyersSymbol,
+            riskSettings.getEmaPatternLookback(),
+            atrService.getAtr(fyersSymbol),
+            riskSettings.getBraidedMinCrossovers(),
+            riskSettings.getBraidedMaxSpreadAtr(),
+            riskSettings.getRailwayMaxCv(),
+            riskSettings.getRailwayMinSpreadAtr());
+        card.put("emaPattern", emaPattern);
         card.put("dayOpen", Math.round(candleAggregator.getDayOpen(fyersSymbol) * 100.0) / 100.0);
 
         // Open classification: IV (Inside Value), OV (Outside Value), EV (Extended Value)

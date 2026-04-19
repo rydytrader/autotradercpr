@@ -11,7 +11,9 @@ public class IndexTrend {
     private String displayName;     // e.g. NIFTY 50
     private double ltp;
     private double ema;             // current 20 EMA value (for display + position check)
+    private double ema50;           // current 50 EMA value (medium-term trend)
     private double ema200;          // current 200 EMA value (long-term trend)
+    private String emaPattern;      // "RAILWAY_UP", "RAILWAY_DOWN", "BRAIDED", or ""
     private String weeklyTrend;     // STRONGLY_BULLISH, BULLISH, NEUTRAL, BEARISH, STRONGLY_BEARISH
     private String dailyTrend;
     private double emaSlopePct;     // % per candle
@@ -21,7 +23,8 @@ public class IndexTrend {
     private int slopeScore;
     private int ema200PositionScore; // +1 if LTP > EMA(200), -1 if LTP < EMA(200), 0 otherwise
     private int openHlScore;        // -1 if O=H (bearish), +1 if O=L (bullish), 0 otherwise
-    private int emaCrossoverScore;  // +1 if 20 EMA > 200 EMA, -1 if below, 0 if data missing
+    private int emaCrossoverScore;  // +2 if both 20 and 50 above 200, +1 if only 20 above, -2/-1 symmetric for bearish, 0 otherwise
+    private int emaPatternScore;    // +1 R-RTP (rising railway), -1 F-RTP (falling railway), 0 for braided/none
     private boolean openEqualsHigh; // true if day open ≈ day high (within 0.05%)
     private boolean openEqualsLow;  // true if day open ≈ day low (within 0.05%)
     private int totalScore;         // sum of all components
@@ -39,8 +42,12 @@ public class IndexTrend {
     public void setLtp(double v) { this.ltp = v; }
     public double getEma() { return ema; }
     public void setEma(double v) { this.ema = v; }
+    public double getEma50() { return ema50; }
+    public void setEma50(double v) { this.ema50 = v; }
     public double getEma200() { return ema200; }
     public void setEma200(double v) { this.ema200 = v; }
+    public String getEmaPattern() { return emaPattern; }
+    public void setEmaPattern(String v) { this.emaPattern = v; }
     public String getWeeklyTrend() { return weeklyTrend; }
     public void setWeeklyTrend(String v) { this.weeklyTrend = v; }
     public String getDailyTrend() { return dailyTrend; }
@@ -65,6 +72,8 @@ public class IndexTrend {
     public void setOpenEqualsLow(boolean v) { this.openEqualsLow = v; }
     public int getEmaCrossoverScore() { return emaCrossoverScore; }
     public void setEmaCrossoverScore(int v) { this.emaCrossoverScore = v; }
+    public int getEmaPatternScore() { return emaPatternScore; }
+    public void setEmaPatternScore(int v) { this.emaPatternScore = v; }
     public int getTotalScore() { return totalScore; }
     public void setTotalScore(int v) { this.totalScore = v; }
     public String getState() { return state; }

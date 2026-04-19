@@ -62,6 +62,13 @@ public class RiskSettingsStore {
         volatile boolean enableEmaDirectionCheck = true; // buy requires close > EMA(20), sell requires close < EMA(20)
         volatile boolean enableEma200DirectionCheck = true; // buy requires close > EMA(200), sell requires close < EMA(200)
         volatile boolean enableEmaCrossoverCheck = true; // buy requires 20 EMA > 200 EMA, sell requires 20 EMA < 200 EMA
+        volatile boolean enableEmaVsAtpCheck = true; // buy requires 20 EMA > ATP (VWAP), sell requires 20 EMA < ATP
+        // EMA 20/50 pattern detection thresholds (Braided vs Railway Track)
+        volatile int emaPatternLookback = 10;        // candles used for pattern detection (10 × 5min = 50 min window)
+        volatile int braidedMinCrossovers = 2;       // ≥ this many crossovers in lookback = BRAIDED
+        volatile double braidedMaxSpreadAtr = 0.3;   // mean|spread| ≤ this × ATR = BRAIDED (EMAs overlapping)
+        volatile double railwayMaxCv = 0.25;         // stddev/mean ratio for RAILWAY (stability)
+        volatile double railwayMinSpreadAtr = 0.3;   // mean|spread| ≥ this × ATR for RAILWAY (meaningful separation)
         volatile double emaCloseDistanceAtr = 0.75;  // legacy — kept for backward compat with old risk-settings.json
         // EMA level-count filter — counts CPR zones strictly between EMA and the broken level.
         // Allow only when count == 0 (EMA is in the zone immediately adjacent to the broken level).
@@ -127,7 +134,7 @@ public class RiskSettingsStore {
         volatile boolean enableIndexAlignment = false;        // master toggle, opt-in
         volatile boolean indexAlignmentHardSkip = false;      // true = hard skip opposed trades; false = HPT→LPT downgrade
         volatile boolean weeklyReversalHardSkip = true;        // true = skip trades opposed to weekly reversal; false = HPT→LPT
-        volatile int indexBullishThreshold = 2;               // score >= this → BULLISH
+        volatile int indexBullishThreshold = 2;               // score >= this → BULLISH (max score ±10)
         volatile int indexStrongBullishThreshold = 5;         // score >= this → STRONG_BULLISH
         volatile int indexBearishThreshold = -2;              // score <= this → BEARISH
         volatile int indexStrongBearishThreshold = -5;        // score <= this → STRONG_BEARISH
@@ -183,6 +190,12 @@ public class RiskSettingsStore {
     public boolean isEnableEmaDirectionCheck()      { return cfg().enableEmaDirectionCheck; }
     public boolean isEnableEma200DirectionCheck()   { return cfg().enableEma200DirectionCheck; }
     public boolean isEnableEmaCrossoverCheck()     { return cfg().enableEmaCrossoverCheck; }
+    public boolean isEnableEmaVsAtpCheck()          { return cfg().enableEmaVsAtpCheck; }
+    public int    getEmaPatternLookback()           { return cfg().emaPatternLookback; }
+    public int    getBraidedMinCrossovers()         { return cfg().braidedMinCrossovers; }
+    public double getBraidedMaxSpreadAtr()          { return cfg().braidedMaxSpreadAtr; }
+    public double getRailwayMaxCv()                 { return cfg().railwayMaxCv; }
+    public double getRailwayMinSpreadAtr()          { return cfg().railwayMinSpreadAtr; }
     public double getEmaCloseDistanceAtr()         { return cfg().emaCloseDistanceAtr; }
     public boolean isEnableEmaLevelCountFilter()   { return cfg().enableEmaLevelCountFilter; }
     public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
@@ -310,6 +323,7 @@ public class RiskSettingsStore {
     public void setEnableEmaDirectionCheck(boolean v)       { cfg().enableEmaDirectionCheck = v; }
     public void setEnableEma200DirectionCheck(boolean v)   { cfg().enableEma200DirectionCheck = v; }
     public void setEnableEmaCrossoverCheck(boolean v)     { cfg().enableEmaCrossoverCheck = v; }
+    public void setEnableEmaVsAtpCheck(boolean v)         { cfg().enableEmaVsAtpCheck = v; }
     public void setEmaCloseDistanceAtr(double v)           { cfg().emaCloseDistanceAtr = v; }
     public void setEnableEmaLevelCountFilter(boolean v)    { cfg().enableEmaLevelCountFilter = v; }
     public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
@@ -433,6 +447,7 @@ public class RiskSettingsStore {
             upsert("enableEmaDirectionCheck", String.valueOf(c.enableEmaDirectionCheck));
             upsert("enableEma200DirectionCheck", String.valueOf(c.enableEma200DirectionCheck));
             upsert("enableEmaCrossoverCheck", String.valueOf(c.enableEmaCrossoverCheck));
+            upsert("enableEmaVsAtpCheck", String.valueOf(c.enableEmaVsAtpCheck));
             upsert("emaCloseDistanceAtr", String.valueOf(c.emaCloseDistanceAtr));
             upsert("enableEmaLevelCountFilter", String.valueOf(c.enableEmaLevelCountFilter));
             upsert("enableTargetShift", String.valueOf(c.enableTargetShift));
@@ -546,6 +561,7 @@ public class RiskSettingsStore {
                     case "enableEmaDirectionCheck" -> c.enableEmaDirectionCheck = Boolean.parseBoolean(v);
                     case "enableEma200DirectionCheck" -> c.enableEma200DirectionCheck = Boolean.parseBoolean(v);
                     case "enableEmaCrossoverCheck" -> c.enableEmaCrossoverCheck = Boolean.parseBoolean(v);
+                    case "enableEmaVsAtpCheck" -> c.enableEmaVsAtpCheck = Boolean.parseBoolean(v);
                     case "emaCloseDistanceAtr" -> c.emaCloseDistanceAtr = Double.parseDouble(v);
                     case "enableEmaLevelCountFilter" -> c.enableEmaLevelCountFilter = Boolean.parseBoolean(v);
                     case "enableTargetShift" -> c.enableTargetShift = Boolean.parseBoolean(v);

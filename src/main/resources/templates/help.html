@@ -630,7 +630,24 @@
                 <tr><td><strong>ON (hard gate)</strong></td><td>Buy requires close &gt; 200 EMA, sell requires close &lt; 200 EMA. Trade blocked otherwise.</td><td>You only want trades aligned with the long-term trend. Filters out counter-trend trades entirely.</td></tr>
                 <tr><td><strong>OFF (target shift)</strong></td><td>Trade fires regardless, but the 200 EMA is added as a <strong>target-shift candidate</strong>. If it sits between entry and the original target, the target is pulled back to the 200 EMA.</td><td>You want to trade both sides but respect the 200 EMA as resistance (buys) or support (sells) when setting targets.</td></tr>
             </table>
-            <p>The 200 EMA joins the same target-shift candidate pool as day high/low and weekly CPR levels. The nearest candidate to entry wins. Shown on scanner cards as <code>EMA 20/200: X / Y</code>.</p>
+            <p>The 200 EMA joins the same target-shift candidate pool as day high/low and weekly CPR levels. The nearest candidate to entry wins. Shown on scanner cards in the price row header (<code>EMA 200: X</code>) next to the Day Open classification.</p>
+
+            <h4>50 EMA + Pattern Detection (R-RTP / F-RTP / ZIG ZAG)</h4>
+            <p>A 50-period EMA is calculated and shown on scanner cards as <code>EMA 20/50: X / Y</code>. The relative behaviour of the 20 EMA vs the 50 EMA over the last 10 × 5-min candles (50 min rolling window) is classified into one of three patterns, displayed inline with the EMA 20/50 label:</p>
+            <table>
+                <tr><th>Pattern</th><th>Marker</th><th>Meaning</th><th>Rules</th></tr>
+                <tr><td><strong>Rising Railway Track</strong></td><td><span style="color:var(--accent-green);font-weight:700;">R-RTP</span></td><td>20 EMA consistently above 50 EMA, moving parallel. Strong bullish trend — breakouts carry momentum.</td><td>≤1 crossover in 10 candles, stddev(|spread|)/mean(|spread|) ≤ 0.25, mean|spread| ≥ 0.3 × ATR, 20 EMA &gt; 50 EMA at last candle</td></tr>
+                <tr><td><strong>Falling Railway Track</strong></td><td><span style="color:var(--accent-red);font-weight:700;">F-RTP</span></td><td>20 EMA consistently below 50 EMA, moving parallel. Strong bearish trend — breakdowns carry momentum.</td><td>Same as R-RTP but 20 EMA &lt; 50 EMA at last candle</td></tr>
+                <tr><td><strong>Braided</strong></td><td><span style="color:var(--accent-red);font-weight:700;">ZIG ZAG</span></td><td>EMAs crossing repeatedly or hugging each other. Choppy conditions — high whipsaw risk.</td><td>≥2 crossovers in 10 candles, OR mean|spread| ≤ 0.3 × ATR (EMAs overlapping)</td></tr>
+                <tr><td><strong>Transitional</strong></td><td><em>(no marker)</em></td><td>Between states — just crossed, converging, diverging, or noisy spread. Normal caution applies.</td><td>Neither R-RTP/F-RTP nor ZIG ZAG criteria met</td></tr>
+            </table>
+            <p><strong>Live updates</strong>: pattern is re-classified on every 5-min candle close as new EMA values roll into the window and old ones fall off.</p>
+            <p><strong>Historical seeding</strong>: EMA(50) ring buffer is populated from 14 days of Fyers historical candles at startup, so patterns classify immediately at market open — no warm-up wait.</p>
+            <p><strong>Per-candle persistence</strong>: every closed 5-min candle stores <code>ema20</code>, <code>ema50</code>, <code>ema200</code>, <code>atr</code>, <code>vwap</code>, and <code>emaPattern</code> for post-trade analysis ("what was the pattern when this breakout fired?").</p>
+            <p><strong>Informational only</strong>: pattern is displayed and logged but does not currently filter trades. Use it to visually assess conditions before taking an entry, or review trade performance by pattern over time.</p>
+
+            <h4>20 EMA vs ATP (VWAP) Filter</h4>
+            <p>Short-term momentum check: buy requires <code>20 EMA &gt; ATP</code>, sell requires <code>20 EMA &lt; ATP</code>. Confirms short-term trend is on the right side of the day's volume-weighted average price before allowing a breakout. Independently toggleable via <code>enableEmaVsAtpCheck</code>.</p>
 
             <h4>EMA Crossover Filter (20 vs 200)</h4>
             <p>In addition to individual EMA direction checks, the <strong>relative position of 20 EMA vs 200 EMA</strong> can be used as a trend structure filter:</p>
@@ -638,7 +655,7 @@
                 <li><strong>Buy</strong>: requires 20 EMA &gt; 200 EMA (uptrend structure confirmed)</li>
                 <li><strong>Sell</strong>: requires 20 EMA &lt; 200 EMA (downtrend structure confirmed)</li>
             </ul>
-            <p>Independently toggleable via <code>enableEmaCrossoverCheck</code>. Also used as a component (±1) in the NIFTY composite trend score.</p>
+            <p>Independently toggleable via <code>enableEmaCrossoverCheck</code>. Also used as a component (±2) in the NIFTY composite trend score — graded by whether both 20 and 50 EMA are on the same side of 200, or only 20.</p>
 
             <h4>Large Candle Body Filter</h4>
             <p>Rejects breakout candles with excessively large body (|close − open| &gt; N × ATR). Catches exhaustion moves where the stock has already run too far on a single candle — entering at the close is chasing. Default threshold 4.0 ATR catches only extreme spikes. Runs before R/R check.</p>
@@ -930,12 +947,13 @@
                 <tr><td>Weekly CPR trend</td><td>+1 / +2 (strong)</td><td>-1 / -2 (strong). <strong>0 when weekly reversal (R) active</strong></td></tr>
                 <tr><td>Daily CPR trend</td><td>+1 / +2 (strong)</td><td>-1 / -2 (strong)</td></tr>
                 <tr><td>20 EMA position (LTP vs 20 EMA)</td><td>+1 (LTP &gt; EMA)</td><td>-1 (LTP &lt; EMA)</td></tr>
-                <tr><td>20 EMA slope (% per candle)</td><td>+1 (mild) / +2 (steep ≥ 0.02%)</td><td>-1 (mild) / -2 (steep ≤ -0.02%)</td></tr>
                 <tr><td>200 EMA position (LTP vs 200 EMA)</td><td>+1 (LTP &gt; 200 EMA)</td><td>-1 (LTP &lt; 200 EMA)</td></tr>
-                <tr><td>EMA crossover (20 vs 200)</td><td>+1 (20 EMA &gt; 200 EMA)</td><td>-1 (20 EMA &lt; 200 EMA)</td></tr>
-                <tr><td>Open=High / Open=Low (live day data)</td><td>+1 (O=L: price never below open)</td><td>-1 (O=H: price never above open)</td></tr>
+                <tr><td>EMA 20/50 vs 200 cross</td><td>+1 (only 20 &gt; 200) / +2 (both 20 &amp; 50 &gt; 200)</td><td>-1 (only 20 &lt; 200) / -2 (both 20 &amp; 50 &lt; 200)</td></tr>
+                <tr><td>EMA 20/50 pattern (R-RTP / F-RTP)</td><td>+2 (R-RTP — rising railway track, bullish parallel trend)</td><td>-2 (F-RTP — falling railway track, bearish parallel trend). 0 for ZIG ZAG or no pattern.</td></tr>
             </table>
-            <p><strong>O=H / O=L</strong> are checked against the live day open, high, and low from the exchange tick feed (within 0.05% tolerance). O=H means the opening price is still the day's high — bearish. O=L means the opening price is still the day's low — bullish. Once broken (price exceeds the open), the signal is permanently gone for the rest of the day.</p>
+            <p><strong>Cross scoring</strong>: getting both 20 EMA and 50 EMA above 200 is a stronger bullish structure than only 20 crossing. Mirrors the standard interpretation of golden/death cross but graded.</p>
+            <p><strong>Pattern scoring</strong>: uses the same R-RTP / F-RTP / ZIG ZAG classification shown on stock cards. Rising/Falling Railway Track indicates a stable, persistent trend; ZIG ZAG (choppy) contributes nothing either way. See the <em>50 EMA + Pattern Detection</em> section for classification rules.</p>
+            <p><strong>Removed from composite</strong>: EMA slope and Open=High/Open=Low were previously counted but dropped — slope was partially redundant with pattern, and OHL gave early signal but often reversed mid-day.</p>
 
             <h4>State Classification (configurable thresholds)</h4>
             <table>
@@ -963,10 +981,10 @@
             </ul>
 
             <h4>Example</h4>
-            <p>NIFTY at 11:45: weekly BULLISH (+1), daily BULLISH (+1), LTP &gt; ATP (+1), EMA slope +0.04% (+2). Total score = <strong>+5 → STRONG_BULLISH</strong>.</p>
+            <p>NIFTY at 11:45: weekly BULLISH (+1), daily BULLISH (+1), LTP &gt; 20 EMA (+1), LTP &gt; 200 EMA (+1), both 20 &amp; 50 above 200 (+2), EMA 20/50 showing R-RTP (+2). Total score = <strong>+8 → STRONG_BULLISH</strong>.</p>
             <ul>
                 <li>A buy signal on HDFC fires → aligned with NIFTY → HPT stays HPT, full qty</li>
-                <li>A sell signal on TCS fires → opposed to NIFTY → HPT downgraded to LPT, half qty (event log: "TCS HPT → LPT — NIFTY STRONG_BULLISH (score +5) opposes sell")</li>
+                <li>A sell signal on TCS fires → opposed to NIFTY → HPT downgraded to LPT, half qty (event log: "TCS HPT → LPT — NIFTY STRONG_BULLISH (score +8) opposes sell")</li>
             </ul>
 
             <p>The filter is opt-in (default OFF). Run in observation mode for a few weeks to see if your journal shows the expected win rate gap before relying on it.</p>
@@ -1502,8 +1520,13 @@
                 <tr><td><strong>OR Badge</strong></td><td>Color-coded Opening Range badge on each card header: OR+ (green=bullish), OR- (red=bearish), OR= (gray=neutral), OR? (yellow=forming).</td></tr>
                 <tr><td><strong>Chart Icon</strong></td><td>Click to open a live TradingView-style candlestick chart with CPR bands, R/S levels, VWAP, EMA20/EMA200, OR band, and trade markers. Gear icon inside modal toggles individual levels/bands on/off (preferences persist across sessions).</td></tr>
                 <tr><td><strong>Card Header</strong></td><td>Symbol name + chart icon + CPR type badges (N/I + NS/NL/IS/IL) + OR status badge. Per-candle OHLC is viewed in the chart modal, not on the card.</td></tr>
-                <tr><td><strong>Price Row</strong></td><td>LTP, % change from previous close, and Day Open classification (EV / IV / OV) right-aligned.</td></tr>
-                <tr><td><strong>Data Row (4 columns)</strong></td><td>EMA 20/200 | ATP (exchange VWAP) | ATR | <strong>Vol / 20-Avg</strong> — current candle volume vs 20-candle average with ratio (e.g., <code>45K / 30K (1.5x)</code>). Color-coded: green if ≥1.5× (volume spike on breakout), white if ≥1.0×, muted if below average.</td></tr>
+                <tr><td><strong>Price Row</strong></td><td>LTP, % change from previous close, and <code>EMA 200: X | Day Open: EV/IV/OV</code> right-aligned.</td></tr>
+                <tr><td><strong>Data Row (4 columns)</strong></td><td>
+                    <strong>EMA 20/50</strong> with pattern marker (<span style="color:var(--accent-green);font-weight:700;">R-RTP</span>, <span style="color:var(--accent-red);font-weight:700;">F-RTP</span>, <span style="color:var(--accent-red);font-weight:700;">ZIG ZAG</span>, or none) |
+                    <strong>ATP</strong> (exchange VWAP) |
+                    <strong>ATR</strong> (Wilder-smoothed) |
+                    <strong>Vol / 20-Avg</strong> — current candle volume vs 20-candle average with ratio (e.g., <code>45K / 30K (1.5x)</code>). Color-coded: green if ≥1.5× (volume spike), normal if ≥1.0×, secondary if below average.
+                </td></tr>
                 <tr><td><strong>Auto Rebuild</strong></td><td>Saving settings re-filters the scanner from existing loaded stocks. Tightening filters (fewer stocks) works mid-day. Widening filters (adding new stocks) requires restart — new stocks need WebSocket subscription + ATR/EMA seed which only happens at startup.</td></tr>
             </table>
 
@@ -1522,6 +1545,7 @@
                 <tr><td>Direction Confirmation (VWAP + 20 EMA)</td><td>Both ON</td><td>VWAP: buy above ATP, sell below. 20 EMA: buy above 20 EMA, sell below.</td></tr>
                 <tr><td>200 EMA Direction Check</td><td>ON</td><td>Buy requires close &gt; 200 EMA, sell requires close &lt; 200 EMA. When OFF, 200 EMA becomes a target-shift candidate instead (caps target at the 200 EMA if it sits between entry and target).</td></tr>
                 <tr><td>EMA Crossover Check</td><td>ON</td><td>Buy requires 20 EMA &gt; 200 EMA, sell requires 20 EMA &lt; 200 EMA. Confirms trend structure.</td></tr>
+                <tr><td>20 EMA vs ATP (VWAP) Check</td><td>ON</td><td>Buy requires 20 EMA &gt; ATP, sell requires 20 EMA &lt; ATP. Confirms short-term momentum is on the right side of the day's volume-weighted average price.</td></tr>
                 <tr><td>20 EMA Level Count Filter</td><td>ON</td><td>Skip if any CPR zone sits strictly between the 20 EMA and the broken level.</td></tr>
                 <tr><td>Small Candle Filter</td><td>OFF, 0.5 ATR</td><td>Reject if candle body smaller than N × ATR</td></tr>
                 <tr><td>Large Candle Body Filter</td><td>ON, 4.0 ATR</td><td>Reject if candle body (|close − open|) exceeds N × ATR. Catches exhaustion moves.</td></tr>

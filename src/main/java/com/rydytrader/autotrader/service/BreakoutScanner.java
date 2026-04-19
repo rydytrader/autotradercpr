@@ -309,6 +309,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (riskSettings.isEnableEma200DirectionCheck() && ema200 > 0 && close < ema200) return null;
         // EMA crossover check for buys: 20 EMA must be above 200 EMA (golden cross)
         if (riskSettings.isEnableEmaCrossoverCheck() && ema > 0 && ema200 > 0 && ema < ema200) return null;
+        // 20 EMA vs ATP/VWAP check for buys: 20 EMA must be above ATP
+        if (riskSettings.isEnableEmaVsAtpCheck() && ema > 0 && atp > 0 && ema < atp) return null;
 
         double r4 = levels.getR4(), r3 = levels.getR3(), r2 = levels.getR2();
         double r1 = levels.getR1(), ph = levels.getPh();
@@ -384,6 +386,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (riskSettings.isEnableEma200DirectionCheck() && ema200 > 0 && close > ema200) return null;
         // EMA crossover check for sells: 20 EMA must be below 200 EMA (death cross)
         if (riskSettings.isEnableEmaCrossoverCheck() && ema > 0 && ema200 > 0 && ema > ema200) return null;
+        // 20 EMA vs ATP/VWAP check for sells: 20 EMA must be below ATP
+        if (riskSettings.isEnableEmaVsAtpCheck() && ema > 0 && atp > 0 && ema > atp) return null;
 
         double s4 = levels.getS4(), s3 = levels.getS3(), s2 = levels.getS2();
         double s1 = levels.getS1(), pl = levels.getPl();

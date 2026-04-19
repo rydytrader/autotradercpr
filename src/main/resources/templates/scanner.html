@@ -835,17 +835,30 @@
             + '<div class="scan-price-row">'
             + '  <span class="scan-ltp">' + fmt(d.ltp) + '</span>'
             + '  <span class="scan-change ' + chClass + '">' + chArrow + ' ' + d.changePercent.toFixed(2) + '%</span>'
-            + (d.openClass ? '  <span style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);margin-left:auto;">Day Open: ' + d.openClass + '</span>' : '')
+            + '  <span style="font-family:var(--font-mono);font-size:0.75rem;font-weight:600;color:var(--text-secondary);margin-left:auto;">'
+            +     (d.ema200 > 0 ? 'EMA 200: ' + fmt(d.ema200) : '')
+            +     (d.openClass ? (d.ema200 > 0 ? ' | ' : '') + 'Day Open: ' + d.openClass : '')
+            + '  </span>'
             + '</div>'
             + '<div class="scan-data-grid">'
-            + '  <div class="scan-data-item"><div class="scan-data-label">EMA 20/200</div><div class="scan-data-value">' + (d.ema20 > 0 ? fmt(d.ema20) : '--') + ' / ' + (d.ema200 > 0 ? fmt(d.ema200) : '--') + '</div></div>'
+            + (function() {
+                var labelSuffix = '';
+                if (d.emaPattern === 'RAILWAY_UP') {
+                    labelSuffix = ' <span style="color:var(--accent-green);font-weight:700;" title="Rising Railway Track — 20 EMA above 50 EMA, parallel, bullish trend">R-RTP</span>';
+                } else if (d.emaPattern === 'RAILWAY_DOWN') {
+                    labelSuffix = ' <span style="color:var(--accent-red);font-weight:700;" title="Falling Railway Track — 20 EMA below 50 EMA, parallel, bearish trend">F-RTP</span>';
+                } else if (d.emaPattern === 'BRAIDED') {
+                    labelSuffix = ' <span style="color:var(--accent-red);font-weight:700;" title="Braided — zigzag, choppy">ZIG ZAG</span>';
+                }
+                return '  <div class="scan-data-item"><div class="scan-data-label">EMA 20/50' + labelSuffix + '</div><div class="scan-data-value">' + (d.ema20 > 0 ? fmt(d.ema20) : '--') + ' / ' + (d.ema50 > 0 ? fmt(d.ema50) : '--') + '</div></div>';
+            })()
             + '  <div class="scan-data-item"><div class="scan-data-label">ATP</div><div class="scan-data-value">' + fmt(d.atp) + '</div></div>'
             + '  <div class="scan-data-item"><div class="scan-data-label">ATR</div><div class="scan-data-value">' + fmt(d.atr) + '</div></div>'
             + (function() {
                 var ratio = (d.avgVolume > 0 && d.candleVolume > 0) ? (d.candleVolume / d.avgVolume) : 0;
-                var color = ratio >= 1.5 ? 'var(--accent-green)' : ratio >= 1.0 ? 'var(--text-primary)' : 'var(--text-muted)';
+                var color = ratio >= 1.5 ? 'var(--accent-green)' : ratio >= 1.0 ? 'var(--text-primary)' : 'var(--text-secondary)';
                 var ratioText = ratio > 0 ? ' (' + ratio.toFixed(1) + 'x)' : '';
-                return '  <div class="scan-data-item"><div class="scan-data-label">Vol / 20-Avg</div><div class="scan-data-value" style="color:' + color + ';">' + (d.candleVolume > 0 ? fmtVol(d.candleVolume) : '--') + ' / ' + (d.avgVolume > 0 ? fmtVol(d.avgVolume) : '--') + ratioText + '</div></div>';
+                return '  <div class="scan-data-item"><div class="scan-data-label">Vol / 20-Avg</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + (d.candleVolume > 0 ? fmtVol(d.candleVolume) : '--') + ' / ' + (d.avgVolume > 0 ? fmtVol(d.avgVolume) : '--') + ratioText + '</div></div>';
             })()
             + '</div>'
             + '<div class="scan-trend-row">'
@@ -1017,18 +1030,29 @@
             var wVal = ts(d.weeklyTrend) + ' ' + sc(d.weeklyScore);
             if (d.weeklyReversalActive) wVal += ' <span style="color:var(--accent-yellow);font-weight:700">(R)</span>';
             var e20Val = d.ema > 0 ? (d.emaPositionScore > 0 ? '▲ ' : d.emaPositionScore < 0 ? '▼ ' : '= ') + d.ema.toFixed(1) + ' ' + sc(d.emaPositionScore) : '—';
+            // EMA 50 position vs LTP (display-only, does not feed total score)
+            var e50Pos = (d.ltp > 0 && d.ema50 > 0) ? (d.ltp > d.ema50 ? 1 : d.ltp < d.ema50 ? -1 : 0) : 0;
+            var e50Val = d.ema50 > 0 ? (e50Pos > 0 ? '▲ ' : e50Pos < 0 ? '▼ ' : '= ') + d.ema50.toFixed(1) + ' ' + sc(e50Pos) : '—';
             var e200Val = d.ema200 > 0 ? (d.ema200PositionScore > 0 ? '▲ ' : d.ema200PositionScore < 0 ? '▼ ' : '= ') + d.ema200.toFixed(1) + ' ' + sc(d.ema200PositionScore) : '—';
-            var crossVal = (d.ema > 0 && d.ema200 > 0) ? (d.emaCrossoverScore > 0 ? '20>200' : d.emaCrossoverScore < 0 ? '20<200' : '=') + ' ' + sc(d.emaCrossoverScore) : '—';
+            var crossVal;
+            if (d.ema > 0 && d.ema200 > 0) {
+                var cs = d.emaCrossoverScore;
+                crossVal = (cs === 2 ? '20&50>200' : cs === 1 ? '20>200' : cs === -2 ? '20&50<200' : cs === -1 ? '20<200' : '=') + ' ' + sc(cs);
+            } else crossVal = '—';
+            var patternVal = d.emaPattern === 'RAILWAY_UP' ? 'R-RTP ' + sc(d.emaPatternScore)
+                           : d.emaPattern === 'RAILWAY_DOWN' ? 'F-RTP ' + sc(d.emaPatternScore)
+                           : d.emaPattern === 'BRAIDED' ? 'ZIG ZAG 0'
+                           : '— 0';
             var ohlVal = d.openEqualsHigh ? 'O=H ' + sc(d.openHlScore) : d.openEqualsLow ? 'O=L ' + sc(d.openHlScore) : '— 0';
 
             document.getElementById('niftyMetrics').innerHTML =
                 seg('W', wVal, d.weeklyScore) + sep +
                 seg('D', ts(d.dailyTrend) + ' ' + sc(d.dailyScore), d.dailyScore) + sep +
                 seg('E20', e20Val, d.emaPositionScore) + sep +
+                seg('E50', e50Val, e50Pos) + sep +
                 seg('E200', e200Val, d.ema200PositionScore) + sep +
                 seg('Cross', crossVal, d.emaCrossoverScore) + sep +
-                seg('Slp', (d.emaSlopePct >= 0 ? '+' : '') + d.emaSlopePct.toFixed(3) + '% ' + sc(d.slopeScore), d.slopeScore) + sep +
-                seg('OHL', ohlVal, d.openHlScore);
+                seg('Pattern', patternVal, d.emaPatternScore);
             // Apply card color class based on state
             var stateLower = (d.state || 'neutral').toLowerCase().replace('_', '-');
             document.getElementById('niftyCard').className = 'nifty-card nifty-card-' + stateLower;

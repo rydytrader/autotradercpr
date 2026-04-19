@@ -36,28 +36,25 @@ public class IndexTrendService {
     public static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
     public static final String NIFTY_DISPLAY = "NIFTY 50";
 
-    private static final int SLOPE_LOOKBACK_CANDLES = 5;
-
-    // EMA slope thresholds (% per candle)
-    private static final double SLOPE_STRONG = 0.02;   // > 0.02% / candle = strong trend
-    private static final double SLOPE_MILD   = 0.005;  // > 0.005% / candle = mild trend
-
     private final WeeklyCprService weeklyCprService;
     private final EmaService emaService;
     private final MarketDataService marketDataService;
     private final RiskSettingsStore riskSettings;
     private final BhavcopyService bhavcopyService;
+    private final AtrService atrService;
 
     public IndexTrendService(WeeklyCprService weeklyCprService,
                              EmaService emaService,
                              MarketDataService marketDataService,
                              RiskSettingsStore riskSettings,
-                             BhavcopyService bhavcopyService) {
+                             BhavcopyService bhavcopyService,
+                             AtrService atrService) {
         this.weeklyCprService = weeklyCprService;
         this.emaService = emaService;
         this.marketDataService = marketDataService;
         this.riskSettings = riskSettings;
         this.bhavcopyService = bhavcopyService;
+        this.atrService = atrService;
     }
 
     public IndexTrend getNiftyTrend() {
@@ -81,28 +78,17 @@ public class IndexTrendService {
             if (cpr != null) ltp = cpr.getClose();
         }
         double ema = emaService.getEma(symbol);
+        double ema50 = emaService.getEma50(symbol);
         double ema200 = emaService.getEma200(symbol);
         String weekly = weeklyCprService.getWeeklyTrend(symbol);
         String daily = weeklyCprService.getDailyTrend(symbol);
-        double slopePct = emaService.getSlopePctPerCandle(symbol, SLOPE_LOOKBACK_CANDLES);
-
-        // Open = High / Open = Low detection from live tick data
-        double dayOpen = marketDataService.getDayOpen(symbol);
-        double dayHigh = marketDataService.getDayHigh(symbol);
-        double dayLow  = marketDataService.getDayLow(symbol);
-        // Tolerance: within 0.05% of open — exact equality is rare on live data
-        double tolerance = dayOpen > 0 ? dayOpen * 0.0005 : 0;
-        boolean openEqualsHigh = dayOpen > 0 && dayHigh > 0 && (dayHigh - dayOpen) <= tolerance;
-        boolean openEqualsLow  = dayOpen > 0 && dayLow > 0 && (dayOpen - dayLow) <= tolerance;
 
         trend.setLtp(ltp);
         trend.setEma(ema);
+        trend.setEma50(ema50);
         trend.setEma200(ema200);
         trend.setWeeklyTrend(weekly);
         trend.setDailyTrend(daily);
-        trend.setEmaSlopePct(slopePct);
-        trend.setOpenEqualsHigh(openEqualsHigh);
-        trend.setOpenEqualsLow(openEqualsLow);
 
         // Weekly reversal flag — zero out weekly score when active
         boolean reversalActive = !"NONE".equals(weeklyCprService.getWeeklyRejection(symbol));
@@ -112,28 +98,53 @@ public class IndexTrendService {
         int weeklyScore = reversalActive ? 0 : scoreTrend(weekly);
         int dailyScore = scoreTrend(daily);
         int emaPositionScore = scoreEmaPosition(ltp, ema);
-        int slopeScore = scoreSlope(slopePct);
         int ema200PositionScore = scoreEmaPosition(ltp, ema200);
-        // O=H (bearish: -1), O=L (bullish: +1), neither: 0
-        int openHlScore = openEqualsHigh ? -1 : (openEqualsLow ? 1 : 0);
-        // EMA crossover: +1 if 20 EMA > 200 EMA (golden cross), -1 if below (death cross)
-        int emaCrossoverScore = (ema > 0 && ema200 > 0) ? (ema > ema200 ? 1 : (ema < ema200 ? -1 : 0)) : 0;
-        int total = weeklyScore + dailyScore + emaPositionScore + slopeScore + ema200PositionScore + openHlScore + emaCrossoverScore;
+        // EMA crossover vs 200: +2 if both 20 and 50 above 200 (strong bullish structure),
+        //                       +1 if only 20 above 200, -2/-1 symmetric for bearish, 0 otherwise.
+        int emaCrossoverScore = 0;
+        if (ema > 0 && ema200 > 0) {
+            boolean e20Bull = ema > ema200;
+            boolean e50Bull = ema50 > 0 && ema50 > ema200;
+            boolean e20Bear = ema < ema200;
+            boolean e50Bear = ema50 > 0 && ema50 < ema200;
+            if (e20Bull && e50Bull) emaCrossoverScore = 2;
+            else if (e20Bull) emaCrossoverScore = 1;
+            else if (e20Bear && e50Bear) emaCrossoverScore = -2;
+            else if (e20Bear) emaCrossoverScore = -1;
+        }
+
+        // EMA 20/50 pattern: R-RTP +1, F-RTP -1, BRAIDED/none 0
+        String emaPattern = "";
+        if (ema > 0 && ema50 > 0) {
+            emaPattern = emaService.getEmaPattern(symbol,
+                riskSettings.getEmaPatternLookback(),
+                atrService.getAtr(symbol),
+                riskSettings.getBraidedMinCrossovers(),
+                riskSettings.getBraidedMaxSpreadAtr(),
+                riskSettings.getRailwayMaxCv(),
+                riskSettings.getRailwayMinSpreadAtr());
+        }
+        int emaPatternScore = "RAILWAY_UP".equals(emaPattern) ? 2
+                             : "RAILWAY_DOWN".equals(emaPattern) ? -2 : 0;
+
+        // Total = Weekly ±2 + Daily ±2 + EMA20 pos ±1 + EMA200 pos ±1 + Cross ±2 + Pattern ±2 = ±10
+        int total = weeklyScore + dailyScore + emaPositionScore
+                  + ema200PositionScore + emaCrossoverScore + emaPatternScore;
 
         trend.setWeeklyScore(weeklyScore);
         trend.setDailyScore(dailyScore);
         trend.setEmaPositionScore(emaPositionScore);
-        trend.setSlopeScore(slopeScore);
         trend.setEma200PositionScore(ema200PositionScore);
-        trend.setOpenHlScore(openHlScore);
         trend.setEmaCrossoverScore(emaCrossoverScore);
+        trend.setEmaPattern(emaPattern);
+        trend.setEmaPatternScore(emaPatternScore);
         trend.setTotalScore(total);
 
         // Classify
         trend.setState(classify(total));
 
         // Mark as available only if we have at least the price data + one structural signal
-        boolean available = ltp > 0 && (weeklyScore != 0 || dailyScore != 0 || emaPositionScore != 0 || slopeScore != 0
+        boolean available = ltp > 0 && (weeklyScore != 0 || dailyScore != 0 || emaPositionScore != 0
                                         || "NEUTRAL".equals(weekly) || "NEUTRAL".equals(daily));
         trend.setDataAvailable(available);
 
@@ -154,14 +165,6 @@ public class IndexTrendService {
         if (ltp <= 0 || ema <= 0) return 0;
         if (ltp > ema) return 1;
         if (ltp < ema) return -1;
-        return 0;
-    }
-
-    private int scoreSlope(double slopePct) {
-        if (slopePct >= SLOPE_STRONG)   return 2;
-        if (slopePct >= SLOPE_MILD)     return 1;
-        if (slopePct <= -SLOPE_STRONG)  return -2;
-        if (slopePct <= -SLOPE_MILD)    return -1;
         return 0;
     }
 

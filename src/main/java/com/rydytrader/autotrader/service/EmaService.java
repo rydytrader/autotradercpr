@@ -22,18 +22,29 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
 
     private static final Logger log = LoggerFactory.getLogger(EmaService.class);
     private static final int EMA_PERIOD = 20;
+    private static final int EMA_MID_PERIOD = 50;
     private static final int EMA_LONG_PERIOD = 200;
 
     private static final int HISTORY_SIZE = 20;  // ring buffer of recent EMA(20) values for slope calc
 
     private final CandleAggregator candleAggregator;
+    private final com.rydytrader.autotrader.store.RiskSettingsStore riskSettings;
+    // ATR lookup lazily injected (avoids circular dep at construction)
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private AtrService atrService;
     private final ConcurrentHashMap<String, Double> emaBySymbol = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Deque<Double>> emaHistoryBySymbol = new ConcurrentHashMap<>();
+    // 50 EMA: value + ring buffer of recent values for braided/railway pattern detection
+    private final ConcurrentHashMap<String, Double> ema50BySymbol = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Deque<Double>> ema50HistoryBySymbol = new ConcurrentHashMap<>();
     // 200 EMA: value only, no ring buffer / slope tracking
     private final ConcurrentHashMap<String, Double> ema200BySymbol = new ConcurrentHashMap<>();
 
-    public EmaService(CandleAggregator candleAggregator) {
+    public EmaService(CandleAggregator candleAggregator,
+                      com.rydytrader.autotrader.store.RiskSettingsStore riskSettings) {
         this.candleAggregator = candleAggregator;
+        this.riskSettings = riskSettings;
     }
 
     /** Get current EMA(20) for a symbol. Returns 0 if not enough data. */
@@ -86,6 +97,26 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
             storeEma(symbol, ema);
         }
 
+        // Seed 50 EMA from the same candle list (needs ≥50 bars)
+        // Pushes each intermediate value into the ring buffer for pattern detection.
+        Deque<Double> history50 = ema50HistoryBySymbol.computeIfAbsent(symbol, s -> new ArrayDeque<>());
+        synchronized (history50) {
+            history50.clear();
+        }
+        if (candles.size() >= EMA_MID_PERIOD) {
+            double k50 = 2.0 / (EMA_MID_PERIOD + 1);
+            double sum50 = 0;
+            for (int i = 0; i < EMA_MID_PERIOD; i++) {
+                sum50 += candles.get(i).close;
+            }
+            double ema50 = sum50 / EMA_MID_PERIOD;
+            storeEma50(symbol, ema50);
+            for (int i = EMA_MID_PERIOD; i < candles.size(); i++) {
+                ema50 = candles.get(i).close * k50 + ema50 * (1 - k50);
+                storeEma50(symbol, ema50);
+            }
+        }
+
         // Seed 200 EMA from the same candle list (needs ≥200 bars for proper convergence)
         if (candles.size() >= EMA_LONG_PERIOD) {
             double k200 = 2.0 / (EMA_LONG_PERIOD + 1);
@@ -99,6 +130,16 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
             }
             ema200BySymbol.put(symbol, ema200);
         }
+    }
+
+    /** Get current EMA(50) for a symbol. Returns 0 if not enough history. */
+    public double getEma50(String symbol) {
+        return ema50BySymbol.getOrDefault(symbol, 0.0);
+    }
+
+    /** Number of symbols with a loaded (non-zero) EMA(50) value. */
+    public int getEma50LoadedCount() {
+        return (int) ema50BySymbol.values().stream().filter(v -> v > 0).count();
     }
 
     /** Get all EMA values (for monitoring/debugging). */
@@ -163,6 +204,15 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
             completedCandle.ema20 = ema; // snapshot on the bar for chart history
         }
 
+        // 50 EMA incremental update
+        Double prev50 = ema50BySymbol.get(fyersSymbol);
+        if (prev50 != null && prev50 > 0) {
+            double k50 = 2.0 / (EMA_MID_PERIOD + 1);
+            double ema50 = completedCandle.close * k50 + prev50 * (1 - k50);
+            storeEma50(fyersSymbol, ema50);
+            completedCandle.ema50 = ema50;
+        }
+
         // 200 EMA incremental update
         Double prev200 = ema200BySymbol.get(fyersSymbol);
         if (prev200 != null && prev200 > 0) {
@@ -170,6 +220,19 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
             double ema200 = completedCandle.close * k200 + prev200 * (1 - k200);
             ema200BySymbol.put(fyersSymbol, ema200);
             completedCandle.ema200 = ema200; // snapshot on the bar for chart history
+        }
+
+        // Classify EMA 20/50 pattern AFTER ring buffers are updated, snapshot on the candle
+        double atrNow = atrService != null ? atrService.getAtr(fyersSymbol) : 0;
+        if (atrNow > 0 && riskSettings != null) {
+            String pattern = getEmaPattern(fyersSymbol,
+                riskSettings.getEmaPatternLookback(),
+                atrNow,
+                riskSettings.getBraidedMinCrossovers(),
+                riskSettings.getBraidedMaxSpreadAtr(),
+                riskSettings.getRailwayMaxCv(),
+                riskSettings.getRailwayMinSpreadAtr());
+            completedCandle.emaPattern = pattern;
         }
     }
 
@@ -181,6 +244,92 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
             history.addLast(ema);
             while (history.size() > HISTORY_SIZE) history.removeFirst();
         }
+    }
+
+    /** Update the current EMA(50) value and append to the EMA(50) history ring buffer. */
+    private void storeEma50(String symbol, double ema50) {
+        ema50BySymbol.put(symbol, ema50);
+        Deque<Double> history = ema50HistoryBySymbol.computeIfAbsent(symbol, k -> new ArrayDeque<>());
+        synchronized (history) {
+            history.addLast(ema50);
+            while (history.size() > HISTORY_SIZE) history.removeFirst();
+        }
+    }
+
+    /**
+     * Classify the EMA(20) / EMA(50) relationship over the last {@code lookback} candles.
+     * @return "BRAIDED" (zigzag, choppy), "RAILWAY" (parallel, trending), or "" (neither)
+     */
+    public String getEmaPattern(String symbol, int lookback, double atr,
+                                int braidedMinCrossovers, double braidedMaxSpreadAtr,
+                                double railwayMaxCv, double railwayMinSpreadAtr) {
+        if (atr <= 0 || lookback < 3) return "";
+        Deque<Double> h20 = emaHistoryBySymbol.get(symbol);
+        Deque<Double> h50 = ema50HistoryBySymbol.get(symbol);
+        if (h20 == null || h50 == null) return "";
+
+        double[] ema20Arr;
+        double[] ema50Arr;
+        synchronized (h20) {
+            if (h20.size() < lookback) return "";
+            ema20Arr = lastN(h20, lookback);
+        }
+        synchronized (h50) {
+            if (h50.size() < lookback) return "";
+            ema50Arr = lastN(h50, lookback);
+        }
+
+        // Compute spread per candle, sign changes, and |spread| stats
+        double[] spread = new double[lookback];
+        double sumAbs = 0;
+        for (int i = 0; i < lookback; i++) {
+            spread[i] = ema20Arr[i] - ema50Arr[i];
+            sumAbs += Math.abs(spread[i]);
+        }
+        double meanAbs = sumAbs / lookback;
+
+        int crossovers = 0;
+        for (int i = 1; i < lookback; i++) {
+            if ((spread[i - 1] > 0 && spread[i] < 0) || (spread[i - 1] < 0 && spread[i] > 0)) {
+                crossovers++;
+            }
+        }
+
+        // Braided: 2+ crossovers OR EMAs hugging zero (effectively overlapping)
+        if (crossovers >= braidedMinCrossovers) return "BRAIDED";
+        if (meanAbs <= braidedMaxSpreadAtr * atr) return "BRAIDED";
+
+        // Railway: ≤1 crossover, stable |spread| magnitude, meaningful separation
+        if (crossovers <= 1 && meanAbs >= railwayMinSpreadAtr * atr) {
+            double sumSqDev = 0;
+            for (int i = 0; i < lookback; i++) {
+                double dev = Math.abs(spread[i]) - meanAbs;
+                sumSqDev += dev * dev;
+            }
+            double std = Math.sqrt(sumSqDev / lookback);
+            double cv = meanAbs > 0 ? std / meanAbs : Double.POSITIVE_INFINITY;
+            if (cv <= railwayMaxCv) {
+                // Determine direction from the most recent spread: 20>50 = rising (bullish), 20<50 = falling (bearish)
+                double latestSpread = spread[lookback - 1];
+                return latestSpread > 0 ? "RAILWAY_UP" : "RAILWAY_DOWN";
+            }
+        }
+
+        return "";
+    }
+
+    /** Extract the last N values from a deque as an ordered array (oldest → newest). */
+    private static double[] lastN(Deque<Double> deque, int n) {
+        double[] out = new double[n];
+        int size = deque.size();
+        int skip = size - n;
+        int i = 0;
+        int outIdx = 0;
+        for (Double v : deque) {
+            if (i++ < skip) continue;
+            out[outIdx++] = v;
+        }
+        return out;
     }
 
     /**

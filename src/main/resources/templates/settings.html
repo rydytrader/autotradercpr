@@ -311,16 +311,16 @@
                 <div class="form-group">
                     <label class="form-label">Extended Level Signals</label>
                     <div style="display:flex; flex-direction:column; gap:8px; margin-top:4px;">
-                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
-                            <input type="checkbox" id="enableR3S3" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> R3/S3
+                        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
+                            <input type="checkbox" id="enableR3S3" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> R3/S3
                             <span style="color:var(--text-muted);font-size:0.72rem;margin-left:4px;">Qty ×</span>
                             <input type="number" id="r3s3QtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        </label>
-                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
-                            <input type="checkbox" id="enableR4S4" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> R4/S4
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
+                            <input type="checkbox" id="enableR4S4" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> R4/S4
                             <span style="color:var(--text-muted);font-size:0.72rem;margin-left:4px;">Qty ×</span>
                             <input type="number" id="r4s4QtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        </label>
+                        </div>
                     </div>
                     <div class="form-hint">Enable extended levels and set qty factor (1.0 = full qty)</div>
                 </div>
@@ -391,7 +391,11 @@
                         <input type="checkbox" id="enableEmaCrossoverCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only when 20 EMA &gt; 200 EMA, sell only when 20 EMA &lt; 200 EMA</span>
                     </div>
-                    <div class="form-hint">Both EMA filters confirm the breakout direction on different timeframes. 20 EMA captures short-term momentum, 200 EMA captures the long-term trend. VWAP uses the day's volume-weighted average. When the 200 EMA check is disabled, the 200 EMA becomes a target-shift candidate instead — if it sits between entry and the original target, the target is pulled back to the 200 EMA (treating it as resistance for buys or support for sells). The R/R filter then evaluates the compressed target.</div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="enableEmaVsAtpCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only when 20 EMA &gt; ATP (VWAP), sell only when 20 EMA &lt; ATP</span>
+                    </div>
+                    <div class="form-hint">EMA filters confirm breakout direction on different timeframes. 20 EMA captures short-term momentum, 200 EMA captures long-term trend, ATP (VWAP) captures the day's volume-weighted fair price. When the 200 EMA check is disabled, the 200 EMA becomes a target-shift candidate instead — if it sits between entry and the original target, the target is pulled back (resistance for buys, support for sells). The R/R filter then evaluates the compressed target.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Risk / Reward Filter</label>
@@ -624,12 +628,12 @@
                 <div class="form-group" style="grid-column: 1 / -1;">
                     <label class="form-label">Signal Probability</label>
                     <div style="display: flex; gap: 20px; margin-top: 6px;">
-                        <label style="display:flex; align-items:center; gap:8px; font-family:var(--font-mono); font-size:0.82rem; color:var(--text-secondary); cursor:pointer;">
-                            <input type="checkbox" id="enableHpt" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> HPT (High Probable)
-                        </label>
-                        <label style="display:flex; align-items:center; gap:8px; font-family:var(--font-mono); font-size:0.82rem; color:var(--text-secondary); cursor:pointer;">
-                            <input type="checkbox" id="enableLpt" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> LPT (Low Probable)
-                        </label>
+                        <div style="display:flex; align-items:center; gap:8px; font-family:var(--font-mono); font-size:0.82rem; color:var(--text-secondary);">
+                            <input type="checkbox" id="enableHpt" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> HPT (High Probable)
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px; font-family:var(--font-mono); font-size:0.82rem; color:var(--text-secondary);">
+                            <input type="checkbox" id="enableLpt" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> LPT (Low Probable)
+                        </div>
                     </div>
                     <div class="form-hint">HPT = weekly+daily+direction aligned. LPT = everything else (half qty by default). Qty factor configured in Risk Controls.</div>
                 </div>
@@ -701,15 +705,15 @@
                 <div class="form-group">
                     <label class="form-label">Market Cap Filter</label>
                     <div style="display:flex; align-items:center; gap:14px; margin-top:4px;">
-                        <label style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem; color:var(--text-secondary); cursor:pointer;">
-                            <input type="checkbox" id="scanCapLarge" style="width:16px; height:16px; accent-color:var(--accent-green);"> Large
-                        </label>
-                        <label style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem; color:var(--text-secondary); cursor:pointer;">
-                            <input type="checkbox" id="scanCapMid" style="width:16px; height:16px; accent-color:var(--accent-blue);"> Mid
-                        </label>
-                        <label style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem; color:var(--text-secondary); cursor:pointer;">
-                            <input type="checkbox" id="scanCapSmall" style="width:16px; height:16px; accent-color:var(--accent-yellow);"> Small
-                        </label>
+                        <div style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem; color:var(--text-secondary);">
+                            <input type="checkbox" id="scanCapLarge" style="width:16px; height:16px; accent-color:var(--accent-green);cursor:pointer;"> Large
+                        </div>
+                        <div style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem; color:var(--text-secondary);">
+                            <input type="checkbox" id="scanCapMid" style="width:16px; height:16px; accent-color:var(--accent-blue);cursor:pointer;"> Mid
+                        </div>
+                        <div style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem; color:var(--text-secondary);">
+                            <input type="checkbox" id="scanCapSmall" style="width:16px; height:16px; accent-color:var(--accent-yellow);cursor:pointer;"> Small
+                        </div>
                     </div>
                     <div class="form-hint">Select one or more cap categories. All unchecked = no filter (all caps included).</div>
                 </div>
@@ -727,18 +731,18 @@
                 <div class="form-group">
                     <label class="form-label">Include in Watchlist</label>
                     <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
-                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
-                            <input type="checkbox" id="scanIncludeNS" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:var(--accent-green);">NS</b> — Narrow + Small (coiled spring — yesterday quiet)
-                        </label>
-                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
-                            <input type="checkbox" id="scanIncludeNL" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:#fb923c;">NL</b> — Narrow + Large (exhausted — yesterday wild)
-                        </label>
-                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
-                            <input type="checkbox" id="scanIncludeIS" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:var(--accent-green);">IS</b> — Inside + Small (coiled spring — yesterday quiet)
-                        </label>
-                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;">
-                            <input type="checkbox" id="scanIncludeIL" style="width:16px;height:16px;accent-color:var(--accent-cyan);"> <b style="color:#fb923c;">IL</b> — Inside + Large (exhausted — yesterday wild)
-                        </label>
+                        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
+                            <input type="checkbox" id="scanIncludeNS" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> <b style="color:var(--accent-green);">NS</b> — Narrow + Small (coiled spring — yesterday quiet)
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
+                            <input type="checkbox" id="scanIncludeNL" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> <b style="color:#fb923c;">NL</b> — Narrow + Large (exhausted — yesterday wild)
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
+                            <input type="checkbox" id="scanIncludeIS" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> <b style="color:var(--accent-green);">IS</b> — Inside + Small (coiled spring — yesterday quiet)
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
+                            <input type="checkbox" id="scanIncludeIL" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> <b style="color:#fb923c;">IL</b> — Inside + Large (exhausted — yesterday wild)
+                        </div>
                     </div>
                     <div style="display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);">
                         <span style="color:var(--text-secondary);font-size:0.82rem;font-family:var(--font-mono);">Small threshold: prev day range ≤</span>
@@ -1010,6 +1014,7 @@
             document.getElementById('enableEmaDirectionCheck').checked = d.enableEmaDirectionCheck !== false;
             document.getElementById('enableEma200DirectionCheck').checked = d.enableEma200DirectionCheck !== false;
             document.getElementById('enableEmaCrossoverCheck').checked = d.enableEmaCrossoverCheck !== false;
+            document.getElementById('enableEmaVsAtpCheck').checked = d.enableEmaVsAtpCheck !== false;
             document.getElementById('enableEmaLevelCountFilter').checked = d.enableEmaLevelCountFilter !== false;
             document.getElementById('enableSplitTarget').checked = d.enableSplitTarget !== false;
             document.getElementById('t1DistancePct').value = d.t1DistancePct || 50;
@@ -1158,6 +1163,7 @@
                 enableEmaDirectionCheck: document.getElementById('enableEmaDirectionCheck').checked,
                 enableEma200DirectionCheck: document.getElementById('enableEma200DirectionCheck').checked,
                 enableEmaCrossoverCheck: document.getElementById('enableEmaCrossoverCheck').checked,
+                enableEmaVsAtpCheck: document.getElementById('enableEmaVsAtpCheck').checked,
                 enableEmaLevelCountFilter: document.getElementById('enableEmaLevelCountFilter').checked,
                 enableSplitTarget: document.getElementById('enableSplitTarget').checked,
                 t1DistancePct: parseInt(document.getElementById('t1DistancePct').value) || 50,

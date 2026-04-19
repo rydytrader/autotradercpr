@@ -260,6 +260,7 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
         int period = getAtrPeriod();
         double atr = ((prev * (period - 1)) + tr) / period;
         atrBySymbol.put(fyersSymbol, atr);
+        completedCandle.atr = atr; // snapshot on the bar for historical analysis
     }
 
     // ── Public API ───────────────────────────────────────────────────────────

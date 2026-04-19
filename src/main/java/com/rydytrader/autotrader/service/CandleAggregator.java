@@ -760,10 +760,13 @@ public class CandleAggregator {
         public double close;
         public long volume;      // candle volume (delta of cumulative vol)
         public long volAtStart;  // cumulative vol when candle opened (internal)
-        // Snapshot of indicator values at candle close (populated by CandleAggregator.finalizeCandle + EmaService.onCandleClose)
+        // Snapshot of indicator values at candle close (populated by CandleAggregator.finalizeCandle + EmaService.onCandleClose + AtrService.onCandleClose)
         public double vwap;      // exchange-provided ATP at candle close (Fyers)
         public double ema20;     // 20-period EMA after this candle was included
+        public double ema50;     // 50-period EMA after this candle was included
         public double ema200;    // 200-period EMA after this candle was included
+        public double atr;       // ATR after this candle was included (Wilder-smoothed)
+        public String emaPattern; // "RAILWAY_UP" (R-RTP), "RAILWAY_DOWN" (F-RTP), "BRAIDED" (ZIG ZAG), or "" at close
         public double trueRange(CandleBar prev) {
             if (prev == null) return high - low;
             return Math.max(high - low, Math.max(Math.abs(high - prev.close), Math.abs(low - prev.close)));

@@ -46,9 +46,36 @@ public class SignalProcessor {
         // Scanner may have already downgraded probability (e.g. NIFTY index alignment) — surface that note.
         String scannerNote = str(alert, "scannerNote");
         if (scannerNote != null && !scannerNote.isEmpty()) adjustments.add(scannerNote);
+        // Capture EMA 20/50 pattern at time of signal (informational — for post-trade analysis).
+        // ATR comes from the alert payload below, so we defer pattern check until after atr is parsed.
         double close       = dbl(alert, "close");
         double atr         = dbl(alert, "atr");
         double dayOpen     = dbl(alert, "dayOpen");
+        // EMA 20/50 pattern at time of signal (for post-trade analysis)
+        try {
+            if (atr > 0 && emaService != null) {
+                String emaPattern = emaService.getEmaPattern(symbol,
+                    riskSettings.getEmaPatternLookback(), atr,
+                    riskSettings.getBraidedMinCrossovers(), riskSettings.getBraidedMaxSpreadAtr(),
+                    riskSettings.getRailwayMaxCv(), riskSettings.getRailwayMinSpreadAtr());
+                if ("RAILWAY_UP".equals(emaPattern)) adjustments.add("EMA 20/50: R-RTP (rising railway track — bullish parallel trend)");
+                else if ("RAILWAY_DOWN".equals(emaPattern)) adjustments.add("EMA 20/50: F-RTP (falling railway track — bearish parallel trend)");
+                else if ("BRAIDED".equals(emaPattern)) adjustments.add("EMA 20/50: ZIG ZAG (braided — choppy, whipsaw risk)");
+            }
+        } catch (Exception ignored) {}
+        // Volume snapshot at signal time: breakout candle volume vs 20-candle average
+        try {
+            CandleAggregator.CandleBar breakoutCandle = candleAggregator.getLastCompletedCandle(symbol);
+            long breakoutVol = breakoutCandle != null ? breakoutCandle.volume : 0;
+            double avgVol = candleAggregator.getAvgVolume(symbol, 20);
+            if (breakoutVol > 0 && avgVol > 0) {
+                double multiple = breakoutVol / avgVol;
+                adjustments.add(String.format("Volume: %s vs 20-avg %s (%.2fx)",
+                    fmtVol(breakoutVol), fmtVol((long) avgVol), multiple));
+            } else if (breakoutVol > 0) {
+                adjustments.add("Volume: " + fmtVol(breakoutVol) + " (no 20-avg baseline yet)");
+            }
+        } catch (Exception ignored) {}
         double r1 = dbl(alert, "r1"), r2 = dbl(alert, "r2"), r3 = dbl(alert, "r3"), r4 = dbl(alert, "r4");
         double s1 = dbl(alert, "s1"), s2 = dbl(alert, "s2"), s3 = dbl(alert, "s3"), s4 = dbl(alert, "s4");
         double ph = dbl(alert, "ph"), pl = dbl(alert, "pl");
@@ -732,5 +759,13 @@ public class SignalProcessor {
 
     private static String fmt(double v) {
         return String.format("%.2f", v);
+    }
+
+    private static String fmtVol(long v) {
+        if (v <= 0) return "--";
+        if (v >= 10_000_000L) return String.format("%.2fCr", v / 10_000_000.0);
+        if (v >= 100_000L)    return String.format("%.2fL", v / 100_000.0);
+        if (v >= 1_000L)      return String.format("%.1fK", v / 1_000.0);
+        return String.valueOf(v);
     }
 }
