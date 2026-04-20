@@ -423,7 +423,7 @@ public class SignalProcessor {
             // Weekly (HTF 60-min) EMA levels — any of EMA(20/50/200) sitting between close and
             // the structural target becomes a resistance/support candidate. These are the same
             // values shown as the "1h" row under the EMA Levels section on the scanner card.
-            if (htfEmaService != null) {
+            if (riskSettings.isEnableWeeklyEmaTargetShift() && htfEmaService != null) {
                 double htfE20  = htfEmaService.getEma(symbol);
                 double htfE50  = htfEmaService.getEma50(symbol);
                 double htfE200 = htfEmaService.getEma200(symbol);
@@ -525,15 +525,21 @@ public class SignalProcessor {
 
         // Weekly NEUTRAL trades are always LPT (downgraded in BreakoutScanner) — no additional qty reduction.
 
-        // ── 4i3. Level-based qty adjustment (R2/R3 and S2/S3 extended, R4/S4 very extended) ──
-        // R2/S2 now grouped with R3/S3 since they're also already one level beyond the
-        // primary breakout zone (R1/PDH or S1/PDL) — fade risk is similar.
-        if (setup.contains("R2") || setup.contains("R3") || setup.contains("S2") || setup.contains("S3")) {
+        // ── 4i3. Level-based qty adjustment (R2/S2, R3/S3, R4/S4 — each its own factor) ──
+        if (setup.contains("R2") || setup.contains("S2")) {
+            double factor = riskSettings.getR2s2QtyFactor();
+            if (factor < 1.0) {
+                int reduced = Math.max(1, (int)(qty * factor));
+                eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (R2/S2 ×" + factor + "): " + qty + " -> " + reduced);
+                adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — R2/S2 extended level)");
+                qty = reduced;
+            }
+        } else if (setup.contains("R3") || setup.contains("S3")) {
             double factor = riskSettings.getR3s3QtyFactor();
             if (factor < 1.0) {
                 int reduced = Math.max(1, (int)(qty * factor));
-                eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (R2/R3/S2/S3 ×" + factor + "): " + qty + " -> " + reduced);
-                adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — R2/R3/S2/S3 extended level)");
+                eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (R3/S3 ×" + factor + "): " + qty + " -> " + reduced);
+                adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — R3/S3 extended level)");
                 qty = reduced;
             }
         } else if (setup.contains("R4") || setup.contains("S4")) {

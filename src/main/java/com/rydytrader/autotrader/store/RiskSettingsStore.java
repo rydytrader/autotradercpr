@@ -50,6 +50,7 @@ public class RiskSettingsStore {
         volatile boolean enableDayHighLowTargetShift = true; // shift target to day high/low if between entry and target
         volatile double dayHighLowShiftMinDistAtr = 2.0; // skip day H/L shift if distance < N ATR from close
         volatile boolean enableWeeklyLevelTargetShift = true; // shift target to weekly CPR levels if between entry and target
+        volatile boolean enableWeeklyEmaTargetShift = true;   // shift target to weekly (HTF 60-min) EMA 20/50/200 if between entry and target
         volatile boolean enableHtfHurdleFilter = true; // skip 5-min CPR breakout when in-progress 1h candle straddles a same-direction weekly level
         // Structural SL — opt-in, anchors SL to the S/R level the trade is testing (per setup family)
         // When on, we compute both structural and default SL and pick the TIGHTER one.
@@ -89,7 +90,9 @@ public class RiskSettingsStore {
         volatile int volumeLookback = 20; // average volume over last N candles (max 20)
         volatile boolean enableTrailingSl = true; // enable trailing SL
         volatile boolean trailingSlNoTarget = false; // when true + trailing SL enabled: skip fixed target, let trailing SL close the trade
+        volatile boolean enableR2S2 = true;      // enable R2/S2 breakouts
         volatile boolean enableR3S3 = true;      // enable R3/S3 breakouts
+        volatile double r2s2QtyFactor = 0.9;    // R2/S2 qty multiplier (one level beyond CPR)
         volatile double r3s3QtyFactor = 0.75;   // R3/S3 qty multiplier
         volatile double r4s4QtyFactor = 0.5;    // R4/S4 qty multiplier
         volatile int    atrPeriod = 14;        // ATR lookback period for initial SL
@@ -196,6 +199,7 @@ public class RiskSettingsStore {
     public boolean isEnableDayHighLowTargetShift() { return cfg().enableDayHighLowTargetShift; }
     public double getDayHighLowShiftMinDistAtr() { return cfg().dayHighLowShiftMinDistAtr; }
     public boolean isEnableWeeklyLevelTargetShift() { return cfg().enableWeeklyLevelTargetShift; }
+    public boolean isEnableWeeklyEmaTargetShift()   { return cfg().enableWeeklyEmaTargetShift; }
     public boolean isEnableHtfHurdleFilter()        { return cfg().enableHtfHurdleFilter; }
     public boolean isEnableStructuralSl()    { return cfg().enableStructuralSl; }
     public double  getStructuralSlBufferAtr(){ return cfg().structuralSlBufferAtr; }
@@ -220,7 +224,9 @@ public class RiskSettingsStore {
     public double getLargeCandleBodyAtrThreshold() { return cfg().largeCandleBodyAtrThreshold; }
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
     public boolean isTrailingSlNoTarget() { return cfg().trailingSlNoTarget; }
+    public boolean isEnableR2S2() { return cfg().enableR2S2; }
     public boolean isEnableR3S3() { return cfg().enableR3S3; }
+    public double getR2s2QtyFactor() { return cfg().r2s2QtyFactor; }
     public double getR3s3QtyFactor() { return cfg().r3s3QtyFactor; }
     public double getR4s4QtyFactor() { return cfg().r4s4QtyFactor; }
     public int getAtrPeriod() { return cfg().atrPeriod; }
@@ -333,6 +339,7 @@ public class RiskSettingsStore {
     public void setEnableDayHighLowTargetShift(boolean v) { cfg().enableDayHighLowTargetShift = v; }
     public void setDayHighLowShiftMinDistAtr(double v) { cfg().dayHighLowShiftMinDistAtr = v; }
     public void setEnableWeeklyLevelTargetShift(boolean v) { cfg().enableWeeklyLevelTargetShift = v; }
+    public void setEnableWeeklyEmaTargetShift(boolean v)   { cfg().enableWeeklyEmaTargetShift = v; }
     public void setEnableHtfHurdleFilter(boolean v)        { cfg().enableHtfHurdleFilter = v; }
     public void setEnableStructuralSl(boolean v)    { cfg().enableStructuralSl = v; }
     public void setStructuralSlBufferAtr(double v)  { cfg().structuralSlBufferAtr = v; }
@@ -351,7 +358,9 @@ public class RiskSettingsStore {
     public void setLargeCandleBodyAtrThreshold(double v) { cfg().largeCandleBodyAtrThreshold = v; }
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
     public void setTrailingSlNoTarget(boolean v) { cfg().trailingSlNoTarget = v; }
+    public void setEnableR2S2(boolean v) { cfg().enableR2S2 = v; }
     public void setEnableR3S3(boolean v) { cfg().enableR3S3 = v; }
+    public void setR2s2QtyFactor(double v) { cfg().r2s2QtyFactor = v; }
     public void setR3s3QtyFactor(double v) { cfg().r3s3QtyFactor = v; }
     public void setR4s4QtyFactor(double v) { cfg().r4s4QtyFactor = v; }
     public void setAtrPeriod(int v) { cfg().atrPeriod = v; }
@@ -458,6 +467,7 @@ public class RiskSettingsStore {
             upsert("enableDayHighLowTargetShift", String.valueOf(c.enableDayHighLowTargetShift));
             upsert("dayHighLowShiftMinDistAtr", String.valueOf(c.dayHighLowShiftMinDistAtr));
             upsert("enableWeeklyLevelTargetShift", String.valueOf(c.enableWeeklyLevelTargetShift));
+            upsert("enableWeeklyEmaTargetShift", String.valueOf(c.enableWeeklyEmaTargetShift));
             upsert("enableHtfHurdleFilter", String.valueOf(c.enableHtfHurdleFilter));
             upsert("enableStructuralSl", String.valueOf(c.enableStructuralSl));
             upsert("structuralSlBufferAtr", String.valueOf(c.structuralSlBufferAtr));
@@ -482,7 +492,9 @@ public class RiskSettingsStore {
             upsert("volumeLookback", String.valueOf(c.volumeLookback));
             upsert("enableTrailingSl", String.valueOf(c.enableTrailingSl));
             upsert("trailingSlNoTarget", String.valueOf(c.trailingSlNoTarget));
+            upsert("enableR2S2", String.valueOf(c.enableR2S2));
             upsert("enableR3S3", String.valueOf(c.enableR3S3));
+            upsert("r2s2QtyFactor", String.valueOf(c.r2s2QtyFactor));
             upsert("r3s3QtyFactor", String.valueOf(c.r3s3QtyFactor));
             upsert("r4s4QtyFactor", String.valueOf(c.r4s4QtyFactor));
             upsert("atrPeriod", String.valueOf(c.atrPeriod));
@@ -574,6 +586,7 @@ public class RiskSettingsStore {
                     case "enableDayHighLowTargetShift" -> c.enableDayHighLowTargetShift = Boolean.parseBoolean(v);
                     case "dayHighLowShiftMinDistAtr" -> c.dayHighLowShiftMinDistAtr = Double.parseDouble(v);
                     case "enableWeeklyLevelTargetShift" -> c.enableWeeklyLevelTargetShift = Boolean.parseBoolean(v);
+                    case "enableWeeklyEmaTargetShift" -> c.enableWeeklyEmaTargetShift = Boolean.parseBoolean(v);
                     case "enableHtfHurdleFilter" -> c.enableHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "enableStructuralSl"    -> c.enableStructuralSl = Boolean.parseBoolean(v);
                     case "structuralSlBufferAtr" -> c.structuralSlBufferAtr = Double.parseDouble(v);
@@ -603,7 +616,9 @@ public class RiskSettingsStore {
                     case "volumeLookback" -> c.volumeLookback = Integer.parseInt(v);
                     case "enableTrailingSl"   -> c.enableTrailingSl = Boolean.parseBoolean(v);
                     case "trailingSlNoTarget" -> c.trailingSlNoTarget = Boolean.parseBoolean(v);
+                    case "enableR2S2" -> c.enableR2S2 = Boolean.parseBoolean(v);
                     case "enableR3S3" -> c.enableR3S3 = Boolean.parseBoolean(v);
+                    case "r2s2QtyFactor" -> c.r2s2QtyFactor = Double.parseDouble(v);
                     case "r3s3QtyFactor" -> c.r3s3QtyFactor = Double.parseDouble(v);
                     case "r4s4QtyFactor" -> c.r4s4QtyFactor = Double.parseDouble(v);
                     case "atrPeriod" -> c.atrPeriod = Integer.parseInt(v);

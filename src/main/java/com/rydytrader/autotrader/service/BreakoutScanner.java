@@ -358,7 +358,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         }
         if (close > r2
                 && ((open < r2 || low < r2) || (low < r2 && open > r2))
-                && !broken.contains("BUY_ABOVE_R2")) return "BUY_ABOVE_R2";
+                && !broken.contains("BUY_ABOVE_R2")) {
+            if (!riskSettings.isEnableR2S2()) { eventService.log("[SCANNER] BUY_ABOVE_R2 for " + levels.getSymbol() + " — skipped, R2/S2 disabled"); }
+            else return "BUY_ABOVE_R2";
+        }
         if (close > r1 && close > ph
                 && ((open < r1 || open < ph || low < r1 || low < ph) || (low < Math.min(r1, ph) && open > Math.min(r1, ph)))
                 && !broken.contains("BUY_ABOVE_R1_PDH")) return "BUY_ABOVE_R1_PDH";
@@ -381,7 +384,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             if (!riskSettings.isEnableR3S3()) { eventService.log("[SCANNER] BUY_ABOVE_S3 for " + levels.getSymbol() + " — skipped, R3/S3 disabled"); }
             else return "BUY_ABOVE_S3";
         }
-        if (open <= s2 && close > s2 && !broken.contains("BUY_ABOVE_S2")) return "BUY_ABOVE_S2";
+        if (open <= s2 && close > s2 && !broken.contains("BUY_ABOVE_S2")) {
+            if (!riskSettings.isEnableR2S2()) { eventService.log("[SCANNER] BUY_ABOVE_S2 for " + levels.getSymbol() + " — skipped, R2/S2 disabled"); }
+            else return "BUY_ABOVE_S2";
+        }
 
         // Day High breakout (lowest priority — only after OR locks)
         double dayHigh = candleAggregator.getDayHighExcluding(fyersSymbol, currentCandle.get());
@@ -447,7 +453,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         }
         if (close < s2
                 && ((open > s2 || high > s2) || (high > s2 && open < s2))
-                && !broken.contains("SELL_BELOW_S2")) return "SELL_BELOW_S2";
+                && !broken.contains("SELL_BELOW_S2")) {
+            if (!riskSettings.isEnableR2S2()) { eventService.log("[SCANNER] SELL_BELOW_S2 for " + levels.getSymbol() + " — skipped, R2/S2 disabled"); }
+            else return "SELL_BELOW_S2";
+        }
         // Mean-reversion fades from above R-levels (gap-up reversals).
         // Pattern: candle opened above the level (price was extended) and closed below it.
         double r2 = levels.getR2(), r3 = levels.getR3(), r4 = levels.getR4();
@@ -459,7 +468,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             if (!riskSettings.isEnableR3S3()) { eventService.log("[SCANNER] SELL_BELOW_R3 for " + levels.getSymbol() + " — skipped, R3/S3 disabled"); }
             else return "SELL_BELOW_R3";
         }
-        if (open >= r2 && close < r2 && !broken.contains("SELL_BELOW_R2")) return "SELL_BELOW_R2";
+        if (open >= r2 && close < r2 && !broken.contains("SELL_BELOW_R2")) {
+            if (!riskSettings.isEnableR2S2()) { eventService.log("[SCANNER] SELL_BELOW_R2 for " + levels.getSymbol() + " — skipped, R2/S2 disabled"); }
+            else return "SELL_BELOW_R2";
+        }
         if (close < s1 && close < pl
                 && ((open > s1 || open > pl || high > s1 || high > pl) || (high > Math.max(s1, pl) && open < Math.max(s1, pl)))
                 && !broken.contains("SELL_BELOW_S1_PDL")) return "SELL_BELOW_S1_PDL";

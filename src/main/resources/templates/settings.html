@@ -321,8 +321,10 @@
                 <div class="form-group">
                     <label class="form-label">Extended Level Signals</label>
                     <div style="display:flex; flex-direction:column; gap:8px; margin-top:4px;">
-                        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-muted);">
-                            <span style="display:inline-block;width:16px;"></span>R2/S2 <span style="color:var(--text-muted);font-size:0.72rem;">(always on, shares R3/S3 factor below)</span>
+                        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
+                            <input type="checkbox" id="enableR2S2" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> R2/S2
+                            <span style="color:var(--text-muted);font-size:0.72rem;margin-left:4px;">Qty ×</span>
+                            <input type="number" id="r2s2QtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         </div>
                         <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
                             <input type="checkbox" id="enableR3S3" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> R3/S3
@@ -335,7 +337,7 @@
                             <input type="number" id="r4s4QtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         </div>
                     </div>
-                    <div class="form-hint">R2/S2 breakouts are always enabled and use the R3/S3 qty factor (one level beyond CPR zone). R3/S3 and R4/S4 have independent enable toggles and factors.</div>
+                    <div class="form-hint">R2/S2, R3/S3, and R4/S4 each have independent enable toggles and qty factors. Default factors: R2/S2 = 0.9, R3/S3 = 0.75, R4/S4 = 0.5. Set factor to 1.0 for full qty.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Session Move Limit</label>
@@ -523,6 +525,10 @@
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="enableWeeklyLevelTargetShift" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift to Weekly CPR levels</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="enableWeeklyEmaTargetShift" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift to Weekly (1h) EMA 20 / 50 / 200</span>
                     </div>
                     <div class="form-hint">Toggle which level types are considered when shifting the structural target down to the nearest resistance/support between entry and target.</div>
                 </div>
@@ -1024,6 +1030,7 @@
             document.getElementById('enableDayHighLowTargetShift').checked = d.enableDayHighLowTargetShift !== false;
             document.getElementById('dayHighLowShiftMinDistAtr').value = d.dayHighLowShiftMinDistAtr != null ? d.dayHighLowShiftMinDistAtr : 2.0;
             document.getElementById('enableWeeklyLevelTargetShift').checked = d.enableWeeklyLevelTargetShift !== false;
+            document.getElementById('enableWeeklyEmaTargetShift').checked = d.enableWeeklyEmaTargetShift !== false;
             document.getElementById('enableHtfHurdleFilter').checked = d.enableHtfHurdleFilter !== false;
             document.getElementById('enableStructuralSl').checked = d.enableStructuralSl === true;
             document.getElementById('structuralSlBufferAtr').value = d.structuralSlBufferAtr != null ? d.structuralSlBufferAtr : 1.0;
@@ -1091,8 +1098,10 @@
             document.getElementById('enableLpt').checked = d.enableLpt !== false;
             document.getElementById('lptQtyFactor').value = d.lptQtyFactor != null ? d.lptQtyFactor : 0.50;
             document.getElementById('minAbsoluteProfit').value = d.minAbsoluteProfit != null ? d.minAbsoluteProfit : 500;
+            document.getElementById('enableR2S2').checked = d.enableR2S2 !== false;
             document.getElementById('enableR3S3').checked = d.enableR3S3 !== false;
             document.getElementById('r3s3QtyFactor').value = d.r3s3QtyFactor || 0.75;
+            document.getElementById('r2s2QtyFactor').value = d.r2s2QtyFactor || 0.9;
             document.getElementById('r4s4QtyFactor').value = d.r4s4QtyFactor || 0.5;
 
             const pnl    = d.todayPnl    || 0;
@@ -1175,6 +1184,7 @@
                 enableDayHighLowTargetShift: document.getElementById('enableDayHighLowTargetShift').checked,
                 dayHighLowShiftMinDistAtr: parseFloat(document.getElementById('dayHighLowShiftMinDistAtr').value) || 1.0,
                 enableWeeklyLevelTargetShift: document.getElementById('enableWeeklyLevelTargetShift').checked,
+                enableWeeklyEmaTargetShift: document.getElementById('enableWeeklyEmaTargetShift').checked,
                 enableHtfHurdleFilter: document.getElementById('enableHtfHurdleFilter').checked,
                 enableStructuralSl: document.getElementById('enableStructuralSl').checked,
                 structuralSlBufferAtr: parseFloat(document.getElementById('structuralSlBufferAtr').value) || 1.0,
@@ -1243,7 +1253,9 @@
                 enableLpt: document.getElementById('enableLpt').checked,
                 lptQtyFactor: parseFloat(document.getElementById('lptQtyFactor').value) || 0.50,
                 minAbsoluteProfit: parseFloat(document.getElementById('minAbsoluteProfit').value) || 500,
+                enableR2S2: document.getElementById('enableR2S2').checked,
                 enableR3S3: document.getElementById('enableR3S3').checked,
+                r2s2QtyFactor: parseFloat(document.getElementById('r2s2QtyFactor').value) || 0.9,
                 r3s3QtyFactor: parseFloat(document.getElementById('r3s3QtyFactor').value) || 0.75,
                 r4s4QtyFactor: parseFloat(document.getElementById('r4s4QtyFactor').value) || 0.5,
             };

@@ -62,6 +62,7 @@ public class SettingsController {
         result.put("enableDayHighLowTargetShift", riskSettings.isEnableDayHighLowTargetShift());
         result.put("dayHighLowShiftMinDistAtr", riskSettings.getDayHighLowShiftMinDistAtr());
         result.put("enableWeeklyLevelTargetShift", riskSettings.isEnableWeeklyLevelTargetShift());
+        result.put("enableWeeklyEmaTargetShift", riskSettings.isEnableWeeklyEmaTargetShift());
         result.put("enableStructuralSl",    riskSettings.isEnableStructuralSl());
         result.put("structuralSlBufferAtr", riskSettings.getStructuralSlBufferAtr());
         result.put("dayHighLowMinAtr", riskSettings.getDayHighLowMinAtr());
@@ -97,7 +98,9 @@ public class SettingsController {
         result.put("volumeLookback", riskSettings.getVolumeLookback(effectiveMode));
         result.put("enableTrailingSl", riskSettings.isEnableTrailingSl(effectiveMode));
         result.put("trailingSlNoTarget", riskSettings.isTrailingSlNoTarget());
+        result.put("enableR2S2", riskSettings.isEnableR2S2());
         result.put("enableR3S3", riskSettings.isEnableR3S3());
+        result.put("r2s2QtyFactor", riskSettings.getR2s2QtyFactor());
         result.put("r3s3QtyFactor", riskSettings.getR3s3QtyFactor());
         result.put("r4s4QtyFactor", riskSettings.getR4s4QtyFactor());
         result.put("atrPeriod", riskSettings.getAtrPeriod());
@@ -164,6 +167,7 @@ public class SettingsController {
             if (body.containsKey("enableDayHighLowTargetShift")) riskSettings.setEnableDayHighLowTargetShift(Boolean.parseBoolean(body.get("enableDayHighLowTargetShift").toString()));
             if (body.containsKey("dayHighLowShiftMinDistAtr")) riskSettings.setDayHighLowShiftMinDistAtr(Double.parseDouble(body.get("dayHighLowShiftMinDistAtr").toString()));
             if (body.containsKey("enableWeeklyLevelTargetShift")) riskSettings.setEnableWeeklyLevelTargetShift(Boolean.parseBoolean(body.get("enableWeeklyLevelTargetShift").toString()));
+            if (body.containsKey("enableWeeklyEmaTargetShift")) riskSettings.setEnableWeeklyEmaTargetShift(Boolean.parseBoolean(body.get("enableWeeklyEmaTargetShift").toString()));
             if (body.containsKey("enableStructuralSl")) riskSettings.setEnableStructuralSl(Boolean.parseBoolean(body.get("enableStructuralSl").toString()));
             if (body.containsKey("structuralSlBufferAtr")) riskSettings.setStructuralSlBufferAtr(Double.parseDouble(body.get("structuralSlBufferAtr").toString()));
             if (body.containsKey("dayHighLowMinAtr")) riskSettings.setDayHighLowMinAtr(Double.parseDouble(body.get("dayHighLowMinAtr").toString()));
@@ -199,7 +203,9 @@ public class SettingsController {
             if (body.containsKey("volumeLookback")) riskSettings.setVolumeLookback(effectiveMode, Integer.parseInt(body.get("volumeLookback").toString()));
             if (body.containsKey("enableTrailingSl")) riskSettings.setEnableTrailingSl(effectiveMode, Boolean.parseBoolean(body.get("enableTrailingSl").toString()));
             if (body.containsKey("trailingSlNoTarget")) riskSettings.setTrailingSlNoTarget(Boolean.parseBoolean(body.get("trailingSlNoTarget").toString()));
+            if (body.containsKey("enableR2S2")) riskSettings.setEnableR2S2(Boolean.parseBoolean(body.get("enableR2S2").toString()));
             if (body.containsKey("enableR3S3")) riskSettings.setEnableR3S3(Boolean.parseBoolean(body.get("enableR3S3").toString()));
+            if (body.containsKey("r2s2QtyFactor")) riskSettings.setR2s2QtyFactor(Double.parseDouble(body.get("r2s2QtyFactor").toString()));
             if (body.containsKey("r3s3QtyFactor")) riskSettings.setR3s3QtyFactor(Double.parseDouble(body.get("r3s3QtyFactor").toString()));
             if (body.containsKey("r4s4QtyFactor")) riskSettings.setR4s4QtyFactor(Double.parseDouble(body.get("r4s4QtyFactor").toString()));
             if (body.containsKey("atrPeriod")) riskSettings.setAtrPeriod(Integer.parseInt(body.get("atrPeriod").toString()));
