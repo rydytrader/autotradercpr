@@ -143,48 +143,51 @@ public class SignalProcessor {
         int baseQty = quantityService.computeBaseQty(symbol, close, sl);
 
         // ── 4d. Small candle filter ─────────────────────────────────────────────
+        // Collapsed "meaningful size" check: reject only when BOTH moveFromLevel and
+        // candle body are below the threshold AND the candle shows no wick defense.
+        // A wide-body candle that broke a level near its high now qualifies via body;
+        // a narrow-body candle that pushed well past the level qualifies via move.
+        // Opposite-wick penalty (Check 4) still runs separately — always applied.
         if (riskSettings.isEnableSmallCandleFilter()) {
             double smallThreshold = riskSettings.getSmallCandleAtrThreshold();
-            double wickRatio = riskSettings.getWickRejectionRatio();
-            double oppWickRatio = riskSettings.getOppositeWickRatio();
-            double moveFromLevel = isBuy ? (close - breakoutLevel) : (breakoutLevel - close);
+            double wickRatio      = riskSettings.getWickRejectionRatio();
+            double oppWickRatio   = riskSettings.getOppositeWickRatio();
+            double moveFromLevel  = isBuy ? (close - breakoutLevel) : (breakoutLevel - close);
+            double candleBody     = candleOpen > 0 ? Math.abs(close - candleOpen) : 0;
+            double sizeFloor      = atr * smallThreshold;
 
-            // Check 1: close too near breakout level
-            if (moveFromLevel < atr * smallThreshold) {
-                return ProcessedSignal.rejected(setup, symbol,
-                    "Small candle — move from breakout level (" + fmt(moveFromLevel) + ") < " + smallThreshold + " ATR (" + fmt(atr * smallThreshold) + ")");
+            // Meaningful size: either the move from the breakout level OR the overall
+            // candle body is at least smallCandleAtrThreshold × ATR.
+            boolean meaningfulSize = Math.max(moveFromLevel, candleBody) >= sizeFloor;
+
+            // Wick defense: tiny-body doji with a long wick into the breakout direction.
+            // Buyers/sellers pushed the price to the wick extreme but the close
+            // recovered — committed directional intent even if the body is small.
+            boolean wickDefense = false;
+            if (candleOpen > 0 && candleHigh > 0 && candleLow > 0 && candleBody < sizeFloor) {
+                double breakoutWick = isBuy
+                    ? (Math.min(close, candleOpen) - candleLow)
+                    : (candleHigh - Math.max(close, candleOpen));
+                wickDefense = breakoutWick >= wickRatio * candleBody
+                    && breakoutWick >= sizeFloor;
             }
 
-            if (candleOpen > 0) {
-                double candleBody = Math.abs(close - candleOpen);
+            if (!meaningfulSize && !wickDefense) {
+                return ProcessedSignal.rejected(setup, symbol,
+                    "Small candle — move from level (" + fmt(moveFromLevel) + ") and body ("
+                    + fmt(candleBody) + ") both < " + smallThreshold + " ATR ("
+                    + fmt(sizeFloor) + "), no wick defense");
+            }
 
-                // Check 2 + 3: candle body too small, unless wick rejection overrides
-                if (candleBody < atr * smallThreshold) {
-                    boolean wickRejection = false;
-                    if (candleHigh > 0 && candleLow > 0) {
-                        // Buy: long lower wick = buyers defended. Sell: long upper wick = sellers defended.
-                        double breakoutWick = isBuy
-                            ? (Math.min(close, candleOpen) - candleLow)
-                            : (candleHigh - Math.max(close, candleOpen));
-                        wickRejection = breakoutWick >= wickRatio * candleBody
-                            && breakoutWick >= atr * smallThreshold;
-                    }
-                    if (!wickRejection) {
-                        return ProcessedSignal.rejected(setup, symbol,
-                            "Small candle body (" + fmt(candleBody) + ") < " + smallThreshold + " ATR (" + fmt(atr * smallThreshold) + ")");
-                    }
-                }
-
-                // Check 4: opposite wick pressure (always checked, even for large bodies)
-                // Buy: long upper wick = sellers pushing down. Sell: long lower wick = buyers pushing up.
-                if (candleHigh > 0 && candleLow > 0) {
-                    double oppositeWick = isBuy
-                        ? (candleHigh - Math.max(close, candleOpen))
-                        : (Math.min(close, candleOpen) - candleLow);
-                    if (oppositeWick >= oppWickRatio * candleBody && oppositeWick >= atr * smallThreshold) {
-                        return ProcessedSignal.rejected(setup, symbol,
-                            "Opposite wick pressure (" + fmt(oppositeWick) + ") — counter-pressure against breakout");
-                    }
+            // Check 4: opposite wick pressure — always checked, even for large bodies.
+            // Buy: long upper wick = sellers pushing down. Sell: long lower wick = buyers pushing up.
+            if (candleOpen > 0 && candleHigh > 0 && candleLow > 0) {
+                double oppositeWick = isBuy
+                    ? (candleHigh - Math.max(close, candleOpen))
+                    : (Math.min(close, candleOpen) - candleLow);
+                if (oppositeWick >= oppWickRatio * candleBody && oppositeWick >= sizeFloor) {
+                    return ProcessedSignal.rejected(setup, symbol,
+                        "Opposite wick pressure (" + fmt(oppositeWick) + ") — counter-pressure against breakout");
                 }
             }
         }
@@ -258,19 +261,21 @@ public class SignalProcessor {
                     }
                 }
 
-                // Any day type: inside OR range → LPT, proceed as-is (no skip, no qty reduction).
-                // Bypass: if close is within N × ATR of the OR boundary for the trade direction
-                // (orHigh for buys, orLow for sells), skip the downgrade — price is close enough
-                // to breaking out that the inside-OR weakness no longer applies.
-                if (orHigh > 0 && orLow > 0 && close >= orLow && close <= orHigh) {
+                // Inside-OR downgrade applies ONLY on EV days (gap up/down). On IV / OV days
+                // the opening range isn't a meaningful enough structural level to justify
+                // downgrading an HPT trade — those setups stay at full HPT size regardless
+                // of where close sits relative to OR High/Low.
+                // On EV days: still downgrade HPT → LPT when close is inside OR, with a
+                // bypass when close is within N × ATR of the relevant OR boundary.
+                if (isEv && orHigh > 0 && orLow > 0 && close >= orLow && close <= orHigh) {
                     double bypassAtr = riskSettings.getInsideOrBypassWithinAtr();
                     double distToBoundary = isBuy ? (orHigh - close) : (close - orLow);
                     boolean nearBoundary = bypassAtr > 0 && atr > 0 && distToBoundary <= bypassAtr * atr;
                     if ("HPT".equals(probability) && !nearBoundary) {
                         probability = "LPT";
-                        adjustments.add("Probability HPT → LPT (inside OR range)");
+                        adjustments.add("Probability HPT → LPT (inside OR range on EV day)");
                     } else if ("HPT".equals(probability) && nearBoundary) {
-                        adjustments.add("Inside OR downgrade skipped — close within "
+                        adjustments.add("Inside OR downgrade skipped (EV day) — close within "
                             + String.format("%.2f", bypassAtr) + " ATR of OR "
                             + (isBuy ? "High" : "Low") + " ("
                             + String.format("%.2f", distToBoundary) + " pts)");
