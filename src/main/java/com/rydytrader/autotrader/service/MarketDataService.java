@@ -107,7 +107,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     private volatile String lastDisconnectTime = "";
     private volatile int reconnectCountToday = 0;
     private volatile long connectSinceMs = 0;
-    private static final int MAX_RECONNECT = 5;
     private static final int CHANNEL_NUM = 11;
 
     // Index symbol → display name mapping (for HSM token resolution)
@@ -249,14 +248,18 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             try {
                 String accessToken = tokenStore.getAccessToken();
                 if (accessToken == null || accessToken.isEmpty()) {
-                    log.info("[MarketData] No access token, skipping WS connect");
+                    log.info("[MarketData] No access token — waiting for re-login before WS can connect");
+                    if (eventService != null) eventService.log("[WS] No access token — please re-login (Fyers tokens expire daily)");
+                    scheduleReconnect();
                     return;
                 }
 
                 // 1. Extract hsm_key from JWT
                 String hsmKey = extractHsmKey(accessToken);
                 if (hsmKey == null) {
-                    log.info("[MarketData] Failed to extract hsm_key from token");
+                    log.info("[MarketData] Failed to extract hsm_key from token — token may be malformed");
+                    if (eventService != null) eventService.log("[WS] Failed to extract hsm_key — token may be malformed; re-login required");
+                    scheduleReconnect();
                     return;
                 }
 
@@ -267,7 +270,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                 resolveSymbolTokens(fyersSymbols, accessToken);
 
                 if (fyersToHsmToken.isEmpty()) {
-                    log.info("[MarketData] No HSM tokens resolved, falling back to REST");
+                    log.info("[MarketData] No HSM tokens resolved (token likely expired) — will retry with backoff");
+                    if (eventService != null) eventService.log("[WS] HSM token resolve failed — Fyers token likely expired; please re-login");
+                    scheduleReconnect();
                     return;
                 }
 
@@ -281,7 +286,17 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                 wsClient.setEventLogSink(msg -> {
                     if (eventService != null) eventService.log(msg);
                 });
-                wsClient.connectBlocking();
+                // Bounded connect — without a timeout, connectBlocking can hang indefinitely
+                // if Fyers' WS endpoint is briefly unavailable (e.g. ~8 AM maintenance),
+                // blocking the scheduler thread and stalling future reconnects.
+                boolean connected = wsClient.connectBlocking(15, TimeUnit.SECONDS);
+                if (!connected) {
+                    log.warn("[MarketData] WS connectBlocking timed out after 15s — scheduling retry");
+                    try { wsClient.close(); } catch (Exception ignored) {}
+                    wsClient = null;
+                    scheduleReconnect();
+                    return;
+                }
 
                 // 5. Start ping scheduler (10s)
                 scheduler.scheduleAtFixedRate(() -> {
@@ -298,13 +313,19 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     }
 
     private void scheduleReconnect() {
-        if (!running || reconnectAttempts >= MAX_RECONNECT) {
-            log.info("[MarketData] Max reconnect attempts reached, using REST fallback");
-            return;
-        }
+        if (!running) return;
         reconnectAttempts++;
-        long delay = Math.min(2L * (1L << reconnectAttempts), 30);
-        log.info("[MarketData] Reconnecting in {}s (attempt {})", delay, reconnectAttempts);
+        // Escalating backoff capped at 60s — never give up during a trading session.
+        // If Fyers/token remain unreachable, we keep retrying every 60s indefinitely so
+        // the moment a fresh token / network is back, WS comes alive without a server restart.
+        long delay = Math.min(2L * (1L << Math.min(reconnectAttempts, 5)), 60);
+        if (reconnectAttempts == 1 || reconnectAttempts % 10 == 0) {
+            log.info("[MarketData] Reconnect attempt #{} in {}s", reconnectAttempts, delay);
+            if (reconnectAttempts >= 10 && eventService != null) {
+                eventService.log("[WS] Reconnect attempt #" + reconnectAttempts + " — still trying (every "
+                    + delay + "s). If stuck, check Fyers login / network.");
+            }
+        }
         if (scheduler != null && !scheduler.isShutdown()) {
             scheduler.schedule(this::startLiveWebSocket, delay, TimeUnit.SECONDS);
         }
@@ -499,7 +520,13 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     @Override
     public void onAuthResult(boolean success, int ackCount) {
         if (!success) {
-            log.error("[MarketData] Auth failed, will not reconnect");
+            log.error("[MarketData] Auth failed — Fyers token likely expired; will keep retrying until re-login");
+            if (eventService != null) {
+                eventService.log("[WS] Fyers auth failed — please re-login. Bot will auto-reconnect once a fresh token is set.");
+            }
+            // Keep retrying rather than giving up: the user may re-login at any moment and
+            // we want WS to come back without a server restart.
+            scheduleReconnect();
         }
     }
 

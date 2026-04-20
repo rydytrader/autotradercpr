@@ -280,7 +280,15 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
                 // Fyers Order WS expects "clientId:accessToken" format
                 String authToken = fyersProperties.getClientId() + ":" + accessToken;
                 wsClient = new FyersOrderWebSocket(authToken, this);
-                wsClient.connectBlocking();
+                // Bounded connect — avoids scheduler-thread hangs if Fyers endpoint is briefly down.
+                boolean connected = wsClient.connectBlocking(15, TimeUnit.SECONDS);
+                if (!connected) {
+                    log.warn("[OrderEventSvc] WS connectBlocking timed out after 15s — scheduling retry");
+                    try { wsClient.close(); } catch (Exception ignored) {}
+                    wsClient = null;
+                    scheduleReconnect();
+                    return;
+                }
 
                 // Ping every 10s
                 scheduler.scheduleAtFixedRate(() -> {

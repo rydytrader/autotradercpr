@@ -66,7 +66,7 @@ public class RiskSettingsStore {
         // EMA 20/50 pattern detection thresholds (Braided vs Railway Track)
         volatile int emaPatternLookback = 10;        // candles used for pattern detection (10 × 5min = 50 min window)
         volatile int braidedMinCrossovers = 2;       // ≥ this many crossovers in lookback = BRAIDED
-        volatile double braidedMaxSpreadAtr = 0.3;   // mean|spread| ≤ this × ATR = BRAIDED (EMAs overlapping)
+        volatile double braidedMaxSpreadAtr = 0.15;  // mean|spread| ≤ this × ATR = BRAIDED (EMAs truly overlapping). Lowered from 0.3 so 1-crossover tight-trending states fall to transitional instead of ZIG ZAG.
         volatile double railwayMaxCv = 0.25;         // stddev/mean ratio for RAILWAY (stability)
         volatile double railwayMinSpreadAtr = 0.3;   // mean|spread| ≥ this × ATR for RAILWAY (meaningful separation)
         volatile double railwayMinSlopeAtr = 0.3;    // (ema[last]−ema[first])/ATR ≥ this for R-RTP (both 20 & 50 must actually rise; symmetric for F-RTP)
