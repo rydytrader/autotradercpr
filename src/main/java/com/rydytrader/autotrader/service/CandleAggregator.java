@@ -28,7 +28,14 @@ public class CandleAggregator {
     private static final Logger log = LoggerFactory.getLogger(CandleAggregator.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final String OR_STATE_FILE = "../store/config/or-state.json";
+    private static final String PRIORS_CACHE_FILE = "../store/cache/candle-priors.json";
     private static final ObjectMapper mapper = new ObjectMapper();
+
+    // true only for the Spring-managed main aggregator. The manually-created htfAggregator
+    // leaves this false so it doesn't contend on the same priors cache file.
+    private volatile boolean persistPriors = false;
+    @org.springframework.beans.factory.annotation.Autowired
+    private MarketHolidayService marketHolidayService;
 
     // Current forming candle per symbol
     private final ConcurrentHashMap<String, CandleBar> currentCandles = new ConcurrentHashMap<>();
@@ -81,6 +88,18 @@ public class CandleAggregator {
 
     public CandleAggregator(RiskSettingsStore riskSettings) {
         this.riskSettings = riskSettings;
+    }
+
+    /**
+     * Runs only for the Spring-managed main aggregator (not the manually-constructed
+     * htfAggregator). Loads prior-day candle volumes from disk so the 20-candle volume
+     * baseline is available from the first tick of the day without needing a multi-day
+     * Fyers fetch on every restart.
+     */
+    @jakarta.annotation.PostConstruct
+    public void initMainInstance() {
+        this.persistPriors = true;
+        loadPriorsFromDisk();
     }
 
     // Daily reset tracker
@@ -400,6 +419,10 @@ public class CandleAggregator {
                 log.error("[CandleAggregator] Listener error for {}: {}", symbol, e.getMessage());
             }
         }
+
+        // Persist priors + today's completedCandles on every close so a mid-day crash
+        // restart can skip the Fyers catch-up fetch for CandleAggregator state.
+        savePriorsToDisk();
     }
 
     /**
@@ -557,6 +580,113 @@ public class CandleAggregator {
         }
     }
 
+    // ── Prior-day candles cache (for 20-bar volume baseline) ────────────────────────
+    //
+    // Without this, every restart needs a multi-day Fyers fetch just to populate the
+    // volume baseline. Persisting priorDayCandles means warm restarts need only today's
+    // catch-up (1 day) and the baseline survives across weekends / long gaps.
+
+    public synchronized void savePriorsToDisk() {
+        if (!persistPriors) return;  // only the main aggregator persists
+        if (priorDayCandles.isEmpty() && completedCandles.isEmpty()) return;
+        try {
+            Path path = Paths.get(PRIORS_CACHE_FILE);
+            Files.createDirectories(path.getParent());
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("savedAt", Instant.now().atZone(IST).toString());
+            data.put("priors", priorDayCandles);
+            // Today's completed candles — persisted on every close so mid-day crash recovers
+            // without a Fyers catch-up fetch for day high/low, volume averaging, etc.
+            Map<String, List<CandleBar>> todayMap = new LinkedHashMap<>();
+            for (Map.Entry<String, Deque<CandleBar>> e : completedCandles.entrySet()) {
+                if (e.getValue() == null || e.getValue().isEmpty()) continue;
+                todayMap.put(e.getKey(), new ArrayList<>(e.getValue()));
+            }
+            data.put("today", todayMap);
+            Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
+            Files.writeString(tmp, mapper.writeValueAsString(data));
+            Files.move(tmp, path, java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (Exception e) {
+            log.error("[CandleAggregator] Failed to save priors cache: {}", e.getMessage());
+        }
+    }
+
+    public synchronized void loadPriorsFromDisk() {
+        try {
+            Path path = Paths.get(PRIORS_CACHE_FILE);
+            if (!Files.exists(path)) return;
+            JsonNode root = mapper.readTree(Files.readString(path));
+            String savedAtStr = root.has("savedAt") ? root.get("savedAt").asText("") : "";
+            if (savedAtStr.isEmpty()) return;
+            java.time.LocalDate cacheDate;
+            try { cacheDate = java.time.LocalDate.parse(savedAtStr.substring(0, 10)); }
+            catch (Exception e) { return; }
+            java.time.LocalDate today = java.time.LocalDate.now(IST);
+            java.time.LocalDate lastTradingDay = marketHolidayService != null
+                ? marketHolidayService.getLastTradingDay() : today;
+            if (!cacheDate.equals(today) && !cacheDate.equals(lastTradingDay)) {
+                log.info("[CandleAggregator] Priors cache stale (cacheDate={}, today={}, lastTradingDay={}) — will rebuild on next seed",
+                    cacheDate, today, lastTradingDay);
+                return;
+            }
+            // Priors (prior-day bars) — load unconditionally if cache is fresh.
+            // Also accept the legacy "bySymbol" field name from the pre-v2 cache layout.
+            JsonNode priorsNode = root.get("priors");
+            if (priorsNode == null) priorsNode = root.get("bySymbol");
+            int priorsCount = 0;
+            if (priorsNode != null && priorsNode.isObject()) {
+                Iterator<Map.Entry<String, JsonNode>> it = priorsNode.fields();
+                while (it.hasNext()) {
+                    Map.Entry<String, JsonNode> e = it.next();
+                    JsonNode arr = e.getValue();
+                    if (arr == null || !arr.isArray()) continue;
+                    List<CandleBar> bars = deserializeBars(arr);
+                    if (!bars.isEmpty()) {
+                        priorDayCandles.put(e.getKey(), bars);
+                        priorsCount++;
+                    }
+                }
+            }
+            // Today's completed candles — load ONLY if cache was from today. If it's from
+            // last trading day, today's bars are stale (market already rolled over).
+            int todayCount = 0;
+            if (cacheDate.equals(today)) {
+                JsonNode todayNode = root.get("today");
+                if (todayNode != null && todayNode.isObject()) {
+                    Iterator<Map.Entry<String, JsonNode>> it = todayNode.fields();
+                    while (it.hasNext()) {
+                        Map.Entry<String, JsonNode> e = it.next();
+                        JsonNode arr = e.getValue();
+                        if (arr == null || !arr.isArray()) continue;
+                        List<CandleBar> bars = deserializeBars(arr);
+                        if (!bars.isEmpty()) {
+                            Deque<CandleBar> deque = completedCandles.computeIfAbsent(e.getKey(), k -> new ArrayDeque<>());
+                            synchronized (deque) { deque.clear(); for (CandleBar b : bars) deque.addLast(b); }
+                            todayCount++;
+                        }
+                    }
+                }
+            }
+            if (priorsCount > 0 || todayCount > 0) {
+                log.info("[CACHE] Candle state restored from cache (savedAt={}, priors={}, todayCandles={})",
+                    savedAtStr, priorsCount, todayCount);
+            }
+        } catch (Exception e) {
+            log.error("[CandleAggregator] Failed to load priors cache: {}", e.getMessage());
+        }
+    }
+
+    private List<CandleBar> deserializeBars(JsonNode arr) {
+        List<CandleBar> bars = new ArrayList<>();
+        if (arr == null || !arr.isArray()) return bars;
+        for (JsonNode b : arr) {
+            try { bars.add(mapper.treeToValue(b, CandleBar.class)); }
+            catch (Exception ignored) {}
+        }
+        return bars;
+    }
+
     public double getAtp(String symbol) {
         return latestAtp.getOrDefault(symbol, 0.0);
     }
@@ -620,6 +750,8 @@ public class CandleAggregator {
         int keepPriors = 25;
         if (priors.size() > keepPriors) priors = priors.subList(priors.size() - keepPriors, priors.size());
         priorDayCandles.put(symbol, new ArrayList<>(priors));
+        // Save refreshed priors so next restart can skip the multi-day history fetch for the baseline.
+        savePriorsToDisk();
 
         if (todays.isEmpty()) return;
 
@@ -713,6 +845,9 @@ public class CandleAggregator {
                 priorDayCandles.put(entry.getKey(), new ArrayList<>(priors.subList(priors.size() - keepPriors, priors.size())));
             }
         }
+        // Persist the refreshed priors before clearing today's state, so a restart tomorrow
+        // morning (or later today) picks up the volume baseline without re-fetching Fyers.
+        savePriorsToDisk();
         currentCandles.clear();
         completedCandles.clear();
         firstBarTraceCount.clear();

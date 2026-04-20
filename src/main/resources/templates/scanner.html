@@ -1888,12 +1888,14 @@ function renderChart(d, isFirst) {
 
     var container = document.getElementById('chartContainer');
 
-    // No data handling
-    if (candles.length === 0) {
-        var msg = d.dataSource === 'error'
-            ? 'Failed to fetch historical candles. Please ensure you are logged in to Fyers.<br/>Error: ' + (d.error || 'unknown')
-            : 'No candle data available for this stock.';
-        container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-secondary);font-family:var(--font-mono);font-size:0.9rem;text-align:center;padding:20px;">' + msg + '</div>';
+    // If Fyers fetch errored entirely, show the diagnostic instead of a blank chart.
+    // For a legitimate "no candles yet" state (pre-market, symbol just added), fall
+    // through and render the empty chart frame with CPR levels so the user still sees
+    // structural context.
+    if (candles.length === 0 && d.dataSource === 'error') {
+        container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-secondary);font-family:var(--font-mono);font-size:0.9rem;text-align:center;padding:20px;">'
+            + 'Failed to fetch historical candles. Please ensure you are logged in to Fyers.<br/>Error: ' + (d.error || 'unknown')
+            + '</div>';
         if (chartState.chart) { chartState.chart.destroy(); chartState.chart = null; }
         return;
     }
@@ -2149,14 +2151,25 @@ function applyChartLines(d) {
     }
     chartState.levelSeries = [];
 
-    // Determine x-range from candle data (day start → day end)
+    // Determine x-range from candle data, or synthesize today's session (9:15–15:30 IST)
+    // when no candles are available (e.g. pre-market, freshly added symbol).
     var candles = d.candles || [];
-    if (candles.length === 0) return;
-    var startSec = Math.floor(candles[0].t / 1000);
-    var endSec = Math.floor(candles[candles.length - 1].t / 1000);
-    // Extend end to include the full last 5-min bar
-    var tf = (d.timeframeMinutes || 5) * 60;
-    endSec = endSec + tf;
+    var startSec, endSec;
+    if (candles.length === 0) {
+        // Synthesize today's NSE session in IST (UTC+5:30). 9:15 IST = 03:45 UTC, 15:30 IST = 10:00 UTC.
+        var now = new Date();
+        var todayStartIST = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 3, 45, 0));
+        // If "now" is already past midnight IST but still before 03:45 UTC (i.e., pre-9:15 IST), keep today.
+        // If already past 10:00 UTC (post market close), show today's range anyway.
+        startSec = Math.floor(todayStartIST.getTime() / 1000);
+        endSec = startSec + (6 * 3600 + 15 * 60);  // +6h15m → 15:30 IST
+    } else {
+        startSec = Math.floor(candles[0].t / 1000);
+        endSec = Math.floor(candles[candles.length - 1].t / 1000);
+        // Extend end to include the full last bar
+        var tf = (d.timeframeMinutes || 5) * 60;
+        endSec = endSec + tf;
+    }
 
     var cpr = d.cpr || {};
 

@@ -151,20 +151,23 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
     }
 
     /**
-     * 1-day catch-up fetch for cache-seeded symbols. Re-seeds CandleAggregator's today-only
-     * deque and replays any bars that closed between cache-save and restart through
-     * {@link EmaService#onCandleClose} / {@link #onCandleClose} so EMAs/ATR stay incremental.
-     * Does NOT call seedFromCandles — that would reset the EMA from SMA and wipe the cache.
+     * Catch-up fetch for cache-seeded symbols. Pulls today's bars only — CandleAggregator's
+     * priorDayCandles disk cache now handles the 20-bar volume baseline, so a 1-day window
+     * is sufficient to (a) replay any bars closed between cache-save and restart through
+     * {@link EmaService#onCandleClose} / {@link #onCandleClose} and (b) populate today's
+     * completedCandles deque so day-high/low etc. are accurate.
+     * The epochSec ≤ lastCandleEpoch guard prevents re-applying bars already baked into the
+     * cache. Does NOT call seedFromCandles — that resets EMA from SMA and wipes the cache.
      */
     private void doCatchUpFetch(List<String> symbols, String authHeader, int timeframe) {
         if (symbols.isEmpty()) return;
         int candleCount = 0;
         for (String symbol : symbols) {
             try {
-                List<CandleAggregator.CandleBar> today = fetchHistoricalCandles(symbol, timeframe, authHeader, 1);
-                candleAggregator.seedCandles(symbol, today);
+                List<CandleAggregator.CandleBar> bars = fetchHistoricalCandles(symbol, timeframe, authHeader, 1);
+                candleAggregator.seedCandles(symbol, bars);
                 long lastEpoch = emaService != null ? emaService.getLastCandleEpoch(symbol) : 0;
-                for (CandleAggregator.CandleBar c : today) {
+                for (CandleAggregator.CandleBar c : bars) {
                     if (c.epochSec <= lastEpoch) continue;  // already applied pre-restart
                     if (emaService != null) emaService.onCandleClose(symbol, c);
                     this.onCandleClose(symbol, c);
@@ -323,9 +326,9 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
     }
 
     /**
-     * HTF catch-up fetch: for cache-seeded symbols, pull only today's HTF bars and replay
-     * any that are newer than the cached lastCandleEpoch through HtfEmaService.onCandleClose.
-     * Avoids the full 100-day fetch on mid-day / next-morning restart.
+     * HTF catch-up fetch: pull today's HTF bars only and replay any newer than the cached
+     * lastCandleEpoch through HtfEmaService.onCandleClose. HTF doesn't use the 20-bar volume
+     * baseline so no multi-day priors needed.
      */
     private void doHtfCatchUpFetch(List<String> symbols, HtfEmaService htfEmaService, String authHeader,
                                    int baseTimeframe, int htfTimeframe, boolean nativeFetch) {
