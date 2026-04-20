@@ -163,7 +163,7 @@ public class TradingController {
         latencyTracker.mark(psSymbol, ps.getSetup(), LatencyTracker.Stage.SIGNAL_PROCESSED);
         if (ps.isRejected()) {
             latencyTracker.cancel(psSymbol);
-            eventService.log("[WARNING] " + psSymbol + " " + ps.getSetup() + " filtered — " + ps.getRejectionReason());
+            eventService.log("[SIGNAL] " + psSymbol + " " + ps.getSetup() + " filtered — " + ps.getRejectionReason());
             return ResponseEntity.ok("Signal filtered: " + ps.getRejectionReason());
         }
         String signal      = ps.getSignal();

@@ -429,16 +429,23 @@ public class ScannerController {
         List<Map<String, Object>> ema200Series = new ArrayList<>();
 
         if (tradingDay) {
-            // Live path: read stored indicator values per-candle from aggregator
-            List<CandleAggregator.CandleBar> candles = candleAggregator.getCompletedCandles(symbol);
-            for (CandleAggregator.CandleBar c : candles) {
-                candleList.add(barToMap(c, false));
-                addIndicatorPoints(c, vwapSeries, ema20Series, ema200Series);
-            }
+            // Live path: compute indicators progressively over prior-day warmup + today so
+            // every today's bar has a fully-warmed-up EMA (bar 1 included). Relying on the
+            // per-bar snapshots left 0s on bars seeded before EmaService.onCandleClose fired
+            // (e.g. cold-start full-fetch bars, mid-day restart catch-up).
+            java.time.ZoneId ist = java.time.ZoneId.of("Asia/Kolkata");
+            java.time.LocalDate today = java.time.LocalDate.now(ist);
+            List<CandleAggregator.CandleBar> priors = candleAggregator.getPriorDayCandles(symbol);
+            List<CandleAggregator.CandleBar> todays  = candleAggregator.getCompletedCandles(symbol);
+            List<CandleAggregator.CandleBar> merged = new ArrayList<>();
+            if (priors != null) merged.addAll(priors);
+            if (todays != null) merged.addAll(todays);
+            computeIndicatorsAndBuild(merged, today, ist, candleList, vwapSeries, ema20Series, ema200Series);
+
+            // Forming (current, still-open) candle — append with live indicator values
             CandleAggregator.CandleBar current = candleAggregator.getCurrentCandle(symbol);
             if (current != null && current.open > 0) {
                 candleList.add(barToMap(current, true));
-                // Forming candle uses current live indicator values
                 long tMs = current.epochSec * 1000L;
                 double liveVwap = candleAggregator.getAtp(symbol);
                 double liveEma20 = emaService.getEma(symbol);

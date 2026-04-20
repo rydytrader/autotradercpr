@@ -49,9 +49,35 @@ public class EventService {
             updateLogDate();
             lastLogDate = today;
         }
+        if (message == null) message = "";
+        // Auto-prepend the calling class name when the caller hasn't supplied their own
+        // [TAG] prefix. Saves editing 150+ call sites and keeps existing tags intact.
+        if (!message.startsWith("[")) {
+            String caller = detectCallerClass();
+            if (caller != null) message = "[" + caller + "] " + message;
+        }
         String entry = LocalTime.now().format(TIME_FMT) + " - " + message;
         tradeLogs.add(entry);
         writeToFile(entry);
+    }
+
+    /** Walks one frame back past this class to find the immediate caller's simple class name. */
+    private String detectCallerClass() {
+        try {
+            StackTraceElement[] stack = new Throwable().getStackTrace();
+            // stack[0] = detectCallerClass, stack[1] = log, stack[2] = direct caller.
+            // If EventService is itself wrapped (unlikely), skip additional EventService frames.
+            for (int i = 2; i < stack.length; i++) {
+                String fqcn = stack[i].getClassName();
+                if (fqcn.contains("EventService")) continue;
+                int dot = fqcn.lastIndexOf('.');
+                String simple = dot >= 0 ? fqcn.substring(dot + 1) : fqcn;
+                int dollar = simple.indexOf('$');       // strip lambda / inner class suffix
+                if (dollar >= 0) simple = simple.substring(0, dollar);
+                return simple;
+            }
+        } catch (Exception ignored) {}
+        return null;
     }
 
     public List<String> getTradeLogs() { return tradeLogs; }

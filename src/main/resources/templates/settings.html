@@ -731,6 +731,12 @@
                         <option value="60">60 min</option>
                     </select>
                     <div class="form-hint">Track high/low of first N minutes. Shows OR badge on scanner. Filters gap trades (first candle beyond R2/S2) to only trade in OR direction.</div>
+                    <div style="display:flex;align-items:center;gap:10px;margin-top:10px;">
+                        <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Inside-OR downgrade bypass when within</span>
+                        <input type="number" id="insideOrBypassWithinAtr" class="form-control" step="0.1" min="0" max="5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">ATR of OR boundary</span>
+                    </div>
+                    <div class="form-hint">When a breakout fires with close inside the OR range, the trade is normally downgraded HPT&nbsp;&rarr;&nbsp;LPT. Bypass this downgrade when the close is within this many ATR of the relevant OR boundary (OR High for buys, OR Low for sells) — the level is close enough to flip. Default 1.0 ATR. Set to 0 to always downgrade.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Include in Watchlist</label>
@@ -1064,6 +1070,7 @@
             document.getElementById('scanCapMid').checked = capVal === 'ALL' || capVal.includes('MID');
             document.getElementById('scanCapSmall').checked = capVal === 'ALL' || capVal.includes('SMALL');
             document.getElementById('openingRangeMinutes').value = d.openingRangeMinutes != null ? d.openingRangeMinutes : 0;
+            document.getElementById('insideOrBypassWithinAtr').value = d.insideOrBypassWithinAtr != null ? d.insideOrBypassWithinAtr : 1.0;
             document.getElementById('scanIncludeNS').checked = d.scanIncludeNS !== false;
             document.getElementById('scanIncludeNL').checked = d.scanIncludeNL !== false;
             document.getElementById('smallRangeAdrPct').value = d.smallRangeAdrPct != null ? d.smallRangeAdrPct : 50.0;
@@ -1214,6 +1221,7 @@
                     return caps.length === 0 || caps.length === 3 ? 'ALL' : caps.join(',');
                 })(),
                 openingRangeMinutes: parseInt(document.getElementById('openingRangeMinutes').value) || 0,
+                insideOrBypassWithinAtr: parseFloat(document.getElementById('insideOrBypassWithinAtr').value) || 0,
                 scanIncludeNS: document.getElementById('scanIncludeNS').checked,
                 scanIncludeNL: document.getElementById('scanIncludeNL').checked,
                 smallRangeAdrPct: parseFloat(document.getElementById('smallRangeAdrPct').value) || 50.0,

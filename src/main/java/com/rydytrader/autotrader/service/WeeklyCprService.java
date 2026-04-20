@@ -531,7 +531,35 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
 
     public String getWeeklyRejection(String symbol) {
         RejectionState s = weeklyRejection.get(symbol);
-        return s != null ? s.type : "NONE";
+        if (s == null || "NONE".equals(s.type)) return "NONE";
+
+        // Live LTP-based reset: as soon as price touches the weekly CPR boundary, the
+        // rejection thesis is complete — don't wait for the next HTF (60-min) candle close
+        // to recognise it. The *rejection-extreme* reset (close above rejection high for
+        // R1/PWH, below rejection low for S1/PWL) still requires a candle CLOSE — handled
+        // in onHigherTimeframeCandleClose, not here.
+        WeeklyLevels wl = weeklyLevels.get(symbol);
+        if (wl != null) {
+            double ltp = candleAggregator.getLtp(symbol);
+            if (ltp > 0) {
+                if ("WEEKLY_R1_PWH_REVERSAL".equals(s.type) && ltp <= wl.top) {
+                    log.info("[WeeklyCpr] {} R1/PWH reversal auto-reset — LTP {} touched weekly CPR top {}",
+                        symbol, String.format("%.2f", ltp), String.format("%.2f", wl.top));
+                    s.type = "NONE"; s.rejectionPrice = 0;
+                    saveTfCloseToFile();
+                    return "NONE";
+                }
+                if ("WEEKLY_S1_PWL_REVERSAL".equals(s.type) && ltp >= wl.bot) {
+                    log.info("[WeeklyCpr] {} S1/PWL reversal auto-reset — LTP {} touched weekly CPR bot {}",
+                        symbol, String.format("%.2f", ltp), String.format("%.2f", wl.bot));
+                    s.type = "NONE"; s.rejectionPrice = 0;
+                    saveTfCloseToFile();
+                    return "NONE";
+                }
+            }
+        }
+
+        return s.type;
     }
 
     @Override

@@ -28,7 +28,8 @@ public class CandleAggregator {
     private static final Logger log = LoggerFactory.getLogger(CandleAggregator.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final String OR_STATE_FILE = "../store/config/or-state.json";
-    private static final String PRIORS_CACHE_FILE = "../store/cache/candle-priors.json";
+    private static final String CANDLE_HISTORY_FILE = "../store/cache/candle-history.json";
+    private static final String LEGACY_PRIORS_FILE  = "../store/cache/candle-priors.json";
     private static final ObjectMapper mapper = new ObjectMapper();
 
     // true only for the Spring-managed main aggregator. The manually-created htfAggregator
@@ -99,7 +100,11 @@ public class CandleAggregator {
     @jakarta.annotation.PostConstruct
     public void initMainInstance() {
         this.persistPriors = true;
+        log.info("[CandleAggregator] Main aggregator initialized — priors cache enabled");
         loadPriorsFromDisk();
+        // NOTE: intentionally no eager save here. Writing an empty file at boot would poison
+        // any good cache loaded during a subsequent restart. Saves fire naturally after
+        // seedCandles populates priors and on every candle close.
     }
 
     // Daily reset tracker
@@ -307,8 +312,12 @@ public class CandleAggregator {
             if (existing.volAtStart == -1 && cumVol > 0) {
                 existing.volAtStart = cumVol - existing.volume;
             }
-            // Update candle volume as delta from start (uses last known cumulative volume)
-            if (cumVol > 0 && existing.volAtStart > 0) {
+            // Update candle volume as delta from start (uses last known cumulative volume).
+            // volAtStart == 0 is a LEGITIMATE starting value for illiquid stocks whose first
+            // WS tick of the day arrives before any trade has executed. Using `> 0` here
+            // caused those candles to stay at 0 volume forever. volAtStart == -1 is the
+            // sentinel for mid-candle restart; it gets rewritten above before this guard.
+            if (cumVol > 0 && existing.volAtStart >= 0) {
                 existing.volume = cumVol - existing.volAtStart;
             }
             return existing;
@@ -588,9 +597,12 @@ public class CandleAggregator {
 
     public synchronized void savePriorsToDisk() {
         if (!persistPriors) return;  // only the main aggregator persists
+        // Don't overwrite a good cache with an empty one. If both maps are empty (e.g. the
+        // eager save fires before seedCandles has run), skip — the next non-empty save after
+        // login / candle close will produce a real snapshot.
         if (priorDayCandles.isEmpty() && completedCandles.isEmpty()) return;
         try {
-            Path path = Paths.get(PRIORS_CACHE_FILE);
+            Path path = Paths.get(CANDLE_HISTORY_FILE);
             Files.createDirectories(path.getParent());
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("savedAt", Instant.now().atZone(IST).toString());
@@ -607,15 +619,33 @@ public class CandleAggregator {
             Files.writeString(tmp, mapper.writeValueAsString(data));
             Files.move(tmp, path, java.nio.file.StandardCopyOption.ATOMIC_MOVE,
                 java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            if (log.isDebugEnabled()) {
+                log.debug("[CandleAggregator] Saved priors cache — {} priors, {} today", priorDayCandles.size(), todayMap.size());
+            }
         } catch (Exception e) {
-            log.error("[CandleAggregator] Failed to save priors cache: {}", e.getMessage());
+            log.error("[CandleAggregator] Failed to save priors cache: {}", e.getMessage(), e);
         }
     }
 
     public synchronized void loadPriorsFromDisk() {
         try {
-            Path path = Paths.get(PRIORS_CACHE_FILE);
-            if (!Files.exists(path)) return;
+            Path path = Paths.get(CANDLE_HISTORY_FILE);
+            // Migrate the old file name on first boot post-rename.
+            if (!Files.exists(path)) {
+                Path legacy = Paths.get(LEGACY_PRIORS_FILE);
+                if (Files.exists(legacy)) {
+                    try {
+                        Files.createDirectories(path.getParent());
+                        Files.move(legacy, path, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        log.info("[MIGRATE] Renamed {} -> {}", legacy, path);
+                    } catch (Exception e) {
+                        log.warn("[MIGRATE] Failed to rename {}: {}", legacy, e.getMessage());
+                        return;
+                    }
+                } else {
+                    return;
+                }
+            }
             JsonNode root = mapper.readTree(Files.readString(path));
             String savedAtStr = root.has("savedAt") ? root.get("savedAt").asText("") : "";
             if (savedAtStr.isEmpty()) return;
@@ -726,6 +756,13 @@ public class CandleAggregator {
         Deque<CandleBar> history = completedCandles.get(symbol);
         if (history == null) return Collections.emptyList();
         return new ArrayList<>(history);
+    }
+
+    /** Prior-day candles kept for volume-avg fallback and chart EMA warmup (ordered oldest → newest). */
+    public List<CandleBar> getPriorDayCandles(String symbol) {
+        List<CandleBar> priors = priorDayCandles.get(symbol);
+        if (priors == null) return Collections.emptyList();
+        return new ArrayList<>(priors);
     }
 
     /**

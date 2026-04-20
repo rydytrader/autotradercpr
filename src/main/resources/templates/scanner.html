@@ -1979,7 +1979,31 @@ function renderChart(d, isFirst) {
         applyChartLines(d);
         applyOrBand(d);
         applyTradeMarkers(d);
-        chartState.chart.timeScale().fitContent();
+        if (candles.length === 0) {
+            // fitContent on an empty candlestick series collapses the time scale to a sliver.
+            // Force the visible range to today's NSE session so the CPR lines span the full
+            // modal width even before any bar has rendered.
+            var now = new Date();
+            var sessStart = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 3, 45, 0) / 1000);
+            var sessEnd = sessStart + (6 * 3600 + 15 * 60);
+            try {
+                chartState.chart.timeScale().setVisibleRange({ from: sessStart, to: sessEnd });
+            } catch (e) {}
+        } else {
+            chartState.chart.timeScale().fitContent();
+        }
+        // Force explicit resize after first layout to work around autoSize hiccups on empty
+        // charts / race with modal's display:flex transition. Two RAF ticks ensure the modal
+        // has laid out and the container's final clientWidth/Height are available.
+        var resizeChart = function() {
+            if (!chartState.chart) return;
+            var w = container.clientWidth || 0;
+            var h = container.clientHeight || 0;
+            if (w > 0 && h > 0) {
+                try { chartState.chart.resize(w, h); } catch (e) {}
+            }
+        };
+        requestAnimationFrame(function() { requestAnimationFrame(resizeChart); });
 
         // Build OHLC tooltip overlay
         var tooltip = document.createElement('div');
@@ -2052,11 +2076,17 @@ function applyOrBand(d) {
     }
     var or = d.or;
     if (!or || !or.high || !or.low || !or.startMs || !or.endMs) return;
+    // Don't draw OR on an empty chart — OR only becomes meaningful AFTER the opening-range
+    // window (usually first 15 min) has locked. Rendering it pre-market or pre-OR-lock paints
+    // stale or uninitialized values onto what should be a structural-levels-only view.
+    var candles = d.candles || [];
+    if (candles.length === 0) return;
+    var nowSec = Math.floor(Date.now() / 1000);
+    if (nowSec < Math.floor(or.endMs / 1000)) return;  // OR window not locked yet
 
     var startSec = Math.floor(or.startMs / 1000);
     var endSec = Math.floor(or.endMs / 1000);
     // Session end for extending OR high/low as reference lines
-    var candles = d.candles || [];
     var sessionEndSec = candles.length ? Math.floor(candles[candles.length - 1].t / 1000) + (d.timeframeMinutes || 5) * 60 : endSec;
     if (sessionEndSec < endSec) sessionEndSec = endSec;
 

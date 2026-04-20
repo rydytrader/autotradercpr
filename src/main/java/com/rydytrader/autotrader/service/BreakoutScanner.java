@@ -180,6 +180,23 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double low = candle.low;
         double high = candle.high;
 
+        // One-time 5-min EMA trend log per candle scan — fires before detectBuy/Sell so
+        // diagnostic re-calls inside those functions don't duplicate the message.
+        double ema20Now  = emaService.getEma(fyersSymbol);
+        double ema50Now  = emaService.getEma50(fyersSymbol);
+        double ema200Now = emaService.getEma200(fyersSymbol);
+        if (riskSettings.isEnableEmaTrendCheck() && ema20Now > 0 && ema50Now > 0 && ema200Now > 0) {
+            if (greenCandle && !(close > ema20Now && close > ema50Now && close > ema200Now)) {
+                eventService.log("[SCANNER] BUY " + fyersSymbol + " blocked by 5-min EMA trend (not BULLISH): close="
+                    + String.format("%.2f", close) + " ema20=" + String.format("%.2f", ema20Now)
+                    + " ema50=" + String.format("%.2f", ema50Now) + " ema200=" + String.format("%.2f", ema200Now));
+            } else if (redCandle && !(close < ema20Now && close < ema50Now && close < ema200Now)) {
+                eventService.log("[SCANNER] SELL " + fyersSymbol + " blocked by 5-min EMA trend (not BEARISH): close="
+                    + String.format("%.2f", close) + " ema20=" + String.format("%.2f", ema20Now)
+                    + " ema50=" + String.format("%.2f", ema50Now) + " ema200=" + String.format("%.2f", ema200Now));
+            }
+        }
+
         // Check BUY signals — requires green candle (close > open)
         if (greenCandle) {
             // ATP check for buys: close must be above ATP
@@ -301,18 +318,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                                       CprLevels levels, double atp, Set<String> broken, String fyersSymbol) {
         // ATP check for buys: close must be above ATP
         if (riskSettings.isEnableAtpCheck() && atp > 0 && close < atp) return null;
-        // 5-min EMA trend check for buys: close must be above EMA(20), EMA(50), EMA(200).
-        // Mirrors the "5m" BULLISH chip on scanner cards (scanner.html emaTrendObj).
-        double ema    = emaService.getEma(fyersSymbol);      // also used by isEnableEmaVsAtpCheck below
-        double ema50  = emaService.getEma50(fyersSymbol);
-        double ema200 = emaService.getEma200(fyersSymbol);
+        // 5-min EMA trend check — now gated at the caller level (scanForBreakoutInner)
+        // before reaching this function, so no double-logging on diagnostic re-calls.
+        double ema    = emaService.getEma(fyersSymbol);      // still needed by isEnableEmaVsAtpCheck below
         if (riskSettings.isEnableEmaTrendCheck()
-                && ema > 0 && ema50 > 0 && ema200 > 0
-                && !(close > ema && close > ema50 && close > ema200)) {
-            eventService.log("[SCANNER] " + fyersSymbol + " blocked by 5-min EMA trend (not BULLISH): close="
-                + String.format("%.2f", close) + " ema20=" + String.format("%.2f", ema)
-                + " ema50=" + String.format("%.2f", ema50) + " ema200=" + String.format("%.2f", ema200));
-            return null;
+                && ema > 0 && emaService.getEma50(fyersSymbol) > 0 && emaService.getEma200(fyersSymbol) > 0
+                && !(close > ema && close > emaService.getEma50(fyersSymbol) && close > emaService.getEma200(fyersSymbol))) {
+            return null;  // silently — the log fired once at the caller
         }
         // 20 EMA vs ATP/VWAP check for buys: 20 EMA must be above ATP
         if (riskSettings.isEnableEmaVsAtpCheck() && ema > 0 && atp > 0 && ema < atp) return null;
@@ -395,18 +407,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                                        CprLevels levels, double atp, Set<String> broken, String fyersSymbol) {
         // ATP check for sells: close must be below ATP
         if (riskSettings.isEnableAtpCheck() && atp > 0 && close > atp) return null;
-        // 5-min EMA trend check for sells: close must be below EMA(20), EMA(50), EMA(200).
-        // Mirrors the "5m" BEARISH chip on scanner cards (scanner.html emaTrendObj).
-        double ema    = emaService.getEma(fyersSymbol);      // also used by isEnableEmaVsAtpCheck below
-        double ema50  = emaService.getEma50(fyersSymbol);
-        double ema200 = emaService.getEma200(fyersSymbol);
+        // 5-min EMA trend check — now gated at the caller level (scanForBreakoutInner) before
+        // reaching this function, so no double-logging on diagnostic re-calls.
+        double ema    = emaService.getEma(fyersSymbol);      // still needed by isEnableEmaVsAtpCheck below
         if (riskSettings.isEnableEmaTrendCheck()
-                && ema > 0 && ema50 > 0 && ema200 > 0
-                && !(close < ema && close < ema50 && close < ema200)) {
-            eventService.log("[SCANNER] " + fyersSymbol + " blocked by 5-min EMA trend (not BEARISH): close="
-                + String.format("%.2f", close) + " ema20=" + String.format("%.2f", ema)
-                + " ema50=" + String.format("%.2f", ema50) + " ema200=" + String.format("%.2f", ema200));
-            return null;
+                && ema > 0 && emaService.getEma50(fyersSymbol) > 0 && emaService.getEma200(fyersSymbol) > 0
+                && !(close < ema && close < emaService.getEma50(fyersSymbol) && close < emaService.getEma200(fyersSymbol))) {
+            return null;  // silently — the log fired once at the caller
         }
         // 20 EMA vs ATP/VWAP check for sells: 20 EMA must be below ATP
         if (riskSettings.isEnableEmaVsAtpCheck() && ema > 0 && atp > 0 && ema > atp) return null;
@@ -489,7 +496,19 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     private void fireSignal(String fyersSymbol, String setup, double open, double high,
                             double low, double close, long candleVolume, double atr, CprLevels levels,
                             String prob, String scannerNote) {
-        String timeStr = ZonedDateTime.now(IST).toLocalTime().format(TIME_FMT);
+        // Use the closing candle's exchange-derived close time, not system clock.
+        // Server clock typically runs ~50-500ms behind exchange wall time due to network
+        // latency, so system-time logs were showing 09:24:59 for a candle that actually
+        // closed at exchange time 09:25:00. Deriving the label from the candle itself
+        // removes that ambiguity.
+        CandleAggregator.CandleBar ctxCandle = currentCandle.get();
+        String timeStr;
+        if (ctxCandle != null && ctxCandle.startMinute > 0) {
+            int closeMin = (int) (ctxCandle.startMinute + riskSettings.getScannerTimeframe());
+            timeStr = String.format("%02d:%02d:00", closeMin / 60, closeMin % 60);
+        } else {
+            timeStr = ZonedDateTime.now(IST).toLocalTime().format(TIME_FMT);
+        }
         latencyTracker.mark(fyersSymbol, setup, LatencyTracker.Stage.SIGNAL_DETECTED);
 
         Map<String, Object> payload = new LinkedHashMap<>();

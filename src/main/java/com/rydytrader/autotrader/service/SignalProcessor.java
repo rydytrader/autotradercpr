@@ -258,11 +258,22 @@ public class SignalProcessor {
                     }
                 }
 
-                // Any day type: inside OR range → LPT, proceed as-is (no skip, no qty reduction)
+                // Any day type: inside OR range → LPT, proceed as-is (no skip, no qty reduction).
+                // Bypass: if close is within N × ATR of the OR boundary for the trade direction
+                // (orHigh for buys, orLow for sells), skip the downgrade — price is close enough
+                // to breaking out that the inside-OR weakness no longer applies.
                 if (orHigh > 0 && orLow > 0 && close >= orLow && close <= orHigh) {
-                    if ("HPT".equals(probability)) {
+                    double bypassAtr = riskSettings.getInsideOrBypassWithinAtr();
+                    double distToBoundary = isBuy ? (orHigh - close) : (close - orLow);
+                    boolean nearBoundary = bypassAtr > 0 && atr > 0 && distToBoundary <= bypassAtr * atr;
+                    if ("HPT".equals(probability) && !nearBoundary) {
                         probability = "LPT";
                         adjustments.add("Probability HPT → LPT (inside OR range)");
+                    } else if ("HPT".equals(probability) && nearBoundary) {
+                        adjustments.add("Inside OR downgrade skipped — close within "
+                            + String.format("%.2f", bypassAtr) + " ATR of OR "
+                            + (isBuy ? "High" : "Low") + " ("
+                            + String.format("%.2f", distToBoundary) + " pts)");
                     }
                 }
             } else if (isEv) {
@@ -279,8 +290,23 @@ public class SignalProcessor {
         // may have downgraded HPT → LPT (inside-OR, EV reversal, etc.). If LPT is disabled
         // and the probability was just downgraded, reject the trade here.
         if ("LPT".equals(probability) && !riskSettings.isEnableLpt()) {
-            return ProcessedSignal.rejected(setup, symbol,
-                "Probability downgraded to LPT after scanner — LPT trades disabled");
+            // Surface which rule caused the downgrade — pulls from the adjustments list
+            // that was populated when each downgrade rule fired.
+            String downgradeReason = "";
+            for (String adj : adjustments) {
+                if (adj != null && adj.startsWith("Probability") && adj.contains("→ LPT")) {
+                    int parenOpen  = adj.indexOf('(');
+                    int parenClose = adj.lastIndexOf(')');
+                    if (parenOpen >= 0 && parenClose > parenOpen) {
+                        if (!downgradeReason.isEmpty()) downgradeReason += "; ";
+                        downgradeReason += adj.substring(parenOpen + 1, parenClose);
+                    }
+                }
+            }
+            String detail = downgradeReason.isEmpty()
+                ? "Probability downgraded to LPT after scanner — LPT trades disabled"
+                : "Probability downgraded to LPT (" + downgradeReason + ") — LPT trades disabled";
+            return ProcessedSignal.rejected(setup, symbol, detail);
         }
 
         // ── 4f. Compute target ──────────────────────────────────────────────────
