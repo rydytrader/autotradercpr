@@ -478,6 +478,20 @@ public class SignalProcessor {
             qty = reduced;
         }
 
+        // ── 4i2b. NIFTY index alignment qty adjustment ─────────────────────────
+        // When NIFTY opposes the trade but the stock's own alignment (weekly + daily +
+        // EMA) is intact, we kept the probability (typically HPT) and apply a qty factor
+        // here instead of a full LPT downgrade. Default 0.75 → 25% qty reduction.
+        if (Boolean.TRUE.equals(alert.get("niftyOpposed"))) {
+            double factor = riskSettings.getIndexOpposedQtyFactor();
+            if (factor > 0 && factor < 1.0) {
+                int reduced = Math.max(1, (int)(qty * factor));
+                eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (NIFTY opposed ×" + factor + "): " + qty + " -> " + reduced);
+                adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — NIFTY opposed)");
+                qty = reduced;
+            }
+        }
+
         // Weekly NEUTRAL trades are always LPT (downgraded in BreakoutScanner) — no additional qty reduction.
 
         // ── 4i3. Level-based qty adjustment (R3/S3 and R4/S4 extended levels) ──

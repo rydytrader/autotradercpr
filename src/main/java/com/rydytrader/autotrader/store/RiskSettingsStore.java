@@ -142,9 +142,14 @@ public class RiskSettingsStore {
         // Target Tolerance — discount structural target by ATR fraction so near-miss reversals fill
         volatile boolean enableTargetTolerance = true;
         volatile double targetToleranceAtr = 0.10; // discount structural target by this fraction of ATR
-        // NIFTY Index Alignment Filter — downgrade HPT → LPT for trades opposed to NIFTY trend
+        // NIFTY Index Alignment Filter
         volatile boolean enableIndexAlignment = false;        // master toggle, opt-in
-        volatile boolean indexAlignmentHardSkip = false;      // true = hard skip opposed trades; false = HPT→LPT downgrade
+        volatile boolean indexAlignmentHardSkip = false;      // true = hard skip opposed trades; false = keep probability, reduce qty
+        // Soft-mode qty factor: when NIFTY opposes the trade and hard-skip is off, trade
+        // fires at original probability (HPT) with qty multiplied by this factor.
+        // Rationale: stock's own alignment is intact (weekly+daily+EMA), only the index
+        // is opposed — take the trade with reduced risk instead of downgrading to LPT.
+        volatile double indexOpposedQtyFactor = 0.75;         // 0.75 = 25% reduction
         volatile boolean weeklyReversalHardSkip = true;        // true = skip trades opposed to weekly reversal; false = HPT→LPT
         // Composite score range is ±10 (weekly ±2 + daily ±2 + EMA20 pos ±1 + EMA200 pos ±1 +
         // cross ±2 + pattern ±2). Thresholds scaled to ~30% / ~60% of range.
@@ -265,6 +270,7 @@ public class RiskSettingsStore {
     public double getTargetToleranceAtr()      { return cfg().targetToleranceAtr; }
     public boolean isEnableIndexAlignment()    { return cfg().enableIndexAlignment; }
     public boolean isIndexAlignmentHardSkip()  { return cfg().indexAlignmentHardSkip; }
+    public double getIndexOpposedQtyFactor()   { return cfg().indexOpposedQtyFactor; }
     public boolean isWeeklyReversalHardSkip()  { return cfg().weeklyReversalHardSkip; }
     public int getIndexBullishThreshold()       { return cfg().indexBullishThreshold; }
     public int getIndexStrongBullishThreshold() { return cfg().indexStrongBullishThreshold; }
@@ -303,6 +309,7 @@ public class RiskSettingsStore {
     public void setTargetToleranceAtr(double v) { cfg().targetToleranceAtr = v; }
     public void setEnableIndexAlignment(boolean v)        { cfg().enableIndexAlignment = v; }
     public void setIndexAlignmentHardSkip(boolean v)      { cfg().indexAlignmentHardSkip = v; }
+    public void setIndexOpposedQtyFactor(double v)        { cfg().indexOpposedQtyFactor = v; }
     public void setWeeklyReversalHardSkip(boolean v)     { cfg().weeklyReversalHardSkip = v; }
     public void setIndexBullishThreshold(int v)           { cfg().indexBullishThreshold = v; }
     public void setIndexStrongBullishThreshold(int v)     { cfg().indexStrongBullishThreshold = v; }
@@ -519,6 +526,7 @@ public class RiskSettingsStore {
             upsert("targetToleranceAtr", String.valueOf(c.targetToleranceAtr));
             upsert("enableIndexAlignment", String.valueOf(c.enableIndexAlignment));
             upsert("indexAlignmentHardSkip", String.valueOf(c.indexAlignmentHardSkip));
+            upsert("indexOpposedQtyFactor", String.valueOf(c.indexOpposedQtyFactor));
             upsert("weeklyReversalHardSkip", String.valueOf(c.weeklyReversalHardSkip));
             upsert("indexBullishThreshold", String.valueOf(c.indexBullishThreshold));
             upsert("indexStrongBullishThreshold", String.valueOf(c.indexStrongBullishThreshold));
@@ -647,6 +655,7 @@ public class RiskSettingsStore {
                     case "targetToleranceAtr" -> c.targetToleranceAtr = Double.parseDouble(v);
                     case "enableIndexAlignment" -> c.enableIndexAlignment = Boolean.parseBoolean(v);
                     case "indexAlignmentHardSkip" -> c.indexAlignmentHardSkip = Boolean.parseBoolean(v);
+                    case "indexOpposedQtyFactor" -> c.indexOpposedQtyFactor = Double.parseDouble(v);
                     case "weeklyReversalHardSkip" -> c.weeklyReversalHardSkip = Boolean.parseBoolean(v);
                     case "indexBullishThreshold" -> c.indexBullishThreshold = Integer.parseInt(v);
                     case "indexStrongBullishThreshold" -> c.indexStrongBullishThreshold = Integer.parseInt(v);

@@ -381,8 +381,11 @@ public class ScannerController {
             if ((isBuy && ltp < atp) || (isSell && ltp > atp)) return "LPT";
         }
 
-        // 5. NIFTY alignment
-        if (riskSettings.isEnableIndexAlignment() && indexTrendService.isOpposedToNifty(isBuy)) return "LPT";
+        // 5. NIFTY alignment — opposition no longer downgrades probability. The trade
+        // fires at its original probability with a qty factor applied by SignalProcessor
+        // (indexOpposedQtyFactor, default 0.75). Hard-skip mode still blocks at the
+        // scanner level, but that's handled in BreakoutScanner — not surfaced here
+        // since classifyProbability is a card-display forecast that assumes the trade fires.
 
         return "HPT"; // all pre-checkable gates passed
     }
