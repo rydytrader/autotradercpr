@@ -50,6 +50,7 @@ public class RiskSettingsStore {
         volatile boolean enableDayHighLowTargetShift = true; // shift target to day high/low if between entry and target
         volatile double dayHighLowShiftMinDistAtr = 2.0; // skip day H/L shift if distance < N ATR from close
         volatile boolean enableWeeklyLevelTargetShift = true; // shift target to weekly CPR levels if between entry and target
+        volatile boolean enableHtfHurdleFilter = true; // skip 5-min CPR breakout when in-progress 1h candle straddles a same-direction weekly level
         // Structural SL — opt-in, anchors SL to the S/R level the trade is testing (per setup family)
         // When on, we compute both structural and default SL and pick the TIGHTER one.
         volatile boolean enableStructuralSl = false;   // when false, always use close ± atrMultiplier × ATR
@@ -123,12 +124,6 @@ public class RiskSettingsStore {
         volatile boolean scanIncludeIL = false;  // Inside + Large Range
         // Opening Range
         volatile int openingRangeMinutes = 30; // 0=disabled, 15/30/45/60
-        // Inside-OR downgrade bypass: skip the HPT→LPT downgrade when the breakout candle's
-        // close is within this many ATR of the relevant OR boundary (orHigh for buys,
-        // orLow for sells). Idea: price is close enough to breaking out that the level
-        // will likely flip on the next candle, so the "inside-OR" weakness no longer applies.
-        // Set to 0 to disable the bypass (always downgrade when inside OR).
-        volatile double insideOrBypassWithinAtr = 1.0;
         // Opening refresh — re-fetches today's candles from Fyers /data/history after
         // 9:20 to correct any wrong live-tick-built first candle (Fyers' live WS data is
         // unreliable during 9:15-9:25 per their own docs). Re-seeds completedCandles, EMA, ATR,
@@ -201,6 +196,7 @@ public class RiskSettingsStore {
     public boolean isEnableDayHighLowTargetShift() { return cfg().enableDayHighLowTargetShift; }
     public double getDayHighLowShiftMinDistAtr() { return cfg().dayHighLowShiftMinDistAtr; }
     public boolean isEnableWeeklyLevelTargetShift() { return cfg().enableWeeklyLevelTargetShift; }
+    public boolean isEnableHtfHurdleFilter()        { return cfg().enableHtfHurdleFilter; }
     public boolean isEnableStructuralSl()    { return cfg().enableStructuralSl; }
     public double  getStructuralSlBufferAtr(){ return cfg().structuralSlBufferAtr; }
     public double getDayHighLowMinAtr()            { return cfg().dayHighLowMinAtr; }
@@ -260,7 +256,6 @@ public class RiskSettingsStore {
     public boolean isScanIncludeIS() { return cfg().scanIncludeIS; }
     public boolean isScanIncludeIL() { return cfg().scanIncludeIL; }
     public int getOpeningRangeMinutes()        { return cfg().openingRangeMinutes; }
-    public double getInsideOrBypassWithinAtr() { return cfg().insideOrBypassWithinAtr; }
     public boolean isEnableOpeningRefresh()    { return cfg().enableOpeningRefresh; }
     public String  getOpeningRefreshTime()     { return cfg().openingRefreshTime; }
     public boolean isEnableSplitTarget()       { return cfg().enableSplitTarget; }
@@ -299,7 +294,6 @@ public class RiskSettingsStore {
     public void setScanIncludeIS(boolean v) { cfg().scanIncludeIS = v; }
     public void setScanIncludeIL(boolean v) { cfg().scanIncludeIL = v; }
     public void setOpeningRangeMinutes(int v)  { cfg().openingRangeMinutes = v; }
-    public void setInsideOrBypassWithinAtr(double v) { cfg().insideOrBypassWithinAtr = v; }
     public void setEnableOpeningRefresh(boolean v) { cfg().enableOpeningRefresh = v; }
     public void setOpeningRefreshTime(String v)    { cfg().openingRefreshTime = v; }
     public void setEnableSplitTarget(boolean v) { cfg().enableSplitTarget = v; }
@@ -339,6 +333,7 @@ public class RiskSettingsStore {
     public void setEnableDayHighLowTargetShift(boolean v) { cfg().enableDayHighLowTargetShift = v; }
     public void setDayHighLowShiftMinDistAtr(double v) { cfg().dayHighLowShiftMinDistAtr = v; }
     public void setEnableWeeklyLevelTargetShift(boolean v) { cfg().enableWeeklyLevelTargetShift = v; }
+    public void setEnableHtfHurdleFilter(boolean v)        { cfg().enableHtfHurdleFilter = v; }
     public void setEnableStructuralSl(boolean v)    { cfg().enableStructuralSl = v; }
     public void setStructuralSlBufferAtr(double v)  { cfg().structuralSlBufferAtr = v; }
     public void setDayHighLowMinAtr(double v)              { cfg().dayHighLowMinAtr = v; }
@@ -463,6 +458,7 @@ public class RiskSettingsStore {
             upsert("enableDayHighLowTargetShift", String.valueOf(c.enableDayHighLowTargetShift));
             upsert("dayHighLowShiftMinDistAtr", String.valueOf(c.dayHighLowShiftMinDistAtr));
             upsert("enableWeeklyLevelTargetShift", String.valueOf(c.enableWeeklyLevelTargetShift));
+            upsert("enableHtfHurdleFilter", String.valueOf(c.enableHtfHurdleFilter));
             upsert("enableStructuralSl", String.valueOf(c.enableStructuralSl));
             upsert("structuralSlBufferAtr", String.valueOf(c.structuralSlBufferAtr));
             upsert("dayHighLowMinAtr", String.valueOf(c.dayHighLowMinAtr));
@@ -516,7 +512,6 @@ public class RiskSettingsStore {
             upsert("scanIncludeIS", String.valueOf(c.scanIncludeIS));
             upsert("scanIncludeIL", String.valueOf(c.scanIncludeIL));
             upsert("openingRangeMinutes", String.valueOf(c.openingRangeMinutes));
-            upsert("insideOrBypassWithinAtr", String.valueOf(c.insideOrBypassWithinAtr));
             upsert("enableOpeningRefresh", String.valueOf(c.enableOpeningRefresh));
             upsert("openingRefreshTime", c.openingRefreshTime);
             upsert("enableSplitTarget", String.valueOf(c.enableSplitTarget));
@@ -579,6 +574,7 @@ public class RiskSettingsStore {
                     case "enableDayHighLowTargetShift" -> c.enableDayHighLowTargetShift = Boolean.parseBoolean(v);
                     case "dayHighLowShiftMinDistAtr" -> c.dayHighLowShiftMinDistAtr = Double.parseDouble(v);
                     case "enableWeeklyLevelTargetShift" -> c.enableWeeklyLevelTargetShift = Boolean.parseBoolean(v);
+                    case "enableHtfHurdleFilter" -> c.enableHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "enableStructuralSl"    -> c.enableStructuralSl = Boolean.parseBoolean(v);
                     case "structuralSlBufferAtr" -> c.structuralSlBufferAtr = Double.parseDouble(v);
                     case "dayHighLowMinAtr" -> c.dayHighLowMinAtr = Double.parseDouble(v);
@@ -645,7 +641,6 @@ public class RiskSettingsStore {
                     case "scanIncludeIS" -> c.scanIncludeIS = Boolean.parseBoolean(v);
                     case "scanIncludeIL" -> c.scanIncludeIL = Boolean.parseBoolean(v);
                     case "openingRangeMinutes" -> c.openingRangeMinutes = Integer.parseInt(v);
-                    case "insideOrBypassWithinAtr" -> c.insideOrBypassWithinAtr = Double.parseDouble(v);
                     case "enableOpeningRefresh" -> c.enableOpeningRefresh = Boolean.parseBoolean(v);
                     case "openingRefreshTime" -> c.openingRefreshTime = v;
                     case "enableSplitTarget" -> c.enableSplitTarget = Boolean.parseBoolean(v);

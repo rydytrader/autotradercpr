@@ -783,8 +783,8 @@ public class CandleAggregator {
             else priors.add(c);
         }
 
-        // Keep last N prior-day candles for volume-avg fallback (ordered oldest → newest)
-        int keepPriors = 25;
+        // Keep last N prior-day candles for volume-avg fallback + 50 SMA chart warmup (ordered oldest → newest)
+        int keepPriors = 50;
         if (priors.size() > keepPriors) priors = priors.subList(priors.size() - keepPriors, priors.size());
         priorDayCandles.put(symbol, new ArrayList<>(priors));
         // Save refreshed priors so next restart can skip the multi-day history fetch for the baseline.
@@ -877,7 +877,7 @@ public class CandleAggregator {
             if (today == null || today.isEmpty()) continue;
             List<CandleBar> priors = priorDayCandles.computeIfAbsent(entry.getKey(), k -> new ArrayList<>());
             priors.addAll(today);
-            int keepPriors = 25;
+            int keepPriors = 50;
             if (priors.size() > keepPriors) {
                 priorDayCandles.put(entry.getKey(), new ArrayList<>(priors.subList(priors.size() - keepPriors, priors.size())));
             }

@@ -117,7 +117,6 @@ public class SettingsController {
         result.put("scanMaxBeta", riskSettings.getScanMaxBeta());
         result.put("scanCapFilter", riskSettings.getScanCapFilter());
         result.put("openingRangeMinutes", riskSettings.getOpeningRangeMinutes());
-        result.put("insideOrBypassWithinAtr", riskSettings.getInsideOrBypassWithinAtr());
         result.put("enableOpeningRefresh", riskSettings.isEnableOpeningRefresh());
         result.put("openingRefreshTime", riskSettings.getOpeningRefreshTime());
         result.put("scanIncludeNS", riskSettings.isScanIncludeNS());
@@ -220,7 +219,6 @@ public class SettingsController {
             if (body.containsKey("scanMaxBeta")) riskSettings.setScanMaxBeta(Double.parseDouble(body.get("scanMaxBeta").toString()));
             if (body.containsKey("scanCapFilter")) riskSettings.setScanCapFilter(body.get("scanCapFilter").toString());
             if (body.containsKey("openingRangeMinutes")) riskSettings.setOpeningRangeMinutes(Integer.parseInt(body.get("openingRangeMinutes").toString()));
-            if (body.containsKey("insideOrBypassWithinAtr")) riskSettings.setInsideOrBypassWithinAtr(Double.parseDouble(body.get("insideOrBypassWithinAtr").toString()));
             if (body.containsKey("enableOpeningRefresh")) riskSettings.setEnableOpeningRefresh(Boolean.parseBoolean(body.get("enableOpeningRefresh").toString()));
             if (body.containsKey("openingRefreshTime")) riskSettings.setOpeningRefreshTime(body.get("openingRefreshTime").toString());
             if (body.containsKey("scanIncludeNS")) riskSettings.setScanIncludeNS(Boolean.parseBoolean(body.get("scanIncludeNS").toString()));

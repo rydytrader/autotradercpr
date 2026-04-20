@@ -1121,9 +1121,13 @@
 
             // Position-arrow helper for HTF EMAs (display-only, no score)
             function arrow(ltp, val) { return (ltp > 0 && val > 0) ? (ltp > val ? '▲ ' : ltp < val ? '▼ ' : '= ') : ''; }
+            function posScore(ltp, val) { return (ltp > 0 && val > 0) ? (ltp > val ? 1 : ltp < val ? -1 : 0) : 0; }
             var htfE20Disp  = d.htfEma20  > 0 ? arrow(d.ltp, d.htfEma20)  + d.htfEma20.toFixed(1)  : '—';
             var htfE50Disp  = d.htfEma50  > 0 ? arrow(d.ltp, d.htfEma50)  + d.htfEma50.toFixed(1)  : '—';
             var htfE200Disp = d.htfEma200 > 0 ? arrow(d.ltp, d.htfEma200) + d.htfEma200.toFixed(1) : '—';
+            var htfE20Pos  = posScore(d.ltp, d.htfEma20);
+            var htfE50Pos  = posScore(d.ltp, d.htfEma50);
+            var htfE200Pos = posScore(d.ltp, d.htfEma200);
 
             // Cross labels (5m comes with score, HTF computed display-only)
             function crossLabel(e20, e50, e200) {
@@ -1147,7 +1151,7 @@
             var htfCrossLabel = crossLabel(d.htfEma20, d.htfEma50, d.htfEma200);
             var htfCrossScore = crossScore(d.htfEma20, d.htfEma50, d.htfEma200);
 
-            var gridStyle = 'display:grid; grid-template-columns:42px 130px 1.1fr 1.1fr 1.1fr 130px 130px; gap:18px; align-items:center; font-size:0.72rem; padding:5px 8px;';
+            var gridStyle = 'display:grid; grid-template-columns:42px 130px 1.5fr 1.5fr 1.5fr 130px 130px; gap:48px; align-items:center; font-size:0.72rem; padding:5px 8px;';
             var headStyle = gridStyle + ' color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; font-size:0.6rem; font-weight:700; border-bottom:1px solid var(--border);';
 
             // Trend cell uses the same scan-trend CSS as stock cards (W/D badges).
@@ -1196,9 +1200,9 @@
                 + '<div style="' + gridStyle + '">'
                 +   '<span style="font-weight:700;color:var(--text-muted);">W</span>'
                 +   '<span>' + trendCell(d.weeklyTrend, d.weeklyScore, d.weeklyReversalActive, true) + '</span>'
-                +   '<span style="text-align:right;">' + emaCell(htfE20Disp, 0) + '</span>'
-                +   '<span style="text-align:right;">' + emaCell(htfE50Disp, 0) + '</span>'
-                +   '<span style="text-align:right;">' + emaCell(htfE200Disp, 0) + '</span>'
+                +   '<span style="text-align:right;">' + emaCell(htfE20Disp, htfE20Pos) + '</span>'
+                +   '<span style="text-align:right;">' + emaCell(htfE50Disp, htfE50Pos) + '</span>'
+                +   '<span style="text-align:right;">' + emaCell(htfE200Disp, htfE200Pos) + '</span>'
                 +   '<span style="text-align:right;"><span style="color:' + clr(htfPatternScore) + ';font-weight:600;">' + htfPatternVal + '</span></span>'
                 +   '<span style="text-align:right;"><span style="color:' + clr(htfCrossScore) + ';font-weight:600;">' + htfCrossLabel + '</span></span>'
                 + '</div>';
@@ -1667,14 +1671,14 @@ function recalcSimQty() {
 // ══════════════════════════════════════════════════════════════════════
 // Chart Modal — live candlestick chart with CPR/VWAP/EMA overlays
 // ══════════════════════════════════════════════════════════════════════
-var chartState = { modal: null, chart: null, series: null, vwapSeries: null, ema20Series: null, ema200Series: null, levelSeries: [], orSeries: null, symbol: null, interval: null, resizeHandler: null, lastData: null };
+var chartState = { modal: null, chart: null, series: null, vwapSeries: null, ema20Series: null, ema50Series: null, ema200Series: null, levelSeries: [], orSeries: null, symbol: null, interval: null, resizeHandler: null, lastData: null };
 
 // Chart visibility preferences (persisted in localStorage)
 var chartPrefs = (function() {
     var defaults = {
         cprBand: true, r1pdhBand: true, s1pdlBand: true, orBand: true,
         cprLines: true, rLines: true, sLines: true, pdhPdl: true, pivot: true,
-        orLines: true, vwap: true, ema20: true, ema200: true, trades: true
+        orLines: true, vwap: true, ema20: true, ema50: true, ema200: true, trades: true
     };
     try {
         var stored = JSON.parse(localStorage.getItem('chartPrefs') || '{}');
@@ -1735,6 +1739,7 @@ function renderChartSettings() {
         { label: 'Indicators', items: [
             { key: 'vwap', label: 'VWAP', color: '#ec407a' },
             { key: 'ema20', label: 'EMA 20', color: '#66bb6a' },
+            { key: 'ema50', label: 'EMA 50', color: '#ef5350' },
             { key: 'ema200', label: 'EMA 200', color: document.documentElement.getAttribute('data-theme') === 'light' ? '#000' : '#fff' }
         ]},
         { label: 'Trades', items: [
@@ -1766,6 +1771,7 @@ function onChartPrefChange(el) {
         applyTradeMarkers(chartState.lastData);
         if (chartState.vwapSeries) chartState.vwapSeries.applyOptions({ visible: chartPrefs.vwap });
         if (chartState.ema20Series) chartState.ema20Series.applyOptions({ visible: chartPrefs.ema20 });
+        if (chartState.ema50Series) chartState.ema50Series.applyOptions({ visible: chartPrefs.ema50 });
         if (chartState.ema200Series) chartState.ema200Series.applyOptions({ visible: chartPrefs.ema200 });
     }
 }
@@ -1905,6 +1911,7 @@ function renderChart(d, isFirst) {
     chartState.volMap = volMap;
     var vwapLine = toLwcLine(d.vwapSeries);
     var ema20Line = toLwcLine(d.ema20Series);
+    var ema50Line = toLwcLine(d.ema50Series);
     var ema200Line = toLwcLine(d.ema200Series);
 
     var theme = document.documentElement.getAttribute('data-theme');
@@ -1967,6 +1974,14 @@ function renderChart(d, isFirst) {
         });
         chartState.ema20Series.setData(ema20Line);
 
+        // EMA 50 line (red)
+        chartState.ema50Series = chartState.chart.addLineSeries({
+            color: '#ef5350', lineWidth: 2,
+            priceLineVisible: false, lastValueVisible: true, title: 'EMA50',
+            crosshairMarkerVisible: false, visible: chartPrefs.ema50
+        });
+        chartState.ema50Series.setData(ema50Line);
+
         // EMA 200 line (white on dark, black on light)
         chartState.ema200Series = chartState.chart.addLineSeries({
             color: dark ? '#ffffff' : '#000000', lineWidth: 2,
@@ -2021,6 +2036,7 @@ function renderChart(d, isFirst) {
             if (!priceData) { tooltip.style.display = 'none'; return; }
             var vwapData = param.seriesData.get(chartState.vwapSeries);
             var ema20Data = param.seriesData.get(chartState.ema20Series);
+            var ema50Data = param.seriesData.get(chartState.ema50Series);
             var ema200Data = param.seriesData.get(chartState.ema200Series);
             var changePct = priceData.open > 0 ? ((priceData.close - priceData.open) / priceData.open * 100) : 0;
             var changeColor = priceData.close >= priceData.open ? '#26a69a' : '#ef5350';
@@ -2034,6 +2050,7 @@ function renderChart(d, isFirst) {
                 '<div style="color:' + (dark ? '#aab0b6' : '#666') + ';">Vol: ' + fmtChartVol(vol) + '</div>';
             if (vwapData && vwapData.value) html += '<div style="color:#ec407a;">VWAP: ' + vwapData.value.toFixed(2) + '</div>';
             if (ema20Data && ema20Data.value) html += '<div style="color:#66bb6a;">EMA20: ' + ema20Data.value.toFixed(2) + '</div>';
+            if (ema50Data && ema50Data.value) html += '<div style="color:#ef5350;">EMA50: ' + ema50Data.value.toFixed(2) + '</div>';
             if (ema200Data && ema200Data.value) html += '<div style="color:' + (dark ? '#ffffff' : '#000000') + ';">EMA200: ' + ema200Data.value.toFixed(2) + '</div>';
             tooltip.innerHTML = html;
             // Position: offset from cursor, flip if near right/bottom edge
@@ -2055,6 +2072,7 @@ function renderChart(d, isFirst) {
     if (lastBar) chartState.series.update(lastBar);
     if (chartState.vwapSeries) chartState.vwapSeries.setData(vwapLine);
     if (chartState.ema20Series) chartState.ema20Series.setData(ema20Line);
+    if (chartState.ema50Series) chartState.ema50Series.setData(ema50Line);
     if (chartState.ema200Series) chartState.ema200Series.setData(ema200Line);
     applyChartLines(d);
     applyOrBand(d);

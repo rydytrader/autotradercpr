@@ -321,6 +321,9 @@
                 <div class="form-group">
                     <label class="form-label">Extended Level Signals</label>
                     <div style="display:flex; flex-direction:column; gap:8px; margin-top:4px;">
+                        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-muted);">
+                            <span style="display:inline-block;width:16px;"></span>R2/S2 <span style="color:var(--text-muted);font-size:0.72rem;">(always on, shares R3/S3 factor below)</span>
+                        </div>
                         <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
                             <input type="checkbox" id="enableR3S3" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> R3/S3
                             <span style="color:var(--text-muted);font-size:0.72rem;margin-left:4px;">Qty ×</span>
@@ -332,7 +335,7 @@
                             <input type="number" id="r4s4QtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         </div>
                     </div>
-                    <div class="form-hint">Enable extended levels and set qty factor (1.0 = full qty)</div>
+                    <div class="form-hint">R2/S2 breakouts are always enabled and use the R3/S3 qty factor (one level beyond CPR zone). R3/S3 and R4/S4 have independent enable toggles and factors.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Session Move Limit</label>
@@ -452,6 +455,14 @@
                     <div class="form-hint">Counts CPR zones (S4, S3, S2, S1/PDL, CPR, R1/PDH, R2, R3, R4) strictly between the 20 EMA and the breakout level. Pair zones (CPR, R1/PDH, S1/PDL) count as one. If the count is 0 (EMA is in the zone immediately adjacent to the broken level) the trade fires. If 1 or more zones sit between, the setup is stale and the trade is skipped. Day High / Day Low setups follow the same rule — no CPR zone exclusion.</div>
                 </div>
                 <div class="form-group">
+                    <label class="form-label">HTF Hurdle Filter (1-hour at weekly level)</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip 5-min breakout when in-progress 1-hour candle straddles a same-direction weekly level</span>
+                    </div>
+                    <div class="form-hint">If the current (unclosed) 1-hour candle has a weekly hurdle inside its range, the 5-min breakout is fragile — the 1-hour can still close back through the level and trap the trade. CPR-3 levels (Pivot/TC/BC) block both directions; R1/PWH blocks buys only; S1/PWL blocks sells only. Other weekly levels are ignored. Applies to CPR breakouts (CPR/R1-R4/S1-S4/PDH/PDL) and DH/DL breakouts. Magnets (mean-reversion) are exempt. Re-evaluates at each 1-hour close.</div>
+                </div>
+                <div class="form-group">
                     <label class="form-label">Weekly Reversal Filter (75-min R1/PWH & S1/PWL)</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="weeklyReversalHardSkip" style="width: 18px; height: 18px; accent-color: var(--accent-yellow); flex-shrink: 0;">
@@ -467,7 +478,12 @@
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px; padding-left: 28px;">
                         <input type="checkbox" id="indexAlignmentHardSkip" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Hard skip mode — skip opposed trades entirely (default: soft mode = HPT → LPT downgrade)</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Hard skip mode — skip opposed trades entirely (default: soft mode = reduce qty)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px; padding-left: 28px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Soft mode qty factor:</span>
+                        <input type="number" id="indexOpposedQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:80px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">(0.75 = 25% reduction, probability unchanged)</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Bullish:</span>
@@ -481,7 +497,7 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Strong bearish:</span>
                         <input type="number" id="indexStrongBearishThreshold" class="form-control" step="1" min="-10" max="10" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                     </div>
-                    <div class="form-hint">Composite NIFTY score from weekly CPR (&plusmn;2) + daily CPR (&plusmn;2) + EMA 20 position (&plusmn;1) + EMA 200 position (&plusmn;1) + EMA 20/50 vs 200 cross (&plusmn;2) + EMA 20/50 pattern R-RTP/F-RTP (&plusmn;2). Total range -10 to +10. Score thresholds map to 5 trend states (STRONG BEARISH / BEARISH / NEUTRAL / BULLISH / STRONG BULLISH). Trades opposing the NIFTY trend are either downgraded HPT &rarr; LPT (soft mode, default) or skipped entirely (hard skip). LPT trades unaffected. The NIFTY card on the scanner page always shows the live composite state regardless of this toggle.</div>
+                    <div class="form-hint">Composite NIFTY score from weekly CPR (&plusmn;2) + daily CPR (&plusmn;2) + EMA 20 position (&plusmn;1) + EMA 200 position (&plusmn;1) + EMA 20/50 vs 200 cross (&plusmn;2) + EMA 20/50 pattern R-RTP/F-RTP (&plusmn;2). Total range -10 to +10. Score thresholds map to 5 trend states (STRONG BEARISH / BEARISH / NEUTRAL / BULLISH / STRONG BULLISH). Trades opposing the NIFTY trend are either quantity-reduced by the soft-mode factor (default, HPT stays HPT) or skipped entirely (hard skip). LPT trades unaffected. The NIFTY card on the scanner page always shows the live composite state regardless of this toggle.</div>
                 </div>
             </div>
         </div>
@@ -730,13 +746,7 @@
                         <option value="45">45 min</option>
                         <option value="60">60 min</option>
                     </select>
-                    <div class="form-hint">Track high/low of first N minutes. Shows OR badge on scanner. Filters gap trades (first candle beyond R2/S2) to only trade in OR direction.</div>
-                    <div style="display:flex;align-items:center;gap:10px;margin-top:10px;">
-                        <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Inside-OR downgrade bypass when within</span>
-                        <input type="number" id="insideOrBypassWithinAtr" class="form-control" step="0.1" min="0" max="5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">ATR of OR boundary</span>
-                    </div>
-                    <div class="form-hint">When a breakout fires with close inside the OR range, the trade is normally downgraded HPT&nbsp;&rarr;&nbsp;LPT. Bypass this downgrade when the close is within this many ATR of the relevant OR boundary (OR High for buys, OR Low for sells) — the level is close enough to flip. Default 1.0 ATR. Set to 0 to always downgrade.</div>
+                    <div class="form-hint">Track high/low of first N minutes. Shows OR badge on scanner. Filters gap trades (first candle beyond R2/S2) to only trade in OR direction. On EV days, any breakout that fires inside OR range is downgraded HPT&nbsp;&rarr;&nbsp;LPT — an OR break is required for HPT.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Include in Watchlist</label>
@@ -1014,6 +1024,7 @@
             document.getElementById('enableDayHighLowTargetShift').checked = d.enableDayHighLowTargetShift !== false;
             document.getElementById('dayHighLowShiftMinDistAtr').value = d.dayHighLowShiftMinDistAtr != null ? d.dayHighLowShiftMinDistAtr : 2.0;
             document.getElementById('enableWeeklyLevelTargetShift').checked = d.enableWeeklyLevelTargetShift !== false;
+            document.getElementById('enableHtfHurdleFilter').checked = d.enableHtfHurdleFilter !== false;
             document.getElementById('enableStructuralSl').checked = d.enableStructuralSl === true;
             document.getElementById('structuralSlBufferAtr').value = d.structuralSlBufferAtr != null ? d.structuralSlBufferAtr : 1.0;
             // dayHighLowMinAtr removed — single min target distance check handles both
@@ -1033,6 +1044,7 @@
             document.getElementById('targetToleranceAtr').value = (d.targetToleranceAtr != null ? d.targetToleranceAtr : 0.10);
             document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
             document.getElementById('indexAlignmentHardSkip').checked = d.indexAlignmentHardSkip === true;
+            document.getElementById('indexOpposedQtyFactor').value = (d.indexOpposedQtyFactor != null ? d.indexOpposedQtyFactor : 0.75);
             document.getElementById('weeklyReversalHardSkip').checked = d.weeklyReversalHardSkip !== false;
             document.getElementById('indexBullishThreshold').value = (d.indexBullishThreshold != null ? d.indexBullishThreshold : 2);
             document.getElementById('indexStrongBullishThreshold').value = (d.indexStrongBullishThreshold != null ? d.indexStrongBullishThreshold : 5);
@@ -1070,7 +1082,6 @@
             document.getElementById('scanCapMid').checked = capVal === 'ALL' || capVal.includes('MID');
             document.getElementById('scanCapSmall').checked = capVal === 'ALL' || capVal.includes('SMALL');
             document.getElementById('openingRangeMinutes').value = d.openingRangeMinutes != null ? d.openingRangeMinutes : 0;
-            document.getElementById('insideOrBypassWithinAtr').value = d.insideOrBypassWithinAtr != null ? d.insideOrBypassWithinAtr : 1.0;
             document.getElementById('scanIncludeNS').checked = d.scanIncludeNS !== false;
             document.getElementById('scanIncludeNL').checked = d.scanIncludeNL !== false;
             document.getElementById('smallRangeAdrPct').value = d.smallRangeAdrPct != null ? d.smallRangeAdrPct : 50.0;
@@ -1164,6 +1175,7 @@
                 enableDayHighLowTargetShift: document.getElementById('enableDayHighLowTargetShift').checked,
                 dayHighLowShiftMinDistAtr: parseFloat(document.getElementById('dayHighLowShiftMinDistAtr').value) || 1.0,
                 enableWeeklyLevelTargetShift: document.getElementById('enableWeeklyLevelTargetShift').checked,
+                enableHtfHurdleFilter: document.getElementById('enableHtfHurdleFilter').checked,
                 enableStructuralSl: document.getElementById('enableStructuralSl').checked,
                 structuralSlBufferAtr: parseFloat(document.getElementById('structuralSlBufferAtr').value) || 1.0,
                 // dayHighLowMinAtr removed
@@ -1183,6 +1195,7 @@
                 targetToleranceAtr: parseFloat(document.getElementById('targetToleranceAtr').value) || 0,
                 enableIndexAlignment: document.getElementById('enableIndexAlignment').checked,
                 indexAlignmentHardSkip: document.getElementById('indexAlignmentHardSkip').checked,
+                indexOpposedQtyFactor: parseFloat(document.getElementById('indexOpposedQtyFactor').value) || 0.75,
                 weeklyReversalHardSkip: document.getElementById('weeklyReversalHardSkip').checked,
                 indexBullishThreshold: parseInt(document.getElementById('indexBullishThreshold').value) || 2,
                 indexStrongBullishThreshold: parseInt(document.getElementById('indexStrongBullishThreshold').value) || 5,
@@ -1221,7 +1234,6 @@
                     return caps.length === 0 || caps.length === 3 ? 'ALL' : caps.join(',');
                 })(),
                 openingRangeMinutes: parseInt(document.getElementById('openingRangeMinutes').value) || 0,
-                insideOrBypassWithinAtr: parseFloat(document.getElementById('insideOrBypassWithinAtr').value) || 0,
                 scanIncludeNS: document.getElementById('scanIncludeNS').checked,
                 scanIncludeNL: document.getElementById('scanIncludeNL').checked,
                 smallRangeAdrPct: parseFloat(document.getElementById('smallRangeAdrPct').value) || 50.0,

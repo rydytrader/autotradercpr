@@ -517,6 +517,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     public String getLastDisconnectTime() { return lastDisconnectTime; }
     public int getReconnectCountToday() { return reconnectCountToday; }
 
+    public CandleAggregator getHtfAggregator() { return htfAggregator; }
+
     @Override
     public void onAuthResult(boolean success, int ackCount) {
         if (!success) {

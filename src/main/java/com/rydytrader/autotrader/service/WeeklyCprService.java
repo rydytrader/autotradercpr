@@ -466,6 +466,13 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
             lastTradingTfClose.put(fyersSymbol, completedCandle.close);
             saveTfCloseToFile();
         }
+        // Eager reset: if this symbol has an active weekly reversal flag and LTP has
+        // touched the weekly CPR zone, clear it now — don't wait for a breakout
+        // candidate to trigger the lazy check inside getWeeklyRejection.
+        RejectionState s = weeklyRejection.get(fyersSymbol);
+        if (s != null && !"NONE".equals(s.type)) {
+            getWeeklyRejection(fyersSymbol);
+        }
     }
 
     public void onHigherTimeframeCandleClose(String fyersSymbol, double open, double high, double low, double close) {
@@ -500,7 +507,10 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
             }
         }
 
-        // Detect new resistance rejection (mirrors 5-min SELL_BELOW_R1_PDH magnet pattern)
+        // Detect new resistance rejection (mirrors 5-min SELL_BELOW_R1_PDH magnet pattern).
+        // Pattern 1: open or high reached either R1 or PH. Pattern 2: high broke the higher
+        // of R1/PH while open was still below it. Either pattern, with close back inside
+        // the R1/PH-to-weekly-top zone, qualifies as a rejection — red/green candle agnostic.
         double r1ph = Math.min(wl.r1, wl.ph);
         if (close < r1ph && close > wl.top
             && ((open > wl.r1 || open > wl.ph || high > wl.r1 || high > wl.ph)
@@ -513,7 +523,10 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
                 String.format("%.2f", wl.r1), String.format("%.2f", wl.ph), String.format("%.2f", wl.top));
         }
 
-        // Detect new support rejection (mirrors 5-min BUY_ABOVE_S1_PDL magnet pattern)
+        // Detect new support rejection (mirrors 5-min BUY_ABOVE_S1_PDL magnet pattern).
+        // Pattern 1: open or low reached either S1 or PL. Pattern 2: low broke the lower
+        // of S1/PL while open was still above it. Either pattern, with close back inside
+        // the S1/PL-to-weekly-bot zone, qualifies as a rejection — red/green candle agnostic.
         double s1pl = Math.max(wl.s1, wl.pl);
         if (close > s1pl && close < wl.bot
             && ((open < wl.s1 || open < wl.pl || low < wl.s1 || low < wl.pl)

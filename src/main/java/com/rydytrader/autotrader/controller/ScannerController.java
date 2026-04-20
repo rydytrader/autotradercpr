@@ -311,10 +311,12 @@ public class ScannerController {
                                            List<Map<String, Object>> candleList,
                                            List<Map<String, Object>> vwapSeries,
                                            List<Map<String, Object>> ema20Series,
+                                           List<Map<String, Object>> ema50Series,
                                            List<Map<String, Object>> ema200Series) {
         final double k20 = 2.0 / 21.0;
+        final double k50 = 2.0 / 51.0;
         final double k200 = 2.0 / 201.0;
-        double ema20 = 0, ema200 = 0;
+        double ema20 = 0, ema50 = 0, ema200 = 0;
         boolean firstBar = true;
         double dayCumPV = 0, dayCumV = 0;
         java.time.LocalDate curDay = null;
@@ -333,10 +335,12 @@ public class ScannerController {
             double vwap = dayCumV > 0 ? dayCumPV / dayCumV : c.close;
             if (firstBar) {
                 ema20 = c.close;
+                ema50 = c.close;
                 ema200 = c.close;
                 firstBar = false;
             } else {
                 ema20 = c.close * k20 + ema20 * (1 - k20);
+                ema50 = c.close * k50 + ema50 * (1 - k50);
                 ema200 = c.close * k200 + ema200 * (1 - k200);
             }
             if (d.equals(displayDate)) {
@@ -344,6 +348,7 @@ public class ScannerController {
                 long tMs = c.epochSec * 1000L;
                 vwapSeries.add(point(tMs, vwap));
                 ema20Series.add(point(tMs, ema20));
+                ema50Series.add(point(tMs, ema50));
                 ema200Series.add(point(tMs, ema200));
             }
         }
@@ -429,6 +434,7 @@ public class ScannerController {
         List<Map<String, Object>> candleList = new ArrayList<>();
         List<Map<String, Object>> vwapSeries = new ArrayList<>();
         List<Map<String, Object>> ema20Series = new ArrayList<>();
+        List<Map<String, Object>> ema50Series = new ArrayList<>();
         List<Map<String, Object>> ema200Series = new ArrayList<>();
 
         if (tradingDay) {
@@ -443,7 +449,7 @@ public class ScannerController {
             List<CandleAggregator.CandleBar> merged = new ArrayList<>();
             if (priors != null) merged.addAll(priors);
             if (todays != null) merged.addAll(todays);
-            computeIndicatorsAndBuild(merged, today, ist, candleList, vwapSeries, ema20Series, ema200Series);
+            computeIndicatorsAndBuild(merged, today, ist, candleList, vwapSeries, ema20Series, ema50Series, ema200Series);
 
             // Forming (current, still-open) candle — append with live indicator values
             CandleAggregator.CandleBar current = candleAggregator.getCurrentCandle(symbol);
@@ -452,9 +458,11 @@ public class ScannerController {
                 long tMs = current.epochSec * 1000L;
                 double liveVwap = candleAggregator.getAtp(symbol);
                 double liveEma20 = emaService.getEma(symbol);
+                double liveEma50 = emaService.getEma50(symbol);
                 double liveEma200 = emaService.getEma200(symbol);
                 if (liveVwap > 0) vwapSeries.add(point(tMs, liveVwap));
                 if (liveEma20 > 0) ema20Series.add(point(tMs, liveEma20));
+                if (liveEma50 > 0) ema50Series.add(point(tMs, liveEma50));
                 if (liveEma200 > 0) ema200Series.add(point(tMs, liveEma200));
             }
             result.put("dataSource", "live");
@@ -471,7 +479,7 @@ public class ScannerController {
                     }
                     if (latestDate != null) {
                         // Compute indicators progressively (Fyers API doesn't return them)
-                        computeIndicatorsAndBuild(hist, latestDate, ist, candleList, vwapSeries, ema20Series, ema200Series);
+                        computeIndicatorsAndBuild(hist, latestDate, ist, candleList, vwapSeries, ema20Series, ema50Series, ema200Series);
                         result.put("dataDate", latestDate.toString());
                     }
                 }
@@ -484,6 +492,7 @@ public class ScannerController {
         result.put("candles", candleList);
         result.put("vwapSeries", vwapSeries);
         result.put("ema20Series", ema20Series);
+        result.put("ema50Series", ema50Series);
         result.put("ema200Series", ema200Series);
         result.put("tradingDay", tradingDay);
 
