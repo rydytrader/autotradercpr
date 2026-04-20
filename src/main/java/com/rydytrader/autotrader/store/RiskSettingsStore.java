@@ -140,10 +140,12 @@ public class RiskSettingsStore {
         volatile boolean enableIndexAlignment = false;        // master toggle, opt-in
         volatile boolean indexAlignmentHardSkip = false;      // true = hard skip opposed trades; false = HPT→LPT downgrade
         volatile boolean weeklyReversalHardSkip = true;        // true = skip trades opposed to weekly reversal; false = HPT→LPT
-        volatile int indexBullishThreshold = 2;               // score >= this → BULLISH (max score ±10)
-        volatile int indexStrongBullishThreshold = 5;         // score >= this → STRONG_BULLISH
-        volatile int indexBearishThreshold = -2;              // score <= this → BEARISH
-        volatile int indexStrongBearishThreshold = -5;        // score <= this → STRONG_BEARISH
+        // Composite score range is ±10 (weekly ±2 + daily ±2 + EMA20 pos ±1 + EMA200 pos ±1 +
+        // cross ±2 + pattern ±2). Thresholds scaled to ~30% / ~60% of range.
+        volatile int indexBullishThreshold = 3;               // score >= this → BULLISH
+        volatile int indexStrongBullishThreshold = 6;         // score >= this → STRONG_BULLISH
+        volatile int indexBearishThreshold = -3;              // score <= this → BEARISH
+        volatile int indexStrongBearishThreshold = -6;        // score <= this → STRONG_BEARISH
     }
 
     private final Cfg live = new Cfg();

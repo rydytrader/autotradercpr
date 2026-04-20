@@ -1,10 +1,24 @@
 package com.rydytrader.autotrader.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
@@ -26,13 +40,18 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
     private static final int EMA_LONG_PERIOD = 200;
 
     private static final int HISTORY_SIZE = 20;  // ring buffer of recent EMA(20) values for slope calc
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+    private static final String CACHE_FILE = "../store/cache/ema-5min.json";
 
     private final CandleAggregator candleAggregator;
     private final com.rydytrader.autotrader.store.RiskSettingsStore riskSettings;
+    @org.springframework.beans.factory.annotation.Autowired
+    private MarketHolidayService marketHolidayService;
     // ATR lookup lazily injected (avoids circular dep at construction)
     @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.context.annotation.Lazy
     private AtrService atrService;
+    private final ObjectMapper mapper = new ObjectMapper();
     private final ConcurrentHashMap<String, Double> emaBySymbol = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Deque<Double>> emaHistoryBySymbol = new ConcurrentHashMap<>();
     // 50 EMA: value + ring buffer of recent values for braided/railway pattern detection
@@ -40,12 +59,27 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
     private final ConcurrentHashMap<String, Deque<Double>> ema50HistoryBySymbol = new ConcurrentHashMap<>();
     // 200 EMA: value only, no ring buffer / slope tracking
     private final ConcurrentHashMap<String, Double> ema200BySymbol = new ConcurrentHashMap<>();
+    // Per-symbol last applied candle epoch — used by AtrService catch-up to skip bars already baked in.
+    private final ConcurrentHashMap<String, Long> lastCandleEpochBySymbol = new ConcurrentHashMap<>();
+    private volatile boolean seededFromCache = false;
 
     public EmaService(CandleAggregator candleAggregator,
                       com.rydytrader.autotrader.store.RiskSettingsStore riskSettings) {
         this.candleAggregator = candleAggregator;
         this.riskSettings = riskSettings;
     }
+
+    /** Restore EMA values + history + ATR from disk cache before scanner init tries to seed from Fyers. */
+    @PostConstruct
+    public void init() {
+        loadCache();
+    }
+
+    public boolean isSeededFromCache()             { return seededFromCache; }
+    public boolean hasCachedSymbol(String symbol)  { return emaBySymbol.containsKey(symbol); }
+    public long    getLastCandleEpoch(String sym)  { return lastCandleEpochBySymbol.getOrDefault(sym, 0L); }
+    /** Public entry point so AtrService can flush the cache once after a bulk seed. */
+    public void    flushCache()                    { saveCache(); }
 
     /** Get current EMA(20) for a symbol. Returns 0 if not enough data. */
     public double getEma(String symbol) {
@@ -129,6 +163,13 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
                 ema200 = candles.get(i).close * k200 + ema200 * (1 - k200);
             }
             ema200BySymbol.put(symbol, ema200);
+        }
+
+        // Record the final candle epoch so catch-up fetch knows where to pick up from after a
+        // restart that happens before the first live candle close.
+        CandleAggregator.CandleBar last = candles.get(candles.size() - 1);
+        if (last != null && last.epochSec > 0) {
+            lastCandleEpochBySymbol.put(symbol, last.epochSec);
         }
     }
 
@@ -234,6 +275,113 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
                 riskSettings.getRailwayMinSpreadAtr());
             completedCandle.emaPattern = pattern;
         }
+
+        // Persist state so mid-day / next-day restart can reload without re-fetching Fyers history.
+        lastCandleEpochBySymbol.put(fyersSymbol, completedCandle.epochSec);
+        saveCache();
+    }
+
+    // ── Disk cache: mid-day restart avoids the 14-day Fyers fetch ───────────────────
+
+    /** Build + atomically write EMA/ATR snapshot for every symbol. One burst per candle-close tick. */
+    private synchronized void saveCache() {
+        try {
+            Path path = Paths.get(CACHE_FILE);
+            Files.createDirectories(path.getParent());
+            ObjectNode root = mapper.createObjectNode();
+            root.put("savedAt", Instant.now().atZone(IST).toString());
+            ObjectNode bySymbol = root.putObject("bySymbol");
+            for (Map.Entry<String, Double> e : emaBySymbol.entrySet()) {
+                String sym = e.getKey();
+                ObjectNode entry = bySymbol.putObject(sym);
+                entry.put("ema20", e.getValue());
+                Double e50 = ema50BySymbol.get(sym);
+                if (e50 != null)  entry.put("ema50", e50);
+                Double e200 = ema200BySymbol.get(sym);
+                if (e200 != null) entry.put("ema200", e200);
+                double atr = atrService != null ? atrService.getAtr(sym) : 0;
+                if (atr > 0) entry.put("atr", atr);
+                Long lastEpoch = lastCandleEpochBySymbol.get(sym);
+                if (lastEpoch != null) entry.put("lastCandleEpoch", lastEpoch);
+                entry.set("ema20History", historyArr(emaHistoryBySymbol.get(sym)));
+                entry.set("ema50History", historyArr(ema50HistoryBySymbol.get(sym)));
+            }
+            Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
+            Files.writeString(tmp, mapper.writeValueAsString(root));
+            Files.move(tmp, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (Exception e) {
+            log.error("[CACHE] EmaService saveCache failed: {}", e.getMessage());
+        }
+    }
+
+    private ArrayNode historyArr(Deque<Double> deque) {
+        ArrayNode arr = mapper.createArrayNode();
+        if (deque == null) return arr;
+        synchronized (deque) { for (Double v : deque) arr.add(v); }
+        return arr;
+    }
+
+    /**
+     * Load EMA/ATR snapshot. Fresh if savedAt date equals today OR the last trading day
+     * (covers mid-day restart, evening, next-morning pre-market).
+     */
+    private synchronized void loadCache() {
+        try {
+            Path path = Paths.get(CACHE_FILE);
+            if (!Files.exists(path)) return;
+            JsonNode root = mapper.readTree(Files.readString(path));
+            String savedAtStr = root.has("savedAt") ? root.get("savedAt").asText("") : "";
+            if (savedAtStr.isEmpty()) return;
+            LocalDate cacheDate;
+            try { cacheDate = LocalDate.parse(savedAtStr.substring(0, 10)); }
+            catch (Exception e) { return; }
+            LocalDate today = LocalDate.now(IST);
+            LocalDate lastTradingDay = marketHolidayService != null
+                ? marketHolidayService.getLastTradingDay() : today;
+            if (!cacheDate.equals(today) && !cacheDate.equals(lastTradingDay)) {
+                log.info("[CACHE] EMA cache stale (cacheDate={}, today={}, lastTradingDay={}) — will full-fetch",
+                    cacheDate, today, lastTradingDay);
+                return;
+            }
+            JsonNode bySymbol = root.get("bySymbol");
+            if (bySymbol == null || !bySymbol.isObject()) return;
+            int count = 0;
+            Iterator<Map.Entry<String, JsonNode>> it = bySymbol.fields();
+            while (it.hasNext()) {
+                Map.Entry<String, JsonNode> e = it.next();
+                String sym = e.getKey();
+                JsonNode entry = e.getValue();
+                double ema20 = entry.path("ema20").asDouble(0);
+                if (ema20 <= 0) continue;
+                emaBySymbol.put(sym, ema20);
+                double ema50 = entry.path("ema50").asDouble(0);
+                if (ema50 > 0) ema50BySymbol.put(sym, ema50);
+                double ema200 = entry.path("ema200").asDouble(0);
+                if (ema200 > 0) ema200BySymbol.put(sym, ema200);
+                long lastEpoch = entry.path("lastCandleEpoch").asLong(0);
+                if (lastEpoch > 0) lastCandleEpochBySymbol.put(sym, lastEpoch);
+                double atr = entry.path("atr").asDouble(0);
+                if (atr > 0 && atrService != null) atrService.primeFromCache(sym, atr);
+                emaHistoryBySymbol.put(sym, deserializeHistory(entry.get("ema20History")));
+                ema50HistoryBySymbol.put(sym, deserializeHistory(entry.get("ema50History")));
+                count++;
+            }
+            seededFromCache = count > 0;
+            if (seededFromCache) {
+                log.info("[CACHE] EMA seed restored from cache (savedAt={}, {} symbols)", savedAtStr, count);
+            }
+        } catch (Exception e) {
+            log.error("[CACHE] EmaService loadCache failed: {}", e.getMessage());
+        }
+    }
+
+    private Deque<Double> deserializeHistory(JsonNode arr) {
+        Deque<Double> out = new ArrayDeque<>();
+        if (arr != null && arr.isArray()) {
+            for (JsonNode v : arr) out.addLast(v.asDouble());
+            while (out.size() > HISTORY_SIZE) out.removeFirst();
+        }
+        return out;
     }
 
     /** Update the current EMA value and append to the history ring buffer for slope tracking. */

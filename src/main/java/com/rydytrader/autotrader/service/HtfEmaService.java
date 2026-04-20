@@ -1,14 +1,28 @@
 package com.rydytrader.autotrader.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -24,18 +38,33 @@ public class HtfEmaService implements CandleAggregator.CandleCloseListener {
     private static final int EMA_MID_PERIOD = 50;
     private static final int EMA_LONG_PERIOD = 200;
     private static final int HISTORY_SIZE = 20;
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+    private static final String CACHE_FILE = "../store/cache/ema-htf.json";
 
     private final RiskSettingsStore riskSettings;
+    @Autowired private MarketHolidayService marketHolidayService;
+    private final ObjectMapper mapper = new ObjectMapper();
 
     private final ConcurrentHashMap<String, Double> emaBySymbol = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Deque<Double>> emaHistoryBySymbol = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Double> ema50BySymbol = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Deque<Double>> ema50HistoryBySymbol = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Double> ema200BySymbol = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> lastCandleEpochBySymbol = new ConcurrentHashMap<>();
+    private volatile boolean seededFromCache = false;
 
     public HtfEmaService(RiskSettingsStore riskSettings) {
         this.riskSettings = riskSettings;
     }
+
+    @PostConstruct
+    public void init() {
+        loadCache();
+    }
+
+    public boolean isSeededFromCache()            { return seededFromCache; }
+    public boolean hasCachedSymbol(String symbol) { return emaBySymbol.containsKey(symbol); }
+    public long    getLastCandleEpoch(String s)   { return lastCandleEpochBySymbol.getOrDefault(s, 0L); }
 
     public double getEma(String symbol)    { return emaBySymbol.getOrDefault(symbol, 0.0); }
     public double getEma50(String symbol)  { return ema50BySymbol.getOrDefault(symbol, 0.0); }
@@ -92,7 +121,16 @@ public class HtfEmaService implements CandleAggregator.CandleCloseListener {
             }
             ema200BySymbol.put(symbol, ema200);
         }
+
+        // Record the last candle epoch so the cache + catch-up know where to pick up from.
+        CandleAggregator.CandleBar last = candles.get(candles.size() - 1);
+        if (last != null && last.epochSec > 0) {
+            lastCandleEpochBySymbol.put(symbol, last.epochSec);
+        }
     }
+
+    /** Public entry point so AtrService can flush the cache once after a bulk HTF seed. */
+    public void flushCache() { saveCache(); }
 
     @Override
     public void onCandleClose(String fyersSymbol, CandleAggregator.CandleBar completedCandle) {
@@ -118,6 +156,103 @@ public class HtfEmaService implements CandleAggregator.CandleCloseListener {
             double ema200 = completedCandle.close * k200 + prev200 * (1 - k200);
             ema200BySymbol.put(fyersSymbol, ema200);
         }
+
+        lastCandleEpochBySymbol.put(fyersSymbol, completedCandle.epochSec);
+        saveCache();
+    }
+
+    // ── Disk cache (ema-htf.json) — avoids 100-day Fyers re-fetch on mid-day restart ──
+
+    private synchronized void saveCache() {
+        try {
+            Path path = Paths.get(CACHE_FILE);
+            Files.createDirectories(path.getParent());
+            ObjectNode root = mapper.createObjectNode();
+            root.put("savedAt", Instant.now().atZone(IST).toString());
+            ObjectNode bySymbol = root.putObject("bySymbol");
+            for (Map.Entry<String, Double> e : emaBySymbol.entrySet()) {
+                String sym = e.getKey();
+                ObjectNode entry = bySymbol.putObject(sym);
+                entry.put("ema20", e.getValue());
+                Double e50  = ema50BySymbol.get(sym);
+                if (e50 != null)  entry.put("ema50", e50);
+                Double e200 = ema200BySymbol.get(sym);
+                if (e200 != null) entry.put("ema200", e200);
+                Long epoch = lastCandleEpochBySymbol.get(sym);
+                if (epoch != null) entry.put("lastCandleEpoch", epoch);
+                entry.set("ema20History", historyArr(emaHistoryBySymbol.get(sym)));
+                entry.set("ema50History", historyArr(ema50HistoryBySymbol.get(sym)));
+            }
+            Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
+            Files.writeString(tmp, mapper.writeValueAsString(root));
+            Files.move(tmp, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (Exception e) {
+            log.error("[CACHE] HtfEmaService saveCache failed: {}", e.getMessage());
+        }
+    }
+
+    private ArrayNode historyArr(Deque<Double> deque) {
+        ArrayNode arr = mapper.createArrayNode();
+        if (deque == null) return arr;
+        synchronized (deque) { for (Double v : deque) arr.add(v); }
+        return arr;
+    }
+
+    private synchronized void loadCache() {
+        try {
+            Path path = Paths.get(CACHE_FILE);
+            if (!Files.exists(path)) return;
+            JsonNode root = mapper.readTree(Files.readString(path));
+            String savedAtStr = root.has("savedAt") ? root.get("savedAt").asText("") : "";
+            if (savedAtStr.isEmpty()) return;
+            LocalDate cacheDate;
+            try { cacheDate = LocalDate.parse(savedAtStr.substring(0, 10)); }
+            catch (Exception e) { return; }
+            LocalDate today = LocalDate.now(IST);
+            LocalDate lastTradingDay = marketHolidayService != null
+                ? marketHolidayService.getLastTradingDay() : today;
+            if (!cacheDate.equals(today) && !cacheDate.equals(lastTradingDay)) {
+                log.info("[CACHE] HTF EMA cache stale (cacheDate={}, today={}, lastTradingDay={}) — will full-fetch",
+                    cacheDate, today, lastTradingDay);
+                return;
+            }
+            JsonNode bySymbol = root.get("bySymbol");
+            if (bySymbol == null || !bySymbol.isObject()) return;
+            int count = 0;
+            Iterator<Map.Entry<String, JsonNode>> it = bySymbol.fields();
+            while (it.hasNext()) {
+                Map.Entry<String, JsonNode> e = it.next();
+                String sym = e.getKey();
+                JsonNode entry = e.getValue();
+                double ema20 = entry.path("ema20").asDouble(0);
+                if (ema20 <= 0) continue;
+                emaBySymbol.put(sym, ema20);
+                double ema50  = entry.path("ema50").asDouble(0);
+                if (ema50  > 0) ema50BySymbol.put(sym, ema50);
+                double ema200 = entry.path("ema200").asDouble(0);
+                if (ema200 > 0) ema200BySymbol.put(sym, ema200);
+                long lastEpoch = entry.path("lastCandleEpoch").asLong(0);
+                if (lastEpoch > 0) lastCandleEpochBySymbol.put(sym, lastEpoch);
+                emaHistoryBySymbol.put(sym, deserializeHistory(entry.get("ema20History")));
+                ema50HistoryBySymbol.put(sym, deserializeHistory(entry.get("ema50History")));
+                count++;
+            }
+            seededFromCache = count > 0;
+            if (seededFromCache) {
+                log.info("[CACHE] HTF EMA seed restored from cache (savedAt={}, {} symbols)", savedAtStr, count);
+            }
+        } catch (Exception e) {
+            log.error("[CACHE] HtfEmaService loadCache failed: {}", e.getMessage());
+        }
+    }
+
+    private Deque<Double> deserializeHistory(JsonNode arr) {
+        Deque<Double> out = new ArrayDeque<>();
+        if (arr != null && arr.isArray()) {
+            for (JsonNode v : arr) out.addLast(v.asDouble());
+            while (out.size() > HISTORY_SIZE) out.removeFirst();
+        }
+        return out;
     }
 
     private void storeEma(String symbol, double ema) {

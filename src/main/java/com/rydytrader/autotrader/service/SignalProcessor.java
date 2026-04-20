@@ -19,17 +19,19 @@ public class SignalProcessor {
     private final CandleAggregator candleAggregator;
     private final WeeklyCprService weeklyCprService;
     private final EmaService       emaService;
+    private final HtfEmaService    htfEmaService;
 
     public SignalProcessor(RiskSettingsStore riskSettings, EventService eventService,
                            QuantityService quantityService, MarketDataService marketDataService,
                            CandleAggregator candleAggregator, WeeklyCprService weeklyCprService,
-                           EmaService emaService) {
+                           EmaService emaService, HtfEmaService htfEmaService) {
         this.riskSettings = riskSettings;
         this.eventService = eventService;
         this.quantityService = quantityService;
         this.marketDataService = marketDataService;
         this.candleAggregator = candleAggregator;
         this.emaService = emaService;
+        this.htfEmaService = htfEmaService;
         this.weeklyCprService = weeklyCprService;
     }
 
@@ -328,6 +330,17 @@ public class SignalProcessor {
                 if (ema200 > 0) {
                     shiftCandidates.putIfAbsent(ema200, "200 EMA");
                 }
+            }
+            // Weekly (HTF 60-min) EMA levels — any of EMA(20/50/200) sitting between close and
+            // the structural target becomes a resistance/support candidate. These are the same
+            // values shown as the "1h" row under the EMA Levels section on the scanner card.
+            if (htfEmaService != null) {
+                double htfE20  = htfEmaService.getEma(symbol);
+                double htfE50  = htfEmaService.getEma50(symbol);
+                double htfE200 = htfEmaService.getEma200(symbol);
+                if (htfE20  > 0) shiftCandidates.putIfAbsent(htfE20,  "weekly EMA 20");
+                if (htfE50  > 0) shiftCandidates.putIfAbsent(htfE50,  "weekly EMA 50");
+                if (htfE200 > 0) shiftCandidates.putIfAbsent(htfE200, "weekly EMA 200");
             }
             Double bestLevel = null;
             String bestName = null;

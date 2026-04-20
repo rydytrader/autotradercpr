@@ -853,12 +853,17 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             watchlistWithIndex.add("NSE:NIFTY50-INDEX");
         }
 
-        // Fetch ATR + seed EMA only for symbols not already loaded (skip on re-init after settings change)
-        List<String> needsAtr = watchlistWithIndex.stream()
-            .filter(s -> atrService.getAtr(s) <= 0)
-            .collect(java.util.stream.Collectors.toList());
+        // Fetch ATR + seed EMA. When EmaService was restored from disk cache, pass the full
+        // watchlist so AtrService routes cached symbols through its 1-day catch-up branch
+        // (and new symbols through the full 14-day seed). Otherwise drop already-loaded symbols.
+        List<String> needsAtr = emaService.isSeededFromCache()
+            ? watchlistWithIndex
+            : watchlistWithIndex.stream()
+                .filter(s -> atrService.getAtr(s) <= 0)
+                .collect(java.util.stream.Collectors.toList());
         if (!needsAtr.isEmpty()) {
-            log.info("[MarketData] Fetching ATR for {} new symbols ({} already loaded)", needsAtr.size(), watchlistWithIndex.size() - needsAtr.size());
+            log.info("[MarketData] Fetching ATR for {} symbols (cache-seeded={})",
+                needsAtr.size(), emaService.isSeededFromCache());
             atrService.fetchAtrForSymbols(needsAtr);
         } else {
             log.info("[MarketData] ATR already loaded for all {} symbols — skipping fetch", watchlistWithIndex.size());
@@ -868,8 +873,10 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         } else {
             log.info("[MarketData] Weekly trends already loaded ({} symbols) — skipping fetch", weeklyCprService.getLoadedCount());
         }
-        // Seed HTF (75-min) EMAs from historical Fyers data
-        if (htfEmaService.getLoadedCount() == 0) {
+        // Seed HTF (60-min) EMAs. Same cache-aware routing as ATR above.
+        if (htfEmaService.isSeededFromCache()) {
+            atrService.fetchHtfEmaForSymbols(watchlistWithIndex, htfEmaService);
+        } else if (htfEmaService.getLoadedCount() == 0) {
             atrService.fetchHtfEmaForSymbols(watchlistWithIndex, htfEmaService);
         } else {
             log.info("[MarketData] HTF EMAs already loaded ({} symbols) — skipping fetch", htfEmaService.getLoadedCount());

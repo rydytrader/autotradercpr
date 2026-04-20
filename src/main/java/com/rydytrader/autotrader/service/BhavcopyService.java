@@ -47,7 +47,8 @@ public class BhavcopyService {
         "Nifty Bank",     "NIFTYBANK",
         "Nifty Fin Service", "FINNIFTY"
     );
-    private static final String STORE_FILE = "../store/config/cpr-data.json";
+    private static final String STORE_FILE = "../store/cache/cpr-data.json";
+    private static final String LEGACY_STORE_FILE = "../store/config/cpr-data.json";
     private static final String NSE_BASE_URL = "https://www.nseindia.com/";
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
@@ -1011,16 +1012,36 @@ public class BhavcopyService {
                 historyList.add(snapMap);
             }
             data.put("dailyHistory", historyList);
-            Files.writeString(Paths.get(STORE_FILE),
-                mapper.writerWithDefaultPrettyPrinter().writeValueAsString(data));
+            Path out = Paths.get(STORE_FILE);
+            Files.createDirectories(out.getParent());
+            Files.writeString(out, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(data));
         } catch (Exception e) {
             log.error("[BhavcopyService] Failed to save CPR data: {}", e.getMessage());
         }
     }
 
+    /** Resolve active cache path, migrating legacy store/config/ file on first boot. */
+    private Path resolveStorePath() {
+        Path primary = Paths.get(STORE_FILE);
+        if (Files.exists(primary)) return primary;
+        Path legacy = Paths.get(LEGACY_STORE_FILE);
+        if (Files.exists(legacy)) {
+            try {
+                Files.createDirectories(primary.getParent());
+                Files.move(legacy, primary, StandardCopyOption.REPLACE_EXISTING);
+                log.info("[MIGRATE] Moved {} -> {}", legacy, primary);
+                return primary;
+            } catch (IOException e) {
+                log.warn("[MIGRATE] Failed to move {}, reading from legacy: {}", legacy, e.getMessage());
+                return legacy;
+            }
+        }
+        return primary;
+    }
+
     private void loadFromFile() {
         try {
-            Path path = Paths.get(STORE_FILE);
+            Path path = resolveStorePath();
             if (!Files.exists(path)) return;
 
             JsonNode root = mapper.readTree(Files.readString(path));

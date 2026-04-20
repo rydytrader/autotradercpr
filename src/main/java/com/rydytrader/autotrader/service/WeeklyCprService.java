@@ -33,8 +33,10 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
                                           CandleAggregator.DailyResetListener {
 
     private static final Logger log = LoggerFactory.getLogger(WeeklyCprService.class);
-    private static final String STORE_FILE = "../store/config/weekly-cpr.json";
-    private static final String TF_CLOSE_FILE = "../store/config/tf-candle-close.json";
+    private static final String STORE_FILE = "../store/cache/weekly-cpr.json";
+    private static final String LEGACY_STORE_FILE = "../store/config/weekly-cpr.json";
+    private static final String TF_CLOSE_FILE = "../store/cache/tf-candle-close.json";
+    private static final String LEGACY_TF_CLOSE_FILE = "../store/config/tf-candle-close.json";
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     private final BhavcopyService bhavcopyService;
@@ -280,8 +282,27 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
      * Load TF candle-close maps from disk on startup. Only loads if the stored date matches today
      * (same trading day = mid-day restart). Otherwise maps start empty (first candle falls back to LTP).
      */
+    /** Resolve primary cache path, migrating from legacy store/config/ location on first boot. */
+    private Path resolveCachePath(String primaryPath, String legacyPath) {
+        Path primary = Paths.get(primaryPath);
+        if (Files.exists(primary)) return primary;
+        Path legacy = Paths.get(legacyPath);
+        if (Files.exists(legacy)) {
+            try {
+                Files.createDirectories(primary.getParent());
+                Files.move(legacy, primary, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                log.info("[MIGRATE] Moved {} -> {}", legacy, primary);
+                return primary;
+            } catch (IOException e) {
+                log.warn("[MIGRATE] Failed to move {}, reading from legacy: {}", legacy, e.getMessage());
+                return legacy;
+            }
+        }
+        return primary;
+    }
+
     private synchronized void loadTfCloseFromFile() {
-        Path path = Paths.get(TF_CLOSE_FILE);
+        Path path = resolveCachePath(TF_CLOSE_FILE, LEGACY_TF_CLOSE_FILE);
         if (!Files.exists(path)) return;
         try {
             JsonNode root = mapper.readTree(Files.readString(path));
@@ -355,7 +376,7 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
      * A cached entry from last Tuesday is stale by this Monday because the "previous week" has shifted.
      */
     private synchronized void loadFromFile() {
-        Path path = Paths.get(STORE_FILE);
+        Path path = resolveCachePath(STORE_FILE, LEGACY_STORE_FILE);
         if (!Files.exists(path)) {
             log.info("[WeeklyCpr] No cached file at {} — will fetch from Fyers on scanner init", STORE_FILE);
             return;

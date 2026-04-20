@@ -481,7 +481,7 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Strong bearish:</span>
                         <input type="number" id="indexStrongBearishThreshold" class="form-control" step="1" min="-10" max="10" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                     </div>
-                    <div class="form-hint">Composite NIFTY score from weekly CPR + daily CPR + 20 EMA position + 20 EMA slope (range -7 to +7). Score thresholds map to 5 trend states. Trades opposing the NIFTY trend get downgraded from HPT to LPT (half qty). LPT trades unaffected. No hard skips. The NIFTY card on the scanner page shows the live state regardless of this toggle.</div>
+                    <div class="form-hint">Composite NIFTY score from weekly CPR (&plusmn;2) + daily CPR (&plusmn;2) + EMA 20 position (&plusmn;1) + EMA 200 position (&plusmn;1) + EMA 20/50 vs 200 cross (&plusmn;2) + EMA 20/50 pattern R-RTP/F-RTP (&plusmn;2). Total range -10 to +10. Score thresholds map to 5 trend states (STRONG BEARISH / BEARISH / NEUTRAL / BULLISH / STRONG BULLISH). Trades opposing the NIFTY trend are either downgraded HPT &rarr; LPT (soft mode, default) or skipped entirely (hard skip). LPT trades unaffected. The NIFTY card on the scanner page always shows the live composite state regardless of this toggle.</div>
                 </div>
             </div>
         </div>

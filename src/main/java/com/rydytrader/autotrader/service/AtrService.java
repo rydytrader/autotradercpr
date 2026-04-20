@@ -57,8 +57,15 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
         this.candleAggregator = candleAggregator;
     }
 
+    /** Called by EmaService.loadCache() to rehydrate ATR values alongside EMA state. */
+    public void primeFromCache(String symbol, double atr) {
+        if (atr > 0) atrBySymbol.put(symbol, atr);
+    }
+
     /**
      * Fetch ATR for all watchlist symbols. Called at 9:00 AM or on restart.
+     * When EmaService has pre-loaded state from its disk cache, cached symbols
+     * route through a 1-day catch-up fetch instead of the 14-day full seed.
      */
     public void fetchAtrForSymbols(List<String> fyersSymbols) {
         String accessToken = tokenStore.getAccessToken();
@@ -69,7 +76,27 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
         String authHeader = fyersProperties.getClientId() + ":" + accessToken;
         int timeframe = riskSettings.getScannerTimeframe();
 
-        log.info("[AtrService] Fetching ATR({}) for {} symbols ({}min candles)", getAtrPeriod(), fyersSymbols.size(), timeframe);
+        if (emaService != null && emaService.isSeededFromCache()) {
+            List<String> fullFetch = new ArrayList<>();
+            List<String> catchUp   = new ArrayList<>();
+            for (String s : fyersSymbols) {
+                if (emaService.hasCachedSymbol(s) && atrBySymbol.getOrDefault(s, 0.0) > 0) catchUp.add(s);
+                else fullFetch.add(s);
+            }
+            log.info("[CACHE] ATR/EMA: catch-up for {} cached symbols, full fetch for {} new symbols",
+                catchUp.size(), fullFetch.size());
+            doCatchUpFetch(catchUp, authHeader, timeframe);
+            if (!fullFetch.isEmpty()) doFullFetch(fullFetch, authHeader, timeframe);
+            return;
+        }
+
+        doFullFetch(fyersSymbols, authHeader, timeframe);
+    }
+
+    /** Existing 14-day seed flow, extracted so the cached path can skip it. */
+    private void doFullFetch(List<String> fyersSymbols, String authHeader, int timeframe) {
+        log.info("[AtrService] Full fetch ATR({}) for {} symbols ({}min candles)",
+            getAtrPeriod(), fyersSymbols.size(), timeframe);
 
         int success = 0;
         List<String> failed = new ArrayList<>();
@@ -79,10 +106,7 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
                 if (candles.size() >= getAtrPeriod()) {
                     double atr = calculateAtr(candles, getAtrPeriod());
                     atrBySymbol.put(symbol, atr);
-                    // Seed candle aggregator with historical candles
                     candleAggregator.seedCandles(symbol, candles);
-                    // Seed EMA from the raw multi-day historical list (bypasses the
-                    // date-filtered completedCandles deque so slope/position work on holidays).
                     if (emaService != null) emaService.seedFromCandles(symbol, candles);
                     success++;
                 } else {
@@ -96,7 +120,6 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
             }
         }
 
-        // Retry failed symbols with longer delay
         if (!failed.isEmpty()) {
             log.info("[AtrService] Retrying {} failed symbols after 2s delay...", failed.size());
             try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
@@ -121,6 +144,40 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
         log.info("[AtrService] ATR loaded for {}/{} symbols", success, fyersSymbols.size());
         eventService.log("[INFO] ATR + EMA loaded for " + success + "/" + fyersSymbols.size() + " symbols ("
             + riskSettings.getScannerTimeframe() + "min candles)");
+
+        // Persist the fresh seed so the next restart (even before the first candle close)
+        // can reload from disk instead of re-fetching 14 days of history.
+        if (emaService != null) emaService.flushCache();
+    }
+
+    /**
+     * 1-day catch-up fetch for cache-seeded symbols. Re-seeds CandleAggregator's today-only
+     * deque and replays any bars that closed between cache-save and restart through
+     * {@link EmaService#onCandleClose} / {@link #onCandleClose} so EMAs/ATR stay incremental.
+     * Does NOT call seedFromCandles — that would reset the EMA from SMA and wipe the cache.
+     */
+    private void doCatchUpFetch(List<String> symbols, String authHeader, int timeframe) {
+        if (symbols.isEmpty()) return;
+        int candleCount = 0;
+        for (String symbol : symbols) {
+            try {
+                List<CandleAggregator.CandleBar> today = fetchHistoricalCandles(symbol, timeframe, authHeader, 1);
+                candleAggregator.seedCandles(symbol, today);
+                long lastEpoch = emaService != null ? emaService.getLastCandleEpoch(symbol) : 0;
+                for (CandleAggregator.CandleBar c : today) {
+                    if (c.epochSec <= lastEpoch) continue;  // already applied pre-restart
+                    if (emaService != null) emaService.onCandleClose(symbol, c);
+                    this.onCandleClose(symbol, c);
+                    candleCount++;
+                }
+                Thread.sleep(150);
+            } catch (Exception e) {
+                log.warn("[CACHE] Catch-up failed for {}: {}", symbol, e.getMessage());
+            }
+        }
+        log.info("[CACHE] Catch-up applied {} bars across {} symbols", candleCount, symbols.size());
+        eventService.log("[INFO] ATR/EMA restored from cache; catch-up " + candleCount
+            + " bars across " + symbols.size() + " symbols");
     }
 
     /**
@@ -173,7 +230,24 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
             return;
         }
 
-        // Native long-history calls (365 days of 60-min) are heavier; pace slower to stay under
+        // If HtfEmaService was seeded from its disk cache, split the work: catch-up for
+        // cached symbols (1-day fetch + incremental onCandleClose replay), full 100-day
+        // fetch only for symbols new to the watchlist.
+        if (htfEmaService.isSeededFromCache()) {
+            List<String> fullFetch = new ArrayList<>();
+            List<String> catchUp   = new ArrayList<>();
+            for (String s : fyersSymbols) {
+                if (htfEmaService.hasCachedSymbol(s)) catchUp.add(s);
+                else fullFetch.add(s);
+            }
+            log.info("[CACHE] HTF EMA: catch-up for {} cached, full fetch for {} new",
+                catchUp.size(), fullFetch.size());
+            doHtfCatchUpFetch(catchUp, htfEmaService, authHeader, baseTimeframe, htfTimeframe, nativeFetch);
+            if (fullFetch.isEmpty()) return;
+            fyersSymbols = fullFetch;  // fall through: full fetch for only the new symbols
+        }
+
+        // Native long-history calls (100 days of 60-min) are heavier; pace slower to stay under
         // Fyers' rate limit. Aggregated path uses smaller (90-day) responses, can go a bit faster.
         long perCallDelayMs = nativeFetch ? 700L : 350L;
 
@@ -243,6 +317,36 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
             htfEmaService.getLoadedCount(),
             htfEmaService.getEma50LoadedCount(),
             htfEmaService.getEma200LoadedCount());
+
+        // Persist fresh HTF seed so the next restart reloads from disk.
+        htfEmaService.flushCache();
+    }
+
+    /**
+     * HTF catch-up fetch: for cache-seeded symbols, pull only today's HTF bars and replay
+     * any that are newer than the cached lastCandleEpoch through HtfEmaService.onCandleClose.
+     * Avoids the full 100-day fetch on mid-day / next-morning restart.
+     */
+    private void doHtfCatchUpFetch(List<String> symbols, HtfEmaService htfEmaService, String authHeader,
+                                   int baseTimeframe, int htfTimeframe, boolean nativeFetch) {
+        if (symbols.isEmpty()) return;
+        int candleCount = 0;
+        for (String symbol : symbols) {
+            try {
+                List<CandleAggregator.CandleBar> base = fetchHistoricalCandles(symbol, baseTimeframe, authHeader, 1);
+                List<CandleAggregator.CandleBar> htf  = nativeFetch ? base : aggregateToHtf(base, htfTimeframe);
+                long lastEpoch = htfEmaService.getLastCandleEpoch(symbol);
+                for (CandleAggregator.CandleBar c : htf) {
+                    if (c.epochSec <= lastEpoch) continue;
+                    htfEmaService.onCandleClose(symbol, c);
+                    candleCount++;
+                }
+                Thread.sleep(200);
+            } catch (Exception e) {
+                log.warn("[CACHE] HTF catch-up failed for {}: {}", symbol, e.getMessage());
+            }
+        }
+        log.info("[CACHE] HTF catch-up applied {} bars across {} symbols", candleCount, symbols.size());
     }
 
     /**

@@ -28,7 +28,8 @@ public class MarketHolidayService {
 
     private static final String HOLIDAY_API = "https://www.nseindia.com/api/holiday-master?type=trading";
     private static final String NSE_BASE_URL = "https://www.nseindia.com/";
-    private static final String CACHE_FILE = "../store/config/nse-holidays.json";
+    private static final String CACHE_FILE = "../store/cache/nse-holidays.json";
+    private static final String LEGACY_CACHE_FILE = "../store/config/nse-holidays.json";
     private static final DateTimeFormatter NSE_DATE_FMT = DateTimeFormatter.ofPattern("dd-MMM-yyyy", Locale.ENGLISH);
 
     private final ObjectMapper mapper = new ObjectMapper();
@@ -124,6 +125,22 @@ public class MarketHolidayService {
             d = d.plusDays(1);
             if (d.isAfter(after.plusDays(30))) break; // safety: max 30 days ahead
         }
+        return d;
+    }
+
+    /**
+     * Return the most recent trading day that has at least opened.
+     * - If today is a trading day AND market has opened (>= 9:15 IST) → today
+     * - Otherwise walk back day-by-day until a trading day is found
+     * Used for cache freshness: "cache is fresh if it was last written on today or the last completed trading day".
+     */
+    public LocalDate getLastTradingDay() {
+        LocalDate d = LocalDate.now(IST);
+        int nowMin = getNowMinute();
+        if (isTradingDay(d) && nowMin >= MARKET_OPEN_MINUTE) return d;
+        d = d.minusDays(1);
+        int safety = 10;
+        while (!isTradingDay(d) && safety-- > 0) d = d.minusDays(1);
         return d;
     }
 
@@ -229,9 +246,28 @@ public class MarketHolidayService {
         }
     }
 
+    /** Resolve the active cache path, migrating from legacy store/config/ if needed. */
+    private Path resolveCachePath() {
+        Path primary = Paths.get(CACHE_FILE);
+        if (Files.exists(primary)) return primary;
+        Path legacy = Paths.get(LEGACY_CACHE_FILE);
+        if (Files.exists(legacy)) {
+            try {
+                Files.createDirectories(primary.getParent());
+                Files.move(legacy, primary, StandardCopyOption.REPLACE_EXISTING);
+                log.info("[MIGRATE] Moved {} -> {}", legacy, primary);
+                return primary;
+            } catch (IOException e) {
+                log.warn("[MIGRATE] Failed to move {}, reading from legacy: {}", legacy, e.getMessage());
+                return legacy;
+            }
+        }
+        return primary;  // doesn't exist yet; created on first save
+    }
+
     private void loadFromFile() {
         try {
-            Path path = Paths.get(CACHE_FILE);
+            Path path = resolveCachePath();
             if (!Files.exists(path)) return;
 
             JsonNode root = mapper.readTree(Files.readString(path));
