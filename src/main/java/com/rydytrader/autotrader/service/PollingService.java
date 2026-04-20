@@ -317,7 +317,8 @@ public class PollingService {
                     }
 
                     holder.ocoRetries++;
-                    boolean skipTarget = riskSettings.isEnableTrailingSl() && riskSettings.isTrailingSlNoTarget();
+                    // Fibonacci trailing always requires a target to compute range — no-target mode removed.
+                    boolean skipTarget = false;
 
                     // Check if we should split targets
                     double targetDist = Math.abs(targetPrice - holder.entryFillPrice);

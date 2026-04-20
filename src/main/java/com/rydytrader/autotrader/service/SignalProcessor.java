@@ -697,7 +697,7 @@ public class SignalProcessor {
     }
 
     // ── Breakout level per setup ────────────────────────────────────────────────
-    private double computeBreakoutLevel(String setup,
+    public static double computeBreakoutLevel(String setup,
             double r1, double r2, double r3, double r4,
             double s1, double s2, double s3, double s4,
             double ph, double pl, double tc, double bc,

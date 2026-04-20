@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.controller.MarketTickerController;
+import com.rydytrader.autotrader.dto.CprLevels;
 import com.rydytrader.autotrader.dto.TickData;
 import com.rydytrader.autotrader.manager.PositionManager;
 import com.rydytrader.autotrader.store.PositionStateStore;
@@ -367,7 +368,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         dirty = true;
     }
 
-    // ── ATR TRAILING SL (called on every candle close) ─────────────────────────
+    // ── FIBONACCI TRAILING SL (called on every candle close) ─────────────────
+    // Range = |target - breakoutLevel| (100%). Two stages:
+    //   stage 1 (LTP hits 61.8% Fib): SL → entry ± 1 ATR
+    //   stage 2 (LTP hits 78.6% Fib): SL → 61.8% Fib level
+    // Split-target trades: trailer suppressed until T1 fills; then activates on remaining qty.
 
     @Override
     public void onCandleClose(String fyersSymbol, CandleAggregator.CandleBar completedCandle) {
@@ -382,83 +387,123 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         if (slOrderId.isEmpty()) return;
 
         String side = state.getOrDefault("side", "").toString();
-        double currentSlPrice = 0;
-        try { currentSlPrice = Double.parseDouble(state.getOrDefault("slPrice", "0").toString()); }
+        String setup = state.getOrDefault("setup", "").toString();
+        if (setup.isEmpty() || (!"LONG".equals(side) && !"SHORT".equals(side))) return;
+
+        // Split-target gate: wait for T1 fill before Fibonacci kicks in
+        Object t1Obj = state.get("target1OrderId");
+        String target1OrderId = t1Obj != null ? t1Obj.toString() : "";
+        boolean isSplit = !target1OrderId.isEmpty() && !"null".equalsIgnoreCase(target1OrderId);
+        boolean t1Filled = Boolean.TRUE.equals(state.get("t1Filled"));
+        if (isSplit && !t1Filled) return;
+
+        double currentSl = 0;
+        try { currentSl = Double.parseDouble(state.getOrDefault("slPrice", "0").toString()); }
+        catch (NumberFormatException ignored) {}
+        double entry = 0;
+        try { entry = Double.parseDouble(state.getOrDefault("avgPrice", "0").toString()); }
+        catch (NumberFormatException ignored) {}
+        double target = 0;
+        try { target = Double.parseDouble(state.getOrDefault("targetPrice", "0").toString()); }
         catch (NumberFormatException ignored) {}
 
-        // Only start trailing after price has moved activation × ATR in the right direction
-        double avgPrice = 0;
-        try { avgPrice = Double.parseDouble(state.getOrDefault("avgPrice", "0").toString()); }
-        catch (NumberFormatException ignored) {}
         double atr = atrService.getAtr(fyersSymbol);
         double ltp = getLtp(fyersSymbol);
-        if (avgPrice > 0 && atr > 0 && ltp > 0) {
-            double moveFromEntry = "LONG".equals(side) ? ltp - avgPrice : avgPrice - ltp;
-            double activationThreshold = atr * riskSettings.getTrailingSlActivationAtr();
-            if (moveFromEntry < activationThreshold) return; // not enough profit yet
-        }
+        if (entry <= 0 || target <= 0 || atr <= 0 || ltp <= 0) return;
 
-        // ATR trailing: SL = peak/trough - ATR × trailing multiplier
-        double multiplier = riskSettings.getTrailingSlAtrMultiplier();
-        if (atr <= 0) return;
-
-        double newSl;
-        if ("LONG".equals(side)) {
-            double peak = peakPrice.getOrDefault(fyersSymbol, ltp);
-            newSl = peak - atr * multiplier;
-        } else {
-            double trough = troughPrice.getOrDefault(fyersSymbol, ltp);
-            newSl = trough + atr * multiplier;
-        }
-        if (newSl <= 0) return;
-
-        newSl = orderService.roundToTick(newSl, fyersSymbol);
-
-        // Only tighten — LONG: SL moves UP, SHORT: SL moves DOWN
-        if ("LONG".equals(side) && newSl <= currentSlPrice) return;
-        if ("SHORT".equals(side) && newSl >= currentSlPrice) return;
-
-        log.info("[TrailingSL] {} {} — new SL={} current={} peak={} atr={}",
-            fyersSymbol, side, String.format("%.2f", newSl), String.format("%.2f", currentSlPrice),
-            String.format("%.2f", "LONG".equals(side) ? peakPrice.getOrDefault(fyersSymbol, 0.0) : troughPrice.getOrDefault(fyersSymbol, 0.0)),
-            String.format("%.2f", atr));
-
-        int modResult = orderService.modifySlOrder(slOrderId, newSl, fyersSymbol);
-        boolean ok = modResult == 1;
-        if (modResult == -1) {
-            // SL order is gone (already filled/cancelled). Trigger position sync to clean up local state.
-            eventService.log("[INFO] Trailing SL skipped for " + fyersSymbol
-                + " — SL order already filled/cancelled, syncing position state");
-            if (pollingService != null) {
-                pollingService.syncPositionOnce();
-            }
+        // Derive breakout level (base) from setup + current CPR data
+        CprLevels cpr = bhavcopyService.getCprLevels(fyersSymbol);
+        if (cpr == null) return;
+        double dayHigh = candleAggregator.getDayHighBeforeLast(fyersSymbol);
+        double dayLow = candleAggregator.getDayLowBeforeLast(fyersSymbol);
+        double base = SignalProcessor.computeBreakoutLevel(setup,
+            cpr.getR1(), cpr.getR2(), cpr.getR3(), cpr.getR4(),
+            cpr.getS1(), cpr.getS2(), cpr.getS3(), cpr.getS4(),
+            cpr.getPh(), cpr.getPl(), cpr.getTc(), cpr.getBc(),
+            dayHigh, dayLow);
+        if (base <= 0) {
+            log.debug("[TrailingSL] {} — no base for setup={}, skipping", fyersSymbol, setup);
             return;
         }
-        if (ok) {
-            trailedSymbols.add(fyersSymbol);
 
-            String targetOrderId = state.get("targetOrderId") != null ? state.get("targetOrderId").toString() : "";
-            double currentTarget = state.get("targetPrice") != null ? Double.parseDouble(state.get("targetPrice").toString()) : 0;
-            positionStateStore.saveOcoState(fyersSymbol, slOrderId, targetOrderId, newSl, currentTarget);
+        double range = Math.abs(target - base);
+        if (range <= 0) return;
 
-            if (orderEventService != null) orderEventService.markAsTrailed(slOrderId);
+        boolean isBuy = "LONG".equals(side);
+        int sign = isBuy ? 1 : -1;
+        double s1Trigger = riskSettings.getFibStage1TriggerPct() / 100.0;
+        double s1AtrMult = riskSettings.getFibStage1SlAtrMult();
+        double s2Trigger = riskSettings.getFibStage2TriggerPct() / 100.0;
+        double s2SlPct   = riskSettings.getFibStage2SlPct() / 100.0;
+        double stage1TriggerPx = base + sign * s1Trigger * range;
+        double stage2TriggerPx = base + sign * s2Trigger * range;
+        double stage1Sl        = entry + sign * s1AtrMult * atr;   // entry ± N × ATR
+        double stage2Sl        = base + sign * s2SlPct * range;    // base + M% of range
 
-            String tsTrail = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
-            positionStateStore.appendDescription(fyersSymbol,
-                tsTrail + " [TRAILING_SL] SL → " + String.format("%.2f", newSl)
-                + " (ATR=" + String.format("%.2f", atr) + " mult=" + multiplier + ")");
+        double extreme = isBuy
+            ? peakPrice.getOrDefault(fyersSymbol, ltp)
+            : troughPrice.getOrDefault(fyersSymbol, ltp);
 
-            String direction = "LONG".equals(side) ? "up" : "down";
-            eventService.log("[SUCCESS] Trailing SL moved " + direction + " for " + fyersSymbol + ": "
-                + String.format("%.2f", currentSlPrice) + " → " + String.format("%.2f", newSl));
-            int qty = 0;
-            try { qty = Integer.parseInt(state.getOrDefault("qty", "0").toString()); } catch (NumberFormatException ignored) {}
-            double peak = "LONG".equals(side) ? peakPrice.getOrDefault(fyersSymbol, ltp) : troughPrice.getOrDefault(fyersSymbol, ltp);
-            telegramService.notifySlModified(fyersSymbol, side, qty, newSl, currentSlPrice, peak);
+        double desiredSl;
+        String stageLabel;
+        String s1Lbl = String.format("%.1f%%", riskSettings.getFibStage1TriggerPct());
+        String s2Lbl = String.format("%.1f%%", riskSettings.getFibStage2TriggerPct());
+        String s2SlLbl = String.format("%.1f%%", riskSettings.getFibStage2SlPct());
+        if (isBuy) {
+            if (extreme >= stage2TriggerPx) { desiredSl = stage2Sl; stageLabel = s2Lbl + " Fib → SL at " + s2SlLbl + " Fib"; }
+            else if (extreme >= stage1TriggerPx) { desiredSl = stage1Sl; stageLabel = s1Lbl + " Fib → SL at entry+" + s1AtrMult + " ATR"; }
+            else return; // no stage reached
         } else {
-            eventService.log("[ERROR] Trailing SL failed for " + fyersSymbol
-                + " — could not modify SL to " + String.format("%.2f", newSl));
+            if (extreme <= stage2TriggerPx) { desiredSl = stage2Sl; stageLabel = s2Lbl + " Fib → SL at " + s2SlLbl + " Fib"; }
+            else if (extreme <= stage1TriggerPx) { desiredSl = stage1Sl; stageLabel = s1Lbl + " Fib → SL at entry-" + s1AtrMult + " ATR"; }
+            else return;
         }
+
+        desiredSl = orderService.roundToTick(desiredSl, fyersSymbol);
+
+        // Never-widen guard
+        if (isBuy && desiredSl <= currentSl) return;
+        if (!isBuy && desiredSl >= currentSl) return;
+
+        log.info("[TrailingSL] {} {} — {}: desiredSl={} currentSl={} base={} target={} stage1Trigger={} stage2Trigger={} extreme={} atr={}",
+            fyersSymbol, side, stageLabel,
+            String.format("%.2f", desiredSl), String.format("%.2f", currentSl),
+            String.format("%.2f", base), String.format("%.2f", target),
+            String.format("%.2f", stage1TriggerPx), String.format("%.2f", stage2TriggerPx),
+            String.format("%.2f", extreme), String.format("%.2f", atr));
+
+        int modResult = orderService.modifySlOrder(slOrderId, desiredSl, fyersSymbol);
+        if (modResult == -1) {
+            eventService.log("[INFO] Trailing SL skipped for " + fyersSymbol
+                + " — SL order already filled/cancelled, syncing position state");
+            if (pollingService != null) pollingService.syncPositionOnce();
+            return;
+        }
+        if (modResult != 1) {
+            eventService.log("[ERROR] Trailing SL failed for " + fyersSymbol
+                + " — could not modify SL to " + String.format("%.2f", desiredSl));
+            return;
+        }
+
+        trailedSymbols.add(fyersSymbol);
+        String targetOrderId = state.get("targetOrderId") != null ? state.get("targetOrderId").toString() : "";
+        positionStateStore.saveOcoState(fyersSymbol, slOrderId, targetOrderId, desiredSl, target);
+        if (orderEventService != null) orderEventService.markAsTrailed(slOrderId);
+
+        String tsTrail = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
+        positionStateStore.appendDescription(fyersSymbol,
+            tsTrail + " [TRAILING_SL] SL → " + String.format("%.2f", desiredSl)
+            + " (" + stageLabel + "; base=" + String.format("%.2f", base)
+            + " target=" + String.format("%.2f", target) + ")");
+
+        String direction = isBuy ? "up" : "down";
+        eventService.log("[SUCCESS] " + fyersSymbol + " " + side + " SL moved " + direction
+            + ": " + String.format("%.2f", currentSl) + " → " + String.format("%.2f", desiredSl)
+            + " (" + stageLabel + ", range " + String.format("%.2f", base) + "→" + String.format("%.2f", target) + ")");
+
+        int qty = 0;
+        try { qty = Integer.parseInt(state.getOrDefault("qty", "0").toString()); } catch (NumberFormatException ignored) {}
+        telegramService.notifySlModified(fyersSymbol, side, qty, desiredSl, currentSl, extreme);
     }
 
     /** Check if a symbol's SL has been trailed. */

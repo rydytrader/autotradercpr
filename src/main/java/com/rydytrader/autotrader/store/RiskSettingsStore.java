@@ -88,16 +88,18 @@ public class RiskSettingsStore {
         volatile boolean enableVolumeFilter = false; // reject if candle volume < volumeMultiple * avg volume
         volatile double volumeMultiple = 2.0; // breakout candle must have this x avg volume
         volatile int volumeLookback = 20; // average volume over last N candles (max 20)
-        volatile boolean enableTrailingSl = true; // enable trailing SL
-        volatile boolean trailingSlNoTarget = false; // when true + trailing SL enabled: skip fixed target, let trailing SL close the trade
+        volatile boolean enableTrailingSl = true; // enable Fibonacci-based trailing SL (base=breakout level, ceiling=target, stages at 61.8% and 78.6%)
+        // Fibonacci trailing SL — all four knobs stored as percent (0–100).
+        volatile double fibStage1TriggerPct = 61.8;   // LTP hits this % of range → stage 1 activates
+        volatile double fibStage1SlAtrMult = 1.0;     // stage 1 SL = entry ± N × ATR
+        volatile double fibStage2TriggerPct = 78.6;   // LTP hits this % of range → stage 2 activates
+        volatile double fibStage2SlPct = 61.8;        // stage 2 SL = base + this % of range
         volatile boolean enableR2S2 = true;      // enable R2/S2 breakouts
         volatile boolean enableR3S3 = true;      // enable R3/S3 breakouts
         volatile double r2s2QtyFactor = 0.9;    // R2/S2 qty multiplier (one level beyond CPR)
         volatile double r3s3QtyFactor = 0.75;   // R3/S3 qty multiplier
         volatile double r4s4QtyFactor = 0.5;    // R4/S4 qty multiplier
         volatile int    atrPeriod = 14;        // ATR lookback period for initial SL
-        volatile double trailingSlAtrMultiplier = 2.0; // ATR multiplier for trailing SL (separate from initial SL)
-        volatile double trailingSlActivationAtr = 1.0; // trailing SL only activates after price moves this × ATR in profit
         // Scanner settings
         volatile String signalSource    = "TRADINGVIEW"; // TRADINGVIEW or INTERNAL
         volatile int    scannerTimeframe = 15;  // candle timeframe in minutes
@@ -223,15 +225,16 @@ public class RiskSettingsStore {
     public boolean isEnableLargeCandleBodyFilter() { return cfg().enableLargeCandleBodyFilter; }
     public double getLargeCandleBodyAtrThreshold() { return cfg().largeCandleBodyAtrThreshold; }
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
-    public boolean isTrailingSlNoTarget() { return cfg().trailingSlNoTarget; }
+    public double getFibStage1TriggerPct() { return cfg().fibStage1TriggerPct; }
+    public double getFibStage1SlAtrMult()  { return cfg().fibStage1SlAtrMult; }
+    public double getFibStage2TriggerPct() { return cfg().fibStage2TriggerPct; }
+    public double getFibStage2SlPct()      { return cfg().fibStage2SlPct; }
     public boolean isEnableR2S2() { return cfg().enableR2S2; }
     public boolean isEnableR3S3() { return cfg().enableR3S3; }
     public double getR2s2QtyFactor() { return cfg().r2s2QtyFactor; }
     public double getR3s3QtyFactor() { return cfg().r3s3QtyFactor; }
     public double getR4s4QtyFactor() { return cfg().r4s4QtyFactor; }
     public int getAtrPeriod() { return cfg().atrPeriod; }
-    public double getTrailingSlAtrMultiplier() { return cfg().trailingSlAtrMultiplier; }
-    public double getTrailingSlActivationAtr() { return cfg().trailingSlActivationAtr; }
     public double getSmallCandleAtrThreshold() { return cfg().smallCandleAtrThreshold; }
     public double getWickRejectionRatio() { return cfg().wickRejectionRatio; }
     public double getOppositeWickRatio() { return cfg().oppositeWickRatio; }
@@ -357,15 +360,16 @@ public class RiskSettingsStore {
     public void setEnableLargeCandleBodyFilter(boolean v) { cfg().enableLargeCandleBodyFilter = v; }
     public void setLargeCandleBodyAtrThreshold(double v) { cfg().largeCandleBodyAtrThreshold = v; }
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
-    public void setTrailingSlNoTarget(boolean v) { cfg().trailingSlNoTarget = v; }
+    public void setFibStage1TriggerPct(double v) { cfg().fibStage1TriggerPct = v; }
+    public void setFibStage1SlAtrMult(double v)  { cfg().fibStage1SlAtrMult = v; }
+    public void setFibStage2TriggerPct(double v) { cfg().fibStage2TriggerPct = v; }
+    public void setFibStage2SlPct(double v)      { cfg().fibStage2SlPct = v; }
     public void setEnableR2S2(boolean v) { cfg().enableR2S2 = v; }
     public void setEnableR3S3(boolean v) { cfg().enableR3S3 = v; }
     public void setR2s2QtyFactor(double v) { cfg().r2s2QtyFactor = v; }
     public void setR3s3QtyFactor(double v) { cfg().r3s3QtyFactor = v; }
     public void setR4s4QtyFactor(double v) { cfg().r4s4QtyFactor = v; }
     public void setAtrPeriod(int v) { cfg().atrPeriod = v; }
-    public void setTrailingSlAtrMultiplier(double v) { cfg().trailingSlAtrMultiplier = v; }
-    public void setTrailingSlActivationAtr(double v) { cfg().trailingSlActivationAtr = v; }
     public void setSmallCandleAtrThreshold(double v) { cfg().smallCandleAtrThreshold = v; }
     public void setWickRejectionRatio(double v) { cfg().wickRejectionRatio = v; }
     public void setOppositeWickRatio(double v) { cfg().oppositeWickRatio = v; }
@@ -491,15 +495,16 @@ public class RiskSettingsStore {
             upsert("volumeMultiple", String.valueOf(c.volumeMultiple));
             upsert("volumeLookback", String.valueOf(c.volumeLookback));
             upsert("enableTrailingSl", String.valueOf(c.enableTrailingSl));
-            upsert("trailingSlNoTarget", String.valueOf(c.trailingSlNoTarget));
+            upsert("fibStage1TriggerPct", String.valueOf(c.fibStage1TriggerPct));
+            upsert("fibStage1SlAtrMult",  String.valueOf(c.fibStage1SlAtrMult));
+            upsert("fibStage2TriggerPct", String.valueOf(c.fibStage2TriggerPct));
+            upsert("fibStage2SlPct",      String.valueOf(c.fibStage2SlPct));
             upsert("enableR2S2", String.valueOf(c.enableR2S2));
             upsert("enableR3S3", String.valueOf(c.enableR3S3));
             upsert("r2s2QtyFactor", String.valueOf(c.r2s2QtyFactor));
             upsert("r3s3QtyFactor", String.valueOf(c.r3s3QtyFactor));
             upsert("r4s4QtyFactor", String.valueOf(c.r4s4QtyFactor));
             upsert("atrPeriod", String.valueOf(c.atrPeriod));
-            upsert("trailingSlAtrMultiplier", String.valueOf(c.trailingSlAtrMultiplier));
-            upsert("trailingSlActivationAtr", String.valueOf(c.trailingSlActivationAtr));
             upsert("signalSource", c.signalSource);
             upsert("scannerTimeframe", String.valueOf(c.scannerTimeframe));
             upsert("higherTimeframe", String.valueOf(c.higherTimeframe));
@@ -615,15 +620,16 @@ public class RiskSettingsStore {
                     case "volumeMultiple" -> c.volumeMultiple = Double.parseDouble(v);
                     case "volumeLookback" -> c.volumeLookback = Integer.parseInt(v);
                     case "enableTrailingSl"   -> c.enableTrailingSl = Boolean.parseBoolean(v);
-                    case "trailingSlNoTarget" -> c.trailingSlNoTarget = Boolean.parseBoolean(v);
+                    case "fibStage1TriggerPct" -> c.fibStage1TriggerPct = Double.parseDouble(v);
+                    case "fibStage1SlAtrMult"  -> c.fibStage1SlAtrMult  = Double.parseDouble(v);
+                    case "fibStage2TriggerPct" -> c.fibStage2TriggerPct = Double.parseDouble(v);
+                    case "fibStage2SlPct"      -> c.fibStage2SlPct      = Double.parseDouble(v);
                     case "enableR2S2" -> c.enableR2S2 = Boolean.parseBoolean(v);
                     case "enableR3S3" -> c.enableR3S3 = Boolean.parseBoolean(v);
                     case "r2s2QtyFactor" -> c.r2s2QtyFactor = Double.parseDouble(v);
                     case "r3s3QtyFactor" -> c.r3s3QtyFactor = Double.parseDouble(v);
                     case "r4s4QtyFactor" -> c.r4s4QtyFactor = Double.parseDouble(v);
                     case "atrPeriod" -> c.atrPeriod = Integer.parseInt(v);
-                    case "trailingSlAtrMultiplier" -> c.trailingSlAtrMultiplier = Double.parseDouble(v);
-                    case "trailingSlActivationAtr" -> c.trailingSlActivationAtr = Double.parseDouble(v);
                     case "signalSource"      -> c.signalSource = v;
                     case "scannerTimeframe"  -> c.scannerTimeframe = Integer.parseInt(v);
                     case "higherTimeframe"   -> c.higherTimeframe = Integer.parseInt(v);

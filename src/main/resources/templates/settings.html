@@ -298,25 +298,26 @@
                     <div class="form-hint">Computed after SL and final target are determined. R/R = |target − entry| / |entry − SL|. Uses the final target (T2 for split trades) and the final SL (structural or default, whichever was picked). Default 1.0 means reject any trade where reward is less than risk.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Trailing SL</label>
+                    <label class="form-label">Fibonacci Trailing SL</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
                         <input type="checkbox" id="enableTrailingSl" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink:0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable trailing stop-loss</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable Fibonacci trailing stop-loss</span>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="trailingSlNoTarget" style="width: 16px; height: 16px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">No fixed target (trailing SL closes the trade)</span>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 10px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono); min-width:72px;">Stage 1 @</span>
+                        <input type="number" id="fibStage1TriggerPct" class="form-control" step="0.1" min="10" max="95" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">% Fib → SL at entry ±</span>
+                        <input type="number" id="fibStage1SlAtrMult" class="form-control" step="0.1" min="0" max="5" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">× ATR</span>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR ×</span>
-                        <input type="number" id="trailingSlAtrMultiplier" class="form-control" step="0.5" min="0.5" max="10.0" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">trailing distance from peak</span>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono); min-width:72px;">Stage 2 @</span>
+                        <input type="number" id="fibStage2TriggerPct" class="form-control" step="0.1" min="10" max="99" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">% Fib → SL at</span>
+                        <input type="number" id="fibStage2SlPct" class="form-control" step="0.1" min="10" max="95" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">% Fib of range</span>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Activation:</span>
-                        <input type="number" id="trailingSlActivationAtr" class="form-control" step="0.5" min="0.5" max="5.0" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">× ATR profit before trailing starts</span>
-                    </div>
+                    <div class="form-hint">Range = breakout level (0%) → target (100%). SL only tightens, never widens. For split-target trades, trailing is suppressed until T1 fills; after T1, Fibonacci activates on the remaining qty using the same thresholds. Defaults: 61.8 / 1 / 78.6 / 61.8.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Extended Level Signals</label>
@@ -1065,9 +1066,10 @@
             document.getElementById('volumeMultiple').value = d.volumeMultiple || 2.0;
             document.getElementById('volumeLookback').value = d.volumeLookback || 20;
             document.getElementById('enableTrailingSl').checked = d.enableTrailingSl != null ? d.enableTrailingSl : true;
-            document.getElementById('trailingSlNoTarget').checked = d.trailingSlNoTarget === true;
-            document.getElementById('trailingSlAtrMultiplier').value = d.trailingSlAtrMultiplier || 2.0;
-            document.getElementById('trailingSlActivationAtr').value = d.trailingSlActivationAtr || 1.0;
+            document.getElementById('fibStage1TriggerPct').value = d.fibStage1TriggerPct != null ? d.fibStage1TriggerPct : 61.8;
+            document.getElementById('fibStage1SlAtrMult').value  = d.fibStage1SlAtrMult  != null ? d.fibStage1SlAtrMult  : 1.0;
+            document.getElementById('fibStage2TriggerPct').value = d.fibStage2TriggerPct != null ? d.fibStage2TriggerPct : 78.6;
+            document.getElementById('fibStage2SlPct').value      = d.fibStage2SlPct      != null ? d.fibStage2SlPct      : 61.8;
 
             // Scanner settings
             document.getElementById('signalSource').value = d.signalSource || 'TRADINGVIEW';
@@ -1118,7 +1120,7 @@
             document.getElementById('statDefaultSl').textContent = slEnabled ? slBuffer + ' × ATR' : 'OFF';
             document.getElementById('statDefaultSlSub').textContent = slEnabled ? 'ATR(' + atrPeriod + ') anchored to level' : 'Structural SL disabled';
             document.getElementById('statTrailSlSub').textContent = d.enableTrailingSl
-                ? 'Trailing SL: ON (×' + (d.trailingSlAtrMultiplier || 2.0) + ' after ' + (d.trailingSlActivationAtr || 1.0) + ' ATR profit)'
+                ? 'Fibonacci trailing: ON (61.8% → entry±1 ATR, 78.6% → 61.8% Fib)'
                 : 'Trailing SL: OFF';
 
             // Loss limit stat
@@ -1219,9 +1221,10 @@
                 volumeMultiple: parseFloat(document.getElementById('volumeMultiple').value) || 2.0,
                 volumeLookback: parseInt(document.getElementById('volumeLookback').value) || 20,
                 enableTrailingSl: document.getElementById('enableTrailingSl').checked,
-                trailingSlNoTarget: document.getElementById('trailingSlNoTarget').checked,
-                trailingSlAtrMultiplier: parseFloat(document.getElementById('trailingSlAtrMultiplier').value) || 2.0,
-                trailingSlActivationAtr: parseFloat(document.getElementById('trailingSlActivationAtr').value) || 1.0,
+                fibStage1TriggerPct: parseFloat(document.getElementById('fibStage1TriggerPct').value) || 61.8,
+                fibStage1SlAtrMult:  parseFloat(document.getElementById('fibStage1SlAtrMult').value)  || 1.0,
+                fibStage2TriggerPct: parseFloat(document.getElementById('fibStage2TriggerPct').value) || 78.6,
+                fibStage2SlPct:      parseFloat(document.getElementById('fibStage2SlPct').value)      || 61.8,
                 signalSource: document.getElementById('signalSource').value,
                 scannerTimeframe: parseInt(document.getElementById('scannerTimeframe').value) || 15,
                 higherTimeframe: parseInt(document.getElementById('higherTimeframe').value) || 75,
