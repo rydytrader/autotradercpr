@@ -976,14 +976,32 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         double insideMax = riskSettings.getInsideCprMaxWidth();
         eventService.log("[INFO] Scanner initialized: " + watchlist.size() + " symbols"
             + " (filters: narrow<" + narrowMax + "%, inside<" + insideMax + "%, price≥₹" + (int)minPrice + ")");
-        eventService.log("[SUCCESS] All prerequisites loaded — system ready for trading");
 
         int narrowCount = (int) bhavcopyService.getNarrowCprStocks().size();
         int insideCount = (int) bhavcopyService.getInsideCprStocks().size();
         int atrLoaded = atrService.getLoadedCount();
         int weeklyCount = weeklyCprService.getLoadedCount();
-        telegramService.notifyBotReady(watchlist.size(), narrowCount, insideCount,
-            atrLoaded, weeklyCount, riskSettings.getHigherTimeframe());
+        int cprCount = bhavcopyService.getLoadedCount();
+        int e20 = emaService.getLoadedCount();
+        int e50 = emaService.getEma50LoadedCount();
+        int e200 = emaService.getEma200LoadedCount();
+        int he20 = htfEmaService.getLoadedCount();
+        int he50 = htfEmaService.getEma50LoadedCount();
+        int he200 = htfEmaService.getEma200LoadedCount();
+        int total = watchlist.size();
+        int htfMins = riskSettings.getHigherTimeframe();
+
+        eventService.log("[SUCCESS] All prerequisites loaded — system ready for trading"
+            + " (watchlist=" + total
+            + ", narrow=" + narrowCount + "/inside=" + insideCount
+            + ", CPR=" + cprCount + ", ATR=" + atrLoaded
+            + ", weekly-trend=" + weeklyCount
+            + ", 5m EMA 20/50/200=" + e20 + "/" + e50 + "/" + e200
+            + ", " + htfMins + "m EMA 20/50/200=" + he20 + "/" + he50 + "/" + he200 + ")");
+
+        telegramService.notifyBotReady(total, narrowCount, insideCount,
+            atrLoaded, weeklyCount, cprCount,
+            e20, e50, e200, he20, he50, he200, htfMins);
     }
 
     /**
