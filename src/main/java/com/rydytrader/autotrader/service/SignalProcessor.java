@@ -116,11 +116,20 @@ public class SignalProcessor {
         double sl = defaultSl;
         boolean useStructuralSl = false;
         if (riskSettings.isEnableStructuralSl()) {
-            // For DH/DL setups, the structural anchor is the 20 EMA (trend support/resistance)
-            // For all other setups, the anchor is the CPR/R/S level that was broken
-            double anchor = isDhDl
-                ? emaService.getEma(symbol)
-                : computeStructuralAnchor(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
+            // Structural anchor:
+            //  - DH/DL breakouts: the breakout candle's own low (for buys) or high (for sells).
+            //    The candle's extreme is the structural level the breakout defended — if price
+            //    falls back through it, the breakout has failed. Falls back to candle close
+            //    if low/high aren't in the payload.
+            //  - All other setups: the CPR/R/S level that was broken (computeStructuralAnchor).
+            double anchor;
+            if (isDhDl) {
+                anchor = isBuy
+                    ? (candleLow  > 0 ? candleLow  : close)
+                    : (candleHigh > 0 ? candleHigh : close);
+            } else {
+                anchor = computeStructuralAnchor(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
+            }
             if (anchor > 0) {
                 double buffer = riskSettings.getStructuralSlBufferAtr();
                 double structSl = isBuy ? (anchor - atr * buffer) : (anchor + atr * buffer);
@@ -133,8 +142,9 @@ public class SignalProcessor {
                 useStructuralSl = true;
                 double defaultDist = Math.abs(close - defaultSl);
                 double structDist = Math.abs(close - structSl);
+                String anchorLabel = isDhDl ? (isBuy ? "candle low" : "candle high") : "level";
                 eventService.log("[INFO] " + symbol + " " + setup + " using structural SL " + fmt(structSl)
-                    + " (dist " + fmt(structDist) + ", anchor " + fmt(anchor) + " ± " + buffer + "×ATR)"
+                    + " (dist " + fmt(structDist) + ", " + anchorLabel + " " + fmt(anchor) + " ± " + buffer + "×ATR)"
                     + " — default would be " + fmt(defaultSl) + " (dist " + fmt(defaultDist) + ")");
             }
         }
@@ -336,10 +346,27 @@ public class SignalProcessor {
                 double minDist = riskSettings.getDayHighLowShiftMinDistAtr() * atr;
                 if (isBuy) {
                     double sh = candleAggregator.getDayHighBeforeLast(symbol);
-                    if (sh > 0 && (sh - close) >= minDist) shiftCandidates.put(sh, "session high");
+                    if (sh > 0 && (sh - close) >= minDist) {
+                        shiftCandidates.put(sh, "session high");
+                    } else if (sh > 0) {
+                        // Session high is too close to candle close — below the configured
+                        // min-distance threshold. Surface this so the user can see why the
+                        // target wasn't shifted to day high.
+                        eventService.log("[INFO] " + symbol + " " + setup + " session high " + fmt(sh)
+                            + " too close to close " + fmt(close) + " — shift skipped (dist "
+                            + fmt(sh - close) + " < " + riskSettings.getDayHighLowShiftMinDistAtr()
+                            + "×ATR = " + fmt(minDist) + ")");
+                    }
                 } else {
                     double sessionLow = candleAggregator.getDayLowBeforeLast(symbol);
-                    if (sessionLow > 0 && (close - sessionLow) >= minDist) shiftCandidates.put(sessionLow, "session low");
+                    if (sessionLow > 0 && (close - sessionLow) >= minDist) {
+                        shiftCandidates.put(sessionLow, "session low");
+                    } else if (sessionLow > 0) {
+                        eventService.log("[INFO] " + symbol + " " + setup + " session low " + fmt(sessionLow)
+                            + " too close to close " + fmt(close) + " — shift skipped (dist "
+                            + fmt(close - sessionLow) + " < " + riskSettings.getDayHighLowShiftMinDistAtr()
+                            + "×ATR = " + fmt(minDist) + ")");
+                    }
                 }
             }
             WeeklyCprService.WeeklyLevels wl = riskSettings.isEnableWeeklyLevelTargetShift()
