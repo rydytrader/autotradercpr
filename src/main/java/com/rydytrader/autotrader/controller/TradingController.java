@@ -104,7 +104,7 @@ public class TradingController {
         // ── KILL SWITCH ──────────────────────────────────────────────────────────
         if (!tradingState.isTradingEnabled()) {
             String msg = "Signal ignored — trading is disabled (kill switch active)";
-            eventService.log("[WARNING] Signal ignored for " + sigCtx + " — trading is disabled (kill switch active)");
+            eventService.log("[SIGNAL] " + sigCtx + " ignored — trading is disabled (kill switch active)");
             return ResponseEntity.ok(msg);
         }
 
@@ -116,7 +116,7 @@ public class TradingController {
         if (now.isBefore(start) || now.isAfter(end)) {
             String msg = "Signal ignored — outside trading hours " + riskSettings.getTradingStartTime()
                        + "–" + riskSettings.getTradingEndTime() + " [now: " + now + "]";
-            eventService.log("[WARNING] Signal ignored for " + sigCtx + " — outside trading hours "
+            eventService.log("[SIGNAL] " + sigCtx + " ignored — outside trading hours "
                 + riskSettings.getTradingStartTime() + "–" + riskSettings.getTradingEndTime() + " [now: " + now + "]");
             return ResponseEntity.ok(msg);
         }
@@ -156,7 +156,9 @@ public class TradingController {
                 String msg = "Signal ignored — risk exposure limit reached (open: ₹" + (int)openRisk
                     + " + losses: ₹" + (int)consumedRisk
                     + " + new: ₹" + (int)riskPerTrade + " > limit: ₹" + (int)maxLoss + ")";
-                eventService.log("[WARNING] " + symbolForLog + " — " + msg);
+                eventService.log("[SIGNAL] " + sigCtx + " ignored — risk exposure limit reached (open: ₹"
+                    + (int)openRisk + " + losses: ₹" + (int)consumedRisk
+                    + " + new: ₹" + (int)riskPerTrade + " > limit: ₹" + (int)maxLoss + ")");
                 return ResponseEntity.ok(msg);
             }
         }
@@ -218,7 +220,7 @@ public class TradingController {
         } else {
             String msg = "Signal ignored — existing position: " + PositionManager.getPosition(symbol);
             log.info(msg);
-            eventService.log("[WARNING] Signal ignored for " + sigCtx + " — existing position: " + PositionManager.getPosition(symbol));
+            eventService.log("[SIGNAL] " + sigCtx + " ignored — existing position: " + PositionManager.getPosition(symbol));
         }
 
         return ResponseEntity.ok("Signal processed");

@@ -50,15 +50,59 @@ public class EventService {
             lastLogDate = today;
         }
         if (message == null) message = "";
-        // Auto-prepend the calling class name when the caller hasn't supplied their own
-        // [TAG] prefix. Saves editing 150+ call sites and keeps existing tags intact.
-        if (!message.startsWith("[")) {
-            String caller = detectCallerClass();
-            if (caller != null) message = "[" + caller + "] " + message;
+        // Auto-insert the calling class name so the source is always visible in the event log.
+        //   - No prefix                  → "[Caller] message"
+        //   - Severity-only prefix       → "[Severity] [Caller] message"
+        //   - Pipeline-stage prefix      → leave alone (pipeline stage is already a source signal)
+        //     e.g. [SCANNER], [SIGNAL], [TrailingSL], [CandleAggregator]
+        String caller = detectCallerClass();
+        if (caller != null) {
+            if (!message.startsWith("[")) {
+                message = "[" + caller + "] " + message;
+            } else if (isSeverityTag(message)) {
+                int close = message.indexOf(']');
+                if (close > 0 && close < message.length() - 1) {
+                    message = message.substring(0, close + 1) + " [" + caller + "]" + message.substring(close + 1);
+                }
+            }
         }
+        // Normalise: all prefix [TAG] groups at the start of the message become uppercase
+        // so the format is consistent across severity, pipeline, and class-name tags.
+        message = uppercasePrefixTags(message);
         String entry = LocalTime.now().format(TIME_FMT) + " - " + message;
         tradeLogs.add(entry);
         writeToFile(entry);
+    }
+
+    /** Uppercase the contents of every consecutive [...] group at the start of the message.
+     *  Leaves brackets in the message body untouched. */
+    private static String uppercasePrefixTags(String msg) {
+        StringBuilder out = new StringBuilder();
+        int i = 0;
+        while (i < msg.length() && msg.charAt(i) == '[') {
+            int close = msg.indexOf(']', i);
+            if (close < 0) break;
+            out.append('[');
+            out.append(msg.substring(i + 1, close).toUpperCase(java.util.Locale.ROOT));
+            out.append(']');
+            i = close + 1;
+            while (i < msg.length() && Character.isWhitespace(msg.charAt(i))) {
+                out.append(msg.charAt(i));
+                i++;
+            }
+        }
+        out.append(msg.substring(i));
+        return out.toString();
+    }
+
+    /** True for pure severity tags ([INFO], [SUCCESS], [WARNING], [ERROR]) — these benefit from
+     *  having the caller class injected after them. Pipeline-stage or class-name tags are left
+     *  alone since they already carry source context. */
+    private static boolean isSeverityTag(String message) {
+        return message.startsWith("[INFO] ")
+            || message.startsWith("[SUCCESS] ")
+            || message.startsWith("[WARNING] ")
+            || message.startsWith("[ERROR] ");
     }
 
     /** Walks one frame back past this class to find the immediate caller's simple class name. */

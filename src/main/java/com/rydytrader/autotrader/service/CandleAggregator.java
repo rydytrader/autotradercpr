@@ -75,8 +75,6 @@ public class CandleAggregator {
     // Candle close listeners
     private final List<CandleCloseListener> listeners = new CopyOnWriteArrayList<>();
 
-    // First-bar diagnostic trace counter (per symbol)
-    private final ConcurrentHashMap<String, Integer> firstBarTraceCount = new ConcurrentHashMap<>();
     // Track which symbols have logged their time source (one-time per symbol per day)
     private final Set<String> timeSourceLogged = ConcurrentHashMap.newKeySet();
 
@@ -214,27 +212,6 @@ public class CandleAggregator {
         if (timeSourceLogged.add(symbol)) {
             String src = raw.exchFeedTime > 0 ? "exchange feed time (exchFeedTime=" + raw.exchFeedTime + ")" : "system clock fallback (exchFeedTime=0)";
             log.info("[CandleAggregator] {} using {} for candle assignment", symbol, src);
-        }
-
-        // ── DIAGNOSTIC: first 5-min window tracing ──
-        // Log every tick a symbol receives in the 09:15-09:20 window so we can find
-        // out why firstCandleClose drifts from the actual session open. Limited to
-        // first 30 ticks per symbol per day to bound log volume.
-        // eventService is null on the manually-constructed htfAggregator instance in
-        // MarketDataService (created via `new`, not Spring DI) — skip trace there.
-        if (eventService != null && nowMinute < MarketHolidayService.MARKET_OPEN_MINUTE + 5) {
-            int seen = firstBarTraceCount.merge(symbol, 1, Integer::sum);
-            if (seen <= 30) {
-                String sysTime = ZonedDateTime.now(IST).toLocalTime()
-                    .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss.SSS"));
-                String exchTime = raw.exchFeedTime > 0
-                    ? Instant.ofEpochSecond(raw.exchFeedTime).atZone(IST).toLocalTime()
-                        .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))
-                    : "N/A";
-                eventService.log("[FIRST_BAR_TRACE] " + symbol + " sys=" + sysTime + " exch=" + exchTime
-                    + " ltp=" + ltp + " open=" + raw.open + " high=" + raw.high + " low=" + raw.low
-                    + " atp=" + raw.atp + " vol=" + raw.volume + " seq=" + seen);
-            }
         }
 
         if (raw.changePercent != 0) latestChangePct.put(symbol, raw.changePercent);
@@ -896,7 +873,6 @@ public class CandleAggregator {
         savePriorsToDisk();
         currentCandles.clear();
         completedCandles.clear();
-        firstBarTraceCount.clear();
         timeSourceLogged.clear();
         dayOpen.clear();
         firstCandleClose.clear();
