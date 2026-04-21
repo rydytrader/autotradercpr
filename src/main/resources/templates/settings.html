@@ -458,12 +458,20 @@
                     <div class="form-hint">Counts CPR zones (S4, S3, S2, S1/PDL, CPR, R1/PDH, R2, R3, R4) strictly between the 20 EMA and the breakout level. Pair zones (CPR, R1/PDH, S1/PDL) count as one. If the count is 0 (EMA is in the zone immediately adjacent to the broken level) the trade fires. If 1 or more zones sit between, the setup is stale and the trade is skipped. Day High / Day Low setups follow the same rule — no CPR zone exclusion.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">HTF Hurdle Filter (1-hour at weekly level)</label>
+                    <label class="form-label">HTF Hurdle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip 5-min breakout when in-progress 1-hour candle straddles a same-direction weekly level</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Downgrade HPT &rarr; LPT when the previous 1h HTF candle hasn't cleared the nearest weekly level</span>
                     </div>
-                    <div class="form-hint">If the current (unclosed) 1-hour candle has a weekly hurdle inside its range, the 5-min breakout is fragile — the 1-hour can still close back through the level and trap the trade. CPR-3 levels (Pivot/TC/BC) block both directions; R1/PWH blocks buys only; S1/PWL blocks sells only. Other weekly levels are ignored. Applies to CPR breakouts (CPR/R1-R4/S1-S4/PDH/PDL) and DH/DL breakouts. Magnets (mean-reversion) are exempt. Re-evaluates at each 1-hour close.</div>
+                    <div class="form-hint">For a 5-min breakout, find the nearest weekly level in the trade direction:
+                        <b>buys</b> &rarr; the highest of {R1, PWH, R2, R3, R4} strictly below the 5-min close;
+                        <b>sells</b> &rarr; the lowest of {S1, PWL, S2, S3, S4} strictly above the close.
+                        Then check the previous 1-hour HTF candle close:
+                        <b>cleared the level</b> (prior 1h close &gt; level on buys, &lt; level on sells) &rarr; HPT retained;
+                        <b>didn't clear</b> &rarr; HPT &rarr; LPT (HTF hasn't confirmed the move);
+                        <b>no prior 1h close yet today</b> (first session hour) &rarr; HPT &rarr; LPT.
+                        Weekly CPR (pivot/TC/BC) is excluded because below-weekly-top trades are already classified as weekly-neutral (LPT) by the weekly trend rule.
+                        Applies to all breakouts. LPT trades unaffected.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Weekly Reversal Filter (75-min R1/PWH & S1/PWL)</label>

@@ -164,7 +164,7 @@ public class SymbolMasterService {
             data.put("tickSizes", tickSizes);
             Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
             Files.writeString(tmp, mapper.writeValueAsString(data));
-            Files.move(tmp, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            com.rydytrader.autotrader.util.FileIoUtils.atomicMoveWithRetry(tmp, path);
         } catch (Exception e) {
             log.error("[SymbolMaster] Failed to save cache: {}", e.getMessage());
         }

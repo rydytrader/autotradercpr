@@ -538,6 +538,26 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
 
     public int getLoadedCount() { return atrBySymbol.size(); }
 
+    /** Count of symbols in the given list that have a non-zero ATR. Used for dashboard stats. */
+    public int getLoadedCountFor(java.util.Collection<String> symbols) {
+        int n = 0;
+        for (String s : symbols) if (atrBySymbol.getOrDefault(s, 0.0) > 0) n++;
+        return n;
+    }
+
+    /**
+     * Drop any ATR entry whose symbol isn't in the current watchlist. Keeps the cache
+     * proportional to today's tradable universe instead of growing cumulatively across days.
+     */
+    public int pruneTo(java.util.Collection<String> watchlist) {
+        java.util.Set<String> keep = new java.util.HashSet<>(watchlist);
+        int before = atrBySymbol.size();
+        atrBySymbol.keySet().retainAll(keep);
+        int removed = before - atrBySymbol.size();
+        if (removed > 0) log.info("[AtrService] Pruned {} stale ATR entries not in watchlist ({} remaining)", removed, atrBySymbol.size());
+        return removed;
+    }
+
     public Map<String, Double> getAllAtr() {
         return Collections.unmodifiableMap(atrBySymbol);
     }

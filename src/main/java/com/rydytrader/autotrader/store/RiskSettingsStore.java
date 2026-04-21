@@ -51,7 +51,7 @@ public class RiskSettingsStore {
         volatile double dayHighLowShiftMinDistAtr = 2.0; // skip day H/L shift if distance < N ATR from close
         volatile boolean enableWeeklyLevelTargetShift = true; // shift target to weekly CPR levels if between entry and target
         volatile boolean enableWeeklyEmaTargetShift = true;   // shift target to weekly (HTF 60-min) EMA 20/50/200 if between entry and target
-        volatile boolean enableHtfHurdleFilter = true; // skip 5-min CPR breakout when in-progress 1h candle straddles a same-direction weekly level
+        volatile boolean enableHtfHurdleFilter = true; // HPT→LPT when 5-min close lands inside R1/PWH (buy) or S1/PWL (sell) zone
         // Structural SL — opt-in, anchors SL to the S/R level the trade is testing (per setup family)
         // When on, we compute both structural and default SL and pick the TIGHTER one.
         volatile boolean enableStructuralSl = false;   // when false, always use close ± atrMultiplier × ATR
@@ -202,7 +202,7 @@ public class RiskSettingsStore {
     public double getDayHighLowShiftMinDistAtr() { return cfg().dayHighLowShiftMinDistAtr; }
     public boolean isEnableWeeklyLevelTargetShift() { return cfg().enableWeeklyLevelTargetShift; }
     public boolean isEnableWeeklyEmaTargetShift()   { return cfg().enableWeeklyEmaTargetShift; }
-    public boolean isEnableHtfHurdleFilter()        { return cfg().enableHtfHurdleFilter; }
+    public boolean isEnableHtfHurdleFilter()    { return cfg().enableHtfHurdleFilter; }
     public boolean isEnableStructuralSl()    { return cfg().enableStructuralSl; }
     public double  getStructuralSlBufferAtr(){ return cfg().structuralSlBufferAtr; }
     public double getDayHighLowMinAtr()            { return cfg().dayHighLowMinAtr; }
@@ -343,7 +343,7 @@ public class RiskSettingsStore {
     public void setDayHighLowShiftMinDistAtr(double v) { cfg().dayHighLowShiftMinDistAtr = v; }
     public void setEnableWeeklyLevelTargetShift(boolean v) { cfg().enableWeeklyLevelTargetShift = v; }
     public void setEnableWeeklyEmaTargetShift(boolean v)   { cfg().enableWeeklyEmaTargetShift = v; }
-    public void setEnableHtfHurdleFilter(boolean v)        { cfg().enableHtfHurdleFilter = v; }
+    public void setEnableHtfHurdleFilter(boolean v)    { cfg().enableHtfHurdleFilter = v; }
     public void setEnableStructuralSl(boolean v)    { cfg().enableStructuralSl = v; }
     public void setStructuralSlBufferAtr(double v)  { cfg().structuralSlBufferAtr = v; }
     public void setDayHighLowMinAtr(double v)              { cfg().dayHighLowMinAtr = v; }

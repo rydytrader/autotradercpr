@@ -1054,6 +1054,66 @@
         </div>
     </div>
 
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> HTF Hurdle Filter</div></div>
+        <div class="help-body">
+            <p>A 5-min breakout is only as reliable as the higher-timeframe confirmation underneath it. The HTF Hurdle Filter checks whether the previous 1-hour candle has itself cleared the nearest weekly reversal level. If the 5-min has broken, say, weekly R1 but the 1-hour hasn't closed above R1 yet, the 5-min move could easily reverse on the next bar — so the trade is downgraded <strong>HPT → LPT</strong> (protected by smaller size) until HTF confirms.</p>
+
+            <h4>How it works — three-zone model</h4>
+            <p>The filter treats the price space above weekly CPR top in three regions, each with distinct behaviour:</p>
+            <table>
+                <tr><th>Zone (buy side)</th><th>Price range</th><th>Filter behaviour</th><th>Why</th></tr>
+                <tr><td><strong>Below weekly TC</strong></td><td>LTP &lt; weekly TC</td><td>No HTF Hurdle check (irrelevant)</td><td>Weekly trend is NEUTRAL via the weekly-trend rule — trade is already LPT upstream</td></tr>
+                <tr><td><strong>Above weekly TC, below R1/PWH</strong></td><td>weekly TC &lt; LTP &lt; min(R1, PWH)</td><td>Filter skips — HPT retained</td><td>Weekly CPR top acts as support <em>by definition</em> once broken; no HTF confirmation needed. Preserves morning momentum entries.</td></tr>
+                <tr><td><strong>At or above R1/PWH</strong></td><td>LTP ≥ min(R1, PWH)</td><td>HTF Hurdle engages — check prior 1h close vs nearest reversal level</td><td>Reversal levels become support only after being broken AND HTF-confirmed; without 1h commit the level can still reject the 5-min move</td></tr>
+            </table>
+            <p>Mirror applies on the sell side using weekly BC and {S1, PWL, S2, S3, S4}.</p>
+
+            <h4>Candidate set (when filter engages)</h4>
+            <ul>
+                <li><strong>Buys</strong>: <code>{R1, PWH, R2, R3, R4}</code> — find the max strictly below the 5-min close.</li>
+                <li><strong>Sells</strong>: <code>{S1, PWL, S2, S3, S4}</code> — find the min strictly above the 5-min close.</li>
+                <li><strong>Weekly CPR (TC/BC/Pivot) is deliberately excluded</strong> — see three-zone model above.</li>
+            </ul>
+
+            <h4>Decision rules</h4>
+            <table>
+                <tr><th>Prior 1h HTF close</th><th>Action</th><th>Log reason</th></tr>
+                <tr><td>None yet today (first session hour)</td><td>HPT → LPT</td><td><code>HTF hurdle at weekly &lt;Level&gt;: close=X, level=Z, no prior 1h close yet today</code></td></tr>
+                <tr><td>Strictly past the level (buy: prior close &gt; level; sell: &lt; level)</td><td>HPT retained</td><td>— (no adjustments entry)</td></tr>
+                <tr><td>At or on wrong side of the level</td><td>HPT → LPT</td><td><code>HTF hurdle at weekly &lt;Level&gt;: close=X, prior 1h close=Y, level=Z</code></td></tr>
+            </table>
+
+            <h4>Why this asymmetry (weekly CPR vs reversal levels)?</h4>
+            <ul>
+                <li><strong>Weekly CPR top (TC)</strong>: once price is above it, the role is static — TC acts as support. No HTF confirmation needed because there is no "rejection candidate" on the other side.</li>
+                <li><strong>Reversal levels (R1, PWH, R2, R3, R4)</strong>: these are resistance until broken AND held. A 5-min close just above R1 doesn't make R1 support — the market can reject off R1 on the very next candle if the HTF hasn't committed above it.</li>
+                <li><strong>Trade-off on weekly CPR</strong>: waiting for the 1h candle to close above weekly CPR before firing HPT trades would forfeit morning momentum entries (the first 1h candle doesn't close until 10:15 IST). The design accepts LTP-based weekly-trend flip as the trigger in this region, banking on the CPR break alone being a durable signal.</li>
+            </ul>
+
+            <h4>Example</h4>
+            <p>Weekly levels: TC=1000, R1=1020, PWH=1025, R2=1050. Setting: HTF Hurdle ON.</p>
+            <table>
+                <tr><th>Time</th><th>5-min close</th><th>Prior 1h close</th><th>Nearest level below</th><th>Result</th></tr>
+                <tr><td>09:45</td><td>1010</td><td>— (first hour)</td><td>none (1010 &lt; R1=1020)</td><td>HPT — filter skips, weekly trend BULLISH via LTP &gt; TC</td></tr>
+                <tr><td>10:30</td><td>1010</td><td>1008</td><td>none</td><td>HPT — same region, still no candidate</td></tr>
+                <tr><td>11:42</td><td>1025</td><td>1010</td><td>R1 (1020)</td><td>HPT → LPT — 1010 ≤ 1020, 1h hasn't cleared R1 yet</td></tr>
+                <tr><td>12:20</td><td>1025</td><td>1022</td><td>R1 (1020)</td><td>HPT — 1022 &gt; 1020, 1h has committed above R1</td></tr>
+                <tr><td>13:10</td><td>1055</td><td>1048</td><td>R2 (1050)</td><td>HPT → LPT — 1048 ≤ 1050, 1h hasn't cleared R2</td></tr>
+                <tr><td>14:05</td><td>1055</td><td>1052</td><td>R2 (1050)</td><td>HPT — 1052 &gt; 1050</td></tr>
+            </table>
+
+            <h4>Net effect on momentum</h4>
+            <ul>
+                <li>Break of weekly CPR = immediate HPT (LTP-triggered). Full-size morning momentum entries preserved.</li>
+                <li>Break of each reversal level = HPT only after the 1h candle has committed above it. Protects against reversal whipsaws.</li>
+                <li>Below weekly CPR top = NEUTRAL weekly → LPT by upstream rule. Filter doesn't touch this region.</li>
+            </ul>
+
+            <p>Setting: <strong>HTF Hurdle Filter</strong> in Settings → Filters. Default ON. Turning it off removes the reversal-level HTF confirmation check entirely; weekly trend probability rules continue to apply.</p>
+        </div>
+    </div>
+
     </div><!-- /tab-split -->
 
     <!-- STOP LOSS & TRAILING -->

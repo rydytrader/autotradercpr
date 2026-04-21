@@ -95,13 +95,16 @@ public class TradingController {
     @PostMapping("/placeorder")
     public ResponseEntity<String> receiveSignal(@RequestBody Map<String, Object> payload) {
 
-        // Extract symbol early for log context
+        // Extract symbol + setup early for log context — used by all pre-processor skip logs
+        // below so they match the "SYMBOL SETUP — reason" format used by SignalProcessor.
         String symbolForLog = payload.containsKey("symbol") ? payload.get("symbol").toString() : "";
+        String setupForLog  = payload.containsKey("setup")  ? payload.get("setup").toString()  : "";
+        String sigCtx       = symbolForLog + (setupForLog.isEmpty() ? "" : " " + setupForLog);
 
         // ── KILL SWITCH ──────────────────────────────────────────────────────────
         if (!tradingState.isTradingEnabled()) {
             String msg = "Signal ignored — trading is disabled (kill switch active)";
-            eventService.log("[WARNING] Signal ignored for " + symbolForLog + " — trading is disabled (kill switch active)");
+            eventService.log("[WARNING] Signal ignored for " + sigCtx + " — trading is disabled (kill switch active)");
             return ResponseEntity.ok(msg);
         }
 
@@ -113,7 +116,7 @@ public class TradingController {
         if (now.isBefore(start) || now.isAfter(end)) {
             String msg = "Signal ignored — outside trading hours " + riskSettings.getTradingStartTime()
                        + "–" + riskSettings.getTradingEndTime() + " [now: " + now + "]";
-            eventService.log("[WARNING] Signal ignored for " + symbolForLog + " — outside trading hours "
+            eventService.log("[WARNING] Signal ignored for " + sigCtx + " — outside trading hours "
                 + riskSettings.getTradingStartTime() + "–" + riskSettings.getTradingEndTime() + " [now: " + now + "]");
             return ResponseEntity.ok(msg);
         }
@@ -215,7 +218,7 @@ public class TradingController {
         } else {
             String msg = "Signal ignored — existing position: " + PositionManager.getPosition(symbol);
             log.info(msg);
-            eventService.log("[WARNING] Signal ignored for " + symbol + " — existing position: " + PositionManager.getPosition(symbol));
+            eventService.log("[WARNING] Signal ignored for " + sigCtx + " — existing position: " + PositionManager.getPosition(symbol));
         }
 
         return ResponseEntity.ok("Signal processed");
@@ -238,20 +241,29 @@ public class TradingController {
             Map<String, Object> m = new java.util.LinkedHashMap<>();
             // Load persisted state first — authoritative source for qty/SL/target after T1 fills
             Map<String, Object> state = positionStateStore.load(p.getSymbol());
-            // Use remainingQty from positionStateStore after T1 fill (authoritative)
+            // Use state as authoritative source for qty and avg after T1 fill. Fyers polling
+            // can briefly return stale pre-T1 qty, and we don't want to trust t1Filled flag
+            // alone (it can lag the remainingQty update). Checking remainingQty > 0 covers
+            // both signals — if state has positive remainingQty, T1 has booked and the
+            // remaining leg is what's open.
             int displayQty = p.getQty();
-            if (state != null && Boolean.TRUE.equals(state.get("t1Filled"))) {
+            double avgForPnl = p.getAvgPrice();
+            if (state != null) {
                 try {
                     int remaining = Integer.parseInt(state.getOrDefault("remainingQty", "0").toString());
                     if (remaining > 0) displayQty = remaining;
+                } catch (NumberFormatException ignored) {}
+                try {
+                    double stateAvg = Double.parseDouble(state.getOrDefault("avgPrice", "0").toString());
+                    if (stateAvg > 0) avgForPnl = stateAvg;
                 } catch (NumberFormatException ignored) {}
             }
             // Overlay live LTP from WebSocket if available
             double liveLtp = marketDataService.getLtp(p.getSymbol());
             double ltp = liveLtp > 0 ? liveLtp : p.getLtp();
             double pnl = "LONG".equals(p.getSide())
-                ? (ltp - p.getAvgPrice()) * displayQty
-                : (p.getAvgPrice() - ltp) * displayQty;
+                ? (ltp - avgForPnl) * displayQty
+                : (avgForPnl - ltp) * displayQty;
             m.put("symbol",    p.getSymbol());
             m.put("qty",       displayQty);
             m.put("side",      p.getSide());
@@ -345,7 +357,7 @@ public class TradingController {
         // Scanner
         health.put("signalSource", riskSettings.getSignalSource());
         health.put("watchlistCount", marketDataService.getWatchlist().size());
-        health.put("atrLoaded", atrService.getAllAtr().size());
+        health.put("atrLoaded", atrService.getLoadedCountFor(marketDataService.getWatchlist()));
 
         // OCO monitors
         health.put("ocoMonitors", pollingService.getOcoMonitorCount());
@@ -391,7 +403,7 @@ public class TradingController {
         scanner.put("watchlistSymbols", marketDataService.getWatchlist().stream()
             .map(s -> s.replaceAll("^(NSE|BSE):", "").replaceAll("-EQ$", ""))
             .collect(java.util.stream.Collectors.toList()));
-        scanner.put("atrLoaded", atrService.getAllAtr().size());
+        scanner.put("atrLoaded", atrService.getLoadedCountFor(marketDataService.getWatchlist()));
         scanner.put("activeCandles", candleAggregator.getActiveCandleCount());
         scanner.put("candleChecker", candleAggregator.isBoundaryCheckerAlive() ? "ALIVE" : "DEAD");
         scanner.put("candleCheckerRestarts", candleAggregator.getRestartCount());
@@ -400,8 +412,8 @@ public class TradingController {
         scanner.put("lastScanTime", breakoutScanner.getLastScanTime());
         scanner.put("tradedToday", breakoutScanner.getTradedCountToday());
         scanner.put("filteredToday", breakoutScanner.getFilteredCountToday());
-        scanner.put("emaLoaded", emaService.getLoadedCount());
-        scanner.put("ema200Loaded", emaService.getEma200LoadedCount());
+        scanner.put("emaLoaded", emaService.getLoadedCountFor(marketDataService.getWatchlist()));
+        scanner.put("ema200Loaded", emaService.getEma200LoadedCountFor(marketDataService.getWatchlist()));
         scanner.put("firstCandleLoaded", candleAggregator.getFirstCandleCloseCount());
         scanner.put("validationPass", marketDataService.getValidationPass());
         scanner.put("validationFail", marketDataService.getValidationFail());

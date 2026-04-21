@@ -241,6 +241,13 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
             wl.bot = Math.min(wl.tc, wl.bc);
             wl.r1 = 2.0 * wl.pivot - wL;
             wl.s1 = 2.0 * wl.pivot - wH;
+            double range = wH - wL;
+            wl.r2 = wl.pivot + range;
+            wl.s2 = wl.pivot - range;
+            wl.r3 = wl.r1 + range;            // = H + 2*(pivot - L)
+            wl.s3 = wl.s1 - range;            // = L - 2*(H - pivot)
+            wl.r4 = wl.r3 + (wl.r2 - wl.r1);
+            wl.s4 = wl.s3 - (wl.s1 - wl.s2);
             wl.ph = wH;
             wl.pl = wL;
             weeklyLevels.put(symbol, wl);
@@ -587,6 +594,13 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
 
     public int getLoadedCount() { return weeklyLevels.size(); }
 
+    /** Watchlist-scoped count for dashboard stats. */
+    public int getLoadedCountFor(java.util.Collection<String> symbols) {
+        int n = 0;
+        for (String s : symbols) if (weeklyLevels.containsKey(s)) n++;
+        return n;
+    }
+
     /** Returns the weekly CPR levels for a symbol, or null if not loaded yet. */
     public WeeklyLevels getWeeklyLevels(String fyersSymbol) {
         return weeklyLevels.get(fyersSymbol);
@@ -712,6 +726,13 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
         return cpr != null ? cpr.getClose() : 0;
     }
 
+    /** Raw last-closed HTF (60-min) candle close for this symbol today, or null if no HTF candle
+     *  has closed yet in the session. Used by the HTF Hurdle filter to decide whether the prior
+     *  1h candle also finished inside the reversal zone. */
+    public Double getLastHigherTfClose(String symbol) {
+        return lastHigherTfClose.get(symbol);
+    }
+
     /** Price for weekly trend: last higher-TF (60-min) candle close, LTP fallback for first candle. */
     public double getWeeklyPrice(String symbol) {
         Double cc = lastHigherTfClose.get(symbol);
@@ -737,6 +758,7 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
     public static class WeeklyLevels {
         public double pivot, tc, bc, top, bot;
         public double r1, s1, ph, pl;
+        public double r2, r3, r4, s2, s3, s4;
 
         public WeeklyLevels() {}
     }

@@ -400,9 +400,9 @@ public class ScannerController {
         Map<String, Object> status = new LinkedHashMap<>();
         status.put("signalSource", riskSettings.getSignalSource());
         status.put("watchlistCount", marketDataService.getWatchlist().size());
-        status.put("atrLoaded", atrService.getLoadedCount());
-        status.put("emaLoaded", emaService.getLoadedCount());
-        status.put("ema200Loaded", emaService.getEma200LoadedCount());
+        status.put("atrLoaded", atrService.getLoadedCountFor(marketDataService.getWatchlist()));
+        status.put("emaLoaded", emaService.getLoadedCountFor(marketDataService.getWatchlist()));
+        status.put("ema200Loaded", emaService.getEma200LoadedCountFor(marketDataService.getWatchlist()));
         status.put("firstCandleLoaded", candleAggregator.getFirstCandleCloseCount());
         status.put("validationPass", marketDataService.getValidationPass());
         status.put("validationFail", marketDataService.getValidationFail());

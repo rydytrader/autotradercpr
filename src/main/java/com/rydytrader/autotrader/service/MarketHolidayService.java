@@ -36,6 +36,12 @@ public class MarketHolidayService {
     private final Map<LocalDate, String> holidays = new java.util.concurrent.ConcurrentHashMap<>();
     private volatile String cachedYear = "";
 
+    // Reuse BhavcopyService's hardened cookie flow (two-step warmup, retries, rich headers)
+    // instead of duplicating a fragile single-shot fetch here.
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private BhavcopyService bhavcopyService;
+
     @PostConstruct
     public void init() {
         loadFromFile();
@@ -162,9 +168,17 @@ public class MarketHolidayService {
 
             HttpURLConnection conn = (HttpURLConnection) new URL(HOLIDAY_API).openConnection();
             conn.setRequestMethod("GET");
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
-            conn.setRequestProperty("Accept", "application/json");
+            // Full browser-like headers — NSE's Akamai bot filter checks fingerprint, not just UA.
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            conn.setRequestProperty("Accept", "*/*");
+            conn.setRequestProperty("Accept-Language", "en-US,en;q=0.9");
+            conn.setRequestProperty("Accept-Encoding", "gzip, deflate, br");
+            conn.setRequestProperty("Connection", "keep-alive");
             conn.setRequestProperty("Referer", "https://www.nseindia.com/resources/exchange-communication-holidays");
+            conn.setRequestProperty("X-Requested-With", "XMLHttpRequest");
+            conn.setRequestProperty("Sec-Fetch-Dest", "empty");
+            conn.setRequestProperty("Sec-Fetch-Mode", "cors");
+            conn.setRequestProperty("Sec-Fetch-Site", "same-origin");
             conn.setRequestProperty("Cookie", cookies);
             conn.setConnectTimeout(10_000);
             conn.setReadTimeout(10_000);
@@ -211,26 +225,7 @@ public class MarketHolidayService {
     }
 
     private String getNseCookies() {
-        try {
-            HttpURLConnection conn = (HttpURLConnection) new URL(NSE_BASE_URL).openConnection();
-            conn.setRequestMethod("GET");
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
-            conn.setRequestProperty("Accept", "text/html");
-            conn.setConnectTimeout(10_000);
-            conn.setReadTimeout(10_000);
-            conn.getResponseCode();
-
-            StringBuilder cookies = new StringBuilder();
-            List<String> setCookies = conn.getHeaderFields().getOrDefault("Set-Cookie", List.of());
-            for (String cookie : setCookies) {
-                if (cookies.length() > 0) cookies.append("; ");
-                cookies.append(cookie.split(";")[0]);
-            }
-            return cookies.toString();
-        } catch (Exception e) {
-            log.error("[MarketHoliday] Cookie fetch error: {}", e.getMessage());
-            return null;
-        }
+        return bhavcopyService != null ? bhavcopyService.getNseCookies() : null;
     }
 
     private void saveToFile() {

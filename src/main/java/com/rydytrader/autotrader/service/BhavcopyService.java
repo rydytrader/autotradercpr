@@ -19,6 +19,11 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.zip.ZipInputStream;
 
@@ -70,6 +75,17 @@ public class BhavcopyService {
     }
     private final EventService eventService;
 
+    // Retry scheduler for post-failure delayed re-fetch (single-thread daemon).
+    // Schedule: 2, 5, 15, 30, 60 min after the first failure. Cancelled once a fetch succeeds.
+    private final ScheduledExecutorService retryScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "bhavcopy-retry");
+        t.setDaemon(true);
+        return t;
+    });
+    private volatile ScheduledFuture<?> retryFuture;
+    private final AtomicInteger retryAttempt = new AtomicInteger(0);
+    private static final long[] RETRY_DELAYS_MIN = { 2, 5, 15, 30, 60 };
+
     @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.context.annotation.Lazy
     private SymbolMasterService symbolMasterService;
@@ -88,7 +104,18 @@ public class BhavcopyService {
         loadFromFile();
         String expectedDate = getLastTradingDay().toString();
         if (!expectedDate.equals(cachedDate)) {
-            fetchAndCompute();
+            boolean ok = fetchAndCompute();
+            if (!ok) {
+                // Fail-safe: cached data is stale AND NSE refresh failed. Clear the cache so
+                // the scanner shows an empty list rather than yesterday's stocks — stale data
+                // is worse than no data for a trading session.
+                int prev = cache.size();
+                cache.clear();
+                cachedDate = "";
+                log.error("[BhavcopyService] Bhavcopy refresh failed on new day — cleared {} stale CPR entries, scanner will show empty watchlist until retry succeeds", prev);
+                eventService.log("[ERROR] Bhavcopy refresh failed on new day — stale CPR cleared. Auto-retries scheduled (2/5/15/30/60 min).");
+                scheduleRetry();
+            }
         } else {
             // Backfill history if we have fewer than 5 days
             if (dailyHistory.size() < MAX_HISTORY_DAYS && !cache.isEmpty()) {
@@ -151,7 +178,66 @@ public class BhavcopyService {
 
     @Scheduled(cron = "0 0 8 * * MON-FRI")
     public void scheduledFetch() {
-        fetchAndCompute();
+        String expectedDate = getLastTradingDay().toString();
+        boolean wasStale = !expectedDate.equals(cachedDate);
+        boolean ok = fetchAndCompute();
+        if (!ok && wasStale) {
+            int prev = cache.size();
+            cache.clear();
+            cachedDate = "";
+            log.error("[BhavcopyService] 8 AM cron fetch failed with stale cache — cleared {} entries, scanner will show empty watchlist", prev);
+            eventService.log("[ERROR] 8 AM CPR fetch failed — stale cache cleared. Manual rebuild required.");
+            scheduleRetry();
+        } else if (ok) {
+            cancelRetry();
+        }
+    }
+
+    /**
+     * Schedule a delayed retry after a failed fetch. Fires at 2, 5, 15, 30, 60 min since
+     * the first failure. Cancelled as soon as a fetch succeeds (either via retry or
+     * the 8 AM cron). Only runs when cache is empty — if it was populated another way,
+     * no retry fires.
+     */
+    private synchronized void scheduleRetry() {
+        int n = retryAttempt.get();
+        if (n >= RETRY_DELAYS_MIN.length) {
+            log.warn("[BhavcopyService] Retry cap reached ({}), giving up until next restart or 8 AM cron", n);
+            return;
+        }
+        long delayMin = RETRY_DELAYS_MIN[n];
+        retryFuture = retryScheduler.schedule(() -> {
+            try {
+                // Skip if someone else (e.g. manual rebuild) populated the cache in the meantime.
+                if (!cache.isEmpty()) {
+                    log.info("[BhavcopyService] Retry skipped — cache was populated by another path");
+                    cancelRetry();
+                    return;
+                }
+                log.info("[BhavcopyService] Retry attempt {}/{} after {} min", n + 1, RETRY_DELAYS_MIN.length, delayMin);
+                boolean ok = fetchAndCompute();
+                if (ok) {
+                    eventService.log("[SUCCESS] Bhavcopy recovered on retry " + (n + 1));
+                    cancelRetry();
+                } else {
+                    retryAttempt.incrementAndGet();
+                    scheduleRetry();
+                }
+            } catch (Exception e) {
+                log.error("[BhavcopyService] Retry failed: {}", e.getMessage());
+                retryAttempt.incrementAndGet();
+                scheduleRetry();
+            }
+        }, delayMin, TimeUnit.MINUTES);
+        log.info("[BhavcopyService] Bhavcopy retry scheduled in {} min (attempt {}/{})", delayMin, n + 1, RETRY_DELAYS_MIN.length);
+    }
+
+    private synchronized void cancelRetry() {
+        retryAttempt.set(0);
+        if (retryFuture != null) {
+            retryFuture.cancel(false);
+            retryFuture = null;
+        }
     }
 
     // ── Public API ─────────────────────────────────────────────────────────────
@@ -164,9 +250,15 @@ public class BhavcopyService {
         return Collections.unmodifiableMap(cache);
     }
 
+    /** True for index tickers merged into the cache alongside stocks (NIFTY50 etc.). */
+    public boolean isIndex(String ticker) {
+        return SUPPORTED_INDICES.containsValue(ticker);
+    }
+
     public List<CprLevels> getNarrowCprStocks() {
         return cache.values().stream()
             .filter(CprLevels::isNarrowCpr)
+            .filter(c -> !isIndex(c.getSymbol()))
                         .sorted(Comparator.comparingDouble(CprLevels::getCprWidthPct))
             .collect(Collectors.toList());
     }
@@ -175,6 +267,7 @@ public class BhavcopyService {
         Map<String, CprLevels> prevDay = getPreviousDaySymbols();
         if (prevDay.isEmpty()) return Collections.emptyList();
         return cache.values().stream()
+                        .filter(c -> !isIndex(c.getSymbol()))
                         .filter(c -> {
                 CprLevels prev = prevDay.get(c.getSymbol());
                 if (prev == null) return false;
@@ -192,6 +285,13 @@ public class BhavcopyService {
     public String getCachedDate()   { return cachedDate; }
     public String getPreviousDate() { return dailyHistory.isEmpty() ? "" : dailyHistory.getFirst().date; }
     public int getLoadedCount()     { return cache.size(); }
+
+    /** Watchlist-scoped count: how many of the given symbols have CPR levels loaded. */
+    public int getLoadedCountFor(java.util.Collection<String> symbols) {
+        int n = 0;
+        for (String s : symbols) if (cache.containsKey(extractTicker(s))) n++;
+        return n;
+    }
 
     /** Get today's cache (latest day). */
     public Map<String, CprLevels> getTodayCache() { return Collections.unmodifiableMap(cache); }
@@ -247,7 +347,8 @@ public class BhavcopyService {
 
     // ── Core fetch logic ───────────────────────────────────────────────────────
 
-    private void fetchAndCompute() {
+    /** @return true if cache was populated with fresh data; false if every attempt failed. */
+    private boolean fetchAndCompute() {
         LocalDate targetDate = getLastTradingDay();
 
         for (int attempt = 0; attempt < 3; attempt++) {
@@ -256,7 +357,7 @@ public class BhavcopyService {
                 String cookies = getNseCookies();
                 if (cookies == null || cookies.isEmpty()) {
                     log.error("[BhavcopyService] Failed to obtain NSE session cookies");
-                    return;
+                    return false;
                 }
 
                 // Download FO Bhavcopy for NFO stock list
@@ -353,7 +454,7 @@ public class BhavcopyService {
                     + " NFO stocks for " + cachedDate + " (" + narrowCount + " narrow, " + insideCount + " inside CPR)";
                 log.info(msg);
                 eventService.log(msg);
-                return;
+                return true;
 
             } catch (Exception e) {
                 log.error("[BhavcopyService] Error fetching Bhavcopy for {}: {}", targetDate, e.getMessage());
@@ -361,7 +462,8 @@ public class BhavcopyService {
             }
         }
 
-        log.error("[BhavcopyService] Failed to fetch Bhavcopy after 3 attempts, using cached data");
+        log.error("[BhavcopyService] Failed to fetch Bhavcopy after 3 attempts");
+        return false;
     }
 
     /**
@@ -655,27 +757,99 @@ public class BhavcopyService {
     // ── NSE session cookies ────────────────────────────────────────────────────
 
     public String getNseCookies() {
+        // NSE uses Akamai bot manager. Plain GET on the homepage sometimes returns 403.
+        // Two-step warmup (homepage → /option-chain) collects bm_sz + bm_sv cookies which
+        // the data archive endpoints require. 3 outer attempts with 2s/5s backoff.
+        long[] backoffMs = { 0L, 2_000L, 5_000L };
+        String lastError = null;
+        for (int attempt = 0; attempt < backoffMs.length; attempt++) {
+            if (backoffMs[attempt] > 0) {
+                try { Thread.sleep(backoffMs[attempt]); } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return null;
+                }
+            }
+            try {
+                // Step 1 — homepage warmup
+                Map<String, String> jar = new LinkedHashMap<>();
+                String step1 = hitAndCollectCookies(NSE_BASE_URL, null, jar);
+                if (step1.startsWith("ERR")) {
+                    lastError = "homepage: " + step1;
+                    log.warn("[BhavcopyService] NSE cookie attempt {}/{}: {}", attempt + 1, backoffMs.length, lastError);
+                    continue;
+                }
+                // Step 2 — secondary page that triggers bm_sv cookie (needs Referer = homepage)
+                String step2 = hitAndCollectCookies(NSE_BASE_URL + "option-chain", NSE_BASE_URL, jar);
+                if (step2.startsWith("ERR") && jar.isEmpty()) {
+                    lastError = "option-chain: " + step2;
+                    log.warn("[BhavcopyService] NSE cookie attempt {}/{}: {}", attempt + 1, backoffMs.length, lastError);
+                    continue;
+                }
+                if (jar.isEmpty()) {
+                    lastError = "HTTP " + step1 + "/" + step2 + " with no Set-Cookie headers";
+                    log.warn("[BhavcopyService] NSE cookie attempt {}/{}: {}", attempt + 1, backoffMs.length, lastError);
+                    continue;
+                }
+                StringBuilder cookies = new StringBuilder();
+                for (Map.Entry<String, String> e : jar.entrySet()) {
+                    if (cookies.length() > 0) cookies.append("; ");
+                    cookies.append(e.getKey()).append("=").append(e.getValue());
+                }
+                if (attempt > 0) log.info("[BhavcopyService] NSE cookies obtained on retry {} ({} cookies)", attempt + 1, jar.size());
+                else log.debug("[BhavcopyService] NSE cookies obtained ({} cookies)", jar.size());
+                return cookies.toString();
+            } catch (Exception e) {
+                lastError = e.getMessage();
+                log.warn("[BhavcopyService] NSE cookie attempt {}/{}: {}", attempt + 1, backoffMs.length, lastError);
+            }
+        }
+        log.error("[BhavcopyService] Failed to get NSE cookies after {} attempts: {}", backoffMs.length, lastError);
+        return null;
+    }
+
+    /**
+     * Fire a GET with full browser-like headers, parse Set-Cookie into the shared jar,
+     * return the HTTP status as a string (e.g. "200") or "ERR:&lt;msg&gt;" on exception.
+     * Body is not consumed — just status + cookies.
+     */
+    private String hitAndCollectCookies(String url, String referer, Map<String, String> jar) {
         try {
-            HttpURLConnection conn = (HttpURLConnection) new URL(NSE_BASE_URL).openConnection();
+            HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
             conn.setRequestMethod("GET");
             conn.setRequestProperty("User-Agent", USER_AGENT);
-            conn.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+            conn.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8");
             conn.setRequestProperty("Accept-Language", "en-US,en;q=0.9");
+            conn.setRequestProperty("Accept-Encoding", "gzip, deflate, br");
+            conn.setRequestProperty("Connection", "keep-alive");
+            conn.setRequestProperty("Upgrade-Insecure-Requests", "1");
+            conn.setRequestProperty("Sec-Fetch-Dest", "document");
+            conn.setRequestProperty("Sec-Fetch-Mode", "navigate");
+            conn.setRequestProperty("Sec-Fetch-Site", referer == null ? "none" : "same-origin");
+            conn.setRequestProperty("Sec-Fetch-User", "?1");
+            conn.setRequestProperty("Cache-Control", "no-cache");
+            conn.setRequestProperty("Pragma", "no-cache");
+            if (referer != null) conn.setRequestProperty("Referer", referer);
+            if (!jar.isEmpty()) {
+                StringBuilder cookieHeader = new StringBuilder();
+                for (Map.Entry<String, String> e : jar.entrySet()) {
+                    if (cookieHeader.length() > 0) cookieHeader.append("; ");
+                    cookieHeader.append(e.getKey()).append("=").append(e.getValue());
+                }
+                conn.setRequestProperty("Cookie", cookieHeader.toString());
+            }
             conn.setConnectTimeout(10_000);
             conn.setReadTimeout(10_000);
             conn.setInstanceFollowRedirects(true);
-            conn.getResponseCode();
-
-            StringBuilder cookies = new StringBuilder();
+            int code = conn.getResponseCode();
             List<String> setCookies = conn.getHeaderFields().getOrDefault("Set-Cookie", List.of());
-            for (String cookie : setCookies) {
-                if (cookies.length() > 0) cookies.append("; ");
-                cookies.append(cookie.split(";")[0]);
+            for (String c : setCookies) {
+                String kv = c.split(";", 2)[0];
+                int eq = kv.indexOf('=');
+                if (eq > 0) jar.put(kv.substring(0, eq).trim(), kv.substring(eq + 1).trim());
             }
-            return cookies.toString();
+            return String.valueOf(code);
         } catch (Exception e) {
-            log.error("[BhavcopyService] Failed to get NSE cookies: {}", e.getMessage());
-            return null;
+            return "ERR:" + e.getMessage();
         }
     }
 

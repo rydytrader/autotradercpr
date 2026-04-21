@@ -193,6 +193,44 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
         return (int) emaBySymbol.values().stream().filter(v -> v > 0).count();
     }
 
+    /** Watchlist-scoped loaded counts for dashboard stats. */
+    public int getLoadedCountFor(java.util.Collection<String> symbols) {
+        int n = 0;
+        for (String s : symbols) if (emaBySymbol.getOrDefault(s, 0.0) > 0) n++;
+        return n;
+    }
+    public int getEma50LoadedCountFor(java.util.Collection<String> symbols) {
+        int n = 0;
+        for (String s : symbols) if (ema50BySymbol.getOrDefault(s, 0.0) > 0) n++;
+        return n;
+    }
+    public int getEma200LoadedCountFor(java.util.Collection<String> symbols) {
+        int n = 0;
+        for (String s : symbols) if (ema200BySymbol.getOrDefault(s, 0.0) > 0) n++;
+        return n;
+    }
+
+    /**
+     * Drop any EMA entries whose symbol isn't in the current watchlist. Keeps the
+     * on-disk cache file proportional to today's tradable universe.
+     */
+    public synchronized int pruneTo(java.util.Collection<String> watchlist) {
+        java.util.Set<String> keep = new java.util.HashSet<>(watchlist);
+        int before = emaBySymbol.size();
+        emaBySymbol.keySet().retainAll(keep);
+        ema50BySymbol.keySet().retainAll(keep);
+        ema200BySymbol.keySet().retainAll(keep);
+        emaHistoryBySymbol.keySet().retainAll(keep);
+        ema50HistoryBySymbol.keySet().retainAll(keep);
+        lastCandleEpochBySymbol.keySet().retainAll(keep);
+        int removed = before - emaBySymbol.size();
+        if (removed > 0) {
+            log.info("[EmaService] Pruned {} stale EMA entries not in watchlist ({} remaining)", removed, emaBySymbol.size());
+            saveCache();  // rewrite disk cache so pruned entries don't come back on next restart
+        }
+        return removed;
+    }
+
     /** Get current EMA(200) for a symbol. Returns 0 if not enough history to seed. */
     public double getEma200(String symbol) {
         return ema200BySymbol.getOrDefault(symbol, 0.0);
@@ -308,7 +346,7 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
             }
             Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
             Files.writeString(tmp, mapper.writeValueAsString(root));
-            Files.move(tmp, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            com.rydytrader.autotrader.util.FileIoUtils.atomicMoveWithRetry(tmp, path);
         } catch (Exception e) {
             log.error("[CACHE] EmaService saveCache failed: {}", e.getMessage());
         }

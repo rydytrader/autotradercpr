@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import com.rydytrader.autotrader.util.FileIoUtils;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.time.ZoneId;
@@ -203,8 +204,11 @@ public class CandleAggregator {
         // Always update latestLtp so trend display reflects pre-market price
         latestLtp.put(symbol, ltp);
 
-        // Skip candle aggregation / OR / ATP tracking for pre-market ticks
-        if (nowMinute < MarketHolidayService.MARKET_OPEN_MINUTE) return;
+        // Skip candle aggregation / OR / ATP tracking outside NSE session (pre-market + post-close).
+        // The session runs 09:15:00 to 15:29:59 inclusive — a tick at 15:30:00 belongs to the
+        // post-close window and shouldn't extend today's chart or create a phantom 15:30 candle.
+        if (nowMinute < MarketHolidayService.MARKET_OPEN_MINUTE
+            || nowMinute >= MarketHolidayService.MARKET_CLOSE_MINUTE) return;
 
         // One-time log per symbol: which time source is used for candle assignment
         if (timeSourceLogged.add(symbol)) {
@@ -339,7 +343,8 @@ public class CandleAggregator {
 
             LocalTime now = ZonedDateTime.now(IST).toLocalTime();
             long nowMinute = now.getHour() * 60L + now.getMinute();
-            // Only process during market hours (9:15 AM to 3:30 PM)
+            // Run during market hours AND briefly past close to finalise the last 15:25 candle
+            // at the 15:30 boundary. Post-15:30 new-candle creation is suppressed in the loop below.
             if (nowMinute < MarketHolidayService.MARKET_OPEN_MINUTE || nowMinute > MarketHolidayService.MARKET_CLOSE_MINUTE) return;
             long currentStart = getCandleStartMinute(now);
 
@@ -348,20 +353,25 @@ public class CandleAggregator {
                 String symbol = entry.getKey();
                 CandleBar candle = entry.getValue();
 
-                // If the current candle belongs to a previous period, finalize it
+                // If the current candle belongs to a previous period, finalize it.
+                // Skip creating the NEW period if it would start at or after the close boundary
+                // (e.g. a 15:30+ bucket when we've already stopped aggregating past 15:29:59).
                 if (candle.startMinute < currentStart && candle.open > 0) {
                     finalizeCandle(symbol, candle);
                     processed++;
-                    // Reset for new period
-                    double ltp = candle.close;
-                    CandleBar newCandle = new CandleBar();
-                    newCandle.startMinute = currentStart;
-                    newCandle.epochSec = ZonedDateTime.now(IST).toLocalDate().atStartOfDay(IST).toEpochSecond() + currentStart * 60L;
-                    newCandle.open = ltp;
-                    newCandle.high = ltp;
-                    newCandle.low = ltp;
-                    newCandle.close = ltp;
-                    currentCandles.put(symbol, newCandle);
+                    if (currentStart >= MarketHolidayService.MARKET_CLOSE_MINUTE) {
+                        currentCandles.remove(symbol);  // no post-close bucket; clear the slot
+                    } else {
+                        double ltp = candle.close;
+                        CandleBar newCandle = new CandleBar();
+                        newCandle.startMinute = currentStart;
+                        newCandle.epochSec = ZonedDateTime.now(IST).toLocalDate().atStartOfDay(IST).toEpochSecond() + currentStart * 60L;
+                        newCandle.open = ltp;
+                        newCandle.high = ltp;
+                        newCandle.low = ltp;
+                        newCandle.close = ltp;
+                        currentCandles.put(symbol, newCandle);
+                    }
                 }
             }
             if (processed > 0) {
@@ -617,8 +627,7 @@ public class CandleAggregator {
             data.put("today", todayMap);
             Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
             Files.writeString(tmp, mapper.writeValueAsString(data));
-            Files.move(tmp, path, java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            FileIoUtils.atomicMoveWithRetry(tmp, path);
             if (log.isDebugEnabled()) {
                 log.debug("[CandleAggregator] Saved priors cache — {} priors, {} today", priorDayCandles.size(), todayMap.size());
             }

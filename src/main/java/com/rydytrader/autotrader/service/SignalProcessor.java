@@ -271,12 +271,18 @@ public class SignalProcessor {
                     }
                 }
 
-                // Inside-OR downgrade applies ONLY on EV days (gap up/down). On IV / OV days
-                // the opening range isn't a meaningful enough structural level to justify
-                // downgrading an HPT trade — those setups stay at full HPT size regardless
-                // of where close sits relative to OR High/Low.
-                // On EV days: any break still inside OR is LPT — an OR break is required for HPT.
+                // Inside-OR handling on EV days:
+                //  - Trade direction OPPOSITE gap direction → reject (fighting gap bias with no OR break)
+                //  - Trade direction ALIGNED with gap direction → downgrade HPT → LPT (still inside digestion zone)
+                // On IV / OV days the opening range isn't a meaningful enough structural level to
+                // justify a downgrade — those setups stay HPT regardless of close vs OR High/Low.
                 if (isEv && orHigh > 0 && orLow > 0 && close >= orLow && close <= orHigh) {
+                    boolean opposesGap = (gapUp && !isBuy) || (gapDown && isBuy);
+                    if (opposesGap) {
+                        return ProcessedSignal.rejected(setup, symbol,
+                            "EV " + (gapUp ? "up" : "down") + " — inside OR range [" + fmt(orLow) + "-" + fmt(orHigh)
+                            + "] and trade direction opposes gap (no OR break yet) — skipped");
+                    }
                     if ("HPT".equals(probability)) {
                         probability = "LPT";
                         adjustments.add("Probability HPT → LPT (inside OR range on EV day — OR break required)");
@@ -291,43 +297,53 @@ public class SignalProcessor {
             }
         }
 
-        // ── 4e2b. HTF Hurdle: 1-hour candle straddling a same-direction weekly level ──
-        // If the in-progress 1h candle has NOT yet resolved a weekly hurdle (level sits
-        // between its high and low), the 5-min breakout is fragile — the 1h can close
-        // back through the level and trap the trade. Applies to CPR breakouts
-        // (CPR/R1-R4/S1-S4/PDH/PDL) and DH/DL breakouts; magnets are exempt.
-        if (riskSettings.isEnableHtfHurdleFilter() && isBreakoutForHtfHurdle(setup)) {
-            CandleAggregator htfAgg = marketDataService.getHtfAggregator();
-            CandleAggregator.CandleBar htfBar = htfAgg != null ? htfAgg.getCurrentCandle(symbol) : null;
+        // ── 4e2b. HTF Hurdle: nearest-weekly-level HPT→LPT downgrade ──
+        // When a 5-min breakout closes above (for buys) the nearest weekly level in
+        // {R1, PWH, R2, R3, R4}, the previous 1h HTF candle must have closed above that level
+        // too — otherwise the HTF hasn't confirmed the move and we downgrade HPT → LPT.
+        // Mirror for sells against {S1, PWL, S2, S3, S4}. Weekly CPR (pivot/TC/BC) is excluded
+        // because below-weekly-top trades already fall under the weekly NEUTRAL → LPT rule.
+        if (riskSettings.isEnableHtfHurdleFilter() && "HPT".equals(probability)) {
             WeeklyCprService.WeeklyLevels wl = weeklyCprService.getWeeklyLevels(symbol);
-
-            if (htfBar != null && wl != null && htfBar.high > 0 && htfBar.low > 0 && htfBar.high > htfBar.low) {
-                // Only weekly CPR-3 levels (Pivot/TC/BC) + R1/PWH (buy hurdle) + S1/PWL (sell hurdle).
-                // CPR-3 checked both directions — straddling the CPR zone is a universal hurdle.
-                // R1/PWH only blocks buys; S1/PWL only blocks sells. Other weekly levels ignored.
-                double[] levels = isBuy
-                    ? new double[]{ wl.pivot, wl.tc, wl.bc, wl.r1, wl.ph }
-                    : new double[]{ wl.pivot, wl.tc, wl.bc, wl.s1, wl.pl };
-                String[] names = isBuy
-                    ? new String[]{ "Pivot", "TC", "BC", "R1", "PH" }
-                    : new String[]{ "Pivot", "TC", "BC", "S1", "PL" };
-
-                String hurdleName = null;
-                double hurdleLevel = 0;
-                for (int i = 0; i < levels.length; i++) {
-                    double lv = levels[i];
-                    if (lv > 0 && lv >= htfBar.low && lv <= htfBar.high) {
-                        hurdleName = names[i];
-                        hurdleLevel = lv;
-                        break;
+            if (wl != null) {
+                double[] candidates;
+                String[] names;
+                if (isBuy) {
+                    candidates = new double[]{ wl.r1, wl.ph, wl.r2, wl.r3, wl.r4 };
+                    names      = new String[]{ "R1", "PWH", "R2", "R3", "R4" };
+                } else {
+                    candidates = new double[]{ wl.s1, wl.pl, wl.s2, wl.s3, wl.s4 };
+                    names      = new String[]{ "S1", "PWL", "S2", "S3", "S4" };
+                }
+                // Find the nearest weekly level in the relevant direction from the 5-min close.
+                // Buy: max level strictly below close. Sell: min level strictly above close.
+                double chosenLevel = 0;
+                String chosenName = null;
+                for (int i = 0; i < candidates.length; i++) {
+                    double lv = candidates[i];
+                    if (lv <= 0) continue;
+                    if (isBuy) {
+                        if (lv < close && lv > chosenLevel) { chosenLevel = lv; chosenName = names[i]; }
+                    } else {
+                        if (lv > close && (chosenName == null || lv < chosenLevel)) { chosenLevel = lv; chosenName = names[i]; }
                     }
                 }
-
-                if (hurdleName != null) {
-                    return ProcessedSignal.rejected(setup, symbol,
-                        "1 HR at weekly hurdle — weekly " + hurdleName + " (" + fmt(hurdleLevel)
-                        + ") inside 1h range [" + fmt(htfBar.low) + "-" + fmt(htfBar.high) + "]");
+                if (chosenName != null) {
+                    Double priorHtfClose = weeklyCprService.getLastHigherTfClose(symbol);
+                    if (priorHtfClose == null || priorHtfClose <= 0) {
+                        probability = "LPT";
+                        adjustments.add("Probability HPT → LPT (HTF hurdle at weekly " + chosenName
+                            + ": close=" + fmt(close) + ", level=" + fmt(chosenLevel)
+                            + ", no prior 1h close yet today)");
+                    } else if (isBuy ? priorHtfClose <= chosenLevel : priorHtfClose >= chosenLevel) {
+                        probability = "LPT";
+                        adjustments.add("Probability HPT → LPT (HTF hurdle at weekly " + chosenName
+                            + ": close=" + fmt(close) + ", prior 1h close=" + fmt(priorHtfClose)
+                            + ", level=" + fmt(chosenLevel) + ")");
+                    }
+                    // else: prior 1h has cleared the nearest weekly level → HPT retained
                 }
+                // else: no weekly level in the relevant direction → filter no-op (e.g. close below all buy candidates)
             }
         }
 
@@ -373,7 +389,16 @@ public class SignalProcessor {
         boolean dayHighLowShifted = false;
         {
             java.util.Map<Double, String> shiftCandidates = new java.util.LinkedHashMap<>();
-            if (!isDhDl && riskSettings.isEnableDayHighLowTargetShift()) {
+            // Session H/L shift only applies when the breakout close is OUTSIDE the Opening Range.
+            // Inside-OR breakouts (EV-day LPT or IV/OV-day HPT) shouldn't use session H/L as a
+            // target cap — the OR itself is the immediate overhead structure, not today's session H/L.
+            boolean insideOr = false;
+            if (candleAggregator.isOpeningRangeLocked(symbol)) {
+                double orHi = candleAggregator.getOpeningRangeHigh(symbol);
+                double orLo = candleAggregator.getOpeningRangeLow(symbol);
+                if (orHi > 0 && orLo > 0 && close >= orLo && close <= orHi) insideOr = true;
+            }
+            if (!isDhDl && !insideOr && riskSettings.isEnableDayHighLowTargetShift()) {
                 double minDist = riskSettings.getDayHighLowShiftMinDistAtr() * atr;
                 if (isBuy) {
                     double sh = candleAggregator.getDayHighBeforeLast(symbol);
@@ -883,14 +908,6 @@ public class SignalProcessor {
 
     private static String fmt(double v) {
         return String.format("%.2f", v);
-    }
-
-    private static boolean isBreakoutForHtfHurdle(String setup) {
-        if (setup == null) return false;
-        // CPR breakouts (CPR/R1-R4/S1-S4/PDH/PDL) and DH/DL breakouts all gated by HTF hurdle.
-        // Magnets (mean-reversion counter-trend plays) are exempt.
-        boolean isMagnet = setup.equals("BUY_ABOVE_S1_PDL") || setup.equals("SELL_BELOW_R1_PDH");
-        return (setup.startsWith("BUY_ABOVE_") || setup.startsWith("SELL_BELOW_")) && !isMagnet;
     }
 
     private static String fmtVol(long v) {

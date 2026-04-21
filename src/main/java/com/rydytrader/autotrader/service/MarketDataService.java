@@ -562,8 +562,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     public String getLastDisconnectTime() { return lastDisconnectTime; }
     public int getReconnectCountToday() { return reconnectCountToday; }
 
-    public CandleAggregator getHtfAggregator() { return htfAggregator; }
-
     @Override
     public void onAuthResult(boolean success, int ackCount) {
         if (!success) {
@@ -927,6 +925,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             watchlistWithIndex.add("NSE:NIFTY50-INDEX");
         }
 
+        // Prune indicator caches to the current watchlist so stale entries from previous days
+        // don't grow the on-disk cache file or leak into dashboard counts.
+        atrService.pruneTo(watchlistWithIndex);
+        emaService.pruneTo(watchlistWithIndex);
+        htfEmaService.pruneTo(watchlistWithIndex);
+
         // Fetch ATR + seed EMA. When EmaService was restored from disk cache, pass the full
         // watchlist so AtrService routes cached symbols through its 1-day catch-up branch
         // (and new symbols through the full 14-day seed). Otherwise drop already-loaded symbols.
@@ -979,15 +983,16 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
 
         int narrowCount = (int) bhavcopyService.getNarrowCprStocks().size();
         int insideCount = (int) bhavcopyService.getInsideCprStocks().size();
-        int atrLoaded = atrService.getLoadedCount();
-        int weeklyCount = weeklyCprService.getLoadedCount();
-        int cprCount = bhavcopyService.getLoadedCount();
-        int e20 = emaService.getLoadedCount();
-        int e50 = emaService.getEma50LoadedCount();
-        int e200 = emaService.getEma200LoadedCount();
-        int he20 = htfEmaService.getLoadedCount();
-        int he50 = htfEmaService.getEma50LoadedCount();
-        int he200 = htfEmaService.getEma200LoadedCount();
+        // Watchlist-scoped counts — avoid misleading totals that include stale or non-watched symbols.
+        int atrLoaded = atrService.getLoadedCountFor(watchlist);
+        int weeklyCount = weeklyCprService.getLoadedCountFor(watchlist);
+        int cprCount = bhavcopyService.getLoadedCountFor(watchlist);
+        int e20 = emaService.getLoadedCountFor(watchlist);
+        int e50 = emaService.getEma50LoadedCountFor(watchlist);
+        int e200 = emaService.getEma200LoadedCountFor(watchlist);
+        int he20 = htfEmaService.getLoadedCountFor(watchlist);
+        int he50 = htfEmaService.getEma50LoadedCountFor(watchlist);
+        int he200 = htfEmaService.getEma200LoadedCountFor(watchlist);
         int total = watchlist.size();
         int htfMins = riskSettings.getHigherTimeframe();
 
@@ -1014,6 +1019,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         double insideMax = riskSettings.getInsideCprMaxWidth();
 
         for (var cpr : bhavcopyService.getAllCprLevels().values()) {
+            if (bhavcopyService.isIndex(cpr.getSymbol())) continue; // NIFTY50 etc. are not tradable stocks
             if (cpr.getCprWidthPct() < narrowMax && passesWatchlistFilters(cpr)) {
                 symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
             }
@@ -1307,6 +1313,10 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         List<String> withIndex = new ArrayList<>(watchlist);
         if (!withIndex.contains("NSE:NIFTY50-INDEX")) withIndex.add("NSE:NIFTY50-INDEX");
         subscribeWatchlist(withIndex);
+        // Prune stale indicator caches for symbols that dropped out of the rebuilt watchlist.
+        atrService.pruneTo(withIndex);
+        emaService.pruneTo(withIndex);
+        htfEmaService.pruneTo(withIndex);
         log.info("[MarketData] Watchlist rebuilt: {} symbols", watchlist.size());
         eventService.log("[INFO] Watchlist rebuilt: " + watchlist.size() + " symbols (filters updated)");
         return watchlist.size();

@@ -180,20 +180,27 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double low = candle.low;
         double high = candle.high;
 
-        // One-time 5-min EMA trend log per candle scan — fires before detectBuy/Sell so
-        // diagnostic re-calls inside those functions don't duplicate the message.
+        // 5-min EMA trend log — fires only when a structural breakout WOULD have matched but
+        // was blocked by the EMA trend filter. Prevents noisy "blocked by EMA" logs on every
+        // candle close for symbols that have no potential setup at all.
         double ema20Now  = emaService.getEma(fyersSymbol);
         double ema50Now  = emaService.getEma50(fyersSymbol);
         double ema200Now = emaService.getEma200(fyersSymbol);
         if (riskSettings.isEnableEmaTrendCheck() && ema20Now > 0 && ema50Now > 0 && ema200Now > 0) {
             if (greenCandle && !(close > ema20Now && close > ema50Now && close > ema200Now)) {
-                eventService.log("[SCANNER] BUY " + fyersSymbol + " blocked by 5-min EMA trend (not BULLISH): close="
-                    + String.format("%.2f", close) + " ema20=" + String.format("%.2f", ema20Now)
-                    + " ema50=" + String.format("%.2f", ema50Now) + " ema200=" + String.format("%.2f", ema200Now));
+                String potentialSetup = detectBuyBreakout(open, high, low, close, levels, atp, broken, fyersSymbol, true);
+                if (potentialSetup != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + potentialSetup + " blocked by 5-min EMA trend (not BULLISH): close="
+                        + String.format("%.2f", close) + " ema20=" + String.format("%.2f", ema20Now)
+                        + " ema50=" + String.format("%.2f", ema50Now) + " ema200=" + String.format("%.2f", ema200Now));
+                }
             } else if (redCandle && !(close < ema20Now && close < ema50Now && close < ema200Now)) {
-                eventService.log("[SCANNER] SELL " + fyersSymbol + " blocked by 5-min EMA trend (not BEARISH): close="
-                    + String.format("%.2f", close) + " ema20=" + String.format("%.2f", ema20Now)
-                    + " ema50=" + String.format("%.2f", ema50Now) + " ema200=" + String.format("%.2f", ema200Now));
+                String potentialSetup = detectSellBreakout(open, high, low, close, levels, atp, broken, fyersSymbol, true);
+                if (potentialSetup != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + potentialSetup + " blocked by 5-min EMA trend (not BEARISH): close="
+                        + String.format("%.2f", close) + " ema20=" + String.format("%.2f", ema20Now)
+                        + " ema50=" + String.format("%.2f", ema50Now) + " ema200=" + String.format("%.2f", ema200Now));
+                }
             }
         }
 
@@ -204,7 +211,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 // Only log if a breakout would have been detected without ATP check
                 String wouldMatch = detectBuyBreakout(open, high, low, close, levels, 0, broken, fyersSymbol);
                 if (wouldMatch != null) {
-                    eventService.log("[SCANNER] " + wouldMatch + " for " + fyersSymbol + " — skipped, close (" + String.format("%.2f", close) + ") below ATP (" + String.format("%.2f", atp) + ")");
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + wouldMatch + " — skipped, close (" + String.format("%.2f", close) + ") below ATP (" + String.format("%.2f", atp) + ")");
                 }
                 return;
             }
@@ -216,12 +223,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     || "BUY_ABOVE_S4".equals(buySetup);
                 String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, true, isMagnet);
                 if ("SKIP".equals(prob)) {
-                    eventService.log("[SCANNER] " + buySetup + " for " + fyersSymbol
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup
                         + " SKIPPED — weekly R1/PWH reversal active (buy opposed)");
                     return;
                 }
                 if (!isProbabilityEnabled(prob)) {
-                    eventService.log("[SCANNER] " + buySetup + " for " + fyersSymbol + " — skipped, " + prob + " not enabled");
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " — skipped, " + prob + " not enabled");
                     return;
                 }
                 // EMA level-count filter: skip if any CPR zone sits between EMA and broken level
@@ -239,13 +246,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (!broken.isEmpty()) {
                     String wouldMatch = detectBuyBreakout(open, high, low, close, levels, atp, Collections.emptySet(), fyersSymbol);
                     if (wouldMatch != null && broken.contains(wouldMatch)) {
-                        eventService.log("[INFO] " + wouldMatch + " for " + fyersSymbol + " — skipped, level already traded");
+                        eventService.log("[INFO] " + fyersSymbol + " " + wouldMatch + " — skipped, level already traded");
                     }
                 }
                 // Debug: detect without ATP to see if ATP blocked it
                 String noAtpMatch = detectBuyBreakout(open, high, low, close, levels, 0, broken, fyersSymbol);
                 if (noAtpMatch != null) {
-                    eventService.log("[SCANNER] " + noAtpMatch + " for " + fyersSymbol + " — no breakout detected (O=" + String.format("%.2f", open) + " H=" + String.format("%.2f", high) + " L=" + String.format("%.2f", low) + " C=" + String.format("%.2f", close) + " ATP=" + String.format("%.2f", atp) + ")");
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + noAtpMatch + " — no breakout detected (O=" + String.format("%.2f", open) + " H=" + String.format("%.2f", high) + " L=" + String.format("%.2f", low) + " C=" + String.format("%.2f", close) + " ATP=" + String.format("%.2f", atp) + ")");
                 }
             }
         }
@@ -256,7 +263,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             if (riskSettings.isEnableAtpCheck() && atp > 0 && close > atp) {
                 String wouldMatch = detectSellBreakout(open, high, low, close, levels, 0, broken, fyersSymbol);
                 if (wouldMatch != null) {
-                    eventService.log("[SCANNER] " + wouldMatch + " for " + fyersSymbol + " — skipped, close (" + String.format("%.2f", close) + ") above ATP (" + String.format("%.2f", atp) + ")");
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + wouldMatch + " — skipped, close (" + String.format("%.2f", close) + ") above ATP (" + String.format("%.2f", atp) + ")");
                 }
                 return;
             }
@@ -268,12 +275,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     || "SELL_BELOW_R4".equals(sellSetup);
                 String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, false, isMagnet);
                 if ("SKIP".equals(prob)) {
-                    eventService.log("[SCANNER] " + sellSetup + " for " + fyersSymbol
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup
                         + " SKIPPED — weekly S1/PWL reversal active (sell opposed)");
                     return;
                 }
                 if (!isProbabilityEnabled(prob)) {
-                    eventService.log("[SCANNER] " + sellSetup + " for " + fyersSymbol + " — skipped, " + prob + " not enabled");
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " — skipped, " + prob + " not enabled");
                     return;
                 }
                 // EMA level-count filter: skip if any CPR zone sits between EMA and broken level
@@ -291,13 +298,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (!broken.isEmpty()) {
                     String wouldMatch = detectSellBreakout(open, high, low, close, levels, atp, Collections.emptySet(), fyersSymbol);
                     if (wouldMatch != null && broken.contains(wouldMatch)) {
-                        eventService.log("[INFO] " + wouldMatch + " for " + fyersSymbol + " — skipped, level already traded");
+                        eventService.log("[INFO] " + fyersSymbol + " " + wouldMatch + " — skipped, level already traded");
                     }
                 }
                 // Debug: detect without ATP to see if ATP blocked it
                 String noAtpMatch = detectSellBreakout(open, high, low, close, levels, 0, broken, fyersSymbol);
                 if (noAtpMatch != null) {
-                    eventService.log("[SCANNER] " + noAtpMatch + " for " + fyersSymbol + " — no breakout detected (O=" + String.format("%.2f", open) + " H=" + String.format("%.2f", high) + " L=" + String.format("%.2f", low) + " C=" + String.format("%.2f", close) + " ATP=" + String.format("%.2f", atp) + ")");
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + noAtpMatch + " — no breakout detected (O=" + String.format("%.2f", open) + " H=" + String.format("%.2f", high) + " L=" + String.format("%.2f", low) + " C=" + String.format("%.2f", close) + " ATP=" + String.format("%.2f", atp) + ")");
                 }
             }
         }
@@ -312,20 +319,32 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      */
     private String detectBuyBreakout(double open, double high, double low, double close,
                                       CprLevels levels, double atp, Set<String> broken, String fyersSymbol) {
+        return detectBuyBreakout(open, high, low, close, levels, atp, broken, fyersSymbol, false);
+    }
+
+    /**
+     * @param skipTrendFilters when true, bypasses ATP / EMA-trend / EMA-vs-ATP / pattern
+     *                         filter gates and only checks the structural candle-vs-level
+     *                         patterns. Used by the caller to pre-detect "would there be a
+     *                         setup if filters were off?" before logging filter rejections.
+     */
+    private String detectBuyBreakout(double open, double high, double low, double close,
+                                      CprLevels levels, double atp, Set<String> broken, String fyersSymbol,
+                                      boolean skipTrendFilters) {
         // ATP check for buys: close must be above ATP
-        if (riskSettings.isEnableAtpCheck() && atp > 0 && close < atp) return null;
+        if (!skipTrendFilters && riskSettings.isEnableAtpCheck() && atp > 0 && close < atp) return null;
         // 5-min EMA trend check — now gated at the caller level (scanForBreakoutInner)
         // before reaching this function, so no double-logging on diagnostic re-calls.
         double ema    = emaService.getEma(fyersSymbol);      // still needed by isEnableEmaVsAtpCheck below
-        if (riskSettings.isEnableEmaTrendCheck()
+        if (!skipTrendFilters && riskSettings.isEnableEmaTrendCheck()
                 && ema > 0 && emaService.getEma50(fyersSymbol) > 0 && emaService.getEma200(fyersSymbol) > 0
                 && !(close > ema && close > emaService.getEma50(fyersSymbol) && close > emaService.getEma200(fyersSymbol))) {
             return null;  // silently — the log fired once at the caller
         }
         // 20 EMA vs ATP/VWAP check for buys: 20 EMA must be above ATP
-        if (riskSettings.isEnableEmaVsAtpCheck() && ema > 0 && atp > 0 && ema < atp) return null;
+        if (!skipTrendFilters && riskSettings.isEnableEmaVsAtpCheck() && ema > 0 && atp > 0 && ema < atp) return null;
         // EMA 20/50 pattern filters for buys
-        if (riskSettings.isRequireRtpPattern() || riskSettings.isSkipTradesInZigZag()) {
+        if (!skipTrendFilters && (riskSettings.isRequireRtpPattern() || riskSettings.isSkipTradesInZigZag())) {
             double atrForPattern = atrService.getAtr(fyersSymbol);
             if (atrForPattern > 0) {
                 String pat = emaService.getEmaPattern(fyersSymbol,
@@ -347,19 +366,19 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
         // Check from highest to lowest — standard breakout OR wick rejection
         if (close > r4 && ((open < r4 || low < r4) || (low < r4 && open > r4)) && !broken.contains("BUY_ABOVE_R4")) {
-            if (!riskSettings.isEnableR4S4()) { eventService.log("[SCANNER] BUY_ABOVE_R4 for " + levels.getSymbol() + " — skipped, R4/S4 disabled"); }
+            if (!riskSettings.isEnableR4S4()) { eventService.log("[SCANNER] " + levels.getSymbol() + " BUY_ABOVE_R4 — skipped, R4/S4 disabled"); }
             else return "BUY_ABOVE_R4";
         }
         if (close > r3
                 && ((open < r3 || low < r3) || (low < r3 && open > r3))
                 && !broken.contains("BUY_ABOVE_R3")) {
-            if (!riskSettings.isEnableR3S3()) { eventService.log("[SCANNER] BUY_ABOVE_R3 for " + levels.getSymbol() + " — skipped, R3/S3 disabled"); }
+            if (!riskSettings.isEnableR3S3()) { eventService.log("[SCANNER] " + levels.getSymbol() + " BUY_ABOVE_R3 — skipped, R3/S3 disabled"); }
             else return "BUY_ABOVE_R3";
         }
         if (close > r2
                 && ((open < r2 || low < r2) || (low < r2 && open > r2))
                 && !broken.contains("BUY_ABOVE_R2")) {
-            if (!riskSettings.isEnableR2S2()) { eventService.log("[SCANNER] BUY_ABOVE_R2 for " + levels.getSymbol() + " — skipped, R2/S2 disabled"); }
+            if (!riskSettings.isEnableR2S2()) { eventService.log("[SCANNER] " + levels.getSymbol() + " BUY_ABOVE_R2 — skipped, R2/S2 disabled"); }
             else return "BUY_ABOVE_R2";
         }
         if (close > r1 && close > ph
@@ -377,15 +396,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // Pattern: candle opened below the level (price was extended down) and closed above it.
         double s2 = levels.getS2(), s3 = levels.getS3(), s4 = levels.getS4();
         if (open <= s4 && close > s4 && !broken.contains("BUY_ABOVE_S4")) {
-            if (!riskSettings.isEnableR4S4()) { eventService.log("[SCANNER] BUY_ABOVE_S4 for " + levels.getSymbol() + " — skipped, R4/S4 disabled"); }
+            if (!riskSettings.isEnableR4S4()) { eventService.log("[SCANNER] " + levels.getSymbol() + " BUY_ABOVE_S4 — skipped, R4/S4 disabled"); }
             else return "BUY_ABOVE_S4";
         }
         if (open <= s3 && close > s3 && !broken.contains("BUY_ABOVE_S3")) {
-            if (!riskSettings.isEnableR3S3()) { eventService.log("[SCANNER] BUY_ABOVE_S3 for " + levels.getSymbol() + " — skipped, R3/S3 disabled"); }
+            if (!riskSettings.isEnableR3S3()) { eventService.log("[SCANNER] " + levels.getSymbol() + " BUY_ABOVE_S3 — skipped, R3/S3 disabled"); }
             else return "BUY_ABOVE_S3";
         }
         if (open <= s2 && close > s2 && !broken.contains("BUY_ABOVE_S2")) {
-            if (!riskSettings.isEnableR2S2()) { eventService.log("[SCANNER] BUY_ABOVE_S2 for " + levels.getSymbol() + " — skipped, R2/S2 disabled"); }
+            if (!riskSettings.isEnableR2S2()) { eventService.log("[SCANNER] " + levels.getSymbol() + " BUY_ABOVE_S2 — skipped, R2/S2 disabled"); }
             else return "BUY_ABOVE_S2";
         }
 
@@ -407,20 +426,26 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      */
     private String detectSellBreakout(double open, double high, double low, double close,
                                        CprLevels levels, double atp, Set<String> broken, String fyersSymbol) {
+        return detectSellBreakout(open, high, low, close, levels, atp, broken, fyersSymbol, false);
+    }
+
+    private String detectSellBreakout(double open, double high, double low, double close,
+                                       CprLevels levels, double atp, Set<String> broken, String fyersSymbol,
+                                       boolean skipTrendFilters) {
         // ATP check for sells: close must be below ATP
-        if (riskSettings.isEnableAtpCheck() && atp > 0 && close > atp) return null;
+        if (!skipTrendFilters && riskSettings.isEnableAtpCheck() && atp > 0 && close > atp) return null;
         // 5-min EMA trend check — now gated at the caller level (scanForBreakoutInner) before
         // reaching this function, so no double-logging on diagnostic re-calls.
         double ema    = emaService.getEma(fyersSymbol);      // still needed by isEnableEmaVsAtpCheck below
-        if (riskSettings.isEnableEmaTrendCheck()
+        if (!skipTrendFilters && riskSettings.isEnableEmaTrendCheck()
                 && ema > 0 && emaService.getEma50(fyersSymbol) > 0 && emaService.getEma200(fyersSymbol) > 0
                 && !(close < ema && close < emaService.getEma50(fyersSymbol) && close < emaService.getEma200(fyersSymbol))) {
             return null;  // silently — the log fired once at the caller
         }
         // 20 EMA vs ATP/VWAP check for sells: 20 EMA must be below ATP
-        if (riskSettings.isEnableEmaVsAtpCheck() && ema > 0 && atp > 0 && ema > atp) return null;
+        if (!skipTrendFilters && riskSettings.isEnableEmaVsAtpCheck() && ema > 0 && atp > 0 && ema > atp) return null;
         // EMA 20/50 pattern filters for sells
-        if (riskSettings.isRequireRtpPattern() || riskSettings.isSkipTradesInZigZag()) {
+        if (!skipTrendFilters && (riskSettings.isRequireRtpPattern() || riskSettings.isSkipTradesInZigZag())) {
             double atrForPattern = atrService.getAtr(fyersSymbol);
             if (atrForPattern > 0) {
                 String pat = emaService.getEmaPattern(fyersSymbol,
@@ -442,34 +467,34 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
         // Check from highest to lowest — standard breakdown OR wick rejection
         if (close < s4 && ((open > s4 || high > s4) || (high > s4 && open < s4)) && !broken.contains("SELL_BELOW_S4")) {
-            if (!riskSettings.isEnableR4S4()) { eventService.log("[SCANNER] SELL_BELOW_S4 for " + levels.getSymbol() + " — skipped, R4/S4 disabled"); }
+            if (!riskSettings.isEnableR4S4()) { eventService.log("[SCANNER] " + levels.getSymbol() + " SELL_BELOW_S4 — skipped, R4/S4 disabled"); }
             else return "SELL_BELOW_S4";
         }
         if (close < s3
                 && ((open > s3 || high > s3) || (high > s3 && open < s3))
                 && !broken.contains("SELL_BELOW_S3")) {
-            if (!riskSettings.isEnableR3S3()) { eventService.log("[SCANNER] SELL_BELOW_S3 for " + levels.getSymbol() + " — skipped, R3/S3 disabled"); }
+            if (!riskSettings.isEnableR3S3()) { eventService.log("[SCANNER] " + levels.getSymbol() + " SELL_BELOW_S3 — skipped, R3/S3 disabled"); }
             else return "SELL_BELOW_S3";
         }
         if (close < s2
                 && ((open > s2 || high > s2) || (high > s2 && open < s2))
                 && !broken.contains("SELL_BELOW_S2")) {
-            if (!riskSettings.isEnableR2S2()) { eventService.log("[SCANNER] SELL_BELOW_S2 for " + levels.getSymbol() + " — skipped, R2/S2 disabled"); }
+            if (!riskSettings.isEnableR2S2()) { eventService.log("[SCANNER] " + levels.getSymbol() + " SELL_BELOW_S2 — skipped, R2/S2 disabled"); }
             else return "SELL_BELOW_S2";
         }
         // Mean-reversion fades from above R-levels (gap-up reversals).
         // Pattern: candle opened above the level (price was extended) and closed below it.
         double r2 = levels.getR2(), r3 = levels.getR3(), r4 = levels.getR4();
         if (open >= r4 && close < r4 && !broken.contains("SELL_BELOW_R4")) {
-            if (!riskSettings.isEnableR4S4()) { eventService.log("[SCANNER] SELL_BELOW_R4 for " + levels.getSymbol() + " — skipped, R4/S4 disabled"); }
+            if (!riskSettings.isEnableR4S4()) { eventService.log("[SCANNER] " + levels.getSymbol() + " SELL_BELOW_R4 — skipped, R4/S4 disabled"); }
             else return "SELL_BELOW_R4";
         }
         if (open >= r3 && close < r3 && !broken.contains("SELL_BELOW_R3")) {
-            if (!riskSettings.isEnableR3S3()) { eventService.log("[SCANNER] SELL_BELOW_R3 for " + levels.getSymbol() + " — skipped, R3/S3 disabled"); }
+            if (!riskSettings.isEnableR3S3()) { eventService.log("[SCANNER] " + levels.getSymbol() + " SELL_BELOW_R3 — skipped, R3/S3 disabled"); }
             else return "SELL_BELOW_R3";
         }
         if (open >= r2 && close < r2 && !broken.contains("SELL_BELOW_R2")) {
-            if (!riskSettings.isEnableR2S2()) { eventService.log("[SCANNER] SELL_BELOW_R2 for " + levels.getSymbol() + " — skipped, R2/S2 disabled"); }
+            if (!riskSettings.isEnableR2S2()) { eventService.log("[SCANNER] " + levels.getSymbol() + " SELL_BELOW_R2 — skipped, R2/S2 disabled"); }
             else return "SELL_BELOW_R2";
         }
         if (close < s1 && close < pl
@@ -576,7 +601,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                             : "RAILWAY_DOWN".equals(pattern5m) ? "F-RTP"
                             : "BRAIDED".equals(pattern5m) ? "ZIG ZAG"
                             : "--";
-        eventService.log("[SCANNER] " + setup + " for " + fyersSymbol + " | close=" + String.format("%.2f", close)
+        eventService.log("[SCANNER] " + fyersSymbol + " " + setup + " | close=" + String.format("%.2f", close)
             + " | ATR=" + String.format("%.2f", atr) + " | " + prob
             + " | 5m trend=" + trend + " pattern=" + patternLabel + " | " + timeStr);
 
@@ -767,7 +792,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         }
 
         if (count > 0) {
-            eventService.log("[SCANNER] " + setup + " for " + fyersSymbol
+            eventService.log("[SCANNER] " + fyersSymbol + " " + setup
                 + " — skipped, EMA(" + String.format("%.2f", ema) + ") is "
                 + count + " zone(s) away from broken " + String.format("%.2f", broken)
                 + " [zones between: " + between + "]");
