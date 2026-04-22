@@ -747,8 +747,8 @@
         var wArrow = wTrend.includes('BULLISH') ? '&#9650;' : wTrend.includes('BEARISH') ? '&#9660;' : '&#9644;';
         var dArrow = dTrend.includes('BULLISH') ? '&#9650;' : dTrend.includes('BEARISH') ? '&#9660;' : '&#9644;';
 
-        // EMA trend per timeframe — shown in EMA Levels title and body
-        function emaTrendObj(price, e20, e50, e200, pattern) {
+        // SMA trend per timeframe — shown in SMA Levels title and body
+        function smaTrendObj(price, e20, e50, e200, pattern) {
             if (price <= 0 || e20 <= 0 || e50 <= 0 || e200 <= 0) {
                 return { label: '--', shortLabel: '--', cls: 'neutral', arrow: '&#9644;' };
             }
@@ -764,8 +764,8 @@
             }
             return { label: 'NEUTRAL', shortLabel: 'NEU', cls: 'neutral', arrow: '&#9644;' };
         }
-        var em5  = emaTrendObj((d.price5m  > 0 ? d.price5m  : d.ltp), d.ema20,    d.ema50,    d.ema200,    d.emaPattern);
-        var em60 = emaTrendObj((d.price60m > 0 ? d.price60m : d.ltp), d.htfEma20, d.htfEma50, d.htfEma200, d.htfEmaPattern);
+        var em5  = smaTrendObj((d.price5m  > 0 ? d.price5m  : d.ltp), d.sma20,    d.sma50,    d.sma200,    d.smaPattern);
+        var em60 = smaTrendObj((d.price60m > 0 ? d.price60m : d.ltp), d.htfSma20, d.htfSma50, d.htfSma200, d.htfSmaPattern);
 
         var probClass = (d.probability || 'lpt').toLowerCase();
 
@@ -893,7 +893,7 @@
             + '<div style="border-top:1px solid var(--border);"></div>'
             + '<div class="scan-levels">'
             + '  <div class="scan-levels-title" onclick="this.parentElement.classList.toggle(\'expanded\')">'
-            + '    <span>EMA Levels</span>'
+            + '    <span>SMA Levels</span>'
             + '    <span style="display:flex; gap:8px; margin-left:auto; align-items:center; font-size:0.7rem;">'
             + '      <span class="scan-trend"><span class="label">5m:</span> <span class="' + em5.cls  + '">' + em5.arrow  + ' ' + em5.label  + '</span></span>'
             + '      <span class="scan-trend"><span class="label">1h:</span> <span class="' + em60.cls + '">' + em60.arrow + ' ' + em60.label + '</span></span>'
@@ -918,18 +918,18 @@
                     + '<div style="' + gridStyle + '">'
                     +   '<span style="font-weight:700; color:var(--text-muted);">5m</span>'
                     +   '<span>' + trendBadge(em5) + '</span>'
-                    +   '<span style="text-align:right;">' + valCell(d.ema20) + '</span>'
-                    +   '<span style="text-align:right;">' + valCell(d.ema50) + '</span>'
-                    +   '<span style="text-align:right;">' + valCell(d.ema200) + '</span>'
-                    +   '<span style="text-align:right;">' + patCell(d.emaPattern) + '</span>'
+                    +   '<span style="text-align:right;">' + valCell(d.sma20) + '</span>'
+                    +   '<span style="text-align:right;">' + valCell(d.sma50) + '</span>'
+                    +   '<span style="text-align:right;">' + valCell(d.sma200) + '</span>'
+                    +   '<span style="text-align:right;">' + patCell(d.smaPattern) + '</span>'
                     + '</div>'
                     + '<div style="' + gridStyle + '">'
                     +   '<span style="font-weight:700; color:var(--text-muted);">60m</span>'
                     +   '<span>' + trendBadge(em60) + '</span>'
-                    +   '<span style="text-align:right;">' + valCell(d.htfEma20) + '</span>'
-                    +   '<span style="text-align:right;">' + valCell(d.htfEma50) + '</span>'
-                    +   '<span style="text-align:right;">' + valCell(d.htfEma200) + '</span>'
-                    +   '<span style="text-align:right;">' + patCell(d.htfEmaPattern) + '</span>'
+                    +   '<span style="text-align:right;">' + valCell(d.htfSma20) + '</span>'
+                    +   '<span style="text-align:right;">' + valCell(d.htfSma50) + '</span>'
+                    +   '<span style="text-align:right;">' + valCell(d.htfSma200) + '</span>'
+                    +   '<span style="text-align:right;">' + patCell(d.htfSmaPattern) + '</span>'
                     + '</div>'
                     + '</div>';
             })()
@@ -1093,41 +1093,41 @@
 
             var wVal = ts(d.weeklyTrend) + ' ' + sc(d.weeklyScore);
             if (d.weeklyReversalActive) wVal += ' <span style="color:var(--accent-yellow);font-weight:700">(R)</span>';
-            var e20Val = d.ema > 0 ? (d.emaPositionScore > 0 ? '▲ ' : d.emaPositionScore < 0 ? '▼ ' : '= ') + d.ema.toFixed(1) + ' ' + sc(d.emaPositionScore) : '—';
-            // EMA 50 position vs LTP (display-only, does not feed total score)
-            var e50Pos = (d.ltp > 0 && d.ema50 > 0) ? (d.ltp > d.ema50 ? 1 : d.ltp < d.ema50 ? -1 : 0) : 0;
-            var e50Val = d.ema50 > 0 ? (e50Pos > 0 ? '▲ ' : e50Pos < 0 ? '▼ ' : '= ') + d.ema50.toFixed(1) + ' ' + sc(e50Pos) : '—';
-            var e200Val = d.ema200 > 0 ? (d.ema200PositionScore > 0 ? '▲ ' : d.ema200PositionScore < 0 ? '▼ ' : '= ') + d.ema200.toFixed(1) + ' ' + sc(d.ema200PositionScore) : '—';
+            var e20Val = d.sma > 0 ? (d.smaPositionScore > 0 ? '▲ ' : d.smaPositionScore < 0 ? '▼ ' : '= ') + d.sma.toFixed(1) + ' ' + sc(d.smaPositionScore) : '—';
+            // SMA 50 position vs LTP (display-only, does not feed total score)
+            var e50Pos = (d.ltp > 0 && d.sma50 > 0) ? (d.ltp > d.sma50 ? 1 : d.ltp < d.sma50 ? -1 : 0) : 0;
+            var e50Val = d.sma50 > 0 ? (e50Pos > 0 ? '▲ ' : e50Pos < 0 ? '▼ ' : '= ') + d.sma50.toFixed(1) + ' ' + sc(e50Pos) : '—';
+            var e200Val = d.sma200 > 0 ? (d.sma200PositionScore > 0 ? '▲ ' : d.sma200PositionScore < 0 ? '▼ ' : '= ') + d.sma200.toFixed(1) + ' ' + sc(d.sma200PositionScore) : '—';
             var crossVal;
-            if (d.ema > 0 && d.ema200 > 0) {
-                var cs = d.emaCrossoverScore;
+            if (d.sma > 0 && d.sma200 > 0) {
+                var cs = d.smaCrossoverScore;
                 crossVal = (cs === 2 ? '20&50>200' : cs === 1 ? '20>200' : cs === -2 ? '20&50<200' : cs === -1 ? '20<200' : '=') + ' ' + sc(cs);
             } else crossVal = '—';
-            var patternVal = d.emaPattern === 'RAILWAY_UP' ? 'R-RTP ' + sc(d.emaPatternScore)
-                           : d.emaPattern === 'RAILWAY_DOWN' ? 'F-RTP ' + sc(d.emaPatternScore)
-                           : d.emaPattern === 'BRAIDED' ? 'ZIG ZAG 0'
+            var patternVal = d.smaPattern === 'RAILWAY_UP' ? 'R-RTP ' + sc(d.smaPatternScore)
+                           : d.smaPattern === 'RAILWAY_DOWN' ? 'F-RTP ' + sc(d.smaPatternScore)
+                           : d.smaPattern === 'BRAIDED' ? 'ZIG ZAG 0'
                            : '— 0';
             var ohlVal = d.openEqualsHigh ? 'O=H ' + sc(d.openHlScore) : d.openEqualsLow ? 'O=L ' + sc(d.openHlScore) : '— 0';
 
-            // HTF (75-min) values — display only, no score contribution
-            var htfE20Val = d.htfEma20 > 0 ? d.htfEma20.toFixed(1) : '—';
-            var htfE50Val = d.htfEma50 > 0 ? d.htfEma50.toFixed(1) : '—';
-            var htfE200Val = d.htfEma200 > 0 ? d.htfEma200.toFixed(1) : '—';
-            var htfPatternVal = d.htfEmaPattern === 'RAILWAY_UP' ? 'R-RTP'
-                             : d.htfEmaPattern === 'RAILWAY_DOWN' ? 'F-RTP'
-                             : d.htfEmaPattern === 'BRAIDED' ? 'ZIG ZAG'
+            // HTF (60-min) values — display only, no score contribution
+            var htfE20Val = d.htfSma20 > 0 ? d.htfSma20.toFixed(1) : '—';
+            var htfE50Val = d.htfSma50 > 0 ? d.htfSma50.toFixed(1) : '—';
+            var htfE200Val = d.htfSma200 > 0 ? d.htfSma200.toFixed(1) : '—';
+            var htfPatternVal = d.htfSmaPattern === 'RAILWAY_UP' ? 'R-RTP'
+                             : d.htfSmaPattern === 'RAILWAY_DOWN' ? 'F-RTP'
+                             : d.htfSmaPattern === 'BRAIDED' ? 'ZIG ZAG'
                              : '—';
-            var htfPatternScore = d.htfEmaPattern === 'RAILWAY_UP' ? 1 : d.htfEmaPattern === 'RAILWAY_DOWN' ? -1 : 0;
+            var htfPatternScore = d.htfSmaPattern === 'RAILWAY_UP' ? 1 : d.htfSmaPattern === 'RAILWAY_DOWN' ? -1 : 0;
 
-            // Position-arrow helper for HTF EMAs (display-only, no score)
+            // Position-arrow helper for HTF SMAs (display-only, no score)
             function arrow(ltp, val) { return (ltp > 0 && val > 0) ? (ltp > val ? '▲ ' : ltp < val ? '▼ ' : '= ') : ''; }
             function posScore(ltp, val) { return (ltp > 0 && val > 0) ? (ltp > val ? 1 : ltp < val ? -1 : 0) : 0; }
-            var htfE20Disp  = d.htfEma20  > 0 ? arrow(d.ltp, d.htfEma20)  + d.htfEma20.toFixed(1)  : '—';
-            var htfE50Disp  = d.htfEma50  > 0 ? arrow(d.ltp, d.htfEma50)  + d.htfEma50.toFixed(1)  : '—';
-            var htfE200Disp = d.htfEma200 > 0 ? arrow(d.ltp, d.htfEma200) + d.htfEma200.toFixed(1) : '—';
-            var htfE20Pos  = posScore(d.ltp, d.htfEma20);
-            var htfE50Pos  = posScore(d.ltp, d.htfEma50);
-            var htfE200Pos = posScore(d.ltp, d.htfEma200);
+            var htfE20Disp  = d.htfSma20  > 0 ? arrow(d.ltp, d.htfSma20)  + d.htfSma20.toFixed(1)  : '—';
+            var htfE50Disp  = d.htfSma50  > 0 ? arrow(d.ltp, d.htfSma50)  + d.htfSma50.toFixed(1)  : '—';
+            var htfE200Disp = d.htfSma200 > 0 ? arrow(d.ltp, d.htfSma200) + d.htfSma200.toFixed(1) : '—';
+            var htfE20Pos  = posScore(d.ltp, d.htfSma20);
+            var htfE50Pos  = posScore(d.ltp, d.htfSma50);
+            var htfE200Pos = posScore(d.ltp, d.htfSma200);
 
             // Cross labels (5m comes with score, HTF computed display-only)
             function crossLabel(e20, e50, e200) {
@@ -1148,8 +1148,8 @@
                 if (e20 < e200) return -1;
                 return 0;
             }
-            var htfCrossLabel = crossLabel(d.htfEma20, d.htfEma50, d.htfEma200);
-            var htfCrossScore = crossScore(d.htfEma20, d.htfEma50, d.htfEma200);
+            var htfCrossLabel = crossLabel(d.htfSma20, d.htfSma50, d.htfSma200);
+            var htfCrossScore = crossScore(d.htfSma20, d.htfSma50, d.htfSma200);
 
             var gridStyle = 'display:grid; grid-template-columns:42px 130px 1.5fr 1.5fr 1.5fr 130px 130px; gap:48px; align-items:center; font-size:0.72rem; padding:5px 8px;';
             var headStyle = gridStyle + ' color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; font-size:0.6rem; font-weight:700; border-bottom:1px solid var(--border);';
@@ -1167,7 +1167,7 @@
                 if (reversal) html += ' <span style="color:var(--accent-yellow);font-weight:700;">(R)</span>';
                 return html;
             }
-            function emaCell(disp, score) {
+            function smaCell(disp, score) {
                 return '<span style="color:' + clr(score) + ';font-weight:600;">' + disp + ' ' + sc(score) + '</span>';
             }
             function patCell(label, score) {
@@ -1187,22 +1187,22 @@
                 + '<div style="' + gridStyle + '">'
                 +   '<span style="font-weight:700;color:var(--text-muted);">D</span>'
                 +   '<span>' + trendCell(d.dailyTrend, d.dailyScore, false, true) + '</span>'
-                +   '<span style="text-align:right;">' + emaCell(d.ema > 0 ? arrow(d.ltp, d.ema) + d.ema.toFixed(1) : '—', d.emaPositionScore) + '</span>'
-                +   '<span style="text-align:right;">' + emaCell(d.ema50 > 0 ? arrow(d.ltp, d.ema50) + d.ema50.toFixed(1) : '—', e50Pos) + '</span>'
-                +   '<span style="text-align:right;">' + emaCell(d.ema200 > 0 ? arrow(d.ltp, d.ema200) + d.ema200.toFixed(1) : '—', d.ema200PositionScore) + '</span>'
+                +   '<span style="text-align:right;">' + smaCell(d.sma > 0 ? arrow(d.ltp, d.sma) + d.sma.toFixed(1) : '—', d.smaPositionScore) + '</span>'
+                +   '<span style="text-align:right;">' + smaCell(d.sma50 > 0 ? arrow(d.ltp, d.sma50) + d.sma50.toFixed(1) : '—', e50Pos) + '</span>'
+                +   '<span style="text-align:right;">' + smaCell(d.sma200 > 0 ? arrow(d.ltp, d.sma200) + d.sma200.toFixed(1) : '—', d.sma200PositionScore) + '</span>'
                 +   '<span style="text-align:right;">' + patCell(
-                        d.emaPattern === 'RAILWAY_UP' ? 'R-RTP'
-                        : d.emaPattern === 'RAILWAY_DOWN' ? 'F-RTP'
-                        : d.emaPattern === 'BRAIDED' ? 'ZIG ZAG' : '—',
-                        d.emaPatternScore) + '</span>'
-                +   '<span style="text-align:right;">' + patCell(crossLabel(d.ema, d.ema50, d.ema200), d.emaCrossoverScore) + '</span>'
+                        d.smaPattern === 'RAILWAY_UP' ? 'R-RTP'
+                        : d.smaPattern === 'RAILWAY_DOWN' ? 'F-RTP'
+                        : d.smaPattern === 'BRAIDED' ? 'ZIG ZAG' : '—',
+                        d.smaPatternScore) + '</span>'
+                +   '<span style="text-align:right;">' + patCell(crossLabel(d.sma, d.sma50, d.sma200), d.smaCrossoverScore) + '</span>'
                 + '</div>'
                 + '<div style="' + gridStyle + '">'
                 +   '<span style="font-weight:700;color:var(--text-muted);">W</span>'
                 +   '<span>' + trendCell(d.weeklyTrend, d.weeklyScore, d.weeklyReversalActive, true) + '</span>'
-                +   '<span style="text-align:right;">' + emaCell(htfE20Disp, htfE20Pos) + '</span>'
-                +   '<span style="text-align:right;">' + emaCell(htfE50Disp, htfE50Pos) + '</span>'
-                +   '<span style="text-align:right;">' + emaCell(htfE200Disp, htfE200Pos) + '</span>'
+                +   '<span style="text-align:right;">' + smaCell(htfE20Disp, htfE20Pos) + '</span>'
+                +   '<span style="text-align:right;">' + smaCell(htfE50Disp, htfE50Pos) + '</span>'
+                +   '<span style="text-align:right;">' + smaCell(htfE200Disp, htfE200Pos) + '</span>'
                 +   '<span style="text-align:right;"><span style="color:' + clr(htfPatternScore) + ';font-weight:600;">' + htfPatternVal + '</span></span>'
                 +   '<span style="text-align:right;"><span style="color:' + clr(htfCrossScore) + ';font-weight:600;">' + htfCrossLabel + '</span></span>'
                 + '</div>';
@@ -1669,16 +1669,16 @@ function recalcSimQty() {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// Chart Modal — live candlestick chart with CPR/VWAP/EMA overlays
+// Chart Modal — live candlestick chart with CPR/VWAP/SMA overlays
 // ══════════════════════════════════════════════════════════════════════
-var chartState = { modal: null, chart: null, series: null, vwapSeries: null, ema20Series: null, ema50Series: null, ema200Series: null, levelSeries: [], orSeries: null, symbol: null, interval: null, resizeHandler: null, lastData: null };
+var chartState = { modal: null, chart: null, series: null, vwapSeries: null, sma20Series: null, sma50Series: null, sma200Series: null, levelSeries: [], orSeries: null, symbol: null, interval: null, resizeHandler: null, lastData: null };
 
 // Chart visibility preferences (persisted in localStorage)
 var chartPrefs = (function() {
     var defaults = {
         cprBand: true, r1pdhBand: true, s1pdlBand: true, orBand: true,
         cprLines: true, rLines: true, sLines: true, pdhPdl: true, pivot: true,
-        orLines: true, vwap: true, ema20: true, ema50: true, ema200: true, trades: true
+        orLines: true, vwap: true, sma20: true, sma50: true, sma200: true, trades: true
     };
     try {
         var stored = JSON.parse(localStorage.getItem('chartPrefs') || '{}');
@@ -1738,9 +1738,9 @@ function renderChartSettings() {
         ]},
         { label: 'Indicators', items: [
             { key: 'vwap', label: 'VWAP', color: '#ec407a' },
-            { key: 'ema20', label: 'EMA 20', color: '#66bb6a' },
-            { key: 'ema50', label: 'EMA 50', color: '#ef5350' },
-            { key: 'ema200', label: 'EMA 200', color: document.documentElement.getAttribute('data-theme') === 'light' ? '#000' : '#fff' }
+            { key: 'sma20', label: 'SMA 20', color: '#66bb6a' },
+            { key: 'sma50', label: 'SMA 50', color: '#ef5350' },
+            { key: 'sma200', label: 'SMA 200', color: document.documentElement.getAttribute('data-theme') === 'light' ? '#000' : '#fff' }
         ]},
         { label: 'Trades', items: [
             { key: 'trades', label: 'Trade markers', color: '#888' }
@@ -1770,9 +1770,9 @@ function onChartPrefChange(el) {
         applyOrBand(chartState.lastData);
         applyTradeMarkers(chartState.lastData);
         if (chartState.vwapSeries) chartState.vwapSeries.applyOptions({ visible: chartPrefs.vwap });
-        if (chartState.ema20Series) chartState.ema20Series.applyOptions({ visible: chartPrefs.ema20 });
-        if (chartState.ema50Series) chartState.ema50Series.applyOptions({ visible: chartPrefs.ema50 });
-        if (chartState.ema200Series) chartState.ema200Series.applyOptions({ visible: chartPrefs.ema200 });
+        if (chartState.sma20Series) chartState.sma20Series.applyOptions({ visible: chartPrefs.sma20 });
+        if (chartState.sma50Series) chartState.sma50Series.applyOptions({ visible: chartPrefs.sma50 });
+        if (chartState.sma200Series) chartState.sma200Series.applyOptions({ visible: chartPrefs.sma200 });
     }
 }
 
@@ -1805,8 +1805,8 @@ function closeChartModal() {
         chartState.chart = null;
         chartState.series = null;
         chartState.vwapSeries = null;
-        chartState.ema20Series = null;
-        chartState.ema200Series = null;
+        chartState.sma20Series = null;
+        chartState.sma200Series = null;
         chartState.levelSeries = [];
         chartState.orSeries = null;
         chartState.tooltip = null;
@@ -1910,9 +1910,9 @@ function renderChart(d, isFirst) {
     var volMap = buildVolumeMap(candles);
     chartState.volMap = volMap;
     var vwapLine = toLwcLine(d.vwapSeries);
-    var ema20Line = toLwcLine(d.ema20Series);
-    var ema50Line = toLwcLine(d.ema50Series);
-    var ema200Line = toLwcLine(d.ema200Series);
+    var sma20Line = toLwcLine(d.sma20Series);
+    var sma50Line = toLwcLine(d.sma50Series);
+    var sma200Line = toLwcLine(d.sma200Series);
 
     var theme = document.documentElement.getAttribute('data-theme');
     var dark = theme !== 'light';
@@ -1966,29 +1966,29 @@ function renderChart(d, isFirst) {
         });
         chartState.vwapSeries.setData(vwapLine);
 
-        // EMA 20 line (green)
-        chartState.ema20Series = chartState.chart.addLineSeries({
+        // SMA 20 line (green)
+        chartState.sma20Series = chartState.chart.addLineSeries({
             color: '#66bb6a', lineWidth: 2,
-            priceLineVisible: false, lastValueVisible: true, title: 'EMA20',
-            crosshairMarkerVisible: false, visible: chartPrefs.ema20
+            priceLineVisible: false, lastValueVisible: true, title: 'SMA20',
+            crosshairMarkerVisible: false, visible: chartPrefs.sma20
         });
-        chartState.ema20Series.setData(ema20Line);
+        chartState.sma20Series.setData(sma20Line);
 
-        // EMA 50 line (red)
-        chartState.ema50Series = chartState.chart.addLineSeries({
+        // SMA 50 line (red)
+        chartState.sma50Series = chartState.chart.addLineSeries({
             color: '#ef5350', lineWidth: 2,
-            priceLineVisible: false, lastValueVisible: true, title: 'EMA50',
-            crosshairMarkerVisible: false, visible: chartPrefs.ema50
+            priceLineVisible: false, lastValueVisible: true, title: 'SMA50',
+            crosshairMarkerVisible: false, visible: chartPrefs.sma50
         });
-        chartState.ema50Series.setData(ema50Line);
+        chartState.sma50Series.setData(sma50Line);
 
-        // EMA 200 line (white on dark, black on light)
-        chartState.ema200Series = chartState.chart.addLineSeries({
+        // SMA 200 line (white on dark, black on light)
+        chartState.sma200Series = chartState.chart.addLineSeries({
             color: dark ? '#ffffff' : '#000000', lineWidth: 2,
-            priceLineVisible: false, lastValueVisible: true, title: 'EMA200',
-            crosshairMarkerVisible: false, visible: chartPrefs.ema200
+            priceLineVisible: false, lastValueVisible: true, title: 'SMA200',
+            crosshairMarkerVisible: false, visible: chartPrefs.sma200
         });
-        chartState.ema200Series.setData(ema200Line);
+        chartState.sma200Series.setData(sma200Line);
 
         chartState.levelSeries = [];
         applyChartLines(d);
@@ -2035,9 +2035,9 @@ function renderChart(d, isFirst) {
             var priceData = param.seriesData.get(chartState.series);
             if (!priceData) { tooltip.style.display = 'none'; return; }
             var vwapData = param.seriesData.get(chartState.vwapSeries);
-            var ema20Data = param.seriesData.get(chartState.ema20Series);
-            var ema50Data = param.seriesData.get(chartState.ema50Series);
-            var ema200Data = param.seriesData.get(chartState.ema200Series);
+            var sma20Data = param.seriesData.get(chartState.sma20Series);
+            var sma50Data = param.seriesData.get(chartState.sma50Series);
+            var sma200Data = param.seriesData.get(chartState.sma200Series);
             var changePct = priceData.open > 0 ? ((priceData.close - priceData.open) / priceData.open * 100) : 0;
             var changeColor = priceData.close >= priceData.open ? '#26a69a' : '#ef5350';
             var vol = chartState.volMap ? chartState.volMap[param.time] : null;
@@ -2049,9 +2049,9 @@ function renderChart(d, isFirst) {
                 '<div>C: <span style="color:' + changeColor + ';">' + priceData.close.toFixed(2) + '</span> <span style="color:' + changeColor + ';font-size:10px;">(' + (changePct >= 0 ? '+' : '') + changePct.toFixed(2) + '%)</span></div>' +
                 '<div style="color:' + (dark ? '#aab0b6' : '#666') + ';">Vol: ' + fmtChartVol(vol) + '</div>';
             if (vwapData && vwapData.value) html += '<div style="color:#ec407a;">VWAP: ' + vwapData.value.toFixed(2) + '</div>';
-            if (ema20Data && ema20Data.value) html += '<div style="color:#66bb6a;">EMA20: ' + ema20Data.value.toFixed(2) + '</div>';
-            if (ema50Data && ema50Data.value) html += '<div style="color:#ef5350;">EMA50: ' + ema50Data.value.toFixed(2) + '</div>';
-            if (ema200Data && ema200Data.value) html += '<div style="color:' + (dark ? '#ffffff' : '#000000') + ';">EMA200: ' + ema200Data.value.toFixed(2) + '</div>';
+            if (sma20Data && sma20Data.value) html += '<div style="color:#66bb6a;">SMA20: ' + sma20Data.value.toFixed(2) + '</div>';
+            if (sma50Data && sma50Data.value) html += '<div style="color:#ef5350;">SMA50: ' + sma50Data.value.toFixed(2) + '</div>';
+            if (sma200Data && sma200Data.value) html += '<div style="color:' + (dark ? '#ffffff' : '#000000') + ';">SMA200: ' + sma200Data.value.toFixed(2) + '</div>';
             tooltip.innerHTML = html;
             // Position: offset from cursor, flip if near right/bottom edge
             var rect = container.getBoundingClientRect();
@@ -2071,9 +2071,9 @@ function renderChart(d, isFirst) {
     var lastBar = bars[bars.length - 1];
     if (lastBar) chartState.series.update(lastBar);
     if (chartState.vwapSeries) chartState.vwapSeries.setData(vwapLine);
-    if (chartState.ema20Series) chartState.ema20Series.setData(ema20Line);
-    if (chartState.ema50Series) chartState.ema50Series.setData(ema50Line);
-    if (chartState.ema200Series) chartState.ema200Series.setData(ema200Line);
+    if (chartState.sma20Series) chartState.sma20Series.setData(sma20Line);
+    if (chartState.sma50Series) chartState.sma50Series.setData(sma50Line);
+    if (chartState.sma200Series) chartState.sma200Series.setData(sma200Line);
     applyChartLines(d);
     applyOrBand(d);
     applyTradeMarkers(d);

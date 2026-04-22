@@ -29,8 +29,8 @@ public class ScannerController {
     private final RiskSettingsStore riskSettings;
     private final MarginDataService marginDataService;
     private final TradeHistoryService tradeHistoryService;
-    private final EmaService emaService;
-    private final HtfEmaService htfEmaService;
+    private final SmaService smaService;
+    private final HtfSmaService htfSmaService;
     private final IndexTrendService indexTrendService;
     private final MarketHolidayService marketHolidayService;
 
@@ -43,8 +43,8 @@ public class ScannerController {
                              RiskSettingsStore riskSettings,
                              MarginDataService marginDataService,
                              TradeHistoryService tradeHistoryService,
-                             EmaService emaService,
-                             HtfEmaService htfEmaService,
+                             SmaService smaService,
+                             HtfSmaService htfSmaService,
                              IndexTrendService indexTrendService,
                              MarketHolidayService marketHolidayService) {
         this.marketDataService = marketDataService;
@@ -56,8 +56,8 @@ public class ScannerController {
         this.riskSettings = riskSettings;
         this.marginDataService = marginDataService;
         this.tradeHistoryService = tradeHistoryService;
-        this.emaService = emaService;
-        this.htfEmaService = htfEmaService;
+        this.smaService = smaService;
+        this.htfSmaService = htfSmaService;
         this.indexTrendService = indexTrendService;
         this.marketHolidayService = marketHolidayService;
     }
@@ -147,37 +147,37 @@ public class ScannerController {
 
         card.put("atp", Math.round(candleAggregator.getAtp(fyersSymbol) * 100.0) / 100.0);
         card.put("atr", Math.round(atrService.getAtr(fyersSymbol) * 100.0) / 100.0);
-        card.put("ema20", Math.round(emaService.getEma(fyersSymbol) * 100.0) / 100.0);
-        card.put("ema50", Math.round(emaService.getEma50(fyersSymbol) * 100.0) / 100.0);
-        card.put("ema200", Math.round(emaService.getEma200(fyersSymbol) * 100.0) / 100.0);
-        // Classify EMA 20/50 pattern over recent candles: BRAIDED (zigzag/choppy), RAILWAY (parallel/trending), or ""
+        card.put("sma20", Math.round(smaService.getSma(fyersSymbol) * 100.0) / 100.0);
+        card.put("sma50", Math.round(smaService.getSma50(fyersSymbol) * 100.0) / 100.0);
+        card.put("sma200", Math.round(smaService.getSma200(fyersSymbol) * 100.0) / 100.0);
+        // Classify SMA 20/50 pattern over recent candles: BRAIDED (zigzag/choppy), RAILWAY (parallel/trending), or ""
         double atrVal = atrService.getAtr(fyersSymbol);
-        String emaPattern = emaService.getEmaPattern(fyersSymbol,
-            riskSettings.getEmaPatternLookback(),
+        String smaPattern = smaService.getSmaPattern(fyersSymbol,
+            riskSettings.getSmaPatternLookback(),
             atrVal,
             riskSettings.getBraidedMinCrossovers(),
             riskSettings.getBraidedMaxSpreadAtr(),
             riskSettings.getRailwayMaxCv(),
             riskSettings.getRailwayMinSpreadAtr());
-        card.put("emaPattern", emaPattern);
-        // HTF (75-min) EMAs — display only, long-term trend
-        double htfEma20 = htfEmaService.getEma(fyersSymbol);
-        double htfEma50 = htfEmaService.getEma50(fyersSymbol);
-        double htfEma200 = htfEmaService.getEma200(fyersSymbol);
-        card.put("htfEma20", Math.round(htfEma20 * 100.0) / 100.0);
-        card.put("htfEma50", Math.round(htfEma50 * 100.0) / 100.0);
-        card.put("htfEma200", Math.round(htfEma200 * 100.0) / 100.0);
-        String htfPattern = (htfEma20 > 0 && htfEma50 > 0)
-            ? htfEmaService.getEmaPattern(fyersSymbol,
-                riskSettings.getEmaPatternLookback(),
+        card.put("smaPattern", smaPattern);
+        // HTF (60-min) SMAs — long-term trend
+        double htfSma20 = htfSmaService.getSma(fyersSymbol);
+        double htfSma50 = htfSmaService.getSma50(fyersSymbol);
+        double htfSma200 = htfSmaService.getSma200(fyersSymbol);
+        card.put("htfSma20", Math.round(htfSma20 * 100.0) / 100.0);
+        card.put("htfSma50", Math.round(htfSma50 * 100.0) / 100.0);
+        card.put("htfSma200", Math.round(htfSma200 * 100.0) / 100.0);
+        String htfPattern = (htfSma20 > 0 && htfSma50 > 0)
+            ? htfSmaService.getSmaPattern(fyersSymbol,
+                riskSettings.getSmaPatternLookback(),
                 atrVal,
                 riskSettings.getBraidedMinCrossovers(),
                 riskSettings.getBraidedMaxSpreadAtr(),
                 riskSettings.getRailwayMaxCv(),
                 riskSettings.getRailwayMinSpreadAtr())
             : "";
-        card.put("htfEmaPattern", htfPattern);
-        // EMA-trend reference price: last completed candle close, LTP fallback for the
+        card.put("htfSmaPattern", htfPattern);
+        // SMA-trend reference price: last completed candle close, LTP fallback for the
         // first candle of the day. Mirrors how WeeklyCprService computes daily/weekly trend.
         card.put("price5m",  Math.round(weeklyCprService.getDailyPrice(fyersSymbol)  * 100.0) / 100.0);
         card.put("price60m", Math.round(weeklyCprService.getWeeklyPrice(fyersSymbol) * 100.0) / 100.0);
@@ -297,12 +297,12 @@ public class ScannerController {
 
     private void addIndicatorPoints(CandleAggregator.CandleBar c,
                                     List<Map<String, Object>> vwapSeries,
-                                    List<Map<String, Object>> ema20Series,
-                                    List<Map<String, Object>> ema200Series) {
+                                    List<Map<String, Object>> sma20Series,
+                                    List<Map<String, Object>> sma200Series) {
         long tMs = c.epochSec * 1000L;
         if (c.vwap > 0) vwapSeries.add(point(tMs, c.vwap));
-        if (c.ema20 > 0) ema20Series.add(point(tMs, c.ema20));
-        if (c.ema200 > 0) ema200Series.add(point(tMs, c.ema200));
+        if (c.sma20 > 0) sma20Series.add(point(tMs, c.sma20));
+        if (c.sma200 > 0) sma200Series.add(point(tMs, c.sma200));
     }
 
     private void computeIndicatorsAndBuild(List<CandleAggregator.CandleBar> history,
@@ -310,14 +310,14 @@ public class ScannerController {
                                            java.time.ZoneId ist,
                                            List<Map<String, Object>> candleList,
                                            List<Map<String, Object>> vwapSeries,
-                                           List<Map<String, Object>> ema20Series,
-                                           List<Map<String, Object>> ema50Series,
-                                           List<Map<String, Object>> ema200Series) {
-        final double k20 = 2.0 / 21.0;
-        final double k50 = 2.0 / 51.0;
-        final double k200 = 2.0 / 201.0;
-        double ema20 = 0, ema50 = 0, ema200 = 0;
-        boolean firstBar = true;
+                                           List<Map<String, Object>> sma20Series,
+                                           List<Map<String, Object>> sma50Series,
+                                           List<Map<String, Object>> sma200Series) {
+        // Rolling-window SMA: keep last N closes and average. Walks the full merged history
+        // (prior-day warmup + today) so each plotted point has a correctly-warmed-up SMA.
+        java.util.ArrayDeque<Double> closes20 = new java.util.ArrayDeque<>();
+        java.util.ArrayDeque<Double> closes50 = new java.util.ArrayDeque<>();
+        java.util.ArrayDeque<Double> closes200 = new java.util.ArrayDeque<>();
         double dayCumPV = 0, dayCumV = 0;
         java.time.LocalDate curDay = null;
         for (CandleAggregator.CandleBar c : history) {
@@ -333,30 +333,35 @@ public class ScannerController {
                 dayCumV += c.volume;
             }
             double vwap = dayCumV > 0 ? dayCumPV / dayCumV : c.close;
-            if (firstBar) {
-                ema20 = c.close;
-                ema50 = c.close;
-                ema200 = c.close;
-                firstBar = false;
-            } else {
-                ema20 = c.close * k20 + ema20 * (1 - k20);
-                ema50 = c.close * k50 + ema50 * (1 - k50);
-                ema200 = c.close * k200 + ema200 * (1 - k200);
-            }
+            closes20.addLast(c.close);
+            closes50.addLast(c.close);
+            closes200.addLast(c.close);
+            while (closes20.size() > 20) closes20.removeFirst();
+            while (closes50.size() > 50) closes50.removeFirst();
+            while (closes200.size() > 200) closes200.removeFirst();
+            double sma20  = closes20.size()  == 20  ? avg(closes20)  : 0;
+            double sma50  = closes50.size()  == 50  ? avg(closes50)  : 0;
+            double sma200 = closes200.size() == 200 ? avg(closes200) : 0;
             if (d.equals(displayDate)) {
                 candleList.add(barToMap(c, false));
                 long tMs = c.epochSec * 1000L;
                 vwapSeries.add(point(tMs, vwap));
-                ema20Series.add(point(tMs, ema20));
-                ema50Series.add(point(tMs, ema50));
-                ema200Series.add(point(tMs, ema200));
+                if (sma20  > 0) sma20Series.add(point(tMs, sma20));
+                if (sma50  > 0) sma50Series.add(point(tMs, sma50));
+                if (sma200 > 0) sma200Series.add(point(tMs, sma200));
             }
         }
     }
 
+    private static double avg(java.util.Deque<Double> d) {
+        double sum = 0;
+        for (Double v : d) sum += v;
+        return sum / d.size();
+    }
+
     /**
      * Compute card-level probability preview using all pre-checkable conditions (8 of 10).
-     * More accurate than the basic weekly+daily check — includes EMA, VWAP, crossover, NIFTY.
+     * More accurate than the basic weekly+daily check — includes SMA, VWAP, crossover, NIFTY.
      * Direction derived from daily trend (bullish → buy preview, bearish → sell preview).
      */
     private String computeCardProbability(String symbol, double ltp) {
@@ -369,13 +374,13 @@ public class ScannerController {
         String baseProb = weeklyCprService.getProbabilityForDirection(symbol, isBuy);
         if (!"HPT".equals(baseProb)) return baseProb; // already LPT or SKIP from weekly
 
-        // 3. 5-min EMA trend alignment (price above/below all of EMA 20/50/200)
-        double ema    = emaService.getEma(symbol);
-        double ema50  = emaService.getEma50(symbol);
-        double ema200 = emaService.getEma200(symbol);
-        if (riskSettings.isEnableEmaTrendCheck() && ema > 0 && ema50 > 0 && ema200 > 0) {
-            boolean bullishAligned = ltp > ema && ltp > ema50 && ltp > ema200;
-            boolean bearishAligned = ltp < ema && ltp < ema50 && ltp < ema200;
+        // 3. 5-min SMA trend alignment (price above/below all of SMA 20/50/200)
+        double sma    = smaService.getSma(symbol);
+        double sma50  = smaService.getSma50(symbol);
+        double sma200 = smaService.getSma200(symbol);
+        if (riskSettings.isEnableSmaTrendCheck() && sma > 0 && sma50 > 0 && sma200 > 0) {
+            boolean bullishAligned = ltp > sma && ltp > sma50 && ltp > sma200;
+            boolean bearishAligned = ltp < sma && ltp < sma50 && ltp < sma200;
             if (isBuy  && !bullishAligned) return "LPT";
             if (isSell && !bearishAligned) return "LPT";
         }
@@ -401,8 +406,8 @@ public class ScannerController {
         status.put("signalSource", riskSettings.getSignalSource());
         status.put("watchlistCount", marketDataService.getWatchlist().size());
         status.put("atrLoaded", atrService.getLoadedCountFor(marketDataService.getWatchlist()));
-        status.put("emaLoaded", emaService.getLoadedCountFor(marketDataService.getWatchlist()));
-        status.put("ema200Loaded", emaService.getEma200LoadedCountFor(marketDataService.getWatchlist()));
+        status.put("smaLoaded", smaService.getLoadedCountFor(marketDataService.getWatchlist()));
+        status.put("sma200Loaded", smaService.getSma200LoadedCountFor(marketDataService.getWatchlist()));
         status.put("firstCandleLoaded", candleAggregator.getFirstCandleCloseCount());
         status.put("validationPass", marketDataService.getValidationPass());
         status.put("validationFail", marketDataService.getValidationFail());
@@ -412,7 +417,7 @@ public class ScannerController {
         status.put("enableHpt", riskSettings.isEnableHpt());
         status.put("enableLpt", riskSettings.isEnableLpt());
         status.put("enableAtp", riskSettings.isEnableAtpCheck());
-        status.put("enableEmaTrend", riskSettings.isEnableEmaTrendCheck());
+        status.put("enableSmaTrend", riskSettings.isEnableSmaTrendCheck());
         status.put("minPrice", riskSettings.getScanMinPrice());
         status.put("maxPrice", riskSettings.getScanMaxPrice());
         status.put("minTurnover", riskSettings.getScanMinTurnover());
@@ -433,15 +438,13 @@ public class ScannerController {
         boolean tradingDay = marketHolidayService.isTradingDay();
         List<Map<String, Object>> candleList = new ArrayList<>();
         List<Map<String, Object>> vwapSeries = new ArrayList<>();
-        List<Map<String, Object>> ema20Series = new ArrayList<>();
-        List<Map<String, Object>> ema50Series = new ArrayList<>();
-        List<Map<String, Object>> ema200Series = new ArrayList<>();
+        List<Map<String, Object>> sma20Series = new ArrayList<>();
+        List<Map<String, Object>> sma50Series = new ArrayList<>();
+        List<Map<String, Object>> sma200Series = new ArrayList<>();
 
         if (tradingDay) {
             // Live path: compute indicators progressively over prior-day warmup + today so
-            // every today's bar has a fully-warmed-up EMA (bar 1 included). Relying on the
-            // per-bar snapshots left 0s on bars seeded before EmaService.onCandleClose fired
-            // (e.g. cold-start full-fetch bars, mid-day restart catch-up).
+            // every today's bar has a fully-warmed-up SMA (bar 1 included).
             java.time.ZoneId ist = java.time.ZoneId.of("Asia/Kolkata");
             java.time.LocalDate today = java.time.LocalDate.now(ist);
             List<CandleAggregator.CandleBar> priors = candleAggregator.getPriorDayCandles(symbol);
@@ -449,7 +452,7 @@ public class ScannerController {
             List<CandleAggregator.CandleBar> merged = new ArrayList<>();
             if (priors != null) merged.addAll(priors);
             if (todays != null) merged.addAll(todays);
-            computeIndicatorsAndBuild(merged, today, ist, candleList, vwapSeries, ema20Series, ema50Series, ema200Series);
+            computeIndicatorsAndBuild(merged, today, ist, candleList, vwapSeries, sma20Series, sma50Series, sma200Series);
 
             // Forming (current, still-open) candle — append with live indicator values
             CandleAggregator.CandleBar current = candleAggregator.getCurrentCandle(symbol);
@@ -457,13 +460,13 @@ public class ScannerController {
                 candleList.add(barToMap(current, true));
                 long tMs = current.epochSec * 1000L;
                 double liveVwap = candleAggregator.getAtp(symbol);
-                double liveEma20 = emaService.getEma(symbol);
-                double liveEma50 = emaService.getEma50(symbol);
-                double liveEma200 = emaService.getEma200(symbol);
+                double liveSma20 = smaService.getSma(symbol);
+                double liveSma50 = smaService.getSma50(symbol);
+                double liveSma200 = smaService.getSma200(symbol);
                 if (liveVwap > 0) vwapSeries.add(point(tMs, liveVwap));
-                if (liveEma20 > 0) ema20Series.add(point(tMs, liveEma20));
-                if (liveEma50 > 0) ema50Series.add(point(tMs, liveEma50));
-                if (liveEma200 > 0) ema200Series.add(point(tMs, liveEma200));
+                if (liveSma20 > 0) sma20Series.add(point(tMs, liveSma20));
+                if (liveSma50 > 0) sma50Series.add(point(tMs, liveSma50));
+                if (liveSma200 > 0) sma200Series.add(point(tMs, liveSma200));
             }
             result.put("dataSource", "live");
         } else {
@@ -479,7 +482,7 @@ public class ScannerController {
                     }
                     if (latestDate != null) {
                         // Compute indicators progressively (Fyers API doesn't return them)
-                        computeIndicatorsAndBuild(hist, latestDate, ist, candleList, vwapSeries, ema20Series, ema50Series, ema200Series);
+                        computeIndicatorsAndBuild(hist, latestDate, ist, candleList, vwapSeries, sma20Series, sma50Series, sma200Series);
                         result.put("dataDate", latestDate.toString());
                     }
                 }
@@ -491,9 +494,9 @@ public class ScannerController {
         }
         result.put("candles", candleList);
         result.put("vwapSeries", vwapSeries);
-        result.put("ema20Series", ema20Series);
-        result.put("ema50Series", ema50Series);
-        result.put("ema200Series", ema200Series);
+        result.put("sma20Series", sma20Series);
+        result.put("sma50Series", sma50Series);
+        result.put("sma200Series", sma200Series);
         result.put("tradingDay", tradingDay);
 
         // CPR levels:
@@ -522,8 +525,8 @@ public class ScannerController {
         // Indicators (current values)
         result.put("ltp", r(candleAggregator.getLtp(symbol)));
         result.put("vwap", r(candleAggregator.getAtp(symbol)));
-        result.put("ema20", r(emaService.getEma(symbol)));
-        result.put("ema200", r(emaService.getEma200(symbol)));
+        result.put("sma20", r(smaService.getSma(symbol)));
+        result.put("sma200", r(smaService.getSma200(symbol)));
 
         // Opening Range (high/low for the OR window, plus time bounds)
         Map<String, Object> or = new LinkedHashMap<>();

@@ -29,7 +29,6 @@ public class RiskSettingsStore {
         volatile double riskPerTrade      = 1000;  // max ₹ loss per trade if SL hits
         volatile String autoSquareOffTime = "";  // empty = disabled, e.g. "15:15"
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
-        volatile boolean enableR4S4       = false; // allow BUY_ABOVE_R4 / SELL_BELOW_S4
         volatile boolean enableSessionMoveLimit = true;
         volatile double sessionMoveLimit = 2.0;   // qty halved if session move exceeds this %
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
@@ -50,7 +49,7 @@ public class RiskSettingsStore {
         volatile boolean enableDayHighLowTargetShift = true; // shift target to day high/low if between entry and target
         volatile double dayHighLowShiftMinDistAtr = 2.0; // skip day H/L shift if distance < N ATR from close
         volatile boolean enableWeeklyLevelTargetShift = true; // shift target to weekly CPR levels if between entry and target
-        volatile boolean enableWeeklyEmaTargetShift = true;   // shift target to weekly (HTF 60-min) EMA 20/50/200 if between entry and target
+        volatile boolean enableWeeklySmaTargetShift = true;   // shift target to weekly (HTF 60-min) SMA 20/50/200 if between entry and target
         volatile boolean enableHtfHurdleFilter = true; // HPT→LPT when 5-min close lands inside R1/PWH (buy) or S1/PWL (sell) zone
         // Structural SL — opt-in, anchors SL to the S/R level the trade is testing (per setup family)
         // When on, we compute both structural and default SL and pick the TIGHTER one.
@@ -60,27 +59,27 @@ public class RiskSettingsStore {
         // Risk/Reward filter — skip trade if |target−entry| / |entry−SL| < minRiskRewardRatio
         volatile boolean enableRiskRewardFilter = true;
         volatile double  minRiskRewardRatio     = 1.0;
-        // EMA filters
-        // 5-min EMA trend gate: buy requires close above EMA(20/50/200), sell requires below all three.
-        // Matches the BULL/BEAR chip on scanner cards. Fail-open if any EMA not loaded.
-        volatile boolean enableEmaTrendCheck = true;
-        volatile boolean enableEmaVsAtpCheck = true; // buy requires 20 EMA > ATP (VWAP), sell requires 20 EMA < ATP
-        // EMA 20/50 pattern detection thresholds (Braided vs Railway Track)
-        volatile int emaPatternLookback = 10;        // candles used for pattern detection (10 × 5min = 50 min window)
+        // SMA filters
+        // 5-min SMA trend gate: buy requires close above SMA(20/50/200), sell requires below all three.
+        // Matches the BULL/BEAR chip on scanner cards. Fail-open if any SMA not loaded.
+        volatile boolean enableSmaTrendCheck = true;
+        volatile boolean enableSmaVsAtpCheck = true; // buy requires 20 SMA > ATP (VWAP), sell requires 20 SMA < ATP
+        // SMA 20/50 pattern detection thresholds (Braided vs Railway Track).
+        // Bumped for SMA behaviour (smoother, smaller spreads, shallower slopes than EMA).
+        volatile int smaPatternLookback = 10;        // candles used for pattern detection (10 × 5min = 50 min window)
         volatile int braidedMinCrossovers = 2;       // ≥ this many crossovers in lookback = BRAIDED
-        volatile double braidedMaxSpreadAtr = 0.15;  // mean|spread| ≤ this × ATR = BRAIDED (EMAs truly overlapping). Lowered from 0.3 so 1-crossover tight-trending states fall to transitional instead of ZIG ZAG.
+        volatile double braidedMaxSpreadAtr = 0.10;  // mean|spread| ≤ this × ATR = BRAIDED (SMAs truly overlapping)
         volatile double railwayMaxCv = 0.25;         // stddev/mean ratio for RAILWAY (stability)
-        volatile double railwayMinSpreadAtr = 0.3;   // mean|spread| ≥ this × ATR for RAILWAY (meaningful separation)
-        volatile double railwayMinSlopeAtr = 0.3;    // (ema[last]−ema[first])/ATR ≥ this for R-RTP (both 20 & 50 must actually rise; symmetric for F-RTP)
-        // EMA pattern trade filters
+        volatile double railwayMinSpreadAtr = 0.20;  // mean|spread| ≥ this × ATR for RAILWAY (meaningful separation; SMA spreads smaller than EMA)
+        volatile double railwayMinSlopeAtr = 0.20;   // (sma[last]−sma[first])/ATR ≥ this for R-RTP (both 20 & 50 must actually rise; symmetric for F-RTP). SMA lag makes slopes shallower.
+        // SMA pattern trade filters
         // When ON, buys require R-RTP pattern and sells require F-RTP pattern (direction-matched).
-        // Single toggle replaces the old buyRequiresRrtp + sellRequiresFrtp pair.
         volatile boolean requireRtpPattern = false;
         volatile boolean skipTradesInZigZag = true; // when ON (default), all trades (buy & sell) blocked when pattern is ZIG ZAG
-        volatile double emaCloseDistanceAtr = 0.75;  // legacy — kept for backward compat with old risk-settings.json
-        // EMA level-count filter — counts CPR zones strictly between EMA and the broken level.
-        // Allow only when count == 0 (EMA is in the zone immediately adjacent to the broken level).
-        volatile boolean enableEmaLevelCountFilter = true;
+        volatile double smaCloseDistanceAtr = 0.75;  // legacy — kept for backward compat with old risk-settings.json
+        // SMA level-count filter — counts CPR zones strictly between SMA and the broken level.
+        // Allow only when count == 0 (SMA is in the zone immediately adjacent to the broken level).
+        volatile boolean enableSmaLevelCountFilter = true;
         volatile boolean enableSmallCandleFilter = false; // reject if candle move from breakout level < smallCandleAtrThreshold ATR
         volatile double smallCandleAtrThreshold = 0.5; // ATR multiplier for small candle filter
         volatile double wickRejectionRatio = 1.5; // breakout wick must be >= this * body to allow small body candle
@@ -94,11 +93,10 @@ public class RiskSettingsStore {
         volatile double fibStage1SlAtrMult = 1.0;     // stage 1 SL = entry ± N × ATR
         volatile double fibStage2TriggerPct = 78.6;   // LTP hits this % of range → stage 2 activates
         volatile double fibStage2SlPct = 61.8;        // stage 2 SL = base + this % of range
-        volatile boolean enableR2S2 = true;      // enable R2/S2 breakouts
-        volatile boolean enableR3S3 = true;      // enable R3/S3 breakouts
-        volatile double r2s2QtyFactor = 0.9;    // R2/S2 qty multiplier (one level beyond CPR)
-        volatile double r3s3QtyFactor = 0.75;   // R3/S3 qty multiplier
-        volatile double r4s4QtyFactor = 0.5;    // R4/S4 qty multiplier
+        // Extended-level breakouts (R3/S3, R4/S4) are skipped on normal IV/OV days but allowed
+        // on EV (gap up/down) days regardless. Toggles default ON (skip on normal days).
+        volatile boolean skipR3S3NormalDays = true;
+        volatile boolean skipR4S4NormalDays = true;
         volatile int    atrPeriod = 14;        // ATR lookback period for initial SL
         // Scanner settings
         volatile String signalSource    = "TRADINGVIEW"; // TRADINGVIEW or INTERNAL
@@ -131,7 +129,7 @@ public class RiskSettingsStore {
         volatile int openingRangeMinutes = 30; // 0=disabled, 15/30/45/60
         // Opening refresh — re-fetches today's candles from Fyers /data/history after
         // 9:20 to correct any wrong live-tick-built first candle (Fyers' live WS data is
-        // unreliable during 9:15-9:25 per their own docs). Re-seeds completedCandles, EMA, ATR,
+        // unreliable during 9:15-9:25 per their own docs). Re-seeds completedCandles, SMA, ATR,
         // firstCandleClose, dayOpen, OR. Configurable HH:mm time (IST).
         volatile boolean enableOpeningRefresh = true;
         volatile String  openingRefreshTime   = "09:25"; // IST, HH:mm
@@ -147,11 +145,11 @@ public class RiskSettingsStore {
         volatile boolean indexAlignmentHardSkip = false;      // true = hard skip opposed trades; false = keep probability, reduce qty
         // Soft-mode qty factor: when NIFTY opposes the trade and hard-skip is off, trade
         // fires at original probability (HPT) with qty multiplied by this factor.
-        // Rationale: stock's own alignment is intact (weekly+daily+EMA), only the index
+        // Rationale: stock's own alignment is intact (weekly+daily+SMA), only the index
         // is opposed — take the trade with reduced risk instead of downgrading to LPT.
         volatile double indexOpposedQtyFactor = 0.75;         // 0.75 = 25% reduction
         volatile boolean weeklyReversalHardSkip = true;        // true = skip trades opposed to weekly reversal; false = HPT→LPT
-        // Composite score range is ±10 (weekly ±2 + daily ±2 + EMA20 pos ±1 + EMA200 pos ±1 +
+        // Composite score range is ±10 (weekly ±2 + daily ±2 + SMA20 pos ±1 + SMA200 pos ±1 +
         // cross ±2 + pattern ±2). Thresholds scaled to ~30% / ~60% of range.
         volatile int indexBullishThreshold = 3;               // score >= this → BULLISH
         volatile int indexStrongBullishThreshold = 6;         // score >= this → STRONG_BULLISH
@@ -184,7 +182,6 @@ public class RiskSettingsStore {
     public double getMaxDailyLoss()      { return cfg().totalCapital * cfg().maxRiskPerDayPct / 100.0; }
     public String getAutoSquareOffTime() { return cfg().autoSquareOffTime; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
-    public boolean isEnableR4S4()        { return cfg().enableR4S4; }
     public boolean isEnableSessionMoveLimit() { return cfg().enableSessionMoveLimit; }
     public double getSessionMoveLimit() { return cfg().sessionMoveLimit; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
@@ -201,16 +198,16 @@ public class RiskSettingsStore {
     public boolean isEnableDayHighLowTargetShift() { return cfg().enableDayHighLowTargetShift; }
     public double getDayHighLowShiftMinDistAtr() { return cfg().dayHighLowShiftMinDistAtr; }
     public boolean isEnableWeeklyLevelTargetShift() { return cfg().enableWeeklyLevelTargetShift; }
-    public boolean isEnableWeeklyEmaTargetShift()   { return cfg().enableWeeklyEmaTargetShift; }
+    public boolean isEnableWeeklySmaTargetShift()   { return cfg().enableWeeklySmaTargetShift; }
     public boolean isEnableHtfHurdleFilter()    { return cfg().enableHtfHurdleFilter; }
     public boolean isEnableStructuralSl()    { return cfg().enableStructuralSl; }
     public double  getStructuralSlBufferAtr(){ return cfg().structuralSlBufferAtr; }
     public double getDayHighLowMinAtr()            { return cfg().dayHighLowMinAtr; }
     public boolean isEnableRiskRewardFilter()      { return cfg().enableRiskRewardFilter; }
     public double  getMinRiskRewardRatio()         { return cfg().minRiskRewardRatio; }
-    public boolean isEnableEmaTrendCheck()          { return cfg().enableEmaTrendCheck; }
-    public boolean isEnableEmaVsAtpCheck()          { return cfg().enableEmaVsAtpCheck; }
-    public int    getEmaPatternLookback()           { return cfg().emaPatternLookback; }
+    public boolean isEnableSmaTrendCheck()          { return cfg().enableSmaTrendCheck; }
+    public boolean isEnableSmaVsAtpCheck()          { return cfg().enableSmaVsAtpCheck; }
+    public int    getSmaPatternLookback()           { return cfg().smaPatternLookback; }
     public int    getBraidedMinCrossovers()         { return cfg().braidedMinCrossovers; }
     public double getBraidedMaxSpreadAtr()          { return cfg().braidedMaxSpreadAtr; }
     public double getRailwayMaxCv()                 { return cfg().railwayMaxCv; }
@@ -218,8 +215,8 @@ public class RiskSettingsStore {
     public double getRailwayMinSlopeAtr()           { return cfg().railwayMinSlopeAtr; }
     public boolean isRequireRtpPattern()            { return cfg().requireRtpPattern; }
     public boolean isSkipTradesInZigZag()           { return cfg().skipTradesInZigZag; }
-    public double getEmaCloseDistanceAtr()         { return cfg().emaCloseDistanceAtr; }
-    public boolean isEnableEmaLevelCountFilter()   { return cfg().enableEmaLevelCountFilter; }
+    public double getSmaCloseDistanceAtr()         { return cfg().smaCloseDistanceAtr; }
+    public boolean isEnableSmaLevelCountFilter()   { return cfg().enableSmaLevelCountFilter; }
     public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
     public boolean isEnableSmallCandleFilter() { return cfg().enableSmallCandleFilter; }
     public boolean isEnableLargeCandleBodyFilter() { return cfg().enableLargeCandleBodyFilter; }
@@ -229,11 +226,8 @@ public class RiskSettingsStore {
     public double getFibStage1SlAtrMult()  { return cfg().fibStage1SlAtrMult; }
     public double getFibStage2TriggerPct() { return cfg().fibStage2TriggerPct; }
     public double getFibStage2SlPct()      { return cfg().fibStage2SlPct; }
-    public boolean isEnableR2S2() { return cfg().enableR2S2; }
-    public boolean isEnableR3S3() { return cfg().enableR3S3; }
-    public double getR2s2QtyFactor() { return cfg().r2s2QtyFactor; }
-    public double getR3s3QtyFactor() { return cfg().r3s3QtyFactor; }
-    public double getR4s4QtyFactor() { return cfg().r4s4QtyFactor; }
+    public boolean isSkipR3S3NormalDays() { return cfg().skipR3S3NormalDays; }
+    public boolean isSkipR4S4NormalDays() { return cfg().skipR4S4NormalDays; }
     public int getAtrPeriod() { return cfg().atrPeriod; }
     public double getSmallCandleAtrThreshold() { return cfg().smallCandleAtrThreshold; }
     public double getWickRejectionRatio() { return cfg().wickRejectionRatio; }
@@ -325,7 +319,6 @@ public class RiskSettingsStore {
     public void setRiskPerTrade(double v)      { cfg().riskPerTrade = v; }
     public void setAutoSquareOffTime(String v) { cfg().autoSquareOffTime = v; }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
-    public void setEnableR4S4(boolean v)       { cfg().enableR4S4 = v; }
     public void setEnableSessionMoveLimit(boolean v) { cfg().enableSessionMoveLimit = v; }
     public void setSessionMoveLimit(double v) { cfg().sessionMoveLimit = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
@@ -342,19 +335,19 @@ public class RiskSettingsStore {
     public void setEnableDayHighLowTargetShift(boolean v) { cfg().enableDayHighLowTargetShift = v; }
     public void setDayHighLowShiftMinDistAtr(double v) { cfg().dayHighLowShiftMinDistAtr = v; }
     public void setEnableWeeklyLevelTargetShift(boolean v) { cfg().enableWeeklyLevelTargetShift = v; }
-    public void setEnableWeeklyEmaTargetShift(boolean v)   { cfg().enableWeeklyEmaTargetShift = v; }
+    public void setEnableWeeklySmaTargetShift(boolean v)   { cfg().enableWeeklySmaTargetShift = v; }
     public void setEnableHtfHurdleFilter(boolean v)    { cfg().enableHtfHurdleFilter = v; }
     public void setEnableStructuralSl(boolean v)    { cfg().enableStructuralSl = v; }
     public void setStructuralSlBufferAtr(double v)  { cfg().structuralSlBufferAtr = v; }
     public void setDayHighLowMinAtr(double v)              { cfg().dayHighLowMinAtr = v; }
     public void setEnableRiskRewardFilter(boolean v)       { cfg().enableRiskRewardFilter = v; }
     public void setMinRiskRewardRatio(double v)            { cfg().minRiskRewardRatio = v; }
-    public void setEnableEmaTrendCheck(boolean v)         { cfg().enableEmaTrendCheck = v; }
-    public void setEnableEmaVsAtpCheck(boolean v)         { cfg().enableEmaVsAtpCheck = v; }
+    public void setEnableSmaTrendCheck(boolean v)         { cfg().enableSmaTrendCheck = v; }
+    public void setEnableSmaVsAtpCheck(boolean v)         { cfg().enableSmaVsAtpCheck = v; }
     public void setRequireRtpPattern(boolean v)           { cfg().requireRtpPattern = v; }
     public void setSkipTradesInZigZag(boolean v)          { cfg().skipTradesInZigZag = v; }
-    public void setEmaCloseDistanceAtr(double v)           { cfg().emaCloseDistanceAtr = v; }
-    public void setEnableEmaLevelCountFilter(boolean v)    { cfg().enableEmaLevelCountFilter = v; }
+    public void setSmaCloseDistanceAtr(double v)           { cfg().smaCloseDistanceAtr = v; }
+    public void setEnableSmaLevelCountFilter(boolean v)    { cfg().enableSmaLevelCountFilter = v; }
     public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
     public void setEnableSmallCandleFilter(boolean v) { cfg().enableSmallCandleFilter = v; }
     public void setEnableLargeCandleBodyFilter(boolean v) { cfg().enableLargeCandleBodyFilter = v; }
@@ -364,11 +357,8 @@ public class RiskSettingsStore {
     public void setFibStage1SlAtrMult(double v)  { cfg().fibStage1SlAtrMult = v; }
     public void setFibStage2TriggerPct(double v) { cfg().fibStage2TriggerPct = v; }
     public void setFibStage2SlPct(double v)      { cfg().fibStage2SlPct = v; }
-    public void setEnableR2S2(boolean v) { cfg().enableR2S2 = v; }
-    public void setEnableR3S3(boolean v) { cfg().enableR3S3 = v; }
-    public void setR2s2QtyFactor(double v) { cfg().r2s2QtyFactor = v; }
-    public void setR3s3QtyFactor(double v) { cfg().r3s3QtyFactor = v; }
-    public void setR4s4QtyFactor(double v) { cfg().r4s4QtyFactor = v; }
+    public void setSkipR3S3NormalDays(boolean v) { cfg().skipR3S3NormalDays = v; }
+    public void setSkipR4S4NormalDays(boolean v) { cfg().skipR4S4NormalDays = v; }
     public void setAtrPeriod(int v) { cfg().atrPeriod = v; }
     public void setSmallCandleAtrThreshold(double v) { cfg().smallCandleAtrThreshold = v; }
     public void setWickRejectionRatio(double v) { cfg().wickRejectionRatio = v; }
@@ -386,7 +376,6 @@ public class RiskSettingsStore {
     public double getMaxDailyLoss(String mode)      { return cfgFor(mode).totalCapital * cfgFor(mode).maxRiskPerDayPct / 100.0; }
     public String getAutoSquareOffTime(String mode) { return cfgFor(mode).autoSquareOffTime; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
-    public boolean isEnableR4S4(String mode)       { return cfgFor(mode).enableR4S4; }
     public double getSessionMoveLimit(String mode) { return cfgFor(mode).sessionMoveLimit; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
     public double getSttRate(String mode)         { return cfgFor(mode).sttRate; }
@@ -415,7 +404,6 @@ public class RiskSettingsStore {
     public void setRiskPerTrade(String mode, double v)      { cfgFor(mode).riskPerTrade = v; }
     public void setAutoSquareOffTime(String mode, String v) { cfgFor(mode).autoSquareOffTime = v; }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
-    public void setEnableR4S4(String mode, boolean v)       { cfgFor(mode).enableR4S4 = v; }
     public void setSessionMoveLimit(String mode, double v) { cfgFor(mode).sessionMoveLimit = v; }
     public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
     public void setSttRate(String mode, double v)         { cfgFor(mode).sttRate = v; }
@@ -454,7 +442,6 @@ public class RiskSettingsStore {
             upsert("riskPerTrade", String.valueOf(c.riskPerTrade));
             upsert("autoSquareOffTime", c.autoSquareOffTime);
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
-            upsert("enableR4S4", String.valueOf(c.enableR4S4));
             upsert("enableSessionMoveLimit", String.valueOf(c.enableSessionMoveLimit));
             upsert("sessionMoveLimit", String.valueOf(c.sessionMoveLimit));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
@@ -471,19 +458,25 @@ public class RiskSettingsStore {
             upsert("enableDayHighLowTargetShift", String.valueOf(c.enableDayHighLowTargetShift));
             upsert("dayHighLowShiftMinDistAtr", String.valueOf(c.dayHighLowShiftMinDistAtr));
             upsert("enableWeeklyLevelTargetShift", String.valueOf(c.enableWeeklyLevelTargetShift));
-            upsert("enableWeeklyEmaTargetShift", String.valueOf(c.enableWeeklyEmaTargetShift));
+            upsert("enableWeeklySmaTargetShift", String.valueOf(c.enableWeeklySmaTargetShift));
             upsert("enableHtfHurdleFilter", String.valueOf(c.enableHtfHurdleFilter));
             upsert("enableStructuralSl", String.valueOf(c.enableStructuralSl));
             upsert("structuralSlBufferAtr", String.valueOf(c.structuralSlBufferAtr));
             upsert("dayHighLowMinAtr", String.valueOf(c.dayHighLowMinAtr));
             upsert("enableRiskRewardFilter", String.valueOf(c.enableRiskRewardFilter));
             upsert("minRiskRewardRatio", String.valueOf(c.minRiskRewardRatio));
-            upsert("enableEmaTrendCheck", String.valueOf(c.enableEmaTrendCheck));
-            upsert("enableEmaVsAtpCheck", String.valueOf(c.enableEmaVsAtpCheck));
+            upsert("enableSmaTrendCheck", String.valueOf(c.enableSmaTrendCheck));
+            upsert("enableSmaVsAtpCheck", String.valueOf(c.enableSmaVsAtpCheck));
+            upsert("smaPatternLookback", String.valueOf(c.smaPatternLookback));
+            upsert("braidedMinCrossovers", String.valueOf(c.braidedMinCrossovers));
+            upsert("braidedMaxSpreadAtr", String.valueOf(c.braidedMaxSpreadAtr));
+            upsert("railwayMaxCv", String.valueOf(c.railwayMaxCv));
+            upsert("railwayMinSpreadAtr", String.valueOf(c.railwayMinSpreadAtr));
+            upsert("railwayMinSlopeAtr", String.valueOf(c.railwayMinSlopeAtr));
             upsert("requireRtpPattern", String.valueOf(c.requireRtpPattern));
             upsert("skipTradesInZigZag", String.valueOf(c.skipTradesInZigZag));
-            upsert("emaCloseDistanceAtr", String.valueOf(c.emaCloseDistanceAtr));
-            upsert("enableEmaLevelCountFilter", String.valueOf(c.enableEmaLevelCountFilter));
+            upsert("smaCloseDistanceAtr", String.valueOf(c.smaCloseDistanceAtr));
+            upsert("enableSmaLevelCountFilter", String.valueOf(c.enableSmaLevelCountFilter));
             upsert("enableTargetShift", String.valueOf(c.enableTargetShift));
             upsert("enableSmallCandleFilter", String.valueOf(c.enableSmallCandleFilter));
             upsert("enableLargeCandleBodyFilter", String.valueOf(c.enableLargeCandleBodyFilter));
@@ -499,11 +492,8 @@ public class RiskSettingsStore {
             upsert("fibStage1SlAtrMult",  String.valueOf(c.fibStage1SlAtrMult));
             upsert("fibStage2TriggerPct", String.valueOf(c.fibStage2TriggerPct));
             upsert("fibStage2SlPct",      String.valueOf(c.fibStage2SlPct));
-            upsert("enableR2S2", String.valueOf(c.enableR2S2));
-            upsert("enableR3S3", String.valueOf(c.enableR3S3));
-            upsert("r2s2QtyFactor", String.valueOf(c.r2s2QtyFactor));
-            upsert("r3s3QtyFactor", String.valueOf(c.r3s3QtyFactor));
-            upsert("r4s4QtyFactor", String.valueOf(c.r4s4QtyFactor));
+            upsert("skipR3S3NormalDays", String.valueOf(c.skipR3S3NormalDays));
+            upsert("skipR4S4NormalDays", String.valueOf(c.skipR4S4NormalDays));
             upsert("atrPeriod", String.valueOf(c.atrPeriod));
             upsert("signalSource", c.signalSource);
             upsert("scannerTimeframe", String.valueOf(c.scannerTimeframe));
@@ -573,7 +563,6 @@ public class RiskSettingsStore {
                     case "riskPerTrade"      -> c.riskPerTrade = Double.parseDouble(v);
                     case "autoSquareOffTime" -> c.autoSquareOffTime = v;
                     case "atrMultiplier"     -> c.atrMultiplier = Double.parseDouble(v);
-                    case "enableR4S4"        -> c.enableR4S4 = Boolean.parseBoolean(v);
                     case "enableSessionMoveLimit" -> c.enableSessionMoveLimit = Boolean.parseBoolean(v);
                     case "sessionMoveLimit"  -> c.sessionMoveLimit = Double.parseDouble(v);
                     case "brokeragePerOrder" -> c.brokeragePerOrder = Double.parseDouble(v);
@@ -591,24 +580,30 @@ public class RiskSettingsStore {
                     case "enableDayHighLowTargetShift" -> c.enableDayHighLowTargetShift = Boolean.parseBoolean(v);
                     case "dayHighLowShiftMinDistAtr" -> c.dayHighLowShiftMinDistAtr = Double.parseDouble(v);
                     case "enableWeeklyLevelTargetShift" -> c.enableWeeklyLevelTargetShift = Boolean.parseBoolean(v);
-                    case "enableWeeklyEmaTargetShift" -> c.enableWeeklyEmaTargetShift = Boolean.parseBoolean(v);
+                    case "enableWeeklyEmaTargetShift", "enableWeeklySmaTargetShift" -> c.enableWeeklySmaTargetShift = Boolean.parseBoolean(v);
                     case "enableHtfHurdleFilter" -> c.enableHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "enableStructuralSl"    -> c.enableStructuralSl = Boolean.parseBoolean(v);
                     case "structuralSlBufferAtr" -> c.structuralSlBufferAtr = Double.parseDouble(v);
                     case "dayHighLowMinAtr" -> c.dayHighLowMinAtr = Double.parseDouble(v);
                     case "enableRiskRewardFilter" -> c.enableRiskRewardFilter = Boolean.parseBoolean(v);
                     case "minRiskRewardRatio" -> c.minRiskRewardRatio = Double.parseDouble(v);
-                    case "enableEmaTrendCheck" -> c.enableEmaTrendCheck = Boolean.parseBoolean(v);
+                    case "enableEmaTrendCheck", "enableSmaTrendCheck" -> c.enableSmaTrendCheck = Boolean.parseBoolean(v);
                     // Legacy keys — silently ignored (semantics differ, no safe fold).
                     case "enableEmaDirectionCheck", "enableEma200DirectionCheck", "enableEmaCrossoverCheck" -> { /* legacy */ }
-                    case "enableEmaVsAtpCheck" -> c.enableEmaVsAtpCheck = Boolean.parseBoolean(v);
+                    case "enableEmaVsAtpCheck", "enableSmaVsAtpCheck" -> c.enableSmaVsAtpCheck = Boolean.parseBoolean(v);
+                    case "emaPatternLookback", "smaPatternLookback" -> c.smaPatternLookback = Integer.parseInt(v);
+                    case "braidedMinCrossovers" -> c.braidedMinCrossovers = Integer.parseInt(v);
+                    case "braidedMaxSpreadAtr" -> c.braidedMaxSpreadAtr = Double.parseDouble(v);
+                    case "railwayMaxCv" -> c.railwayMaxCv = Double.parseDouble(v);
+                    case "railwayMinSpreadAtr" -> c.railwayMinSpreadAtr = Double.parseDouble(v);
+                    case "railwayMinSlopeAtr" -> c.railwayMinSlopeAtr = Double.parseDouble(v);
                     case "requireRtpPattern" -> c.requireRtpPattern = Boolean.parseBoolean(v);
                     // Legacy: if either old toggle was ON, new combined toggle is ON.
                     case "buyRequiresRrtp", "sellRequiresFrtp" -> { if (Boolean.parseBoolean(v)) c.requireRtpPattern = true; }
                     case "skipTradesInZigZag" -> c.skipTradesInZigZag = Boolean.parseBoolean(v);
                     case "allowTradesInZigZag" -> c.skipTradesInZigZag = !Boolean.parseBoolean(v); // legacy (inverted semantic)
-                    case "emaCloseDistanceAtr" -> c.emaCloseDistanceAtr = Double.parseDouble(v);
-                    case "enableEmaLevelCountFilter" -> c.enableEmaLevelCountFilter = Boolean.parseBoolean(v);
+                    case "emaCloseDistanceAtr", "smaCloseDistanceAtr" -> c.smaCloseDistanceAtr = Double.parseDouble(v);
+                    case "enableEmaLevelCountFilter", "enableSmaLevelCountFilter" -> c.enableSmaLevelCountFilter = Boolean.parseBoolean(v);
                     case "enableTargetShift" -> c.enableTargetShift = Boolean.parseBoolean(v);
                     case "enableSmallCandleFilter" -> c.enableSmallCandleFilter = Boolean.parseBoolean(v);
                     case "enableLargeCandleBodyFilter" -> c.enableLargeCandleBodyFilter = Boolean.parseBoolean(v);
@@ -624,11 +619,8 @@ public class RiskSettingsStore {
                     case "fibStage1SlAtrMult"  -> c.fibStage1SlAtrMult  = Double.parseDouble(v);
                     case "fibStage2TriggerPct" -> c.fibStage2TriggerPct = Double.parseDouble(v);
                     case "fibStage2SlPct"      -> c.fibStage2SlPct      = Double.parseDouble(v);
-                    case "enableR2S2" -> c.enableR2S2 = Boolean.parseBoolean(v);
-                    case "enableR3S3" -> c.enableR3S3 = Boolean.parseBoolean(v);
-                    case "r2s2QtyFactor" -> c.r2s2QtyFactor = Double.parseDouble(v);
-                    case "r3s3QtyFactor" -> c.r3s3QtyFactor = Double.parseDouble(v);
-                    case "r4s4QtyFactor" -> c.r4s4QtyFactor = Double.parseDouble(v);
+                    case "skipR3S3NormalDays" -> c.skipR3S3NormalDays = Boolean.parseBoolean(v);
+                    case "skipR4S4NormalDays" -> c.skipR4S4NormalDays = Boolean.parseBoolean(v);
                     case "atrPeriod" -> c.atrPeriod = Integer.parseInt(v);
                     case "signalSource"      -> c.signalSource = v;
                     case "scannerTimeframe"  -> c.scannerTimeframe = Integer.parseInt(v);
@@ -679,7 +671,7 @@ public class RiskSettingsStore {
                     case "indexStrongBearishThreshold" -> c.indexStrongBearishThreshold = Integer.parseInt(v);
                 }
             }
-            log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} enableR4S4={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} trailingSl={}", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.enableR4S4, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.enableTrailingSl);
+            log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} trailingSl={} skipR3S3={} skipR4S4={}", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.enableTrailingSl, c.skipR3S3NormalDays, c.skipR4S4NormalDays);
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to load {}: {}", mode, e.getMessage());
         }

@@ -159,11 +159,11 @@ function renderMonitoring(d) {
     html += '<div style="border-top:1px dashed var(--border);margin:6px 0;"></div>';
     var wc = sc.watchlistCount || 0;
     var atrOk = (sc.atrLoaded || 0) >= wc && wc > 0;
-    var emaOk = (sc.emaLoaded || 0) >= wc && wc > 0;
+    var smaOk = (sc.smaLoaded || 0) >= wc && wc > 0;
     var fcOk  = (sc.firstCandleLoaded || 0) >= wc && wc > 0;
-    html += row('EMA 20 Loaded', (sc.emaLoaded || 0) + '/' + wc, emaOk ? 'ok' : (sc.emaLoaded > 0 ? 'warn' : 'err'));
-    var ema200Ok = (sc.ema200Loaded || 0) >= wc && wc > 0;
-    html += row('EMA 200 Loaded', (sc.ema200Loaded || 0) + '/' + wc, ema200Ok ? 'ok' : (sc.ema200Loaded > 0 ? 'warn' : 'err'));
+    html += row('SMA 20 Loaded', (sc.smaLoaded || 0) + '/' + wc, smaOk ? 'ok' : (sc.smaLoaded > 0 ? 'warn' : 'err'));
+    var sma200Ok = (sc.sma200Loaded || 0) >= wc && wc > 0;
+    html += row('SMA 200 Loaded', (sc.sma200Loaded || 0) + '/' + wc, sma200Ok ? 'ok' : (sc.sma200Loaded > 0 ? 'warn' : 'err'));
     html += row('1st Bar Close', (sc.firstCandleLoaded || 0) + '/' + wc, fcOk ? 'ok' : (sc.firstCandleLoaded > 0 ? 'warn' : 'err'));
     var vPass = sc.validationPass, vFail = sc.validationFail, vTotal = sc.validationTotal;
     if (vTotal != null && vTotal >= 0) {

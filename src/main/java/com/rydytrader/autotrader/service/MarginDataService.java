@@ -120,7 +120,7 @@ public class MarginDataService {
             // Only show "waiting for login" message if NOT already logged in
             String token = tokenStore != null ? tokenStore.getAccessToken() : null;
             if (token == null || token.isEmpty()) {
-                eventService.log("[INFO] Waiting for Fyers login to load ATR, EMA and weekly trends...");
+                eventService.log("[INFO] Waiting for Fyers login to load ATR, SMA and weekly trends...");
             }
 
         } catch (Exception e) {

@@ -285,7 +285,7 @@
                         <input type="number" id="structuralSlBufferAtr" class="form-control" min="0.1" max="3" step="0.1" style="width:75px; text-align:center;" placeholder="1.0">
                         <span style="color:var(--text-secondary); font-size:0.82rem;">× ATR</span>
                     </div>
-                    <div class="form-hint">SL = anchor ± buffer × ATR(period). Anchored to the broken level (CPR, R1/PDH, R2, etc.) or 20 EMA (for DH/DL breakouts). ATR period also used for candle filters and volatility measures.</div>
+                    <div class="form-hint">SL = anchor ± buffer × ATR(period). Anchored to the broken level (CPR, R1/PDH, R2, etc.) or 20 SMA (for DH/DL breakouts). ATR period also used for candle filters and volatility measures.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Risk / Reward Filter</label>
@@ -318,27 +318,6 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">% Fib of range</span>
                     </div>
                     <div class="form-hint">Range = breakout level (0%) → target (100%). SL only tightens, never widens. For split-target trades, trailing is suppressed until T1 fills; after T1, Fibonacci activates on the remaining qty using the same thresholds. Defaults: 61.8 / 1 / 78.6 / 61.8.</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Extended Level Signals</label>
-                    <div style="display:flex; flex-direction:column; gap:8px; margin-top:4px;">
-                        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
-                            <input type="checkbox" id="enableR2S2" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> R2/S2
-                            <span style="color:var(--text-muted);font-size:0.72rem;margin-left:4px;">Qty ×</span>
-                            <input type="number" id="r2s2QtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        </div>
-                        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
-                            <input type="checkbox" id="enableR3S3" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> R3/S3
-                            <span style="color:var(--text-muted);font-size:0.72rem;margin-left:4px;">Qty ×</span>
-                            <input type="number" id="r3s3QtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        </div>
-                        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
-                            <input type="checkbox" id="enableR4S4" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> R4/S4
-                            <span style="color:var(--text-muted);font-size:0.72rem;margin-left:4px;">Qty ×</span>
-                            <input type="number" id="r4s4QtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        </div>
-                    </div>
-                    <div class="form-hint">R2/S2, R3/S3, and R4/S4 each have independent enable toggles and qty factors. Default factors: R2/S2 = 0.9, R3/S3 = 0.75, R4/S4 = 0.5. Set factor to 1.0 for full qty.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Session Move Limit</label>
@@ -382,10 +361,10 @@
         <div class="section-body">
             <div class="form-grid">
                 <div class="form-group">
-                    <label class="form-label">EMA Price and Pattern Filter</label>
+                    <label class="form-label">SMA Price and Pattern Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableEmaTrendCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Price</b>: 5-min EMA trend — close above/below EMA 20, 50, 200 together</span>
+                        <input type="checkbox" id="enableSmaTrendCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Price</b>: 5-min SMA trend — close above/below SMA 20, 50, 200 together</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="requireRtpPattern" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
@@ -395,7 +374,7 @@
                         <input type="checkbox" id="skipTradesInZigZag" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Pattern</b>: skip trades when 5-min pattern is <b style="color:var(--accent-red);">ZIG ZAG</b> (choppy)</span>
                     </div>
-                    <div class="form-hint">Two dimensions gate an entry: <b>price position</b> vs EMAs and <b>pattern</b> of the 20/50 EMAs. Combine them for stricter setups — e.g. price gate + R-RTP for buy = 5-min STRONG BULLISH only. Each can run independently: RRTP alone allows pullback entries (valid trend structure, price may be inside the EMAs); price-only allows trades without pattern confirmation. Fail-open when any EMA is warming up. When the price gate is OFF, the 200 EMA becomes a target-shift candidate.</div>
+                    <div class="form-hint">Two dimensions gate an entry: <b>price position</b> vs SMAs and <b>pattern</b> of the 20/50 SMAs. Combine them for stricter setups — e.g. price gate + R-RTP for buy = 5-min STRONG BULLISH only. Each can run independently: RRTP alone allows pullback entries (valid trend structure, price may be inside the SMAs); price-only allows trades without pattern confirmation. Fail-open when any SMA is warming up. When the price gate is OFF, the 200 SMA becomes a target-shift candidate.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">VWAP Confirmation (ATP)</label>
@@ -404,10 +383,10 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only above ATP (VWAP), sell only below ATP</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="enableEmaVsAtpCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only when 20 EMA &gt; ATP, sell only when 20 EMA &lt; ATP</span>
+                        <input type="checkbox" id="enableSmaVsAtpCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only when 20 SMA &gt; ATP, sell only when 20 SMA &lt; ATP</span>
                     </div>
-                    <div class="form-hint">ATP is the exchange's VWAP — today's volume-weighted average price. Resets daily, independent of EMAs (which span days). Captures intraday sentiment: price above ATP = bulls in control today, below = bears. Complements the EMA filter above.</div>
+                    <div class="form-hint">ATP is the exchange's VWAP — today's volume-weighted average price. Resets daily, independent of SMAs (which span days). Captures intraday sentiment: price above ATP = bulls in control today, below = bears. Complements the SMA filter above.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Small Candle Filter</label>
@@ -450,12 +429,12 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">20 EMA Level Count Filter</label>
+                    <label class="form-label">20 SMA Level Count Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
-                        <input type="checkbox" id="enableEmaLevelCountFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip if any CPR zone sits between EMA and the broken level</span>
+                        <input type="checkbox" id="enableSmaLevelCountFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip if any CPR zone sits between SMA and the broken level</span>
                     </div>
-                    <div class="form-hint">Counts CPR zones (S4, S3, S2, S1/PDL, CPR, R1/PDH, R2, R3, R4) strictly between the 20 EMA and the breakout level. Pair zones (CPR, R1/PDH, S1/PDL) count as one. If the count is 0 (EMA is in the zone immediately adjacent to the broken level) the trade fires. If 1 or more zones sit between, the setup is stale and the trade is skipped. Day High / Day Low setups follow the same rule — no CPR zone exclusion.</div>
+                    <div class="form-hint">Counts CPR zones (S4, S3, S2, S1/PDL, CPR, R1/PDH, R2, R3, R4) strictly between the 20 SMA and the breakout level. Pair zones (CPR, R1/PDH, S1/PDL) count as one. If the count is 0 (SMA is in the zone immediately adjacent to the broken level) the trade fires. If 1 or more zones sit between, the setup is stale and the trade is skipped. Day High / Day Low setups follow the same rule — no CPR zone exclusion.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">HTF Hurdle Filter</label>
@@ -508,7 +487,19 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Strong bearish:</span>
                         <input type="number" id="indexStrongBearishThreshold" class="form-control" step="1" min="-10" max="10" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                     </div>
-                    <div class="form-hint">Composite NIFTY score from weekly CPR (&plusmn;2) + daily CPR (&plusmn;2) + EMA 20 position (&plusmn;1) + EMA 200 position (&plusmn;1) + EMA 20/50 vs 200 cross (&plusmn;2) + EMA 20/50 pattern R-RTP/F-RTP (&plusmn;2). Total range -10 to +10. Score thresholds map to 5 trend states (STRONG BEARISH / BEARISH / NEUTRAL / BULLISH / STRONG BULLISH). Trades opposing the NIFTY trend are either quantity-reduced by the soft-mode factor (default, HPT stays HPT) or skipped entirely (hard skip). LPT trades unaffected. The NIFTY card on the scanner page always shows the live composite state regardless of this toggle.</div>
+                    <div class="form-hint">Composite NIFTY score from weekly CPR (&plusmn;2) + daily CPR (&plusmn;2) + SMA 20 position (&plusmn;1) + SMA 200 position (&plusmn;1) + SMA 20/50 vs 200 cross (&plusmn;2) + SMA 20/50 pattern R-RTP/F-RTP (&plusmn;2). Total range -10 to +10. Score thresholds map to 5 trend states (STRONG BEARISH / BEARISH / NEUTRAL / BULLISH / STRONG BULLISH). Trades opposing the NIFTY trend are either quantity-reduced by the soft-mode factor (default, HPT stays HPT) or skipped entirely (hard skip). LPT trades unaffected. The NIFTY card on the scanner page always shows the live composite state regardless of this toggle.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Extended Level Signals (R3/S3, R4/S4)</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="skipR3S3NormalDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R3/S3 breakouts on normal (IV/OV) days</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="skipR4S4NormalDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R4/S4 breakouts on normal (IV/OV) days</span>
+                    </div>
+                    <div class="form-hint">Extended-level breakouts (R3/S3, R4/S4) are far from the daily CPR and historically unreliable on normal sessions. On EV days (gap up &ge; R2 or gap down &le; S2) they are always allowed — the gap provides the directional bias. R2/S2 always fires regardless. No per-level qty reduction.</div>
                 </div>
             </div>
         </div>
@@ -536,8 +527,8 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift to Weekly CPR levels</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="enableWeeklyEmaTargetShift" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift to Weekly (1h) EMA 20 / 50 / 200</span>
+                        <input type="checkbox" id="enableWeeklySmaTargetShift" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift to Weekly (1h) SMA 20 / 50 / 200</span>
                     </div>
                     <div class="form-hint">Toggle which level types are considered when shifting the structural target down to the nearest resistance/support between entry and target.</div>
                 </div>
@@ -643,7 +634,7 @@
                 <div class="form-group">
                     <label class="form-label">Trading Timeframe</label>
                     <input type="number" id="scannerTimeframe" class="form-control" min="1" max="60" step="1" placeholder="5">
-                    <div class="form-hint">Candle timeframe in minutes for breakout detection, ATR, EMA and daily trend</div>
+                    <div class="form-hint">Candle timeframe in minutes for breakout detection, ATR, SMA and daily trend</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Higher Timeframe</label>
@@ -658,7 +649,7 @@
                         <input type="time" id="openingRefreshTime" class="form-control" style="width:110px; padding:5px 8px; font-size:0.82rem; text-align:center;" placeholder="09:25">
                         <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">IST</span>
                     </div>
-                    <div class="form-hint">Fyers' live tick stream is unreliable during 9:15-9:25 per their own docs — the first 5-min candle built from ticks can have wrong open/high/low/close. At the configured time (default 09:25), the bot refetches today's candles from Fyers <code>/data/history</code> (authoritative exchange-aggregated bars) and overwrites firstCandleClose, dayOpen, OR high/low, EMA, ATR, and the completedCandles deque. This fixes IV/OV/EV classification, DH/DL breakout detection, target shift, and structural SL for late-subscribed symbols.</div>
+                    <div class="form-hint">Fyers' live tick stream is unreliable during 9:15-9:25 per their own docs — the first 5-min candle built from ticks can have wrong open/high/low/close. At the configured time (default 09:25), the bot refetches today's candles from Fyers <code>/data/history</code> (authoritative exchange-aggregated bars) and overwrites firstCandleClose, dayOpen, OR high/low, SMA, ATR, and the completedCandles deque. This fixes IV/OV/EV classification, DH/DL breakout detection, target shift, and structural SL for late-subscribed symbols.</div>
                 </div>
                 <div class="form-group" style="grid-column: 1 / -1;">
                     <label class="form-label">Signal Probability</label>
@@ -705,7 +696,7 @@
                             % (0 = no filter)
                         </label>
                     </div>
-                    <div class="form-hint">Width as % of close price. Stocks with CPR wider than threshold are excluded. You can tighten mid-day (fewer stocks from the existing set), but widening requires a restart (new stocks need WebSocket subscription + ATR/EMA seed).</div>
+                    <div class="form-hint">Width as % of close price. Stocks with CPR wider than threshold are excluded. You can tighten mid-day (fewer stocks from the existing set), but widening requires a restart (new stocks need WebSocket subscription + ATR/SMA seed).</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Stock Price Range (₹)</label>
@@ -1033,13 +1024,12 @@
             document.getElementById('fixedQuantity').value     = d.fixedQuantity    != null ? d.fixedQuantity : 2;
             document.getElementById('capitalPerTrade').value   = d.capitalPerTrade  != null ? d.capitalPerTrade : 0;
             // telegramAlertFrequency removed — notifications are event-driven only
-            document.getElementById('enableR4S4').checked      = d.enableR4S4        || false;
             // enableTargetShift removed — replaced by min target distance check
             // enableGapCheck removed — replaced by Opening Range filter
             document.getElementById('enableDayHighLowTargetShift').checked = d.enableDayHighLowTargetShift !== false;
             document.getElementById('dayHighLowShiftMinDistAtr').value = d.dayHighLowShiftMinDistAtr != null ? d.dayHighLowShiftMinDistAtr : 2.0;
             document.getElementById('enableWeeklyLevelTargetShift').checked = d.enableWeeklyLevelTargetShift !== false;
-            document.getElementById('enableWeeklyEmaTargetShift').checked = d.enableWeeklyEmaTargetShift !== false;
+            document.getElementById('enableWeeklySmaTargetShift').checked = d.enableWeeklySmaTargetShift !== false;
             document.getElementById('enableHtfHurdleFilter').checked = d.enableHtfHurdleFilter !== false;
             document.getElementById('enableStructuralSl').checked = d.enableStructuralSl === true;
             document.getElementById('structuralSlBufferAtr').value = d.structuralSlBufferAtr != null ? d.structuralSlBufferAtr : 1.0;
@@ -1048,11 +1038,11 @@
             document.getElementById('enableLargeCandleBodyFilter').checked = d.enableLargeCandleBodyFilter !== false;
             document.getElementById('largeCandleBodyAtrThreshold').value = d.largeCandleBodyAtrThreshold != null ? d.largeCandleBodyAtrThreshold : 4.0;
             document.getElementById('minRiskRewardRatio').value = d.minRiskRewardRatio != null ? d.minRiskRewardRatio : 1.0;
-            document.getElementById('enableEmaTrendCheck').checked = d.enableEmaTrendCheck !== false;
-            document.getElementById('enableEmaVsAtpCheck').checked = d.enableEmaVsAtpCheck !== false;
+            document.getElementById('enableSmaTrendCheck').checked = d.enableSmaTrendCheck !== false;
+            document.getElementById('enableSmaVsAtpCheck').checked = d.enableSmaVsAtpCheck !== false;
             document.getElementById('requireRtpPattern').checked = d.requireRtpPattern === true;
             document.getElementById('skipTradesInZigZag').checked = d.skipTradesInZigZag !== false;
-            document.getElementById('enableEmaLevelCountFilter').checked = d.enableEmaLevelCountFilter !== false;
+            document.getElementById('enableSmaLevelCountFilter').checked = d.enableSmaLevelCountFilter !== false;
             document.getElementById('enableSplitTarget').checked = d.enableSplitTarget !== false;
             document.getElementById('t1DistancePct').value = d.t1DistancePct || 50;
             document.getElementById('splitMinDistanceAtr').value = d.splitMinDistanceAtr || 0;
@@ -1108,11 +1098,8 @@
             document.getElementById('enableLpt').checked = d.enableLpt !== false;
             document.getElementById('lptQtyFactor').value = d.lptQtyFactor != null ? d.lptQtyFactor : 0.50;
             document.getElementById('minAbsoluteProfit').value = d.minAbsoluteProfit != null ? d.minAbsoluteProfit : 500;
-            document.getElementById('enableR2S2').checked = d.enableR2S2 !== false;
-            document.getElementById('enableR3S3').checked = d.enableR3S3 !== false;
-            document.getElementById('r3s3QtyFactor').value = d.r3s3QtyFactor || 0.75;
-            document.getElementById('r2s2QtyFactor').value = d.r2s2QtyFactor || 0.9;
-            document.getElementById('r4s4QtyFactor').value = d.r4s4QtyFactor || 0.5;
+            document.getElementById('skipR3S3NormalDays').checked = d.skipR3S3NormalDays !== false;
+            document.getElementById('skipR4S4NormalDays').checked = d.skipR4S4NormalDays !== false;
 
             const pnl    = d.todayPnl    || 0;
             const trades = d.todayTrades || 0;
@@ -1189,12 +1176,11 @@
                 fixedQuantity:    parseInt(document.getElementById('fixedQuantity').value),
                 capitalPerTrade:  parseFloat(document.getElementById('capitalPerTrade').value) || 0,
                 // telegramAlertFrequency removed
-                enableR4S4:        document.getElementById('enableR4S4').checked,
                 // enableTargetShift removed
                 enableDayHighLowTargetShift: document.getElementById('enableDayHighLowTargetShift').checked,
                 dayHighLowShiftMinDistAtr: parseFloat(document.getElementById('dayHighLowShiftMinDistAtr').value) || 1.0,
                 enableWeeklyLevelTargetShift: document.getElementById('enableWeeklyLevelTargetShift').checked,
-                enableWeeklyEmaTargetShift: document.getElementById('enableWeeklyEmaTargetShift').checked,
+                enableWeeklySmaTargetShift: document.getElementById('enableWeeklySmaTargetShift').checked,
                 enableHtfHurdleFilter: document.getElementById('enableHtfHurdleFilter').checked,
                 enableStructuralSl: document.getElementById('enableStructuralSl').checked,
                 structuralSlBufferAtr: parseFloat(document.getElementById('structuralSlBufferAtr').value) || 1.0,
@@ -1203,11 +1189,11 @@
                 enableLargeCandleBodyFilter: document.getElementById('enableLargeCandleBodyFilter').checked,
                 largeCandleBodyAtrThreshold: parseFloat(document.getElementById('largeCandleBodyAtrThreshold').value) || 4.0,
                 minRiskRewardRatio: parseFloat(document.getElementById('minRiskRewardRatio').value) || 1.0,
-                enableEmaTrendCheck: document.getElementById('enableEmaTrendCheck').checked,
-                enableEmaVsAtpCheck: document.getElementById('enableEmaVsAtpCheck').checked,
+                enableSmaTrendCheck: document.getElementById('enableSmaTrendCheck').checked,
+                enableSmaVsAtpCheck: document.getElementById('enableSmaVsAtpCheck').checked,
                 requireRtpPattern: document.getElementById('requireRtpPattern').checked,
                 skipTradesInZigZag: document.getElementById('skipTradesInZigZag').checked,
-                enableEmaLevelCountFilter: document.getElementById('enableEmaLevelCountFilter').checked,
+                enableSmaLevelCountFilter: document.getElementById('enableSmaLevelCountFilter').checked,
                 enableSplitTarget: document.getElementById('enableSplitTarget').checked,
                 t1DistancePct: parseInt(document.getElementById('t1DistancePct').value) || 50,
                 splitMinDistanceAtr: parseFloat(document.getElementById('splitMinDistanceAtr').value) || 0,
@@ -1264,11 +1250,8 @@
                 enableLpt: document.getElementById('enableLpt').checked,
                 lptQtyFactor: parseFloat(document.getElementById('lptQtyFactor').value) || 0.50,
                 minAbsoluteProfit: parseFloat(document.getElementById('minAbsoluteProfit').value) || 500,
-                enableR2S2: document.getElementById('enableR2S2').checked,
-                enableR3S3: document.getElementById('enableR3S3').checked,
-                r2s2QtyFactor: parseFloat(document.getElementById('r2s2QtyFactor').value) || 0.9,
-                r3s3QtyFactor: parseFloat(document.getElementById('r3s3QtyFactor').value) || 0.75,
-                r4s4QtyFactor: parseFloat(document.getElementById('r4s4QtyFactor').value) || 0.5,
+                skipR3S3NormalDays: document.getElementById('skipR3S3NormalDays').checked,
+                skipR4S4NormalDays: document.getElementById('skipR4S4NormalDays').checked,
             };
             const r = await fetch('/api/settings/risk', {
                 method: 'POST',

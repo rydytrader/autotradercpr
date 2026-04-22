@@ -173,7 +173,7 @@
                 <tr><th>Condition</th><th>Effect</th></tr>
                 <tr><td>Weekly + daily trend aligned with breakout</td><td>HPT (1.0x qty)</td></tr>
                 <tr><td>Breakout closes decisively outside OR</td><td>No probability downgrade</td></tr>
-                <tr><td>EMA close to broken level (no CPR zones between)</td><td>EMA level count filter passes (count = 0)</td></tr>
+                <tr><td>SMA close to broken level (no CPR zones between)</td><td>SMA level count filter passes (count = 0)</td></tr>
                 <tr><td>Reasonable distance from breakout level</td><td>Not flagged as large candle</td></tr>
                 <tr><td>VWAP/ATP confirms direction</td><td>Direction filter passes</td></tr>
             </table>
@@ -183,15 +183,15 @@
                 <tr><th>Condition</th><th>Reason</th></tr>
                 <tr><td>EV day + breakout inside OR</td><td>Gap day chop - highest risk, no trade</td></tr>
                 <tr><td>Wide candle (poor R/R due to wide SL)</td><td>R/R filter catches this — wide move → wide SL → bad reward:risk ratio</td></tr>
-                <tr><td>≥ 1 CPR zone sits between 20 EMA and broken level</td><td>Setup is stale (EMA is structurally too far)</td></tr>
+                <tr><td>≥ 1 CPR zone sits between 20 SMA and broken level</td><td>Setup is stale (SMA is structurally too far)</td></tr>
                 <tr><td>VWAP/ATP wrong side</td><td>No intraday confirmation</td></tr>
                 <tr><td>OR still forming on EV day</td><td>Wait for opening range to lock</td></tr>
                 <tr><td>Small candle (close too near level)</td><td>Weak breakout, unclear conviction</td></tr>
             </table>
 
             <h4>The Combined Effect</h4>
-            <p>On a sideways day, multiple filters compound: a counter-trend breakout inside OR with the close far from EMA might get LPT downgrade (x0.25), session move halving (x0.5), and a level factor (x0.75) - final size becomes a small fraction of base, or the trade gets skipped entirely. On a clean trending day, a weekly+daily aligned breakout with a tight candle close near EMA passes every filter at full HPT sizing.</p>
-            <p>You don't need to manually decide "is this a chop day?" The filters look at OR position, trend alignment, EMA distance, candle structure, session move, and gap classification independently - and the qty stack multiplies the results. Conviction signals get full size; weak signals get either reduced size or no trade.</p>
+            <p>On a sideways day, multiple filters compound: a counter-trend breakout inside OR with the close far from SMA might get LPT downgrade (x0.25), session move halving (x0.5), and a level factor (x0.75) - final size becomes a small fraction of base, or the trade gets skipped entirely. On a clean trending day, a weekly+daily aligned breakout with a tight candle close near SMA passes every filter at full HPT sizing.</p>
+            <p>You don't need to manually decide "is this a chop day?" The filters look at OR position, trend alignment, SMA distance, candle structure, session move, and gap classification independently - and the qty stack multiplies the results. Conviction signals get full size; weak signals get either reduced size or no trade.</p>
         </div>
     </div>
 
@@ -220,7 +220,7 @@
               <text x="310" y="92" text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="8">Daily OHLC + CPR levels</text>
               <rect x="420" y="55" width="180" height="50" rx="8" fill="rgba(251,191,36,0.12)" stroke="rgba(251,191,36,0.4)" stroke-width="1.5"/>
               <text x="510" y="76" text-anchor="middle" fill="rgba(251,191,36,0.9)" font-size="9" font-weight="700">FYERS HISTORY API</text>
-              <text x="510" y="92" text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="8">ATR(14) + EMA seed</text>
+              <text x="510" y="92" text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="8">ATR(14) + SMA seed</text>
               <!-- DUAL AGGREGATORS -->
               <rect x="50" y="140" width="200" height="60" rx="10" fill="rgba(99,179,237,0.08)" stroke="rgba(99,179,237,0.35)" stroke-width="1.5"/>
               <text x="150" y="163" text-anchor="middle" fill="rgba(99,179,237,0.9)" font-size="10" font-weight="700">CANDLE AGGREGATOR</text>
@@ -235,7 +235,7 @@
               <rect x="20" y="235" width="110" height="40" rx="6" fill="rgba(52,211,153,0.1)" stroke="rgba(52,211,153,0.3)" stroke-width="1"/>
               <text x="75" y="258" text-anchor="middle" fill="rgba(52,211,153,0.8)" font-size="9" font-weight="600">ATR</text>
               <rect x="145" y="235" width="110" height="40" rx="6" fill="rgba(52,211,153,0.1)" stroke="rgba(52,211,153,0.3)" stroke-width="1"/>
-              <text x="200" y="258" text-anchor="middle" fill="rgba(52,211,153,0.8)" font-size="9" font-weight="600">20 EMA</text>
+              <text x="200" y="258" text-anchor="middle" fill="rgba(52,211,153,0.8)" font-size="9" font-weight="600">20 SMA</text>
               <rect x="270" y="235" width="150" height="40" rx="6" fill="rgba(251,191,36,0.1)" stroke="rgba(251,191,36,0.3)" stroke-width="1"/>
               <text x="345" y="253" text-anchor="middle" fill="rgba(251,191,36,0.8)" font-size="9" font-weight="600">WEEKLY CPR</text>
               <text x="345" y="266" text-anchor="middle" fill="rgba(255,255,255,0.4)" font-size="7">Daily Trend (5m close)</text>
@@ -266,7 +266,7 @@
               <rect x="640" y="202" width="240" height="22" rx="4" fill="rgba(99,179,237,0.06)" stroke="rgba(99,179,237,0.2)" stroke-width="0.8"/>
               <text x="760" y="217" text-anchor="middle" fill="rgba(99,179,237,0.7)" font-size="8">2. Candle Filters (large/small/volume/wick)</text>
               <rect x="640" y="229" width="240" height="22" rx="4" fill="rgba(99,179,237,0.06)" stroke="rgba(99,179,237,0.2)" stroke-width="0.8"/>
-              <text x="760" y="244" text-anchor="middle" fill="rgba(99,179,237,0.7)" font-size="8">3. EMA Direction + Distance</text>
+              <text x="760" y="244" text-anchor="middle" fill="rgba(99,179,237,0.7)" font-size="8">3. SMA Direction + Distance</text>
               <rect x="640" y="256" width="240" height="22" rx="4" fill="rgba(251,191,36,0.06)" stroke="rgba(251,191,36,0.2)" stroke-width="0.8"/>
               <text x="760" y="271" text-anchor="middle" fill="rgba(251,191,36,0.7)" font-size="8">4. Weekly Reversal Check (R)</text>
               <rect x="640" y="283" width="240" height="22" rx="4" fill="rgba(52,211,153,0.06)" stroke="rgba(52,211,153,0.2)" stroke-width="0.8"/>
@@ -324,7 +324,7 @@
               <circle cx="175" cy="695" r="5" fill="rgba(52,211,153,0.6)"/><text x="187" y="699" fill="rgba(255,255,255,0.4)" font-size="7">Computation/Order</text>
               <circle cx="320" cy="695" r="5" fill="rgba(251,191,36,0.6)"/><text x="332" y="699" fill="rgba(255,255,255,0.4)" font-size="7">Higher TF/Reversal</text>
               <circle cx="470" cy="695" r="5" fill="rgba(239,68,68,0.6)"/><text x="482" y="699" fill="rgba(255,255,255,0.4)" font-size="7">Scanner/Exit</text>
-              <text x="620" y="699" fill="rgba(255,255,255,0.3)" font-size="7">Arrows show sequential candle-close listener chain (ATR → EMA → WeeklyCPR → Scanner)</text>
+              <text x="620" y="699" fill="rgba(255,255,255,0.3)" font-size="7">Arrows show sequential candle-close listener chain (ATR → SMA → WeeklyCPR → Scanner)</text>
             </svg>
         </div>
     </div>
@@ -546,18 +546,18 @@
                 <tr><td><strong>SELL_BELOW_DL</strong></td><td>Candle closes below current session low with red candle</td></tr>
                 <tr><td><strong>Priority</strong></td><td>Lowest — only fires when NO CPR level was broken on the same candle.</td></tr>
                 <tr><td><strong>OR Lock Guard</strong></td><td>DH/DL only fires after the Opening Range locks.</td></tr>
-                <tr><td><strong>Structural SL</strong></td><td>Anchored to the <strong>20 EMA</strong> (trend support/resistance) instead of a CPR level. SL = 20 EMA ± buffer × ATR. If price falls back through the EMA, the breakout has failed.</td></tr>
+                <tr><td><strong>Structural SL</strong></td><td>Anchored to the <strong>20 SMA</strong> (trend support/resistance) instead of a CPR level. SL = 20 SMA ± buffer × ATR. If price falls back through the SMA, the breakout has failed.</td></tr>
                 <tr><td><strong>Target</strong></td><td>Next CPR level above day high (for buy) or below day low (for sell). R1 and PDH are treated as separate levels — the nearer one is picked.</td></tr>
-                <tr><td><strong>Target Shift</strong></td><td>Session H/L skipped (breakout candle creates new H/L), but weekly CPR levels and 200 EMA still apply.</td></tr>
-                <tr><td><strong>All other filters</strong></td><td>VWAP/ATP, EMA direction, EMA crossover, candle size, volume, R/R, probability, qty stacking — all apply identically to CPR breakouts.</td></tr>
+                <tr><td><strong>Target Shift</strong></td><td>Session H/L skipped (breakout candle creates new H/L), but weekly CPR levels and 200 SMA still apply.</td></tr>
+                <tr><td><strong>All other filters</strong></td><td>VWAP/ATP, SMA direction, SMA crossover, candle size, volume, R/R, probability, qty stacking — all apply identically to CPR breakouts.</td></tr>
             </table>
 
-            <h4>20 EMA Filter</h4>
-            <p>A 20-period Exponential Moving Average (EMA) is calculated on each candle close using the configured trading timeframe. It serves as two independent filters:</p>
+            <h4>20 SMA Filter</h4>
+            <p>A 20-period Simple Moving Average (SMA) is calculated on each candle close using the configured trading timeframe. It serves as two independent filters:</p>
             <table>
                 <tr><th>Filter</th><th>Rule</th><th>Purpose</th></tr>
-                <tr><td><strong>EMA Direction Check</strong></td><td>Buy requires close &gt; 20 EMA. Sell requires close &lt; 20 EMA.</td><td>Ensures you're trading in the direction of the short-term trend.</td></tr>
-                <tr><td><strong>EMA Level Count Filter</strong></td><td>Count the CPR zones strictly between the 20 EMA and the broken level. Allow only when count = 0.</td><td>Structural "stale setup" detection — EMA must sit in the zone immediately adjacent to the broken level, or inside the broken zone itself.</td></tr>
+                <tr><td><strong>SMA Direction Check</strong></td><td>Buy requires close &gt; 20 SMA. Sell requires close &lt; 20 SMA.</td><td>Ensures you're trading in the direction of the short-term trend.</td></tr>
+                <tr><td><strong>SMA Level Count Filter</strong></td><td>Count the CPR zones strictly between the 20 SMA and the broken level. Allow only when count = 0.</td><td>Structural "stale setup" detection — SMA must sit in the zone immediately adjacent to the broken level, or inside the broken zone itself.</td></tr>
             </table>
 
             <h5>How the level count works</h5>
@@ -573,7 +573,7 @@
             <p><strong>Algorithm</strong> — direction-agnostic (works for both BUY and SELL):</p>
             <ol>
                 <li>Compute <code>broken = breakoutLevelForSetup()</code></li>
-                <li><code>lo = min(ema, broken)</code>, <code>hi = max(ema, broken)</code></li>
+                <li><code>lo = min(sma, broken)</code>, <code>hi = max(sma, broken)</code></li>
                 <li>For each zone, count it if: (a) it's not the setup's own zone, AND (b) at least one of its edges is strictly in <code>(lo, hi)</code></li>
                 <li><strong>Allow</strong> if count = 0, else <strong>skip</strong></li>
             </ol>
@@ -591,7 +591,7 @@
 
             <h5>Worked examples (BUY_ABOVE_R2, excluded = R2)</h5>
             <table>
-                <tr><th>EMA position</th><th>Zones between</th><th>Count</th><th>Action</th></tr>
+                <tr><th>SMA position</th><th>Zones between</th><th>Count</th><th>Action</th></tr>
                 <tr><td>Between max(R1,PH) and R2 — immediately below R2</td><td>—</td><td>0</td><td><strong>allow</strong></td></tr>
                 <tr><td>Inside R1/PDH pair</td><td>R1/PDH</td><td>1</td><td>skip</td></tr>
                 <tr><td>Inside CPR</td><td>CPR, R1/PDH</td><td>2</td><td>skip</td></tr>
@@ -600,7 +600,7 @@
 
             <h5>Worked examples (BUY_ABOVE_CPR, excluded = CPR)</h5>
             <table>
-                <tr><th>EMA position</th><th>Zones between</th><th>Count</th><th>Action</th></tr>
+                <tr><th>SMA position</th><th>Zones between</th><th>Count</th><th>Action</th></tr>
                 <tr><td>Between S1/PDL and CPR-bot — immediately below CPR</td><td>—</td><td>0</td><td><strong>allow</strong></td></tr>
                 <tr><td>Inside CPR (between cprBot and cprTop)</td><td>— (CPR excluded)</td><td>0</td><td><strong>allow</strong></td></tr>
                 <tr><td>Inside S1/PDL pair</td><td>S1/PDL</td><td>1</td><td>skip</td></tr>
@@ -609,44 +609,44 @@
 
             <h5>Worked examples (BUY_ABOVE_R1_PDH, excluded = R1/PDH)</h5>
             <table>
-                <tr><th>EMA position</th><th>Zones between</th><th>Count</th><th>Action</th></tr>
+                <tr><th>SMA position</th><th>Zones between</th><th>Count</th><th>Action</th></tr>
                 <tr><td>Between cprTop and min(R1,PH) — immediately below R1/PDH</td><td>—</td><td>0</td><td><strong>allow</strong></td></tr>
                 <tr><td>Inside R1/PDH pair</td><td>— (R1/PDH excluded)</td><td>0</td><td><strong>allow</strong></td></tr>
                 <tr><td>Inside CPR</td><td>CPR (cprTop in interval)</td><td>1</td><td>skip</td></tr>
                 <tr><td>Below CPR</td><td>CPR</td><td>1</td><td>skip</td></tr>
             </table>
 
-            <p><strong>Why this works</strong>: ATR-based distance thresholds fail on wide-CPR stocks (1 ATR may span zero or multiple structural levels depending on level density). Counting zones is structural — it asks "how many S/R bands does the EMA have to cross to reach the broken level?" If any band sits between them, the setup is stale regardless of raw price distance.</p>
+            <p><strong>Why this works</strong>: ATR-based distance thresholds fail on wide-CPR stocks (1 ATR may span zero or multiple structural levels depending on level density). Counting zones is structural — it asks "how many S/R bands does the SMA have to cross to reach the broken level?" If any band sits between them, the setup is stale regardless of raw price distance.</p>
 
             <p><strong>Combined with Structural SL</strong>: this filter loosens the entry gate (more valid breakouts fire), and structural SL ensures the exit is anchored to the level being tested. Net effect: enter on fresh structural signals, exit on structural invalidation.</p>
 
-            <p>Both filters can be enabled/disabled independently. EMA is seeded from historical candles at startup so it's available from the first candle close. Shown on scanner cards in the data grid.</p>
+            <p>Both filters can be enabled/disabled independently. SMA is seeded from historical candles at startup so it's available from the first candle close. Shown on scanner cards in the data grid.</p>
 
-            <h4>5-min EMA Trend Filter (20 / 50 / 200)</h4>
-            <p>A single unified trend gate replaces the earlier standalone direction checks. Controlled by <code>enableEmaTrendCheck</code>. Classifies a symbol's 5-min trend by price position relative to all three EMAs simultaneously — the same rule that drives the BULL/BEAR/NEUTRAL chip on the scanner card's EMA Levels section.</p>
+            <h4>5-min SMA Trend Filter (20 / 50 / 200)</h4>
+            <p>A single unified trend gate replaces the earlier standalone direction checks. Controlled by <code>enableSmaTrendCheck</code>. Classifies a symbol's 5-min trend by price position relative to all three SMAs simultaneously — the same rule that drives the BULL/BEAR/NEUTRAL chip on the scanner card's SMA Levels section.</p>
             <p><strong>Two modes</strong>:</p>
             <table>
                 <tr><th>Mode</th><th>Behaviour</th><th>Use when</th></tr>
-                <tr><td><strong>ON (hard gate)</strong></td><td>Buy requires close &gt; 20 EMA <em>AND</em> close &gt; 50 EMA <em>AND</em> close &gt; 200 EMA (= 5-min BULLISH). Sell symmetric (close below all three = 5-min BEARISH). Trade blocked otherwise — logged as <code>[SCANNER] &lt;SYM&gt; blocked by 5-min EMA trend</code>.</td><td>You only want trades with all three EMAs aligned on the trade side. Filters both counter-trend trades and "price-between-EMAs" early-momentum entries.</td></tr>
-                <tr><td><strong>OFF (target shift)</strong></td><td>Trade fires regardless, but the 200 EMA is added as a <strong>target-shift candidate</strong>. If it sits between entry and the original target, the target is pulled back to the 200 EMA.</td><td>You want to trade both sides but respect the 200 EMA as resistance (buys) or support (sells) when setting targets.</td></tr>
+                <tr><td><strong>ON (hard gate)</strong></td><td>Buy requires close &gt; 20 SMA <em>AND</em> close &gt; 50 SMA <em>AND</em> close &gt; 200 SMA (= 5-min BULLISH). Sell symmetric (close below all three = 5-min BEARISH). Trade blocked otherwise — logged as <code>[SCANNER] &lt;SYM&gt; blocked by 5-min SMA trend</code>.</td><td>You only want trades with all three SMAs aligned on the trade side. Filters both counter-trend trades and "price-between-SMAs" early-momentum entries.</td></tr>
+                <tr><td><strong>OFF (target shift)</strong></td><td>Trade fires regardless, but the 200 SMA is added as a <strong>target-shift candidate</strong>. If it sits between entry and the original target, the target is pulled back to the 200 SMA.</td><td>You want to trade both sides but respect the 200 SMA as resistance (buys) or support (sells) when setting targets.</td></tr>
             </table>
-            <p>Fail-open semantics: if any of the three EMAs hasn't loaded yet (=0), the gate is skipped — a symbol mid-warm-up won't be silently rejected. 200 EMA is seeded from 14 calendar days of Fyers history (~750 five-min bars) for proper convergence, then rolls forward incrementally on every 5-min candle close.</p>
-            <p>The 200 EMA (when trend gate is OFF) joins the same target-shift candidate pool as day high/low and weekly CPR levels. The nearest candidate to entry wins.</p>
+            <p>Fail-open semantics: if any of the three SMAs hasn't loaded yet (=0), the gate is skipped — a symbol mid-warm-up won't be silently rejected. 200 SMA is seeded from 14 calendar days of Fyers history (~750 five-min bars) for proper convergence, then rolls forward incrementally on every 5-min candle close.</p>
+            <p>The 200 SMA (when trend gate is OFF) joins the same target-shift candidate pool as day high/low and weekly CPR levels. The nearest candidate to entry wins.</p>
 
-            <h4>50 EMA + Pattern Detection (R-RTP / F-RTP / ZIG ZAG)</h4>
-            <p>A 50-period EMA is calculated and shown on scanner cards as <code>EMA 20/50: X / Y</code>. The relative behaviour of the 20 EMA vs the 50 EMA over the last 10 × 5-min candles (50 min rolling window) is classified into one of three patterns, displayed inline with the EMA 20/50 label:</p>
+            <h4>50 SMA + Pattern Detection (R-RTP / F-RTP / ZIG ZAG)</h4>
+            <p>A 50-period SMA is calculated and shown on scanner cards as <code>SMA 20/50: X / Y</code>. The relative behaviour of the 20 SMA vs the 50 SMA over the last 10 × 5-min candles (50 min rolling window) is classified into one of three patterns, displayed inline with the SMA 20/50 label:</p>
             <table>
                 <tr><th>Pattern</th><th>Marker</th><th>Meaning</th><th>Rules</th></tr>
-                <tr><td><strong>Rising Railway Track</strong></td><td><span style="color:var(--accent-green);font-weight:700;">R-RTP</span></td><td>20 EMA consistently above 50 EMA, moving parallel. Strong bullish trend — breakouts carry momentum.</td><td>≤1 crossover in 10 candles, stddev(|spread|)/mean(|spread|) ≤ 0.25, mean|spread| ≥ 0.3 × ATR, 20 EMA &gt; 50 EMA at last candle</td></tr>
-                <tr><td><strong>Falling Railway Track</strong></td><td><span style="color:var(--accent-red);font-weight:700;">F-RTP</span></td><td>20 EMA consistently below 50 EMA, moving parallel. Strong bearish trend — breakdowns carry momentum.</td><td>Same as R-RTP but 20 EMA &lt; 50 EMA at last candle</td></tr>
-                <tr><td><strong>Braided</strong></td><td><span style="color:var(--accent-red);font-weight:700;">ZIG ZAG</span></td><td>EMAs crossing repeatedly or truly overlapping. Choppy conditions — high whipsaw risk.</td><td>≥2 crossovers in 10 candles, OR mean|spread| ≤ 0.15 × ATR (EMAs overlapping). Spread between 0.15 and 0.30 × ATR falls to transitional (not ZIG ZAG) when crossovers ≤ 1.</td></tr>
+                <tr><td><strong>Rising Railway Track</strong></td><td><span style="color:var(--accent-green);font-weight:700;">R-RTP</span></td><td>20 SMA consistently above 50 SMA, moving parallel. Strong bullish trend — breakouts carry momentum.</td><td>≤1 crossover in 10 candles, stddev(|spread|)/mean(|spread|) ≤ 0.25, mean|spread| ≥ 0.3 × ATR, 20 SMA &gt; 50 SMA at last candle</td></tr>
+                <tr><td><strong>Falling Railway Track</strong></td><td><span style="color:var(--accent-red);font-weight:700;">F-RTP</span></td><td>20 SMA consistently below 50 SMA, moving parallel. Strong bearish trend — breakdowns carry momentum.</td><td>Same as R-RTP but 20 SMA &lt; 50 SMA at last candle</td></tr>
+                <tr><td><strong>Braided</strong></td><td><span style="color:var(--accent-red);font-weight:700;">ZIG ZAG</span></td><td>SMAs crossing repeatedly or truly overlapping. Choppy conditions — high whipsaw risk.</td><td>≥2 crossovers in 10 candles, OR mean|spread| ≤ 0.15 × ATR (SMAs overlapping). Spread between 0.15 and 0.30 × ATR falls to transitional (not ZIG ZAG) when crossovers ≤ 1.</td></tr>
                 <tr><td><strong>Transitional</strong></td><td><em>(no marker)</em></td><td>Between states — just crossed, converging, diverging, or noisy spread. Normal caution applies.</td><td>Neither R-RTP/F-RTP nor ZIG ZAG criteria met</td></tr>
             </table>
-            <p><strong>Live updates</strong>: pattern is re-classified on every 5-min candle close as new EMA values roll into the window and old ones fall off.</p>
-            <p><strong>Historical seeding</strong>: EMA(50) ring buffer is populated from 14 days of Fyers historical candles at startup, so patterns classify immediately at market open — no warm-up wait.</p>
-            <p><strong>Per-candle persistence</strong>: every closed 5-min candle stores <code>ema20</code>, <code>ema50</code>, <code>ema200</code>, <code>atr</code>, <code>vwap</code>, and <code>emaPattern</code> for post-trade analysis ("what was the pattern when this breakout fired?").</p>
+            <p><strong>Live updates</strong>: pattern is re-classified on every 5-min candle close as new SMA values roll into the window and old ones fall off.</p>
+            <p><strong>Historical seeding</strong>: SMA(50) ring buffer is populated from 14 days of Fyers historical candles at startup, so patterns classify immediately at market open — no warm-up wait.</p>
+            <p><strong>Per-candle persistence</strong>: every closed 5-min candle stores <code>sma20</code>, <code>sma50</code>, <code>sma200</code>, <code>atr</code>, <code>vwap</code>, and <code>smaPattern</code> for post-trade analysis ("what was the pattern when this breakout fired?").</p>
             <h5>Pattern Filter (optional, Filters tab)</h5>
-            <p>Three independent toggles gate breakouts by EMA 20/50 pattern:</p>
+            <p>Three independent toggles gate breakouts by SMA 20/50 pattern:</p>
             <table>
                 <tr><th>Toggle</th><th>Effect when ON</th></tr>
                 <tr><td><code>requireRtpPattern</code></td><td>Direction-matched pattern required: buys fire <strong>only</strong> when pattern is R-RTP (rising railway), sells fire <strong>only</strong> when pattern is F-RTP (falling railway). Transitional / ZIG ZAG / opposite pattern all block the trade.</td></tr>
@@ -661,12 +661,12 @@
             </table>
             <p>Default: only <code>skipTradesInZigZag</code> is ON. Trades fire normally unless a clear ZIG ZAG state is active.</p>
 
-            <h4>20 EMA vs ATP (VWAP) Filter</h4>
-            <p>Short-term momentum check: buy requires <code>20 EMA &gt; ATP</code>, sell requires <code>20 EMA &lt; ATP</code>. Confirms short-term trend is on the right side of the day's volume-weighted average price before allowing a breakout. Independently toggleable via <code>enableEmaVsAtpCheck</code>.</p>
+            <h4>20 SMA vs ATP (VWAP) Filter</h4>
+            <p>Short-term momentum check: buy requires <code>20 SMA &gt; ATP</code>, sell requires <code>20 SMA &lt; ATP</code>. Confirms short-term trend is on the right side of the day's volume-weighted average price before allowing a breakout. Independently toggleable via <code>enableSmaVsAtpCheck</code>.</p>
 
-            <h4>EMA Crossover (20 vs 200) — NIFTY composite only</h4>
-            <p>The standalone "20 EMA vs 200 EMA" trade gate has been absorbed into the 5-min EMA Trend Filter above. The relative position of 20 vs 200 is still surfaced as a component (±2) in the <strong>NIFTY composite trend score</strong>, graded by whether both 20 and 50 EMA are on the same side of 200, or only 20 — but it no longer blocks individual stock trades on its own.</p>
-            <p>For stock trades, the equivalent constraint now lives implicitly inside the R-RTP / F-RTP pattern classifier, which requires EMA(20) on the right side of EMA(200) before classifying a rising / falling railway.</p>
+            <h4>SMA Crossover (20 vs 200) — NIFTY composite only</h4>
+            <p>The standalone "20 SMA vs 200 SMA" trade gate has been absorbed into the 5-min SMA Trend Filter above. The relative position of 20 vs 200 is still surfaced as a component (±2) in the <strong>NIFTY composite trend score</strong>, graded by whether both 20 and 50 SMA are on the same side of 200, or only 20 — but it no longer blocks individual stock trades on its own.</p>
+            <p>For stock trades, the equivalent constraint now lives implicitly inside the R-RTP / F-RTP pattern classifier, which requires SMA(20) on the right side of SMA(200) before classifying a rising / falling railway.</p>
 
             <h4>Large Candle Body Filter</h4>
             <p>Rejects breakout candles with excessively large body (|close − open| &gt; N × ATR). Catches exhaustion moves where the stock has already run too far on a single candle — entering at the close is chasing. Default threshold 4.0 ATR catches only extreme spikes. Runs before R/R check.</p>
@@ -682,8 +682,8 @@
                 <tr><td><strong>2. Nearest Resistance/Support Shift</strong></td><td>If any session high/low or weekly CPR level (R1, S1, PH, PL, TC, BC, Pivot) sits between entry and target, shift target to the <strong>nearest</strong> one. Single target — no T1/T2 split when shifted.</td><td>Weekly R1=1858, session high=1865 — both between 1850-1880. Nearest is 1858 → target shifts to weekly R1</td></tr>
                 <tr><td><strong>3. Risk/Reward Filter</strong></td><td>After SL and final target are determined, compute R/R = |target − entry| / |entry − SL|. If R/R &lt; minRiskRewardRatio → <strong>skip trade</strong> (configurable, default 1.0:1). Uses the final SL (structural or default, whichever was picked) and the final target (T2 for split trades).</td><td>Entry 100, SL 97 (risk 3), target 102 (reward 2). R/R = 0.67 &lt; 1.0 → <strong>SKIP</strong></td></tr>
             </table>
-            <p>The shift picks the nearest resistance (buys) or support (sells) between entry and the structural CPR target. Candidates include today's session high/low, all 7 weekly CPR levels, and the <strong>200 EMA</strong> (when the 200 EMA direction check is disabled — the 200 EMA acts as a target cap instead of a hard block). The nearest candidate wins.</p>
-            <p><strong>DH/DL setups</strong>: session high/low is skipped as a candidate (the breakout candle just created it), but weekly CPR levels and 200 EMA still apply.</p>
+            <p>The shift picks the nearest resistance (buys) or support (sells) between entry and the structural CPR target. Candidates include today's session high/low, all 7 weekly CPR levels, and the <strong>200 SMA</strong> (when the 200 SMA direction check is disabled — the 200 SMA acts as a target cap instead of a hard block). The nearest candidate wins.</p>
+            <p><strong>DH/DL setups</strong>: session high/low is skipped as a candidate (the breakout candle just created it), but weekly CPR levels and 200 SMA still apply.</p>
             <p><strong>Split targets after shift</strong>: shifted trades are eligible for T1/T2 split if the final target distance still exceeds the <code>splitMinDistanceAtr</code> threshold. The split decision is based purely on qty (≥4) and target distance — the shift itself does not block the split.</p>
         </div>
     </div>
@@ -863,8 +863,8 @@
                 <li><strong>Small candle filter</strong> — reject if candle move &lt; N x ATR</li>
                 <li><strong>Volume filter</strong> — reject if candle volume &lt; N x average volume</li>
                 <li><strong>Small target filter</strong> — reject if final target &lt; N x ATR from entry (after nearest-level shift)</li>
-                <li><strong>20 EMA direction check</strong> — reject buy if close &lt; 20 EMA, reject sell if close &gt; 20 EMA (same logic as VWAP/ATP check)</li>
-                <li><strong>20 EMA level count filter</strong> — reject if any CPR zone sits strictly between the 20 EMA and the broken level (stale setup). Pair zones (CPR, R1/PDH, S1/PDL) each count once; the setup's own zone is excluded.</li>
+                <li><strong>20 SMA direction check</strong> — reject buy if close &lt; 20 SMA, reject sell if close &gt; 20 SMA (same logic as VWAP/ATP check)</li>
+                <li><strong>20 SMA level count filter</strong> — reject if any CPR zone sits strictly between the 20 SMA and the broken level (stale setup). Pair zones (CPR, R1/PDH, S1/PDL) each count once; the setup's own zone is excluded.</li>
                 <li><strong>R4/S4 disabled</strong> — reject R4/S4 signals</li>
                 <li><strong>ATR invalid</strong> — reject if ATR is zero or NaN</li>
             </ul>
@@ -930,7 +930,7 @@
                 <tr><th>Target Type</th><th>Tolerance Applied?</th><th>Reason</th></tr>
                 <tr><td>Single target trade (split disabled / qty &lt; 4 / split distance not met)</td><td>YES</td><td>Sits at the CPR level</td></tr>
                 <tr><td>T2 leg of split target trade</td><td>YES</td><td>T2 is the structural CPR level</td></tr>
-                <tr><td>Nearest-level shifted target (session H/L, weekly CPR, or 200 EMA)</td><td>YES</td><td>Structural resistance/support level — eligible for split if distance still exceeds threshold</td></tr>
+                <tr><td>Nearest-level shifted target (session H/L, weekly CPR, or 200 SMA)</td><td>YES</td><td>Structural resistance/support level — eligible for split if distance still exceeds threshold</td></tr>
                 <tr><td>DH/DL breakout target</td><td>YES</td><td>Targets next CPR level</td></tr>
                 <tr><td><strong>T1 leg of split target trade</strong></td><td><strong>NO</strong></td><td>T1 is a calculated mid-point, not a structural level</td></tr>
             </table>
@@ -957,14 +957,14 @@
                 <tr><th>Signal</th><th>Bullish</th><th>Bearish</th></tr>
                 <tr><td>Weekly CPR trend</td><td>+1 / +2 (strong)</td><td>-1 / -2 (strong). <strong>0 when weekly reversal (R) active</strong></td></tr>
                 <tr><td>Daily CPR trend</td><td>+1 / +2 (strong)</td><td>-1 / -2 (strong)</td></tr>
-                <tr><td>20 EMA position (LTP vs 20 EMA)</td><td>+1 (LTP &gt; EMA)</td><td>-1 (LTP &lt; EMA)</td></tr>
-                <tr><td>200 EMA position (LTP vs 200 EMA)</td><td>+1 (LTP &gt; 200 EMA)</td><td>-1 (LTP &lt; 200 EMA)</td></tr>
-                <tr><td>EMA 20/50 vs 200 cross</td><td>+1 (only 20 &gt; 200) / +2 (both 20 &amp; 50 &gt; 200)</td><td>-1 (only 20 &lt; 200) / -2 (both 20 &amp; 50 &lt; 200)</td></tr>
-                <tr><td>EMA 20/50 pattern (R-RTP / F-RTP)</td><td>+2 (R-RTP — rising railway track, bullish parallel trend)</td><td>-2 (F-RTP — falling railway track, bearish parallel trend). 0 for ZIG ZAG or no pattern.</td></tr>
+                <tr><td>20 SMA position (LTP vs 20 SMA)</td><td>+1 (LTP &gt; SMA)</td><td>-1 (LTP &lt; SMA)</td></tr>
+                <tr><td>200 SMA position (LTP vs 200 SMA)</td><td>+1 (LTP &gt; 200 SMA)</td><td>-1 (LTP &lt; 200 SMA)</td></tr>
+                <tr><td>SMA 20/50 vs 200 cross</td><td>+1 (only 20 &gt; 200) / +2 (both 20 &amp; 50 &gt; 200)</td><td>-1 (only 20 &lt; 200) / -2 (both 20 &amp; 50 &lt; 200)</td></tr>
+                <tr><td>SMA 20/50 pattern (R-RTP / F-RTP)</td><td>+2 (R-RTP — rising railway track, bullish parallel trend)</td><td>-2 (F-RTP — falling railway track, bearish parallel trend). 0 for ZIG ZAG or no pattern.</td></tr>
             </table>
-            <p><strong>Cross scoring</strong>: getting both 20 EMA and 50 EMA above 200 is a stronger bullish structure than only 20 crossing. Mirrors the standard interpretation of golden/death cross but graded.</p>
-            <p><strong>Pattern scoring</strong>: uses the same R-RTP / F-RTP / ZIG ZAG classification shown on stock cards. Rising/Falling Railway Track indicates a stable, persistent trend; ZIG ZAG (choppy) contributes nothing either way. See the <em>50 EMA + Pattern Detection</em> section for classification rules.</p>
-            <p><strong>Removed from composite</strong>: EMA slope and Open=High/Open=Low were previously counted but dropped — slope was partially redundant with pattern, and OHL gave early signal but often reversed mid-day.</p>
+            <p><strong>Cross scoring</strong>: getting both 20 SMA and 50 SMA above 200 is a stronger bullish structure than only 20 crossing. Mirrors the standard interpretation of golden/death cross but graded.</p>
+            <p><strong>Pattern scoring</strong>: uses the same R-RTP / F-RTP / ZIG ZAG classification shown on stock cards. Rising/Falling Railway Track indicates a stable, persistent trend; ZIG ZAG (choppy) contributes nothing either way. See the <em>50 SMA + Pattern Detection</em> section for classification rules.</p>
+            <p><strong>Removed from composite</strong>: SMA slope and Open=High/Open=Low were previously counted but dropped — slope was partially redundant with pattern, and OHL gave early signal but often reversed mid-day.</p>
 
             <h4>State Classification (configurable thresholds)</h4>
             <table>
@@ -992,7 +992,7 @@
             </ul>
 
             <h4>Example</h4>
-            <p>NIFTY at 11:45: weekly BULLISH (+1), daily BULLISH (+1), LTP &gt; 20 EMA (+1), LTP &gt; 200 EMA (+1), both 20 &amp; 50 above 200 (+2), EMA 20/50 showing R-RTP (+2). Total score = <strong>+8 → STRONG_BULLISH</strong>.</p>
+            <p>NIFTY at 11:45: weekly BULLISH (+1), daily BULLISH (+1), LTP &gt; 20 SMA (+1), LTP &gt; 200 SMA (+1), both 20 &amp; 50 above 200 (+2), SMA 20/50 showing R-RTP (+2). Total score = <strong>+8 → STRONG_BULLISH</strong>.</p>
             <ul>
                 <li>A buy signal on HDFC fires → aligned with NIFTY → HPT stays HPT, full qty</li>
                 <li>A sell signal on TCS fires → opposed to NIFTY → HPT downgraded to LPT, half qty (event log: "TCS HPT → LPT — NIFTY STRONG_BULLISH (score +8) opposes sell")</li>
@@ -1147,10 +1147,10 @@
             </table>
             <p><strong>Why paired levels anchor to the outer edge</strong>: between R1 and PDH, the price is "inside the zone" — neither breakout nor invalidation. A stop at <code>max − buffer</code> gets shaken out by retests into the zone. Anchoring to <code>min − buffer</code> lets the entire zone act as the structural buffer before the stop hits.</p>
 
-            <h4>Structural SL ↔ EMA Level Count Filter Synergy</h4>
+            <h4>Structural SL ↔ SMA Level Count Filter Synergy</h4>
             <p>The two filters compose into a clean structural strategy:</p>
             <ul>
-                <li><strong>EMA level count filter</strong> loosens the entry gate — take every setup where the EMA is in the zone immediately adjacent to the broken level (or inside the broken zone itself). More valid breakouts fire, especially on wide-CPR stocks where ATR-based thresholds used to kill them.</li>
+                <li><strong>SMA level count filter</strong> loosens the entry gate — take every setup where the SMA is in the zone immediately adjacent to the broken level (or inside the broken zone itself). More valid breakouts fire, especially on wide-CPR stocks where ATR-based thresholds used to kill them.</li>
                 <li><strong>Structural SL</strong> anchors the exit to the level being tested — if the breakout fails and price returns through the level, the SL triggers at the real structural invalidation point, not at an arbitrary ATR offset.</li>
             </ul>
             <p><strong>Net effect</strong>: enter on fresh structural signals, exit on structural invalidation. "Right by structure, wrong by structure" — the entire premise of level-based trading.</p>
@@ -1158,7 +1158,7 @@
             <ul>
                 <li>Better R/R on tight breakouts — close near the level means tighter structural SL, same target distance, higher R multiple</li>
                 <li>Natural fail-fast on false breakouts — if the level doesn't hold, SL hits quickly (small loss), trade doesn't bleed through ATR decay</li>
-                <li>Fewer morning rejections on gap days — EMA catching up is fine as long as no CPR zone sits between it and the broken level</li>
+                <li>Fewer morning rejections on gap days — SMA catching up is fine as long as no CPR zone sits between it and the broken level</li>
             </ul>
             <p><strong>Tradeoff</strong>: more trades fire → daily risk budget (<code>maxDailyLoss</code>) consumes faster if early trades lose. Watch for "risk exposure limit reached" warnings and adjust <code>maxDailyLoss</code> or tighten the structural SL buffer if needed.</p>
 
@@ -1540,7 +1540,7 @@
             <table>
                 <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
                 <tr><td>ATR Period</td><td>14</td><td>Number of candles for ATR calculation (uses trading timeframe)</td></tr>
-                <tr><td>Enable Structural SL</td><td>ON</td><td>SL anchored to the broken level (CPR, R/S levels) or 20 EMA (DH/DL setups). SL = anchor ± buffer × ATR.</td></tr>
+                <tr><td>Enable Structural SL</td><td>ON</td><td>SL anchored to the broken level (CPR, R/S levels) or 20 SMA (DH/DL setups). SL = anchor ± buffer × ATR.</td></tr>
                 <tr><td>Structural SL Buffer (ATR)</td><td>1.0</td><td>ATR buffer added below/above the structural anchor (the level being tested)</td></tr>
                 <tr><td>Trailing SL</td><td>ON</td><td>Enable ATR peak-based trailing stop loss</td></tr>
                 <tr><td>Trailing SL Multiplier</td><td>2.0</td><td>Trailing SL = peak - ATR x this value</td></tr>
@@ -1559,7 +1559,7 @@
             <table>
                 <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
                 <tr><td>Signal Source</td><td>INTERNAL</td><td>Bot Managed (internal scanner) or TradingView (webhook)</td></tr>
-                <tr><td>Trading Timeframe</td><td>5 min</td><td>Candle timeframe for breakout detection, ATR and EMA calculation</td></tr>
+                <tr><td>Trading Timeframe</td><td>5 min</td><td>Candle timeframe for breakout detection, ATR and SMA calculation</td></tr>
                 <tr><td>HPT / LPT</td><td>Both ON</td><td>Enable/disable each probability tier independently. Disable LPT for strict HPT-only mode.</td></tr>
             </table>
 
@@ -1574,7 +1574,7 @@
                 <tr><td>Beta Range</td><td>0 – 0 (no filter)</td><td>Filter by stock beta vs NIFTY (25-day). 0 = disabled.</td></tr>
                 <tr><td>Market Cap Filter</td><td>All (multi-select)</td><td>Large (NIFTY 100) / Mid (MIDCAP 150) / Small. Multi-select checkboxes.</td></tr>
                 <tr><td>Opening Range</td><td>30 min</td><td>OR period: Off / 15 / 30 / 45 / 60 min</td></tr>
-                <tr><td>Trading Timeframe</td><td>5 min</td><td>Candle timeframe for breakout detection, ATR, EMA, daily trend</td></tr>
+                <tr><td>Trading Timeframe</td><td>5 min</td><td>Candle timeframe for breakout detection, ATR, SMA, daily trend</td></tr>
                 <tr><td>Higher Timeframe</td><td>75 min</td><td>Candle timeframe for weekly trend. Weekly trend updates on this interval.</td></tr>
                 <tr><td>NS / NL / IS / IL</td><td>NS+NL+IS ON</td><td>Which range types to include in the watchlist. NS/IS = Small (compressed). NL/IL = Large (expanded).</td></tr>
                 <tr><td>Small Range Threshold</td><td>50%</td><td>Stock classified SMALL if previous day's range (H-L) ≤ this % of its 20-day Average Daily Range (ADR). Default 50% means stock moved half or less than usual = compressed coiled spring. Lower = stricter (fewer SMALL classifications). Reclassifies live when changed.</td></tr>
@@ -1589,16 +1589,16 @@
                 <tr><td><strong>Export Fyers</strong></td><td>Downloads the filtered watchlist in Fyers import format (NSE:SYMBOL-EQ, one per line)</td></tr>
                 <tr><td><strong>Status Bar</strong></td><td>Shows active filters: stock count, price range, turnover, volume, beta, cap, signals</td></tr>
                 <tr><td><strong>OR Badge</strong></td><td>Color-coded Opening Range badge on each card header: OR+ (green=bullish), OR- (red=bearish), OR= (gray=neutral), OR? (yellow=forming).</td></tr>
-                <tr><td><strong>Chart Icon</strong></td><td>Click to open a live TradingView-style candlestick chart with CPR bands, R/S levels, VWAP, EMA20/EMA200, OR band, and trade markers. Gear icon inside modal toggles individual levels/bands on/off (preferences persist across sessions).</td></tr>
+                <tr><td><strong>Chart Icon</strong></td><td>Click to open a live TradingView-style candlestick chart with CPR bands, R/S levels, VWAP, SMA20/SMA200, OR band, and trade markers. Gear icon inside modal toggles individual levels/bands on/off (preferences persist across sessions).</td></tr>
                 <tr><td><strong>Card Header</strong></td><td>Symbol name + chart icon + CPR type badges (N/I + NS/NL/IS/IL) + OR status badge. Per-candle OHLC is viewed in the chart modal, not on the card.</td></tr>
-                <tr><td><strong>Price Row</strong></td><td>LTP, % change from previous close, and <code>EMA 200: X | Day Open: EV/IV/OV</code> right-aligned.</td></tr>
+                <tr><td><strong>Price Row</strong></td><td>LTP, % change from previous close, and <code>SMA 200: X | Day Open: EV/IV/OV</code> right-aligned.</td></tr>
                 <tr><td><strong>Data Row (4 columns)</strong></td><td>
-                    <strong>EMA 20/50</strong> with pattern marker (<span style="color:var(--accent-green);font-weight:700;">R-RTP</span>, <span style="color:var(--accent-red);font-weight:700;">F-RTP</span>, <span style="color:var(--accent-red);font-weight:700;">ZIG ZAG</span>, or none) |
+                    <strong>SMA 20/50</strong> with pattern marker (<span style="color:var(--accent-green);font-weight:700;">R-RTP</span>, <span style="color:var(--accent-red);font-weight:700;">F-RTP</span>, <span style="color:var(--accent-red);font-weight:700;">ZIG ZAG</span>, or none) |
                     <strong>ATP</strong> (exchange VWAP) |
                     <strong>ATR</strong> (Wilder-smoothed) |
                     <strong>Vol / 20-Avg</strong> — current candle volume vs 20-candle average with ratio (e.g., <code>45K / 30K (1.5x)</code>). Color-coded: green if ≥1.5× (volume spike), normal if ≥1.0×, secondary if below average.
                 </td></tr>
-                <tr><td><strong>Auto Rebuild</strong></td><td>Saving settings re-filters the scanner from existing loaded stocks. Tightening filters (fewer stocks) works mid-day. Widening filters (adding new stocks) requires restart — new stocks need WebSocket subscription + ATR/EMA seed which only happens at startup.</td></tr>
+                <tr><td><strong>Auto Rebuild</strong></td><td>Saving settings re-filters the scanner from existing loaded stocks. Tightening filters (fewer stocks) works mid-day. Widening filters (adding new stocks) requires restart — new stocks need WebSocket subscription + ATR/SMA seed which only happens at startup.</td></tr>
             </table>
 
             <h4>Stock Enrichment (computed daily from NSE data)</h4>
@@ -1613,11 +1613,11 @@
             <h4>Filters Tab</h4>
             <table>
                 <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
-                <tr><td>Direction Confirmation (VWAP + 20 EMA)</td><td>Both ON</td><td>VWAP: buy above ATP, sell below. 20 EMA: buy above 20 EMA, sell below.</td></tr>
-                <tr><td>200 EMA Direction Check</td><td>ON</td><td>Buy requires close &gt; 200 EMA, sell requires close &lt; 200 EMA. When OFF, 200 EMA becomes a target-shift candidate instead (caps target at the 200 EMA if it sits between entry and target).</td></tr>
-                <tr><td>EMA Crossover Check</td><td>ON</td><td>Buy requires 20 EMA &gt; 200 EMA, sell requires 20 EMA &lt; 200 EMA. Confirms trend structure.</td></tr>
-                <tr><td>20 EMA vs ATP (VWAP) Check</td><td>ON</td><td>Buy requires 20 EMA &gt; ATP, sell requires 20 EMA &lt; ATP. Confirms short-term momentum is on the right side of the day's volume-weighted average price.</td></tr>
-                <tr><td>20 EMA Level Count Filter</td><td>ON</td><td>Skip if any CPR zone sits strictly between the 20 EMA and the broken level.</td></tr>
+                <tr><td>Direction Confirmation (VWAP + 20 SMA)</td><td>Both ON</td><td>VWAP: buy above ATP, sell below. 20 SMA: buy above 20 SMA, sell below.</td></tr>
+                <tr><td>200 SMA Direction Check</td><td>ON</td><td>Buy requires close &gt; 200 SMA, sell requires close &lt; 200 SMA. When OFF, 200 SMA becomes a target-shift candidate instead (caps target at the 200 SMA if it sits between entry and target).</td></tr>
+                <tr><td>SMA Crossover Check</td><td>ON</td><td>Buy requires 20 SMA &gt; 200 SMA, sell requires 20 SMA &lt; 200 SMA. Confirms trend structure.</td></tr>
+                <tr><td>20 SMA vs ATP (VWAP) Check</td><td>ON</td><td>Buy requires 20 SMA &gt; ATP, sell requires 20 SMA &lt; ATP. Confirms short-term momentum is on the right side of the day's volume-weighted average price.</td></tr>
+                <tr><td>20 SMA Level Count Filter</td><td>ON</td><td>Skip if any CPR zone sits strictly between the 20 SMA and the broken level.</td></tr>
                 <tr><td>Small Candle Filter</td><td>OFF, 0.5 ATR</td><td>Reject if candle body smaller than N × ATR</td></tr>
                 <tr><td>Large Candle Body Filter</td><td>ON, 4.0 ATR</td><td>Reject if candle body (|close − open|) exceeds N × ATR. Catches exhaustion moves.</td></tr>
                 <tr><td>Volume Filter</td><td>ON, 1.0x avg</td><td>Reject if candle volume below N × average volume</td></tr>
@@ -1652,8 +1652,8 @@
             <table>
                 <tr><th>Indicator</th><th>What it shows</th><th>Healthy state</th></tr>
                 <tr><td>ATR Loaded</td><td>Symbols with ATR(14) seeded / total watchlist</td><td>Green: X/X (all loaded)</td></tr>
-                <tr><td>EMA 20 Loaded</td><td>Symbols with 20 EMA seeded / total watchlist</td><td>Green: X/X</td></tr>
-                <tr><td>EMA 200 Loaded</td><td>Symbols with 200 EMA seeded / total watchlist</td><td>Green: X/X</td></tr>
+                <tr><td>SMA 20 Loaded</td><td>Symbols with 20 SMA seeded / total watchlist</td><td>Green: X/X</td></tr>
+                <tr><td>SMA 200 Loaded</td><td>Symbols with 200 SMA seeded / total watchlist</td><td>Green: X/X</td></tr>
                 <tr><td>1st Bar Close</td><td>Symbols with first 5-min candle close captured</td><td>Green after 09:20 (all captured)</td></tr>
                 <tr><td>Open Refresh Validate</td><td>5 random symbols spot-checked against Fyers history</td><td>Green: 5/5 OK (after 09:25 refresh)</td></tr>
             </table>

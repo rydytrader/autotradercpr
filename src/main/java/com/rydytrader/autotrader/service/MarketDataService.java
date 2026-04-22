@@ -51,12 +51,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     private final RiskSettingsStore   riskSettings;
     private final CandleAggregator    candleAggregator;
     private final AtrService          atrService;
-    private final EmaService          emaService;
+    private final SmaService          smaService;
     private final WeeklyCprService    weeklyCprService;
     private final BreakoutScanner     breakoutScanner;
     private final BhavcopyService     bhavcopyService;
     private final TelegramService     telegramService;
-    private final HtfEmaService       htfEmaService;
+    private final HtfSmaService       htfSmaService;
     private final ObjectMapper        mapper = new ObjectMapper();
     private CandleAggregator          htfAggregator; // higher timeframe (75-min) for weekly trend
 
@@ -154,9 +154,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                               WeeklyCprService weeklyCprService,
                               BreakoutScanner breakoutScanner,
                               BhavcopyService bhavcopyService,
-                              EmaService emaService,
+                              SmaService smaService,
                               TelegramService telegramService,
-                              HtfEmaService htfEmaService) {
+                              HtfSmaService htfSmaService) {
         this.tokenStore = tokenStore;
         this.fyersProperties = fyersProperties;
         this.positionStateStore = positionStateStore;
@@ -169,9 +169,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         this.weeklyCprService = weeklyCprService;
         this.breakoutScanner = breakoutScanner;
         this.bhavcopyService = bhavcopyService;
-        this.emaService = emaService;
+        this.smaService = smaService;
         this.telegramService = telegramService;
-        this.htfEmaService = htfEmaService;
+        this.htfSmaService = htfSmaService;
         candleAggregator.addListener(this);
     }
 
@@ -199,7 +199,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         // Register candle close listeners
         candleAggregator.setTimeframe(riskSettings.getScannerTimeframe());
         candleAggregator.addListener(atrService);
-        candleAggregator.addListener(emaService);
+        candleAggregator.addListener(smaService);
         candleAggregator.addListener(weeklyCprService);
         candleAggregator.addListener(breakoutScanner);
         candleAggregator.start();
@@ -209,9 +209,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         htfAggregator.setTimeframe(riskSettings.getHigherTimeframe());
         htfAggregator.addListener((symbol, candle) ->
             weeklyCprService.onHigherTimeframeCandleClose(symbol, candle.open, candle.high, candle.low, candle.close));
-        htfAggregator.addListener(htfEmaService);
+        htfAggregator.addListener(htfSmaService);
         htfAggregator.start();
-        log.info("[MarketData] Higher timeframe aggregator started: {}min (listeners: WeeklyCpr, HtfEma)", riskSettings.getHigherTimeframe());
+        log.info("[MarketData] Higher timeframe aggregator started: {}min (listeners: WeeklyCpr, HtfSma)", riskSettings.getHigherTimeframe());
 
         // Schedule scanner pre-market data fetch
         scheduleScannerInit();
@@ -928,20 +928,20 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         // Prune indicator caches to the current watchlist so stale entries from previous days
         // don't grow the on-disk cache file or leak into dashboard counts.
         atrService.pruneTo(watchlistWithIndex);
-        emaService.pruneTo(watchlistWithIndex);
-        htfEmaService.pruneTo(watchlistWithIndex);
+        smaService.pruneTo(watchlistWithIndex);
+        htfSmaService.pruneTo(watchlistWithIndex);
 
-        // Fetch ATR + seed EMA. When EmaService was restored from disk cache, pass the full
+        // Fetch ATR + seed SMA. When SmaService was restored from disk cache, pass the full
         // watchlist so AtrService routes cached symbols through its 1-day catch-up branch
         // (and new symbols through the full 14-day seed). Otherwise drop already-loaded symbols.
-        List<String> needsAtr = emaService.isSeededFromCache()
+        List<String> needsAtr = smaService.isSeededFromCache()
             ? watchlistWithIndex
             : watchlistWithIndex.stream()
                 .filter(s -> atrService.getAtr(s) <= 0)
                 .collect(java.util.stream.Collectors.toList());
         if (!needsAtr.isEmpty()) {
             log.info("[MarketData] Fetching ATR for {} symbols (cache-seeded={})",
-                needsAtr.size(), emaService.isSeededFromCache());
+                needsAtr.size(), smaService.isSeededFromCache());
             atrService.fetchAtrForSymbols(needsAtr);
         } else {
             log.info("[MarketData] ATR already loaded for all {} symbols — skipping fetch", watchlistWithIndex.size());
@@ -951,13 +951,13 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         } else {
             log.info("[MarketData] Weekly trends already loaded ({} symbols) — skipping fetch", weeklyCprService.getLoadedCount());
         }
-        // Seed HTF (60-min) EMAs. Same cache-aware routing as ATR above.
-        if (htfEmaService.isSeededFromCache()) {
-            atrService.fetchHtfEmaForSymbols(watchlistWithIndex, htfEmaService);
-        } else if (htfEmaService.getLoadedCount() == 0) {
-            atrService.fetchHtfEmaForSymbols(watchlistWithIndex, htfEmaService);
+        // Seed HTF (60-min) SMAs. Same cache-aware routing as ATR above.
+        if (htfSmaService.isSeededFromCache()) {
+            atrService.fetchHtfSmaForSymbols(watchlistWithIndex, htfSmaService);
+        } else if (htfSmaService.getLoadedCount() == 0) {
+            atrService.fetchHtfSmaForSymbols(watchlistWithIndex, htfSmaService);
         } else {
-            log.info("[MarketData] HTF EMAs already loaded ({} symbols) — skipping fetch", htfEmaService.getLoadedCount());
+            log.info("[MarketData] HTF SMAs already loaded ({} symbols) — skipping fetch", htfSmaService.getLoadedCount());
         }
 
         // Subscribe watchlist + NIFTY to WebSocket (after API calls give WS time to connect)
@@ -987,12 +987,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         int atrLoaded = atrService.getLoadedCountFor(watchlist);
         int weeklyCount = weeklyCprService.getLoadedCountFor(watchlist);
         int cprCount = bhavcopyService.getLoadedCountFor(watchlist);
-        int e20 = emaService.getLoadedCountFor(watchlist);
-        int e50 = emaService.getEma50LoadedCountFor(watchlist);
-        int e200 = emaService.getEma200LoadedCountFor(watchlist);
-        int he20 = htfEmaService.getLoadedCountFor(watchlist);
-        int he50 = htfEmaService.getEma50LoadedCountFor(watchlist);
-        int he200 = htfEmaService.getEma200LoadedCountFor(watchlist);
+        int e20 = smaService.getLoadedCountFor(watchlist);
+        int e50 = smaService.getSma50LoadedCountFor(watchlist);
+        int e200 = smaService.getSma200LoadedCountFor(watchlist);
+        int he20 = htfSmaService.getLoadedCountFor(watchlist);
+        int he50 = htfSmaService.getSma50LoadedCountFor(watchlist);
+        int he200 = htfSmaService.getSma200LoadedCountFor(watchlist);
         int total = watchlist.size();
         int htfMins = riskSettings.getHigherTimeframe();
 
@@ -1001,8 +1001,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             + ", narrow=" + narrowCount + "/inside=" + insideCount
             + ", CPR=" + cprCount + ", ATR=" + atrLoaded
             + ", weekly-trend=" + weeklyCount
-            + ", 5m EMA 20/50/200=" + e20 + "/" + e50 + "/" + e200
-            + ", " + htfMins + "m EMA 20/50/200=" + he20 + "/" + he50 + "/" + he200 + ")");
+            + ", 5m SMA 20/50/200=" + e20 + "/" + e50 + "/" + e200
+            + ", " + htfMins + "m SMA 20/50/200=" + he20 + "/" + he50 + "/" + he200 + ")");
 
         telegramService.notifyBotReady(total, narrowCount, insideCount,
             atrLoaded, weeklyCount, cprCount,
@@ -1118,7 +1118,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
      * Periodic check (every 30s) — triggers the opening refresh exactly once per trading day,
      * at or shortly after the configured time (default 09:25 IST). Re-fetches today's candles
      * from Fyers /data/history for every watchlist symbol and re-seeds firstCandleClose,
-     * dayOpen, openingRangeHigh/Low, EMA, ATR, and the completedCandles deque. This corrects
+     * dayOpen, openingRangeHigh/Low, SMA, ATR, and the completedCandles deque. This corrects
      * any wrong values from the unreliable live tick stream during 9:15-9:25 (Fyers-documented
      * issue — their live WS can't deliver ticks fast enough for all subscribed symbols in the
      * first 5-10 minutes).
@@ -1165,12 +1165,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
 
             // Reuse existing seeding path — fetchAtrForSymbols re-fetches history,
             // re-computes ATR, re-seeds candleAggregator.completedCandles (today-only filter
-            // picks the correct 9:15-9:20 bar from history), and re-seeds EMA from the raw list.
+            // picks the correct 9:15-9:20 bar from history), and re-seeds SMA from the raw list.
             // Also re-writes firstCandleClose, dayOpen, OR via seedCandles' direct put calls.
             atrService.fetchAtrForSymbols(withIndex);
 
             lastOpeningRefreshDate = today;
-            eventService.log("[SUCCESS] Opening refresh complete — firstCandleClose, dayOpen, OR, EMA, ATR all re-seeded from authoritative Fyers history");
+            eventService.log("[SUCCESS] Opening refresh complete — firstCandleClose, dayOpen, OR, SMA, ATR all re-seeded from authoritative Fyers history");
 
             // Diagnostic: log pre-snapshot drop summary captured by the HSM parser between
             // subscribe-time and now. Tells us whether the 9:15-9:20 data loss came from
@@ -1315,8 +1315,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         subscribeWatchlist(withIndex);
         // Prune stale indicator caches for symbols that dropped out of the rebuilt watchlist.
         atrService.pruneTo(withIndex);
-        emaService.pruneTo(withIndex);
-        htfEmaService.pruneTo(withIndex);
+        smaService.pruneTo(withIndex);
+        htfSmaService.pruneTo(withIndex);
         log.info("[MarketData] Watchlist rebuilt: {} symbols", watchlist.size());
         eventService.log("[INFO] Watchlist rebuilt: " + watchlist.size() + " symbols (filters updated)");
         return watchlist.size();

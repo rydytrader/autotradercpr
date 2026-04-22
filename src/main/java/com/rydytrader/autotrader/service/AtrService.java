@@ -40,7 +40,7 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
     private final CandleAggregator candleAggregator;
     @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.context.annotation.Lazy
-    private EmaService emaService;
+    private SmaService smaService;
     @org.springframework.beans.factory.annotation.Autowired
     private EventService eventService;
     private final ObjectMapper mapper = new ObjectMapper();
@@ -57,14 +57,14 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
         this.candleAggregator = candleAggregator;
     }
 
-    /** Called by EmaService.loadCache() to rehydrate ATR values alongside EMA state. */
+    /** Called by SmaService.loadCache() to rehydrate ATR values alongside SMA state. */
     public void primeFromCache(String symbol, double atr) {
         if (atr > 0) atrBySymbol.put(symbol, atr);
     }
 
     /**
      * Fetch ATR for all watchlist symbols. Called at 9:00 AM or on restart.
-     * When EmaService has pre-loaded state from its disk cache, cached symbols
+     * When SmaService has pre-loaded state from its disk cache, cached symbols
      * route through a 1-day catch-up fetch instead of the 14-day full seed.
      */
     public void fetchAtrForSymbols(List<String> fyersSymbols) {
@@ -76,14 +76,14 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
         String authHeader = fyersProperties.getClientId() + ":" + accessToken;
         int timeframe = riskSettings.getScannerTimeframe();
 
-        if (emaService != null && emaService.isSeededFromCache()) {
+        if (smaService != null && smaService.isSeededFromCache()) {
             List<String> fullFetch = new ArrayList<>();
             List<String> catchUp   = new ArrayList<>();
             for (String s : fyersSymbols) {
-                if (emaService.hasCachedSymbol(s) && atrBySymbol.getOrDefault(s, 0.0) > 0) catchUp.add(s);
+                if (smaService.hasCachedSymbol(s) && atrBySymbol.getOrDefault(s, 0.0) > 0) catchUp.add(s);
                 else fullFetch.add(s);
             }
-            log.info("[CACHE] ATR/EMA: catch-up for {} cached symbols, full fetch for {} new symbols",
+            log.info("[CACHE] ATR/SMA: catch-up for {} cached symbols, full fetch for {} new symbols",
                 catchUp.size(), fullFetch.size());
             doCatchUpFetch(catchUp, authHeader, timeframe);
             if (!fullFetch.isEmpty()) doFullFetch(fullFetch, authHeader, timeframe);
@@ -107,7 +107,7 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
                     double atr = calculateAtr(candles, getAtrPeriod());
                     atrBySymbol.put(symbol, atr);
                     candleAggregator.seedCandles(symbol, candles);
-                    if (emaService != null) emaService.seedFromCandles(symbol, candles);
+                    if (smaService != null) smaService.seedFromCandles(symbol, candles);
                     success++;
                 } else {
                     log.warn("[AtrService] Only {} candles for {} (need {})", candles.size(), symbol, getAtrPeriod());
@@ -130,7 +130,7 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
                         double atr = calculateAtr(candles, getAtrPeriod());
                         atrBySymbol.put(symbol, atr);
                         candleAggregator.seedCandles(symbol, candles);
-                        if (emaService != null) emaService.seedFromCandles(symbol, candles);
+                        if (smaService != null) smaService.seedFromCandles(symbol, candles);
                         success++;
                         log.info("[AtrService] Retry succeeded for {}", symbol);
                     }
@@ -142,12 +142,12 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
         }
 
         log.info("[AtrService] ATR loaded for {}/{} symbols", success, fyersSymbols.size());
-        eventService.log("[INFO] ATR + EMA loaded for " + success + "/" + fyersSymbols.size() + " symbols ("
+        eventService.log("[INFO] ATR + SMA loaded for " + success + "/" + fyersSymbols.size() + " symbols ("
             + riskSettings.getScannerTimeframe() + "min candles)");
 
         // Persist the fresh seed so the next restart (even before the first candle close)
         // can reload from disk instead of re-fetching 14 days of history.
-        if (emaService != null) emaService.flushCache();
+        if (smaService != null) smaService.flushCache();
     }
 
     /**
@@ -156,9 +156,9 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
      *      cache may be missing, empty, or from a stale day, so we rebuild the 20-bar
      *      volume baseline from a multi-day window.
      *   2. Bars closed between cache-save and restart get replayed through
-     *      {@link EmaService#onCandleClose} / {@link #onCandleClose} so EMA/ATR stay incremental.
+     *      {@link SmaService#onCandleClose} / {@link #onCandleClose} so SMA/ATR stay incremental.
      * The epochSec ≤ lastCandleEpoch guard prevents re-applying bars already baked into the
-     * EMA cache. Does NOT call seedFromCandles — that resets EMA from SMA and wipes the cache.
+     * SMA cache. Does NOT call seedFromCandles — that resets SMA and wipes the cache.
      */
     private void doCatchUpFetch(List<String> symbols, String authHeader, int timeframe) {
         if (symbols.isEmpty()) return;
@@ -167,10 +167,10 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
             try {
                 List<CandleAggregator.CandleBar> bars = fetchHistoricalCandles(symbol, timeframe, authHeader, 5);
                 candleAggregator.seedCandles(symbol, bars);
-                long lastEpoch = emaService != null ? emaService.getLastCandleEpoch(symbol) : 0;
+                long lastEpoch = smaService != null ? smaService.getLastCandleEpoch(symbol) : 0;
                 for (CandleAggregator.CandleBar c : bars) {
                     if (c.epochSec <= lastEpoch) continue;  // already applied pre-restart
-                    if (emaService != null) emaService.onCandleClose(symbol, c);
+                    if (smaService != null) smaService.onCandleClose(symbol, c);
                     this.onCandleClose(symbol, c);
                     candleCount++;
                 }
@@ -180,7 +180,7 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
             }
         }
         log.info("[CACHE] Catch-up applied {} bars across {} symbols", candleCount, symbols.size());
-        eventService.log("[INFO] ATR/EMA restored from cache; catch-up " + candleCount
+        eventService.log("[INFO] ATR/SMA restored from cache; catch-up " + candleCount
             + " bars across " + symbols.size() + " symbols");
     }
 
@@ -201,52 +201,49 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
     }
 
     /**
-     * Fetch HTF candles for all watchlist symbols and seed HtfEmaService.
+     * Fetch HTF candles for all watchlist symbols and seed HtfSmaService.
      * Fyers /data/history only supports standard resolutions (1,2,3,5,10,15,20,30,45,60,120,180,240,D),
      * so we fetch 15-min bars and locally aggregate into HTF bars using the same
      * bucket alignment as CandleAggregator (minuteOfDay / htfMin * htfMin).
-     * 60 days back → ~200 HTF bars for EMA(200) convergence.
+     * 60 days back → ~200 HTF bars for SMA(200) coverage.
      */
-    public void fetchHtfEmaForSymbols(List<String> fyersSymbols, HtfEmaService htfEmaService) {
+    public void fetchHtfSmaForSymbols(List<String> fyersSymbols, HtfSmaService htfSmaService) {
         String accessToken = tokenStore.getAccessToken();
         if (accessToken == null || accessToken.isEmpty()) {
-            log.warn("[AtrService] No access token, cannot fetch HTF EMAs");
+            log.warn("[AtrService] No access token, cannot fetch HTF SMAs");
             return;
         }
         String authHeader = fyersProperties.getClientId() + ":" + accessToken;
         int htfTimeframe = riskSettings.getHigherTimeframe();
         // Fyers /data/history natively supports these intraday resolutions.
-        // For supported values we fetch directly (no aggregation), with a longer
-        // window for EMA(200) to fully converge (~3× period after SMA seed).
-        // For unsupported values (e.g. 75) we fall back to fetching 15-min and aggregating.
         Set<Integer> nativeResolutions = Set.of(1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 120, 180, 240);
         boolean nativeFetch = nativeResolutions.contains(htfTimeframe);
         int baseTimeframe = nativeFetch ? htfTimeframe : 15;
         // Fyers /data/history caps intraday requests at ~100 days per call regardless of
         // resolution — going beyond returns HTTP 422. Stay under that limit.
-        // 60-min × 100 days ≈ 700 bars → EMA(200) gets ~500 iterations past SMA seed (well-converged).
-        // 15-min × 90 days for the aggregated 75-min path.
+        // 60-min × 100 days ≈ 700 bars → SMA(200) has a 200-close window plus 500 extra for pattern history.
+        // 15-min × 90 days for the aggregated path.
         int daysBack = nativeFetch && htfTimeframe >= 60 ? 100 : 90;
 
         if (!nativeFetch && (htfTimeframe % baseTimeframe != 0 || htfTimeframe < baseTimeframe)) {
-            log.warn("[AtrService] HTF timeframe {} not a multiple of {} — cannot seed HTF EMAs",
+            log.warn("[AtrService] HTF timeframe {} not a multiple of {} — cannot seed HTF SMAs",
                 htfTimeframe, baseTimeframe);
             return;
         }
 
-        // If HtfEmaService was seeded from its disk cache, split the work: catch-up for
+        // If HtfSmaService was seeded from its disk cache, split the work: catch-up for
         // cached symbols (1-day fetch + incremental onCandleClose replay), full 100-day
         // fetch only for symbols new to the watchlist.
-        if (htfEmaService.isSeededFromCache()) {
+        if (htfSmaService.isSeededFromCache()) {
             List<String> fullFetch = new ArrayList<>();
             List<String> catchUp   = new ArrayList<>();
             for (String s : fyersSymbols) {
-                if (htfEmaService.hasCachedSymbol(s)) catchUp.add(s);
+                if (htfSmaService.hasCachedSymbol(s)) catchUp.add(s);
                 else fullFetch.add(s);
             }
-            log.info("[CACHE] HTF EMA: catch-up for {} cached, full fetch for {} new",
+            log.info("[CACHE] HTF SMA: catch-up for {} cached, full fetch for {} new",
                 catchUp.size(), fullFetch.size());
-            doHtfCatchUpFetch(catchUp, htfEmaService, authHeader, baseTimeframe, htfTimeframe, nativeFetch);
+            doHtfCatchUpFetch(catchUp, htfSmaService, authHeader, baseTimeframe, htfTimeframe, nativeFetch);
             if (fullFetch.isEmpty()) return;
             fyersSymbols = fullFetch;  // fall through: full fetch for only the new symbols
         }
@@ -255,7 +252,7 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
         // Fyers' rate limit. Aggregated path uses smaller (90-day) responses, can go a bit faster.
         long perCallDelayMs = nativeFetch ? 700L : 350L;
 
-        log.info("[AtrService] Fetching {}min bars for HTF({}min) EMAs — {} mode, {} symbols, {} days back, {}ms gap",
+        log.info("[AtrService] Fetching {}min bars for HTF({}min) SMAs — {} mode, {} symbols, {} days back, {}ms gap",
             baseTimeframe, htfTimeframe, nativeFetch ? "native" : "aggregated",
             fyersSymbols.size(), daysBack, perCallDelayMs);
 
@@ -267,7 +264,7 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
                 List<CandleAggregator.CandleBar> base = fetchHistoricalCandles(symbol, baseTimeframe, authHeader, daysBack);
                 List<CandleAggregator.CandleBar> htf = nativeFetch ? base : aggregateToHtf(base, htfTimeframe);
                 if (htf.size() >= 20) {
-                    htfEmaService.seedFromCandles(symbol, htf);
+                    htfSmaService.seedFromCandles(symbol, htf);
                     success++;
                 } else {
                     log.warn("[AtrService] Only {} HTF bars for {} (need ≥20)", htf.size(), symbol);
@@ -282,7 +279,7 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
                     failed.add(symbol);
                     rateLimited = true;
                 } else {
-                    log.error("[AtrService] Failed to fetch HTF EMA for {}: {}", symbol, msg);
+                    log.error("[AtrService] Failed to fetch HTF SMA for {}: {}", symbol, msg);
                     failed.add(symbol);
                 }
             }
@@ -300,7 +297,7 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
                     List<CandleAggregator.CandleBar> base = fetchHistoricalCandles(symbol, baseTimeframe, authHeader, daysBack);
                     List<CandleAggregator.CandleBar> htf = nativeFetch ? base : aggregateToHtf(base, htfTimeframe);
                     if (htf.size() >= 20) {
-                        htfEmaService.seedFromCandles(symbol, htf);
+                        htfSmaService.seedFromCandles(symbol, htf);
                         success++;
                     }
                 } catch (Exception e) {
@@ -316,22 +313,22 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
             }
         }
 
-        log.info("[AtrService] Seeded HTF EMAs for {}/{} symbols (20: {} loaded, 50: {}, 200: {})",
+        log.info("[AtrService] Seeded HTF SMAs for {}/{} symbols (20: {} loaded, 50: {}, 200: {})",
             success, fyersSymbols.size(),
-            htfEmaService.getLoadedCount(),
-            htfEmaService.getEma50LoadedCount(),
-            htfEmaService.getEma200LoadedCount());
+            htfSmaService.getLoadedCount(),
+            htfSmaService.getSma50LoadedCount(),
+            htfSmaService.getSma200LoadedCount());
 
         // Persist fresh HTF seed so the next restart reloads from disk.
-        htfEmaService.flushCache();
+        htfSmaService.flushCache();
     }
 
     /**
      * HTF catch-up fetch: pull 5 days of HTF bars and replay any newer than the cached
-     * lastCandleEpoch through HtfEmaService.onCandleClose. 5-day window ensures recovery
+     * lastCandleEpoch through HtfSmaService.onCandleClose. 5-day window ensures recovery
      * across weekends / long gaps even if the htfAggregator's completedCandles is empty.
      */
-    private void doHtfCatchUpFetch(List<String> symbols, HtfEmaService htfEmaService, String authHeader,
+    private void doHtfCatchUpFetch(List<String> symbols, HtfSmaService htfSmaService, String authHeader,
                                    int baseTimeframe, int htfTimeframe, boolean nativeFetch) {
         if (symbols.isEmpty()) return;
         int candleCount = 0;
@@ -339,10 +336,10 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
             try {
                 List<CandleAggregator.CandleBar> base = fetchHistoricalCandles(symbol, baseTimeframe, authHeader, 5);
                 List<CandleAggregator.CandleBar> htf  = nativeFetch ? base : aggregateToHtf(base, htfTimeframe);
-                long lastEpoch = htfEmaService.getLastCandleEpoch(symbol);
+                long lastEpoch = htfSmaService.getLastCandleEpoch(symbol);
                 for (CandleAggregator.CandleBar c : htf) {
                     if (c.epochSec <= lastEpoch) continue;
-                    htfEmaService.onCandleClose(symbol, c);
+                    htfSmaService.onCandleClose(symbol, c);
                     candleCount++;
                 }
                 Thread.sleep(200);
@@ -411,7 +408,7 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
         String resolution = String.valueOf(timeframeMin);
 
         // Date range: caller-configurable. 14 days default for 5-min (~750 candles).
-        // HTF 75-min needs ~60 days for 200 EMA convergence (~200 bars).
+        // HTF 75-min needs ~60 days for 200 SMA to have a full window (~200 bars).
         long toEpoch = Instant.now().getEpochSecond();
         long fromEpoch = toEpoch - ((long) daysBack * 24 * 3600);
 

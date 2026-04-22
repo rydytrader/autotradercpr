@@ -18,20 +18,20 @@ public class SignalProcessor {
     private final MarketDataService marketDataService;
     private final CandleAggregator candleAggregator;
     private final WeeklyCprService weeklyCprService;
-    private final EmaService       emaService;
-    private final HtfEmaService    htfEmaService;
+    private final SmaService       smaService;
+    private final HtfSmaService    htfSmaService;
 
     public SignalProcessor(RiskSettingsStore riskSettings, EventService eventService,
                            QuantityService quantityService, MarketDataService marketDataService,
                            CandleAggregator candleAggregator, WeeklyCprService weeklyCprService,
-                           EmaService emaService, HtfEmaService htfEmaService) {
+                           SmaService smaService, HtfSmaService htfSmaService) {
         this.riskSettings = riskSettings;
         this.eventService = eventService;
         this.quantityService = quantityService;
         this.marketDataService = marketDataService;
         this.candleAggregator = candleAggregator;
-        this.emaService = emaService;
-        this.htfEmaService = htfEmaService;
+        this.smaService = smaService;
+        this.htfSmaService = htfSmaService;
         this.weeklyCprService = weeklyCprService;
     }
 
@@ -48,21 +48,21 @@ public class SignalProcessor {
         // Scanner may have already downgraded probability (e.g. NIFTY index alignment) — surface that note.
         String scannerNote = str(alert, "scannerNote");
         if (scannerNote != null && !scannerNote.isEmpty()) adjustments.add(scannerNote);
-        // Capture EMA 20/50 pattern at time of signal (informational — for post-trade analysis).
+        // Capture SMA 20/50 pattern at time of signal (informational — for post-trade analysis).
         // ATR comes from the alert payload below, so we defer pattern check until after atr is parsed.
         double close       = dbl(alert, "close");
         double atr         = dbl(alert, "atr");
         double dayOpen     = dbl(alert, "dayOpen");
-        // EMA 20/50 pattern at time of signal (for post-trade analysis)
+        // SMA 20/50 pattern at time of signal (for post-trade analysis)
         try {
-            if (atr > 0 && emaService != null) {
-                String emaPattern = emaService.getEmaPattern(symbol,
-                    riskSettings.getEmaPatternLookback(), atr,
+            if (atr > 0 && smaService != null) {
+                String smaPattern = smaService.getSmaPattern(symbol,
+                    riskSettings.getSmaPatternLookback(), atr,
                     riskSettings.getBraidedMinCrossovers(), riskSettings.getBraidedMaxSpreadAtr(),
                     riskSettings.getRailwayMaxCv(), riskSettings.getRailwayMinSpreadAtr());
-                if ("RAILWAY_UP".equals(emaPattern)) adjustments.add("EMA 20/50: R-RTP (rising railway track — bullish parallel trend)");
-                else if ("RAILWAY_DOWN".equals(emaPattern)) adjustments.add("EMA 20/50: F-RTP (falling railway track — bearish parallel trend)");
-                else if ("BRAIDED".equals(emaPattern)) adjustments.add("EMA 20/50: ZIG ZAG (braided — choppy, whipsaw risk)");
+                if ("RAILWAY_UP".equals(smaPattern)) adjustments.add("SMA 20/50: R-RTP (rising railway track — bullish parallel trend)");
+                else if ("RAILWAY_DOWN".equals(smaPattern)) adjustments.add("SMA 20/50: F-RTP (falling railway track — bearish parallel trend)");
+                else if ("BRAIDED".equals(smaPattern)) adjustments.add("SMA 20/50: ZIG ZAG (braided — choppy, whipsaw risk)");
             }
         } catch (Exception ignored) {}
         // Volume snapshot at signal time: breakout candle volume vs 20-candle average
@@ -97,10 +97,29 @@ public class SignalProcessor {
         boolean isBuy = setup.startsWith("BUY_");
         String signal = isBuy ? "BUY" : "SELL";
 
-        // ── R4/S4 gate ────────────────────────────────────────────────────────
-        boolean isR4S4 = "BUY_ABOVE_R4".equals(setup) || "SELL_BELOW_S4".equals(setup);
-        if (isR4S4 && !riskSettings.isEnableR4S4()) {
-            return ProcessedSignal.rejected(setup, symbol, "R4/S4 signals disabled in settings");
+        // ── Extended-level day-type gate ─────────────────────────────────────
+        // R3/S3 and R4/S4 breakouts are skipped on normal (IV/OV) days but allowed on
+        // EV (gap up / gap down) days. Each level family has its own toggle. On EV days
+        // the skip is bypassed entirely — the gap provides the directional bias that makes
+        // these far levels tradeable.
+        boolean isR3S3Setup = "BUY_ABOVE_R3".equals(setup) || "SELL_BELOW_S3".equals(setup)
+                           || "BUY_ABOVE_S3".equals(setup) || "SELL_BELOW_R3".equals(setup);
+        boolean isR4S4Setup = "BUY_ABOVE_R4".equals(setup) || "SELL_BELOW_S4".equals(setup)
+                           || "BUY_ABOVE_S4".equals(setup) || "SELL_BELOW_R4".equals(setup);
+        if (isR3S3Setup || isR4S4Setup) {
+            double firstCloseForDayType = candleAggregator.getFirstCandleClose(symbol);
+            boolean isEvDay = firstCloseForDayType > 0
+                && ((r2 > 0 && firstCloseForDayType >= r2) || (s2 > 0 && firstCloseForDayType <= s2));
+            if (!isEvDay) {
+                if (isR3S3Setup && riskSettings.isSkipR3S3NormalDays()) {
+                    return ProcessedSignal.rejected(setup, symbol,
+                        "R3/S3 breakout skipped — not an EV day (allowed only on gap up/down sessions)");
+                }
+                if (isR4S4Setup && riskSettings.isSkipR4S4NormalDays()) {
+                    return ProcessedSignal.rejected(setup, symbol,
+                        "R4/S4 breakout skipped — not an EV day (allowed only on gap up/down sessions)");
+                }
+            }
         }
 
         // ── 4c. Compute breakout level ──────────────────────────────────────────
@@ -436,25 +455,25 @@ public class SignalProcessor {
                 shiftCandidates.putIfAbsent(wl.bc,    "weekly BC");
                 shiftCandidates.putIfAbsent(wl.pivot, "weekly Pivot");
             }
-            // 200 EMA as target shift candidate — only when the EMA trend gate is disabled
-            // (trade fires into the 200 EMA rather than being blocked by it).
-            // The 200 EMA acts as resistance (buys) or support (sells) for target capping.
-            if (!riskSettings.isEnableEmaTrendCheck()) {
-                double ema200 = emaService.getEma200(symbol);
-                if (ema200 > 0) {
-                    shiftCandidates.putIfAbsent(ema200, "200 EMA");
+            // 200 SMA as target shift candidate — only when the SMA trend gate is disabled
+            // (trade fires into the 200 SMA rather than being blocked by it).
+            // The 200 SMA acts as resistance (buys) or support (sells) for target capping.
+            if (!riskSettings.isEnableSmaTrendCheck()) {
+                double sma200 = smaService.getSma200(symbol);
+                if (sma200 > 0) {
+                    shiftCandidates.putIfAbsent(sma200, "200 SMA");
                 }
             }
-            // Weekly (HTF 60-min) EMA levels — any of EMA(20/50/200) sitting between close and
+            // Weekly (HTF 60-min) SMA levels — any of SMA(20/50/200) sitting between close and
             // the structural target becomes a resistance/support candidate. These are the same
-            // values shown as the "1h" row under the EMA Levels section on the scanner card.
-            if (riskSettings.isEnableWeeklyEmaTargetShift() && htfEmaService != null) {
-                double htfE20  = htfEmaService.getEma(symbol);
-                double htfE50  = htfEmaService.getEma50(symbol);
-                double htfE200 = htfEmaService.getEma200(symbol);
-                if (htfE20  > 0) shiftCandidates.putIfAbsent(htfE20,  "weekly EMA 20");
-                if (htfE50  > 0) shiftCandidates.putIfAbsent(htfE50,  "weekly EMA 50");
-                if (htfE200 > 0) shiftCandidates.putIfAbsent(htfE200, "weekly EMA 200");
+            // values shown as the "1h" row under the SMA Levels section on the scanner card.
+            if (riskSettings.isEnableWeeklySmaTargetShift() && htfSmaService != null) {
+                double htfS20  = htfSmaService.getSma(symbol);
+                double htfS50  = htfSmaService.getSma50(symbol);
+                double htfS200 = htfSmaService.getSma200(symbol);
+                if (htfS20  > 0) shiftCandidates.putIfAbsent(htfS20,  "weekly SMA 20");
+                if (htfS50  > 0) shiftCandidates.putIfAbsent(htfS50,  "weekly SMA 50");
+                if (htfS200 > 0) shiftCandidates.putIfAbsent(htfS200, "weekly SMA 200");
             }
             Double bestLevel = null;
             String bestName = null;
@@ -497,14 +516,11 @@ public class SignalProcessor {
         }
 
         // ── 4i. Quantity ────────────────────────────────────────────────────────
+        // Extended-level (R3/S3/R4/S4) qty reduction removed — these setups are either
+        // skipped outright on IV/OV days (via skipR3S3NormalDays / skipR4S4NormalDays)
+        // or allowed at full size on EV days. No per-level factor.
         int qty = baseQty;
         String qtyLog = null;
-        boolean isExtreme = "BUY_ABOVE_R3".equals(setup) || "SELL_BELOW_S3".equals(setup) || isR4S4;
-        if (isExtreme) {
-            qty = Math.max(1, qty / 2);
-            qtyLog = "[INFO] " + symbol + " " + setup + " qty halved (extreme level): " + baseQty + " -> " + qty;
-            adjustments.add("Qty " + baseQty + " → " + qty + " (halved — extreme level R3/S3/R4/S4)");
-        }
         // ── Session move limit: reduce qty if price moved too far from day open/PDC ──
         double sessionMoveLimit = riskSettings.getSessionMoveLimit() / 100.0; // e.g. 2.0 → 0.02
         if (riskSettings.isEnableSessionMoveLimit() && sessionMoveLimit > 0) {
@@ -536,7 +552,7 @@ public class SignalProcessor {
 
         // ── 4i2b. NIFTY index alignment qty adjustment ─────────────────────────
         // When NIFTY opposes the trade but the stock's own alignment (weekly + daily +
-        // EMA) is intact, we kept the probability (typically HPT) and apply a qty factor
+        // SMA) is intact, we kept the probability (typically HPT) and apply a qty factor
         // here instead of a full LPT downgrade. Default 0.75 → 25% qty reduction.
         if (Boolean.TRUE.equals(alert.get("niftyOpposed"))) {
             double factor = riskSettings.getIndexOpposedQtyFactor();
@@ -550,34 +566,7 @@ public class SignalProcessor {
 
         // Weekly NEUTRAL trades are always LPT (downgraded in BreakoutScanner) — no additional qty reduction.
 
-        // ── 4i3. Level-based qty adjustment (R2/S2, R3/S3, R4/S4 — each its own factor) ──
-        if (setup.contains("R2") || setup.contains("S2")) {
-            double factor = riskSettings.getR2s2QtyFactor();
-            if (factor < 1.0) {
-                int reduced = Math.max(1, (int)(qty * factor));
-                eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (R2/S2 ×" + factor + "): " + qty + " -> " + reduced);
-                adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — R2/S2 extended level)");
-                qty = reduced;
-            }
-        } else if (setup.contains("R3") || setup.contains("S3")) {
-            double factor = riskSettings.getR3s3QtyFactor();
-            if (factor < 1.0) {
-                int reduced = Math.max(1, (int)(qty * factor));
-                eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (R3/S3 ×" + factor + "): " + qty + " -> " + reduced);
-                adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — R3/S3 extended level)");
-                qty = reduced;
-            }
-        } else if (setup.contains("R4") || setup.contains("S4")) {
-            double factor = riskSettings.getR4s4QtyFactor();
-            if (factor < 1.0) {
-                int reduced = Math.max(1, (int)(qty * factor));
-                eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (R4/S4 ×" + factor + "): " + qty + " -> " + reduced);
-                adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — R4/S4 extended level)");
-                qty = reduced;
-            }
-        }
-
-        // ── 4i4. Mean-reversion qty reduction — half qty for all counter-trend trades ──
+        // ── 4i3. Mean-reversion qty reduction — half qty for all counter-trend trades ──
         boolean isMagnet = "BUY_ABOVE_S1_PDL".equals(setup) || "SELL_BELOW_R1_PDH".equals(setup);
         if (isReversal || (isMagnet && !isReversal)) {
             // Check if OV magnet (not EV — EV magnets are already isReversal)
