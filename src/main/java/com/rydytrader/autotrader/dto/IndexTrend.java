@@ -35,7 +35,6 @@ public class IndexTrend {
     private int totalScore;         // sum of all components
     private String state;           // STRONG_BULLISH, BULLISH, NEUTRAL, BEARISH, STRONG_BEARISH
     private boolean dataAvailable;  // false if any input is missing (e.g. before market open)
-    private boolean weeklyReversalActive; // true if HTF candle rejected at weekly R1/PWH or S1/PWL
 
     public IndexTrend() {}
 
@@ -93,6 +92,4 @@ public class IndexTrend {
     public void setState(String v) { this.state = v; }
     public boolean isDataAvailable() { return dataAvailable; }
     public void setDataAvailable(boolean v) { this.dataAvailable = v; }
-    public boolean isWeeklyReversalActive() { return weeklyReversalActive; }
-    public void setWeeklyReversalActive(boolean v) { this.weeklyReversalActive = v; }
 }

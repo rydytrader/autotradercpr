@@ -54,6 +54,7 @@ public class BhavcopyService {
     );
     private static final String STORE_FILE = "../store/cache/cpr-data.json";
     private static final String LEGACY_STORE_FILE = "../store/config/cpr-data.json";
+    private static final String NIFTY50_LIST_FILE = "../store/cache/nifty50-list.json";
     private static final String NSE_BASE_URL = "https://www.nseindia.com/";
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
@@ -64,6 +65,10 @@ public class BhavcopyService {
 
     private final ConcurrentHashMap<String, CprLevels> cache = new ConcurrentHashMap<>();
     private volatile String cachedDate = "";
+    // NIFTY 50 membership — fetched from NSE once per day, cached to disk as fallback for
+    // offline/failed-fetch days. When non-empty, the bhavcopy parse intersects with this set
+    // so only NIFTY 50 stocks end up in the CPR cache (cheaper CPR/volume/turnover compute).
+    private volatile Set<String> nifty50Symbols = Collections.emptySet();
 
     // Rolling 5-day history (most recent first) for weekly CPR and inside-CPR detection
     private final LinkedList<DaySnapshot> dailyHistory = new LinkedList<>();
@@ -168,11 +173,14 @@ public class BhavcopyService {
             } else {
                 log.info("[BhavcopyService] Beta + cap + averages already cached — skipping enrichment");
             }
-            long narrowCount = cache.values().stream().filter(CprLevels::isNarrowCpr).count();
+            double narrowMaxWidth = riskSettings != null ? riskSettings.getNarrowCprMaxWidth() : 0.1;
+            long narrowCount = cache.values().stream()
+                .filter(c -> !isIndex(c.getSymbol()) && c.getCprWidthPct() < narrowMaxWidth)
+                .count();
             long insideCount = getInsideCprStocks().size();
-            log.info("[BhavcopyService] Loaded {} NFO stocks from cache for {} ({} narrow, {} inside CPR, {} history days)", cache.size(), cachedDate, narrowCount, insideCount, dailyHistory.size());
+            log.info("[BhavcopyService] Loaded {} NFO stocks from cache for {} ({} narrow @{}%, {} inside CPR, {} history days)", cache.size(), cachedDate, narrowCount, narrowMaxWidth, insideCount, dailyHistory.size());
             eventService.log("[BhavcopyService] Loaded CPR for " + cache.size() + " NFO stocks for " + cachedDate
-                + " (" + narrowCount + " narrow, " + insideCount + " inside CPR)");
+                + " (" + narrowCount + " narrow @" + narrowMaxWidth + "%, " + insideCount + " inside CPR)");
         }
     }
 
@@ -255,11 +263,23 @@ public class BhavcopyService {
         return SUPPORTED_INDICES.containsValue(ticker);
     }
 
+    /** True if the symbol is part of the NIFTY 50 universe — flag set during cap-category fetch. */
+    public boolean isInNifty50(String ticker) {
+        CprLevels cpr = cache.get(ticker);
+        return cpr != null && cpr.isInNifty50();
+    }
+
+    /** Total NIFTY 50 stocks marked in the current cache. Returns 0 if the list fetch failed. */
+    public int getNifty50Count() {
+        return (int) cache.values().stream().filter(CprLevels::isInNifty50).count();
+    }
+
     public List<CprLevels> getNarrowCprStocks() {
+        double narrowMaxWidth = riskSettings != null ? riskSettings.getNarrowCprMaxWidth() : 0.1;
         return cache.values().stream()
-            .filter(CprLevels::isNarrowCpr)
             .filter(c -> !isIndex(c.getSymbol()))
-                        .sorted(Comparator.comparingDouble(CprLevels::getCprWidthPct))
+            .filter(c -> c.getCprWidthPct() < narrowMaxWidth)
+            .sorted(Comparator.comparingDouble(CprLevels::getCprWidthPct))
             .collect(Collectors.toList());
     }
 
@@ -360,21 +380,31 @@ public class BhavcopyService {
                     return false;
                 }
 
-                // Download FO Bhavcopy for NFO stock list
-                String foUrl = String.format(FO_URL_TEMPLATE, dateStr);
-                byte[] foZip = downloadZip(foUrl, cookies);
-                if (foZip == null) {
-                    log.error("[BhavcopyService] FO Bhavcopy not available for {}, trying previous day", targetDate);
-                    targetDate = skipWeekends(targetDate.minusDays(1));
-                    continue;
-                }
-
-                Set<String> nfoSymbols = extractNfoSymbols(foZip);
-                log.info("[BhavcopyService] FO Bhavcopy yielded {} unique NFO stock symbols", nfoSymbols.size());
-                if (nfoSymbols.isEmpty()) {
-                    log.error("[BhavcopyService] No NFO symbols found in FO Bhavcopy for {}", targetDate);
-                    targetDate = skipWeekends(targetDate.minusDays(1));
-                    continue;
+                // Universe selection. NIFTY 50 ⊂ FNO, so when the NIFTY 50 list is available
+                // (live or disk-cached) we skip the FO bhavcopy fetch entirely — it was only
+                // used to establish FNO membership, and NIFTY 50 guarantees that. If NIFTY 50
+                // is unavailable, fall back to FO bhavcopy + full FNO universe.
+                Set<String> nifty50 = fetchOrLoadNifty50List(cookies);
+                Set<String> nfoSymbols;
+                if (!nifty50.isEmpty()) {
+                    nfoSymbols = new HashSet<>(nifty50);
+                    log.info("[BhavcopyService] NIFTY 50 universe active — skipping FO bhavcopy fetch ({} symbols)", nfoSymbols.size());
+                } else {
+                    // Fallback: fetch FO bhavcopy for full FNO universe
+                    String foUrl = String.format(FO_URL_TEMPLATE, dateStr);
+                    byte[] foZip = downloadZip(foUrl, cookies);
+                    if (foZip == null) {
+                        log.error("[BhavcopyService] FO Bhavcopy not available for {}, trying previous day", targetDate);
+                        targetDate = skipWeekends(targetDate.minusDays(1));
+                        continue;
+                    }
+                    nfoSymbols = extractNfoSymbols(foZip);
+                    log.info("[BhavcopyService] FO Bhavcopy fallback — {} unique NFO stock symbols", nfoSymbols.size());
+                    if (nfoSymbols.isEmpty()) {
+                        log.error("[BhavcopyService] No NFO symbols found in FO Bhavcopy for {}", targetDate);
+                        targetDate = skipWeekends(targetDate.minusDays(1));
+                        continue;
+                    }
                 }
 
                 // Download CM Bhavcopy for OHLC data
@@ -396,6 +426,7 @@ public class BhavcopyService {
                 }
 
                 // Compute CPR levels
+                boolean nifty50Active = !nifty50Symbols.isEmpty();
                 ConcurrentHashMap<String, CprLevels> newCache = new ConcurrentHashMap<>();
                 for (Map.Entry<String, double[]> entry : ohlcMap.entrySet()) {
                     double[] hlc = entry.getValue();
@@ -404,6 +435,7 @@ public class BhavcopyService {
                     if (hlc.length > 4) lvl.setFiftyTwoWeekHigh(hlc[4]);
                     if (hlc.length > 5) lvl.setFiftyTwoWeekLow(hlc[5]);
                     if (hlc.length > 6) lvl.setTurnover(hlc[6]);
+                    if (nifty50Active) lvl.setInNifty50(true);
                     if (symbolMasterService != null) {
                         double tick = symbolMasterService.getTickSize("NSE:" + entry.getKey() + "-EQ");
                         lvl.roundToTick(tick);
@@ -448,10 +480,14 @@ public class BhavcopyService {
 
                 saveToFile();
 
-                long narrowCount = cache.values().stream().filter(CprLevels::isNarrowCpr).count();
+                double narrowMaxWidth = riskSettings != null ? riskSettings.getNarrowCprMaxWidth() : 0.1;
+                long narrowCount = cache.values().stream()
+                    .filter(c -> !isIndex(c.getSymbol()) && c.getCprWidthPct() < narrowMaxWidth)
+                    .count();
                 long insideCount = getInsideCprStocks().size();
                 String msg = "[BhavcopyService] Loaded CPR for " + cache.size()
-                    + " NFO stocks for " + cachedDate + " (" + narrowCount + " narrow, " + insideCount + " inside CPR)";
+                    + " NFO stocks for " + cachedDate + " (" + narrowCount + " narrow @" + narrowMaxWidth
+                    + "%, " + insideCount + " inside CPR)";
                 log.info(msg);
                 eventService.log(msg);
                 return true;
@@ -633,10 +669,72 @@ public class BhavcopyService {
 
     // ── Market cap classification from NSE index CSVs ───────────────────────
 
+    private static final String NIFTY50_URL  = "https://nsearchives.nseindia.com/content/indices/ind_nifty50list.csv";
     private static final String NIFTY100_URL = "https://nsearchives.nseindia.com/content/indices/ind_nifty100list.csv";
     private static final String MIDCAP150_URL = "https://nsearchives.nseindia.com/content/indices/ind_niftymidcap150list.csv";
 
+    /**
+     * Fetch the NIFTY 50 member list from NSE and update {@link #nifty50Symbols}. On fetch
+     * failure, fall back to the disk-cached copy (last-known-good). Returns the set in use.
+     * Called once per bhavcopy refresh — keeps the list ~1 day fresh, which is fine since
+     * NIFTY 50 rebalances ~2× per year.
+     */
+    private Set<String> fetchOrLoadNifty50List(String cookies) {
+        Set<String> fresh = fetchIndexSymbols(NIFTY50_URL, cookies);
+        if (!fresh.isEmpty()) {
+            nifty50Symbols = fresh;
+            saveNifty50ToDisk(fresh);
+            log.info("[BhavcopyService] NIFTY 50 list fetched from NSE: {} stocks", fresh.size());
+            return fresh;
+        }
+        // Live fetch failed → try disk fallback
+        Set<String> cached = loadNifty50FromDisk();
+        if (!cached.isEmpty()) {
+            nifty50Symbols = cached;
+            log.warn("[BhavcopyService] NIFTY 50 live fetch failed — using disk-cached list of {} stocks", cached.size());
+            return cached;
+        }
+        log.warn("[BhavcopyService] NIFTY 50 list unavailable (live fetch + disk cache both empty) — bhavcopy will be processed with full FNO universe");
+        return Collections.emptySet();
+    }
+
+    private void saveNifty50ToDisk(Set<String> symbols) {
+        try {
+            java.nio.file.Path path = java.nio.file.Paths.get(NIFTY50_LIST_FILE);
+            java.nio.file.Files.createDirectories(path.getParent());
+            java.nio.file.Files.writeString(path, mapper.writeValueAsString(symbols));
+        } catch (Exception e) {
+            log.warn("[BhavcopyService] Failed to persist NIFTY 50 list to disk: {}", e.getMessage());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Set<String> loadNifty50FromDisk() {
+        try {
+            java.nio.file.Path path = java.nio.file.Paths.get(NIFTY50_LIST_FILE);
+            if (!java.nio.file.Files.exists(path)) return Collections.emptySet();
+            String json = java.nio.file.Files.readString(path);
+            return mapper.readValue(json, Set.class);
+        } catch (Exception e) {
+            log.warn("[BhavcopyService] Failed to load NIFTY 50 list from disk: {}", e.getMessage());
+            return Collections.emptySet();
+        }
+    }
+
     private void fetchCapCategories(String cookies, Map<String, CprLevels> todayCache) {
+        // When NIFTY 50 filter is active, every cached entry is a NIFTY 50 constituent by
+        // construction — all are LARGE caps. Skip the NIFTY 100 / MIDCAP 150 fetches and
+        // just mark everyone LARGE.
+        if (!nifty50Symbols.isEmpty()) {
+            for (CprLevels cpr : todayCache.values()) {
+                if (!isIndex(cpr.getSymbol())) cpr.setCapCategory("LARGE");
+            }
+            log.info("[BhavcopyService] Cap categories: all {} entries marked LARGE (NIFTY 50 universe)",
+                todayCache.size());
+            return;
+        }
+        // Fallback path — NIFTY 50 list unavailable, universe is full FNO. Classify via
+        // NIFTY 100 (large) and MIDCAP 150 (mid); everything else is small.
         try {
             Set<String> largeCaps = fetchIndexSymbols(NIFTY100_URL, cookies);
             Set<String> midCaps = fetchIndexSymbols(MIDCAP150_URL, cookies);
@@ -647,7 +745,7 @@ public class BhavcopyService {
                 else if (midCaps.contains(sym)) { cpr.setCapCategory("MID"); mc++; }
                 else { cpr.setCapCategory("SMALL"); sc++; }
             }
-            log.info("[BhavcopyService] Cap categories: {} large, {} mid, {} small", lc, mc, sc);
+            log.info("[BhavcopyService] Cap categories (fallback mode): {} large, {} mid, {} small", lc, mc, sc);
         } catch (Exception e) {
             log.warn("[BhavcopyService] Failed to fetch cap categories: {} — defaulting all to SMALL", e.getMessage());
             todayCache.values().forEach(c -> { if (c.getCapCategory() == null) c.setCapCategory("SMALL"); });

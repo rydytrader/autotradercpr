@@ -199,10 +199,14 @@ public class CandleAggregator {
             nowMinute = t.getHour() * 60L + t.getMinute();
         }
 
-        // Always update latestLtp so trend display reflects pre-market price
+        // Always update latestLtp and latestAtp so trend / scanner display reflects the
+        // latest known prices — pre-market, during session, and post-close. Candle aggregation
+        // below is guarded by the session-hours check so phantom post-close candles can't form,
+        // but display values (LTP + ATP) should stay current.
         latestLtp.put(symbol, ltp);
+        if (raw.atp > 0) latestAtp.put(symbol, raw.atp);
 
-        // Skip candle aggregation / OR / ATP tracking outside NSE session (pre-market + post-close).
+        // Skip candle aggregation / OR tracking outside NSE session (pre-market + post-close).
         // The session runs 09:15:00 to 15:29:59 inclusive — a tick at 15:30:00 belongs to the
         // post-close window and shouldn't extend today's chart or create a phantom 15:30 candle.
         if (nowMinute < MarketHolidayService.MARKET_OPEN_MINUTE
@@ -238,9 +242,6 @@ public class CandleAggregator {
                 saveOrState();
             }
         }
-
-        // Track ATP from exchange avg_trade_price
-        if (raw.atp > 0) latestAtp.put(symbol, raw.atp);
 
         // Track cumulative volume — only update when Fyers sends a non-zero value
         // (delta updates may not include volume, so we keep the last known value)
@@ -482,6 +483,44 @@ public class CandleAggregator {
         return getDayLowExcluding(symbol, candles.peekLast());
     }
 
+    /**
+     * Day high from completed candle BODIES (max of open/close), excluding the most recent candle.
+     * Used for target shift to session high where we want to ignore wicks — only the body extreme
+     * counts as a confirmed price level. Wick rejections are treated as unheld price spikes, not
+     * structural resistance.
+     */
+    public double getDayBodyHighBeforeLast(String symbol) {
+        java.util.Deque<CandleBar> candles = completedCandles.get(symbol);
+        if (candles == null || candles.isEmpty()) return 0;
+        CandleBar exclude = candles.peekLast();
+        double max = 0;
+        for (CandleBar c : candles) {
+            if (c == exclude) continue;
+            if (c.open <= 0 || c.close <= 0) continue;
+            double bodyHigh = Math.max(c.open, c.close);
+            if (bodyHigh > max) max = bodyHigh;
+        }
+        return max;
+    }
+
+    /**
+     * Day low from completed candle BODIES (min of open/close), excluding the most recent candle.
+     * Mirror of getDayBodyHighBeforeLast — ignores wicks for target-shift purposes.
+     */
+    public double getDayBodyLowBeforeLast(String symbol) {
+        java.util.Deque<CandleBar> candles = completedCandles.get(symbol);
+        if (candles == null || candles.isEmpty()) return 0;
+        CandleBar exclude = candles.peekLast();
+        double min = Double.MAX_VALUE;
+        for (CandleBar c : candles) {
+            if (c == exclude) continue;
+            if (c.open <= 0 || c.close <= 0) continue;
+            double bodyLow = Math.min(c.open, c.close);
+            if (bodyLow < min) min = bodyLow;
+        }
+        return min == Double.MAX_VALUE ? 0 : min;
+    }
+
     /** Get the close price of the first completed candle of the day for a symbol. */
     public double getFirstCandleClose(String symbol) {
         return firstCandleClose.getOrDefault(symbol, 0.0);
@@ -490,6 +529,43 @@ public class CandleAggregator {
     /** Number of symbols that have a captured first-candle close (should match watchlist after 9:20). */
     public int getFirstCandleCloseCount() {
         return (int) firstCandleClose.values().stream().filter(v -> v > 0).count();
+    }
+
+    /** Watchlist-scoped first-candle-close count — ignores stale entries from old universes. */
+    public int getFirstCandleCloseCountFor(java.util.Collection<String> symbols) {
+        int n = 0;
+        for (String s : symbols) {
+            if (firstCandleClose.getOrDefault(s, 0.0) > 0) n++;
+        }
+        return n;
+    }
+
+    /**
+     * Drop per-symbol map entries for symbols not in the current watchlist.
+     * Cleans up stale data loaded from the candle-history.json cache (from previous
+     * universes) + stale LTP/ATP/OR entries accumulated across watchlist changes.
+     */
+    public int pruneTo(java.util.Collection<String> watchlist) {
+        java.util.Set<String> keep = new java.util.HashSet<>(watchlist);
+        int before = firstCandleClose.size();
+        firstCandleClose.keySet().retainAll(keep);
+        dayOpen.keySet().retainAll(keep);
+        openingRangeHigh.keySet().retainAll(keep);
+        openingRangeLow.keySet().retainAll(keep);
+        openingRangeLocked.keySet().retainAll(keep);
+        latestAtp.keySet().retainAll(keep);
+        latestLtp.keySet().retainAll(keep);
+        latestChangePct.keySet().retainAll(keep);
+        lastCumulativeVol.keySet().retainAll(keep);
+        currentCandles.keySet().retainAll(keep);
+        completedCandles.keySet().retainAll(keep);
+        priorDayCandles.keySet().retainAll(keep);
+        int removed = before - firstCandleClose.size();
+        if (removed > 0) {
+            log.info("[CandleAggregator] Pruned {} stale per-symbol entries not in watchlist ({} remaining)",
+                removed, firstCandleClose.size());
+        }
+        return removed;
     }
 
     /** Opening Range high (highest price in first N minutes). */

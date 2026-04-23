@@ -63,17 +63,20 @@ public class SettingsController {
         result.put("enableWeeklyLevelTargetShift", riskSettings.isEnableWeeklyLevelTargetShift());
         result.put("enableWeeklySmaTargetShift", riskSettings.isEnableWeeklySmaTargetShift());
         result.put("enableHtfHurdleFilter", riskSettings.isEnableHtfHurdleFilter());
+        result.put("enableHtfSmaAlignment", riskSettings.isEnableHtfSmaAlignment());
         result.put("enableStructuralSl",    riskSettings.isEnableStructuralSl());
         result.put("structuralSlBufferAtr", riskSettings.getStructuralSlBufferAtr());
         result.put("dayHighLowMinAtr", riskSettings.getDayHighLowMinAtr());
         result.put("enableRiskRewardFilter", riskSettings.isEnableRiskRewardFilter());
         result.put("minRiskRewardRatio", riskSettings.getMinRiskRewardRatio());
         result.put("enableSmaTrendCheck", riskSettings.isEnableSmaTrendCheck());
+        result.put("enableSmaAlignmentCheck", riskSettings.isEnableSmaAlignmentCheck());
         result.put("enableSmaVsAtpCheck", riskSettings.isEnableSmaVsAtpCheck());
         result.put("requireRtpPattern", riskSettings.isRequireRtpPattern());
         result.put("skipTradesInZigZag", riskSettings.isSkipTradesInZigZag());
         result.put("smaCloseDistanceAtr", riskSettings.getSmaCloseDistanceAtr());
         result.put("enableSmaLevelCountFilter", riskSettings.isEnableSmaLevelCountFilter());
+        result.put("smaLevelMinRangePct", riskSettings.getSmaLevelMinRangePct());
         result.put("enableTargetShift", riskSettings.isEnableTargetShift(effectiveMode));
         result.put("enableSplitTarget", riskSettings.isEnableSplitTarget());
         result.put("t1DistancePct", riskSettings.getT1DistancePct());
@@ -82,7 +85,6 @@ public class SettingsController {
         result.put("targetToleranceAtr", riskSettings.getTargetToleranceAtr());
         result.put("enableIndexAlignment", riskSettings.isEnableIndexAlignment());
         result.put("indexAlignmentHardSkip", riskSettings.isIndexAlignmentHardSkip());
-        result.put("weeklyReversalHardSkip", riskSettings.isWeeklyReversalHardSkip());
         result.put("indexBullishThreshold", riskSettings.getIndexBullishThreshold());
         result.put("indexStrongBullishThreshold", riskSettings.getIndexStrongBullishThreshold());
         result.put("indexBearishThreshold", riskSettings.getIndexBearishThreshold());
@@ -116,7 +118,6 @@ public class SettingsController {
         result.put("scanMinVolume", riskSettings.getScanMinVolume());
         result.put("scanMinBeta", riskSettings.getScanMinBeta());
         result.put("scanMaxBeta", riskSettings.getScanMaxBeta());
-        result.put("scanCapFilter", riskSettings.getScanCapFilter());
         result.put("openingRangeMinutes", riskSettings.getOpeningRangeMinutes());
         result.put("enableOpeningRefresh", riskSettings.isEnableOpeningRefresh());
         result.put("openingRefreshTime", riskSettings.getOpeningRefreshTime());
@@ -166,17 +167,20 @@ public class SettingsController {
             if (body.containsKey("enableWeeklyLevelTargetShift")) riskSettings.setEnableWeeklyLevelTargetShift(Boolean.parseBoolean(body.get("enableWeeklyLevelTargetShift").toString()));
             if (body.containsKey("enableWeeklySmaTargetShift")) riskSettings.setEnableWeeklySmaTargetShift(Boolean.parseBoolean(body.get("enableWeeklySmaTargetShift").toString()));
             if (body.containsKey("enableHtfHurdleFilter")) riskSettings.setEnableHtfHurdleFilter(Boolean.parseBoolean(body.get("enableHtfHurdleFilter").toString()));
+            if (body.containsKey("enableHtfSmaAlignment")) riskSettings.setEnableHtfSmaAlignment(Boolean.parseBoolean(body.get("enableHtfSmaAlignment").toString()));
             if (body.containsKey("enableStructuralSl")) riskSettings.setEnableStructuralSl(Boolean.parseBoolean(body.get("enableStructuralSl").toString()));
             if (body.containsKey("structuralSlBufferAtr")) riskSettings.setStructuralSlBufferAtr(Double.parseDouble(body.get("structuralSlBufferAtr").toString()));
             if (body.containsKey("dayHighLowMinAtr")) riskSettings.setDayHighLowMinAtr(Double.parseDouble(body.get("dayHighLowMinAtr").toString()));
             if (body.containsKey("enableRiskRewardFilter")) riskSettings.setEnableRiskRewardFilter(Boolean.parseBoolean(body.get("enableRiskRewardFilter").toString()));
             if (body.containsKey("minRiskRewardRatio")) riskSettings.setMinRiskRewardRatio(Double.parseDouble(body.get("minRiskRewardRatio").toString()));
             if (body.containsKey("enableSmaTrendCheck")) riskSettings.setEnableSmaTrendCheck(Boolean.parseBoolean(body.get("enableSmaTrendCheck").toString()));
+            if (body.containsKey("enableSmaAlignmentCheck")) riskSettings.setEnableSmaAlignmentCheck(Boolean.parseBoolean(body.get("enableSmaAlignmentCheck").toString()));
             if (body.containsKey("enableSmaVsAtpCheck")) riskSettings.setEnableSmaVsAtpCheck(Boolean.parseBoolean(body.get("enableSmaVsAtpCheck").toString()));
             if (body.containsKey("requireRtpPattern")) riskSettings.setRequireRtpPattern(Boolean.parseBoolean(body.get("requireRtpPattern").toString()));
             if (body.containsKey("skipTradesInZigZag")) riskSettings.setSkipTradesInZigZag(Boolean.parseBoolean(body.get("skipTradesInZigZag").toString()));
             if (body.containsKey("smaCloseDistanceAtr")) riskSettings.setSmaCloseDistanceAtr(Double.parseDouble(body.get("smaCloseDistanceAtr").toString()));
             if (body.containsKey("enableSmaLevelCountFilter")) riskSettings.setEnableSmaLevelCountFilter(Boolean.parseBoolean(body.get("enableSmaLevelCountFilter").toString()));
+            if (body.containsKey("smaLevelMinRangePct")) riskSettings.setSmaLevelMinRangePct(Integer.parseInt(body.get("smaLevelMinRangePct").toString()));
             if (body.containsKey("enableTargetShift")) riskSettings.setEnableTargetShift(effectiveMode, Boolean.parseBoolean(body.get("enableTargetShift").toString()));
             if (body.containsKey("enableSplitTarget")) riskSettings.setEnableSplitTarget(Boolean.parseBoolean(body.get("enableSplitTarget").toString()));
             if (body.containsKey("t1DistancePct")) riskSettings.setT1DistancePct(Integer.parseInt(body.get("t1DistancePct").toString()));
@@ -185,7 +189,6 @@ public class SettingsController {
             if (body.containsKey("targetToleranceAtr")) riskSettings.setTargetToleranceAtr(Double.parseDouble(body.get("targetToleranceAtr").toString()));
             if (body.containsKey("enableIndexAlignment")) riskSettings.setEnableIndexAlignment(Boolean.parseBoolean(body.get("enableIndexAlignment").toString()));
             if (body.containsKey("indexAlignmentHardSkip")) riskSettings.setIndexAlignmentHardSkip(Boolean.parseBoolean(body.get("indexAlignmentHardSkip").toString()));
-            if (body.containsKey("weeklyReversalHardSkip")) riskSettings.setWeeklyReversalHardSkip(Boolean.parseBoolean(body.get("weeklyReversalHardSkip").toString()));
             if (body.containsKey("indexBullishThreshold")) riskSettings.setIndexBullishThreshold(Integer.parseInt(body.get("indexBullishThreshold").toString()));
             if (body.containsKey("indexStrongBullishThreshold")) riskSettings.setIndexStrongBullishThreshold(Integer.parseInt(body.get("indexStrongBullishThreshold").toString()));
             if (body.containsKey("indexBearishThreshold")) riskSettings.setIndexBearishThreshold(Integer.parseInt(body.get("indexBearishThreshold").toString()));
@@ -219,7 +222,6 @@ public class SettingsController {
             if (body.containsKey("scanMinVolume")) riskSettings.setScanMinVolume(Long.parseLong(body.get("scanMinVolume").toString()));
             if (body.containsKey("scanMinBeta")) riskSettings.setScanMinBeta(Double.parseDouble(body.get("scanMinBeta").toString()));
             if (body.containsKey("scanMaxBeta")) riskSettings.setScanMaxBeta(Double.parseDouble(body.get("scanMaxBeta").toString()));
-            if (body.containsKey("scanCapFilter")) riskSettings.setScanCapFilter(body.get("scanCapFilter").toString());
             if (body.containsKey("openingRangeMinutes")) riskSettings.setOpeningRangeMinutes(Integer.parseInt(body.get("openingRangeMinutes").toString()));
             if (body.containsKey("enableOpeningRefresh")) riskSettings.setEnableOpeningRefresh(Boolean.parseBoolean(body.get("enableOpeningRefresh").toString()));
             if (body.containsKey("openingRefreshTime")) riskSettings.setOpeningRefreshTime(body.get("openingRefreshTime").toString());
@@ -247,6 +249,7 @@ public class SettingsController {
     public Map<String, Object> getNarrowCprStocks() {
         double maxWidth = riskSettings.getNarrowCprMaxWidth();
         List<CprLevels> narrow = bhavcopyService.getAllCprLevels().values().stream()
+            .filter(c -> !bhavcopyService.isIndex(c.getSymbol()))
             .filter(c -> c.getCprWidthPct() < maxWidth)
             .sorted(java.util.Comparator.comparing(CprLevels::getSymbol))
             .collect(Collectors.toList());
@@ -265,6 +268,7 @@ public class SettingsController {
     public Map<String, Object> getInsideCprStocks() {
         double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
         List<CprLevels> inside = bhavcopyService.getInsideCprStocks().stream()
+            .filter(c -> !bhavcopyService.isIndex(c.getSymbol()))
             .filter(c -> insideMaxWidth <= 0 || c.getCprWidthPct() < insideMaxWidth)
             .sorted(java.util.Comparator.comparing(CprLevels::getSymbol))
             .collect(Collectors.toList());

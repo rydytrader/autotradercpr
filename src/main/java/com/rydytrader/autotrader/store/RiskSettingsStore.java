@@ -51,6 +51,7 @@ public class RiskSettingsStore {
         volatile boolean enableWeeklyLevelTargetShift = true; // shift target to weekly CPR levels if between entry and target
         volatile boolean enableWeeklySmaTargetShift = true;   // shift target to weekly (HTF 60-min) SMA 20/50/200 if between entry and target
         volatile boolean enableHtfHurdleFilter = true; // HPT→LPT when 5-min close lands inside R1/PWH (buy) or S1/PWL (sell) zone
+        volatile boolean enableHtfSmaAlignment = true; // HPT→LPT when live LTP not above/below 1h SMA 20/50/200 together
         // Structural SL — opt-in, anchors SL to the S/R level the trade is testing (per setup family)
         // When on, we compute both structural and default SL and pick the TIGHTER one.
         volatile boolean enableStructuralSl = false;   // when false, always use close ± atrMultiplier × ATR
@@ -63,6 +64,8 @@ public class RiskSettingsStore {
         // 5-min SMA trend gate: buy requires close above SMA(20/50/200), sell requires below all three.
         // Matches the BULL/BEAR chip on scanner cards. Fail-open if any SMA not loaded.
         volatile boolean enableSmaTrendCheck = true;
+        // SMA alignment gate (stricter than trend check): buy requires 20>50>200, sell requires 20<50<200.
+        volatile boolean enableSmaAlignmentCheck = false;
         volatile boolean enableSmaVsAtpCheck = true; // buy requires 20 SMA > ATP (VWAP), sell requires 20 SMA < ATP
         // SMA 20/50 pattern detection thresholds (Braided vs Railway Track).
         // Bumped for SMA behaviour (smoother, smaller spreads, shallower slopes than EMA).
@@ -80,6 +83,11 @@ public class RiskSettingsStore {
         // SMA level-count filter — counts CPR zones strictly between SMA and the broken level.
         // Allow only when count == 0 (SMA is in the zone immediately adjacent to the broken level).
         volatile boolean enableSmaLevelCountFilter = true;
+        // Secondary proximity constraint on top of the level-count filter. Requires SMA to sit
+        // within (100 - smaLevelMinRangePct)% of the range from the broken level to the nearest
+        // non-broken zone edge on the other side. 50 = SMA must be in the upper half of that
+        // range (buy) / lower half (sell). 0 = proximity check disabled.
+        volatile int smaLevelMinRangePct = 50;
         volatile boolean enableSmallCandleFilter = false; // reject if candle move from breakout level < smallCandleAtrThreshold ATR
         volatile double smallCandleAtrThreshold = 0.5; // ATR multiplier for small candle filter
         volatile double wickRejectionRatio = 1.5; // breakout wick must be >= this * body to allow small body candle
@@ -120,7 +128,7 @@ public class RiskSettingsStore {
         volatile long   scanMinVolume = 0;       // min previous day volume (0 = no filter)
         volatile double scanMinBeta = 0;         // min stock beta (0 = no filter)
         volatile double scanMaxBeta = 0;         // max stock beta (0 = no filter)
-        volatile String scanCapFilter = "ALL";   // ALL, or comma-separated: LARGE,MID,SMALL
+        // scanCapFilter removed — NIFTY 50 universe means all stocks are LARGE; cap filter was a no-op
         volatile boolean scanIncludeNS = true;   // Narrow + Small Range (z < -1.5)
         volatile boolean scanIncludeNL = true;   // Narrow + Large Range
         volatile boolean scanIncludeIS = true;   // Inside + Small Range
@@ -148,7 +156,6 @@ public class RiskSettingsStore {
         // Rationale: stock's own alignment is intact (weekly+daily+SMA), only the index
         // is opposed — take the trade with reduced risk instead of downgrading to LPT.
         volatile double indexOpposedQtyFactor = 0.75;         // 0.75 = 25% reduction
-        volatile boolean weeklyReversalHardSkip = true;        // true = skip trades opposed to weekly reversal; false = HPT→LPT
         // Composite score range is ±10 (weekly ±2 + daily ±2 + SMA20 pos ±1 + SMA200 pos ±1 +
         // cross ±2 + pattern ±2). Thresholds scaled to ~30% / ~60% of range.
         volatile int indexBullishThreshold = 3;               // score >= this → BULLISH
@@ -200,12 +207,14 @@ public class RiskSettingsStore {
     public boolean isEnableWeeklyLevelTargetShift() { return cfg().enableWeeklyLevelTargetShift; }
     public boolean isEnableWeeklySmaTargetShift()   { return cfg().enableWeeklySmaTargetShift; }
     public boolean isEnableHtfHurdleFilter()    { return cfg().enableHtfHurdleFilter; }
+    public boolean isEnableHtfSmaAlignment()    { return cfg().enableHtfSmaAlignment; }
     public boolean isEnableStructuralSl()    { return cfg().enableStructuralSl; }
     public double  getStructuralSlBufferAtr(){ return cfg().structuralSlBufferAtr; }
     public double getDayHighLowMinAtr()            { return cfg().dayHighLowMinAtr; }
     public boolean isEnableRiskRewardFilter()      { return cfg().enableRiskRewardFilter; }
     public double  getMinRiskRewardRatio()         { return cfg().minRiskRewardRatio; }
     public boolean isEnableSmaTrendCheck()          { return cfg().enableSmaTrendCheck; }
+    public boolean isEnableSmaAlignmentCheck()      { return cfg().enableSmaAlignmentCheck; }
     public boolean isEnableSmaVsAtpCheck()          { return cfg().enableSmaVsAtpCheck; }
     public int    getSmaPatternLookback()           { return cfg().smaPatternLookback; }
     public int    getBraidedMinCrossovers()         { return cfg().braidedMinCrossovers; }
@@ -217,6 +226,7 @@ public class RiskSettingsStore {
     public boolean isSkipTradesInZigZag()           { return cfg().skipTradesInZigZag; }
     public double getSmaCloseDistanceAtr()         { return cfg().smaCloseDistanceAtr; }
     public boolean isEnableSmaLevelCountFilter()   { return cfg().enableSmaLevelCountFilter; }
+    public int getSmaLevelMinRangePct()            { return cfg().smaLevelMinRangePct; }
     public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
     public boolean isEnableSmallCandleFilter() { return cfg().enableSmallCandleFilter; }
     public boolean isEnableLargeCandleBodyFilter() { return cfg().enableLargeCandleBodyFilter; }
@@ -253,7 +263,6 @@ public class RiskSettingsStore {
     public long   getScanMinVolume()   { return cfg().scanMinVolume; }
     public double getScanMinBeta() { return cfg().scanMinBeta; }
     public double getScanMaxBeta() { return cfg().scanMaxBeta; }
-    public String getScanCapFilter() { return cfg().scanCapFilter; }
     public boolean isScanIncludeNS() { return cfg().scanIncludeNS; }
     public boolean isScanIncludeNL() { return cfg().scanIncludeNL; }
     public boolean isScanIncludeIS() { return cfg().scanIncludeIS; }
@@ -269,7 +278,6 @@ public class RiskSettingsStore {
     public boolean isEnableIndexAlignment()    { return cfg().enableIndexAlignment; }
     public boolean isIndexAlignmentHardSkip()  { return cfg().indexAlignmentHardSkip; }
     public double getIndexOpposedQtyFactor()   { return cfg().indexOpposedQtyFactor; }
-    public boolean isWeeklyReversalHardSkip()  { return cfg().weeklyReversalHardSkip; }
     public int getIndexBullishThreshold()       { return cfg().indexBullishThreshold; }
     public int getIndexStrongBullishThreshold() { return cfg().indexStrongBullishThreshold; }
     public int getIndexBearishThreshold()       { return cfg().indexBearishThreshold; }
@@ -291,7 +299,6 @@ public class RiskSettingsStore {
     public void setScanMinVolume(long v)     { cfg().scanMinVolume = v; }
     public void setScanMinBeta(double v) { cfg().scanMinBeta = v; }
     public void setScanMaxBeta(double v) { cfg().scanMaxBeta = v; }
-    public void setScanCapFilter(String v) { cfg().scanCapFilter = v; }
     public void setScanIncludeNS(boolean v) { cfg().scanIncludeNS = v; }
     public void setScanIncludeNL(boolean v) { cfg().scanIncludeNL = v; }
     public void setScanIncludeIS(boolean v) { cfg().scanIncludeIS = v; }
@@ -307,7 +314,6 @@ public class RiskSettingsStore {
     public void setEnableIndexAlignment(boolean v)        { cfg().enableIndexAlignment = v; }
     public void setIndexAlignmentHardSkip(boolean v)      { cfg().indexAlignmentHardSkip = v; }
     public void setIndexOpposedQtyFactor(double v)        { cfg().indexOpposedQtyFactor = v; }
-    public void setWeeklyReversalHardSkip(boolean v)     { cfg().weeklyReversalHardSkip = v; }
     public void setIndexBullishThreshold(int v)           { cfg().indexBullishThreshold = v; }
     public void setIndexStrongBullishThreshold(int v)     { cfg().indexStrongBullishThreshold = v; }
     public void setIndexBearishThreshold(int v)           { cfg().indexBearishThreshold = v; }
@@ -337,17 +343,20 @@ public class RiskSettingsStore {
     public void setEnableWeeklyLevelTargetShift(boolean v) { cfg().enableWeeklyLevelTargetShift = v; }
     public void setEnableWeeklySmaTargetShift(boolean v)   { cfg().enableWeeklySmaTargetShift = v; }
     public void setEnableHtfHurdleFilter(boolean v)    { cfg().enableHtfHurdleFilter = v; }
+    public void setEnableHtfSmaAlignment(boolean v)    { cfg().enableHtfSmaAlignment = v; }
     public void setEnableStructuralSl(boolean v)    { cfg().enableStructuralSl = v; }
     public void setStructuralSlBufferAtr(double v)  { cfg().structuralSlBufferAtr = v; }
     public void setDayHighLowMinAtr(double v)              { cfg().dayHighLowMinAtr = v; }
     public void setEnableRiskRewardFilter(boolean v)       { cfg().enableRiskRewardFilter = v; }
     public void setMinRiskRewardRatio(double v)            { cfg().minRiskRewardRatio = v; }
     public void setEnableSmaTrendCheck(boolean v)         { cfg().enableSmaTrendCheck = v; }
+    public void setEnableSmaAlignmentCheck(boolean v)     { cfg().enableSmaAlignmentCheck = v; }
     public void setEnableSmaVsAtpCheck(boolean v)         { cfg().enableSmaVsAtpCheck = v; }
     public void setRequireRtpPattern(boolean v)           { cfg().requireRtpPattern = v; }
     public void setSkipTradesInZigZag(boolean v)          { cfg().skipTradesInZigZag = v; }
     public void setSmaCloseDistanceAtr(double v)           { cfg().smaCloseDistanceAtr = v; }
     public void setEnableSmaLevelCountFilter(boolean v)    { cfg().enableSmaLevelCountFilter = v; }
+    public void setSmaLevelMinRangePct(int v)               { cfg().smaLevelMinRangePct = Math.max(0, Math.min(100, v)); }
     public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
     public void setEnableSmallCandleFilter(boolean v) { cfg().enableSmallCandleFilter = v; }
     public void setEnableLargeCandleBodyFilter(boolean v) { cfg().enableLargeCandleBodyFilter = v; }
@@ -460,12 +469,14 @@ public class RiskSettingsStore {
             upsert("enableWeeklyLevelTargetShift", String.valueOf(c.enableWeeklyLevelTargetShift));
             upsert("enableWeeklySmaTargetShift", String.valueOf(c.enableWeeklySmaTargetShift));
             upsert("enableHtfHurdleFilter", String.valueOf(c.enableHtfHurdleFilter));
+            upsert("enableHtfSmaAlignment", String.valueOf(c.enableHtfSmaAlignment));
             upsert("enableStructuralSl", String.valueOf(c.enableStructuralSl));
             upsert("structuralSlBufferAtr", String.valueOf(c.structuralSlBufferAtr));
             upsert("dayHighLowMinAtr", String.valueOf(c.dayHighLowMinAtr));
             upsert("enableRiskRewardFilter", String.valueOf(c.enableRiskRewardFilter));
             upsert("minRiskRewardRatio", String.valueOf(c.minRiskRewardRatio));
             upsert("enableSmaTrendCheck", String.valueOf(c.enableSmaTrendCheck));
+            upsert("enableSmaAlignmentCheck", String.valueOf(c.enableSmaAlignmentCheck));
             upsert("enableSmaVsAtpCheck", String.valueOf(c.enableSmaVsAtpCheck));
             upsert("smaPatternLookback", String.valueOf(c.smaPatternLookback));
             upsert("braidedMinCrossovers", String.valueOf(c.braidedMinCrossovers));
@@ -477,6 +488,7 @@ public class RiskSettingsStore {
             upsert("skipTradesInZigZag", String.valueOf(c.skipTradesInZigZag));
             upsert("smaCloseDistanceAtr", String.valueOf(c.smaCloseDistanceAtr));
             upsert("enableSmaLevelCountFilter", String.valueOf(c.enableSmaLevelCountFilter));
+            upsert("smaLevelMinRangePct", String.valueOf(c.smaLevelMinRangePct));
             upsert("enableTargetShift", String.valueOf(c.enableTargetShift));
             upsert("enableSmallCandleFilter", String.valueOf(c.enableSmallCandleFilter));
             upsert("enableLargeCandleBodyFilter", String.valueOf(c.enableLargeCandleBodyFilter));
@@ -513,7 +525,6 @@ public class RiskSettingsStore {
             upsert("scanMinVolume", String.valueOf(c.scanMinVolume));
             upsert("scanMinBeta", String.valueOf(c.scanMinBeta));
             upsert("scanMaxBeta", String.valueOf(c.scanMaxBeta));
-            upsert("scanCapFilter", c.scanCapFilter);
             upsert("scanIncludeNS", String.valueOf(c.scanIncludeNS));
             upsert("scanIncludeNL", String.valueOf(c.scanIncludeNL));
             upsert("scanIncludeIS", String.valueOf(c.scanIncludeIS));
@@ -529,7 +540,6 @@ public class RiskSettingsStore {
             upsert("enableIndexAlignment", String.valueOf(c.enableIndexAlignment));
             upsert("indexAlignmentHardSkip", String.valueOf(c.indexAlignmentHardSkip));
             upsert("indexOpposedQtyFactor", String.valueOf(c.indexOpposedQtyFactor));
-            upsert("weeklyReversalHardSkip", String.valueOf(c.weeklyReversalHardSkip));
             upsert("indexBullishThreshold", String.valueOf(c.indexBullishThreshold));
             upsert("indexStrongBullishThreshold", String.valueOf(c.indexStrongBullishThreshold));
             upsert("indexBearishThreshold", String.valueOf(c.indexBearishThreshold));
@@ -582,12 +592,14 @@ public class RiskSettingsStore {
                     case "enableWeeklyLevelTargetShift" -> c.enableWeeklyLevelTargetShift = Boolean.parseBoolean(v);
                     case "enableWeeklyEmaTargetShift", "enableWeeklySmaTargetShift" -> c.enableWeeklySmaTargetShift = Boolean.parseBoolean(v);
                     case "enableHtfHurdleFilter" -> c.enableHtfHurdleFilter = Boolean.parseBoolean(v);
+                    case "enableHtfSmaAlignment" -> c.enableHtfSmaAlignment = Boolean.parseBoolean(v);
                     case "enableStructuralSl"    -> c.enableStructuralSl = Boolean.parseBoolean(v);
                     case "structuralSlBufferAtr" -> c.structuralSlBufferAtr = Double.parseDouble(v);
                     case "dayHighLowMinAtr" -> c.dayHighLowMinAtr = Double.parseDouble(v);
                     case "enableRiskRewardFilter" -> c.enableRiskRewardFilter = Boolean.parseBoolean(v);
                     case "minRiskRewardRatio" -> c.minRiskRewardRatio = Double.parseDouble(v);
                     case "enableEmaTrendCheck", "enableSmaTrendCheck" -> c.enableSmaTrendCheck = Boolean.parseBoolean(v);
+                    case "enableSmaAlignmentCheck" -> c.enableSmaAlignmentCheck = Boolean.parseBoolean(v);
                     // Legacy keys — silently ignored (semantics differ, no safe fold).
                     case "enableEmaDirectionCheck", "enableEma200DirectionCheck", "enableEmaCrossoverCheck" -> { /* legacy */ }
                     case "enableEmaVsAtpCheck", "enableSmaVsAtpCheck" -> c.enableSmaVsAtpCheck = Boolean.parseBoolean(v);
@@ -604,6 +616,7 @@ public class RiskSettingsStore {
                     case "allowTradesInZigZag" -> c.skipTradesInZigZag = !Boolean.parseBoolean(v); // legacy (inverted semantic)
                     case "emaCloseDistanceAtr", "smaCloseDistanceAtr" -> c.smaCloseDistanceAtr = Double.parseDouble(v);
                     case "enableEmaLevelCountFilter", "enableSmaLevelCountFilter" -> c.enableSmaLevelCountFilter = Boolean.parseBoolean(v);
+                    case "smaLevelMinRangePct" -> c.smaLevelMinRangePct = Math.max(0, Math.min(100, Integer.parseInt(v)));
                     case "enableTargetShift" -> c.enableTargetShift = Boolean.parseBoolean(v);
                     case "enableSmallCandleFilter" -> c.enableSmallCandleFilter = Boolean.parseBoolean(v);
                     case "enableLargeCandleBodyFilter" -> c.enableLargeCandleBodyFilter = Boolean.parseBoolean(v);
@@ -648,7 +661,7 @@ public class RiskSettingsStore {
                     case "scanMinVolume" -> c.scanMinVolume = Long.parseLong(v);
                     case "scanMinBeta" -> c.scanMinBeta = Double.parseDouble(v);
                     case "scanMaxBeta" -> c.scanMaxBeta = Double.parseDouble(v);
-                    case "scanCapFilter" -> c.scanCapFilter = v;
+                    case "scanCapFilter" -> { /* legacy key, silently ignored — cap filter removed */ }
                     case "scanIncludeNS" -> c.scanIncludeNS = Boolean.parseBoolean(v);
                     case "scanIncludeNL" -> c.scanIncludeNL = Boolean.parseBoolean(v);
                     case "scanIncludeIS" -> c.scanIncludeIS = Boolean.parseBoolean(v);
@@ -664,7 +677,6 @@ public class RiskSettingsStore {
                     case "enableIndexAlignment" -> c.enableIndexAlignment = Boolean.parseBoolean(v);
                     case "indexAlignmentHardSkip" -> c.indexAlignmentHardSkip = Boolean.parseBoolean(v);
                     case "indexOpposedQtyFactor" -> c.indexOpposedQtyFactor = Double.parseDouble(v);
-                    case "weeklyReversalHardSkip" -> c.weeklyReversalHardSkip = Boolean.parseBoolean(v);
                     case "indexBullishThreshold" -> c.indexBullishThreshold = Integer.parseInt(v);
                     case "indexStrongBullishThreshold" -> c.indexStrongBullishThreshold = Integer.parseInt(v);
                     case "indexBearishThreshold" -> c.indexBearishThreshold = Integer.parseInt(v);

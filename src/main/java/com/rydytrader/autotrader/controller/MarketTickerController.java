@@ -2,8 +2,10 @@ package com.rydytrader.autotrader.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.rydytrader.autotrader.config.FyersProperties;
+import com.rydytrader.autotrader.dto.CprLevels;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
 import com.rydytrader.autotrader.manager.PositionManager;
+import com.rydytrader.autotrader.service.BhavcopyService;
 import com.rydytrader.autotrader.service.MarketHolidayService;
 import com.rydytrader.autotrader.store.TokenStore;
 import org.springframework.http.ResponseEntity;
@@ -25,13 +27,14 @@ public class MarketTickerController {
     private final FyersProperties fyersProperties;
     private final TokenStore tokenStore;
     private final MarketHolidayService marketHolidayService;
+    private final BhavcopyService bhavcopyService;
 
-    private static final String BASE_SYMBOLS =
-        "NSE:NIFTY50-INDEX,NSE:NIFTYBANK-INDEX,NSE:NIFTYIT-INDEX," +
-        "NSE:RELIANCE-EQ,NSE:TCS-EQ,NSE:HDFCBANK-EQ,NSE:INFY-EQ,NSE:ICICIBANK-EQ," +
-        "NSE:SBIN-EQ,NSE:WIPRO-EQ,NSE:ITC-EQ";
+    // Only indices stay hardcoded — used by MarketDataService to ensure the WebSocket
+    // always subscribes to them for the NIFTY trend calc. Stocks on the ticker come
+    // dynamically from the NIFTY 50 list via bhavcopy.
+    private static final String BASE_SYMBOLS = "NSE:NIFTY50-INDEX,NSE:NIFTYBANK-INDEX";
 
-    /** Returns the base symbol list as an array. Used by MarketDataService for subscription. */
+    /** Returns the base index symbols. Used by MarketDataService for WebSocket subscription. */
     public static String[] getBaseSymbols() {
         return BASE_SYMBOLS.split(",");
     }
@@ -44,11 +47,13 @@ public class MarketTickerController {
     public MarketTickerController(FyersClientRouter fyersClient,
                                    FyersProperties fyersProperties,
                                    TokenStore tokenStore,
-                                   MarketHolidayService marketHolidayService) {
+                                   MarketHolidayService marketHolidayService,
+                                   BhavcopyService bhavcopyService) {
         this.fyersClient = fyersClient;
         this.fyersProperties = fyersProperties;
         this.tokenStore = tokenStore;
         this.marketHolidayService = marketHolidayService;
+        this.bhavcopyService = bhavcopyService;
     }
 
     @GetMapping("/api/market-ticker")
@@ -98,10 +103,21 @@ public class MarketTickerController {
 
     private String buildSymbolList() {
         Set<String> symbols = new LinkedHashSet<>();
+        // Two indices first — NIFTY 50 + NIFTY BANK
         for (String s : BASE_SYMBOLS.split(",")) {
             symbols.add(s);
         }
-        // Add open position symbols to the ticker
+        // All 50 NIFTY 50 stocks from the bhavcopy CPR cache. The cache is already
+        // restricted to NIFTY 50 at the parse stage, so every non-index entry is a
+        // NIFTY 50 stock. Defensive: still check isInNifty50 in case the fallback
+        // "full FNO" path populated the cache on a NIFTY-50-list-unavailable day.
+        for (CprLevels cpr : bhavcopyService.getAllCprLevels().values()) {
+            if (bhavcopyService.isIndex(cpr.getSymbol())) continue;
+            if (!cpr.isInNifty50()) continue;
+            symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
+        }
+        // Open position symbols — ensures user always sees live prices for what they hold,
+        // even if somehow outside NIFTY 50 (manual position, NIFTY 50 rebalance mid-session).
         symbols.addAll(PositionManager.getAllSymbols());
         return String.join(",", symbols);
     }

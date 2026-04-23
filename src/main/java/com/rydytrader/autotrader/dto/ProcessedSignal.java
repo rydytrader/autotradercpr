@@ -10,6 +10,7 @@ public class ProcessedSignal {
     private final String setup;
     private final String probability;
     private final boolean rejected;
+    private final boolean silent;   // true = rejected without an event-log entry (native-LPT when LPT disabled)
     private final String rejectionReason;
     private final double atr;
     private final double atrMultiplier;
@@ -26,6 +27,7 @@ public class ProcessedSignal {
         this.setup           = b.setup;
         this.probability     = b.probability;
         this.rejected        = b.rejected;
+        this.silent          = b.silent;
         this.rejectionReason = b.rejectionReason;
         this.atr             = b.atr;
         this.atrMultiplier   = b.atrMultiplier;
@@ -38,6 +40,11 @@ public class ProcessedSignal {
         return new Builder().setup(setup).symbol(symbol).rejected(true).rejectionReason(reason).build();
     }
 
+    /** Rejected but suppresses the event-log entry — used for expected skips (e.g. native-LPT when LPT disabled). */
+    public static ProcessedSignal silentlyRejected(String setup, String symbol) {
+        return new Builder().setup(setup).symbol(symbol).rejected(true).silent(true).build();
+    }
+
     public String  getSignal()          { return signal; }
     public String  getSymbol()          { return symbol; }
     public int     getQuantity()        { return quantity; }
@@ -46,6 +53,7 @@ public class ProcessedSignal {
     public String  getSetup()           { return setup; }
     public String  getProbability()     { return probability; }
     public boolean isRejected()         { return rejected; }
+    public boolean isSilent()           { return silent; }
     public String  getRejectionReason() { return rejectionReason; }
     public double  getAtr()             { return atr; }
     public double  getAtrMultiplier()   { return atrMultiplier; }
@@ -62,6 +70,7 @@ public class ProcessedSignal {
         private String setup;
         private String probability;
         private boolean rejected;
+        private boolean silent;
         private String rejectionReason;
         private double atr;
         private double atrMultiplier;
@@ -77,6 +86,7 @@ public class ProcessedSignal {
         public Builder setup(String v)            { this.setup = v; return this; }
         public Builder probability(String v)      { this.probability = v; return this; }
         public Builder rejected(boolean v)        { this.rejected = v; return this; }
+        public Builder silent(boolean v)          { this.silent = v; return this; }
         public Builder rejectionReason(String v)  { this.rejectionReason = v; return this; }
         public Builder atr(double v)              { this.atr = v; return this; }
         public Builder atrMultiplier(double v)    { this.atrMultiplier = v; return this; }

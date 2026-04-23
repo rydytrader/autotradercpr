@@ -44,6 +44,9 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
     private final com.rydytrader.autotrader.store.RiskSettingsStore riskSettings;
     @org.springframework.beans.factory.annotation.Autowired
     private EventService eventService;
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private HtfSmaService htfSmaService;
     private final ObjectMapper mapper = new ObjectMapper();
 
     // Weekly CPR levels per symbol (fixed for the week, fetched once)
@@ -53,15 +56,6 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
     // Cleared on daily reset; first candle of each timeframe falls back to live LTP.
     private final ConcurrentHashMap<String, Double> lastTradingTfClose = new ConcurrentHashMap<>();  // 5-min → daily trend
     private final ConcurrentHashMap<String, Double> lastHigherTfClose = new ConcurrentHashMap<>();   // 75-min → weekly trend
-
-    // Weekly level rejection detection on 75-min timeframe
-    private final ConcurrentHashMap<String, RejectionState> weeklyRejection = new ConcurrentHashMap<>();
-
-    public static class RejectionState {
-        public String type = "NONE";      // NONE, WEEKLY_R1_PWH_REVERSAL, WEEKLY_S1_PWL_REVERSAL
-        public double rejectionPrice = 0; // high of rejection candle (resistance) or low (support)
-        public RejectionState() {}
-    }
 
     // Date on which the cached weekly levels were computed (= most recent Monday or earlier when
     // levels were fetched). Used for staleness check during loadFromFile.
@@ -277,7 +271,6 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
             root.put("date", LocalDate.now(IST).toString());
             root.putPOJO("tradingTf", lastTradingTfClose);
             root.putPOJO("higherTf", lastHigherTfClose);
-            root.putPOJO("rejections", weeklyRejection);
             Files.writeString(Paths.get(TF_CLOSE_FILE),
                 mapper.writeValueAsString(root));
         } catch (Exception e) {
@@ -333,19 +326,9 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
                 });
                 count += lastHigherTfClose.size();
             }
-            // Restore rejection states
-            JsonNode rejections = root.get("rejections");
-            if (rejections != null && rejections.isObject()) {
-                rejections.fields().forEachRemaining(e -> {
-                    try {
-                        RejectionState rs = mapper.treeToValue(e.getValue(), RejectionState.class);
-                        if (rs != null && !"NONE".equals(rs.type)) weeklyRejection.put(e.getKey(), rs);
-                    } catch (Exception ignored) {}
-                });
-            }
-            if (count > 0 || !weeklyRejection.isEmpty()) {
-                log.info("[WeeklyCpr] Restored mid-day cache: {} trading-TF + {} higher-TF + {} rejections",
-                    lastTradingTfClose.size(), lastHigherTfClose.size(), weeklyRejection.size());
+            if (count > 0) {
+                log.info("[WeeklyCpr] Restored mid-day cache: {} trading-TF + {} higher-TF",
+                    lastTradingTfClose.size(), lastHigherTfClose.size());
             }
         } catch (Exception e) {
             log.error("[WeeklyCpr] Failed to load TF close data: {}", e.getMessage());
@@ -473,120 +456,17 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
             lastTradingTfClose.put(fyersSymbol, completedCandle.close);
             saveTfCloseToFile();
         }
-        // Eager reset: if this symbol has an active weekly reversal flag and LTP has
-        // touched the weekly CPR zone, clear it now — don't wait for a breakout
-        // candidate to trigger the lazy check inside getWeeklyRejection.
-        RejectionState s = weeklyRejection.get(fyersSymbol);
-        if (s != null && !"NONE".equals(s.type)) {
-            getWeeklyRejection(fyersSymbol);
-        }
     }
 
     public void onHigherTimeframeCandleClose(String fyersSymbol, double open, double high, double low, double close) {
         if (close > 0) lastHigherTfClose.put(fyersSymbol, close);
-
-        WeeklyLevels wl = weeklyLevels.get(fyersSymbol);
-        if (wl == null) { saveTfCloseToFile(); return; }
-
-        RejectionState state = weeklyRejection.computeIfAbsent(fyersSymbol, k -> new RejectionState());
-
-        // Nullify existing rejection: (1) candle closes beyond rejection extreme, (2) price reaches CPR
-        if ("WEEKLY_R1_PWH_REVERSAL".equals(state.type)) {
-            if (close >= state.rejectionPrice) {
-                log.info("[WeeklyCpr] {} R1/PWH reversal NULLIFIED — close {} >= rejection high {}",
-                    fyersSymbol, String.format("%.2f", close), String.format("%.2f", state.rejectionPrice));
-                state.type = "NONE"; state.rejectionPrice = 0;
-            } else if (close <= wl.top) {
-                log.info("[WeeklyCpr] {} R1/PWH reversal NULLIFIED — close {} reached weekly CPR top {}",
-                    fyersSymbol, String.format("%.2f", close), String.format("%.2f", wl.top));
-                state.type = "NONE"; state.rejectionPrice = 0;
-            }
-        }
-        if ("WEEKLY_S1_PWL_REVERSAL".equals(state.type)) {
-            if (close <= state.rejectionPrice) {
-                log.info("[WeeklyCpr] {} S1/PWL reversal NULLIFIED — close {} <= rejection low {}",
-                    fyersSymbol, String.format("%.2f", close), String.format("%.2f", state.rejectionPrice));
-                state.type = "NONE"; state.rejectionPrice = 0;
-            } else if (close >= wl.bot) {
-                log.info("[WeeklyCpr] {} S1/PWL reversal NULLIFIED — close {} reached weekly CPR bot {}",
-                    fyersSymbol, String.format("%.2f", close), String.format("%.2f", wl.bot));
-                state.type = "NONE"; state.rejectionPrice = 0;
-            }
-        }
-
-        // Detect new resistance rejection (mirrors 5-min SELL_BELOW_R1_PDH magnet pattern).
-        // Pattern 1: open or high reached either R1 or PH. Pattern 2: high broke the higher
-        // of R1/PH while open was still below it. Either pattern, with close back inside
-        // the R1/PH-to-weekly-top zone, qualifies as a rejection — red/green candle agnostic.
-        double r1ph = Math.min(wl.r1, wl.ph);
-        if (close < r1ph && close > wl.top
-            && ((open > wl.r1 || open > wl.ph || high > wl.r1 || high > wl.ph)
-                || (high > Math.max(wl.r1, wl.ph) && open < Math.max(wl.r1, wl.ph)))) {
-            state.type = "WEEKLY_R1_PWH_REVERSAL";
-            state.rejectionPrice = high;
-            log.info("[WeeklyCpr] {} WEEKLY R1/PWH REVERSAL: O={} H={} L={} C={} (R1={} PH={} top={})",
-                fyersSymbol, String.format("%.2f", open), String.format("%.2f", high),
-                String.format("%.2f", low), String.format("%.2f", close),
-                String.format("%.2f", wl.r1), String.format("%.2f", wl.ph), String.format("%.2f", wl.top));
-        }
-
-        // Detect new support rejection (mirrors 5-min BUY_ABOVE_S1_PDL magnet pattern).
-        // Pattern 1: open or low reached either S1 or PL. Pattern 2: low broke the lower
-        // of S1/PL while open was still above it. Either pattern, with close back inside
-        // the S1/PL-to-weekly-bot zone, qualifies as a rejection — red/green candle agnostic.
-        double s1pl = Math.max(wl.s1, wl.pl);
-        if (close > s1pl && close < wl.bot
-            && ((open < wl.s1 || open < wl.pl || low < wl.s1 || low < wl.pl)
-                || (low < Math.min(wl.s1, wl.pl) && open > Math.min(wl.s1, wl.pl)))) {
-            state.type = "WEEKLY_S1_PWL_REVERSAL";
-            state.rejectionPrice = low;
-            log.info("[WeeklyCpr] {} WEEKLY S1/PWL REVERSAL: O={} H={} L={} C={} (S1={} PL={} bot={})",
-                fyersSymbol, String.format("%.2f", open), String.format("%.2f", high),
-                String.format("%.2f", low), String.format("%.2f", close),
-                String.format("%.2f", wl.s1), String.format("%.2f", wl.pl), String.format("%.2f", wl.bot));
-        }
-
         saveTfCloseToFile();
-    }
-
-    public String getWeeklyRejection(String symbol) {
-        RejectionState s = weeklyRejection.get(symbol);
-        if (s == null || "NONE".equals(s.type)) return "NONE";
-
-        // Live LTP-based reset: as soon as price touches the weekly CPR boundary, the
-        // rejection thesis is complete — don't wait for the next HTF (60-min) candle close
-        // to recognise it. The *rejection-extreme* reset (close above rejection high for
-        // R1/PWH, below rejection low for S1/PWL) still requires a candle CLOSE — handled
-        // in onHigherTimeframeCandleClose, not here.
-        WeeklyLevels wl = weeklyLevels.get(symbol);
-        if (wl != null) {
-            double ltp = candleAggregator.getLtp(symbol);
-            if (ltp > 0) {
-                if ("WEEKLY_R1_PWH_REVERSAL".equals(s.type) && ltp <= wl.top) {
-                    log.info("[WeeklyCpr] {} R1/PWH reversal auto-reset — LTP {} touched weekly CPR top {}",
-                        symbol, String.format("%.2f", ltp), String.format("%.2f", wl.top));
-                    s.type = "NONE"; s.rejectionPrice = 0;
-                    saveTfCloseToFile();
-                    return "NONE";
-                }
-                if ("WEEKLY_S1_PWL_REVERSAL".equals(s.type) && ltp >= wl.bot) {
-                    log.info("[WeeklyCpr] {} S1/PWL reversal auto-reset — LTP {} touched weekly CPR bot {}",
-                        symbol, String.format("%.2f", ltp), String.format("%.2f", wl.bot));
-                    s.type = "NONE"; s.rejectionPrice = 0;
-                    saveTfCloseToFile();
-                    return "NONE";
-                }
-            }
-        }
-
-        return s.type;
     }
 
     @Override
     public void onDailyReset() {
         lastTradingTfClose.clear();
         lastHigherTfClose.clear();
-        weeklyRejection.clear();
         saveTfCloseToFile();
     }
 
@@ -617,6 +497,17 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
         if (ltp < wl.s1 && ltp < wl.pl) return "STRONG_BEARISH";
         if (ltp > wl.top) return "BULLISH";
         if (ltp < wl.bot) return "BEARISH";
+
+        // Inside weekly CPR — refine via HTF SMA 20/50 using live LTP (not sticky 1h close).
+        // Truly NEUTRAL only when live price sits between HTF SMA 20 and HTF SMA 50.
+        double live = candleAggregator.getLtp(symbol);
+        if (live <= 0) live = ltp; // fallback if LTP not yet available
+        double htfS20 = htfSmaService != null ? htfSmaService.getSma(symbol)   : 0;
+        double htfS50 = htfSmaService != null ? htfSmaService.getSma50(symbol) : 0;
+        if (htfS20 > 0 && htfS50 > 0) {
+            if (live > htfS20 && live > htfS50) return "BULLISH";
+            if (live < htfS20 && live < htfS50) return "BEARISH";
+        }
         return "NEUTRAL";
     }
 
@@ -667,22 +558,26 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
      * @param isBuy true for buy breakout, false for sell breakout
      */
     public String getProbabilityForDirection(String symbol, boolean isBuy) {
-        return getProbabilityForDirection(symbol, isBuy, false);
+        return getProbabilityForDirection(symbol, isBuy, (String) null);
     }
 
     /**
-     * Get probability based on breakout direction + weekly trend + daily trend.
-     * Two-tier model:
-     *   HPT — strict: weekly + daily + breakout direction all aligned
-     *   LPT — anything weaker (weekly neutral, weekly opposed, daily opposed, magnets, reversals)
-     * Magnet trades and EV reversals are counter-daily by design — they can never be HPT.
+     * Get probability based on breakout direction + weekly trend + daily trend + setup category.
+     * Three trade categories:
+     *   1. TREND TRADES — regular breakouts in the trend direction (CPR, R1/PDH, R2/R3/R4 buys,
+     *      CPR, S1/PDL, S2/S3/S4 sells, DH/DL breakouts).
+     *      HPT requires WEEKLY + DAILY both aligned with direction.
+     *   2. MAGNET TRADES — bounces off / rejections at the first structural pair:
+     *      BUY_ABOVE_S1_PDL (bounce off support in uptrend), SELL_BELOW_R1_PDH (rejection at
+     *      resistance in downtrend). HPT requires WEEKLY only — 5-min (daily) is inherently
+     *      opposite to trade direction by the nature of the setup.
+     *   3. MEAN REVERSION TRADES — deep counter-trend fades on EV gap days:
+     *      BUY_ABOVE_S2/S3/S4 (gap-down fade), SELL_BELOW_R2/R3/R4 (gap-up fade).
+     *      ALWAYS LPT — by definition counter to the bigger trend.
      * @param isBuy true for buy breakout, false for sell breakout
-     * @param isMagnet true for magnet/mean-reversion trades (always LPT under the new model)
+     * @param setup the setup name (e.g. "BUY_ABOVE_S1_PDL"); null or empty treated as trend trade
      */
-    public String getProbabilityForDirection(String symbol, boolean isBuy, boolean isMagnet) {
-        // Magnets and EV reversals are counter-daily by definition — always LPT.
-        if (isMagnet) return "LPT";
-
+    public String getProbabilityForDirection(String symbol, boolean isBuy, String setup) {
         String weekly = getWeeklyTrend(symbol);
         String daily = getDailyTrend(symbol);
         boolean wBull = weekly.contains("BULLISH");
@@ -690,18 +585,26 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
         boolean dBull = daily.contains("BULLISH");
         boolean dBear = daily.contains("BEARISH");
 
-        // Weekly reversal flag: if active and trade opposes it, skip or downgrade
-        String rejection = getWeeklyRejection(symbol);
-        if (isBuy && "WEEKLY_R1_PWH_REVERSAL".equals(rejection)) {
-            if (riskSettings.isWeeklyReversalHardSkip()) return "SKIP";
-            return "LPT";
-        }
-        if (!isBuy && "WEEKLY_S1_PWL_REVERSAL".equals(rejection)) {
-            if (riskSettings.isWeeklyReversalHardSkip()) return "SKIP";
+        // Categorize by setup into one of three trade types
+        boolean isMagnetTrade = setup != null && (
+            "BUY_ABOVE_S1_PDL".equals(setup) || "SELL_BELOW_R1_PDH".equals(setup));
+        boolean isMeanReversionTrade = setup != null && (
+            "BUY_ABOVE_S2".equals(setup) || "BUY_ABOVE_S3".equals(setup) || "BUY_ABOVE_S4".equals(setup)
+         || "SELL_BELOW_R2".equals(setup) || "SELL_BELOW_R3".equals(setup) || "SELL_BELOW_R4".equals(setup));
+        // else: trend trade (regular breakout)
+
+        // MEAN REVERSION TRADES — always LPT. Deep counter-trend fades on EV gap days.
+        if (isMeanReversionTrade) return "LPT";
+
+        // MAGNET TRADES — HPT requires weekly (60-min) aligned with direction.
+        // 5-min / daily is inherently opposite by the nature of the bounce/rejection setup.
+        if (isMagnetTrade) {
+            if (isBuy  && wBull) return "HPT";
+            if (!isBuy && wBear) return "HPT";
             return "LPT";
         }
 
-        // Weekly NEUTRAL → LPT. To skip these, disable LPT trades globally.
+        // TREND TRADES — HPT requires weekly + daily both aligned with direction.
         if (isBuy) {
             if (wBull && dBull) return "HPT";
             return "LPT";

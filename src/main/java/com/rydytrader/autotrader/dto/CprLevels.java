@@ -22,6 +22,7 @@ public class CprLevels {
     private double volumeMultiple;    // volume / avgVolume20
     private double beta;              // stock beta vs NIFTY (25-day)
     private String capCategory;       // "LARGE", "MID", "SMALL"
+    private boolean inNifty50;        // true if symbol is part of NIFTY 50 (universe filter)
 
     /** No-arg constructor for Jackson deserialization. */
     public CprLevels() {}
@@ -127,4 +128,6 @@ public class CprLevels {
     public void    setBeta(double v)      { this.beta = v; }
     public String  getCapCategory()       { return capCategory; }
     public void    setCapCategory(String v) { this.capCategory = v; }
+    public boolean isInNifty50()          { return inNifty50; }
+    public void    setInNifty50(boolean v) { this.inNifty50 = v; }
 }

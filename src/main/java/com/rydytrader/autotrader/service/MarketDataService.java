@@ -202,6 +202,13 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         candleAggregator.addListener(smaService);
         candleAggregator.addListener(weeklyCprService);
         candleAggregator.addListener(breakoutScanner);
+        // Feed each 5-min close into HtfSmaService as the in-progress 60-min bar's current
+        // value — so HTF SMA refreshes every 5 min instead of stepping only at 1h boundaries.
+        candleAggregator.addListener((symbol, candle) -> {
+            if (candle != null && candle.close > 0) {
+                htfSmaService.updatePartialClose(symbol, candle.close);
+            }
+        });
         candleAggregator.start();
 
         // Higher timeframe aggregator for weekly trend (e.g. 75-min candles)
@@ -930,35 +937,19 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         atrService.pruneTo(watchlistWithIndex);
         smaService.pruneTo(watchlistWithIndex);
         htfSmaService.pruneTo(watchlistWithIndex);
+        candleAggregator.pruneTo(watchlistWithIndex);
 
-        // Fetch ATR + seed SMA. When SmaService was restored from disk cache, pass the full
-        // watchlist so AtrService routes cached symbols through its 1-day catch-up branch
-        // (and new symbols through the full 14-day seed). Otherwise drop already-loaded symbols.
-        List<String> needsAtr = smaService.isSeededFromCache()
-            ? watchlistWithIndex
-            : watchlistWithIndex.stream()
-                .filter(s -> atrService.getAtr(s) <= 0)
-                .collect(java.util.stream.Collectors.toList());
-        if (!needsAtr.isEmpty()) {
-            log.info("[MarketData] Fetching ATR for {} symbols (cache-seeded={})",
-                needsAtr.size(), smaService.isSeededFromCache());
-            atrService.fetchAtrForSymbols(needsAtr);
-        } else {
-            log.info("[MarketData] ATR already loaded for all {} symbols — skipping fetch", watchlistWithIndex.size());
-        }
-        if (weeklyCprService.getLoadedCount() == 0) {
-            weeklyCprService.fetchWeeklyTrends(watchlistWithIndex);
-        } else {
-            log.info("[MarketData] Weekly trends already loaded ({} symbols) — skipping fetch", weeklyCprService.getLoadedCount());
-        }
-        // Seed HTF (60-min) SMAs. Same cache-aware routing as ATR above.
-        if (htfSmaService.isSeededFromCache()) {
-            atrService.fetchHtfSmaForSymbols(watchlistWithIndex, htfSmaService);
-        } else if (htfSmaService.getLoadedCount() == 0) {
-            atrService.fetchHtfSmaForSymbols(watchlistWithIndex, htfSmaService);
-        } else {
-            log.info("[MarketData] HTF SMAs already loaded ({} symbols) — skipping fetch", htfSmaService.getLoadedCount());
-        }
+        // Always seed ATR / SMA / weekly / HTF SMA for every watchlist symbol. Both
+        // AtrService.fetchAtrForSymbols and fetchHtfSmaForSymbols route cached symbols
+        // through their 1-day catch-up branch and fresh symbols through the full seed, so
+        // the cost scales with what's actually new. Guarantees every NIFTY 50 stock has
+        // indicators ready before the scanner goes live — no "missing ATR" edge cases.
+        log.info("[MarketData] Seeding ATR + 5-min SMA for all {} symbols", watchlistWithIndex.size());
+        atrService.fetchAtrForSymbols(watchlistWithIndex);
+        log.info("[MarketData] Seeding weekly trends for all {} symbols", watchlistWithIndex.size());
+        weeklyCprService.fetchWeeklyTrends(watchlistWithIndex);
+        log.info("[MarketData] Seeding HTF (60-min) SMAs for all {} symbols", watchlistWithIndex.size());
+        atrService.fetchHtfSmaForSymbols(watchlistWithIndex, htfSmaService);
 
         // Subscribe watchlist + NIFTY to WebSocket (after API calls give WS time to connect)
         subscribeWatchlist(watchlistWithIndex);
@@ -1014,6 +1005,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
      * Returns Fyers symbols (e.g., "NSE:RELIANCE-EQ").
      */
     private List<String> buildWatchlist() {
+        // BhavcopyService now filters to NIFTY 50 at the parse stage (cpr cache only contains
+        // NIFTY 50 stocks when the list is available; full FNO as a fallback). No extra filter
+        // needed here — width / price / volume / cap / NS-NL toggles still apply.
         Set<String> symbols = new LinkedHashSet<>();
         double narrowMax = riskSettings.getNarrowCprMaxWidth();
         double insideMax = riskSettings.getInsideCprMaxWidth();
@@ -1045,16 +1039,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         double maxBeta = riskSettings.getScanMaxBeta();
         if (minBeta > 0 && cpr.getBeta() > 0 && cpr.getBeta() < minBeta) return false;
         if (maxBeta > 0 && cpr.getBeta() > 0 && cpr.getBeta() > maxBeta) return false;
-        String capFilter = riskSettings.getScanCapFilter();
-        if (capFilter != null && !capFilter.isEmpty() && !"ALL".equals(capFilter)) {
-            String cap = cpr.getCapCategory();
-            if (cap == null) cap = "SMALL";
-            boolean match = false;
-            for (String allowed : capFilter.split(",")) {
-                if (allowed.trim().equals(cap)) { match = true; break; }
-            }
-            if (!match) return false;
-        }
+        // Cap filter removed — universe is NIFTY 50 (all LARGE caps by definition).
         return true;
     }
 
@@ -1302,7 +1287,10 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         }
     }
 
-    /** Rebuild watchlist from current settings without full re-init. Subscribes new symbols. */
+    /** Rebuild watchlist from current settings without full re-init. Universe is fixed
+     *  (NIFTY 50 stocks seeded once at startup via initScanner) so rebuild only re-applies
+     *  filters and prunes — no reseeding needed. Every symbol in the rebuilt watchlist was
+     *  already seeded on startup. */
     public int rebuildWatchlist() {
         List<String> watchlist = buildWatchlist();
         if (watchlist.isEmpty()) {
@@ -1317,6 +1305,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         atrService.pruneTo(withIndex);
         smaService.pruneTo(withIndex);
         htfSmaService.pruneTo(withIndex);
+        candleAggregator.pruneTo(withIndex);
         log.info("[MarketData] Watchlist rebuilt: {} symbols", watchlist.size());
         eventService.log("[INFO] Watchlist rebuilt: " + watchlist.size() + " symbols (filters updated)");
         return watchlist.size();

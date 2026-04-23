@@ -92,20 +92,49 @@ public class SmaService implements CandleAggregator.CandleCloseListener {
 
     /** Get current SMA(20) for a symbol. Returns 0 if not enough data. */
     public double getSma(String symbol) {
-        return computeSma(symbol, SMA_PERIOD);
+        return computeSmaBlended(symbol, SMA_PERIOD);
     }
 
     /** Get current SMA(50) for a symbol. Returns 0 if not enough history. */
     public double getSma50(String symbol) {
-        return computeSma(symbol, SMA_MID_PERIOD);
+        return computeSmaBlended(symbol, SMA_MID_PERIOD);
     }
 
     /** Get current SMA(200) for a symbol. Returns 0 if not enough history to seed. */
     public double getSma200(String symbol) {
-        return computeSma(symbol, SMA_LONG_PERIOD);
+        return computeSmaBlended(symbol, SMA_LONG_PERIOD);
     }
 
-    private double computeSma(String symbol, int period) {
+    /**
+     * Blend current LTP as the in-progress 5-min bar's partial close. Matches TradingView's
+     * intra-bar SMA behaviour: SMA = (last period-1 completed closes + current LTP) / period.
+     * Falls back to completed-only when LTP isn't available.
+     */
+    private double computeSmaBlended(String symbol, int period) {
+        double ltp = candleAggregator.getLtp(symbol);
+        if (ltp <= 0) return computeSmaCompleted(symbol, period);
+        Deque<Double> closes = closesBySymbol.get(symbol);
+        if (closes == null) return 0;
+        synchronized (closes) {
+            if (closes.size() < period - 1) return 0;
+            double sum = ltp;
+            int skip = closes.size() - (period - 1);
+            int i = 0, count = 1;
+            for (Double v : closes) {
+                if (i++ < skip) continue;
+                sum += v;
+                count++;
+            }
+            return count == period ? sum / period : 0;
+        }
+    }
+
+    /**
+     * Completed-bars-only SMA. Used internally by onCandleClose / seedFromCandles so that
+     * the pattern history buffer captures the SMA value at bar close (not a blended intra-bar
+     * value), and so bar-close downstream listeners see the canonical post-close SMA.
+     */
+    private double computeSmaCompleted(String symbol, int period) {
         Deque<Double> closes = closesBySymbol.get(symbol);
         if (closes == null) return 0;
         synchronized (closes) {
@@ -155,11 +184,11 @@ public class SmaService implements CandleAggregator.CandleCloseListener {
             }
             // Only start recording pattern history once we have enough bars for SMA(20)
             if (i >= SMA_PERIOD - 1) {
-                double sma20 = computeSma(symbol, SMA_PERIOD);
+                double sma20 = computeSmaCompleted(symbol, SMA_PERIOD);
                 if (sma20 > 0) pushHistory(history20, sma20);
             }
             if (i >= SMA_MID_PERIOD - 1) {
-                double sma50 = computeSma(symbol, SMA_MID_PERIOD);
+                double sma50 = computeSmaCompleted(symbol, SMA_MID_PERIOD);
                 if (sma50 > 0) pushHistory(history50, sma50);
             }
         }
@@ -273,21 +302,21 @@ public class SmaService implements CandleAggregator.CandleCloseListener {
             while (closes.size() > SMA_LONG_PERIOD) closes.removeFirst();
         }
 
-        double sma20 = computeSma(fyersSymbol, SMA_PERIOD);
+        double sma20 = computeSmaCompleted(fyersSymbol, SMA_PERIOD);
         if (sma20 > 0) {
             completedCandle.sma20 = sma20;
             Deque<Double> history20 = smaHistoryBySymbol.computeIfAbsent(fyersSymbol, s -> new ArrayDeque<>());
             pushHistory(history20, sma20);
         }
 
-        double sma50 = computeSma(fyersSymbol, SMA_MID_PERIOD);
+        double sma50 = computeSmaCompleted(fyersSymbol, SMA_MID_PERIOD);
         if (sma50 > 0) {
             completedCandle.sma50 = sma50;
             Deque<Double> history50 = sma50HistoryBySymbol.computeIfAbsent(fyersSymbol, s -> new ArrayDeque<>());
             pushHistory(history50, sma50);
         }
 
-        double sma200 = computeSma(fyersSymbol, SMA_LONG_PERIOD);
+        double sma200 = computeSmaCompleted(fyersSymbol, SMA_LONG_PERIOD);
         if (sma200 > 0) {
             completedCandle.sma200 = sma200;
         }

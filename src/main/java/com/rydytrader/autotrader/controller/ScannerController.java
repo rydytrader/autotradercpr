@@ -73,10 +73,14 @@ public class ScannerController {
             insideSymbols.add(cpr.getSymbol());
         }
 
+        // Universe is restricted to NIFTY 50 at the bhavcopy parse stage — cache already
+        // contains only NIFTY 50 stocks (full FNO fallback if NIFTY 50 list was unavailable).
+
         // Collect narrow CPR stocks — use configurable width threshold + filters + NS/NL toggles
         double narrowMaxWidth = riskSettings.getNarrowCprMaxWidth();
         Set<String> seen = new HashSet<>();
         for (CprLevels cpr : bhavcopyService.getAllCprLevels().values()) {
+            if (bhavcopyService.isIndex(cpr.getSymbol())) continue; // NIFTY50/NIFTYBANK etc.
             if (cpr.getCprWidthPct() >= narrowMaxWidth) continue;
             if (!marketDataService.passesWatchlistFilters(cpr)) continue;
             String nrt = cpr.getNarrowRangeType();
@@ -205,7 +209,6 @@ public class ScannerController {
         card.put("candleVolume", candleAggregator.getCurrentCandleVolume(fyersSymbol));
         card.put("avgVolume", Math.round(candleAggregator.getAvgVolume(fyersSymbol, riskSettings.getVolumeLookback())));
         card.put("weeklyTrend", weeklyCprService.getWeeklyTrend(fyersSymbol));
-        card.put("weeklyReversalActive", !"NONE".equals(weeklyCprService.getWeeklyRejection(fyersSymbol)));
         card.put("dailyTrend", weeklyCprService.getDailyTrend(fyersSymbol));
         card.put("probability", computeCardProbability(fyersSymbol, ltp));
 
@@ -408,7 +411,7 @@ public class ScannerController {
         status.put("atrLoaded", atrService.getLoadedCountFor(marketDataService.getWatchlist()));
         status.put("smaLoaded", smaService.getLoadedCountFor(marketDataService.getWatchlist()));
         status.put("sma200Loaded", smaService.getSma200LoadedCountFor(marketDataService.getWatchlist()));
-        status.put("firstCandleLoaded", candleAggregator.getFirstCandleCloseCount());
+        status.put("firstCandleLoaded", candleAggregator.getFirstCandleCloseCountFor(marketDataService.getWatchlist()));
         status.put("validationPass", marketDataService.getValidationPass());
         status.put("validationFail", marketDataService.getValidationFail());
         status.put("validationTotal", marketDataService.getValidationTotal());
@@ -424,7 +427,6 @@ public class ScannerController {
         status.put("minVolume", riskSettings.getScanMinVolume());
         status.put("minBeta", riskSettings.getScanMinBeta());
         status.put("maxBeta", riskSettings.getScanMaxBeta());
-        status.put("capFilter", riskSettings.getScanCapFilter());
         status.put("narrowMaxWidth", riskSettings.getNarrowCprMaxWidth());
         status.put("insideMaxWidth", riskSettings.getInsideCprMaxWidth());
         return status;

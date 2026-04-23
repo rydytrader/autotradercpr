@@ -143,9 +143,8 @@ function renderMonitoring(d) {
     // Scanner card
     html += '<div class="mon-card">';
     html += '<div class="mon-card-title">Scanner</div>';
-    html += row('Signal Source', sc.signalSource || '--', 'info');
+    html += row('Scan Universe', 'Nifty 50 (' + (sc.nifty50Count || 0) + ')', (sc.nifty50Count || 0) >= 50 ? 'ok' : 'warn');
     html += row('Watchlist', sc.watchlistCount || 0, sc.watchlistCount > 0 ? 'ok' : 'err');
-    html += row('ATR Loaded', (sc.atrLoaded || 0) + '/' + (sc.watchlistCount || 0), sc.atrLoaded >= sc.watchlistCount ? 'ok' : 'warn');
     html += '<div style="border-top:1px dashed var(--border);margin:6px 0;"></div>';
     html += row('Active Candles', (sc.activeCandles || 0) + ' (total) / ' + (sc.watchlistCount || 0) + ' (watchlist)', sc.activeCandles >= sc.watchlistCount ? 'ok' : 'warn');
     html += row('Candle Checker', sc.candleChecker || '--', cls(sc.candleChecker, 'ALIVE'));
@@ -154,23 +153,25 @@ function renderMonitoring(d) {
     }
     html += row('Last Scan', (sc.lastScanCount || 0) + '/' + (sc.watchlistCount || 0) + (sc.lastScanTime ? ' @ ' + sc.lastScanTime : ''), sc.lastScanCount >= sc.watchlistCount ? 'ok' : sc.lastScanCount > 0 ? 'warn' : '');
     html += '<div style="border-top:1px dashed var(--border);margin:6px 0;"></div>';
-    html += row('Traded Today', sc.tradedToday || 0, sc.tradedToday > 0 ? 'ok' : '');
-    html += row('Filtered Today', sc.filteredToday || 0, sc.filteredToday > 0 ? 'warn' : '');
-    html += '<div style="border-top:1px dashed var(--border);margin:6px 0;"></div>';
+    // Indicator seed status — ATR grouped with SMA series (all per-symbol Fyers-history seeds).
     var wc = sc.watchlistCount || 0;
-    var atrOk = (sc.atrLoaded || 0) >= wc && wc > 0;
-    var smaOk = (sc.smaLoaded || 0) >= wc && wc > 0;
-    var fcOk  = (sc.firstCandleLoaded || 0) >= wc && wc > 0;
-    html += row('SMA 20 Loaded', (sc.smaLoaded || 0) + '/' + wc, smaOk ? 'ok' : (sc.smaLoaded > 0 ? 'warn' : 'err'));
+    var atrOk    = (sc.atrLoaded    || 0) >= wc && wc > 0;
+    var smaOk    = (sc.smaLoaded    || 0) >= wc && wc > 0;
+    var sma50Ok  = (sc.sma50Loaded  || 0) >= wc && wc > 0;
     var sma200Ok = (sc.sma200Loaded || 0) >= wc && wc > 0;
+    html += row('ATR Loaded',     (sc.atrLoaded    || 0) + '/' + wc, atrOk    ? 'ok' : (sc.atrLoaded    > 0 ? 'warn' : 'err'));
+    html += row('SMA 20 Loaded',  (sc.smaLoaded    || 0) + '/' + wc, smaOk    ? 'ok' : (sc.smaLoaded    > 0 ? 'warn' : 'err'));
+    html += row('SMA 50 Loaded',  (sc.sma50Loaded  || 0) + '/' + wc, sma50Ok  ? 'ok' : (sc.sma50Loaded  > 0 ? 'warn' : 'err'));
     html += row('SMA 200 Loaded', (sc.sma200Loaded || 0) + '/' + wc, sma200Ok ? 'ok' : (sc.sma200Loaded > 0 ? 'warn' : 'err'));
-    html += row('1st Bar Close', (sc.firstCandleLoaded || 0) + '/' + wc, fcOk ? 'ok' : (sc.firstCandleLoaded > 0 ? 'warn' : 'err'));
     var vPass = sc.validationPass, vFail = sc.validationFail, vTotal = sc.validationTotal;
     if (vTotal != null && vTotal >= 0) {
         html += row('Open Refresh Validate', vFail === 0 ? vPass + '/' + vTotal + ' OK' : vFail + '/' + vTotal + ' FAIL', vFail === 0 ? 'ok' : 'err');
     } else {
         html += row('Open Refresh Validate', 'Pending', '');
     }
+    html += '<div style="border-top:1px dashed var(--border);margin:6px 0;"></div>';
+    html += row('Traded Today', sc.tradedToday || 0, sc.tradedToday > 0 ? 'ok' : '');
+    html += row('Filtered Today', sc.filteredToday || 0, sc.filteredToday > 0 ? 'warn' : '');
     html += '</div>';
 
     // Trading card

@@ -111,6 +111,28 @@ public class MarketHolidayService {
         return !isHoliday(date);
     }
 
+    /**
+     * Is today the first trading day of the current ISO week? (Monday typically;
+     * Tuesday/later when preceding days are holidays.) Used by the HTF Hurdle filter
+     * to decide whether the prior session's last 1h close is a meaningful fallback —
+     * on the first trading day of the week, the weekly CPR levels just went live and
+     * the prior session's close was against the previous week's levels, so it's not
+     * a comparable reference.
+     */
+    public boolean isFirstTradingDayOfWeek() {
+        LocalDate today = LocalDate.now(IST);
+        if (!isTradingDay(today)) return false;
+        java.time.temporal.WeekFields wf = java.time.temporal.WeekFields.ISO;
+        int thisWeek = today.get(wf.weekOfWeekBasedYear());
+        LocalDate d = today.minusDays(1);
+        for (int i = 0; i < 7; i++) {
+            if (d.get(wf.weekOfWeekBasedYear()) != thisWeek) return true;
+            if (isTradingDay(d)) return false;
+            d = d.minusDays(1);
+        }
+        return true;
+    }
+
     /** Is today the last trading day of the week? (for weekly squareoff) */
     public boolean isLastTradingDayOfWeek() {
         LocalDate today = LocalDate.now(IST);

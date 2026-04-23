@@ -18,11 +18,11 @@ import org.springframework.stereotype.Service;
  *   2. BreakoutScanner index alignment filter (downgrade HPT → LPT when opposed)
  *
  * Score weighting:
- *   - weekly trend    : ±2 (strong) / ±1 (mild) / 0
- *   - daily trend     : ±2 (strong) / ±1 (mild) / 0
+ *   - weekly trend    : ±2 / ±1 / 0
+ *   - daily trend     : ±3 / ±2 / 0   (bumped — daily CPR outweighs lagging SMA crossover)
  *   - SMA 20 position : ±1 (LTP above/below 20 SMA)
  *   - SMA 200 position: ±1 (LTP above/below 200 SMA)
- *   - SMA crossover   : +2/+1/-1/-2 (20 vs 200 / 50 vs 200)
+ *   - SMA crossover   : ±1 / 0        (binary — lagging signal, reduced weight)
  *   - SMA 20/50 pattern: ±2 (RAILWAY_UP/DOWN) / 0
  *
  * Score range: -10 to +10
@@ -92,27 +92,18 @@ public class IndexTrendService {
         trend.setWeeklyTrend(weekly);
         trend.setDailyTrend(daily);
 
-        // Weekly reversal flag — zero out weekly score when active
-        boolean reversalActive = !"NONE".equals(weeklyCprService.getWeeklyRejection(symbol));
-        trend.setWeeklyReversalActive(reversalActive);
-
         // Compute component scores
-        int weeklyScore = reversalActive ? 0 : scoreTrend(weekly);
-        int dailyScore = scoreTrend(daily);
+        int weeklyScore = scoreTrend(weekly);
+        int dailyScore = scoreDailyTrend(daily);
         int smaPositionScore = scoreSmaPosition(ltp, sma);
         int sma200PositionScore = scoreSmaPosition(ltp, sma200);
-        // SMA crossover vs 200: +2 if both 20 and 50 above 200 (strong bullish structure),
-        //                       +1 if only 20 above 200, -2/-1 symmetric for bearish, 0 otherwise.
+        // SMA crossover: binary ±1 on SMA(20) vs SMA(200). Reduced from ±2 → ±1 because
+        // crossover is a lagging signal — daily CPR trend (now ±3) should dominate when
+        // the two disagree (e.g. price below daily CPR but SMAs haven't flipped yet).
         int smaCrossoverScore = 0;
         if (sma > 0 && sma200 > 0) {
-            boolean s20Bull = sma > sma200;
-            boolean s50Bull = sma50 > 0 && sma50 > sma200;
-            boolean s20Bear = sma < sma200;
-            boolean s50Bear = sma50 > 0 && sma50 < sma200;
-            if (s20Bull && s50Bull) smaCrossoverScore = 2;
-            else if (s20Bull) smaCrossoverScore = 1;
-            else if (s20Bear && s50Bear) smaCrossoverScore = -2;
-            else if (s20Bear) smaCrossoverScore = -1;
+            if (sma > sma200) smaCrossoverScore = 1;
+            else if (sma < sma200) smaCrossoverScore = -1;
         }
 
         // SMA 20/50 pattern: R-RTP +2, F-RTP -2, BRAIDED/none 0
@@ -178,6 +169,21 @@ public class IndexTrendService {
         if ("BULLISH".equals(trendStr))         return 1;
         if ("BEARISH".equals(trendStr))         return -1;
         return 0;  // NEUTRAL or unknown
+    }
+
+    /**
+     * Daily trend scale, bumped to ±3 max so current-day price structure outweighs the
+     * lagging SMA crossover (now capped at ±1). Handles cases where NIFTY price breaks
+     * below daily CPR but SMAs haven't flipped yet — daily-bearish ±2/±3 overrides the
+     * stale ±1 bullish crossover instead of cancelling to NEUTRAL.
+     */
+    private int scoreDailyTrend(String trendStr) {
+        if (trendStr == null) return 0;
+        if ("STRONG_BULLISH".equals(trendStr))  return 3;
+        if ("STRONG_BEARISH".equals(trendStr))  return -3;
+        if ("BULLISH".equals(trendStr))         return 2;
+        if ("BEARISH".equals(trendStr))         return -2;
+        return 0;
     }
 
     /** SMA position: +1 if LTP above 20 SMA, -1 if below, 0 if equal or data missing. */

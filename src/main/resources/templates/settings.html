@@ -367,6 +367,10 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Price</b>: 5-min SMA trend — close above/below SMA 20, 50, 200 together</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="enableSmaAlignmentCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Alignment</b>: SMAs aligned — buy requires <b>20 &gt; 50 &gt; 200</b>, sell requires <b>20 &lt; 50 &lt; 200</b></span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="requireRtpPattern" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Pattern</b>: require direction-matched 5-min pattern — <b style="color:var(--accent-green);">R-RTP</b> for buys, <b style="color:var(--accent-red);">F-RTP</b> for sells</span>
                     </div>
@@ -433,32 +437,34 @@
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
                         <input type="checkbox" id="enableSmaLevelCountFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip if any CPR zone sits between SMA and the broken level</span>
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono); margin-left:12px;">Min % range from boundary:</span>
+                        <input type="number" id="smaLevelMinRangePct" class="form-control" step="5" min="0" max="100" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                     </div>
-                    <div class="form-hint">Counts CPR zones (S4, S3, S2, S1/PDL, CPR, R1/PDH, R2, R3, R4) strictly between the 20 SMA and the breakout level. Pair zones (CPR, R1/PDH, S1/PDL) count as one. If the count is 0 (SMA is in the zone immediately adjacent to the broken level) the trade fires. If 1 or more zones sit between, the setup is stale and the trade is skipped. Day High / Day Low setups follow the same rule — no CPR zone exclusion.</div>
+                    <div class="form-hint">Counts CPR zones (S4, S3, S2, S1/PDL, CPR, R1/PDH, R2, R3, R4) strictly between the 20 SMA and the breakout level. Pair zones (CPR, R1/PDH, S1/PDL) count as one. If the count is 0 (SMA is in the zone immediately adjacent to the broken level) the trade fires. If 1 or more zones sit between, the setup is stale and the trade is skipped.
+                    <br/><br/><b>Min % range from boundary (default 50)</b>: secondary proximity check. The 100% range is measured from the broken level to the top/bottom edge of the next non-broken zone. SMA must sit within <i>(100 − N)%</i> of the range from the broken level — i.e. in the upper N% for buys / lower N% for sells. Example: <i>BUY_ABOVE_R1_PDH</i> with R1=100, cprTop=95. Range = 5. At N=50, SMA must be ≥ 97.5. SMA at 96 is 80% of the range below R1 → skipped. Set to <b>0</b> to disable this check and use count-only filter.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">HTF Hurdle Filter</label>
+                    <label class="form-label">HTF Hurdle and SMA Trend Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Downgrade HPT &rarr; LPT when the previous 1h HTF candle hasn't cleared the nearest weekly level</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Hurdle</b>: HPT &rarr; LPT when prior 1h HTF candle hasn't cleared nearest weekly R1/PWH (buy) or S1/PWL (sell)</span>
                     </div>
-                    <div class="form-hint">For a 5-min breakout, find the nearest weekly level in the trade direction:
-                        <b>buys</b> &rarr; the highest of {R1, PWH, R2, R3, R4} strictly below the 5-min close;
-                        <b>sells</b> &rarr; the lowest of {S1, PWL, S2, S3, S4} strictly above the close.
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="enableHtfSmaAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Price</b>: 1-hour SMA trend &mdash; LTP above/below 1h SMA 20, 50, 200 together</span>
+                    </div>
+                    <div class="form-hint">Two independent HTF checks &mdash; each can downgrade HPT &rarr; LPT on its own.
+                        <br><br>
+                        <b>Hurdle.</b> For a 5-min breakout, find the nearest weekly hurdle in the trade direction:
+                        <b>buys</b> &rarr; the higher of {R1, PWH} strictly below the 5-min close;
+                        <b>sells</b> &rarr; the lower of {S1, PWL} strictly above the close.
                         Then check the previous 1-hour HTF candle close:
-                        <b>cleared the level</b> (prior 1h close &gt; level on buys, &lt; level on sells) &rarr; HPT retained;
-                        <b>didn't clear</b> &rarr; HPT &rarr; LPT (HTF hasn't confirmed the move);
-                        <b>no prior 1h close yet today</b> (first session hour) &rarr; HPT &rarr; LPT.
-                        Weekly CPR (pivot/TC/BC) is excluded because below-weekly-top trades are already classified as weekly-neutral (LPT) by the weekly trend rule.
-                        Applies to all breakouts. LPT trades unaffected.</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Weekly Reversal Filter (75-min R1/PWH & S1/PWL)</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="weeklyReversalHardSkip" style="width: 18px; height: 18px; accent-color: var(--accent-yellow); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Hard skip trades opposed to weekly reversal (disable for HPT → LPT downgrade)</span>
-                    </div>
-                    <div class="form-hint">When a 75-min candle rejects at weekly R1/PWH or S1/PWL, buy/sell trades fighting the reversal are skipped (hard skip) or downgraded to LPT (soft mode). Applies to all stocks, not just NIFTY. Scanner shows (R) in amber.</div>
+                        <b>cleared</b> &rarr; HPT retained; <b>didn't clear</b> &rarr; LPT; <b>no prior 1h close yet today</b> (first session hour) &rarr; LPT.
+                        Only R1/PWH and S1/PWL are hurdles &mdash; R2+/S2+ are far-out projections, not walls the HTF needs to clear first. Weekly CPR (TC/BC/Pivot) is excluded because inside-CPR trades fall under the weekly-NEUTRAL rule.
+                        <br><br>
+                        <b>Price.</b> LTP-based (not candle close), so the hourly trend structure has to be on the trade's side right now. Mirrors the 5-min SMA price gate above, applied to the 1-hour SMAs.
+                        <br><br>
+                        Applies to all breakouts. LPT trades unaffected. Fail-open when any SMA/level is warming up.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">NIFTY Index Alignment Filter</label>
@@ -468,12 +474,7 @@
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px; padding-left: 28px;">
                         <input type="checkbox" id="indexAlignmentHardSkip" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Hard skip mode — skip opposed trades entirely (default: soft mode = reduce qty)</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px; padding-left: 28px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Soft mode qty factor:</span>
-                        <input type="number" id="indexOpposedQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:80px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">(0.75 = 25% reduction, probability unchanged)</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Hard skip mode — skip opposed trades entirely (default: soft mode = downgrade to LPT)</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Bullish:</span>
@@ -487,7 +488,7 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Strong bearish:</span>
                         <input type="number" id="indexStrongBearishThreshold" class="form-control" step="1" min="-10" max="10" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                     </div>
-                    <div class="form-hint">Composite NIFTY score from weekly CPR (&plusmn;2) + daily CPR (&plusmn;2) + SMA 20 position (&plusmn;1) + SMA 200 position (&plusmn;1) + SMA 20/50 vs 200 cross (&plusmn;2) + SMA 20/50 pattern R-RTP/F-RTP (&plusmn;2). Total range -10 to +10. Score thresholds map to 5 trend states (STRONG BEARISH / BEARISH / NEUTRAL / BULLISH / STRONG BULLISH). Trades opposing the NIFTY trend are either quantity-reduced by the soft-mode factor (default, HPT stays HPT) or skipped entirely (hard skip). LPT trades unaffected. The NIFTY card on the scanner page always shows the live composite state regardless of this toggle.</div>
+                    <div class="form-hint">Composite NIFTY score from weekly CPR (&plusmn;2) + daily CPR (&plusmn;2) + SMA 20 position (&plusmn;1) + SMA 200 position (&plusmn;1) + SMA 20/50 vs 200 cross (&plusmn;2) + SMA 20/50 pattern R-RTP/F-RTP (&plusmn;2). Total range -10 to +10. Score thresholds map to 5 trend states (STRONG BEARISH / BEARISH / NEUTRAL / BULLISH / STRONG BULLISH). Trades opposing the NIFTY trend are either downgraded to LPT (soft mode, default) or skipped entirely (hard skip). LPT trades unaffected. The NIFTY card on the scanner page always shows the live composite state regardless of this toggle.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Extended Level Signals (R3/S3, R4/S4)</label>
@@ -524,7 +525,7 @@
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="enableWeeklyLevelTargetShift" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift to Weekly CPR levels</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift to Weekly Support / Resistance levels</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="enableWeeklySmaTargetShift" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
@@ -727,21 +728,6 @@
                         <input type="number" id="scanMaxBeta" class="form-control" min="0" max="5" step="0.1" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;" placeholder="0">
                     </div>
                     <div class="form-hint">Filter by stock beta vs NIFTY. 0 = no filter. Restart required.</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Market Cap Filter</label>
-                    <div style="display:flex; align-items:center; gap:14px; margin-top:4px;">
-                        <div style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem; color:var(--text-secondary);">
-                            <input type="checkbox" id="scanCapLarge" style="width:16px; height:16px; accent-color:var(--accent-green);cursor:pointer;"> Large
-                        </div>
-                        <div style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem; color:var(--text-secondary);">
-                            <input type="checkbox" id="scanCapMid" style="width:16px; height:16px; accent-color:var(--accent-blue);cursor:pointer;"> Mid
-                        </div>
-                        <div style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.82rem; color:var(--text-secondary);">
-                            <input type="checkbox" id="scanCapSmall" style="width:16px; height:16px; accent-color:var(--accent-yellow);cursor:pointer;"> Small
-                        </div>
-                    </div>
-                    <div class="form-hint">Select one or more cap categories. All unchecked = no filter (all caps included).</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Opening Range</label>
@@ -1031,6 +1017,7 @@
             document.getElementById('enableWeeklyLevelTargetShift').checked = d.enableWeeklyLevelTargetShift !== false;
             document.getElementById('enableWeeklySmaTargetShift').checked = d.enableWeeklySmaTargetShift !== false;
             document.getElementById('enableHtfHurdleFilter').checked = d.enableHtfHurdleFilter !== false;
+            document.getElementById('enableHtfSmaAlignment').checked = d.enableHtfSmaAlignment !== false;
             document.getElementById('enableStructuralSl').checked = d.enableStructuralSl === true;
             document.getElementById('structuralSlBufferAtr').value = d.structuralSlBufferAtr != null ? d.structuralSlBufferAtr : 1.0;
             // dayHighLowMinAtr removed — single min target distance check handles both
@@ -1039,10 +1026,12 @@
             document.getElementById('largeCandleBodyAtrThreshold').value = d.largeCandleBodyAtrThreshold != null ? d.largeCandleBodyAtrThreshold : 4.0;
             document.getElementById('minRiskRewardRatio').value = d.minRiskRewardRatio != null ? d.minRiskRewardRatio : 1.0;
             document.getElementById('enableSmaTrendCheck').checked = d.enableSmaTrendCheck !== false;
+            document.getElementById('enableSmaAlignmentCheck').checked = d.enableSmaAlignmentCheck === true;
             document.getElementById('enableSmaVsAtpCheck').checked = d.enableSmaVsAtpCheck !== false;
             document.getElementById('requireRtpPattern').checked = d.requireRtpPattern === true;
             document.getElementById('skipTradesInZigZag').checked = d.skipTradesInZigZag !== false;
             document.getElementById('enableSmaLevelCountFilter').checked = d.enableSmaLevelCountFilter !== false;
+            document.getElementById('smaLevelMinRangePct').value = d.smaLevelMinRangePct != null ? d.smaLevelMinRangePct : 50;
             document.getElementById('enableSplitTarget').checked = d.enableSplitTarget !== false;
             document.getElementById('t1DistancePct').value = d.t1DistancePct || 50;
             document.getElementById('splitMinDistanceAtr').value = d.splitMinDistanceAtr || 0;
@@ -1050,8 +1039,6 @@
             document.getElementById('targetToleranceAtr').value = (d.targetToleranceAtr != null ? d.targetToleranceAtr : 0.10);
             document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
             document.getElementById('indexAlignmentHardSkip').checked = d.indexAlignmentHardSkip === true;
-            document.getElementById('indexOpposedQtyFactor').value = (d.indexOpposedQtyFactor != null ? d.indexOpposedQtyFactor : 0.75);
-            document.getElementById('weeklyReversalHardSkip').checked = d.weeklyReversalHardSkip !== false;
             document.getElementById('indexBullishThreshold').value = (d.indexBullishThreshold != null ? d.indexBullishThreshold : 2);
             document.getElementById('indexStrongBullishThreshold').value = (d.indexStrongBullishThreshold != null ? d.indexStrongBullishThreshold : 5);
             document.getElementById('indexBearishThreshold').value = (d.indexBearishThreshold != null ? d.indexBearishThreshold : -2);
@@ -1084,10 +1071,6 @@
             document.getElementById('scanMinVolume').value = d.scanMinVolume != null ? Math.round(d.scanMinVolume / 100000) : 0;
             document.getElementById('scanMinBeta').value = d.scanMinBeta != null ? d.scanMinBeta : 0;
             document.getElementById('scanMaxBeta').value = d.scanMaxBeta != null ? d.scanMaxBeta : 0;
-            var capVal = d.scanCapFilter || 'ALL';
-            document.getElementById('scanCapLarge').checked = capVal === 'ALL' || capVal.includes('LARGE');
-            document.getElementById('scanCapMid').checked = capVal === 'ALL' || capVal.includes('MID');
-            document.getElementById('scanCapSmall').checked = capVal === 'ALL' || capVal.includes('SMALL');
             document.getElementById('openingRangeMinutes').value = d.openingRangeMinutes != null ? d.openingRangeMinutes : 0;
             document.getElementById('scanIncludeNS').checked = d.scanIncludeNS !== false;
             document.getElementById('scanIncludeNL').checked = d.scanIncludeNL !== false;
@@ -1182,6 +1165,7 @@
                 enableWeeklyLevelTargetShift: document.getElementById('enableWeeklyLevelTargetShift').checked,
                 enableWeeklySmaTargetShift: document.getElementById('enableWeeklySmaTargetShift').checked,
                 enableHtfHurdleFilter: document.getElementById('enableHtfHurdleFilter').checked,
+                enableHtfSmaAlignment: document.getElementById('enableHtfSmaAlignment').checked,
                 enableStructuralSl: document.getElementById('enableStructuralSl').checked,
                 structuralSlBufferAtr: parseFloat(document.getElementById('structuralSlBufferAtr').value) || 1.0,
                 // dayHighLowMinAtr removed
@@ -1190,10 +1174,12 @@
                 largeCandleBodyAtrThreshold: parseFloat(document.getElementById('largeCandleBodyAtrThreshold').value) || 4.0,
                 minRiskRewardRatio: parseFloat(document.getElementById('minRiskRewardRatio').value) || 1.0,
                 enableSmaTrendCheck: document.getElementById('enableSmaTrendCheck').checked,
+                enableSmaAlignmentCheck: document.getElementById('enableSmaAlignmentCheck').checked,
                 enableSmaVsAtpCheck: document.getElementById('enableSmaVsAtpCheck').checked,
                 requireRtpPattern: document.getElementById('requireRtpPattern').checked,
                 skipTradesInZigZag: document.getElementById('skipTradesInZigZag').checked,
                 enableSmaLevelCountFilter: document.getElementById('enableSmaLevelCountFilter').checked,
+                smaLevelMinRangePct: parseInt(document.getElementById('smaLevelMinRangePct').value) || 0,
                 enableSplitTarget: document.getElementById('enableSplitTarget').checked,
                 t1DistancePct: parseInt(document.getElementById('t1DistancePct').value) || 50,
                 splitMinDistanceAtr: parseFloat(document.getElementById('splitMinDistanceAtr').value) || 0,
@@ -1201,8 +1187,6 @@
                 targetToleranceAtr: parseFloat(document.getElementById('targetToleranceAtr').value) || 0,
                 enableIndexAlignment: document.getElementById('enableIndexAlignment').checked,
                 indexAlignmentHardSkip: document.getElementById('indexAlignmentHardSkip').checked,
-                indexOpposedQtyFactor: parseFloat(document.getElementById('indexOpposedQtyFactor').value) || 0.75,
-                weeklyReversalHardSkip: document.getElementById('weeklyReversalHardSkip').checked,
                 indexBullishThreshold: parseInt(document.getElementById('indexBullishThreshold').value) || 2,
                 indexStrongBullishThreshold: parseInt(document.getElementById('indexStrongBullishThreshold').value) || 5,
                 indexBearishThreshold: parseInt(document.getElementById('indexBearishThreshold').value) || -2,
@@ -1233,13 +1217,6 @@
                 scanMinVolume: (parseInt(document.getElementById('scanMinVolume').value) || 0) * 100000,
                 scanMinBeta: parseFloat(document.getElementById('scanMinBeta').value) || 0,
                 scanMaxBeta: parseFloat(document.getElementById('scanMaxBeta').value) || 0,
-                scanCapFilter: (function() {
-                    var caps = [];
-                    if (document.getElementById('scanCapLarge').checked) caps.push('LARGE');
-                    if (document.getElementById('scanCapMid').checked) caps.push('MID');
-                    if (document.getElementById('scanCapSmall').checked) caps.push('SMALL');
-                    return caps.length === 0 || caps.length === 3 ? 'ALL' : caps.join(',');
-                })(),
                 openingRangeMinutes: parseInt(document.getElementById('openingRangeMinutes').value) || 0,
                 scanIncludeNS: document.getElementById('scanIncludeNS').checked,
                 scanIncludeNL: document.getElementById('scanIncludeNL').checked,

@@ -455,10 +455,6 @@
             <span class="ss-value" id="ssBeta">--</span>
         </div>
         <div class="ss-item">
-            <span class="ss-label">Cap:</span>
-            <span class="ss-value" id="ssCap">ALL</span>
-        </div>
-        <div class="ss-item">
             <span class="ss-label">Signals:</span>
             <span id="ssSignals">--</span>
         </div>
@@ -742,7 +738,6 @@
             return t.replace('_', ' ');
         }
         var wLabel = shortTrendLabel(wTrend);
-        if (d.weeklyReversalActive) wLabel += ' <span style="color:var(--accent-yellow);font-weight:700;">(R)</span>';
         var dLabel = shortTrendLabel(dTrend);
         var wArrow = wTrend.includes('BULLISH') ? '&#9650;' : wTrend.includes('BEARISH') ? '&#9660;' : '&#9644;';
         var dArrow = dTrend.includes('BULLISH') ? '&#9650;' : dTrend.includes('BEARISH') ? '&#9660;' : '&#9644;';
@@ -992,9 +987,6 @@
                 document.getElementById('ssBeta').textContent = 'All';
             }
 
-            // Cap
-            document.getElementById('ssCap').textContent = s.capFilter || 'ALL';
-
             // Signals
             var sigs = [];
             if (s.enableHpt) sigs.push('HPT');
@@ -1092,7 +1084,6 @@
             var sep = ' <span style="color:var(--border);margin:0 2px">|</span> ';
 
             var wVal = ts(d.weeklyTrend) + ' ' + sc(d.weeklyScore);
-            if (d.weeklyReversalActive) wVal += ' <span style="color:var(--accent-yellow);font-weight:700">(R)</span>';
             var e20Val = d.sma > 0 ? (d.smaPositionScore > 0 ? '▲ ' : d.smaPositionScore < 0 ? '▼ ' : '= ') + d.sma.toFixed(1) + ' ' + sc(d.smaPositionScore) : '—';
             // SMA 50 position vs LTP (display-only, does not feed total score)
             var e50Pos = (d.ltp > 0 && d.sma50 > 0) ? (d.ltp > d.sma50 ? 1 : d.ltp < d.sma50 ? -1 : 0) : 0;
@@ -1157,18 +1148,21 @@
             // Trend cell uses the same scan-trend CSS as stock cards (W/D badges).
             // Score (+N) shown for weekly trend only; daily and below have no inline score number
             // but composite contribution still flows through totalScore (shown in card header).
-            function trendCell(trendStr, score, reversal, showScore) {
+            function trendCell(trendStr, score, showScore) {
                 var trend = (trendStr || 'NEUTRAL').toUpperCase();
                 var cls = trend.toLowerCase();
                 var arrow = trend.includes('BULLISH') ? '&#9650;' : trend.includes('BEARISH') ? '&#9660;' : '&#9644;';
                 var label = trend.replace('_', ' ');
-                var html = '<span class="scan-trend"><span class="' + cls + '">' + arrow + ' ' + label
-                         + (showScore ? ' ' + sc(score) : '') + '</span></span>';
-                if (reversal) html += ' <span style="color:var(--accent-yellow);font-weight:700;">(R)</span>';
-                return html;
+                return '<span class="scan-trend"><span class="' + cls + '">' + arrow + ' ' + label
+                     + (showScore ? ' ' + sc(score) : '') + '</span></span>';
             }
             function smaCell(disp, score) {
                 return '<span style="color:' + clr(score) + ';font-weight:600;">' + disp + ' ' + sc(score) + '</span>';
+            }
+            // Display-only variant for HTF SMA row — colors the value by position (LTP vs SMA)
+            // but doesn't append a score number, because HTF SMAs don't feed the composite total.
+            function smaCellNoScore(disp, posScore) {
+                return '<span style="color:' + clr(posScore) + ';font-weight:600;">' + disp + '</span>';
             }
             function patCell(label, score) {
                 return '<span style="color:' + clr(score) + ';font-weight:600;">' + label + ' ' + sc(score) + '</span>';
@@ -1177,16 +1171,16 @@
             document.getElementById('niftyMetrics').innerHTML =
                 '<div style="' + headStyle + '">'
                 +   '<span>TF</span>'
-                +   '<span>Trend</span>'
-                +   '<span style="text-align:right;">E20</span>'
-                +   '<span style="text-align:right;">E50</span>'
-                +   '<span style="text-align:right;">E200</span>'
+                +   '<span>CPR Trend</span>'
+                +   '<span style="text-align:right;">SMA 20</span>'
+                +   '<span style="text-align:right;">SMA 50</span>'
+                +   '<span style="text-align:right;">SMA 200</span>'
                 +   '<span style="text-align:right;">Pattern</span>'
                 +   '<span style="text-align:right;">Cross</span>'
                 + '</div>'
                 + '<div style="' + gridStyle + '">'
-                +   '<span style="font-weight:700;color:var(--text-muted);">D</span>'
-                +   '<span>' + trendCell(d.dailyTrend, d.dailyScore, false, true) + '</span>'
+                +   '<span style="font-weight:700;color:var(--text-muted);">D <span style="font-weight:400;opacity:0.7;">(5 min)</span></span>'
+                +   '<span>' + trendCell(d.dailyTrend, d.dailyScore, true) + '</span>'
                 +   '<span style="text-align:right;">' + smaCell(d.sma > 0 ? arrow(d.ltp, d.sma) + d.sma.toFixed(1) : '—', d.smaPositionScore) + '</span>'
                 +   '<span style="text-align:right;">' + smaCell(d.sma50 > 0 ? arrow(d.ltp, d.sma50) + d.sma50.toFixed(1) : '—', e50Pos) + '</span>'
                 +   '<span style="text-align:right;">' + smaCell(d.sma200 > 0 ? arrow(d.ltp, d.sma200) + d.sma200.toFixed(1) : '—', d.sma200PositionScore) + '</span>'
@@ -1198,11 +1192,11 @@
                 +   '<span style="text-align:right;">' + patCell(crossLabel(d.sma, d.sma50, d.sma200), d.smaCrossoverScore) + '</span>'
                 + '</div>'
                 + '<div style="' + gridStyle + '">'
-                +   '<span style="font-weight:700;color:var(--text-muted);">W</span>'
-                +   '<span>' + trendCell(d.weeklyTrend, d.weeklyScore, d.weeklyReversalActive, true) + '</span>'
-                +   '<span style="text-align:right;">' + smaCell(htfE20Disp, htfE20Pos) + '</span>'
-                +   '<span style="text-align:right;">' + smaCell(htfE50Disp, htfE50Pos) + '</span>'
-                +   '<span style="text-align:right;">' + smaCell(htfE200Disp, htfE200Pos) + '</span>'
+                +   '<span style="font-weight:700;color:var(--text-muted);">W <span style="font-weight:400;opacity:0.7;">(60 min)</span></span>'
+                +   '<span>' + trendCell(d.weeklyTrend, d.weeklyScore, true) + '</span>'
+                +   '<span style="text-align:right;">' + smaCellNoScore(htfE20Disp, htfE20Pos) + '</span>'
+                +   '<span style="text-align:right;">' + smaCellNoScore(htfE50Disp, htfE50Pos) + '</span>'
+                +   '<span style="text-align:right;">' + smaCellNoScore(htfE200Disp, htfE200Pos) + '</span>'
                 +   '<span style="text-align:right;"><span style="color:' + clr(htfPatternScore) + ';font-weight:600;">' + htfPatternVal + '</span></span>'
                 +   '<span style="text-align:right;"><span style="color:' + clr(htfCrossScore) + ';font-weight:600;">' + htfCrossLabel + '</span></span>'
                 + '</div>';
@@ -1247,11 +1241,6 @@
             <input type="number" id="nfMinBeta" placeholder="0" step="0.1" style="width:45px; padding:4px 6px; font-size:0.72rem; background:var(--bg-base); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); text-align:center;" oninput="filterModalRows('narrow')">
             <span>–</span>
             <input type="number" id="nfMaxBeta" placeholder="∞" step="0.1" style="width:45px; padding:4px 6px; font-size:0.72rem; background:var(--bg-base); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); text-align:center;" oninput="filterModalRows('narrow')">
-            <span style="margin-left:6px;">Cap:</span>
-            <button class="modal-cap-btn active" data-cap="ALL" data-modal="narrow" onclick="setCapFilter(this)" style="padding:3px 8px; font-size:0.68rem; font-family:var(--font-mono); border-radius:4px; cursor:pointer; border:1px solid var(--border); background:rgba(99,179,237,0.12); color:var(--accent-blue);">All</button>
-            <button class="modal-cap-btn" data-cap="LARGE" data-modal="narrow" onclick="setCapFilter(this)" style="padding:3px 8px; font-size:0.68rem; font-family:var(--font-mono); border-radius:4px; cursor:pointer; border:1px solid var(--border); background:var(--bg-base); color:var(--text-secondary);">Large</button>
-            <button class="modal-cap-btn" data-cap="MID" data-modal="narrow" onclick="setCapFilter(this)" style="padding:3px 8px; font-size:0.68rem; font-family:var(--font-mono); border-radius:4px; cursor:pointer; border:1px solid var(--border); background:var(--bg-base); color:var(--text-secondary);">Mid</button>
-            <button class="modal-cap-btn" data-cap="SMALL" data-modal="narrow" onclick="setCapFilter(this)" style="padding:3px 8px; font-size:0.68rem; font-family:var(--font-mono); border-radius:4px; cursor:pointer; border:1px solid var(--border); background:var(--bg-base); color:var(--text-secondary);">Small</button>
             <span id="narrowFilterCount" style="margin-left:auto; color:var(--text-muted);"></span>
         </div>
         <div style="overflow-y:auto; flex:1; min-height:0; padding:0; scrollbar-width:thin; scrollbar-color:var(--border) transparent;">
@@ -1265,7 +1254,6 @@
                         <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Avg Volume (20d)</th>
                         <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Avg T/O ₹Cr (20d)</th>
                         <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Beta</th>
-                        <th style="padding:10px 14px; text-align:center; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Cap</th>
                     </tr>
                 </thead>
                 <tbody id="narrowCprBody"></tbody>
@@ -1274,7 +1262,6 @@
         </div>
         <div style="padding:10px 16px; border-top:1px solid var(--border); font-family:var(--font-mono); font-size:0.65rem; color:var(--text-muted); display:flex; gap:20px; flex-shrink:0; flex-wrap:wrap;">
             <span>Beta: <span style="color:var(--accent-red);">&gt;1.2 High</span> <span style="color:var(--accent-yellow);">&gt;1.0 Above Mkt</span> <span style="color:var(--text-primary);">0.8–1.0 Market</span> <span style="color:var(--accent-blue);">&lt;0.8 Defensive</span></span>
-            <span>Cap: <span style="color:var(--accent-green); font-weight:700;">LRG</span> Large (NIFTY 100) <span style="color:var(--accent-blue); font-weight:700;">MID</span> Mid (MIDCAP 150) <span style="color:var(--accent-yellow); font-weight:700;">SML</span> Small</span>
         </div>
     </div>
 </div>
@@ -1303,11 +1290,6 @@
             <input type="number" id="ifMinBeta" placeholder="0" step="0.1" style="width:45px; padding:4px 6px; font-size:0.72rem; background:var(--bg-base); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); text-align:center;" oninput="filterModalRows('inside')">
             <span>–</span>
             <input type="number" id="ifMaxBeta" placeholder="∞" step="0.1" style="width:45px; padding:4px 6px; font-size:0.72rem; background:var(--bg-base); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); text-align:center;" oninput="filterModalRows('inside')">
-            <span style="margin-left:6px;">Cap:</span>
-            <button class="modal-cap-btn active" data-cap="ALL" data-modal="inside" onclick="setCapFilter(this)" style="padding:3px 8px; font-size:0.68rem; font-family:var(--font-mono); border-radius:4px; cursor:pointer; border:1px solid var(--border); background:rgba(99,179,237,0.12); color:var(--accent-blue);">All</button>
-            <button class="modal-cap-btn" data-cap="LARGE" data-modal="inside" onclick="setCapFilter(this)" style="padding:3px 8px; font-size:0.68rem; font-family:var(--font-mono); border-radius:4px; cursor:pointer; border:1px solid var(--border); background:var(--bg-base); color:var(--text-secondary);">Large</button>
-            <button class="modal-cap-btn" data-cap="MID" data-modal="inside" onclick="setCapFilter(this)" style="padding:3px 8px; font-size:0.68rem; font-family:var(--font-mono); border-radius:4px; cursor:pointer; border:1px solid var(--border); background:var(--bg-base); color:var(--text-secondary);">Mid</button>
-            <button class="modal-cap-btn" data-cap="SMALL" data-modal="inside" onclick="setCapFilter(this)" style="padding:3px 8px; font-size:0.68rem; font-family:var(--font-mono); border-radius:4px; cursor:pointer; border:1px solid var(--border); background:var(--bg-base); color:var(--text-secondary);">Small</button>
             <span id="insideFilterCount" style="margin-left:auto; color:var(--text-muted);"></span>
         </div>
         <div style="overflow-y:auto; flex:1; min-height:0; padding:0; scrollbar-width:thin; scrollbar-color:var(--border) transparent;">
@@ -1321,7 +1303,6 @@
                         <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Avg Volume (20d)</th>
                         <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Avg T/O ₹Cr (20d)</th>
                         <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Beta</th>
-                        <th style="padding:10px 14px; text-align:center; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Cap</th>
                     </tr>
                 </thead>
                 <tbody id="insideCprBody"></tbody>
@@ -1330,25 +1311,17 @@
         </div>
         <div style="padding:10px 16px; border-top:1px solid var(--border); font-family:var(--font-mono); font-size:0.65rem; color:var(--text-muted); display:flex; gap:20px; flex-shrink:0; flex-wrap:wrap;">
             <span>Beta: <span style="color:var(--accent-red);">&gt;1.2 High</span> <span style="color:var(--accent-yellow);">&gt;1.0 Above Mkt</span> <span style="color:var(--text-primary);">0.8–1.0 Market</span> <span style="color:var(--accent-blue);">&lt;0.8 Defensive</span></span>
-            <span>Cap: <span style="color:var(--accent-green); font-weight:700;">LRG</span> Large (NIFTY 100) <span style="color:var(--accent-blue); font-weight:700;">MID</span> Mid (MIDCAP 150) <span style="color:var(--accent-yellow); font-weight:700;">SML</span> Small</span>
         </div>
     </div>
 </div>
 
 <script>
-var modalCapFilter = { narrow: 'ALL', inside: 'ALL' };
-
 function fmtVol(v) {
     if (!v || v <= 0) return '—';
     if (v >= 10000000) return (v / 10000000).toFixed(1) + ' Cr';
     if (v >= 100000) return (v / 100000).toFixed(1) + ' L';
     if (v >= 1000) return (v / 1000).toFixed(1) + ' K';
     return v.toString();
-}
-function capBadge(c) {
-    var colors = { LARGE: 'var(--accent-green)', MID: 'var(--accent-blue)', SMALL: 'var(--accent-yellow)' };
-    var labels = { LARGE: 'LRG', MID: 'MID', SMALL: 'SML' };
-    return '<span style="color:' + (colors[c]||'var(--text-muted)') + ';font-weight:700;">' + (labels[c]||c||'—') + '</span>';
 }
 function betaColor(b) {
     if (b > 1.2) return 'var(--accent-red)';
@@ -1373,7 +1346,7 @@ function buildModalRow(s, i) {
     var tovCell = s.avgTurnover20 > 0 ? s.avgTurnover20.toFixed(1) : '—';
     return '<tr class="modal-stock-row" data-close="' + s.close + '" data-turnover="' + (s.avgTurnover20||0)
         + '" data-volume="' + (s.avgVolume20||0)
-        + '" data-beta="' + (s.beta||0) + '" data-cap="' + (s.capCategory||'SMALL')
+        + '" data-beta="' + (s.beta||0)
         + '" style="border-bottom:1px solid var(--border);">'
         + '<td style="padding:8px 14px; color:var(--text-muted);">' + (i+1) + '</td>'
         + '<td style="padding:8px 14px; color:var(--accent-cyan); font-weight:600;">' + s.symbol + '</td>'
@@ -1382,7 +1355,6 @@ function buildModalRow(s, i) {
         + '<td style="padding:8px 14px; text-align:right; color:var(--text-secondary);">' + volCell + '</td>'
         + '<td style="padding:8px 14px; text-align:right; color:var(--text-secondary);">' + tovCell + '</td>'
         + '<td style="padding:8px 14px; text-align:right; color:' + betaColor(s.beta || 1) + ';">' + (s.beta > 0 ? s.beta.toFixed(2) : '1.00') + '</td>'
-        + '<td style="padding:8px 14px; text-align:center;">' + capBadge(s.capCategory) + '</td>'
         + '</tr>';
 }
 
@@ -1394,7 +1366,6 @@ function filterModalRows(type) {
     var minV = (parseFloat(document.getElementById(prefix + 'MinVolume').value) || 0) * 100000; // input in lakhs
     var minB = parseFloat(document.getElementById(prefix + 'MinBeta').value) || 0;
     var maxB = parseFloat(document.getElementById(prefix + 'MaxBeta').value) || 0;
-    var capF = modalCapFilter[type] || 'ALL';
     var bodyId = type === 'narrow' ? 'narrowCprBody' : 'insideCprBody';
     var countId = type + 'FilterCount';
     var rows = document.getElementById(bodyId).querySelectorAll('.modal-stock-row');
@@ -1404,7 +1375,6 @@ function filterModalRows(type) {
         var t = parseFloat(row.dataset.turnover);
         var v = parseFloat(row.dataset.volume);
         var b = parseFloat(row.dataset.beta);
-        var cap = row.dataset.cap;
         var vis = true;
         if (minP > 0 && c < minP) vis = false;
         if (maxP > 0 && c > maxP) vis = false;
@@ -1412,25 +1382,15 @@ function filterModalRows(type) {
         if (minV > 0 && v < minV) vis = false;
         if (minB > 0 && b < minB) vis = false;
         if (maxB > 0 && b > maxB) vis = false;
-        if (capF !== 'ALL' && cap !== capF) vis = false;
         row.style.display = vis ? '' : 'none';
         if (vis) shown++;
     });
     document.getElementById(countId).textContent = 'Showing ' + shown + ' of ' + total;
 }
 
-function setCapFilter(btn) {
-    var modal = btn.dataset.modal;
-    modalCapFilter[modal] = btn.dataset.cap;
-    var all = btn.parentElement.querySelectorAll('.modal-cap-btn[data-modal="' + modal + '"]');
-    all.forEach(function(b) { b.style.background = 'var(--bg-base)'; b.style.color = 'var(--text-secondary)'; b.classList.remove('active'); });
-    btn.style.background = 'rgba(99,179,237,0.12)'; btn.style.color = 'var(--accent-blue)'; btn.classList.add('active');
-    filterModalRows(modal);
-}
-
 function showNarrowCpr() {
     document.getElementById('narrowCprModal').style.display = 'block';
-    document.getElementById('narrowCprBody').innerHTML = '<tr><td colspan="8" style="padding:30px; text-align:center; color:var(--text-muted);">Loading...</td></tr>';
+    document.getElementById('narrowCprBody').innerHTML = '<tr><td colspan="7" style="padding:30px; text-align:center; color:var(--text-muted);">Loading...</td></tr>';
     document.getElementById('narrowCprEmpty').style.display = 'none';
     document.getElementById('narrowCprSubtitle').textContent = '';
     fetch('/api/narrow-cpr')
@@ -1443,12 +1403,12 @@ function showNarrowCpr() {
             document.getElementById('narrowCprBody').innerHTML = stocks.map((s, i) => buildModalRow(s, i)).join('');
             document.getElementById('narrowFilterCount').textContent = 'Showing ' + stocks.length + ' of ' + stocks.length;
         })
-        .catch(err => { document.getElementById('narrowCprBody').innerHTML = '<tr><td colspan="8" style="padding:30px; text-align:center; color:var(--accent-red);">Failed: ' + err.message + '</td></tr>'; });
+        .catch(err => { document.getElementById('narrowCprBody').innerHTML = '<tr><td colspan="7" style="padding:30px; text-align:center; color:var(--accent-red);">Failed: ' + err.message + '</td></tr>'; });
 }
 
 function showInsideCpr() {
     document.getElementById('insideCprModal').style.display = 'block';
-    document.getElementById('insideCprBody').innerHTML = '<tr><td colspan="8" style="padding:30px; text-align:center; color:var(--text-muted);">Loading...</td></tr>';
+    document.getElementById('insideCprBody').innerHTML = '<tr><td colspan="7" style="padding:30px; text-align:center; color:var(--text-muted);">Loading...</td></tr>';
     document.getElementById('insideCprEmpty').style.display = 'none';
     document.getElementById('insideCprSubtitle').textContent = '';
     fetch('/api/inside-cpr')
@@ -1461,7 +1421,7 @@ function showInsideCpr() {
             document.getElementById('insideCprBody').innerHTML = stocks.map((s, i) => buildModalRow(s, i)).join('');
             document.getElementById('insideFilterCount').textContent = 'Showing ' + stocks.length + ' of ' + stocks.length;
         })
-        .catch(err => { document.getElementById('insideCprBody').innerHTML = '<tr><td colspan="8" style="padding:30px; text-align:center; color:var(--accent-red);">Failed: ' + err.message + '</td></tr>'; });
+        .catch(err => { document.getElementById('insideCprBody').innerHTML = '<tr><td colspan="7" style="padding:30px; text-align:center; color:var(--accent-red);">Failed: ' + err.message + '</td></tr>'; });
 }
 
 </script>

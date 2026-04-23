@@ -48,6 +48,10 @@ public class HtfSmaService implements CandleAggregator.CandleCloseListener {
     private final ConcurrentHashMap<String, Deque<Double>> smaHistoryBySymbol = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Deque<Double>> sma50HistoryBySymbol = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Long> lastCandleEpochBySymbol = new ConcurrentHashMap<>();
+    // Latest 5-min close per symbol — represents the in-progress 60-min bar's current value.
+    // Feeds into getSma/getSma50/getSma200 so the HTF SMA refreshes every 5 min instead of
+    // stepping only at 60-min boundaries. Cleared when the 60-min bar actually closes.
+    private final ConcurrentHashMap<String, Double> partialCloseBySymbol = new ConcurrentHashMap<>();
     private volatile boolean seededFromCache = false;
 
     public HtfSmaService(RiskSettingsStore riskSettings) {
@@ -80,10 +84,51 @@ public class HtfSmaService implements CandleAggregator.CandleCloseListener {
     public double getSma50(String symbol)  { return computeSma(symbol, SMA_MID_PERIOD); }
     public double getSma200(String symbol) { return computeSma(symbol, SMA_LONG_PERIOD); }
 
+    /**
+     * Update the in-progress 60-min bar's "current close" from a 5-min candle close.
+     * Called by MarketDataService's 5-min listener — refreshes HTF SMA values every
+     * 5 min so callers see a smooth MA instead of stepwise-at-60-min behaviour.
+     */
+    public void updatePartialClose(String symbol, double fiveMinClose) {
+        if (fiveMinClose > 0) partialCloseBySymbol.put(symbol, fiveMinClose);
+    }
+
+    /**
+     * Most recent HTF (60-min) close recorded for this symbol across all days,
+     * or null if no closes are tracked. Used by the HTF Hurdle filter as a
+     * first-hour fallback: before today's first 1h candle closes, this returns
+     * the prior session's final 1h close.
+     */
+    public Double getLastClose(String symbol) {
+        Deque<Double> closes = closesBySymbol.get(symbol);
+        if (closes == null) return null;
+        synchronized (closes) {
+            return closes.isEmpty() ? null : closes.peekLast();
+        }
+    }
+
     private double computeSma(String symbol, int period) {
         Deque<Double> closes = closesBySymbol.get(symbol);
         if (closes == null) return 0;
+        Double partial = partialCloseBySymbol.get(symbol);
         synchronized (closes) {
+            if (partial != null && partial > 0) {
+                // In-progress 60-min bar exists — include its partial close as the Nth value.
+                // Window: last (period - 1) completed closes + partial. Requires ≥ period-1
+                // completed closes.
+                if (closes.size() < period - 1) return 0;
+                double sum = partial;
+                int skip = closes.size() - (period - 1);
+                int i = 0;
+                int count = 1;
+                for (Double v : closes) {
+                    if (i++ < skip) continue;
+                    sum += v;
+                    count++;
+                }
+                return count == period ? sum / period : 0;
+            }
+            // No partial — fall back to the last `period` completed closes only.
             if (closes.size() < period) return 0;
             double sum = 0;
             int skip = closes.size() - period;
@@ -137,6 +182,7 @@ public class HtfSmaService implements CandleAggregator.CandleCloseListener {
         smaHistoryBySymbol.keySet().retainAll(keep);
         sma50HistoryBySymbol.keySet().retainAll(keep);
         lastCandleEpochBySymbol.keySet().retainAll(keep);
+        partialCloseBySymbol.keySet().retainAll(keep);
         int removed = before - closesBySymbol.size();
         if (removed > 0) {
             log.info("[HtfSmaService] Pruned {} stale HTF SMA entries not in watchlist ({} remaining)", removed, closesBySymbol.size());
@@ -199,6 +245,9 @@ public class HtfSmaService implements CandleAggregator.CandleCloseListener {
             closes.addLast(completedCandle.close);
             while (closes.size() > SMA_LONG_PERIOD) closes.removeFirst();
         }
+        // 60-min bar is now committed — clear the in-progress partial. The next 5-min close
+        // will seed a fresh partial for the next 60-min bar.
+        partialCloseBySymbol.remove(fyersSymbol);
 
         double sma20 = computeSma(fyersSymbol, SMA_PERIOD);
         if (sma20 > 0) {

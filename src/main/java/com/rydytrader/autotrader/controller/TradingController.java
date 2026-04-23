@@ -18,6 +18,7 @@ import com.rydytrader.autotrader.dto.ProcessedSignal;
 import com.rydytrader.autotrader.manager.PositionManager;
 import com.rydytrader.autotrader.service.EventService;
 import com.rydytrader.autotrader.service.AtrService;
+import com.rydytrader.autotrader.service.BhavcopyService;
 import com.rydytrader.autotrader.service.SmaService;
 import com.rydytrader.autotrader.service.BreakoutScanner;
 import com.rydytrader.autotrader.service.CandleAggregator;
@@ -54,6 +55,7 @@ public class TradingController {
     private final BreakoutScanner     breakoutScanner;
     private final MarginDataService   marginDataService;
     private final SmaService          smaService;
+    private final BhavcopyService     bhavcopyService;
 
     public TradingController(PollingService pollingService,
                               OrderService orderService,
@@ -70,7 +72,8 @@ public class TradingController {
                               LatencyTracker latencyTracker,
                               BreakoutScanner breakoutScanner,
                               MarginDataService marginDataService,
-                              SmaService smaService) {
+                              SmaService smaService,
+                              BhavcopyService bhavcopyService) {
         this.pollingService      = pollingService;
         this.orderService        = orderService;
         this.eventService        = eventService;
@@ -87,6 +90,7 @@ public class TradingController {
         this.breakoutScanner     = breakoutScanner;
         this.marginDataService   = marginDataService;
         this.smaService          = smaService;
+        this.bhavcopyService     = bhavcopyService;
     }
 
     // ── PLACE ORDER ───────────────────────────────────────────────────────────
@@ -168,8 +172,12 @@ public class TradingController {
         latencyTracker.mark(psSymbol, ps.getSetup(), LatencyTracker.Stage.SIGNAL_PROCESSED);
         if (ps.isRejected()) {
             latencyTracker.cancel(psSymbol);
-            eventService.log("[SIGNAL] " + psSymbol + " " + ps.getSetup() + " filtered — " + ps.getRejectionReason());
-            return ResponseEntity.ok("Signal filtered: " + ps.getRejectionReason());
+            // Silent rejections (native-LPT when LPT disabled, etc.) skip the event log —
+            // reserved for expected skips the user has already opted out of via settings.
+            if (!ps.isSilent()) {
+                eventService.log("[SIGNAL] " + psSymbol + " " + ps.getSetup() + " filtered — " + ps.getRejectionReason());
+            }
+            return ResponseEntity.ok("Signal filtered: " + (ps.getRejectionReason() != null ? ps.getRejectionReason() : "silent"));
         }
         String signal      = ps.getSignal();
         String symbol      = ps.getSymbol();
@@ -269,7 +277,11 @@ public class TradingController {
             m.put("symbol",    p.getSymbol());
             m.put("qty",       displayQty);
             m.put("side",      p.getSide());
-            m.put("avgPrice",  p.getAvgPrice());
+            // Use avgForPnl (state-authoritative) so the displayed avg matches the P&L calc.
+            // Fyers polling returns a re-weighted avg after T1 sells (e.g. 490 instead of the
+            // 500 entry price), which alternated with the state value as polling/state synced
+            // at different rates. State avgPrice is the entry cost basis for the remaining qty.
+            m.put("avgPrice",  avgForPnl);
             m.put("ltp",       ltp);
             m.put("pnl",       pnl);
             m.put("setup",     p.getSetup());
@@ -400,7 +412,7 @@ public class TradingController {
 
         // Scanner
         Map<String, Object> scanner = new java.util.LinkedHashMap<>();
-        scanner.put("signalSource", riskSettings.getSignalSource());
+        scanner.put("nifty50Count", bhavcopyService.getNifty50Count());
         scanner.put("watchlistCount", marketDataService.getWatchlist().size());
         scanner.put("watchlistSymbols", marketDataService.getWatchlist().stream()
             .map(s -> s.replaceAll("^(NSE|BSE):", "").replaceAll("-EQ$", ""))
@@ -415,8 +427,9 @@ public class TradingController {
         scanner.put("tradedToday", breakoutScanner.getTradedCountToday());
         scanner.put("filteredToday", breakoutScanner.getFilteredCountToday());
         scanner.put("smaLoaded", smaService.getLoadedCountFor(marketDataService.getWatchlist()));
+        scanner.put("sma50Loaded", smaService.getSma50LoadedCountFor(marketDataService.getWatchlist()));
         scanner.put("sma200Loaded", smaService.getSma200LoadedCountFor(marketDataService.getWatchlist()));
-        scanner.put("firstCandleLoaded", candleAggregator.getFirstCandleCloseCount());
+        scanner.put("firstCandleLoaded", candleAggregator.getFirstCandleCloseCountFor(marketDataService.getWatchlist()));
         scanner.put("validationPass", marketDataService.getValidationPass());
         scanner.put("validationFail", marketDataService.getValidationFail());
         scanner.put("validationTotal", marketDataService.getValidationTotal());

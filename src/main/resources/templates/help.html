@@ -1003,58 +1003,6 @@
     </div>
 
     <div class="section-card help-section fade-in" style="margin-bottom:16px;">
-        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> Weekly Level Reversal Detection</div></div>
-        <div class="help-body">
-            <p>On the higher timeframe (default 75 min), the bot detects when price <strong>rejects at weekly R1/PWH</strong> (resistance) or <strong>S1/PWL</strong> (support). A rejection means the level held — price tested it but couldn't break through. This signals a potential mean-reversion back toward weekly CPR.</p>
-
-            <h4>Detection (mirrors 5-min magnet pattern)</h4>
-            <table>
-                <tr><th>Reversal</th><th>Condition (75-min candle)</th><th>Meaning</th></tr>
-                <tr><td><span class="badge-example by">WEEKLY_R1_PWH_REVERSAL</span></td><td>High touches R1 or PWH zone, close below min(R1,PWH), still above weekly CPR top</td><td>Resistance held — upside capped, price likely to retrace toward CPR</td></tr>
-                <tr><td><span class="badge-example by">WEEKLY_S1_PWL_REVERSAL</span></td><td>Low touches S1 or PWL zone, close above max(S1,PWL), still below weekly CPR bot</td><td>Support held — downside capped, price likely to bounce toward CPR</td></tr>
-            </table>
-            <p>Both Path 1 (open in/above zone, close below) and Path 2 (wick through zone, close back below) are detected — same pattern as the 5-min magnet trades.</p>
-
-            <h4>Flag Behavior</h4>
-            <ul>
-                <li>Flag <strong>persists</strong> across subsequent 75-min candles until nullified</li>
-                <li><strong>Nullified</strong> when either:
-                    <ul>
-                        <li>A 75-min candle closes above the rejection candle's high (resistance) / below its low (support) — rejection overcome</li>
-                        <li>Price reaches weekly CPR top (resistance) / CPR bot (support) — magnet trade complete, reverted to value</li>
-                    </ul>
-                </li>
-                <li><strong>Re-triggered</strong> if another rejection candle appears</li>
-                <li><strong>Cleared</strong> on daily reset</li>
-                <li><strong>Persisted</strong> to disk for mid-day restart recovery</li>
-            </ul>
-
-            <h4>Impact on Trades</h4>
-            <table>
-                <tr><th>Reversal Active</th><th>Trade Direction</th><th>Effect (configurable)</th></tr>
-                <tr><td>R1/PWH reversal</td><td>Buy</td><td><strong>Skip</strong> (default) or HPT → LPT — buying into a proven ceiling</td></tr>
-                <tr><td>R1/PWH reversal</td><td>Sell</td><td>No change — aligned with reversal direction</td></tr>
-                <tr><td>S1/PWL reversal</td><td>Sell</td><td><strong>Skip</strong> (default) or HPT → LPT — selling into a proven floor</td></tr>
-                <tr><td>S1/PWL reversal</td><td>Buy</td><td>No change — aligned with reversal direction</td></tr>
-            </table>
-            <p>Applies to all trade types (trend, magnet, EV). The direction check is universal — any buy is penalized when R1/PWH reversal is active, any sell when S1/PWL.</p>
-            <p>Setting: <strong>Weekly Reversal Hard Skip</strong> (default ON). Disable to downgrade HPT → LPT instead of skipping.</p>
-
-            <h4>Impact on NIFTY Composite Score</h4>
-            <p>When weekly reversal is active for NIFTY, the <strong>weekly score component is set to 0</strong> in the NIFTY composite score. The weekly trend label (BULLISH/BEARISH) remains but the score contribution is neutralized. Scanner page shows <span style="color:var(--accent-yellow);font-weight:700;">(R)</span> in amber next to the weekly trend on both NIFTY card and individual stock cards.</p>
-
-            <h4>Example</h4>
-            <p>RELIANCE weekly trend = BULLISH. At 11:30 a 75-min candle's high reaches weekly R1 (2680) but closes at 2665 (below R1, above weekly CPR top 2640). Flag set: <strong>WEEKLY_R1_PWH_REVERSAL</strong>, rejection price = candle high.</p>
-            <ul>
-                <li>Next 5-min BUY_ABOVE_R1_PDH fires → <strong>SKIPPED</strong> (buying into the weekly ceiling that just rejected)</li>
-                <li>Next 5-min SELL_BELOW_CPR fires → <strong>no penalty</strong> (aligned with reversal — selling toward value)</li>
-                <li>At 14:15, 75-min candle closes at 2645 (still below rejection high) → flag persists</li>
-                <li>At 15:00, 75-min candle closes at 2638 (below weekly CPR top 2640) → flag <strong>NULLIFIED</strong> (magnet complete, price reverted to CPR)</li>
-            </ul>
-        </div>
-    </div>
-
-    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
         <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> HTF Hurdle Filter</div></div>
         <div class="help-body">
             <p>A 5-min breakout is only as reliable as the higher-timeframe confirmation underneath it. The HTF Hurdle Filter checks whether the previous 1-hour candle has itself cleared the nearest weekly reversal level. If the 5-min has broken, say, weekly R1 but the 1-hour hasn't closed above R1 yet, the 5-min move could easily reverse on the next bar — so the trade is downgraded <strong>HPT → LPT</strong> (protected by smaller size) until HTF confirms.</p>
