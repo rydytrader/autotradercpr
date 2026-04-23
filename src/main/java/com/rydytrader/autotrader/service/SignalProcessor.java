@@ -428,23 +428,44 @@ public class SignalProcessor {
         }
 
         // ── 4e2c. HTF SMA alignment — additional HPT→LPT check ──
-        // Live LTP must be above (buys) / below (sells) all three of HTF SMA 20, 50, and 200.
+        // Live LTP must be above (buys) / below (sells) both HTF SMA 20 and HTF SMA 50.
         // LTP-based, not candle-close: the hourly trend structure has to be on the trade's
-        // side right now, regardless of whether the last 1h candle has closed. Independent
-        // toggle from the weekly-level hurdle — either can trigger a downgrade.
+        // side right now, regardless of whether the last 1h candle has closed. SMA 200 is
+        // excluded — it's too slow a reference to be a near-term HTF alignment gate and
+        // would block too many valid recoveries. Independent toggle from the weekly-level
+        // hurdle — either can trigger a downgrade.
         if (riskSettings.isEnableHtfSmaAlignment() && "HPT".equals(probability)) {
-            double htfS20  = htfSmaService != null ? htfSmaService.getSma(symbol)    : 0;
-            double htfS50  = htfSmaService != null ? htfSmaService.getSma50(symbol)  : 0;
-            double htfS200 = htfSmaService != null ? htfSmaService.getSma200(symbol) : 0;
+            double htfS20  = htfSmaService != null ? htfSmaService.getSma(symbol)   : 0;
+            double htfS50  = htfSmaService != null ? htfSmaService.getSma50(symbol) : 0;
             double liveLtp = candleAggregator.getLtp(symbol);
-            if (liveLtp > 0 && htfS20 > 0 && htfS50 > 0 && htfS200 > 0) {
-                boolean alignedBuy  = liveLtp > htfS20 && liveLtp > htfS50 && liveLtp > htfS200;
-                boolean alignedSell = liveLtp < htfS20 && liveLtp < htfS50 && liveLtp < htfS200;
+            if (liveLtp > 0 && htfS20 > 0 && htfS50 > 0) {
+                boolean alignedBuy  = liveLtp > htfS20 && liveLtp > htfS50;
+                boolean alignedSell = liveLtp < htfS20 && liveLtp < htfS50;
                 if (isBuy ? !alignedBuy : !alignedSell) {
                     probability = "LPT";
                     adjustments.add("Probability HPT → LPT (HTF SMA not aligned: LTP=" + fmt(liveLtp)
-                        + " vs 1h SMA 20=" + fmt(htfS20) + ", 50=" + fmt(htfS50) + ", 200=" + fmt(htfS200)
-                        + " — need " + (isBuy ? "LTP above all three" : "LTP below all three") + ")");
+                        + " vs 1h SMA 20=" + fmt(htfS20) + ", 50=" + fmt(htfS50)
+                        + " — need " + (isBuy ? "LTP above both" : "LTP below both") + ")");
+                }
+            }
+        }
+
+        // ── 4e2d. HTF SMA order — stricter alignment check ──
+        // 1h SMA 20 must be above 1h SMA 50 (buys) or below it (sells). This is the
+        // SMA-to-SMA ordering check — stricter than the price-vs-SMAs gate above.
+        // Mirrors the 5-min SMA alignment check (20>50>200) but using only 20/50 since
+        // 200 is excluded from HTF structure rules here.
+        if (riskSettings.isEnableHtfSmaAlignmentCheck() && "HPT".equals(probability)) {
+            double htfS20 = htfSmaService != null ? htfSmaService.getSma(symbol)   : 0;
+            double htfS50 = htfSmaService != null ? htfSmaService.getSma50(symbol) : 0;
+            if (htfS20 > 0 && htfS50 > 0) {
+                boolean orderedBuy  = htfS20 > htfS50;
+                boolean orderedSell = htfS20 < htfS50;
+                if (isBuy ? !orderedBuy : !orderedSell) {
+                    probability = "LPT";
+                    adjustments.add("Probability HPT → LPT (HTF SMA order not aligned: 1h SMA 20="
+                        + fmt(htfS20) + ", 50=" + fmt(htfS50)
+                        + " — need " + (isBuy ? "20 > 50" : "20 < 50") + ")");
                 }
             }
         }

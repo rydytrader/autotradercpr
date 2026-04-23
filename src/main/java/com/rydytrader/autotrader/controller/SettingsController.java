@@ -64,6 +64,7 @@ public class SettingsController {
         result.put("enableWeeklySmaTargetShift", riskSettings.isEnableWeeklySmaTargetShift());
         result.put("enableHtfHurdleFilter", riskSettings.isEnableHtfHurdleFilter());
         result.put("enableHtfSmaAlignment", riskSettings.isEnableHtfSmaAlignment());
+        result.put("enableHtfSmaAlignmentCheck", riskSettings.isEnableHtfSmaAlignmentCheck());
         result.put("enableStructuralSl",    riskSettings.isEnableStructuralSl());
         result.put("structuralSlBufferAtr", riskSettings.getStructuralSlBufferAtr());
         result.put("dayHighLowMinAtr", riskSettings.getDayHighLowMinAtr());
@@ -168,6 +169,7 @@ public class SettingsController {
             if (body.containsKey("enableWeeklySmaTargetShift")) riskSettings.setEnableWeeklySmaTargetShift(Boolean.parseBoolean(body.get("enableWeeklySmaTargetShift").toString()));
             if (body.containsKey("enableHtfHurdleFilter")) riskSettings.setEnableHtfHurdleFilter(Boolean.parseBoolean(body.get("enableHtfHurdleFilter").toString()));
             if (body.containsKey("enableHtfSmaAlignment")) riskSettings.setEnableHtfSmaAlignment(Boolean.parseBoolean(body.get("enableHtfSmaAlignment").toString()));
+            if (body.containsKey("enableHtfSmaAlignmentCheck")) riskSettings.setEnableHtfSmaAlignmentCheck(Boolean.parseBoolean(body.get("enableHtfSmaAlignmentCheck").toString()));
             if (body.containsKey("enableStructuralSl")) riskSettings.setEnableStructuralSl(Boolean.parseBoolean(body.get("enableStructuralSl").toString()));
             if (body.containsKey("structuralSlBufferAtr")) riskSettings.setStructuralSlBufferAtr(Double.parseDouble(body.get("structuralSlBufferAtr").toString()));
             if (body.containsKey("dayHighLowMinAtr")) riskSettings.setDayHighLowMinAtr(Double.parseDouble(body.get("dayHighLowMinAtr").toString()));

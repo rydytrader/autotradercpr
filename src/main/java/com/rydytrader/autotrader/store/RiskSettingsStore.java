@@ -51,7 +51,8 @@ public class RiskSettingsStore {
         volatile boolean enableWeeklyLevelTargetShift = true; // shift target to weekly CPR levels if between entry and target
         volatile boolean enableWeeklySmaTargetShift = true;   // shift target to weekly (HTF 60-min) SMA 20/50/200 if between entry and target
         volatile boolean enableHtfHurdleFilter = true; // HPT→LPT when 5-min close lands inside R1/PWH (buy) or S1/PWL (sell) zone
-        volatile boolean enableHtfSmaAlignment = true; // HPT→LPT when live LTP not above/below 1h SMA 20/50/200 together
+        volatile boolean enableHtfSmaAlignment = true; // HPT→LPT when live LTP not above/below 1h SMA 20/50 together
+        volatile boolean enableHtfSmaAlignmentCheck = false; // HPT→LPT when 1h SMAs not in order (20>50 buy, 20<50 sell)
         // Structural SL — opt-in, anchors SL to the S/R level the trade is testing (per setup family)
         // When on, we compute both structural and default SL and pick the TIGHTER one.
         volatile boolean enableStructuralSl = false;   // when false, always use close ± atrMultiplier × ATR
@@ -208,6 +209,7 @@ public class RiskSettingsStore {
     public boolean isEnableWeeklySmaTargetShift()   { return cfg().enableWeeklySmaTargetShift; }
     public boolean isEnableHtfHurdleFilter()    { return cfg().enableHtfHurdleFilter; }
     public boolean isEnableHtfSmaAlignment()    { return cfg().enableHtfSmaAlignment; }
+    public boolean isEnableHtfSmaAlignmentCheck() { return cfg().enableHtfSmaAlignmentCheck; }
     public boolean isEnableStructuralSl()    { return cfg().enableStructuralSl; }
     public double  getStructuralSlBufferAtr(){ return cfg().structuralSlBufferAtr; }
     public double getDayHighLowMinAtr()            { return cfg().dayHighLowMinAtr; }
@@ -344,6 +346,7 @@ public class RiskSettingsStore {
     public void setEnableWeeklySmaTargetShift(boolean v)   { cfg().enableWeeklySmaTargetShift = v; }
     public void setEnableHtfHurdleFilter(boolean v)    { cfg().enableHtfHurdleFilter = v; }
     public void setEnableHtfSmaAlignment(boolean v)    { cfg().enableHtfSmaAlignment = v; }
+    public void setEnableHtfSmaAlignmentCheck(boolean v) { cfg().enableHtfSmaAlignmentCheck = v; }
     public void setEnableStructuralSl(boolean v)    { cfg().enableStructuralSl = v; }
     public void setStructuralSlBufferAtr(double v)  { cfg().structuralSlBufferAtr = v; }
     public void setDayHighLowMinAtr(double v)              { cfg().dayHighLowMinAtr = v; }
@@ -470,6 +473,7 @@ public class RiskSettingsStore {
             upsert("enableWeeklySmaTargetShift", String.valueOf(c.enableWeeklySmaTargetShift));
             upsert("enableHtfHurdleFilter", String.valueOf(c.enableHtfHurdleFilter));
             upsert("enableHtfSmaAlignment", String.valueOf(c.enableHtfSmaAlignment));
+            upsert("enableHtfSmaAlignmentCheck", String.valueOf(c.enableHtfSmaAlignmentCheck));
             upsert("enableStructuralSl", String.valueOf(c.enableStructuralSl));
             upsert("structuralSlBufferAtr", String.valueOf(c.structuralSlBufferAtr));
             upsert("dayHighLowMinAtr", String.valueOf(c.dayHighLowMinAtr));
@@ -593,6 +597,7 @@ public class RiskSettingsStore {
                     case "enableWeeklyEmaTargetShift", "enableWeeklySmaTargetShift" -> c.enableWeeklySmaTargetShift = Boolean.parseBoolean(v);
                     case "enableHtfHurdleFilter" -> c.enableHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "enableHtfSmaAlignment" -> c.enableHtfSmaAlignment = Boolean.parseBoolean(v);
+                    case "enableHtfSmaAlignmentCheck" -> c.enableHtfSmaAlignmentCheck = Boolean.parseBoolean(v);
                     case "enableStructuralSl"    -> c.enableStructuralSl = Boolean.parseBoolean(v);
                     case "structuralSlBufferAtr" -> c.structuralSlBufferAtr = Double.parseDouble(v);
                     case "dayHighLowMinAtr" -> c.dayHighLowMinAtr = Double.parseDouble(v);

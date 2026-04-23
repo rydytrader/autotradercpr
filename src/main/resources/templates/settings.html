@@ -451,7 +451,11 @@
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="enableHtfSmaAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Price</b>: 1-hour SMA trend &mdash; LTP above/below 1h SMA 20, 50, 200 together</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Price</b>: 1-hour SMA trend &mdash; LTP above/below 1h SMA 20 and 50 together</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="enableHtfSmaAlignmentCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Alignment</b>: 1h SMAs aligned &mdash; buy requires <b>20 &gt; 50</b>, sell requires <b>20 &lt; 50</b></span>
                     </div>
                     <div class="form-hint">Two independent HTF checks &mdash; each can downgrade HPT &rarr; LPT on its own.
                         <br><br>
@@ -463,6 +467,8 @@
                         Only R1/PWH and S1/PWL are hurdles &mdash; R2+/S2+ are far-out projections, not walls the HTF needs to clear first. Weekly CPR (TC/BC/Pivot) is excluded because inside-CPR trades fall under the weekly-NEUTRAL rule.
                         <br><br>
                         <b>Price.</b> LTP-based (not candle close), so the hourly trend structure has to be on the trade's side right now. Mirrors the 5-min SMA price gate above, applied to the 1-hour SMAs.
+                        <br><br>
+                        <b>Alignment.</b> SMA-to-SMA ordering: 1h SMA 20 above 50 for buys, below 50 for sells. Stricter than Price &mdash; the HTF trend structure itself has to be stacked in the trade's direction, independent of where LTP currently sits.
                         <br><br>
                         Applies to all breakouts. LPT trades unaffected. Fail-open when any SMA/level is warming up.</div>
                 </div>
@@ -1018,6 +1024,7 @@
             document.getElementById('enableWeeklySmaTargetShift').checked = d.enableWeeklySmaTargetShift !== false;
             document.getElementById('enableHtfHurdleFilter').checked = d.enableHtfHurdleFilter !== false;
             document.getElementById('enableHtfSmaAlignment').checked = d.enableHtfSmaAlignment !== false;
+            document.getElementById('enableHtfSmaAlignmentCheck').checked = d.enableHtfSmaAlignmentCheck === true;
             document.getElementById('enableStructuralSl').checked = d.enableStructuralSl === true;
             document.getElementById('structuralSlBufferAtr').value = d.structuralSlBufferAtr != null ? d.structuralSlBufferAtr : 1.0;
             // dayHighLowMinAtr removed — single min target distance check handles both
@@ -1166,6 +1173,7 @@
                 enableWeeklySmaTargetShift: document.getElementById('enableWeeklySmaTargetShift').checked,
                 enableHtfHurdleFilter: document.getElementById('enableHtfHurdleFilter').checked,
                 enableHtfSmaAlignment: document.getElementById('enableHtfSmaAlignment').checked,
+                enableHtfSmaAlignmentCheck: document.getElementById('enableHtfSmaAlignmentCheck').checked,
                 enableStructuralSl: document.getElementById('enableStructuralSl').checked,
                 structuralSlBufferAtr: parseFloat(document.getElementById('structuralSlBufferAtr').value) || 1.0,
                 // dayHighLowMinAtr removed
