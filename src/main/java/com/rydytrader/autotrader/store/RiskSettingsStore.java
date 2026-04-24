@@ -125,7 +125,8 @@ public class RiskSettingsStore {
         volatile boolean enableCprDayRelationFilter = false; // buys require 2D-HV, sells require 2D-LV (today's CPR completely above/below yesterday's)
         volatile double minAbsoluteProfit = 500; // skip if qty × target_distance < this amount (₹)
         // CPR Width scanner group toggles
-        volatile double narrowCprMaxWidth = 0.1;  // CPR width % threshold for narrow CPR stocks
+        volatile double narrowCprMaxWidth = 0.1;  // CPR width % upper threshold for narrow CPR stocks
+        volatile double narrowCprMinWidth = 0.0;  // CPR width % lower threshold — narrow = [min, max). 0 = no min.
         // narrowRangeRatioThreshold removed — z-score of PDH-PDL/CPR ratio is self-calibrating
         volatile double insideCprMaxWidth = 0.5;  // max CPR width % for inside CPR stocks (0 = no filter)
         volatile double scanMinPrice = 300;      // min stock price filter (0 = no filter)
@@ -265,6 +266,7 @@ public class RiskSettingsStore {
     public boolean isEnableCprDayRelationFilter() { return cfg().enableCprDayRelationFilter; }
     public double getMinAbsoluteProfit() { return cfg().minAbsoluteProfit; }
     public double getNarrowCprMaxWidth() { return cfg().narrowCprMaxWidth; }
+    public double getNarrowCprMinWidth() { return cfg().narrowCprMinWidth; }
     public double getInsideCprMaxWidth() { return cfg().insideCprMaxWidth; }
     public double getScanMinPrice() { return cfg().scanMinPrice; }
     public double getScanMaxPrice() { return cfg().scanMaxPrice; }
@@ -302,6 +304,7 @@ public class RiskSettingsStore {
     public void setEnableCprDayRelationFilter(boolean v) { cfg().enableCprDayRelationFilter = v; }
     public void setMinAbsoluteProfit(double v) { cfg().minAbsoluteProfit = v; }
     public void setNarrowCprMaxWidth(double v) { cfg().narrowCprMaxWidth = v; }
+    public void setNarrowCprMinWidth(double v) { cfg().narrowCprMinWidth = Math.max(0, v); }
     public void setInsideCprMaxWidth(double v) { cfg().insideCprMaxWidth = v; }
     public void setScanMinPrice(double v) { cfg().scanMinPrice = v; }
     public void setScanMaxPrice(double v) { cfg().scanMaxPrice = v; }
@@ -532,6 +535,7 @@ public class RiskSettingsStore {
             upsert("enableCprDayRelationFilter", String.valueOf(c.enableCprDayRelationFilter));
             upsert("minAbsoluteProfit", String.valueOf(c.minAbsoluteProfit));
             upsert("narrowCprMaxWidth", String.valueOf(c.narrowCprMaxWidth));
+            upsert("narrowCprMinWidth", String.valueOf(c.narrowCprMinWidth));
             // narrowRangeRatioThreshold removed — z-score is self-calibrating
             upsert("insideCprMaxWidth", String.valueOf(c.insideCprMaxWidth));
             upsert("scanMinPrice", String.valueOf(c.scanMinPrice));
@@ -671,6 +675,7 @@ public class RiskSettingsStore {
                     case "enableCprDayRelationFilter" -> c.enableCprDayRelationFilter = Boolean.parseBoolean(v);
                     case "minAbsoluteProfit" -> c.minAbsoluteProfit = Double.parseDouble(v);
                     case "narrowCprMaxWidth" -> c.narrowCprMaxWidth = Double.parseDouble(v);
+                    case "narrowCprMinWidth" -> c.narrowCprMinWidth = Math.max(0, Double.parseDouble(v));
                     // narrowRangeRatioThreshold — legacy key, silently ignored
                     case "insideCprMaxWidth" -> c.insideCprMaxWidth = Double.parseDouble(v);
                     case "scanMinPrice" -> c.scanMinPrice = Double.parseDouble(v);

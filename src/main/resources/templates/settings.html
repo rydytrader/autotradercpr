@@ -706,9 +706,11 @@
                     <label class="form-label">CPR Width Thresholds (%)</label>
                     <div style="display:flex; flex-direction:column; gap:8px; margin-top:4px;">
                         <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
-                            Narrow CPR &lt;
+                            Narrow CPR:
+                            <input type="number" id="narrowCprMinWidth" class="form-control" step="0.01" min="0" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                            % &le; width &lt;
                             <input type="number" id="narrowCprMaxWidth" class="form-control" step="0.05" min="0.01" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                            %
+                            % <span style="color:var(--text-muted);">(min = 0 for no lower bound)</span>
                         </label>
                         <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
                             Inside CPR &lt;
@@ -1085,6 +1087,7 @@
             document.getElementById('openingRefreshTime').value = d.openingRefreshTime || '09:25';
             document.getElementById('enableAtpCheck').checked = d.enableAtpCheck !== false;
             document.getElementById('narrowCprMaxWidth').value = d.narrowCprMaxWidth != null ? d.narrowCprMaxWidth : 0.1;
+            document.getElementById('narrowCprMinWidth').value = d.narrowCprMinWidth != null ? d.narrowCprMinWidth : 0;
             document.getElementById('insideCprMaxWidth').value = d.insideCprMaxWidth != null ? d.insideCprMaxWidth : 0.5;
             document.getElementById('scanMinPrice').value = d.scanMinPrice != null ? d.scanMinPrice : 300;
             document.getElementById('scanMaxPrice').value = d.scanMaxPrice != null ? d.scanMaxPrice : 0;
@@ -1234,6 +1237,7 @@
                 openingRefreshTime: document.getElementById('openingRefreshTime').value || '09:25',
                 enableAtpCheck: document.getElementById('enableAtpCheck').checked,
                 narrowCprMaxWidth: parseFloat(document.getElementById('narrowCprMaxWidth').value) || 0.1,
+                narrowCprMinWidth: parseFloat(document.getElementById('narrowCprMinWidth').value) || 0,
                 insideCprMaxWidth: parseFloat(document.getElementById('insideCprMaxWidth').value) || 0,
                 scanMinPrice: parseFloat(document.getElementById('scanMinPrice').value) || 0,
                 scanMaxPrice: parseFloat(document.getElementById('scanMaxPrice').value) || 0,

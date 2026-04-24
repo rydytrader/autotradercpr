@@ -113,6 +113,7 @@ public class SettingsController {
         result.put("higherTimeframe", riskSettings.getHigherTimeframe());
         result.put("enableAtpCheck", riskSettings.isEnableAtpCheck());
         result.put("narrowCprMaxWidth", riskSettings.getNarrowCprMaxWidth());
+        result.put("narrowCprMinWidth", riskSettings.getNarrowCprMinWidth());
         result.put("insideCprMaxWidth", riskSettings.getInsideCprMaxWidth());
         result.put("scanMinPrice", riskSettings.getScanMinPrice());
         result.put("scanMaxPrice", riskSettings.getScanMaxPrice());
@@ -220,6 +221,7 @@ public class SettingsController {
             if (body.containsKey("higherTimeframe")) riskSettings.setHigherTimeframe(Integer.parseInt(body.get("higherTimeframe").toString()));
             if (body.containsKey("enableAtpCheck")) riskSettings.setEnableAtpCheck(Boolean.parseBoolean(body.get("enableAtpCheck").toString()));
             if (body.containsKey("narrowCprMaxWidth")) riskSettings.setNarrowCprMaxWidth(Double.parseDouble(body.get("narrowCprMaxWidth").toString()));
+            if (body.containsKey("narrowCprMinWidth")) riskSettings.setNarrowCprMinWidth(Double.parseDouble(body.get("narrowCprMinWidth").toString()));
             if (body.containsKey("insideCprMaxWidth")) riskSettings.setInsideCprMaxWidth(Double.parseDouble(body.get("insideCprMaxWidth").toString()));
             if (body.containsKey("scanMinPrice")) riskSettings.setScanMinPrice(Double.parseDouble(body.get("scanMinPrice").toString()));
             if (body.containsKey("scanMaxPrice")) riskSettings.setScanMaxPrice(Double.parseDouble(body.get("scanMaxPrice").toString()));
@@ -254,9 +256,10 @@ public class SettingsController {
     @GetMapping("/api/narrow-cpr")
     public Map<String, Object> getNarrowCprStocks() {
         double maxWidth = riskSettings.getNarrowCprMaxWidth();
+        double minWidth = riskSettings.getNarrowCprMinWidth();
         List<CprLevels> narrow = bhavcopyService.getAllCprLevels().values().stream()
             .filter(c -> !bhavcopyService.isIndex(c.getSymbol()))
-            .filter(c -> c.getCprWidthPct() < maxWidth)
+            .filter(c -> c.getCprWidthPct() >= minWidth && c.getCprWidthPct() < maxWidth)
             .sorted(java.util.Comparator.comparing(CprLevels::getSymbol))
             .collect(Collectors.toList());
         List<Map<String, Object>> list = narrow.stream().map(c -> buildStockRow(c)).collect(Collectors.toList());

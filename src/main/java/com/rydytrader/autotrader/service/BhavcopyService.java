@@ -174,8 +174,9 @@ public class BhavcopyService {
                 log.info("[BhavcopyService] Beta + cap + averages already cached — skipping enrichment");
             }
             double narrowMaxWidth = riskSettings != null ? riskSettings.getNarrowCprMaxWidth() : 0.1;
+            double narrowMinWidth = riskSettings != null ? riskSettings.getNarrowCprMinWidth() : 0.0;
             long narrowCount = cache.values().stream()
-                .filter(c -> !isIndex(c.getSymbol()) && c.getCprWidthPct() < narrowMaxWidth)
+                .filter(c -> !isIndex(c.getSymbol()) && c.getCprWidthPct() >= narrowMinWidth && c.getCprWidthPct() < narrowMaxWidth)
                 .count();
             long insideCount = getInsideCprStocks().size();
             log.info("[BhavcopyService] Loaded {} NFO stocks from cache for {} ({} narrow @{}%, {} inside CPR, {} history days)", cache.size(), cachedDate, narrowCount, narrowMaxWidth, insideCount, dailyHistory.size());
@@ -276,9 +277,10 @@ public class BhavcopyService {
 
     public List<CprLevels> getNarrowCprStocks() {
         double narrowMaxWidth = riskSettings != null ? riskSettings.getNarrowCprMaxWidth() : 0.1;
+        double narrowMinWidth = riskSettings != null ? riskSettings.getNarrowCprMinWidth() : 0.0;
         return cache.values().stream()
             .filter(c -> !isIndex(c.getSymbol()))
-            .filter(c -> c.getCprWidthPct() < narrowMaxWidth)
+            .filter(c -> c.getCprWidthPct() >= narrowMinWidth && c.getCprWidthPct() < narrowMaxWidth)
             .sorted(Comparator.comparingDouble(CprLevels::getCprWidthPct))
             .collect(Collectors.toList());
     }
@@ -481,8 +483,9 @@ public class BhavcopyService {
                 saveToFile();
 
                 double narrowMaxWidth = riskSettings != null ? riskSettings.getNarrowCprMaxWidth() : 0.1;
+                double narrowMinWidth = riskSettings != null ? riskSettings.getNarrowCprMinWidth() : 0.0;
                 long narrowCount = cache.values().stream()
-                    .filter(c -> !isIndex(c.getSymbol()) && c.getCprWidthPct() < narrowMaxWidth)
+                    .filter(c -> !isIndex(c.getSymbol()) && c.getCprWidthPct() >= narrowMinWidth && c.getCprWidthPct() < narrowMaxWidth)
                     .count();
                 long insideCount = getInsideCprStocks().size();
                 String msg = "[BhavcopyService] Loaded CPR for " + cache.size()

@@ -690,7 +690,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double minPrice = riskSettings.getScanMinPrice();
         if (minPrice > 0 && cpr.getClose() < minPrice) return false;
 
-        boolean isNarrow = cpr.getCprWidthPct() < riskSettings.getNarrowCprMaxWidth();
+        double wpct = cpr.getCprWidthPct();
+        boolean isNarrow = wpct >= riskSettings.getNarrowCprMinWidth() && wpct < riskSettings.getNarrowCprMaxWidth();
         boolean isInside = bhavcopyService.getInsideCprStocks().stream()
                 .anyMatch(c -> c.getSymbol().equals(ticker));
         String nrt = cpr.getNarrowRangeType();

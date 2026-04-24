@@ -76,12 +76,13 @@ public class ScannerController {
         // Universe is restricted to NIFTY 50 at the bhavcopy parse stage — cache already
         // contains only NIFTY 50 stocks (full FNO fallback if NIFTY 50 list was unavailable).
 
-        // Collect narrow CPR stocks — use configurable width threshold + filters + NS/NL toggles
+        // Collect narrow CPR stocks — use configurable width range + filters + NS/NL toggles
         double narrowMaxWidth = riskSettings.getNarrowCprMaxWidth();
+        double narrowMinWidth = riskSettings.getNarrowCprMinWidth();
         Set<String> seen = new HashSet<>();
         for (CprLevels cpr : bhavcopyService.getAllCprLevels().values()) {
             if (bhavcopyService.isIndex(cpr.getSymbol())) continue; // NIFTY50/NIFTYBANK etc.
-            if (cpr.getCprWidthPct() >= narrowMaxWidth) continue;
+            if (cpr.getCprWidthPct() < narrowMinWidth || cpr.getCprWidthPct() >= narrowMaxWidth) continue;
             if (!marketDataService.passesWatchlistFilters(cpr)) continue;
             String nrt = cpr.getNarrowRangeType();
             boolean rangeMatches = ("SMALL".equals(nrt) && riskSettings.isScanIncludeNS())
@@ -429,6 +430,7 @@ public class ScannerController {
         status.put("minBeta", riskSettings.getScanMinBeta());
         status.put("maxBeta", riskSettings.getScanMaxBeta());
         status.put("narrowMaxWidth", riskSettings.getNarrowCprMaxWidth());
+        status.put("narrowMinWidth", riskSettings.getNarrowCprMinWidth());
         status.put("insideMaxWidth", riskSettings.getInsideCprMaxWidth());
         return status;
     }
