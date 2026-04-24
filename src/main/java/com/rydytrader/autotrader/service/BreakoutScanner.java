@@ -554,6 +554,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         payload.put("pl", levels.getPl());
         payload.put("tc", levels.getTc());
         payload.put("bc", levels.getBc());
+        payload.put("cprDayRelation", levels.getCprDayRelation());
         payload.put("dayHigh", candleAggregator.getDayHighBeforeLast(fyersSymbol));
         payload.put("dayLow", candleAggregator.getDayLowBeforeLast(fyersSymbol));
         if (scannerNote != null && !scannerNote.isEmpty()) payload.put("scannerNote", scannerNote);
@@ -806,8 +807,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     eventService.log("[SCANNER] " + fyersSymbol + " " + setup
                         + " — skipped, SMA(" + String.format("%.2f", sma) + ") too far from broken "
                         + String.format("%.2f", broken) + " (dist " + String.format("%.2f", actualDist)
-                        + " > " + minRangePct + "% of range " + String.format("%.2f", range)
-                        + " from boundary " + String.format("%.2f", boundaryEdge) + ")");
+                        + " > max " + String.format("%.2f", maxDist)
+                        + " = " + (100 - minRangePct) + "% of range " + String.format("%.2f", range)
+                        + " to boundary " + String.format("%.2f", boundaryEdge)
+                        + " — SMA must be at least " + minRangePct + "% away from boundary)");
                     return 2;
                 }
             }
@@ -872,6 +875,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             case "BUY_ABOVE_S2"      -> levels.getS2();
             case "BUY_ABOVE_S3"      -> levels.getS3();
             case "BUY_ABOVE_S4"      -> levels.getS4();
+            // Day-high / Day-low breakouts: level is today's session high/low (excluding the
+            // breakout candle itself). Without these cases the SMA level-count filter was
+            // skipped entirely for DH/DL trades because broken=0 short-circuits to pass.
+            case "BUY_ABOVE_DH"      -> candleAggregator.getDayHighExcluding(fyersSymbol, currentCandle.get());
+            case "SELL_BELOW_DL"     -> candleAggregator.getDayLowExcluding(fyersSymbol, currentCandle.get());
             default -> 0;
         };
     }

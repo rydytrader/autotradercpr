@@ -567,6 +567,27 @@ public class BhavcopyService {
             today.setRangeAdrPct(Math.round(pct * 10.0) / 10.0);
             today.setRangeZScore(0); // legacy — keep at 0, display uses rangeAdrPct
             today.setNarrowRangeType(pct <= threshold ? "SMALL" : "LARGE");
+
+            // 2-day CPR relationship: compare today's CPR (TC/BC) vs yesterday's CPR.
+            // dailyHistory.get(0) is the most recent prior day; its CprLevels.tc/bc IS
+            // yesterday's CPR (because each snapshot's CPR is computed from the day-before's H/L/C,
+            // so today's snapshot has today's CPR and dailyHistory[0] has yesterday's CPR).
+            // HV = today's CPR completely above yesterday's (todayBC > yestTC) — buy-friendly
+            // LV = today's CPR completely below yesterday's (todayTC < yestBC) — sell-friendly
+            // NC = overlapping (default)
+            if (!dailyHistory.isEmpty()) {
+                CprLevels yest = dailyHistory.get(0).symbols.get(sym);
+                if (yest != null && yest.getTc() > 0 && yest.getBc() > 0
+                        && today.getTc() > 0 && today.getBc() > 0) {
+                    double tBC = Math.min(today.getTc(), today.getBc());
+                    double tTC = Math.max(today.getTc(), today.getBc());
+                    double yBC = Math.min(yest.getTc(),  yest.getBc());
+                    double yTC = Math.max(yest.getTc(),  yest.getBc());
+                    if      (tBC > yTC) today.setCprDayRelation("HV");
+                    else if (tTC < yBC) today.setCprDayRelation("LV");
+                    else                today.setCprDayRelation("NC");
+                }
+            }
             classified++;
         }
         log.info("[BhavcopyService] Classified narrow range type for {} stocks (prev day range ≤ {}% of 20d ADR = SMALL, {} skipped for insufficient history)",

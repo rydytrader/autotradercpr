@@ -67,6 +67,7 @@ public class SettingsController {
         result.put("enableHtfSmaAlignmentCheck", riskSettings.isEnableHtfSmaAlignmentCheck());
         result.put("enableStructuralSl",    riskSettings.isEnableStructuralSl());
         result.put("structuralSlBufferAtr", riskSettings.getStructuralSlBufferAtr());
+        result.put("singleLevelSlBufferAtr", riskSettings.getSingleLevelSlBufferAtr());
         result.put("dayHighLowMinAtr", riskSettings.getDayHighLowMinAtr());
         result.put("enableRiskRewardFilter", riskSettings.isEnableRiskRewardFilter());
         result.put("minRiskRewardRatio", riskSettings.getMinRiskRewardRatio());
@@ -130,6 +131,7 @@ public class SettingsController {
         result.put("enableLpt", riskSettings.isEnableLpt());
         result.put("lptQtyFactor", riskSettings.getLptQtyFactor());
         result.put("smallRangeAdrPct", riskSettings.getSmallRangeAdrPct());
+        result.put("enableCprDayRelationFilter", riskSettings.isEnableCprDayRelationFilter());
         result.put("minAbsoluteProfit", riskSettings.getMinAbsoluteProfit());
         result.put("todayPnl",         Math.round(todayPnl * 100.0) / 100.0);
         result.put("todayTrades",      todayTrades);
@@ -172,6 +174,7 @@ public class SettingsController {
             if (body.containsKey("enableHtfSmaAlignmentCheck")) riskSettings.setEnableHtfSmaAlignmentCheck(Boolean.parseBoolean(body.get("enableHtfSmaAlignmentCheck").toString()));
             if (body.containsKey("enableStructuralSl")) riskSettings.setEnableStructuralSl(Boolean.parseBoolean(body.get("enableStructuralSl").toString()));
             if (body.containsKey("structuralSlBufferAtr")) riskSettings.setStructuralSlBufferAtr(Double.parseDouble(body.get("structuralSlBufferAtr").toString()));
+            if (body.containsKey("singleLevelSlBufferAtr")) riskSettings.setSingleLevelSlBufferAtr(Double.parseDouble(body.get("singleLevelSlBufferAtr").toString()));
             if (body.containsKey("dayHighLowMinAtr")) riskSettings.setDayHighLowMinAtr(Double.parseDouble(body.get("dayHighLowMinAtr").toString()));
             if (body.containsKey("enableRiskRewardFilter")) riskSettings.setEnableRiskRewardFilter(Boolean.parseBoolean(body.get("enableRiskRewardFilter").toString()));
             if (body.containsKey("minRiskRewardRatio")) riskSettings.setMinRiskRewardRatio(Double.parseDouble(body.get("minRiskRewardRatio").toString()));
@@ -238,6 +241,7 @@ public class SettingsController {
                 riskSettings.setSmallRangeAdrPct(Double.parseDouble(body.get("smallRangeAdrPct").toString()));
                 bhavcopyService.reclassifyNarrowRangeTypes();
             }
+            if (body.containsKey("enableCprDayRelationFilter")) riskSettings.setEnableCprDayRelationFilter(Boolean.parseBoolean(body.get("enableCprDayRelationFilter").toString()));
             if (body.containsKey("minAbsoluteProfit")) riskSettings.setMinAbsoluteProfit(Double.parseDouble(body.get("minAbsoluteProfit").toString()));
             riskSettings.saveFor(effectiveMode);
             return ResponseEntity.ok(Map.of("ok", true, "message", "Settings saved"));

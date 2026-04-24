@@ -100,36 +100,61 @@ public class SignalProcessor {
         boolean isBuy = setup.startsWith("BUY_");
         String signal = isBuy ? "BUY" : "SELL";
 
-        // ── Extended-level day-type gate ─────────────────────────────────────
-        // R3/S3 and R4/S4 breakouts are skipped on normal (IV/OV) days but allowed on
-        // EV (gap up / gap down) days. Each level family has its own toggle. On EV days
-        // the skip is bypassed entirely — the gap provides the directional bias that makes
-        // these far levels tradeable.
+        // ── Extended-level skip gate ─────────────────────────────────────────
+        // R3/S3 and R4/S4 breakouts skipped on ALL day types when their respective toggle is on.
+        // DH/DL breakouts that have already reached or passed an R3/S3 or R4/S4 level are
+        // treated identically — a DH break above R3 IS effectively an R3 trade.
         boolean isR3S3Setup = "BUY_ABOVE_R3".equals(setup) || "SELL_BELOW_S3".equals(setup)
                            || "BUY_ABOVE_S3".equals(setup) || "SELL_BELOW_R3".equals(setup);
         boolean isR4S4Setup = "BUY_ABOVE_R4".equals(setup) || "SELL_BELOW_S4".equals(setup)
                            || "BUY_ABOVE_S4".equals(setup) || "SELL_BELOW_R4".equals(setup);
-        // DH above R4 / DL below S4: the breakout level is already beyond the R4/S4 extreme,
-        // so treat it like an R4/S4 trade — allow only on EV days.
+        boolean isDhAboveR3 = "BUY_ABOVE_DH".equals(setup)  && r3 > 0 && dayHigh > r3;
         boolean isDhAboveR4 = "BUY_ABOVE_DH".equals(setup)  && r4 > 0 && dayHigh > r4;
+        boolean isDlBelowS3 = "SELL_BELOW_DL".equals(setup) && s3 > 0 && dayLow  < s3;
         boolean isDlBelowS4 = "SELL_BELOW_DL".equals(setup) && s4 > 0 && dayLow  < s4;
-        if (isR3S3Setup || isR4S4Setup || isDhAboveR4 || isDlBelowS4) {
-            double firstCloseForDayType = candleAggregator.getFirstCandleClose(symbol);
-            boolean isEvDay = firstCloseForDayType > 0
-                && ((r2 > 0 && firstCloseForDayType >= r2) || (s2 > 0 && firstCloseForDayType <= s2));
-            if (!isEvDay) {
-                if (isR3S3Setup && riskSettings.isSkipR3S3NormalDays()) {
+
+        if (riskSettings.isSkipR3S3NormalDays()) {
+            if (isR3S3Setup) {
+                return ProcessedSignal.rejected(setup, symbol,
+                    "R3/S3 breakout skipped (extended-level skip enabled)");
+            }
+            if (isDhAboveR3 || isDlBelowS3) {
+                return ProcessedSignal.rejected(setup, symbol,
+                    (isDhAboveR3 ? "DH above R3" : "DL below S3")
+                    + " skipped (extended-level skip enabled — DH/DL beyond R3/S3 treated as R3/S3)");
+            }
+        }
+        if (riskSettings.isSkipR4S4NormalDays()) {
+            if (isR4S4Setup) {
+                return ProcessedSignal.rejected(setup, symbol,
+                    "R4/S4 breakout skipped (extended-level skip enabled)");
+            }
+            if (isDhAboveR4 || isDlBelowS4) {
+                return ProcessedSignal.rejected(setup, symbol,
+                    (isDhAboveR4 ? "DH above R4" : "DL below S4")
+                    + " skipped (extended-level skip enabled — DH/DL beyond R4/S4 treated as R4/S4)");
+            }
+        }
+
+        // ── DH/DL inside-zone gate ─────────────────────────────────────────────
+        // DH/DL breakouts are only meaningful when the broken level sits in clear air —
+        // not inside an existing CPR / R1+PDH / S1+PDL zone. A DH that's actually within
+        // the CPR (or R1+PDH) zone is just a level retest, not a fresh structural break.
+        if ("BUY_ABOVE_DH".equals(setup) || "SELL_BELOW_DL".equals(setup)) {
+            boolean isDh = "BUY_ABOVE_DH".equals(setup);
+            double level = isDh ? dayHigh : dayLow;
+            if (level > 0) {
+                double cprLo  = Math.min(tc, bc), cprHi  = Math.max(tc, bc);
+                double r1pLo  = Math.min(r1, ph), r1pHi  = Math.max(r1, ph);
+                double s1pLo  = Math.min(s1, pl), s1pHi  = Math.max(s1, pl);
+                String inZone = null;
+                if      (cprLo > 0 && cprHi > 0 && level >= cprLo && level <= cprHi) inZone = "CPR";
+                else if (r1pLo > 0 && r1pHi > 0 && level >= r1pLo && level <= r1pHi) inZone = "R1+PDH";
+                else if (s1pLo > 0 && s1pHi > 0 && level >= s1pLo && level <= s1pHi) inZone = "S1+PDL";
+                if (inZone != null) {
                     return ProcessedSignal.rejected(setup, symbol,
-                        "R3/S3 breakout skipped — not an EV day (allowed only on gap up/down sessions)");
-                }
-                if (isR4S4Setup && riskSettings.isSkipR4S4NormalDays()) {
-                    return ProcessedSignal.rejected(setup, symbol,
-                        "R4/S4 breakout skipped — not an EV day (allowed only on gap up/down sessions)");
-                }
-                if ((isDhAboveR4 || isDlBelowS4) && riskSettings.isSkipR4S4NormalDays()) {
-                    return ProcessedSignal.rejected(setup, symbol,
-                        (isDhAboveR4 ? "DH above R4" : "DL below S4")
-                        + " skipped — not an EV day (allowed only on gap up/down sessions)");
+                        (isDh ? "DH" : "DL") + " (" + fmt(level) + ") is inside " + inZone
+                        + " zone — not a clean structural breakout");
                 }
             }
         }
@@ -163,7 +188,12 @@ public class SignalProcessor {
             }
             if (anchor > 0) {
                 double buffer = riskSettings.getStructuralSlBufferAtr();
-                double structSl = isBuy ? (anchor - atr * buffer) : (anchor + atr * buffer);
+                // Single-level setups (R2/R3/R4, S2/S3/S4, DH/DL) lack the zone-width cushion
+                // that zone setups (CPR, R1+PDH, S1+PDL, magnets) get for free, so add an
+                // extra ATR buffer to push the SL further from the anchor.
+                double extra = isSingleLevelSetup(setup) ? riskSettings.getSingleLevelSlBufferAtr() : 0;
+                double totalBufferAtr = buffer + extra;
+                double structSl = isBuy ? (anchor - atr * totalBufferAtr) : (anchor + atr * totalBufferAtr);
                 // Always use structural SL when enabled — it anchors to the broken level
                 // and guarantees the SL sits on the correct side of the support/resistance.
                 // The old "pick tighter" rule could place the default ATR-based SL inside
@@ -174,8 +204,11 @@ public class SignalProcessor {
                 double defaultDist = Math.abs(close - defaultSl);
                 double structDist = Math.abs(close - structSl);
                 String anchorLabel = isDhDl ? (isBuy ? "candle low" : "candle high") : "level";
+                String bufferLabel = extra > 0
+                    ? (totalBufferAtr + "×ATR = " + buffer + " base + " + extra + " single-level")
+                    : (buffer + "×ATR");
                 eventService.log("[INFO] " + symbol + " " + setup + " using structural SL " + fmt(structSl)
-                    + " (dist " + fmt(structDist) + ", " + anchorLabel + " " + fmt(anchor) + " ± " + buffer + "×ATR)"
+                    + " (dist " + fmt(structDist) + ", " + anchorLabel + " " + fmt(anchor) + " ± " + bufferLabel + ")"
                     + " — default would be " + fmt(defaultSl) + " (dist " + fmt(defaultDist) + ")");
             }
         }
@@ -354,6 +387,22 @@ public class SignalProcessor {
         if (Boolean.TRUE.equals(alert.get("niftyOpposed")) && "HPT".equals(probability)) {
             probability = "LPT";
             adjustments.add("Probability HPT → LPT (NIFTY opposed)");
+        }
+
+        // ── 4e2a2. 2-Day CPR relationship: HPT → LPT when CPR doesn't favor the direction ──
+        // Buys want today's CPR completely above yesterday's (HV); sells want completely below (LV).
+        // Overlapping (NC) or wrong-side relation downgrades HPT → LPT. Fail-open if no relation
+        // computed (e.g. fresh boot before bhavcopy classification).
+        if (riskSettings.isEnableCprDayRelationFilter() && "HPT".equals(probability)) {
+            String rel = str(alert, "cprDayRelation");
+            if (rel != null && !rel.isEmpty()) {
+                boolean wanted = isBuy ? "HV".equals(rel) : "LV".equals(rel);
+                if (!wanted) {
+                    probability = "LPT";
+                    adjustments.add("Probability HPT → LPT (2D CPR relation 2D-" + rel
+                        + ", need 2D-" + (isBuy ? "HV" : "LV") + ")");
+                }
+            }
         }
 
         // ── 4e2b. HTF Hurdle: nearest-weekly-level HPT→LPT downgrade ──
@@ -727,9 +776,13 @@ public class SignalProcessor {
         desc.append("\n").append(ts).append(" [SL] ").append(fmt(sl));
         if (useStructuralSl) {
             double anchor = computeStructuralAnchor(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
+            double base = riskSettings.getStructuralSlBufferAtr();
+            double extra = isSingleLevelSetup(setup) ? riskSettings.getSingleLevelSlBufferAtr() : 0;
             desc.append(" (structural anchor ").append(fmt(anchor))
-                .append(" ").append(isBuy ? "−" : "+").append(" ").append(riskSettings.getStructuralSlBufferAtr())
-                .append(" × ATR ").append(fmt(atr)).append(").");
+                .append(" ").append(isBuy ? "−" : "+").append(" ").append(base + extra)
+                .append(" × ATR ").append(fmt(atr));
+            if (extra > 0) desc.append(" [").append(base).append(" base + ").append(extra).append(" single-level]");
+            desc.append(").");
         } else {
             desc.append(" (ATR ").append(fmt(atr)).append(" × ").append(riskSettings.getAtrMultiplier()).append(").");
         }
@@ -796,6 +849,18 @@ public class SignalProcessor {
     // ── Structural SL anchor per setup (outer edge of zone for pairs) ──────────
     private static boolean isDhDlSetup(String setup) {
         return "BUY_ABOVE_DH".equals(setup) || "SELL_BELOW_DL".equals(setup);
+    }
+
+    /** Single-level breakouts that lack a zone-width cushion — get the extra SL buffer. */
+    private static boolean isSingleLevelSetup(String setup) {
+        return switch (setup) {
+            case "BUY_ABOVE_R2", "BUY_ABOVE_R3", "BUY_ABOVE_R4",
+                 "BUY_ABOVE_S2", "BUY_ABOVE_S3", "BUY_ABOVE_S4",
+                 "SELL_BELOW_R2", "SELL_BELOW_R3", "SELL_BELOW_R4",
+                 "SELL_BELOW_S2", "SELL_BELOW_S3", "SELL_BELOW_S4",
+                 "BUY_ABOVE_DH", "SELL_BELOW_DL" -> true;
+            default -> false;
+        };
     }
 
     private static double computeStructuralAnchor(String setup,

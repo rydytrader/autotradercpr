@@ -13,6 +13,7 @@ public class CprLevels {
     private double rangeZScore;       // legacy z-score field (kept for serialization compat, now 0)
     private double rangeAdrPct;       // previous day's range as % of 20-day ADR (drives SMALL/LARGE classification)
     private String narrowRangeType;   // "SMALL" / "LARGE" / null (only set for narrow/inside CPR)
+    private String cprDayRelation;    // "HV" (today CPR completely above yesterday's), "LV" (completely below), "NC" (overlapping/not clear), "" if no prior data
     private long   volume;
     private double fiftyTwoWeekHigh, fiftyTwoWeekLow;
     private double turnover;          // previous day total traded value (₹)
@@ -107,6 +108,8 @@ public class CprLevels {
     public void    setRangeAdrPct(double v) { this.rangeAdrPct = v; }
     public String  getNarrowRangeType() { return narrowRangeType; }
     public void    setNarrowRangeType(String v) { this.narrowRangeType = v; }
+    public String  getCprDayRelation()  { return cprDayRelation; }
+    public void    setCprDayRelation(String v) { this.cprDayRelation = v; }
 
     public long    getVolume()             { return volume; }
     public void    setVolume(long v)       { this.volume = v; }

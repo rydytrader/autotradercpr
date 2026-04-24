@@ -74,8 +74,10 @@ public class EventService {
         writeToFile(entry);
     }
 
-    /** Uppercase the contents of every consecutive [...] group at the start of the message.
-     *  Leaves brackets in the message body untouched. */
+    /** Uppercase the contents of every consecutive [...] group at the start of the message,
+     *  inserting hyphens at CamelCase boundaries so class-name tags like FyersOrderWebSocket
+     *  render as [FYERS-ORDER-WEB-SOCKET] instead of [FYERSORDERWEBSOCKET]. Leaves brackets
+     *  in the message body untouched. */
     private static String uppercasePrefixTags(String msg) {
         StringBuilder out = new StringBuilder();
         int i = 0;
@@ -83,7 +85,7 @@ public class EventService {
             int close = msg.indexOf(']', i);
             if (close < 0) break;
             out.append('[');
-            out.append(msg.substring(i + 1, close).toUpperCase(java.util.Locale.ROOT));
+            out.append(camelToHyphenUpper(msg.substring(i + 1, close)));
             out.append(']');
             i = close + 1;
             while (i < msg.length() && Character.isWhitespace(msg.charAt(i))) {
@@ -93,6 +95,25 @@ public class EventService {
         }
         out.append(msg.substring(i));
         return out.toString();
+    }
+
+    /** Convert CamelCase / PascalCase to UPPER-HYPHEN-CASE.
+     *  "FyersOrderWebSocket" → "FYERS-ORDER-WEB-SOCKET"
+     *  "PollingService"      → "POLLING-SERVICE"
+     *  "INFO"                → "INFO"
+     *  "scanner"             → "SCANNER" */
+    private static String camelToHyphenUpper(String tag) {
+        if (tag == null || tag.isEmpty()) return tag;
+        StringBuilder sb = new StringBuilder(tag.length() + 4);
+        for (int i = 0; i < tag.length(); i++) {
+            char c = tag.charAt(i);
+            // Insert hyphen at lowercase→uppercase boundary (CamelCase split)
+            if (i > 0 && Character.isUpperCase(c) && Character.isLowerCase(tag.charAt(i - 1))) {
+                sb.append('-');
+            }
+            sb.append(Character.toUpperCase(c));
+        }
+        return sb.toString();
     }
 
     /** True for pure severity tags ([INFO], [SUCCESS], [WARNING], [ERROR]) — these benefit from

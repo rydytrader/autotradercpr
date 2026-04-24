@@ -57,6 +57,10 @@ public class RiskSettingsStore {
         // When on, we compute both structural and default SL and pick the TIGHTER one.
         volatile boolean enableStructuralSl = false;   // when false, always use close ± atrMultiplier × ATR
         volatile double  structuralSlBufferAtr = 1.0;  // ATR multiplier added below/above the structural anchor
+        // Extra ATR cushion applied ONLY to single-level setups (R2/R3/R4, S2/S3/S4, DH/DL).
+        // Zone setups (CPR, R1+PDH, S1+PDL, magnets) already get a built-in cushion from the
+        // zone width itself, so they don't need this. Active only when enableStructuralSl is on.
+        volatile double  singleLevelSlBufferAtr = 0.5;
         volatile double dayHighLowMinAtr = 0.5; // min distance in ATR for day high/low shifted target (0 = no check)
         // Risk/Reward filter — skip trade if |target−entry| / |entry−SL| < minRiskRewardRatio
         volatile boolean enableRiskRewardFilter = true;
@@ -118,6 +122,7 @@ public class RiskSettingsStore {
         // Weekly NEUTRAL trades → LPT. Use enableLpt toggle to skip them.
         // Inside-OR breakouts are always downgraded to LPT (no skip toggles, no qty reduction)
         volatile double smallRangeAdrPct = 50.0; // prev day's range ≤ this % of 20-day ADR → SMALL classification (NS / IS)
+        volatile boolean enableCprDayRelationFilter = false; // buys require 2D-HV, sells require 2D-LV (today's CPR completely above/below yesterday's)
         volatile double minAbsoluteProfit = 500; // skip if qty × target_distance < this amount (₹)
         // CPR Width scanner group toggles
         volatile double narrowCprMaxWidth = 0.1;  // CPR width % threshold for narrow CPR stocks
@@ -212,6 +217,7 @@ public class RiskSettingsStore {
     public boolean isEnableHtfSmaAlignmentCheck() { return cfg().enableHtfSmaAlignmentCheck; }
     public boolean isEnableStructuralSl()    { return cfg().enableStructuralSl; }
     public double  getStructuralSlBufferAtr(){ return cfg().structuralSlBufferAtr; }
+    public double  getSingleLevelSlBufferAtr(){ return cfg().singleLevelSlBufferAtr; }
     public double getDayHighLowMinAtr()            { return cfg().dayHighLowMinAtr; }
     public boolean isEnableRiskRewardFilter()      { return cfg().enableRiskRewardFilter; }
     public double  getMinRiskRewardRatio()         { return cfg().minRiskRewardRatio; }
@@ -256,6 +262,7 @@ public class RiskSettingsStore {
     public boolean isEnableLpt()          { return cfg().enableLpt; }
     public double getLptQtyFactor()       { return cfg().lptQtyFactor; }
     public double getSmallRangeAdrPct() { return cfg().smallRangeAdrPct; }
+    public boolean isEnableCprDayRelationFilter() { return cfg().enableCprDayRelationFilter; }
     public double getMinAbsoluteProfit() { return cfg().minAbsoluteProfit; }
     public double getNarrowCprMaxWidth() { return cfg().narrowCprMaxWidth; }
     public double getInsideCprMaxWidth() { return cfg().insideCprMaxWidth; }
@@ -292,6 +299,7 @@ public class RiskSettingsStore {
     public void setEnableLpt(boolean v)        { cfg().enableLpt = v; }
     public void setLptQtyFactor(double v)      { cfg().lptQtyFactor = v; }
     public void setSmallRangeAdrPct(double v) { cfg().smallRangeAdrPct = v; }
+    public void setEnableCprDayRelationFilter(boolean v) { cfg().enableCprDayRelationFilter = v; }
     public void setMinAbsoluteProfit(double v) { cfg().minAbsoluteProfit = v; }
     public void setNarrowCprMaxWidth(double v) { cfg().narrowCprMaxWidth = v; }
     public void setInsideCprMaxWidth(double v) { cfg().insideCprMaxWidth = v; }
@@ -349,6 +357,7 @@ public class RiskSettingsStore {
     public void setEnableHtfSmaAlignmentCheck(boolean v) { cfg().enableHtfSmaAlignmentCheck = v; }
     public void setEnableStructuralSl(boolean v)    { cfg().enableStructuralSl = v; }
     public void setStructuralSlBufferAtr(double v)  { cfg().structuralSlBufferAtr = v; }
+    public void setSingleLevelSlBufferAtr(double v) { cfg().singleLevelSlBufferAtr = v; }
     public void setDayHighLowMinAtr(double v)              { cfg().dayHighLowMinAtr = v; }
     public void setEnableRiskRewardFilter(boolean v)       { cfg().enableRiskRewardFilter = v; }
     public void setMinRiskRewardRatio(double v)            { cfg().minRiskRewardRatio = v; }
@@ -476,6 +485,7 @@ public class RiskSettingsStore {
             upsert("enableHtfSmaAlignmentCheck", String.valueOf(c.enableHtfSmaAlignmentCheck));
             upsert("enableStructuralSl", String.valueOf(c.enableStructuralSl));
             upsert("structuralSlBufferAtr", String.valueOf(c.structuralSlBufferAtr));
+            upsert("singleLevelSlBufferAtr", String.valueOf(c.singleLevelSlBufferAtr));
             upsert("dayHighLowMinAtr", String.valueOf(c.dayHighLowMinAtr));
             upsert("enableRiskRewardFilter", String.valueOf(c.enableRiskRewardFilter));
             upsert("minRiskRewardRatio", String.valueOf(c.minRiskRewardRatio));
@@ -519,6 +529,7 @@ public class RiskSettingsStore {
             upsert("enableLpt", String.valueOf(c.enableLpt));
             upsert("lptQtyFactor", String.valueOf(c.lptQtyFactor));
             upsert("smallRangeAdrPct", String.valueOf(c.smallRangeAdrPct));
+            upsert("enableCprDayRelationFilter", String.valueOf(c.enableCprDayRelationFilter));
             upsert("minAbsoluteProfit", String.valueOf(c.minAbsoluteProfit));
             upsert("narrowCprMaxWidth", String.valueOf(c.narrowCprMaxWidth));
             // narrowRangeRatioThreshold removed — z-score is self-calibrating
@@ -600,6 +611,7 @@ public class RiskSettingsStore {
                     case "enableHtfSmaAlignmentCheck" -> c.enableHtfSmaAlignmentCheck = Boolean.parseBoolean(v);
                     case "enableStructuralSl"    -> c.enableStructuralSl = Boolean.parseBoolean(v);
                     case "structuralSlBufferAtr" -> c.structuralSlBufferAtr = Double.parseDouble(v);
+                    case "singleLevelSlBufferAtr" -> c.singleLevelSlBufferAtr = Double.parseDouble(v);
                     case "dayHighLowMinAtr" -> c.dayHighLowMinAtr = Double.parseDouble(v);
                     case "enableRiskRewardFilter" -> c.enableRiskRewardFilter = Boolean.parseBoolean(v);
                     case "minRiskRewardRatio" -> c.minRiskRewardRatio = Double.parseDouble(v);
@@ -656,6 +668,7 @@ public class RiskSettingsStore {
                         /* removed — narrow OR override feature deleted */
                     }
                     case "smallRangeAdrPct" -> c.smallRangeAdrPct = Double.parseDouble(v);
+                    case "enableCprDayRelationFilter" -> c.enableCprDayRelationFilter = Boolean.parseBoolean(v);
                     case "minAbsoluteProfit" -> c.minAbsoluteProfit = Double.parseDouble(v);
                     case "narrowCprMaxWidth" -> c.narrowCprMaxWidth = Double.parseDouble(v);
                     // narrowRangeRatioThreshold — legacy key, silently ignored

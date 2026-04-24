@@ -831,6 +831,15 @@
             + '    <button class="chart-icon-btn" onclick="openChartModal(\'' + d.symbol + '\', \'' + d.shortName + '\')" title="View chart" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:3px 6px;cursor:pointer;color:var(--text-secondary);line-height:0;display:inline-flex;align-items:center;">'
             + '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="1.5" y="9" width="3" height="5.5" rx="0.5"/><rect x="6.5" y="5" width="3" height="9.5" rx="0.5"/><rect x="11.5" y="7" width="3" height="7.5" rx="0.5"/></svg>'
             + '</button>'
+            + (function() {
+                if (!d.cprDayRelation) return '';
+                var rel = d.cprDayRelation;
+                var cls = rel === 'HV' ? 'narrow-small' : rel === 'LV' ? 'inside-large' : 'narrow';
+                var ttl = rel === 'HV' ? 'Today\'s CPR completely above yesterday\'s — bullish bias'
+                       : rel === 'LV' ? 'Today\'s CPR completely below yesterday\'s — bearish bias'
+                       : 'Today\'s CPR overlaps yesterday\'s — no clear directional bias';
+                return '<span class="scan-badge ' + cls + '" title="' + ttl + '">2D-' + rel + '</span>';
+            })()
             + ((d.cprTypes || [d.cprType]).filter(function(t){ return ['NARROW','INSIDE'].includes(t); }).map(function(t) {
                 var nrt = d.narrowRangeType;
                 var rp = d.rangeAdrPct != null ? d.rangeAdrPct : '?';
@@ -1039,10 +1048,26 @@
                         if (update.candleOpen) d.candleOpen = update.candleOpen;
                         if (update.candleHigh) d.candleHigh = update.candleHigh;
                         if (update.candleLow) d.candleLow = update.candleLow;
+                        // Live SMA values pushed from server every tick
+                        if (update.sma)       d.sma       = update.sma;
+                        if (update.sma50)     d.sma50     = update.sma50;
+                        if (update.sma200)    d.sma200    = update.sma200;
+                        if (update.htfSma20)  d.htfSma20  = update.htfSma20;
+                        if (update.htfSma50)  d.htfSma50  = update.htfSma50;
+                        if (update.htfSma200) d.htfSma200 = update.htfSma200;
 
                         // Update DOM in-place
                         var card = document.querySelector('[data-symbol="' + d.symbol + '"]');
                         if (!card) continue;
+                        // If SMA values changed, the cheapest way to refresh the SMA grid
+                        // (5-min + 1h rows include arrows/scores derived from LTP vs SMA) is
+                        // to re-render the whole card. ~50 cards × small HTML = fast enough.
+                        var smaChanged = update.sma || update.sma50 || update.sma200
+                                       || update.htfSma20 || update.htfSma50 || update.htfSma200;
+                        if (smaChanged) {
+                            card.outerHTML = buildCard(d);
+                            continue;
+                        }
                         var ltpEl = card.querySelector('.scan-ltp');
                         if (ltpEl) ltpEl.textContent = fmt(d.ltp);
                         var chEl = card.querySelector('.scan-change');
@@ -1054,6 +1079,22 @@
                         var ohlEl = card.querySelector('.scan-ohl');
                         if (ohlEl && d.candleOpen) {
                             ohlEl.textContent = 'O:' + fmt(d.candleOpen) + ' H:' + fmt(d.candleHigh) + ' L:' + fmt(d.candleLow);
+                        }
+                    }
+                } catch (err) {}
+            });
+
+            // Live NIFTY LTP via SSE ticker stream — refresh between 5s composite polls.
+            window.__tickerSSE.addEventListener('ticker', function(e) {
+                try {
+                    var arr = JSON.parse(e.data);
+                    if (!arr || !arr.length) return;
+                    for (var i = 0; i < arr.length; i++) {
+                        var t = arr[i];
+                        if (t && t.symbol === 'NSE:NIFTY50-INDEX' && t.ltp) {
+                            var el = document.getElementById('niftyLtp');
+                            if (el) el.textContent = (+t.ltp).toFixed(2);
+                            break;
                         }
                     }
                 } catch (err) {}

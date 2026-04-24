@@ -42,6 +42,7 @@ public class HtfSmaService implements CandleAggregator.CandleCloseListener {
 
     private final RiskSettingsStore riskSettings;
     @Autowired private MarketHolidayService marketHolidayService;
+    @Autowired @org.springframework.context.annotation.Lazy private CandleAggregator candleAggregator;
     private final ObjectMapper mapper = new ObjectMapper();
 
     private final ConcurrentHashMap<String, Deque<Double>> closesBySymbol = new ConcurrentHashMap<>();
@@ -85,9 +86,9 @@ public class HtfSmaService implements CandleAggregator.CandleCloseListener {
     public double getSma200(String symbol) { return computeSma(symbol, SMA_LONG_PERIOD); }
 
     /**
-     * Update the in-progress 60-min bar's "current close" from a 5-min candle close.
-     * Called by MarketDataService's 5-min listener — refreshes HTF SMA values every
-     * 5 min so callers see a smooth MA instead of stepwise-at-60-min behaviour.
+     * Legacy: previously updated by MarketDataService's 5-min listener. Now superseded by
+     * lazy LTP read inside computeSma — keeping the method as a no-op to preserve callers
+     * until the listener is removed.
      */
     public void updatePartialClose(String symbol, double fiveMinClose) {
         if (fiveMinClose > 0) partialCloseBySymbol.put(symbol, fiveMinClose);
@@ -110,14 +111,20 @@ public class HtfSmaService implements CandleAggregator.CandleCloseListener {
     private double computeSma(String symbol, int period) {
         Deque<Double> closes = closesBySymbol.get(symbol);
         if (closes == null) return 0;
-        Double partial = partialCloseBySymbol.get(symbol);
+        // Live tick-by-tick HTF SMA: blend current LTP as the in-progress 60-min bar's "close".
+        // Falls back to the legacy 5-min partial map (still updated by MarketDataService listener)
+        // if LTP isn't available, then to completed-only when neither is.
+        double live = candleAggregator != null ? candleAggregator.getLtp(symbol) : 0;
+        if (live <= 0) {
+            Double partial = partialCloseBySymbol.get(symbol);
+            if (partial != null && partial > 0) live = partial;
+        }
         synchronized (closes) {
-            if (partial != null && partial > 0) {
-                // In-progress 60-min bar exists — include its partial close as the Nth value.
-                // Window: last (period - 1) completed closes + partial. Requires ≥ period-1
-                // completed closes.
+            if (live > 0) {
+                // In-progress 60-min bar exists — include the live value as the Nth bar.
+                // Window: last (period - 1) completed closes + live. Requires ≥ period-1 completed.
                 if (closes.size() < period - 1) return 0;
-                double sum = partial;
+                double sum = live;
                 int skip = closes.size() - (period - 1);
                 int i = 0;
                 int count = 1;
@@ -128,7 +135,7 @@ public class HtfSmaService implements CandleAggregator.CandleCloseListener {
                 }
                 return count == period ? sum / period : 0;
             }
-            // No partial — fall back to the last `period` completed closes only.
+            // No live and no partial — fall back to the last `period` completed closes only.
             if (closes.size() < period) return 0;
             double sum = 0;
             int skip = closes.size() - period;

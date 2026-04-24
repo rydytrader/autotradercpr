@@ -285,7 +285,12 @@
                         <input type="number" id="structuralSlBufferAtr" class="form-control" min="0.1" max="3" step="0.1" style="width:75px; text-align:center;" placeholder="1.0">
                         <span style="color:var(--text-secondary); font-size:0.82rem;">× ATR</span>
                     </div>
-                    <div class="form-hint">SL = anchor ± buffer × ATR(period). Anchored to the broken level (CPR, R1/PDH, R2, etc.) or 20 SMA (for DH/DL breakouts). ATR period also used for candle filters and volatility measures.</div>
+                    <div style="display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap;">
+                        <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Single-level extra buffer</span>
+                        <input type="number" id="singleLevelSlBufferAtr" class="form-control" min="0" max="3" step="0.1" style="width:75px; text-align:center;" placeholder="0.5">
+                        <span style="color:var(--text-secondary); font-size:0.82rem;">× ATR (R2/R3/R4, S2/S3/S4, DH/DL only)</span>
+                    </div>
+                    <div class="form-hint">SL = anchor &plusmn; buffer &times; ATR(period). Anchored to the broken level (CPR, R1/PDH, R2, etc.) or candle wick (for DH/DL). The <b>single-level extra buffer</b> is added <b>only</b> to setups that lack a zone-width cushion (R2/R3/R4, S2/S3/S4, DH/DL); zone setups (CPR, R1+PDH, S1+PDL, magnets) get their cushion from the zone width itself. ATR period also used for candle filters and volatility measures.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Risk / Reward Filter</label>
@@ -497,16 +502,24 @@
                     <div class="form-hint">Composite NIFTY score from weekly CPR (&plusmn;2) + daily CPR (&plusmn;2) + SMA 20 position (&plusmn;1) + SMA 200 position (&plusmn;1) + SMA 20/50 vs 200 cross (&plusmn;2) + SMA 20/50 pattern R-RTP/F-RTP (&plusmn;2). Total range -10 to +10. Score thresholds map to 5 trend states (STRONG BEARISH / BEARISH / NEUTRAL / BULLISH / STRONG BULLISH). Trades opposing the NIFTY trend are either downgraded to LPT (soft mode, default) or skipped entirely (hard skip). LPT trades unaffected. The NIFTY card on the scanner page always shows the live composite state regardless of this toggle.</div>
                 </div>
                 <div class="form-group">
+                    <label class="form-label">2-Day CPR Relationship Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableCprDayRelationFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Downgrade HPT &rarr; LPT when today's CPR doesn't favor the trade direction vs yesterday's CPR</span>
+                    </div>
+                    <div class="form-hint">Buys want today's CPR completely <b>above</b> yesterday's (todayBC &gt; yestTC = <b>2D-HV</b> / Higher Value). Sells want today's CPR completely <b>below</b> yesterday's (todayTC &lt; yestBC = <b>2D-LV</b> / Lower Value). Overlapping CPRs (<b>2D-NC</b> / Not Clear) downgrade in both directions. Tag shown next to chart icon on each scanner card. LPT trades unaffected. Fail-open if no prior-day data.</div>
+                </div>
+                <div class="form-group">
                     <label class="form-label">Extended Level Signals (R3/S3, R4/S4)</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="skipR3S3NormalDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R3/S3 breakouts on normal (IV/OV) days</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R3/S3 breakouts (and DH above R3 / DL below S3) &mdash; all day types</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="skipR4S4NormalDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R4/S4 breakouts on normal (IV/OV) days</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R4/S4 breakouts (and DH above R4 / DL below S4) &mdash; all day types</span>
                     </div>
-                    <div class="form-hint">Extended-level breakouts (R3/S3, R4/S4) are far from the daily CPR and historically unreliable on normal sessions. On EV days (gap up &ge; R2 or gap down &le; S2) they are always allowed — the gap provides the directional bias. R2/S2 always fires regardless. No per-level qty reduction.</div>
+                    <div class="form-hint">Extended-level breakouts (R3/S3, R4/S4) are far from the daily CPR and historically unreliable. When enabled, applies to <b>all</b> day types (IV/OV/EV). DH/DL breakouts that have already passed the level are treated identically &mdash; e.g. a Day-High break above R3 is skipped when R3/S3 skip is on (because it IS effectively an R3 trade). R2/S2 always fires regardless. No per-level qty reduction.</div>
                 </div>
             </div>
         </div>
@@ -1027,6 +1040,7 @@
             document.getElementById('enableHtfSmaAlignmentCheck').checked = d.enableHtfSmaAlignmentCheck === true;
             document.getElementById('enableStructuralSl').checked = d.enableStructuralSl === true;
             document.getElementById('structuralSlBufferAtr').value = d.structuralSlBufferAtr != null ? d.structuralSlBufferAtr : 1.0;
+            document.getElementById('singleLevelSlBufferAtr').value = d.singleLevelSlBufferAtr != null ? d.singleLevelSlBufferAtr : 0.5;
             // dayHighLowMinAtr removed — single min target distance check handles both
             document.getElementById('enableRiskRewardFilter').checked = d.enableRiskRewardFilter !== false;
             document.getElementById('enableLargeCandleBodyFilter').checked = d.enableLargeCandleBodyFilter !== false;
@@ -1082,6 +1096,7 @@
             document.getElementById('scanIncludeNS').checked = d.scanIncludeNS !== false;
             document.getElementById('scanIncludeNL').checked = d.scanIncludeNL !== false;
             document.getElementById('smallRangeAdrPct').value = d.smallRangeAdrPct != null ? d.smallRangeAdrPct : 50.0;
+            document.getElementById('enableCprDayRelationFilter').checked = d.enableCprDayRelationFilter === true;
             document.getElementById('scanIncludeIS').checked = d.scanIncludeIS !== false;
             document.getElementById('scanIncludeIL').checked = d.scanIncludeIL === true;
             document.getElementById('enableHpt').checked = d.enableHpt !== false;
@@ -1176,6 +1191,7 @@
                 enableHtfSmaAlignmentCheck: document.getElementById('enableHtfSmaAlignmentCheck').checked,
                 enableStructuralSl: document.getElementById('enableStructuralSl').checked,
                 structuralSlBufferAtr: parseFloat(document.getElementById('structuralSlBufferAtr').value) || 1.0,
+                singleLevelSlBufferAtr: parseFloat(document.getElementById('singleLevelSlBufferAtr').value) || 0,
                 // dayHighLowMinAtr removed
                 enableRiskRewardFilter: document.getElementById('enableRiskRewardFilter').checked,
                 enableLargeCandleBodyFilter: document.getElementById('enableLargeCandleBodyFilter').checked,
@@ -1229,6 +1245,7 @@
                 scanIncludeNS: document.getElementById('scanIncludeNS').checked,
                 scanIncludeNL: document.getElementById('scanIncludeNL').checked,
                 smallRangeAdrPct: parseFloat(document.getElementById('smallRangeAdrPct').value) || 50.0,
+                enableCprDayRelationFilter: document.getElementById('enableCprDayRelationFilter').checked,
                 scanIncludeIS: document.getElementById('scanIncludeIS').checked,
                 scanIncludeIL: document.getElementById('scanIncludeIL').checked,
                 enableHpt: document.getElementById('enableHpt').checked,

@@ -210,6 +210,7 @@ public class ScannerController {
         card.put("avgVolume", Math.round(candleAggregator.getAvgVolume(fyersSymbol, riskSettings.getVolumeLookback())));
         card.put("weeklyTrend", weeklyCprService.getWeeklyTrend(fyersSymbol));
         card.put("dailyTrend", weeklyCprService.getDailyTrend(fyersSymbol));
+        card.put("cprDayRelation", levels.getCprDayRelation());
         card.put("probability", computeCardProbability(fyersSymbol, ltp));
 
         // Opening Range status
