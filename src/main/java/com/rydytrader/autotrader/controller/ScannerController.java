@@ -33,6 +33,8 @@ public class ScannerController {
     private final HtfSmaService htfSmaService;
     private final IndexTrendService indexTrendService;
     private final MarketHolidayService marketHolidayService;
+    @org.springframework.beans.factory.annotation.Autowired
+    private SymbolMasterService symbolMasterService;
 
     public ScannerController(MarketDataService marketDataService,
                              BhavcopyService bhavcopyService,
@@ -152,9 +154,10 @@ public class ScannerController {
 
         card.put("atp", Math.round(candleAggregator.getAtp(fyersSymbol) * 100.0) / 100.0);
         card.put("atr", Math.round(atrService.getAtr(fyersSymbol) * 100.0) / 100.0);
-        card.put("sma20", Math.round(smaService.getSma(fyersSymbol) * 100.0) / 100.0);
-        card.put("sma50", Math.round(smaService.getSma50(fyersSymbol) * 100.0) / 100.0);
-        card.put("sma200", Math.round(smaService.getSma200(fyersSymbol) * 100.0) / 100.0);
+        double tickSize = symbolMasterService != null ? symbolMasterService.getTickSize(fyersSymbol) : 0;
+        card.put("sma20",  roundToTick(smaService.getSma(fyersSymbol),    tickSize));
+        card.put("sma50",  roundToTick(smaService.getSma50(fyersSymbol),  tickSize));
+        card.put("sma200", roundToTick(smaService.getSma200(fyersSymbol), tickSize));
         // Classify SMA 20/50 pattern over recent candles: BRAIDED (zigzag/choppy), RAILWAY (parallel/trending), or ""
         double atrVal = atrService.getAtr(fyersSymbol);
         String smaPattern = smaService.getSmaPattern(fyersSymbol,
@@ -169,9 +172,9 @@ public class ScannerController {
         double htfSma20 = htfSmaService.getSma(fyersSymbol);
         double htfSma50 = htfSmaService.getSma50(fyersSymbol);
         double htfSma200 = htfSmaService.getSma200(fyersSymbol);
-        card.put("htfSma20", Math.round(htfSma20 * 100.0) / 100.0);
-        card.put("htfSma50", Math.round(htfSma50 * 100.0) / 100.0);
-        card.put("htfSma200", Math.round(htfSma200 * 100.0) / 100.0);
+        card.put("htfSma20",  roundToTick(htfSma20,  tickSize));
+        card.put("htfSma50",  roundToTick(htfSma50,  tickSize));
+        card.put("htfSma200", roundToTick(htfSma200, tickSize));
         String htfPattern = (htfSma20 > 0 && htfSma50 > 0)
             ? htfSmaService.getSmaPattern(fyersSymbol,
                 riskSettings.getSmaPatternLookback(),
@@ -280,6 +283,13 @@ public class ScannerController {
     }
 
     private double r(double v) { return Math.round(v * 100.0) / 100.0; }
+
+    /** Round derived prices (SMAs etc.) to the symbol's tick size for display.
+     *  Filter math still uses the raw value via SmaService / HtfSmaService. */
+    private static double roundToTick(double value, double tick) {
+        if (tick <= 0) return Math.round(value * 100.0) / 100.0;
+        return Math.round(value / tick) * tick;
+    }
 
     private Map<String, Object> barToMap(CandleAggregator.CandleBar c, boolean forming) {
         Map<String, Object> bar = new LinkedHashMap<>();

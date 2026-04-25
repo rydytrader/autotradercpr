@@ -445,6 +445,12 @@
                         <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono); margin-left:12px;">Min % range from boundary:</span>
                         <input type="number" id="smaLevelMinRangePct" class="form-control" step="5" min="0" max="100" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                     </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; padding-left: 28px;">
+                        <input type="checkbox" id="smaLevelFilterMorningSkip" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Bypass this filter until</span>
+                        <input type="time" id="smaLevelFilterMorningSkipUntil" class="form-control" style="width:100px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">(IST — momentum often outruns SMA in the first hour)</span>
+                    </div>
                     <div class="form-hint">Counts CPR zones (S4, S3, S2, S1/PDL, CPR, R1/PDH, R2, R3, R4) strictly between the 20 SMA and the breakout level. Pair zones (CPR, R1/PDH, S1/PDL) count as one. If the count is 0 (SMA is in the zone immediately adjacent to the broken level) the trade fires. If 1 or more zones sit between, the setup is stale and the trade is skipped.
                     <br/><br/><b>Min % range from boundary (default 50)</b>: secondary proximity check. The 100% range is measured from the broken level to the top/bottom edge of the next non-broken zone. SMA must sit within <i>(100 − N)%</i> of the range from the broken level — i.e. in the upper N% for buys / lower N% for sells. Example: <i>BUY_ABOVE_R1_PDH</i> with R1=100, cprTop=95. Range = 5. At N=50, SMA must be ≥ 97.5. SMA at 96 is 80% of the range below R1 → skipped. Set to <b>0</b> to disable this check and use count-only filter.</div>
                 </div>
@@ -1055,6 +1061,8 @@
             document.getElementById('skipTradesInZigZag').checked = d.skipTradesInZigZag !== false;
             document.getElementById('enableSmaLevelCountFilter').checked = d.enableSmaLevelCountFilter !== false;
             document.getElementById('smaLevelMinRangePct').value = d.smaLevelMinRangePct != null ? d.smaLevelMinRangePct : 50;
+            document.getElementById('smaLevelFilterMorningSkip').checked = d.smaLevelFilterMorningSkip === true;
+            document.getElementById('smaLevelFilterMorningSkipUntil').value = d.smaLevelFilterMorningSkipUntil || '10:15';
             document.getElementById('enableSplitTarget').checked = d.enableSplitTarget !== false;
             document.getElementById('t1DistancePct').value = d.t1DistancePct || 50;
             document.getElementById('splitMinDistanceAtr').value = d.splitMinDistanceAtr || 0;
@@ -1207,6 +1215,8 @@
                 skipTradesInZigZag: document.getElementById('skipTradesInZigZag').checked,
                 enableSmaLevelCountFilter: document.getElementById('enableSmaLevelCountFilter').checked,
                 smaLevelMinRangePct: parseInt(document.getElementById('smaLevelMinRangePct').value) || 0,
+                smaLevelFilterMorningSkip: document.getElementById('smaLevelFilterMorningSkip').checked,
+                smaLevelFilterMorningSkipUntil: document.getElementById('smaLevelFilterMorningSkipUntil').value || '10:15',
                 enableSplitTarget: document.getElementById('enableSplitTarget').checked,
                 t1DistancePct: parseInt(document.getElementById('t1DistancePct').value) || 50,
                 splitMinDistanceAtr: parseFloat(document.getElementById('splitMinDistanceAtr').value) || 0,

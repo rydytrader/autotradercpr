@@ -93,6 +93,11 @@ public class RiskSettingsStore {
         // non-broken zone edge on the other side. 50 = SMA must be in the upper half of that
         // range (buy) / lower half (sell). 0 = proximity check disabled.
         volatile int smaLevelMinRangePct = 50;
+        // Morning skip: when enabled, the SMA level-count filter is bypassed before this time.
+        // Rationale: in the first hour of the session price can run hard while SMA(20) lags
+        // behind, making the filter reject otherwise valid breakouts.
+        volatile boolean smaLevelFilterMorningSkip = false;
+        volatile String  smaLevelFilterMorningSkipUntil = "10:15"; // HH:mm IST
         volatile boolean enableSmallCandleFilter = false; // reject if candle move from breakout level < smallCandleAtrThreshold ATR
         volatile double smallCandleAtrThreshold = 0.5; // ATR multiplier for small candle filter
         volatile double wickRejectionRatio = 1.5; // breakout wick must be >= this * body to allow small body candle
@@ -236,6 +241,8 @@ public class RiskSettingsStore {
     public double getSmaCloseDistanceAtr()         { return cfg().smaCloseDistanceAtr; }
     public boolean isEnableSmaLevelCountFilter()   { return cfg().enableSmaLevelCountFilter; }
     public int getSmaLevelMinRangePct()            { return cfg().smaLevelMinRangePct; }
+    public boolean isSmaLevelFilterMorningSkip()       { return cfg().smaLevelFilterMorningSkip; }
+    public String  getSmaLevelFilterMorningSkipUntil() { return cfg().smaLevelFilterMorningSkipUntil; }
     public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
     public boolean isEnableSmallCandleFilter() { return cfg().enableSmallCandleFilter; }
     public boolean isEnableLargeCandleBodyFilter() { return cfg().enableLargeCandleBodyFilter; }
@@ -372,6 +379,8 @@ public class RiskSettingsStore {
     public void setSmaCloseDistanceAtr(double v)           { cfg().smaCloseDistanceAtr = v; }
     public void setEnableSmaLevelCountFilter(boolean v)    { cfg().enableSmaLevelCountFilter = v; }
     public void setSmaLevelMinRangePct(int v)               { cfg().smaLevelMinRangePct = Math.max(0, Math.min(100, v)); }
+    public void setSmaLevelFilterMorningSkip(boolean v)     { cfg().smaLevelFilterMorningSkip = v; }
+    public void setSmaLevelFilterMorningSkipUntil(String v) { if (v != null && !v.isEmpty()) cfg().smaLevelFilterMorningSkipUntil = v; }
     public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
     public void setEnableSmallCandleFilter(boolean v) { cfg().enableSmallCandleFilter = v; }
     public void setEnableLargeCandleBodyFilter(boolean v) { cfg().enableLargeCandleBodyFilter = v; }
@@ -506,6 +515,8 @@ public class RiskSettingsStore {
             upsert("smaCloseDistanceAtr", String.valueOf(c.smaCloseDistanceAtr));
             upsert("enableSmaLevelCountFilter", String.valueOf(c.enableSmaLevelCountFilter));
             upsert("smaLevelMinRangePct", String.valueOf(c.smaLevelMinRangePct));
+            upsert("smaLevelFilterMorningSkip", String.valueOf(c.smaLevelFilterMorningSkip));
+            upsert("smaLevelFilterMorningSkipUntil", c.smaLevelFilterMorningSkipUntil);
             upsert("enableTargetShift", String.valueOf(c.enableTargetShift));
             upsert("enableSmallCandleFilter", String.valueOf(c.enableSmallCandleFilter));
             upsert("enableLargeCandleBodyFilter", String.valueOf(c.enableLargeCandleBodyFilter));
@@ -638,6 +649,8 @@ public class RiskSettingsStore {
                     case "emaCloseDistanceAtr", "smaCloseDistanceAtr" -> c.smaCloseDistanceAtr = Double.parseDouble(v);
                     case "enableEmaLevelCountFilter", "enableSmaLevelCountFilter" -> c.enableSmaLevelCountFilter = Boolean.parseBoolean(v);
                     case "smaLevelMinRangePct" -> c.smaLevelMinRangePct = Math.max(0, Math.min(100, Integer.parseInt(v)));
+                    case "smaLevelFilterMorningSkip" -> c.smaLevelFilterMorningSkip = Boolean.parseBoolean(v);
+                    case "smaLevelFilterMorningSkipUntil" -> { if (v != null && !v.isEmpty()) c.smaLevelFilterMorningSkipUntil = v; }
                     case "enableTargetShift" -> c.enableTargetShift = Boolean.parseBoolean(v);
                     case "enableSmallCandleFilter" -> c.enableSmallCandleFilter = Boolean.parseBoolean(v);
                     case "enableLargeCandleBodyFilter" -> c.enableLargeCandleBodyFilter = Boolean.parseBoolean(v);

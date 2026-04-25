@@ -79,6 +79,8 @@ public class SettingsController {
         result.put("smaCloseDistanceAtr", riskSettings.getSmaCloseDistanceAtr());
         result.put("enableSmaLevelCountFilter", riskSettings.isEnableSmaLevelCountFilter());
         result.put("smaLevelMinRangePct", riskSettings.getSmaLevelMinRangePct());
+        result.put("smaLevelFilterMorningSkip", riskSettings.isSmaLevelFilterMorningSkip());
+        result.put("smaLevelFilterMorningSkipUntil", riskSettings.getSmaLevelFilterMorningSkipUntil());
         result.put("enableTargetShift", riskSettings.isEnableTargetShift(effectiveMode));
         result.put("enableSplitTarget", riskSettings.isEnableSplitTarget());
         result.put("t1DistancePct", riskSettings.getT1DistancePct());
@@ -187,6 +189,8 @@ public class SettingsController {
             if (body.containsKey("smaCloseDistanceAtr")) riskSettings.setSmaCloseDistanceAtr(Double.parseDouble(body.get("smaCloseDistanceAtr").toString()));
             if (body.containsKey("enableSmaLevelCountFilter")) riskSettings.setEnableSmaLevelCountFilter(Boolean.parseBoolean(body.get("enableSmaLevelCountFilter").toString()));
             if (body.containsKey("smaLevelMinRangePct")) riskSettings.setSmaLevelMinRangePct(Integer.parseInt(body.get("smaLevelMinRangePct").toString()));
+            if (body.containsKey("smaLevelFilterMorningSkip")) riskSettings.setSmaLevelFilterMorningSkip(Boolean.parseBoolean(body.get("smaLevelFilterMorningSkip").toString()));
+            if (body.containsKey("smaLevelFilterMorningSkipUntil")) riskSettings.setSmaLevelFilterMorningSkipUntil(body.get("smaLevelFilterMorningSkipUntil").toString());
             if (body.containsKey("enableTargetShift")) riskSettings.setEnableTargetShift(effectiveMode, Boolean.parseBoolean(body.get("enableTargetShift").toString()));
             if (body.containsKey("enableSplitTarget")) riskSettings.setEnableSplitTarget(Boolean.parseBoolean(body.get("enableSplitTarget").toString()));
             if (body.containsKey("t1DistancePct")) riskSettings.setT1DistancePct(Integer.parseInt(body.get("t1DistancePct").toString()));

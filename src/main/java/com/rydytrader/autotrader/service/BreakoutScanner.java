@@ -725,6 +725,18 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                                    CprLevels levels, double atr) {
         if (!riskSettings.isEnableSmaLevelCountFilter()) return 0;
 
+        // Morning skip: bypass the filter while price runs hard and SMA(20) lags.
+        if (riskSettings.isSmaLevelFilterMorningSkip()) {
+            String until = riskSettings.getSmaLevelFilterMorningSkipUntil();
+            if (until != null && !until.isEmpty()) {
+                try {
+                    java.time.LocalTime nowIst = java.time.ZonedDateTime.now(IST).toLocalTime();
+                    java.time.LocalTime cutoff = java.time.LocalTime.parse(until);
+                    if (nowIst.isBefore(cutoff)) return 0;
+                } catch (Exception ignored) {}
+            }
+        }
+
         double sma = smaService.getSma(fyersSymbol);
         if (sma <= 0) return 0;
         double broken = getBreakoutLevelPrice(setup, levels, fyersSymbol);
