@@ -168,12 +168,13 @@ public class RiskSettingsStore {
         // Rationale: stock's own alignment is intact (weekly+daily+SMA), only the index
         // is opposed — take the trade with reduced risk instead of downgrading to LPT.
         volatile double indexOpposedQtyFactor = 0.75;         // 0.75 = 25% reduction
-        // Composite score range is ±10 (weekly ±2 + daily ±2 + SMA20 pos ±1 + SMA200 pos ±1 +
-        // cross ±2 + pattern ±2). Thresholds scaled to ~30% / ~60% of range.
-        volatile int indexBullishThreshold = 3;               // score >= this → BULLISH
-        volatile int indexStrongBullishThreshold = 6;         // score >= this → STRONG_BULLISH
-        volatile int indexBearishThreshold = -3;              // score <= this → BEARISH
-        volatile int indexStrongBearishThreshold = -6;        // score <= this → STRONG_BEARISH
+        // Composite score range is ±20 (weekly ±3 + daily ±3 + 5m SMA Price ±2 + 5m SMA Align ±2
+        // + 5m SMA Pattern ±3 + HTF SMA Price ±2 + HTF SMA Align ±2 + HTF SMA Pattern ±3).
+        // CPR and Pattern weighted heaviest. Thresholds scaled to ~30% / ~60% of range.
+        volatile int indexBullishThreshold = 6;                // score >= this → BULLISH
+        volatile int indexStrongBullishThreshold = 12;         // score >= this → STRONG_BULLISH
+        volatile int indexBearishThreshold = -6;               // score <= this → BEARISH
+        volatile int indexStrongBearishThreshold = -12;        // score <= this → STRONG_BEARISH
     }
 
     private final Cfg live = new Cfg();

@@ -143,8 +143,8 @@ function renderMonitoring(d) {
     // Scanner card
     html += '<div class="mon-card">';
     html += '<div class="mon-card-title">Scanner</div>';
-    html += row('Scan Universe', 'Nifty 50 (' + (sc.nifty50Count || 0) + ')', (sc.nifty50Count || 0) >= 50 ? 'ok' : 'warn');
-    html += row('Watchlist', sc.watchlistCount || 0, sc.watchlistCount > 0 ? 'ok' : 'err');
+    html += row('Scan Universe', 'Nifty 50 (' + (sc.universeSize || sc.nifty50Count || 0) + ')', (sc.universeSize || sc.nifty50Count || 0) >= 50 ? 'ok' : 'warn');
+    html += row('Watchlist', (sc.watchlistCount || 0) + ' / ' + (sc.universeSize || sc.nifty50Count || 50) + ' (filtered / universe)', sc.watchlistCount > 0 ? 'ok' : 'err');
     html += '<div style="border-top:1px dashed var(--border);margin:6px 0;"></div>';
     html += row('Active Candles', (sc.activeCandles || 0) + ' (total) / ' + (sc.watchlistCount || 0) + ' (watchlist)', sc.activeCandles >= sc.watchlistCount ? 'ok' : 'warn');
     html += row('Candle Checker', sc.candleChecker || '--', cls(sc.candleChecker, 'ALIVE'));

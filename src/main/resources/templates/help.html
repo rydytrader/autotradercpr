@@ -188,7 +188,7 @@
             <p>If either WS drops, <b>PollingService</b> resumes 10-second REST polling automatically. Status shown in the sidebar pill.</p>
 
             <h4>Live UI</h4>
-            <p>Stock cards push tick updates over Server-Sent Events (SSE) every market tick — LTP, change %, candle OHL, and SMAs (5-min and 1h, blended with current LTP) are all live. Full card data refreshes every 15 seconds (CPR levels, signal status, narrow/inside tags). NIFTY card LTP is also tick-by-tick; its composite trend score refreshes every 5 seconds.</p>
+            <p>Stock cards push tick updates over Server-Sent Events (SSE) every market tick — LTP, change %, candle OHL, and SMAs (5-min and 1h, blended with current LTP) are all live. Full card data refreshes every 15 seconds (CPR levels, signal status, narrow/inside tags). NIFTY card LTP and change % are tick-by-tick; breadth + state refresh every 5 seconds.</p>
         </div>
     </div>
 
@@ -501,36 +501,47 @@
     </div>
 
     <div class="section-card help-section fade-in" style="margin-bottom:16px;">
-        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-blue);"></div> NIFTY composite trend (index alignment)</div></div>
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-blue);"></div> NIFTY trend (breadth-driven)</div></div>
         <div class="help-body">
-            <p>The NIFTY card aggregates six independent components into a single score in the range −10 to +10:</p>
+            <p>The NIFTY trend state is now <b>breadth-driven</b> — based on the percentage of NIFTY 50 stocks trading green vs red, not NIFTY's own price. A narrow rally (a few mega-caps lifting NIFTY while most stocks are red) produces a NEUTRAL or BEARISH state instead of misleading BULLISH.</p>
+
+            <h4>Breadth computation</h4>
+            <p>For each NIFTY 50 stock with valid data:</p>
+            <ul>
+                <li><b>Green (advancer)</b> — current LTP &gt; previous day close</li>
+                <li><b>Red (decliner)</b> — current LTP &lt; previous day close</li>
+                <li><b>Flat</b> — LTP equals prev close</li>
+            </ul>
+            <p>Counts roll up every 5 seconds (NIFTY card refresh) over the universe. All 50 stocks are subscribed to live ticks at startup so all 50 contribute to the count.</p>
+
+            <h4>State classification</h4>
             <table>
-                <tr><th>Component</th><th>Weight</th><th>Source</th></tr>
-                <tr><td>Weekly CPR trend</td><td>±2</td><td>NIFTY weekly trend (BULLISH = +2, STRONG_BULLISH = +2 also; symmetric on bear side)</td></tr>
-                <tr><td>Daily CPR trend</td><td>±2</td><td>NIFTY daily trend</td></tr>
-                <tr><td>SMA 20 position</td><td>±1</td><td>NIFTY LTP vs 5-min SMA 20</td></tr>
-                <tr><td>SMA 200 position</td><td>±1</td><td>NIFTY LTP vs 5-min SMA 200</td></tr>
-                <tr><td>SMA 20 vs 200 cross</td><td>±2</td><td>+2 if SMA 20 &gt; 200, −2 otherwise</td></tr>
-                <tr><td>SMA 20/50 pattern</td><td>±2</td><td>R-RTP = +2, F-RTP = −2, BRAIDED/none = 0</td></tr>
+                <tr><th>State</th><th>Threshold</th></tr>
+                <tr><td><span class="badge-example bg">STRONG_BULLISH</span></td><td><b>advancers ≥ 70% of breadth</b> (broad-based rally)</td></tr>
+                <tr><td><span class="badge-example bg">BULLISH</span></td><td><b>advancers &gt; decliners</b> (any majority advancing)</td></tr>
+                <tr><td><span class="badge-example by">NEUTRAL</span></td><td>Tie — equal advancers and decliners</td></tr>
+                <tr><td><span class="badge-example br">BEARISH</span></td><td><b>decliners &gt; advancers</b> (any majority declining)</td></tr>
+                <tr><td><span class="badge-example br">STRONG_BEARISH</span></td><td><b>decliners ≥ 70% of breadth</b> (broad-based selloff)</td></tr>
             </table>
 
-            <p>Score thresholds map to 5 trend states (configurable):</p>
-            <table>
-                <tr><th>State</th><th>Default threshold</th></tr>
-                <tr><td><span class="badge-example bg">STRONG_BULLISH</span></td><td>score ≥ <code>indexStrongBullishThreshold</code> (default 6)</td></tr>
-                <tr><td><span class="badge-example bg">BULLISH</span></td><td>score ≥ <code>indexBullishThreshold</code> (default 3)</td></tr>
-                <tr><td><span class="badge-example by">NEUTRAL</span></td><td>between bearish and bullish thresholds</td></tr>
-                <tr><td><span class="badge-example br">BEARISH</span></td><td>score ≤ <code>indexBearishThreshold</code> (default −3)</td></tr>
-                <tr><td><span class="badge-example br">STRONG_BEARISH</span></td><td>score ≤ <code>indexStrongBearishThreshold</code> (default −6)</td></tr>
-            </table>
+            <h4>What's still on the card</h4>
+            <p>The NIFTY card displays:</p>
+            <ul>
+                <li><b>LTP</b> + <b>change %</b> (live tick-by-tick) — informational, no longer drives state</li>
+                <li><b>BREADTH</b> — `▲ N / ▼ N (N% green)` — drives state</li>
+                <li><b>State chip</b> (STRONG_BULLISH / BULLISH / NEUTRAL / BEARISH / STRONG_BEARISH) — the breadth-derived classification</li>
+                <li><b>Composite metrics breakdown</b> (Weekly CPR, Daily CPR, 5m & HTF SMA Price/Align/Pattern) — still computed per timeframe and shown for reference, but doesn't decide state</li>
+            </ul>
 
             <h4>How it gates trades</h4>
-            <p>When <code>enableIndexAlignment</code> is on, every signal direction is checked against NIFTY:</p>
+            <p>When <code>enableIndexAlignment</code> is on, every signal direction is checked against NIFTY's breadth-driven state:</p>
             <ul>
                 <li><b>Hard skip</b> mode (<code>indexAlignmentHardSkip</code> on): trades opposed to the NIFTY trend are rejected.</li>
                 <li><b>Soft mode</b> (default): opposed trades are <b>downgraded HPT → LPT</b>. No qty factor — the LPT downgrade does the size reduction.</li>
             </ul>
-            <p>The NIFTY card on the scanner page is always live (LTP tick-by-tick, score every 5s) regardless of whether the filter is enabled.</p>
+            <p>"Opposed" means buy when NIFTY is BEARISH/STRONG_BEARISH (most stocks red), or sell when NIFTY is BULLISH/STRONG_BULLISH (most stocks green). NEUTRAL state never triggers an alignment block.</p>
+
+            <p><b>Why breadth instead of price:</b> a few heavyweight stocks (RELIANCE, HDFCBANK, INFOSYS) can move NIFTY by 0.5%+ even when 35 of 50 stocks are red. Trading aligned with NIFTY's price would have you buying into a market most stocks are selling. Breadth captures actual market participation — if 75% of stocks are up, the bullish setup is broad-based and stock buys are more likely to work.</p>
         </div>
     </div>
 
@@ -843,7 +854,7 @@
                 <tr><td>skipTradesInZigZag</td><td>true</td><td>Reject if SMA pattern is BRAIDED</td></tr>
                 <tr><td>enableIndexAlignment</td><td>false</td><td>NIFTY composite filter master toggle</td></tr>
                 <tr><td>indexAlignmentHardSkip</td><td>false</td><td>Hard skip opposed (true) vs HPT→LPT downgrade (false)</td></tr>
-                <tr><td>indexBullishThreshold / etc.</td><td>3 / 6 / −3 / −6</td><td>NIFTY score thresholds for state classification</td></tr>
+                <tr><td>indexBullishThreshold / Strong / Bearish / StrongBearish</td><td>6 / 12 / −6 / −12</td><td>Legacy composite score thresholds (no longer used for state — kept for the score breakdown shown on the NIFTY card; state is now breadth-driven by direct adv-vs-dec count, with strong tier at ≥70% one-sided)</td></tr>
                 <tr><td>enableCprDayRelationFilter</td><td>false</td><td>Buy needs 2D-HV, sell needs 2D-LV (else HPT→LPT)</td></tr>
                 <tr><td>enableHtfHurdleFilter</td><td>true</td><td>Prior 1h close must clear nearest weekly R1/PWH or S1/PWL</td></tr>
                 <tr><td>enableHtfSmaAlignment</td><td>true</td><td>HTF Price: LTP above/below 1h SMA 20+50</td></tr>

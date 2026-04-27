@@ -111,6 +111,21 @@ public class CprLevels {
     public String  getCprDayRelation()  { return cprDayRelation; }
     public void    setCprDayRelation(String v) { this.cprDayRelation = v; }
 
+    /** 2-Day CPR relation gated by the day's open print (close of first 5-min candle).
+     *  HV/LV are confirmed only when the opening honors the directional bias:
+     *  HV needs first close above today's CPR top, LV needs first close below CPR bot.
+     *  Returns null when the relation is invalidated (gap rejected). NC and empty pass through.
+     *  Before firstCandleClose is set (pre-market / first 5-min) returns the raw value. */
+    public String  getCprDayRelationValidated(double firstCandleClose) {
+        String rel = this.cprDayRelation;
+        if (rel == null || rel.isEmpty() || firstCandleClose <= 0) return rel;
+        double cprBot = Math.min(tc, bc);
+        double cprTop = Math.max(tc, bc);
+        if ("HV".equals(rel) && firstCandleClose <= cprTop) return null;
+        if ("LV".equals(rel) && firstCandleClose >= cprBot) return null;
+        return rel;
+    }
+
     public long    getVolume()             { return volume; }
     public void    setVolume(long v)       { this.volume = v; }
     public double  getFiftyTwoWeekHigh()   { return fiftyTwoWeekHigh; }

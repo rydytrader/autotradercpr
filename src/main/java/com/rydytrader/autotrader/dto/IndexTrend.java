@@ -28,13 +28,20 @@ public class IndexTrend {
     private int slopeScore;
     private int sma200PositionScore; // +1 if LTP > SMA(200), -1 if LTP < SMA(200), 0 otherwise
     private int openHlScore;        // -1 if O=H (bearish), +1 if O=L (bullish), 0 otherwise
-    private int smaCrossoverScore;  // +2 if both 20 and 50 above 200, +1 if only 20 above, -2/-1 symmetric for bearish, 0 otherwise
-    private int smaPatternScore;    // +1 R-RTP (rising railway), -1 F-RTP (falling railway), 0 for braided/none
+    private int smaCrossoverScore;  // 5-min SMA Alignment: ±2 full (20>50>200) / ±1 partial (one pair) / 0
+    private int smaPatternScore;    // ±2 R-RTP / F-RTP, 0 BRAIDED/none
+    private int htfPriceScore;      // HTF Price (LTP vs 1h SMA 20/50/200): ±2 full / ±1 partial / 0
+    private int htfAlignmentScore;  // HTF Alignment (1h SMA 20>50>200): ±2 full / ±1 partial / 0
+    private int htfPatternScore;    // ±2 R-RTP / F-RTP on 1h SMA 20/50, 0 otherwise
     private boolean openEqualsHigh; // true if day open ≈ day high (within 0.05%)
     private boolean openEqualsLow;  // true if day open ≈ day low (within 0.05%)
     private int totalScore;         // sum of all components
     private String state;           // STRONG_BULLISH, BULLISH, NEUTRAL, BEARISH, STRONG_BEARISH
     private boolean dataAvailable;  // false if any input is missing (e.g. before market open)
+    private double changePct;       // % change of LTP vs prev day close (drives state classification)
+    private int breadthAdvancers;   // # NIFTY 50 stocks trading above prev close
+    private int breadthDecliners;   // # below prev close
+    private int breadthTotal;       // # with valid LTP + prev close (advancers + decliners + flat)
 
     public IndexTrend() {}
 
@@ -86,10 +93,24 @@ public class IndexTrend {
     public void setSmaCrossoverScore(int v) { this.smaCrossoverScore = v; }
     public int getSmaPatternScore() { return smaPatternScore; }
     public void setSmaPatternScore(int v) { this.smaPatternScore = v; }
+    public int getHtfPriceScore() { return htfPriceScore; }
+    public void setHtfPriceScore(int v) { this.htfPriceScore = v; }
+    public int getHtfAlignmentScore() { return htfAlignmentScore; }
+    public void setHtfAlignmentScore(int v) { this.htfAlignmentScore = v; }
+    public int getHtfPatternScore() { return htfPatternScore; }
+    public void setHtfPatternScore(int v) { this.htfPatternScore = v; }
     public int getTotalScore() { return totalScore; }
     public void setTotalScore(int v) { this.totalScore = v; }
     public String getState() { return state; }
     public void setState(String v) { this.state = v; }
     public boolean isDataAvailable() { return dataAvailable; }
     public void setDataAvailable(boolean v) { this.dataAvailable = v; }
+    public double getChangePct() { return changePct; }
+    public void setChangePct(double v) { this.changePct = v; }
+    public int getBreadthAdvancers() { return breadthAdvancers; }
+    public void setBreadthAdvancers(int v) { this.breadthAdvancers = v; }
+    public int getBreadthDecliners() { return breadthDecliners; }
+    public void setBreadthDecliners(int v) { this.breadthDecliners = v; }
+    public int getBreadthTotal() { return breadthTotal; }
+    public void setBreadthTotal(int v) { this.breadthTotal = v; }
 }

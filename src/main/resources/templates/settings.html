@@ -442,8 +442,9 @@
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
                         <input type="checkbox" id="enableSmaLevelCountFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip if any CPR zone sits between SMA and the broken level</span>
-                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono); margin-left:12px;">Min % range from boundary:</span>
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono); margin-left:12px;">SMA must sit within</span>
                         <input type="number" id="smaLevelMinRangePct" class="form-control" step="5" min="0" max="100" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">% (away from boundary = close to broken level)</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; padding-left: 28px;">
                         <input type="checkbox" id="smaLevelFilterMorningSkip" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
@@ -451,8 +452,9 @@
                         <input type="time" id="smaLevelFilterMorningSkipUntil" class="form-control" style="width:100px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">(IST — momentum often outruns SMA in the first hour)</span>
                     </div>
-                    <div class="form-hint">Counts CPR zones (S4, S3, S2, S1/PDL, CPR, R1/PDH, R2, R3, R4) strictly between the 20 SMA and the breakout level. Pair zones (CPR, R1/PDH, S1/PDL) count as one. If the count is 0 (SMA is in the zone immediately adjacent to the broken level) the trade fires. If 1 or more zones sit between, the setup is stale and the trade is skipped.
-                    <br/><br/><b>Min % range from boundary (default 50)</b>: secondary proximity check. The 100% range is measured from the broken level to the top/bottom edge of the next non-broken zone. SMA must sit within <i>(100 − N)%</i> of the range from the broken level — i.e. in the upper N% for buys / lower N% for sells. Example: <i>BUY_ABOVE_R1_PDH</i> with R1=100, cprTop=95. Range = 5. At N=50, SMA must be ≥ 97.5. SMA at 96 is 80% of the range below R1 → skipped. Set to <b>0</b> to disable this check and use count-only filter.</div>
+                    <div class="form-hint"><b>Zone count check.</b> Counts CPR zones (S4, S3, S2, S1/PDL, CPR, R1/PDH, R2, R3, R4) strictly between the 20 SMA and the breakout level. Pair zones (CPR, R1/PDH, S1/PDL) count as one. The breakout zone itself is excluded — for DH/DL setups no zone is excluded since DH/DL aren't CPR-defined. If 0 zones in between, the trade fires; if 1 or more, the setup is stale and skipped.
+                    <br/><br/><b>Proximity check (default 50%).</b> The setting reads as "SMA must sit within <i>N%</i> away from the boundary edge" — equivalently, within the closest <i>(100−N)%</i> of the range from the broken level. The 100% range is measured from the broken level to the next-zone edge. <b>Higher N = stricter</b> (SMA must be closer to broken).<br/>
+                    Example: <i>BUY_ABOVE_R1_PDH</i> with broken=R1+PDH=100, next zone above (R2)=105. Range = 5. At N=75, SMA must sit within (100−75)% = 25% of range from broken → SMA ≥ 98.75 (close to broken). SMA at 96 = 80% of range away from broken → skipped (too far). Set to <b>0</b> to disable proximity check (use zone-count only).</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">HTF Hurdle and SMA Trend Filter</label>
@@ -1070,10 +1072,10 @@
             document.getElementById('targetToleranceAtr').value = (d.targetToleranceAtr != null ? d.targetToleranceAtr : 0.10);
             document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
             document.getElementById('indexAlignmentHardSkip').checked = d.indexAlignmentHardSkip === true;
-            document.getElementById('indexBullishThreshold').value = (d.indexBullishThreshold != null ? d.indexBullishThreshold : 2);
-            document.getElementById('indexStrongBullishThreshold').value = (d.indexStrongBullishThreshold != null ? d.indexStrongBullishThreshold : 5);
-            document.getElementById('indexBearishThreshold').value = (d.indexBearishThreshold != null ? d.indexBearishThreshold : -2);
-            document.getElementById('indexStrongBearishThreshold').value = (d.indexStrongBearishThreshold != null ? d.indexStrongBearishThreshold : -5);
+            document.getElementById('indexBullishThreshold').value = (d.indexBullishThreshold != null ? d.indexBullishThreshold : 6);
+            document.getElementById('indexStrongBullishThreshold').value = (d.indexStrongBullishThreshold != null ? d.indexStrongBullishThreshold : 12);
+            document.getElementById('indexBearishThreshold').value = (d.indexBearishThreshold != null ? d.indexBearishThreshold : -6);
+            document.getElementById('indexStrongBearishThreshold').value = (d.indexStrongBearishThreshold != null ? d.indexStrongBearishThreshold : -12);
             document.getElementById('enableSmallCandleFilter').checked = d.enableSmallCandleFilter === true;
             document.getElementById('smallCandleAtrThreshold').value = d.smallCandleAtrThreshold || 0.5;
             document.getElementById('wickRejectionRatio').value = d.wickRejectionRatio || 1.5;
@@ -1224,10 +1226,10 @@
                 targetToleranceAtr: parseFloat(document.getElementById('targetToleranceAtr').value) || 0,
                 enableIndexAlignment: document.getElementById('enableIndexAlignment').checked,
                 indexAlignmentHardSkip: document.getElementById('indexAlignmentHardSkip').checked,
-                indexBullishThreshold: parseInt(document.getElementById('indexBullishThreshold').value) || 2,
-                indexStrongBullishThreshold: parseInt(document.getElementById('indexStrongBullishThreshold').value) || 5,
-                indexBearishThreshold: parseInt(document.getElementById('indexBearishThreshold').value) || -2,
-                indexStrongBearishThreshold: parseInt(document.getElementById('indexStrongBearishThreshold').value) || -5,
+                indexBullishThreshold: parseInt(document.getElementById('indexBullishThreshold').value) || 6,
+                indexStrongBullishThreshold: parseInt(document.getElementById('indexStrongBullishThreshold').value) || 12,
+                indexBearishThreshold: parseInt(document.getElementById('indexBearishThreshold').value) || -6,
+                indexStrongBearishThreshold: parseInt(document.getElementById('indexStrongBearishThreshold').value) || -12,
                 enableSmallCandleFilter: document.getElementById('enableSmallCandleFilter').checked,
                 smallCandleAtrThreshold: parseFloat(document.getElementById('smallCandleAtrThreshold').value) || 0.5,
                 wickRejectionRatio: parseFloat(document.getElementById('wickRejectionRatio').value) || 1.5,

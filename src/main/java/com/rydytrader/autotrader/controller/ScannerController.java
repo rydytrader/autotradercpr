@@ -189,7 +189,13 @@ public class ScannerController {
         // first candle of the day. Mirrors how WeeklyCprService computes daily/weekly trend.
         card.put("price5m",  Math.round(weeklyCprService.getDailyPrice(fyersSymbol)  * 100.0) / 100.0);
         card.put("price60m", Math.round(weeklyCprService.getWeeklyPrice(fyersSymbol) * 100.0) / 100.0);
-        card.put("dayOpen", Math.round(candleAggregator.getDayOpen(fyersSymbol) * 100.0) / 100.0);
+        // "Day Open" on stock card = the open print (close of first 5-min candle), NOT the
+        // 9:15 auction open. Open print is the price the day "settles" into and drives the
+        // IV/OV/EV classification, so it's the more meaningful reference for traders.
+        // Falls back to actual day open before 9:20 (firstCandleClose not yet available).
+        double openPrint = candleAggregator.getFirstCandleClose(fyersSymbol);
+        if (openPrint <= 0) openPrint = candleAggregator.getDayOpen(fyersSymbol);
+        card.put("dayOpen", Math.round(openPrint * 100.0) / 100.0);
 
         // Open classification: IV (Inside Value), OV (Outside Value), EV (Extended Value)
         double firstClose = candleAggregator.getFirstCandleClose(fyersSymbol);
@@ -214,7 +220,8 @@ public class ScannerController {
         card.put("avgVolume", Math.round(candleAggregator.getAvgVolume(fyersSymbol, riskSettings.getVolumeLookback())));
         card.put("weeklyTrend", weeklyCprService.getWeeklyTrend(fyersSymbol));
         card.put("dailyTrend", weeklyCprService.getDailyTrend(fyersSymbol));
-        card.put("cprDayRelation", levels.getCprDayRelation());
+        card.put("cprDayRelation",
+            levels.getCprDayRelationValidated(candleAggregator.getFirstCandleClose(fyersSymbol)));
         card.put("probability", computeCardProbability(fyersSymbol, ltp));
 
         // Opening Range status
@@ -420,6 +427,7 @@ public class ScannerController {
         Map<String, Object> status = new LinkedHashMap<>();
         status.put("signalSource", riskSettings.getSignalSource());
         status.put("watchlistCount", marketDataService.getWatchlist().size());
+        status.put("universeSize", bhavcopyService.getNifty50Count());
         status.put("atrLoaded", atrService.getLoadedCountFor(marketDataService.getWatchlist()));
         status.put("smaLoaded", smaService.getLoadedCountFor(marketDataService.getWatchlist()));
         status.put("sma200Loaded", smaService.getSma200LoadedCountFor(marketDataService.getWatchlist()));

@@ -287,7 +287,14 @@ public class TradingController {
             m.put("setup",     p.getSetup());
             m.put("entryTime", p.getEntryTime());
             m.put("description", state != null ? state.getOrDefault("description", "") : "");
-            m.put("probability", pollingService.getProbability(p.getSymbol()));
+            // Probability: prefer in-memory cache (live during the session), fall back to the
+            // persisted PositionStateStore value so the table stays correct after restarts.
+            String probDisplay = pollingService.getProbability(p.getSymbol());
+            if ((probDisplay == null || probDisplay.isEmpty()) && state != null) {
+                Object stateProb = state.get("probability");
+                if (stateProb != null) probDisplay = stateProb.toString();
+            }
+            m.put("probability", probDisplay != null ? probDisplay : "");
             // SL and target prices from persisted state
             if (state != null) {
                 try { m.put("slPrice", Double.parseDouble(state.getOrDefault("slPrice", "0").toString())); } catch (NumberFormatException e) { m.put("slPrice", 0.0); }

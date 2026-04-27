@@ -468,9 +468,10 @@
         <div class="nifty-row">
             <div class="nifty-name">NIFTY 50</div>
             <div class="nifty-ltp" id="niftyLtp">—</div>
+            <div class="nifty-change" id="niftyChange" style="font-family:var(--font-mono); font-weight:700; font-size:0.85rem; margin-left:8px;">—</div>
+            <div class="nifty-breadth" id="niftyBreadth" style="font-family:var(--font-mono); font-weight:600; font-size:0.78rem; margin-left:14px; color:var(--text-muted);" title="NIFTY 50 breadth: stocks up / total tracked">—</div>
             <div class="nifty-state" id="niftyState">—</div>
-            <div class="nifty-score" id="niftyScore">—</div>
-            <div class="nifty-right" id="niftyMetrics">—</div>
+            <div class="nifty-right" id="niftyMetrics"></div>
         </div>
     </div>
 
@@ -885,8 +886,9 @@
             + '<div class="scan-price-row">'
             + '  <span class="scan-ltp">' + fmt(d.ltp) + '</span>'
             + '  <span class="scan-change ' + chClass + '">' + chArrow + ' ' + d.changePercent.toFixed(2) + '%</span>'
-            + '  <span style="font-family:var(--font-mono);font-size:0.75rem;font-weight:600;color:var(--text-secondary);margin-left:auto;">'
-            +     (d.openClass ? 'Day Open: ' + d.openClass : '')
+            + '  <span style="margin-left:auto; display:inline-flex; align-items:baseline; gap:6px;">'
+            +     '<span class="scan-data-label">Day Open</span>'
+            +     '<span class="scan-data-value">' + (d.dayOpen > 0 ? fmt(d.dayOpen) : '--') + (d.openClass ? ' (' + d.openClass + ')' : '') + '</span>'
             + '  </span>'
             + '</div>'
             + '<div class="scan-data-grid scan-data-grid-3">'
@@ -926,7 +928,7 @@
                     if (p === 'RAILWAY_UP')   return '<span style="color:var(--accent-green);font-weight:700;">R-RTP</span>';
                     if (p === 'RAILWAY_DOWN') return '<span style="color:var(--accent-red);font-weight:700;">F-RTP</span>';
                     if (p === 'BRAIDED')      return '<span style="color:var(--accent-red);font-weight:700;">ZIG ZAG</span>';
-                    return '<span style="color:var(--text-muted);">--</span>';
+                    return '<span style="color:var(--text-muted);">NONE</span>';
                 }
                 function valCell(v) { return v > 0 ? fmt(v) : '<span style="color:var(--text-muted);">--</span>'; }
                 function trendBadge(t) {
@@ -1101,16 +1103,30 @@
                 } catch (err) {}
             });
 
-            // Live NIFTY LTP via SSE ticker stream — refresh between 5s composite polls.
+            // Live NIFTY LTP + change% via SSE ticker stream — refresh between 5s composite polls.
+            // Ticker payload uses display name ("Nifty 50") and `lp` / `chp` fields.
             window.__tickerSSE.addEventListener('ticker', function(e) {
                 try {
                     var arr = JSON.parse(e.data);
                     if (!arr || !arr.length) return;
                     for (var i = 0; i < arr.length; i++) {
                         var t = arr[i];
-                        if (t && t.symbol === 'NSE:NIFTY50-INDEX' && t.ltp) {
-                            var el = document.getElementById('niftyLtp');
-                            if (el) el.textContent = (+t.ltp).toFixed(2);
+                        var sym = t && t.symbol ? String(t.symbol).toUpperCase() : '';
+                        if (sym === 'NIFTY 50' || sym === 'NIFTY50') {
+                            if (t.lp) {
+                                var el = document.getElementById('niftyLtp');
+                                if (el) el.textContent = (+t.lp).toFixed(2);
+                            }
+                            if (t.chp !== undefined && t.chp !== null) {
+                                var chgEl2 = document.getElementById('niftyChange');
+                                if (chgEl2) {
+                                    var cp2 = +t.chp;
+                                    var arr2 = cp2 > 0 ? '▲' : cp2 < 0 ? '▼' : '▬';
+                                    var sgn2 = cp2 >= 0 ? '+' : '';
+                                    chgEl2.textContent = arr2 + ' ' + sgn2 + cp2.toFixed(2) + '%';
+                                    chgEl2.style.color = cp2 > 0 ? 'var(--accent-green)' : cp2 < 0 ? 'var(--accent-red)' : 'var(--text-muted)';
+                                }
+                            }
                             break;
                         }
                     }
@@ -1124,15 +1140,41 @@
         fetch('/api/index/nifty').then(function(r) { return r.json(); }).then(function(d) {
             if (!d || !d.dataAvailable) {
                 document.getElementById('niftyLtp').textContent = '—';
+                document.getElementById('niftyChange').textContent = '—';
+                var br0 = document.getElementById('niftyBreadth'); if (br0) br0.textContent = '—';
                 document.getElementById('niftyState').textContent = 'WAITING';
-                document.getElementById('niftyScore').textContent = '';
-                document.getElementById('niftyMetrics').innerHTML = '—';
+                document.getElementById('niftyMetrics').innerHTML = '';
                 document.getElementById('niftyCard').className = 'nifty-card nifty-card-neutral';
                 return;
             }
+            // Apply card color class FIRST — done early so any later error in the
+            // metrics-rendering block (which is in a .catch swallow) doesn't strand the card
+            // on its previous className.
+            var stateLowerEarly = (d.state || 'neutral').toLowerCase().replace('_', '-');
+            document.getElementById('niftyCard').className = 'nifty-card nifty-card-' + stateLowerEarly;
+
             document.getElementById('niftyLtp').textContent = d.ltp.toFixed(2);
+            // NIFTY breadth — % of NIFTY 50 stocks above prev close
+            var brEl = document.getElementById('niftyBreadth');
+            if (brEl && d.breadthTotal > 0) {
+                var adv = +d.breadthAdvancers || 0;
+                var dec = +d.breadthDecliners || 0;
+                var tot = +d.breadthTotal;
+                var advPct = Math.round(adv / tot * 100);
+                brEl.innerHTML = 'BREADTH: <span style="color:var(--accent-green);">▲ ' + adv + '</span> / <span style="color:var(--accent-red);">▼ ' + dec + '</span> ('
+                    + '<span style="color:' + (advPct >= 50 ? 'var(--accent-green)' : 'var(--accent-red)') + ';">' + advPct + '%</span> green)';
+            }
+            var chgEl = document.getElementById('niftyChange');
+            if (chgEl && d.changePct !== undefined && d.changePct !== null) {
+                var cp = +d.changePct;
+                var arrow = cp > 0 ? '▲' : cp < 0 ? '▼' : '▬';
+                var sign = cp >= 0 ? '+' : '';
+                chgEl.textContent = arrow + ' ' + sign + cp.toFixed(2) + '%';
+                chgEl.style.color = cp > 0 ? 'var(--accent-green)' : cp < 0 ? 'var(--accent-red)' : 'var(--text-muted)';
+            }
             document.getElementById('niftyState').textContent = (d.state || 'NEUTRAL').replace('_', ' ');
-            document.getElementById('niftyScore').textContent = '(score ' + (d.totalScore >= 0 ? '+' : '') + d.totalScore + ' / \u00B110)';
+            // niftyScore display removed
+            if (false) document.getElementById('niftyScore').textContent = '(score ' + (d.totalScore >= 0 ? '+' : '') + d.totalScore + ' / \u00B120)';
 
             // Build single-line metrics string
             function sc(v) { return (v >= 0 ? '+' : '') + v; }
@@ -1154,8 +1196,8 @@
             } else crossVal = '—';
             var patternVal = d.smaPattern === 'RAILWAY_UP' ? 'R-RTP ' + sc(d.smaPatternScore)
                            : d.smaPattern === 'RAILWAY_DOWN' ? 'F-RTP ' + sc(d.smaPatternScore)
-                           : d.smaPattern === 'BRAIDED' ? 'ZIG ZAG 0'
-                           : '— 0';
+                           : d.smaPattern === 'BRAIDED' ? 'ZIG ZAG ' + sc(d.smaPatternScore)
+                           : 'NONE ' + sc(d.smaPatternScore);
             var ohlVal = d.openEqualsHigh ? 'O=H ' + sc(d.openHlScore) : d.openEqualsLow ? 'O=L ' + sc(d.openHlScore) : '— 0';
 
             // HTF (60-min) values — display only, no score contribution
@@ -1165,7 +1207,7 @@
             var htfPatternVal = d.htfSmaPattern === 'RAILWAY_UP' ? 'R-RTP'
                              : d.htfSmaPattern === 'RAILWAY_DOWN' ? 'F-RTP'
                              : d.htfSmaPattern === 'BRAIDED' ? 'ZIG ZAG'
-                             : '—';
+                             : 'NONE';
             var htfPatternScore = d.htfSmaPattern === 'RAILWAY_UP' ? 1 : d.htfSmaPattern === 'RAILWAY_DOWN' ? -1 : 0;
 
             // Position-arrow helper for HTF SMAs (display-only, no score)
@@ -1200,7 +1242,7 @@
             var htfCrossLabel = crossLabel(d.htfSma20, d.htfSma50, d.htfSma200);
             var htfCrossScore = crossScore(d.htfSma20, d.htfSma50, d.htfSma200);
 
-            var gridStyle = 'display:grid; grid-template-columns:42px 130px 1.5fr 1.5fr 1.5fr 130px 130px; gap:48px; align-items:center; font-size:0.72rem; padding:5px 8px;';
+            var gridStyle = 'display:grid; grid-template-columns:42px 120px 1.2fr 1.2fr 1.2fr 90px 90px 110px; gap:32px; align-items:center; font-size:0.72rem; padding:5px 8px;';
             var headStyle = gridStyle + ' color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; font-size:0.6rem; font-weight:700; border-bottom:1px solid var(--border);';
 
             // Trend cell uses the same scan-trend CSS as stock cards (W/D badges).
@@ -1233,21 +1275,23 @@
                 +   '<span style="text-align:right;">SMA 20</span>'
                 +   '<span style="text-align:right;">SMA 50</span>'
                 +   '<span style="text-align:right;">SMA 200</span>'
+                +   '<span style="text-align:right;">Price</span>'
+                +   '<span style="text-align:right;">Align</span>'
                 +   '<span style="text-align:right;">Pattern</span>'
-                +   '<span style="text-align:right;">Cross</span>'
                 + '</div>'
                 + '<div style="' + gridStyle + '">'
                 +   '<span style="font-weight:700;color:var(--text-muted);">D <span style="font-weight:400;opacity:0.7;">(5 min)</span></span>'
                 +   '<span>' + trendCell(d.dailyTrend, d.dailyScore, true) + '</span>'
-                +   '<span style="text-align:right;">' + smaCell(d.sma > 0 ? arrow(d.ltp, d.sma) + d.sma.toFixed(1) : '—', d.smaPositionScore) + '</span>'
-                +   '<span style="text-align:right;">' + smaCell(d.sma50 > 0 ? arrow(d.ltp, d.sma50) + d.sma50.toFixed(1) : '—', e50Pos) + '</span>'
-                +   '<span style="text-align:right;">' + smaCell(d.sma200 > 0 ? arrow(d.ltp, d.sma200) + d.sma200.toFixed(1) : '—', d.sma200PositionScore) + '</span>'
+                +   '<span style="text-align:right;">' + smaCellNoScore(d.sma > 0 ? arrow(d.ltp, d.sma) + d.sma.toFixed(1) : '—', posScore(d.ltp, d.sma)) + '</span>'
+                +   '<span style="text-align:right;">' + smaCellNoScore(d.sma50 > 0 ? arrow(d.ltp, d.sma50) + d.sma50.toFixed(1) : '—', e50Pos) + '</span>'
+                +   '<span style="text-align:right;">' + smaCellNoScore(d.sma200 > 0 ? arrow(d.ltp, d.sma200) + d.sma200.toFixed(1) : '—', posScore(d.ltp, d.sma200)) + '</span>'
+                +   '<span style="text-align:right;">' + patCell(d.smaPositionScore === 2 ? 'ABOVE' : d.smaPositionScore === 1 ? 'above 2/3' : d.smaPositionScore === -1 ? 'below 2/3' : d.smaPositionScore === -2 ? 'BELOW' : 'mixed', d.smaPositionScore) + '</span>'
+                +   '<span style="text-align:right;">' + patCell(d.smaCrossoverScore === 2 ? '20>50>200' : d.smaCrossoverScore === 1 ? 'partial bull' : d.smaCrossoverScore === -1 ? 'partial bear' : d.smaCrossoverScore === -2 ? '20<50<200' : 'mixed', d.smaCrossoverScore) + '</span>'
                 +   '<span style="text-align:right;">' + patCell(
                         d.smaPattern === 'RAILWAY_UP' ? 'R-RTP'
                         : d.smaPattern === 'RAILWAY_DOWN' ? 'F-RTP'
-                        : d.smaPattern === 'BRAIDED' ? 'ZIG ZAG' : '—',
+                        : d.smaPattern === 'BRAIDED' ? 'ZIG ZAG' : 'NONE',
                         d.smaPatternScore) + '</span>'
-                +   '<span style="text-align:right;">' + patCell(crossLabel(d.sma, d.sma50, d.sma200), d.smaCrossoverScore) + '</span>'
                 + '</div>'
                 + '<div style="' + gridStyle + '">'
                 +   '<span style="font-weight:700;color:var(--text-muted);">W <span style="font-weight:400;opacity:0.7;">(60 min)</span></span>'
@@ -1255,13 +1299,11 @@
                 +   '<span style="text-align:right;">' + smaCellNoScore(htfE20Disp, htfE20Pos) + '</span>'
                 +   '<span style="text-align:right;">' + smaCellNoScore(htfE50Disp, htfE50Pos) + '</span>'
                 +   '<span style="text-align:right;">' + smaCellNoScore(htfE200Disp, htfE200Pos) + '</span>'
-                +   '<span style="text-align:right;"><span style="color:' + clr(htfPatternScore) + ';font-weight:600;">' + htfPatternVal + '</span></span>'
-                +   '<span style="text-align:right;"><span style="color:' + clr(htfCrossScore) + ';font-weight:600;">' + htfCrossLabel + '</span></span>'
+                +   '<span style="text-align:right;">' + patCell(d.htfPriceScore === 2 ? 'ABOVE 20+50' : d.htfPriceScore === -2 ? 'BELOW 20+50' : 'mixed', d.htfPriceScore || 0) + '</span>'
+                +   '<span style="text-align:right;">' + patCell(d.htfAlignmentScore === 2 ? '20>50' : d.htfAlignmentScore === -2 ? '20<50' : 'mixed', d.htfAlignmentScore || 0) + '</span>'
+                +   '<span style="text-align:right;">' + patCell(htfPatternVal, d.htfPatternScore || 0) + '</span>'
                 + '</div>';
-            // Apply card color class based on state
-            var stateLower = (d.state || 'neutral').toLowerCase().replace('_', '-');
-            document.getElementById('niftyCard').className = 'nifty-card nifty-card-' + stateLower;
-        }).catch(function() {});
+        }).catch(function(err) { console.warn('refreshNiftyCard failed:', err); });
     }
 
     // ── Init ────────────────────────────────────────

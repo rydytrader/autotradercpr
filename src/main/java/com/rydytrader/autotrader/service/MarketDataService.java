@@ -958,27 +958,30 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             watchlistWithIndex.add("NSE:NIFTY50-INDEX");
         }
 
-        // Prune indicator caches to the current watchlist so stale entries from previous days
-        // don't grow the on-disk cache file or leak into dashboard counts.
-        atrService.pruneTo(watchlistWithIndex);
-        smaService.pruneTo(watchlistWithIndex);
-        htfSmaService.pruneTo(watchlistWithIndex);
-        candleAggregator.pruneTo(watchlistWithIndex);
+        // Prune indicator caches to the FULL NIFTY 50 universe (not the filtered watchlist).
+        // Filter changes can re-include stocks; we want their indicator data preserved. Pruning
+        // only removes data for non-NIFTY-50 stocks (e.g., legacy positions that closed).
+        List<String> seedUniverse = buildSeedUniverse(watchlistWithIndex);
+        atrService.pruneTo(seedUniverse);
+        smaService.pruneTo(seedUniverse);
+        htfSmaService.pruneTo(seedUniverse);
+        candleAggregator.pruneTo(seedUniverse);
 
-        // Always seed ATR / SMA / weekly / HTF SMA for every watchlist symbol. Both
-        // AtrService.fetchAtrForSymbols and fetchHtfSmaForSymbols route cached symbols
-        // through their 1-day catch-up branch and fresh symbols through the full seed, so
-        // the cost scales with what's actually new. Guarantees every NIFTY 50 stock has
-        // indicators ready before the scanner goes live — no "missing ATR" edge cases.
-        log.info("[MarketData] Seeding ATR + 5-min SMA for all {} symbols", watchlistWithIndex.size());
-        atrService.fetchAtrForSymbols(watchlistWithIndex);
-        log.info("[MarketData] Seeding weekly trends for all {} symbols", watchlistWithIndex.size());
-        weeklyCprService.fetchWeeklyTrends(watchlistWithIndex);
-        log.info("[MarketData] Seeding HTF (60-min) SMAs for all {} symbols", watchlistWithIndex.size());
-        atrService.fetchHtfSmaForSymbols(watchlistWithIndex, htfSmaService);
+        // Pre-seed ATR / SMA / weekly / HTF SMA for ALL NIFTY 50 stocks (not just the filtered
+        // watchlist subset). Filter changes mid-day can bring previously-excluded stocks into
+        // the watchlist; pre-seeding ensures their indicators are ready instantly. Cost is one
+        // historical fetch per stock at startup vs. lazy seeding on every rebuild.
+        log.info("[MarketData] Seeding ATR + 5-min SMA for {} symbols (full NIFTY 50)", seedUniverse.size());
+        atrService.fetchAtrForSymbols(seedUniverse);
+        log.info("[MarketData] Seeding weekly trends for {} symbols", seedUniverse.size());
+        weeklyCprService.fetchWeeklyTrends(seedUniverse);
+        log.info("[MarketData] Seeding HTF (60-min) SMAs for {} symbols", seedUniverse.size());
+        atrService.fetchHtfSmaForSymbols(seedUniverse, htfSmaService);
 
-        // Subscribe watchlist + NIFTY to WebSocket (after API calls give WS time to connect)
-        subscribeWatchlist(watchlistWithIndex);
+        // Subscribe ALL 50 NIFTY stocks + indices to WebSocket — needed for live LTP on the
+        // full universe so NIFTY breadth (advancers vs decliners) reflects the entire 50,
+        // not just the filtered watchlist subset. Bandwidth cost negligible (~50 symbols).
+        subscribeWatchlist(seedUniverse);
 
         // Verify all symbols subscribed — retry if some failed
         int subscribed = 0;
@@ -1013,13 +1016,14 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         int total = watchlist.size();
         int htfMins = riskSettings.getHigherTimeframe();
 
-        eventService.log("[SUCCESS] All prerequisites loaded — system ready for trading"
+        eventService.log("[INFO] All prerequisites loaded"
             + " (watchlist=" + total
             + ", narrow=" + narrowCount + "/inside=" + insideCount
             + ", CPR=" + cprCount + ", ATR=" + atrLoaded
             + ", weekly-trend=" + weeklyCount
             + ", 5m SMA 20/50/200=" + e20 + "/" + e50 + "/" + e200
             + ", " + htfMins + "m SMA 20/50/200=" + he20 + "/" + he50 + "/" + he200 + ")");
+        eventService.log("[SUCCESS] System ready for trading");
 
         telegramService.notifyBotReady(total, narrowCount, insideCount,
             atrLoaded, weeklyCount, cprCount,
@@ -1050,6 +1054,20 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             }
         }
         return new ArrayList<>(symbols);
+    }
+
+    /** Build the indicator-seeding universe: ALL NIFTY 50 stocks + NIFTY index + everything in
+     *  the filtered watchlist (which is a subset already, but include for safety). Used at
+     *  startup and on watchlist rebuild so filter changes don't strand stocks without ATR/SMA. */
+    private List<String> buildSeedUniverse(List<String> filteredWatchlistWithIndex) {
+        Set<String> universe = new LinkedHashSet<>(filteredWatchlistWithIndex);
+        for (var cpr : bhavcopyService.getAllCprLevels().values()) {
+            if (bhavcopyService.isIndex(cpr.getSymbol())) continue;
+            if (cpr.isInNifty50()) {
+                universe.add("NSE:" + cpr.getSymbol() + "-EQ");
+            }
+        }
+        return new ArrayList<>(universe);
     }
 
     public boolean passesWatchlistFilters(com.rydytrader.autotrader.dto.CprLevels cpr) {
@@ -1179,6 +1197,10 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             // picks the correct 9:15-9:20 bar from history), and re-seeds SMA from the raw list.
             // Also re-writes firstCandleClose, dayOpen, OR via seedCandles' direct put calls.
             atrService.fetchAtrForSymbols(withIndex);
+
+            // Re-check 2D-HV/LV confirmation now that firstCandleClose is the corrected
+            // history-derived value. Logs any state flips (confirmed↔rejected) per symbol.
+            breakoutScanner.recheckCprDayRelationAfterRefresh();
 
             lastOpeningRefreshDate = today;
             eventService.log("[SUCCESS] Opening refresh complete — firstCandleClose, dayOpen, OR, SMA, ATR all re-seeded from authoritative Fyers history");
@@ -1326,13 +1348,13 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         breakoutScanner.setWatchlistSymbols(watchlist);
         List<String> withIndex = new ArrayList<>(watchlist);
         if (!withIndex.contains("NSE:NIFTY50-INDEX")) withIndex.add("NSE:NIFTY50-INDEX");
-        subscribeWatchlist(withIndex);
-        // Prune stale indicator caches for symbols that dropped out of the rebuilt watchlist.
-        atrService.pruneTo(withIndex);
-        smaService.pruneTo(withIndex);
-        htfSmaService.pruneTo(withIndex);
-        candleAggregator.pruneTo(withIndex);
-        log.info("[MarketData] Watchlist rebuilt: {} symbols", watchlist.size());
+        // Subscribe newly-filtered stocks to WS (subscribeWatchlist is idempotent for already-
+        // subscribed symbols). No re-seeding of indicators needed — startup pre-seeded all 50
+        // NIFTY stocks and we never prune them. Filter changes are just a WS-subscription +
+        // scanner-target update.
+        // Subscribe full universe (all 50 NIFTY) so breadth and non-filtered LTPs stay live.
+        subscribeWatchlist(buildSeedUniverse(withIndex));
+        log.info("[MarketData] Watchlist rebuilt: {} symbols (filters updated)", watchlist.size());
         eventService.log("[INFO] Watchlist rebuilt: " + watchlist.size() + " symbols (filters updated)");
         return watchlist.size();
     }
