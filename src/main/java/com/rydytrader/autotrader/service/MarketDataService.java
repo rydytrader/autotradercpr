@@ -1092,8 +1092,16 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
      * Subscribe watchlist symbols to the HSM WebSocket.
      */
     private void subscribeWatchlist(List<String> fyersSymbols) {
+        // Wait up to 5s for the WS to come up. Startup orders the seeding/catch-up before
+        // wsClient.connect(), and now that catch-up is fast (no-op when cache is current),
+        // subscribeWatchlist can land here a few hundred ms before the WS handshake completes.
+        // Brief poll keeps the call site clean and avoids the noisy 3s outer retry.
+        long deadline = System.currentTimeMillis() + 5000L;
+        while ((wsClient == null || !wsClient.isOpen()) && System.currentTimeMillis() < deadline) {
+            try { Thread.sleep(100); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); break; }
+        }
         if (wsClient == null || !wsClient.isOpen()) {
-            log.warn("[MarketData] WebSocket not connected, cannot subscribe watchlist");
+            log.warn("[MarketData] WebSocket not connected after 5s wait, cannot subscribe watchlist");
             return;
         }
 
@@ -1180,6 +1188,15 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
 
             java.time.LocalTime now = java.time.ZonedDateTime.now(ist).toLocalTime();
             if (now.isBefore(refreshTime)) return;
+
+            // Skip when started after market close — there are no live-tick-built first candles
+            // to correct. Saves the redundant Fyers re-fetch (was ~4s on watchlist subset) when
+            // the bot is restarted in the evening for the next trading day.
+            int nowMin = now.getHour() * 60 + now.getMinute();
+            if (nowMin > MarketHolidayService.MARKET_CLOSE_MINUTE) {
+                lastOpeningRefreshDate = today;  // mark done so we don't keep re-checking
+                return;
+            }
 
             // Fire the refresh
             List<String> watchlist = buildWatchlist();

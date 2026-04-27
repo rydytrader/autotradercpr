@@ -162,8 +162,23 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
      */
     private void doCatchUpFetch(List<String> symbols, String authHeader, int timeframe) {
         if (symbols.isEmpty()) return;
+        // Skip the REST call when the cached lastCandleEpoch already covers the latest possible
+        // completed bar given current time + market hours. After 15:30, no new bars form today.
+        long latestPossibleStart = latestPossibleBarStart(timeframe);
+        List<String> needsFetch = new ArrayList<>();
+        for (String s : symbols) {
+            long lastEpoch = smaService != null ? smaService.getLastCandleEpoch(s) : 0;
+            if (lastEpoch < latestPossibleStart) needsFetch.add(s);
+        }
+        int upToDate = symbols.size() - needsFetch.size();
+        if (needsFetch.isEmpty()) {
+            log.info("[CACHE] ATR/SMA catch-up: all {} symbols already current — no fetch needed", upToDate);
+            eventService.log("[INFO] ATR/SMA restored from cache; all " + upToDate + " symbols already current");
+            return;
+        }
+        log.info("[CACHE] ATR/SMA catch-up: {} symbols already current, fetching for {} stale", upToDate, needsFetch.size());
         int candleCount = 0;
-        for (String symbol : symbols) {
+        for (String symbol : needsFetch) {
             try {
                 List<CandleAggregator.CandleBar> bars = fetchHistoricalCandles(symbol, timeframe, authHeader, 5);
                 candleAggregator.seedCandles(symbol, bars);
@@ -179,9 +194,9 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
                 log.warn("[CACHE] Catch-up failed for {}: {}", symbol, e.getMessage());
             }
         }
-        log.info("[CACHE] Catch-up applied {} bars across {} symbols", candleCount, symbols.size());
+        log.info("[CACHE] Catch-up applied {} bars across {} symbols", candleCount, needsFetch.size());
         eventService.log("[INFO] ATR/SMA restored from cache; catch-up " + candleCount
-            + " bars across " + symbols.size() + " symbols");
+            + " bars across " + needsFetch.size() + " symbols");
     }
 
     /**
@@ -324,6 +339,32 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
     }
 
     /**
+     * Compute the start epoch of the latest possible COMPLETED bar at this moment, bounded
+     * by today's market hours. Used by both catch-up paths to decide whether a REST fetch
+     * could possibly yield anything new.
+     *
+     * Session-aligned: bar buckets start at MARKET_OPEN (9:15) and step by timeframeMinutes.
+     * Returns -1 if no complete bar exists yet today (pre-9:15 + bucketSec, or pre-market
+     * with no good fallback to previous trading day).
+     */
+    private long latestPossibleBarStart(int timeframeMinutes) {
+        long bucketSec = timeframeMinutes * 60L;
+        java.time.LocalDate today = java.time.LocalDate.now(IST);
+        long marketOpenSec  = today.atTime(MarketHolidayService.MARKET_OPEN_MINUTE / 60,
+                                           MarketHolidayService.MARKET_OPEN_MINUTE % 60).atZone(IST).toEpochSecond();
+        long marketCloseSec = today.atTime(MarketHolidayService.MARKET_CLOSE_MINUTE / 60,
+                                           MarketHolidayService.MARKET_CLOSE_MINUTE % 60).atZone(IST).toEpochSecond();
+        long nowSec = java.time.Instant.now().getEpochSecond();
+
+        // Effective time = clamp(now, marketOpen, marketClose) — past close means no new bars
+        long effectiveSec = Math.min(Math.max(nowSec, marketOpenSec), marketCloseSec);
+        long elapsed = effectiveSec - marketOpenSec;
+        long completedBuckets = elapsed / bucketSec;
+        if (completedBuckets <= 0) return -1L;
+        return marketOpenSec + (completedBuckets - 1) * bucketSec;
+    }
+
+    /**
      * HTF catch-up fetch: pull 5 days of HTF bars and replay any newer than the cached
      * lastCandleEpoch through HtfSmaService.onCandleClose. 5-day window ensures recovery
      * across weekends / long gaps even if the htfAggregator's completedCandles is empty.
@@ -331,8 +372,24 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
     private void doHtfCatchUpFetch(List<String> symbols, HtfSmaService htfSmaService, String authHeader,
                                    int baseTimeframe, int htfTimeframe, boolean nativeFetch) {
         if (symbols.isEmpty()) return;
+        // Skip the REST call when the cached lastCandleEpoch already covers the latest possible
+        // completed bar given current time + market hours. After 15:30, no new bars form today
+        // so anyone with the last session bar is current — no need to ping Fyers. Mid-session,
+        // anyone with the most recently closed bar is current.
+        long latestPossibleStart = latestPossibleBarStart(htfTimeframe);
+        List<String> needsFetch = new ArrayList<>();
+        for (String s : symbols) {
+            long lastEpoch = htfSmaService.getLastCandleEpoch(s);
+            if (lastEpoch < latestPossibleStart) needsFetch.add(s);
+        }
+        int upToDate = symbols.size() - needsFetch.size();
+        if (needsFetch.isEmpty()) {
+            log.info("[CACHE] HTF catch-up: all {} symbols already current — no fetch needed", upToDate);
+            return;
+        }
+        log.info("[CACHE] HTF catch-up: {} symbols already current, fetching for {} stale", upToDate, needsFetch.size());
         int candleCount = 0;
-        for (String symbol : symbols) {
+        for (String symbol : needsFetch) {
             try {
                 List<CandleAggregator.CandleBar> base = fetchHistoricalCandles(symbol, baseTimeframe, authHeader, 5);
                 List<CandleAggregator.CandleBar> htf  = nativeFetch ? base : aggregateToHtf(base, htfTimeframe);
@@ -347,7 +404,7 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
                 log.warn("[CACHE] HTF catch-up failed for {}: {}", symbol, e.getMessage());
             }
         }
-        log.info("[CACHE] HTF catch-up applied {} bars across {} symbols", candleCount, symbols.size());
+        log.info("[CACHE] HTF catch-up applied {} bars across {} symbols", candleCount, needsFetch.size());
     }
 
     /**
