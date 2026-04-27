@@ -138,9 +138,15 @@ public class ScannerController {
         card.put("shortName", levels.getSymbol());
         card.put("cprType", cprType);
 
+        // LTP / change% chain: live tick (CandleAggregator → MarketDataService) →
+        // bhavcopy prev-close fallback. MarketDataService.currentTicks survives across
+        // the bot lifetime and is what the scrolling ticker uses, so cards now match the
+        // ticker after market close instead of going to 0.00%.
         double ltp = candleAggregator.getLtp(fyersSymbol);
-        if (ltp <= 0) ltp = levels.getClose(); // fallback to previous close (weekends/pre-market)
+        if (ltp <= 0) ltp = marketDataService.getLtp(fyersSymbol);
+        if (ltp <= 0) ltp = levels.getClose();
         double changePct = candleAggregator.getChangePct(fyersSymbol);
+        if (changePct == 0) changePct = marketDataService.getChangePercent(fyersSymbol);
         card.put("ltp", Math.round(ltp * 100.0) / 100.0);
         card.put("changePercent", Math.round(changePct * 100.0) / 100.0);
 
@@ -220,8 +226,21 @@ public class ScannerController {
         card.put("avgVolume", Math.round(candleAggregator.getAvgVolume(fyersSymbol, riskSettings.getVolumeLookback())));
         card.put("weeklyTrend", weeklyCprService.getWeeklyTrend(fyersSymbol));
         card.put("dailyTrend", weeklyCprService.getDailyTrend(fyersSymbol));
-        card.put("cprDayRelation",
-            levels.getCprDayRelationValidated(candleAggregator.getFirstCandleClose(fyersSymbol)));
+        // Always send the raw 2D relation (HV/LV/NC) so the badge stays visible.
+        // The validation result is sent as a separate status: CONFIRMED (open print honored
+        // the bias), REJECTED (open invalidated it), or PENDING (no first-candle-close yet).
+        // Card JS uses status to render ✓/✗ next to the badge. SignalProcessor still calls
+        // getCprDayRelationValidated() for the LPT-downgrade gate — unchanged.
+        String relRaw = levels.getCprDayRelation();
+        card.put("cprDayRelation", relRaw);
+        if (relRaw != null && ("HV".equals(relRaw) || "LV".equals(relRaw))) {
+            double fcc = candleAggregator.getFirstCandleClose(fyersSymbol);
+            String status;
+            if (fcc <= 0)                                                 status = "PENDING";
+            else if (levels.getCprDayRelationValidated(fcc) != null)       status = "CONFIRMED";
+            else                                                           status = "REJECTED";
+            card.put("cprDayRelationStatus", status);
+        }
         card.put("probability", computeCardProbability(fyersSymbol, ltp));
 
         // Opening Range status

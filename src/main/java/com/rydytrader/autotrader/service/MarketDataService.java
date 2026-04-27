@@ -360,6 +360,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         if (raw.high > 0) tick.setHigh(raw.high);
         if (raw.low > 0) tick.setLow(raw.low);
         tick.recalcChange();
+        tick.setLastTickDate(java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).toString());
         tick.setHasPosition(PositionManager.getAllSymbols().contains(raw.fyersSymbol));
 
         // Chandelier Exit trailing SL is handled via onCandleClose callback (not per-tick)
@@ -1466,6 +1467,22 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     public double getLtp(String fyersSymbol) {
         TickData tick = currentTicks.get(fyersSymbol);
         return (tick != null && tick.getLtp() > 0) ? tick.getLtp() : 0;
+    }
+
+    /** Get today's change% for a symbol — same source as the scrolling ticker (currentTicks).
+     *  Survives across the whole bot lifetime; used as a fallback when CandleAggregator's
+     *  per-tick latestChangePct is empty (e.g. after market close + restart).
+     *
+     *  Stale-day guard: if the last tick on this symbol was from a previous trading day
+     *  (bot kept running overnight, no new-day tick has landed yet), return 0 so the card
+     *  doesn't show yesterday's session move on a fresh trading day. The cached changePercent
+     *  self-corrects on the first new-day tick. */
+    public double getChangePercent(String fyersSymbol) {
+        TickData tick = currentTicks.get(fyersSymbol);
+        if (tick == null) return 0;
+        String today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).toString();
+        if (tick.getLastTickDate() != null && !today.equals(tick.getLastTickDate())) return 0;
+        return tick.getChangePercent();
     }
 
     /** Get today's day open for a symbol. */

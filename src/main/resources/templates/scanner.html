@@ -262,7 +262,7 @@
         .nifty-metric-label { color: var(--text-muted); }
         .nifty-metric-value { font-weight: 600; }
 
-        /* State color classes — entire card background and border */
+        /* State color classes — entire card background and border, 7 tiers */
         .nifty-card-neutral {
             background: var(--bg-card);
             border: 1px solid var(--border);
@@ -272,9 +272,14 @@
             border: 1px solid rgba(52,211,153,0.40);
             color: var(--accent-green);
         }
-        .nifty-card-strong-bullish {
-            background: linear-gradient(135deg, rgba(52,211,153,0.20), rgba(52,211,153,0.08));
-            border: 1px solid rgba(52,211,153,0.60);
+        .nifty-card-very-bullish {
+            background: linear-gradient(135deg, rgba(52,211,153,0.18), rgba(52,211,153,0.07));
+            border: 1px solid rgba(52,211,153,0.55);
+            color: var(--accent-green);
+        }
+        .nifty-card-extreme-bullish {
+            background: linear-gradient(135deg, rgba(52,211,153,0.28), rgba(52,211,153,0.12));
+            border: 1px solid rgba(52,211,153,0.75);
             color: var(--accent-green);
         }
         .nifty-card-bearish {
@@ -282,26 +287,37 @@
             border: 1px solid rgba(248,113,113,0.40);
             color: var(--accent-red);
         }
-        .nifty-card-strong-bearish {
-            background: linear-gradient(135deg, rgba(248,113,113,0.20), rgba(248,113,113,0.08));
-            border: 1px solid rgba(248,113,113,0.60);
+        .nifty-card-very-bearish {
+            background: linear-gradient(135deg, rgba(248,113,113,0.18), rgba(248,113,113,0.07));
+            border: 1px solid rgba(248,113,113,0.55);
+            color: var(--accent-red);
+        }
+        .nifty-card-extreme-bearish {
+            background: linear-gradient(135deg, rgba(248,113,113,0.28), rgba(248,113,113,0.12));
+            border: 1px solid rgba(248,113,113,0.75);
             color: var(--accent-red);
         }
         /* Keep the right-side metrics readable in colored cards */
         .nifty-card-bullish .nifty-metric-value,
-        .nifty-card-strong-bullish .nifty-metric-value,
+        .nifty-card-very-bullish .nifty-metric-value,
+        .nifty-card-extreme-bullish .nifty-metric-value,
         .nifty-card-bearish .nifty-metric-value,
-        .nifty-card-strong-bearish .nifty-metric-value {
+        .nifty-card-very-bearish .nifty-metric-value,
+        .nifty-card-extreme-bearish .nifty-metric-value {
             color: var(--text-primary);
         }
         .nifty-card-bullish .nifty-name,
-        .nifty-card-strong-bullish .nifty-name,
+        .nifty-card-very-bullish .nifty-name,
+        .nifty-card-extreme-bullish .nifty-name,
         .nifty-card-bearish .nifty-name,
-        .nifty-card-strong-bearish .nifty-name,
+        .nifty-card-very-bearish .nifty-name,
+        .nifty-card-extreme-bearish .nifty-name,
         .nifty-card-bullish .nifty-ltp,
-        .nifty-card-strong-bullish .nifty-ltp,
+        .nifty-card-very-bullish .nifty-ltp,
+        .nifty-card-extreme-bullish .nifty-ltp,
         .nifty-card-bearish .nifty-ltp,
-        .nifty-card-strong-bearish .nifty-ltp { color: var(--text-primary); }
+        .nifty-card-very-bearish .nifty-ltp,
+        .nifty-card-extreme-bearish .nifty-ltp { color: var(--text-primary); }
 
         /* ── FILTER BAR ───────────────────────────── */
         .filter-bar {
@@ -856,7 +872,17 @@
                 var ttl = rel === 'HV' ? 'Today\'s CPR completely above yesterday\'s — bullish bias'
                        : rel === 'LV' ? 'Today\'s CPR completely below yesterday\'s — bearish bias'
                        : 'Today\'s CPR overlaps yesterday\'s — no clear directional bias';
-                return '<span class="scan-badge ' + cls + '" title="' + ttl + '">2D-' + rel + '</span>';
+                // Open-print validation marker: ✓ confirmed (open honored bias), ✗ rejected,
+                // nothing while pending or for NC. Marker color reflects status, not relation.
+                var mark = '', markTtl = '';
+                if (d.cprDayRelationStatus === 'CONFIRMED') {
+                    mark = ' <span style="color:var(--accent-green);font-weight:700;">&#10003;</span>';
+                    markTtl = ' [open print confirmed]';
+                } else if (d.cprDayRelationStatus === 'REJECTED') {
+                    mark = ' <span style="color:var(--accent-red);font-weight:700;">&#10007;</span>';
+                    markTtl = ' [open print rejected — bias not honored]';
+                }
+                return '<span class="scan-badge ' + cls + '" title="' + ttl + markTtl + '">2D-' + rel + mark + '</span>';
             })()
             + ((d.cprTypes || [d.cprType]).filter(function(t){ return ['NARROW','INSIDE'].includes(t); }).map(function(t) {
                 var nrt = d.narrowRangeType;
@@ -1160,9 +1186,10 @@
                 var adv = +d.breadthAdvancers || 0;
                 var dec = +d.breadthDecliners || 0;
                 var tot = +d.breadthTotal;
-                var advPct = Math.round(adv / tot * 100);
-                brEl.innerHTML = 'BREADTH: <span style="color:var(--accent-green);">▲ ' + adv + '</span> / <span style="color:var(--accent-red);">▼ ' + dec + '</span> ('
-                    + '<span style="color:' + (advPct >= 50 ? 'var(--accent-green)' : 'var(--accent-red)') + ';">' + advPct + '%</span> green)';
+                var add = +d.addScore || 0;
+                var addColor = add >= 28 ? 'var(--accent-green)' : add >= 22 ? 'var(--text-muted)' : 'var(--accent-red)';
+                brEl.innerHTML = 'Advance Declines <span style="color:' + addColor + ';font-weight:700;">' + add + '</span> '
+                    + '(<span style="color:var(--accent-green);">▲ ' + adv + '</span> / <span style="color:var(--accent-red);">▼ ' + dec + '</span>)';
             }
             var chgEl = document.getElementById('niftyChange');
             if (chgEl && d.changePct !== undefined && d.changePct !== null) {

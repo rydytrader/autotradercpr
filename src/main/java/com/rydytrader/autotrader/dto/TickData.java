@@ -11,6 +11,7 @@ public class TickData {
     private double high;
     private double low;
     private boolean hasPosition;
+    private String lastTickDate; // IST trading date (yyyy-MM-dd) of most recent tick — drives stale-day check
 
     public TickData() {}
 
@@ -46,6 +47,8 @@ public class TickData {
     public void setLow(double v)             { this.low = v; }
     public boolean isHasPosition()           { return hasPosition; }
     public void setHasPosition(boolean v)    { this.hasPosition = v; }
+    public String getLastTickDate()          { return lastTickDate; }
+    public void setLastTickDate(String v)    { this.lastTickDate = v; }
 
     /** Recalculate change fields from current ltp and prevClose. */
     public void recalcChange() {

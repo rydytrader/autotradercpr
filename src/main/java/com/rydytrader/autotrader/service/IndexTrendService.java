@@ -184,29 +184,41 @@ public class IndexTrendService {
         trend.setBreadthDecliners(decliners);
         trend.setBreadthTotal(breadthCount);
 
-        // ── Trend state (breadth-driven) ──────────────────────────────────────
-        // State is decided by direct count: any majority of advancers vs decliners flips the
-        // card. Strong tier kicks in at ≥70% of the polled universe leaning one way.
-        //   STRONG_BULLISH  advancers ≥ 70% of breadthCount
-        //   BULLISH         advancers >  decliners
-        //   STRONG_BEARISH  decliners ≥ 70% of breadthCount
-        //   BEARISH         decliners >  advancers
-        //   NEUTRAL         tie (incl. breadthCount = 0 edge after composite fallback)
+        // ── Trend state (ADD-driven, 7 tiers) ─────────────────────────────────
+        // ADD = advancers count, scaled to a virtual 50-stock universe so the bands
+        // hold even when not all 50 NIFTY 50 stocks have ticked yet:
+        //   addScore = round(advancers × 50 / breadthCount)
+        //
+        //   45-50  EXTREME_BULLISH  (≥90% of NIFTY 50 advancing — very strong rally)
+        //   38-44  VERY_BULLISH     (76-88% advancing)
+        //   28-37  BULLISH          (56-74% advancing — clear majority)
+        //   22-27  NEUTRAL          (44-54% — split market)
+        //   13-21  BEARISH          (26-42% advancing)
+        //    6-12  VERY_BEARISH     (12-24% advancing)
+        //    0-5   EXTREME_BEARISH  (≤10% — broad-based selloff)
+        // Change% chain: candleAggregator (per-tick) → MarketDataService (currentTicks, retained
+        // across full bot lifetime — same source as the scrolling ticker). Stops the NIFTY card
+        // showing 0.00% after market close just because the per-tick map hasn't fired today.
         double changePct = candleAggregator != null ? candleAggregator.getChangePct(symbol) : 0;
+        if (changePct == 0) changePct = marketDataService.getChangePercent(symbol);
         trend.setChangePct(Math.round(changePct * 100.0) / 100.0);
+        int addScore = 0;
         String state;
         if (breadthCount > 0) {
-            double strongCutoff = 0.70 * breadthCount;
-            if      (advancers >= strongCutoff && advancers > decliners) state = "STRONG_BULLISH";
-            else if (decliners >= strongCutoff && decliners > advancers) state = "STRONG_BEARISH";
-            else if (advancers > decliners)                              state = "BULLISH";
-            else if (decliners > advancers)                              state = "BEARISH";
-            else                                                         state = "NEUTRAL";
+            addScore = (int) Math.round(advancers * 50.0 / breadthCount);
+            if      (addScore >= 45) state = "EXTREME_BULLISH";
+            else if (addScore >= 38) state = "VERY_BULLISH";
+            else if (addScore >= 28) state = "BULLISH";
+            else if (addScore >= 22) state = "NEUTRAL";
+            else if (addScore >= 13) state = "BEARISH";
+            else if (addScore >=  6) state = "VERY_BEARISH";
+            else                     state = "EXTREME_BEARISH";
         } else {
             // No live LTPs from any NIFTY 50 stock yet (pre-market or WS not subscribed).
             // Fall back to the legacy composite score so the card shows something.
             state = classify(total);
         }
+        trend.setAddScore(addScore);
         trend.setState(state);
 
         // State is now price-driven via HSM tick's change%. LTP > 0 is enough.
@@ -285,18 +297,20 @@ public class IndexTrendService {
     }
 
     /**
-     * Returns true if the given trade direction (buy or sell) is OPPOSED to the
-     * current NIFTY trend. Used by BreakoutScanner to decide HPT → LPT downgrade.
-     * Only returns true for BEARISH/STRONG_BEARISH (vs buy) or BULLISH/STRONG_BULLISH (vs sell).
+     * Returns true if the given trade direction is OPPOSED to the current NIFTY trend.
+     * Buys are opposed on any of the 3 bearish tiers; sells are opposed on any of the
+     * 3 bullish tiers. NEUTRAL never opposes. Used by BreakoutScanner to decide
+     * HPT → LPT downgrade (or hard-skip when indexAlignmentHardSkip is on).
      */
     public boolean isOpposedToNifty(boolean isBuy) {
         IndexTrend trend = getNiftyTrend();
         if (!trend.isDataAvailable()) return false;
         String state = trend.getState();
+        if (state == null) return false;
         if (isBuy) {
-            return "BEARISH".equals(state) || "STRONG_BEARISH".equals(state);
+            return state.endsWith("BEARISH"); // BEARISH, VERY_BEARISH, EXTREME_BEARISH
         } else {
-            return "BULLISH".equals(state) || "STRONG_BULLISH".equals(state);
+            return state.endsWith("BULLISH"); // BULLISH, VERY_BULLISH, EXTREME_BULLISH
         }
     }
 }

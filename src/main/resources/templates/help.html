@@ -158,7 +158,7 @@
                 <tr><td>Same but inside OR with daily not aligned</td><td>HPT → LPT, half size</td></tr>
                 <tr><td>Stock moved &gt; session-move-limit% from open already</td><td>Half size on top of any other reduction</td></tr>
                 <tr><td>Mean-reversion (gap-fade) on EV day</td><td>Always LPT, half size</td></tr>
-                <tr><td>NIFTY in STRONG_BEARISH and you're trying to buy</td><td>Skipped if hard-skip on, else LPT</td></tr>
+                <tr><td>NIFTY in any bearish tier (BEARISH/VERY_BEARISH/EXTREME_BEARISH) and you're trying to buy</td><td>Skipped if hard-skip on, else LPT</td></tr>
             </table>
             <p>Net: the bot trades smaller when the conditions are mixed — multiple half-multipliers compound. On a clean day, full HPT size; on a chop day, fractional positions or none.</p>
         </div>
@@ -501,27 +501,22 @@
     </div>
 
     <div class="section-card help-section fade-in" style="margin-bottom:16px;">
-        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-blue);"></div> NIFTY trend (breadth-driven)</div></div>
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-blue);"></div> NIFTY trend (ADD-driven, 7 tiers)</div></div>
         <div class="help-body">
-            <p>The NIFTY trend state is now <b>breadth-driven</b> — based on the percentage of NIFTY 50 stocks trading green vs red, not NIFTY's own price. A narrow rally (a few mega-caps lifting NIFTY while most stocks are red) produces a NEUTRAL or BEARISH state instead of misleading BULLISH.</p>
-
-            <h4>Breadth computation</h4>
-            <p>For each NIFTY 50 stock with valid data:</p>
-            <ul>
-                <li><b>Green (advancer)</b> — current LTP &gt; previous day close</li>
-                <li><b>Red (decliner)</b> — current LTP &lt; previous day close</li>
-                <li><b>Flat</b> — LTP equals prev close</li>
-            </ul>
-            <p>Counts roll up every 5 seconds (NIFTY card refresh) over the universe. All 50 stocks are subscribed to live ticks at startup so all 50 contribute to the count.</p>
+            <p>The NIFTY trend state is driven by the <b>ADD score</b> — the count of NIFTY 50 stocks advancing (LTP &gt; prev close), scaled to a virtual 50-stock universe so the bands hold even when not all 50 have ticked yet:</p>
+            <pre style="background:var(--bg-card); padding:8px; border-radius:6px; font-family:var(--font-mono); font-size:0.85rem;">addScore = round(advancers × 50 / breadthCount)</pre>
+            <p>A narrow rally (a few mega-caps lifting NIFTY while most stocks are red) lands in a bearish tier instead of misleading bullish from price alone.</p>
 
             <h4>State classification</h4>
             <table>
-                <tr><th>State</th><th>Threshold</th></tr>
-                <tr><td><span class="badge-example bg">STRONG_BULLISH</span></td><td><b>advancers ≥ 70% of breadth</b> (broad-based rally)</td></tr>
-                <tr><td><span class="badge-example bg">BULLISH</span></td><td><b>advancers &gt; decliners</b> (any majority advancing)</td></tr>
-                <tr><td><span class="badge-example by">NEUTRAL</span></td><td>Tie — equal advancers and decliners</td></tr>
-                <tr><td><span class="badge-example br">BEARISH</span></td><td><b>decliners &gt; advancers</b> (any majority declining)</td></tr>
-                <tr><td><span class="badge-example br">STRONG_BEARISH</span></td><td><b>decliners ≥ 70% of breadth</b> (broad-based selloff)</td></tr>
+                <tr><th>State</th><th>ADD band</th><th>Meaning</th></tr>
+                <tr><td><span class="badge-example bg">EXTREME_BULLISH</span></td><td><b>45-50</b></td><td>≥90% of NIFTY 50 advancing — very strong rally</td></tr>
+                <tr><td><span class="badge-example bg">VERY_BULLISH</span></td><td><b>38-44</b></td><td>76-88% advancing</td></tr>
+                <tr><td><span class="badge-example bg">BULLISH</span></td><td><b>28-37</b></td><td>56-74% — clear majority</td></tr>
+                <tr><td><span class="badge-example by">NEUTRAL</span></td><td><b>22-27</b></td><td>44-54% — split market</td></tr>
+                <tr><td><span class="badge-example br">BEARISH</span></td><td><b>13-21</b></td><td>26-42% advancing</td></tr>
+                <tr><td><span class="badge-example br">VERY_BEARISH</span></td><td><b>6-12</b></td><td>12-24% advancing</td></tr>
+                <tr><td><span class="badge-example br">EXTREME_BEARISH</span></td><td><b>0-5</b></td><td>≤10% — broad-based selloff</td></tr>
             </table>
 
             <h4>What's still on the card</h4>
@@ -529,7 +524,7 @@
             <ul>
                 <li><b>LTP</b> + <b>change %</b> (live tick-by-tick) — informational, no longer drives state</li>
                 <li><b>BREADTH</b> — `▲ N / ▼ N (N% green)` — drives state</li>
-                <li><b>State chip</b> (STRONG_BULLISH / BULLISH / NEUTRAL / BEARISH / STRONG_BEARISH) — the breadth-derived classification</li>
+                <li><b>State chip</b> (EXTREME_BULLISH / VERY_BULLISH / BULLISH / NEUTRAL / BEARISH / VERY_BEARISH / EXTREME_BEARISH) — the ADD-derived 7-tier classification</li>
                 <li><b>Composite metrics breakdown</b> (Weekly CPR, Daily CPR, 5m & HTF SMA Price/Align/Pattern) — still computed per timeframe and shown for reference, but doesn't decide state</li>
             </ul>
 
@@ -539,7 +534,7 @@
                 <li><b>Hard skip</b> mode (<code>indexAlignmentHardSkip</code> on): trades opposed to the NIFTY trend are rejected.</li>
                 <li><b>Soft mode</b> (default): opposed trades are <b>downgraded HPT → LPT</b>. No qty factor — the LPT downgrade does the size reduction.</li>
             </ul>
-            <p>"Opposed" means buy when NIFTY is BEARISH/STRONG_BEARISH (most stocks red), or sell when NIFTY is BULLISH/STRONG_BULLISH (most stocks green). NEUTRAL state never triggers an alignment block.</p>
+            <p>"Opposed" means buy when NIFTY is in any bearish tier (BEARISH/VERY_BEARISH/EXTREME_BEARISH), or sell when NIFTY is in any bullish tier (BULLISH/VERY_BULLISH/EXTREME_BULLISH). NEUTRAL state never triggers an alignment block.</p>
 
             <p><b>Why breadth instead of price:</b> a few heavyweight stocks (RELIANCE, HDFCBANK, INFOSYS) can move NIFTY by 0.5%+ even when 35 of 50 stocks are red. Trading aligned with NIFTY's price would have you buying into a market most stocks are selling. Breadth captures actual market participation — if 75% of stocks are up, the bullish setup is broad-based and stock buys are more likely to work.</p>
         </div>

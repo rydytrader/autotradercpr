@@ -676,9 +676,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             com.rydytrader.autotrader.dto.IndexTrend nifty = indexTrendService.getNiftyTrend();
             if (!nifty.isDataAvailable()) return NiftyAlignStatus.OK;
             String state = nifty.getState();
-            boolean opposed = isBuy
-                ? ("BEARISH".equals(state) || "STRONG_BEARISH".equals(state))
-                : ("BULLISH".equals(state) || "STRONG_BULLISH".equals(state));
+            // Buy is opposed on any of the 3 bearish ADD tiers (BEARISH/VERY_BEARISH/EXTREME_BEARISH);
+            // sell is opposed on any of the 3 bullish tiers. NEUTRAL never opposes.
+            boolean opposed = state != null && (isBuy ? state.endsWith("BEARISH") : state.endsWith("BULLISH"));
             if (!opposed) return NiftyAlignStatus.OK;
 
             if (riskSettings.isIndexAlignmentHardSkip()) {

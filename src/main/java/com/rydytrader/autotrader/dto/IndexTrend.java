@@ -36,12 +36,13 @@ public class IndexTrend {
     private boolean openEqualsHigh; // true if day open ≈ day high (within 0.05%)
     private boolean openEqualsLow;  // true if day open ≈ day low (within 0.05%)
     private int totalScore;         // sum of all components
-    private String state;           // STRONG_BULLISH, BULLISH, NEUTRAL, BEARISH, STRONG_BEARISH
+    private String state;           // EXTREME_BULLISH, VERY_BULLISH, BULLISH, NEUTRAL, BEARISH, VERY_BEARISH, EXTREME_BEARISH
     private boolean dataAvailable;  // false if any input is missing (e.g. before market open)
     private double changePct;       // % change of LTP vs prev day close (drives state classification)
     private int breadthAdvancers;   // # NIFTY 50 stocks trading above prev close
     private int breadthDecliners;   // # below prev close
     private int breadthTotal;       // # with valid LTP + prev close (advancers + decliners + flat)
+    private int addScore;           // ADD = advancers count scaled to 50-stock universe — drives 7-tier state
 
     public IndexTrend() {}
 
@@ -113,4 +114,6 @@ public class IndexTrend {
     public void setBreadthDecliners(int v) { this.breadthDecliners = v; }
     public int getBreadthTotal() { return breadthTotal; }
     public void setBreadthTotal(int v) { this.breadthTotal = v; }
+    public int getAddScore() { return addScore; }
+    public void setAddScore(int v) { this.addScore = v; }
 }
