@@ -70,8 +70,12 @@ public class IndexTrendService {
         trend.setSymbol(symbol);
         trend.setDisplayName(displayName);
 
-        // Live LTP from WS ticks, fall back to previous-day bhavcopy close on holidays / weekends
-        double ltp = marketDataService.getLtp(symbol);
+        // Live LTP from WS ticks (stale-day guarded — returns 0 if last tick is from a previous
+        // trading date). On pre-market new-day or holiday, no live tick exists yet; for internal
+        // SMA-position scoring we fall back to bhavcopy prev close so the score has a reference,
+        // but the displayed LTP on the card is the live value (0 when nothing today).
+        double liveTickLtp = marketDataService.getLtp(symbol);
+        double ltp = liveTickLtp;
         if (ltp <= 0) {
             String ticker = symbol;
             int colon = ticker.indexOf(':');
@@ -87,7 +91,7 @@ public class IndexTrendService {
         String weekly = weeklyCprService.getWeeklyTrend(symbol);
         String daily = weeklyCprService.getDailyTrend(symbol);
 
-        trend.setLtp(ltp);
+        trend.setLtp(liveTickLtp);
         trend.setSma(sma);
         trend.setSma50(sma50);
         trend.setSma200(sma200);
@@ -204,7 +208,12 @@ public class IndexTrendService {
         trend.setChangePct(Math.round(changePct * 100.0) / 100.0);
         int addScore = 0;
         String state;
-        if (breadthCount > 0) {
+        // No live LTPs yet (pre-market, WS not subscribed, or new-day stale-guard zeroed
+        // everything) OR all stocks exactly flat → NEUTRAL. Anything else would be misleading;
+        // ADD = 0 is "no data," not "extreme bearish." Bearish requires actual decliners.
+        if (breadthCount == 0 || (advancers == 0 && decliners == 0)) {
+            state = "NEUTRAL";
+        } else {
             addScore = (int) Math.round(advancers * 50.0 / breadthCount);
             if      (addScore >= 45) state = "EXTREME_BULLISH";
             else if (addScore >= 38) state = "VERY_BULLISH";
@@ -213,10 +222,6 @@ public class IndexTrendService {
             else if (addScore >= 13) state = "BEARISH";
             else if (addScore >=  6) state = "VERY_BEARISH";
             else                     state = "EXTREME_BEARISH";
-        } else {
-            // No live LTPs from any NIFTY 50 stock yet (pre-market or WS not subscribed).
-            // Fall back to the legacy composite score so the card shows something.
-            state = classify(total);
         }
         trend.setAddScore(addScore);
         trend.setState(state);

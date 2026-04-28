@@ -214,7 +214,7 @@ public class SignalProcessor {
         }
 
         // ── 4c3. Compute base quantity (uses SL for risk-based sizing) ─────────
-        int baseQty = quantityService.computeBaseQty(symbol, close, sl);
+        int baseQty = quantityService.computeBaseQty(symbol, close, sl, setup);
 
         // ── 4d. Small candle filter ─────────────────────────────────────────────
         // Collapsed "meaningful size" check: reject only when BOTH moveFromLevel and

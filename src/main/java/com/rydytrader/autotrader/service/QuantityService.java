@@ -28,7 +28,12 @@ public class QuantityService {
 
     /** Backward-compat overload: returns fixed qty or minimum 2 when SL is unknown. */
     public int computeBaseQty(String fyersSymbol, double closePrice) {
-        return computeBaseQty(fyersSymbol, closePrice, 0);
+        return computeBaseQty(fyersSymbol, closePrice, 0, "");
+    }
+
+    /** Backward-compat overload without setup. */
+    public int computeBaseQty(String fyersSymbol, double closePrice, double slPrice) {
+        return computeBaseQty(fyersSymbol, closePrice, slPrice, "");
     }
 
     /**
@@ -37,10 +42,13 @@ public class QuantityService {
      * @param fyersSymbol Fyers symbol (e.g. "NSE:HDFCBANK-EQ")
      * @param closePrice  current close/entry price
      * @param slPrice     stop loss price (0 if unknown — falls back to min qty in risk mode)
+     * @param setup       breakout setup (e.g. "BUY_ABOVE_R1") — included in the log line for traceability
      * @return even quantity (minimum 2)
      */
-    public int computeBaseQty(String fyersSymbol, double closePrice, double slPrice) {
+    public int computeBaseQty(String fyersSymbol, double closePrice, double slPrice, String setup) {
         int fixedQty = riskSettings.getFixedQuantity();
+
+        String tag = fyersSymbol + (setup != null && !setup.isEmpty() ? " " + setup : "");
 
         if (fixedQty != -1) {
             return roundToEven(fixedQty);
@@ -50,7 +58,7 @@ public class QuantityService {
         double riskPerTrade = riskSettings.getRiskPerTrade();
         double riskPerShare = Math.abs(closePrice - slPrice);
         if (riskPerTrade <= 0 || riskPerShare <= 0) {
-            eventService.log("[WARN] riskPerTrade=" + fmt(riskPerTrade) + " riskPerShare=" + fmt(riskPerShare) + ", using minimum qty 2");
+            eventService.log("[WARN] " + tag + " riskPerTrade=" + fmt(riskPerTrade) + " riskPerShare=" + fmt(riskPerShare) + ", using minimum qty 2");
             return 2;
         }
 
@@ -69,7 +77,7 @@ public class QuantityService {
         int qty = roundDownToEven(finalRawQty);
 
         String capNote = (riskQty > capitalCapQty) ? " [CAPITAL-CAPPED from " + riskQty + "]" : "";
-        eventService.log("[INFO] Qty computed: risk=" + fmt(riskPerTrade)
+        eventService.log("[INFO] " + tag + " Qty computed: risk=" + fmt(riskPerTrade)
             + " / riskPerShare=" + fmt(riskPerShare)
             + " = " + riskQty
             + " | capitalCap=(" + fmt(capital) + "×" + leverage + ")/2/" + fmt(closePrice) + "=" + capitalCapQty

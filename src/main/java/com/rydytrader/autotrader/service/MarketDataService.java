@@ -657,10 +657,16 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                 Map<String, Map<String, Object>> wlPayload = new LinkedHashMap<>();
                 for (String sym : wl) {
                     double ltp = candleAggregator.getLtp(sym);
+                    if (ltp <= 0) ltp = getLtp(sym);  // fallback to TickData (same source as scrolling ticker)
                     if (ltp <= 0) continue;
                     Map<String, Object> d = new LinkedHashMap<>();
                     d.put("ltp", Math.round(ltp * 100.0) / 100.0);
-                    d.put("changePercent", Math.round(candleAggregator.getChangePct(sym) * 100.0) / 100.0);
+                    // change% fallback: candleAggregator's latestChangePct map skips ticks with
+                    // changePercent==0 so it can be empty for quiet symbols. TickData.changePercent
+                    // is recomputed from prev close on every tick (recalcChange) — authoritative.
+                    double chPct = candleAggregator.getChangePct(sym);
+                    if (chPct == 0) chPct = getChangePercent(sym);
+                    d.put("changePercent", Math.round(chPct * 100.0) / 100.0);
                     d.put("candleVolume", candleAggregator.getCurrentCandleVolume(sym));
                     CandleAggregator.CandleBar cb = candleAggregator.getCurrentCandle(sym);
                     if (cb != null) {
@@ -792,13 +798,22 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     private List<Map<String, Object>> buildPayload() {
         List<Map<String, Object>> indices = new ArrayList<>();
         List<Map<String, Object>> stocks = new ArrayList<>();
+        // Stale-day guard: if a tick's lastTickDate is from a previous IST trading date,
+        // zero out lp / ch / chp so the scrolling ticker (and any consumer that overwrites
+        // card values from this stream, like the NIFTY card SSE handler) doesn't render
+        // yesterday's values on a new trading day before the first new-day tick lands.
+        String today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).toString();
         for (TickData tick : currentTicks.values()) {
             Map<String, Object> item = new LinkedHashMap<>();
             String shortName = tick.getShortName() != null ? tick.getShortName() : tick.getFyersSymbol();
             item.put("symbol", shortName);
-            item.put("lp", Math.round(tick.getLtp() * 100.0) / 100.0);
-            item.put("ch", Math.round(tick.getChange() * 100.0) / 100.0);
-            item.put("chp", Math.round(tick.getChangePercent() * 100.0) / 100.0);
+            boolean staleDay = tick.getLastTickDate() != null && !today.equals(tick.getLastTickDate());
+            double lp  = staleDay ? 0 : tick.getLtp();
+            double ch  = staleDay ? 0 : tick.getChange();
+            double chp = staleDay ? 0 : tick.getChangePercent();
+            item.put("lp", Math.round(lp * 100.0) / 100.0);
+            item.put("ch", Math.round(ch * 100.0) / 100.0);
+            item.put("chp", Math.round(chp * 100.0) / 100.0);
             item.put("position", tick.isHasPosition());
             // Indices first, then stocks
             if (tick.getFyersSymbol() != null && tick.getFyersSymbol().endsWith("-INDEX")) {
@@ -1214,7 +1229,10 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             // re-computes ATR, re-seeds candleAggregator.completedCandles (today-only filter
             // picks the correct 9:15-9:20 bar from history), and re-seeds SMA from the raw list.
             // Also re-writes firstCandleClose, dayOpen, OR via seedCandles' direct put calls.
-            atrService.fetchAtrForSymbols(withIndex);
+            // forceFetch=true bypasses the catch-up's "skip when current" optimization — the
+            // whole point of the opening refresh is to overwrite live-tick-built bars even if
+            // the cache claims they're up-to-date.
+            atrService.fetchAtrForSymbols(withIndex, true);
 
             // Re-check 2D-HV/LV confirmation now that firstCandleClose is the corrected
             // history-derived value. Logs any state flips (confirmed↔rejected) per symbol.
@@ -1483,7 +1501,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     /** Get live LTP for a symbol. Returns 0 if no tick data available. */
     public double getLtp(String fyersSymbol) {
         TickData tick = currentTicks.get(fyersSymbol);
-        return (tick != null && tick.getLtp() > 0) ? tick.getLtp() : 0;
+        if (tick == null || tick.getLtp() <= 0) return 0;
+        // Stale-day guard: yesterday's cached LTP is not today's "last value"
+        String today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).toString();
+        if (tick.getLastTickDate() != null && !today.equals(tick.getLastTickDate())) return 0;
+        return tick.getLtp();
     }
 
     /** Get today's change% for a symbol — same source as the scrolling ticker (currentTicks).

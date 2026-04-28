@@ -68,6 +68,16 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
      * route through a 1-day catch-up fetch instead of the 14-day full seed.
      */
     public void fetchAtrForSymbols(List<String> fyersSymbols) {
+        fetchAtrForSymbols(fyersSymbols, false);
+    }
+
+    /**
+     * @param forceFetch When true, the catch-up path's "skip when cache is current" optimization
+     *                   is bypassed and every symbol re-fetches + re-seeds. Used by the 9:25
+     *                   opening refresh which must overwrite live-tick-built morning bars even
+     *                   when the cache claims to already have them.
+     */
+    public void fetchAtrForSymbols(List<String> fyersSymbols, boolean forceFetch) {
         String accessToken = tokenStore.getAccessToken();
         if (accessToken == null || accessToken.isEmpty()) {
             log.warn("[AtrService] No access token, cannot fetch ATR");
@@ -83,9 +93,9 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
                 if (smaService.hasCachedSymbol(s) && atrBySymbol.getOrDefault(s, 0.0) > 0) catchUp.add(s);
                 else fullFetch.add(s);
             }
-            log.info("[CACHE] ATR/SMA: catch-up for {} cached symbols, full fetch for {} new symbols",
-                catchUp.size(), fullFetch.size());
-            doCatchUpFetch(catchUp, authHeader, timeframe);
+            log.info("[CACHE] ATR/SMA: catch-up for {} cached symbols, full fetch for {} new symbols{}",
+                catchUp.size(), fullFetch.size(), forceFetch ? " [FORCE]" : "");
+            doCatchUpFetch(catchUp, authHeader, timeframe, forceFetch);
             if (!fullFetch.isEmpty()) doFullFetch(fullFetch, authHeader, timeframe);
             return;
         }
@@ -160,15 +170,21 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
      * The epochSec ≤ lastCandleEpoch guard prevents re-applying bars already baked into the
      * SMA cache. Does NOT call seedFromCandles — that resets SMA and wipes the cache.
      */
-    private void doCatchUpFetch(List<String> symbols, String authHeader, int timeframe) {
+    private void doCatchUpFetch(List<String> symbols, String authHeader, int timeframe, boolean forceFetch) {
         if (symbols.isEmpty()) return;
         // Skip the REST call when the cached lastCandleEpoch already covers the latest possible
-        // completed bar given current time + market hours. After 15:30, no new bars form today.
-        long latestPossibleStart = latestPossibleBarStart(timeframe);
-        List<String> needsFetch = new ArrayList<>();
-        for (String s : symbols) {
-            long lastEpoch = smaService != null ? smaService.getLastCandleEpoch(s) : 0;
-            if (lastEpoch < latestPossibleStart) needsFetch.add(s);
+        // completed bar — except when forceFetch is set (9:25 opening refresh path), which must
+        // overwrite even-when-current to correct corrupt live-tick-built morning bars.
+        List<String> needsFetch;
+        if (forceFetch) {
+            needsFetch = new ArrayList<>(symbols);
+        } else {
+            long latestPossibleStart = latestPossibleBarStart(timeframe);
+            needsFetch = new ArrayList<>();
+            for (String s : symbols) {
+                long lastEpoch = smaService != null ? smaService.getLastCandleEpoch(s) : 0;
+                if (lastEpoch < latestPossibleStart) needsFetch.add(s);
+            }
         }
         int upToDate = symbols.size() - needsFetch.size();
         if (needsFetch.isEmpty()) {
@@ -176,7 +192,8 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
             eventService.log("[INFO] ATR/SMA restored from cache; all " + upToDate + " symbols already current");
             return;
         }
-        log.info("[CACHE] ATR/SMA catch-up: {} symbols already current, fetching for {} stale", upToDate, needsFetch.size());
+        log.info("[CACHE] ATR/SMA catch-up: {} symbols already current, fetching for {} {}",
+            upToDate, needsFetch.size(), forceFetch ? "(FORCE: re-seeding all)" : "stale");
         int candleCount = 0;
         for (String symbol : needsFetch) {
             try {

@@ -70,6 +70,11 @@ public class CandleAggregator {
     // Latest change % per symbol
     private final ConcurrentHashMap<String, Double> latestChangePct = new ConcurrentHashMap<>();
 
+    // IST trading date of most recent tick per symbol — drives the stale-day guard on
+    // getLtp / getChangePct so yesterday's cached values don't bleed into a new trading day
+    // before the first new-day tick arrives.
+    private final ConcurrentHashMap<String, String> lastTickDate = new ConcurrentHashMap<>();
+
     private final RiskSettingsStore riskSettings;
 
     // Candle close listeners
@@ -178,6 +183,7 @@ public class CandleAggregator {
         latestAtp.clear();
         latestLtp.clear();
         latestChangePct.clear();
+        lastTickDate.clear();
         log.info("[CandleAggregator] Stopped");
     }
 
@@ -205,6 +211,7 @@ public class CandleAggregator {
         // but display values (LTP + ATP) should stay current.
         latestLtp.put(symbol, ltp);
         if (raw.atp > 0) latestAtp.put(symbol, raw.atp);
+        lastTickDate.put(symbol, java.time.LocalDate.now(IST).toString());
 
         // Skip candle aggregation / OR tracking outside NSE session (pre-market + post-close).
         // The session runs 09:15:00 to 15:29:59 inclusive — a tick at 15:30:00 belongs to the
@@ -556,6 +563,7 @@ public class CandleAggregator {
         latestAtp.keySet().retainAll(keep);
         latestLtp.keySet().retainAll(keep);
         latestChangePct.keySet().retainAll(keep);
+        lastTickDate.keySet().retainAll(keep);
         lastCumulativeVol.keySet().retainAll(keep);
         currentCandles.keySet().retainAll(keep);
         completedCandles.keySet().retainAll(keep);
@@ -780,15 +788,25 @@ public class CandleAggregator {
     }
 
     public double getAtp(String symbol) {
+        if (isStaleDay(symbol)) return 0.0;
         return latestAtp.getOrDefault(symbol, 0.0);
     }
 
     public double getLtp(String symbol) {
+        if (isStaleDay(symbol)) return 0.0;
         return latestLtp.getOrDefault(symbol, 0.0);
     }
 
     public double getChangePct(String symbol) {
+        if (isStaleDay(symbol)) return 0.0;
         return latestChangePct.getOrDefault(symbol, 0.0);
+    }
+
+    /** True when the cached tick for this symbol is from a previous IST trading date. */
+    private boolean isStaleDay(String symbol) {
+        String stamp = lastTickDate.get(symbol);
+        if (stamp == null) return false;
+        return !java.time.LocalDate.now(IST).toString().equals(stamp);
     }
 
     /**
@@ -958,6 +976,7 @@ public class CandleAggregator {
         latestAtp.clear();
         latestLtp.clear();
         latestChangePct.clear();
+        lastTickDate.clear();
         lastCumulativeVol.clear();
         lastCycleProcessed = 0;
         lastCycleTime = "";
@@ -987,6 +1006,7 @@ public class CandleAggregator {
         latestAtp.clear();
         latestLtp.clear();
         latestChangePct.clear();
+        lastTickDate.clear();
         lastCumulativeVol.clear();
     }
 

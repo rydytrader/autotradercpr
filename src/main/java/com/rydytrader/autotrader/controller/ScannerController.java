@@ -138,16 +138,20 @@ public class ScannerController {
         card.put("shortName", levels.getSymbol());
         card.put("cprType", cprType);
 
-        // LTP / change% chain: live tick (CandleAggregator → MarketDataService) →
-        // bhavcopy prev-close fallback. MarketDataService.currentTicks survives across
-        // the bot lifetime and is what the scrolling ticker uses, so cards now match the
-        // ticker after market close instead of going to 0.00%.
-        double ltp = candleAggregator.getLtp(fyersSymbol);
-        if (ltp <= 0) ltp = marketDataService.getLtp(fyersSymbol);
-        if (ltp <= 0) ltp = levels.getClose();
+        // LTP separated into two values:
+        //   liveTickLtp — the LTP from today's WS ticks (0 if none, e.g. pre-market new day).
+        //                 Both source maps already apply a stale-day guard so yesterday's
+        //                 cached LTP doesn't bleed in.
+        //   ltp         — internal value used downstream (probability, OR status). Falls back
+        //                 to bhavcopy prev close so HPT/LPT logic has a non-zero reference.
+        // The card displays liveTickLtp directly: pre-market on a new day → "0.00", once
+        // ticks start arriving → today's actual price.
+        double liveTickLtp = candleAggregator.getLtp(fyersSymbol);
+        if (liveTickLtp <= 0) liveTickLtp = marketDataService.getLtp(fyersSymbol);
+        double ltp = liveTickLtp > 0 ? liveTickLtp : levels.getClose();
         double changePct = candleAggregator.getChangePct(fyersSymbol);
         if (changePct == 0) changePct = marketDataService.getChangePercent(fyersSymbol);
-        card.put("ltp", Math.round(ltp * 100.0) / 100.0);
+        card.put("ltp", Math.round(liveTickLtp * 100.0) / 100.0);
         card.put("changePercent", Math.round(changePct * 100.0) / 100.0);
 
         // Current candle OHLC
