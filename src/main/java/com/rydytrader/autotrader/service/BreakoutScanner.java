@@ -1410,9 +1410,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         String s = responseText.toLowerCase();
 
         // Composite LPT-disabled rejection — drill into the parenthesised inner reason.
+        // Order matters: more specific first (HTF SMA order > HTF SMA not aligned > HTF hurdle).
         if (s.contains("probability downgraded to lpt") || s.contains("→ lpt")) {
             if (s.contains("htf hurdle"))              return "HTF_HURDLE";
-            if (s.contains("htf sma order"))           return "HTF_SMA_ORDER";
+            if (s.contains("htf sma order"))           return "HTF_SMA_ALIGNMENT";
+            if (s.contains("htf sma not aligned"))     return "HTF_SMA_TREND";
             if (s.contains("nifty opposed"))           return "NIFTY_OPPOSED";
             if (s.contains("2d cpr"))                  return "2D_CPR";
             if (s.contains("inside-or"))               return "INSIDE_OR";

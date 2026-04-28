@@ -513,6 +513,18 @@ public class ScannerController {
                 fn = "SMA_20_DISTANCE";
                 r.put("filterName", fn);
             }
+            // HTF filters renamed to mirror the 5-min naming (SMA_TREND / SMA_ALIGNMENT):
+            //   HTF_SMA_ORDER → HTF_SMA_ALIGNMENT (stack ordering)
+            //   HTF_ALIGNMENT → HTF_SMA_ALIGNMENT (intermediate rename)
+            //   HTF_PRICE     → HTF_SMA_TREND     (LTP vs HTF SMAs)
+            if ("HTF_SMA_ORDER".equals(fn) || "HTF_ALIGNMENT".equals(fn)) {
+                fn = "HTF_SMA_ALIGNMENT";
+                r.put("filterName", fn);
+            }
+            if ("HTF_PRICE".equals(fn)) {
+                fn = "HTF_SMA_TREND";
+                r.put("filterName", fn);
+            }
             if (!fn.isEmpty()) byFilter.merge(fn, 1, Integer::sum);
         }
         // Sort byFilter descending by count (LinkedHashMap rebuild).
@@ -541,9 +553,12 @@ public class ScannerController {
         String s = detail.toLowerCase();
 
         // Composite: "Probability downgraded to LPT (X) — LPT trades disabled". Drill into X.
+        // Order matters: HTF SMA order is checked before HTF SMA not aligned because the order
+        // string contains "not aligned" too — specificity ordering avoids false matches.
         if (s.contains("probability downgraded to lpt") || s.contains("→ lpt")) {
             if (s.contains("htf hurdle"))              return "HTF_HURDLE";
-            if (s.contains("htf sma order"))           return "HTF_SMA_ORDER";
+            if (s.contains("htf sma order"))           return "HTF_SMA_ALIGNMENT";
+            if (s.contains("htf sma not aligned"))     return "HTF_SMA_TREND";
             if (s.contains("nifty opposed"))           return "NIFTY_OPPOSED";
             if (s.contains("2d cpr"))                  return "2D_CPR";
             if (s.contains("inside-or"))               return "INSIDE_OR";
