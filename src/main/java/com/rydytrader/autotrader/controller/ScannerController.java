@@ -445,6 +445,177 @@ public class ScannerController {
         return "HPT"; // all pre-checkable gates passed
     }
 
+    /**
+     * EOD Analysis: post-mortem audit of every breakout signal today.
+     * Returns the full signalHistory (TRADED + every FILTERED rejection with structured filterName)
+     * either for one symbol or aggregated across all symbols, plus summary counts and a top-blockers map.
+     */
+    @GetMapping("/api/signal-trail")
+    public Map<String, Object> getEodAnalysis(@RequestParam(required = false) String symbol) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("asOfDate", java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata"))
+            .toLocalDate().toString());
+
+        Map<String, List<BreakoutScanner.SignalInfo>> all = breakoutScanner.getSignalHistoryAll();
+
+        // Distinct list of symbols with at least one signal today (for the dropdown).
+        List<String> symbols = new ArrayList<>(all.keySet());
+        Collections.sort(symbols);
+        result.put("symbols", symbols);
+        result.put("selected", symbol != null && !symbol.isEmpty() ? symbol : "ALL");
+
+        // Build the row list — either filtered to one symbol or flattened across all.
+        List<Map<String, Object>> rows = new ArrayList<>();
+        if (symbol != null && !symbol.isEmpty() && !"ALL".equalsIgnoreCase(symbol)) {
+            for (BreakoutScanner.SignalInfo si : all.getOrDefault(symbol, Collections.emptyList())) {
+                rows.add(buildEodRow(symbol, si));
+            }
+        } else {
+            for (var entry : all.entrySet()) {
+                String sym = entry.getKey();
+                for (BreakoutScanner.SignalInfo si : entry.getValue()) {
+                    rows.add(buildEodRow(sym, si));
+                }
+            }
+        }
+        // Sort by time ascending (HH:mm:ss strings sort lexicographically same as chronologically).
+        rows.sort((a, b) -> String.valueOf(a.get("time")).compareTo(String.valueOf(b.get("time"))));
+        // Stamp serial numbers post-sort.
+        for (int i = 0; i < rows.size(); i++) rows.get(i).put("srNo", i + 1);
+        result.put("rows", rows);
+
+        // Summary: counts by status + map of filterName → count for the top-blockers chips.
+        int traded = 0, filtered = 0, errors = 0;
+        Map<String, Integer> byFilter = new LinkedHashMap<>();
+        for (Map<String, Object> r : rows) {
+            String st = String.valueOf(r.get("status"));
+            if ("TRADED".equals(st)) traded++;
+            else if ("FILTERED".equals(st)) filtered++;
+            else if ("ERROR".equals(st)) errors++;
+            String fn = String.valueOf(r.getOrDefault("filterName", ""));
+            String detail = String.valueOf(r.getOrDefault("detail", ""));
+            // Persisted entries from before the filterName capture work shipped have an empty
+            // filterName but still status=FILTERED. Backfill from the detail text so they show
+            // a real category (TRADING_HOURS / RISK_LIMIT / etc.) instead of UNKNOWN.
+            if (fn.isEmpty() && ("FILTERED".equals(st) || "ERROR".equals(st))) {
+                fn = classifyByDetail(detail);
+                r.put("filterName", fn);
+            }
+            // SMA_TREND was overloaded before the split — entries whose detail says "not aligned"
+            // were really alignment failures. Reclassify by the source-of-truth detail text.
+            if ("SMA_TREND".equals(fn) && detail != null && detail.toLowerCase().contains("not aligned")) {
+                fn = "SMA_ALIGNMENT";
+                r.put("filterName", fn);
+            }
+            // LEVEL_COUNT was renamed to SMA_20_DISTANCE — reclassify legacy entries so they
+            // show under the new chip name without needing a state-file rewrite.
+            if ("LEVEL_COUNT".equals(fn)) {
+                fn = "SMA_20_DISTANCE";
+                r.put("filterName", fn);
+            }
+            if (!fn.isEmpty()) byFilter.merge(fn, 1, Integer::sum);
+        }
+        // Sort byFilter descending by count (LinkedHashMap rebuild).
+        Map<String, Integer> byFilterSorted = byFilter.entrySet().stream()
+            .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+            .collect(java.util.stream.Collectors.toMap(
+                Map.Entry::getKey, Map.Entry::getValue,
+                (a, b) -> a, LinkedHashMap::new));
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("totalSignals", rows.size());
+        summary.put("traded", traded);
+        summary.put("filtered", filtered);
+        summary.put("errors", errors);
+        summary.put("byFilter", byFilterSorted);
+        result.put("summary", summary);
+        return result;
+    }
+
+    /** Backfill heuristic for legacy SignalHistory entries without a filterName field, plus
+     *  classifier for the full set of SignalProcessor rejection reasons. Order matters —
+     *  composite "downgraded to LPT (X)" patterns inspect the inner X to surface the actual
+     *  filter that triggered the downgrade chain. */
+    private String classifyByDetail(String detail) {
+        if (detail == null || detail.isEmpty()) return "UNKNOWN";
+        String s = detail.toLowerCase();
+
+        // Composite: "Probability downgraded to LPT (X) — LPT trades disabled". Drill into X.
+        if (s.contains("probability downgraded to lpt") || s.contains("→ lpt")) {
+            if (s.contains("htf hurdle"))              return "HTF_HURDLE";
+            if (s.contains("htf sma order"))           return "HTF_SMA_ORDER";
+            if (s.contains("nifty opposed"))           return "NIFTY_OPPOSED";
+            if (s.contains("2d cpr"))                  return "2D_CPR";
+            if (s.contains("inside-or"))               return "INSIDE_OR";
+            if (s.contains("ev reversal"))             return "EV_REVERSAL";
+            return "LPT_DISABLED";
+        }
+
+        // Order-layer (TradingController) gates
+        if (s.contains("outside trading hours"))                  return "TRADING_HOURS";
+        if (s.contains("risk exposure") || s.contains("daily loss")) return "RISK_LIMIT";
+        if (s.contains("kill switch"))                             return "KILL_SWITCH";
+
+        // Pre-trade structural gates
+        if (s.contains("extended-level"))                          return "EXTENDED_LEVEL";
+        if (s.contains("is inside") && s.contains("zone"))         return "DH_DL_ZONE";
+        if (s.contains("invalid atr"))                             return "INVALID_ATR";
+        if (s.contains("wrong side of entry"))                     return "WRONG_SIDE_TARGET";
+
+        // Candle-shape & volume rejections
+        if (s.contains("small candle"))                            return "SMALL_CANDLE";
+        if (s.contains("opposite wick pressure"))                  return "OPPOSITE_WICK";
+        if (s.contains("large candle body"))                       return "LARGE_CANDLE";
+        if (s.contains("low volume"))                              return "LOW_VOLUME";
+
+        // EV / OR gates
+        if (s.contains("mean-reversion setup only allowed"))       return "MEAN_REVERSION_DAY";
+        if (s.contains("opposes or break"))                        return "EV_OR_OPPOSED";
+        if (s.contains("inside or range"))                         return "EV_OR_INSIDE";
+        if (s.contains("ev ") && s.contains("detected"))           return "EV_GAP_OPPOSED";
+
+        // Risk / reward / profit gates
+        if (s.contains("risk/reward") || s.contains("risk\\reward")) return "RISK_REWARD";
+        if (s.contains("absolute profit too low"))                 return "MIN_PROFIT";
+
+        // Order placement
+        if (s.contains("order failed") || s.contains("rejected by broker")) return "ORDER_FAILED";
+
+        // Probability disable
+        if (s.contains("hpt not enabled") || s.contains("lpt not enabled") || s.contains("mpt not enabled"))
+            return "PROB_DISABLED";
+
+        // BreakoutScanner-side filters
+        if (s.contains("zone(s) away"))                            return "SMA_20_DISTANCE";
+        if (s.contains("too far from broken zone"))                return "LEVEL_PROXIMITY";
+        // Distinguish price-vs-SMA (SMA_TREND) from stack-ordering (SMA_ALIGNMENT) within
+        // the unified "blocked by 5-min SMA trend" log line.
+        if (s.contains("blocked by 5-min sma trend") && s.contains("not aligned")) return "SMA_ALIGNMENT";
+        if (s.contains("not aligned (need 20"))                    return "SMA_ALIGNMENT";
+        if (s.contains("blocked by 5-min sma trend"))              return "SMA_TREND";
+        if (s.contains("close not above all smas") || s.contains("close not below all smas")) return "SMA_TREND";
+        if (s.contains("below atp") || s.contains("above atp"))    return "ATP";
+        if (s.contains("nifty") && s.contains("opposes"))          return "NIFTY_OPPOSED";
+
+        // Pre-scanner gates that early-return before any setup detection
+        if (s.contains("position") && s.contains("already open"))  return "POSITION_OPEN";
+        if (s.contains("already traded today") || s.contains("level already traded")) return "LEVEL_BROKEN";
+
+        return "UNKNOWN";
+    }
+
+    private Map<String, Object> buildEodRow(String symbol, BreakoutScanner.SignalInfo si) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("symbol", symbol);
+        row.put("time", si.time != null ? si.time : "");
+        row.put("setup", si.setup != null ? si.setup : "");
+        row.put("status", si.status != null ? si.status : "");
+        row.put("filterName", si.filterName != null ? si.filterName : "");
+        row.put("price", Math.round(si.price * 100.0) / 100.0);
+        row.put("detail", si.detail != null ? si.detail : "");
+        return row;
+    }
+
     @GetMapping("/api/scanner/status")
     public Map<String, Object> getScannerStatus() {
         Map<String, Object> status = new LinkedHashMap<>();

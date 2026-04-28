@@ -201,6 +201,9 @@ public class ViewController {
     @GetMapping("/journal")
     public String journal() { return "journal"; }
 
+    @GetMapping("/signal-trail")
+    public String signalTrail() { return "signal-trail"; }
+
     @GetMapping("/scanner")
     public String scanner() { return "scanner"; }
 

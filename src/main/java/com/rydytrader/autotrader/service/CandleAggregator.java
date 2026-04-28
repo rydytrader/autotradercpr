@@ -205,12 +205,14 @@ public class CandleAggregator {
             nowMinute = t.getHour() * 60L + t.getMinute();
         }
 
-        // Always update latestLtp and latestAtp so trend / scanner display reflects the
-        // latest known prices — pre-market, during session, and post-close. Candle aggregation
-        // below is guarded by the session-hours check so phantom post-close candles can't form,
-        // but display values (LTP + ATP) should stay current.
+        // Always update latestLtp / latestAtp / latestChangePct so trend / scanner display
+        // reflects the latest known prices — pre-market, during session, and post-close. The
+        // session gate below applies to candle AGGREGATION only (no phantom post-close candles)
+        // — display values must keep moving in lockstep with the WS feed otherwise the card
+        // shows a moving LTP next to a frozen %.
         latestLtp.put(symbol, ltp);
         if (raw.atp > 0) latestAtp.put(symbol, raw.atp);
+        if (raw.changePercent != 0) latestChangePct.put(symbol, raw.changePercent);
         lastTickDate.put(symbol, java.time.LocalDate.now(IST).toString());
 
         // Skip candle aggregation / OR tracking outside NSE session (pre-market + post-close).
@@ -224,8 +226,6 @@ public class CandleAggregator {
             String src = raw.exchFeedTime > 0 ? "exchange feed time (exchFeedTime=" + raw.exchFeedTime + ")" : "system clock fallback (exchFeedTime=0)";
             log.info("[CandleAggregator] {} using {} for candle assignment", symbol, src);
         }
-
-        if (raw.changePercent != 0) latestChangePct.put(symbol, raw.changePercent);
 
         // Track day open from HSM open_price field
         if (raw.open > 0) dayOpen.putIfAbsent(symbol, raw.open);

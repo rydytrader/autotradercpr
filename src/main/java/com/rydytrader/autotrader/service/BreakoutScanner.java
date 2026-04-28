@@ -98,6 +98,151 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         this.latencyTracker = latencyTracker;
         this.smaService = smaService;
         loadState();
+        backfillFromEventLog();
+    }
+
+    /**
+     * One-shot recovery for today's pre-recordRejection-shipment rejections. Pre-fireSignal
+     * filters (SMA trend, ATP, level-count, level-proximity, NIFTY hard-skip, position-open,
+     * level-broken) only logged to event-log.txt before the structured capture sites shipped.
+     * This parser scans today's event log for [SCANNER] / [INFO] rejection lines, classifies
+     * them by reason, and injects SignalInfo entries into signalHistory so the EOD-Analysis
+     * page sees them. Skips lines whose (symbol, setup, time) tuple already matches a
+     * persisted entry — safe to call multiple times across restarts.
+     */
+    public void backfillFromEventLog() {
+        try {
+            Path logPath = Paths.get("../store/events/event-log.txt");
+            if (!Files.exists(logPath)) return;
+
+            // Build a dedupe key set from existing signalHistory so we don't double-insert.
+            java.util.Set<String> existingKeys = new java.util.HashSet<>();
+            for (var entry : signalHistory.entrySet()) {
+                String sym = entry.getKey();
+                for (SignalInfo si : entry.getValue()) {
+                    existingKeys.add(sym + "|" + (si.setup != null ? si.setup : "") + "|" + (si.time != null ? si.time : ""));
+                }
+            }
+
+            // Patterns for the rejection log lines we want to recover.
+            // Normalised time format used by signalHistory is HH:mm:00 (5-min candle close);
+            // event-log timestamps are HH:mm:ss. We snap the seconds to :00 to match.
+            java.util.regex.Pattern reSkipBlock = java.util.regex.Pattern.compile(
+                "^(\\d{2}):(\\d{2}):(\\d{2}) - \\[SCANNER\\] (NSE:[A-Z0-9&-]+(?:-EQ|-INDEX)) (\\S+) (.+)$");
+            java.util.regex.Pattern rePosOpen = java.util.regex.Pattern.compile(
+                "^(\\d{2}):(\\d{2}):(\\d{2}) - \\[SCANNER\\] (NSE:[A-Z0-9&-]+(?:-EQ|-INDEX)) — skipped, position already open \\(([^)]+)\\)$");
+            java.util.regex.Pattern reLevelBroken = java.util.regex.Pattern.compile(
+                "^(\\d{2}):(\\d{2}):(\\d{2}) - \\[INFO\\] (NSE:[A-Z0-9&-]+(?:-EQ|-INDEX)) (\\S+) — skipped, level already traded$");
+
+            int injected = 0;
+            int seen = 0;
+            try (java.io.BufferedReader r = Files.newBufferedReader(logPath, java.nio.charset.StandardCharsets.UTF_8)) {
+                String line;
+                while ((line = r.readLine()) != null) {
+                    seen++;
+
+                    // 1) Position-open skip (no setup field)
+                    java.util.regex.Matcher mPos = rePosOpen.matcher(line);
+                    if (mPos.matches()) {
+                        String time = mPos.group(1) + ":" + mPos.group(2) + ":00";
+                        String sym  = mPos.group(4);
+                        String detail = "position " + mPos.group(5) + " already open";
+                        if (insertIfAbsent(existingKeys, sym, "", time, "POSITION_OPEN", detail, 0)) injected++;
+                        continue;
+                    }
+
+                    // 2) Level-already-traded ([INFO] prefix)
+                    java.util.regex.Matcher mBr = reLevelBroken.matcher(line);
+                    if (mBr.matches()) {
+                        String time = mBr.group(1) + ":" + mBr.group(2) + ":00";
+                        String sym  = mBr.group(4);
+                        String setup = mBr.group(5);
+                        if (insertIfAbsent(existingKeys, sym, setup, time, "LEVEL_BROKEN",
+                                "level " + setup + " already traded today", 0)) injected++;
+                        continue;
+                    }
+
+                    // 3) [SCANNER] X SETUP <rest> — classify by rest
+                    java.util.regex.Matcher m = reSkipBlock.matcher(line);
+                    if (!m.matches()) continue;
+                    String time  = m.group(1) + ":" + m.group(2) + ":00";
+                    String sym   = m.group(4);
+                    String setup = m.group(5);
+                    String rest  = m.group(6);
+                    String restLower = rest.toLowerCase();
+
+                    // Skip TRADED success lines — those are already captured by fireSignal.
+                    // Success lines look like:  | close=... | ATR=... | HPT | 5m trend=... | TIME
+                    if (rest.startsWith("| close=")) continue;
+                    if (rest.startsWith("|"))         continue;
+
+                    String filterName;
+                    String detail;
+                    if (restLower.contains("blocked by 5-min sma trend")) {
+                        // Strip the "blocked by 5-min SMA trend — " prefix to keep detail concise.
+                        String dash = " — ";
+                        int idx = rest.indexOf(dash);
+                        detail = idx >= 0 ? rest.substring(idx + dash.length()) : rest;
+                        filterName = restLower.contains("not aligned") ? "SMA_ALIGNMENT" : "SMA_TREND";
+                    } else if (restLower.contains("zone(s) away from broken")) {
+                        filterName = "SMA_20_DISTANCE";
+                        detail = stripSkippedPrefix(rest);
+                    } else if (restLower.contains("too far from broken zone")) {
+                        filterName = "LEVEL_PROXIMITY";
+                        detail = stripSkippedPrefix(rest);
+                    } else if (restLower.contains("below atp") || restLower.contains("above atp")) {
+                        filterName = "ATP";
+                        detail = stripSkippedPrefix(rest);
+                    } else if (restLower.contains("hpt not enabled") || restLower.contains("lpt not enabled") || restLower.contains("mpt not enabled")) {
+                        filterName = "PROB_DISABLED";
+                        detail = stripSkippedPrefix(rest);
+                    } else if (restLower.startsWith("skipped — nifty") && restLower.contains("opposes")) {
+                        filterName = "NIFTY_OPPOSED";
+                        detail = stripSkippedPrefix(rest);
+                    } else {
+                        // Not a recognised pre-fireSignal rejection — skip.
+                        continue;
+                    }
+
+                    if (insertIfAbsent(existingKeys, sym, setup, time, filterName, detail, 0)) injected++;
+                }
+            }
+
+            if (injected > 0) {
+                log.info("[Scanner] Backfilled {} rejection entries from event-log ({} lines scanned)", injected, seen);
+                eventService.log("[INFO] EOD audit backfill — restored " + injected
+                    + " rejection entries from today's event log");
+                saveState();
+            }
+        } catch (Exception e) {
+            log.warn("[Scanner] backfillFromEventLog failed: {}", e.getMessage());
+        }
+    }
+
+    /** Helper for {@link #backfillFromEventLog()}: drop the leading "— skipped, " preamble
+     *  if present so the recovered detail mirrors what live capture stores. */
+    private String stripSkippedPrefix(String rest) {
+        String key = "— skipped, ";
+        int idx = rest.indexOf(key);
+        return idx >= 0 ? rest.substring(idx + key.length()) : rest;
+    }
+
+    /** Helper for {@link #backfillFromEventLog()}: insert a SignalInfo only when no entry
+     *  with the same (symbol, setup, time) already exists. Returns true if inserted. */
+    private boolean insertIfAbsent(java.util.Set<String> seenKeys, String sym, String setup,
+                                   String time, String filterName, String detail, double price) {
+        String key = sym + "|" + setup + "|" + time;
+        if (!seenKeys.add(key)) return false;
+        SignalInfo info = new SignalInfo();
+        info.setup = setup;
+        info.time = time;
+        info.status = "FILTERED";
+        info.filterName = filterName;
+        info.detail = detail;
+        info.price = price;
+        signalHistory.computeIfAbsent(sym, k -> Collections.synchronizedList(new ArrayList<>())).add(info);
+        filteredCountToday++;
+        return true;
     }
 
     public void setWatchlistSymbols(List<String> symbols) {
@@ -145,6 +290,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
         }
 
+        // Gate the breakout scan on the user's configured trading window. Suppresses both
+        // the filter-rejection log noise AND prevents premature brokenLevels marking that
+        // would silence a legitimate post-start-time fire on the same level.
+        if (!isWithinTradingWindow()) return;
+
         // Track scan cycle — reset counter when boundary changes
         if (completedCandle.startMinute != lastScanBoundary) {
             lastScanBoundary = completedCandle.startMinute;
@@ -161,6 +311,19 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             scanForBreakout(fyersSymbol, completedCandle);
         } catch (Exception e) {
             log.error("[Scanner] Error scanning {}: {}", fyersSymbol, e.getMessage());
+        }
+    }
+
+    /** True when current IST time is within [tradingStartTime, tradingEndTime]. Falls back
+     *  to "always on" if either setting is malformed so a typo can't silence the scanner. */
+    private boolean isWithinTradingWindow() {
+        try {
+            java.time.LocalTime now   = ZonedDateTime.now(IST).toLocalTime();
+            java.time.LocalTime start = java.time.LocalTime.parse(riskSettings.getTradingStartTime());
+            java.time.LocalTime end   = java.time.LocalTime.parse(riskSettings.getTradingEndTime());
+            return !now.isBefore(start) && !now.isAfter(end);
+        } catch (Exception e) {
+            return true;
         }
     }
 
@@ -201,7 +364,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // Already in position for this symbol?
         String pos = PositionManager.getPosition(fyersSymbol);
         if (!"NONE".equals(pos)) {
-            eventService.log("[SCANNER] " + fyersSymbol + " — skipped, position already open (" + pos + ")");
+            String detail = "position " + pos + " already open";
+            eventService.log("[SCANNER] " + fyersSymbol + " — skipped, " + detail);
+            recordRejection(fyersSymbol, "", close, "POSITION_OPEN", detail);
             return;
         }
 
@@ -225,18 +390,30 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             if (greenCandle && !(bullClose && (!alignmentOn || bullAligned))) {
                 String potentialSetup = detectBuyBreakout(open, high, low, close, levels, atp, broken, fyersSymbol, true);
                 if (potentialSetup != null) {
-                    String reason = !bullClose ? "close not above all SMAs" : "SMA not aligned (need 20>50>200)";
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + potentialSetup + " blocked by 5-min SMA trend — " + reason + ": close="
-                        + String.format("%.2f", close) + " sma20=" + String.format("%.2f", sma20Now)
-                        + " sma50=" + String.format("%.2f", sma50Now) + " sma200=" + String.format("%.2f", sma200Now));
+                    // Two distinct rejection causes share this branch — surface them as separate
+                    // filterName values so the EOD page can chip-filter by which check tripped.
+                    boolean priceFail = !bullClose;
+                    String reason = priceFail ? "close not above all SMAs" : "SMA not aligned (need 20>50>200)";
+                    String filterName = priceFail ? "SMA_TREND" : "SMA_ALIGNMENT";
+                    String detail = reason + ": close=" + String.format("%.2f", close)
+                        + " sma20=" + String.format("%.2f", sma20Now)
+                        + " sma50=" + String.format("%.2f", sma50Now)
+                        + " sma200=" + String.format("%.2f", sma200Now);
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + potentialSetup + " blocked by 5-min SMA trend — " + detail);
+                    recordRejection(fyersSymbol, potentialSetup, close, filterName, detail);
                 }
             } else if (redCandle && !(bearClose && (!alignmentOn || bearAligned))) {
                 String potentialSetup = detectSellBreakout(open, high, low, close, levels, atp, broken, fyersSymbol, true);
                 if (potentialSetup != null) {
-                    String reason = !bearClose ? "close not below all SMAs" : "SMA not aligned (need 20<50<200)";
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + potentialSetup + " blocked by 5-min SMA trend — " + reason + ": close="
-                        + String.format("%.2f", close) + " sma20=" + String.format("%.2f", sma20Now)
-                        + " sma50=" + String.format("%.2f", sma50Now) + " sma200=" + String.format("%.2f", sma200Now));
+                    boolean priceFail = !bearClose;
+                    String reason = priceFail ? "close not below all SMAs" : "SMA not aligned (need 20<50<200)";
+                    String filterName = priceFail ? "SMA_TREND" : "SMA_ALIGNMENT";
+                    String detail = reason + ": close=" + String.format("%.2f", close)
+                        + " sma20=" + String.format("%.2f", sma20Now)
+                        + " sma50=" + String.format("%.2f", sma50Now)
+                        + " sma200=" + String.format("%.2f", sma200Now);
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + potentialSetup + " blocked by 5-min SMA trend — " + detail);
+                    recordRejection(fyersSymbol, potentialSetup, close, filterName, detail);
                 }
             }
         }
@@ -248,7 +425,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 // Only log if a breakout would have been detected without ATP check
                 String wouldMatch = detectBuyBreakout(open, high, low, close, levels, 0, broken, fyersSymbol);
                 if (wouldMatch != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + wouldMatch + " — skipped, close (" + String.format("%.2f", close) + ") below ATP (" + String.format("%.2f", atp) + ")");
+                    String detail = "close (" + String.format("%.2f", close) + ") below ATP (" + String.format("%.2f", atp) + ")";
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + wouldMatch + " — skipped, " + detail);
+                    recordRejection(fyersSymbol, wouldMatch, close, "ATP", detail);
                 }
                 return;
             }
@@ -259,16 +438,23 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     // Only log when an HPT setup was filtered — natively-LPT setups (magnets,
                     // counter-trend bounces) are expected to be skipped silently when LPT is off,
                     // otherwise the event log fills with noise the user has already opted out of.
+                    String detail = prob + " not enabled";
                     if ("HPT".equals(prob)) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " — skipped, HPT not enabled");
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " — skipped, " + detail);
                     }
+                    recordRejection(fyersSymbol, buySetup, close, "PROB_DISABLED", detail);
                     return;
                 }
                 // SMA level-count filter: skip if any CPR zone sits between SMA and broken level
                 if (evaluateSmaFilter(fyersSymbol, buySetup, close, levels, atr) == 2) return;
                 // NIFTY index alignment filter — hard skip, qty reduction (soft), or no-op.
                 NiftyAlignStatus alignBuy = checkIndexAlignment(fyersSymbol, buySetup, true);
-                if (alignBuy == NiftyAlignStatus.SKIP) return;
+                if (alignBuy == NiftyAlignStatus.SKIP) {
+                    String niftyState = indexTrendService != null ? indexTrendService.getNiftyTrend().getState() : "?";
+                    recordRejection(fyersSymbol, buySetup, close, "NIFTY_OPPOSED",
+                        "NIFTY " + niftyState + " opposes buy [hard-skip]");
+                    return;
+                }
                 boolean niftyOpposedBuy = alignBuy == NiftyAlignStatus.OPPOSED_SOFT;
                 String buyNote = niftyOpposedBuy
                     ? "NIFTY opposes buy — probability downgraded to LPT"
@@ -279,7 +465,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (!broken.isEmpty()) {
                     String wouldMatch = detectBuyBreakout(open, high, low, close, levels, atp, Collections.emptySet(), fyersSymbol);
                     if (wouldMatch != null && broken.contains(wouldMatch)) {
+                        String detail = "level " + wouldMatch + " already traded today";
                         eventService.log("[INFO] " + fyersSymbol + " " + wouldMatch + " — skipped, level already traded");
+                        recordRejection(fyersSymbol, wouldMatch, close, "LEVEL_BROKEN", detail);
                     }
                 }
                 // Debug: detect without ATP to see if ATP blocked it
@@ -296,7 +484,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             if (riskSettings.isEnableAtpCheck() && atp > 0 && close > atp) {
                 String wouldMatch = detectSellBreakout(open, high, low, close, levels, 0, broken, fyersSymbol);
                 if (wouldMatch != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + wouldMatch + " — skipped, close (" + String.format("%.2f", close) + ") above ATP (" + String.format("%.2f", atp) + ")");
+                    String detail = "close (" + String.format("%.2f", close) + ") above ATP (" + String.format("%.2f", atp) + ")";
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + wouldMatch + " — skipped, " + detail);
+                    recordRejection(fyersSymbol, wouldMatch, close, "ATP", detail);
                 }
                 return;
             }
@@ -306,16 +496,23 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (!isProbabilityEnabled(prob)) {
                     // Only log when an HPT setup was filtered — natively-LPT setups (magnets,
                     // counter-trend bounces) are expected to be skipped silently when LPT is off.
+                    String detail = prob + " not enabled";
                     if ("HPT".equals(prob)) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " — skipped, HPT not enabled");
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " — skipped, " + detail);
                     }
+                    recordRejection(fyersSymbol, sellSetup, close, "PROB_DISABLED", detail);
                     return;
                 }
                 // SMA level-count filter: skip if any CPR zone sits between SMA and broken level
                 if (evaluateSmaFilter(fyersSymbol, sellSetup, close, levels, atr) == 2) return;
                 // NIFTY index alignment filter — hard skip, qty reduction (soft), or no-op.
                 NiftyAlignStatus alignSell = checkIndexAlignment(fyersSymbol, sellSetup, false);
-                if (alignSell == NiftyAlignStatus.SKIP) return;
+                if (alignSell == NiftyAlignStatus.SKIP) {
+                    String niftyState = indexTrendService != null ? indexTrendService.getNiftyTrend().getState() : "?";
+                    recordRejection(fyersSymbol, sellSetup, close, "NIFTY_OPPOSED",
+                        "NIFTY " + niftyState + " opposes sell [hard-skip]");
+                    return;
+                }
                 boolean niftyOpposedSell = alignSell == NiftyAlignStatus.OPPOSED_SOFT;
                 String sellNote = niftyOpposedSell
                     ? "NIFTY opposes sell — probability downgraded to LPT"
@@ -326,7 +523,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (!broken.isEmpty()) {
                     String wouldMatch = detectSellBreakout(open, high, low, close, levels, atp, Collections.emptySet(), fyersSymbol);
                     if (wouldMatch != null && broken.contains(wouldMatch)) {
+                        String detail = "level " + wouldMatch + " already traded today";
                         eventService.log("[INFO] " + fyersSymbol + " " + wouldMatch + " — skipped, level already traded");
+                        recordRejection(fyersSymbol, wouldMatch, close, "LEVEL_BROKEN", detail);
                     }
                 }
                 // Debug: detect without ATP to see if ATP blocked it
@@ -627,6 +826,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             info.price = close;
             boolean filtered = status.contains("failed") || status.contains("filtered") || status.contains("ignored");
             info.status = filtered ? "FILTERED" : "TRADED";
+            info.filterName = classifyDownstreamRejection(status, filtered);
             if (filtered) filteredCountToday++; else tradedCountToday++;
             info.detail = status;
             lastSignal.put(fyersSymbol, info);
@@ -644,6 +844,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             info.setup = setup;
             info.time = timeStr;
             info.status = "ERROR";
+            info.filterName = "EXCEPTION";
             info.detail = e.getMessage();
             lastSignal.put(fyersSymbol, info);
             signalHistory.computeIfAbsent(fyersSymbol, k -> Collections.synchronizedList(new ArrayList<>())).add(info);
@@ -799,15 +1000,25 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             { levels.getR4() }
         };
 
+        // A zone counts as "between" SMA and broken only if the SMA-to-broken path FULLY
+        // crosses through it — i.e., ALL of its valid edges sit inside the interval. For a
+        // single-edge level (R2/R3/R4/S2/S3/S4/DH/DL) that's the one edge. For a two-edge
+        // zone (R1+PDH, CPR, S1+PDL) it requires BOTH edges. If only one edge is in the
+        // interval, the SMA is sitting INSIDE the zone (or straddling its boundary), which
+        // means the zone is at the SMA's level — not a wall between them.
         int count = 0;
         StringBuilder between = new StringBuilder();
         for (int i = 0; i < zoneNames.length; i++) {
             if (zoneNames[i].equals(excludedZone)) continue;
-            boolean anyEdgeInInterval = false;
+            int validEdges = 0;
+            int edgesInInterval = 0;
             for (double e : zoneEdges[i]) {
-                if (e > 0 && e > lo && e < hi) { anyEdgeInInterval = true; break; }
+                if (e <= 0) continue;
+                validEdges++;
+                if (e > lo && e < hi) edgesInInterval++;
             }
-            if (anyEdgeInInterval) {
+            boolean fullyBetween = validEdges > 0 && edgesInInterval == validEdges;
+            if (fullyBetween) {
                 count++;
                 if (between.length() > 0) between.append(", ");
                 between.append(zoneNames[i]);
@@ -815,21 +1026,35 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         }
 
         if (count > 0) {
-            eventService.log("[SCANNER] " + fyersSymbol + " " + setup
-                + " — skipped, SMA(" + String.format("%.2f", sma) + ") is "
+            String detail = "SMA(" + String.format("%.2f", sma) + ") is "
                 + count + " zone(s) away from broken " + String.format("%.2f", broken)
-                + " [zones between: " + between + "]");
+                + " [zones between: " + between + "]";
+            eventService.log("[SCANNER] " + fyersSymbol + " " + setup + " — skipped, " + detail);
+            recordRejection(fyersSymbol, setup, close, "SMA_20_DISTANCE", detail);
             return 2;
         }
 
         // Secondary proximity check: SMA must be within (100 - smaLevelMinRangePct)% of the
-        // range between the broken level and the nearest zone edge on the other side. Catches
-        // the "count=0 but SMA at bottom of the zone" gap — SMA can pass the count check while
-        // still being far below the breakout level within the same zone.
+        // range between the NEAR edge of the broken zone and the nearest zone edge on the
+        // other side. Anchoring at the near edge (bottom of zone for buy, top for sell) means
+        // the zone's own width doesn't get counted as proximity distance — wider zones aren't
+        // double-penalised. Single-edge levels (R2/R3/R4 etc.) keep nearEdge == broken.
         int minRangePct = riskSettings.getSmaLevelMinRangePct();
         if (minRangePct > 0) {
             boolean isBuy = setup.startsWith("BUY_");
-            // Nearest zone edge on the other side of the broken level, skipping the broken zone.
+
+            // Near edge of the broken zone — the inner edge facing the SMA.
+            double nearEdge = broken;
+            for (int i = 0; i < zoneNames.length; i++) {
+                if (!zoneNames[i].equals(excludedZone)) continue;
+                if (zoneEdges[i].length == 2) {
+                    double e1 = zoneEdges[i][0], e2 = zoneEdges[i][1];
+                    nearEdge = isBuy ? Math.min(e1, e2) : Math.max(e1, e2);
+                }
+                break;
+            }
+
+            // Nearest zone edge on the other side of the broken zone, skipping the broken zone.
             // For buy: highest edge strictly below broken. For sell: lowest edge strictly above.
             double boundaryEdge = 0;
             for (int i = 0; i < zoneNames.length; i++) {
@@ -844,19 +1069,26 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 }
             }
             if (boundaryEdge > 0) {
-                double range = Math.abs(broken - boundaryEdge);
+                double range = Math.abs(nearEdge - boundaryEdge);
                 double maxDist = range * (100 - minRangePct) / 100.0;
-                double actualDist = Math.abs(sma - broken);
+                // Directional subtraction + clamp at 0: SMA inside or past the broken zone
+                // (at/above nearEdge for buys, at/below for sells) is "0% distance" — the
+                // breakout has already swept through it.
+                double rawDist = isBuy ? (nearEdge - sma) : (sma - nearEdge);
+                double actualDist = Math.max(0, rawDist);
                 if (actualDist > maxDist) {
                     int actualPct = (int) Math.round(actualDist / range * 100.0);
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + setup
-                        + " — skipped, SMA(" + String.format("%.2f", sma) + ") too far from broken "
-                        + String.format("%.2f", broken) + " — SMA must sit within "
-                        + (100 - minRangePct) + "% of range from broken level"
-                        + " (range to boundary " + String.format("%.2f", boundaryEdge)
-                        + " = " + String.format("%.2f", range)
-                        + "; SMA dist " + String.format("%.2f", actualDist)
-                        + " = " + actualPct + "% — beyond " + (100 - minRangePct) + "% threshold)");
+                    String detail = "SMA(" + String.format("%.2f", sma)
+                        + ") too far from broken zone — must sit within "
+                        + (100 - minRangePct) + "% of range from "
+                        + (isBuy ? "bottom" : "top") + " of broken zone"
+                        + " (zone edge " + String.format("%.2f", nearEdge)
+                        + " → boundary " + String.format("%.2f", boundaryEdge)
+                        + " = range " + String.format("%.2f", range)
+                        + "; dist " + String.format("%.2f", actualDist)
+                        + " = " + actualPct + "% > " + (100 - minRangePct) + "%)";
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + setup + " — skipped, " + detail);
+                    recordRejection(fyersSymbol, setup, close, "LEVEL_PROXIMITY", detail);
                     return 2;
                 }
             }
@@ -987,6 +1219,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         return signalHistory.getOrDefault(symbol, Collections.emptyList());
     }
 
+    /** Read-only view of the per-symbol signal history map for the day. Used by the EOD-Analysis
+     *  endpoint to enumerate symbols with signals + iterate the full audit trail. */
+    public Map<String, List<SignalInfo>> getSignalHistoryAll() {
+        return Collections.unmodifiableMap(signalHistory);
+    }
+
     /** Clear all state for end of day. */
     public void clearAll() {
         brokenLevels.clear();
@@ -1023,6 +1261,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 sig.put("status", entry.getValue().status);
                 sig.put("detail", entry.getValue().detail);
                 sig.put("price", entry.getValue().price);
+                sig.put("filterName", entry.getValue().filterName != null ? entry.getValue().filterName : "");
                 signals.put(entry.getKey(), sig);
             }
             state.put("signals", signals);
@@ -1047,6 +1286,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     sig.put("status", si.status);
                     sig.put("detail", si.detail);
                     sig.put("price", si.price);
+                    sig.put("filterName", si.filterName != null ? si.filterName : "");
                     list.add(sig);
                 }
                 history.put(entry.getKey(), list);
@@ -1086,6 +1326,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     info.status = v.has("status") ? v.get("status").asText() : "";
                     info.detail = v.has("detail") ? v.get("detail").asText() : "";
                     info.price = v.has("price") ? v.get("price").asDouble() : 0;
+                    info.filterName = v.has("filterName") ? v.get("filterName").asText() : "";
                     lastSignal.put(entry.getKey(), info);
                 });
             }
@@ -1112,6 +1353,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                         si.status = node.has("status") ? node.get("status").asText() : "";
                         si.detail = node.has("detail") ? node.get("detail").asText() : "";
                         si.price = node.has("price") ? node.get("price").asDouble() : 0;
+                        si.filterName = node.has("filterName") ? node.get("filterName").asText() : "";
                         list.add(si);
                     });
                     signalHistory.put(entry.getKey(), list);
@@ -1129,6 +1371,90 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         }
     }
 
+    /** Build the HH:mm:00 time string for the currently-processing candle, mirroring the
+     *  format fireSignal uses. Falls back to system clock if no candle context is set. */
+    private String currentSignalTime() {
+        CandleAggregator.CandleBar ctxCandle = currentCandle.get();
+        if (ctxCandle != null && ctxCandle.startMinute > 0) {
+            int closeMin = (int) (ctxCandle.startMinute + riskSettings.getScannerTimeframe());
+            return String.format("%02d:%02d:00", closeMin / 60, closeMin % 60);
+        }
+        return ZonedDateTime.now(IST).toLocalTime().format(TIME_FMT);
+    }
+
+    /** Append a structured FILTERED entry to signalHistory + bump the filtered-counter. Used at
+     *  every pre-fireSignal early-return so the EOD-Analysis page sees the full audit trail.
+     *  The free-text {@code detail} mirrors what's already in the [SCANNER] event-log line. */
+    private void recordRejection(String fyersSymbol, String setup, double price, String filterName, String detail) {
+        SignalInfo info = new SignalInfo();
+        info.setup = setup != null ? setup : "";
+        info.time = currentSignalTime();
+        info.status = "FILTERED";
+        info.filterName = filterName;
+        info.detail = detail;
+        info.price = price;
+        lastSignal.put(fyersSymbol, info);
+        signalHistory.computeIfAbsent(fyersSymbol, k -> Collections.synchronizedList(new ArrayList<>())).add(info);
+        filteredCountToday++;
+        saveState();
+    }
+
+    /** Map TradingController/SignalProcessor response text into a stable {@code filterName}
+     *  enum so the EOD-Analysis UI can group/chip-filter by reason. Returns "" for
+     *  passes (TRADED) and "DOWNSTREAM" as a catch-all for rejections that don't match
+     *  a known prefix. Order matters — the composite "downgraded to LPT (X)" wrapper is
+     *  inspected first so the inner X surfaces as the real filter name. */
+    private String classifyDownstreamRejection(String responseText, boolean filtered) {
+        if (!filtered) return "";
+        if (responseText == null) return "DOWNSTREAM";
+        String s = responseText.toLowerCase();
+
+        // Composite LPT-disabled rejection — drill into the parenthesised inner reason.
+        if (s.contains("probability downgraded to lpt") || s.contains("→ lpt")) {
+            if (s.contains("htf hurdle"))              return "HTF_HURDLE";
+            if (s.contains("htf sma order"))           return "HTF_SMA_ORDER";
+            if (s.contains("nifty opposed"))           return "NIFTY_OPPOSED";
+            if (s.contains("2d cpr"))                  return "2D_CPR";
+            if (s.contains("inside-or"))               return "INSIDE_OR";
+            if (s.contains("ev reversal"))             return "EV_REVERSAL";
+            return "LPT_DISABLED";
+        }
+
+        // Order-layer gates
+        if (s.contains("outside trading hours"))                  return "TRADING_HOURS";
+        if (s.contains("risk exposure") || s.contains("daily loss")) return "RISK_LIMIT";
+        if (s.contains("kill switch"))                             return "KILL_SWITCH";
+
+        // Structural / setup-level gates
+        if (s.contains("extended-level"))                          return "EXTENDED_LEVEL";
+        if (s.contains("is inside") && s.contains("zone"))         return "DH_DL_ZONE";
+        if (s.contains("inside cpr") || s.contains("dh/dl"))       return "DH_DL_ZONE";
+        if (s.contains("2d cpr") || s.contains("2d-cpr"))          return "2D_CPR";
+        if (s.contains("invalid atr"))                             return "INVALID_ATR";
+        if (s.contains("wrong side of entry"))                     return "WRONG_SIDE_TARGET";
+
+        // Candle-shape / volume gates
+        if (s.contains("small candle"))                            return "SMALL_CANDLE";
+        if (s.contains("opposite wick pressure"))                  return "OPPOSITE_WICK";
+        if (s.contains("large candle body"))                       return "LARGE_CANDLE";
+        if (s.contains("low volume"))                              return "LOW_VOLUME";
+
+        // EV / OR gates
+        if (s.contains("mean-reversion setup only allowed"))       return "MEAN_REVERSION_DAY";
+        if (s.contains("opposes or break"))                        return "EV_OR_OPPOSED";
+        if (s.contains("inside or range"))                         return "EV_OR_INSIDE";
+        if (s.contains("ev ") && s.contains("detected"))           return "EV_GAP_OPPOSED";
+
+        // Risk / reward / profit
+        if (s.contains("risk/reward") || s.contains("risk\\reward")) return "RISK_REWARD";
+        if (s.contains("absolute profit too low"))                 return "MIN_PROFIT";
+
+        // Order placement
+        if (s.contains("order failed") || s.contains("rejected by broker")) return "ORDER_FAILED";
+
+        return "DOWNSTREAM";
+    }
+
     // ── Signal info for dashboard ────────────────────────────────────────────
 
     public static class SignalInfo {
@@ -1137,5 +1463,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         public String status; // TRADED, FILTERED, ERROR
         public String detail;
         public double price;  // candle close at signal time
+        public String filterName; // "" for TRADED; stable enum for FILTERED (drives EOD-Analysis grouping)
     }
 }

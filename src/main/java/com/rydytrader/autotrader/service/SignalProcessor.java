@@ -389,18 +389,20 @@ public class SignalProcessor {
             adjustments.add("Probability HPT → LPT (NIFTY opposed)");
         }
 
-        // ── 4e2a2. 2-Day CPR relationship: HPT → LPT when CPR doesn't favor the direction ──
-        // Buys want today's CPR completely above yesterday's (HV); sells want completely below (LV).
-        // Overlapping (NC) or wrong-side relation downgrades HPT → LPT. Fail-open if no relation
-        // computed (e.g. fresh boot before bhavcopy classification).
+        // ── 4e2a2. 2-Day CPR relationship: HPT → LPT only when CPR is OPPOSED to direction ──
+        // Buys are opposed by LV (today's CPR below yesterday's = bearish bias).
+        // Sells are opposed by HV (today's CPR above yesterday's = bullish bias).
+        // NC (overlapping CPRs) is non-directional — same semantic as NIFTY NEUTRAL — and
+        // does NOT trigger a downgrade. Fail-open if no relation computed (e.g. fresh boot
+        // before bhavcopy classification, or open-print rejected the bias → null).
         if (riskSettings.isEnableCprDayRelationFilter() && "HPT".equals(probability)) {
             String rel = str(alert, "cprDayRelation");
             if (rel != null && !rel.isEmpty()) {
-                boolean wanted = isBuy ? "HV".equals(rel) : "LV".equals(rel);
-                if (!wanted) {
+                boolean opposed = isBuy ? "LV".equals(rel) : "HV".equals(rel);
+                if (opposed) {
                     probability = "LPT";
                     adjustments.add("Probability HPT → LPT (2D CPR relation 2D-" + rel
-                        + ", need 2D-" + (isBuy ? "HV" : "LV") + ")");
+                        + " opposes " + (isBuy ? "buy" : "sell") + ")");
                 }
             }
         }
