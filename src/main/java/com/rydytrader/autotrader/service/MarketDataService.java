@@ -1072,14 +1072,15 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         return new ArrayList<>(symbols);
     }
 
-    /** Build the indicator-seeding universe: ALL NIFTY 50 stocks + NIFTY index + everything in
-     *  the filtered watchlist (which is a subset already, but include for safety). Used at
-     *  startup and on watchlist rebuild so filter changes don't strand stocks without ATR/SMA. */
+    /** Build the indicator-seeding universe: ALL stocks in the configured scan universe
+     *  (NIFTY 50 or NIFTY 100) + NIFTY index + everything in the filtered watchlist
+     *  (which is a subset already, but include for safety). Used at startup and on
+     *  watchlist rebuild so filter changes don't strand stocks without ATR/SMA. */
     private List<String> buildSeedUniverse(List<String> filteredWatchlistWithIndex) {
         Set<String> universe = new LinkedHashSet<>(filteredWatchlistWithIndex);
         for (var cpr : bhavcopyService.getAllCprLevels().values()) {
             if (bhavcopyService.isIndex(cpr.getSymbol())) continue;
-            if (cpr.isInNifty50()) {
+            if (bhavcopyService.isInScanUniverse(cpr.getSymbol())) {
                 universe.add("NSE:" + cpr.getSymbol() + "-EQ");
             }
         }

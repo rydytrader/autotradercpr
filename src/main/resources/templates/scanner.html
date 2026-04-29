@@ -475,7 +475,12 @@
             <span class="ss-label">Signals:</span>
             <span id="ssSignals">--</span>
         </div>
-        <div class="ss-item" style="margin-left:auto;">
+        <div class="ss-item" id="candleTimerChip" style="margin-left:auto; display:flex; align-items:center; gap:8px; padding:4px 12px; border-radius:8px; background:var(--bg-card); border:1px solid var(--border); position:relative; overflow:hidden; font-family:var(--font-mono); min-width:104px;" title="Time until next 5-min candle close">
+            <span class="ss-label" style="font-size:0.62rem; opacity:0.7; z-index:1;">BAR</span>
+            <span id="candleTimerText" style="font-size:0.78rem; font-weight:700; color:var(--accent-blue); z-index:1;">--:--</span>
+            <div id="candleTimerFill" style="position:absolute; left:0; top:0; bottom:0; width:0%; background:rgba(99,179,237,0.12); transition:width 0.5s linear; z-index:0;"></div>
+        </div>
+        <div class="ss-item">
             <span onclick="document.getElementById('legendModal').style.display='flex'" title="Classification Legend" style="display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border-radius:50%; background:rgba(251,191,36,0.15); border:1px solid rgba(251,191,36,0.35); color:#fbbf24; font-family:var(--font-mono); font-size:0.75rem; font-weight:700; cursor:pointer; transition:all 0.2s;" onmouseover="this.style.background='rgba(251,191,36,0.28)'" onmouseout="this.style.background='rgba(251,191,36,0.15)'">?</span>
         </div>
     </div>
@@ -494,6 +499,11 @@
 
     <!-- Filter Bar -->
     <div class="filter-bar">
+        <span class="universe-filter-group">
+            <button class="filter-btn active" onclick="setUniverseFilter('ALL', this)">All</button>
+            <button class="filter-btn" onclick="setUniverseFilter('N50', this)">N 50</button>
+        </span>
+        <div class="filter-sep"></div>
         <span class="cpr-filter-group">
             <button class="filter-btn active" onclick="setFilter('all', this)">All</button>
 
@@ -509,13 +519,6 @@
         <span class="prob-filter-group">
             <button class="filter-btn" onclick="toggleProbFilter('HPT', this)">HPT</button>
             <button class="filter-btn" onclick="toggleProbFilter('LPT', this)">LPT</button>
-        </span>
-        <div class="filter-sep"></div>
-        <div class="filter-sep"></div>
-        <span class="or-filter-group">
-            <button class="filter-btn" onclick="toggleOrFilter('BULLISH', this)">OR Bull</button>
-            <button class="filter-btn" onclick="toggleOrFilter('BEARISH', this)">OR Bear</button>
-            <button class="filter-btn" onclick="toggleOrFilter('NEUTRAL', this)">OR Neutral</button>
         </span>
         <div class="filter-sep"></div>
         <span class="ov-filter-group">
@@ -571,12 +574,12 @@
     var cprFilter = 'all';
     var probFilter = null;
     var rangeFilter = null;
-    var orFilter = null;
     var ovFilter = null;
     var signalFilter = false;
     var filteredFilter = false;
     var timeFilter = '';
     var symbolFilter = '';
+    var universeFilter = 'ALL'; // 'ALL' (NIFTY 100) or 'N50' (NIFTY 50 only)
 
     // Populate time dropdown (9:15 to 15:30 in 15-min intervals)
     (function() {
@@ -594,6 +597,15 @@
     })();
 
     // ── Filter controls ─────────────────────────────
+    window.setUniverseFilter = function(type, btn) {
+        universeFilter = type; // 'ALL' or 'N50'
+        document.querySelectorAll('.universe-filter-group .filter-btn').forEach(function(b) {
+            b.classList.remove('active');
+        });
+        btn.classList.add('active');
+        renderCards();
+    };
+
     window.setFilter = function(type, btn) {
         cprFilter = type;
         document.querySelectorAll('.cpr-filter-group .filter-btn').forEach(function(b) {
@@ -643,20 +655,6 @@
         renderCards();
     };
 
-    window.toggleOrFilter = function(type, btn) {
-        if (orFilter === type) {
-            orFilter = null;
-            btn.classList.remove('active');
-        } else {
-            orFilter = type;
-            document.querySelectorAll('.or-filter-group .filter-btn').forEach(function(b) {
-                b.classList.remove('active');
-            });
-            btn.classList.add('active');
-        }
-        renderCards();
-    };
-
     window.toggleOvFilter = function(type, btn) {
         if (ovFilter === type) {
             ovFilter = null;
@@ -702,6 +700,7 @@
         var grid = document.getElementById('scannerGrid');
         var filtered = allData.filter(function(d) {
             if (symbolFilter && d.shortName !== symbolFilter) return false;
+            if (universeFilter === 'N50' && !d.inNifty50) return false;
             if (cprFilter !== 'all') {
                 var types = d.cprTypes || [d.cprType];
                 if (cprFilter === 'CPR') {
@@ -712,7 +711,6 @@
             }
             if (probFilter && d.probability !== probFilter) return false;
             if (rangeFilter && d.narrowRangeType !== rangeFilter) return false;
-            if (orFilter && d.orStatus !== orFilter) return false;
             if (ovFilter && d.openClass !== ovFilter) return false;
             if (signalFilter && (!d.lastSignal || d.lastSignal.status !== 'TRADED')) return false;
             if (filteredFilter && (!d.lastSignal || d.lastSignal.status !== 'FILTERED')) return false;
@@ -1333,6 +1331,43 @@
                 + '</div>';
         }).catch(function(err) { console.warn('refreshNiftyCard failed:', err); });
     }
+
+    // ── 5-min candle countdown (TradingView-style bar timer, anchored to NSE 9:15 IST) ─
+    (function () {
+        var fillEl = document.getElementById('candleTimerFill');
+        var txtEl  = document.getElementById('candleTimerText');
+        var chipEl = document.getElementById('candleTimerChip');
+        if (!fillEl || !txtEl || !chipEl) return;
+
+        function nowIST() {
+            // Rebase to IST regardless of browser timezone — exchange-correct alignment.
+            var d = new Date();
+            return new Date(d.getTime() + (d.getTimezoneOffset() + 330) * 60000);
+        }
+
+        function tick() {
+            var ist = nowIST();
+            var totalSec = ist.getHours() * 3600 + ist.getMinutes() * 60 + ist.getSeconds();
+            var sessionOpen  = 9 * 3600 + 15 * 60;   // 09:15:00
+            var sessionClose = 15 * 3600 + 30 * 60;  // 15:30:00
+            if (totalSec < sessionOpen || totalSec >= sessionClose) {
+                txtEl.textContent = '--:--';
+                fillEl.style.width = '0%';
+                chipEl.style.opacity = '0.5';
+                return;
+            }
+            chipEl.style.opacity = '1';
+            var elapsed = (totalSec - sessionOpen) % 300;       // 0..299 in current bar
+            var remaining = 300 - elapsed;                       // 1..300 sec to close
+            var m = Math.floor(remaining / 60);
+            var s = remaining % 60;
+            txtEl.textContent = m + ':' + (s < 10 ? '0' : '') + s;
+            fillEl.style.width = (elapsed / 300 * 100) + '%';
+        }
+
+        tick();
+        setInterval(tick, 1000);
+    })();
 
     // ── Init ────────────────────────────────────────
     fetchData();

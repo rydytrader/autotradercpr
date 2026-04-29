@@ -107,17 +107,16 @@ public class MarketTickerController {
         for (String s : BASE_SYMBOLS.split(",")) {
             symbols.add(s);
         }
-        // All 50 NIFTY 50 stocks from the bhavcopy CPR cache. The cache is already
-        // restricted to NIFTY 50 at the parse stage, so every non-index entry is a
-        // NIFTY 50 stock. Defensive: still check isInNifty50 in case the fallback
-        // "full FNO" path populated the cache on a NIFTY-50-list-unavailable day.
+        // All stocks in the configured scan universe (NIFTY 50 or NIFTY 100) from the
+        // bhavcopy CPR cache. The cache is already restricted at parse stage; this
+        // re-check guards the fallback "full FNO" path on a list-fetch-unavailable day.
         for (CprLevels cpr : bhavcopyService.getAllCprLevels().values()) {
             if (bhavcopyService.isIndex(cpr.getSymbol())) continue;
-            if (!cpr.isInNifty50()) continue;
+            if (!bhavcopyService.isInScanUniverse(cpr.getSymbol())) continue;
             symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
         }
         // Open position symbols — ensures user always sees live prices for what they hold,
-        // even if somehow outside NIFTY 50 (manual position, NIFTY 50 rebalance mid-session).
+        // even if somehow outside the scan universe (manual position, mid-session rebalance).
         symbols.addAll(PositionManager.getAllSymbols());
         return String.join(",", symbols);
     }

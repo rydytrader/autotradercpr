@@ -217,40 +217,44 @@ public class SignalProcessor {
         int baseQty = quantityService.computeBaseQty(symbol, close, sl, setup);
 
         // ── 4d. Small candle filter ─────────────────────────────────────────────
-        // Collapsed "meaningful size" check: reject only when BOTH moveFromLevel and
-        // candle body are below the threshold AND the candle shows no wick defense.
-        // A wide-body candle that broke a level near its high now qualifies via body;
-        // a narrow-body candle that pushed well past the level qualifies via move.
-        // Opposite-wick penalty (Check 4) still runs separately — always applied.
+        // Two independent ATR floors:
+        //   bodyFloor — minimum candle body required to claim "meaningful conviction"
+        //   moveFloor — minimum push past the breakout level required to claim "level
+        //               actually cleared" (defaults much smaller than bodyFloor — a
+        //               strong-body candle that closes only just past the level is fine)
+        // OR-logic: pass if EITHER body ≥ bodyFloor OR moveFromLevel ≥ moveFloor.
+        // Wick defense and opposite-wick checks are body-based, so both use bodyFloor.
         if (riskSettings.isEnableSmallCandleFilter()) {
-            double smallThreshold = riskSettings.getSmallCandleAtrThreshold();
+            double bodyAtrMult    = riskSettings.getSmallCandleBodyAtrThreshold();
+            double moveAtrMult    = riskSettings.getSmallCandleMoveAtrThreshold();
             double wickRatio      = riskSettings.getWickRejectionRatio();
             double oppWickRatio   = riskSettings.getOppositeWickRatio();
             double moveFromLevel  = isBuy ? (close - breakoutLevel) : (breakoutLevel - close);
             double candleBody     = candleOpen > 0 ? Math.abs(close - candleOpen) : 0;
-            double sizeFloor      = atr * smallThreshold;
+            double bodyFloor      = atr * bodyAtrMult;
+            double moveFloor      = atr * moveAtrMult;
 
-            // Meaningful size: either the move from the breakout level OR the overall
-            // candle body is at least smallCandleAtrThreshold × ATR.
-            boolean meaningfulSize = Math.max(moveFromLevel, candleBody) >= sizeFloor;
+            boolean bodyOk = candleBody    >= bodyFloor;
+            boolean moveOk = moveFromLevel >= moveFloor;
+            boolean meaningfulSize = bodyOk || moveOk;
 
             // Wick defense: tiny-body doji with a long wick into the breakout direction.
             // Buyers/sellers pushed the price to the wick extreme but the close
             // recovered — committed directional intent even if the body is small.
             boolean wickDefense = false;
-            if (candleOpen > 0 && candleHigh > 0 && candleLow > 0 && candleBody < sizeFloor) {
+            if (candleOpen > 0 && candleHigh > 0 && candleLow > 0 && candleBody < bodyFloor) {
                 double breakoutWick = isBuy
                     ? (Math.min(close, candleOpen) - candleLow)
                     : (candleHigh - Math.max(close, candleOpen));
                 wickDefense = breakoutWick >= wickRatio * candleBody
-                    && breakoutWick >= sizeFloor;
+                    && breakoutWick >= bodyFloor;
             }
 
             if (!meaningfulSize && !wickDefense) {
                 return ProcessedSignal.rejected(setup, symbol,
-                    "Small candle — move from level (" + fmt(moveFromLevel) + ") and body ("
-                    + fmt(candleBody) + ") both < " + smallThreshold + " ATR ("
-                    + fmt(sizeFloor) + "), no wick defense");
+                    "Small candle — body (" + fmt(candleBody) + ") < " + bodyAtrMult + " ATR ("
+                    + fmt(bodyFloor) + ") AND move from level (" + fmt(moveFromLevel) + ") < "
+                    + moveAtrMult + " ATR (" + fmt(moveFloor) + "), no wick defense");
             }
 
             // Check 4: opposite wick pressure — always checked, even for large bodies.
@@ -259,7 +263,7 @@ public class SignalProcessor {
                 double oppositeWick = isBuy
                     ? (candleHigh - Math.max(close, candleOpen))
                     : (Math.min(close, candleOpen) - candleLow);
-                if (oppositeWick >= oppWickRatio * candleBody && oppositeWick >= sizeFloor) {
+                if (oppositeWick >= oppWickRatio * candleBody && oppositeWick >= bodyFloor) {
                     return ProcessedSignal.rejected(setup, symbol,
                         "Opposite wick pressure (" + fmt(oppositeWick) + ") — counter-pressure against breakout");
                 }

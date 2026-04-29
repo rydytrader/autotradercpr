@@ -402,10 +402,13 @@
                     <label class="form-label">Small Candle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableSmallCandleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject if move &lt;</span>
-                        <input type="number" id="smallCandleAtrThreshold" class="form-control" step="0.1" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject if body &lt;</span>
+                        <input type="number" id="smallCandleBodyAtrThreshold" class="form-control" step="0.05" min="0.05" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR AND move &lt;</span>
+                        <input type="number" id="smallCandleMoveAtrThreshold" class="form-control" step="0.05" min="0.05" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR from breakout level</span>
                     </div>
+                    <div class="form-hint">OR-logic: candle passes if EITHER body or move past level meets its floor. Body floor = "meaningful conviction" (default 0.5). Move floor = "level actually cleared" (default 0.15 — small push past level is OK when body is strong).</div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px; padding-left: 28px;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Breakout wick ratio:</span>
                         <input type="number" id="wickRejectionRatio" class="form-control" step="0.1" min="1.0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
@@ -1078,7 +1081,10 @@
             document.getElementById('indexBearishThreshold').value = (d.indexBearishThreshold != null ? d.indexBearishThreshold : -6);
             document.getElementById('indexStrongBearishThreshold').value = (d.indexStrongBearishThreshold != null ? d.indexStrongBearishThreshold : -12);
             document.getElementById('enableSmallCandleFilter').checked = d.enableSmallCandleFilter === true;
-            document.getElementById('smallCandleAtrThreshold').value = d.smallCandleAtrThreshold || 0.5;
+            document.getElementById('smallCandleBodyAtrThreshold').value =
+                (d.smallCandleBodyAtrThreshold != null ? d.smallCandleBodyAtrThreshold : (d.smallCandleAtrThreshold != null ? d.smallCandleAtrThreshold : 0.5));
+            document.getElementById('smallCandleMoveAtrThreshold').value =
+                (d.smallCandleMoveAtrThreshold != null ? d.smallCandleMoveAtrThreshold : 0.15);
             document.getElementById('wickRejectionRatio').value = d.wickRejectionRatio || 1.5;
             document.getElementById('oppositeWickRatio').value = d.oppositeWickRatio || 2.0;
             document.getElementById('enableVolumeFilter').checked = d.enableVolumeFilter || false;
@@ -1232,7 +1238,8 @@
                 indexBearishThreshold: parseInt(document.getElementById('indexBearishThreshold').value) || -6,
                 indexStrongBearishThreshold: parseInt(document.getElementById('indexStrongBearishThreshold').value) || -12,
                 enableSmallCandleFilter: document.getElementById('enableSmallCandleFilter').checked,
-                smallCandleAtrThreshold: parseFloat(document.getElementById('smallCandleAtrThreshold').value) || 0.5,
+                smallCandleBodyAtrThreshold: parseFloat(document.getElementById('smallCandleBodyAtrThreshold').value) || 0.5,
+                smallCandleMoveAtrThreshold: parseFloat(document.getElementById('smallCandleMoveAtrThreshold').value) || 0.15,
                 wickRejectionRatio: parseFloat(document.getElementById('wickRejectionRatio').value) || 1.5,
                 oppositeWickRatio: parseFloat(document.getElementById('oppositeWickRatio').value) || 2.0,
                 enableVolumeFilter: document.getElementById('enableVolumeFilter').checked,

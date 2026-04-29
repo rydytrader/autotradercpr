@@ -97,6 +97,8 @@ public class SettingsController {
         result.put("enableLargeCandleBodyFilter", riskSettings.isEnableLargeCandleBodyFilter());
         result.put("largeCandleBodyAtrThreshold", riskSettings.getLargeCandleBodyAtrThreshold());
         result.put("smallCandleAtrThreshold", riskSettings.getSmallCandleAtrThreshold(effectiveMode));
+        result.put("smallCandleBodyAtrThreshold", riskSettings.getSmallCandleBodyAtrThreshold(effectiveMode));
+        result.put("smallCandleMoveAtrThreshold", riskSettings.getSmallCandleMoveAtrThreshold(effectiveMode));
         result.put("wickRejectionRatio", riskSettings.getWickRejectionRatio(effectiveMode));
         result.put("oppositeWickRatio", riskSettings.getOppositeWickRatio(effectiveMode));
         result.put("enableVolumeFilter", riskSettings.isEnableVolumeFilter(effectiveMode));
@@ -117,6 +119,7 @@ public class SettingsController {
         result.put("narrowCprMaxWidth", riskSettings.getNarrowCprMaxWidth());
         result.put("narrowCprMinWidth", riskSettings.getNarrowCprMinWidth());
         result.put("insideCprMaxWidth", riskSettings.getInsideCprMaxWidth());
+        result.put("scanUniverse", riskSettings.getScanUniverse());
         result.put("scanMinPrice", riskSettings.getScanMinPrice());
         result.put("scanMaxPrice", riskSettings.getScanMaxPrice());
         result.put("scanMinTurnover", riskSettings.getScanMinTurnover());
@@ -207,6 +210,8 @@ public class SettingsController {
             if (body.containsKey("enableLargeCandleBodyFilter")) riskSettings.setEnableLargeCandleBodyFilter(Boolean.parseBoolean(body.get("enableLargeCandleBodyFilter").toString()));
             if (body.containsKey("largeCandleBodyAtrThreshold")) riskSettings.setLargeCandleBodyAtrThreshold(Double.parseDouble(body.get("largeCandleBodyAtrThreshold").toString()));
             if (body.containsKey("smallCandleAtrThreshold")) riskSettings.setSmallCandleAtrThreshold(effectiveMode, Double.parseDouble(body.get("smallCandleAtrThreshold").toString()));
+            if (body.containsKey("smallCandleBodyAtrThreshold")) riskSettings.setSmallCandleBodyAtrThreshold(effectiveMode, Double.parseDouble(body.get("smallCandleBodyAtrThreshold").toString()));
+            if (body.containsKey("smallCandleMoveAtrThreshold")) riskSettings.setSmallCandleMoveAtrThreshold(effectiveMode, Double.parseDouble(body.get("smallCandleMoveAtrThreshold").toString()));
             if (body.containsKey("wickRejectionRatio")) riskSettings.setWickRejectionRatio(effectiveMode, Double.parseDouble(body.get("wickRejectionRatio").toString()));
             if (body.containsKey("oppositeWickRatio")) riskSettings.setOppositeWickRatio(effectiveMode, Double.parseDouble(body.get("oppositeWickRatio").toString()));
             if (body.containsKey("enableVolumeFilter")) riskSettings.setEnableVolumeFilter(effectiveMode, Boolean.parseBoolean(body.get("enableVolumeFilter").toString()));
@@ -227,6 +232,7 @@ public class SettingsController {
             if (body.containsKey("narrowCprMaxWidth")) riskSettings.setNarrowCprMaxWidth(Double.parseDouble(body.get("narrowCprMaxWidth").toString()));
             if (body.containsKey("narrowCprMinWidth")) riskSettings.setNarrowCprMinWidth(Double.parseDouble(body.get("narrowCprMinWidth").toString()));
             if (body.containsKey("insideCprMaxWidth")) riskSettings.setInsideCprMaxWidth(Double.parseDouble(body.get("insideCprMaxWidth").toString()));
+            if (body.containsKey("scanUniverse")) riskSettings.setScanUniverse(body.get("scanUniverse").toString());
             if (body.containsKey("scanMinPrice")) riskSettings.setScanMinPrice(Double.parseDouble(body.get("scanMinPrice").toString()));
             if (body.containsKey("scanMaxPrice")) riskSettings.setScanMaxPrice(Double.parseDouble(body.get("scanMaxPrice").toString()));
             if (body.containsKey("scanMinTurnover")) riskSettings.setScanMinTurnover(Double.parseDouble(body.get("scanMinTurnover").toString()));

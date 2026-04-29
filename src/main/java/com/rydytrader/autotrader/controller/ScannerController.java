@@ -137,6 +137,9 @@ public class ScannerController {
         card.put("symbol", fyersSymbol);
         card.put("shortName", levels.getSymbol());
         card.put("cprType", cprType);
+        // Universe membership flags drive the scanner-page client-side N50 vs All filter.
+        card.put("inNifty50", levels.isInNifty50());
+        card.put("inNifty100", levels.isInNifty100());
 
         // LTP separated into two values:
         //   liveTickLtp — the LTP from today's WS ticks (0 if none, e.g. pre-market new day).
@@ -636,7 +639,8 @@ public class ScannerController {
         Map<String, Object> status = new LinkedHashMap<>();
         status.put("signalSource", riskSettings.getSignalSource());
         status.put("watchlistCount", marketDataService.getWatchlist().size());
-        status.put("universeSize", bhavcopyService.getNifty50Count());
+        status.put("universeSize", bhavcopyService.getScanUniverseCount());
+        status.put("scanUniverse", riskSettings.getScanUniverse());
         status.put("atrLoaded", atrService.getLoadedCountFor(marketDataService.getWatchlist()));
         status.put("smaLoaded", smaService.getLoadedCountFor(marketDataService.getWatchlist()));
         status.put("sma200Loaded", smaService.getSma200LoadedCountFor(marketDataService.getWatchlist()));

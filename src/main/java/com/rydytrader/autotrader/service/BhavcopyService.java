@@ -54,7 +54,8 @@ public class BhavcopyService {
     );
     private static final String STORE_FILE = "../store/cache/cpr-data.json";
     private static final String LEGACY_STORE_FILE = "../store/config/cpr-data.json";
-    private static final String NIFTY50_LIST_FILE = "../store/cache/nifty50-list.json";
+    private static final String NIFTY50_LIST_FILE  = "../store/cache/nifty50-list.json";
+    private static final String NIFTY100_LIST_FILE = "../store/cache/nifty100-list.json";
     private static final String NSE_BASE_URL = "https://www.nseindia.com/";
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
@@ -65,10 +66,13 @@ public class BhavcopyService {
 
     private final ConcurrentHashMap<String, CprLevels> cache = new ConcurrentHashMap<>();
     private volatile String cachedDate = "";
-    // NIFTY 50 membership — fetched from NSE once per day, cached to disk as fallback for
-    // offline/failed-fetch days. When non-empty, the bhavcopy parse intersects with this set
-    // so only NIFTY 50 stocks end up in the CPR cache (cheaper CPR/volume/turnover compute).
-    private volatile Set<String> nifty50Symbols = Collections.emptySet();
+    // NIFTY 50 / NIFTY 100 membership — both lists fetched from NSE once per day, cached to
+    // disk as a fallback for offline/failed-fetch days. NIFTY 50 is a strict subset of NIFTY 100.
+    // The bhavcopy parse intersects with the SCAN universe set (chosen via scanUniverse setting)
+    // so only the relevant stocks end up in the CPR cache. NIFTY 50 membership is also tracked
+    // independently because index breadth + the NIFTY 50 trend card always use the 50 set.
+    private volatile Set<String> nifty50Symbols  = Collections.emptySet();
+    private volatile Set<String> nifty100Symbols = Collections.emptySet();
 
     // Rolling 5-day history (most recent first) for weekly CPR and inside-CPR detection
     private final LinkedList<DaySnapshot> dailyHistory = new LinkedList<>();
@@ -270,9 +274,31 @@ public class BhavcopyService {
         return cpr != null && cpr.isInNifty50();
     }
 
+    /** True if the symbol is part of the NIFTY 100 universe (NIFTY 50 ⊂ NIFTY 100). */
+    public boolean isInNifty100(String ticker) {
+        CprLevels cpr = cache.get(ticker);
+        return cpr != null && cpr.isInNifty100();
+    }
+
+    /** True if the symbol is in the configured scan universe (NIFTY 50 or NIFTY 100). */
+    public boolean isInScanUniverse(String ticker) {
+        if (riskSettings != null && "NIFTY100".equals(riskSettings.getScanUniverse())) {
+            return isInNifty100(ticker);
+        }
+        return isInNifty50(ticker);
+    }
+
     /** Total NIFTY 50 stocks marked in the current cache. Returns 0 if the list fetch failed. */
     public int getNifty50Count() {
         return (int) cache.values().stream().filter(CprLevels::isInNifty50).count();
+    }
+
+    /** Total stocks in the configured scan universe (NIFTY 50 or NIFTY 100). */
+    public int getScanUniverseCount() {
+        if (riskSettings != null && "NIFTY100".equals(riskSettings.getScanUniverse())) {
+            return (int) cache.values().stream().filter(CprLevels::isInNifty100).count();
+        }
+        return getNifty50Count();
     }
 
     public List<CprLevels> getNarrowCprStocks() {
@@ -382,15 +408,24 @@ public class BhavcopyService {
                     return false;
                 }
 
-                // Universe selection. NIFTY 50 ⊂ FNO, so when the NIFTY 50 list is available
-                // (live or disk-cached) we skip the FO bhavcopy fetch entirely — it was only
-                // used to establish FNO membership, and NIFTY 50 guarantees that. If NIFTY 50
-                // is unavailable, fall back to FO bhavcopy + full FNO universe.
-                Set<String> nifty50 = fetchOrLoadNifty50List(cookies);
+                // Universe selection. NIFTY 50 ⊂ NIFTY 100 ⊂ FNO. We always fetch BOTH index
+                // lists so the bhavcopy parse can intersect with whichever the user has
+                // configured (scanUniverse). NIFTY 50 / NIFTY 100 guarantees FNO membership,
+                // so the FO bhavcopy fetch is skipped when either list is available.
+                Set<String> nifty50  = fetchOrLoadNifty50List(cookies);
+                Set<String> nifty100 = fetchOrLoadNifty100List(cookies);
+                String universe = riskSettings != null ? riskSettings.getScanUniverse() : "NIFTY50";
                 Set<String> nfoSymbols;
-                if (!nifty50.isEmpty()) {
+                Set<String> chosen = "NIFTY100".equals(universe) ? nifty100 : nifty50;
+                if (!chosen.isEmpty()) {
+                    nfoSymbols = new HashSet<>(chosen);
+                    log.info("[BhavcopyService] {} universe active — skipping FO bhavcopy fetch ({} symbols)",
+                        universe, nfoSymbols.size());
+                } else if (!nifty50.isEmpty()) {
+                    // Requested NIFTY 100 but it failed to load; fall back to NIFTY 50.
                     nfoSymbols = new HashSet<>(nifty50);
-                    log.info("[BhavcopyService] NIFTY 50 universe active — skipping FO bhavcopy fetch ({} symbols)", nfoSymbols.size());
+                    log.warn("[BhavcopyService] {} list unavailable, falling back to NIFTY 50 ({} symbols)",
+                        universe, nfoSymbols.size());
                 } else {
                     // Fallback: fetch FO bhavcopy for full FNO universe
                     String foUrl = String.format(FO_URL_TEMPLATE, dateStr);
@@ -428,7 +463,6 @@ public class BhavcopyService {
                 }
 
                 // Compute CPR levels
-                boolean nifty50Active = !nifty50Symbols.isEmpty();
                 ConcurrentHashMap<String, CprLevels> newCache = new ConcurrentHashMap<>();
                 for (Map.Entry<String, double[]> entry : ohlcMap.entrySet()) {
                     double[] hlc = entry.getValue();
@@ -437,7 +471,9 @@ public class BhavcopyService {
                     if (hlc.length > 4) lvl.setFiftyTwoWeekHigh(hlc[4]);
                     if (hlc.length > 5) lvl.setFiftyTwoWeekLow(hlc[5]);
                     if (hlc.length > 6) lvl.setTurnover(hlc[6]);
-                    if (nifty50Active) lvl.setInNifty50(true);
+                    // Mark membership independently — N50 ⊂ N100, so an N50 stock has both flags set.
+                    if (nifty50Symbols.contains(entry.getKey()))  lvl.setInNifty50(true);
+                    if (nifty100Symbols.contains(entry.getKey())) lvl.setInNifty100(true);
                     if (symbolMasterService != null) {
                         double tick = symbolMasterService.getTickSize("NSE:" + entry.getKey() + "-EQ");
                         lvl.roundToTick(tick);
@@ -720,6 +756,50 @@ public class BhavcopyService {
         }
         log.warn("[BhavcopyService] NIFTY 50 list unavailable (live fetch + disk cache both empty) — bhavcopy will be processed with full FNO universe");
         return Collections.emptySet();
+    }
+
+    /** Same lifecycle as {@link #fetchOrLoadNifty50List(String)} but for the NIFTY 100. Always
+     *  fetched (regardless of scanUniverse setting) so the user can switch on the fly without
+     *  triggering a fresh NSE fetch. NIFTY 100 rebalances ~2× per year so 1-day staleness
+     *  is acceptable. */
+    private Set<String> fetchOrLoadNifty100List(String cookies) {
+        Set<String> fresh = fetchIndexSymbols(NIFTY100_URL, cookies);
+        if (!fresh.isEmpty()) {
+            nifty100Symbols = fresh;
+            saveSymbolsToDisk(fresh, NIFTY100_LIST_FILE, "NIFTY 100");
+            log.info("[BhavcopyService] NIFTY 100 list fetched from NSE: {} stocks", fresh.size());
+            return fresh;
+        }
+        Set<String> cached = loadSymbolsFromDisk(NIFTY100_LIST_FILE);
+        if (!cached.isEmpty()) {
+            nifty100Symbols = cached;
+            log.warn("[BhavcopyService] NIFTY 100 live fetch failed — using disk-cached list of {} stocks", cached.size());
+            return cached;
+        }
+        log.warn("[BhavcopyService] NIFTY 100 list unavailable (live fetch + disk cache both empty)");
+        return Collections.emptySet();
+    }
+
+    private void saveSymbolsToDisk(Set<String> symbols, String file, String label) {
+        try {
+            java.nio.file.Path path = java.nio.file.Paths.get(file);
+            java.nio.file.Files.createDirectories(path.getParent());
+            java.nio.file.Files.writeString(path, mapper.writeValueAsString(symbols));
+        } catch (Exception e) {
+            log.warn("[BhavcopyService] Failed to persist {} list to disk: {}", label, e.getMessage());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Set<String> loadSymbolsFromDisk(String file) {
+        try {
+            java.nio.file.Path path = java.nio.file.Paths.get(file);
+            if (!java.nio.file.Files.exists(path)) return Collections.emptySet();
+            String json = java.nio.file.Files.readString(path);
+            return mapper.readValue(json, Set.class);
+        } catch (Exception e) {
+            return Collections.emptySet();
+        }
     }
 
     private void saveNifty50ToDisk(Set<String> symbols) {

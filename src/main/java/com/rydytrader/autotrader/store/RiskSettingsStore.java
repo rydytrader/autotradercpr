@@ -98,8 +98,10 @@ public class RiskSettingsStore {
         // behind, making the filter reject otherwise valid breakouts.
         volatile boolean smaLevelFilterMorningSkip = false;
         volatile String  smaLevelFilterMorningSkipUntil = "10:15"; // HH:mm IST
-        volatile boolean enableSmallCandleFilter = false; // reject if candle move from breakout level < smallCandleAtrThreshold ATR
-        volatile double smallCandleAtrThreshold = 0.5; // ATR multiplier for small candle filter
+        volatile boolean enableSmallCandleFilter = false; // reject if candle body and move past level both fall short of their ATR floors
+        volatile double smallCandleAtrThreshold = 0.5; // legacy single-knob (kept for backward-compat load only; no longer drives logic)
+        volatile double smallCandleBodyAtrThreshold = 0.5;  // body floor — small body = weak conviction
+        volatile double smallCandleMoveAtrThreshold = 0.15; // move-past-level floor — tiny push past the level = barely cleared
         volatile double wickRejectionRatio = 1.5; // breakout wick must be >= this * body to allow small body candle
         volatile double oppositeWickRatio = 2.0; // opposite wick >= this * body = counter-pressure, reject
         volatile boolean enableVolumeFilter = false; // reject if candle volume < volumeMultiple * avg volume
@@ -134,6 +136,11 @@ public class RiskSettingsStore {
         volatile double narrowCprMinWidth = 0.0;  // CPR width % lower threshold — narrow = [min, max). 0 = no min.
         // narrowRangeRatioThreshold removed — z-score of PDH-PDL/CPR ratio is self-calibrating
         volatile double insideCprMaxWidth = 0.5;  // max CPR width % for inside CPR stocks (0 = no filter)
+        // Scan universe — fixed at NIFTY 100. The backend always loads + subscribes the full
+        // 100-stock universe so NIFTY 100 stocks (beyond the 50-index) can still be scanned for
+        // signals. The scanner page has a client-side filter chip to view N50-only or all 100.
+        // Field kept for forward-compat in case a per-user override is ever exposed again.
+        volatile String scanUniverse = "NIFTY100";
         volatile double scanMinPrice = 300;      // min stock price filter (0 = no filter)
         volatile double scanMaxPrice = 0;        // max stock price filter (0 = no max)
         volatile double scanMinTurnover = 0;     // min daily turnover in ₹ Cr (0 = no filter)
@@ -257,6 +264,8 @@ public class RiskSettingsStore {
     public boolean isSkipR4S4NormalDays() { return cfg().skipR4S4NormalDays; }
     public int getAtrPeriod() { return cfg().atrPeriod; }
     public double getSmallCandleAtrThreshold() { return cfg().smallCandleAtrThreshold; }
+    public double getSmallCandleBodyAtrThreshold() { return cfg().smallCandleBodyAtrThreshold; }
+    public double getSmallCandleMoveAtrThreshold() { return cfg().smallCandleMoveAtrThreshold; }
     public double getWickRejectionRatio() { return cfg().wickRejectionRatio; }
     public double getOppositeWickRatio() { return cfg().oppositeWickRatio; }
     public boolean isEnableVolumeFilter() { return cfg().enableVolumeFilter; }
@@ -276,6 +285,7 @@ public class RiskSettingsStore {
     public double getNarrowCprMaxWidth() { return cfg().narrowCprMaxWidth; }
     public double getNarrowCprMinWidth() { return cfg().narrowCprMinWidth; }
     public double getInsideCprMaxWidth() { return cfg().insideCprMaxWidth; }
+    public String getScanUniverse() { String u = cfg().scanUniverse; return u != null && !u.isEmpty() ? u : "NIFTY100"; }
     public double getScanMinPrice() { return cfg().scanMinPrice; }
     public double getScanMaxPrice() { return cfg().scanMaxPrice; }
     public double getScanMinTurnover() { return cfg().scanMinTurnover; }
@@ -314,6 +324,11 @@ public class RiskSettingsStore {
     public void setNarrowCprMaxWidth(double v) { cfg().narrowCprMaxWidth = v; }
     public void setNarrowCprMinWidth(double v) { cfg().narrowCprMinWidth = Math.max(0, v); }
     public void setInsideCprMaxWidth(double v) { cfg().insideCprMaxWidth = v; }
+    public void setScanUniverse(String v) {
+        // Always NIFTY 100 — the toggle was removed. Setter ignores input, kept only so
+        // settings-save calls don't blow up if a stale UI client still posts the field.
+        cfg().scanUniverse = "NIFTY100";
+    }
     public void setScanMinPrice(double v) { cfg().scanMinPrice = v; }
     public void setScanMaxPrice(double v) { cfg().scanMaxPrice = v; }
     public void setScanMinTurnover(double v) { cfg().scanMinTurnover = v; }
@@ -395,6 +410,8 @@ public class RiskSettingsStore {
     public void setSkipR4S4NormalDays(boolean v) { cfg().skipR4S4NormalDays = v; }
     public void setAtrPeriod(int v) { cfg().atrPeriod = v; }
     public void setSmallCandleAtrThreshold(double v) { cfg().smallCandleAtrThreshold = v; }
+    public void setSmallCandleBodyAtrThreshold(double v) { cfg().smallCandleBodyAtrThreshold = v; }
+    public void setSmallCandleMoveAtrThreshold(double v) { cfg().smallCandleMoveAtrThreshold = v; }
     public void setWickRejectionRatio(double v) { cfg().wickRejectionRatio = v; }
     public void setOppositeWickRatio(double v) { cfg().oppositeWickRatio = v; }
     public void setEnableVolumeFilter(boolean v) { cfg().enableVolumeFilter = v; }
@@ -425,6 +442,8 @@ public class RiskSettingsStore {
     public boolean isEnableSmallCandleFilter(String mode) { return cfgFor(mode).enableSmallCandleFilter; }
     public boolean isEnableTrailingSl(String mode) { return cfgFor(mode).enableTrailingSl; }
     public double getSmallCandleAtrThreshold(String mode) { return cfgFor(mode).smallCandleAtrThreshold; }
+    public double getSmallCandleBodyAtrThreshold(String mode) { return cfgFor(mode).smallCandleBodyAtrThreshold; }
+    public double getSmallCandleMoveAtrThreshold(String mode) { return cfgFor(mode).smallCandleMoveAtrThreshold; }
     public double getWickRejectionRatio(String mode) { return cfgFor(mode).wickRejectionRatio; }
     public double getOppositeWickRatio(String mode) { return cfgFor(mode).oppositeWickRatio; }
     public boolean isEnableVolumeFilter(String mode) { return cfgFor(mode).enableVolumeFilter; }
@@ -453,6 +472,8 @@ public class RiskSettingsStore {
     public void setEnableSmallCandleFilter(String mode, boolean v) { cfgFor(mode).enableSmallCandleFilter = v; }
     public void setEnableTrailingSl(String mode, boolean v) { cfgFor(mode).enableTrailingSl = v; }
     public void setSmallCandleAtrThreshold(String mode, double v) { cfgFor(mode).smallCandleAtrThreshold = v; }
+    public void setSmallCandleBodyAtrThreshold(String mode, double v) { cfgFor(mode).smallCandleBodyAtrThreshold = v; }
+    public void setSmallCandleMoveAtrThreshold(String mode, double v) { cfgFor(mode).smallCandleMoveAtrThreshold = v; }
     public void setWickRejectionRatio(String mode, double v) { cfgFor(mode).wickRejectionRatio = v; }
     public void setOppositeWickRatio(String mode, double v) { cfgFor(mode).oppositeWickRatio = v; }
     public void setEnableVolumeFilter(String mode, boolean v) { cfgFor(mode).enableVolumeFilter = v; }
@@ -523,6 +544,8 @@ public class RiskSettingsStore {
             upsert("enableLargeCandleBodyFilter", String.valueOf(c.enableLargeCandleBodyFilter));
             upsert("largeCandleBodyAtrThreshold", String.valueOf(c.largeCandleBodyAtrThreshold));
             upsert("smallCandleAtrThreshold", String.valueOf(c.smallCandleAtrThreshold));
+            upsert("smallCandleBodyAtrThreshold", String.valueOf(c.smallCandleBodyAtrThreshold));
+            upsert("smallCandleMoveAtrThreshold", String.valueOf(c.smallCandleMoveAtrThreshold));
             upsert("wickRejectionRatio", String.valueOf(c.wickRejectionRatio));
             upsert("oppositeWickRatio", String.valueOf(c.oppositeWickRatio));
             upsert("enableVolumeFilter", String.valueOf(c.enableVolumeFilter));
@@ -550,6 +573,7 @@ public class RiskSettingsStore {
             upsert("narrowCprMinWidth", String.valueOf(c.narrowCprMinWidth));
             // narrowRangeRatioThreshold removed — z-score is self-calibrating
             upsert("insideCprMaxWidth", String.valueOf(c.insideCprMaxWidth));
+            upsert("scanUniverse", "NIFTY100");  // toggle removed — always pinned
             upsert("scanMinPrice", String.valueOf(c.scanMinPrice));
             upsert("scanMaxPrice", String.valueOf(c.scanMaxPrice));
             upsert("scanMinTurnover", String.valueOf(c.scanMinTurnover));
@@ -656,7 +680,14 @@ public class RiskSettingsStore {
                     case "enableSmallCandleFilter" -> c.enableSmallCandleFilter = Boolean.parseBoolean(v);
                     case "enableLargeCandleBodyFilter" -> c.enableLargeCandleBodyFilter = Boolean.parseBoolean(v);
                     case "largeCandleBodyAtrThreshold" -> c.largeCandleBodyAtrThreshold = Double.parseDouble(v);
-                    case "smallCandleAtrThreshold" -> c.smallCandleAtrThreshold = Double.parseDouble(v);
+                    case "smallCandleAtrThreshold" -> {
+                        // Legacy single knob: also seed the new split fields if those keys haven't been
+                        // saved yet. Once the user saves the new fields explicitly, this no-op overwrites
+                        // are harmless because save() writes both keys.
+                        c.smallCandleAtrThreshold = Double.parseDouble(v);
+                    }
+                    case "smallCandleBodyAtrThreshold" -> c.smallCandleBodyAtrThreshold = Double.parseDouble(v);
+                    case "smallCandleMoveAtrThreshold" -> c.smallCandleMoveAtrThreshold = Double.parseDouble(v);
                     case "wickRejectionRatio" -> c.wickRejectionRatio = Double.parseDouble(v);
                     case "oppositeWickRatio" -> c.oppositeWickRatio = Double.parseDouble(v);
                     case "enableVolumeFilter" -> c.enableVolumeFilter = Boolean.parseBoolean(v);
@@ -692,6 +723,9 @@ public class RiskSettingsStore {
                     case "narrowCprMinWidth" -> c.narrowCprMinWidth = Math.max(0, Double.parseDouble(v));
                     // narrowRangeRatioThreshold — legacy key, silently ignored
                     case "insideCprMaxWidth" -> c.insideCprMaxWidth = Double.parseDouble(v);
+                    // scanUniverse — always NIFTY 100 (the toggle was removed). Any legacy
+                    // persisted value (NIFTY50) gets migrated forward on load.
+                    case "scanUniverse" -> c.scanUniverse = "NIFTY100";
                     case "scanMinPrice" -> c.scanMinPrice = Double.parseDouble(v);
                     case "scanMaxPrice" -> c.scanMaxPrice = Double.parseDouble(v);
                     case "scanMinTurnover" -> c.scanMinTurnover = Double.parseDouble(v);

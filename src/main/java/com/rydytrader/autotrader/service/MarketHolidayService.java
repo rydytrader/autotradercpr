@@ -211,8 +211,18 @@ public class MarketHolidayService {
                 return;
             }
 
+            // NSE may honour our Accept-Encoding header and return gzip/deflate. Wrap the
+            // raw byte stream accordingly before decoding as UTF-8 — otherwise compressed
+            // bytes get read as text and the JSON parse blows up on 0xFFFD replacement chars.
+            String encoding = conn.getContentEncoding();
+            java.io.InputStream raw = conn.getInputStream();
+            java.io.InputStream decoded = "gzip".equalsIgnoreCase(encoding)
+                ? new java.util.zip.GZIPInputStream(raw)
+                : "deflate".equalsIgnoreCase(encoding)
+                    ? new java.util.zip.InflaterInputStream(raw)
+                    : raw;
             StringBuilder sb = new StringBuilder();
-            try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(decoded, java.nio.charset.StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = br.readLine()) != null) sb.append(line);
             }
