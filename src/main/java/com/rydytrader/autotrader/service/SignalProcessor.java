@@ -101,9 +101,11 @@ public class SignalProcessor {
         String signal = isBuy ? "BUY" : "SELL";
 
         // ── Extended-level skip gate (daily) ─────────────────────────────────
-        // Daily R3/S3 and R4/S4 breakouts skipped on ALL day types when their respective
-        // toggle is on. DH/DL breakouts that have already reached or passed daily R3/S3 or
-        // R4/S4 are treated identically — a DH break above R3 IS effectively an R3 trade.
+        // Daily R3/S3 and R4/S4 breakouts skipped per day type. The toggle splits into two:
+        //   *IvOvDays — skip on IV (open inside CPR) or OV (open between CPR and R2/S2) days
+        //   *EvDays   — skip on EV (open above R2 or below S2 — extreme-value gap) days
+        // DH/DL breakouts that have reached or passed daily R3/S3 or R4/S4 are treated
+        // identically — a DH break above R3 IS effectively an R3 trade.
         boolean isR3S3Setup = "BUY_ABOVE_R3".equals(setup) || "SELL_BELOW_S3".equals(setup)
                            || "BUY_ABOVE_S3".equals(setup) || "SELL_BELOW_R3".equals(setup);
         boolean isR4S4Setup = "BUY_ABOVE_R4".equals(setup) || "SELL_BELOW_S4".equals(setup)
@@ -113,26 +115,42 @@ public class SignalProcessor {
         boolean isDlBelowS3 = "SELL_BELOW_DL".equals(setup) && s3 > 0 && dayLow  < s3;
         boolean isDlBelowS4 = "SELL_BELOW_DL".equals(setup) && s4 > 0 && dayLow  < s4;
 
-        if (riskSettings.isSkipR3S3NormalDays()) {
+        // Classify today's day type from the open print (= first 5-min candle close,
+        // matching the bot's existing 2D-CPR validation pattern).
+        double openPrint = candleAggregator.getFirstCandleClose(symbol);
+        String dayType = classifyDayType(openPrint, tc, bc, r2, s2);
+        boolean isEvDay   = "EV".equals(dayType);
+        // Pre-9:20 IST or missing CPR → UNKNOWN treated as IV/OV (conservative: applies the
+        // IV/OV toggle so trades aren't silently let through before the open print confirms).
+        boolean isIvOvDay = "IV".equals(dayType) || "OV".equals(dayType) || "UNKNOWN".equals(dayType);
+
+        boolean shouldSkipR3S3 =
+               (isEvDay   && riskSettings.isSkipR3S3EvDays())
+            || (isIvOvDay && riskSettings.isSkipR3S3IvOvDays());
+        boolean shouldSkipR4S4 =
+               (isEvDay   && riskSettings.isSkipR4S4EvDays())
+            || (isIvOvDay && riskSettings.isSkipR4S4IvOvDays());
+
+        if (shouldSkipR3S3) {
             if (isR3S3Setup) {
                 return ProcessedSignal.rejected(setup, symbol,
-                    "R3/S3 breakout skipped (extended-level skip enabled)");
+                    "R3/S3 breakout skipped (" + dayType + " day)");
             }
             if (isDhAboveR3 || isDlBelowS3) {
                 return ProcessedSignal.rejected(setup, symbol,
                     (isDhAboveR3 ? "DH above R3" : "DL below S3")
-                    + " skipped (extended-level skip enabled — DH/DL beyond R3/S3 treated as R3/S3)");
+                    + " skipped (" + dayType + " day — DH/DL beyond R3/S3 treated as R3/S3)");
             }
         }
-        if (riskSettings.isSkipR4S4NormalDays()) {
+        if (shouldSkipR4S4) {
             if (isR4S4Setup) {
                 return ProcessedSignal.rejected(setup, symbol,
-                    "R4/S4 breakout skipped (extended-level skip enabled)");
+                    "R4/S4 breakout skipped (" + dayType + " day)");
             }
             if (isDhAboveR4 || isDlBelowS4) {
                 return ProcessedSignal.rejected(setup, symbol,
                     (isDhAboveR4 ? "DH above R4" : "DL below S4")
-                    + " skipped (extended-level skip enabled — DH/DL beyond R4/S4 treated as R4/S4)");
+                    + " skipped (" + dayType + " day — DH/DL beyond R4/S4 treated as R4/S4)");
             }
         }
 
@@ -674,10 +692,11 @@ public class SignalProcessor {
                 shiftCandidates.putIfAbsent(wl.ph, "weekly PH");
                 shiftCandidates.putIfAbsent(wl.pl, "weekly PL");
             }
-            // 200 SMA as target shift candidate — only when the SMA trend gate is disabled
-            // (trade fires into the 200 SMA rather than being blocked by it).
-            // The 200 SMA acts as resistance (buys) or support (sells) for target capping.
-            if (!riskSettings.isEnableSmaTrendCheck()) {
+            // 200 SMA as target shift candidate — gated by the explicit "Daily SMA 200" toggle.
+            // Particularly useful with the lenient price/alignment gates which don't validate
+            // against the 200 SMA: the line still acts as resistance (for buys) or support (for
+            // sells) intraday and is worth capturing as a target cap.
+            if (riskSettings.isEnableDailySma200TargetShift()) {
                 double sma200 = smaService.getSma200(symbol);
                 if (sma200 > 0) {
                     shiftCandidates.putIfAbsent(sma200, "200 SMA");
@@ -1118,6 +1137,30 @@ public class SignalProcessor {
             case "SELL_BELOW_DL"    -> "Day Low";
             default -> setup;
         };
+    }
+
+    /**
+     * Classify today's day type from the open print (first 5-min candle close) vs daily CPR.
+     * Used by the daily extended-level skip toggles to decide which day-type-specific toggle
+     * applies.
+     * <ul>
+     *   <li>{@code IV}  — open print inside CPR (between BC and TC)</li>
+     *   <li>{@code OV}  — open print between CPR and R2/S2</li>
+     *   <li>{@code EV}  — open print outside R2/S2 (extreme-value gap)</li>
+     *   <li>{@code UNKNOWN} — open print not yet established (pre-9:20 IST) or CPR missing</li>
+     * </ul>
+     */
+    static String classifyDayType(double openPrint, double tc, double bc, double r2, double s2) {
+        if (openPrint <= 0) return "UNKNOWN";
+        if (tc <= 0 || bc <= 0) return "UNKNOWN";
+        double cprTop = Math.max(tc, bc);
+        double cprBot = Math.min(tc, bc);
+        if (openPrint > cprBot && openPrint < cprTop) return "IV";
+        // Inclusive of the boundary itself (open == TC or BC) → still IV.
+        if (openPrint == cprTop || openPrint == cprBot) return "IV";
+        if (r2 > 0 && openPrint > r2) return "EV";
+        if (s2 > 0 && openPrint < s2) return "EV";
+        return "OV";
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────

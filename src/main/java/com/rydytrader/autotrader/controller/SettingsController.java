@@ -59,6 +59,7 @@ public class SettingsController {
         result.put("telegramAlertFrequency", riskSettings.getTelegramAlertFrequency(effectiveMode));
         result.put("enableGapCheck", riskSettings.isEnableGapCheck());
         result.put("enableDayHighLowTargetShift", riskSettings.isEnableDayHighLowTargetShift());
+        result.put("enableDailySma200TargetShift", riskSettings.isEnableDailySma200TargetShift());
         result.put("dayHighLowShiftMinDistAtr", riskSettings.getDayHighLowShiftMinDistAtr());
         result.put("enableWeeklyLevelTargetShift", riskSettings.isEnableWeeklyLevelTargetShift());
         result.put("enableWeeklySmaTargetShift", riskSettings.isEnableWeeklySmaTargetShift());
@@ -72,7 +73,9 @@ public class SettingsController {
         result.put("enableRiskRewardFilter", riskSettings.isEnableRiskRewardFilter());
         result.put("minRiskRewardRatio", riskSettings.getMinRiskRewardRatio());
         result.put("enableSmaTrendCheck", riskSettings.isEnableSmaTrendCheck());
+        result.put("enableSmaTrendCheckLenient", riskSettings.isEnableSmaTrendCheckLenient());
         result.put("enableSmaAlignmentCheck", riskSettings.isEnableSmaAlignmentCheck());
+        result.put("enableSmaAlignmentCheckLenient", riskSettings.isEnableSmaAlignmentCheckLenient());
         result.put("enableSmaVsAtpCheck", riskSettings.isEnableSmaVsAtpCheck());
         result.put("requireRtpPattern", riskSettings.isRequireRtpPattern());
         result.put("skipTradesInZigZag", riskSettings.isSkipTradesInZigZag());
@@ -106,8 +109,10 @@ public class SettingsController {
         result.put("fibStage1SlAtrMult",  riskSettings.getFibStage1SlAtrMult());
         result.put("fibStage2TriggerPct", riskSettings.getFibStage2TriggerPct());
         result.put("fibStage2SlPct",      riskSettings.getFibStage2SlPct());
-        result.put("skipR3S3NormalDays", riskSettings.isSkipR3S3NormalDays());
-        result.put("skipR4S4NormalDays", riskSettings.isSkipR4S4NormalDays());
+        result.put("skipR3S3IvOvDays", riskSettings.isSkipR3S3IvOvDays());
+        result.put("skipR3S3EvDays",   riskSettings.isSkipR3S3EvDays());
+        result.put("skipR4S4IvOvDays", riskSettings.isSkipR4S4IvOvDays());
+        result.put("skipR4S4EvDays",   riskSettings.isSkipR4S4EvDays());
         result.put("skipHtfR3S3NormalDays", riskSettings.isSkipHtfR3S3NormalDays());
         result.put("skipHtfR4S4NormalDays", riskSettings.isSkipHtfR4S4NormalDays());
         result.put("atrPeriod", riskSettings.getAtrPeriod());
@@ -171,6 +176,7 @@ public class SettingsController {
             if (body.containsKey("telegramAlertFrequency")) riskSettings.setTelegramAlertFrequency(effectiveMode, Integer.parseInt(body.get("telegramAlertFrequency").toString()));
             if (body.containsKey("enableGapCheck")) riskSettings.setEnableGapCheck(Boolean.parseBoolean(body.get("enableGapCheck").toString()));
             if (body.containsKey("enableDayHighLowTargetShift")) riskSettings.setEnableDayHighLowTargetShift(Boolean.parseBoolean(body.get("enableDayHighLowTargetShift").toString()));
+            if (body.containsKey("enableDailySma200TargetShift")) riskSettings.setEnableDailySma200TargetShift(Boolean.parseBoolean(body.get("enableDailySma200TargetShift").toString()));
             if (body.containsKey("dayHighLowShiftMinDistAtr")) riskSettings.setDayHighLowShiftMinDistAtr(Double.parseDouble(body.get("dayHighLowShiftMinDistAtr").toString()));
             if (body.containsKey("enableWeeklyLevelTargetShift")) riskSettings.setEnableWeeklyLevelTargetShift(Boolean.parseBoolean(body.get("enableWeeklyLevelTargetShift").toString()));
             if (body.containsKey("enableWeeklySmaTargetShift")) riskSettings.setEnableWeeklySmaTargetShift(Boolean.parseBoolean(body.get("enableWeeklySmaTargetShift").toString()));
@@ -184,7 +190,9 @@ public class SettingsController {
             if (body.containsKey("enableRiskRewardFilter")) riskSettings.setEnableRiskRewardFilter(Boolean.parseBoolean(body.get("enableRiskRewardFilter").toString()));
             if (body.containsKey("minRiskRewardRatio")) riskSettings.setMinRiskRewardRatio(Double.parseDouble(body.get("minRiskRewardRatio").toString()));
             if (body.containsKey("enableSmaTrendCheck")) riskSettings.setEnableSmaTrendCheck(Boolean.parseBoolean(body.get("enableSmaTrendCheck").toString()));
+            if (body.containsKey("enableSmaTrendCheckLenient")) riskSettings.setEnableSmaTrendCheckLenient(Boolean.parseBoolean(body.get("enableSmaTrendCheckLenient").toString()));
             if (body.containsKey("enableSmaAlignmentCheck")) riskSettings.setEnableSmaAlignmentCheck(Boolean.parseBoolean(body.get("enableSmaAlignmentCheck").toString()));
+            if (body.containsKey("enableSmaAlignmentCheckLenient")) riskSettings.setEnableSmaAlignmentCheckLenient(Boolean.parseBoolean(body.get("enableSmaAlignmentCheckLenient").toString()));
             if (body.containsKey("enableSmaVsAtpCheck")) riskSettings.setEnableSmaVsAtpCheck(Boolean.parseBoolean(body.get("enableSmaVsAtpCheck").toString()));
             if (body.containsKey("requireRtpPattern")) riskSettings.setRequireRtpPattern(Boolean.parseBoolean(body.get("requireRtpPattern").toString()));
             if (body.containsKey("skipTradesInZigZag")) riskSettings.setSkipTradesInZigZag(Boolean.parseBoolean(body.get("skipTradesInZigZag").toString()));
@@ -218,8 +226,10 @@ public class SettingsController {
             if (body.containsKey("fibStage1SlAtrMult"))  riskSettings.setFibStage1SlAtrMult(Double.parseDouble(body.get("fibStage1SlAtrMult").toString()));
             if (body.containsKey("fibStage2TriggerPct")) riskSettings.setFibStage2TriggerPct(Double.parseDouble(body.get("fibStage2TriggerPct").toString()));
             if (body.containsKey("fibStage2SlPct"))      riskSettings.setFibStage2SlPct(Double.parseDouble(body.get("fibStage2SlPct").toString()));
-            if (body.containsKey("skipR3S3NormalDays")) riskSettings.setSkipR3S3NormalDays(Boolean.parseBoolean(body.get("skipR3S3NormalDays").toString()));
-            if (body.containsKey("skipR4S4NormalDays")) riskSettings.setSkipR4S4NormalDays(Boolean.parseBoolean(body.get("skipR4S4NormalDays").toString()));
+            if (body.containsKey("skipR3S3IvOvDays")) riskSettings.setSkipR3S3IvOvDays(Boolean.parseBoolean(body.get("skipR3S3IvOvDays").toString()));
+            if (body.containsKey("skipR3S3EvDays"))   riskSettings.setSkipR3S3EvDays(Boolean.parseBoolean(body.get("skipR3S3EvDays").toString()));
+            if (body.containsKey("skipR4S4IvOvDays")) riskSettings.setSkipR4S4IvOvDays(Boolean.parseBoolean(body.get("skipR4S4IvOvDays").toString()));
+            if (body.containsKey("skipR4S4EvDays"))   riskSettings.setSkipR4S4EvDays(Boolean.parseBoolean(body.get("skipR4S4EvDays").toString()));
             if (body.containsKey("skipHtfR3S3NormalDays")) riskSettings.setSkipHtfR3S3NormalDays(Boolean.parseBoolean(body.get("skipHtfR3S3NormalDays").toString()));
             if (body.containsKey("skipHtfR4S4NormalDays")) riskSettings.setSkipHtfR4S4NormalDays(Boolean.parseBoolean(body.get("skipHtfR4S4NormalDays").toString()));
             if (body.containsKey("atrPeriod")) riskSettings.setAtrPeriod(Integer.parseInt(body.get("atrPeriod").toString()));

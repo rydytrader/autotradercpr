@@ -381,19 +381,56 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double sma20Now  = smaService.getSma(fyersSymbol);
         double sma50Now  = smaService.getSma50(fyersSymbol);
         double sma200Now = smaService.getSma200(fyersSymbol);
-        if (riskSettings.isEnableSmaTrendCheck() && sma20Now > 0 && sma50Now > 0 && sma200Now > 0) {
-            boolean bullClose = close > sma20Now && close > sma50Now && close > sma200Now;
-            boolean bearClose = close < sma20Now && close < sma50Now && close < sma200Now;
-            boolean bullAligned = sma20Now > sma50Now && sma50Now > sma200Now;
-            boolean bearAligned = sma20Now < sma50Now && sma50Now < sma200Now;
-            boolean alignmentOn = riskSettings.isEnableSmaAlignmentCheck();
+        boolean strictTrendOn  = riskSettings.isEnableSmaTrendCheck();
+        boolean lenientTrendOn = riskSettings.isEnableSmaTrendCheckLenient();
+        if ((strictTrendOn || lenientTrendOn) && sma20Now > 0 && sma50Now > 0
+                && (lenientTrendOn || sma200Now > 0)) {
+            boolean bullClose;
+            boolean bearClose;
+            String priceFailReason;
+            if (strictTrendOn) {
+                // Strict gate wins when both are on (it implies the lenient gate).
+                bullClose = close > sma20Now && close > sma50Now && close > sma200Now;
+                bearClose = close < sma20Now && close < sma50Now && close < sma200Now;
+                priceFailReason = "close not above all SMAs (20/50/200)";
+            } else {
+                // Lenient-only: 200 SMA is ignored.
+                bullClose = close > sma20Now && close > sma50Now;
+                bearClose = close < sma20Now && close < sma50Now;
+                priceFailReason = "close not above SMA 20 and 50 (lenient)";
+            }
+            // Alignment evaluation: strict needs 200; lenient only needs 20 vs 50.
+            boolean strictAlignOn  = riskSettings.isEnableSmaAlignmentCheck();
+            boolean lenientAlignOn = riskSettings.isEnableSmaAlignmentCheckLenient();
+            boolean canEvalStrictAlign = sma200Now > 0;
+            boolean bullAligned;
+            boolean bearAligned;
+            if (strictAlignOn && canEvalStrictAlign) {
+                // Strict wins when both are on.
+                bullAligned = sma20Now > sma50Now && sma50Now > sma200Now;
+                bearAligned = sma20Now < sma50Now && sma50Now < sma200Now;
+            } else {
+                // Lenient-only or strict can't be evaluated yet (200 warming up).
+                bullAligned = sma20Now > sma50Now;
+                bearAligned = sma20Now < sma50Now;
+            }
+            boolean alignmentOn = (strictAlignOn && canEvalStrictAlign) || lenientAlignOn;
+            String priceFailReasonSell = priceFailReason.replace("not above", "not below");
+            // Alignment rejection labels follow the gate that's actually evaluating.
+            boolean strictAlignEvaluated = strictAlignOn && canEvalStrictAlign;
+            String alignBuyReason  = strictAlignEvaluated
+                ? "SMA not aligned (need 20>50>200)"
+                : "SMA not aligned (need 20>50, lenient)";
+            String alignSellReason = strictAlignEvaluated
+                ? "SMA not aligned (need 20<50<200)"
+                : "SMA not aligned (need 20<50, lenient)";
             if (greenCandle && !(bullClose && (!alignmentOn || bullAligned))) {
                 String potentialSetup = detectBuyBreakout(open, high, low, close, levels, atp, broken, fyersSymbol, true);
                 if (potentialSetup != null) {
                     // Two distinct rejection causes share this branch — surface them as separate
                     // filterName values so the EOD page can chip-filter by which check tripped.
                     boolean priceFail = !bullClose;
-                    String reason = priceFail ? "close not above all SMAs" : "SMA not aligned (need 20>50>200)";
+                    String reason = priceFail ? priceFailReason : alignBuyReason;
                     String filterName = priceFail ? "SMA_TREND" : "SMA_ALIGNMENT";
                     String detail = reason + ": close=" + String.format("%.2f", close)
                         + " sma20=" + String.format("%.2f", sma20Now)
@@ -406,7 +443,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 String potentialSetup = detectSellBreakout(open, high, low, close, levels, atp, broken, fyersSymbol, true);
                 if (potentialSetup != null) {
                     boolean priceFail = !bearClose;
-                    String reason = priceFail ? "close not below all SMAs" : "SMA not aligned (need 20<50<200)";
+                    String reason = priceFail ? priceFailReasonSell : alignSellReason;
                     String filterName = priceFail ? "SMA_TREND" : "SMA_ALIGNMENT";
                     String detail = reason + ": close=" + String.format("%.2f", close)
                         + " sma20=" + String.format("%.2f", sma20Now)
@@ -451,8 +488,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 NiftyAlignStatus alignBuy = checkIndexAlignment(fyersSymbol, buySetup, true);
                 if (alignBuy == NiftyAlignStatus.SKIP) {
                     String niftyState = indexTrendService != null ? indexTrendService.getNiftyTrend().getState() : "?";
-                    recordRejection(fyersSymbol, buySetup, close, "NIFTY_OPPOSED",
-                        "NIFTY " + niftyState + " opposes buy [hard-skip]");
+                    String niftyDetail = "NEUTRAL".equals(niftyState)
+                        ? "NIFTY NEUTRAL — no clear bias [skip]"
+                        : "NIFTY " + niftyState.replace('_', ' ') + " opposes buy [hard-skip]";
+                    recordRejection(fyersSymbol, buySetup, close, "NIFTY_OPPOSED", niftyDetail);
                     return;
                 }
                 boolean niftyOpposedBuy = alignBuy == NiftyAlignStatus.OPPOSED_SOFT;
@@ -509,8 +548,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 NiftyAlignStatus alignSell = checkIndexAlignment(fyersSymbol, sellSetup, false);
                 if (alignSell == NiftyAlignStatus.SKIP) {
                     String niftyState = indexTrendService != null ? indexTrendService.getNiftyTrend().getState() : "?";
-                    recordRejection(fyersSymbol, sellSetup, close, "NIFTY_OPPOSED",
-                        "NIFTY " + niftyState + " opposes sell [hard-skip]");
+                    String niftyDetail = "NEUTRAL".equals(niftyState)
+                        ? "NIFTY NEUTRAL — no clear bias [skip]"
+                        : "NIFTY " + niftyState.replace('_', ' ') + " opposes sell [hard-skip]";
+                    recordRejection(fyersSymbol, sellSetup, close, "NIFTY_OPPOSED", niftyDetail);
                     return;
                 }
                 boolean niftyOpposedSell = alignSell == NiftyAlignStatus.OPPOSED_SOFT;
@@ -570,10 +611,23 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 && !(close > sma && close > sma50 && close > sma200)) {
             return null;  // silently — the log fired once at the caller
         }
+        // Lenient 5-min SMA trend check (close > SMA 20 AND > SMA 50, ignores 200). Independent
+        // of the strict gate above; if both are on, the strict check has already filtered.
+        if (!skipTrendFilters && riskSettings.isEnableSmaTrendCheckLenient()
+                && sma > 0 && sma50 > 0
+                && !(close > sma && close > sma50)) {
+            return null;
+        }
         // SMA alignment check for buys: 20 > 50 > 200 (stricter than close > SMAs)
         if (!skipTrendFilters && riskSettings.isEnableSmaAlignmentCheck()
                 && sma > 0 && sma50 > 0 && sma200 > 0
                 && !(sma > sma50 && sma50 > sma200)) {
+            return null;
+        }
+        // Lenient alignment for buys: only requires 20 > 50 (skips 50 > 200).
+        if (!skipTrendFilters && riskSettings.isEnableSmaAlignmentCheckLenient()
+                && sma > 0 && sma50 > 0
+                && !(sma > sma50)) {
             return null;
         }
         // 20 SMA vs ATP/VWAP check for buys: 20 SMA must be above ATP
@@ -661,10 +715,22 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 && !(close < sma && close < sma50 && close < sma200)) {
             return null;  // silently — the log fired once at the caller
         }
+        // Lenient 5-min SMA trend check (close < SMA 20 AND < SMA 50, ignores 200).
+        if (!skipTrendFilters && riskSettings.isEnableSmaTrendCheckLenient()
+                && sma > 0 && sma50 > 0
+                && !(close < sma && close < sma50)) {
+            return null;
+        }
         // SMA alignment check for sells: 20 < 50 < 200 (stricter than close < SMAs)
         if (!skipTrendFilters && riskSettings.isEnableSmaAlignmentCheck()
                 && sma > 0 && sma50 > 0 && sma200 > 0
                 && !(sma < sma50 && sma50 < sma200)) {
+            return null;
+        }
+        // Lenient alignment for sells: only requires 20 < 50 (skips 50 < 200).
+        if (!skipTrendFilters && riskSettings.isEnableSmaAlignmentCheckLenient()
+                && sma > 0 && sma50 > 0
+                && !(sma < sma50)) {
             return null;
         }
         // 20 SMA vs ATP/VWAP check for sells: 20 SMA must be below ATP
@@ -1445,7 +1511,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (s.contains("kill switch"))                             return "KILL_SWITCH";
 
         // Structural / setup-level gates
-        if (s.contains("extended-level"))                          return "EXTENDED_LEVEL";
+        // HTF extended-level (weekly R3/R4 / S3/S4) bucketed separately from the daily
+        // R3/S3 / R4/S4 skip — both are independent toggles in Settings, so they should be
+        // chip-filterable independently in the Signal Trail. Order matters: HTF check first
+        // (its message is "HTF extended-level…" so the daily check would also match it).
+        if (s.contains("htf extended-level"))                      return "EXTENDED_LEVEL_HTF";
+        if (s.contains("extended-level"))                          return "EXTENDED_LEVEL_DAILY";
         if (s.contains("is inside") && s.contains("zone"))         return "DH_DL_ZONE";
         if (s.contains("inside cpr") || s.contains("dh/dl"))       return "DH_DL_ZONE";
         if (s.contains("2d cpr") || s.contains("2d-cpr"))          return "2D_CPR";

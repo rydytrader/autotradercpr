@@ -378,22 +378,37 @@
                 <div class="form-group">
                     <label class="form-label">SMA Price and Pattern Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableSmaTrendCheckLenient" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Price (lenient)</b>: 5-min SMA trend — close above/below SMA 20 and 50 (skip 200)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="enableSmaTrendCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Price</b>: 5-min SMA trend — close above/below SMA 20, 50, 200 together</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Price (strict)</b>: 5-min SMA trend — close above/below SMA 20, 50, 200 together</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="enableSmaAlignmentCheckLenient" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Alignment (lenient)</b>: SMAs aligned — buy requires <b>20 &gt; 50</b> only, sell requires <b>20 &lt; 50</b> only (skip 200)</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="enableSmaAlignmentCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Alignment</b>: SMAs aligned — buy requires <b>20 &gt; 50 &gt; 200</b>, sell requires <b>20 &lt; 50 &lt; 200</b></span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Alignment (strict)</b>: SMAs aligned — buy requires <b>20 &gt; 50 &gt; 200</b>, sell requires <b>20 &lt; 50 &lt; 200</b></span>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                    <!-- Pattern toggles hidden from UI but settings still wired (load/save preserved) -->
+                    <div style="display: none;">
                         <input type="checkbox" id="requireRtpPattern" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Pattern</b>: require direction-matched 5-min pattern — <b style="color:var(--accent-green);">R-RTP</b> for buys, <b style="color:var(--accent-red);">F-RTP</b> for sells</span>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                    <div style="display: none;">
                         <input type="checkbox" id="skipTradesInZigZag" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Pattern</b>: skip trades when 5-min pattern is <b style="color:var(--accent-red);">ZIG ZAG</b> (choppy)</span>
                     </div>
-                    <div class="form-hint">Two dimensions gate an entry: <b>price position</b> vs SMAs and <b>pattern</b> of the 20/50 SMAs. Combine them for stricter setups — e.g. price gate + R-RTP for buy = 5-min STRONG BULLISH only. Each can run independently: RRTP alone allows pullback entries (valid trend structure, price may be inside the SMAs); price-only allows trades without pattern confirmation. Fail-open when any SMA is warming up. When the price gate is OFF, the 200 SMA becomes a target-shift candidate.</div>
+                    <div class="form-hint">Two dimensions gate an entry: <b>price position</b> vs SMAs and <b>pattern</b> of the 20/50 SMAs. Each has a <b>lenient</b> (skips 200 SMA) and <b>strict</b> (uses all three) variant — strict implies lenient, so when both are on the strict gate wins.
+                        <br><br>
+                        <b>Price (lenient)</b>: close above/below 20 and 50. <b>Price (strict)</b>: close above/below 20, 50, 200 together.
+                        <br>
+                        <b>Alignment (lenient)</b>: 20 &gt; 50 (buy) / 20 &lt; 50 (sell). <b>Alignment (strict)</b>: 20 &gt; 50 &gt; 200 (buy) / 20 &lt; 50 &lt; 200 (sell).
+                        <br><br>
+                        Combine with RRTP for tighter setups — e.g. strict price + strict alignment + R-RTP for buy = 5-min STRONG BULLISH only. RRTP alone allows pullback entries; price-only allows trades without pattern confirmation. Fail-open when any SMA is warming up. When both price gates are OFF, the 200 SMA becomes a target-shift candidate.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">VWAP Confirmation (ATP)</label>
@@ -447,7 +462,7 @@
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="enableHtfSmaAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Price</b>: 1-hour SMA trend &mdash; LTP above/below 1h SMA 20 and 50 together</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Price</b>: 1-hour SMA trend &mdash; prior 1h candle close above/below 1h SMA 20 and 50 together</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="enableHtfSmaAlignmentCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
@@ -462,9 +477,9 @@
                         <b>cleared</b> &rarr; HPT retained; <b>didn't clear</b> &rarr; LPT; <b>no prior 1h close yet today</b> (first session hour) &rarr; LPT.
                         Weekly CPR (TC/Pivot/BC) is included so that breakouts that fired just past the weekly CPR boundary are gated by the prior 1h close too &mdash; e.g. a buy at R1 in a stock currently inside weekly CPR but BULLISH by the state machine. R2+/S2+ are excluded &mdash; far-out projections, not walls the HTF needs to clear first.
                         <br><br>
-                        <b>Price.</b> LTP-based (not candle close), so the hourly trend structure has to be on the trade's side right now. Mirrors the 5-min SMA price gate above, applied to the 1-hour SMAs.
+                        <b>Price.</b> Compares the <b>previous completed 1h candle's close</b> against the 1h SMA 20 and SMA 50 (both computed from completed 1h closes only &mdash; no live blending). Sticky between 1h boundaries: the gate stays put until the next 1h close commits a new value. Confirmed structure, not in-progress hope. Tue&ndash;Fri uses the prior session's final 1h close as the first-hour fallback before today's first 1h close fires; Monday morning HPT signals downgrade to LPT until the day's first 1h close.
                         <br><br>
-                        <b>Alignment.</b> SMA-to-SMA ordering: 1h SMA 20 above 50 for buys, below 50 for sells. Stricter than Price &mdash; the HTF trend structure itself has to be stacked in the trade's direction, independent of where LTP currently sits.
+                        <b>Alignment.</b> SMA-to-SMA ordering: 1h SMA 20 above 50 for buys, below 50 for sells. Both SMAs from completed 1h closes only. Stricter than Price &mdash; the HTF trend structure itself has to be stacked in the trade's direction, independent of where the prior close sits.
                         <br><br>
                         Applies to all breakouts. LPT trades unaffected. Fail-open when any SMA/level is warming up.</div>
                 </div>
@@ -512,27 +527,28 @@
                     <div class="form-hint">Buys want today's CPR completely <b>above</b> yesterday's (todayBC &gt; yestTC = <b>2D-HV</b> / Higher Value). Sells want today's CPR completely <b>below</b> yesterday's (todayTC &lt; yestBC = <b>2D-LV</b> / Lower Value). Overlapping CPRs (<b>2D-NC</b> / Not Clear) downgrade in both directions. Tag shown next to chart icon on each scanner card. LPT trades unaffected. Fail-open if no prior-day data.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Volume Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableVolumeFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject if candle volume &lt;</span>
-                        <input type="number" id="volumeMultiple" class="form-control" step="0.5" min="1.0" max="10.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">x avg volume of last</span>
-                        <input type="number" id="volumeLookback" class="form-control" step="1" min="1" max="20" style="width:55px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">candles</span>
-                    </div>
-                </div>
-                <div class="form-group">
                     <label class="form-label">Extended Level Signals (R3/S3, R4/S4)</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="skipR3S3NormalDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R3/S3 breakouts (and DH above R3 / DL below S3) &mdash; all day types</span>
+                        <input type="checkbox" id="skipR3S3IvOvDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R3/S3 breakouts (and DH above R3 / DL below S3) &mdash; <b>IV / OV days</b></span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="skipR4S4NormalDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R4/S4 breakouts (and DH above R4 / DL below S4) &mdash; all day types</span>
+                        <input type="checkbox" id="skipR3S3EvDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R3/S3 breakouts (and DH above R3 / DL below S3) &mdash; <b>EV days</b></span>
                     </div>
-                    <div class="form-hint">Extended-level breakouts (R3/S3, R4/S4) are far from the daily CPR and historically unreliable. When enabled, applies to <b>all</b> day types (IV/OV/EV). DH/DL breakouts that have already passed the level are treated identically &mdash; e.g. a Day-High break above R3 is skipped when R3/S3 skip is on (because it IS effectively an R3 trade). R2/S2 always fires regardless. No per-level qty reduction.</div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="skipR4S4IvOvDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R4/S4 breakouts (and DH above R4 / DL below S4) &mdash; <b>IV / OV days</b></span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="skipR4S4EvDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R4/S4 breakouts (and DH above R4 / DL below S4) &mdash; <b>EV days</b></span>
+                    </div>
+                    <div class="form-hint">Day type is set by the open print (first 5-min close) vs daily CPR + R2/S2:
+                        <br>&bull; <b>IV</b> &mdash; open inside CPR (between BC and TC)
+                        <br>&bull; <b>OV</b> &mdash; open between CPR and R2/S2
+                        <br>&bull; <b>EV</b> &mdash; open outside R2/S2 (extreme-value gap)
+                        <br>Extended-level breakouts (R3/S3, R4/S4) are far from the daily CPR and historically unreliable on regular days. EV days are different &mdash; an R3 break following an open above R2 is fresh gap momentum, not exhaustion. Toggle the IV/OV and EV gates independently to match your strategy. DH/DL breakouts that have already passed the level are treated identically. R2/S2 always fires regardless. No per-level qty reduction.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">HTF Extended Level Filters (Weekly R3/S3, R4/S4)</label>
@@ -545,6 +561,17 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip any breakout with entry close beyond <b>weekly R4</b> (buys) or <b>weekly S4</b> (sells)</span>
                     </div>
                     <div class="form-hint">Independent of the daily extended-level skips above. Trades whose entry sits past the weekly extended levels carry the same exhaustion concern as a daily-R3 trade &mdash; even if the daily setup is just an R1 break. Enable both for the strictest gating; either toggle independently otherwise. Fail-open if weekly levels haven't loaded yet.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Volume Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableVolumeFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject if candle volume &lt;</span>
+                        <input type="number" id="volumeMultiple" class="form-control" step="0.5" min="1.0" max="10.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">x avg volume of last</span>
+                        <input type="number" id="volumeLookback" class="form-control" step="1" min="1" max="20" style="width:55px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">candles</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -568,6 +595,10 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR)</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="enableDailySma200TargetShift" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift to Daily (5-min) SMA 200</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="enableWeeklyLevelTargetShift" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift to Weekly Support / Resistance levels</span>
                     </div>
@@ -575,7 +606,7 @@
                         <input type="checkbox" id="enableWeeklySmaTargetShift" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift to Weekly (1h) SMA 20 / 50 / 200</span>
                     </div>
-                    <div class="form-hint">Toggle which level types are considered when shifting the structural target down to the nearest resistance/support between entry and target.</div>
+                    <div class="form-hint">Toggle which level types are considered when shifting the structural target down to the nearest resistance/support between entry and target. The <b>Daily (5-min) SMA 200</b> source is most useful when running the lenient SMA price/alignment gates, since those don't validate against the 200 SMA — keeping it as a target cap captures the intraday resistance/support it provides.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Split Targets (T1 + T2)</label>
@@ -1062,6 +1093,7 @@
             document.getElementById('dayHighLowShiftMinDistAtr').value = d.dayHighLowShiftMinDistAtr != null ? d.dayHighLowShiftMinDistAtr : 2.0;
             document.getElementById('enableWeeklyLevelTargetShift').checked = d.enableWeeklyLevelTargetShift !== false;
             document.getElementById('enableWeeklySmaTargetShift').checked = d.enableWeeklySmaTargetShift !== false;
+            document.getElementById('enableDailySma200TargetShift').checked = d.enableDailySma200TargetShift !== false;
             document.getElementById('enableHtfHurdleFilter').checked = d.enableHtfHurdleFilter !== false;
             document.getElementById('enableHtfSmaAlignment').checked = d.enableHtfSmaAlignment !== false;
             document.getElementById('enableHtfSmaAlignmentCheck').checked = d.enableHtfSmaAlignmentCheck === true;
@@ -1074,7 +1106,9 @@
             document.getElementById('largeCandleBodyAtrThreshold').value = d.largeCandleBodyAtrThreshold != null ? d.largeCandleBodyAtrThreshold : 4.0;
             document.getElementById('minRiskRewardRatio').value = d.minRiskRewardRatio != null ? d.minRiskRewardRatio : 1.0;
             document.getElementById('enableSmaTrendCheck').checked = d.enableSmaTrendCheck !== false;
+            document.getElementById('enableSmaTrendCheckLenient').checked = d.enableSmaTrendCheckLenient === true;
             document.getElementById('enableSmaAlignmentCheck').checked = d.enableSmaAlignmentCheck === true;
+            document.getElementById('enableSmaAlignmentCheckLenient').checked = d.enableSmaAlignmentCheckLenient === true;
             document.getElementById('enableSmaVsAtpCheck').checked = d.enableSmaVsAtpCheck !== false;
             document.getElementById('requireRtpPattern').checked = d.requireRtpPattern === true;
             document.getElementById('skipTradesInZigZag').checked = d.skipTradesInZigZag !== false;
@@ -1133,8 +1167,10 @@
             document.getElementById('enableLpt').checked = d.enableLpt !== false;
             document.getElementById('lptQtyFactor').value = d.lptQtyFactor != null ? d.lptQtyFactor : 0.50;
             document.getElementById('minAbsoluteProfit').value = d.minAbsoluteProfit != null ? d.minAbsoluteProfit : 500;
-            document.getElementById('skipR3S3NormalDays').checked = d.skipR3S3NormalDays !== false;
-            document.getElementById('skipR4S4NormalDays').checked = d.skipR4S4NormalDays !== false;
+            document.getElementById('skipR3S3IvOvDays').checked = d.skipR3S3IvOvDays !== false;
+            document.getElementById('skipR3S3EvDays').checked   = d.skipR3S3EvDays   !== false;
+            document.getElementById('skipR4S4IvOvDays').checked = d.skipR4S4IvOvDays !== false;
+            document.getElementById('skipR4S4EvDays').checked   = d.skipR4S4EvDays   !== false;
             document.getElementById('skipHtfR3S3NormalDays').checked = d.skipHtfR3S3NormalDays !== false;
             document.getElementById('skipHtfR4S4NormalDays').checked = d.skipHtfR4S4NormalDays !== false;
 
@@ -1218,6 +1254,7 @@
                 dayHighLowShiftMinDistAtr: parseFloat(document.getElementById('dayHighLowShiftMinDistAtr').value) || 1.0,
                 enableWeeklyLevelTargetShift: document.getElementById('enableWeeklyLevelTargetShift').checked,
                 enableWeeklySmaTargetShift: document.getElementById('enableWeeklySmaTargetShift').checked,
+                enableDailySma200TargetShift: document.getElementById('enableDailySma200TargetShift').checked,
                 enableHtfHurdleFilter: document.getElementById('enableHtfHurdleFilter').checked,
                 enableHtfSmaAlignment: document.getElementById('enableHtfSmaAlignment').checked,
                 enableHtfSmaAlignmentCheck: document.getElementById('enableHtfSmaAlignmentCheck').checked,
@@ -1230,7 +1267,9 @@
                 largeCandleBodyAtrThreshold: parseFloat(document.getElementById('largeCandleBodyAtrThreshold').value) || 4.0,
                 minRiskRewardRatio: parseFloat(document.getElementById('minRiskRewardRatio').value) || 1.0,
                 enableSmaTrendCheck: document.getElementById('enableSmaTrendCheck').checked,
+                enableSmaTrendCheckLenient: document.getElementById('enableSmaTrendCheckLenient').checked,
                 enableSmaAlignmentCheck: document.getElementById('enableSmaAlignmentCheck').checked,
+                enableSmaAlignmentCheckLenient: document.getElementById('enableSmaAlignmentCheckLenient').checked,
                 enableSmaVsAtpCheck: document.getElementById('enableSmaVsAtpCheck').checked,
                 requireRtpPattern: document.getElementById('requireRtpPattern').checked,
                 skipTradesInZigZag: document.getElementById('skipTradesInZigZag').checked,
@@ -1285,8 +1324,10 @@
                 enableLpt: document.getElementById('enableLpt').checked,
                 lptQtyFactor: parseFloat(document.getElementById('lptQtyFactor').value) || 0.50,
                 minAbsoluteProfit: parseFloat(document.getElementById('minAbsoluteProfit').value) || 500,
-                skipR3S3NormalDays: document.getElementById('skipR3S3NormalDays').checked,
-                skipR4S4NormalDays: document.getElementById('skipR4S4NormalDays').checked,
+                skipR3S3IvOvDays: document.getElementById('skipR3S3IvOvDays').checked,
+                skipR3S3EvDays:   document.getElementById('skipR3S3EvDays').checked,
+                skipR4S4IvOvDays: document.getElementById('skipR4S4IvOvDays').checked,
+                skipR4S4EvDays:   document.getElementById('skipR4S4EvDays').checked,
                 skipHtfR3S3NormalDays: document.getElementById('skipHtfR3S3NormalDays').checked,
                 skipHtfR4S4NormalDays: document.getElementById('skipHtfR4S4NormalDays').checked,
             };

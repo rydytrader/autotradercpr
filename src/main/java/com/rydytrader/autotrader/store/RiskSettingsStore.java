@@ -47,6 +47,10 @@ public class RiskSettingsStore {
         volatile boolean enableTargetShift = true; // shift target to next level if default target < threshold ATR. If false, skip the entry.
         volatile boolean enableGapCheck = true;     // halve qty if day open or first candle beyond R2/S2
         volatile boolean enableDayHighLowTargetShift = true; // shift target to day high/low if between entry and target
+        // Shift target to daily 5-min SMA 200 when it sits between entry and target. Useful
+        // mainly when running the lenient SMA price gate (which doesn't validate against 200) —
+        // the 200 SMA can still act as resistance/support on the way to the structural target.
+        volatile boolean enableDailySma200TargetShift = true;
         volatile double dayHighLowShiftMinDistAtr = 2.0; // skip day H/L shift if distance < N ATR from close
         volatile boolean enableWeeklyLevelTargetShift = true; // shift target to weekly CPR levels if between entry and target
         volatile boolean enableWeeklySmaTargetShift = true;   // shift target to weekly (HTF 60-min) SMA 20/50/200 if between entry and target
@@ -69,8 +73,14 @@ public class RiskSettingsStore {
         // 5-min SMA trend gate: buy requires close above SMA(20/50/200), sell requires below all three.
         // Matches the BULL/BEAR chip on scanner cards. Fail-open if any SMA not loaded.
         volatile boolean enableSmaTrendCheck = true;
+        // Lenient variant: only requires close above/below SMA 20 AND SMA 50 (skips SMA 200).
+        // If enableSmaTrendCheck is also on, the strict 3-SMA gate wins (strict implies lenient).
+        volatile boolean enableSmaTrendCheckLenient = false;
         // SMA alignment gate (stricter than trend check): buy requires 20>50>200, sell requires 20<50<200.
         volatile boolean enableSmaAlignmentCheck = false;
+        // Lenient alignment: buy requires only 20 > 50 (skips 50 > 200); mirror for sells.
+        // If enableSmaAlignmentCheck is also on, the strict 3-SMA gate wins (strict implies lenient).
+        volatile boolean enableSmaAlignmentCheckLenient = false;
         volatile boolean enableSmaVsAtpCheck = true; // buy requires 20 SMA > ATP (VWAP), sell requires 20 SMA < ATP
         // SMA 20/50 pattern detection thresholds (Braided vs Railway Track).
         // Bumped for SMA behaviour (smoother, smaller spreads, shallower slopes than EMA).
@@ -119,8 +129,15 @@ public class RiskSettingsStore {
         volatile double fibStage2SlPct = 61.8;        // stage 2 SL = base + this % of range
         // Extended-level breakouts (R3/S3, R4/S4) are skipped on normal IV/OV days but allowed
         // on EV (gap up/down) days regardless. Toggles default ON (skip on normal days).
-        volatile boolean skipR3S3NormalDays = true;
-        volatile boolean skipR4S4NormalDays = true;
+        // Daily extended-level skip — split by day type. IV/OV = open print inside CPR or
+        // between CPR and R2/S2; EV = open print outside R2/S2 (gap). Defaults preserve the
+        // previous "skip on all days" behavior. The legacy keys skipR3S3NormalDays /
+        // skipR4S4NormalDays are still read by load() for backward compat (seed both new
+        // fields with the same value), then dropped from the rewritten JSON on next save.
+        volatile boolean skipR3S3IvOvDays = true;
+        volatile boolean skipR3S3EvDays   = true;
+        volatile boolean skipR4S4IvOvDays = true;
+        volatile boolean skipR4S4EvDays   = true;
         // HTF (weekly) extended-level skips — independent of the daily extended-level skips
         // above. When on, breakout close past weekly R3/R4 (buys) or S3/S4 (sells) is skipped
         // regardless of the daily setup. Default true (matches daily skip stance).
@@ -228,6 +245,7 @@ public class RiskSettingsStore {
     public int    getTelegramAlertFrequency() { return cfg().telegramAlertFrequency; }
     public boolean isEnableGapCheck() { return cfg().enableGapCheck; }
     public boolean isEnableDayHighLowTargetShift() { return cfg().enableDayHighLowTargetShift; }
+    public boolean isEnableDailySma200TargetShift() { return cfg().enableDailySma200TargetShift; }
     public double getDayHighLowShiftMinDistAtr() { return cfg().dayHighLowShiftMinDistAtr; }
     public boolean isEnableWeeklyLevelTargetShift() { return cfg().enableWeeklyLevelTargetShift; }
     public boolean isEnableWeeklySmaTargetShift()   { return cfg().enableWeeklySmaTargetShift; }
@@ -241,7 +259,9 @@ public class RiskSettingsStore {
     public boolean isEnableRiskRewardFilter()      { return cfg().enableRiskRewardFilter; }
     public double  getMinRiskRewardRatio()         { return cfg().minRiskRewardRatio; }
     public boolean isEnableSmaTrendCheck()          { return cfg().enableSmaTrendCheck; }
+    public boolean isEnableSmaTrendCheckLenient()   { return cfg().enableSmaTrendCheckLenient; }
     public boolean isEnableSmaAlignmentCheck()      { return cfg().enableSmaAlignmentCheck; }
+    public boolean isEnableSmaAlignmentCheckLenient() { return cfg().enableSmaAlignmentCheckLenient; }
     public boolean isEnableSmaVsAtpCheck()          { return cfg().enableSmaVsAtpCheck; }
     public int    getSmaPatternLookback()           { return cfg().smaPatternLookback; }
     public int    getBraidedMinCrossovers()         { return cfg().braidedMinCrossovers; }
@@ -266,8 +286,10 @@ public class RiskSettingsStore {
     public double getFibStage1SlAtrMult()  { return cfg().fibStage1SlAtrMult; }
     public double getFibStage2TriggerPct() { return cfg().fibStage2TriggerPct; }
     public double getFibStage2SlPct()      { return cfg().fibStage2SlPct; }
-    public boolean isSkipR3S3NormalDays() { return cfg().skipR3S3NormalDays; }
-    public boolean isSkipR4S4NormalDays() { return cfg().skipR4S4NormalDays; }
+    public boolean isSkipR3S3IvOvDays() { return cfg().skipR3S3IvOvDays; }
+    public boolean isSkipR3S3EvDays()   { return cfg().skipR3S3EvDays; }
+    public boolean isSkipR4S4IvOvDays() { return cfg().skipR4S4IvOvDays; }
+    public boolean isSkipR4S4EvDays()   { return cfg().skipR4S4EvDays; }
     public boolean isSkipHtfR3S3NormalDays() { return cfg().skipHtfR3S3NormalDays; }
     public boolean isSkipHtfR4S4NormalDays() { return cfg().skipHtfR4S4NormalDays; }
     public int getAtrPeriod() { return cfg().atrPeriod; }
@@ -375,6 +397,7 @@ public class RiskSettingsStore {
     public void setTelegramAlertFrequency(int v) { cfg().telegramAlertFrequency = v; }
     public void setEnableGapCheck(boolean v) { cfg().enableGapCheck = v; }
     public void setEnableDayHighLowTargetShift(boolean v) { cfg().enableDayHighLowTargetShift = v; }
+    public void setEnableDailySma200TargetShift(boolean v) { cfg().enableDailySma200TargetShift = v; }
     public void setDayHighLowShiftMinDistAtr(double v) { cfg().dayHighLowShiftMinDistAtr = v; }
     public void setEnableWeeklyLevelTargetShift(boolean v) { cfg().enableWeeklyLevelTargetShift = v; }
     public void setEnableWeeklySmaTargetShift(boolean v)   { cfg().enableWeeklySmaTargetShift = v; }
@@ -388,7 +411,9 @@ public class RiskSettingsStore {
     public void setEnableRiskRewardFilter(boolean v)       { cfg().enableRiskRewardFilter = v; }
     public void setMinRiskRewardRatio(double v)            { cfg().minRiskRewardRatio = v; }
     public void setEnableSmaTrendCheck(boolean v)         { cfg().enableSmaTrendCheck = v; }
+    public void setEnableSmaTrendCheckLenient(boolean v)  { cfg().enableSmaTrendCheckLenient = v; }
     public void setEnableSmaAlignmentCheck(boolean v)     { cfg().enableSmaAlignmentCheck = v; }
+    public void setEnableSmaAlignmentCheckLenient(boolean v) { cfg().enableSmaAlignmentCheckLenient = v; }
     public void setEnableSmaVsAtpCheck(boolean v)         { cfg().enableSmaVsAtpCheck = v; }
     public void setRequireRtpPattern(boolean v)           { cfg().requireRtpPattern = v; }
     public void setSkipTradesInZigZag(boolean v)          { cfg().skipTradesInZigZag = v; }
@@ -407,8 +432,10 @@ public class RiskSettingsStore {
     public void setFibStage1SlAtrMult(double v)  { cfg().fibStage1SlAtrMult = v; }
     public void setFibStage2TriggerPct(double v) { cfg().fibStage2TriggerPct = v; }
     public void setFibStage2SlPct(double v)      { cfg().fibStage2SlPct = v; }
-    public void setSkipR3S3NormalDays(boolean v) { cfg().skipR3S3NormalDays = v; }
-    public void setSkipR4S4NormalDays(boolean v) { cfg().skipR4S4NormalDays = v; }
+    public void setSkipR3S3IvOvDays(boolean v) { cfg().skipR3S3IvOvDays = v; }
+    public void setSkipR3S3EvDays(boolean v)   { cfg().skipR3S3EvDays = v; }
+    public void setSkipR4S4IvOvDays(boolean v) { cfg().skipR4S4IvOvDays = v; }
+    public void setSkipR4S4EvDays(boolean v)   { cfg().skipR4S4EvDays = v; }
     public void setSkipHtfR3S3NormalDays(boolean v) { cfg().skipHtfR3S3NormalDays = v; }
     public void setSkipHtfR4S4NormalDays(boolean v) { cfg().skipHtfR4S4NormalDays = v; }
     public void setAtrPeriod(int v) { cfg().atrPeriod = v; }
@@ -514,6 +541,7 @@ public class RiskSettingsStore {
             upsert("telegramAlertFrequency", String.valueOf(c.telegramAlertFrequency));
             upsert("enableGapCheck", String.valueOf(c.enableGapCheck));
             upsert("enableDayHighLowTargetShift", String.valueOf(c.enableDayHighLowTargetShift));
+            upsert("enableDailySma200TargetShift", String.valueOf(c.enableDailySma200TargetShift));
             upsert("dayHighLowShiftMinDistAtr", String.valueOf(c.dayHighLowShiftMinDistAtr));
             upsert("enableWeeklyLevelTargetShift", String.valueOf(c.enableWeeklyLevelTargetShift));
             upsert("enableWeeklySmaTargetShift", String.valueOf(c.enableWeeklySmaTargetShift));
@@ -527,7 +555,9 @@ public class RiskSettingsStore {
             upsert("enableRiskRewardFilter", String.valueOf(c.enableRiskRewardFilter));
             upsert("minRiskRewardRatio", String.valueOf(c.minRiskRewardRatio));
             upsert("enableSmaTrendCheck", String.valueOf(c.enableSmaTrendCheck));
+            upsert("enableSmaTrendCheckLenient", String.valueOf(c.enableSmaTrendCheckLenient));
             upsert("enableSmaAlignmentCheck", String.valueOf(c.enableSmaAlignmentCheck));
+            upsert("enableSmaAlignmentCheckLenient", String.valueOf(c.enableSmaAlignmentCheckLenient));
             upsert("enableSmaVsAtpCheck", String.valueOf(c.enableSmaVsAtpCheck));
             upsert("smaPatternLookback", String.valueOf(c.smaPatternLookback));
             upsert("braidedMinCrossovers", String.valueOf(c.braidedMinCrossovers));
@@ -560,8 +590,10 @@ public class RiskSettingsStore {
             upsert("fibStage1SlAtrMult",  String.valueOf(c.fibStage1SlAtrMult));
             upsert("fibStage2TriggerPct", String.valueOf(c.fibStage2TriggerPct));
             upsert("fibStage2SlPct",      String.valueOf(c.fibStage2SlPct));
-            upsert("skipR3S3NormalDays", String.valueOf(c.skipR3S3NormalDays));
-            upsert("skipR4S4NormalDays", String.valueOf(c.skipR4S4NormalDays));
+            upsert("skipR3S3IvOvDays", String.valueOf(c.skipR3S3IvOvDays));
+            upsert("skipR3S3EvDays",   String.valueOf(c.skipR3S3EvDays));
+            upsert("skipR4S4IvOvDays", String.valueOf(c.skipR4S4IvOvDays));
+            upsert("skipR4S4EvDays",   String.valueOf(c.skipR4S4EvDays));
             upsert("skipHtfR3S3NormalDays", String.valueOf(c.skipHtfR3S3NormalDays));
             upsert("skipHtfR4S4NormalDays", String.valueOf(c.skipHtfR4S4NormalDays));
             upsert("atrPeriod", String.valueOf(c.atrPeriod));
@@ -645,6 +677,7 @@ public class RiskSettingsStore {
                     // enableLargeCandleFilter / largeCandleAtrThreshold removed — legacy keys silently ignored
                     case "enableGapCheck" -> c.enableGapCheck = Boolean.parseBoolean(v);
                     case "enableDayHighLowTargetShift" -> c.enableDayHighLowTargetShift = Boolean.parseBoolean(v);
+                    case "enableDailySma200TargetShift" -> c.enableDailySma200TargetShift = Boolean.parseBoolean(v);
                     case "dayHighLowShiftMinDistAtr" -> c.dayHighLowShiftMinDistAtr = Double.parseDouble(v);
                     case "enableWeeklyLevelTargetShift" -> c.enableWeeklyLevelTargetShift = Boolean.parseBoolean(v);
                     case "enableWeeklyEmaTargetShift", "enableWeeklySmaTargetShift" -> c.enableWeeklySmaTargetShift = Boolean.parseBoolean(v);
@@ -658,7 +691,9 @@ public class RiskSettingsStore {
                     case "enableRiskRewardFilter" -> c.enableRiskRewardFilter = Boolean.parseBoolean(v);
                     case "minRiskRewardRatio" -> c.minRiskRewardRatio = Double.parseDouble(v);
                     case "enableEmaTrendCheck", "enableSmaTrendCheck" -> c.enableSmaTrendCheck = Boolean.parseBoolean(v);
+                    case "enableSmaTrendCheckLenient" -> c.enableSmaTrendCheckLenient = Boolean.parseBoolean(v);
                     case "enableSmaAlignmentCheck" -> c.enableSmaAlignmentCheck = Boolean.parseBoolean(v);
+                    case "enableSmaAlignmentCheckLenient" -> c.enableSmaAlignmentCheckLenient = Boolean.parseBoolean(v);
                     // Legacy keys — silently ignored (semantics differ, no safe fold).
                     case "enableEmaDirectionCheck", "enableEma200DirectionCheck", "enableEmaCrossoverCheck" -> { /* legacy */ }
                     case "enableEmaVsAtpCheck", "enableSmaVsAtpCheck" -> c.enableSmaVsAtpCheck = Boolean.parseBoolean(v);
@@ -701,8 +736,23 @@ public class RiskSettingsStore {
                     case "fibStage1SlAtrMult"  -> c.fibStage1SlAtrMult  = Double.parseDouble(v);
                     case "fibStage2TriggerPct" -> c.fibStage2TriggerPct = Double.parseDouble(v);
                     case "fibStage2SlPct"      -> c.fibStage2SlPct      = Double.parseDouble(v);
-                    case "skipR3S3NormalDays" -> c.skipR3S3NormalDays = Boolean.parseBoolean(v);
-                    case "skipR4S4NormalDays" -> c.skipR4S4NormalDays = Boolean.parseBoolean(v);
+                    // Legacy NormalDays keys: split into the new IvOv + Ev pair, both seeded
+                    // with the legacy value so the user's prior intent is preserved on first
+                    // load after upgrade. Once any save happens, the new keys overwrite.
+                    case "skipR3S3NormalDays" -> {
+                        boolean lv = Boolean.parseBoolean(v);
+                        c.skipR3S3IvOvDays = lv;
+                        c.skipR3S3EvDays   = lv;
+                    }
+                    case "skipR4S4NormalDays" -> {
+                        boolean lv = Boolean.parseBoolean(v);
+                        c.skipR4S4IvOvDays = lv;
+                        c.skipR4S4EvDays   = lv;
+                    }
+                    case "skipR3S3IvOvDays" -> c.skipR3S3IvOvDays = Boolean.parseBoolean(v);
+                    case "skipR3S3EvDays"   -> c.skipR3S3EvDays   = Boolean.parseBoolean(v);
+                    case "skipR4S4IvOvDays" -> c.skipR4S4IvOvDays = Boolean.parseBoolean(v);
+                    case "skipR4S4EvDays"   -> c.skipR4S4EvDays   = Boolean.parseBoolean(v);
                     case "skipHtfR3S3NormalDays" -> c.skipHtfR3S3NormalDays = Boolean.parseBoolean(v);
                     case "skipHtfR4S4NormalDays" -> c.skipHtfR4S4NormalDays = Boolean.parseBoolean(v);
                     case "atrPeriod" -> c.atrPeriod = Integer.parseInt(v);
@@ -755,7 +805,7 @@ public class RiskSettingsStore {
                     case "indexOpposedQtyFactor" -> c.indexOpposedQtyFactor = Double.parseDouble(v);
                 }
             }
-            log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} trailingSl={} skipR3S3={} skipR4S4={}", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.enableTrailingSl, c.skipR3S3NormalDays, c.skipR4S4NormalDays);
+            log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} trailingSl={} skipR3S3(IvOv/Ev)={}/{} skipR4S4(IvOv/Ev)={}/{}", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.enableTrailingSl, c.skipR3S3IvOvDays, c.skipR3S3EvDays, c.skipR4S4IvOvDays, c.skipR4S4EvDays);
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to load {}: {}", mode, e.getMessage());
         }
