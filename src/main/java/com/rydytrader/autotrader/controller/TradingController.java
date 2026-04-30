@@ -419,6 +419,8 @@ public class TradingController {
 
         // Scanner
         Map<String, Object> scanner = new java.util.LinkedHashMap<>();
+        scanner.put("scanUniverse", riskSettings.getScanUniverse());
+        scanner.put("universeSize", bhavcopyService.getScanUniverseCount());
         scanner.put("nifty50Count", bhavcopyService.getNifty50Count());
         scanner.put("watchlistCount", marketDataService.getWatchlist().size());
         scanner.put("watchlistSymbols", marketDataService.getWatchlist().stream()

@@ -1,178 +1,183 @@
 package com.rydytrader.autotrader.service;
 
 import com.rydytrader.autotrader.dto.IndexTrend;
-import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import jakarta.annotation.PostConstruct;
+
 /**
- * Computes a composite trend state for an index (NIFTY 50 today) by combining
- * four signals: weekly CPR trend, daily CPR trend, 20 SMA position (LTP vs SMA),
- * and 20 SMA slope. Final score is mapped to one of five states:
+ * Computes the NIFTY 50 trend snapshot for the scanner-page card.
  *
- *     STRONG_BULLISH, BULLISH, NEUTRAL, BEARISH, STRONG_BEARISH
+ * <p>Three signals are tracked, all <b>sticky</b> — refreshed only at 5-min candle close:
+ * <ul>
+ *   <li>{@code cprBullish}    — NIFTY LTP vs daily CPR (above top / below bottom / inside)</li>
+ *   <li>{@code futVwapBullish}— near-month NIFTY futures LTP vs futures VWAP</li>
+ *   <li>{@code state}         — 5-state combination of the two above</li>
+ * </ul>
  *
- * Used by:
- *   1. NIFTY card on the scanner page (display)
- *   2. BreakoutScanner index alignment filter (downgrade HPT → LPT when opposed)
+ * <p>State combinations (reversal name = direction the market is reversing <i>toward</i>):
+ * <pre>
+ *   CPR bullish + VWAP bullish  → BULLISH
+ *   CPR bearish + VWAP bearish  → BEARISH
+ *   CPR bullish + VWAP bearish  → BEAR_REVERSAL (above CPR but VWAP rolling over → sell side)
+ *   CPR bearish + VWAP bullish  → BULL_REVERSAL (below CPR but VWAP turning up → buy side)
+ *   any signal missing/inside CPR → NEUTRAL
+ * </pre>
  *
- * Score weighting:
- *   - weekly trend    : ±2 / ±1 / 0
- *   - daily trend     : ±3 / ±2 / 0   (bumped — daily CPR outweighs lagging SMA crossover)
- *   - SMA 20 position : ±1 (LTP above/below 20 SMA)
- *   - SMA 200 position: ±1 (LTP above/below 200 SMA)
- *   - SMA crossover   : ±1 / 0        (binary — lagging signal, reduced weight)
- *   - SMA 20/50 pattern: ±2 (RAILWAY_UP/DOWN) / 0
- *
- * Score range: -10 to +10
+ * <p>Live values (LTP, change%, breadth) update every poll for display, but the three
+ * cached states only change on a 5-min boundary — eliminates flicker between bars.
  */
 @Service
-public class IndexTrendService {
+public class IndexTrendService implements CandleAggregator.CandleCloseListener,
+                                          CandleAggregator.DailyResetListener {
 
     private static final Logger log = LoggerFactory.getLogger(IndexTrendService.class);
 
     public static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
     public static final String NIFTY_DISPLAY = "NIFTY 50";
 
-    private final WeeklyCprService weeklyCprService;
-    private final SmaService smaService;
     private final MarketDataService marketDataService;
-    private final RiskSettingsStore riskSettings;
     private final BhavcopyService bhavcopyService;
-    private final AtrService atrService;
-    private final HtfSmaService htfSmaService;
     @org.springframework.beans.factory.annotation.Autowired
     private CandleAggregator candleAggregator;
 
-    public IndexTrendService(WeeklyCprService weeklyCprService,
-                             SmaService smaService,
-                             MarketDataService marketDataService,
-                             RiskSettingsStore riskSettings,
-                             BhavcopyService bhavcopyService,
-                             AtrService atrService,
-                             HtfSmaService htfSmaService) {
-        this.weeklyCprService = weeklyCprService;
-        this.smaService = smaService;
+    // Sticky cached signals — refreshed only on 5-min candle close for NIFTY index or futures.
+    // null = not yet computed or insufficient data.
+    private volatile Boolean cachedCprBullish;
+    private volatile Boolean cachedFutVwapBullish;
+    private volatile String  cachedState = "NEUTRAL";
+    // True once we've received the first candle close for NIFTY (or its near-month future)
+    // for the current trading day. Until then, getNiftyTrend() recomputes live from current
+    // LTP — gives the user a directional signal during the first 5-min bar before any close
+    // has fired. Reset on daily reset.
+    private volatile boolean firstCloseReceived = false;
+
+    public IndexTrendService(MarketDataService marketDataService,
+                             BhavcopyService bhavcopyService) {
         this.marketDataService = marketDataService;
-        this.riskSettings = riskSettings;
         this.bhavcopyService = bhavcopyService;
-        this.atrService = atrService;
-        this.htfSmaService = htfSmaService;
+    }
+
+    @PostConstruct
+    public void registerCandleListener() {
+        // Self-register so we don't have to thread IndexTrendService through MarketDataService's
+        // constructor (avoids the circular dep MarketDataService↔IndexTrendService).
+        if (candleAggregator != null) {
+            candleAggregator.addListener(this);
+        }
+    }
+
+    /**
+     * Fired on every 5-min candle close. We only react to NIFTY index and near-month futures
+     * symbols — all other symbols' closes are no-ops here.
+     */
+    @Override
+    public void onCandleClose(String fyersSymbol, CandleAggregator.CandleBar candle) {
+        if (fyersSymbol == null) return;
+        String niftyFut = marketDataService.computeNearMonthNiftyFuturesSymbol(
+            java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")));
+        if (NIFTY_SYMBOL.equals(fyersSymbol) || niftyFut.equals(fyersSymbol)) {
+            recomputeStates();
+            firstCloseReceived = true;
+        }
+    }
+
+    @Override
+    public void onDailyReset() {
+        // New trading day — clear sticky state so the first 5-min bar runs in live-LTP
+        // bootstrap mode again until the day's first NIFTY/futures candle closes (~9:20 IST).
+        cachedCprBullish     = null;
+        cachedFutVwapBullish = null;
+        cachedState          = "NEUTRAL";
+        firstCloseReceived   = false;
+    }
+
+    /**
+     * Recompute the 3 sticky states from the most recent values (post-close LTP, futures
+     * LTP/VWAP). Called from {@link #onCandleClose} at every 5-min boundary that involves
+     * NIFTY or its near-month future. Updates the cached fields atomically.
+     */
+    private void recomputeStates() {
+        // CPR signal: NIFTY LTP vs daily CPR (above top / below bottom / inside)
+        Boolean cprBullish = null;
+        double ltp = marketDataService.getLtp(NIFTY_SYMBOL);
+        if (ltp > 0) {
+            String ticker = "NIFTY50";
+            var cprLevels = bhavcopyService.getCprLevels(ticker);
+            if (cprLevels != null && cprLevels.getTc() > 0 && cprLevels.getBc() > 0) {
+                double cprTop = Math.max(cprLevels.getTc(), cprLevels.getBc());
+                double cprBot = Math.min(cprLevels.getTc(), cprLevels.getBc());
+                if (ltp > cprTop) cprBullish = Boolean.TRUE;
+                else if (ltp < cprBot) cprBullish = Boolean.FALSE;
+                // else inside CPR → leave null
+            }
+        }
+
+        // VWAP signal: near-month NIFTY futures LTP vs futures VWAP
+        Boolean futVwapBullish = null;
+        if (candleAggregator != null) {
+            String futSym = marketDataService.computeNearMonthNiftyFuturesSymbol(
+                java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")));
+            double futLtp  = candleAggregator.getLtp(futSym);
+            double futVwap = candleAggregator.getAtp(futSym);
+            if (futLtp > 0 && futVwap > 0) {
+                futVwapBullish = futLtp > futVwap;
+            }
+        }
+
+        // 5-state combination — reversal name = direction the market is reversing TOWARD.
+        //   above CPR + VWAP turning down  → BEAR_REVERSAL (sell side)
+        //   below CPR + VWAP turning up    → BULL_REVERSAL (buy side)
+        String state;
+        if (cprBullish == null || futVwapBullish == null) {
+            state = "NEUTRAL";
+        } else if (cprBullish && futVwapBullish) {
+            state = "BULLISH";
+        } else if (!cprBullish && !futVwapBullish) {
+            state = "BEARISH";
+        } else if (cprBullish && !futVwapBullish) {
+            state = "BEAR_REVERSAL";
+        } else {
+            state = "BULL_REVERSAL";
+        }
+
+        // Atomic update — log only if state actually changed
+        String prev = cachedState;
+        cachedCprBullish     = cprBullish;
+        cachedFutVwapBullish = futVwapBullish;
+        cachedState          = state;
+        if (!state.equals(prev)) {
+            log.info("[IndexTrend] NIFTY state {} → {} (cpr={} vwap={})",
+                prev, state, cprBullish, futVwapBullish);
+        }
     }
 
     public IndexTrend getNiftyTrend() {
-        return computeFor(NIFTY_SYMBOL, NIFTY_DISPLAY);
-    }
+        // First 5 minutes of the session (or after a mid-day restart) — no candle close has
+        // fired yet for NIFTY today, so the cached states are stale/null. Recompute live from
+        // current LTP each call so the user has a directional signal during the opening bar.
+        // Once the first NIFTY/futures 5-min candle closes (~9:20 IST), the listener takes
+        // over and this fallback stops firing — cached values are sticky between bars.
+        if (!firstCloseReceived) {
+            recomputeStates();
+        }
 
-    private IndexTrend computeFor(String symbol, String displayName) {
         IndexTrend trend = new IndexTrend();
-        trend.setSymbol(symbol);
-        trend.setDisplayName(displayName);
+        trend.setSymbol(NIFTY_SYMBOL);
+        trend.setDisplayName(NIFTY_DISPLAY);
 
-        // Live LTP from WS ticks (stale-day guarded — returns 0 if last tick is from a previous
-        // trading date). On pre-market new-day or holiday, no live tick exists yet; for internal
-        // SMA-position scoring we fall back to bhavcopy prev close so the score has a reference,
-        // but the displayed LTP on the card is the live value (0 when nothing today).
-        double liveTickLtp = marketDataService.getLtp(symbol);
+        // Live LTP for display (stale-day guarded). Falls back to bhavcopy prev close pre-market.
+        double liveTickLtp = marketDataService.getLtp(NIFTY_SYMBOL);
         double ltp = liveTickLtp;
         if (ltp <= 0) {
-            String ticker = symbol;
-            int colon = ticker.indexOf(':');
-            if (colon >= 0) ticker = ticker.substring(colon + 1);
-            if (ticker.endsWith("-INDEX")) ticker = ticker.substring(0, ticker.length() - 6);
-            else if (ticker.endsWith("-EQ")) ticker = ticker.substring(0, ticker.length() - 3);
-            var cpr = bhavcopyService.getCprLevels(ticker);
+            var cpr = bhavcopyService.getCprLevels("NIFTY50");
             if (cpr != null) ltp = cpr.getClose();
         }
-        double sma = smaService.getSma(symbol);
-        double sma50 = smaService.getSma50(symbol);
-        double sma200 = smaService.getSma200(symbol);
-        String weekly = weeklyCprService.getWeeklyTrend(symbol);
-        String daily = weeklyCprService.getDailyTrend(symbol);
-
         trend.setLtp(liveTickLtp);
-        trend.setSma(sma);
-        trend.setSma50(sma50);
-        trend.setSma200(sma200);
-        trend.setWeeklyTrend(weekly);
-        trend.setDailyTrend(daily);
 
-        // Compute component scores
-        int weeklyScore = scoreTrend(weekly);
-        int dailyScore = scoreDailyTrend(daily);
-
-        // SMA Price (mirrors stock-card enableSmaTrendCheck): binary — LTP must be above ALL of
-        // 20/50/200 for full bull (or below all for full bear). Anything else = 0. No partial tier.
-        int smaPositionScore = scoreSmaPositionAll(ltp, sma, sma50, sma200, false);
-
-        // SMA Alignment (mirrors stock-card enableSmaAlignmentCheck): 20>50>200 = full bull stack;
-        // one pair correct (20>50 or 50>200) but not both = partial bull; mirror for bearish.
-        // The legacy standalone 20-vs-200 cross score is folded into this rule.
-        int smaAlignmentScore = scoreSmaAlignment(sma, sma50, sma200);
-
-        // SMA Pattern (mirrors stock-card requireRtpPattern): R-RTP +2, F-RTP -2, BRAIDED/none 0.
-        String smaPattern = "";
-        if (sma > 0 && sma50 > 0) {
-            smaPattern = smaService.getSmaPattern(symbol,
-                riskSettings.getSmaPatternLookback(),
-                atrService.getAtr(symbol),
-                riskSettings.getBraidedMinCrossovers(),
-                riskSettings.getBraidedMaxSpreadAtr(),
-                riskSettings.getRailwayMaxCv(),
-                riskSettings.getRailwayMinSpreadAtr());
-        }
-        // Pattern: R-RTP +3 (rising railway), F-RTP -3 (falling railway), no RTP -1 (chop/no
-        // trend penalty — absence of railway is a soft negative for trend conviction).
-        int smaPatternScore = "RAILWAY_UP".equals(smaPattern) ? 3
-                             : "RAILWAY_DOWN".equals(smaPattern) ? -3 : -1;
-
-        // HTF (60-min) SMA scoring — uses 20 and 50 only (NOT 200). Matches the HTF Price &
-        // Alignment filters which also skip the 200 SMA. Binary scoring (no partial tier
-        // possible with just 2 SMAs).
-        double htfSma20 = htfSmaService.getSma(symbol);
-        double htfSma50 = htfSmaService.getSma50(symbol);
-        double htfSma200 = htfSmaService.getSma200(symbol); // display only, not in score
-        int htfPriceScore     = scoreHtfPrice(ltp, htfSma20, htfSma50);
-        int htfAlignmentScore = scoreHtfAlignment(htfSma20, htfSma50);
-        String htfPat = (htfSma20 > 0 && htfSma50 > 0)
-            ? htfSmaService.getSmaPattern(symbol,
-                riskSettings.getSmaPatternLookback(),
-                atrService.getAtr(symbol),
-                riskSettings.getBraidedMinCrossovers(),
-                riskSettings.getBraidedMaxSpreadAtr(),
-                riskSettings.getRailwayMaxCv(),
-                riskSettings.getRailwayMinSpreadAtr())
-            : "";
-        int htfPatternScore = "RAILWAY_UP".equals(htfPat) ? 3
-                            : "RAILWAY_DOWN".equals(htfPat) ? -3 : -1;
-
-        // Total = Weekly ±3 + Daily ±3 + 5m(Price ±2 + Align ±2 + Pattern ±3) + HTF(Price ±2 + Align ±2 + Pattern ±3) = ±20
-        // CPR and Pattern weighted heavier (±3) than Price/Align (±2). CPR drives structural bias;
-        // Pattern (R-RTP/F-RTP) confirms persistent trend. Price/Align are intermediate confirmation.
-        int total = weeklyScore + dailyScore
-                  + smaPositionScore + smaAlignmentScore + smaPatternScore
-                  + htfPriceScore + htfAlignmentScore + htfPatternScore;
-
-        trend.setWeeklyScore(weeklyScore);
-        trend.setDailyScore(dailyScore);
-        trend.setSmaPositionScore(smaPositionScore);
-        trend.setSma200PositionScore(0); // legacy DTO field, no longer scored independently
-        trend.setSmaCrossoverScore(smaAlignmentScore); // reuse old DTO field for 5m alignment score
-        trend.setSmaPattern(smaPattern);
-        trend.setSmaPatternScore(smaPatternScore);
-        trend.setHtfSma20(htfSma20);
-        trend.setHtfSma50(htfSma50);
-        trend.setHtfSma200(htfSma200);
-        trend.setHtfSmaPattern(htfPat);
-        trend.setHtfPriceScore(htfPriceScore);
-        trend.setHtfAlignmentScore(htfAlignmentScore);
-        trend.setHtfPatternScore(htfPatternScore);
-        trend.setTotalScore(total);
-
-        // ── NIFTY breadth: how many NIFTY 50 stocks are up vs down today ──
-        // Iterates the bhavcopy NIFTY 50 universe, compares each stock's live LTP against
-        // its prev-day close. Cheap (~50 map lookups) — fine to compute on every poll.
+        // Live breadth (advancers/decliners across NIFTY 50). Updates every poll — display only.
         int advancers = 0, decliners = 0, breadthCount = 0;
         for (var cpr : bhavcopyService.getAllCprLevels().values()) {
             if (!cpr.isInNifty50() || bhavcopyService.isIndex(cpr.getSymbol())) continue;
@@ -187,135 +192,20 @@ public class IndexTrendService {
         trend.setBreadthAdvancers(advancers);
         trend.setBreadthDecliners(decliners);
         trend.setBreadthTotal(breadthCount);
-
-        // ── Trend state (ADD-driven, 7 tiers) ─────────────────────────────────
-        // ADD = advancers count, scaled to a virtual 50-stock universe so the bands
-        // hold even when not all 50 NIFTY 50 stocks have ticked yet:
-        //   addScore = round(advancers × 50 / breadthCount)
-        //
-        //   45-50  EXTREME_BULLISH  (≥90% of NIFTY 50 advancing — very strong rally)
-        //   38-44  VERY_BULLISH     (76-88% advancing)
-        //   28-37  BULLISH          (56-74% advancing — clear majority)
-        //   22-27  NEUTRAL          (44-54% — split market)
-        //   13-21  BEARISH          (26-42% advancing)
-        //    6-12  VERY_BEARISH     (12-24% advancing)
-        //    0-5   EXTREME_BEARISH  (≤10% — broad-based selloff)
-        // Change% chain: candleAggregator (per-tick) → MarketDataService (currentTicks, retained
-        // across full bot lifetime — same source as the scrolling ticker). Stops the NIFTY card
-        // showing 0.00% after market close just because the per-tick map hasn't fired today.
-        double changePct = candleAggregator != null ? candleAggregator.getChangePct(symbol) : 0;
-        if (changePct == 0) changePct = marketDataService.getChangePercent(symbol);
-        trend.setChangePct(Math.round(changePct * 100.0) / 100.0);
-        int addScore = 0;
-        String state;
-        // No live LTPs yet (pre-market, WS not subscribed, or new-day stale-guard zeroed
-        // everything) OR all stocks exactly flat → NEUTRAL. Anything else would be misleading;
-        // ADD = 0 is "no data," not "extreme bearish." Bearish requires actual decliners.
-        if (breadthCount == 0 || (advancers == 0 && decliners == 0)) {
-            state = "NEUTRAL";
-        } else {
-            addScore = (int) Math.round(advancers * 50.0 / breadthCount);
-            if      (addScore >= 45) state = "EXTREME_BULLISH";
-            else if (addScore >= 38) state = "VERY_BULLISH";
-            else if (addScore >= 28) state = "BULLISH";
-            else if (addScore >= 22) state = "NEUTRAL";
-            else if (addScore >= 13) state = "BEARISH";
-            else if (addScore >=  6) state = "VERY_BEARISH";
-            else                     state = "EXTREME_BEARISH";
-        }
+        int addScore = breadthCount > 0 ? (int) Math.round(advancers * 50.0 / breadthCount) : 0;
         trend.setAddScore(addScore);
-        trend.setState(state);
 
-        // State is now price-driven via HSM tick's change%. LTP > 0 is enough.
-        boolean available = ltp > 0;
-        trend.setDataAvailable(available);
+        // Live change% for display
+        double changePct = candleAggregator != null ? candleAggregator.getChangePct(NIFTY_SYMBOL) : 0;
+        if (changePct == 0) changePct = marketDataService.getChangePercent(NIFTY_SYMBOL);
+        trend.setChangePct(Math.round(changePct * 100.0) / 100.0);
 
+        // Cached (sticky) trend signals — only change at 5-min candle boundaries
+        trend.setCprBullish(cachedCprBullish);
+        trend.setFutVwapBullish(cachedFutVwapBullish);
+        trend.setState(cachedState != null ? cachedState : "NEUTRAL");
+
+        trend.setDataAvailable(ltp > 0);
         return trend;
-    }
-
-    private int scoreTrend(String trendStr) {
-        if (trendStr == null) return 0;
-        if ("STRONG_BULLISH".equals(trendStr))  return 3;
-        if ("STRONG_BEARISH".equals(trendStr))  return -3;
-        if ("BULLISH".equals(trendStr))         return 1;
-        if ("BEARISH".equals(trendStr))         return -1;
-        return 0;  // NEUTRAL or unknown
-    }
-
-    /** Daily trend scale — same weight as weekly (±2 max). No special treatment. */
-    private int scoreDailyTrend(String trendStr) {
-        return scoreTrend(trendStr);
-    }
-
-    /** SMA Price (LTP vs all three SMAs): mirrors enableSmaTrendCheck on stock cards.
-     *  When {@code partialAllowed=true}: ±2 full / ±1 partial (above-or-below 2 of 3) / 0 mixed.
-     *  When {@code partialAllowed=false}: binary — ±2 full only when above/below all three; 0 otherwise.
-     *  The 5-min check uses binary mode (matches the stock-card filter, which is pass/fail). */
-    private int scoreSmaPositionAll(double ltp, double sma20, double sma50, double sma200, boolean partialAllowed) {
-        if (ltp <= 0 || sma20 <= 0 || sma50 <= 0 || sma200 <= 0) return 0;
-        int above = (ltp > sma20 ? 1 : 0) + (ltp > sma50 ? 1 : 0) + (ltp > sma200 ? 1 : 0);
-        if (above == 3) return 2;     // full bullish — LTP above all three
-        if (above == 0) return -2;    // full bearish — LTP below all three
-        if (!partialAllowed) return 0;
-        if (above == 2) return 1;
-        return -1;                    // above == 1 → below 2 of 3
-    }
-
-    /** HTF Price (LTP vs 1h SMA 20 and 50 only — 200 excluded by design, matches the HTF
-     *  Price filter on stock cards). Binary: ±2 above-or-below both, 0 if split or missing data. */
-    private int scoreHtfPrice(double ltp, double htfSma20, double htfSma50) {
-        if (ltp <= 0 || htfSma20 <= 0 || htfSma50 <= 0) return 0;
-        if (ltp > htfSma20 && ltp > htfSma50) return 2;
-        if (ltp < htfSma20 && ltp < htfSma50) return -2;
-        return 0;
-    }
-
-    /** HTF Alignment (1h SMA 20 vs 50 only — 200 excluded by design, matches the HTF Alignment
-     *  filter on stock cards). Binary: ±2 if 20>50 or 20<50, 0 if equal/missing. */
-    private int scoreHtfAlignment(double htfSma20, double htfSma50) {
-        if (htfSma20 <= 0 || htfSma50 <= 0) return 0;
-        if (htfSma20 > htfSma50) return 2;
-        if (htfSma20 < htfSma50) return -2;
-        return 0;
-    }
-
-    /** SMA Alignment (stack ordering 20/50/200): mirrors enableSmaAlignmentCheck on stock cards.
-     *  Full ±2 when 20>50>200 (or 20<50<200).
-     *  Partial ±1 when one of the two stack pairs (20>50 or 50>200) is bullish/bearish but
-     *  not both. Zero on mixed/equal. */
-    private int scoreSmaAlignment(double sma20, double sma50, double sma200) {
-        if (sma20 <= 0 || sma50 <= 0 || sma200 <= 0) return 0;
-        int bullPairs = (sma20 > sma50 ? 1 : 0) + (sma50 > sma200 ? 1 : 0);
-        int bearPairs = (sma20 < sma50 ? 1 : 0) + (sma50 < sma200 ? 1 : 0);
-        int net = bullPairs - bearPairs;
-        if (net >  2) net =  2;
-        if (net < -2) net = -2;
-        return net;
-    }
-
-    private String classify(int score) {
-        if (score >= riskSettings.getIndexStrongBullishThreshold()) return "STRONG_BULLISH";
-        if (score >= riskSettings.getIndexBullishThreshold())       return "BULLISH";
-        if (score <= riskSettings.getIndexStrongBearishThreshold()) return "STRONG_BEARISH";
-        if (score <= riskSettings.getIndexBearishThreshold())       return "BEARISH";
-        return "NEUTRAL";
-    }
-
-    /**
-     * Returns true if the given trade direction is OPPOSED to the current NIFTY trend.
-     * Buys are opposed on any of the 3 bearish tiers; sells are opposed on any of the
-     * 3 bullish tiers. NEUTRAL never opposes. Used by BreakoutScanner to decide
-     * HPT → LPT downgrade (or hard-skip when indexAlignmentHardSkip is on).
-     */
-    public boolean isOpposedToNifty(boolean isBuy) {
-        IndexTrend trend = getNiftyTrend();
-        if (!trend.isDataAvailable()) return false;
-        String state = trend.getState();
-        if (state == null) return false;
-        if (isBuy) {
-            return state.endsWith("BEARISH"); // BEARISH, VERY_BEARISH, EXTREME_BEARISH
-        } else {
-            return state.endsWith("BULLISH"); // BULLISH, VERY_BULLISH, EXTREME_BULLISH
-        }
     }
 }

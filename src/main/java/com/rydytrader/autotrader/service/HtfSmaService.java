@@ -86,6 +86,14 @@ public class HtfSmaService implements CandleAggregator.CandleCloseListener {
     public double getSma200(String symbol) { return computeSma(symbol, SMA_LONG_PERIOD); }
 
     /**
+     * SMA based exclusively on completed 1h closes — no live LTP blending. Used by HTF SMA
+     * Price/Alignment filters that should fire against the committed HTF state, not the
+     * in-progress bar. Matches HTF Hurdle's prior-1h-close design philosophy.
+     */
+    public double getSmaCompletedOnly(String symbol)    { return computeSmaCompletedOnly(symbol, SMA_PERIOD); }
+    public double getSma50CompletedOnly(String symbol)  { return computeSmaCompletedOnly(symbol, SMA_MID_PERIOD); }
+
+    /**
      * Legacy: previously updated by MarketDataService's 5-min listener. Now superseded by
      * lazy LTP read inside computeSma — keeping the method as a no-op to preserve callers
      * until the listener is removed.
@@ -105,6 +113,24 @@ public class HtfSmaService implements CandleAggregator.CandleCloseListener {
         if (closes == null) return null;
         synchronized (closes) {
             return closes.isEmpty() ? null : closes.peekLast();
+        }
+    }
+
+    private double computeSmaCompletedOnly(String symbol, int period) {
+        Deque<Double> closes = closesBySymbol.get(symbol);
+        if (closes == null) return 0;
+        synchronized (closes) {
+            if (closes.size() < period) return 0;
+            double sum = 0;
+            int skip = closes.size() - period;
+            int i = 0;
+            int count = 0;
+            for (Double v : closes) {
+                if (i++ < skip) continue;
+                sum += v;
+                count++;
+            }
+            return count == period ? sum / period : 0;
         }
     }
 

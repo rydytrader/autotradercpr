@@ -368,7 +368,6 @@
         <a href="/scanner" data-tooltip="Scanner" class="sidebar-nav-item active"><span class="sidebar-nav-icon">&#9678;</span><span class="sidebar-nav-label">Scanner</span></a>
         <a href="/positions" data-tooltip="Positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">&#11041;</span><span class="sidebar-nav-label">Positions</span></a>
         <a href="/trades" data-tooltip="Trade Log" class="sidebar-nav-item"><span class="sidebar-nav-icon">&#8862;</span><span class="sidebar-nav-label">Trade Log</span></a>
-        <a href="/signal-trail" data-tooltip="Signal Trail" class="sidebar-nav-item"><span class="sidebar-nav-icon">&#8981;</span><span class="sidebar-nav-label">Signal Trail</span></a>
         <a href="/journal" data-tooltip="Journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">&#9783;</span><span class="sidebar-nav-label">Journal</span></a>
         <a href="/calendar" data-tooltip="Calendar" class="sidebar-nav-item"><span class="sidebar-nav-icon">&#9638;</span><span class="sidebar-nav-label">Calendar</span></a>
         <a href="/settings" data-tooltip="Settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">&#9881;</span><span class="sidebar-nav-label">Settings</span></a>
@@ -430,21 +429,13 @@
             " onmouseover="this.style.background='rgba(52,211,153,0.18)'" onmouseout="this.style.background='rgba(52,211,153,0.1)'">
                 Export TradingView
             </a>
-            <a href="/api/scanner/fyers-watchlist" style="
+            <button onclick="showSignalTrail()" style="
                 background: rgba(99,179,237,0.1); border: 1px solid rgba(99,179,237,0.3);
                 color: var(--accent-blue); padding: 6px 14px; border-radius: 8px;
                 font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
-                cursor: pointer; transition: all 0.2s; text-decoration: none;
-            " onmouseover="this.style.background='rgba(99,179,237,0.18)'" onmouseout="this.style.background='rgba(99,179,237,0.1)'">
-                Export Fyers
-            </a>
-            <button onclick="showSimulateQty()" style="
-                background: rgba(249,115,22,0.1); border: 1px solid rgba(249,115,22,0.3);
-                color: #f97316; padding: 6px 14px; border-radius: 8px;
-                font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
                 cursor: pointer; transition: all 0.2s;
-            " onmouseover="this.style.background='rgba(249,115,22,0.18)'" onmouseout="this.style.background='rgba(249,115,22,0.1)'">
-                Position Size Simulator
+            " onmouseover="this.style.background='rgba(99,179,237,0.18)'" onmouseout="this.style.background='rgba(99,179,237,0.1)'">
+                Signal Trail
             </button>
         </div>
     </div>
@@ -491,8 +482,10 @@
             <div class="nifty-name">NIFTY 50</div>
             <div class="nifty-ltp" id="niftyLtp">—</div>
             <div class="nifty-change" id="niftyChange" style="font-family:var(--font-mono); font-weight:700; font-size:0.85rem; margin-left:8px;">—</div>
-            <div class="nifty-breadth" id="niftyBreadth" style="font-family:var(--font-mono); font-weight:600; font-size:0.78rem; margin-left:14px; color:var(--text-muted);" title="NIFTY 50 breadth: stocks up / total tracked">—</div>
+            <div class="nifty-cpr" id="niftyCprBias" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY LTP vs daily CPR (above CPR top / below CPR bottom)">—</div>
+            <div class="nifty-fut-vwap" id="niftyFutVwap" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="Near-month NIFTY futures: price vs VWAP">—</div>
             <div class="nifty-state" id="niftyState">—</div>
+            <div class="nifty-breadth" id="niftyBreadth" style="font-family:var(--font-mono); font-weight:600; font-size:0.78rem; margin-left:auto; color:var(--text-muted);" title="NIFTY 50 breadth: stocks up / total tracked">—</div>
             <div class="nifty-right" id="niftyMetrics"></div>
         </div>
     </div>
@@ -1167,6 +1160,8 @@
                 document.getElementById('niftyLtp').textContent = '—';
                 document.getElementById('niftyChange').textContent = '—';
                 var br0 = document.getElementById('niftyBreadth'); if (br0) br0.textContent = '—';
+                var fv0 = document.getElementById('niftyFutVwap'); if (fv0) { fv0.textContent = '—'; fv0.style.color = 'var(--text-muted)'; }
+                var cb0 = document.getElementById('niftyCprBias'); if (cb0) { cb0.textContent = '—'; cb0.style.color = 'var(--text-muted)'; }
                 document.getElementById('niftyState').textContent = 'WAITING';
                 document.getElementById('niftyMetrics').innerHTML = '';
                 document.getElementById('niftyCard').className = 'nifty-card nifty-card-neutral';
@@ -1174,8 +1169,12 @@
             }
             // Apply card color class FIRST — done early so any later error in the
             // metrics-rendering block (which is in a .catch swallow) doesn't strand the card
-            // on its previous className.
-            var stateLowerEarly = (d.state || 'neutral').toLowerCase().replace('_', '-');
+            // on its previous className. Reversal states route to their trade-direction colour
+            // (BULL_REVERSAL = buy side → bullish styling; BEAR_REVERSAL = sell side → bearish).
+            var rawState = (d.state || 'NEUTRAL');
+            var styleState = (rawState === 'BULL_REVERSAL') ? 'BULLISH'
+                           : (rawState === 'BEAR_REVERSAL') ? 'BEARISH' : rawState;
+            var stateLowerEarly = styleState.toLowerCase().replace('_', '-');
             document.getElementById('niftyCard').className = 'nifty-card nifty-card-' + stateLowerEarly;
 
             document.getElementById('niftyLtp').textContent = d.ltp.toFixed(2);
@@ -1199,136 +1198,40 @@
                 chgEl.style.color = cp > 0 ? 'var(--accent-green)' : cp < 0 ? 'var(--accent-red)' : 'var(--text-muted)';
             }
             document.getElementById('niftyState').textContent = (d.state || 'NEUTRAL').replace('_', ' ');
-            // niftyScore display removed
-            if (false) document.getElementById('niftyScore').textContent = '(score ' + (d.totalScore >= 0 ? '+' : '') + d.totalScore + ' / \u00B120)';
 
-            // Build single-line metrics string
-            function sc(v) { return (v >= 0 ? '+' : '') + v; }
-            function ts(t) { return t === 'STRONG_BULLISH' ? 'S.BULL' : t === 'STRONG_BEARISH' ? 'S.BEAR' : t === 'BULLISH' ? 'BULL' : t === 'BEARISH' ? 'BEAR' : 'NEU'; }
-            function clr(v) { return v > 0 ? 'var(--accent-green)' : v < 0 ? 'var(--accent-red)' : 'var(--text-muted)'; }
-            function seg(label, val, score) { return '<span style="color:var(--text-muted)">' + label + '</span> <span style="color:' + clr(score) + ';font-weight:600">' + val + '</span>'; }
-            var sep = ' <span style="color:var(--border);margin:0 2px">|</span> ';
-
-            var wVal = ts(d.weeklyTrend) + ' ' + sc(d.weeklyScore);
-            var e20Val = d.sma > 0 ? (d.smaPositionScore > 0 ? '▲ ' : d.smaPositionScore < 0 ? '▼ ' : '= ') + d.sma.toFixed(1) + ' ' + sc(d.smaPositionScore) : '—';
-            // SMA 50 position vs LTP (display-only, does not feed total score)
-            var e50Pos = (d.ltp > 0 && d.sma50 > 0) ? (d.ltp > d.sma50 ? 1 : d.ltp < d.sma50 ? -1 : 0) : 0;
-            var e50Val = d.sma50 > 0 ? (e50Pos > 0 ? '▲ ' : e50Pos < 0 ? '▼ ' : '= ') + d.sma50.toFixed(1) + ' ' + sc(e50Pos) : '—';
-            var e200Val = d.sma200 > 0 ? (d.sma200PositionScore > 0 ? '▲ ' : d.sma200PositionScore < 0 ? '▼ ' : '= ') + d.sma200.toFixed(1) + ' ' + sc(d.sma200PositionScore) : '—';
-            var crossVal;
-            if (d.sma > 0 && d.sma200 > 0) {
-                var cs = d.smaCrossoverScore;
-                crossVal = (cs === 2 ? '20&50>200' : cs === 1 ? '20>200' : cs === -2 ? '20&50<200' : cs === -1 ? '20<200' : '=') + ' ' + sc(cs);
-            } else crossVal = '—';
-            var patternVal = d.smaPattern === 'RAILWAY_UP' ? 'R-RTP ' + sc(d.smaPatternScore)
-                           : d.smaPattern === 'RAILWAY_DOWN' ? 'F-RTP ' + sc(d.smaPatternScore)
-                           : d.smaPattern === 'BRAIDED' ? 'ZIG ZAG ' + sc(d.smaPatternScore)
-                           : 'NONE ' + sc(d.smaPatternScore);
-            var ohlVal = d.openEqualsHigh ? 'O=H ' + sc(d.openHlScore) : d.openEqualsLow ? 'O=L ' + sc(d.openHlScore) : '— 0';
-
-            // HTF (60-min) values — display only, no score contribution
-            var htfE20Val = d.htfSma20 > 0 ? d.htfSma20.toFixed(1) : '—';
-            var htfE50Val = d.htfSma50 > 0 ? d.htfSma50.toFixed(1) : '—';
-            var htfE200Val = d.htfSma200 > 0 ? d.htfSma200.toFixed(1) : '—';
-            var htfPatternVal = d.htfSmaPattern === 'RAILWAY_UP' ? 'R-RTP'
-                             : d.htfSmaPattern === 'RAILWAY_DOWN' ? 'F-RTP'
-                             : d.htfSmaPattern === 'BRAIDED' ? 'ZIG ZAG'
-                             : 'NONE';
-            var htfPatternScore = d.htfSmaPattern === 'RAILWAY_UP' ? 1 : d.htfSmaPattern === 'RAILWAY_DOWN' ? -1 : 0;
-
-            // Position-arrow helper for HTF SMAs (display-only, no score)
-            function arrow(ltp, val) { return (ltp > 0 && val > 0) ? (ltp > val ? '▲ ' : ltp < val ? '▼ ' : '= ') : ''; }
-            function posScore(ltp, val) { return (ltp > 0 && val > 0) ? (ltp > val ? 1 : ltp < val ? -1 : 0) : 0; }
-            var htfE20Disp  = d.htfSma20  > 0 ? arrow(d.ltp, d.htfSma20)  + d.htfSma20.toFixed(1)  : '—';
-            var htfE50Disp  = d.htfSma50  > 0 ? arrow(d.ltp, d.htfSma50)  + d.htfSma50.toFixed(1)  : '—';
-            var htfE200Disp = d.htfSma200 > 0 ? arrow(d.ltp, d.htfSma200) + d.htfSma200.toFixed(1) : '—';
-            var htfE20Pos  = posScore(d.ltp, d.htfSma20);
-            var htfE50Pos  = posScore(d.ltp, d.htfSma50);
-            var htfE200Pos = posScore(d.ltp, d.htfSma200);
-
-            // Cross labels (5m comes with score, HTF computed display-only)
-            function crossLabel(e20, e50, e200) {
-                if (!(e20 > 0 && e200 > 0)) return '—';
-                var b20 = e20 > e200, b50 = e50 > 0 && e50 > e200;
-                var b20bear = e20 < e200, b50bear = e50 > 0 && e50 < e200;
-                if (b20 && b50)         return '20&50>200';
-                if (b20)                return '20>200';
-                if (b20bear && b50bear) return '20&50<200';
-                if (b20bear)            return '20<200';
-                return '=';
+            // NIFTY LTP vs daily CPR (above CPR top / below CPR bottom / inside).
+            var cbEl = document.getElementById('niftyCprBias');
+            if (cbEl) {
+                if (d.cprBullish === true) {
+                    cbEl.textContent = 'NIFTY CPR - BULLISH';
+                    cbEl.style.color = 'var(--accent-green)';
+                } else if (d.cprBullish === false) {
+                    cbEl.textContent = 'NIFTY CPR - BEARISH';
+                    cbEl.style.color = 'var(--accent-red)';
+                } else {
+                    cbEl.textContent = 'NIFTY CPR - —';
+                    cbEl.style.color = 'var(--text-muted)';
+                }
             }
-            function crossScore(e20, e50, e200) {
-                if (!(e20 > 0 && e200 > 0)) return 0;
-                if (e20 > e200 && e50 > 0 && e50 > e200) return 2;
-                if (e20 > e200) return 1;
-                if (e20 < e200 && e50 > 0 && e50 < e200) return -2;
-                if (e20 < e200) return -1;
-                return 0;
-            }
-            var htfCrossLabel = crossLabel(d.htfSma20, d.htfSma50, d.htfSma200);
-            var htfCrossScore = crossScore(d.htfSma20, d.htfSma50, d.htfSma200);
-
-            var gridStyle = 'display:grid; grid-template-columns:42px 120px 1.2fr 1.2fr 1.2fr 90px 90px 110px; gap:32px; align-items:center; font-size:0.72rem; padding:5px 8px;';
-            var headStyle = gridStyle + ' color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; font-size:0.6rem; font-weight:700; border-bottom:1px solid var(--border);';
-
-            // Trend cell uses the same scan-trend CSS as stock cards (W/D badges).
-            // Score (+N) shown for weekly trend only; daily and below have no inline score number
-            // but composite contribution still flows through totalScore (shown in card header).
-            function trendCell(trendStr, score, showScore) {
-                var trend = (trendStr || 'NEUTRAL').toUpperCase();
-                var cls = trend.toLowerCase();
-                var arrow = trend.includes('BULLISH') ? '&#9650;' : trend.includes('BEARISH') ? '&#9660;' : '&#9644;';
-                var label = trend.replace('_', ' ');
-                return '<span class="scan-trend"><span class="' + cls + '">' + arrow + ' ' + label
-                     + (showScore ? ' ' + sc(score) : '') + '</span></span>';
-            }
-            function smaCell(disp, score) {
-                return '<span style="color:' + clr(score) + ';font-weight:600;">' + disp + ' ' + sc(score) + '</span>';
-            }
-            // Display-only variant for HTF SMA row — colors the value by position (LTP vs SMA)
-            // but doesn't append a score number, because HTF SMAs don't feed the composite total.
-            function smaCellNoScore(disp, posScore) {
-                return '<span style="color:' + clr(posScore) + ';font-weight:600;">' + disp + '</span>';
-            }
-            function patCell(label, score) {
-                return '<span style="color:' + clr(score) + ';font-weight:600;">' + label + ' ' + sc(score) + '</span>';
+            // Near-month NIFTY futures: price above/below VWAP. Pure futures-internal sign.
+            var fvEl = document.getElementById('niftyFutVwap');
+            if (fvEl) {
+                if (d.futVwapBullish === true) {
+                    fvEl.textContent = 'NIFTY VWAP - BULLISH';
+                    fvEl.style.color = 'var(--accent-green)';
+                } else if (d.futVwapBullish === false) {
+                    fvEl.textContent = 'NIFTY VWAP - BEARISH';
+                    fvEl.style.color = 'var(--accent-red)';
+                } else {
+                    fvEl.textContent = 'NIFTY VWAP - —';
+                    fvEl.style.color = 'var(--text-muted)';
+                }
             }
 
-            document.getElementById('niftyMetrics').innerHTML =
-                '<div style="' + headStyle + '">'
-                +   '<span>TF</span>'
-                +   '<span>CPR Trend</span>'
-                +   '<span style="text-align:right;">SMA 20</span>'
-                +   '<span style="text-align:right;">SMA 50</span>'
-                +   '<span style="text-align:right;">SMA 200</span>'
-                +   '<span style="text-align:right;">Price</span>'
-                +   '<span style="text-align:right;">Align</span>'
-                +   '<span style="text-align:right;">Pattern</span>'
-                + '</div>'
-                + '<div style="' + gridStyle + '">'
-                +   '<span style="font-weight:700;color:var(--text-muted);">D <span style="font-weight:400;opacity:0.7;">(5 min)</span></span>'
-                +   '<span>' + trendCell(d.dailyTrend, d.dailyScore, true) + '</span>'
-                +   '<span style="text-align:right;">' + smaCellNoScore(d.sma > 0 ? arrow(d.ltp, d.sma) + d.sma.toFixed(1) : '—', posScore(d.ltp, d.sma)) + '</span>'
-                +   '<span style="text-align:right;">' + smaCellNoScore(d.sma50 > 0 ? arrow(d.ltp, d.sma50) + d.sma50.toFixed(1) : '—', e50Pos) + '</span>'
-                +   '<span style="text-align:right;">' + smaCellNoScore(d.sma200 > 0 ? arrow(d.ltp, d.sma200) + d.sma200.toFixed(1) : '—', posScore(d.ltp, d.sma200)) + '</span>'
-                +   '<span style="text-align:right;">' + patCell(d.smaPositionScore === 2 ? 'ABOVE' : d.smaPositionScore === 1 ? 'above 2/3' : d.smaPositionScore === -1 ? 'below 2/3' : d.smaPositionScore === -2 ? 'BELOW' : 'mixed', d.smaPositionScore) + '</span>'
-                +   '<span style="text-align:right;">' + patCell(d.smaCrossoverScore === 2 ? '20>50>200' : d.smaCrossoverScore === 1 ? 'partial bull' : d.smaCrossoverScore === -1 ? 'partial bear' : d.smaCrossoverScore === -2 ? '20<50<200' : 'mixed', d.smaCrossoverScore) + '</span>'
-                +   '<span style="text-align:right;">' + patCell(
-                        d.smaPattern === 'RAILWAY_UP' ? 'R-RTP'
-                        : d.smaPattern === 'RAILWAY_DOWN' ? 'F-RTP'
-                        : d.smaPattern === 'BRAIDED' ? 'ZIG ZAG' : 'NONE',
-                        d.smaPatternScore) + '</span>'
-                + '</div>'
-                + '<div style="' + gridStyle + '">'
-                +   '<span style="font-weight:700;color:var(--text-muted);">W <span style="font-weight:400;opacity:0.7;">(60 min)</span></span>'
-                +   '<span>' + trendCell(d.weeklyTrend, d.weeklyScore, true) + '</span>'
-                +   '<span style="text-align:right;">' + smaCellNoScore(htfE20Disp, htfE20Pos) + '</span>'
-                +   '<span style="text-align:right;">' + smaCellNoScore(htfE50Disp, htfE50Pos) + '</span>'
-                +   '<span style="text-align:right;">' + smaCellNoScore(htfE200Disp, htfE200Pos) + '</span>'
-                +   '<span style="text-align:right;">' + patCell(d.htfPriceScore === 2 ? 'ABOVE 20+50' : d.htfPriceScore === -2 ? 'BELOW 20+50' : 'mixed', d.htfPriceScore || 0) + '</span>'
-                +   '<span style="text-align:right;">' + patCell(d.htfAlignmentScore === 2 ? '20>50' : d.htfAlignmentScore === -2 ? '20<50' : 'mixed', d.htfAlignmentScore || 0) + '</span>'
-                +   '<span style="text-align:right;">' + patCell(htfPatternVal, d.htfPatternScore || 0) + '</span>'
-                + '</div>';
+            // NIFTY trend state is breadth-driven. The grid showing CPR trend / SMA values /
+            // patterns has been removed — those were the visual remnants of the scoring system
+            // that no longer feeds the state. Card now shows only LTP, change%, breadth, state.
+            document.getElementById('niftyMetrics').innerHTML = '';
         }).catch(function(err) { console.warn('refreshNiftyCard failed:', err); });
     }
 
@@ -1601,7 +1504,7 @@ function showInsideCpr() {
             </div>
             <button onclick="document.getElementById('legendModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
         </div>
-        <div style="overflow-y:auto; padding:20px 24px; flex:1; font-family:var(--font-mono); font-size:0.72rem; color:var(--text-primary); line-height:1.5;">
+        <div style="overflow-y:auto; padding:20px 24px; flex:1; min-height:0; font-family:var(--font-mono); font-size:0.72rem; color:var(--text-primary); line-height:1.5; scrollbar-width:thin; scrollbar-color:var(--border) transparent;">
 
             <!-- 1. CPR Width -->
             <div style="margin-bottom:28px;">
@@ -1652,154 +1555,230 @@ function showInsideCpr() {
     </div>
 </div>
 
-<div id="simQtyModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px);" onclick="if(event.target===this)this.style.display='none'">
-    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:1000px; max-height:85vh; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
+<!-- Signal Trail Modal -->
+<div id="signalTrailModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px);" onclick="if(event.target===this)this.style.display='none'">
+    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:1200px; max-height:90vh; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
         <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border); background:var(--bg-section-header);">
             <div>
-                <div id="simQtyTitle" style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:var(--text-primary);">QUANTITY SIMULATOR</div>
-                <div id="simQtySubtitle" style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); margin-top:2px;"></div>
-                <div id="simQtyInput" style="display:flex; align-items:center; gap:8px; margin-top:4px;">
-                    <span id="simQtyInputLabel" style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-secondary);"></span>
-                    <input type="number" id="simQtyOverride" style="width:80px; padding:3px 6px; font-family:var(--font-mono); font-size:0.75rem; background:var(--bg-surface); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; text-align:right;">
-                    <button onclick="recalcSimQty()" style="padding:3px 10px; font-family:var(--font-mono); font-size:0.72rem; font-weight:600; background:rgba(99,179,237,0.15); color:var(--accent-blue); border:1px solid rgba(99,179,237,0.3); border-radius:4px; cursor:pointer;">Recalculate</button>
-                </div>
+                <div style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:var(--accent-blue);">SIGNAL TRAIL</div>
+                <div style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); margin-top:2px;">Post-mortem of today's signals — which filters blocked which trades · <span id="stAsOfDate">--</span></div>
             </div>
-            <button onclick="document.getElementById('simQtyModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
+            <button onclick="document.getElementById('signalTrailModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
         </div>
-        <div style="overflow-y:auto; padding:0;">
-            <table style="width:100%; border-collapse:collapse; font-family:var(--font-mono); font-size:0.75rem;">
+
+        <!-- Summary stats -->
+        <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; padding:14px 18px; background:var(--bg-surface); border-bottom:1px solid var(--border); flex-shrink:0;">
+            <div style="text-align:center; padding:10px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px;">
+                <div style="font-family:var(--font-mono); font-size:0.65rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em;">Total Signals</div>
+                <div id="stTotal" style="font-family:var(--font-mono); font-size:1.6rem; font-weight:700; color:var(--accent-blue); margin-top:4px;">0</div>
+            </div>
+            <div style="text-align:center; padding:10px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px;">
+                <div style="font-family:var(--font-mono); font-size:0.65rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em;">Traded</div>
+                <div id="stTraded" style="font-family:var(--font-mono); font-size:1.6rem; font-weight:700; color:var(--accent-green); margin-top:4px;">0</div>
+                <div id="stTradedPct" style="font-family:var(--font-mono); font-size:0.65rem; color:var(--text-muted); margin-top:2px;">--</div>
+            </div>
+            <div style="text-align:center; padding:10px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px;">
+                <div style="font-family:var(--font-mono); font-size:0.65rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em;">Filtered</div>
+                <div id="stFiltered" style="font-family:var(--font-mono); font-size:1.6rem; font-weight:700; color:var(--accent-red); margin-top:4px;">0</div>
+                <div id="stFilteredPct" style="font-family:var(--font-mono); font-size:0.65rem; color:var(--text-muted); margin-top:2px;">--</div>
+            </div>
+            <div style="text-align:center; padding:10px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px;">
+                <div style="font-family:var(--font-mono); font-size:0.65rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em;">Top Blocker</div>
+                <div id="stTopFilter" style="font-family:var(--font-mono); font-size:1rem; font-weight:700; color:var(--text-primary); margin-top:4px;">--</div>
+                <div id="stTopFilterDetail" style="font-family:var(--font-mono); font-size:0.65rem; color:var(--text-muted); margin-top:2px;">--</div>
+            </div>
+        </div>
+
+        <!-- Filter row -->
+        <div style="display:flex; align-items:center; gap:10px; padding:10px 18px; border-bottom:1px solid var(--border); flex-wrap:wrap; flex-shrink:0; font-family:var(--font-mono); font-size:0.72rem; color:var(--text-secondary);">
+            <span>Show:</span>
+            <select id="stStatusSelect" onchange="setStStatusFilter(this.value)" style="padding:4px 8px; font-family:var(--font-mono); font-size:0.72rem; background:var(--bg-base); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; min-width:120px;">
+                <option value="">All</option>
+                <option value="TRADED">TRADED</option>
+                <option value="FILTERED">FILTERED</option>
+                <option value="ERROR">ERROR</option>
+            </select>
+            <span>Filter:</span>
+            <select id="stFilterSelect" onchange="setStFilterDropdown(this.value)" style="padding:4px 8px; font-family:var(--font-mono); font-size:0.72rem; background:var(--bg-base); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; min-width:180px;">
+                <option value="">All filters</option>
+            </select>
+            <span>Stock:</span>
+            <select id="stStockSelect" onchange="loadSignalTrail()" style="padding:4px 8px; font-family:var(--font-mono); font-size:0.72rem; background:var(--bg-base); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; min-width:180px;">
+                <option value="ALL">All stocks</option>
+            </select>
+            <span id="stRowCount" style="margin-left:auto; color:var(--text-muted);">0 signals</span>
+        </div>
+
+        <!-- Table -->
+        <div style="overflow-y:auto; flex:1; min-height:0; scrollbar-width:thin; scrollbar-color:var(--border) transparent;">
+            <table style="width:100%; border-collapse:collapse; font-family:var(--font-mono); font-size:0.74rem; table-layout:fixed;">
                 <thead>
-                    <tr style="background:var(--bg-surface); position:sticky; top:0;">
-                        <th style="padding:8px 12px; text-align:left; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">#</th>
-                        <th style="padding:8px 12px; text-align:left; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Symbol</th>
-                        <th style="padding:8px 12px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">LTP</th>
-                        <th style="padding:8px 12px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">ATR</th>
-                        <th style="padding:8px 12px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">SL Dist</th>
-                        <th style="padding:8px 12px; text-align:center; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Leverage</th>
-                        <th style="padding:8px 12px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Risk Qty</th>
-                        <th style="padding:8px 12px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Cap Qty</th>
-                        <th style="padding:8px 12px; text-align:right; color:var(--accent-cyan); font-weight:700; border-bottom:1px solid var(--border);">Qty</th>
-                        <th style="padding:8px 12px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Risk Amt</th>
-                        <th style="padding:8px 12px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Capital</th>
+                    <tr style="background:var(--bg-surface); position:sticky; top:0; z-index:1;">
+                        <th style="padding:9px 12px; text-align:left; color:var(--text-muted); font-size:0.64rem; text-transform:uppercase; letter-spacing:0.06em; border-bottom:1px solid var(--border); width:46px;">#</th>
+                        <th style="padding:9px 12px; text-align:left; color:var(--text-muted); font-size:0.64rem; text-transform:uppercase; letter-spacing:0.06em; border-bottom:1px solid var(--border); width:80px;">Time</th>
+                        <th style="padding:9px 12px; text-align:left; color:var(--text-muted); font-size:0.64rem; text-transform:uppercase; letter-spacing:0.06em; border-bottom:1px solid var(--border); width:110px;">Symbol</th>
+                        <th style="padding:9px 12px; text-align:left; color:var(--text-muted); font-size:0.64rem; text-transform:uppercase; letter-spacing:0.06em; border-bottom:1px solid var(--border); width:160px;">Setup</th>
+                        <th style="padding:9px 12px; text-align:left; color:var(--text-muted); font-size:0.64rem; text-transform:uppercase; letter-spacing:0.06em; border-bottom:1px solid var(--border); width:100px;">Status</th>
+                        <th style="padding:9px 12px; text-align:left; color:var(--text-muted); font-size:0.64rem; text-transform:uppercase; letter-spacing:0.06em; border-bottom:1px solid var(--border); width:150px;">Filter</th>
+                        <th style="padding:9px 12px; text-align:left; color:var(--text-muted); font-size:0.64rem; text-transform:uppercase; letter-spacing:0.06em; border-bottom:1px solid var(--border);">Reason</th>
                     </tr>
                 </thead>
-                <tbody id="simQtyBody"></tbody>
+                <tbody id="stRowsBody">
+                    <tr><td colspan="7" style="padding:40px; text-align:center; color:var(--text-muted);">Loading…</td></tr>
+                </tbody>
             </table>
-            <div id="simQtyEmpty" style="display:none; padding:40px; text-align:center; color:var(--text-muted); font-family:var(--font-mono); font-size:0.85rem;">No data available</div>
         </div>
     </div>
 </div>
 
 <script>
-function showSimulateQty() {
-    document.getElementById('simQtyModal').style.display = 'block';
-    document.getElementById('simQtyBody').innerHTML = '<tr><td colspan="11" style="padding:30px; text-align:center; color:var(--text-muted);">Loading...</td></tr>';
-    document.getElementById('simQtyEmpty').style.display = 'none';
-    fetch('/api/scanner/simulate-qty')
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            window._simData = data; // cache for re-simulation
-            var totalCapital = 0, totalRisk = 0, totalMargin = 0;
-            (data.stocks || []).forEach(function(s) {
-                totalCapital += s.capitalUsed || 0;
-                totalRisk += s.riskAmount || 0;
-                totalMargin += s.leverage > 0 ? (s.capitalUsed || 0) / s.leverage : (s.capitalUsed || 0);
-            });
-            function inrH(v) { return '\u20B9' + v.toLocaleString('en-IN'); }
-            var sub = 'Risk/Trade: ' + inrH(data.riskPerTrade) + ' | Capital/Trade: ' + inrH(data.capitalPerTrade) + ' | ATR Mult: ' + data.atrMultiplier;
-            if (data.fixedQuantity !== -1) sub += ' | Fixed Qty: ' + data.fixedQuantity;
-            sub += ' | Total Value: ' + inrH(Math.round(totalCapital)) + ' | Est. Margin: ' + inrH(Math.round(totalMargin)) + ' | Total Risk: ' + inrH(Math.round(totalRisk));
-            var isFixed = data.fixedQuantity !== -1;
-            document.getElementById('simQtyTitle').textContent = 'QUANTITY SIMULATOR - ' + (isFixed ? 'FIXED QUANTITY' : 'RISK BASED');
-            document.getElementById('simQtyInputLabel').textContent = isFixed ? 'Fixed Qty:' : 'Risk/Trade (₹):';
-            document.getElementById('simQtyOverride').value = isFixed ? data.fixedQuantity : data.riskPerTrade;
-            document.getElementById('simQtySubtitle').textContent = sub;
-            var stocks = data.stocks || [];
-            if (stocks.length === 0) { document.getElementById('simQtyBody').innerHTML = ''; document.getElementById('simQtyEmpty').style.display = 'block'; return; }
-            var html = '';
-            function inr(v) { return typeof v === 'number' ? '₹' + v.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : v; }
-            stocks.forEach(function(s, i) {
-                var capped = s.mode === 'CAPITAL-CAPPED';
-                html += '<tr style="border-bottom:1px solid var(--border);">'
-                    + '<td style="padding:6px 12px; color:var(--text-muted);">' + (i + 1) + '</td>'
-                    + '<td style="padding:6px 12px; color:var(--accent-cyan); font-weight:600;">' + s.symbol + '</td>'
-                    + '<td style="padding:6px 12px; text-align:right; color:var(--text-primary);">' + inr(s.ltp) + '</td>'
-                    + '<td style="padding:6px 12px; text-align:right; color:var(--text-secondary);">' + inr(s.atr) + '</td>'
-                    + '<td style="padding:6px 12px; text-align:right; color:var(--text-secondary);">' + inr(s.slDist) + '</td>'
-                    + '<td style="padding:6px 12px; text-align:center; color:var(--text-secondary);">' + s.leverage + 'x</td>'
-                    + '<td style="padding:6px 12px; text-align:right; color:var(--text-secondary);">' + s.riskQty + '</td>'
-                    + '<td style="padding:6px 12px; text-align:right; color:' + (capped ? 'var(--accent-yellow)' : 'var(--text-secondary)') + ';">' + s.capitalCapQty + (capped ? ' *' : '') + '</td>'
-                    + '<td style="padding:6px 12px; text-align:right; color:var(--accent-cyan); font-weight:700;">' + s.qty + '</td>'
-                    + '<td style="padding:6px 12px; text-align:right; color:var(--accent-red);">' + inr(s.riskAmount) + '</td>'
-                    + '<td style="padding:6px 12px; text-align:right; color:var(--text-secondary);">' + inr(s.capitalUsed) + '</td>'
-                    + '</tr>';
-            });
-            document.getElementById('simQtyBody').innerHTML = html;
-        })
-        .catch(function(err) { document.getElementById('simQtyBody').innerHTML = '<tr><td colspan="11" style="padding:30px; text-align:center; color:var(--accent-red);">Failed: ' + err.message + '</td></tr>'; });
+// ══════════════════════════════════════════════════════════════════════
+// Signal Trail Modal — post-mortem of today's signals (filtered vs traded)
+// ══════════════════════════════════════════════════════════════════════
+var stState = { allRows: [], statusFilter: '', filterNameFilter: '', refreshTimer: null };
+
+function stShortSymbol(fyersSymbol) {
+    if (!fyersSymbol) return '';
+    var s = fyersSymbol;
+    if (s.startsWith('NSE:')) s = s.substring(4);
+    if (s.endsWith('-EQ')) s = s.substring(0, s.length - 3);
+    return s;
 }
 
-function recalcSimQty() {
-    var data = window._simData;
-    if (!data) return;
-    var override = parseFloat(document.getElementById('simQtyOverride').value);
-    if (isNaN(override) || override <= 0) return;
+function stStatusBadge(status) {
+    var color = status === 'TRADED' ? 'var(--accent-green)'
+              : status === 'FILTERED' ? 'var(--accent-red)'
+              : 'var(--accent-yellow)';
+    var bg = status === 'TRADED' ? 'rgba(52,211,153,0.12)'
+           : status === 'FILTERED' ? 'rgba(248,113,113,0.12)'
+           : 'rgba(251,191,36,0.12)';
+    var border = status === 'TRADED' ? 'rgba(52,211,153,0.3)'
+               : status === 'FILTERED' ? 'rgba(248,113,113,0.3)'
+               : 'rgba(251,191,36,0.3)';
+    return '<span style="display:inline-block; padding:3px 9px; border-radius:4px; font-size:0.62rem; font-weight:700; letter-spacing:0.04em; background:' + bg + '; color:' + color + '; border:1px solid ' + border + ';">' + status + '</span>';
+}
 
-    var isFixed = data.fixedQuantity !== -1;
-    var riskPerTrade = isFixed ? data.riskPerTrade : override;
-    var fixedQty = isFixed ? override : -1;
-    var capitalPerTrade = data.capitalPerTrade;
-    var atrMultiplier = data.atrMultiplier;
+function stFilterBadge(name) {
+    if (!name) return '<span style="color:var(--text-muted);">&mdash;</span>';
+    return '<span style="display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.62rem; font-weight:700; background:rgba(99,179,237,0.1); color:var(--accent-blue); border:1px solid rgba(99,179,237,0.25);">' + name + '</span>';
+}
 
-    function inr(v) { return typeof v === 'number' ? '\u20B9' + v.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : v; }
-    function inrH(v) { return '\u20B9' + v.toLocaleString('en-IN'); }
+function stBuildFilterOptions(byFilter) {
+    var sel = document.getElementById('stFilterSelect');
+    if (!sel) return;
+    var current = sel.value;
+    sel.innerHTML = '<option value="">All filters</option>';
+    Object.keys(byFilter).forEach(function(name) {
+        var opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name + ' (' + byFilter[name] + ')';
+        sel.appendChild(opt);
+    });
+    sel.value = (current && (current === '' || byFilter[current] != null)) ? current : '';
+    stState.filterNameFilter = sel.value;
+}
 
-    var totalCapital = 0, totalRisk = 0, totalMargin = 0;
+function stRerenderRows() {
+    var body = document.getElementById('stRowsBody');
+    var visible = stState.allRows.filter(function(r) {
+        if (stState.statusFilter && r.status !== stState.statusFilter) return false;
+        if (stState.filterNameFilter && r.filterName !== stState.filterNameFilter) return false;
+        return true;
+    });
+    document.getElementById('stRowCount').textContent = visible.length + ' signal' + (visible.length === 1 ? '' : 's');
+    if (!visible.length) {
+        body.innerHTML = '<tr><td colspan="7" style="padding:40px; text-align:center; color:var(--text-muted);">No signals match the selected filters.</td></tr>';
+        return;
+    }
     var html = '';
-    (data.stocks || []).forEach(function(s, i) {
-        var ltp = s.ltp, atr = s.atr, leverage = s.leverage;
-        var slDist = atr * atrMultiplier;
-        var qty, riskQty, capitalCapQty, capped = false, riskAmount, capitalUsed;
-
-        if (fixedQty !== -1) {
-            qty = Math.max(2, fixedQty % 2 !== 0 ? fixedQty + 1 : fixedQty);
-            riskQty = '--'; capitalCapQty = '--';
-        } else if (atr > 0 && ltp > 0) {
-            riskQty = Math.floor(riskPerTrade / slDist);
-            var effectiveCap = (capitalPerTrade * leverage) / 2;
-            capitalCapQty = Math.floor(effectiveCap / ltp);
-            var rawQty = Math.min(riskQty, capitalCapQty);
-            qty = Math.max(2, Math.floor(rawQty / 2) * 2);
-            capped = riskQty > capitalCapQty;
-        } else {
-            qty = 2; riskQty = 0; capitalCapQty = 0; slDist = 0;
-        }
-        riskAmount = slDist * qty;
-        capitalUsed = ltp * qty;
-        totalCapital += capitalUsed;
-        totalRisk += riskAmount;
-        totalMargin += leverage > 0 ? capitalUsed / leverage : capitalUsed;
-
-        html += '<tr style="border-bottom:1px solid var(--border);">'
-            + '<td style="padding:6px 12px; color:var(--text-muted);">' + (i + 1) + '</td>'
-            + '<td style="padding:6px 12px; color:var(--accent-cyan); font-weight:600;">' + s.symbol + '</td>'
-            + '<td style="padding:6px 12px; text-align:right; color:var(--text-primary);">' + inr(ltp) + '</td>'
-            + '<td style="padding:6px 12px; text-align:right; color:var(--text-secondary);">' + inr(atr) + '</td>'
-            + '<td style="padding:6px 12px; text-align:right; color:var(--text-secondary);">' + inr(slDist) + '</td>'
-            + '<td style="padding:6px 12px; text-align:center; color:var(--text-secondary);">' + leverage + 'x</td>'
-            + '<td style="padding:6px 12px; text-align:right; color:var(--text-secondary);">' + riskQty + '</td>'
-            + '<td style="padding:6px 12px; text-align:right; color:' + (capped ? 'var(--accent-yellow)' : 'var(--text-secondary)') + ';">' + capitalCapQty + (capped ? ' *' : '') + '</td>'
-            + '<td style="padding:6px 12px; text-align:right; color:var(--accent-cyan); font-weight:700;">' + qty + '</td>'
-            + '<td style="padding:6px 12px; text-align:right; color:var(--accent-red);">' + inr(riskAmount) + '</td>'
-            + '<td style="padding:6px 12px; text-align:right; color:var(--text-secondary);">' + inr(capitalUsed) + '</td>'
+    visible.forEach(function(r, idx) {
+        html += '<tr style="border-bottom:1px solid var(--border-soft);">'
+            + '<td style="padding:9px 12px; color:var(--text-muted);">' + (idx + 1) + '</td>'
+            + '<td style="padding:9px 12px; color:var(--text-secondary);">' + (r.time || '--') + '</td>'
+            + '<td style="padding:9px 12px;"><strong>' + stShortSymbol(r.symbol) + '</strong></td>'
+            + '<td style="padding:9px 12px; color:var(--text-secondary);">' + (r.setup || '--') + '</td>'
+            + '<td style="padding:9px 12px;">' + stStatusBadge(r.status) + '</td>'
+            + '<td style="padding:9px 12px;">' + stFilterBadge(r.filterName) + '</td>'
+            + '<td style="padding:9px 12px; color:var(--text-secondary); font-size:0.7rem; line-height:1.5; word-break:break-word;">' + (r.detail || '--') + '</td>'
             + '</tr>';
     });
-    document.getElementById('simQtyBody').innerHTML = html;
+    body.innerHTML = html;
+}
 
-    var sub = 'Risk/Trade: ' + inrH(riskPerTrade) + ' | Capital/Trade: ' + inrH(capitalPerTrade) + ' | ATR Mult: ' + atrMultiplier;
-    if (fixedQty !== -1) sub += ' | Fixed Qty: ' + fixedQty;
-    sub += ' | Total Value: ' + inrH(Math.round(totalCapital)) + ' | Est. Margin: ' + inrH(Math.round(totalMargin)) + ' | Total Risk: ' + inrH(Math.round(totalRisk));
-    document.getElementById('simQtySubtitle').textContent = sub;
+function stApplySummary(s) {
+    s = s || {};
+    document.getElementById('stTotal').textContent = s.totalSignals != null ? s.totalSignals : 0;
+    document.getElementById('stTraded').textContent = s.traded != null ? s.traded : 0;
+    document.getElementById('stFiltered').textContent = s.filtered != null ? s.filtered : 0;
+    var pct = s.totalSignals > 0 ? Math.round((s.traded / s.totalSignals) * 100) : 0;
+    document.getElementById('stTradedPct').textContent = pct + '% of all';
+    var fpct = s.totalSignals > 0 ? Math.round((s.filtered / s.totalSignals) * 100) : 0;
+    document.getElementById('stFilteredPct').textContent = fpct + '% blocked';
+
+    var byF = s.byFilter || {};
+    var topName = Object.keys(byF)[0];
+    if (topName) {
+        document.getElementById('stTopFilter').textContent = topName;
+        document.getElementById('stTopFilterDetail').textContent = byF[topName] + ' rejection' + (byF[topName] === 1 ? '' : 's');
+    } else {
+        document.getElementById('stTopFilter').textContent = '--';
+        document.getElementById('stTopFilterDetail').textContent = 'No rejections';
+    }
+    stBuildFilterOptions(byF);
+}
+
+function stRebuildSymbolDropdown(symbols, selected) {
+    var sel = document.getElementById('stStockSelect');
+    var current = sel.value;
+    sel.innerHTML = '<option value="ALL">All stocks</option>';
+    symbols.forEach(function(s) {
+        var opt = document.createElement('option');
+        opt.value = s;
+        opt.textContent = stShortSymbol(s);
+        sel.appendChild(opt);
+    });
+    var preserve = symbols.indexOf(current) >= 0 ? current : (selected || 'ALL');
+    sel.value = preserve;
+}
+
+function loadSignalTrail() {
+    var sel = document.getElementById('stStockSelect');
+    var sym = sel ? sel.value : 'ALL';
+    var qs = sym && sym !== 'ALL' ? ('?symbol=' + encodeURIComponent(sym)) : '';
+    fetch('/api/signal-trail' + qs)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            document.getElementById('stAsOfDate').textContent = 'as of ' + (d.asOfDate || '--');
+            stRebuildSymbolDropdown(d.symbols || [], d.selected);
+            stState.allRows = d.rows || [];
+            stApplySummary(d.summary || {});
+            stRerenderRows();
+        })
+        .catch(function(err) { console.warn('Signal trail fetch failed:', err); });
+}
+
+function setStStatusFilter(status) {
+    stState.statusFilter = status || '';
+    stRerenderRows();
+}
+
+function setStFilterDropdown(name) {
+    stState.filterNameFilter = name || '';
+    stRerenderRows();
+}
+
+function showSignalTrail() {
+    document.getElementById('signalTrailModal').style.display = 'block';
+    loadSignalTrail();
+    if (stState.refreshTimer) clearInterval(stState.refreshTimer);
+    stState.refreshTimer = setInterval(function() {
+        if (document.getElementById('signalTrailModal').style.display === 'block') {
+            loadSignalTrail();
+        } else {
+            clearInterval(stState.refreshTimer);
+            stState.refreshTimer = null;
+        }
+    }, 10000);
 }
 
 // ══════════════════════════════════════════════════════════════════════

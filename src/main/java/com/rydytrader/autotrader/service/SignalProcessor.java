@@ -100,10 +100,10 @@ public class SignalProcessor {
         boolean isBuy = setup.startsWith("BUY_");
         String signal = isBuy ? "BUY" : "SELL";
 
-        // ── Extended-level skip gate ─────────────────────────────────────────
-        // R3/S3 and R4/S4 breakouts skipped on ALL day types when their respective toggle is on.
-        // DH/DL breakouts that have already reached or passed an R3/S3 or R4/S4 level are
-        // treated identically — a DH break above R3 IS effectively an R3 trade.
+        // ── Extended-level skip gate (daily) ─────────────────────────────────
+        // Daily R3/S3 and R4/S4 breakouts skipped on ALL day types when their respective
+        // toggle is on. DH/DL breakouts that have already reached or passed daily R3/S3 or
+        // R4/S4 are treated identically — a DH break above R3 IS effectively an R3 trade.
         boolean isR3S3Setup = "BUY_ABOVE_R3".equals(setup) || "SELL_BELOW_S3".equals(setup)
                            || "BUY_ABOVE_S3".equals(setup) || "SELL_BELOW_R3".equals(setup);
         boolean isR4S4Setup = "BUY_ABOVE_R4".equals(setup) || "SELL_BELOW_S4".equals(setup)
@@ -133,6 +133,36 @@ public class SignalProcessor {
                 return ProcessedSignal.rejected(setup, symbol,
                     (isDhAboveR4 ? "DH above R4" : "DL below S4")
                     + " skipped (extended-level skip enabled — DH/DL beyond R4/S4 treated as R4/S4)");
+            }
+        }
+
+        // ── HTF Extended-level skip gate (weekly) ───────────────────────────
+        // Independent of the daily checks above. Skip when the breakout candle close is
+        // beyond the weekly R3/R4 (buys) or weekly S3/S4 (sells) in the trade direction.
+        // Even an R1 setup is "HTF-extended" if the entry sits past weekly R3 — same
+        // exhaustion concern as a daily-R3 trade. Each toggle is independent so users
+        // can enable e.g. daily R3/S3 only, or weekly R3/S3 only, or both.
+        WeeklyCprService.WeeklyLevels weeklyLv = weeklyCprService.getWeeklyLevels(symbol);
+        if (riskSettings.isSkipHtfR3S3NormalDays() && weeklyLv != null) {
+            boolean aboveWeeklyR3 = isBuy  && weeklyLv.r3 > 0 && close > weeklyLv.r3;
+            boolean belowWeeklyS3 = !isBuy && weeklyLv.s3 > 0 && close < weeklyLv.s3;
+            if (aboveWeeklyR3 || belowWeeklyS3) {
+                String levelName = aboveWeeklyR3 ? "weekly R3=" + fmt(weeklyLv.r3)
+                                                 : "weekly S3=" + fmt(weeklyLv.s3);
+                return ProcessedSignal.rejected(setup, symbol,
+                    setup + " entry close=" + fmt(close) + " beyond " + levelName
+                    + " (HTF extended-level skip enabled)");
+            }
+        }
+        if (riskSettings.isSkipHtfR4S4NormalDays() && weeklyLv != null) {
+            boolean aboveWeeklyR4 = isBuy  && weeklyLv.r4 > 0 && close > weeklyLv.r4;
+            boolean belowWeeklyS4 = !isBuy && weeklyLv.s4 > 0 && close < weeklyLv.s4;
+            if (aboveWeeklyR4 || belowWeeklyS4) {
+                String levelName = aboveWeeklyR4 ? "weekly R4=" + fmt(weeklyLv.r4)
+                                                 : "weekly S4=" + fmt(weeklyLv.s4);
+                return ProcessedSignal.rejected(setup, symbol,
+                    setup + " entry close=" + fmt(close) + " beyond " + levelName
+                    + " (HTF extended-level skip enabled)");
             }
         }
 
@@ -412,23 +442,26 @@ public class SignalProcessor {
         }
 
         // ── 4e2b. HTF Hurdle: nearest-weekly-level HPT→LPT downgrade ──
-        // When a 5-min breakout closes above (for buys) the nearest weekly R1/PWH, the previous
+        // When a 5-min breakout closes above (for buys) the nearest weekly hurdle, the previous
         // 1h HTF candle must have closed above that level too — otherwise the HTF hasn't
-        // confirmed the move and we downgrade HPT → LPT. Mirror for sells against S1/PWL.
-        // Only R1/PWH and S1/PWL are hurdles — R2+/S2+ are far-out projections (not a wall
-        // the HTF needs to clear first), and weekly CPR (TC/BC/Pivot) already falls under the
-        // weekly-NEUTRAL → LPT rule.
+        // confirmed the move and we downgrade HPT → LPT. Mirror for sells.
+        // Hurdle candidates: R1, PWH, weekly TC, weekly Pivot, weekly BC for buys; S1, PWL,
+        // weekly TC, weekly Pivot, weekly BC for sells. Including weekly CPR levels (TC/Pivot/BC)
+        // catches breakouts that fired just above (or below) weekly CPR while the prior 1h
+        // hadn't yet committed past that boundary — e.g. a buy at R1 in a stock that's BULLISH
+        // by the state machine but currently still inside weekly CPR. R2+/S2+ are excluded —
+        // far-out projections, not walls the HTF needs to clear first.
         if (riskSettings.isEnableHtfHurdleFilter() && "HPT".equals(probability)) {
             WeeklyCprService.WeeklyLevels wl = weeklyCprService.getWeeklyLevels(symbol);
             if (wl != null) {
                 double[] candidates;
                 String[] names;
                 if (isBuy) {
-                    candidates = new double[]{ wl.r1, wl.ph };
-                    names      = new String[]{ "R1", "PWH" };
+                    candidates = new double[]{ wl.r1, wl.ph, wl.tc, wl.pivot, wl.bc };
+                    names      = new String[]{ "R1", "PWH", "weekly TC", "weekly Pivot", "weekly BC" };
                 } else {
-                    candidates = new double[]{ wl.s1, wl.pl };
-                    names      = new String[]{ "S1", "PWL" };
+                    candidates = new double[]{ wl.s1, wl.pl, wl.tc, wl.pivot, wl.bc };
+                    names      = new String[]{ "S1", "PWL", "weekly TC", "weekly Pivot", "weekly BC" };
                 }
                 // Find the nearest weekly level in the relevant direction from the 5-min close.
                 // Buy: max level strictly below close. Sell: min level strictly above close.
@@ -482,37 +515,55 @@ public class SignalProcessor {
             }
         }
 
-        // ── 4e2c. HTF SMA alignment — additional HPT→LPT check ──
-        // Live LTP must be above (buys) / below (sells) both HTF SMA 20 and HTF SMA 50.
-        // LTP-based, not candle-close: the hourly trend structure has to be on the trade's
-        // side right now, regardless of whether the last 1h candle has closed. SMA 200 is
-        // excluded — it's too slow a reference to be a near-term HTF alignment gate and
-        // would block too many valid recoveries. Independent toggle from the weekly-level
-        // hurdle — either can trigger a downgrade.
+        // ── 4e2c. HTF SMA price — additional HPT→LPT check ──
+        // Prior 1h close must be above (buys) / below (sells) both HTF SMA 20 and HTF SMA 50.
+        // Both inputs are 1h-close-based: the price reference is the previous completed 1h close
+        // (not live LTP), and the SMAs are computed from completed 1h closes only (no live
+        // blending). This makes the filter a "did the committed HTF state confirm the trend?"
+        // check, mirroring the HTF Hurdle's design philosophy. Filter state is sticky between
+        // 1h boundaries — no flicker mid-bar. SMA 200 is excluded — too slow a reference for
+        // near-term HTF alignment.
+        // First-hour fallback: before today's first 1h close, use prior session's final 1h close
+        // (Tue–Fri only). Monday/first-trading-day with no prior 1h close → downgrade to LPT.
         if (riskSettings.isEnableHtfSmaAlignment() && "HPT".equals(probability)) {
-            double htfS20  = htfSmaService != null ? htfSmaService.getSma(symbol)   : 0;
-            double htfS50  = htfSmaService != null ? htfSmaService.getSma50(symbol) : 0;
-            double liveLtp = candleAggregator.getLtp(symbol);
-            if (liveLtp > 0 && htfS20 > 0 && htfS50 > 0) {
-                boolean alignedBuy  = liveLtp > htfS20 && liveLtp > htfS50;
-                boolean alignedSell = liveLtp < htfS20 && liveLtp < htfS50;
-                if (isBuy ? !alignedBuy : !alignedSell) {
-                    probability = "LPT";
-                    adjustments.add("Probability HPT → LPT (HTF SMA not aligned: LTP=" + fmt(liveLtp)
-                        + " vs 1h SMA 20=" + fmt(htfS20) + ", 50=" + fmt(htfS50)
-                        + " — need " + (isBuy ? "LTP above both" : "LTP below both") + ")");
+            double htfS20 = htfSmaService != null ? htfSmaService.getSmaCompletedOnly(symbol)   : 0;
+            double htfS50 = htfSmaService != null ? htfSmaService.getSma50CompletedOnly(symbol) : 0;
+            Double priorHtfClose = htfSmaService != null ? htfSmaService.getLastClose(symbol) : null;
+            boolean firstTradingDay = marketHolidayService.isFirstTradingDayOfWeek();
+            if (htfS20 > 0 && htfS50 > 0) {
+                if (priorHtfClose == null || priorHtfClose <= 0) {
+                    if (!firstTradingDay) {
+                        // Tue-Fri: getLastClose already returns prior session's final close when
+                        // today has no completed 1h yet — null means truly no data.
+                        probability = "LPT";
+                        adjustments.add("Probability HPT → LPT (HTF SMA price: no prior 1h close available)");
+                    } else {
+                        probability = "LPT";
+                        adjustments.add("Probability HPT → LPT (HTF SMA price: first trading day of week, no prior 1h close)");
+                    }
+                } else {
+                    boolean alignedBuy  = priorHtfClose > htfS20 && priorHtfClose > htfS50;
+                    boolean alignedSell = priorHtfClose < htfS20 && priorHtfClose < htfS50;
+                    if (isBuy ? !alignedBuy : !alignedSell) {
+                        probability = "LPT";
+                        adjustments.add("Probability HPT → LPT (HTF SMA price not aligned: prior 1h close="
+                            + fmt(priorHtfClose)
+                            + " vs 1h SMA 20=" + fmt(htfS20) + ", 50=" + fmt(htfS50)
+                            + " — need " + (isBuy ? "close above both" : "close below both") + ")");
+                    }
                 }
             }
         }
 
         // ── 4e2d. HTF SMA order — stricter alignment check ──
-        // 1h SMA 20 must be above 1h SMA 50 (buys) or below it (sells). This is the
-        // SMA-to-SMA ordering check — stricter than the price-vs-SMAs gate above.
-        // Mirrors the 5-min SMA alignment check (20>50>200) but using only 20/50 since
-        // 200 is excluded from HTF structure rules here.
+        // 1h SMA 20 must be above 1h SMA 50 (buys) or below it (sells). Uses completed-only
+        // SMAs (no live blending) — same 1h-close-based philosophy as 4e2c. Stricter than the
+        // price gate above: the HTF trend structure itself has to be stacked in the trade's
+        // direction. Mirrors the 5-min SMA alignment check (20>50>200) but using only 20/50
+        // since 200 is excluded from HTF structure rules here.
         if (riskSettings.isEnableHtfSmaAlignmentCheck() && "HPT".equals(probability)) {
-            double htfS20 = htfSmaService != null ? htfSmaService.getSma(symbol)   : 0;
-            double htfS50 = htfSmaService != null ? htfSmaService.getSma50(symbol) : 0;
+            double htfS20 = htfSmaService != null ? htfSmaService.getSmaCompletedOnly(symbol)   : 0;
+            double htfS50 = htfSmaService != null ? htfSmaService.getSma50CompletedOnly(symbol) : 0;
             if (htfS20 > 0 && htfS50 > 0) {
                 boolean orderedBuy  = htfS20 > htfS50;
                 boolean orderedSell = htfS20 < htfS50;

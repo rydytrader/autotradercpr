@@ -57,6 +57,13 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
     private final ConcurrentHashMap<String, Double> lastTradingTfClose = new ConcurrentHashMap<>();  // 5-min → daily trend
     private final ConcurrentHashMap<String, Double> lastHigherTfClose = new ConcurrentHashMap<>();   // 75-min → weekly trend
 
+    // Sticky weekly trend state — driven exclusively by HTF (1h) candle closes vs weekly CPR.
+    // BULLISH set when an HTF close prints above weekly TC, BEARISH when below weekly BC. HTF
+    // closes that print INSIDE weekly CPR don't change the state — the trend stays as before
+    // until another HTF close flips it the other way. Cleared when weekly CPR levels are
+    // recomputed (Monday refresh) so the state re-seeds against the new week's levels.
+    private final ConcurrentHashMap<String, String> weeklyTrendStateBySymbol = new ConcurrentHashMap<>();
+
     // Date on which the cached weekly levels were computed (= most recent Monday or earlier when
     // levels were fetched). Used for staleness check during loadFromFile.
     private volatile String cachedDate = "";
@@ -204,6 +211,7 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
         int success = 0;
         int missing = 0;
         weeklyLevels.clear();  // refresh the whole map so stale entries don't linger
+        weeklyTrendStateBySymbol.clear(); // weekly levels changed — re-seed state from upcoming HTF closes
         for (String symbol : fyersSymbols) {
             String ticker = extractTicker(symbol);
             // Aggregate high/low/close across target week's snapshots for this ticker
@@ -271,6 +279,7 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
             root.put("date", LocalDate.now(IST).toString());
             root.putPOJO("tradingTf", lastTradingTfClose);
             root.putPOJO("higherTf", lastHigherTfClose);
+            root.putPOJO("weeklyTrendState", weeklyTrendStateBySymbol);
             Files.writeString(Paths.get(TF_CLOSE_FILE),
                 mapper.writeValueAsString(root));
         } catch (Exception e) {
@@ -325,6 +334,18 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
                     try { lastHigherTfClose.put(e.getKey(), e.getValue().asDouble()); } catch (Exception ignored) {}
                 });
                 count += lastHigherTfClose.size();
+            }
+            JsonNode trendState = root.get("weeklyTrendState");
+            if (trendState != null && trendState.isObject()) {
+                trendState.fields().forEachRemaining(e -> {
+                    try {
+                        String v = e.getValue().asText("");
+                        if ("STRONG_BULLISH".equals(v) || "BULLISH".equals(v)
+                            || "BEARISH".equals(v) || "STRONG_BEARISH".equals(v)) {
+                            weeklyTrendStateBySymbol.put(e.getKey(), v);
+                        }
+                    } catch (Exception ignored) {}
+                });
             }
             if (count > 0) {
                 log.info("[WeeklyCpr] Restored mid-day cache: {} trading-TF + {} higher-TF",
@@ -459,14 +480,69 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
     }
 
     public void onHigherTimeframeCandleClose(String fyersSymbol, double open, double high, double low, double close) {
-        if (close > 0) lastHigherTfClose.put(fyersSymbol, close);
+        if (close > 0) {
+            lastHigherTfClose.put(fyersSymbol, close);
+            updateWeeklyTrendStateFromHtfClose(fyersSymbol, close);
+        }
         saveTfCloseToFile();
+    }
+
+    /**
+     * Update sticky weekly trend state from a fresh HTF (1h) candle close. Flips state only
+     * when the close prints OUTSIDE weekly CPR — closes inside CPR preserve the previous
+     * state. This is the single mutation point for {@link #weeklyTrendStateBySymbol}.
+     *
+     * State ladder (all transitions require an HTF close — no live-LTP shortcuts):
+     *   close > weekly R1 AND > PWH    → STRONG_BULLISH
+     *   close > weekly TC (else above) → BULLISH
+     *   close < weekly BC (else below) → BEARISH
+     *   close < weekly S1 AND < PWL    → STRONG_BEARISH
+     *   close inside weekly CPR        → state preserved
+     */
+    private void updateWeeklyTrendStateFromHtfClose(String fyersSymbol, double close) {
+        WeeklyLevels wl = weeklyLevels.get(fyersSymbol);
+        if (wl == null || close <= 0) return;
+        if (wl.top <= 0 || wl.bot <= 0) return; // levels not seeded yet
+
+        String newState = null;
+        String reason = null;
+        if (wl.r1 > 0 && wl.ph > 0 && close > wl.r1 && close > wl.ph) {
+            newState = "STRONG_BULLISH";
+            reason = "close=" + String.format("%.2f", close)
+                + " > weekly R1=" + String.format("%.2f", wl.r1)
+                + " AND > PWH=" + String.format("%.2f", wl.ph);
+        } else if (wl.s1 > 0 && wl.pl > 0 && close < wl.s1 && close < wl.pl) {
+            newState = "STRONG_BEARISH";
+            reason = "close=" + String.format("%.2f", close)
+                + " < weekly S1=" + String.format("%.2f", wl.s1)
+                + " AND < PWL=" + String.format("%.2f", wl.pl);
+        } else if (close > wl.top) {
+            newState = "BULLISH";
+            reason = "close=" + String.format("%.2f", close)
+                + " > weekly TC=" + String.format("%.2f", wl.top);
+        } else if (close < wl.bot) {
+            newState = "BEARISH";
+            reason = "close=" + String.format("%.2f", close)
+                + " < weekly BC=" + String.format("%.2f", wl.bot);
+        }
+        // else: HTF close inside weekly CPR — state preserved (no-op)
+
+        if (newState != null) {
+            String prev = weeklyTrendStateBySymbol.put(fyersSymbol, newState);
+            if (!newState.equals(prev)) {
+                eventService.log("[INFO] " + fyersSymbol + " weekly trend → " + newState
+                    + " (HTF " + reason + ")");
+            }
+        }
     }
 
     @Override
     public void onDailyReset() {
         lastTradingTfClose.clear();
         lastHigherTfClose.clear();
+        // Weekly trend state is preserved across daily reset — it survives the trading day
+        // boundary because weekly CPR levels are only refreshed on Mondays. The state will
+        // be cleared on Monday's weekly-level refresh in fetchWeeklyTrends().
         saveTfCloseToFile();
     }
 
@@ -490,24 +566,23 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
         WeeklyLevels wl = weeklyLevels.get(symbol);
         if (wl == null) return "NEUTRAL";
 
+        // All five trend states are sticky and driven by HTF (1h) candle closes vs weekly
+        // CPR / R1 / PWH / S1 / PWL. State only flips when an HTF candle CLOSES outside
+        // weekly CPR. HTF closes inside weekly CPR preserve the previous state. Live LTP
+        // doesn't override the state — a brief intraday dip back inside CPR or a tick spike
+        // through R1 won't flicker the trend; only a confirmed HTF close does.
+        String state = weeklyTrendStateBySymbol.get(symbol);
+        if (state != null) return state;
+
+        // Cold start (no HTF close has printed yet for this symbol since weekly levels were
+        // computed) — seed from live LTP vs the same level ladder. As soon as the first HTF
+        // close arrives, the state machine takes over and live LTP no longer drives the trend.
         double ltp = getWeeklyPrice(symbol);
         if (ltp <= 0) return "NEUTRAL";
-
-        if (ltp > wl.r1 && ltp > wl.ph) return "STRONG_BULLISH";
-        if (ltp < wl.s1 && ltp < wl.pl) return "STRONG_BEARISH";
+        if (wl.r1 > 0 && wl.ph > 0 && ltp > wl.r1 && ltp > wl.ph) return "STRONG_BULLISH";
+        if (wl.s1 > 0 && wl.pl > 0 && ltp < wl.s1 && ltp < wl.pl) return "STRONG_BEARISH";
         if (ltp > wl.top) return "BULLISH";
         if (ltp < wl.bot) return "BEARISH";
-
-        // Inside weekly CPR — refine via HTF SMA 20/50 using live LTP (not sticky 1h close).
-        // Truly NEUTRAL only when live price sits between HTF SMA 20 and HTF SMA 50.
-        double live = candleAggregator.getLtp(symbol);
-        if (live <= 0) live = ltp; // fallback if LTP not yet available
-        double htfS20 = htfSmaService != null ? htfSmaService.getSma(symbol)   : 0;
-        double htfS50 = htfSmaService != null ? htfSmaService.getSma50(symbol) : 0;
-        if (htfS20 > 0 && htfS50 > 0) {
-            if (live > htfS20 && live > htfS50) return "BULLISH";
-            if (live < htfS20 && live < htfS50) return "BEARISH";
-        }
         return "NEUTRAL";
     }
 

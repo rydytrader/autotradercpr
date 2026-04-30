@@ -115,7 +115,6 @@
         <a href="/scanner" data-tooltip="Scanner" class="sidebar-nav-item"><span class="sidebar-nav-icon">◎</span><span class="sidebar-nav-label">Scanner</span></a>
         <a href="/positions" data-tooltip="Positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
         <a href="/trades" data-tooltip="Trade Log" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
-        <a href="/signal-trail" data-tooltip="Signal Trail" class="sidebar-nav-item"><span class="sidebar-nav-icon">⌕</span><span class="sidebar-nav-label">Signal Trail</span></a>
         <a href="/journal" data-tooltip="Journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">☷</span><span class="sidebar-nav-label">Journal</span></a>
         <a href="/calendar" data-tooltip="Calendar" class="sidebar-nav-item"><span class="sidebar-nav-icon">▦</span><span class="sidebar-nav-label">Calendar</span></a>
         <a href="/settings" data-tooltip="Settings" class="sidebar-nav-item active"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
@@ -326,6 +325,16 @@
                     <div class="form-hint">Range = breakout level (0%) → target (100%). SL only tightens, never widens. For split-target trades, trailing is suppressed until T1 fills; after T1, Fibonacci activates on the remaining qty using the same thresholds. Defaults: 61.8 / 1 / 78.6 / 61.8.</div>
                 </div>
                 <div class="form-group">
+                    <label class="form-label">SMA Cross Exit</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableSmaCrossExit" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">
+                            Manually close active trade when 5-min SMA 20 closes against trade direction
+                        </span>
+                    </div>
+                    <div class="form-hint">Evaluates at every 5-min candle close. <b>Active LONG</b>: exits when SMA 20 &lt; SMA 50. <b>Active SHORT</b>: exits when SMA 20 &gt; SMA 50. Independent of SL / Target / Trailing &mdash; fires before any of them. Defensive exit to cut momentum-loss trades early. Cancels both SL and Target before placing the exit market order; trade is recorded with reason <code>SMA_CROSS_EXIT</code>.</div>
+                </div>
+                <div class="form-group">
                     <label class="form-label">Session Move Limit</label>
                     <div style="display:flex; align-items:center; gap:8px; margin-top:4px; flex-wrap:wrap;">
                         <input type="checkbox" id="enableSessionMoveLimit" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
@@ -431,15 +440,33 @@
                     <div class="form-hint">Rejects breakout candles with excessively large body (|close − open|). Catches exhaustion moves where the stock has already run too far on a single candle. Default 4.0 ATR catches only extreme spikes.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Volume Filter</label>
+                    <label class="form-label">HTF Hurdle and SMA Trend Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableVolumeFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject if candle volume &lt;</span>
-                        <input type="number" id="volumeMultiple" class="form-control" step="0.5" min="1.0" max="10.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">x avg volume of last</span>
-                        <input type="number" id="volumeLookback" class="form-control" step="1" min="1" max="20" style="width:55px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">candles</span>
+                        <input type="checkbox" id="enableHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Hurdle</b>: HPT &rarr; LPT when prior 1h HTF candle hasn't cleared nearest weekly R1/PWH/TC/Pivot/BC (buy) or S1/PWL/TC/Pivot/BC (sell)</span>
                     </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="enableHtfSmaAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Price</b>: 1-hour SMA trend &mdash; LTP above/below 1h SMA 20 and 50 together</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="enableHtfSmaAlignmentCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Alignment</b>: 1h SMAs aligned &mdash; buy requires <b>20 &gt; 50</b>, sell requires <b>20 &lt; 50</b></span>
+                    </div>
+                    <div class="form-hint">Two independent HTF checks &mdash; each can downgrade HPT &rarr; LPT on its own.
+                        <br><br>
+                        <b>Hurdle.</b> For a 5-min breakout, find the nearest weekly hurdle in the trade direction:
+                        <b>buys</b> &rarr; the highest of {R1, PWH, weekly TC, weekly Pivot, weekly BC} strictly below the 5-min close;
+                        <b>sells</b> &rarr; the lowest of {S1, PWL, weekly TC, weekly Pivot, weekly BC} strictly above the close.
+                        Then check the previous 1-hour HTF candle close:
+                        <b>cleared</b> &rarr; HPT retained; <b>didn't clear</b> &rarr; LPT; <b>no prior 1h close yet today</b> (first session hour) &rarr; LPT.
+                        Weekly CPR (TC/Pivot/BC) is included so that breakouts that fired just past the weekly CPR boundary are gated by the prior 1h close too &mdash; e.g. a buy at R1 in a stock currently inside weekly CPR but BULLISH by the state machine. R2+/S2+ are excluded &mdash; far-out projections, not walls the HTF needs to clear first.
+                        <br><br>
+                        <b>Price.</b> LTP-based (not candle close), so the hourly trend structure has to be on the trade's side right now. Mirrors the 5-min SMA price gate above, applied to the 1-hour SMAs.
+                        <br><br>
+                        <b>Alignment.</b> SMA-to-SMA ordering: 1h SMA 20 above 50 for buys, below 50 for sells. Stricter than Price &mdash; the HTF trend structure itself has to be stacked in the trade's direction, independent of where LTP currently sits.
+                        <br><br>
+                        Applies to all breakouts. LPT trades unaffected. Fail-open when any SMA/level is warming up.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">20 SMA Level Count Filter</label>
@@ -461,57 +488,20 @@
                     Example: <i>BUY_ABOVE_R1_PDH</i> with broken=R1+PDH=100, next zone above (R2)=105. Range = 5. At N=75, SMA must sit within (100−75)% = 25% of range from broken → SMA ≥ 98.75 (close to broken). SMA at 96 = 80% of range away from broken → skipped (too far). Set to <b>0</b> to disable proximity check (use zone-count only).</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">HTF Hurdle and SMA Trend Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Hurdle</b>: HPT &rarr; LPT when prior 1h HTF candle hasn't cleared nearest weekly R1/PWH (buy) or S1/PWL (sell)</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="enableHtfSmaAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Price</b>: 1-hour SMA trend &mdash; LTP above/below 1h SMA 20 and 50 together</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="enableHtfSmaAlignmentCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Alignment</b>: 1h SMAs aligned &mdash; buy requires <b>20 &gt; 50</b>, sell requires <b>20 &lt; 50</b></span>
-                    </div>
-                    <div class="form-hint">Two independent HTF checks &mdash; each can downgrade HPT &rarr; LPT on its own.
-                        <br><br>
-                        <b>Hurdle.</b> For a 5-min breakout, find the nearest weekly hurdle in the trade direction:
-                        <b>buys</b> &rarr; the higher of {R1, PWH} strictly below the 5-min close;
-                        <b>sells</b> &rarr; the lower of {S1, PWL} strictly above the close.
-                        Then check the previous 1-hour HTF candle close:
-                        <b>cleared</b> &rarr; HPT retained; <b>didn't clear</b> &rarr; LPT; <b>no prior 1h close yet today</b> (first session hour) &rarr; LPT.
-                        Only R1/PWH and S1/PWL are hurdles &mdash; R2+/S2+ are far-out projections, not walls the HTF needs to clear first. Weekly CPR (TC/BC/Pivot) is excluded because inside-CPR trades fall under the weekly-NEUTRAL rule.
-                        <br><br>
-                        <b>Price.</b> LTP-based (not candle close), so the hourly trend structure has to be on the trade's side right now. Mirrors the 5-min SMA price gate above, applied to the 1-hour SMAs.
-                        <br><br>
-                        <b>Alignment.</b> SMA-to-SMA ordering: 1h SMA 20 above 50 for buys, below 50 for sells. Stricter than Price &mdash; the HTF trend structure itself has to be stacked in the trade's direction, independent of where LTP currently sits.
-                        <br><br>
-                        Applies to all breakouts. LPT trades unaffected. Fail-open when any SMA/level is warming up.</div>
-                </div>
-                <div class="form-group">
                     <label class="form-label">NIFTY Index Alignment Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableIndexAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable NIFTY composite trend filter</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable NIFTY breadth trend filter</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px; padding-left: 28px;">
                         <input type="checkbox" id="indexAlignmentHardSkip" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Hard skip mode — skip opposed trades entirely (default: soft mode = downgrade to LPT)</span>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Bullish:</span>
-                        <input type="number" id="indexBullishThreshold" class="form-control" step="1" min="-10" max="10" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Strong bullish:</span>
-                        <input type="number" id="indexStrongBullishThreshold" class="form-control" step="1" min="-10" max="10" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Bearish:</span>
-                        <input type="number" id="indexBearishThreshold" class="form-control" step="1" min="-10" max="10" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Strong bearish:</span>
-                        <input type="number" id="indexStrongBearishThreshold" class="form-control" step="1" min="-10" max="10" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                    </div>
-                    <div class="form-hint">Composite NIFTY score from weekly CPR (&plusmn;2) + daily CPR (&plusmn;2) + SMA 20 position (&plusmn;1) + SMA 200 position (&plusmn;1) + SMA 20/50 vs 200 cross (&plusmn;2) + SMA 20/50 pattern R-RTP/F-RTP (&plusmn;2). Total range -10 to +10. Score thresholds map to 5 trend states (STRONG BEARISH / BEARISH / NEUTRAL / BULLISH / STRONG BULLISH). Trades opposing the NIFTY trend are either downgraded to LPT (soft mode, default) or skipped entirely (hard skip). LPT trades unaffected. The NIFTY card on the scanner page always shows the live composite state regardless of this toggle.</div>
+                    <div class="form-hint">NIFTY trend state combines <b>two sticky signals</b>, both refreshed only at 5-min candle close:
+                        <br>&nbsp;&nbsp;&bull; <b>NIFTY CPR</b>: LTP above (bullish) or below (bearish) daily CPR
+                        <br>&nbsp;&nbsp;&bull; <b>NIFTY VWAP</b>: near-month futures LTP above/below intraday futures VWAP
+                        <br>States: <b>BULLISH</b> (both bullish) / <b>BEARISH</b> (both bearish) / <b>BULL REVERSAL</b> (below CPR, VWAP turning up &mdash; buy side) / <b>BEAR REVERSAL</b> (above CPR, VWAP rolling over &mdash; sell side) / <b>NEUTRAL</b> (signal missing or inside CPR).
+                        <br>When this filter is on: buys allowed on <b>BULLISH</b> or <b>BULL REVERSAL</b>; sells allowed on <b>BEARISH</b> or <b>BEAR REVERSAL</b>; <b>all trades skipped on NEUTRAL</b> regardless of hard/soft mode. Soft mode reduces qty on opposed trades; hard mode skips them entirely. Breadth (advancers/decliners) is shown on the card for context but no longer drives the state.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">2-Day CPR Relationship Filter</label>
@@ -520,6 +510,17 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Downgrade HPT &rarr; LPT when today's CPR doesn't favor the trade direction vs yesterday's CPR</span>
                     </div>
                     <div class="form-hint">Buys want today's CPR completely <b>above</b> yesterday's (todayBC &gt; yestTC = <b>2D-HV</b> / Higher Value). Sells want today's CPR completely <b>below</b> yesterday's (todayTC &lt; yestBC = <b>2D-LV</b> / Lower Value). Overlapping CPRs (<b>2D-NC</b> / Not Clear) downgrade in both directions. Tag shown next to chart icon on each scanner card. LPT trades unaffected. Fail-open if no prior-day data.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Volume Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableVolumeFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject if candle volume &lt;</span>
+                        <input type="number" id="volumeMultiple" class="form-control" step="0.5" min="1.0" max="10.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">x avg volume of last</span>
+                        <input type="number" id="volumeLookback" class="form-control" step="1" min="1" max="20" style="width:55px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">candles</span>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Extended Level Signals (R3/S3, R4/S4)</label>
@@ -532,6 +533,18 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R4/S4 breakouts (and DH above R4 / DL below S4) &mdash; all day types</span>
                     </div>
                     <div class="form-hint">Extended-level breakouts (R3/S3, R4/S4) are far from the daily CPR and historically unreliable. When enabled, applies to <b>all</b> day types (IV/OV/EV). DH/DL breakouts that have already passed the level are treated identically &mdash; e.g. a Day-High break above R3 is skipped when R3/S3 skip is on (because it IS effectively an R3 trade). R2/S2 always fires regardless. No per-level qty reduction.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">HTF Extended Level Filters (Weekly R3/S3, R4/S4)</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="skipHtfR3S3NormalDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip any breakout with entry close beyond <b>weekly R3</b> (buys) or <b>weekly S3</b> (sells)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="skipHtfR4S4NormalDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip any breakout with entry close beyond <b>weekly R4</b> (buys) or <b>weekly S4</b> (sells)</span>
+                    </div>
+                    <div class="form-hint">Independent of the daily extended-level skips above. Trades whose entry sits past the weekly extended levels carry the same exhaustion concern as a daily-R3 trade &mdash; even if the daily setup is just an R1 break. Enable both for the strictest gating; either toggle independently otherwise. Fail-open if weekly levels haven't loaded yet.</div>
                 </div>
             </div>
         </div>
@@ -1076,10 +1089,6 @@
             document.getElementById('targetToleranceAtr').value = (d.targetToleranceAtr != null ? d.targetToleranceAtr : 0.10);
             document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
             document.getElementById('indexAlignmentHardSkip').checked = d.indexAlignmentHardSkip === true;
-            document.getElementById('indexBullishThreshold').value = (d.indexBullishThreshold != null ? d.indexBullishThreshold : 6);
-            document.getElementById('indexStrongBullishThreshold').value = (d.indexStrongBullishThreshold != null ? d.indexStrongBullishThreshold : 12);
-            document.getElementById('indexBearishThreshold').value = (d.indexBearishThreshold != null ? d.indexBearishThreshold : -6);
-            document.getElementById('indexStrongBearishThreshold').value = (d.indexStrongBearishThreshold != null ? d.indexStrongBearishThreshold : -12);
             document.getElementById('enableSmallCandleFilter').checked = d.enableSmallCandleFilter === true;
             document.getElementById('smallCandleBodyAtrThreshold').value =
                 (d.smallCandleBodyAtrThreshold != null ? d.smallCandleBodyAtrThreshold : (d.smallCandleAtrThreshold != null ? d.smallCandleAtrThreshold : 0.5));
@@ -1091,6 +1100,7 @@
             document.getElementById('volumeMultiple').value = d.volumeMultiple || 2.0;
             document.getElementById('volumeLookback').value = d.volumeLookback || 20;
             document.getElementById('enableTrailingSl').checked = d.enableTrailingSl != null ? d.enableTrailingSl : true;
+            document.getElementById('enableSmaCrossExit').checked = d.enableSmaCrossExit === true;
             document.getElementById('fibStage1TriggerPct').value = d.fibStage1TriggerPct != null ? d.fibStage1TriggerPct : 61.8;
             document.getElementById('fibStage1SlAtrMult').value  = d.fibStage1SlAtrMult  != null ? d.fibStage1SlAtrMult  : 1.0;
             document.getElementById('fibStage2TriggerPct').value = d.fibStage2TriggerPct != null ? d.fibStage2TriggerPct : 78.6;
@@ -1125,6 +1135,8 @@
             document.getElementById('minAbsoluteProfit').value = d.minAbsoluteProfit != null ? d.minAbsoluteProfit : 500;
             document.getElementById('skipR3S3NormalDays').checked = d.skipR3S3NormalDays !== false;
             document.getElementById('skipR4S4NormalDays').checked = d.skipR4S4NormalDays !== false;
+            document.getElementById('skipHtfR3S3NormalDays').checked = d.skipHtfR3S3NormalDays !== false;
+            document.getElementById('skipHtfR4S4NormalDays').checked = d.skipHtfR4S4NormalDays !== false;
 
             const pnl    = d.todayPnl    || 0;
             const trades = d.todayTrades || 0;
@@ -1233,10 +1245,6 @@
                 targetToleranceAtr: parseFloat(document.getElementById('targetToleranceAtr').value) || 0,
                 enableIndexAlignment: document.getElementById('enableIndexAlignment').checked,
                 indexAlignmentHardSkip: document.getElementById('indexAlignmentHardSkip').checked,
-                indexBullishThreshold: parseInt(document.getElementById('indexBullishThreshold').value) || 6,
-                indexStrongBullishThreshold: parseInt(document.getElementById('indexStrongBullishThreshold').value) || 12,
-                indexBearishThreshold: parseInt(document.getElementById('indexBearishThreshold').value) || -6,
-                indexStrongBearishThreshold: parseInt(document.getElementById('indexStrongBearishThreshold').value) || -12,
                 enableSmallCandleFilter: document.getElementById('enableSmallCandleFilter').checked,
                 smallCandleBodyAtrThreshold: parseFloat(document.getElementById('smallCandleBodyAtrThreshold').value) || 0.5,
                 smallCandleMoveAtrThreshold: parseFloat(document.getElementById('smallCandleMoveAtrThreshold').value) || 0.15,
@@ -1246,6 +1254,7 @@
                 volumeMultiple: parseFloat(document.getElementById('volumeMultiple').value) || 2.0,
                 volumeLookback: parseInt(document.getElementById('volumeLookback').value) || 20,
                 enableTrailingSl: document.getElementById('enableTrailingSl').checked,
+                enableSmaCrossExit: document.getElementById('enableSmaCrossExit').checked,
                 fibStage1TriggerPct: parseFloat(document.getElementById('fibStage1TriggerPct').value) || 61.8,
                 fibStage1SlAtrMult:  parseFloat(document.getElementById('fibStage1SlAtrMult').value)  || 1.0,
                 fibStage2TriggerPct: parseFloat(document.getElementById('fibStage2TriggerPct').value) || 78.6,
@@ -1278,6 +1287,8 @@
                 minAbsoluteProfit: parseFloat(document.getElementById('minAbsoluteProfit').value) || 500,
                 skipR3S3NormalDays: document.getElementById('skipR3S3NormalDays').checked,
                 skipR4S4NormalDays: document.getElementById('skipR4S4NormalDays').checked,
+                skipHtfR3S3NormalDays: document.getElementById('skipHtfR3S3NormalDays').checked,
+                skipHtfR4S4NormalDays: document.getElementById('skipHtfR4S4NormalDays').checked,
             };
             const r = await fetch('/api/settings/risk', {
                 method: 'POST',

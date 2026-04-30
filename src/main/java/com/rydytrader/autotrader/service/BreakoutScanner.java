@@ -877,22 +877,39 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             com.rydytrader.autotrader.dto.IndexTrend nifty = indexTrendService.getNiftyTrend();
             if (!nifty.isDataAvailable()) return NiftyAlignStatus.OK;
             String state = nifty.getState();
-            // Buy is opposed on any of the 3 bearish ADD tiers (BEARISH/VERY_BEARISH/EXTREME_BEARISH);
-            // sell is opposed on any of the 3 bullish tiers. NEUTRAL never opposes.
-            boolean opposed = state != null && (isBuy ? state.endsWith("BEARISH") : state.endsWith("BULLISH"));
+
+            // 5-state alignment rules (filter ON):
+            //   BULLISH       → allow buy, oppose sell
+            //   BULL_REVERSAL → allow buy, oppose sell  (markets reversing toward bull —
+            //                   below CPR but VWAP turning up)
+            //   BEARISH       → allow sell, oppose buy
+            //   BEAR_REVERSAL → allow sell, oppose buy  (markets reversing toward bear —
+            //                   above CPR but VWAP rolling over)
+            //   NEUTRAL       → skip both directions (no clear bias — wait for the index
+            //                   to pick a side at the next 5-min boundary)
+
+            if ("NEUTRAL".equals(state)) {
+                eventService.log("[SCANNER] " + fyersSymbol + " " + setup
+                    + " SKIPPED — NIFTY NEUTRAL (CPR and VWAP signals incomplete or inside CPR)");
+                return NiftyAlignStatus.SKIP;
+            }
+
+            boolean buySideState  = "BULLISH".equals(state) || "BULL_REVERSAL".equals(state);
+            boolean sellSideState = "BEARISH".equals(state) || "BEAR_REVERSAL".equals(state);
+            boolean opposed = (isBuy ? sellSideState : buySideState);
             if (!opposed) return NiftyAlignStatus.OK;
 
             if (riskSettings.isIndexAlignmentHardSkip()) {
                 eventService.log("[SCANNER] " + fyersSymbol + " " + setup
-                    + " SKIPPED — NIFTY " + state + " (score " + nifty.getTotalScore() + ") opposes "
+                    + " SKIPPED — NIFTY " + state.replace('_', ' ') + " opposes "
                     + (isBuy ? "buy" : "sell") + " [hard skip mode]");
                 return NiftyAlignStatus.SKIP;
             }
-            // Soft mode: trade still fires at its scanner probability (HPT/MPT/LPT).
-            // SignalProcessor applies indexOpposedQtyFactor to reduce size.
+            // Soft mode: trade still fires at its scanner probability; SignalProcessor
+            // applies indexOpposedQtyFactor to reduce size.
             double factor = riskSettings.getIndexOpposedQtyFactor();
             eventService.log("[SCANNER] " + fyersSymbol + " " + setup
-                + " — NIFTY " + state + " (score " + nifty.getTotalScore() + ") opposes "
+                + " — NIFTY " + state.replace('_', ' ') + " opposes "
                 + (isBuy ? "buy" : "sell") + " — qty reduced to " + String.format("%.0f%%", factor * 100));
             return NiftyAlignStatus.OPPOSED_SOFT;
         } catch (Exception e) {

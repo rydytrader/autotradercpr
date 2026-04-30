@@ -57,8 +57,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     private final BhavcopyService     bhavcopyService;
     private final TelegramService     telegramService;
     private final HtfSmaService       htfSmaService;
+    private final SmaCrossExitService smaCrossExitService;
     @org.springframework.beans.factory.annotation.Autowired
     private SymbolMasterService       symbolMasterService;
+    @org.springframework.beans.factory.annotation.Autowired
+    private MarketHolidayService      marketHolidayService;
     private final ObjectMapper        mapper = new ObjectMapper();
     private CandleAggregator          htfAggregator; // higher timeframe (75-min) for weekly trend
 
@@ -158,7 +161,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                               BhavcopyService bhavcopyService,
                               SmaService smaService,
                               TelegramService telegramService,
-                              HtfSmaService htfSmaService) {
+                              HtfSmaService htfSmaService,
+                              SmaCrossExitService smaCrossExitService) {
         this.tokenStore = tokenStore;
         this.fyersProperties = fyersProperties;
         this.positionStateStore = positionStateStore;
@@ -174,6 +178,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         this.smaService = smaService;
         this.telegramService = telegramService;
         this.htfSmaService = htfSmaService;
+        this.smaCrossExitService = smaCrossExitService;
         candleAggregator.addListener(this);
     }
 
@@ -198,12 +203,16 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         // 9:20 to correct wrong live-tick-built first candles (Fyers WS is unreliable 9:15-9:25)
         scheduler.scheduleAtFixedRate(this::checkOpeningRefresh, 30, 30, TimeUnit.SECONDS);
 
+
         // Register candle close listeners
         candleAggregator.setTimeframe(riskSettings.getScannerTimeframe());
         candleAggregator.addListener(atrService);
         candleAggregator.addListener(smaService);
         candleAggregator.addListener(weeklyCprService);
         candleAggregator.addListener(breakoutScanner);
+        // SMA cross exit — must register AFTER smaService so candle.sma20/sma50 are populated.
+        // Gated by enableSmaCrossExit setting; reads candle's post-close completed-only SMA snapshot.
+        candleAggregator.addListener(smaCrossExitService);
         // Feed each 5-min close into HtfSmaService as the in-progress 60-min bar's current
         // value — so HTF SMA refreshes every 5 min instead of stepping only at 1h boundaries.
         candleAggregator.addListener((symbol, candle) -> {
@@ -973,6 +982,13 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         if (!watchlistWithIndex.contains("NSE:NIFTY50-INDEX")) {
             watchlistWithIndex.add("NSE:NIFTY50-INDEX");
         }
+        // Near-month NIFTY futures — diagnostic for VWAP/ATP availability. Indices don't have
+        // traded volume so spot ATP is always 0; futures trade with real volume → real ATP.
+        String niftyFut = computeNearMonthNiftyFuturesSymbol(
+            java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")));
+        if (!watchlistWithIndex.contains(niftyFut)) {
+            watchlistWithIndex.add(niftyFut);
+        }
 
         // Prune indicator caches to the FULL NIFTY 50 universe (not the filtered watchlist).
         // Filter changes can re-include stocks; we want their indicator data preserved. Pruning
@@ -1177,6 +1193,56 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
      * issue — their live WS can't deliver ticks fast enough for all subscribed symbols in the
      * first 5-10 minutes).
      */
+    /**
+     * Compute the near-month NIFTY 50 futures symbol for a given date.
+     *
+     * Expiry rule: last Thursday of the month, walked back to the prior trading day if that
+     * Thursday is a holiday (NSE shifts expiry to the previous business day in that case).
+     *
+     * Roll-over: roll on expiry day itself ({@code today >= expiry}), not after. NSE settles
+     * the contract at 3:30 PM on expiry day; after settlement Fyers stops accepting subscribe
+     * requests for the expiring symbol (HTTP 422). Rolling on expiry day morning sacrifices
+     * intraday signal continuity for the AM session in exchange for stable subscription.
+     * Volume shifts to the next-month contract heavily through expiry day anyway.
+     *
+     * Format matches Fyers symbol-master output: NSE:NIFTY{YY}{MMM}FUT,
+     * e.g. NSE:NIFTY26MARFUT.
+     */
+    public String computeNearMonthNiftyFuturesSymbol(java.time.LocalDate today) {
+        java.time.LocalDate expiry = computeMonthlyExpiry(today.getYear(), today.getMonthValue());
+        boolean rollToNext = !today.isBefore(expiry); // today >= expiry → roll
+        java.time.YearMonth target = rollToNext
+            ? java.time.YearMonth.of(today.getYear(), today.getMonthValue()).plusMonths(1)
+            : java.time.YearMonth.of(today.getYear(), today.getMonthValue());
+        String yy  = String.format("%02d", target.getYear() % 100);
+        String mmm = target.getMonth().getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH).toUpperCase();
+        return "NSE:NIFTY" + yy + mmm + "FUT";
+    }
+
+    /**
+     * NSE monthly F&amp;O expiry: last Thursday of the month, shifted earlier if that day is a
+     * holiday. Walks back one day at a time skipping weekends and holidays — handles the rare
+     * case of consecutive holiday days too. Returns the actual trading day on which the
+     * monthly contract expires.
+     */
+    private java.time.LocalDate computeMonthlyExpiry(int year, int month) {
+        java.time.LocalDate d = java.time.YearMonth.of(year, month).atEndOfMonth();
+        while (d.getDayOfWeek() != java.time.DayOfWeek.THURSDAY) {
+            d = d.minusDays(1);
+        }
+        // Walk back while the day is a non-trading day (weekend or holiday).
+        // marketHolidayService.isHoliday() may return true for both weekends and holidays
+        // depending on its impl; check explicitly for safety.
+        while (true) {
+            boolean weekend = d.getDayOfWeek() == java.time.DayOfWeek.SATURDAY
+                           || d.getDayOfWeek() == java.time.DayOfWeek.SUNDAY;
+            boolean holiday = marketHolidayService != null && marketHolidayService.isHoliday(d);
+            if (!weekend && !holiday) break;
+            d = d.minusDays(1);
+        }
+        return d;
+    }
+
     private void checkOpeningRefresh() {
         try {
             if (!riskSettings.isEnableOpeningRefresh()) return;
@@ -1222,6 +1288,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             }
             List<String> withIndex = new ArrayList<>(watchlist);
             if (!withIndex.contains("NSE:NIFTY50-INDEX")) withIndex.add("NSE:NIFTY50-INDEX");
+            String niftyFutRefresh = computeNearMonthNiftyFuturesSymbol(
+                java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")));
+            if (!withIndex.contains(niftyFutRefresh)) withIndex.add(niftyFutRefresh);
 
             eventService.log("[INFO] Opening refresh triggered — refetching today's candles from Fyers /data/history for "
                 + withIndex.size() + " symbols (fixes wrong live-tick-built first candles)");
@@ -1385,6 +1454,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         breakoutScanner.setWatchlistSymbols(watchlist);
         List<String> withIndex = new ArrayList<>(watchlist);
         if (!withIndex.contains("NSE:NIFTY50-INDEX")) withIndex.add("NSE:NIFTY50-INDEX");
+        String niftyFutRebuild = computeNearMonthNiftyFuturesSymbol(
+            java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")));
+        if (!withIndex.contains(niftyFutRebuild)) withIndex.add(niftyFutRebuild);
         // Subscribe newly-filtered stocks to WS (subscribeWatchlist is idempotent for already-
         // subscribed symbols). No re-seeding of indicators needed — startup pre-seeded all 50
         // NIFTY stocks and we never prune them. Filter changes are just a WS-subscription +

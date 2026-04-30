@@ -108,6 +108,10 @@ public class RiskSettingsStore {
         volatile double volumeMultiple = 2.0; // breakout candle must have this x avg volume
         volatile int volumeLookback = 20; // average volume over last N candles (max 20)
         volatile boolean enableTrailingSl = true; // enable Fibonacci-based trailing SL (base=breakout level, ceiling=target, stages at 61.8% and 78.6%)
+        // Defensive 5-min SMA cross exit: at every 5-min candle close, if SMA 20 has stacked
+        // against the trade direction (LONG: SMA 20 < SMA 50; SHORT: SMA 20 > SMA 50) the bot
+        // squareoffs the position before SL hits. Default off — material behavior change.
+        volatile boolean enableSmaCrossExit = false;
         // Fibonacci trailing SL — all four knobs stored as percent (0–100).
         volatile double fibStage1TriggerPct = 61.8;   // LTP hits this % of range → stage 1 activates
         volatile double fibStage1SlAtrMult = 1.0;     // stage 1 SL = entry ± N × ATR
@@ -117,6 +121,11 @@ public class RiskSettingsStore {
         // on EV (gap up/down) days regardless. Toggles default ON (skip on normal days).
         volatile boolean skipR3S3NormalDays = true;
         volatile boolean skipR4S4NormalDays = true;
+        // HTF (weekly) extended-level skips — independent of the daily extended-level skips
+        // above. When on, breakout close past weekly R3/R4 (buys) or S3/S4 (sells) is skipped
+        // regardless of the daily setup. Default true (matches daily skip stance).
+        volatile boolean skipHtfR3S3NormalDays = true;
+        volatile boolean skipHtfR4S4NormalDays = true;
         volatile int    atrPeriod = 14;        // ATR lookback period for initial SL
         // Scanner settings
         volatile String signalSource    = "TRADINGVIEW"; // TRADINGVIEW or INTERNAL
@@ -178,10 +187,6 @@ public class RiskSettingsStore {
         // Composite score range is ±20 (weekly ±3 + daily ±3 + 5m SMA Price ±2 + 5m SMA Align ±2
         // + 5m SMA Pattern ±3 + HTF SMA Price ±2 + HTF SMA Align ±2 + HTF SMA Pattern ±3).
         // CPR and Pattern weighted heaviest. Thresholds scaled to ~30% / ~60% of range.
-        volatile int indexBullishThreshold = 6;                // score >= this → BULLISH
-        volatile int indexStrongBullishThreshold = 12;         // score >= this → STRONG_BULLISH
-        volatile int indexBearishThreshold = -6;               // score <= this → BEARISH
-        volatile int indexStrongBearishThreshold = -12;        // score <= this → STRONG_BEARISH
     }
 
     private final Cfg live = new Cfg();
@@ -256,12 +261,15 @@ public class RiskSettingsStore {
     public boolean isEnableLargeCandleBodyFilter() { return cfg().enableLargeCandleBodyFilter; }
     public double getLargeCandleBodyAtrThreshold() { return cfg().largeCandleBodyAtrThreshold; }
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
+    public boolean isEnableSmaCrossExit() { return cfg().enableSmaCrossExit; }
     public double getFibStage1TriggerPct() { return cfg().fibStage1TriggerPct; }
     public double getFibStage1SlAtrMult()  { return cfg().fibStage1SlAtrMult; }
     public double getFibStage2TriggerPct() { return cfg().fibStage2TriggerPct; }
     public double getFibStage2SlPct()      { return cfg().fibStage2SlPct; }
     public boolean isSkipR3S3NormalDays() { return cfg().skipR3S3NormalDays; }
     public boolean isSkipR4S4NormalDays() { return cfg().skipR4S4NormalDays; }
+    public boolean isSkipHtfR3S3NormalDays() { return cfg().skipHtfR3S3NormalDays; }
+    public boolean isSkipHtfR4S4NormalDays() { return cfg().skipHtfR4S4NormalDays; }
     public int getAtrPeriod() { return cfg().atrPeriod; }
     public double getSmallCandleAtrThreshold() { return cfg().smallCandleAtrThreshold; }
     public double getSmallCandleBodyAtrThreshold() { return cfg().smallCandleBodyAtrThreshold; }
@@ -307,10 +315,6 @@ public class RiskSettingsStore {
     public boolean isEnableIndexAlignment()    { return cfg().enableIndexAlignment; }
     public boolean isIndexAlignmentHardSkip()  { return cfg().indexAlignmentHardSkip; }
     public double getIndexOpposedQtyFactor()   { return cfg().indexOpposedQtyFactor; }
-    public int getIndexBullishThreshold()       { return cfg().indexBullishThreshold; }
-    public int getIndexStrongBullishThreshold() { return cfg().indexStrongBullishThreshold; }
-    public int getIndexBearishThreshold()       { return cfg().indexBearishThreshold; }
-    public int getIndexStrongBearishThreshold() { return cfg().indexStrongBearishThreshold; }
     public void setSignalSource(String v)      { cfg().signalSource = v; }
     public void setScannerTimeframe(int v)     { cfg().scannerTimeframe = v; }
     public void setHigherTimeframe(int v)      { cfg().higherTimeframe = v; }
@@ -350,10 +354,6 @@ public class RiskSettingsStore {
     public void setEnableIndexAlignment(boolean v)        { cfg().enableIndexAlignment = v; }
     public void setIndexAlignmentHardSkip(boolean v)      { cfg().indexAlignmentHardSkip = v; }
     public void setIndexOpposedQtyFactor(double v)        { cfg().indexOpposedQtyFactor = v; }
-    public void setIndexBullishThreshold(int v)           { cfg().indexBullishThreshold = v; }
-    public void setIndexStrongBullishThreshold(int v)     { cfg().indexStrongBullishThreshold = v; }
-    public void setIndexBearishThreshold(int v)           { cfg().indexBearishThreshold = v; }
-    public void setIndexStrongBearishThreshold(int v)     { cfg().indexStrongBearishThreshold = v; }
     public void setTradingStartTime(String v)  { cfg().tradingStartTime = v; }
     public void setTradingEndTime(String v)    { cfg().tradingEndTime = v; }
     public void setTotalCapital(double v)       { cfg().totalCapital = v; }
@@ -402,12 +402,15 @@ public class RiskSettingsStore {
     public void setEnableLargeCandleBodyFilter(boolean v) { cfg().enableLargeCandleBodyFilter = v; }
     public void setLargeCandleBodyAtrThreshold(double v) { cfg().largeCandleBodyAtrThreshold = v; }
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
+    public void setEnableSmaCrossExit(boolean v) { cfg().enableSmaCrossExit = v; }
     public void setFibStage1TriggerPct(double v) { cfg().fibStage1TriggerPct = v; }
     public void setFibStage1SlAtrMult(double v)  { cfg().fibStage1SlAtrMult = v; }
     public void setFibStage2TriggerPct(double v) { cfg().fibStage2TriggerPct = v; }
     public void setFibStage2SlPct(double v)      { cfg().fibStage2SlPct = v; }
     public void setSkipR3S3NormalDays(boolean v) { cfg().skipR3S3NormalDays = v; }
     public void setSkipR4S4NormalDays(boolean v) { cfg().skipR4S4NormalDays = v; }
+    public void setSkipHtfR3S3NormalDays(boolean v) { cfg().skipHtfR3S3NormalDays = v; }
+    public void setSkipHtfR4S4NormalDays(boolean v) { cfg().skipHtfR4S4NormalDays = v; }
     public void setAtrPeriod(int v) { cfg().atrPeriod = v; }
     public void setSmallCandleAtrThreshold(double v) { cfg().smallCandleAtrThreshold = v; }
     public void setSmallCandleBodyAtrThreshold(double v) { cfg().smallCandleBodyAtrThreshold = v; }
@@ -552,12 +555,15 @@ public class RiskSettingsStore {
             upsert("volumeMultiple", String.valueOf(c.volumeMultiple));
             upsert("volumeLookback", String.valueOf(c.volumeLookback));
             upsert("enableTrailingSl", String.valueOf(c.enableTrailingSl));
+            upsert("enableSmaCrossExit", String.valueOf(c.enableSmaCrossExit));
             upsert("fibStage1TriggerPct", String.valueOf(c.fibStage1TriggerPct));
             upsert("fibStage1SlAtrMult",  String.valueOf(c.fibStage1SlAtrMult));
             upsert("fibStage2TriggerPct", String.valueOf(c.fibStage2TriggerPct));
             upsert("fibStage2SlPct",      String.valueOf(c.fibStage2SlPct));
             upsert("skipR3S3NormalDays", String.valueOf(c.skipR3S3NormalDays));
             upsert("skipR4S4NormalDays", String.valueOf(c.skipR4S4NormalDays));
+            upsert("skipHtfR3S3NormalDays", String.valueOf(c.skipHtfR3S3NormalDays));
+            upsert("skipHtfR4S4NormalDays", String.valueOf(c.skipHtfR4S4NormalDays));
             upsert("atrPeriod", String.valueOf(c.atrPeriod));
             upsert("signalSource", c.signalSource);
             upsert("scannerTimeframe", String.valueOf(c.scannerTimeframe));
@@ -595,10 +601,6 @@ public class RiskSettingsStore {
             upsert("enableIndexAlignment", String.valueOf(c.enableIndexAlignment));
             upsert("indexAlignmentHardSkip", String.valueOf(c.indexAlignmentHardSkip));
             upsert("indexOpposedQtyFactor", String.valueOf(c.indexOpposedQtyFactor));
-            upsert("indexBullishThreshold", String.valueOf(c.indexBullishThreshold));
-            upsert("indexStrongBullishThreshold", String.valueOf(c.indexStrongBullishThreshold));
-            upsert("indexBearishThreshold", String.valueOf(c.indexBearishThreshold));
-            upsert("indexStrongBearishThreshold", String.valueOf(c.indexStrongBearishThreshold));
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to save {}: {}", mode, e.getMessage());
         }
@@ -694,12 +696,15 @@ public class RiskSettingsStore {
                     case "volumeMultiple" -> c.volumeMultiple = Double.parseDouble(v);
                     case "volumeLookback" -> c.volumeLookback = Integer.parseInt(v);
                     case "enableTrailingSl"   -> c.enableTrailingSl = Boolean.parseBoolean(v);
+                    case "enableSmaCrossExit" -> c.enableSmaCrossExit = Boolean.parseBoolean(v);
                     case "fibStage1TriggerPct" -> c.fibStage1TriggerPct = Double.parseDouble(v);
                     case "fibStage1SlAtrMult"  -> c.fibStage1SlAtrMult  = Double.parseDouble(v);
                     case "fibStage2TriggerPct" -> c.fibStage2TriggerPct = Double.parseDouble(v);
                     case "fibStage2SlPct"      -> c.fibStage2SlPct      = Double.parseDouble(v);
                     case "skipR3S3NormalDays" -> c.skipR3S3NormalDays = Boolean.parseBoolean(v);
                     case "skipR4S4NormalDays" -> c.skipR4S4NormalDays = Boolean.parseBoolean(v);
+                    case "skipHtfR3S3NormalDays" -> c.skipHtfR3S3NormalDays = Boolean.parseBoolean(v);
+                    case "skipHtfR4S4NormalDays" -> c.skipHtfR4S4NormalDays = Boolean.parseBoolean(v);
                     case "atrPeriod" -> c.atrPeriod = Integer.parseInt(v);
                     case "signalSource"      -> c.signalSource = v;
                     case "scannerTimeframe"  -> c.scannerTimeframe = Integer.parseInt(v);
@@ -748,10 +753,6 @@ public class RiskSettingsStore {
                     case "enableIndexAlignment" -> c.enableIndexAlignment = Boolean.parseBoolean(v);
                     case "indexAlignmentHardSkip" -> c.indexAlignmentHardSkip = Boolean.parseBoolean(v);
                     case "indexOpposedQtyFactor" -> c.indexOpposedQtyFactor = Double.parseDouble(v);
-                    case "indexBullishThreshold" -> c.indexBullishThreshold = Integer.parseInt(v);
-                    case "indexStrongBullishThreshold" -> c.indexStrongBullishThreshold = Integer.parseInt(v);
-                    case "indexBearishThreshold" -> c.indexBearishThreshold = Integer.parseInt(v);
-                    case "indexStrongBearishThreshold" -> c.indexStrongBearishThreshold = Integer.parseInt(v);
                 }
             }
             log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} trailingSl={} skipR3S3={} skipR4S4={}", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.enableTrailingSl, c.skipR3S3NormalDays, c.skipR4S4NormalDays);
