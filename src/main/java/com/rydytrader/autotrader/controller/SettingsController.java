@@ -143,7 +143,6 @@ public class SettingsController {
         result.put("enableMpt", riskSettings.isEnableMpt());
         result.put("mptQtyFactor", riskSettings.getMptQtyFactor());
         result.put("smallRangeAdrPct", riskSettings.getSmallRangeAdrPct());
-        result.put("enableCprDayRelationFilter", riskSettings.isEnableCprDayRelationFilter());
         result.put("minAbsoluteProfit", riskSettings.getMinAbsoluteProfit());
         result.put("todayPnl",         Math.round(todayPnl * 100.0) / 100.0);
         result.put("todayTrades",      todayTrades);
@@ -265,7 +264,6 @@ public class SettingsController {
                 riskSettings.setSmallRangeAdrPct(Double.parseDouble(body.get("smallRangeAdrPct").toString()));
                 bhavcopyService.reclassifyNarrowRangeTypes();
             }
-            if (body.containsKey("enableCprDayRelationFilter")) riskSettings.setEnableCprDayRelationFilter(Boolean.parseBoolean(body.get("enableCprDayRelationFilter").toString()));
             if (body.containsKey("minAbsoluteProfit")) riskSettings.setMinAbsoluteProfit(Double.parseDouble(body.get("minAbsoluteProfit").toString()));
             riskSettings.saveFor(effectiveMode);
             return ResponseEntity.ok(Map.of("ok", true, "message", "Settings saved"));

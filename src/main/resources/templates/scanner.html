@@ -862,25 +862,6 @@
             + '    <button class="chart-icon-btn" onclick="openChartModal(\'' + d.symbol + '\', \'' + d.shortName + '\')" title="View chart" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:3px 6px;cursor:pointer;color:var(--text-secondary);line-height:0;display:inline-flex;align-items:center;">'
             + '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="1.5" y="9" width="3" height="5.5" rx="0.5"/><rect x="6.5" y="5" width="3" height="9.5" rx="0.5"/><rect x="11.5" y="7" width="3" height="7.5" rx="0.5"/></svg>'
             + '</button>'
-            + (function() {
-                if (!d.cprDayRelation) return '';
-                var rel = d.cprDayRelation;
-                var cls = rel === 'HV' ? 'narrow-small' : rel === 'LV' ? 'inside-large' : 'narrow';
-                var ttl = rel === 'HV' ? 'Today\'s CPR completely above yesterday\'s — bullish bias'
-                       : rel === 'LV' ? 'Today\'s CPR completely below yesterday\'s — bearish bias'
-                       : 'Today\'s CPR overlaps yesterday\'s — no clear directional bias';
-                // Open-print validation marker: ✓ confirmed (open honored bias), ✗ rejected,
-                // nothing while pending or for NC. Marker color reflects status, not relation.
-                var mark = '', markTtl = '';
-                if (d.cprDayRelationStatus === 'CONFIRMED') {
-                    mark = ' <span style="color:var(--accent-green);font-weight:700;">&#10003;</span>';
-                    markTtl = ' [open print confirmed]';
-                } else if (d.cprDayRelationStatus === 'REJECTED') {
-                    mark = ' <span style="color:var(--accent-red);font-weight:700;">&#10007;</span>';
-                    markTtl = ' [open print rejected — bias not honored]';
-                }
-                return '<span class="scan-badge ' + cls + '" title="' + ttl + markTtl + '">2D-' + rel + mark + '</span>';
-            })()
             + ((d.cprTypes || [d.cprType]).filter(function(t){ return ['NARROW','INSIDE'].includes(t); }).map(function(t) {
                 var nrt = d.narrowRangeType;
                 var rp = d.rangeAdrPct != null ? d.rangeAdrPct : '?';
@@ -1515,18 +1496,7 @@ function showInsideCpr() {
                 </div>
             </div>
 
-            <!-- 2. 2-Day CPR Relationship -->
-            <div style="margin-bottom:28px;">
-                <div style="font-weight:700; font-size:0.85rem; color:var(--accent-cyan); margin-bottom:10px;">2. 2-Day CPR Relationship</div>
-                <div style="color:var(--text-secondary); margin-bottom:14px; font-size:0.72rem; line-height:1.6;">Compares today's CPR (TC/BC) against yesterday's CPR. Shown as a tag next to the chart icon on each scanner card. When the 2-Day CPR filter is enabled in Settings, buys fire only on 2D-HV and sells only on 2D-LV; 2D-NC trades are downgraded to LPT.</div>
-                <div style="display:flex; flex-wrap:wrap; gap:12px 20px; font-size:0.72rem;">
-                    <div><span class="scan-badge narrow-small" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">2D-HV</span> Higher Value — today's CPR completely <b>above</b> yesterday's (todayBC &gt; yestTC) — bullish bias</div>
-                    <div><span class="scan-badge inside-large" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">2D-LV</span> Lower Value — today's CPR completely <b>below</b> yesterday's (todayTC &lt; yestBC) — bearish bias</div>
-                    <div><span class="scan-badge narrow" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">2D-NC</span> Not Clear — today's CPR <b>overlaps</b> yesterday's — no directional bias</div>
-                </div>
-            </div>
-
-            <!-- 3. Signal Probability -->
+            <!-- 2. Signal Probability -->
             <div style="margin-bottom:12px;">
                 <div style="font-weight:700; font-size:0.85rem; color:var(--accent-cyan); margin-bottom:10px;">3. Signal Probability</div>
                 <div style="color:var(--text-secondary); margin-bottom:14px; font-size:0.72rem; line-height:1.6;">CPR breakout signals classified by LTF (5-min close vs daily CPR) and HTF (weekly state machine) alignment. Two tiers: HPT (full qty) when both align, MPT (configurable qty, default 0.75) when only one aligns. Counter-LTF or HTF-misaligned trades are rejected outright.</div>

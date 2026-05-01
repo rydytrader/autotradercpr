@@ -113,8 +113,7 @@ public class SignalProcessor {
         boolean isDlBelowS3 = "SELL_BELOW_DL".equals(setup) && s3 > 0 && dayLow  < s3;
         boolean isDlBelowS4 = "SELL_BELOW_DL".equals(setup) && s4 > 0 && dayLow  < s4;
 
-        // Classify today's day type from the open print (= first 5-min candle close,
-        // matching the bot's existing 2D-CPR validation pattern).
+        // Classify today's day type from the open print (close of first 5-min candle).
         double openPrint = candleAggregator.getFirstCandleClose(symbol);
         String dayType = classifyDayType(openPrint, tc, bc, r2, s2);
         boolean isEvDay   = "EV".equals(dayType);
@@ -402,23 +401,6 @@ public class SignalProcessor {
         if (Boolean.TRUE.equals(alert.get("niftyOpposed"))
                 && ("HPT".equals(probability) || "MPT".equals(probability))) {
             return ProcessedSignal.rejected(setup, symbol, "NIFTY opposed — trade rejected (LTF-priority model)");
-        }
-
-        // ── 4e2a2. 2-Day CPR relationship: reject HPT/MPT when 2D-CPR is OPPOSED ──
-        // Buys are opposed by LV (today's CPR below yesterday's = bearish bias).
-        // Sells are opposed by HV (today's CPR above yesterday's = bullish bias).
-        // NC (overlapping) and null (gap-rejected) → fail-open, no rejection.
-        if (riskSettings.isEnableCprDayRelationFilter()
-                && ("HPT".equals(probability) || "MPT".equals(probability))) {
-            String rel = str(alert, "cprDayRelation");
-            if (rel != null && !rel.isEmpty()) {
-                boolean opposed = isBuy ? "LV".equals(rel) : "HV".equals(rel);
-                if (opposed) {
-                    return ProcessedSignal.rejected(setup, symbol,
-                        "2D CPR relation 2D-" + rel + " opposes " + (isBuy ? "buy" : "sell")
-                        + " — trade rejected (LTF-priority model)");
-                }
-            }
         }
 
         // ── 4e2b. HTF Hurdle: nearest-weekly-level HPT→LPT downgrade ──

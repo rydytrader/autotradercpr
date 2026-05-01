@@ -61,9 +61,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
     // Track which levels have been broken today per symbol (prevents re-fire)
     private final ConcurrentHashMap<String, Set<String>> brokenLevels = new ConcurrentHashMap<>();
-    // Tracks the 2D-HV/LV confirmation state set at 9:20 (first-candle-close) so we can detect
-    // flips after the 9:25 history refresh corrects the open print. Symbol → was-confirmed.
-    private final ConcurrentHashMap<String, Boolean> cprConfirmedAt920 = new ConcurrentHashMap<>();
 
     // Track signals generated today (for scanner dashboard)
     private final ConcurrentHashMap<String, SignalInfo> lastSignal = new ConcurrentHashMap<>();
@@ -262,33 +259,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
         // Skip candles that started before market open
         if (completedCandle.startMinute < MarketHolidayService.MARKET_OPEN_MINUTE) return;
-
-        // 2-Day CPR relation confirmation/rejection log — fires once per symbol when the
-        // first 5-min candle (9:15-9:20) closes. Only logs HV/LV stocks; NC and empty are
-        // skipped (NC is non-directional, empty means no prior-day data).
-        if (completedCandle.startMinute == MarketHolidayService.MARKET_OPEN_MINUTE) {
-            String ticker = extractTicker(fyersSymbol);
-            CprLevels cpr = bhavcopyService.getCprLevels(ticker);
-            if (cpr != null) {
-                String raw = cpr.getCprDayRelation();
-                if ("HV".equals(raw) || "LV".equals(raw)) {
-                    String validated = cpr.getCprDayRelationValidated(completedCandle.close);
-                    double cprBot = Math.min(cpr.getTc(), cpr.getBc());
-                    double cprTop = Math.max(cpr.getTc(), cpr.getBc());
-                    String openCtx = "open=" + String.format("%.2f", completedCandle.close)
-                        + ", CPR " + String.format("%.2f", cprBot) + "-" + String.format("%.2f", cprTop);
-                    boolean confirmed = (validated != null);
-                    cprConfirmedAt920.put(fyersSymbol, confirmed);
-                    if (confirmed) {
-                        eventService.log("[SUCCESS] " + fyersSymbol + " 2D-" + raw
-                            + " CONFIRMED by opening (" + openCtx + ")");
-                    } else {
-                        eventService.log("[INFO] " + fyersSymbol + " 2D-" + raw
-                            + " REJECTED — opening did not honor bias (" + openCtx + ")");
-                    }
-                }
-            }
-        }
 
         // Gate the breakout scan on the user's configured trading window. Suppresses both
         // the filter-rejection log noise AND prevents premature brokenLevels marking that
@@ -849,8 +819,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         payload.put("pl", levels.getPl());
         payload.put("tc", levels.getTc());
         payload.put("bc", levels.getBc());
-        payload.put("cprDayRelation",
-            levels.getCprDayRelationValidated(candleAggregator.getFirstCandleClose(fyersSymbol)));
         payload.put("dayHigh", candleAggregator.getDayHighBeforeLast(fyersSymbol));
         payload.put("dayLow", candleAggregator.getDayLowBeforeLast(fyersSymbol));
         if (scannerNote != null && !scannerNote.isEmpty()) payload.put("scannerNote", scannerNote);
@@ -1259,39 +1227,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     public int getTradedCountToday() { return tradedCountToday; }
     public int getFilteredCountToday() { return filteredCountToday; }
 
-    /**
-     * Re-evaluate 2D-HV/LV confirmation for every watchlist symbol after the 9:25 opening
-     * refresh has updated firstCandleClose from authoritative Fyers history. Only logs flips
-     * (state changed since the 9:20 first-close evaluation). Confirmed→Rejected and
-     * Rejected→Confirmed both logged. Stocks where the state didn't flip stay silent.
-     */
-    public void recheckCprDayRelationAfterRefresh() {
-        for (String fyersSymbol : watchlistSymbols) {
-            Boolean origConfirmed = cprConfirmedAt920.get(fyersSymbol);
-            if (origConfirmed == null) continue; // wasn't an HV/LV stock at 9:20
-            String ticker = extractTicker(fyersSymbol);
-            CprLevels cpr = bhavcopyService.getCprLevels(ticker);
-            if (cpr == null) continue;
-            String raw = cpr.getCprDayRelation();
-            if (!"HV".equals(raw) && !"LV".equals(raw)) continue;
-            double newFirstClose = candleAggregator.getFirstCandleClose(fyersSymbol);
-            if (newFirstClose <= 0) continue;
-            String validated = cpr.getCprDayRelationValidated(newFirstClose);
-            boolean nowConfirmed = (validated != null);
-            if (origConfirmed != nowConfirmed) {
-                double cprBot = Math.min(cpr.getTc(), cpr.getBc());
-                double cprTop = Math.max(cpr.getTc(), cpr.getBc());
-                String openCtx = "corrected open=" + String.format("%.2f", newFirstClose)
-                    + ", CPR " + String.format("%.2f", cprBot) + "-" + String.format("%.2f", cprTop);
-                String severity = nowConfirmed ? "[SUCCESS]" : "[INFO]";
-                String flipTo = nowConfirmed ? "CONFIRMED" : "REJECTED";
-                eventService.log(severity + " " + fyersSymbol + " 2D-" + raw
-                    + " FLIPPED to " + flipTo + " after 9:25 history refresh (" + openCtx + ")");
-                cprConfirmedAt920.put(fyersSymbol, nowConfirmed);
-            }
-        }
-    }
-
     public SignalInfo getLastSignal(String symbol) {
         return lastSignal.get(symbol);
     }
@@ -1501,7 +1436,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             if (s.contains("htf sma order"))           return "HTF_SMA_ALIGNMENT";
             if (s.contains("htf sma not aligned"))     return "HTF_SMA_TREND";
             if (s.contains("nifty opposed"))           return "NIFTY_OPPOSED";
-            if (s.contains("2d cpr"))                  return "2D_CPR";
             if (s.contains("inside-or"))               return "INSIDE_OR";
             if (s.contains("ev reversal"))             return "EV_REVERSAL";
             return "LPT_DISABLED";
@@ -1525,7 +1459,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (s.contains("extended-level"))                          return "EXTENDED_LEVEL_DAILY";
         if (s.contains("is inside") && s.contains("zone"))         return "DH_DL_ZONE";
         if (s.contains("inside cpr") || s.contains("dh/dl"))       return "DH_DL_ZONE";
-        if (s.contains("2d cpr") || s.contains("2d-cpr"))          return "2D_CPR";
         if (s.contains("invalid atr"))                             return "INVALID_ATR";
         if (s.contains("wrong side of entry"))                     return "WRONG_SIDE_TARGET";
 

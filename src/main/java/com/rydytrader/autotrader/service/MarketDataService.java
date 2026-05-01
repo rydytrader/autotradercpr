@@ -1304,10 +1304,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             // the cache claims they're up-to-date.
             atrService.fetchAtrForSymbols(withIndex, true);
 
-            // Re-check 2D-HV/LV confirmation now that firstCandleClose is the corrected
-            // history-derived value. Logs any state flips (confirmed↔rejected) per symbol.
-            breakoutScanner.recheckCprDayRelationAfterRefresh();
-
             lastOpeningRefreshDate = today;
             eventService.log("[SUCCESS] Opening refresh complete — firstCandleClose, dayOpen, OR, SMA, ATR all re-seeded from authoritative Fyers history");
 

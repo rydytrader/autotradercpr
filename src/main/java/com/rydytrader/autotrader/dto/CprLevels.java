@@ -13,7 +13,6 @@ public class CprLevels {
     private double rangeZScore;       // legacy z-score field (kept for serialization compat, now 0)
     private double rangeAdrPct;       // previous day's range as % of 20-day ADR (drives SMALL/LARGE classification)
     private String narrowRangeType;   // "SMALL" / "LARGE" / null (only set for narrow/inside CPR)
-    private String cprDayRelation;    // "HV" (today CPR completely above yesterday's), "LV" (completely below), "NC" (overlapping/not clear), "" if no prior data
     private long   volume;
     private double fiftyTwoWeekHigh, fiftyTwoWeekLow;
     private double turnover;          // previous day total traded value (₹)
@@ -109,23 +108,6 @@ public class CprLevels {
     public void    setRangeAdrPct(double v) { this.rangeAdrPct = v; }
     public String  getNarrowRangeType() { return narrowRangeType; }
     public void    setNarrowRangeType(String v) { this.narrowRangeType = v; }
-    public String  getCprDayRelation()  { return cprDayRelation; }
-    public void    setCprDayRelation(String v) { this.cprDayRelation = v; }
-
-    /** 2-Day CPR relation gated by the day's open print (close of first 5-min candle).
-     *  HV/LV are confirmed only when the opening honors the directional bias:
-     *  HV needs first close above today's CPR top, LV needs first close below CPR bot.
-     *  Returns null when the relation is invalidated (gap rejected). NC and empty pass through.
-     *  Before firstCandleClose is set (pre-market / first 5-min) returns the raw value. */
-    public String  getCprDayRelationValidated(double firstCandleClose) {
-        String rel = this.cprDayRelation;
-        if (rel == null || rel.isEmpty() || firstCandleClose <= 0) return rel;
-        double cprBot = Math.min(tc, bc);
-        double cprTop = Math.max(tc, bc);
-        if ("HV".equals(rel) && firstCandleClose <= cprTop) return null;
-        if ("LV".equals(rel) && firstCandleClose >= cprBot) return null;
-        return rel;
-    }
 
     public long    getVolume()             { return volume; }
     public void    setVolume(long v)       { this.volume = v; }

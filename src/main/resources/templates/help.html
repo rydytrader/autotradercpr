@@ -142,7 +142,7 @@
 
             <h4>How it confirms the trade</h4>
             <p>Before placing, the signal must pass a chain of independent filters (each separately toggled). Any failure either rejects the trade outright or downgrades it from <span class="badge-example bg">HPT</span> (full size) to <span class="badge-example by">LPT</span> (half size). If LPT is disabled, downgraded trades are silently rejected.</p>
-            <p>The big filters: ATP/VWAP confirmation, 5-min SMA trend (close above/below 20+50+200), SMA alignment (20&gt;50&gt;200 ordering), HTF Hurdle (1h structure), HTF SMA Price &amp; Alignment, NIFTY index alignment, 2-Day CPR Relationship, weekly + daily CPR trend match. See the <b>PROBABILITY</b> tab for the full chain.</p>
+            <p>The big filters: ATP/VWAP confirmation, 5-min SMA trend (close above/below 20+50+200), SMA alignment (20&gt;50&gt;200 ordering), HTF Hurdle (1h structure), HTF SMA Price &amp; Alignment, NIFTY index alignment, weekly + daily CPR trend match. See the <b>PROBABILITY</b> tab for the full chain.</p>
         </div>
     </div>
 
@@ -153,7 +153,7 @@
             <h4>Examples</h4>
             <table>
                 <tr><th>Scenario</th><th>What happens</th></tr>
-                <tr><td>Trend trade, weekly+daily aligned, NIFTY aligned, all SMAs in order, 2D-HV, OR cleared</td><td>HPT, full size</td></tr>
+                <tr><td>Trend trade, weekly+daily aligned, NIFTY aligned, all SMAs in order, OR cleared</td><td>HPT, full size</td></tr>
                 <tr><td>Same but NIFTY opposed</td><td>HPT → LPT, half size</td></tr>
                 <tr><td>Same but inside OR with daily not aligned</td><td>HPT → LPT, half size</td></tr>
                 <tr><td>Stock moved &gt; session-move-limit% from open already</td><td>Half size on top of any other reduction</td></tr>
@@ -176,7 +176,7 @@
             <ol>
                 <li><b>CandleAggregator</b> finalizes the just-closed bar from WebSocket ticks.</li>
                 <li><b>BreakoutScanner</b> runs against every watchlist symbol — checks ATP, SMA trend, SMA alignment, NIFTY alignment, etc., and walks setup priority. If a setup passes scanner-side checks, it builds a payload.</li>
-                <li><b>SignalProcessor</b> applies the full filter chain (DH/DL inside-zone gate, extended-level gate, small/large candle, OR rules, HTF Hurdle &amp; SMA Trend, 2D-CPR, NIFTY-opposed, target shift, R/R, qty stack, min profit) and produces a <b>ProcessedSignal</b>.</li>
+                <li><b>SignalProcessor</b> applies the full filter chain (DH/DL inside-zone gate, extended-level gate, small/large candle, OR rules, HTF Hurdle &amp; SMA Trend, NIFTY-opposed, target shift, R/R, qty stack, min profit) and produces a <b>ProcessedSignal</b>.</li>
                 <li><b>OrderService</b> places the entry on Fyers. On fill, the SL and split targets (T1/T2) are placed.</li>
                 <li><b>OrderEventService</b> tracks entry/SL/target lifecycle via Order WebSocket. <b>MarketDataService</b> trails the SL via tick stream.</li>
             </ol>
@@ -540,19 +540,6 @@
         </div>
     </div>
 
-    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
-        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> 2-Day CPR Relationship</div></div>
-        <div class="help-body">
-            <p>For each watchlist stock, today's CPR is compared against yesterday's. Three possible relations:</p>
-            <table>
-                <tr><th>Tag</th><th>Condition</th><th>Bias</th></tr>
-                <tr><td><span class="badge-example bg">2D-HV</span></td><td>todayBC &gt; yestTC (today's CPR completely above yesterday's)</td><td>Bullish — favors buy direction</td></tr>
-                <tr><td><span class="badge-example br">2D-LV</span></td><td>todayTC &lt; yestBC (today's CPR completely below yesterday's)</td><td>Bearish — favors sell direction</td></tr>
-                <tr><td><span class="badge-example by">2D-NC</span></td><td>CPRs overlap (Not Clear)</td><td>No directional bias</td></tr>
-            </table>
-            <p>The tag shows next to the chart icon on each scanner card. When <code>enableCprDayRelationFilter</code> is on, HPT trades are downgraded to LPT if the relation doesn't favor the trade direction (buys need 2D-HV, sells need 2D-LV; 2D-NC always downgrades).</p>
-        </div>
-    </div>
     </div><!-- /tab-trends -->
 
     <!-- ========================================================== -->
@@ -578,7 +565,6 @@
                 <li><b>EV reversal</b> — gap-fade direction (OR broke against the gap).</li>
                 <li><b>Inside OR on IV/OV trend trade with daily not aligned.</b></li>
                 <li><b>NIFTY opposed</b> (when index alignment soft mode is on).</li>
-                <li><b>2-Day CPR relation doesn't favor direction</b> (when filter on).</li>
                 <li><b>HTF Hurdle</b> — prior 1h close didn't clear nearest weekly R1/PWH (buy) or S1/PWL (sell).</li>
                 <li><b>HTF SMA Price</b> — live LTP not above (buy) / below (sell) <b>both</b> 1h SMA 20 and 50.</li>
                 <li><b>HTF SMA Alignment</b> — 1h SMA 20 not above 50 (buy) / below 50 (sell).</li>
@@ -850,7 +836,6 @@
                 <tr><td>enableIndexAlignment</td><td>false</td><td>NIFTY composite filter master toggle</td></tr>
                 <tr><td>indexAlignmentHardSkip</td><td>false</td><td>Hard skip opposed (true) vs HPT→LPT downgrade (false)</td></tr>
                 <tr><td>indexBullishThreshold / Strong / Bearish / StrongBearish</td><td>6 / 12 / −6 / −12</td><td>Legacy composite score thresholds (no longer used for state — kept for the score breakdown shown on the NIFTY card; state is now breadth-driven by direct adv-vs-dec count, with strong tier at ≥70% one-sided)</td></tr>
-                <tr><td>enableCprDayRelationFilter</td><td>false</td><td>Buy needs 2D-HV, sell needs 2D-LV (else HPT→LPT)</td></tr>
                 <tr><td>enableHtfHurdleFilter</td><td>true</td><td>Prior 1h close must clear nearest weekly R1/PWH or S1/PWL</td></tr>
                 <tr><td>enableHtfSmaAlignment</td><td>true</td><td>HTF Price: LTP above/below 1h SMA 20+50</td></tr>
                 <tr><td>enableHtfSmaAlignmentCheck</td><td>false</td><td>HTF Alignment: 1h SMA 20&gt;50 (buy) / 20&lt;50 (sell)</td></tr>

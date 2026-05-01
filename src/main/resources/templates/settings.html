@@ -360,7 +360,7 @@
                             <span style="font-size:0.72rem; opacity:0.6;">(legacy)</span>
                         </label>
                     </div>
-                    <div class="form-hint">Under the LTF-priority probability model: <b>HPT</b> = LTF and HTF both align (full size). <b>MPT</b> = only one of LTF or HTF aligns (medium size — default 0.75). Trades that fail any HTF Hurdle / 2D-CPR / NIFTY filter are <b>rejected</b>, not downgraded to LPT.</div>
+                    <div class="form-hint">Under the LTF-priority probability model: <b>HPT</b> = LTF and HTF both align (full size). <b>MPT</b> = only one of LTF or HTF aligns (medium size — default 0.75). Trades that fail any HTF Hurdle / NIFTY filter are <b>rejected</b>, not downgraded to LPT.</div>
                 </div>
             </div>
         </div>
@@ -523,14 +523,6 @@
                         <br>&nbsp;&nbsp;&bull; <b>NIFTY VWAP</b>: near-month futures LTP above/below intraday futures VWAP
                         <br>States: <b>BULLISH</b> (both bullish) / <b>BEARISH</b> (both bearish) / <b>BULL REVERSAL</b> (below CPR, VWAP turning up &mdash; buy side) / <b>BEAR REVERSAL</b> (above CPR, VWAP rolling over &mdash; sell side) / <b>NEUTRAL</b> (signal missing or inside CPR).
                         <br>When this filter is on: buys allowed on <b>BULLISH</b> or <b>BULL REVERSAL</b>; sells allowed on <b>BEARISH</b> or <b>BEAR REVERSAL</b>; <b>all trades skipped on NEUTRAL</b> regardless of hard/soft mode. Soft mode reduces qty on opposed trades; hard mode skips them entirely. Breadth (advancers/decliners) is shown on the card for context but no longer drives the state.</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">2-Day CPR Relationship Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableCprDayRelationFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Downgrade HPT &rarr; LPT when today's CPR doesn't favor the trade direction vs yesterday's CPR</span>
-                    </div>
-                    <div class="form-hint">Buys want today's CPR completely <b>above</b> yesterday's (todayBC &gt; yestTC = <b>2D-HV</b> / Higher Value). Sells want today's CPR completely <b>below</b> yesterday's (todayTC &lt; yestBC = <b>2D-LV</b> / Lower Value). Overlapping CPRs (<b>2D-NC</b> / Not Clear) downgrade in both directions. Tag shown next to chart icon on each scanner card. LPT trades unaffected. Fail-open if no prior-day data.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Extended Level Signals (R3/S3, R4/S4)</label>
@@ -1169,7 +1161,6 @@
             document.getElementById('scanIncludeNS').checked = d.scanIncludeNS !== false;
             document.getElementById('scanIncludeNL').checked = d.scanIncludeNL !== false;
             document.getElementById('smallRangeAdrPct').value = d.smallRangeAdrPct != null ? d.smallRangeAdrPct : 50.0;
-            document.getElementById('enableCprDayRelationFilter').checked = d.enableCprDayRelationFilter === true;
             document.getElementById('scanIncludeIS').checked = d.scanIncludeIS !== false;
             document.getElementById('scanIncludeIL').checked = d.scanIncludeIL === true;
             document.getElementById('enableHpt').checked = d.enableHpt !== false;
@@ -1328,7 +1319,6 @@
                 scanIncludeNS: document.getElementById('scanIncludeNS').checked,
                 scanIncludeNL: document.getElementById('scanIncludeNL').checked,
                 smallRangeAdrPct: parseFloat(document.getElementById('smallRangeAdrPct').value) || 50.0,
-                enableCprDayRelationFilter: document.getElementById('enableCprDayRelationFilter').checked,
                 scanIncludeIS: document.getElementById('scanIncludeIS').checked,
                 scanIncludeIL: document.getElementById('scanIncludeIL').checked,
                 enableHpt: document.getElementById('enableHpt').checked,

@@ -233,21 +233,6 @@ public class ScannerController {
         card.put("avgVolume", Math.round(candleAggregator.getAvgVolume(fyersSymbol, riskSettings.getVolumeLookback())));
         card.put("weeklyTrend", weeklyCprService.getWeeklyTrend(fyersSymbol));
         card.put("dailyTrend", weeklyCprService.getDailyTrend(fyersSymbol));
-        // Always send the raw 2D relation (HV/LV/NC) so the badge stays visible.
-        // The validation result is sent as a separate status: CONFIRMED (open print honored
-        // the bias), REJECTED (open invalidated it), or PENDING (no first-candle-close yet).
-        // Card JS uses status to render ✓/✗ next to the badge. SignalProcessor still calls
-        // getCprDayRelationValidated() for the LPT-downgrade gate — unchanged.
-        String relRaw = levels.getCprDayRelation();
-        card.put("cprDayRelation", relRaw);
-        if (relRaw != null && ("HV".equals(relRaw) || "LV".equals(relRaw))) {
-            double fcc = candleAggregator.getFirstCandleClose(fyersSymbol);
-            String status;
-            if (fcc <= 0)                                                 status = "PENDING";
-            else if (levels.getCprDayRelationValidated(fcc) != null)       status = "CONFIRMED";
-            else                                                           status = "REJECTED";
-            card.put("cprDayRelationStatus", status);
-        }
         card.put("probability", computeCardProbability(fyersSymbol, ltp));
 
         // Opening Range status
@@ -542,7 +527,6 @@ public class ScannerController {
             if (s.contains("htf sma order"))           return "HTF_SMA_ALIGNMENT";
             if (s.contains("htf sma not aligned"))     return "HTF_SMA_TREND";
             if (s.contains("nifty opposed"))           return "NIFTY_OPPOSED";
-            if (s.contains("2d cpr"))                  return "2D_CPR";
             if (s.contains("inside-or"))               return "INSIDE_OR";
             if (s.contains("ev reversal"))             return "EV_REVERSAL";
             return "LPT_DISABLED";
