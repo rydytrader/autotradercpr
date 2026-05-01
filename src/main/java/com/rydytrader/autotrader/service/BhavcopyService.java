@@ -1,5 +1,6 @@
 package com.rydytrader.autotrader.service;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rydytrader.autotrader.dto.CprLevels;
@@ -62,7 +63,11 @@ public class BhavcopyService {
     private static final String USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-    private static final ObjectMapper mapper = new ObjectMapper();
+    // Tolerate unknown properties so cached JSON written by older versions (e.g. with the
+    // removed cprDayRelation field) still deserializes — otherwise every record fails and
+    // the cache loads empty.
+    private static final ObjectMapper mapper = new ObjectMapper()
+        .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 
     private final ConcurrentHashMap<String, CprLevels> cache = new ConcurrentHashMap<>();
     private volatile String cachedDate = "";
