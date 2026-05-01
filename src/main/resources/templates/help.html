@@ -136,31 +136,49 @@
 
             <h4>How it decides direction</h4>
             <p>For every 5-min candle close, the scanner walks through CPR/R/S levels in priority order:</p>
-            <p><b>Buys (green candle):</b> R4 → R3 → R2 → R1+PDH → CPR → S1+PDL (magnet bounce) → S2/S3/S4 (mean-reversion on EV days) → Day High.<br/>
-               <b>Sells (red candle):</b> S4 → S3 → S2 → S1+PDL → CPR → R1+PDH (magnet rejection) → R2/R3/R4 (mean-reversion on EV days) → Day Low.</p>
+            <p><b>Buys (green candle):</b> R4 → R3 → R2 → R1+PDH → CPR → S1+PDL (magnet bounce) → Day High.<br/>
+               <b>Sells (red candle):</b> S4 → S3 → S2 → S1+PDL → CPR → R1+PDH (magnet rejection) → Day Low.</p>
             <p>The first level that meets the breakout pattern wins. The level is then marked as "broken" so it can't re-fire today.</p>
 
+            <h4>How it classifies the trade (LTF + HTF)</h4>
+            <p>Every signal that survives is classified <span class="badge-example bg">HPT</span> (full size) or <span class="badge-example bb">MPT</span> (medium size, default 0.75) based on two timeframes:</p>
+            <ul>
+                <li><b>LTF</b> — 5-min breakout candle close vs <b>daily CPR</b>. Above daily TC = LTF bullish; below daily BC = LTF bearish; inside CPR = LTF undetermined.</li>
+                <li><b>HTF</b> — weekly state machine (BULLISH / STRONG_BULLISH / BEARISH / STRONG_BEARISH).</li>
+            </ul>
+            <p>Both align with trade direction → <b>HPT</b>. Only one aligns → <b>MPT</b>. <b>Magnet</b> setups (S1+PDL bounce, R1+PDH rejection) bypass the LTF gate and always classify as MPT. Counter-LTF non-magnet signals are <b>rejected outright</b> — there is no LPT under the new model.</p>
+
             <h4>How it confirms the trade</h4>
-            <p>Before placing, the signal must pass a chain of independent filters (each separately toggled). Any failure either rejects the trade outright or downgrades it from <span class="badge-example bg">HPT</span> (full size) to <span class="badge-example by">LPT</span> (half size). If LPT is disabled, downgraded trades are silently rejected.</p>
-            <p>The big filters: ATP/VWAP confirmation, 5-min SMA trend (close above/below 20+50+200), SMA alignment (20&gt;50&gt;200 ordering), HTF Hurdle (1h structure), HTF SMA Price &amp; Alignment, NIFTY index alignment, weekly + daily CPR trend match. See the <b>PROBABILITY</b> tab for the full chain.</p>
+            <p>Before placing, the signal must pass a chain of independent filters. Any failure <b>rejects</b> the trade outright (no qty downgrade). Big filters in order:</p>
+            <ul>
+                <li>ATP / VWAP confirmation (price vs day's VWAP)</li>
+                <li>5-min SMA Price (lenient: vs 20+50; strict: vs 20+50+200)</li>
+                <li>5-min SMA Alignment (lenient: 20 vs 50; strict: 20 vs 50 vs 200)</li>
+                <li>HTF Hurdle — prior 1h close above (buy) / below (sell) nearest weekly hurdle</li>
+                <li>HTF SMA Price + HTF SMA Alignment (60-min)</li>
+                <li>NIFTY trend filter (CPR + 5-min SMA Price + SMA 20/50 alignment — all 3 factors aligned)</li>
+                <li>Volume, candle-size, R/R, min-profit, day-type extended-level skips</li>
+            </ul>
+            <p>See the <b>PROBABILITY</b> tab for the classification rule and the <b>SETTINGS</b> tab for every toggle.</p>
         </div>
     </div>
 
     <div class="section-card help-section fade-in" style="margin-bottom:16px;">
         <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> Risk philosophy: choppy days small, trending days large</div></div>
         <div class="help-body">
-            <p>The bot doesn't try to predict the day — it lets the day reveal itself and adjusts size. Each filter that fails downgrades probability or halves quantity. So a setup hitting one weak signal trades small; one hitting all confirmations trades full size. You don't decide "is this a chop day?" — the qty stack does it.</p>
+            <p>Under the LTF-priority model the bot is binary: either the conditions support the trade (HPT or MPT) or they don't (rejected). There's no LPT consolation prize. A clean trade fires at full size (HPT); a single-timeframe-aligned trade fires at medium size (MPT, default × 0.75); anything that fails LTF, HTF, or any of the gate filters is skipped outright.</p>
             <h4>Examples</h4>
             <table>
                 <tr><th>Scenario</th><th>What happens</th></tr>
-                <tr><td>Trend trade, weekly+daily aligned, NIFTY aligned, all SMAs in order, OR cleared</td><td>HPT, full size</td></tr>
-                <tr><td>Same but NIFTY opposed</td><td>HPT → LPT, half size</td></tr>
-                <tr><td>Same but inside OR with daily not aligned</td><td>HPT → LPT, half size</td></tr>
-                <tr><td>Stock moved &gt; session-move-limit% from open already</td><td>Half size on top of any other reduction</td></tr>
-                <tr><td>Mean-reversion (gap-fade) on EV day</td><td>Always LPT, half size</td></tr>
-                <tr><td>NIFTY in any bearish tier (BEARISH/VERY_BEARISH/EXTREME_BEARISH) and you're trying to buy</td><td>Skipped if hard-skip on, else LPT</td></tr>
+                <tr><td>Buy trade, close above daily TC (LTF bullish) + weekly BULLISH (HTF aligned), all gate filters pass</td><td><b>HPT</b>, full size</td></tr>
+                <tr><td>Same but weekly BEARISH (HTF disagrees)</td><td><b>MPT</b>, qty × 0.75</td></tr>
+                <tr><td>Buy trade, close inside daily CPR (LTF undetermined)</td><td>Rejected (LTF_OPPOSED) — no trade</td></tr>
+                <tr><td>Magnet (BUY_ABOVE_S1_PDL) firing — counter-trend bounce setup</td><td><b>MPT</b>, qty × 0.75 (LTF gate bypassed by design)</td></tr>
+                <tr><td>HPT or MPT trade fails HTF Hurdle / HTF SMA / NIFTY filter</td><td>Rejected outright — no LPT downgrade</td></tr>
+                <tr><td>NIFTY = SIDEWAYS or NEUTRAL, alignment filter on</td><td>Rejected — buys need NIFTY BULLISH, sells need NIFTY BEARISH</td></tr>
+                <tr><td>Stock moved &gt; sessionMoveLimit% from open / PDC</td><td>Qty halved on top of any HPT/MPT factor</td></tr>
             </table>
-            <p>Net: the bot trades smaller when the conditions are mixed — multiple half-multipliers compound. On a clean day, full HPT size; on a chop day, fractional positions or none.</p>
+            <p>Net: the bot fires fewer trades but each one represents real alignment. Mixed-signal trades are skipped, not sized down to noise.</p>
         </div>
     </div>
     </div><!-- /tab-strategy -->
@@ -170,25 +188,103 @@
     <!-- ========================================================== -->
     <div id="tab-architecture" class="help-content">
     <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> System diagram</div></div>
+        <div class="help-body">
+            <p>End-to-end view of how a tick becomes a trade. Solid arrows are the live data path; dashed arrows are fallbacks / reads.</p>
+<pre style="background:var(--bg-card); padding:14px; border-radius:6px; font-family:var(--font-mono); font-size:0.72rem; line-height:1.4; overflow-x:auto; color:var(--text-primary); border:1px solid var(--border);">
+                ┌────────────────────────────┐                ┌───────────────────────────┐
+                │   Fyers Market Data WS     │                │   Fyers Order Update WS   │
+                │   (binary HSM v1-5/prod)   │                │   (JSON trade/v3)         │
+                └─────────────┬──────────────┘                └─────────────┬─────────────┘
+                              │ ticks (LTP, ATP, vol)                       │ entry/SL/target events
+                              ▼                                             ▼
+                ┌────────────────────────────┐                ┌───────────────────────────┐
+                │     MarketDataService      │                │     OrderEventService     │
+                │  (subscribe, parse, tick   │                │  (route by orderId, fire  │
+                │   distribution, SSE push)  │                │   on FILLED/CANCELLED)    │
+                └─────────────┬──────────────┘                └─────────────┬─────────────┘
+                              │ ticks                                       │ ── fills/cancels
+                              ▼                                             │
+                ┌────────────────────────────┐                              │
+                │      CandleAggregator      │                              │
+                │  (5-min &amp; 60-min bars,    │                              │
+                │   day OHL, ATP, ORH/L)     │                              │
+                └─────────────┬──────────────┘                              │
+                              │ on candle close                             │
+                              ▼                                             │
+        ┌──────────┬──────────────────────┬──────────┬──────────┐           │
+        │   ATR    │   SmaService (5-min) │  HtfSma  │ Weekly   │           │
+        │ Service  │   (20 / 50 / 200,    │ Service  │ CprSvc   │           │
+        │          │    pattern detect)   │ (60-min) │ (HTF)    │           │
+        └────┬─────┴───────────┬──────────┴────┬─────┴────┬─────┘           │
+             └─────────────────┼───────────────┼──────────┘                 │
+                               ▼               ▼                            │
+                      ┌─────────────────────────────────┐                   │
+                      │       BreakoutScanner           │                   │
+                      │  pre-filters: green/red, ATP,   │                   │
+                      │  5-min SMA Price/Align, vol     │                   │
+                      │  setup priority: R4..S4, DH/DL  │                   │
+                      │  LTF check (close vs daily CPR) │                   │
+                      │  HTF check (weekly state)       │                   │
+                      │  NIFTY align, level-count, etc. │                   │
+                      └────────────────┬────────────────┘                   │
+                                       │ payload {setup, prob:HPT|MPT}      │
+                                       ▼                                    │
+                      ┌─────────────────────────────────┐                   │
+                      │       SignalProcessor           │                   │
+                      │  HTF Hurdle / HTF SMA / OR      │                   │
+                      │  small/large candle, min profit │                   │
+                      │  target shift, R/R filter       │                   │
+                      │  QuantityService (HPT × 1.0,    │                   │
+                      │                   MPT × 0.75)   │                   │
+                      └────────────────┬────────────────┘                   │
+                                       │ ProcessedSignal                    │
+                                       ▼                                    │
+                              ┌────────────────┐                            │
+                              │  OrderService  │ ─── places entry order ──▶ Fyers REST
+                              │   (Fyers REST) │ ─── on fill: SL+T1+T2  ──▶ Fyers REST
+                              └────────┬───────┘                            │
+                                       │ orderId tracked                    │
+                                       ▼                                    │
+                              ┌────────────────┐ ◀ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┘
+                              │ PositionManager│         WS event matched
+                              │ + StateStore   │         to tracked orderId
+                              │ (in-mem + JSON)│
+                              └────────┬───────┘
+                                       │ MarketDataService ticks ─▶ trailing SL modify
+                                       ▼
+                              ┌────────────────┐         ┌──────────────────┐
+                              │ EventService   │ ──────▶ │ TelegramService  │
+                              │ (logs / SSE)   │         │ (alerts)         │
+                              └────────────────┘         └──────────────────┘
+
+  Sidecar:  PollingService (REST every 10s)  ◀ activates if any WS drops; status pill = "POLLING"
+            BhavcopyService (NSE bhavcopy)    ◀ daily 09:00 — builds watchlist, computes CPR, history
+            IndexTrendService                 ◀ NIFTY 5-min close: combines CPR + SMA Price + SMA align
+</pre>
+        </div>
+    </div>
+
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
         <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Signal flow</div></div>
         <div class="help-body">
             <p>The bot has one signal path (live, internal). At each scanner-timeframe candle close:</p>
             <ol>
-                <li><b>CandleAggregator</b> finalizes the just-closed bar from WebSocket ticks.</li>
-                <li><b>BreakoutScanner</b> runs against every watchlist symbol — checks ATP, SMA trend, SMA alignment, NIFTY alignment, etc., and walks setup priority. If a setup passes scanner-side checks, it builds a payload.</li>
-                <li><b>SignalProcessor</b> applies the full filter chain (DH/DL inside-zone gate, extended-level gate, small/large candle, OR rules, HTF Hurdle &amp; SMA Trend, NIFTY-opposed, target shift, R/R, qty stack, min profit) and produces a <b>ProcessedSignal</b>.</li>
-                <li><b>OrderService</b> places the entry on Fyers. On fill, the SL and split targets (T1/T2) are placed.</li>
-                <li><b>OrderEventService</b> tracks entry/SL/target lifecycle via Order WebSocket. <b>MarketDataService</b> trails the SL via tick stream.</li>
+                <li><b>CandleAggregator</b> finalizes the just-closed bar from WebSocket ticks; SmaService / HtfSmaService / AtrService update.</li>
+                <li><b>BreakoutScanner</b> runs against every watchlist symbol — applies pre-filters (green/red candle, ATP, 5-min SMA Price/Alignment, volume), walks setup priority (R4 → ... → S1+PDL / R1+PDH magnets → DH/DL), runs the LTF check (close vs daily CPR) and HTF check (weekly state) to assign probability HPT / MPT / null. NIFTY alignment + 20-SMA level-count filters also run here. Counter-LTF non-magnet trades are rejected immediately.</li>
+                <li><b>SignalProcessor</b> applies the higher-level filter chain: DH/DL inside-zone gate, extended-level skips (IV/OV vs EV split for daily R3/S3, R4/S4; HTF weekly R3/S3, R4/S4), small/large candle, OR rules (EV days only), HTF Hurdle, HTF SMA Price &amp; Alignment, target shift, R/R, qty stack, min profit. Failure rejects the trade outright — no qty downgrade.</li>
+                <li><b>OrderService</b> places the entry on Fyers. On fill, the structural SL and split targets (T1 + T2) are computed from the fill price and placed.</li>
+                <li><b>OrderEventService</b> tracks entry / SL / target lifecycle via the Order WebSocket. <b>MarketDataService</b> trails the SL via the tick stream once the Fibonacci stage triggers.</li>
             </ol>
             <h4>Two WebSockets, zero polling (in steady state)</h4>
             <ul>
-                <li><b>Market data WS</b> (binary HSM, <code>wss://socket.fyers.in/hsm/v1-5/prod</code>): LTP, VWAP, volume — feeds CandleAggregator and the scanner card SSE stream.</li>
-                <li><b>Order update WS</b> (JSON, <code>wss://socket.fyers.in/trade/v3</code>): entry fills, SL/target hits, manual modifications, external closes — replaces 2-second polling.</li>
+                <li><b>Market data WS</b> (binary HSM, <code>wss://socket.fyers.in/hsm/v1-5/prod</code>) — LTP, VWAP, volume. Feeds CandleAggregator and the scanner card SSE stream.</li>
+                <li><b>Order update WS</b> (JSON, <code>wss://socket.fyers.in/trade/v3</code>) — entry fills, SL/target hits, manual modifications, external closes. Replaces 2-second polling.</li>
             </ul>
             <p>If either WS drops, <b>PollingService</b> resumes 10-second REST polling automatically. Status shown in the sidebar pill.</p>
 
             <h4>Live UI</h4>
-            <p>Stock cards push tick updates over Server-Sent Events (SSE) every market tick — LTP, change %, candle OHL, and SMAs (5-min and 1h, blended with current LTP) are all live. Full card data refreshes every 15 seconds (CPR levels, signal status, narrow/inside tags). NIFTY card LTP and change % are tick-by-tick; breadth + state refresh every 5 seconds.</p>
+            <p>Stock cards push tick updates over Server-Sent Events (SSE) every market tick — LTP, change %, candle OHL, and SMAs (5-min and 1h, blended with current LTP) are all live. Full card data refreshes every 15 seconds (CPR levels, signal status, narrow/inside tags). NIFTY card LTP / change % update tick-by-tick; the cached three factors (CPR, SMA Price, SMA Align) refresh only on NIFTY's 5-min candle close.</p>
         </div>
     </div>
 
@@ -274,18 +370,17 @@
 
             <table>
                 <tr><th>Tag</th><th>Where the first candle closed</th><th>Meaning</th></tr>
-                <tr><td><span class="badge-example bg">IV</span></td><td>Inside Value — between max(S1, PDL) and min(R1, PDH)</td><td>Quiet open inside yesterday's value zone. Normal trend day setup.</td></tr>
-                <tr><td><span class="badge-example by">OV</span></td><td>Outside Value — beyond R1+PDH or S1+PDL but not extreme</td><td>Modest gap; trend possible but watch for early reversal.</td></tr>
-                <tr><td><span class="badge-example bo">EV</span></td><td>Extended Value — at or beyond R2 (gap up) or S2 (gap down)</td><td>Strong gap. Mean-reversion setups become eligible. Trend-direction trades require OR confirmation.</td></tr>
+                <tr><td><span class="badge-example bg">IV</span></td><td>Inside Value — inside daily CPR (between BC and TC)</td><td>Quiet open inside today's pivot range. Normal trend day setup.</td></tr>
+                <tr><td><span class="badge-example by">OV</span></td><td>Outside Value — between CPR and R2/S2</td><td>Modest gap; trend possible but watch for early reversal.</td></tr>
+                <tr><td><span class="badge-example bo">EV</span></td><td>Extended Value — at or beyond R2 (gap up) or S2 (gap down)</td><td>Strong gap. Trend-direction trades wait for OR confirmation.</td></tr>
             </table>
 
             <h4>What each tag enables / blocks</h4>
             <ul>
-                <li><b>EV days</b> unlock the <b>mean-reversion</b> setups (BUY_ABOVE_S2/S3/S4, SELL_BELOW_R2/R3/R4 — gap-fade fades). On non-EV days these setups are rejected outright.</li>
-                <li><b>EV days</b> also wait for OR to lock before any trade fires — the gap needs to settle first.</li>
-                <li><b>EV + OR broken in opposite direction</b> = gap-fade reversal trade fires as LPT mean-reversion (uses reversal targets).</li>
-                <li><b>EV + OR not yet broken</b> + breakout candle inside OR + opposes the gap = rejected (fighting the gap with no breakout confirmation).</li>
-                <li><b>IV / OV</b> days = standard trend trading; no EV-specific gates.</li>
+                <li><b>Extended-level skips</b> (R3/S3, R4/S4) split toggles: separate IV/OV vs EV settings (<code>skipR3S3IvOvDays</code>, <code>skipR3S3EvDays</code>, <code>skipR4S4IvOvDays</code>, <code>skipR4S4EvDays</code>). Tighter on regular days, looser on gap days where extended-level breaks can be fresh momentum rather than exhaustion.</li>
+                <li><b>EV days</b> use Opening Range gates: trades fire only after OR locks; direction must match OR break or align with the gap (see OPENING RANGE tab).</li>
+                <li><b>IV / OV days</b> ignore OR entirely. Day-type also feeds NS/IS classification for the watchlist.</li>
+                <li><b>Mean-reversion setups removed.</b> Earlier versions had BUY_ABOVE_S2/S3/S4 and SELL_BELOW_R2/R3/R4 gap-fade fades; under the LTF-priority model these would always fail the LTF gate (close opposite of daily CPR direction) so they were removed entirely.</li>
             </ul>
 
             <h4>Where you see it</h4>
@@ -306,28 +401,27 @@
             <h4>Buy priority (requires <b>green</b> candle: close &gt; open)</h4>
             <table>
                 <tr><th>Setup</th><th>Breakout level</th><th>Notes</th></tr>
-                <tr><td><span class="badge-example bg">BUY_ABOVE_R4</span></td><td>R4</td><td>Far resistance. Skipped on all day types if <code>skipR4S4NormalDays</code> on.</td></tr>
-                <tr><td><span class="badge-example bg">BUY_ABOVE_R3</span></td><td>R3</td><td>Skipped on all day types if <code>skipR3S3NormalDays</code> on.</td></tr>
+                <tr><td><span class="badge-example bg">BUY_ABOVE_R4</span></td><td>R4</td><td>Far resistance. Skipped per day-type — <code>skipR4S4IvOvDays</code> / <code>skipR4S4EvDays</code>.</td></tr>
+                <tr><td><span class="badge-example bg">BUY_ABOVE_R3</span></td><td>R3</td><td>Skipped per day-type — <code>skipR3S3IvOvDays</code> / <code>skipR3S3EvDays</code>.</td></tr>
                 <tr><td><span class="badge-example bg">BUY_ABOVE_R2</span></td><td>R2</td><td>Major resistance breakout.</td></tr>
                 <tr><td><span class="badge-example bg">BUY_ABOVE_R1_PDH</span></td><td>max(R1, PDH)</td><td>Zonal pair — R1 and yesterday's high together.</td></tr>
                 <tr><td><span class="badge-example bg">BUY_ABOVE_CPR</span></td><td>max(TC, BC)</td><td>Breakout above central pivot range.</td></tr>
-                <tr><td><span class="badge-example bb">BUY_ABOVE_S1_PDL</span></td><td>max(S1, PDL)</td><td>Magnet — bounce off support, target CPR.</td></tr>
-                <tr><td><span class="badge-example bo">BUY_ABOVE_S2/S3/S4</span></td><td>S2 / S3 / S4</td><td>Mean-reversion bounce — EV gap-down days only.</td></tr>
+                <tr><td><span class="badge-example bb">BUY_ABOVE_S1_PDL</span></td><td>max(S1, PDL)</td><td>Magnet — bounce off support, target CPR. Always classifies as MPT (bypasses LTF gate).</td></tr>
                 <tr><td><span class="badge-example bg">BUY_ABOVE_DH</span></td><td>Day high (excl. current candle)</td><td>Lowest priority. Only fires after OR locks. Rejected if dayHigh sits inside CPR / R1+PDH / S1+PDL zone.</td></tr>
             </table>
 
             <h4>Sell priority (requires <b>red</b> candle: close &lt; open)</h4>
             <table>
                 <tr><th>Setup</th><th>Breakout level</th><th>Notes</th></tr>
-                <tr><td><span class="badge-example br">SELL_BELOW_S4</span></td><td>S4</td><td>Far support. Skipped on all day types if <code>skipR4S4NormalDays</code> on.</td></tr>
-                <tr><td><span class="badge-example br">SELL_BELOW_S3</span></td><td>S3</td><td>Skipped on all day types if <code>skipR3S3NormalDays</code> on.</td></tr>
+                <tr><td><span class="badge-example br">SELL_BELOW_S4</span></td><td>S4</td><td>Far support. Skipped per day-type — <code>skipR4S4IvOvDays</code> / <code>skipR4S4EvDays</code>.</td></tr>
+                <tr><td><span class="badge-example br">SELL_BELOW_S3</span></td><td>S3</td><td>Skipped per day-type — <code>skipR3S3IvOvDays</code> / <code>skipR3S3EvDays</code>.</td></tr>
                 <tr><td><span class="badge-example br">SELL_BELOW_S2</span></td><td>S2</td><td>Major support breakdown.</td></tr>
                 <tr><td><span class="badge-example br">SELL_BELOW_S1_PDL</span></td><td>min(S1, PDL)</td><td>Zonal pair — S1 and yesterday's low together.</td></tr>
                 <tr><td><span class="badge-example br">SELL_BELOW_CPR</span></td><td>min(TC, BC)</td><td>Breakdown below central pivot range.</td></tr>
-                <tr><td><span class="badge-example bb">SELL_BELOW_R1_PDH</span></td><td>min(R1, PDH)</td><td>Magnet — rejection at resistance, target CPR.</td></tr>
-                <tr><td><span class="badge-example bo">SELL_BELOW_R2/R3/R4</span></td><td>R2 / R3 / R4</td><td>Mean-reversion fade — EV gap-up days only.</td></tr>
+                <tr><td><span class="badge-example bb">SELL_BELOW_R1_PDH</span></td><td>min(R1, PDH)</td><td>Magnet — rejection at resistance, target CPR. Always classifies as MPT (bypasses LTF gate).</td></tr>
                 <tr><td><span class="badge-example br">SELL_BELOW_DL</span></td><td>Day low (excl. current candle)</td><td>Lowest priority. Only fires after OR locks. Rejected if dayLow sits inside CPR / R1+PDH / S1+PDL zone.</td></tr>
             </table>
+            <p><i>Mean-reversion setups (BUY_ABOVE_S2/S3/S4 and SELL_BELOW_R2/R3/R4) were removed — under the LTF-priority model they'd always fail the LTF gate and have been deleted from detection.</i></p>
 
             <h4>Two breakout patterns per level</h4>
             <p>The candle qualifies via either:</p>
@@ -344,14 +438,16 @@
         <div class="help-body">
             <p>Before walking setup priority, the scanner applies these fast checks. Any failure short-circuits the whole symbol for that candle.</p>
             <ul>
-                <li><b>Green/red candle</b> — buys need green, sells need red. Doji's skipped.</li>
+                <li><b>Green/red candle</b> — buys need green, sells need red. Dojis skipped.</li>
                 <li><b>ATP / VWAP check</b> (<code>enableAtpCheck</code>) — buy needs close above ATP; sell below.</li>
-                <li><b>5-min SMA trend</b> (<code>enableSmaTrendCheck</code>) — buy needs close above all of SMA 20, 50, 200; sell below all three.</li>
-                <li><b>5-min SMA alignment</b> (<code>enableSmaAlignmentCheck</code>, off by default) — stricter: buy needs 20 &gt; 50 &gt; 200; sell needs 20 &lt; 50 &lt; 200.</li>
+                <li><b>5-min SMA Price</b> — lenient (<code>enableSmaTrendCheckLenient</code>): close above/below SMA 20 &amp; 50. Strict (<code>enableSmaTrendCheck</code>): close above/below SMA 20, 50, 200 together. Strict implies lenient.</li>
+                <li><b>5-min SMA Alignment</b> — lenient (<code>enableSmaAlignmentCheckLenient</code>): 20 vs 50 ordering. Strict (<code>enableSmaAlignmentCheck</code>): 20 &gt; 50 &gt; 200 (buy) / 20 &lt; 50 &lt; 200 (sell). Strict implies lenient.</li>
                 <li><b>SMA vs ATP</b> (<code>enableSmaVsAtpCheck</code>) — buy needs 20 SMA &gt; ATP; sell &lt; ATP.</li>
-                <li><b>SMA pattern</b> — RTP requirement (<code>requireRtpPattern</code>) and ZIG ZAG skip (<code>skipTradesInZigZag</code>).</li>
                 <li><b>SMA level-count filter</b> (<code>enableSmaLevelCountFilter</code>) — skip if any CPR zone sits between 20 SMA and the broken level. Plus a proximity check (<code>smaLevelMinRangePct</code>). Optional <b>morning skip</b> bypass before <code>smaLevelFilterMorningSkipUntil</code> (default 10:15 IST).</li>
-                <li><b>NIFTY index alignment</b> — hard skip mode rejects opposed trades; soft mode passes them through and SignalProcessor downgrades to LPT.</li>
+                <li><b>Volume filter</b> (<code>enableVolumeFilter</code>) — candle volume must be ≥ <code>volumeMultiple</code> × N-candle average.</li>
+                <li><b>NIFTY index alignment</b> (<code>enableIndexAlignment</code>) — buys require NIFTY state == BULLISH; sells require BEARISH. SIDEWAYS / NEUTRAL / opposite-direction → reject. No soft mode.</li>
+                <li><b>LTF check</b> — non-magnet trades require breakout close above daily TC (buy) / below daily BC (sell). Otherwise rejected as <code>LTF_OPPOSED</code>.</li>
+                <li><b>Probability assignment</b> — HPT (LTF + HTF aligned), MPT (only one aligned, or magnet trade), null (rejected).</li>
             </ul>
         </div>
     </div>
@@ -371,14 +467,14 @@
             </ul>
 
             <h4>Why the probability rule is different</h4>
-            <p>Trend trades require <b>both weekly AND daily</b> aligned with direction for HPT. Magnets only need <b>weekly aligned</b>. Reason: a magnet is, by definition, a counter-trend bounce on the daily timeframe — buying support in a bullish week even though the day looks weak. Daily being opposite is expected, not a disqualifier.</p>
+            <p>A magnet is by definition a <b>counter-trend bounce on the daily timeframe</b> — buying support in a stock currently below daily TC, or selling resistance in a stock above daily BC. The LTF check (close vs daily CPR) would always fail by design. So magnets <b>bypass the LTF gate entirely</b> and are sized as MPT regardless of LTF/HTF state.</p>
 
             <table>
-                <tr><th>Weekly</th><th>Direction</th><th>Magnet probability</th></tr>
-                <tr><td>BULLISH or STRONG_BULLISH</td><td>Buy (BUY_ABOVE_S1_PDL)</td><td>HPT</td></tr>
-                <tr><td>BEARISH or STRONG_BEARISH</td><td>Sell (SELL_BELOW_R1_PDH)</td><td>HPT</td></tr>
-                <tr><td>NEUTRAL or opposed</td><td>Either</td><td>LPT</td></tr>
+                <tr><th>Setup</th><th>Classification</th></tr>
+                <tr><td>BUY_ABOVE_S1_PDL</td><td><b>MPT</b> — always (LTF gate bypassed; HTF state ignored)</td></tr>
+                <tr><td>SELL_BELOW_R1_PDH</td><td><b>MPT</b> — always</td></tr>
             </table>
+            <p>Magnets still pass through the rest of the filter chain (HTF Hurdle, HTF SMA, NIFTY align, OR rules, candle filters, etc.). Failure in any of those rejects the trade outright.</p>
 
             <h4>Targets</h4>
             <p>Magnet targets aim back to the value area:</p>
@@ -388,7 +484,7 @@
             </ul>
 
             <h4>Quantity</h4>
-            <p>Standard qty stack applies. If the trade is also "OV magnet" (first candle close was outside R1/PDH or S1/PDL), qty is halved on top of any LPT factor — magnets from extended opens are inherently weaker.</p>
+            <p>MPT qty factor (<code>mptQtyFactor</code>, default 0.75) applies. Other multipliers stack on top (session move limit, etc.) — see the QTY STACKING tab.</p>
         </div>
     </div>
     </div><!-- /tab-magnet -->
@@ -398,34 +494,18 @@
     <!-- ========================================================== -->
     <div id="tab-reversal" class="help-content">
     <div class="section-card help-section fade-in" style="margin-bottom:16px;">
-        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:#fb923c;"></div> Mean reversion — gap-day fades</div></div>
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:#fb923c;"></div> Mean reversion — removed</div></div>
         <div class="help-body">
-            <p>Six setups exist exclusively for <b>EV (gap) days</b> — they're rejected outright on IV/OV days:</p>
-            <ul>
-                <li><span class="badge-example bo">BUY_ABOVE_S2</span> / <span class="badge-example bo">BUY_ABOVE_S3</span> / <span class="badge-example bo">BUY_ABOVE_S4</span> — gap-down recoveries.</li>
-                <li><span class="badge-example bo">SELL_BELOW_R2</span> / <span class="badge-example bo">SELL_BELOW_R3</span> / <span class="badge-example bo">SELL_BELOW_R4</span> — gap-up fades.</li>
-            </ul>
+            <p><b>The mean-reversion setups (BUY_ABOVE_S2/S3/S4 and SELL_BELOW_R2/R3/R4) have been removed.</b> They were gap-fade fades that fired only on EV days, always classified as LPT.</p>
 
-            <h4>Pattern</h4>
-            <p>Open at or beyond the level, close in the opposite direction (back into value). e.g. for BUY_ABOVE_S2: open ≤ S2, close &gt; S2 = recovery candle from below.</p>
+            <h4>Why removed</h4>
+            <p>Under the LTF-priority probability model, trade direction must agree with the breakout candle's close vs daily CPR (the LTF gate). Mean-reversion buys (close &lt; daily BC, gap-down recovery) always fail this gate. Mean-reversion sells (close &gt; daily TC, gap-up fade) likewise. Rather than filter them out at runtime they were deleted from the breakout detection code in <code>BreakoutScanner.detectBuyBreakout</code> / <code>detectSellBreakout</code>.</p>
 
-            <h4>Probability</h4>
-            <p>Always <span class="badge-example by">LPT</span> by definition — these are counter-trend trades by design. Half qty applies via the LPT factor; an additional half on top via the mean-reversion halving.</p>
+            <h4>What replaces them?</h4>
+            <p>Counter-trend bounce-off-support / rejection-at-resistance plays still exist via the <b>magnet setups</b> (<code>BUY_ABOVE_S1_PDL</code>, <code>SELL_BELOW_R1_PDH</code>) — see the <b>MAGNET TRADES</b> tab. Those bypass the LTF gate by design and fire as MPT.</p>
 
-            <h4>Targets</h4>
-            <table>
-                <tr><th>Setup</th><th>Target</th></tr>
-                <tr><td>BUY_ABOVE_S4</td><td>S3</td></tr>
-                <tr><td>BUY_ABOVE_S3</td><td>S2</td></tr>
-                <tr><td>BUY_ABOVE_S2</td><td>min(S1, PDL)</td></tr>
-                <tr><td>SELL_BELOW_R4</td><td>R3</td></tr>
-                <tr><td>SELL_BELOW_R3</td><td>R2</td></tr>
-                <tr><td>SELL_BELOW_R2</td><td>max(R1, PDH)</td></tr>
-            </table>
-            <p>Mean-reversion targets are deliberately conservative — you're fading a gap, not riding a trend. The aim is a return toward value, not a full reversal.</p>
-
-            <h4>Note: EV-day reversal flag</h4>
-            <p>If the OR direction opposes the gap (e.g., gap-up but OR breaks bearish), even regular CPR breakouts get the "reversal" flag — they fire as LPT mean-reversion using the reversal target table above.</p>
+            <h4>Historical entries</h4>
+            <p>Pre-existing trades and Signal Trail rows from the old setups remain readable in the Trade Log; only new bars after the upgrade no longer produce these setups.</p>
         </div>
     </div>
     </div><!-- /tab-reversal -->
@@ -439,17 +519,15 @@
         <div class="help-body">
             <p>OR = the high &amp; low of the first <code>openingRangeMinutes</code> minutes of the session (default 15 min, so 9:15 to 9:30). At 9:30 the OR locks and becomes a fixed reference for the rest of the day.</p>
 
-            <h4>What OR does</h4>
+            <h4>What OR does (EV days only)</h4>
             <ul>
-                <li><b>EV days, before OR locks</b> → all signals rejected. EV bias needs the OR to settle first.</li>
-                <li><b>EV days, OR broken in trade direction</b> → trade allowed at normal probability.</li>
-                <li><b>EV days, OR broken against trade direction</b> → gap-fade reversal: trade fires as LPT mean-reversion using reversal targets.</li>
-                <li><b>EV days, close inside OR, direction opposes gap</b> → rejected (fighting the gap with no break).</li>
-                <li><b>EV days, close inside OR, direction aligns with gap</b> → HPT retained (gap = conviction).</li>
-                <li><b>IV/OV trend trade, close inside OR, daily aligned</b> → HPT retained.</li>
-                <li><b>IV/OV trend trade, close inside OR, daily NOT aligned</b> → HPT → LPT.</li>
-                <li><b>IV/OV magnet, close inside OR</b> → HPT retained (magnets ignore daily by design).</li>
+                <li><b>OR not yet locked</b> → no EV-specific gating yet (signals still go through the regular filter chain).</li>
+                <li><b>OR broken, trade direction matches the break</b> → allowed.</li>
+                <li><b>OR broken, trade direction opposes the break</b> → <b>rejected</b>.</li>
+                <li><b>Close inside OR, direction aligns with the gap</b> → allowed.</li>
+                <li><b>Close inside OR, direction opposes the gap</b> → <b>rejected</b> (no break, fighting the gap).</li>
             </ul>
+            <p>IV / OV days don't use OR for gating — the LTF check (close vs daily CPR) already enforces direction.</p>
 
             <h4>Target shift bypass when inside OR</h4>
             <p>Normally target gets shifted to the nearest weekly level / session H-L between entry and structural target. When the entry candle closes inside the OR range, this shift is skipped — the OR boundary itself is the immediate overhead/underfoot structure, so capping target at session H-L would be misleading.</p>
@@ -457,8 +535,8 @@
             <h4>OR timing summary</h4>
             <table>
                 <tr><th>Time</th><th>OR state</th><th>Trade behaviour</th></tr>
-                <tr><td>9:15–9:30 (default)</td><td>Forming — H/L building from ticks</td><td>EV days: skip. IV/OV: trade normally; OR rules don't bind yet.</td></tr>
-                <tr><td>9:30 onwards</td><td>Locked — H/L frozen</td><td>All OR rules above apply.</td></tr>
+                <tr><td>9:15–9:45 (default 30 min)</td><td>Forming — H/L building from ticks</td><td>OR rules don't bind until lock; EV-day signals can still fire if other gates pass.</td></tr>
+                <tr><td>9:45 onwards</td><td>Locked — H/L frozen</td><td>All EV-day OR rules above apply.</td></tr>
             </table>
         </div>
     </div>
@@ -501,42 +579,39 @@
     </div>
 
     <div class="section-card help-section fade-in" style="margin-bottom:16px;">
-        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-blue);"></div> NIFTY trend (ADD-driven, 7 tiers)</div></div>
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-blue);"></div> NIFTY trend (3-factor model)</div></div>
         <div class="help-body">
-            <p>The NIFTY trend state is driven by the <b>ADD score</b> — the count of NIFTY 50 stocks advancing (LTP &gt; prev close), scaled to a virtual 50-stock universe so the bands hold even when not all 50 have ticked yet:</p>
-            <pre style="background:var(--bg-card); padding:8px; border-radius:6px; font-family:var(--font-mono); font-size:0.85rem;">addScore = round(advancers × 50 / breadthCount)</pre>
-            <p>A narrow rally (a few mega-caps lifting NIFTY while most stocks are red) lands in a bearish tier instead of misleading bullish from price alone.</p>
-
-            <h4>State classification</h4>
+            <p>The NIFTY trend state combines <b>three sticky factors</b>, all refreshed only on NIFTY's 5-min candle close (not tick-by-tick — eliminates flicker):</p>
             <table>
-                <tr><th>State</th><th>ADD band</th><th>Meaning</th></tr>
-                <tr><td><span class="badge-example bg">EXTREME_BULLISH</span></td><td><b>45-50</b></td><td>≥90% of NIFTY 50 advancing — very strong rally</td></tr>
-                <tr><td><span class="badge-example bg">VERY_BULLISH</span></td><td><b>38-44</b></td><td>76-88% advancing</td></tr>
-                <tr><td><span class="badge-example bg">BULLISH</span></td><td><b>28-37</b></td><td>56-74% — clear majority</td></tr>
-                <tr><td><span class="badge-example by">NEUTRAL</span></td><td><b>22-27</b></td><td>44-54% — split market</td></tr>
-                <tr><td><span class="badge-example br">BEARISH</span></td><td><b>13-21</b></td><td>26-42% advancing</td></tr>
-                <tr><td><span class="badge-example br">VERY_BEARISH</span></td><td><b>6-12</b></td><td>12-24% advancing</td></tr>
-                <tr><td><span class="badge-example br">EXTREME_BEARISH</span></td><td><b>0-5</b></td><td>≤10% — broad-based selloff</td></tr>
+                <tr><th>Factor</th><th>Bullish</th><th>Bearish</th><th>Source</th></tr>
+                <tr><td><b>CPR</b></td><td>NIFTY LTP &gt; max(TC, BC)</td><td>NIFTY LTP &lt; min(TC, BC)</td><td>NIFTY 50 daily CPR (from yesterday's bhavcopy)</td></tr>
+                <tr><td><b>SMA Price</b></td><td>LTP &gt; 5-min SMA 20 AND &gt; SMA 50</td><td>LTP &lt; SMA 20 AND &lt; SMA 50</td><td>NIFTY index 5-min SMAs from <code>SmaService</code></td></tr>
+                <tr><td><b>SMA Align</b></td><td>SMA 20 &gt; SMA 50</td><td>SMA 20 &lt; SMA 50</td><td>Same</td></tr>
             </table>
 
-            <h4>What's still on the card</h4>
-            <p>The NIFTY card displays:</p>
+            <h4>State combination</h4>
+            <table>
+                <tr><th>State</th><th>Condition</th></tr>
+                <tr><td><span class="badge-example bg">BULLISH</span></td><td>All 3 factors bullish</td></tr>
+                <tr><td><span class="badge-example br">BEARISH</span></td><td>All 3 factors bearish</td></tr>
+                <tr><td><span class="badge-example by">SIDEWAYS</span></td><td>CPR is determined (above or below) but SMA factors don't all agree (mixed)</td></tr>
+                <tr><td><span class="badge-example by">NEUTRAL</span></td><td>NIFTY inside daily CPR, or LTP / CPR data missing</td></tr>
+            </table>
+
+            <h4>What's on the card</h4>
             <ul>
-                <li><b>LTP</b> + <b>change %</b> (live tick-by-tick) — informational, no longer drives state</li>
-                <li><b>BREADTH</b> — `▲ N / ▼ N (N% green)` — drives state</li>
-                <li><b>State chip</b> (EXTREME_BULLISH / VERY_BULLISH / BULLISH / NEUTRAL / BEARISH / VERY_BEARISH / EXTREME_BEARISH) — the ADD-derived 7-tier classification</li>
-                <li><b>Composite metrics breakdown</b> (Weekly CPR, Daily CPR, 5m & HTF SMA Price/Align/Pattern) — still computed per timeframe and shown for reference, but doesn't decide state</li>
+                <li><b>LTP</b> + <b>change %</b> — live tick-by-tick, informational only</li>
+                <li><b>CPR</b> chip — bullish / bearish / —</li>
+                <li><b>PRICE &gt; 20,50</b> chip — bullish / bearish / between</li>
+                <li><b>20 &gt; 50</b> chip — bullish / bearish</li>
+                <li><b>State chip</b> — BULLISH / BEARISH / SIDEWAYS / NEUTRAL</li>
+                <li><b>Breadth</b> (advancers / decliners) — display-only, no longer drives state</li>
             </ul>
 
             <h4>How it gates trades</h4>
-            <p>When <code>enableIndexAlignment</code> is on, every signal direction is checked against NIFTY's breadth-driven state:</p>
-            <ul>
-                <li><b>Hard skip</b> mode (<code>indexAlignmentHardSkip</code> on): trades opposed to the NIFTY trend are rejected.</li>
-                <li><b>Soft mode</b> (default): opposed trades are <b>downgraded HPT → LPT</b>. No qty factor — the LPT downgrade does the size reduction.</li>
-            </ul>
-            <p>"Opposed" means buy when NIFTY is in any bearish tier (BEARISH/VERY_BEARISH/EXTREME_BEARISH), or sell when NIFTY is in any bullish tier (BULLISH/VERY_BULLISH/EXTREME_BULLISH). NEUTRAL state never triggers an alignment block.</p>
+            <p>When <code>enableIndexAlignment</code> is on, every signal direction is checked against NIFTY's state. <b>Buys require NIFTY = BULLISH; sells require NIFTY = BEARISH.</b> Every other state (SIDEWAYS / NEUTRAL / opposite-direction) skips the trade outright. There is no soft mode and no qty reduction.</p>
 
-            <p><b>Why breadth instead of price:</b> a few heavyweight stocks (RELIANCE, HDFCBANK, INFOSYS) can move NIFTY by 0.5%+ even when 35 of 50 stocks are red. Trading aligned with NIFTY's price would have you buying into a market most stocks are selling. Breadth captures actual market participation — if 75% of stocks are up, the bullish setup is broad-based and stock buys are more likely to work.</p>
+            <p><b>Why this combination:</b> CPR sets the day's directional bias from yesterday's close; the 5-min SMA pair captures whether intraday price action confirms that bias. Demanding all three to align means we're trading the index alongside both its longer and shorter timeframes pointing the same way. Mixed signals → wait it out.</p>
         </div>
     </div>
 
@@ -547,34 +622,43 @@
     <!-- ========================================================== -->
     <div id="tab-probability" class="help-content">
     <div class="section-card help-section fade-in" style="margin-bottom:16px;">
-        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> HPT vs LPT</div></div>
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> HPT vs MPT (LTF-priority model)</div></div>
         <div class="help-body">
-            <p>Every signal is classified as either <span class="badge-example bg">HPT</span> (High Probability Trade — full size) or <span class="badge-example by">LPT</span> (Low Probability Trade — fractional size, default 50%). The classification is set initially by setup category and weekly/daily trend, then potentially downgraded by additional filters.</p>
+            <p>Every signal that fires is classified as either <span class="badge-example bg">HPT</span> (full size, qty × 1.0) or <span class="badge-example bb">MPT</span> (medium size, qty × <code>mptQtyFactor</code>, default 0.75). The classification is decided by two timeframes — the <b>LTF</b> and the <b>HTF</b>. Counter-LTF signals are <b>rejected outright</b>, not classified. <b>LPT no longer exists</b> for new trades.</p>
 
-            <h4>Initial classification (by setup type)</h4>
+            <h4>The two timeframes</h4>
+            <ul>
+                <li><b>LTF</b> = 5-min breakout candle's close vs <b>daily CPR</b>. Above daily TC = LTF bullish; below daily BC = LTF bearish; inside CPR = LTF undetermined.</li>
+                <li><b>HTF</b> = weekly state machine output (<code>BULLISH</code> / <code>STRONG_BULLISH</code> for the bull side; <code>BEARISH</code> / <code>STRONG_BEARISH</code> for the bear side).</li>
+            </ul>
+
+            <h4>Classification rule</h4>
             <table>
-                <tr><th>Trade type</th><th>HPT requires</th><th>Otherwise</th></tr>
-                <tr><td>Trend (CPR, R1+PDH, R2+, S1+PDL, S2+, DH/DL)</td><td><b>Both</b> weekly AND daily aligned with direction</td><td>LPT</td></tr>
-                <tr><td>Magnet (BUY_ABOVE_S1_PDL, SELL_BELOW_R1_PDH)</td><td><b>Weekly only</b> aligned (daily ignored by design)</td><td>LPT</td></tr>
-                <tr><td>Mean-reversion (BUY_ABOVE_S2/S3/S4, SELL_BELOW_R2/R3/R4)</td><td>(always)</td><td>Always LPT</td></tr>
+                <tr><th>Setup category</th><th>LTF aligned</th><th>HTF aligned</th><th>Tier</th></tr>
+                <tr><td>Standard breakout (CPR, R1+PDH, R2/R3/R4, S1+PDL, S2/S3/S4, DH/DL)</td><td>Yes</td><td>Yes</td><td><b>HPT</b></td></tr>
+                <tr><td>Standard breakout</td><td>Yes</td><td>No</td><td><b>MPT</b></td></tr>
+                <tr><td>Standard breakout</td><td>No / undetermined</td><td>—</td><td><b>Rejected</b> (<code>LTF_OPPOSED</code>)</td></tr>
+                <tr><td>Magnet (BUY_ABOVE_S1_PDL, SELL_BELOW_R1_PDH)</td><td>(bypassed)</td><td>(bypassed)</td><td><b>MPT</b> always</td></tr>
             </table>
+            <p>Magnets bypass both gates because they're counter-trend bounce/rejection setups by design — they buy support in stocks below daily TC and sell resistance in stocks above daily BC, so the LTF gate would always fail. They fire as MPT and rely on the rest of the filter chain for safety.</p>
 
-            <h4>HPT → LPT downgrade triggers</h4>
-            <p>Even if a trade starts as HPT, any of these can downgrade it (each runs independently; first applicable downgrade applies):</p>
+            <h4>Filter chain — every failure is a reject</h4>
+            <p>HPT and MPT trades both pass through the same downstream filter chain. Any failure rejects the trade outright (no qty downgrade, no LPT consolation):</p>
             <ol>
-                <li><b>EV reversal</b> — gap-fade direction (OR broke against the gap).</li>
-                <li><b>Inside OR on IV/OV trend trade with daily not aligned.</b></li>
-                <li><b>NIFTY opposed</b> (when index alignment soft mode is on).</li>
-                <li><b>HTF Hurdle</b> — prior 1h close didn't clear nearest weekly R1/PWH (buy) or S1/PWL (sell).</li>
-                <li><b>HTF SMA Price</b> — live LTP not above (buy) / below (sell) <b>both</b> 1h SMA 20 and 50.</li>
-                <li><b>HTF SMA Alignment</b> — 1h SMA 20 not above 50 (buy) / below 50 (sell).</li>
+                <li><b>OR rules</b> on EV days — direction must match the OR break, or align with the gap if no break yet.</li>
+                <li><b>NIFTY index alignment</b> (when on) — buys need NIFTY = BULLISH, sells need BEARISH.</li>
+                <li><b>HTF Hurdle</b> — prior 1h close above (buy) / below (sell) the nearest weekly hurdle (R1, PWH, weekly TC, Pivot, BC for buys; mirror for sells).</li>
+                <li><b>HTF SMA Price</b> — prior 1h close above / below 1h SMA 20 and 50 together.</li>
+                <li><b>HTF SMA Alignment</b> — 1h SMA 20 vs 50 ordering matches direction.</li>
+                <li><b>Extended-level skips</b> — daily R3/S3, R4/S4 and HTF weekly R3/S3, R4/S4 toggles (per day-type for daily).</li>
+                <li><b>Candle quality, R/R, min profit, session move limit, target shift, structural SL, target tolerance.</b></li>
             </ol>
 
-            <h4>LPT trades disabled</h4>
-            <p>If <code>enableLpt</code> is off, LPT trades are rejected. The rejection log lists the reason chain: <i>"Probability downgraded to LPT (NIFTY opposed; HTF SMA not aligned: ...) — LPT trades disabled"</i>. Native-LPT trades (magnets that never had HPT, mean-reversion always-LPT) are silently rejected to avoid log spam.</p>
+            <h4>Probability toggles</h4>
+            <p><code>enableHpt</code> and <code>enableMpt</code> independently disable each tier. With <code>enableMpt = false</code>, only HPT signals fire (cleaner setups, fewer trades). The legacy <code>enableLpt</code> setting is preserved in <code>RiskSettingsStore</code> for backward-compat config loading and historical Trade Log display only — no new trade is ever classified or downgraded to LPT.</p>
 
             <h4>Quantity impact</h4>
-            <p>HPT = full base qty. LPT = base qty × <code>lptQtyFactor</code> (default 0.50). Other multipliers stack on top (session move limit, mean-reversion halving, etc.) — see the QTY STACKING tab.</p>
+            <p>HPT = full base qty (× 1.0). MPT = base qty × <code>mptQtyFactor</code> (default 0.75 → 25% reduction). Other multipliers stack on top (session move limit) — see the QTY STACKING tab.</p>
         </div>
     </div>
     </div><!-- /tab-probability -->
@@ -586,24 +670,23 @@
     <div class="section-card help-section fade-in" style="margin-bottom:16px;">
         <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> Quantity stacking order</div></div>
         <div class="help-body">
-            <p>Quantity is computed in steps; each multiplier stacks on the previous. The order matters because each step rounds down to a minimum of 2 shares.</p>
+            <p>Quantity is computed in steps; each multiplier stacks on the previous. The order matters because each step rounds to even (min 2 shares).</p>
 
             <ol>
-                <li><b>Base qty</b> — risk-based (<code>fixedQuantity = -1</code>): <code>baseQty = riskPerTrade / |entry − SL|</code>, capped by capital × leverage. If <code>fixedQuantity</code> is set to a number, that number is used (rounded to even, min 2).</li>
-                <li><b>Session move limit</b> (<code>enableSessionMoveLimit</code>): if price already moved more than <code>sessionMoveLimit</code>% from day open <b>or</b> previous day close, qty is <b>halved</b>. Catches over-extended setups.</li>
-                <li><b>LPT factor</b>: if probability ended as LPT, qty × <code>lptQtyFactor</code> (default 0.50).</li>
-                <li><b>Mean-reversion halving</b>: if the trade is an EV reversal OR an OV magnet (first candle outside R1/PDH or S1/PDL), qty is halved again.</li>
-                <li><b>Minimum absolute profit gate</b> (<code>minAbsoluteProfit</code>): expected profit = qty × |target − entry|. If less than threshold, trade is rejected outright. Catches setups where R/R is fine but absolute rupees are too small.</li>
+                <li><b>Base qty</b> — risk-based when <code>fixedQuantity = -1</code>: <code>baseQty = riskPerTrade / |entry − SL|</code>, capped by capital × leverage. Otherwise the fixed number is used (rounded to even, min 2).</li>
+                <li><b>Probability factor</b> — HPT × 1.0; MPT × <code>mptQtyFactor</code> (default 0.75). Counter-LTF non-magnet trades never reach this step (rejected upstream).</li>
+                <li><b>Session move limit</b> (<code>enableSessionMoveLimit</code>) — if price has already moved more than <code>sessionMoveLimit</code>% from day open <b>or</b> previous day close, qty is <b>halved</b>. Catches over-extended setups.</li>
+                <li><b>Minimum absolute profit gate</b> (<code>minAbsoluteProfit</code>) — expected profit = qty × |target − entry|. If less than threshold, the trade is rejected outright. Catches setups where R/R is fine but absolute rupees are too small.</li>
             </ol>
 
             <h4>Worked example</h4>
             <p>Stock at 1000, ATR 5, structural SL at 992 (8 below entry). <code>riskPerTrade = 1000</code>, so base qty = 1000 / 8 = 125 → rounded to 124 (even).</p>
             <ul>
-                <li>If <b>NIFTY opposed</b> (HPT → LPT): 124 × 0.50 = 62.</li>
-                <li>If also <b>session moved 2.3%</b> (above 2% limit): 62 / 2 = 31 → rounded to 30.</li>
-                <li>Final: 30 shares. Expected profit (target +12 from entry): 30 × 12 = ₹360. If <code>minAbsoluteProfit = 500</code>, trade rejected.</li>
+                <li>If <b>weekly disagrees with LTF</b> (MPT): 124 × 0.75 = 93 → 92.</li>
+                <li>If also <b>session moved 2.3%</b> (above 2% limit): 92 / 2 = 46.</li>
+                <li>Final: 46 shares. Expected profit (target +12 from entry): 46 × 12 = ₹552. If <code>minAbsoluteProfit = 500</code>, allowed.</li>
             </ul>
-            <p>The stack is intentionally compounding — multiple weak signals shrink size aggressively. Clean signals trade at full size; mixed signals trade fractional.</p>
+            <p>The stack is intentionally compounding — partial alignment + extended price action shrinks size, fully aligned setups trade full HPT size.</p>
         </div>
     </div>
     </div><!-- /tab-qty -->
@@ -773,10 +856,11 @@
             <h4>Filter "kill switches"</h4>
             <p>Most filters can be turned off independently from the Settings page. Useful when testing or in unusual market conditions:</p>
             <ul>
-                <li>Disable <code>enableSmaTrendCheck</code> to allow trades against the SMA bundle.</li>
+                <li>Disable <code>enableSmaTrendCheck</code> / <code>enableSmaTrendCheckLenient</code> to allow trades against the SMA bundle. Same for the alignment pair.</li>
                 <li>Disable <code>enableHtfHurdleFilter</code>, <code>enableHtfSmaAlignment</code>, <code>enableHtfSmaAlignmentCheck</code> independently.</li>
-                <li>Disable <code>enableLpt</code> to trade HPT-only (cleaner setups, fewer trades).</li>
-                <li>Disable <code>enableHpt</code> if you want LPT-only experimentation (rare).</li>
+                <li>Disable <code>enableIndexAlignment</code> to ignore NIFTY's state entirely.</li>
+                <li>Disable <code>enableMpt</code> to trade HPT-only (only fully-aligned LTF + HTF setups fire — cleanest, fewest trades).</li>
+                <li>Disable <code>enableHpt</code> for the rare case of MPT-only experimentation.</li>
             </ul>
         </div>
     </div>
@@ -824,24 +908,24 @@
             <table>
                 <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
                 <tr><td>enableAtpCheck</td><td>true</td><td>Buy needs close &gt; ATP, sell &lt; ATP</td></tr>
-                <tr><td>enableSmaTrendCheck</td><td>true</td><td>Close above/below 5-min SMA 20+50+200 together</td></tr>
-                <tr><td>enableSmaAlignmentCheck</td><td>false</td><td>Stricter: 5-min SMA 20&gt;50&gt;200 (buy) / 20&lt;50&lt;200 (sell)</td></tr>
+                <tr><td>enableSmaTrendCheckLenient</td><td>false</td><td>5-min SMA Price (lenient): close above/below SMA 20 &amp; 50 (skip 200)</td></tr>
+                <tr><td>enableSmaTrendCheck</td><td>true</td><td>5-min SMA Price (strict): close above/below SMA 20, 50, 200 together</td></tr>
+                <tr><td>enableSmaAlignmentCheckLenient</td><td>false</td><td>5-min SMA Alignment (lenient): 20 &gt; 50 (buy) / 20 &lt; 50 (sell)</td></tr>
+                <tr><td>enableSmaAlignmentCheck</td><td>false</td><td>5-min SMA Alignment (strict): 20 &gt; 50 &gt; 200 (buy) / 20 &lt; 50 &lt; 200 (sell)</td></tr>
                 <tr><td>enableSmaVsAtpCheck</td><td>true</td><td>20 SMA vs ATP/VWAP</td></tr>
-                <tr><td>enableSmaLevelCountFilter</td><td>true</td><td>Skip if CPR zones sit between SMA and broken level</td></tr>
-                <tr><td>smaLevelMinRangePct</td><td>50</td><td>Proximity check: SMA must be within (100−N)% of range from broken level</td></tr>
+                <tr><td>enableSmaLevelCountFilter</td><td>true</td><td>Skip if CPR zones sit between 20 SMA and broken level</td></tr>
+                <tr><td>smaLevelMinRangePct</td><td>50</td><td>Proximity: SMA must be within (100−N)% of range from broken level</td></tr>
                 <tr><td>smaLevelFilterMorningSkip</td><td>false</td><td>Bypass SMA level filter before cutoff time</td></tr>
                 <tr><td>smaLevelFilterMorningSkipUntil</td><td>10:15</td><td>Cutoff time IST for morning skip</td></tr>
-                <tr><td>requireRtpPattern</td><td>false</td><td>Require R-RTP (buy) / F-RTP (sell) SMA pattern</td></tr>
-                <tr><td>skipTradesInZigZag</td><td>true</td><td>Reject if SMA pattern is BRAIDED</td></tr>
-                <tr><td>enableIndexAlignment</td><td>false</td><td>NIFTY composite filter master toggle</td></tr>
-                <tr><td>indexAlignmentHardSkip</td><td>false</td><td>Hard skip opposed (true) vs HPT→LPT downgrade (false)</td></tr>
-                <tr><td>indexBullishThreshold / Strong / Bearish / StrongBearish</td><td>6 / 12 / −6 / −12</td><td>Legacy composite score thresholds (no longer used for state — kept for the score breakdown shown on the NIFTY card; state is now breadth-driven by direct adv-vs-dec count, with strong tier at ≥70% one-sided)</td></tr>
-                <tr><td>enableHtfHurdleFilter</td><td>true</td><td>Prior 1h close must clear nearest weekly R1/PWH or S1/PWL</td></tr>
-                <tr><td>enableHtfSmaAlignment</td><td>true</td><td>HTF Price: LTP above/below 1h SMA 20+50</td></tr>
-                <tr><td>enableHtfSmaAlignmentCheck</td><td>false</td><td>HTF Alignment: 1h SMA 20&gt;50 (buy) / 20&lt;50 (sell)</td></tr>
-                <tr><td>skipR3S3NormalDays</td><td>true</td><td>Skip R3/S3 + DH above R3 / DL below S3 (all day types)</td></tr>
-                <tr><td>skipR4S4NormalDays</td><td>true</td><td>Skip R4/S4 + DH above R4 / DL below S4 (all day types)</td></tr>
-                <tr><td>enableHpt / enableLpt</td><td>true / true</td><td>Allow HPT / LPT trades</td></tr>
+                <tr><td>enableIndexAlignment</td><td>false</td><td>NIFTY trend filter — buy needs BULLISH, sell needs BEARISH; else skip</td></tr>
+                <tr><td>enableHtfHurdleFilter</td><td>true</td><td>Reject when prior 1h close hasn't cleared nearest weekly R1/PWH/TC/Pivot/BC (buy) or S1/PWL/TC/Pivot/BC (sell)</td></tr>
+                <tr><td>enableHtfSmaAlignment</td><td>true</td><td>HTF SMA Price — prior 1h close above/below 1h SMA 20 &amp; 50</td></tr>
+                <tr><td>enableHtfSmaAlignmentCheck</td><td>false</td><td>HTF SMA Alignment — 1h SMA 20 &gt; 50 (buy) / 20 &lt; 50 (sell)</td></tr>
+                <tr><td>skipR3S3IvOvDays / skipR3S3EvDays</td><td>true / true</td><td>Skip R3/S3 + DH above R3 / DL below S3, split by day type</td></tr>
+                <tr><td>skipR4S4IvOvDays / skipR4S4EvDays</td><td>true / true</td><td>Skip R4/S4 + DH above R4 / DL below S4, split by day type</td></tr>
+                <tr><td>skipHtfR3S3NormalDays / skipHtfR4S4NormalDays</td><td>true / true</td><td>Skip when entry close is past weekly R3/R4 (buys) or S3/S4 (sells)</td></tr>
+                <tr><td>enableVolumeFilter / volumeMultiple / volumeLookback</td><td>false / 2.0 / 20</td><td>Reject if candle volume &lt; multiple × N-candle average</td></tr>
+                <tr><td>enableHpt / enableMpt</td><td>true / true</td><td>Allow HPT / MPT trades. <code>enableLpt</code> retained as legacy; not honored for new trades.</td></tr>
             </table>
 
             <h4>Candle quality</h4>
@@ -877,8 +961,9 @@
                 <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
                 <tr><td>enableDayHighLowTargetShift</td><td>true</td><td>Shift target to today's session body H/L</td></tr>
                 <tr><td>dayHighLowShiftMinDistAtr</td><td>2.0</td><td>Skip shift if H/L too close (× ATR)</td></tr>
-                <tr><td>enableWeeklyLevelTargetShift</td><td>true</td><td>Shift to weekly R1-R4/S1-S4/PH/PL (TC/BC/Pivot excluded)</td></tr>
+                <tr><td>enableWeeklyLevelTargetShift</td><td>true</td><td>Shift to weekly R1-R4 / S1-S4 / PH / PL (TC/BC/Pivot excluded)</td></tr>
                 <tr><td>enableWeeklySmaTargetShift</td><td>true</td><td>Shift to 1h SMA 20/50/200</td></tr>
+                <tr><td>enableDailySma200TargetShift</td><td>true</td><td>Shift to daily 5-min SMA 200 between entry and target (most useful when running lenient SMA gates)</td></tr>
                 <tr><td>enableTargetTolerance</td><td>true</td><td>Discount target by ATR fraction so near-miss reversals fill</td></tr>
                 <tr><td>targetToleranceAtr</td><td>0.10</td><td>Discount as multiple of ATR</td></tr>
                 <tr><td>enableRiskRewardFilter</td><td>true</td><td>Reject if reward / risk &lt; minRiskRewardRatio</td></tr>
@@ -886,7 +971,6 @@
                 <tr><td>enableSplitTarget</td><td>true</td><td>Place T1 + T2 split orders</td></tr>
                 <tr><td>splitMinDistanceAtr</td><td>0</td><td>Min target distance to split (0 = always split)</td></tr>
                 <tr><td>t1DistancePct</td><td>50</td><td>T1 sits at this % of (T2 − entry) distance</td></tr>
-                <tr><td>t1QtyPct</td><td>50</td><td>T1 takes this % of total qty</td></tr>
             </table>
 
             <h4>Quantity stacking</h4>
@@ -894,13 +978,14 @@
                 <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
                 <tr><td>enableSessionMoveLimit</td><td>true</td><td>Halve qty if price moved too far from open or PDC</td></tr>
                 <tr><td>sessionMoveLimit</td><td>2.0</td><td>Threshold % move</td></tr>
-                <tr><td>lptQtyFactor</td><td>0.50</td><td>LPT qty multiplier</td></tr>
+                <tr><td>mptQtyFactor</td><td>0.75</td><td>MPT qty multiplier</td></tr>
+                <tr><td>lptQtyFactor</td><td>0.50</td><td>Legacy — no longer applied to new trades; kept for historical Trade Log display</td></tr>
             </table>
 
             <h4>Opening Range</h4>
             <table>
                 <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
-                <tr><td>openingRangeMinutes</td><td>15</td><td>OR window in minutes from open (0 = disabled)</td></tr>
+                <tr><td>openingRangeMinutes</td><td>30</td><td>OR window in minutes from open (0 = disabled)</td></tr>
                 <tr><td>enableOpeningRefresh</td><td>true</td><td>Re-fetch first candle from history at refresh time</td></tr>
                 <tr><td>openingRefreshTime</td><td>09:25</td><td>When to refresh first-candle data</td></tr>
             </table>
@@ -914,6 +999,7 @@
             </table>
 
             <h4>SMA pattern detection</h4>
+            <p>Pattern toggles (<code>requireRtpPattern</code>, <code>skipTradesInZigZag</code>) are still wired in <code>RiskSettingsStore</code> but hidden from the Settings UI. The detection thresholds below are kept for informational completeness.</p>
             <table>
                 <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
                 <tr><td>smaPatternLookback</td><td>10</td><td>Candles for pattern detection</td></tr>

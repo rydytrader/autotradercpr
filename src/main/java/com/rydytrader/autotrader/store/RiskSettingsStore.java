@@ -197,17 +197,10 @@ public class RiskSettingsStore {
         // Target Tolerance — discount structural target by ATR fraction so near-miss reversals fill
         volatile boolean enableTargetTolerance = true;
         volatile double targetToleranceAtr = 0.10; // discount structural target by this fraction of ATR
-        // NIFTY Index Alignment Filter
+        // NIFTY Index Alignment Filter — when on, buys require NIFTY state == BULLISH and
+        // sells require BEARISH; every other state (SIDEWAYS / NEUTRAL / opposite-direction)
+        // skips the trade outright. No soft mode / qty reduction.
         volatile boolean enableIndexAlignment = false;        // master toggle, opt-in
-        volatile boolean indexAlignmentHardSkip = false;      // true = hard skip opposed trades; false = keep probability, reduce qty
-        // Soft-mode qty factor: when NIFTY opposes the trade and hard-skip is off, trade
-        // fires at original probability (HPT) with qty multiplied by this factor.
-        // Rationale: stock's own alignment is intact (weekly+daily+SMA), only the index
-        // is opposed — take the trade with reduced risk instead of downgrading to LPT.
-        volatile double indexOpposedQtyFactor = 0.75;         // 0.75 = 25% reduction
-        // Composite score range is ±20 (weekly ±3 + daily ±3 + 5m SMA Price ±2 + 5m SMA Align ±2
-        // + 5m SMA Pattern ±3 + HTF SMA Price ±2 + HTF SMA Align ±2 + HTF SMA Pattern ±3).
-        // CPR and Pattern weighted heaviest. Thresholds scaled to ~30% / ~60% of range.
     }
 
     private final Cfg live = new Cfg();
@@ -340,8 +333,6 @@ public class RiskSettingsStore {
     public boolean isEnableTargetTolerance()   { return cfg().enableTargetTolerance; }
     public double getTargetToleranceAtr()      { return cfg().targetToleranceAtr; }
     public boolean isEnableIndexAlignment()    { return cfg().enableIndexAlignment; }
-    public boolean isIndexAlignmentHardSkip()  { return cfg().indexAlignmentHardSkip; }
-    public double getIndexOpposedQtyFactor()   { return cfg().indexOpposedQtyFactor; }
     public void setSignalSource(String v)      { cfg().signalSource = v; }
     public void setScannerTimeframe(int v)     { cfg().scannerTimeframe = v; }
     public void setHigherTimeframe(int v)      { cfg().higherTimeframe = v; }
@@ -380,8 +371,6 @@ public class RiskSettingsStore {
     public void setEnableTargetTolerance(boolean v) { cfg().enableTargetTolerance = v; }
     public void setTargetToleranceAtr(double v) { cfg().targetToleranceAtr = v; }
     public void setEnableIndexAlignment(boolean v)        { cfg().enableIndexAlignment = v; }
-    public void setIndexAlignmentHardSkip(boolean v)      { cfg().indexAlignmentHardSkip = v; }
-    public void setIndexOpposedQtyFactor(double v)        { cfg().indexOpposedQtyFactor = v; }
     public void setTradingStartTime(String v)  { cfg().tradingStartTime = v; }
     public void setTradingEndTime(String v)    { cfg().tradingEndTime = v; }
     public void setTotalCapital(double v)       { cfg().totalCapital = v; }
@@ -638,8 +627,6 @@ public class RiskSettingsStore {
             upsert("enableTargetTolerance", String.valueOf(c.enableTargetTolerance));
             upsert("targetToleranceAtr", String.valueOf(c.targetToleranceAtr));
             upsert("enableIndexAlignment", String.valueOf(c.enableIndexAlignment));
-            upsert("indexAlignmentHardSkip", String.valueOf(c.indexAlignmentHardSkip));
-            upsert("indexOpposedQtyFactor", String.valueOf(c.indexOpposedQtyFactor));
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to save {}: {}", mode, e.getMessage());
         }
@@ -810,8 +797,7 @@ public class RiskSettingsStore {
                     case "enableTargetTolerance" -> c.enableTargetTolerance = Boolean.parseBoolean(v);
                     case "targetToleranceAtr" -> c.targetToleranceAtr = Double.parseDouble(v);
                     case "enableIndexAlignment" -> c.enableIndexAlignment = Boolean.parseBoolean(v);
-                    case "indexAlignmentHardSkip" -> c.indexAlignmentHardSkip = Boolean.parseBoolean(v);
-                    case "indexOpposedQtyFactor" -> c.indexOpposedQtyFactor = Double.parseDouble(v);
+                    case "indexAlignmentHardSkip", "indexOpposedQtyFactor" -> { /* removed — soft mode deleted */ }
                 }
             }
             log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} trailingSl={} skipR3S3(IvOv/Ev)={}/{} skipR4S4(IvOv/Ev)={}/{}", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.enableTrailingSl, c.skipR3S3IvOvDays, c.skipR3S3EvDays, c.skipR4S4IvOvDays, c.skipR4S4EvDays);

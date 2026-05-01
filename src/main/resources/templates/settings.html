@@ -408,13 +408,13 @@
                         <input type="checkbox" id="skipTradesInZigZag" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Pattern</b>: skip trades when 5-min pattern is <b style="color:var(--accent-red);">ZIG ZAG</b> (choppy)</span>
                     </div>
-                    <div class="form-hint">Two dimensions gate an entry: <b>price position</b> vs SMAs and <b>pattern</b> of the 20/50 SMAs. Each has a <b>lenient</b> (skips 200 SMA) and <b>strict</b> (uses all three) variant — strict implies lenient, so when both are on the strict gate wins.
+                    <div class="form-hint">Two dimensions gate an entry: <b>price position</b> (close vs SMAs) and <b>alignment</b> (SMA-to-SMA ordering). Each has a <b>lenient</b> (uses 20 + 50 only) and a <b>strict</b> (uses 20 + 50 + 200) variant — strict implies lenient, so when both are on the strict gate wins.
                         <br><br>
                         <b>Price (lenient)</b>: close above/below 20 and 50. <b>Price (strict)</b>: close above/below 20, 50, 200 together.
                         <br>
                         <b>Alignment (lenient)</b>: 20 &gt; 50 (buy) / 20 &lt; 50 (sell). <b>Alignment (strict)</b>: 20 &gt; 50 &gt; 200 (buy) / 20 &lt; 50 &lt; 200 (sell).
                         <br><br>
-                        Combine with RRTP for tighter setups — e.g. strict price + strict alignment + R-RTP for buy = 5-min STRONG BULLISH only. RRTP alone allows pullback entries; price-only allows trades without pattern confirmation. Fail-open when any SMA is warming up. When both price gates are OFF, the 200 SMA becomes a target-shift candidate.</div>
+                        Failing any enabled gate rejects the trade (no qty downgrade under the LTF-priority model). Fail-open when any SMA is still warming up. When both price gates are OFF, the daily 200 SMA becomes a target-shift candidate (see Target Shift Sources).</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">VWAP Confirmation (ATP)</label>
@@ -464,7 +464,7 @@
                     <label class="form-label">HTF Hurdle and SMA Trend Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Hurdle</b>: HPT &rarr; LPT when prior 1h HTF candle hasn't cleared nearest weekly R1/PWH/TC/Pivot/BC (buy) or S1/PWL/TC/Pivot/BC (sell)</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Hurdle</b>: reject when prior 1h HTF candle hasn't cleared nearest weekly R1/PWH/TC/Pivot/BC (buy) or S1/PWL/TC/Pivot/BC (sell)</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="enableHtfSmaAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
@@ -474,20 +474,20 @@
                         <input type="checkbox" id="enableHtfSmaAlignmentCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Alignment</b>: 1h SMAs aligned &mdash; buy requires <b>20 &gt; 50</b>, sell requires <b>20 &lt; 50</b></span>
                     </div>
-                    <div class="form-hint">Two independent HTF checks &mdash; each can downgrade HPT &rarr; LPT on its own.
+                    <div class="form-hint">Three independent HTF checks &mdash; each rejects the trade outright on its own (no qty downgrade under the LTF-priority model).
                         <br><br>
                         <b>Hurdle.</b> For a 5-min breakout, find the nearest weekly hurdle in the trade direction:
                         <b>buys</b> &rarr; the highest of {R1, PWH, weekly TC, weekly Pivot, weekly BC} strictly below the 5-min close;
                         <b>sells</b> &rarr; the lowest of {S1, PWL, weekly TC, weekly Pivot, weekly BC} strictly above the close.
                         Then check the previous 1-hour HTF candle close:
-                        <b>cleared</b> &rarr; HPT retained; <b>didn't clear</b> &rarr; LPT; <b>no prior 1h close yet today</b> (first session hour) &rarr; LPT.
+                        <b>cleared</b> &rarr; trade fires; <b>didn't clear</b> &rarr; reject; <b>no prior 1h close yet today</b> (first session hour) &rarr; reject.
                         Weekly CPR (TC/Pivot/BC) is included so that breakouts that fired just past the weekly CPR boundary are gated by the prior 1h close too &mdash; e.g. a buy at R1 in a stock currently inside weekly CPR but BULLISH by the state machine. R2+/S2+ are excluded &mdash; far-out projections, not walls the HTF needs to clear first.
                         <br><br>
-                        <b>Price.</b> Compares the <b>previous completed 1h candle's close</b> against the 1h SMA 20 and SMA 50 (both computed from completed 1h closes only &mdash; no live blending). Sticky between 1h boundaries: the gate stays put until the next 1h close commits a new value. Confirmed structure, not in-progress hope. Tue&ndash;Fri uses the prior session's final 1h close as the first-hour fallback before today's first 1h close fires; Monday morning HPT signals downgrade to LPT until the day's first 1h close.
+                        <b>Price.</b> Compares the <b>previous completed 1h candle's close</b> against the 1h SMA 20 and SMA 50 (both computed from completed 1h closes only &mdash; no live blending). Sticky between 1h boundaries: the gate stays put until the next 1h close commits a new value. Confirmed structure, not in-progress hope. Tue&ndash;Fri uses the prior session's final 1h close as the first-hour fallback before today's first 1h close fires; Monday morning HPT/MPT signals are rejected until the day's first 1h close.
                         <br><br>
                         <b>Alignment.</b> SMA-to-SMA ordering: 1h SMA 20 above 50 for buys, below 50 for sells. Both SMAs from completed 1h closes only. Stricter than Price &mdash; the HTF trend structure itself has to be stacked in the trade's direction, independent of where the prior close sits.
                         <br><br>
-                        Applies to all breakouts. LPT trades unaffected. Fail-open when any SMA/level is warming up.</div>
+                        Applies to all HPT and MPT breakouts. Fail-open when any SMA/level is warming up.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">20 SMA Level Count Filter</label>
@@ -512,17 +512,14 @@
                     <label class="form-label">NIFTY Index Alignment Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableIndexAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable NIFTY breadth trend filter</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable NIFTY trend alignment filter</span>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px; padding-left: 28px;">
-                        <input type="checkbox" id="indexAlignmentHardSkip" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Hard skip mode — skip opposed trades entirely (default: soft mode = downgrade to LPT)</span>
-                    </div>
-                    <div class="form-hint">NIFTY trend state combines <b>two sticky signals</b>, both refreshed only at 5-min candle close:
-                        <br>&nbsp;&nbsp;&bull; <b>NIFTY CPR</b>: LTP above (bullish) or below (bearish) daily CPR
-                        <br>&nbsp;&nbsp;&bull; <b>NIFTY VWAP</b>: near-month futures LTP above/below intraday futures VWAP
-                        <br>States: <b>BULLISH</b> (both bullish) / <b>BEARISH</b> (both bearish) / <b>BULL REVERSAL</b> (below CPR, VWAP turning up &mdash; buy side) / <b>BEAR REVERSAL</b> (above CPR, VWAP rolling over &mdash; sell side) / <b>NEUTRAL</b> (signal missing or inside CPR).
-                        <br>When this filter is on: buys allowed on <b>BULLISH</b> or <b>BULL REVERSAL</b>; sells allowed on <b>BEARISH</b> or <b>BEAR REVERSAL</b>; <b>all trades skipped on NEUTRAL</b> regardless of hard/soft mode. Soft mode reduces qty on opposed trades; hard mode skips them entirely. Breadth (advancers/decliners) is shown on the card for context but no longer drives the state.</div>
+                    <div class="form-hint">NIFTY trend state combines <b>three sticky factors</b>, all refreshed only at NIFTY's 5-min candle close:
+                        <br>&nbsp;&nbsp;&bull; <b>CPR</b>: NIFTY LTP above (bullish) or below (bearish) daily CPR
+                        <br>&nbsp;&nbsp;&bull; <b>SMA Price</b>: NIFTY LTP above (bullish) or below (bearish) <i>both</i> 5-min SMA 20 and 50
+                        <br>&nbsp;&nbsp;&bull; <b>SMA Alignment</b>: 5-min SMA 20 &gt; 50 (bullish) or 20 &lt; 50 (bearish)
+                        <br>States: <b>BULLISH</b> (all 3 factors bullish) / <b>BEARISH</b> (all 3 bearish) / <b>SIDEWAYS</b> (mixed) / <b>NEUTRAL</b> (NIFTY inside CPR or no data).
+                        <br>When this filter is on: buys require <b>BULLISH</b>; sells require <b>BEARISH</b>; every other state (SIDEWAYS / NEUTRAL / opposite) skips the trade outright. Breadth (advancers/decliners) is shown on the card for context only.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Extended Level Signals (R3/S3, R4/S4)</label>
@@ -816,7 +813,10 @@
                         <option value="45">45 min</option>
                         <option value="60">60 min</option>
                     </select>
-                    <div class="form-hint">Track high/low of first N minutes. Shows OR badge on scanner. Filters gap trades (first candle beyond R2/S2) to only trade in OR direction. On EV days, any breakout that fires inside OR range is downgraded HPT&nbsp;&rarr;&nbsp;LPT — an OR break is required for HPT.</div>
+                    <div class="form-hint">Tracks high/low of the first N minutes (Opening Range). Used only on EV days (open beyond R2 / S2):
+                        <br>&bull; Once OR is locked and broken, the trade direction must match the OR break &mdash; opposing trades are <b>rejected</b>.
+                        <br>&bull; Inside OR (no break yet), trades that <b>oppose the gap direction</b> are rejected; gap-aligned trades are allowed.
+                        <br>IV / OV days don't use OR for gating &mdash; the LTF (5-min close vs daily CPR) gate already enforces direction. Set to <b>Off</b> to disable the EV gates entirely.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Include in Watchlist</label>
@@ -1123,7 +1123,6 @@
             document.getElementById('enableTargetTolerance').checked = d.enableTargetTolerance !== false;
             document.getElementById('targetToleranceAtr').value = (d.targetToleranceAtr != null ? d.targetToleranceAtr : 0.10);
             document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
-            document.getElementById('indexAlignmentHardSkip').checked = d.indexAlignmentHardSkip === true;
             document.getElementById('enableSmallCandleFilter').checked = d.enableSmallCandleFilter === true;
             document.getElementById('smallCandleBodyAtrThreshold').value =
                 (d.smallCandleBodyAtrThreshold != null ? d.smallCandleBodyAtrThreshold : (d.smallCandleAtrThreshold != null ? d.smallCandleAtrThreshold : 0.5));
@@ -1216,7 +1215,7 @@
                 srcEl.textContent = d.signalSource || 'INTERNAL';
                 var probs = [];
                 if (d.enableHpt) probs.push('HPT');
-                if (d.enableLpt) probs.push('LPT');
+                if (d.enableMpt) probs.push('MPT');
                 srcSubEl.textContent = probs.length > 0 ? probs.join(' + ') : 'No probabilities enabled';
             }
 
@@ -1285,7 +1284,6 @@
                 enableTargetTolerance: document.getElementById('enableTargetTolerance').checked,
                 targetToleranceAtr: parseFloat(document.getElementById('targetToleranceAtr').value) || 0,
                 enableIndexAlignment: document.getElementById('enableIndexAlignment').checked,
-                indexAlignmentHardSkip: document.getElementById('indexAlignmentHardSkip').checked,
                 enableSmallCandleFilter: document.getElementById('enableSmallCandleFilter').checked,
                 smallCandleBodyAtrThreshold: parseFloat(document.getElementById('smallCandleBodyAtrThreshold').value) || 0.5,
                 smallCandleMoveAtrThreshold: parseFloat(document.getElementById('smallCandleMoveAtrThreshold').value) || 0.15,

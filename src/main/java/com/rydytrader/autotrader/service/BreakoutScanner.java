@@ -460,20 +460,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 // SMA level-count filter: skip if any CPR zone sits between SMA and broken level
                 if (evaluateSmaFilter(fyersSymbol, buySetup, close, levels, atr) == 2) return;
                 // NIFTY index alignment filter — hard skip, qty reduction (soft), or no-op.
-                NiftyAlignStatus alignBuy = checkIndexAlignment(fyersSymbol, buySetup, true);
-                if (alignBuy == NiftyAlignStatus.SKIP) {
+                if (checkIndexAlignment(fyersSymbol, buySetup, true) == NiftyAlignStatus.SKIP) {
                     String niftyState = indexTrendService != null ? indexTrendService.getNiftyTrend().getState() : "?";
-                    String niftyDetail = "NEUTRAL".equals(niftyState)
-                        ? "NIFTY NEUTRAL — no clear bias [skip]"
-                        : "NIFTY " + niftyState.replace('_', ' ') + " opposes buy [hard-skip]";
-                    recordRejection(fyersSymbol, buySetup, close, "NIFTY_OPPOSED", niftyDetail);
+                    recordRejection(fyersSymbol, buySetup, close, "NIFTY_OPPOSED",
+                        "NIFTY " + niftyState + " — buy requires NIFTY BULLISH");
                     return;
                 }
-                boolean niftyOpposedBuy = alignBuy == NiftyAlignStatus.OPPOSED_SOFT;
-                String buyNote = niftyOpposedBuy
-                    ? "NIFTY opposes buy — probability downgraded to LPT"
-                    : null;
-                fireSignal(fyersSymbol, buySetup, open, high, low, close, candle.volume, atr, levels, prob, buyNote, niftyOpposedBuy);
+                fireSignal(fyersSymbol, buySetup, open, high, low, close, candle.volume, atr, levels, prob, null);
                 return;
             } else {
                 if (!broken.isEmpty()) {
@@ -523,20 +516,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 // SMA level-count filter: skip if any CPR zone sits between SMA and broken level
                 if (evaluateSmaFilter(fyersSymbol, sellSetup, close, levels, atr) == 2) return;
                 // NIFTY index alignment filter — hard skip, qty reduction (soft), or no-op.
-                NiftyAlignStatus alignSell = checkIndexAlignment(fyersSymbol, sellSetup, false);
-                if (alignSell == NiftyAlignStatus.SKIP) {
+                if (checkIndexAlignment(fyersSymbol, sellSetup, false) == NiftyAlignStatus.SKIP) {
                     String niftyState = indexTrendService != null ? indexTrendService.getNiftyTrend().getState() : "?";
-                    String niftyDetail = "NEUTRAL".equals(niftyState)
-                        ? "NIFTY NEUTRAL — no clear bias [skip]"
-                        : "NIFTY " + niftyState.replace('_', ' ') + " opposes sell [hard-skip]";
-                    recordRejection(fyersSymbol, sellSetup, close, "NIFTY_OPPOSED", niftyDetail);
+                    recordRejection(fyersSymbol, sellSetup, close, "NIFTY_OPPOSED",
+                        "NIFTY " + niftyState + " — sell requires NIFTY BEARISH");
                     return;
                 }
-                boolean niftyOpposedSell = alignSell == NiftyAlignStatus.OPPOSED_SOFT;
-                String sellNote = niftyOpposedSell
-                    ? "NIFTY opposes sell — probability downgraded to LPT"
-                    : null;
-                fireSignal(fyersSymbol, sellSetup, open, high, low, close, candle.volume, atr, levels, prob, sellNote, niftyOpposedSell);
+                fireSignal(fyersSymbol, sellSetup, open, high, low, close, candle.volume, atr, levels, prob, null);
             } else {
                 // No sell breakout detected — log if close is below a key level for debugging
                 if (!broken.isEmpty()) {
@@ -772,12 +758,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     private void fireSignal(String fyersSymbol, String setup, double open, double high,
                             double low, double close, long candleVolume, double atr, CprLevels levels,
                             String prob, String scannerNote) {
-        fireSignal(fyersSymbol, setup, open, high, low, close, candleVolume, atr, levels, prob, scannerNote, false);
-    }
-
-    private void fireSignal(String fyersSymbol, String setup, double open, double high,
-                            double low, double close, long candleVolume, double atr, CprLevels levels,
-                            String prob, String scannerNote, boolean niftyOpposed) {
         // Use the closing candle's exchange-derived close time, not system clock.
         // Server clock typically runs ~50-500ms behind exchange wall time due to network
         // latency, so system-time logs were showing 09:24:59 for a candle that actually
@@ -806,7 +786,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         payload.put("dayOpen", candleAggregator.getDayOpen(fyersSymbol));
         payload.put("firstCandleClose", candleAggregator.getFirstCandleClose(fyersSymbol));
         payload.put("probability", prob);
-        payload.put("niftyOpposed", niftyOpposed);
         payload.put("r1", levels.getR1());
         payload.put("r2", levels.getR2());
         payload.put("r3", levels.getR3());
@@ -897,13 +876,14 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      *
      * Returns the (possibly modified) probability string, or null to signal "skip this trade".
      */
-    /**
-     * Result of the NIFTY alignment check. {@code SKIP} = hard-skip mode rejected the trade;
-     * {@code OPPOSED_SOFT} = NIFTY opposes but soft mode — keep probability, SignalProcessor
-     * will apply {@code indexOpposedQtyFactor} qty reduction; {@code OK} = aligned or check disabled.
-     */
-    private enum NiftyAlignStatus { OK, OPPOSED_SOFT, SKIP }
+    /** Result of the NIFTY alignment check. SKIP = trade rejected; OK = aligned or check off. */
+    private enum NiftyAlignStatus { OK, SKIP }
 
+    /**
+     * NIFTY index alignment filter. Buys require NIFTY state == BULLISH; sells require BEARISH.
+     * Every other state (SIDEWAYS, NEUTRAL, opposite-direction BULLISH/BEARISH) → skip the trade.
+     * Returns OK if the filter is disabled or the index data isn't available yet (fail-open).
+     */
     private NiftyAlignStatus checkIndexAlignment(String fyersSymbol, String setup, boolean isBuy) {
         if (!riskSettings.isEnableIndexAlignment()) return NiftyAlignStatus.OK;
         if (indexTrendService == null) return NiftyAlignStatus.OK;
@@ -911,41 +891,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             com.rydytrader.autotrader.dto.IndexTrend nifty = indexTrendService.getNiftyTrend();
             if (!nifty.isDataAvailable()) return NiftyAlignStatus.OK;
             String state = nifty.getState();
-
-            // 5-state alignment rules (filter ON):
-            //   BULLISH       → allow buy, oppose sell
-            //   BULL_REVERSAL → allow buy, oppose sell  (markets reversing toward bull —
-            //                   below CPR but VWAP turning up)
-            //   BEARISH       → allow sell, oppose buy
-            //   BEAR_REVERSAL → allow sell, oppose buy  (markets reversing toward bear —
-            //                   above CPR but VWAP rolling over)
-            //   NEUTRAL       → skip both directions (no clear bias — wait for the index
-            //                   to pick a side at the next 5-min boundary)
-
-            if ("NEUTRAL".equals(state)) {
-                eventService.log("[SCANNER] " + fyersSymbol + " " + setup
-                    + " SKIPPED — NIFTY NEUTRAL (CPR and VWAP signals incomplete or inside CPR)");
-                return NiftyAlignStatus.SKIP;
-            }
-
-            boolean buySideState  = "BULLISH".equals(state) || "BULL_REVERSAL".equals(state);
-            boolean sellSideState = "BEARISH".equals(state) || "BEAR_REVERSAL".equals(state);
-            boolean opposed = (isBuy ? sellSideState : buySideState);
-            if (!opposed) return NiftyAlignStatus.OK;
-
-            if (riskSettings.isIndexAlignmentHardSkip()) {
-                eventService.log("[SCANNER] " + fyersSymbol + " " + setup
-                    + " SKIPPED — NIFTY " + state.replace('_', ' ') + " opposes "
-                    + (isBuy ? "buy" : "sell") + " [hard skip mode]");
-                return NiftyAlignStatus.SKIP;
-            }
-            // Soft mode: trade still fires at its scanner probability; SignalProcessor
-            // applies indexOpposedQtyFactor to reduce size.
-            double factor = riskSettings.getIndexOpposedQtyFactor();
+            boolean aligned = isBuy ? "BULLISH".equals(state) : "BEARISH".equals(state);
+            if (aligned) return NiftyAlignStatus.OK;
             eventService.log("[SCANNER] " + fyersSymbol + " " + setup
-                + " — NIFTY " + state.replace('_', ' ') + " opposes "
-                + (isBuy ? "buy" : "sell") + " — qty reduced to " + String.format("%.0f%%", factor * 100));
-            return NiftyAlignStatus.OPPOSED_SOFT;
+                + " SKIPPED — NIFTY " + state + ", need "
+                + (isBuy ? "BULLISH for buy" : "BEARISH for sell"));
+            return NiftyAlignStatus.SKIP;
         } catch (Exception e) {
             log.warn("[BreakoutScanner] Index alignment check failed for {}: {}", fyersSymbol, e.getMessage());
         }

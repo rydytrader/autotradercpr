@@ -396,13 +396,6 @@ public class SignalProcessor {
             }
         }
 
-        // ── 4e2a. NIFTY alignment: reject HPT/MPT trades when NIFTY opposes ──
-        // Under the LTF-priority model, NIFTY opposition is a hard reject (not LPT downgrade).
-        if (Boolean.TRUE.equals(alert.get("niftyOpposed"))
-                && ("HPT".equals(probability) || "MPT".equals(probability))) {
-            return ProcessedSignal.rejected(setup, symbol, "NIFTY opposed — trade rejected (LTF-priority model)");
-        }
-
         // ── 4e2b. HTF Hurdle: nearest-weekly-level HPT→LPT downgrade ──
         // When a 5-min breakout closes above (for buys) the nearest weekly hurdle, the previous
         // 1h HTF candle must have closed above that level too — otherwise the HTF hasn't
