@@ -104,10 +104,10 @@
         <button class="help-tab" onclick="switchHelpTab('open-class', this)">OPEN CLASSIFICATION</button>
         <button class="help-tab" onclick="switchHelpTab('trend', this)">TREND FOLLOWING</button>
         <button class="help-tab" onclick="switchHelpTab('magnet', this)">MAGNET TRADES</button>
-        <button class="help-tab" onclick="switchHelpTab('reversal', this)">MEAN REVERSION</button>
         <button class="help-tab" onclick="switchHelpTab('or', this)">OPENING RANGE</button>
         <button class="help-tab" onclick="switchHelpTab('trends', this)">TREND &amp; ALIGNMENT</button>
         <button class="help-tab" onclick="switchHelpTab('probability', this)">PROBABILITY</button>
+        <button class="help-tab" onclick="switchHelpTab('signal-trail', this)">SIGNAL TRAIL</button>
         <button class="help-tab" onclick="switchHelpTab('qty', this)">QTY STACKING</button>
         <button class="help-tab" onclick="switchHelpTab('split', this)">SPLIT TARGETS</button>
         <button class="help-tab" onclick="switchHelpTab('sl', this)">STOP LOSS</button>
@@ -190,78 +190,159 @@
     <div class="section-card help-section fade-in" style="margin-bottom:16px;">
         <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> System diagram</div></div>
         <div class="help-body">
-            <p>End-to-end view of how a tick becomes a trade. Solid arrows are the live data path; dashed arrows are fallbacks / reads.</p>
-<pre style="background:var(--bg-card); padding:14px; border-radius:6px; font-family:var(--font-mono); font-size:0.72rem; line-height:1.4; overflow-x:auto; color:var(--text-primary); border:1px solid var(--border);">
-                ┌────────────────────────────┐                ┌───────────────────────────┐
-                │   Fyers Market Data WS     │                │   Fyers Order Update WS   │
-                │   (binary HSM v1-5/prod)   │                │   (JSON trade/v3)         │
-                └─────────────┬──────────────┘                └─────────────┬─────────────┘
-                              │ ticks (LTP, ATP, vol)                       │ entry/SL/target events
-                              ▼                                             ▼
-                ┌────────────────────────────┐                ┌───────────────────────────┐
-                │     MarketDataService      │                │     OrderEventService     │
-                │  (subscribe, parse, tick   │                │  (route by orderId, fire  │
-                │   distribution, SSE push)  │                │   on FILLED/CANCELLED)    │
-                └─────────────┬──────────────┘                └─────────────┬─────────────┘
-                              │ ticks                                       │ ── fills/cancels
-                              ▼                                             │
-                ┌────────────────────────────┐                              │
-                │      CandleAggregator      │                              │
-                │  (5-min &amp; 60-min bars,    │                              │
-                │   day OHL, ATP, ORH/L)     │                              │
-                └─────────────┬──────────────┘                              │
-                              │ on candle close                             │
-                              ▼                                             │
-        ┌──────────┬──────────────────────┬──────────┬──────────┐           │
-        │   ATR    │   SmaService (5-min) │  HtfSma  │ Weekly   │           │
-        │ Service  │   (20 / 50 / 200,    │ Service  │ CprSvc   │           │
-        │          │    pattern detect)   │ (60-min) │ (HTF)    │           │
-        └────┬─────┴───────────┬──────────┴────┬─────┴────┬─────┘           │
-             └─────────────────┼───────────────┼──────────┘                 │
-                               ▼               ▼                            │
-                      ┌─────────────────────────────────┐                   │
-                      │       BreakoutScanner           │                   │
-                      │  pre-filters: green/red, ATP,   │                   │
-                      │  5-min SMA Price/Align, vol     │                   │
-                      │  setup priority: R4..S4, DH/DL  │                   │
-                      │  LTF check (close vs daily CPR) │                   │
-                      │  HTF check (weekly state)       │                   │
-                      │  NIFTY align, level-count, etc. │                   │
-                      └────────────────┬────────────────┘                   │
-                                       │ payload {setup, prob:HPT|MPT}      │
-                                       ▼                                    │
-                      ┌─────────────────────────────────┐                   │
-                      │       SignalProcessor           │                   │
-                      │  HTF Hurdle / HTF SMA / OR      │                   │
-                      │  small/large candle, min profit │                   │
-                      │  target shift, R/R filter       │                   │
-                      │  QuantityService (HPT × 1.0,    │                   │
-                      │                   MPT × 0.75)   │                   │
-                      └────────────────┬────────────────┘                   │
-                                       │ ProcessedSignal                    │
-                                       ▼                                    │
-                              ┌────────────────┐                            │
-                              │  OrderService  │ ─── places entry order ──▶ Fyers REST
-                              │   (Fyers REST) │ ─── on fill: SL+T1+T2  ──▶ Fyers REST
-                              └────────┬───────┘                            │
-                                       │ orderId tracked                    │
-                                       ▼                                    │
-                              ┌────────────────┐ ◀ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┘
-                              │ PositionManager│         WS event matched
-                              │ + StateStore   │         to tracked orderId
-                              │ (in-mem + JSON)│
-                              └────────┬───────┘
-                                       │ MarketDataService ticks ─▶ trailing SL modify
-                                       ▼
-                              ┌────────────────┐         ┌──────────────────┐
-                              │ EventService   │ ──────▶ │ TelegramService  │
-                              │ (logs / SSE)   │         │ (alerts)         │
-                              └────────────────┘         └──────────────────┘
+            <p>End-to-end view of how a tick becomes a trade. Solid arrows are the live data path; dashed arrows are async events from the order WS / sidecar reads.</p>
+            <div style="background:var(--bg-card); padding:18px; border-radius:6px; border:1px solid var(--border); overflow-x:auto;">
+            <svg viewBox="0 0 1100 1340" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMin meet" style="width:100%; max-width:1100px; display:block; margin:0 auto; font-family:var(--font-mono); color:var(--text-primary);">
+                <defs>
+                    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                        <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+                    </marker>
+                    <marker id="arrowDim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                        <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.55"/>
+                    </marker>
+                </defs>
+                <style>
+                    .box   { stroke-width:1.5; rx:6; ry:6; }
+                    .ws    { stroke:#63b3ed; fill:#63b3ed; fill-opacity:0.10; }
+                    .svc   { stroke:#34d399; fill:#34d399; fill-opacity:0.10; }
+                    .core  { stroke:#fbbf24; fill:#fbbf24; fill-opacity:0.10; }
+                    .order { stroke:#a78bfa; fill:#a78bfa; fill-opacity:0.10; }
+                    .pos   { stroke:#fb923c; fill:#fb923c; fill-opacity:0.10; }
+                    .out   { stroke:#f87171; fill:#f87171; fill-opacity:0.10; }
+                    .sc    { stroke:currentColor; fill:currentColor; fill-opacity:0.04; opacity:0.85; stroke-dasharray:4,3; }
+                    .arr   { stroke:currentColor; stroke-width:1.5; fill:none; opacity:0.75; }
+                    .arrDim{ stroke:currentColor; stroke-width:1.4; fill:none; opacity:0.55; stroke-dasharray:6,4; }
+                    .ttl   { fill:currentColor; font-weight:700; font-size:13px; }
+                    .sub   { fill:currentColor; font-size:11px; opacity:0.75; }
+                    .lbl   { fill:currentColor; font-size:10.5px; opacity:0.7; }
+                </style>
 
-  Sidecar:  PollingService (REST every 10s)  ◀ activates if any WS drops; status pill = "POLLING"
-            BhavcopyService (NSE bhavcopy)    ◀ daily 09:00 — builds watchlist, computes CPR, history
-            IndexTrendService                 ◀ NIFTY 5-min close: combines CPR + SMA Price + SMA align
-</pre>
+                <!-- Row 1: WebSockets -->
+                <rect class="box ws" x="80"  y="20" width="320" height="68"/>
+                <text class="ttl" x="240" y="48" text-anchor="middle">Fyers Market Data WS</text>
+                <text class="sub" x="240" y="68" text-anchor="middle">binary HSM &middot; wss://socket.fyers.in/hsm/v1-5/prod</text>
+
+                <rect class="box ws" x="700" y="20" width="320" height="68"/>
+                <text class="ttl" x="860" y="48" text-anchor="middle">Fyers Order Update WS</text>
+                <text class="sub" x="860" y="68" text-anchor="middle">JSON &middot; wss://socket.fyers.in/trade/v3</text>
+
+                <path class="arr"   d="M240,88  L240,148" marker-end="url(#arrow)"/>
+                <text class="lbl"   x="246" y="120">ticks (LTP, ATP, vol)</text>
+
+                <path class="arr"   d="M860,88  L860,148" marker-end="url(#arrow)"/>
+                <text class="lbl"   x="866" y="120">order events</text>
+
+                <!-- Row 2: WS handler services -->
+                <rect class="box svc" x="80"  y="148" width="320" height="68"/>
+                <text class="ttl" x="240" y="176" text-anchor="middle">MarketDataService</text>
+                <text class="sub" x="240" y="196" text-anchor="middle">subscribe, parse, distribute ticks, SSE push</text>
+
+                <rect class="box svc" x="700" y="148" width="320" height="68"/>
+                <text class="ttl" x="860" y="176" text-anchor="middle">OrderEventService</text>
+                <text class="sub" x="860" y="196" text-anchor="middle">route by orderId &middot; FILLED / CANCELLED</text>
+
+                <path class="arr"  d="M240,216 L240,272" marker-end="url(#arrow)"/>
+                <text class="lbl"  x="246" y="248">ticks</text>
+
+                <!-- Long dashed arrow from OrderEventService down to PositionManager -->
+                <path class="arrDim" d="M860,216 L860,1010 L660,1010" marker-end="url(#arrowDim)"/>
+                <text class="lbl"  x="868" y="600">fills / cancels</text>
+                <text class="lbl"  x="868" y="616">match orderId</text>
+
+                <!-- Row 3: CandleAggregator -->
+                <rect class="box core" x="80"  y="272" width="320" height="68"/>
+                <text class="ttl" x="240" y="300" text-anchor="middle">CandleAggregator</text>
+                <text class="sub" x="240" y="320" text-anchor="middle">5-min &amp; 60-min bars &middot; OHL &middot; ATP &middot; ORH/L</text>
+
+                <path class="arr"  d="M240,340 L240,396" marker-end="url(#arrow)"/>
+                <text class="lbl"  x="246" y="372">on candle close</text>
+
+                <!-- Row 4: 4 data services -->
+                <rect class="box svc" x="20"  y="396" width="160" height="68"/>
+                <text class="ttl" x="100" y="422" text-anchor="middle">AtrService</text>
+                <text class="sub" x="100" y="442" text-anchor="middle">ATR(14)</text>
+
+                <rect class="box svc" x="200" y="396" width="200" height="68"/>
+                <text class="ttl" x="300" y="422" text-anchor="middle">SmaService (5m)</text>
+                <text class="sub" x="300" y="442" text-anchor="middle">20 / 50 / 200 + pattern</text>
+
+                <rect class="box svc" x="420" y="396" width="180" height="68"/>
+                <text class="ttl" x="510" y="422" text-anchor="middle">HtfSmaService</text>
+                <text class="sub" x="510" y="442" text-anchor="middle">60-min SMA 20/50</text>
+
+                <rect class="box svc" x="620" y="396" width="200" height="68"/>
+                <text class="ttl" x="720" y="422" text-anchor="middle">WeeklyCprService</text>
+                <text class="sub" x="720" y="442" text-anchor="middle">HTF state machine</text>
+
+                <!-- Stubs from each service to bus -->
+                <line class="arr" x1="100" y1="464" x2="100" y2="494"/>
+                <line class="arr" x1="300" y1="464" x2="300" y2="494"/>
+                <line class="arr" x1="510" y1="464" x2="510" y2="494"/>
+                <line class="arr" x1="720" y1="464" x2="720" y2="494"/>
+                <!-- Bus -->
+                <line class="arr" x1="100" y1="494" x2="720" y2="494"/>
+                <!-- Trunk down to BreakoutScanner -->
+                <path class="arr" d="M410,494 L410,540" marker-end="url(#arrow)"/>
+
+                <!-- Row 5: BreakoutScanner -->
+                <rect class="box core" x="180" y="540" width="500" height="120"/>
+                <text class="ttl" x="430" y="568" text-anchor="middle">BreakoutScanner</text>
+                <text class="sub" x="430" y="589" text-anchor="middle">pre-filters: green/red, ATP, 5-min SMA Price/Align, volume</text>
+                <text class="sub" x="430" y="606" text-anchor="middle">setup priority: R4 &rarr; ... &rarr; S1+PDL / R1+PDH magnets &rarr; DH/DL</text>
+                <text class="sub" x="430" y="623" text-anchor="middle">LTF (close vs daily CPR) + HTF (weekly state) &rarr; HPT / MPT / null</text>
+                <text class="sub" x="430" y="640" text-anchor="middle">NIFTY align (skip if not BULLISH/BEARISH), 20-SMA level-count</text>
+
+                <path class="arr" d="M430,660 L430,716" marker-end="url(#arrow)"/>
+                <text class="lbl" x="436" y="692">payload {setup, probability: HPT | MPT}</text>
+
+                <!-- Row 6: SignalProcessor -->
+                <rect class="box core" x="180" y="716" width="500" height="120"/>
+                <text class="ttl" x="430" y="744" text-anchor="middle">SignalProcessor</text>
+                <text class="sub" x="430" y="765" text-anchor="middle">HTF Hurdle, HTF SMA Price/Alignment, OR rules (EV days)</text>
+                <text class="sub" x="430" y="782" text-anchor="middle">extended-level skips (IV/OV vs EV), small/large candle</text>
+                <text class="sub" x="430" y="799" text-anchor="middle">target shift, target tolerance, R/R filter, min profit</text>
+                <text class="sub" x="430" y="816" text-anchor="middle">QuantityService: HPT &times; 1.0, MPT &times; 0.75 (any failure &rarr; reject)</text>
+
+                <path class="arr" d="M430,836 L430,892" marker-end="url(#arrow)"/>
+                <text class="lbl" x="436" y="868">ProcessedSignal</text>
+
+                <!-- Row 7: OrderService -->
+                <rect class="box order" x="240" y="892" width="380" height="80"/>
+                <text class="ttl" x="430" y="920" text-anchor="middle">OrderService</text>
+                <text class="sub" x="430" y="940" text-anchor="middle">place entry &middot; on fill: structural SL + T1 + T2</text>
+                <text class="sub" x="430" y="958" text-anchor="middle">Fyers REST &middot; orderId tracked</text>
+
+                <path class="arr" d="M430,972 L430,1010" marker-end="url(#arrow)"/>
+
+                <!-- Row 8: PositionManager -->
+                <rect class="box pos" x="240" y="1010" width="380" height="80"/>
+                <text class="ttl" x="430" y="1038" text-anchor="middle">PositionManager + StateStore</text>
+                <text class="sub" x="430" y="1058" text-anchor="middle">in-memory LONG / SHORT / NONE per symbol</text>
+                <text class="sub" x="430" y="1076" text-anchor="middle">JSON snapshot in store/data/positions/</text>
+
+                <path class="arr" d="M430,1090 L430,1142" marker-end="url(#arrow)"/>
+                <text class="lbl" x="436" y="1118">ticks &rarr; trailing SL modify</text>
+
+                <!-- Row 9: EventService → TelegramService -->
+                <rect class="box out" x="180" y="1142" width="240" height="64"/>
+                <text class="ttl" x="300" y="1170" text-anchor="middle">EventService</text>
+                <text class="sub" x="300" y="1188" text-anchor="middle">logs &middot; SSE</text>
+
+                <path class="arr" d="M420,1174 L520,1174" marker-end="url(#arrow)"/>
+
+                <rect class="box out" x="520" y="1142" width="240" height="64"/>
+                <text class="ttl" x="640" y="1170" text-anchor="middle">TelegramService</text>
+                <text class="sub" x="640" y="1188" text-anchor="middle">trade alerts</text>
+
+                <!-- Sidecar block -->
+                <rect class="box sc" x="80" y="1238" width="940" height="92"/>
+                <text class="ttl" x="100" y="1264" text-anchor="start">Sidecars</text>
+                <text class="sub" x="100" y="1284" text-anchor="start"><tspan font-weight="700">PollingService</tspan> &mdash; REST every 10s, activates when any WS drops; status pill = "POLLING"</text>
+                <text class="sub" x="100" y="1302" text-anchor="start"><tspan font-weight="700">BhavcopyService</tspan> &mdash; daily 09:00; builds watchlist, computes CPR, fetches history</text>
+                <text class="sub" x="100" y="1320" text-anchor="start"><tspan font-weight="700">IndexTrendService</tspan> &mdash; NIFTY 5-min close: combines CPR + 5m SMA Price + 5m SMA Alignment &rarr; BULLISH / BEARISH / SIDEWAYS / NEUTRAL</text>
+            </svg>
+            </div>
+            <p style="margin-top:12px; font-size:0.74rem; color:var(--text-muted);">Box colors: <span style="color:#63b3ed;">blue</span> = WebSockets, <span style="color:#34d399;">green</span> = data services, <span style="color:#fbbf24;">yellow</span> = aggregation / decision, <span style="color:#a78bfa;">purple</span> = orders, <span style="color:#fb923c;">orange</span> = state, <span style="color:#f87171;">red</span> = output. Dashed border = sidecar.</p>
         </div>
     </div>
 
@@ -490,27 +571,6 @@
     </div><!-- /tab-magnet -->
 
     <!-- ========================================================== -->
-    <!-- MEAN REVERSION                                              -->
-    <!-- ========================================================== -->
-    <div id="tab-reversal" class="help-content">
-    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
-        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:#fb923c;"></div> Mean reversion — removed</div></div>
-        <div class="help-body">
-            <p><b>The mean-reversion setups (BUY_ABOVE_S2/S3/S4 and SELL_BELOW_R2/R3/R4) have been removed.</b> They were gap-fade fades that fired only on EV days, always classified as LPT.</p>
-
-            <h4>Why removed</h4>
-            <p>Under the LTF-priority probability model, trade direction must agree with the breakout candle's close vs daily CPR (the LTF gate). Mean-reversion buys (close &lt; daily BC, gap-down recovery) always fail this gate. Mean-reversion sells (close &gt; daily TC, gap-up fade) likewise. Rather than filter them out at runtime they were deleted from the breakout detection code in <code>BreakoutScanner.detectBuyBreakout</code> / <code>detectSellBreakout</code>.</p>
-
-            <h4>What replaces them?</h4>
-            <p>Counter-trend bounce-off-support / rejection-at-resistance plays still exist via the <b>magnet setups</b> (<code>BUY_ABOVE_S1_PDL</code>, <code>SELL_BELOW_R1_PDH</code>) — see the <b>MAGNET TRADES</b> tab. Those bypass the LTF gate by design and fire as MPT.</p>
-
-            <h4>Historical entries</h4>
-            <p>Pre-existing trades and Signal Trail rows from the old setups remain readable in the Trade Log; only new bars after the upgrade no longer produce these setups.</p>
-        </div>
-    </div>
-    </div><!-- /tab-reversal -->
-
-    <!-- ========================================================== -->
     <!-- OPENING RANGE                                               -->
     <!-- ========================================================== -->
     <div id="tab-or" class="help-content">
@@ -643,15 +703,28 @@
             <p>Magnets bypass both gates because they're counter-trend bounce/rejection setups by design — they buy support in stocks below daily TC and sell resistance in stocks above daily BC, so the LTF gate would always fail. They fire as MPT and rely on the rest of the filter chain for safety.</p>
 
             <h4>Filter chain — every failure is a reject</h4>
-            <p>HPT and MPT trades both pass through the same downstream filter chain. Any failure rejects the trade outright (no qty downgrade, no LPT consolation):</p>
+            <p>HPT and MPT trades both pass through the same downstream filter chain. Any failure rejects the trade outright (no qty downgrade, no LPT consolation). Order roughly matches execution order — scanner-side first, then SignalProcessor-side:</p>
+            <p style="margin-top:8px;"><b>Scanner-side (BreakoutScanner — runs before HPT/MPT classification)</b></p>
             <ol>
+                <li><b>Green/red candle</b> — buys need green, sells need red; dojis skipped.</li>
+                <li><b>ATP / VWAP</b> (<code>enableAtpCheck</code>) — buy needs close &gt; ATP; sell &lt; ATP.</li>
+                <li><b>5-min SMA Price</b> — lenient (<code>enableSmaTrendCheckLenient</code>): close above/below SMA 20 &amp; 50. Strict (<code>enableSmaTrendCheck</code>): close above/below SMA 20, 50, 200 together.</li>
+                <li><b>5-min SMA Alignment</b> — lenient (<code>enableSmaAlignmentCheckLenient</code>): 20 vs 50. Strict (<code>enableSmaAlignmentCheck</code>): 20 &gt; 50 &gt; 200 (buy) / 20 &lt; 50 &lt; 200 (sell).</li>
+                <li><b>SMA vs ATP</b> (<code>enableSmaVsAtpCheck</code>) — buy needs 20 SMA &gt; ATP; sell &lt; ATP.</li>
+                <li><b>20-SMA level-count</b> (<code>enableSmaLevelCountFilter</code>) — skip if a CPR zone sits between the 20 SMA and the broken level; plus proximity check (<code>smaLevelMinRangePct</code>).</li>
+                <li><b>Volume filter</b> (<code>enableVolumeFilter</code>) — candle volume ≥ <code>volumeMultiple</code> × N-candle average.</li>
+                <li><b>NIFTY index alignment</b> (<code>enableIndexAlignment</code>) — buys need NIFTY = BULLISH, sells need BEARISH; SIDEWAYS / NEUTRAL / opposite skip.</li>
+            </ol>
+            <p style="margin-top:12px;"><b>SignalProcessor-side (after probability assignment)</b></p>
+            <ol>
+                <li><b>Extended-level skips</b> — daily R3/S3, R4/S4 (per day-type IV/OV vs EV) and HTF weekly R3/S3, R4/S4.</li>
                 <li><b>OR rules</b> on EV days — direction must match the OR break, or align with the gap if no break yet.</li>
-                <li><b>NIFTY index alignment</b> (when on) — buys need NIFTY = BULLISH, sells need BEARISH.</li>
                 <li><b>HTF Hurdle</b> — prior 1h close above (buy) / below (sell) the nearest weekly hurdle (R1, PWH, weekly TC, Pivot, BC for buys; mirror for sells).</li>
                 <li><b>HTF SMA Price</b> — prior 1h close above / below 1h SMA 20 and 50 together.</li>
                 <li><b>HTF SMA Alignment</b> — 1h SMA 20 vs 50 ordering matches direction.</li>
-                <li><b>Extended-level skips</b> — daily R3/S3, R4/S4 and HTF weekly R3/S3, R4/S4 toggles (per day-type for daily).</li>
-                <li><b>Candle quality, R/R, min profit, session move limit, target shift, structural SL, target tolerance.</b></li>
+                <li><b>Small / Large candle filters</b> — body + move-past-level floors; large-body cap as multiple of ATR.</li>
+                <li><b>Session move limit</b> — qty halved if already moved &gt; <code>sessionMoveLimit</code>% from open / PDC.</li>
+                <li><b>Target shift, target tolerance, structural SL, R/R filter, min absolute profit.</b></li>
             </ol>
 
             <h4>Probability toggles</h4>
@@ -662,6 +735,115 @@
         </div>
     </div>
     </div><!-- /tab-probability -->
+
+    <!-- ========================================================== -->
+    <!-- SIGNAL TRAIL                                                -->
+    <!-- ========================================================== -->
+    <div id="tab-signal-trail" class="help-content">
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-blue);"></div> What is the Signal Trail</div></div>
+        <div class="help-body">
+            <p>The Signal Trail is a <b>post-mortem audit</b> of every breakout signal the scanner saw today. Open it from the scanner page (the link next to the candle countdown chip). For each candle close on every watchlist symbol it captures one row:</p>
+            <ul>
+                <li><b>TRADED</b> — the signal passed all filters and an order was placed.</li>
+                <li><b>FILTERED</b> — the signal was rejected. The row records the structured filter name (the bucket) and a one-line detail explaining why.</li>
+                <li><b>ERROR</b> — exception thrown during processing (rare; investigate via Console logs).</li>
+            </ul>
+            <p>The header row shows total counts and the top-blockers as clickable chips — click a chip to filter the table to that bucket.</p>
+
+            <h4>How to read a row</h4>
+            <table>
+                <tr><th>Column</th><th>Meaning</th></tr>
+                <tr><td><b>Time</b></td><td>Candle close time (HH:mm:ss IST). Sorted chronologically.</td></tr>
+                <tr><td><b>Symbol</b></td><td>Stock that produced the signal.</td></tr>
+                <tr><td><b>Setup</b></td><td>BUY_ABOVE_R1_PDH / SELL_BELOW_S2 / etc.</td></tr>
+                <tr><td><b>Close</b></td><td>The 5-min candle's close price at the time the signal was evaluated.</td></tr>
+                <tr><td><b>Status</b></td><td>TRADED / FILTERED / ERROR.</td></tr>
+                <tr><td><b>Filter</b></td><td>Structured bucket name (one of the buckets below). For TRADED rows this is empty.</td></tr>
+                <tr><td><b>Detail</b></td><td>Free-form text — the actual rejection message, including numbers and levels involved.</td></tr>
+            </table>
+        </div>
+    </div>
+
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Filter buckets — what each one means</div></div>
+        <div class="help-body">
+            <p>Buckets are grouped by where they fire in the pipeline. The order roughly matches execution order — scanner-side first, then SignalProcessor-side, then order-layer.</p>
+
+            <h4>Pre-detection / scanner pre-filters</h4>
+            <table>
+                <tr><th>Bucket</th><th>What triggered it</th></tr>
+                <tr><td><code>POSITION_OPEN</code></td><td>Symbol already has an open position; no new signals scanned for it.</td></tr>
+                <tr><td><code>LEVEL_BROKEN</code></td><td>The level matching this candle has already been traded today (one-shot per level until position closes).</td></tr>
+                <tr><td><code>TRADING_HOURS</code></td><td>Candle close fell outside <code>tradingStartTime</code> &ndash; <code>tradingEndTime</code>.</td></tr>
+                <tr><td><code>RISK_LIMIT</code></td><td>Daily loss cap reached, or max-open-positions / max-exposure breached.</td></tr>
+                <tr><td><code>KILL_SWITCH</code></td><td>Operator-triggered halt active.</td></tr>
+                <tr><td><code>ATP</code></td><td>Buy: close ≤ ATP / VWAP. Sell: close ≥ ATP.</td></tr>
+                <tr><td><code>SMA_TREND</code></td><td>5-min SMA Price gate failed: buy not above (or sell not below) the SMA bundle (20+50, or 20+50+200 in strict mode).</td></tr>
+                <tr><td><code>SMA_ALIGNMENT</code></td><td>5-min SMAs not stacked in trade direction (20 vs 50, or 20&gt;50&gt;200 strict).</td></tr>
+                <tr><td><code>SMA_20_DISTANCE</code></td><td>20-SMA level-count filter — a CPR zone sits between the SMA and the broken level, or the SMA is too far from the broken level.</td></tr>
+                <tr><td><code>LEVEL_PROXIMITY</code></td><td>Subset of the level-count filter: SMA is too far from the broken level by the proximity-pct check.</td></tr>
+                <tr><td><code>LOW_VOLUME</code></td><td>Volume filter: candle volume below the configured multiple of average.</td></tr>
+                <tr><td><code>NIFTY_OPPOSED</code></td><td>NIFTY trend not aligned: buy needs NIFTY = BULLISH, sell needs BEARISH; everything else (SIDEWAYS / NEUTRAL / opposite) hits this bucket.</td></tr>
+            </table>
+
+            <h4>LTF / HTF probability gates (LTF-priority model)</h4>
+            <table>
+                <tr><th>Bucket</th><th>What triggered it</th></tr>
+                <tr><td><code>LTF_OPPOSED</code></td><td>Non-magnet trade where the breakout candle's close didn't agree with daily CPR. Buy needs close &gt; daily TC; sell needs close &lt; daily BC.</td></tr>
+                <tr><td><code>HTF_NOT_ALIGNED</code></td><td>Magnet trade but the weekly state didn't align with the magnet direction (rare under current rules — magnets are always MPT).</td></tr>
+                <tr><td><code>PROB_DISABLED</code></td><td>Probability tier toggled off (<code>enableHpt</code> or <code>enableMpt</code> off) for the assigned tier.</td></tr>
+            </table>
+
+            <h4>SignalProcessor — structural / day-type / OR / candle filters</h4>
+            <table>
+                <tr><th>Bucket</th><th>What triggered it</th></tr>
+                <tr><td><code>EXTENDED_LEVEL_DAILY</code></td><td>Daily R3/S3 or R4/S4 skip toggle hit (per day-type IV/OV vs EV).</td></tr>
+                <tr><td><code>EXTENDED_LEVEL_HTF</code></td><td>Entry close past weekly R3/S3 or R4/S4 with the corresponding HTF skip toggle on.</td></tr>
+                <tr><td><code>DH_DL_ZONE</code></td><td>DH/DL trade rejected because the day high/low sits inside a CPR zone (CPR / R1+PDH / S1+PDL).</td></tr>
+                <tr><td><code>EV_OR_OPPOSED</code></td><td>EV day, OR broken, but the trade direction opposes the OR break.</td></tr>
+                <tr><td><code>EV_OR_INSIDE</code></td><td>EV day, close inside OR range, direction opposes the gap.</td></tr>
+                <tr><td><code>EV_GAP_OPPOSED</code></td><td>Trade direction opposes the gap on an EV day (without an OR break to override).</td></tr>
+                <tr><td><code>SMALL_CANDLE</code></td><td>Candle body and move-past-level both below their ATR floors.</td></tr>
+                <tr><td><code>OPPOSITE_WICK</code></td><td>Counter-pressure wick (opposite to trade direction) ≥ <code>oppositeWickRatio</code> × body.</td></tr>
+                <tr><td><code>LARGE_CANDLE</code></td><td>Candle body exceeds <code>largeCandleBodyAtrThreshold</code> × ATR (exhaustion).</td></tr>
+                <tr><td><code>HTF_HURDLE</code></td><td>Prior 1h close hadn't cleared the nearest weekly hurdle (R1/PWH/TC/Pivot/BC for buys; mirror for sells).</td></tr>
+                <tr><td><code>HTF_SMA_TREND</code></td><td>Prior 1h close not above (buy) / below (sell) 1h SMA 20 and 50 together.</td></tr>
+                <tr><td><code>HTF_SMA_ALIGNMENT</code></td><td>1h SMA 20 not above (buy) / below (sell) 50.</td></tr>
+                <tr><td><code>INVALID_ATR</code></td><td>ATR not available or invalid for the symbol — can't compute SL distance.</td></tr>
+                <tr><td><code>WRONG_SIDE_TARGET</code></td><td>Computed target ended up on the wrong side of entry (degenerate projection — rejected as a safety check).</td></tr>
+                <tr><td><code>RISK_REWARD</code></td><td>Reward / risk &lt; <code>minRiskRewardRatio</code> after target shift and structural SL.</td></tr>
+                <tr><td><code>MIN_PROFIT</code></td><td>Final qty × |target − entry| below <code>minAbsoluteProfit</code>.</td></tr>
+            </table>
+
+            <h4>Order layer</h4>
+            <table>
+                <tr><th>Bucket</th><th>What triggered it</th></tr>
+                <tr><td><code>ORDER_FAILED</code></td><td>Fyers rejected the order (margin, frozen scrip, circuit, etc.). Detail carries the broker reason.</td></tr>
+                <tr><td><code>DOWNSTREAM</code></td><td>Catch-all for any rejection reason that didn't pattern-match the buckets above. Investigate via the detail text.</td></tr>
+            </table>
+
+            <h4>Legacy buckets (still mapped for backward-compat)</h4>
+            <table>
+                <tr><th>Bucket</th><th>Note</th></tr>
+                <tr><td><code>LPT_DISABLED</code></td><td>Legacy — appears only on historical rows from before the LTF-priority model. New trades never produce this.</td></tr>
+                <tr><td><code>EV_REVERSAL</code> / <code>INSIDE_OR</code> / <code>MEAN_REVERSION_DAY</code> / <code>2D_CPR</code></td><td>Legacy buckets visible only on historical Signal Trail rows from removed features (mean-reversion, 2D-CPR, soft-mode NIFTY).</td></tr>
+            </table>
+        </div>
+    </div>
+
+    <div class="section-card help-section fade-in" style="margin-bottom:16px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> Practical use</div></div>
+        <div class="help-body">
+            <ul>
+                <li><b>End-of-day review</b> — scroll the trail looking for symbols with many filtered rows in one bucket. If, e.g., <code>HTF_SMA_TREND</code> dominates today's blocks, the 1h SMA bundle was misaligned for most stocks — that's a market-context observation, not necessarily a bug.</li>
+                <li><b>Tuning</b> — if a setup repeatedly fails one bucket and you trust the rest of the chain, consider relaxing that gate (e.g. switch SMA Price from strict to lenient). Don't tune off a single day — accumulate a few sessions first.</li>
+                <li><b>Debugging missed trades</b> — found a chart where the move was obvious but no trade fired? Find the symbol+time in the Signal Trail. The bucket and detail tell you exactly which gate skipped it.</li>
+                <li><b>Filter chip filtering</b> — the top-of-modal chips show the day's distribution of buckets. Click one to scope the table to that bucket only.</li>
+            </ul>
+        </div>
+    </div>
+    </div><!-- /tab-signal-trail -->
 
     <!-- ========================================================== -->
     <!-- QTY STACKING                                                -->

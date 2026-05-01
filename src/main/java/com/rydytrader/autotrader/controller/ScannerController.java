@@ -600,6 +600,7 @@ public class ScannerController {
     @GetMapping("/api/scanner/status")
     public Map<String, Object> getScannerStatus() {
         Map<String, Object> status = new LinkedHashMap<>();
+        status.put("tradingDay", marketHolidayService.isTradingDay());
         status.put("signalSource", riskSettings.getSignalSource());
         status.put("watchlistCount", marketDataService.getWatchlist().size());
         status.put("universeSize", bhavcopyService.getScanUniverseCount());

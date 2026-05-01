@@ -354,11 +354,6 @@
                             MPT Qty ×
                             <input type="number" id="mptQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         </label>
-                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-muted);" title="Legacy — LPT is no longer assigned under the LTF-priority probability model. Kept for historical Trade Log display.">
-                            LPT Qty ×
-                            <input type="number" id="lptQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;" disabled>
-                            <span style="font-size:0.72rem; opacity:0.6;">(legacy)</span>
-                        </label>
                     </div>
                     <div class="form-hint">Under the LTF-priority probability model: <b>HPT</b> = LTF and HTF both align (full size). <b>MPT</b> = only one of LTF or HTF aligns (medium size — default 0.75). Trades that fail any HTF Hurdle / NIFTY filter are <b>rejected</b>, not downgraded to LPT.</div>
                 </div>
@@ -1164,7 +1159,6 @@
             document.getElementById('scanIncludeIL').checked = d.scanIncludeIL === true;
             document.getElementById('enableHpt').checked = d.enableHpt !== false;
             document.getElementById('enableLpt').checked = d.enableLpt !== false;
-            document.getElementById('lptQtyFactor').value = d.lptQtyFactor != null ? d.lptQtyFactor : 0.50;
             document.getElementById('enableMpt').checked = d.enableMpt !== false;
             document.getElementById('mptQtyFactor').value = d.mptQtyFactor != null ? d.mptQtyFactor : 0.75;
             document.getElementById('minAbsoluteProfit').value = d.minAbsoluteProfit != null ? d.minAbsoluteProfit : 500;
@@ -1321,7 +1315,6 @@
                 scanIncludeIL: document.getElementById('scanIncludeIL').checked,
                 enableHpt: document.getElementById('enableHpt').checked,
                 enableLpt: document.getElementById('enableLpt').checked,
-                lptQtyFactor: parseFloat(document.getElementById('lptQtyFactor').value) || 0.50,
                 enableMpt: document.getElementById('enableMpt').checked,
                 mptQtyFactor: parseFloat(document.getElementById('mptQtyFactor').value) || 0.75,
                 minAbsoluteProfit: parseFloat(document.getElementById('minAbsoluteProfit').value) || 500,

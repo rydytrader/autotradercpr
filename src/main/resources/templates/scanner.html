@@ -966,6 +966,7 @@
         }).catch(function() {});
 
         fetch('/api/scanner/status').then(function(r) { return r.json(); }).then(function(s) {
+            window.__isTradingDay = s.tradingDay !== false; // default true if undefined
             document.getElementById('ssWatchlist').textContent = s.watchlistCount;
 
             // Price range
@@ -1219,7 +1220,11 @@
             var totalSec = ist.getHours() * 3600 + ist.getMinutes() * 60 + ist.getSeconds();
             var sessionOpen  = 9 * 3600 + 15 * 60;   // 09:15:00
             var sessionClose = 15 * 3600 + 30 * 60;  // 15:30:00
-            if (totalSec < sessionOpen || totalSec >= sessionClose) {
+            // Halt the timer on weekends and exchange holidays. window.__isTradingDay is
+            // refreshed every 5s by the /api/scanner/status poll. Default to "true if unknown"
+            // so the timer still renders during the brief window before the first poll lands.
+            var isTradingDay = window.__isTradingDay !== false;
+            if (!isTradingDay || totalSec < sessionOpen || totalSec >= sessionClose) {
                 txtEl.textContent = '--:--';
                 fillEl.style.width = '0%';
                 chipEl.style.opacity = '0.5';
