@@ -418,34 +418,13 @@ public class ScannerController {
         boolean isSell = daily.contains("BEARISH");
         if (!isBuy && !isSell) return "--"; // daily neutral — direction unknown
 
-        // 1-2. Weekly + daily alignment
+        // Pure CPR alignment: LTF (5-min/LTP vs daily CPR) + HTF (weekly state).
+        // HPT = both aligned, MPT = only one aligned, null = LTF opposed → "--".
+        // SMA / VWAP / NIFTY filters intentionally NOT applied here — those are
+        // execution-time gates in the real pipeline; the card forecast reflects
+        // CPR alignment only.
         String baseProb = weeklyCprService.getProbabilityForDirection(symbol, isBuy);
-        if (!"HPT".equals(baseProb)) return baseProb; // already LPT or SKIP from weekly
-
-        // 3. 5-min SMA trend alignment (price above/below all of SMA 20/50/200)
-        double sma    = smaService.getSma(symbol);
-        double sma50  = smaService.getSma50(symbol);
-        double sma200 = smaService.getSma200(symbol);
-        if (riskSettings.isEnableSmaTrendCheck() && sma > 0 && sma50 > 0 && sma200 > 0) {
-            boolean bullishAligned = ltp > sma && ltp > sma50 && ltp > sma200;
-            boolean bearishAligned = ltp < sma && ltp < sma50 && ltp < sma200;
-            if (isBuy  && !bullishAligned) return "LPT";
-            if (isSell && !bearishAligned) return "LPT";
-        }
-
-        // 4. VWAP/ATP
-        double atp = candleAggregator.getAtp(symbol);
-        if (riskSettings.isEnableAtpCheck() && atp > 0) {
-            if ((isBuy && ltp < atp) || (isSell && ltp > atp)) return "LPT";
-        }
-
-        // 5. NIFTY alignment — opposition no longer downgrades probability. The trade
-        // fires at its original probability with a qty factor applied by SignalProcessor
-        // (indexOpposedQtyFactor, default 0.75). Hard-skip mode still blocks at the
-        // scanner level, but that's handled in BreakoutScanner — not surfaced here
-        // since classifyProbability is a card-display forecast that assumes the trade fires.
-
-        return "HPT"; // all pre-checkable gates passed
+        return baseProb != null ? baseProb : "--";
     }
 
     /**

@@ -1,0 +1,27 @@
+//@version=5
+indicator("NSE Day Open Line", overlay = true)
+
+// ── Inputs ─────────────────────────────────────────────────────────────────
+lineColor = input.color(color.new(color.blue, 0), "Line color")
+lineWidth = input.int(2, "Line width", minval = 1, maxval = 5)
+showLabel = input.bool(true, "Show price label on last bar")
+restrictToSession = input.bool(true, "Show only during NSE session (9:15-15:30 IST)")
+
+// ── Daily open (rock-solid for history — Pine fetches the day's open from the
+//    daily timeframe and returns it for every intraday bar within that day) ─
+//    lookahead_on is safe for `open` because the open is established on bar 1
+//    of the day and doesn't change — no future-leak for backtesting.
+dayOpen = request.security(syminfo.tickerid, "D", open, lookahead = barmerge.lookahead_on)
+
+// ── Optional session restriction ───────────────────────────────────────────
+inSession = not na(time(timeframe.period, "0915-1530:23456", "Asia/Kolkata"))
+plotValue = restrictToSession ? (inSession ? dayOpen : na) : dayOpen
+
+// ── Plot ───────────────────────────────────────────────────────────────────
+plot(plotValue, color = lineColor, linewidth = lineWidth, title = "Day Open", style = plot.style_line)
+
+// ── Optional label only on the most recent bar (no historical clutter) ────
+var label dayOpenLabel = na
+if showLabel and barstate.islast and not na(dayOpen)
+    label.delete(dayOpenLabel)
+    dayOpenLabel := label.new(bar_index, dayOpen, text = "Day Open " + str.tostring(dayOpen, format.mintick), style = label.style_label_left, color = color.new(lineColor, 80), textcolor = color.white, size = size.small)

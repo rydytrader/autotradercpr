@@ -470,15 +470,20 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
             String buySetup = detectBuyBreakout(open, high, low, close, levels, atp, broken, fyersSymbol);
             if (buySetup != null) {
-                String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, true, buySetup);
+                String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, true, buySetup, close);
+                if (prob == null) {
+                    // LTF-priority gate rejected: standard buy with close ≤ daily TC (no LTF
+                    // support). Magnets always fire (HTF/LTF bypassed) so they don't reach here.
+                    String detail = "buy requires close > daily TC (LTF bullish); close="
+                        + String.format("%.2f", close);
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " — skipped, " + detail);
+                    recordRejection(fyersSymbol, buySetup, close, "LTF_OPPOSED", detail);
+                    return;
+                }
                 if (!isProbabilityEnabled(prob)) {
-                    // Only log when an HPT setup was filtered — natively-LPT setups (magnets,
-                    // counter-trend bounces) are expected to be skipped silently when LPT is off,
-                    // otherwise the event log fills with noise the user has already opted out of.
+                    // Probability tier toggled off in settings (e.g. enableMpt=false).
                     String detail = prob + " not enabled";
-                    if ("HPT".equals(prob)) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " — skipped, " + detail);
-                    }
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " — skipped, " + detail);
                     recordRejection(fyersSymbol, buySetup, close, "PROB_DISABLED", detail);
                     return;
                 }
@@ -531,14 +536,17 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
             String sellSetup = detectSellBreakout(open, high, low, close, levels, atp, broken, fyersSymbol);
             if (sellSetup != null) {
-                String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, false, sellSetup);
+                String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, false, sellSetup, close);
+                if (prob == null) {
+                    String detail = "sell requires close < daily BC (LTF bearish); close="
+                        + String.format("%.2f", close);
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " — skipped, " + detail);
+                    recordRejection(fyersSymbol, sellSetup, close, "LTF_OPPOSED", detail);
+                    return;
+                }
                 if (!isProbabilityEnabled(prob)) {
-                    // Only log when an HPT setup was filtered — natively-LPT setups (magnets,
-                    // counter-trend bounces) are expected to be skipped silently when LPT is off.
                     String detail = prob + " not enabled";
-                    if ("HPT".equals(prob)) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " — skipped, " + detail);
-                    }
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " — skipped, " + detail);
                     recordRejection(fyersSymbol, sellSetup, close, "PROB_DISABLED", detail);
                     return;
                 }
@@ -672,12 +680,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (close > s1pl && close < cprBot
                 && ((open < s1 || open < pl || low < s1 || low < pl) || (low < Math.min(s1, pl) && open > Math.min(s1, pl)))
                 && !broken.contains("BUY_ABOVE_S1_PDL")) return "BUY_ABOVE_S1_PDL";
-        // Mean-reversion bounces from below S-levels (gap-down reversals).
-        // Pattern: candle opened below the level (price was extended down) and closed above it.
-        double s2 = levels.getS2(), s3 = levels.getS3(), s4 = levels.getS4();
-        if (open <= s4 && close > s4 && !broken.contains("BUY_ABOVE_S4")) return "BUY_ABOVE_S4";
-        if (open <= s3 && close > s3 && !broken.contains("BUY_ABOVE_S3")) return "BUY_ABOVE_S3";
-        if (open <= s2 && close > s2 && !broken.contains("BUY_ABOVE_S2")) return "BUY_ABOVE_S2";
+        // (Mean-reversion buys above S2/S3/S4 removed — counter-LTF setups always rejected
+        // under the LTF-priority probability rule.)
 
         // Day High breakout (lowest priority — only after OR locks)
         double dayHigh = candleAggregator.getDayHighExcluding(fyersSymbol, currentCandle.get());
@@ -764,12 +768,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (close < s2
                 && ((open > s2 || high > s2) || (high > s2 && open < s2))
                 && !broken.contains("SELL_BELOW_S2")) return "SELL_BELOW_S2";
-        // Mean-reversion fades from above R-levels (gap-up reversals).
-        // Pattern: candle opened above the level (price was extended) and closed below it.
-        double r2 = levels.getR2(), r3 = levels.getR3(), r4 = levels.getR4();
-        if (open >= r4 && close < r4 && !broken.contains("SELL_BELOW_R4")) return "SELL_BELOW_R4";
-        if (open >= r3 && close < r3 && !broken.contains("SELL_BELOW_R3")) return "SELL_BELOW_R3";
-        if (open >= r2 && close < r2 && !broken.contains("SELL_BELOW_R2")) return "SELL_BELOW_R2";
+        // (Mean-reversion sells below R2/R3/R4 removed — counter-LTF setups always rejected
+        // under the LTF-priority probability rule.)
         if (close < s1 && close < pl
                 && ((open > s1 || open > pl || high > s1 || high > pl) || (high > Math.max(s1, pl) && open < Math.max(s1, pl)))
                 && !broken.contains("SELL_BELOW_S1_PDL")) return "SELL_BELOW_S1_PDL";
@@ -985,8 +985,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     }
 
     private boolean isProbabilityEnabled(String prob) {
+        if (prob == null) return false;
         return switch (prob) {
             case "HPT" -> riskSettings.isEnableHpt();
+            case "MPT" -> riskSettings.isEnableMpt();
             case "LPT" -> riskSettings.isEnableLpt();
             default -> false;
         };
@@ -1504,6 +1506,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             if (s.contains("ev reversal"))             return "EV_REVERSAL";
             return "LPT_DISABLED";
         }
+
+        // LTF/HTF probability gates (new under LTF-priority classification)
+        if (s.contains("ltf opposed") || s.contains("requires close >") || s.contains("requires close <")) return "LTF_OPPOSED";
+        if (s.contains("htf not aligned") || s.contains("magnet ") && s.contains("requires weekly")) return "HTF_NOT_ALIGNED";
 
         // Order-layer gates
         if (s.contains("outside trading hours"))                  return "TRADING_HOURS";

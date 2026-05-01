@@ -140,6 +140,8 @@ public class SettingsController {
         result.put("enableHpt", riskSettings.isEnableHpt());
         result.put("enableLpt", riskSettings.isEnableLpt());
         result.put("lptQtyFactor", riskSettings.getLptQtyFactor());
+        result.put("enableMpt", riskSettings.isEnableMpt());
+        result.put("mptQtyFactor", riskSettings.getMptQtyFactor());
         result.put("smallRangeAdrPct", riskSettings.getSmallRangeAdrPct());
         result.put("enableCprDayRelationFilter", riskSettings.isEnableCprDayRelationFilter());
         result.put("minAbsoluteProfit", riskSettings.getMinAbsoluteProfit());
@@ -257,6 +259,8 @@ public class SettingsController {
             if (body.containsKey("enableHpt")) riskSettings.setEnableHpt(Boolean.parseBoolean(body.get("enableHpt").toString()));
             if (body.containsKey("enableLpt")) riskSettings.setEnableLpt(Boolean.parseBoolean(body.get("enableLpt").toString()));
             if (body.containsKey("lptQtyFactor")) riskSettings.setLptQtyFactor(Double.parseDouble(body.get("lptQtyFactor").toString()));
+            if (body.containsKey("enableMpt")) riskSettings.setEnableMpt(Boolean.parseBoolean(body.get("enableMpt").toString()));
+            if (body.containsKey("mptQtyFactor")) riskSettings.setMptQtyFactor(Double.parseDouble(body.get("mptQtyFactor").toString()));
             if (body.containsKey("smallRangeAdrPct")) {
                 riskSettings.setSmallRangeAdrPct(Double.parseDouble(body.get("smallRangeAdrPct").toString()));
                 bhavcopyService.reclassifyNarrowRangeTypes();

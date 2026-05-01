@@ -574,16 +574,18 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
         String state = weeklyTrendStateBySymbol.get(symbol);
         if (state != null) return state;
 
-        // Cold start (no HTF close has printed yet for this symbol since weekly levels were
-        // computed) — seed from live LTP vs the same level ladder. As soon as the first HTF
-        // close arrives, the state machine takes over and live LTP no longer drives the trend.
+        // Cold start (no HTF close has flipped the state machine yet) — seed from live LTP.
+        // Never return NEUTRAL: when LTP sits inside weekly CPR with no prior break to lean
+        // on, fall back to LTP vs weekly Pivot to pick a side. Once the first HTF close
+        // outside CPR fires, the state machine takes over.
         double ltp = getWeeklyPrice(symbol);
-        if (ltp <= 0) return "NEUTRAL";
+        if (ltp <= 0) return "BULLISH"; // missing data — default bullish bias
         if (wl.r1 > 0 && wl.ph > 0 && ltp > wl.r1 && ltp > wl.ph) return "STRONG_BULLISH";
         if (wl.s1 > 0 && wl.pl > 0 && ltp < wl.s1 && ltp < wl.pl) return "STRONG_BEARISH";
         if (ltp > wl.top) return "BULLISH";
         if (ltp < wl.bot) return "BEARISH";
-        return "NEUTRAL";
+        // Inside weekly CPR — pick a side based on pivot. Never NEUTRAL.
+        return ltp >= wl.pivot ? "BULLISH" : "BEARISH";
     }
 
     /**
@@ -625,68 +627,64 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
     }
 
     /**
-     * Get probability based on breakout direction + weekly trend + daily trend.
-     * HPT: weekly AND daily aligned with direction.
-     * Two-tier classification:
-     *   HPT — weekly trend AND daily trend AND breakout direction all aligned
-     *   LPT — everything else (weekly neutral/opposed, daily opposed, magnets, EV reversals)
-     * @param isBuy true for buy breakout, false for sell breakout
+     * LTF-priority probability classification with new MPT tier (scalping mode).
+     * <ul>
+     *   <li><b>HPT</b> — LTF (5-min close vs daily CPR) and HTF (weekly state) both align with
+     *       the trade direction. Full size.</li>
+     *   <li><b>MPT</b> — only one of LTF or HTF aligns. Two paths:
+     *     <ul>
+     *       <li>Standard trade: LTF supports trade, HTF disagrees</li>
+     *       <li>Magnet (BUY_ABOVE_S1_PDL / SELL_BELOW_R1_PDH): HTF aligns; LTF gate bypassed</li>
+     *     </ul>
+     *   </li>
+     *   <li><b>null</b> — non-magnet with LTF neutral or LTF opposing; OR magnet without HTF
+     *       alignment. Trade is rejected.</li>
+     * </ul>
+     * LPT is no longer assigned at initial classification.
+     *
+     * @param breakoutClose the 5-min breakout candle's close (used for LTF position vs daily CPR)
+     * @return "HPT" / "MPT" / null (rejected)
      */
-    public String getProbabilityForDirection(String symbol, boolean isBuy) {
-        return getProbabilityForDirection(symbol, isBuy, (String) null);
+    public String getProbabilityForDirection(String symbol, boolean isBuy, String setup, double breakoutClose) {
+        String weekly = getWeeklyTrend(symbol);
+        boolean wBull = weekly != null && weekly.contains("BULLISH");
+        boolean wBear = weekly != null && weekly.contains("BEARISH");
+
+        boolean isMagnet = setup != null
+            && ("BUY_ABOVE_S1_PDL".equals(setup) || "SELL_BELOW_R1_PDH".equals(setup));
+
+        // Magnet: always MPT. Both LTF and HTF gates bypassed — these counter-trend
+        // bounce/rejection setups are taken on their own merit, sized as medium-probability.
+        if (isMagnet) return "MPT";
+
+        // Standard trade: LTF must support the trade direction.
+        com.rydytrader.autotrader.dto.CprLevels cpr = bhavcopyService.getCprLevels(extractTicker(symbol));
+        if (cpr == null || breakoutClose <= 0) return null;
+        double cprTop = Math.max(cpr.getTc(), cpr.getBc());
+        double cprBot = Math.min(cpr.getTc(), cpr.getBc());
+        boolean ltfBull = breakoutClose > cprTop;
+        boolean ltfBear = breakoutClose < cprBot;
+
+        if (isBuy) {
+            if (!ltfBull) return null;
+            return wBull ? "HPT" : "MPT";
+        } else {
+            if (!ltfBear) return null;
+            return wBear ? "HPT" : "MPT";
+        }
     }
 
-    /**
-     * Get probability based on breakout direction + weekly trend + daily trend + setup category.
-     * Three trade categories:
-     *   1. TREND TRADES — regular breakouts in the trend direction (CPR, R1/PDH, R2/R3/R4 buys,
-     *      CPR, S1/PDL, S2/S3/S4 sells, DH/DL breakouts).
-     *      HPT requires WEEKLY + DAILY both aligned with direction.
-     *   2. MAGNET TRADES — bounces off / rejections at the first structural pair:
-     *      BUY_ABOVE_S1_PDL (bounce off support in uptrend), SELL_BELOW_R1_PDH (rejection at
-     *      resistance in downtrend). HPT requires WEEKLY only — 5-min (daily) is inherently
-     *      opposite to trade direction by the nature of the setup.
-     *   3. MEAN REVERSION TRADES — deep counter-trend fades on EV gap days:
-     *      BUY_ABOVE_S2/S3/S4 (gap-down fade), SELL_BELOW_R2/R3/R4 (gap-up fade).
-     *      ALWAYS LPT — by definition counter to the bigger trend.
-     * @param isBuy true for buy breakout, false for sell breakout
-     * @param setup the setup name (e.g. "BUY_ABOVE_S1_PDL"); null or empty treated as trend trade
-     */
+    /** Legacy 2-arg overload — falls back to live LTP for the LTF check (best-effort).
+     *  Production trade signals should use the 4-arg overload with the actual breakout close. */
+    public String getProbabilityForDirection(String symbol, boolean isBuy) {
+        double live = candleAggregator != null ? candleAggregator.getLtp(symbol) : 0;
+        return getProbabilityForDirection(symbol, isBuy, null, live);
+    }
+
+    /** Legacy 3-arg overload — same fallback as 2-arg, accepts setup name. */
     public String getProbabilityForDirection(String symbol, boolean isBuy, String setup) {
-        String weekly = getWeeklyTrend(symbol);
-        String daily = getDailyTrend(symbol);
-        boolean wBull = weekly.contains("BULLISH");
-        boolean wBear = weekly.contains("BEARISH");
-        boolean dBull = daily.contains("BULLISH");
-        boolean dBear = daily.contains("BEARISH");
-
-        // Categorize by setup into one of three trade types
-        boolean isMagnetTrade = setup != null && (
-            "BUY_ABOVE_S1_PDL".equals(setup) || "SELL_BELOW_R1_PDH".equals(setup));
-        boolean isMeanReversionTrade = setup != null && (
-            "BUY_ABOVE_S2".equals(setup) || "BUY_ABOVE_S3".equals(setup) || "BUY_ABOVE_S4".equals(setup)
-         || "SELL_BELOW_R2".equals(setup) || "SELL_BELOW_R3".equals(setup) || "SELL_BELOW_R4".equals(setup));
-        // else: trend trade (regular breakout)
-
-        // MEAN REVERSION TRADES — always LPT. Deep counter-trend fades on EV gap days.
-        if (isMeanReversionTrade) return "LPT";
-
-        // MAGNET TRADES — HPT requires weekly (60-min) aligned with direction.
-        // 5-min / daily is inherently opposite by the nature of the bounce/rejection setup.
-        if (isMagnetTrade) {
-            if (isBuy  && wBull) return "HPT";
-            if (!isBuy && wBear) return "HPT";
-            return "LPT";
-        }
-
-        // TREND TRADES — HPT requires weekly + daily both aligned with direction.
-        if (isBuy) {
-            if (wBull && dBull) return "HPT";
-            return "LPT";
-        } else {
-            if (wBear && dBear) return "HPT";
-            return "LPT";
-        }
+        double live = candleAggregator != null ? candleAggregator.getLtp(symbol) : 0;
+        return getProbabilityForDirection(symbol, isBuy, setup, live);
     }
 
     /**

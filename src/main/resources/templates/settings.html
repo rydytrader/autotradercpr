@@ -351,10 +351,16 @@
                             HPT Qty × 1.0 (full)
                         </label>
                         <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
+                            MPT Qty ×
+                            <input type="number" id="mptQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-muted);" title="Legacy — LPT is no longer assigned under the LTF-priority probability model. Kept for historical Trade Log display.">
                             LPT Qty ×
-                            <input type="number" id="lptQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                            <input type="number" id="lptQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;" disabled>
+                            <span style="font-size:0.72rem; opacity:0.6;">(legacy)</span>
                         </label>
                     </div>
+                    <div class="form-hint">Under the LTF-priority probability model: <b>HPT</b> = LTF and HTF both align (full size). <b>MPT</b> = only one of LTF or HTF aligns (medium size — default 0.75). Trades that fail any HTF Hurdle / 2D-CPR / NIFTY filter are <b>rejected</b>, not downgraded to LPT.</div>
                 </div>
             </div>
         </div>
@@ -734,10 +740,13 @@
                             <input type="checkbox" id="enableHpt" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> HPT (High Probable)
                         </div>
                         <div style="display:flex; align-items:center; gap:8px; font-family:var(--font-mono); font-size:0.82rem; color:var(--text-secondary);">
-                            <input type="checkbox" id="enableLpt" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> LPT (Low Probable)
+                            <input type="checkbox" id="enableMpt" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> MPT (Medium Probable)
+                        </div>
+                        <div style="display:none;">
+                            <input type="checkbox" id="enableLpt" style="width:16px;height:16px;">
                         </div>
                     </div>
-                    <div class="form-hint">HPT = weekly+daily+direction aligned. LPT = everything else (half qty by default). Qty factor configured in Risk Controls.</div>
+                    <div class="form-hint"><b>HPT</b> — LTF (5-min close vs daily CPR) and HTF (weekly state machine) both align with trade direction. Full size. <b>MPT</b> — only one of LTF or HTF aligns (e.g. magnet trades aligned only with HTF, or trend trades where HTF disagrees). Configurable qty factor (default 0.75). LPT is no longer assigned in the new LTF-priority model.</div>
                 </div>
             </div>
         </div>
@@ -1166,6 +1175,8 @@
             document.getElementById('enableHpt').checked = d.enableHpt !== false;
             document.getElementById('enableLpt').checked = d.enableLpt !== false;
             document.getElementById('lptQtyFactor').value = d.lptQtyFactor != null ? d.lptQtyFactor : 0.50;
+            document.getElementById('enableMpt').checked = d.enableMpt !== false;
+            document.getElementById('mptQtyFactor').value = d.mptQtyFactor != null ? d.mptQtyFactor : 0.75;
             document.getElementById('minAbsoluteProfit').value = d.minAbsoluteProfit != null ? d.minAbsoluteProfit : 500;
             document.getElementById('skipR3S3IvOvDays').checked = d.skipR3S3IvOvDays !== false;
             document.getElementById('skipR3S3EvDays').checked   = d.skipR3S3EvDays   !== false;
@@ -1323,6 +1334,8 @@
                 enableHpt: document.getElementById('enableHpt').checked,
                 enableLpt: document.getElementById('enableLpt').checked,
                 lptQtyFactor: parseFloat(document.getElementById('lptQtyFactor').value) || 0.50,
+                enableMpt: document.getElementById('enableMpt').checked,
+                mptQtyFactor: parseFloat(document.getElementById('mptQtyFactor').value) || 0.75,
                 minAbsoluteProfit: parseFloat(document.getElementById('minAbsoluteProfit').value) || 500,
                 skipR3S3IvOvDays: document.getElementById('skipR3S3IvOvDays').checked,
                 skipR3S3EvDays:   document.getElementById('skipR3S3EvDays').checked,

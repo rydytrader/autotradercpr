@@ -145,6 +145,7 @@
         .scan-trend .neutral { color: var(--accent-yellow); font-weight: 700; }
 
         .scan-badge.hpt { background: rgba(52,211,153,0.12); color: var(--accent-green); }
+        .scan-badge.mpt { background: rgba(99,179,237,0.12); color: var(--accent-blue); }
         .scan-badge.lpt { background: rgba(251,191,36,0.12); color: var(--accent-yellow); }
         .scan-badge.or-bullish { background: rgba(52,211,153,0.15); color: var(--accent-green); }
         .scan-badge.or-bearish { background: rgba(239,68,68,0.15); color: var(--accent-red); }
@@ -511,7 +512,7 @@
         <div class="filter-sep"></div>
         <span class="prob-filter-group">
             <button class="filter-btn" onclick="toggleProbFilter('HPT', this)">HPT</button>
-            <button class="filter-btn" onclick="toggleProbFilter('LPT', this)">LPT</button>
+            <button class="filter-btn" onclick="toggleProbFilter('MPT', this)">MPT</button>
         </span>
         <div class="filter-sep"></div>
         <span class="ov-filter-group">
@@ -770,17 +771,21 @@
 
         // SMA trend per timeframe — shown in SMA Levels title and body
         function smaTrendObj(price, e20, e50, e200, pattern) {
-            if (price <= 0 || e20 <= 0 || e50 <= 0 || e200 <= 0) {
+            if (price <= 0 || e20 <= 0 || e50 <= 0) {
                 return { label: '--', shortLabel: '--', cls: 'neutral', arrow: '&#9644;' };
             }
-            var allAbove = price > e20 && price > e50 && price > e200;
-            var allBelow = price < e20 && price < e50 && price < e200;
-            if (allAbove) {
-                if (pattern === 'RAILWAY_UP') return { label: 'S.BULLISH', shortLabel: 'S.BULL', cls: 'strong_bullish', arrow: '&#9650;' };
+            var bullBase = price > e20 && price > e50 && e20 > e50;
+            var bearBase = price < e20 && price < e50 && e20 < e50;
+            if (bullBase) {
+                if (e200 > 0 && price > e200 && e50 > e200) {
+                    return { label: 'S.BULLISH', shortLabel: 'S.BULL', cls: 'strong_bullish', arrow: '&#9650;' };
+                }
                 return { label: 'BULLISH', shortLabel: 'BULL', cls: 'bullish', arrow: '&#9650;' };
             }
-            if (allBelow) {
-                if (pattern === 'RAILWAY_DOWN') return { label: 'S.BEARISH', shortLabel: 'S.BEAR', cls: 'strong_bearish', arrow: '&#9660;' };
+            if (bearBase) {
+                if (e200 > 0 && price < e200 && e50 < e200) {
+                    return { label: 'S.BEARISH', shortLabel: 'S.BEAR', cls: 'strong_bearish', arrow: '&#9660;' };
+                }
                 return { label: 'BEARISH', shortLabel: 'BEAR', cls: 'bearish', arrow: '&#9660;' };
             }
             return { label: 'NEUTRAL', shortLabel: 'NEU', cls: 'neutral', arrow: '&#9644;' };
@@ -890,14 +895,6 @@
                 var ittl = 'Inside CPR' + (nrt ? ' — ' + (nrt === 'SMALL' ? 'prev day range ' : 'prev day range ') + rp + '% of 20d ADR — ' + (nrt === 'SMALL' ? 'compressed (coiled spring)' : 'expanded') : '');
                 return '<span class="scan-badge ' + icls + '" title="' + ittl + '">' + ilbl + '</span>';
             }).join(''))
-            + (function() {
-                var or = d.orStatus;
-                if (!or) return '';
-                var cls = or === 'BULLISH' ? 'or-bullish' : or === 'BEARISH' ? 'or-bearish' : or === 'FORMING' ? 'or-forming' : 'or-neutral';
-                var lbl = or === 'BULLISH' ? 'OR+' : or === 'BEARISH' ? 'OR-' : or === 'FORMING' ? 'OR?' : 'OR=';
-                var ttl = 'Opening Range ' + or + (d.orHigh > 0 ? ' (H:' + fmt(d.orHigh) + ' L:' + fmt(d.orLow) + ')' : '');
-                return '<span class="scan-badge ' + cls + '" title="' + ttl + '">' + lbl + '</span>';
-            })()
             + '<span class="scan-badge ' + probClass + '" title="Signal probability">' + d.probability + '</span>'
             + '  </span>'
             + '</div>'
@@ -1036,7 +1033,7 @@
             // Signals
             var sigs = [];
             if (s.enableHpt) sigs.push('HPT');
-            if (s.enableLpt) sigs.push('LPT');
+            if (s.enableMpt) sigs.push('MPT');
             document.getElementById('ssSignals').innerHTML = sigs.length > 0
                 ? sigs.map(function(p) { return '<span class="scan-badge ' + p.toLowerCase() + '" style="margin-left:2px;">' + p + '</span>'; }).join(' ')
                 : '<span style="color:var(--text-muted);">None</span>';
@@ -1529,25 +1526,13 @@ function showInsideCpr() {
                 </div>
             </div>
 
-            <!-- 3. Opening Range -->
-            <div style="margin-bottom:28px;">
-                <div style="font-weight:700; font-size:0.85rem; color:var(--accent-cyan); margin-bottom:10px;">3. Opening Range</div>
-                <div style="color:var(--text-secondary); margin-bottom:14px; font-size:0.72rem; line-height:1.6;">Tracks the first N minutes of trading (configurable, default 15 min). After the OR window locks, LTP vs OR High/Low determines the breakout direction. DH/DL breakouts only fire after OR locks.</div>
-                <div style="display:flex; flex-wrap:wrap; gap:12px 20px; font-size:0.72rem;">
-                    <div><span class="scan-badge or-bullish" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">OR+</span> Bullish — LTP above OR High</div>
-                    <div><span class="scan-badge or-bearish" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">OR-</span> Bearish — LTP below OR Low</div>
-                    <div><span class="scan-badge or-neutral" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">OR=</span> Neutral — LTP inside OR range</div>
-                    <div><span class="scan-badge or-forming" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">OR?</span> Forming — OR window still open</div>
-                </div>
-            </div>
-
             <!-- 3. Signal Probability -->
             <div style="margin-bottom:12px;">
-                <div style="font-weight:700; font-size:0.85rem; color:var(--accent-cyan); margin-bottom:10px;">4. Signal Probability</div>
-                <div style="color:var(--text-secondary); margin-bottom:14px; font-size:0.72rem; line-height:1.6;">CPR breakout signals classified by alignment with weekly + daily trends. Two tiers: HPT (full qty) and LPT (half qty).</div>
+                <div style="font-weight:700; font-size:0.85rem; color:var(--accent-cyan); margin-bottom:10px;">3. Signal Probability</div>
+                <div style="color:var(--text-secondary); margin-bottom:14px; font-size:0.72rem; line-height:1.6;">CPR breakout signals classified by LTF (5-min close vs daily CPR) and HTF (weekly state machine) alignment. Two tiers: HPT (full qty) when both align, MPT (configurable qty, default 0.75) when only one aligns. Counter-LTF or HTF-misaligned trades are rejected outright.</div>
                 <div style="display:flex; flex-wrap:wrap; gap:12px 20px; font-size:0.72rem;">
-                    <div><span style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700; background:rgba(52,211,153,0.15); color:var(--accent-green); border:1px solid rgba(52,211,153,0.3);">HPT</span> High Probable Trade — weekly + daily + breakout direction all aligned (full qty)</div>
-                    <div><span style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700; background:rgba(251,191,36,0.15); color:#fbbf24; border:1px solid rgba(251,191,36,0.3);">LPT</span> Low Probable Trade — everything else: weekly neutral, weekly/daily opposed, magnets, EV reversals (half qty)</div>
+                    <div><span style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700; background:rgba(52,211,153,0.15); color:var(--accent-green); border:1px solid rgba(52,211,153,0.3);">HPT</span> High Probable Trade — LTF (5-min close vs daily CPR) AND HTF (weekly state) both align with trade direction (full qty)</div>
+                    <div><span style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700; background:rgba(99,179,237,0.15); color:var(--accent-blue); border:1px solid rgba(99,179,237,0.3);">MPT</span> Medium Probable Trade — LTF supports trade but HTF disagrees. Magnet trades (BUY_ABOVE_S1_PDL, SELL_BELOW_R1_PDH) always classify as MPT regardless of LTF/HTF state — they're taken on their own merit (configurable qty, default 0.75).</div>
                 </div>
             </div>
 

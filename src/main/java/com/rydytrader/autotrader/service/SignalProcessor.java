@@ -106,10 +106,8 @@ public class SignalProcessor {
         //   *EvDays   — skip on EV (open above R2 or below S2 — extreme-value gap) days
         // DH/DL breakouts that have reached or passed daily R3/S3 or R4/S4 are treated
         // identically — a DH break above R3 IS effectively an R3 trade.
-        boolean isR3S3Setup = "BUY_ABOVE_R3".equals(setup) || "SELL_BELOW_S3".equals(setup)
-                           || "BUY_ABOVE_S3".equals(setup) || "SELL_BELOW_R3".equals(setup);
-        boolean isR4S4Setup = "BUY_ABOVE_R4".equals(setup) || "SELL_BELOW_S4".equals(setup)
-                           || "BUY_ABOVE_S4".equals(setup) || "SELL_BELOW_R4".equals(setup);
+        boolean isR3S3Setup = "BUY_ABOVE_R3".equals(setup) || "SELL_BELOW_S3".equals(setup);
+        boolean isR4S4Setup = "BUY_ABOVE_R4".equals(setup) || "SELL_BELOW_S4".equals(setup);
         boolean isDhAboveR3 = "BUY_ABOVE_DH".equals(setup)  && r3 > 0 && dayHigh > r3;
         boolean isDhAboveR4 = "BUY_ABOVE_DH".equals(setup)  && r4 > 0 && dayHigh > r4;
         boolean isDlBelowS3 = "SELL_BELOW_DL".equals(setup) && s3 > 0 && dayLow  < s3;
@@ -374,54 +372,21 @@ public class SignalProcessor {
                                 "EV " + (gapUp ? "up" : "down") + " — trade direction opposes OR break ("
                                 + (orBullish ? "OR Bullish" : "OR Bearish") + ") — skipped");
                         }
-                        // Gap-fade (counter-gap direction): mean-reversion (LPT + reversal targets)
-                        boolean isGapFade = (gapUp && !isBuy) || (gapDown && isBuy);
-                        if (isGapFade) {
-                            isReversal = true;
-                            if (!"LPT".equals(probability)) {
-                                adjustments.add("Probability " + probability + " → LPT (EV "
-                                    + (gapUp ? "gap-up" : "gap-down") + " reversal — mean-reversion)");
-                                probability = "LPT";
-                            }
-                        }
+                        // (EV gap-fade rejection removed — already caught by the LTF-priority gate
+                        //  in WeeklyCprService.getProbabilityForDirection upstream.)
                     }
                 }
 
-                // Inside-OR handling — day-type specific, magnet-aware.
-                //   EV gap-OPPOSED                        → reject (fighting gap with no OR break).
-                //   EV gap-ALIGNED                        → HPT retained (gap = conviction).
-                //   IV/OV + TREND trade + daily aligned   → HPT retained.
-                //   IV/OV + TREND trade + daily NOT aligned → HPT → LPT (no full trend support).
-                //   IV/OV + MAGNET trade                  → HPT retained unconditionally
-                //                                           (daily is expected to be opposite by
-                //                                            the nature of a bounce-off-support /
-                //                                            rejection-at-resistance setup — the
-                //                                            HPT rule for magnets already uses
-                //                                            weekly-only and doesn't require daily).
-                boolean isMagnetSetup = "BUY_ABOVE_S1_PDL".equals(setup) || "SELL_BELOW_R1_PDH".equals(setup);
-                if (orHigh > 0 && orLow > 0 && close >= orLow && close <= orHigh) {
-                    if (isEv) {
-                        boolean opposesGap = (gapUp && !isBuy) || (gapDown && isBuy);
-                        if (opposesGap) {
-                            return ProcessedSignal.rejected(setup, symbol,
-                                "EV " + (gapUp ? "up" : "down") + " — inside OR range [" + fmt(orLow) + "-" + fmt(orHigh)
-                                + "] and trade direction opposes gap (no OR break yet) — skipped");
-                        }
-                        // EV gap-aligned inside OR → HPT retained (no downgrade)
-                    } else if ("HPT".equals(probability) && !isMagnetSetup) {
-                        // IV/OV trend trade inside-OR — HPT retained only if daily aligned.
-                        String daily = weeklyCprService.getDailyTrend(symbol);
-                        boolean dailyAligned = isBuy
-                            ? (daily != null && daily.contains("BULLISH"))
-                            : (daily != null && daily.contains("BEARISH"));
-                        if (!dailyAligned) {
-                            probability = "LPT";
-                            adjustments.add("Probability HPT → LPT (inside OR on IV/OV day, daily not aligned: "
-                                + (daily != null ? daily : "UNKNOWN") + ")");
-                        }
-                        // else daily aligned → HPT retained
+                // Inside-OR handling on EV days only — IV/OV inside-OR check removed
+                // (redundant under LTF-priority model; LTF gate already enforces direction match).
+                if (orHigh > 0 && orLow > 0 && close >= orLow && close <= orHigh && isEv) {
+                    boolean opposesGap = (gapUp && !isBuy) || (gapDown && isBuy);
+                    if (opposesGap) {
+                        return ProcessedSignal.rejected(setup, symbol,
+                            "EV " + (gapUp ? "up" : "down") + " — inside OR range [" + fmt(orLow) + "-" + fmt(orHigh)
+                            + "] and trade direction opposes gap (no OR break yet) — skipped");
                     }
-                    // Magnets inside OR → HPT retained (already classified via weekly-only rule)
+                    // EV gap-aligned inside OR → trade allowed
                 }
             } else if (isEv) {
                 // EV detected but OR still forming — skip trade
@@ -432,29 +397,26 @@ public class SignalProcessor {
             }
         }
 
-        // ── 4e2a. NIFTY alignment: HPT → LPT for NIFTY-opposed trades ──
-        // When NIFTY opposes the trade direction, downgrade probability to LPT regardless
-        // of the stock's own alignment. No qty factor — the LPT downgrade itself routes
-        // through the LPT qty factor and the LPT-enable gate.
-        if (Boolean.TRUE.equals(alert.get("niftyOpposed")) && "HPT".equals(probability)) {
-            probability = "LPT";
-            adjustments.add("Probability HPT → LPT (NIFTY opposed)");
+        // ── 4e2a. NIFTY alignment: reject HPT/MPT trades when NIFTY opposes ──
+        // Under the LTF-priority model, NIFTY opposition is a hard reject (not LPT downgrade).
+        if (Boolean.TRUE.equals(alert.get("niftyOpposed"))
+                && ("HPT".equals(probability) || "MPT".equals(probability))) {
+            return ProcessedSignal.rejected(setup, symbol, "NIFTY opposed — trade rejected (LTF-priority model)");
         }
 
-        // ── 4e2a2. 2-Day CPR relationship: HPT → LPT only when CPR is OPPOSED to direction ──
+        // ── 4e2a2. 2-Day CPR relationship: reject HPT/MPT when 2D-CPR is OPPOSED ──
         // Buys are opposed by LV (today's CPR below yesterday's = bearish bias).
         // Sells are opposed by HV (today's CPR above yesterday's = bullish bias).
-        // NC (overlapping CPRs) is non-directional — same semantic as NIFTY NEUTRAL — and
-        // does NOT trigger a downgrade. Fail-open if no relation computed (e.g. fresh boot
-        // before bhavcopy classification, or open-print rejected the bias → null).
-        if (riskSettings.isEnableCprDayRelationFilter() && "HPT".equals(probability)) {
+        // NC (overlapping) and null (gap-rejected) → fail-open, no rejection.
+        if (riskSettings.isEnableCprDayRelationFilter()
+                && ("HPT".equals(probability) || "MPT".equals(probability))) {
             String rel = str(alert, "cprDayRelation");
             if (rel != null && !rel.isEmpty()) {
                 boolean opposed = isBuy ? "LV".equals(rel) : "HV".equals(rel);
                 if (opposed) {
-                    probability = "LPT";
-                    adjustments.add("Probability HPT → LPT (2D CPR relation 2D-" + rel
-                        + " opposes " + (isBuy ? "buy" : "sell") + ")");
+                    return ProcessedSignal.rejected(setup, symbol,
+                        "2D CPR relation 2D-" + rel + " opposes " + (isBuy ? "buy" : "sell")
+                        + " — trade rejected (LTF-priority model)");
                 }
             }
         }
@@ -469,7 +431,8 @@ public class SignalProcessor {
         // hadn't yet committed past that boundary — e.g. a buy at R1 in a stock that's BULLISH
         // by the state machine but currently still inside weekly CPR. R2+/S2+ are excluded —
         // far-out projections, not walls the HTF needs to clear first.
-        if (riskSettings.isEnableHtfHurdleFilter() && "HPT".equals(probability)) {
+        if (riskSettings.isEnableHtfHurdleFilter()
+                && ("HPT".equals(probability) || "MPT".equals(probability))) {
             WeeklyCprService.WeeklyLevels wl = weeklyCprService.getWeeklyLevels(symbol);
             if (wl != null) {
                 double[] candidates;
@@ -514,20 +477,19 @@ public class SignalProcessor {
                     }
 
                     if (priorHtfClose == null || priorHtfClose <= 0) {
-                        probability = "LPT";
-                        adjustments.add("Probability HPT → LPT (HTF hurdle at weekly " + chosenName
+                        return ProcessedSignal.rejected(setup, symbol,
+                            "HTF hurdle at weekly " + chosenName
                             + ": close=" + fmt(close) + ", level=" + fmt(chosenLevel)
                             + ", no prior 1h close available"
-                            + (firstTradingDay ? " — first trading day of week" : "")
-                            + ")");
+                            + (firstTradingDay ? " — first trading day of week" : ""));
                     } else if (isBuy ? priorHtfClose <= chosenLevel : priorHtfClose >= chosenLevel) {
-                        probability = "LPT";
-                        adjustments.add("Probability HPT → LPT (HTF hurdle at weekly " + chosenName
+                        return ProcessedSignal.rejected(setup, symbol,
+                            "HTF hurdle at weekly " + chosenName
                             + ": close=" + fmt(close)
                             + (usedPrevSession ? ", prev session 1h close=" : ", prior 1h close=") + fmt(priorHtfClose)
-                            + ", level=" + fmt(chosenLevel) + ")");
+                            + ", level=" + fmt(chosenLevel));
                     }
-                    // else: prior 1h (today's or previous session's) has cleared the level → HPT retained
+                    // else: prior 1h has cleared the level → trade allowed
                 }
                 // else: no weekly level in the relevant direction → filter no-op (e.g. close below all buy candidates)
             }
@@ -543,32 +505,28 @@ public class SignalProcessor {
         // near-term HTF alignment.
         // First-hour fallback: before today's first 1h close, use prior session's final 1h close
         // (Tue–Fri only). Monday/first-trading-day with no prior 1h close → downgrade to LPT.
-        if (riskSettings.isEnableHtfSmaAlignment() && "HPT".equals(probability)) {
+        if (riskSettings.isEnableHtfSmaAlignment()
+                && ("HPT".equals(probability) || "MPT".equals(probability))) {
             double htfS20 = htfSmaService != null ? htfSmaService.getSmaCompletedOnly(symbol)   : 0;
             double htfS50 = htfSmaService != null ? htfSmaService.getSma50CompletedOnly(symbol) : 0;
             Double priorHtfClose = htfSmaService != null ? htfSmaService.getLastClose(symbol) : null;
             boolean firstTradingDay = marketHolidayService.isFirstTradingDayOfWeek();
             if (htfS20 > 0 && htfS50 > 0) {
                 if (priorHtfClose == null || priorHtfClose <= 0) {
-                    if (!firstTradingDay) {
-                        // Tue-Fri: getLastClose already returns prior session's final close when
-                        // today has no completed 1h yet — null means truly no data.
-                        probability = "LPT";
-                        adjustments.add("Probability HPT → LPT (HTF SMA price: no prior 1h close available)");
-                    } else {
-                        probability = "LPT";
-                        adjustments.add("Probability HPT → LPT (HTF SMA price: first trading day of week, no prior 1h close)");
+                    if (firstTradingDay) {
+                        return ProcessedSignal.rejected(setup, symbol,
+                            "HTF SMA price: first trading day of week, no prior 1h close");
                     }
-                } else {
-                    boolean alignedBuy  = priorHtfClose > htfS20 && priorHtfClose > htfS50;
-                    boolean alignedSell = priorHtfClose < htfS20 && priorHtfClose < htfS50;
-                    if (isBuy ? !alignedBuy : !alignedSell) {
-                        probability = "LPT";
-                        adjustments.add("Probability HPT → LPT (HTF SMA price not aligned: prior 1h close="
-                            + fmt(priorHtfClose)
-                            + " vs 1h SMA 20=" + fmt(htfS20) + ", 50=" + fmt(htfS50)
-                            + " — need " + (isBuy ? "close above both" : "close below both") + ")");
-                    }
+                    return ProcessedSignal.rejected(setup, symbol,
+                        "HTF SMA price: no prior 1h close available");
+                }
+                boolean alignedBuy  = priorHtfClose > htfS20 && priorHtfClose > htfS50;
+                boolean alignedSell = priorHtfClose < htfS20 && priorHtfClose < htfS50;
+                if (isBuy ? !alignedBuy : !alignedSell) {
+                    return ProcessedSignal.rejected(setup, symbol,
+                        "HTF SMA price not aligned: prior 1h close=" + fmt(priorHtfClose)
+                        + " vs 1h SMA 20=" + fmt(htfS20) + ", 50=" + fmt(htfS50)
+                        + " — need " + (isBuy ? "close above both" : "close below both"));
                 }
             }
         }
@@ -579,45 +537,29 @@ public class SignalProcessor {
         // price gate above: the HTF trend structure itself has to be stacked in the trade's
         // direction. Mirrors the 5-min SMA alignment check (20>50>200) but using only 20/50
         // since 200 is excluded from HTF structure rules here.
-        if (riskSettings.isEnableHtfSmaAlignmentCheck() && "HPT".equals(probability)) {
+        if (riskSettings.isEnableHtfSmaAlignmentCheck()
+                && ("HPT".equals(probability) || "MPT".equals(probability))) {
             double htfS20 = htfSmaService != null ? htfSmaService.getSmaCompletedOnly(symbol)   : 0;
             double htfS50 = htfSmaService != null ? htfSmaService.getSma50CompletedOnly(symbol) : 0;
             if (htfS20 > 0 && htfS50 > 0) {
                 boolean orderedBuy  = htfS20 > htfS50;
                 boolean orderedSell = htfS20 < htfS50;
                 if (isBuy ? !orderedBuy : !orderedSell) {
-                    probability = "LPT";
-                    adjustments.add("Probability HPT → LPT (HTF SMA order not aligned: 1h SMA 20="
-                        + fmt(htfS20) + ", 50=" + fmt(htfS50)
-                        + " — need " + (isBuy ? "20 > 50" : "20 < 50") + ")");
+                    return ProcessedSignal.rejected(setup, symbol,
+                        "HTF SMA order not aligned: 1h SMA 20=" + fmt(htfS20)
+                        + ", 50=" + fmt(htfS50)
+                        + " — need " + (isBuy ? "20 > 50" : "20 < 50"));
                 }
             }
         }
 
         // ── 4e3. Re-check probability after all downgrades ─────────────────────
         // Only fires when an HPT trade was actually downgraded to LPT inside SignalProcessor
-        // (inside-OR, EV reversal, HTF hurdle, etc.) AND LPT is disabled. Natively-LPT trades
-        // (magnets, counter-trend bounces) are silently rejected so the event log only
-        // surfaces the surprising case: a would-have-been HPT blocked by the LPT setting.
-        if ("LPT".equals(probability) && !riskSettings.isEnableLpt()) {
-            String downgradeReason = "";
-            for (String adj : adjustments) {
-                if (adj != null && adj.startsWith("Probability") && adj.contains("→ LPT")) {
-                    int parenOpen  = adj.indexOf('(');
-                    int parenClose = adj.lastIndexOf(')');
-                    if (parenOpen >= 0 && parenClose > parenOpen) {
-                        if (!downgradeReason.isEmpty()) downgradeReason += "; ";
-                        downgradeReason += adj.substring(parenOpen + 1, parenClose);
-                    }
-                }
-            }
-            if (downgradeReason.isEmpty()) {
-                // Native LPT arrived (no in-processor downgrade). Silent rejection — user
-                // already disabled LPT at the setting, no need to announce every magnet skip.
-                return ProcessedSignal.silentlyRejected(setup, symbol);
-            }
-            return ProcessedSignal.rejected(setup, symbol,
-                "Probability downgraded to LPT (" + downgradeReason + ") — LPT trades disabled");
+        // LPT-disabled gate (legacy) — under LTF-priority model, no trade is downgraded to LPT
+        // anymore. All HPT/MPT failure paths return rejected directly. The block below is kept
+        // as a safety net for any historical code path that still assigns LPT.
+        if ("LPT".equals(probability)) {
+            return ProcessedSignal.silentlyRejected(setup, symbol);
         }
 
         // ── 4f. Compute target ──────────────────────────────────────────────────
@@ -789,16 +731,22 @@ public class SignalProcessor {
             }
         }
 
-        // ── 4i2. Probability-based qty adjustment (LPT = configurable, default 0.50) ──
-        if ("LPT".equals(probability)) {
+        // ── 4i2. Probability-based qty adjustment ─────────────────────────────
+        // MPT (medium): qty × mptQtyFactor (default 0.75). LPT: legacy path, no longer
+        // assigned by new classification but kept for backward compat with any old payload.
+        if ("MPT".equals(probability)) {
+            double factor = riskSettings.getMptQtyFactor();
+            int reduced = Math.max(1, (int)(qty * factor));
+            eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (MPT ×" + factor + "): " + qty + " -> " + reduced);
+            adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — MPT probability)");
+            qty = reduced;
+        } else if ("LPT".equals(probability)) {
             double factor = riskSettings.getLptQtyFactor();
-            int reduced = Math.max(1, (int)(qty * factor)); // apply factor, round to even
+            int reduced = Math.max(1, (int)(qty * factor));
             eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (LPT ×" + factor + "): " + qty + " -> " + reduced);
             adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — LPT probability)");
             qty = reduced;
         }
-
-        // Weekly NEUTRAL trades are always LPT (downgraded in BreakoutScanner) — no additional qty reduction.
 
         // ── 4i3. Mean-reversion qty reduction — half qty for all counter-trend trades ──
         boolean isMagnet = "BUY_ABOVE_S1_PDL".equals(setup) || "SELL_BELOW_R1_PDH".equals(setup);
