@@ -190,7 +190,7 @@ public class ScannerController {
         card.put("htfSma200", roundToTick(htfSma200, tickSize));
         String htfPattern = (htfSma20 > 0 && htfSma50 > 0)
             ? htfSmaService.getSmaPattern(fyersSymbol,
-                riskSettings.getSmaPatternLookback(),
+                riskSettings.getSmaPatternLookbackHtf(),
                 atrVal,
                 riskSettings.getBraidedMinCrossovers(),
                 riskSettings.getBraidedMaxSpreadAtr(),

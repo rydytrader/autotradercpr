@@ -89,7 +89,12 @@ public class RiskSettingsStore {
         volatile boolean enableSmaVsAtpCheck = true; // buy requires 20 SMA > ATP (VWAP), sell requires 20 SMA < ATP
         // SMA 20/50 pattern detection thresholds (Braided vs Railway Track).
         // Bumped for SMA behaviour (smoother, smaller spreads, shallower slopes than EMA).
-        volatile int smaPatternLookback = 10;        // candles used for pattern detection (10 × 5min = 50 min window)
+        // 5-min pattern lookback. 24 × 5min = 120 min window — long enough to filter routine
+        // pullbacks within real trends, short enough to catch fresh structural shifts within a session.
+        volatile int smaPatternLookback = 24;
+        // 1h (HTF) pattern lookback. 10 × 60min = 10 hours — kept short because each bar carries
+        // much more signal at 1h timeframe; same algorithm reads cleanly with fewer samples.
+        volatile int smaPatternLookbackHtf = 10;
         volatile int braidedMinCrossovers = 2;       // ≥ this many crossovers in lookback = BRAIDED
         volatile double braidedMaxSpreadAtr = 0.10;  // mean|spread| ≤ this × ATR = BRAIDED (SMAs truly overlapping)
         volatile double railwayMaxCv = 0.25;         // stddev/mean ratio for RAILWAY (stability)
@@ -277,6 +282,7 @@ public class RiskSettingsStore {
     public boolean isEnableSmaAlignmentCheckLenient() { return cfg().enableSmaAlignmentCheckLenient; }
     public boolean isEnableSmaVsAtpCheck()          { return cfg().enableSmaVsAtpCheck; }
     public int    getSmaPatternLookback()           { return cfg().smaPatternLookback; }
+    public int    getSmaPatternLookbackHtf()        { return cfg().smaPatternLookbackHtf; }
     public int    getBraidedMinCrossovers()         { return cfg().braidedMinCrossovers; }
     public double getBraidedMaxSpreadAtr()          { return cfg().braidedMaxSpreadAtr; }
     public double getRailwayMaxCv()                 { return cfg().railwayMaxCv; }
@@ -577,6 +583,7 @@ public class RiskSettingsStore {
             upsert("enableSmaAlignmentCheckLenient", String.valueOf(c.enableSmaAlignmentCheckLenient));
             upsert("enableSmaVsAtpCheck", String.valueOf(c.enableSmaVsAtpCheck));
             upsert("smaPatternLookback", String.valueOf(c.smaPatternLookback));
+            upsert("smaPatternLookbackHtf", String.valueOf(c.smaPatternLookbackHtf));
             upsert("braidedMinCrossovers", String.valueOf(c.braidedMinCrossovers));
             upsert("braidedMaxSpreadAtr", String.valueOf(c.braidedMaxSpreadAtr));
             upsert("railwayMaxCv", String.valueOf(c.railwayMaxCv));
@@ -717,6 +724,7 @@ public class RiskSettingsStore {
                     case "enableEmaDirectionCheck", "enableEma200DirectionCheck", "enableEmaCrossoverCheck" -> { /* legacy */ }
                     case "enableEmaVsAtpCheck", "enableSmaVsAtpCheck" -> c.enableSmaVsAtpCheck = Boolean.parseBoolean(v);
                     case "emaPatternLookback", "smaPatternLookback" -> c.smaPatternLookback = Integer.parseInt(v);
+                    case "smaPatternLookbackHtf" -> c.smaPatternLookbackHtf = Integer.parseInt(v);
                     case "braidedMinCrossovers" -> c.braidedMinCrossovers = Integer.parseInt(v);
                     case "braidedMaxSpreadAtr" -> c.braidedMaxSpreadAtr = Double.parseDouble(v);
                     case "railwayMaxCv" -> c.railwayMaxCv = Double.parseDouble(v);

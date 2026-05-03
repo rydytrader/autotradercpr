@@ -36,7 +36,7 @@ public class SmaService implements CandleAggregator.CandleCloseListener {
     private static final int SMA_MID_PERIOD = 50;
     private static final int SMA_LONG_PERIOD = 200;
 
-    private static final int HISTORY_SIZE = 20;  // ring buffer of recent SMA(20)/SMA(50) values for pattern calc
+    private static final int HISTORY_SIZE = 30;  // ring buffer of recent SMA(20)/SMA(50) values for pattern calc (≥ smaPatternLookback default 24)
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final String CACHE_FILE = "../store/cache/sma-5min.json";
     private static final String LEGACY_CACHE_FILE = "../store/cache/ema-5min.json";
