@@ -325,14 +325,29 @@
                     <div class="form-hint">Range = breakout level (0%) → target (100%). SL only tightens, never widens. For split-target trades, trailing is suppressed until T1 fills; after T1, Fibonacci activates on the remaining qty using the same thresholds. Defaults: 61.8 / 1 / 78.6 / 61.8.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">SMA Cross Exit</label>
+                    <label class="form-label">Per-Symbol Daily Trade Limit</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Stop trading a symbol once today's wins or losses reach</span>
+                        <input type="number" id="perSymbolDailyTradeLimit" class="form-control" step="1" min="0" max="20" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.78rem; font-family: var(--font-mono);">(0 = disabled)</span>
+                    </div>
+                    <div class="form-hint">Wins and losses are counted <b>separately</b> per symbol per trading day, not summed. With limit = <b>2</b>: <i>2W + 0L</i> → stop, <i>0W + 2L</i> → stop, <i>1W + 1L</i> → continue. T1 partial fills are not counted &mdash; a split trade that hits both T1 and T2 counts as one win. Counter resets daily. Skipped signals appear in Signal Trail under bucket <code>SYMBOL_DAILY_LIMIT</code>.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">SMA-based Defensive Exits</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableSmaCrossExit" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">
-                            Manually close active trade when 5-min SMA 20 closes against trade direction
+                            <b>SMA Cross</b> &mdash; exit when 5-min SMA 20 stacks against trade direction (LONG: 20 &lt; 50; SHORT: 20 &gt; 50)
                         </span>
                     </div>
-                    <div class="form-hint">Evaluates at every 5-min candle close. <b>Active LONG</b>: exits when SMA 20 &lt; SMA 50. <b>Active SHORT</b>: exits when SMA 20 &gt; SMA 50. Independent of SL / Target / Trailing &mdash; fires before any of them. Defensive exit to cut momentum-loss trades early. Cancels both SL and Target before placing the exit market order; trade is recorded with reason <code>SMA_CROSS_EXIT</code>.</div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="enablePriceSmaExit" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">
+                            <b>Price vs SMA 50</b> &mdash; exit when 5-min candle close is on the wrong side of SMA 50 (LONG: close &lt; SMA 50; SHORT: close &gt; SMA 50)
+                        </span>
+                    </div>
+                    <div class="form-hint">Both checks evaluate at every 5-min candle close, independently of SL / Target / Trailing. Fire before any of them &mdash; defensive exits to cut momentum-loss trades early. Either check cancels both SL and Target before placing the exit market order; the trade is recorded with reason <code>SMA_CROSS_EXIT</code> or <code>PRICE_SMA_EXIT</code>. SMA 50 is the structural reference for the price-vs-SMA check &mdash; slower than 20, less noise from routine pullbacks. Both can be enabled together; if both fire on the same bar, SMA Cross (stricter) wins.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Session Move Limit</label>
@@ -456,33 +471,44 @@
                     <div class="form-hint">Rejects breakout candles with excessively large body (|close − open|). Catches exhaustion moves where the stock has already run too far on a single candle. Default 4.0 ATR catches only extreme spikes.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">HTF Hurdle and SMA Trend Filter</label>
+                    <label class="form-label">HTF Hurdle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Hurdle</b>: reject when prior 1h HTF candle hasn't cleared nearest weekly R1/PWH/TC/Pivot/BC (buy) or S1/PWL/TC/Pivot/BC (sell)</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject when prior 1h HTF candle hasn't cleared nearest weekly R1/PWH/TC/Pivot/BC (buy) or S1/PWL/TC/Pivot/BC (sell)</span>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="enableHtfSmaAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Price</b>: 1-hour SMA trend &mdash; prior 1h candle close above/below 1h SMA 20 and 50 together</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="enableHtfSmaAlignmentCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Alignment</b>: 1h SMAs aligned &mdash; buy requires <b>20 &gt; 50</b>, sell requires <b>20 &lt; 50</b></span>
-                    </div>
-                    <div class="form-hint">Three independent HTF checks &mdash; each rejects the trade outright on its own (no qty downgrade under the LTF-priority model).
-                        <br><br>
-                        <b>Hurdle.</b> For a 5-min breakout, find the nearest weekly hurdle in the trade direction:
+                    <div class="form-hint">For a 5-min breakout, find the nearest weekly hurdle in the trade direction:
                         <b>buys</b> &rarr; the highest of {R1, PWH, weekly TC, weekly Pivot, weekly BC} strictly below the 5-min close;
                         <b>sells</b> &rarr; the lowest of {S1, PWL, weekly TC, weekly Pivot, weekly BC} strictly above the close.
                         Then check the previous 1-hour HTF candle close:
                         <b>cleared</b> &rarr; trade fires; <b>didn't clear</b> &rarr; reject; <b>no prior 1h close yet today</b> (first session hour) &rarr; reject.
                         Weekly CPR (TC/Pivot/BC) is included so that breakouts that fired just past the weekly CPR boundary are gated by the prior 1h close too &mdash; e.g. a buy at R1 in a stock currently inside weekly CPR but BULLISH by the state machine. R2+/S2+ are excluded &mdash; far-out projections, not walls the HTF needs to clear first.
+                        Applies to all HPT and MPT breakouts. Fail-open when any level is warming up.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">HTF SMA Trend and Pattern Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableHtfSmaAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Trend</b>: prior 1h candle close above/below 1h SMA 20 and 50 together</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="enableHtfSmaAlignmentCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Pattern</b>: 1h SMAs aligned &mdash; buy requires <b>20 &gt; 50</b>, sell requires <b>20 &lt; 50</b></span>
+                    </div>
+                    <div class="form-hint">Two independent 1-hour HTF SMA checks &mdash; each rejects the trade outright on its own (no qty downgrade under the LTF-priority model).
                         <br><br>
-                        <b>Price.</b> Compares the <b>previous completed 1h candle's close</b> against the 1h SMA 20 and SMA 50 (both computed from completed 1h closes only &mdash; no live blending). Sticky between 1h boundaries: the gate stays put until the next 1h close commits a new value. Confirmed structure, not in-progress hope. Tue&ndash;Fri uses the prior session's final 1h close as the first-hour fallback before today's first 1h close fires; Monday morning HPT/MPT signals are rejected until the day's first 1h close.
+                        <b>Trend.</b> Compares the <b>previous completed 1h candle's close</b> against the 1h SMA 20 and SMA 50 (both computed from completed 1h closes only &mdash; no live blending). Sticky between 1h boundaries: the gate stays put until the next 1h close commits a new value. Confirmed structure, not in-progress hope. Tue&ndash;Fri uses the prior session's final 1h close as the first-hour fallback before today's first 1h close fires; Monday morning HPT/MPT signals are rejected until the day's first 1h close.
                         <br><br>
-                        <b>Alignment.</b> SMA-to-SMA ordering: 1h SMA 20 above 50 for buys, below 50 for sells. Both SMAs from completed 1h closes only. Stricter than Price &mdash; the HTF trend structure itself has to be stacked in the trade's direction, independent of where the prior close sits.
+                        <b>Pattern.</b> SMA-to-SMA ordering: 1h SMA 20 above 50 for buys, below 50 for sells. Both SMAs from completed 1h closes only. Stricter than Trend &mdash; the HTF SMA structure itself has to be stacked in the trade's direction, independent of where the prior close sits.
                         <br><br>
-                        Applies to all HPT and MPT breakouts. Fail-open when any SMA/level is warming up.</div>
+                        Applies to all HPT and MPT breakouts. Fail-open when any SMA is warming up.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">NIFTY HTF Hurdle Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableNiftyHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY's prior 1h close hasn't cleared its nearest weekly hurdle</span>
+                    </div>
+                    <div class="form-hint">Macro-level mirror of the per-stock HTF Hurdle, applied to NIFTY's own data. When on, identifies NIFTY's nearest weekly hurdle in trade direction (R1/PWH/weekly TC/Pivot/BC for buys; S1/PWL/... for sells) and rejects every stock signal while NIFTY's prior 1h close hasn't decisively cleared it. While NIFTY's current 1h candle is still in progress and the prior close is on the wrong side, all stock signals are skipped &mdash; we wait for the next 1h close to commit. Independent of the NIFTY trend alignment filter below; both can be enabled together. Signal Trail bucket: <code>NIFTY_HURDLE</code>.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">20 SMA Level Count Filter</label>
@@ -514,7 +540,7 @@
                         <br>&nbsp;&nbsp;&bull; <b>SMA Price</b>: NIFTY LTP above (bullish) or below (bearish) <i>both</i> 5-min SMA 20 and 50
                         <br>&nbsp;&nbsp;&bull; <b>SMA Alignment</b>: 5-min SMA 20 &gt; 50 (bullish) or 20 &lt; 50 (bearish)
                         <br>States: <b>BULLISH</b> (all 3 factors bullish) / <b>BEARISH</b> (all 3 bearish) / <b>SIDEWAYS</b> (mixed) / <b>NEUTRAL</b> (NIFTY inside CPR or no data).
-                        <br>When this filter is on: buys require <b>BULLISH</b>; sells require <b>BEARISH</b>; every other state (SIDEWAYS / NEUTRAL / opposite) skips the trade outright. Breadth (advancers/decliners) is shown on the card for context only.</div>
+                        <br>When this filter is on: buys require <b>BULLISH</b>; sells require <b>BEARISH</b>; every other state (SIDEWAYS / NEUTRAL / opposite) skips the trade outright. Independent of the NIFTY HTF Hurdle filter above; both can be enabled together.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Extended Level Signals (R3/S3, R4/S4)</label>
@@ -1118,6 +1144,7 @@
             document.getElementById('enableTargetTolerance').checked = d.enableTargetTolerance !== false;
             document.getElementById('targetToleranceAtr').value = (d.targetToleranceAtr != null ? d.targetToleranceAtr : 0.10);
             document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
+            document.getElementById('enableNiftyHtfHurdleFilter').checked = d.enableNiftyHtfHurdleFilter === true;
             document.getElementById('enableSmallCandleFilter').checked = d.enableSmallCandleFilter === true;
             document.getElementById('smallCandleBodyAtrThreshold').value =
                 (d.smallCandleBodyAtrThreshold != null ? d.smallCandleBodyAtrThreshold : (d.smallCandleAtrThreshold != null ? d.smallCandleAtrThreshold : 0.5));
@@ -1130,6 +1157,8 @@
             document.getElementById('volumeLookback').value = d.volumeLookback || 20;
             document.getElementById('enableTrailingSl').checked = d.enableTrailingSl != null ? d.enableTrailingSl : true;
             document.getElementById('enableSmaCrossExit').checked = d.enableSmaCrossExit === true;
+            document.getElementById('enablePriceSmaExit').checked = d.enablePriceSmaExit === true;
+            document.getElementById('perSymbolDailyTradeLimit').value = d.perSymbolDailyTradeLimit != null ? d.perSymbolDailyTradeLimit : 2;
             document.getElementById('fibStage1TriggerPct').value = d.fibStage1TriggerPct != null ? d.fibStage1TriggerPct : 61.8;
             document.getElementById('fibStage1SlAtrMult').value  = d.fibStage1SlAtrMult  != null ? d.fibStage1SlAtrMult  : 1.0;
             document.getElementById('fibStage2TriggerPct').value = d.fibStage2TriggerPct != null ? d.fibStage2TriggerPct : 78.6;
@@ -1278,6 +1307,7 @@
                 enableTargetTolerance: document.getElementById('enableTargetTolerance').checked,
                 targetToleranceAtr: parseFloat(document.getElementById('targetToleranceAtr').value) || 0,
                 enableIndexAlignment: document.getElementById('enableIndexAlignment').checked,
+                enableNiftyHtfHurdleFilter: document.getElementById('enableNiftyHtfHurdleFilter').checked,
                 enableSmallCandleFilter: document.getElementById('enableSmallCandleFilter').checked,
                 smallCandleBodyAtrThreshold: parseFloat(document.getElementById('smallCandleBodyAtrThreshold').value) || 0.5,
                 smallCandleMoveAtrThreshold: parseFloat(document.getElementById('smallCandleMoveAtrThreshold').value) || 0.15,
@@ -1288,6 +1318,8 @@
                 volumeLookback: parseInt(document.getElementById('volumeLookback').value) || 20,
                 enableTrailingSl: document.getElementById('enableTrailingSl').checked,
                 enableSmaCrossExit: document.getElementById('enableSmaCrossExit').checked,
+                enablePriceSmaExit: document.getElementById('enablePriceSmaExit').checked,
+                perSymbolDailyTradeLimit: parseInt(document.getElementById('perSymbolDailyTradeLimit').value) || 0,
                 fibStage1TriggerPct: parseFloat(document.getElementById('fibStage1TriggerPct').value) || 61.8,
                 fibStage1SlAtrMult:  parseFloat(document.getElementById('fibStage1SlAtrMult').value)  || 1.0,
                 fibStage2TriggerPct: parseFloat(document.getElementById('fibStage2TriggerPct').value) || 78.6,

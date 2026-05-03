@@ -59,6 +59,18 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     @org.springframework.context.annotation.Lazy
     private IndexTrendService indexTrendService;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private TradeHistoryService tradeHistoryService;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private HtfSmaService htfSmaService;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private MarketHolidayService marketHolidayService;
+
     // Track which levels have been broken today per symbol (prevents re-fire)
     private final ConcurrentHashMap<String, Set<String>> brokenLevels = new ConcurrentHashMap<>();
 
@@ -340,6 +352,21 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             return;
         }
 
+        // Per-symbol daily trade limit. Halt new trades on the symbol once today's wins OR
+        // losses (counted separately, not summed) reach the threshold. 0 = disabled.
+        int perSymbolLimit = riskSettings.getPerSymbolDailyTradeLimit();
+        if (perSymbolLimit > 0 && tradeHistoryService != null) {
+            int[] wl = tradeHistoryService.getSymbolTodayResult(fyersSymbol);
+            int wins = wl[0], losses = wl[1];
+            if (wins >= perSymbolLimit || losses >= perSymbolLimit) {
+                String detail = "today " + wins + "W / " + losses + "L — limit " + perSymbolLimit
+                    + " (" + (wins >= perSymbolLimit ? "wins" : "losses") + ") reached";
+                eventService.log("[SCANNER] " + fyersSymbol + " — skipped, " + detail);
+                recordRejection(fyersSymbol, "", close, "SYMBOL_DAILY_LIMIT", detail);
+                return;
+            }
+        }
+
         Set<String> broken = brokenLevels.getOrDefault(fyersSymbol, Collections.emptySet());
 
         double low = candle.low;
@@ -466,6 +493,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                         "NIFTY " + niftyState + " — buy requires NIFTY BULLISH");
                     return;
                 }
+                // NIFTY HTF Hurdle — wait for NIFTY's prior 1h close to clear its nearest weekly hurdle.
+                String niftyHurdleReject = checkNiftyHurdle(true);
+                if (niftyHurdleReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + niftyHurdleReject);
+                    recordRejection(fyersSymbol, buySetup, close, "NIFTY_HURDLE", niftyHurdleReject);
+                    return;
+                }
                 fireSignal(fyersSymbol, buySetup, open, high, low, close, candle.volume, atr, levels, prob, null);
                 return;
             } else {
@@ -520,6 +554,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     String niftyState = indexTrendService != null ? indexTrendService.getNiftyTrend().getState() : "?";
                     recordRejection(fyersSymbol, sellSetup, close, "NIFTY_OPPOSED",
                         "NIFTY " + niftyState + " — sell requires NIFTY BEARISH");
+                    return;
+                }
+                // NIFTY HTF Hurdle — wait for NIFTY's prior 1h close to clear its nearest weekly hurdle.
+                String niftyHurdleReject = checkNiftyHurdle(false);
+                if (niftyHurdleReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + niftyHurdleReject);
+                    recordRejection(fyersSymbol, sellSetup, close, "NIFTY_HURDLE", niftyHurdleReject);
                     return;
                 }
                 fireSignal(fyersSymbol, sellSetup, open, high, low, close, candle.volume, atr, levels, prob, null);
@@ -901,6 +942,85 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             log.warn("[BreakoutScanner] Index alignment check failed for {}: {}", fyersSymbol, e.getMessage());
         }
         return NiftyAlignStatus.OK;
+    }
+
+    /**
+     * NIFTY HTF Hurdle filter. Mirrors the per-stock HTF Hurdle (see SignalProcessor) but
+     * applied to NIFTY's own data: when NIFTY's prior 1h close hasn't cleared its nearest
+     * weekly hurdle in trade direction, all stock trades in that direction are skipped until
+     * the next 1h close commits.
+     *
+     * <p>Returns a non-null reason string when the filter rejects, or null when the trade
+     * is allowed (filter off, no hurdle, hurdle cleared, or fail-open data missing).
+     */
+    private String checkNiftyHurdle(boolean isBuy) {
+        if (!riskSettings.isEnableNiftyHtfHurdleFilter()) return null;
+        if (marketDataService == null || weeklyCprService == null) return null;
+        try {
+            String niftySym = IndexTrendService.NIFTY_SYMBOL;
+            double niftyPrice = marketDataService.getLtp(niftySym);
+            if (niftyPrice <= 0) return null; // no LTP yet — fail-open
+
+            WeeklyCprService.WeeklyLevels wl = weeklyCprService.getWeeklyLevels(niftySym);
+            if (wl == null) return null; // weekly levels not loaded — fail-open
+
+            double[] candidates;
+            String[] names;
+            if (isBuy) {
+                candidates = new double[]{ wl.r1, wl.ph, wl.tc, wl.pivot, wl.bc };
+                names      = new String[]{ "R1", "PWH", "weekly TC", "weekly Pivot", "weekly BC" };
+            } else {
+                candidates = new double[]{ wl.s1, wl.pl, wl.tc, wl.pivot, wl.bc };
+                names      = new String[]{ "S1", "PWL", "weekly TC", "weekly Pivot", "weekly BC" };
+            }
+
+            // Nearest hurdle in trade direction relative to NIFTY's current price.
+            double chosenLevel = 0;
+            String chosenName = null;
+            for (int i = 0; i < candidates.length; i++) {
+                double lv = candidates[i];
+                if (lv <= 0) continue;
+                if (isBuy) {
+                    if (lv < niftyPrice && lv > chosenLevel) { chosenLevel = lv; chosenName = names[i]; }
+                } else {
+                    if (lv > niftyPrice && (chosenName == null || lv < chosenLevel)) {
+                        chosenLevel = lv; chosenName = names[i];
+                    }
+                }
+            }
+            if (chosenName == null) return null; // no hurdle in trade direction → clear path
+
+            Double priorHtfClose = weeklyCprService.getLastHigherTfClose(niftySym);
+            boolean usedPrevSession = false;
+            boolean firstTradingDay = marketHolidayService != null && marketHolidayService.isFirstTradingDayOfWeek();
+            if ((priorHtfClose == null || priorHtfClose <= 0) && !firstTradingDay && htfSmaService != null) {
+                Double prev = htfSmaService.getLastClose(niftySym);
+                if (prev != null && prev > 0) {
+                    priorHtfClose = prev;
+                    usedPrevSession = true;
+                }
+            }
+
+            if (priorHtfClose == null || priorHtfClose <= 0) {
+                return "NIFTY HTF hurdle at weekly " + chosenName
+                    + ": NIFTY " + String.format("%.2f", niftyPrice)
+                    + ", level " + String.format("%.2f", chosenLevel)
+                    + ", no prior 1h close available"
+                    + (firstTradingDay ? " — first trading day of week" : "");
+            }
+            boolean cleared = isBuy ? priorHtfClose > chosenLevel : priorHtfClose < chosenLevel;
+            if (!cleared) {
+                return "NIFTY HTF hurdle at weekly " + chosenName
+                    + ": NIFTY " + String.format("%.2f", niftyPrice)
+                    + (usedPrevSession ? ", prev session 1h close=" : ", prior 1h close=")
+                    + String.format("%.2f", priorHtfClose)
+                    + ", level " + String.format("%.2f", chosenLevel);
+            }
+            return null; // prior 1h has cleared the hurdle
+        } catch (Exception e) {
+            log.warn("[BreakoutScanner] NIFTY hurdle check failed: {}", e.getMessage());
+            return null; // fail-open
+        }
     }
 
     private boolean isProbabilityEnabled(String prob) {

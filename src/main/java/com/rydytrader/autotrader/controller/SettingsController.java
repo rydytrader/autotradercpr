@@ -64,6 +64,7 @@ public class SettingsController {
         result.put("enableWeeklyLevelTargetShift", riskSettings.isEnableWeeklyLevelTargetShift());
         result.put("enableWeeklySmaTargetShift", riskSettings.isEnableWeeklySmaTargetShift());
         result.put("enableHtfHurdleFilter", riskSettings.isEnableHtfHurdleFilter());
+        result.put("enableNiftyHtfHurdleFilter", riskSettings.isEnableNiftyHtfHurdleFilter());
         result.put("enableHtfSmaAlignment", riskSettings.isEnableHtfSmaAlignment());
         result.put("enableHtfSmaAlignmentCheck", riskSettings.isEnableHtfSmaAlignmentCheck());
         result.put("enableStructuralSl",    riskSettings.isEnableStructuralSl());
@@ -104,6 +105,8 @@ public class SettingsController {
         result.put("volumeLookback", riskSettings.getVolumeLookback(effectiveMode));
         result.put("enableTrailingSl", riskSettings.isEnableTrailingSl(effectiveMode));
         result.put("enableSmaCrossExit", riskSettings.isEnableSmaCrossExit());
+        result.put("enablePriceSmaExit", riskSettings.isEnablePriceSmaExit());
+        result.put("perSymbolDailyTradeLimit", riskSettings.getPerSymbolDailyTradeLimit());
         result.put("fibStage1TriggerPct", riskSettings.getFibStage1TriggerPct());
         result.put("fibStage1SlAtrMult",  riskSettings.getFibStage1SlAtrMult());
         result.put("fibStage2TriggerPct", riskSettings.getFibStage2TriggerPct());
@@ -181,6 +184,7 @@ public class SettingsController {
             if (body.containsKey("enableWeeklyLevelTargetShift")) riskSettings.setEnableWeeklyLevelTargetShift(Boolean.parseBoolean(body.get("enableWeeklyLevelTargetShift").toString()));
             if (body.containsKey("enableWeeklySmaTargetShift")) riskSettings.setEnableWeeklySmaTargetShift(Boolean.parseBoolean(body.get("enableWeeklySmaTargetShift").toString()));
             if (body.containsKey("enableHtfHurdleFilter")) riskSettings.setEnableHtfHurdleFilter(Boolean.parseBoolean(body.get("enableHtfHurdleFilter").toString()));
+            if (body.containsKey("enableNiftyHtfHurdleFilter")) riskSettings.setEnableNiftyHtfHurdleFilter(Boolean.parseBoolean(body.get("enableNiftyHtfHurdleFilter").toString()));
             if (body.containsKey("enableHtfSmaAlignment")) riskSettings.setEnableHtfSmaAlignment(Boolean.parseBoolean(body.get("enableHtfSmaAlignment").toString()));
             if (body.containsKey("enableHtfSmaAlignmentCheck")) riskSettings.setEnableHtfSmaAlignmentCheck(Boolean.parseBoolean(body.get("enableHtfSmaAlignmentCheck").toString()));
             if (body.containsKey("enableStructuralSl")) riskSettings.setEnableStructuralSl(Boolean.parseBoolean(body.get("enableStructuralSl").toString()));
@@ -221,6 +225,12 @@ public class SettingsController {
             if (body.containsKey("volumeLookback")) riskSettings.setVolumeLookback(effectiveMode, Integer.parseInt(body.get("volumeLookback").toString()));
             if (body.containsKey("enableTrailingSl")) riskSettings.setEnableTrailingSl(effectiveMode, Boolean.parseBoolean(body.get("enableTrailingSl").toString()));
             if (body.containsKey("enableSmaCrossExit")) riskSettings.setEnableSmaCrossExit(Boolean.parseBoolean(body.get("enableSmaCrossExit").toString()));
+            if (body.containsKey("enablePriceSmaExit")) riskSettings.setEnablePriceSmaExit(Boolean.parseBoolean(body.get("enablePriceSmaExit").toString()));
+            if (body.containsKey("perSymbolDailyTradeLimit")) {
+                try {
+                    riskSettings.setPerSymbolDailyTradeLimit(Integer.parseInt(body.get("perSymbolDailyTradeLimit").toString()));
+                } catch (NumberFormatException ignored) { /* leave at current value */ }
+            }
             if (body.containsKey("fibStage1TriggerPct")) riskSettings.setFibStage1TriggerPct(Double.parseDouble(body.get("fibStage1TriggerPct").toString()));
             if (body.containsKey("fibStage1SlAtrMult"))  riskSettings.setFibStage1SlAtrMult(Double.parseDouble(body.get("fibStage1SlAtrMult").toString()));
             if (body.containsKey("fibStage2TriggerPct")) riskSettings.setFibStage2TriggerPct(Double.parseDouble(body.get("fibStage2TriggerPct").toString()));

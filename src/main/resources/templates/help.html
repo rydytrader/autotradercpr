@@ -714,6 +714,7 @@
                 <li><b>20-SMA level-count</b> (<code>enableSmaLevelCountFilter</code>) — skip if a CPR zone sits between the 20 SMA and the broken level; plus proximity check (<code>smaLevelMinRangePct</code>).</li>
                 <li><b>Volume filter</b> (<code>enableVolumeFilter</code>) — candle volume ≥ <code>volumeMultiple</code> × N-candle average.</li>
                 <li><b>NIFTY index alignment</b> (<code>enableIndexAlignment</code>) — buys need NIFTY = BULLISH, sells need BEARISH; SIDEWAYS / NEUTRAL / opposite skip.</li>
+                <li><b>NIFTY HTF Hurdle</b> (<code>enableNiftyHtfHurdleFilter</code>, opt-in) — same rule as the per-stock HTF Hurdle, applied to NIFTY's own data. NIFTY's prior 1h close must have decisively cleared NIFTY's nearest weekly hurdle in trade direction (R1/PWH/weekly TC/Pivot/BC for buys; S1/PWL/... for sells). While NIFTY's current 1h candle is in progress and the prior close is on the wrong side, all stock signals skip.</li>
             </ol>
             <p style="margin-top:12px;"><b>SignalProcessor-side (after probability assignment)</b></p>
             <ol>
@@ -785,6 +786,7 @@
                 <tr><td><code>LEVEL_PROXIMITY</code></td><td>Subset of the level-count filter: SMA is too far from the broken level by the proximity-pct check.</td></tr>
                 <tr><td><code>LOW_VOLUME</code></td><td>Volume filter: candle volume below the configured multiple of average.</td></tr>
                 <tr><td><code>NIFTY_OPPOSED</code></td><td>NIFTY trend not aligned: buy needs NIFTY = BULLISH, sell needs BEARISH; everything else (SIDEWAYS / NEUTRAL / opposite) hits this bucket.</td></tr>
+                <tr><td><code>NIFTY_HURDLE</code></td><td>NIFTY HTF Hurdle filter on. NIFTY's prior 1h close hasn't cleared NIFTY's nearest weekly hurdle in trade direction. Detail names the hurdle (R1/PWH/weekly TC/Pivot/BC for buys; mirror for sells), NIFTY's current price, prior 1h close, and the level. Wait for the next 1h close to commit.</td></tr>
             </table>
 
             <h4>LTF / HTF probability gates (LTF-priority model)</h4>

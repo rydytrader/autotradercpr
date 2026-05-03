@@ -77,6 +77,28 @@ public class TradeHistoryService {
 
     public List<TradeRecord> getTrades() { return new ArrayList<>(trades); }
 
+    /**
+     * Today's wins and losses for a single symbol, used by the per-symbol daily-trade-limit gate.
+     * Counts only fully-closed trade rows — TARGET_1 partial fills are excluded so a split
+     * trade that hits T1 then T2 counts as one win, not two.
+     *
+     * @return int[]{wins, losses} — both >= 0
+     */
+    public int[] getSymbolTodayResult(String symbol) {
+        if (symbol == null) return new int[]{0, 0};
+        int wins = 0;
+        int losses = 0;
+        synchronized (trades) {
+            for (TradeRecord r : trades) {
+                if (!symbol.equals(r.getSymbol())) continue;
+                if ("TARGET_1".equals(r.getExitReason())) continue; // partial fill
+                if ("PROFIT".equals(r.getResult())) wins++;
+                else if ("LOSS".equals(r.getResult())) losses++;
+            }
+        }
+        return new int[]{wins, losses};
+    }
+
     public List<TradeRecord> getTradesForRange(LocalDate from, LocalDate to) {
         List<TradeRecord> result = new ArrayList<>();
         List<TradeEntity> entities = tradeRepo.findByTradeDateBetween(from, to);
