@@ -349,11 +349,9 @@ public class SignalProcessor {
             boolean gapDown = firstClose > 0 && s2 > 0 && firstClose <= s2;
             boolean isEv = gapUp || gapDown;
 
-            // IV/OV days: mean-reversion setups not allowed (only fire on EV days)
-            if (!isEv && isMeanReversionSetup(setup)) {
-                return ProcessedSignal.rejected(setup, symbol,
-                    "Mean-reversion setup only allowed on EV days (gap up/down) — today is IV/OV");
-            }
+            // Mean-reversion setups (S2/S3/S4 buys, R2/R3/R4 sells) fire on any day type.
+            // Master gate is the BreakoutScanner's enableMeanReversionTrades toggle, applied
+            // before this point. Earlier "EV-only" restriction was removed.
 
             if (candleAggregator.isOpeningRangeLocked(symbol)) {
                 double orHigh = candleAggregator.getOpeningRangeHigh(symbol);
@@ -435,19 +433,30 @@ public class SignalProcessor {
                 if (chosenName != null) {
                     Double priorHtfClose = weeklyCprService.getLastHigherTfClose(symbol);
                     boolean usedPrevSession = false;
+                    boolean usedLiveLtp = false;
                     boolean firstTradingDay = marketHolidayService.isFirstTradingDayOfWeek();
 
                     // First-hour fallback: before today's first 1h candle closes, there's no
                     // today's HTF close to check against. On Tue-Fri (not first trading day),
                     // use the prior session's final 1h close — weekly CPR levels are stable
                     // across the week, so yesterday's close vs this week's reversal level is a
-                    // meaningful comparison. On Monday/first-day, skip the fallback — weekly
-                    // levels just went live and last Friday's close was vs last week's levels.
+                    // meaningful comparison. On Monday/first-day, skip the prior-session fallback
+                    // — weekly levels just went live and last Friday's close was vs last week's
+                    // levels — and instead fall back to live LTP as the in-progress 1h proxy
+                    // (loses "wait for confirmed structure" guarantee for one window, but lets
+                    // Monday morning trade rather than rejecting everything before 10:15 IST).
                     if ((priorHtfClose == null || priorHtfClose <= 0) && !firstTradingDay) {
                         Double prev = htfSmaService.getLastClose(symbol);
                         if (prev != null && prev > 0) {
                             priorHtfClose = prev;
                             usedPrevSession = true;
+                        }
+                    }
+                    if ((priorHtfClose == null || priorHtfClose <= 0) && firstTradingDay) {
+                        double ltp = candleAggregator.getLtp(symbol);
+                        if (ltp > 0) {
+                            priorHtfClose = ltp;
+                            usedLiveLtp = true;
                         }
                     }
 
@@ -458,13 +467,16 @@ public class SignalProcessor {
                             + ", no prior 1h close available"
                             + (firstTradingDay ? " — first trading day of week" : ""));
                     } else if (isBuy ? priorHtfClose <= chosenLevel : priorHtfClose >= chosenLevel) {
+                        String label = usedLiveLtp ? ", live LTP="
+                                     : usedPrevSession ? ", prev session 1h close="
+                                     : ", prior 1h close=";
                         return ProcessedSignal.rejected(setup, symbol,
                             "HTF hurdle at weekly " + chosenName
                             + ": close=" + fmt(close)
-                            + (usedPrevSession ? ", prev session 1h close=" : ", prior 1h close=") + fmt(priorHtfClose)
+                            + label + fmt(priorHtfClose)
                             + ", level=" + fmt(chosenLevel));
                     }
-                    // else: prior 1h has cleared the level → trade allowed
+                    // else: prior 1h close (or LTP fallback) has cleared the level → trade allowed
                 }
                 // else: no weekly level in the relevant direction → filter no-op (e.g. close below all buy candidates)
             }
@@ -479,18 +491,28 @@ public class SignalProcessor {
         // 1h boundaries — no flicker mid-bar. SMA 200 is excluded — too slow a reference for
         // near-term HTF alignment.
         // First-hour fallback: before today's first 1h close, use prior session's final 1h close
-        // (Tue–Fri only). Monday/first-trading-day with no prior 1h close → downgrade to LPT.
+        // (Tue–Fri only — htfSmaService.getLastClose persists across days). On Monday/first-day
+        // with no prior 1h close in cache, fall back to live LTP as the in-progress 1h proxy
+        // so we don't reject every trade for the first hour of the week.
         if (riskSettings.isEnableHtfSmaAlignment()
                 && ("HPT".equals(probability) || "MPT".equals(probability))) {
             double htfS20 = htfSmaService != null ? htfSmaService.getSmaCompletedOnly(symbol)   : 0;
             double htfS50 = htfSmaService != null ? htfSmaService.getSma50CompletedOnly(symbol) : 0;
             Double priorHtfClose = htfSmaService != null ? htfSmaService.getLastClose(symbol) : null;
             boolean firstTradingDay = marketHolidayService.isFirstTradingDayOfWeek();
+            boolean usedLiveLtp = false;
+            if ((priorHtfClose == null || priorHtfClose <= 0) && firstTradingDay) {
+                double ltp = candleAggregator.getLtp(symbol);
+                if (ltp > 0) {
+                    priorHtfClose = ltp;
+                    usedLiveLtp = true;
+                }
+            }
             if (htfS20 > 0 && htfS50 > 0) {
                 if (priorHtfClose == null || priorHtfClose <= 0) {
                     if (firstTradingDay) {
                         return ProcessedSignal.rejected(setup, symbol,
-                            "HTF SMA price: first trading day of week, no prior 1h close");
+                            "HTF SMA price: first trading day of week, no prior 1h close and no live LTP");
                     }
                     return ProcessedSignal.rejected(setup, symbol,
                         "HTF SMA price: no prior 1h close available");
@@ -498,10 +520,11 @@ public class SignalProcessor {
                 boolean alignedBuy  = priorHtfClose > htfS20 && priorHtfClose > htfS50;
                 boolean alignedSell = priorHtfClose < htfS20 && priorHtfClose < htfS50;
                 if (isBuy ? !alignedBuy : !alignedSell) {
+                    String label = usedLiveLtp ? "live LTP=" : "prior 1h close=";
                     return ProcessedSignal.rejected(setup, symbol,
-                        "HTF SMA price not aligned: prior 1h close=" + fmt(priorHtfClose)
+                        "HTF SMA price not aligned: " + label + fmt(priorHtfClose)
                         + " vs 1h SMA 20=" + fmt(htfS20) + ", 50=" + fmt(htfS50)
-                        + " — need " + (isBuy ? "close above both" : "close below both"));
+                        + " — need " + (isBuy ? "above both" : "below both"));
                 }
             }
         }
@@ -723,27 +746,12 @@ public class SignalProcessor {
             qty = reduced;
         }
 
-        // ── 4i3. Mean-reversion qty reduction — half qty for all counter-trend trades ──
-        boolean isMagnet = "BUY_ABOVE_S1_PDL".equals(setup) || "SELL_BELOW_R1_PDH".equals(setup);
-        if (isReversal || (isMagnet && !isReversal)) {
-            // Check if OV magnet (not EV — EV magnets are already isReversal)
-            boolean shouldHalve = isReversal; // all EV reversals get halved
-            if (!shouldHalve && isMagnet) {
-                double firstCloseOv = candleAggregator.getFirstCandleClose(symbol);
-                if (firstCloseOv > 0) {
-                    double upperBound = Math.max(r1, ph);
-                    double lowerBound = Math.min(s1, pl);
-                    shouldHalve = firstCloseOv > upperBound || firstCloseOv < lowerBound;
-                }
-            }
-            if (shouldHalve) {
-                int reduced = Math.max(1, qty / 2);
-                String reason = isReversal ? "EV mean-reversion (counter daily trend)" : "OV magnet (outside value)";
-                eventService.log("[INFO] " + symbol + " " + setup + " qty halved (" + reason + "): " + qty + " -> " + reduced);
-                adjustments.add("Qty " + qty + " → " + reduced + " (halved — " + reason + ")");
-                qty = reduced;
-            }
-        }
+        // ── 4i3. Counter-trend qty reductions removed ──
+        // Both EV-reversal halving and OV-magnet halving were removed under the LTF-priority
+        // model. Counter-trend setups (8 magnets + deep mean-rev) are now sized purely by the
+        // MPT factor (mptQtyFactor, default 0.75) applied above. The setup-quality / day-type
+        // reductions added too much compounding when the user already has explicit toggles for
+        // the same conditions (enableMeanReversionTrades, OR rules, etc.).
 
         // ── 4i6. Minimum absolute profit filter ────────────────────────────────
         double minProfit = riskSettings.getMinAbsoluteProfit();
@@ -1022,18 +1030,6 @@ public class SignalProcessor {
         };
     }
 
-    /**
-     * R2+/S2+ mean-reversion fades — only valid on EV (gap) days.
-     * Magnets (SELL_BELOW_R1_PDH, BUY_ABOVE_S1_PDL) are excluded — they fire on all day types.
-     */
-    private static boolean isMeanReversionSetup(String setup) {
-        return "SELL_BELOW_R2".equals(setup)
-            || "SELL_BELOW_R3".equals(setup)
-            || "SELL_BELOW_R4".equals(setup)
-            || "BUY_ABOVE_S2".equals(setup)
-            || "BUY_ABOVE_S3".equals(setup)
-            || "BUY_ABOVE_S4".equals(setup);
-    }
 
     // ── Level name for description ──────────────────────────────────────────────
     private static String levelNameForSetup(String setup) {

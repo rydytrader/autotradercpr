@@ -503,6 +503,17 @@
                         Applies to all HPT and MPT breakouts. Fail-open when any SMA is warming up.</div>
                 </div>
                 <div class="form-group">
+                    <label class="form-label">HTF Candle Direction Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableHtfCandleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy needs in-progress 1h candle <b>green</b>; sell needs <b>red</b></span>
+                    </div>
+                    <div class="form-hint">Per-stock candle-direction confluence check. When on, every 5-min breakout must agree with the currently-forming 60-min HTF candle's body direction:
+                        <br>&nbsp;&nbsp;&bull; <b>Buy</b> &mdash; 1h close &gt; 1h open (green). Reject if 1h is strictly red.
+                        <br>&nbsp;&nbsp;&bull; <b>Sell</b> &mdash; 1h close &lt; 1h open (red). Reject if 1h is strictly green.
+                        <br>Doji (close == open) passes both directions. No in-progress 1h bar yet (first ticks of a new 1h bucket) &rarr; fail-open. Independent of HTF Hurdle / HTF SMA filters &mdash; this looks at the <i>currently-forming</i> bar's intra-bar direction, not the prior close. Signal Trail bucket: <code>HTF_CANDLE_OPPOSED</code>.</div>
+                </div>
+                <div class="form-group">
                     <label class="form-label">NIFTY HTF Hurdle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableNiftyHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
@@ -539,8 +550,14 @@
                         <br>&nbsp;&nbsp;&bull; <b>CPR</b>: NIFTY LTP above (bullish) or below (bearish) daily CPR
                         <br>&nbsp;&nbsp;&bull; <b>SMA Price</b>: NIFTY LTP above (bullish) or below (bearish) <i>both</i> 5-min SMA 20 and 50
                         <br>&nbsp;&nbsp;&bull; <b>SMA Alignment</b>: 5-min SMA 20 &gt; 50 (bullish) or 20 &lt; 50 (bearish)
-                        <br>States: <b>BULLISH</b> (all 3 factors bullish) / <b>BEARISH</b> (all 3 bearish) / <b>SIDEWAYS</b> (mixed) / <b>NEUTRAL</b> (NIFTY inside CPR or no data).
-                        <br>When this filter is on: buys require <b>BULLISH</b>; sells require <b>BEARISH</b>; every other state (SIDEWAYS / NEUTRAL / opposite) skips the trade outright. Independent of the NIFTY HTF Hurdle filter above; both can be enabled together.</div>
+                        <br>States:
+                        <br>&nbsp;&nbsp;&bull; <b>BULLISH</b> &mdash; all 3 factors bullish
+                        <br>&nbsp;&nbsp;&bull; <b>BEARISH</b> &mdash; all 3 factors bearish
+                        <br>&nbsp;&nbsp;&bull; <b>BULLISH REVERSAL</b> &mdash; CPR bearish but both SMA factors flipped bullish (downtrend rolling over)
+                        <br>&nbsp;&nbsp;&bull; <b>BEARISH REVERSAL</b> &mdash; CPR bullish but both SMA factors flipped bearish (uptrend rolling over)
+                        <br>&nbsp;&nbsp;&bull; <b>SIDEWAYS</b> &mdash; CPR determined but SMA factors mixed
+                        <br>&nbsp;&nbsp;&bull; <b>NEUTRAL</b> &mdash; NIFTY inside daily CPR or no data
+                        <br>When this filter is on: buys require <b>BULLISH</b> or <b>BULLISH REVERSAL</b>; sells require <b>BEARISH</b> or <b>BEARISH REVERSAL</b>; SIDEWAYS / NEUTRAL / opposite-direction states skip the trade outright. Independent of the NIFTY HTF Hurdle filter above; both can be enabled together.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Extended Level Signals (R3/S3, R4/S4)</label>
@@ -565,6 +582,17 @@
                         <br>&bull; <b>OV</b> &mdash; open between CPR and R2/S2
                         <br>&bull; <b>EV</b> &mdash; open outside R2/S2 (extreme-value gap)
                         <br>Extended-level breakouts (R3/S3, R4/S4) are far from the daily CPR and historically unreliable on regular days. EV days are different &mdash; an R3 break following an open above R2 is fresh gap momentum, not exhaustion. Toggle the IV/OV and EV gates independently to match your strategy. DH/DL breakouts that have already passed the level are treated identically. R2/S2 always fires regardless. No per-level qty reduction.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Mean-Reversion / Magnet Trades</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableMeanReversionTrades" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable counter-trend setups (magnets + deep mean-reversion fades)</span>
+                    </div>
+                    <div class="form-hint">Master switch for <b>8 counter-trend setups</b>, all day-type agnostic (fire on IV / OV / EV alike):
+                        <br>&nbsp;&nbsp;&bull; <b>Magnets</b> &mdash; <code>BUY_ABOVE_S1_PDL</code>, <code>SELL_BELOW_R1_PDH</code>: bounce off / rejection at the first structural level pair, target back to CPR.
+                        <br>&nbsp;&nbsp;&bull; <b>Deep mean-rev</b> &mdash; <code>BUY_ABOVE_S2/S3/S4</code>, <code>SELL_BELOW_R2/R3/R4</code>: fades from deep support/resistance, target one level back toward value.
+                        <br>All eight bypass the LTF gate (counter-trend by design) and fire as <b>MPT</b>. When this toggle is <b>off</b>, none of the 8 fire &mdash; only direction-aligned breakouts (R1+/R2/R3/R4 buys, S1+/S2/S3/S4 sells, DH/DL) trade. Signal Trail bucket: <code>MEAN_REVERSION_DISABLED</code>.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">HTF Extended Level Filters (Weekly R3/S3, R4/S4)</label>
@@ -1145,6 +1173,7 @@
             document.getElementById('targetToleranceAtr').value = (d.targetToleranceAtr != null ? d.targetToleranceAtr : 0.10);
             document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
             document.getElementById('enableNiftyHtfHurdleFilter').checked = d.enableNiftyHtfHurdleFilter === true;
+            document.getElementById('enableHtfCandleFilter').checked = d.enableHtfCandleFilter === true;
             document.getElementById('enableSmallCandleFilter').checked = d.enableSmallCandleFilter === true;
             document.getElementById('smallCandleBodyAtrThreshold').value =
                 (d.smallCandleBodyAtrThreshold != null ? d.smallCandleBodyAtrThreshold : (d.smallCandleAtrThreshold != null ? d.smallCandleAtrThreshold : 0.5));
@@ -1197,6 +1226,7 @@
             document.getElementById('skipR4S4EvDays').checked   = d.skipR4S4EvDays   !== false;
             document.getElementById('skipHtfR3S3NormalDays').checked = d.skipHtfR3S3NormalDays !== false;
             document.getElementById('skipHtfR4S4NormalDays').checked = d.skipHtfR4S4NormalDays !== false;
+            document.getElementById('enableMeanReversionTrades').checked = d.enableMeanReversionTrades !== false;
 
             const pnl    = d.todayPnl    || 0;
             const trades = d.todayTrades || 0;
@@ -1308,6 +1338,7 @@
                 targetToleranceAtr: parseFloat(document.getElementById('targetToleranceAtr').value) || 0,
                 enableIndexAlignment: document.getElementById('enableIndexAlignment').checked,
                 enableNiftyHtfHurdleFilter: document.getElementById('enableNiftyHtfHurdleFilter').checked,
+                enableHtfCandleFilter: document.getElementById('enableHtfCandleFilter').checked,
                 enableSmallCandleFilter: document.getElementById('enableSmallCandleFilter').checked,
                 smallCandleBodyAtrThreshold: parseFloat(document.getElementById('smallCandleBodyAtrThreshold').value) || 0.5,
                 smallCandleMoveAtrThreshold: parseFloat(document.getElementById('smallCandleMoveAtrThreshold').value) || 0.15,
@@ -1356,6 +1387,7 @@
                 skipR4S4EvDays:   document.getElementById('skipR4S4EvDays').checked,
                 skipHtfR3S3NormalDays: document.getElementById('skipHtfR3S3NormalDays').checked,
                 skipHtfR4S4NormalDays: document.getElementById('skipHtfR4S4NormalDays').checked,
+                enableMeanReversionTrades: document.getElementById('enableMeanReversionTrades').checked,
             };
             const r = await fetch('/api/settings/risk', {
                 method: 'POST',

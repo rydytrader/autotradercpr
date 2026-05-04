@@ -29,6 +29,10 @@ public class IndexTrend {
     // Factor 3: 5-min SMA 20 vs SMA 50 ordering. true = 20 > 50, false = 20 < 50, null = SMAs
     // not yet seeded.
     private Boolean smaAlignBullish;
+    // Live (display-only) SMA values for the NIFTY card. Snapshot at the time the response is
+    // built — not sticky like the factors above. Zero if the SMA hasn't seeded yet.
+    private double sma20;
+    private double sma50;
 
     public IndexTrend() {}
 
@@ -58,4 +62,8 @@ public class IndexTrend {
     public void setSmaPriceBullish(Boolean v) { this.smaPriceBullish = v; }
     public Boolean getSmaAlignBullish() { return smaAlignBullish; }
     public void setSmaAlignBullish(Boolean v) { this.smaAlignBullish = v; }
+    public double getSma20() { return sma20; }
+    public void setSma20(double v) { this.sma20 = v; }
+    public double getSma50() { return sma50; }
+    public void setSma50(double v) { this.sma50 = v; }
 }

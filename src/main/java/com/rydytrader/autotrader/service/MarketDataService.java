@@ -1567,6 +1567,15 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         }
     }
 
+    /**
+     * Returns the currently-forming 1h HTF candle for a symbol, or null if none yet (e.g. very
+     * first ticks of a new 1h bucket, or pre-market). Used by the HTF Candle direction filter
+     * in BreakoutScanner — read-only snapshot of open/high/low/close.
+     */
+    public CandleAggregator.CandleBar getInProgressHtfCandle(String fyersSymbol) {
+        return htfAggregator != null ? htfAggregator.getCurrentCandle(fyersSymbol) : null;
+    }
+
     /** Get live LTP for a symbol. Returns 0 if no tick data available. */
     public double getLtp(String fyersSymbol) {
         TickData tick = currentTicks.get(fyersSymbol);

@@ -62,6 +62,10 @@ public class RiskSettingsStore {
         volatile boolean enableNiftyHtfHurdleFilter = false;
         volatile boolean enableHtfSmaAlignment = true; // HPT→LPT when live LTP not above/below 1h SMA 20/50 together
         volatile boolean enableHtfSmaAlignmentCheck = false; // HPT→LPT when 1h SMAs not in order (20>50 buy, 20<50 sell)
+        // In-progress 1h candle direction must agree with the 5-min breakout direction. Buy
+        // requires the currently-forming 1h bar to be green (close > open); sell requires red
+        // (close < open). Doji passes both. Fail-open if no in-progress bar yet. Default off.
+        volatile boolean enableHtfCandleFilter = false;
         // Structural SL — opt-in, anchors SL to the S/R level the trade is testing (per setup family)
         // When on, we compute both structural and default SL and pick the TIGHTER one.
         volatile boolean enableStructuralSl = false;   // when false, always use close ± atrMultiplier × ATR
@@ -163,6 +167,11 @@ public class RiskSettingsStore {
         // regardless of the daily setup. Default true (matches daily skip stance).
         volatile boolean skipHtfR3S3NormalDays = true;
         volatile boolean skipHtfR4S4NormalDays = true;
+        // Master toggle for the 8 counter-trend setups: 2 magnets (BUY_ABOVE_S1_PDL,
+        // SELL_BELOW_R1_PDH) + 6 deep mean-rev (BUY_ABOVE_S2/S3/S4, SELL_BELOW_R2/R3/R4).
+        // When off, none of them fire. All 8 are day-type agnostic — fire on IV/OV/EV alike.
+        // Default on — preserves existing magnet behavior.
+        volatile boolean enableMeanReversionTrades = true;
         volatile int    atrPeriod = 14;        // ATR lookback period for initial SL
         // Scanner settings
         volatile String signalSource    = "TRADINGVIEW"; // TRADINGVIEW or INTERNAL
@@ -270,6 +279,7 @@ public class RiskSettingsStore {
     public boolean isEnableNiftyHtfHurdleFilter() { return cfg().enableNiftyHtfHurdleFilter; }
     public boolean isEnableHtfSmaAlignment()    { return cfg().enableHtfSmaAlignment; }
     public boolean isEnableHtfSmaAlignmentCheck() { return cfg().enableHtfSmaAlignmentCheck; }
+    public boolean isEnableHtfCandleFilter()      { return cfg().enableHtfCandleFilter; }
     public boolean isEnableStructuralSl()    { return cfg().enableStructuralSl; }
     public double  getStructuralSlBufferAtr(){ return cfg().structuralSlBufferAtr; }
     public double  getSingleLevelSlBufferAtr(){ return cfg().singleLevelSlBufferAtr; }
@@ -313,6 +323,7 @@ public class RiskSettingsStore {
     public boolean isSkipR4S4EvDays()   { return cfg().skipR4S4EvDays; }
     public boolean isSkipHtfR3S3NormalDays() { return cfg().skipHtfR3S3NormalDays; }
     public boolean isSkipHtfR4S4NormalDays() { return cfg().skipHtfR4S4NormalDays; }
+    public boolean isEnableMeanReversionTrades() { return cfg().enableMeanReversionTrades; }
     public int getAtrPeriod() { return cfg().atrPeriod; }
     public double getSmallCandleAtrThreshold() { return cfg().smallCandleAtrThreshold; }
     public double getSmallCandleBodyAtrThreshold() { return cfg().smallCandleBodyAtrThreshold; }
@@ -424,6 +435,7 @@ public class RiskSettingsStore {
     public void setEnableNiftyHtfHurdleFilter(boolean v) { cfg().enableNiftyHtfHurdleFilter = v; }
     public void setEnableHtfSmaAlignment(boolean v)    { cfg().enableHtfSmaAlignment = v; }
     public void setEnableHtfSmaAlignmentCheck(boolean v) { cfg().enableHtfSmaAlignmentCheck = v; }
+    public void setEnableHtfCandleFilter(boolean v)      { cfg().enableHtfCandleFilter = v; }
     public void setEnableStructuralSl(boolean v)    { cfg().enableStructuralSl = v; }
     public void setStructuralSlBufferAtr(double v)  { cfg().structuralSlBufferAtr = v; }
     public void setSingleLevelSlBufferAtr(double v) { cfg().singleLevelSlBufferAtr = v; }
@@ -460,6 +472,7 @@ public class RiskSettingsStore {
     public void setSkipR4S4EvDays(boolean v)   { cfg().skipR4S4EvDays = v; }
     public void setSkipHtfR3S3NormalDays(boolean v) { cfg().skipHtfR3S3NormalDays = v; }
     public void setSkipHtfR4S4NormalDays(boolean v) { cfg().skipHtfR4S4NormalDays = v; }
+    public void setEnableMeanReversionTrades(boolean v) { cfg().enableMeanReversionTrades = v; }
     public void setAtrPeriod(int v) { cfg().atrPeriod = v; }
     public void setSmallCandleAtrThreshold(double v) { cfg().smallCandleAtrThreshold = v; }
     public void setSmallCandleBodyAtrThreshold(double v) { cfg().smallCandleBodyAtrThreshold = v; }
@@ -571,6 +584,7 @@ public class RiskSettingsStore {
             upsert("enableNiftyHtfHurdleFilter", String.valueOf(c.enableNiftyHtfHurdleFilter));
             upsert("enableHtfSmaAlignment", String.valueOf(c.enableHtfSmaAlignment));
             upsert("enableHtfSmaAlignmentCheck", String.valueOf(c.enableHtfSmaAlignmentCheck));
+            upsert("enableHtfCandleFilter", String.valueOf(c.enableHtfCandleFilter));
             upsert("enableStructuralSl", String.valueOf(c.enableStructuralSl));
             upsert("structuralSlBufferAtr", String.valueOf(c.structuralSlBufferAtr));
             upsert("singleLevelSlBufferAtr", String.valueOf(c.singleLevelSlBufferAtr));
@@ -622,6 +636,7 @@ public class RiskSettingsStore {
             upsert("skipR4S4EvDays",   String.valueOf(c.skipR4S4EvDays));
             upsert("skipHtfR3S3NormalDays", String.valueOf(c.skipHtfR3S3NormalDays));
             upsert("skipHtfR4S4NormalDays", String.valueOf(c.skipHtfR4S4NormalDays));
+            upsert("enableMeanReversionTrades", String.valueOf(c.enableMeanReversionTrades));
             upsert("atrPeriod", String.valueOf(c.atrPeriod));
             upsert("signalSource", c.signalSource);
             upsert("scannerTimeframe", String.valueOf(c.scannerTimeframe));
@@ -710,6 +725,7 @@ public class RiskSettingsStore {
                     case "enableNiftyHtfHurdleFilter" -> c.enableNiftyHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "enableHtfSmaAlignment" -> c.enableHtfSmaAlignment = Boolean.parseBoolean(v);
                     case "enableHtfSmaAlignmentCheck" -> c.enableHtfSmaAlignmentCheck = Boolean.parseBoolean(v);
+                    case "enableHtfCandleFilter" -> c.enableHtfCandleFilter = Boolean.parseBoolean(v);
                     case "enableStructuralSl"    -> c.enableStructuralSl = Boolean.parseBoolean(v);
                     case "structuralSlBufferAtr" -> c.structuralSlBufferAtr = Double.parseDouble(v);
                     case "singleLevelSlBufferAtr" -> c.singleLevelSlBufferAtr = Double.parseDouble(v);
@@ -784,6 +800,7 @@ public class RiskSettingsStore {
                     case "skipR4S4EvDays"   -> c.skipR4S4EvDays   = Boolean.parseBoolean(v);
                     case "skipHtfR3S3NormalDays" -> c.skipHtfR3S3NormalDays = Boolean.parseBoolean(v);
                     case "skipHtfR4S4NormalDays" -> c.skipHtfR4S4NormalDays = Boolean.parseBoolean(v);
+                    case "enableMeanReversionTrades" -> c.enableMeanReversionTrades = Boolean.parseBoolean(v);
                     case "atrPeriod" -> c.atrPeriod = Integer.parseInt(v);
                     case "signalSource"      -> c.signalSource = v;
                     case "scannerTimeframe"  -> c.scannerTimeframe = Integer.parseInt(v);

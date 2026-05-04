@@ -467,6 +467,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
             String buySetup = detectBuyBreakout(open, high, low, close, levels, atp, broken, fyersSymbol);
             if (buySetup != null) {
+                // Master toggle for the 8 counter-trend setups (magnets + deep mean-rev).
+                if (isMeanReversionOrMagnet(buySetup) && !riskSettings.isEnableMeanReversionTrades()) {
+                    String detail = "mean-reversion trades disabled (master toggle off)";
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " — skipped, " + detail);
+                    recordRejection(fyersSymbol, buySetup, close, "MEAN_REVERSION_DISABLED", detail);
+                    return;
+                }
                 String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, true, buySetup, close);
                 if (prob == null) {
                     // LTF-priority gate rejected: standard buy with close ≤ daily TC (no LTF
@@ -490,7 +497,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (checkIndexAlignment(fyersSymbol, buySetup, true) == NiftyAlignStatus.SKIP) {
                     String niftyState = indexTrendService != null ? indexTrendService.getNiftyTrend().getState() : "?";
                     recordRejection(fyersSymbol, buySetup, close, "NIFTY_OPPOSED",
-                        "NIFTY " + niftyState + " — buy requires NIFTY BULLISH");
+                        "NIFTY " + niftyState + " — buy requires NIFTY BULLISH or BULLISH_REVERSAL");
                     return;
                 }
                 // NIFTY HTF Hurdle — wait for NIFTY's prior 1h close to clear its nearest weekly hurdle.
@@ -498,6 +505,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (niftyHurdleReject != null) {
                     eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + niftyHurdleReject);
                     recordRejection(fyersSymbol, buySetup, close, "NIFTY_HURDLE", niftyHurdleReject);
+                    return;
+                }
+                // In-progress 1h candle direction — buy needs the currently-forming 1h bar to be green.
+                String htfCandleReject = checkHtfCandleColor(true, fyersSymbol);
+                if (htfCandleReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + htfCandleReject);
+                    recordRejection(fyersSymbol, buySetup, close, "HTF_CANDLE_OPPOSED", htfCandleReject);
                     return;
                 }
                 fireSignal(fyersSymbol, buySetup, open, high, low, close, candle.volume, atr, levels, prob, null);
@@ -533,6 +547,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
             String sellSetup = detectSellBreakout(open, high, low, close, levels, atp, broken, fyersSymbol);
             if (sellSetup != null) {
+                // Master toggle for the 8 counter-trend setups (magnets + deep mean-rev).
+                if (isMeanReversionOrMagnet(sellSetup) && !riskSettings.isEnableMeanReversionTrades()) {
+                    String detail = "mean-reversion trades disabled (master toggle off)";
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " — skipped, " + detail);
+                    recordRejection(fyersSymbol, sellSetup, close, "MEAN_REVERSION_DISABLED", detail);
+                    return;
+                }
                 String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, false, sellSetup, close);
                 if (prob == null) {
                     String detail = "sell requires close < daily BC (LTF bearish); close="
@@ -553,7 +574,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (checkIndexAlignment(fyersSymbol, sellSetup, false) == NiftyAlignStatus.SKIP) {
                     String niftyState = indexTrendService != null ? indexTrendService.getNiftyTrend().getState() : "?";
                     recordRejection(fyersSymbol, sellSetup, close, "NIFTY_OPPOSED",
-                        "NIFTY " + niftyState + " — sell requires NIFTY BEARISH");
+                        "NIFTY " + niftyState + " — sell requires NIFTY BEARISH or BEARISH_REVERSAL");
                     return;
                 }
                 // NIFTY HTF Hurdle — wait for NIFTY's prior 1h close to clear its nearest weekly hurdle.
@@ -561,6 +582,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (niftyHurdleReject != null) {
                     eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + niftyHurdleReject);
                     recordRejection(fyersSymbol, sellSetup, close, "NIFTY_HURDLE", niftyHurdleReject);
+                    return;
+                }
+                // In-progress 1h candle direction — sell needs the currently-forming 1h bar to be red.
+                String htfCandleReject = checkHtfCandleColor(false, fyersSymbol);
+                if (htfCandleReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + htfCandleReject);
+                    recordRejection(fyersSymbol, sellSetup, close, "HTF_CANDLE_OPPOSED", htfCandleReject);
                     return;
                 }
                 fireSignal(fyersSymbol, sellSetup, open, high, low, close, candle.volume, atr, levels, prob, null);
@@ -677,8 +705,17 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (close > s1pl && close < cprBot
                 && ((open < s1 || open < pl || low < s1 || low < pl) || (low < Math.min(s1, pl) && open > Math.min(s1, pl)))
                 && !broken.contains("BUY_ABOVE_S1_PDL")) return "BUY_ABOVE_S1_PDL";
-        // (Mean-reversion buys above S2/S3/S4 removed — counter-LTF setups always rejected
-        // under the LTF-priority probability rule.)
+        // Mean-reversion bounces from deep support — S4 / S3 / S2 in priority order (deepest
+        // first). Standard-breakout pattern only. Counter-LTF by design — bypass LTF gate at
+        // probability assignment, classify as MPT. Day-type agnostic (fire on IV/OV/EV alike).
+        // Master gate is enableMeanReversionTrades in onCandleClose. No wick-rejection branch
+        // — these are deep, low-frequency setups.
+        if (s4 > 0 && close > s4 && (open < s4 || low < s4)
+                && !broken.contains("BUY_ABOVE_S4")) return "BUY_ABOVE_S4";
+        if (s3 > 0 && close > s3 && (open < s3 || low < s3)
+                && !broken.contains("BUY_ABOVE_S3")) return "BUY_ABOVE_S3";
+        if (s2 > 0 && close > s2 && (open < s2 || low < s2)
+                && !broken.contains("BUY_ABOVE_S2")) return "BUY_ABOVE_S2";
 
         // Day High breakout (lowest priority — only after OR locks)
         double dayHigh = candleAggregator.getDayHighExcluding(fyersSymbol, currentCandle.get());
@@ -765,8 +802,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (close < s2
                 && ((open > s2 || high > s2) || (high > s2 && open < s2))
                 && !broken.contains("SELL_BELOW_S2")) return "SELL_BELOW_S2";
-        // (Mean-reversion sells below R2/R3/R4 removed — counter-LTF setups always rejected
-        // under the LTF-priority probability rule.)
         if (close < s1 && close < pl
                 && ((open > s1 || open > pl || high > s1 || high > pl) || (high > Math.max(s1, pl) && open < Math.max(s1, pl)))
                 && !broken.contains("SELL_BELOW_S1_PDL")) return "SELL_BELOW_S1_PDL";
@@ -778,6 +813,16 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (close < r1ph && close > cprTop
                 && ((open > r1 || open > ph || high > r1 || high > ph) || (high > Math.max(r1, ph) && open < Math.max(r1, ph)))
                 && !broken.contains("SELL_BELOW_R1_PDH")) return "SELL_BELOW_R1_PDH";
+        // Mean-reversion fades from deep resistance — R4 / R3 / R2 in priority order. Standard
+        // pattern only. Counter-LTF by design (bypasses LTF gate at probability assignment as
+        // MPT). Day-type agnostic. Master gate is enableMeanReversionTrades in onCandleClose.
+        double r2v = levels.getR2(), r3v = levels.getR3(), r4v = levels.getR4();
+        if (r4v > 0 && close < r4v && (open > r4v || high > r4v)
+                && !broken.contains("SELL_BELOW_R4")) return "SELL_BELOW_R4";
+        if (r3v > 0 && close < r3v && (open > r3v || high > r3v)
+                && !broken.contains("SELL_BELOW_R3")) return "SELL_BELOW_R3";
+        if (r2v > 0 && close < r2v && (open > r2v || high > r2v)
+                && !broken.contains("SELL_BELOW_R2")) return "SELL_BELOW_R2";
 
         // Day Low breakout (lowest priority — only after OR locks)
         double dayLow = candleAggregator.getDayLowExcluding(fyersSymbol, currentCandle.get());
@@ -921,9 +966,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     private enum NiftyAlignStatus { OK, SKIP }
 
     /**
-     * NIFTY index alignment filter. Buys require NIFTY state == BULLISH; sells require BEARISH.
-     * Every other state (SIDEWAYS, NEUTRAL, opposite-direction BULLISH/BEARISH) → skip the trade.
-     * Returns OK if the filter is disabled or the index data isn't available yet (fail-open).
+     * NIFTY index alignment filter.
+     * <ul>
+     *   <li>Buys allowed when NIFTY state ∈ {BULLISH, BULLISH_REVERSAL}.</li>
+     *   <li>Sells allowed when NIFTY state ∈ {BEARISH, BEARISH_REVERSAL}.</li>
+     *   <li>SIDEWAYS / NEUTRAL / opposite-direction → skip.</li>
+     * </ul>
+     * BULLISH_REVERSAL = CPR bearish but both 5-min SMA factors flipped bullish (downtrend rolling
+     * over). BEARISH_REVERSAL is the mirror — taken on the assumption the structural turn anticipates
+     * the trade direction. Returns OK if the filter is disabled or index data isn't available yet.
      */
     private NiftyAlignStatus checkIndexAlignment(String fyersSymbol, String setup, boolean isBuy) {
         if (!riskSettings.isEnableIndexAlignment()) return NiftyAlignStatus.OK;
@@ -932,11 +983,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             com.rydytrader.autotrader.dto.IndexTrend nifty = indexTrendService.getNiftyTrend();
             if (!nifty.isDataAvailable()) return NiftyAlignStatus.OK;
             String state = nifty.getState();
-            boolean aligned = isBuy ? "BULLISH".equals(state) : "BEARISH".equals(state);
+            boolean aligned = isBuy
+                ? ("BULLISH".equals(state) || "BULLISH_REVERSAL".equals(state))
+                : ("BEARISH".equals(state) || "BEARISH_REVERSAL".equals(state));
             if (aligned) return NiftyAlignStatus.OK;
             eventService.log("[SCANNER] " + fyersSymbol + " " + setup
                 + " SKIPPED — NIFTY " + state + ", need "
-                + (isBuy ? "BULLISH for buy" : "BEARISH for sell"));
+                + (isBuy ? "BULLISH or BULLISH_REVERSAL for buy" : "BEARISH or BEARISH_REVERSAL for sell"));
             return NiftyAlignStatus.SKIP;
         } catch (Exception e) {
             log.warn("[BreakoutScanner] Index alignment check failed for {}: {}", fyersSymbol, e.getMessage());
@@ -992,6 +1045,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
             Double priorHtfClose = weeklyCprService.getLastHigherTfClose(niftySym);
             boolean usedPrevSession = false;
+            boolean usedLiveLtp = false;
             boolean firstTradingDay = marketHolidayService != null && marketHolidayService.isFirstTradingDayOfWeek();
             if ((priorHtfClose == null || priorHtfClose <= 0) && !firstTradingDay && htfSmaService != null) {
                 Double prev = htfSmaService.getLastClose(niftySym);
@@ -999,6 +1053,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     priorHtfClose = prev;
                     usedPrevSession = true;
                 }
+            }
+            // First-trading-day fallback: prior session's close was vs last week's levels and
+            // can't be reused. Use NIFTY's live LTP as the in-progress 1h proxy so we don't
+            // reject every signal during Monday's first hour. niftyPrice is already the LTP.
+            if ((priorHtfClose == null || priorHtfClose <= 0) && firstTradingDay) {
+                priorHtfClose = niftyPrice;
+                usedLiveLtp = true;
             }
 
             if (priorHtfClose == null || priorHtfClose <= 0) {
@@ -1010,17 +1071,64 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
             boolean cleared = isBuy ? priorHtfClose > chosenLevel : priorHtfClose < chosenLevel;
             if (!cleared) {
+                String label = usedLiveLtp ? ", live LTP="
+                             : usedPrevSession ? ", prev session 1h close="
+                             : ", prior 1h close=";
                 return "NIFTY HTF hurdle at weekly " + chosenName
                     + ": NIFTY " + String.format("%.2f", niftyPrice)
-                    + (usedPrevSession ? ", prev session 1h close=" : ", prior 1h close=")
-                    + String.format("%.2f", priorHtfClose)
+                    + label + String.format("%.2f", priorHtfClose)
                     + ", level " + String.format("%.2f", chosenLevel);
             }
-            return null; // prior 1h has cleared the hurdle
+            return null; // prior 1h close (or LTP fallback) has cleared the hurdle
         } catch (Exception e) {
             log.warn("[BreakoutScanner] NIFTY hurdle check failed: {}", e.getMessage());
             return null; // fail-open
         }
+    }
+
+    /**
+     * In-progress 1h HTF candle direction filter. When enabled, requires the currently-forming
+     * 60-min bar's body to agree with the trade direction. Buys reject when the 1h bar is
+     * strictly red (close &lt; open); sells reject when it's strictly green (close &gt; open).
+     * Doji (close == open) passes both — only a clearly opposite-direction bar blocks the trade.
+     *
+     * <p>Fail-open when no in-progress bar exists yet (e.g. very first ticks of a new 1h
+     * bucket, or low-volume stocks between boundaries) — consistent with other "data missing"
+     * branches in the scanner. Returns null on pass, a short rejection-reason String otherwise.
+     */
+    private String checkHtfCandleColor(boolean isBuy, String fyersSymbol) {
+        if (!riskSettings.isEnableHtfCandleFilter()) return null;
+        if (marketDataService == null) return null;
+        CandleAggregator.CandleBar bar = marketDataService.getInProgressHtfCandle(fyersSymbol);
+        if (bar == null || bar.open <= 0 || bar.close <= 0) return null; // fail-open
+
+        if (isBuy && bar.close < bar.open) {
+            return "HTF 1h candle red — buy requires green: 1h open="
+                + String.format("%.2f", bar.open) + ", close=" + String.format("%.2f", bar.close);
+        }
+        if (!isBuy && bar.close > bar.open) {
+            return "HTF 1h candle green — sell requires red: 1h open="
+                + String.format("%.2f", bar.open) + ", close=" + String.format("%.2f", bar.close);
+        }
+        return null;
+    }
+
+    /**
+     * Counter-trend setup family — magnets (S1+PDL / R1+PDH) plus deep mean-rev
+     * (S2/S3/S4 buys, R2/R3/R4 sells). All eight bypass the LTF gate at probability
+     * assignment and fire as MPT. The master toggle <code>enableMeanReversionTrades</code>
+     * gates the entire family.
+     */
+    private static boolean isMeanReversionOrMagnet(String setup) {
+        if (setup == null) return false;
+        return "BUY_ABOVE_S1_PDL".equals(setup)
+            || "BUY_ABOVE_S2".equals(setup)
+            || "BUY_ABOVE_S3".equals(setup)
+            || "BUY_ABOVE_S4".equals(setup)
+            || "SELL_BELOW_R1_PDH".equals(setup)
+            || "SELL_BELOW_R2".equals(setup)
+            || "SELL_BELOW_R3".equals(setup)
+            || "SELL_BELOW_R4".equals(setup);
     }
 
     private boolean isProbabilityEnabled(String prob) {

@@ -20,10 +20,12 @@ import jakarta.annotation.PostConstruct;
  *
  * <p>State combinations:
  * <pre>
- *   All 3 factors bullish → BULLISH
- *   All 3 factors bearish → BEARISH
- *   CPR null (inside CPR or no LTP) → NEUTRAL
- *   Otherwise (mixed) → SIDEWAYS
+ *   All 3 factors bullish                                → BULLISH
+ *   All 3 factors bearish                                → BEARISH
+ *   CPR bearish, both SMA factors bullish                → BULLISH_REVERSAL  (downtrend rolling over)
+ *   CPR bullish, both SMA factors bearish                → BEARISH_REVERSAL  (uptrend rolling over)
+ *   CPR null (inside CPR or no LTP)                      → NEUTRAL
+ *   Otherwise (mixed)                                    → SIDEWAYS
  * </pre>
  *
  * <p>Live values (LTP, change%, breadth) update every poll for display, but the cached
@@ -143,6 +145,16 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
                 && Boolean.FALSE.equals(smaPriceBullish)
                 && Boolean.FALSE.equals(smaAlignBullish)) {
             state = "BEARISH";
+        } else if (Boolean.FALSE.equals(cprBullish)
+                && Boolean.TRUE.equals(smaPriceBullish)
+                && Boolean.TRUE.equals(smaAlignBullish)) {
+            // CPR bearish, but both SMA factors flipped bullish — early reversal of a downtrend.
+            state = "BULLISH_REVERSAL";
+        } else if (Boolean.TRUE.equals(cprBullish)
+                && Boolean.FALSE.equals(smaPriceBullish)
+                && Boolean.FALSE.equals(smaAlignBullish)) {
+            // CPR bullish, but both SMA factors flipped bearish — early reversal of an uptrend.
+            state = "BEARISH_REVERSAL";
         } else {
             state = "SIDEWAYS";
         }
@@ -210,6 +222,12 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         trend.setSmaPriceBullish(cachedSmaPriceBullish);
         trend.setSmaAlignBullish(cachedSmaAlignBullish);
         trend.setState(cachedState != null ? cachedState : "NEUTRAL");
+
+        // Live SMA snapshot for the card display — not sticky.
+        if (smaService != null) {
+            trend.setSma20(smaService.getSma(NIFTY_SYMBOL));
+            trend.setSma50(smaService.getSma50(NIFTY_SYMBOL));
+        }
 
         trend.setDataAvailable(ltp > 0);
         return trend;

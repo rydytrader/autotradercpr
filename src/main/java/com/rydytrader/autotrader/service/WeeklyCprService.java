@@ -631,14 +631,16 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
      * <ul>
      *   <li><b>HPT</b> — LTF (5-min close vs daily CPR) and HTF (weekly state) both align with
      *       the trade direction. Full size.</li>
-     *   <li><b>MPT</b> — only one of LTF or HTF aligns. Two paths:
+     *   <li><b>MPT</b> — only one of LTF or HTF aligns, or it's a counter-trend setup that
+     *       bypasses the LTF gate by design. Two paths:
      *     <ul>
      *       <li>Standard trade: LTF supports trade, HTF disagrees</li>
-     *       <li>Magnet (BUY_ABOVE_S1_PDL / SELL_BELOW_R1_PDH): HTF aligns; LTF gate bypassed</li>
+     *       <li>Counter-trend family (8 setups: BUY_ABOVE_S1_PDL/S2/S3/S4 magnets+mean-rev,
+     *           SELL_BELOW_R1_PDH/R2/R3/R4 magnets+mean-rev): LTF gate bypassed; classified
+     *           as MPT regardless of LTF/HTF state.</li>
      *     </ul>
      *   </li>
-     *   <li><b>null</b> — non-magnet with LTF neutral or LTF opposing; OR magnet without HTF
-     *       alignment. Trade is rejected.</li>
+     *   <li><b>null</b> — non-magnet with LTF neutral or LTF opposing. Trade is rejected.</li>
      * </ul>
      * LPT is no longer assigned at initial classification.
      *
@@ -650,12 +652,20 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
         boolean wBull = weekly != null && weekly.contains("BULLISH");
         boolean wBear = weekly != null && weekly.contains("BEARISH");
 
-        boolean isMagnet = setup != null
-            && ("BUY_ABOVE_S1_PDL".equals(setup) || "SELL_BELOW_R1_PDH".equals(setup));
+        // Counter-trend family — magnets (S1+PDL / R1+PDH) plus deep mean-rev (S2/S3/S4 buys,
+        // R2/R3/R4 sells). All eight bypass the LTF gate by design and classify as MPT.
+        // Master-toggle gating happens upstream in BreakoutScanner; here we only assign tier.
+        boolean isCounterTrend = setup != null && (
+               "BUY_ABOVE_S1_PDL".equals(setup)
+            || "BUY_ABOVE_S2".equals(setup)
+            || "BUY_ABOVE_S3".equals(setup)
+            || "BUY_ABOVE_S4".equals(setup)
+            || "SELL_BELOW_R1_PDH".equals(setup)
+            || "SELL_BELOW_R2".equals(setup)
+            || "SELL_BELOW_R3".equals(setup)
+            || "SELL_BELOW_R4".equals(setup));
 
-        // Magnet: always MPT. Both LTF and HTF gates bypassed — these counter-trend
-        // bounce/rejection setups are taken on their own merit, sized as medium-probability.
-        if (isMagnet) return "MPT";
+        if (isCounterTrend) return "MPT";
 
         // Standard trade: LTF must support the trade direction.
         com.rydytrader.autotrader.dto.CprLevels cpr = bhavcopyService.getCprLevels(extractTicker(symbol));

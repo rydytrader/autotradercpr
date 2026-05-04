@@ -67,6 +67,7 @@ public class SettingsController {
         result.put("enableNiftyHtfHurdleFilter", riskSettings.isEnableNiftyHtfHurdleFilter());
         result.put("enableHtfSmaAlignment", riskSettings.isEnableHtfSmaAlignment());
         result.put("enableHtfSmaAlignmentCheck", riskSettings.isEnableHtfSmaAlignmentCheck());
+        result.put("enableHtfCandleFilter", riskSettings.isEnableHtfCandleFilter());
         result.put("enableStructuralSl",    riskSettings.isEnableStructuralSl());
         result.put("structuralSlBufferAtr", riskSettings.getStructuralSlBufferAtr());
         result.put("singleLevelSlBufferAtr", riskSettings.getSingleLevelSlBufferAtr());
@@ -117,6 +118,7 @@ public class SettingsController {
         result.put("skipR4S4EvDays",   riskSettings.isSkipR4S4EvDays());
         result.put("skipHtfR3S3NormalDays", riskSettings.isSkipHtfR3S3NormalDays());
         result.put("skipHtfR4S4NormalDays", riskSettings.isSkipHtfR4S4NormalDays());
+        result.put("enableMeanReversionTrades", riskSettings.isEnableMeanReversionTrades());
         result.put("atrPeriod", riskSettings.getAtrPeriod());
         result.put("signalSource", riskSettings.getSignalSource());
         result.put("scannerTimeframe", riskSettings.getScannerTimeframe());
@@ -187,6 +189,7 @@ public class SettingsController {
             if (body.containsKey("enableNiftyHtfHurdleFilter")) riskSettings.setEnableNiftyHtfHurdleFilter(Boolean.parseBoolean(body.get("enableNiftyHtfHurdleFilter").toString()));
             if (body.containsKey("enableHtfSmaAlignment")) riskSettings.setEnableHtfSmaAlignment(Boolean.parseBoolean(body.get("enableHtfSmaAlignment").toString()));
             if (body.containsKey("enableHtfSmaAlignmentCheck")) riskSettings.setEnableHtfSmaAlignmentCheck(Boolean.parseBoolean(body.get("enableHtfSmaAlignmentCheck").toString()));
+            if (body.containsKey("enableHtfCandleFilter")) riskSettings.setEnableHtfCandleFilter(Boolean.parseBoolean(body.get("enableHtfCandleFilter").toString()));
             if (body.containsKey("enableStructuralSl")) riskSettings.setEnableStructuralSl(Boolean.parseBoolean(body.get("enableStructuralSl").toString()));
             if (body.containsKey("structuralSlBufferAtr")) riskSettings.setStructuralSlBufferAtr(Double.parseDouble(body.get("structuralSlBufferAtr").toString()));
             if (body.containsKey("singleLevelSlBufferAtr")) riskSettings.setSingleLevelSlBufferAtr(Double.parseDouble(body.get("singleLevelSlBufferAtr").toString()));
@@ -241,6 +244,7 @@ public class SettingsController {
             if (body.containsKey("skipR4S4EvDays"))   riskSettings.setSkipR4S4EvDays(Boolean.parseBoolean(body.get("skipR4S4EvDays").toString()));
             if (body.containsKey("skipHtfR3S3NormalDays")) riskSettings.setSkipHtfR3S3NormalDays(Boolean.parseBoolean(body.get("skipHtfR3S3NormalDays").toString()));
             if (body.containsKey("skipHtfR4S4NormalDays")) riskSettings.setSkipHtfR4S4NormalDays(Boolean.parseBoolean(body.get("skipHtfR4S4NormalDays").toString()));
+            if (body.containsKey("enableMeanReversionTrades")) riskSettings.setEnableMeanReversionTrades(Boolean.parseBoolean(body.get("enableMeanReversionTrades").toString()));
             if (body.containsKey("atrPeriod")) riskSettings.setAtrPeriod(Integer.parseInt(body.get("atrPeriod").toString()));
             if (body.containsKey("signalSource")) riskSettings.setSignalSource(body.get("signalSource").toString());
             if (body.containsKey("scannerTimeframe")) riskSettings.setScannerTimeframe(Integer.parseInt(body.get("scannerTimeframe").toString()));
