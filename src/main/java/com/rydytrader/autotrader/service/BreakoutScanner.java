@@ -682,6 +682,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double r1 = levels.getR1(), ph = levels.getPh();
         double pp = levels.getPivot(), tc = levels.getTc(), bc = levels.getBc();
         double s1 = levels.getS1(), pl = levels.getPl();
+        double s2 = levels.getS2(), s3 = levels.getS3(), s4 = levels.getS4();
 
         double cprTop = Math.max(tc, bc);
         double cprBot = Math.min(tc, bc);
