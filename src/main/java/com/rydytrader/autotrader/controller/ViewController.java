@@ -5,6 +5,7 @@ import com.rydytrader.autotrader.entity.AppUser;
 import com.rydytrader.autotrader.repository.AppUserRepository;
 import com.rydytrader.autotrader.service.LoginService;
 import com.rydytrader.autotrader.service.MarketDataService;
+import com.rydytrader.autotrader.service.NiftyOptionOiService;
 import com.rydytrader.autotrader.service.OrderEventService;
 import com.rydytrader.autotrader.service.PollingService;
 import com.rydytrader.autotrader.store.TokenStore;
@@ -29,6 +30,7 @@ public class ViewController {
     private final FyersProperties   fyersProperties;
     private final MarketDataService marketDataService;
     private final OrderEventService orderEventService;
+    private final NiftyOptionOiService niftyOptionOiService;
     private final AppUserRepository userRepo;
     private final PasswordEncoder  passwordEncoder;
 
@@ -38,6 +40,7 @@ public class ViewController {
                            FyersProperties fyersProperties,
                            MarketDataService marketDataService,
                            OrderEventService orderEventService,
+                           NiftyOptionOiService niftyOptionOiService,
                            AppUserRepository userRepo,
                            PasswordEncoder passwordEncoder) {
         this.tokenStore        = tokenStore;
@@ -46,6 +49,7 @@ public class ViewController {
         this.fyersProperties   = fyersProperties;
         this.marketDataService = marketDataService;
         this.orderEventService = orderEventService;
+        this.niftyOptionOiService = niftyOptionOiService;
         this.userRepo          = userRepo;
         this.passwordEncoder   = passwordEncoder;
     }
@@ -85,6 +89,9 @@ public class ViewController {
                     pollingService.startPositionSync();
                     marketDataService.start();
                     orderEventService.start();
+                    // Now that the access token is set, kick off the first NIFTY OI fetch.
+                    // Without this trigger the service would wait until the next 15-min cron tick.
+                    niftyOptionOiService.triggerRefresh();
                 } catch (Exception e) {
                     log.error("Error starting services after Fyers login: {}", e.getMessage());
                 }

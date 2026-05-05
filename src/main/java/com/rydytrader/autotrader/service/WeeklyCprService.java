@@ -530,8 +530,9 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
         if (newState != null) {
             String prev = weeklyTrendStateBySymbol.put(fyersSymbol, newState);
             if (!newState.equals(prev)) {
-                eventService.log("[INFO] " + fyersSymbol + " weekly trend → " + newState
-                    + " (HTF " + reason + ")");
+                // Quiet slf4j debug only — visible event-console log was distracting since the
+                // state change is already reflected in the scanner card's weekly-trend chip.
+                log.debug("[WeeklyCpr] {} weekly trend → {} (HTF {})", fyersSymbol, newState, reason);
             }
         }
     }

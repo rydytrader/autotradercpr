@@ -65,11 +65,11 @@ public class SettingsController {
         result.put("enableWeeklySmaTargetShift", riskSettings.isEnableWeeklySmaTargetShift());
         result.put("enableHtfHurdleFilter", riskSettings.isEnableHtfHurdleFilter());
         result.put("enableNiftyHtfHurdleFilter", riskSettings.isEnableNiftyHtfHurdleFilter());
+        result.put("enableNifty5mHurdleFilter", riskSettings.isEnableNifty5mHurdleFilter());
         result.put("enableHtfSmaAlignment", riskSettings.isEnableHtfSmaAlignment());
         result.put("enableHtfSmaAlignmentCheck", riskSettings.isEnableHtfSmaAlignmentCheck());
         result.put("enableHtfCandleFilter", riskSettings.isEnableHtfCandleFilter());
         result.put("enableNiftyHtfCandleFilter", riskSettings.isEnableNiftyHtfCandleFilter());
-        result.put("enableNifty5mCandleFilter", riskSettings.isEnableNifty5mCandleFilter());
         result.put("enableStructuralSl",    riskSettings.isEnableStructuralSl());
         result.put("structuralSlBufferAtr", riskSettings.getStructuralSlBufferAtr());
         result.put("singleLevelSlBufferAtr", riskSettings.getSingleLevelSlBufferAtr());
@@ -109,8 +109,6 @@ public class SettingsController {
         result.put("enableTrailingSl", riskSettings.isEnableTrailingSl(effectiveMode));
         result.put("enableSmaCrossExit", riskSettings.isEnableSmaCrossExit());
         result.put("enablePriceSmaExit", riskSettings.isEnablePriceSmaExit());
-        result.put("enableNiftySmaCrossExit", riskSettings.isEnableNiftySmaCrossExit());
-        result.put("enableNiftyPriceSmaExit", riskSettings.isEnableNiftyPriceSmaExit());
         result.put("perSymbolDailyTradeLimit", riskSettings.getPerSymbolDailyTradeLimit());
         result.put("fibStage1TriggerPct", riskSettings.getFibStage1TriggerPct());
         result.put("fibStage1SlAtrMult",  riskSettings.getFibStage1SlAtrMult());
@@ -191,11 +189,11 @@ public class SettingsController {
             if (body.containsKey("enableWeeklySmaTargetShift")) riskSettings.setEnableWeeklySmaTargetShift(Boolean.parseBoolean(body.get("enableWeeklySmaTargetShift").toString()));
             if (body.containsKey("enableHtfHurdleFilter")) riskSettings.setEnableHtfHurdleFilter(Boolean.parseBoolean(body.get("enableHtfHurdleFilter").toString()));
             if (body.containsKey("enableNiftyHtfHurdleFilter")) riskSettings.setEnableNiftyHtfHurdleFilter(Boolean.parseBoolean(body.get("enableNiftyHtfHurdleFilter").toString()));
+            if (body.containsKey("enableNifty5mHurdleFilter")) riskSettings.setEnableNifty5mHurdleFilter(Boolean.parseBoolean(body.get("enableNifty5mHurdleFilter").toString()));
             if (body.containsKey("enableHtfSmaAlignment")) riskSettings.setEnableHtfSmaAlignment(Boolean.parseBoolean(body.get("enableHtfSmaAlignment").toString()));
             if (body.containsKey("enableHtfSmaAlignmentCheck")) riskSettings.setEnableHtfSmaAlignmentCheck(Boolean.parseBoolean(body.get("enableHtfSmaAlignmentCheck").toString()));
             if (body.containsKey("enableHtfCandleFilter")) riskSettings.setEnableHtfCandleFilter(Boolean.parseBoolean(body.get("enableHtfCandleFilter").toString()));
             if (body.containsKey("enableNiftyHtfCandleFilter")) riskSettings.setEnableNiftyHtfCandleFilter(Boolean.parseBoolean(body.get("enableNiftyHtfCandleFilter").toString()));
-            if (body.containsKey("enableNifty5mCandleFilter")) riskSettings.setEnableNifty5mCandleFilter(Boolean.parseBoolean(body.get("enableNifty5mCandleFilter").toString()));
             if (body.containsKey("enableStructuralSl")) riskSettings.setEnableStructuralSl(Boolean.parseBoolean(body.get("enableStructuralSl").toString()));
             if (body.containsKey("structuralSlBufferAtr")) riskSettings.setStructuralSlBufferAtr(Double.parseDouble(body.get("structuralSlBufferAtr").toString()));
             if (body.containsKey("singleLevelSlBufferAtr")) riskSettings.setSingleLevelSlBufferAtr(Double.parseDouble(body.get("singleLevelSlBufferAtr").toString()));
@@ -235,8 +233,6 @@ public class SettingsController {
             if (body.containsKey("enableTrailingSl")) riskSettings.setEnableTrailingSl(effectiveMode, Boolean.parseBoolean(body.get("enableTrailingSl").toString()));
             if (body.containsKey("enableSmaCrossExit")) riskSettings.setEnableSmaCrossExit(Boolean.parseBoolean(body.get("enableSmaCrossExit").toString()));
             if (body.containsKey("enablePriceSmaExit")) riskSettings.setEnablePriceSmaExit(Boolean.parseBoolean(body.get("enablePriceSmaExit").toString()));
-            if (body.containsKey("enableNiftySmaCrossExit")) riskSettings.setEnableNiftySmaCrossExit(Boolean.parseBoolean(body.get("enableNiftySmaCrossExit").toString()));
-            if (body.containsKey("enableNiftyPriceSmaExit")) riskSettings.setEnableNiftyPriceSmaExit(Boolean.parseBoolean(body.get("enableNiftyPriceSmaExit").toString()));
             if (body.containsKey("perSymbolDailyTradeLimit")) {
                 try {
                     riskSettings.setPerSymbolDailyTradeLimit(Integer.parseInt(body.get("perSymbolDailyTradeLimit").toString()));

@@ -749,18 +749,29 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
 
             String side = state.getOrDefault("side", "").toString();
             int qty = 0;
+            int remainingQty = 0;
             double avgPrice = 0;
             try {
                 qty = Integer.parseInt(state.getOrDefault("qty", "0").toString());
+                remainingQty = Integer.parseInt(state.getOrDefault("remainingQty", "0").toString());
                 avgPrice = Double.parseDouble(state.getOrDefault("avgPrice", "0").toString());
             } catch (NumberFormatException ignored) {}
+
+            // Open-qty source of truth: after T1 fills on a split-target trade, the original
+            // qty field still holds the entry quantity (saveT1FilledState does not touch it),
+            // but remainingQty is set atomically alongside t1Filled. Prefer remainingQty when
+            // t1Filled — this keeps live P&L stable through the syncPosition reconciliation
+            // window where Fyers' position API can briefly return either full or remaining qty,
+            // causing the displayed P&L to flicker.
+            boolean t1Filled = Boolean.TRUE.equals(state.get("t1Filled"));
+            int openQty = (t1Filled && remainingQty > 0) ? remainingQty : qty;
 
             double ltp = getLtp(symbol);
             if (ltp <= 0) continue; // no tick data yet
 
             double pnl = "LONG".equals(side)
-                ? (ltp - avgPrice) * qty
-                : (avgPrice - ltp) * qty;
+                ? (ltp - avgPrice) * openQty
+                : (avgPrice - ltp) * openQty;
             unrealizedPnl += pnl;
 
             Map<String, Object> pos = new LinkedHashMap<>();
@@ -768,7 +779,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             pos.put("ltp", Math.round(ltp * 100.0) / 100.0);
             pos.put("pnl", Math.round(pnl * 100.0) / 100.0);
             pos.put("avgPrice", Math.round(avgPrice * 100.0) / 100.0);
-            pos.put("qty", qty);
+            pos.put("qty", openQty);
             pos.put("side", side);
             pos.put("setup", state.getOrDefault("setup", ""));
             pos.put("entryTime", state.getOrDefault("entryTime", ""));

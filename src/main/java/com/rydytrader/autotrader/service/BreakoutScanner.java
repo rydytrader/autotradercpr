@@ -71,6 +71,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     @org.springframework.context.annotation.Lazy
     private MarketHolidayService marketHolidayService;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @org.springframework.context.annotation.Lazy
+    private NiftyOptionOiService niftyOptionOiService;
+
     // Track which levels have been broken today per symbol (prevents re-fire)
     private final ConcurrentHashMap<String, Set<String>> brokenLevels = new ConcurrentHashMap<>();
 
@@ -495,7 +499,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (evaluateSmaFilter(fyersSymbol, buySetup, close, levels, atr) == 2) return;
                 // NIFTY index alignment filter — hard skip, qty reduction (soft), or no-op.
                 if (checkIndexAlignment(fyersSymbol, buySetup, true) == NiftyAlignStatus.SKIP) {
-                    String niftyState = indexTrendService != null ? indexTrendService.getNiftyTrend().getState() : "?";
+                    String niftyState = indexTrendService != null ? indexTrendService.getStickyState() : "?";
                     recordRejection(fyersSymbol, buySetup, close, "NIFTY_OPPOSED",
                         "NIFTY " + niftyState + " — buy requires NIFTY BULLISH or BULLISH_REVERSAL");
                     return;
@@ -505,6 +509,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (niftyHurdleReject != null) {
                     eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + niftyHurdleReject);
                     recordRejection(fyersSymbol, buySetup, close, "NIFTY_HURDLE", niftyHurdleReject);
+                    return;
+                }
+                // NIFTY 5m Hurdle — prior 5-min NIFTY close must have cleared nearest daily CPR hurdle.
+                String nifty5mHurdleReject = checkNifty5mHurdle(true, candle.startMinute);
+                if (nifty5mHurdleReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + nifty5mHurdleReject);
+                    recordRejection(fyersSymbol, buySetup, close, "NIFTY_5M_HURDLE", nifty5mHurdleReject);
                     return;
                 }
                 // In-progress 1h candle direction — buy needs the currently-forming 1h bar to be green.
@@ -519,13 +530,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (niftyHtfCandleReject != null) {
                     eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + niftyHtfCandleReject);
                     recordRejection(fyersSymbol, buySetup, close, "NIFTY_HTF_CANDLE_OPPOSED", niftyHtfCandleReject);
-                    return;
-                }
-                // NIFTY just-closed 5m candle direction — buy needs NIFTY's last 5m bar to be green.
-                String nifty5mCandleReject = checkNifty5mCandleColor(true, candle.startMinute);
-                if (nifty5mCandleReject != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + nifty5mCandleReject);
-                    recordRejection(fyersSymbol, buySetup, close, "NIFTY_5M_CANDLE_OPPOSED", nifty5mCandleReject);
                     return;
                 }
                 fireSignal(fyersSymbol, buySetup, open, high, low, close, candle.volume, atr, levels, prob, null);
@@ -586,7 +590,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (evaluateSmaFilter(fyersSymbol, sellSetup, close, levels, atr) == 2) return;
                 // NIFTY index alignment filter — hard skip, qty reduction (soft), or no-op.
                 if (checkIndexAlignment(fyersSymbol, sellSetup, false) == NiftyAlignStatus.SKIP) {
-                    String niftyState = indexTrendService != null ? indexTrendService.getNiftyTrend().getState() : "?";
+                    String niftyState = indexTrendService != null ? indexTrendService.getStickyState() : "?";
                     recordRejection(fyersSymbol, sellSetup, close, "NIFTY_OPPOSED",
                         "NIFTY " + niftyState + " — sell requires NIFTY BEARISH or BEARISH_REVERSAL");
                     return;
@@ -596,6 +600,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (niftyHurdleReject != null) {
                     eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + niftyHurdleReject);
                     recordRejection(fyersSymbol, sellSetup, close, "NIFTY_HURDLE", niftyHurdleReject);
+                    return;
+                }
+                // NIFTY 5m Hurdle — prior 5-min NIFTY close must have cleared nearest daily CPR hurdle.
+                String nifty5mHurdleReject = checkNifty5mHurdle(false, candle.startMinute);
+                if (nifty5mHurdleReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + nifty5mHurdleReject);
+                    recordRejection(fyersSymbol, sellSetup, close, "NIFTY_5M_HURDLE", nifty5mHurdleReject);
                     return;
                 }
                 // In-progress 1h candle direction — sell needs the currently-forming 1h bar to be red.
@@ -610,13 +621,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (niftyHtfCandleReject != null) {
                     eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + niftyHtfCandleReject);
                     recordRejection(fyersSymbol, sellSetup, close, "NIFTY_HTF_CANDLE_OPPOSED", niftyHtfCandleReject);
-                    return;
-                }
-                // NIFTY just-closed 5m candle direction — sell needs NIFTY's last 5m bar to be red.
-                String nifty5mCandleReject = checkNifty5mCandleColor(false, candle.startMinute);
-                if (nifty5mCandleReject != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + nifty5mCandleReject);
-                    recordRejection(fyersSymbol, sellSetup, close, "NIFTY_5M_CANDLE_OPPOSED", nifty5mCandleReject);
                     return;
                 }
                 fireSignal(fyersSymbol, sellSetup, open, high, low, close, candle.volume, atr, levels, prob, null);
@@ -1009,9 +1013,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (!riskSettings.isEnableIndexAlignment()) return NiftyAlignStatus.OK;
         if (indexTrendService == null) return NiftyAlignStatus.OK;
         try {
-            com.rydytrader.autotrader.dto.IndexTrend nifty = indexTrendService.getNiftyTrend();
-            if (!nifty.isDataAvailable()) return NiftyAlignStatus.OK;
-            String state = nifty.getState();
+            // Sticky state — only updates at NIFTY 5-min candle close, so trade decisions
+            // don't oscillate tick-to-tick during a bar.
+            String state = indexTrendService.getStickyState();
+            if ("NEUTRAL".equals(state)) return NiftyAlignStatus.OK; // no data / inside CPR
             boolean aligned = isBuy
                 ? ("BULLISH".equals(state) || "BULLISH_REVERSAL".equals(state))
                 : ("BEARISH".equals(state) || "BEARISH_REVERSAL".equals(state));
@@ -1046,27 +1051,45 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             WeeklyCprService.WeeklyLevels wl = weeklyCprService.getWeeklyLevels(niftySym);
             if (wl == null) return null; // weekly levels not loaded — fail-open
 
-            double[] candidates;
-            String[] names;
+            // Base weekly candidates plus the trade-direction's option-chain Max OI strike when
+            // available. Max Call OI = resistance (joins buy hurdle set); Max Put OI = support
+            // (joins sell hurdle set). OI strikes are zero until NiftyOptionOiService's first
+            // successful fetch — falls through to base set with no regression.
+            java.util.List<Double> candidateLevels = new java.util.ArrayList<>(6);
+            java.util.List<String> candidateNames  = new java.util.ArrayList<>(6);
             if (isBuy) {
-                candidates = new double[]{ wl.r1, wl.ph, wl.tc, wl.pivot, wl.bc };
-                names      = new String[]{ "R1", "PWH", "weekly TC", "weekly Pivot", "weekly BC" };
+                candidateLevels.add(wl.r1);    candidateNames.add("weekly R1");
+                candidateLevels.add(wl.ph);    candidateNames.add("weekly PWH");
+                candidateLevels.add(wl.tc);    candidateNames.add("weekly TC");
+                candidateLevels.add(wl.pivot); candidateNames.add("weekly Pivot");
+                candidateLevels.add(wl.bc);    candidateNames.add("weekly BC");
+                if (niftyOptionOiService != null) {
+                    double oi = niftyOptionOiService.getMaxCallOiStrike();
+                    if (oi > 0) { candidateLevels.add(oi); candidateNames.add("Max Call OI"); }
+                }
             } else {
-                candidates = new double[]{ wl.s1, wl.pl, wl.tc, wl.pivot, wl.bc };
-                names      = new String[]{ "S1", "PWL", "weekly TC", "weekly Pivot", "weekly BC" };
+                candidateLevels.add(wl.s1);    candidateNames.add("weekly S1");
+                candidateLevels.add(wl.pl);    candidateNames.add("weekly PWL");
+                candidateLevels.add(wl.tc);    candidateNames.add("weekly TC");
+                candidateLevels.add(wl.pivot); candidateNames.add("weekly Pivot");
+                candidateLevels.add(wl.bc);    candidateNames.add("weekly BC");
+                if (niftyOptionOiService != null) {
+                    double oi = niftyOptionOiService.getMaxPutOiStrike();
+                    if (oi > 0) { candidateLevels.add(oi); candidateNames.add("Max Put OI"); }
+                }
             }
 
             // Nearest hurdle in trade direction relative to NIFTY's current price.
             double chosenLevel = 0;
             String chosenName = null;
-            for (int i = 0; i < candidates.length; i++) {
-                double lv = candidates[i];
+            for (int i = 0; i < candidateLevels.size(); i++) {
+                double lv = candidateLevels.get(i);
                 if (lv <= 0) continue;
                 if (isBuy) {
-                    if (lv < niftyPrice && lv > chosenLevel) { chosenLevel = lv; chosenName = names[i]; }
+                    if (lv < niftyPrice && lv > chosenLevel) { chosenLevel = lv; chosenName = candidateNames.get(i); }
                 } else {
                     if (lv > niftyPrice && (chosenName == null || lv < chosenLevel)) {
-                        chosenLevel = lv; chosenName = names[i];
+                        chosenLevel = lv; chosenName = candidateNames.get(i);
                     }
                 }
             }
@@ -1092,7 +1115,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
 
             if (priorHtfClose == null || priorHtfClose <= 0) {
-                return "NIFTY HTF hurdle at weekly " + chosenName
+                return "NIFTY HTF hurdle at " + chosenName
                     + ": NIFTY " + String.format("%.2f", niftyPrice)
                     + ", level " + String.format("%.2f", chosenLevel)
                     + ", no prior 1h close available"
@@ -1103,7 +1126,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 String label = usedLiveLtp ? ", live LTP="
                              : usedPrevSession ? ", prev session 1h close="
                              : ", prior 1h close=";
-                return "NIFTY HTF hurdle at weekly " + chosenName
+                return "NIFTY HTF hurdle at " + chosenName
                     + ": NIFTY " + String.format("%.2f", niftyPrice)
                     + label + String.format("%.2f", priorHtfClose)
                     + ", level " + String.format("%.2f", chosenLevel);
@@ -1143,45 +1166,95 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     }
 
     /**
-     * 5-min variant of {@link #checkNiftyHtfCandleColor}. When a stock's 5-min breakout fires,
-     * NIFTY's matching 5-min candle body must agree with the trade direction. Buys reject when
-     * NIFTY's matching 5m bar is strictly red; sells reject when it's strictly green. Doji
-     * passes both. Fail-open if no matching NIFTY bar is available.
+     * 5-min variant of {@link #checkNiftyHurdle}, against NIFTY's <i>daily</i> CPR levels (not
+     * weekly). When a stock's 5-min breakout fires, NIFTY's prior 5-min close must already have
+     * cleared its nearest daily-CPR hurdle in the trade direction. Guards against firing while
+     * NIFTY's <i>current</i> 5-min is just now crossing a daily resistance/support — wait for
+     * confirmation that the prior bar already closed past the level.
      *
-     * <p>Listener-ordering safe: aggregator finalizes candles per-symbol on the first
-     * post-boundary tick, so when this filter runs from STOCK-X's onCandleClose, NIFTY may
-     * or may not have closed its bucket yet. We resolve this by matching {@code startMinute}:
+     * <p>Daily levels considered:
+     * <ul>
+     *   <li>Buys: {BC, Pivot, TC, R1, R2, R3, R4} → highest level strictly below NIFTY LTP
+     *       (the most recent resistance NIFTY has cleared).</li>
+     *   <li>Sells: {TC, Pivot, BC, S1, S2, S3, S4} → lowest level strictly above NIFTY LTP.</li>
+     * </ul>
+     *
+     * <p>Listener-ordering safe — the prior NIFTY 5-min has {@code startMinute ==
+     * stockBucketStartMinute - 5}. We match on {@code startMinute} regardless of whether
+     * NIFTY's onCandleClose listener has fired yet for the current boundary:
      * <ol>
-     *   <li>NIFTY's last completed candle with the same {@code startMinute} (NIFTY closed first), else</li>
-     *   <li>NIFTY's in-progress candle with the same {@code startMinute} (NIFTY hasn't closed yet,
-     *       but its bar has been fed every tick through the boundary and represents the same window)</li>
+     *   <li>If NIFTY's listener fired first, the just-closed bar is the last completed and the
+     *       prior we want is the second-to-last → {@link CandleAggregator#getPreviousCandle}.</li>
+     *   <li>If NIFTY's listener hasn't fired, the just-closed bar is still in {@code currentCandle}
+     *       and the prior we want is the most recent completed → {@link CandleAggregator#getLastCompletedCandle}.</li>
      * </ol>
-     * Otherwise fail-open.
+     *
+     * <p>Returns null on pass (filter off, no hurdle in trade direction, prior 5m cleared, or no
+     * prior 5m available — first bar of session, fail-open). Returns a non-null reason string
+     * to reject.
      */
-    private String checkNifty5mCandleColor(boolean isBuy, long stockBucketStartMinute) {
-        if (!riskSettings.isEnableNifty5mCandleFilter()) return null;
-        if (candleAggregator == null) return null;
+    private String checkNifty5mHurdle(boolean isBuy, long stockBucketStartMinute) {
+        if (!riskSettings.isEnableNifty5mHurdleFilter()) return null;
+        if (candleAggregator == null || marketDataService == null || bhavcopyService == null) return null;
 
         String niftySym = IndexTrendService.NIFTY_SYMBOL;
-        CandleAggregator.CandleBar bar = null;
-        CandleAggregator.CandleBar last = candleAggregator.getLastCompletedCandle(niftySym);
-        if (last != null && last.startMinute == stockBucketStartMinute && last.open > 0 && last.close > 0) {
-            bar = last;
+        double niftyLtp = marketDataService.getLtp(niftySym);
+        if (niftyLtp <= 0) return null; // no LTP — fail-open
+
+        var cpr = bhavcopyService.getCprLevels("NIFTY50");
+        if (cpr == null) return null; // daily CPR not loaded — fail-open
+
+        double[] candidates;
+        String[] names;
+        if (isBuy) {
+            candidates = new double[]{ cpr.getBc(), cpr.getPivot(), cpr.getTc(),
+                                       cpr.getR1(), cpr.getR2(), cpr.getR3(), cpr.getR4() };
+            names      = new String[]{ "daily BC", "daily Pivot", "daily TC",
+                                       "R1", "R2", "R3", "R4" };
         } else {
-            CandleAggregator.CandleBar cur = candleAggregator.getCurrentCandle(niftySym);
-            if (cur != null && cur.startMinute == stockBucketStartMinute && cur.open > 0 && cur.close > 0) {
-                bar = cur;
+            candidates = new double[]{ cpr.getTc(), cpr.getPivot(), cpr.getBc(),
+                                       cpr.getS1(), cpr.getS2(), cpr.getS3(), cpr.getS4() };
+            names      = new String[]{ "daily TC", "daily Pivot", "daily BC",
+                                       "S1", "S2", "S3", "S4" };
+        }
+
+        // Nearest hurdle in trade direction: highest below LTP for buys, lowest above for sells.
+        double chosenLevel = 0;
+        String chosenName = null;
+        for (int i = 0; i < candidates.length; i++) {
+            double lv = candidates[i];
+            if (lv <= 0) continue;
+            if (isBuy) {
+                if (lv < niftyLtp && lv > chosenLevel) { chosenLevel = lv; chosenName = names[i]; }
+            } else {
+                if (lv > niftyLtp && (chosenName == null || lv < chosenLevel)) {
+                    chosenLevel = lv; chosenName = names[i];
+                }
             }
         }
-        if (bar == null) return null; // fail-open — no matching NIFTY bucket
+        if (chosenName == null) return null; // no hurdle in trade direction → clear path
 
-        if (isBuy && bar.close < bar.open) {
-            return "NIFTY 5m candle red — buy requires green: NIFTY 5m open="
-                + String.format("%.2f", bar.open) + ", close=" + String.format("%.2f", bar.close);
+        // Resolve NIFTY's prior 5-min close — the bar at startMinute = stockBucket - 5.
+        long priorStartMinute = stockBucketStartMinute - 5;
+        CandleAggregator.CandleBar priorBar = null;
+        CandleAggregator.CandleBar prev = candleAggregator.getPreviousCandle(niftySym);
+        if (prev != null && prev.startMinute == priorStartMinute && prev.close > 0) {
+            priorBar = prev;
+        } else {
+            CandleAggregator.CandleBar last = candleAggregator.getLastCompletedCandle(niftySym);
+            if (last != null && last.startMinute == priorStartMinute && last.close > 0) {
+                priorBar = last;
+            }
         }
-        if (!isBuy && bar.close > bar.open) {
-            return "NIFTY 5m candle green — sell requires red: NIFTY 5m open="
-                + String.format("%.2f", bar.open) + ", close=" + String.format("%.2f", bar.close);
+        if (priorBar == null) return null; // first 5-min of session — fail-open
+
+        double priorClose = priorBar.close;
+        boolean cleared = isBuy ? priorClose > chosenLevel : priorClose < chosenLevel;
+        if (!cleared) {
+            return "NIFTY 5m hurdle at " + chosenName
+                + ": NIFTY " + String.format("%.2f", niftyLtp)
+                + ", prior 5m close " + String.format("%.2f", priorClose)
+                + ", level " + String.format("%.2f", chosenLevel);
         }
         return null;
     }

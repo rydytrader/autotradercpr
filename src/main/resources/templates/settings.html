@@ -575,23 +575,20 @@
                         <br>When this filter is on: buys require <b>BULLISH</b> or <b>BULLISH REVERSAL</b>; sells require <b>BEARISH</b> or <b>BEARISH REVERSAL</b>; SIDEWAYS / NEUTRAL / opposite-direction states skip the trade outright. Independent of the other NIFTY filters below; all can be enabled together.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">NIFTY 5m Candle Direction Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableNifty5mCandleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy needs NIFTY's just-closed 5m candle <b>green</b>; sell needs <b>red</b></span>
-                    </div>
-                    <div class="form-hint">Same-timeframe variant of the NIFTY 1h Candle filter, run on the just-closed 5-min bar. When a stock fires a 5-min breakout, NIFTY's matching 5-min candle must agree:
-                        <br>&nbsp;&nbsp;&bull; <b>Buy</b> &mdash; NIFTY 5m close &gt; NIFTY 5m open (green). Reject if NIFTY 5m is strictly red.
-                        <br>&nbsp;&nbsp;&bull; <b>Sell</b> &mdash; NIFTY 5m close &lt; NIFTY 5m open (red). Reject if NIFTY 5m is strictly green.
-                        <br>Doji passes both. NIFTY's last completed 5m bar not yet available &rarr; fail-open. Tighter than the 1h variant &mdash; rejects when NIFTY momentum disagrees with the stock breakout on the same bar that fired it. Signal Trail bucket: <code>NIFTY_5M_CANDLE_OPPOSED</code>.</div>
-                </div>
-                <div class="form-group">
                     <label class="form-label">NIFTY HTF Hurdle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableNiftyHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY's prior 1h close hasn't cleared its nearest weekly hurdle</span>
                     </div>
                     <div class="form-hint">Macro-level mirror of the per-stock HTF Hurdle, applied to NIFTY's own data. When on, identifies NIFTY's nearest weekly hurdle in trade direction (R1/PWH/weekly TC/Pivot/BC for buys; S1/PWL/... for sells) and rejects every stock signal while NIFTY's prior 1h close hasn't decisively cleared it. While NIFTY's current 1h candle is still in progress and the prior close is on the wrong side, all stock signals are skipped &mdash; we wait for the next 1h close to commit. Signal Trail bucket: <code>NIFTY_HURDLE</code>.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">NIFTY 5m Hurdle Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableNifty5mHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY's prior 5m close hasn't cleared its nearest daily CPR hurdle</span>
+                    </div>
+                    <div class="form-hint">5-min variant of the NIFTY HTF Hurdle, against NIFTY's <b>daily CPR</b> levels (not weekly). Identifies NIFTY's nearest daily-CPR hurdle in trade direction (R1/R2/R3/R4 + daily TC/Pivot/BC for buys; S1/S2/S3/S4 + TC/Pivot/BC for sells) and rejects every stock signal while NIFTY's <i>prior</i> 5m close hasn't decisively cleared it. Guards against firing while NIFTY's current 5m bar is just now crossing a daily level &mdash; wait for the prior bar's close to confirm. Fail-open at session open (no prior 5m available). Signal Trail bucket: <code>NIFTY_5M_HURDLE</code>.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">NIFTY HTF Candle Direction Filter</label>
@@ -603,22 +600,6 @@
                         <br>&nbsp;&nbsp;&bull; <b>Buy</b> &mdash; NIFTY 1h close &gt; NIFTY 1h open (green). Reject if NIFTY 1h is strictly red.
                         <br>&nbsp;&nbsp;&bull; <b>Sell</b> &mdash; NIFTY 1h close &lt; NIFTY 1h open (red). Reject if NIFTY 1h is strictly green.
                         <br>Doji passes both. No in-progress NIFTY 1h bar yet (first ticks of a new 1h bucket) &rarr; fail-open. Signal Trail bucket: <code>NIFTY_HTF_CANDLE_OPPOSED</code>.</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">NIFTY SMA-based Defensive Exits</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableNiftySmaCrossExit" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">
-                            <b>NIFTY SMA Cross</b> &mdash; exit when NIFTY's 5-min SMA 20 stacks against trade direction (LONG: 20 &lt; 50; SHORT: 20 &gt; 50)
-                        </span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="enableNiftyPriceSmaExit" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">
-                            <b>NIFTY Price vs SMA 50</b> &mdash; exit when NIFTY's LTP is on the wrong side of its 5-min SMA 50 (LONG: NIFTY &lt; SMA 50; SHORT: NIFTY &gt; SMA 50)
-                        </span>
-                    </div>
-                    <div class="form-hint">Macro safety-net mirrors of the per-stock SMA-based Defensive Exits (Risk tab). Evaluated on every 5-min candle close: when NIFTY's structure rolls against an open trade direction, all positions on that side are squared off &mdash; even if the individual stock's own SMAs still look aligned. Fire before SL / Target / Trailing; cancels both OCO legs and places an exit market order. Reasons recorded: <code>NIFTY_SMA_CROSS_EXIT</code>, <code>NIFTY_PRICE_SMA_EXIT</code>.</div>
                 </div>
             </div>
         </div>
@@ -1249,9 +1230,9 @@
             document.getElementById('targetToleranceAtr').value = (d.targetToleranceAtr != null ? d.targetToleranceAtr : 0.10);
             document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
             document.getElementById('enableNiftyHtfHurdleFilter').checked = d.enableNiftyHtfHurdleFilter === true;
+            document.getElementById('enableNifty5mHurdleFilter').checked = d.enableNifty5mHurdleFilter === true;
             document.getElementById('enableHtfCandleFilter').checked = d.enableHtfCandleFilter === true;
             document.getElementById('enableNiftyHtfCandleFilter').checked = d.enableNiftyHtfCandleFilter === true;
-            document.getElementById('enableNifty5mCandleFilter').checked = d.enableNifty5mCandleFilter === true;
             document.getElementById('enableSmallCandleFilter').checked = d.enableSmallCandleFilter === true;
             document.getElementById('smallCandleBodyAtrThreshold').value =
                 (d.smallCandleBodyAtrThreshold != null ? d.smallCandleBodyAtrThreshold : (d.smallCandleAtrThreshold != null ? d.smallCandleAtrThreshold : 0.5));
@@ -1265,8 +1246,6 @@
             document.getElementById('enableTrailingSl').checked = d.enableTrailingSl != null ? d.enableTrailingSl : true;
             document.getElementById('enableSmaCrossExit').checked = d.enableSmaCrossExit === true;
             document.getElementById('enablePriceSmaExit').checked = d.enablePriceSmaExit === true;
-            document.getElementById('enableNiftySmaCrossExit').checked = d.enableNiftySmaCrossExit === true;
-            document.getElementById('enableNiftyPriceSmaExit').checked = d.enableNiftyPriceSmaExit === true;
             document.getElementById('perSymbolDailyTradeLimit').value = d.perSymbolDailyTradeLimit != null ? d.perSymbolDailyTradeLimit : 2;
             document.getElementById('fibStage1TriggerPct').value = d.fibStage1TriggerPct != null ? d.fibStage1TriggerPct : 61.8;
             document.getElementById('fibStage1SlAtrMult').value  = d.fibStage1SlAtrMult  != null ? d.fibStage1SlAtrMult  : 1.0;
@@ -1418,9 +1397,9 @@
                 targetToleranceAtr: parseFloat(document.getElementById('targetToleranceAtr').value) || 0,
                 enableIndexAlignment: document.getElementById('enableIndexAlignment').checked,
                 enableNiftyHtfHurdleFilter: document.getElementById('enableNiftyHtfHurdleFilter').checked,
+                enableNifty5mHurdleFilter: document.getElementById('enableNifty5mHurdleFilter').checked,
                 enableHtfCandleFilter: document.getElementById('enableHtfCandleFilter').checked,
                 enableNiftyHtfCandleFilter: document.getElementById('enableNiftyHtfCandleFilter').checked,
-                enableNifty5mCandleFilter: document.getElementById('enableNifty5mCandleFilter').checked,
                 enableSmallCandleFilter: document.getElementById('enableSmallCandleFilter').checked,
                 smallCandleBodyAtrThreshold: parseFloat(document.getElementById('smallCandleBodyAtrThreshold').value) || 0.5,
                 smallCandleMoveAtrThreshold: parseFloat(document.getElementById('smallCandleMoveAtrThreshold').value) || 0.15,
@@ -1432,8 +1411,6 @@
                 enableTrailingSl: document.getElementById('enableTrailingSl').checked,
                 enableSmaCrossExit: document.getElementById('enableSmaCrossExit').checked,
                 enablePriceSmaExit: document.getElementById('enablePriceSmaExit').checked,
-                enableNiftySmaCrossExit: document.getElementById('enableNiftySmaCrossExit').checked,
-                enableNiftyPriceSmaExit: document.getElementById('enableNiftyPriceSmaExit').checked,
                 perSymbolDailyTradeLimit: parseInt(document.getElementById('perSymbolDailyTradeLimit').value) || 0,
                 fibStage1TriggerPct: parseFloat(document.getElementById('fibStage1TriggerPct').value) || 61.8,
                 fibStage1SlAtrMult:  parseFloat(document.getElementById('fibStage1SlAtrMult').value)  || 1.0,

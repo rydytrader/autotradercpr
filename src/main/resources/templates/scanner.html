@@ -480,9 +480,9 @@
             <div class="nifty-cpr" id="niftyCprBias" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY LTP vs daily CPR (above CPR top / below CPR bottom)">—</div>
             <div class="nifty-sma-price" id="niftySmaPrice" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY LTP vs 5-min SMA 20 &amp; 50 (above both / below both)">—</div>
             <div class="nifty-sma-align" id="niftySmaAlign" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="5-min SMA 20 vs 50 (20 &gt; 50 bullish / 20 &lt; 50 bearish)">—</div>
-            <div class="nifty-sma-values" id="niftySmaValues" style="font-family:var(--font-mono); font-weight:600; font-size:0.78rem; margin-left:14px; color:var(--text-muted);" title="NIFTY 5-min SMA 20 / SMA 50 values">—</div>
-            <div class="nifty-state" id="niftyState">—</div>
-            <div class="nifty-breadth" id="niftyBreadth" style="font-family:var(--font-mono); font-weight:600; font-size:0.78rem; margin-left:auto; color:var(--text-muted);" title="NIFTY 50 breadth: stocks up / total tracked">—</div>
+            <div class="nifty-oi-call" id="niftyMaxCallOi" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px; color:var(--accent-red);" title="NIFTY Max Call OI strike — acts as intraday resistance hurdle (refreshed every 15 min)">—</div>
+            <div class="nifty-oi-put" id="niftyMaxPutOi" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px; color:var(--accent-green);" title="NIFTY Max Put OI strike — acts as intraday support hurdle (refreshed every 15 min)">—</div>
+            <div class="nifty-state" id="niftyState" style="margin-left:auto;">—</div>
             <div class="nifty-right" id="niftyMetrics"></div>
         </div>
     </div>
@@ -1134,10 +1134,10 @@
             if (!d || !d.dataAvailable) {
                 document.getElementById('niftyLtp').textContent = '—';
                 document.getElementById('niftyChange').textContent = '—';
-                var br0 = document.getElementById('niftyBreadth'); if (br0) br0.textContent = '—';
                 var sp0 = document.getElementById('niftySmaPrice'); if (sp0) { sp0.textContent = '—'; sp0.style.color = 'var(--text-muted)'; }
                 var sa0 = document.getElementById('niftySmaAlign'); if (sa0) { sa0.textContent = '—'; sa0.style.color = 'var(--text-muted)'; }
-                var sv0 = document.getElementById('niftySmaValues'); if (sv0) sv0.textContent = '—';
+                var mc0 = document.getElementById('niftyMaxCallOi'); if (mc0) mc0.textContent = '—';
+                var mp0 = document.getElementById('niftyMaxPutOi'); if (mp0) mp0.textContent = '—';
                 var cw0 = document.getElementById('niftyCprWidth'); if (cw0) { cw0.textContent = '—'; cw0.style.color = 'var(--text-muted)'; }
                 var cb0 = document.getElementById('niftyCprBias'); if (cb0) { cb0.textContent = '—'; cb0.style.color = 'var(--text-muted)'; }
                 document.getElementById('niftyState').textContent = 'WAITING';
@@ -1153,17 +1153,6 @@
             document.getElementById('niftyCard').className = 'nifty-card nifty-card-' + stateLowerEarly;
 
             document.getElementById('niftyLtp').textContent = d.ltp.toFixed(2);
-            // NIFTY breadth — % of NIFTY 50 stocks above prev close
-            var brEl = document.getElementById('niftyBreadth');
-            if (brEl && d.breadthTotal > 0) {
-                var adv = +d.breadthAdvancers || 0;
-                var dec = +d.breadthDecliners || 0;
-                var tot = +d.breadthTotal;
-                var add = +d.addScore || 0;
-                var addColor = add >= 28 ? 'var(--accent-green)' : add >= 22 ? 'var(--text-muted)' : 'var(--accent-red)';
-                brEl.innerHTML = 'Advance Declines <span style="color:' + addColor + ';font-weight:700;">' + add + '</span> '
-                    + '(<span style="color:var(--accent-green);">▲ ' + adv + '</span> / <span style="color:var(--accent-red);">▼ ' + dec + '</span>)';
-            }
             var chgEl = document.getElementById('niftyChange');
             if (chgEl && d.changePct !== undefined && d.changePct !== null) {
                 var cp = +d.changePct;
@@ -1234,20 +1223,50 @@
                 }
             }
 
-            // Live SMA values — display-only, not used for the trend factors above.
-            var svEl = document.getElementById('niftySmaValues');
-            if (svEl) {
+            // Live SMA values — shown as a tooltip on the "PRICE > 20,50" chip. Hover the chip
+            // to see the actual numeric values "5-min SMA 20: X / SMA 50: Y".
+            var spTipEl = document.getElementById('niftySmaPrice');
+            if (spTipEl) {
                 var s20 = +d.sma20 || 0;
                 var s50 = +d.sma50 || 0;
                 if (s20 > 0 && s50 > 0) {
-                    svEl.textContent = '20: ' + s20.toFixed(2) + ' / 50: ' + s50.toFixed(2);
+                    spTipEl.title = '5-min SMA 20: ' + s20.toFixed(2) + ' / SMA 50: ' + s50.toFixed(2);
                 } else {
-                    svEl.textContent = '—';
+                    spTipEl.title = 'NIFTY 5-min SMA 20 / SMA 50 values (not yet loaded)';
+                }
+            }
+
+            // Max OI strikes — refreshed every 15 min by NiftyOptionOiService. Resistance/support
+            // hurdles also folded into the NIFTY HTF Hurdle filter when enabled.
+            var mcEl = document.getElementById('niftyMaxCallOi');
+            if (mcEl) {
+                var mc = +d.maxCallOiStrike || 0;
+                if (mc > 0) {
+                    mcEl.textContent = 'Max Call OI: ' + mc;
+                    var mcOi = +d.maxCallOi || 0;
+                    mcEl.title = 'Max Call OI: ' + mcOi.toLocaleString()
+                        + (d.oiLastUpdated ? ' (updated ' + d.oiLastUpdated + ')' : '');
+                } else {
+                    mcEl.textContent = '—';
+                    mcEl.title = 'Max Call OI not loaded yet';
+                }
+            }
+            var mpEl = document.getElementById('niftyMaxPutOi');
+            if (mpEl) {
+                var mp = +d.maxPutOiStrike || 0;
+                if (mp > 0) {
+                    mpEl.textContent = 'Max Put OI: ' + mp;
+                    var mpOi = +d.maxPutOi || 0;
+                    mpEl.title = 'Max Put OI: ' + mpOi.toLocaleString()
+                        + (d.oiLastUpdated ? ' (updated ' + d.oiLastUpdated + ')' : '');
+                } else {
+                    mpEl.textContent = '—';
+                    mpEl.title = 'Max Put OI not loaded yet';
                 }
             }
 
             // No extra metrics on the right side — card shows LTP, change%, the 3 factor chips,
-            // SMA values, state, and breadth (display-only).
+            // SMA values, OI strikes, state, and breadth (display-only).
             document.getElementById('niftyMetrics').innerHTML = '';
         }).catch(function(err) { console.warn('refreshNiftyCard failed:', err); });
     }

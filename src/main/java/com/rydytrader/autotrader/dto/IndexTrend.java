@@ -37,6 +37,14 @@ public class IndexTrend {
     // the user's narrowCprMaxWidth and insideCprMaxWidth scanner thresholds. Display-only.
     private double cprWidthPct;
     private String cprWidthCategory;
+    // NIFTY option-chain Max OI strikes refreshed every 15 minutes during market hours.
+    // Max Call OI = intraday resistance hurdle; Max Put OI = intraday support hurdle.
+    // Zero = not yet loaded.
+    private double maxCallOiStrike;
+    private long   maxCallOi;
+    private double maxPutOiStrike;
+    private long   maxPutOi;
+    private String oiLastUpdated;
 
     public IndexTrend() {}
 
@@ -74,4 +82,14 @@ public class IndexTrend {
     public void setCprWidthPct(double v) { this.cprWidthPct = v; }
     public String getCprWidthCategory() { return cprWidthCategory; }
     public void setCprWidthCategory(String v) { this.cprWidthCategory = v; }
+    public double getMaxCallOiStrike() { return maxCallOiStrike; }
+    public void setMaxCallOiStrike(double v) { this.maxCallOiStrike = v; }
+    public long getMaxCallOi() { return maxCallOi; }
+    public void setMaxCallOi(long v) { this.maxCallOi = v; }
+    public double getMaxPutOiStrike() { return maxPutOiStrike; }
+    public void setMaxPutOiStrike(double v) { this.maxPutOiStrike = v; }
+    public long getMaxPutOi() { return maxPutOi; }
+    public void setMaxPutOi(long v) { this.maxPutOi = v; }
+    public String getOiLastUpdated() { return oiLastUpdated; }
+    public void setOiLastUpdated(String v) { this.oiLastUpdated = v; }
 }

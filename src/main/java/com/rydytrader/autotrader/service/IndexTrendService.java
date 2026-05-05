@@ -48,6 +48,8 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
     private SmaService smaService;
     @org.springframework.beans.factory.annotation.Autowired
     private com.rydytrader.autotrader.store.RiskSettingsStore riskSettings;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private NiftyOptionOiService niftyOptionOiService;
 
     // Sticky cached factors — refreshed only on NIFTY 5-min candle close.
     // null = not yet computed or insufficient data (treated as missing / mixed in state combo).
@@ -99,12 +101,16 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         firstCloseReceived    = false;
     }
 
+    /** Pure live snapshot of the 3 factors + combined state. No side effects. */
+    private record TrendSnapshot(Boolean cprBullish, Boolean smaPriceBullish,
+                                 Boolean smaAlignBullish, String state) {}
+
     /**
-     * Recompute the 3 sticky factors and combined state from the most recent values
-     * (post-close LTP, 5-min SMA 20/50). Called from {@link #onCandleClose} at every NIFTY
-     * 5-min boundary. Updates the cached fields atomically.
+     * Compute the 3 factors and combined state from the latest values (live LTP + blended
+     * SMA 20/50). Pure — no caching. Used by both the UI ({@link #getNiftyTrend()}, refreshes
+     * every poll) and the candle-close listener (which writes the result to the sticky cache).
      */
-    private void recomputeStates() {
+    private TrendSnapshot computeSnapshot() {
         double ltp = marketDataService.getLtp(NIFTY_SYMBOL);
 
         // Factor 1: CPR — NIFTY LTP vs daily CPR (above top / below bottom / inside)
@@ -160,28 +166,37 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         } else {
             state = "SIDEWAYS";
         }
+        return new TrendSnapshot(cprBullish, smaPriceBullish, smaAlignBullish, state);
+    }
 
-        // Atomic update — log only if state actually changed
+    /**
+     * Sticky update path — called only by {@link #onCandleClose} at NIFTY 5-min boundaries.
+     * Snapshots the live values and writes them to the cache so the filter (which reads
+     * {@link #getStickyState()}) sees a value that only changes at bar boundaries.
+     */
+    private void recomputeStates() {
+        TrendSnapshot s = computeSnapshot();
         String prev = cachedState;
-        cachedCprBullish      = cprBullish;
-        cachedSmaPriceBullish = smaPriceBullish;
-        cachedSmaAlignBullish = smaAlignBullish;
-        cachedState           = state;
-        if (!state.equals(prev)) {
+        cachedCprBullish      = s.cprBullish();
+        cachedSmaPriceBullish = s.smaPriceBullish();
+        cachedSmaAlignBullish = s.smaAlignBullish();
+        cachedState           = s.state();
+        if (!s.state().equals(prev)) {
             log.info("[IndexTrend] NIFTY state {} → {} (cpr={} smaPrice={} smaAlign={})",
-                prev, state, cprBullish, smaPriceBullish, smaAlignBullish);
+                prev, s.state(), s.cprBullish(), s.smaPriceBullish(), s.smaAlignBullish());
         }
     }
 
+    /** Sticky NIFTY trend state — only updates at NIFTY 5-min candle close. Used by filters
+     *  (NIFTY Index Alignment) so trade decisions don't oscillate tick-to-tick within a bar. */
+    public String getStickyState() { return cachedState != null ? cachedState : "NEUTRAL"; }
+
     public IndexTrend getNiftyTrend() {
-        // First 5 minutes of the session (or after a mid-day restart) — no candle close has
-        // fired yet for NIFTY today, so the cached states are stale/null. Recompute live from
-        // current LTP each call so the user has a directional signal during the opening bar.
-        // Once the first NIFTY/futures 5-min candle closes (~9:20 IST), the listener takes
-        // over and this fallback stops firing — cached values are sticky between bars.
-        if (!firstCloseReceived) {
-            recomputeStates();
-        }
+        // Live snapshot for the UI — chips and state shown on the card update every poll so they
+        // stay in sync with the displayed live-blended SMA numbers and current LTP-vs-CPR check.
+        // The cached fields used by filters are NOT touched here; they only update at NIFTY 5-min
+        // candle close via recomputeStates(). Filters read getStickyState() for sticky behavior.
+        TrendSnapshot live = computeSnapshot();
 
         IndexTrend trend = new IndexTrend();
         trend.setSymbol(NIFTY_SYMBOL);
@@ -191,8 +206,8 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         double liveTickLtp = marketDataService.getLtp(NIFTY_SYMBOL);
         double ltp = liveTickLtp;
         if (ltp <= 0) {
-            var cpr = bhavcopyService.getCprLevels("NIFTY50");
-            if (cpr != null) ltp = cpr.getClose();
+            var fallbackCpr = bhavcopyService.getCprLevels("NIFTY50");
+            if (fallbackCpr != null) ltp = fallbackCpr.getClose();
         }
         trend.setLtp(liveTickLtp);
 
@@ -202,11 +217,11 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
             if (!cpr.isInNifty50() || bhavcopyService.isIndex(cpr.getSymbol())) continue;
             double prev = cpr.getClose();
             if (prev <= 0) continue;
-            double live = marketDataService.getLtp("NSE:" + cpr.getSymbol() + "-EQ");
-            if (live <= 0) continue;
+            double liveLtp = marketDataService.getLtp("NSE:" + cpr.getSymbol() + "-EQ");
+            if (liveLtp <= 0) continue;
             breadthCount++;
-            if (live > prev) advancers++;
-            else if (live < prev) decliners++;
+            if (liveLtp > prev) advancers++;
+            else if (liveLtp < prev) decliners++;
         }
         trend.setBreadthAdvancers(advancers);
         trend.setBreadthDecliners(decliners);
@@ -219,11 +234,12 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         if (changePct == 0) changePct = marketDataService.getChangePercent(NIFTY_SYMBOL);
         trend.setChangePct(Math.round(changePct * 100.0) / 100.0);
 
-        // Cached (sticky) trend factors — only change at NIFTY 5-min candle boundaries
-        trend.setCprBullish(cachedCprBullish);
-        trend.setSmaPriceBullish(cachedSmaPriceBullish);
-        trend.setSmaAlignBullish(cachedSmaAlignBullish);
-        trend.setState(cachedState != null ? cachedState : "NEUTRAL");
+        // Live factors for UI display — recomputed on each call so chips and state on the card
+        // match the live-blended SMA numbers and current LTP-vs-CPR check.
+        trend.setCprBullish(live.cprBullish());
+        trend.setSmaPriceBullish(live.smaPriceBullish());
+        trend.setSmaAlignBullish(live.smaAlignBullish());
+        trend.setState(live.state());
 
         // Live SMA snapshot for the card display — not sticky.
         if (smaService != null) {
@@ -241,6 +257,17 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
             String category = widthPct < narrowMax ? "NARROW" : "WIDE";
             trend.setCprWidthPct(Math.round(widthPct * 1000.0) / 1000.0);
             trend.setCprWidthCategory(category);
+        }
+
+        // NIFTY option-chain Max OI strikes (refreshed every 15 min by NiftyOptionOiService).
+        // Display-only on the card; also consumed by BreakoutScanner.checkNiftyHurdle as
+        // additional hurdle candidates. Zero values until first successful fetch.
+        if (niftyOptionOiService != null) {
+            trend.setMaxCallOiStrike(niftyOptionOiService.getMaxCallOiStrike());
+            trend.setMaxCallOi(niftyOptionOiService.getMaxCallOi());
+            trend.setMaxPutOiStrike(niftyOptionOiService.getMaxPutOiStrike());
+            trend.setMaxPutOi(niftyOptionOiService.getMaxPutOi());
+            trend.setOiLastUpdated(niftyOptionOiService.getLastUpdatedFormatted());
         }
 
         trend.setDataAvailable(ltp > 0);
