@@ -685,20 +685,20 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                     }
                     // Live SMA values — both compute lazily with current LTP blending,
                     // so the UI sees tick-fresh values instead of waiting for the 15s full refresh.
-                    // Rounded to symbol's tick size (display only — filter logic still uses raw).
-                    double tick = symbolMasterService != null ? symbolMasterService.getTickSize(sym) : 0;
+                    // Rounded to 2 decimals only (TV does not snap SMAs to tick size — keeping
+                    // raw value rounded to ₹0.01 lets the bot's display match TV exactly).
                     double s20  = smaService.getSma(sym);
                     double s50  = smaService.getSma50(sym);
                     double s200 = smaService.getSma200(sym);
-                    if (s20  > 0) d.put("sma",      roundToTick(s20,  tick));
-                    if (s50  > 0) d.put("sma50",    roundToTick(s50,  tick));
-                    if (s200 > 0) d.put("sma200",   roundToTick(s200, tick));
+                    if (s20  > 0) d.put("sma",      Math.round(s20  * 100.0) / 100.0);
+                    if (s50  > 0) d.put("sma50",    Math.round(s50  * 100.0) / 100.0);
+                    if (s200 > 0) d.put("sma200",   Math.round(s200 * 100.0) / 100.0);
                     double h20  = htfSmaService.getSma(sym);
                     double h50  = htfSmaService.getSma50(sym);
                     double h200 = htfSmaService.getSma200(sym);
-                    if (h20  > 0) d.put("htfSma20",  roundToTick(h20,  tick));
-                    if (h50  > 0) d.put("htfSma50",  roundToTick(h50,  tick));
-                    if (h200 > 0) d.put("htfSma200", roundToTick(h200, tick));
+                    if (h20  > 0) d.put("htfSma20",  Math.round(h20  * 100.0) / 100.0);
+                    if (h50  > 0) d.put("htfSma50",  Math.round(h50  * 100.0) / 100.0);
+                    if (h200 > 0) d.put("htfSma200", Math.round(h200 * 100.0) / 100.0);
                     wlPayload.put(sym, d);
                 }
                 if (!wlPayload.isEmpty()) {

@@ -863,8 +863,12 @@ public class CandleAggregator {
             else priors.add(c);
         }
 
-        // Keep last N prior-day candles for volume-avg fallback + 50 SMA chart warmup (ordered oldest → newest)
-        int keepPriors = 50;
+        // Keep last N prior-day candles. Sized to cover SMA200 on 5-min bars without ever
+        // needing a Fyers /data/history fetch on a normal mid-session or daily restart:
+        // 250 bars / ~75 bars per session ≈ 3.3 trading days of priors (overlaps with the
+        // bot's own captured live data so the SMA seed never touches /data/history when the
+        // bot has been running normally).
+        int keepPriors = 250;
         if (priors.size() > keepPriors) priors = priors.subList(priors.size() - keepPriors, priors.size());
         priorDayCandles.put(symbol, new ArrayList<>(priors));
         // Save refreshed priors so next restart can skip the multi-day history fetch for the baseline.
@@ -957,7 +961,8 @@ public class CandleAggregator {
             if (today == null || today.isEmpty()) continue;
             List<CandleBar> priors = priorDayCandles.computeIfAbsent(entry.getKey(), k -> new ArrayList<>());
             priors.addAll(today);
-            int keepPriors = 50;
+            // Sized to cover SMA200 on 5-min (see comment in seedCandles).
+            int keepPriors = 250;
             if (priors.size() > keepPriors) {
                 priorDayCandles.put(entry.getKey(), new ArrayList<>(priors.subList(priors.size() - keepPriors, priors.size())));
             }

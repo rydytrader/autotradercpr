@@ -103,32 +103,67 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
         doFullFetch(fyersSymbols, authHeader, timeframe);
     }
 
-    /** Existing 14-day seed flow, extracted so the cached path can skip it. */
+    /**
+     * Full seed flow for symbols without an SMA cache entry. Uses live-aggregated bars from
+     * CandleAggregator's loaded disk state when available (matches TradingView exactly), and
+     * tops up from Fyers /data/history only for the gap before what we have on disk. This
+     * keeps today's bars in the SMA deque sourced from WebSocket aggregation, not from Fyers'
+     * historical OHLC which carries small per-bar snapshot drift on indices.
+     */
     private void doFullFetch(List<String> fyersSymbols, String authHeader, int timeframe) {
         log.info("[AtrService] Full fetch ATR({}) for {} symbols ({}min candles)",
             getAtrPeriod(), fyersSymbols.size(), timeframe);
 
         int success = 0;
+        int diskOnly = 0;
         List<String> failed = new ArrayList<>();
         for (String symbol : fyersSymbols) {
             try {
-                List<CandleAggregator.CandleBar> candles = fetchHistoricalCandles(symbol, timeframe, authHeader);
+                // Build candle list: disk priors + today's bars first (oldest → newest), then
+                // Fyers /data/history filling in older bars only if disk is too thin.
+                List<CandleAggregator.CandleBar> diskBars = new ArrayList<>();
+                diskBars.addAll(candleAggregator.getPriorDayCandles(symbol));
+                diskBars.addAll(candleAggregator.getCompletedCandles(symbol));
+                diskBars.sort((a, b) -> Long.compare(a.epochSec, b.epochSec));
+
+                List<CandleAggregator.CandleBar> candles;
+                boolean fyersFetched = false;
+                // Disk alone covers SMA200 + ATR(14) requirement → skip Fyers fetch entirely.
+                if (diskBars.size() >= 200) {
+                    candles = diskBars;
+                } else {
+                    // Fetch from Fyers for the missing older window. Merge: keep disk bars as
+                    // authoritative; Fyers fills in only what's older than the oldest disk bar.
+                    List<CandleAggregator.CandleBar> fyersBars = fetchHistoricalCandles(symbol, timeframe, authHeader);
+                    fyersFetched = true;
+                    long oldestDiskEpoch = diskBars.isEmpty() ? Long.MAX_VALUE : diskBars.get(0).epochSec;
+                    candles = new ArrayList<>();
+                    for (CandleAggregator.CandleBar c : fyersBars) {
+                        if (c.epochSec < oldestDiskEpoch) candles.add(c);
+                    }
+                    candles.addAll(diskBars);  // disk bars stay authoritative for the recent window
+                }
+
                 if (candles.size() >= getAtrPeriod()) {
                     double atr = calculateAtr(candles, getAtrPeriod());
                     atrBySymbol.put(symbol, atr);
-                    candleAggregator.seedCandles(symbol, candles);
+                    // Only call seedCandles when we just fetched from Fyers; otherwise the
+                    // CandleAggregator's loaded disk state already represents the truth.
+                    if (fyersFetched) candleAggregator.seedCandles(symbol, candles);
                     if (smaService != null) smaService.seedFromCandles(symbol, candles);
                     success++;
+                    if (!fyersFetched) diskOnly++;
                 } else {
                     log.warn("[AtrService] Only {} candles for {} (need {})", candles.size(), symbol, getAtrPeriod());
                     failed.add(symbol);
                 }
-                Thread.sleep(300);
+                if (fyersFetched) Thread.sleep(300);
             } catch (Exception e) {
                 log.error("[AtrService] Failed to fetch ATR for {}: {}", symbol, e.getMessage());
                 failed.add(symbol);
             }
         }
+        log.info("[AtrService] doFullFetch: {} disk-only, {} needed Fyers", diskOnly, success - diskOnly);
 
         if (!failed.isEmpty()) {
             log.info("[AtrService] Retrying {} failed symbols after 2s delay...", failed.size());
@@ -192,28 +227,70 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
             eventService.log("[INFO] ATR/SMA restored from cache; all " + upToDate + " symbols already current");
             return;
         }
-        log.info("[CACHE] ATR/SMA catch-up: {} symbols already current, fetching for {} {}",
+        log.info("[CACHE] ATR/SMA catch-up: {} symbols already current, catching up for {} {}",
             upToDate, needsFetch.size(), forceFetch ? "(FORCE: re-seeding all)" : "stale");
-        int candleCount = 0;
+
+        long latestPossibleStart = latestPossibleBarStart(timeframe);
+        int candleCountFromDisk = 0;
+        int candleCountFromFyers = 0;
+        int symbolsFromDiskOnly = 0;
+        int symbolsNeededFyers = 0;
+
         for (String symbol : needsFetch) {
             try {
-                List<CandleAggregator.CandleBar> bars = fetchHistoricalCandles(symbol, timeframe, authHeader, 5);
-                candleAggregator.seedCandles(symbol, bars);
                 long lastEpoch = smaService != null ? smaService.getLastCandleEpoch(symbol) : 0;
-                for (CandleAggregator.CandleBar c : bars) {
-                    if (c.epochSec <= lastEpoch) continue;  // already applied pre-restart
+
+                // STEP 1 — Try to fill the gap from CandleAggregator's loaded disk state. These
+                // bars are LIVE-aggregated (built from WebSocket ticks captured during prior
+                // sessions) and match TradingView exactly — unlike Fyers /data/history which
+                // produces small per-bar drift on indices due to vendor snapshot timing. We use
+                // disk bars whenever they cover the gap so the SMA deque stays clean of vendor
+                // drift.
+                List<CandleAggregator.CandleBar> diskBars = new ArrayList<>();
+                diskBars.addAll(candleAggregator.getPriorDayCandles(symbol));
+                diskBars.addAll(candleAggregator.getCompletedCandles(symbol));
+                diskBars.sort((a, b) -> Long.compare(a.epochSec, b.epochSec));
+
+                int appliedFromDisk = 0;
+                for (CandleAggregator.CandleBar c : diskBars) {
+                    if (c.epochSec <= lastEpoch) continue;  // already in deque
                     if (smaService != null) smaService.onCandleClose(symbol, c);
                     this.onCandleClose(symbol, c);
-                    candleCount++;
+                    appliedFromDisk++;
                 }
+                candleCountFromDisk += appliedFromDisk;
+
+                long newLastEpoch = smaService != null ? smaService.getLastCandleEpoch(symbol) : 0;
+
+                // STEP 2 — If disk bars closed the gap, we're done. Otherwise (bot was offline
+                // beyond what we have on disk), fall back to Fyers /data/history for the remaining
+                // bars. This is the legitimate case: long offline, new symbol, first-ever startup.
+                if (!forceFetch && newLastEpoch >= latestPossibleStart) {
+                    symbolsFromDiskOnly++;
+                    continue;
+                }
+
+                List<CandleAggregator.CandleBar> bars = fetchHistoricalCandles(symbol, timeframe, authHeader, 5);
+                if (forceFetch) candleAggregator.seedCandles(symbol, bars);
+                int applied = 0;
+                for (CandleAggregator.CandleBar c : bars) {
+                    if (c.epochSec <= newLastEpoch) continue;  // already covered by disk + prior epoch
+                    if (smaService != null) smaService.onCandleClose(symbol, c);
+                    this.onCandleClose(symbol, c);
+                    applied++;
+                }
+                candleCountFromFyers += applied;
+                symbolsNeededFyers++;
                 Thread.sleep(150);
             } catch (Exception e) {
                 log.warn("[CACHE] Catch-up failed for {}: {}", symbol, e.getMessage());
             }
         }
-        log.info("[CACHE] Catch-up applied {} bars across {} symbols", candleCount, needsFetch.size());
-        eventService.log("[INFO] ATR/SMA restored from cache; catch-up " + candleCount
-            + " bars across " + needsFetch.size() + " symbols");
+        log.info("[CACHE] Catch-up applied {} bars from disk ({} symbols), {} bars from Fyers ({} symbols)",
+            candleCountFromDisk, symbolsFromDiskOnly, candleCountFromFyers, symbolsNeededFyers);
+        eventService.log("[INFO] ATR/SMA catch-up: " + candleCountFromDisk + " bars from live cache + "
+            + candleCountFromFyers + " bars from Fyers (" + symbolsFromDiskOnly + " disk-only, "
+            + symbolsNeededFyers + " needed Fyers)");
     }
 
     /**

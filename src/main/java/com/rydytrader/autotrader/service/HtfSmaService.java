@@ -137,11 +137,15 @@ public class HtfSmaService implements CandleAggregator.CandleCloseListener {
     private double computeSma(String symbol, int period) {
         Deque<Double> closes = closesBySymbol.get(symbol);
         if (closes == null) return 0;
+        // Post-market: skip the live blend so the value freezes at the last completed bar's
+        // SMA — matches TV's static post-market chart and avoids drift from closing-auction
+        // LTP updates getting folded into the SMA after 15:30.
+        boolean marketOpen = marketHolidayService != null && marketHolidayService.isMarketOpen();
         // Live tick-by-tick HTF SMA: blend current LTP as the in-progress 60-min bar's "close".
         // Falls back to the legacy 5-min partial map (still updated by MarketDataService listener)
         // if LTP isn't available, then to completed-only when neither is.
-        double live = candleAggregator != null ? candleAggregator.getLtp(symbol) : 0;
-        if (live <= 0) {
+        double live = (marketOpen && candleAggregator != null) ? candleAggregator.getLtp(symbol) : 0;
+        if (marketOpen && live <= 0) {
             Double partial = partialCloseBySymbol.get(symbol);
             if (partial != null && partial > 0) live = partial;
         }

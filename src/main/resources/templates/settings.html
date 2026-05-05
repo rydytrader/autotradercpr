@@ -578,9 +578,12 @@
                     <label class="form-label">NIFTY HTF Hurdle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableNiftyHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY's prior 1h close hasn't cleared its nearest weekly hurdle</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY's prior 1h close hasn't cleared its nearest hurdle (weekly levels + Max Call/Put OI)</span>
                     </div>
-                    <div class="form-hint">Macro-level mirror of the per-stock HTF Hurdle, applied to NIFTY's own data. When on, identifies NIFTY's nearest weekly hurdle in trade direction (R1/PWH/weekly TC/Pivot/BC for buys; S1/PWL/... for sells) and rejects every stock signal while NIFTY's prior 1h close hasn't decisively cleared it. While NIFTY's current 1h candle is still in progress and the prior close is on the wrong side, all stock signals are skipped &mdash; we wait for the next 1h close to commit. Signal Trail bucket: <code>NIFTY_HURDLE</code>.</div>
+                    <div class="form-hint">Macro-level mirror of the per-stock HTF Hurdle, applied to NIFTY's own data. When on, identifies NIFTY's nearest hurdle in trade direction and rejects every stock signal while NIFTY's prior 1h close hasn't decisively cleared it.
+                        <br>&nbsp;&nbsp;&bull; <b>Buys</b> &mdash; nearest of {weekly R1, PWH, weekly TC, weekly Pivot, weekly BC, <b>Max Call OI strike</b>} below NIFTY LTP
+                        <br>&nbsp;&nbsp;&bull; <b>Sells</b> &mdash; nearest of {weekly S1, PWL, weekly TC, weekly Pivot, weekly BC, <b>Max Put OI strike</b>} above NIFTY LTP
+                        <br>The OI strikes are refreshed every 15 minutes from NIFTY's option chain (<i>Max Call OI</i> = intraday resistance from option writers; <i>Max Put OI</i> = intraday support). They join the candidate set only when loaded &mdash; before the first OI fetch the filter falls back to weekly-levels-only. While NIFTY's current 1h candle is still in progress and the prior close is on the wrong side, all stock signals are skipped &mdash; we wait for the next 1h close to commit. Signal Trail bucket: <code>NIFTY_HURDLE</code>.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">NIFTY 5m Hurdle Filter</label>

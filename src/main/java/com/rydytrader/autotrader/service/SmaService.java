@@ -108,9 +108,15 @@ public class SmaService implements CandleAggregator.CandleCloseListener {
     /**
      * Blend current LTP as the in-progress 5-min bar's partial close. Matches TradingView's
      * intra-bar SMA behaviour: SMA = (last period-1 completed closes + current LTP) / period.
-     * Falls back to completed-only when LTP isn't available.
+     * Falls back to completed-only when LTP isn't available, or when the market is closed —
+     * post-market the LTP keeps moving (closing-auction prints, settlement) but TV's chart
+     * freezes at the last bar's value, so we return completed-SMA after 15:30 to stay in sync
+     * with TV's static post-market display.
      */
     private double computeSmaBlended(String symbol, int period) {
+        if (marketHolidayService != null && !marketHolidayService.isMarketOpen()) {
+            return computeSmaCompleted(symbol, period);
+        }
         double ltp = candleAggregator.getLtp(symbol);
         if (ltp <= 0) return computeSmaCompleted(symbol, period);
         Deque<Double> closes = closesBySymbol.get(symbol);
