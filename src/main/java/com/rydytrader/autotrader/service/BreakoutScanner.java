@@ -514,6 +514,20 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     recordRejection(fyersSymbol, buySetup, close, "HTF_CANDLE_OPPOSED", htfCandleReject);
                     return;
                 }
+                // NIFTY in-progress 1h candle direction — buy needs NIFTY's 1h bar to be green.
+                String niftyHtfCandleReject = checkNiftyHtfCandleColor(true);
+                if (niftyHtfCandleReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + niftyHtfCandleReject);
+                    recordRejection(fyersSymbol, buySetup, close, "NIFTY_HTF_CANDLE_OPPOSED", niftyHtfCandleReject);
+                    return;
+                }
+                // NIFTY just-closed 5m candle direction — buy needs NIFTY's last 5m bar to be green.
+                String nifty5mCandleReject = checkNifty5mCandleColor(true, candle.startMinute);
+                if (nifty5mCandleReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + nifty5mCandleReject);
+                    recordRejection(fyersSymbol, buySetup, close, "NIFTY_5M_CANDLE_OPPOSED", nifty5mCandleReject);
+                    return;
+                }
                 fireSignal(fyersSymbol, buySetup, open, high, low, close, candle.volume, atr, levels, prob, null);
                 return;
             } else {
@@ -589,6 +603,20 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (htfCandleReject != null) {
                     eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + htfCandleReject);
                     recordRejection(fyersSymbol, sellSetup, close, "HTF_CANDLE_OPPOSED", htfCandleReject);
+                    return;
+                }
+                // NIFTY in-progress 1h candle direction — sell needs NIFTY's 1h bar to be red.
+                String niftyHtfCandleReject = checkNiftyHtfCandleColor(false);
+                if (niftyHtfCandleReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + niftyHtfCandleReject);
+                    recordRejection(fyersSymbol, sellSetup, close, "NIFTY_HTF_CANDLE_OPPOSED", niftyHtfCandleReject);
+                    return;
+                }
+                // NIFTY just-closed 5m candle direction — sell needs NIFTY's last 5m bar to be red.
+                String nifty5mCandleReject = checkNifty5mCandleColor(false, candle.startMinute);
+                if (nifty5mCandleReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + nifty5mCandleReject);
+                    recordRejection(fyersSymbol, sellSetup, close, "NIFTY_5M_CANDLE_OPPOSED", nifty5mCandleReject);
                     return;
                 }
                 fireSignal(fyersSymbol, sellSetup, open, high, low, close, candle.volume, atr, levels, prob, null);
@@ -1109,6 +1137,73 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         }
         if (!isBuy && bar.close > bar.open) {
             return "HTF 1h candle green — sell requires red: 1h open="
+                + String.format("%.2f", bar.open) + ", close=" + String.format("%.2f", bar.close);
+        }
+        return null;
+    }
+
+    /**
+     * 5-min variant of {@link #checkNiftyHtfCandleColor}. When a stock's 5-min breakout fires,
+     * NIFTY's matching 5-min candle body must agree with the trade direction. Buys reject when
+     * NIFTY's matching 5m bar is strictly red; sells reject when it's strictly green. Doji
+     * passes both. Fail-open if no matching NIFTY bar is available.
+     *
+     * <p>Listener-ordering safe: aggregator finalizes candles per-symbol on the first
+     * post-boundary tick, so when this filter runs from STOCK-X's onCandleClose, NIFTY may
+     * or may not have closed its bucket yet. We resolve this by matching {@code startMinute}:
+     * <ol>
+     *   <li>NIFTY's last completed candle with the same {@code startMinute} (NIFTY closed first), else</li>
+     *   <li>NIFTY's in-progress candle with the same {@code startMinute} (NIFTY hasn't closed yet,
+     *       but its bar has been fed every tick through the boundary and represents the same window)</li>
+     * </ol>
+     * Otherwise fail-open.
+     */
+    private String checkNifty5mCandleColor(boolean isBuy, long stockBucketStartMinute) {
+        if (!riskSettings.isEnableNifty5mCandleFilter()) return null;
+        if (candleAggregator == null) return null;
+
+        String niftySym = IndexTrendService.NIFTY_SYMBOL;
+        CandleAggregator.CandleBar bar = null;
+        CandleAggregator.CandleBar last = candleAggregator.getLastCompletedCandle(niftySym);
+        if (last != null && last.startMinute == stockBucketStartMinute && last.open > 0 && last.close > 0) {
+            bar = last;
+        } else {
+            CandleAggregator.CandleBar cur = candleAggregator.getCurrentCandle(niftySym);
+            if (cur != null && cur.startMinute == stockBucketStartMinute && cur.open > 0 && cur.close > 0) {
+                bar = cur;
+            }
+        }
+        if (bar == null) return null; // fail-open — no matching NIFTY bucket
+
+        if (isBuy && bar.close < bar.open) {
+            return "NIFTY 5m candle red — buy requires green: NIFTY 5m open="
+                + String.format("%.2f", bar.open) + ", close=" + String.format("%.2f", bar.close);
+        }
+        if (!isBuy && bar.close > bar.open) {
+            return "NIFTY 5m candle green — sell requires red: NIFTY 5m open="
+                + String.format("%.2f", bar.open) + ", close=" + String.format("%.2f", bar.close);
+        }
+        return null;
+    }
+
+    /**
+     * Macro-level mirror of {@link #checkHtfCandleColor}: requires NIFTY's currently-forming
+     * 1h candle body to agree with the trade direction. Buys reject when NIFTY's 1h bar is
+     * strictly red; sells reject when NIFTY's 1h bar is strictly green. Doji passes both.
+     * Fail-open if NIFTY's in-progress 1h bar isn't available yet.
+     */
+    private String checkNiftyHtfCandleColor(boolean isBuy) {
+        if (!riskSettings.isEnableNiftyHtfCandleFilter()) return null;
+        if (marketDataService == null) return null;
+        CandleAggregator.CandleBar bar = marketDataService.getInProgressHtfCandle(IndexTrendService.NIFTY_SYMBOL);
+        if (bar == null || bar.open <= 0 || bar.close <= 0) return null; // fail-open
+
+        if (isBuy && bar.close < bar.open) {
+            return "NIFTY 1h candle red — buy requires green: NIFTY 1h open="
+                + String.format("%.2f", bar.open) + ", close=" + String.format("%.2f", bar.close);
+        }
+        if (!isBuy && bar.close > bar.open) {
+            return "NIFTY 1h candle green — sell requires red: NIFTY 1h open="
                 + String.format("%.2f", bar.open) + ", close=" + String.format("%.2f", bar.close);
         }
         return null;

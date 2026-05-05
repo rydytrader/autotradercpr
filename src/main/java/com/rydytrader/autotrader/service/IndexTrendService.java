@@ -46,6 +46,8 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
     private CandleAggregator candleAggregator;
     @org.springframework.beans.factory.annotation.Autowired
     private SmaService smaService;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.rydytrader.autotrader.store.RiskSettingsStore riskSettings;
 
     // Sticky cached factors — refreshed only on NIFTY 5-min candle close.
     // null = not yet computed or insufficient data (treated as missing / mixed in state combo).
@@ -227,6 +229,18 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         if (smaService != null) {
             trend.setSma20(smaService.getSma(NIFTY_SYMBOL));
             trend.setSma50(smaService.getSma50(NIFTY_SYMBOL));
+        }
+
+        // CPR width category — NARROW if below the scanner's narrowCprMaxWidth (the upper end
+        // of the "narrow" band; narrowCprMinWidth is the lower bound but is typically 0), WIDE
+        // if at or above narrowCprMaxWidth. Display-only on the NIFTY card.
+        var niftyCpr = bhavcopyService.getCprLevels("NIFTY50");
+        if (niftyCpr != null && niftyCpr.getCprWidthPct() > 0 && riskSettings != null) {
+            double widthPct = niftyCpr.getCprWidthPct();
+            double narrowMax = riskSettings.getNarrowCprMaxWidth();
+            String category = widthPct < narrowMax ? "NARROW" : "WIDE";
+            trend.setCprWidthPct(Math.round(widthPct * 1000.0) / 1000.0);
+            trend.setCprWidthCategory(category);
         }
 
         trend.setDataAvailable(ltp > 0);

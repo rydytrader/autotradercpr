@@ -33,6 +33,10 @@ public class IndexTrend {
     // built — not sticky like the factors above. Zero if the SMA hasn't seeded yet.
     private double sma20;
     private double sma50;
+    // NIFTY's daily CPR width as a % of price + a NARROW / NORMAL / WIDE label derived from
+    // the user's narrowCprMaxWidth and insideCprMaxWidth scanner thresholds. Display-only.
+    private double cprWidthPct;
+    private String cprWidthCategory;
 
     public IndexTrend() {}
 
@@ -66,4 +70,8 @@ public class IndexTrend {
     public void setSma20(double v) { this.sma20 = v; }
     public double getSma50() { return sma50; }
     public void setSma50(double v) { this.sma50 = v; }
+    public double getCprWidthPct() { return cprWidthPct; }
+    public void setCprWidthPct(double v) { this.cprWidthPct = v; }
+    public String getCprWidthCategory() { return cprWidthCategory; }
+    public void setCprWidthCategory(String v) { this.cprWidthCategory = v; }
 }

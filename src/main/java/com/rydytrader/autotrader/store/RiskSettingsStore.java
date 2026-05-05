@@ -66,6 +66,16 @@ public class RiskSettingsStore {
         // requires the currently-forming 1h bar to be green (close > open); sell requires red
         // (close < open). Doji passes both. Fail-open if no in-progress bar yet. Default off.
         volatile boolean enableHtfCandleFilter = false;
+        // NIFTY-level mirror of the HTF Candle Direction Filter. When on, every stock breakout
+        // must agree with NIFTY's currently-forming 1h candle body: buys need NIFTY 1h green,
+        // sells need NIFTY 1h red. Doji passes both. Fail-open if NIFTY's in-progress 1h bar
+        // isn't available yet. Default off.
+        volatile boolean enableNiftyHtfCandleFilter = false;
+        // 5-min variant: when on, a stock's just-closed 5-min breakout must agree with NIFTY's
+        // matching just-closed 5-min candle body. Buys need NIFTY 5m green, sells need NIFTY 5m
+        // red. Doji passes both. Fail-open if NIFTY's last completed 5-min bar isn't available.
+        // Default off.
+        volatile boolean enableNifty5mCandleFilter = false;
         // Structural SL — opt-in, anchors SL to the S/R level the trade is testing (per setup family)
         // When on, we compute both structural and default SL and pick the TIGHTER one.
         volatile boolean enableStructuralSl = false;   // when false, always use close ± atrMultiplier × ATR
@@ -141,6 +151,11 @@ public class RiskSettingsStore {
         // SHORT: close > SMA 20), squareoff the position before SL hits. Independent of the
         // SMA-cross exit above; both can be enabled together. Default off — material behavior change.
         volatile boolean enablePriceSmaExit = false;
+        // NIFTY-level mirrors of the per-stock SMA exits. When on, an open position is
+        // squared off if NIFTY's structure rolls against the trade — even when the stock's
+        // own SMAs are still aligned. Macro safety net for trend-day reversals.
+        volatile boolean enableNiftySmaCrossExit = false;
+        volatile boolean enableNiftyPriceSmaExit = false;
         // Per-symbol daily trade limit. When >0, halts further trades on a symbol once today's
         // count of wins OR today's count of losses (separately, NOT total) reaches the threshold.
         // E.g. limit=2: 2W+0L → stop, 0W+2L → stop, 1W+1L → continue, 2W+1L → stop.
@@ -280,6 +295,8 @@ public class RiskSettingsStore {
     public boolean isEnableHtfSmaAlignment()    { return cfg().enableHtfSmaAlignment; }
     public boolean isEnableHtfSmaAlignmentCheck() { return cfg().enableHtfSmaAlignmentCheck; }
     public boolean isEnableHtfCandleFilter()      { return cfg().enableHtfCandleFilter; }
+    public boolean isEnableNiftyHtfCandleFilter() { return cfg().enableNiftyHtfCandleFilter; }
+    public boolean isEnableNifty5mCandleFilter()  { return cfg().enableNifty5mCandleFilter; }
     public boolean isEnableStructuralSl()    { return cfg().enableStructuralSl; }
     public double  getStructuralSlBufferAtr(){ return cfg().structuralSlBufferAtr; }
     public double  getSingleLevelSlBufferAtr(){ return cfg().singleLevelSlBufferAtr; }
@@ -312,6 +329,8 @@ public class RiskSettingsStore {
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
     public boolean isEnableSmaCrossExit() { return cfg().enableSmaCrossExit; }
     public boolean isEnablePriceSmaExit() { return cfg().enablePriceSmaExit; }
+    public boolean isEnableNiftySmaCrossExit() { return cfg().enableNiftySmaCrossExit; }
+    public boolean isEnableNiftyPriceSmaExit() { return cfg().enableNiftyPriceSmaExit; }
     public int getPerSymbolDailyTradeLimit() { return cfg().perSymbolDailyTradeLimit; }
     public double getFibStage1TriggerPct() { return cfg().fibStage1TriggerPct; }
     public double getFibStage1SlAtrMult()  { return cfg().fibStage1SlAtrMult; }
@@ -436,6 +455,8 @@ public class RiskSettingsStore {
     public void setEnableHtfSmaAlignment(boolean v)    { cfg().enableHtfSmaAlignment = v; }
     public void setEnableHtfSmaAlignmentCheck(boolean v) { cfg().enableHtfSmaAlignmentCheck = v; }
     public void setEnableHtfCandleFilter(boolean v)      { cfg().enableHtfCandleFilter = v; }
+    public void setEnableNiftyHtfCandleFilter(boolean v) { cfg().enableNiftyHtfCandleFilter = v; }
+    public void setEnableNifty5mCandleFilter(boolean v)  { cfg().enableNifty5mCandleFilter = v; }
     public void setEnableStructuralSl(boolean v)    { cfg().enableStructuralSl = v; }
     public void setStructuralSlBufferAtr(double v)  { cfg().structuralSlBufferAtr = v; }
     public void setSingleLevelSlBufferAtr(double v) { cfg().singleLevelSlBufferAtr = v; }
@@ -461,6 +482,8 @@ public class RiskSettingsStore {
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
     public void setEnableSmaCrossExit(boolean v) { cfg().enableSmaCrossExit = v; }
     public void setEnablePriceSmaExit(boolean v) { cfg().enablePriceSmaExit = v; }
+    public void setEnableNiftySmaCrossExit(boolean v) { cfg().enableNiftySmaCrossExit = v; }
+    public void setEnableNiftyPriceSmaExit(boolean v) { cfg().enableNiftyPriceSmaExit = v; }
     public void setPerSymbolDailyTradeLimit(int v) { cfg().perSymbolDailyTradeLimit = Math.max(0, v); }
     public void setFibStage1TriggerPct(double v) { cfg().fibStage1TriggerPct = v; }
     public void setFibStage1SlAtrMult(double v)  { cfg().fibStage1SlAtrMult = v; }
@@ -585,6 +608,8 @@ public class RiskSettingsStore {
             upsert("enableHtfSmaAlignment", String.valueOf(c.enableHtfSmaAlignment));
             upsert("enableHtfSmaAlignmentCheck", String.valueOf(c.enableHtfSmaAlignmentCheck));
             upsert("enableHtfCandleFilter", String.valueOf(c.enableHtfCandleFilter));
+            upsert("enableNiftyHtfCandleFilter", String.valueOf(c.enableNiftyHtfCandleFilter));
+            upsert("enableNifty5mCandleFilter", String.valueOf(c.enableNifty5mCandleFilter));
             upsert("enableStructuralSl", String.valueOf(c.enableStructuralSl));
             upsert("structuralSlBufferAtr", String.valueOf(c.structuralSlBufferAtr));
             upsert("singleLevelSlBufferAtr", String.valueOf(c.singleLevelSlBufferAtr));
@@ -625,6 +650,8 @@ public class RiskSettingsStore {
             upsert("enableTrailingSl", String.valueOf(c.enableTrailingSl));
             upsert("enableSmaCrossExit", String.valueOf(c.enableSmaCrossExit));
             upsert("enablePriceSmaExit", String.valueOf(c.enablePriceSmaExit));
+            upsert("enableNiftySmaCrossExit", String.valueOf(c.enableNiftySmaCrossExit));
+            upsert("enableNiftyPriceSmaExit", String.valueOf(c.enableNiftyPriceSmaExit));
             upsert("perSymbolDailyTradeLimit", String.valueOf(c.perSymbolDailyTradeLimit));
             upsert("fibStage1TriggerPct", String.valueOf(c.fibStage1TriggerPct));
             upsert("fibStage1SlAtrMult",  String.valueOf(c.fibStage1SlAtrMult));
@@ -726,6 +753,8 @@ public class RiskSettingsStore {
                     case "enableHtfSmaAlignment" -> c.enableHtfSmaAlignment = Boolean.parseBoolean(v);
                     case "enableHtfSmaAlignmentCheck" -> c.enableHtfSmaAlignmentCheck = Boolean.parseBoolean(v);
                     case "enableHtfCandleFilter" -> c.enableHtfCandleFilter = Boolean.parseBoolean(v);
+                    case "enableNiftyHtfCandleFilter" -> c.enableNiftyHtfCandleFilter = Boolean.parseBoolean(v);
+                    case "enableNifty5mCandleFilter" -> c.enableNifty5mCandleFilter = Boolean.parseBoolean(v);
                     case "enableStructuralSl"    -> c.enableStructuralSl = Boolean.parseBoolean(v);
                     case "structuralSlBufferAtr" -> c.structuralSlBufferAtr = Double.parseDouble(v);
                     case "singleLevelSlBufferAtr" -> c.singleLevelSlBufferAtr = Double.parseDouble(v);
@@ -776,6 +805,8 @@ public class RiskSettingsStore {
                     case "enableTrailingSl"   -> c.enableTrailingSl = Boolean.parseBoolean(v);
                     case "enableSmaCrossExit" -> c.enableSmaCrossExit = Boolean.parseBoolean(v);
                     case "enablePriceSmaExit" -> c.enablePriceSmaExit = Boolean.parseBoolean(v);
+                    case "enableNiftySmaCrossExit" -> c.enableNiftySmaCrossExit = Boolean.parseBoolean(v);
+                    case "enableNiftyPriceSmaExit" -> c.enableNiftyPriceSmaExit = Boolean.parseBoolean(v);
                     case "perSymbolDailyTradeLimit" -> c.perSymbolDailyTradeLimit = Math.max(0, Integer.parseInt(v));
                     case "fibStage1TriggerPct" -> c.fibStage1TriggerPct = Double.parseDouble(v);
                     case "fibStage1SlAtrMult"  -> c.fibStage1SlAtrMult  = Double.parseDouble(v);

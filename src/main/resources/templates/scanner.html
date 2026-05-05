@@ -476,6 +476,7 @@
             <div class="nifty-name">NIFTY 50</div>
             <div class="nifty-ltp" id="niftyLtp">—</div>
             <div class="nifty-change" id="niftyChange" style="font-family:var(--font-mono); font-weight:700; font-size:0.85rem; margin-left:8px;">—</div>
+            <div class="nifty-cpr-width" id="niftyCprWidth" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY daily CPR width vs scanner thresholds (Narrow / Normal / Wide)">—</div>
             <div class="nifty-cpr" id="niftyCprBias" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY LTP vs daily CPR (above CPR top / below CPR bottom)">—</div>
             <div class="nifty-sma-price" id="niftySmaPrice" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY LTP vs 5-min SMA 20 &amp; 50 (above both / below both)">—</div>
             <div class="nifty-sma-align" id="niftySmaAlign" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="5-min SMA 20 vs 50 (20 &gt; 50 bullish / 20 &lt; 50 bearish)">—</div>
@@ -1137,6 +1138,7 @@
                 var sp0 = document.getElementById('niftySmaPrice'); if (sp0) { sp0.textContent = '—'; sp0.style.color = 'var(--text-muted)'; }
                 var sa0 = document.getElementById('niftySmaAlign'); if (sa0) { sa0.textContent = '—'; sa0.style.color = 'var(--text-muted)'; }
                 var sv0 = document.getElementById('niftySmaValues'); if (sv0) sv0.textContent = '—';
+                var cw0 = document.getElementById('niftyCprWidth'); if (cw0) { cw0.textContent = '—'; cw0.style.color = 'var(--text-muted)'; }
                 var cb0 = document.getElementById('niftyCprBias'); if (cb0) { cb0.textContent = '—'; cb0.style.color = 'var(--text-muted)'; }
                 document.getElementById('niftyState').textContent = 'WAITING';
                 document.getElementById('niftyMetrics').innerHTML = '';
@@ -1171,6 +1173,23 @@
                 chgEl.style.color = cp > 0 ? 'var(--accent-green)' : cp < 0 ? 'var(--accent-red)' : 'var(--text-muted)';
             }
             document.getElementById('niftyState').textContent = (d.state || 'NEUTRAL').replace('_', ' ');
+
+            // CPR width category — NARROW (below narrowCprMaxWidth) or WIDE (at/above).
+            var cwEl = document.getElementById('niftyCprWidth');
+            if (cwEl) {
+                var cat = d.cprWidthCategory;
+                var w = +d.cprWidthPct || 0;
+                if (cat === 'NARROW') {
+                    cwEl.textContent = 'NARROW (' + w.toFixed(2) + '%)';
+                    cwEl.style.color = 'var(--accent-green)';
+                } else if (cat === 'WIDE') {
+                    cwEl.textContent = 'WIDE (' + w.toFixed(2) + '%)';
+                    cwEl.style.color = 'var(--accent-red)';
+                } else {
+                    cwEl.textContent = '—';
+                    cwEl.style.color = 'var(--text-muted)';
+                }
+            }
 
             // Factor 1: NIFTY LTP vs daily CPR (above CPR top / below CPR bottom / inside).
             var cbEl = document.getElementById('niftyCprBias');

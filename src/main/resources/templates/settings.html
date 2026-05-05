@@ -202,6 +202,8 @@
         <button class="settings-tab" onclick="switchTab('signals', this)">Signals</button>
         <button class="settings-tab" onclick="switchTab('scanner', this)">Scanner</button>
         <button class="settings-tab" onclick="switchTab('filters', this)">Filters</button>
+        <button class="settings-tab" onclick="switchTab('index', this)">Index Alignment</button>
+        <button class="settings-tab" onclick="switchTab('htf', this)">HTF Alignment</button>
         <button class="settings-tab" onclick="switchTab('targets', this)">Targets</button>
         <button class="settings-tab" onclick="switchTab('hours', this)">Hours</button>
         <button class="settings-tab" onclick="switchTab('charges', this)">Charges</button>
@@ -338,16 +340,16 @@
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableSmaCrossExit" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">
-                            <b>SMA Cross</b> &mdash; exit when 5-min SMA 20 stacks against trade direction (LONG: 20 &lt; 50; SHORT: 20 &gt; 50)
+                            <b>Stock SMA Cross</b> &mdash; exit when stock's 5-min SMA 20 stacks against trade direction (LONG: 20 &lt; 50; SHORT: 20 &gt; 50)
                         </span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="enablePriceSmaExit" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">
-                            <b>Price vs SMA 50</b> &mdash; exit when 5-min candle close is on the wrong side of SMA 50 (LONG: close &lt; SMA 50; SHORT: close &gt; SMA 50)
+                            <b>Stock Price vs SMA 50</b> &mdash; exit when stock's 5-min candle close is on the wrong side of its SMA 50 (LONG: close &lt; SMA 50; SHORT: close &gt; SMA 50)
                         </span>
                     </div>
-                    <div class="form-hint">Both checks evaluate at every 5-min candle close, independently of SL / Target / Trailing. Fire before any of them &mdash; defensive exits to cut momentum-loss trades early. Either check cancels both SL and Target before placing the exit market order; the trade is recorded with reason <code>SMA_CROSS_EXIT</code> or <code>PRICE_SMA_EXIT</code>. SMA 50 is the structural reference for the price-vs-SMA check &mdash; slower than 20, less noise from routine pullbacks. Both can be enabled together; if both fire on the same bar, SMA Cross (stricter) wins.</div>
+                    <div class="form-hint">Stock-side defensive-exit checks, evaluated on every 5-min candle close (after the candle's SMAs are stamped). Fire before SL / Target / Trailing; cancels both OCO legs and places an exit market order. Reasons recorded: <code>SMA_CROSS_EXIT</code>, <code>PRICE_SMA_EXIT</code>. Checks run in order; first match wins. NIFTY-side macro safety-net mirrors of these checks live on the <b>Index Alignment</b> tab.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Session Move Limit</label>
@@ -471,6 +473,172 @@
                     <div class="form-hint">Rejects breakout candles with excessively large body (|close − open|). Catches exhaustion moves where the stock has already run too far on a single candle. Default 4.0 ATR catches only extreme spikes.</div>
                 </div>
                 <div class="form-group">
+                    <label class="form-label">20 SMA Level Count Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
+                        <input type="checkbox" id="enableSmaLevelCountFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip if any CPR zone sits between SMA and the broken level</span>
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono); margin-left:12px;">SMA must sit within</span>
+                        <input type="number" id="smaLevelMinRangePct" class="form-control" step="5" min="0" max="100" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">% (away from boundary = close to broken level)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; padding-left: 28px;">
+                        <input type="checkbox" id="smaLevelFilterMorningSkip" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Bypass this filter until</span>
+                        <input type="time" id="smaLevelFilterMorningSkipUntil" class="form-control" style="width:100px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">(IST — momentum often outruns SMA in the first hour)</span>
+                    </div>
+                    <div class="form-hint"><b>Zone count check.</b> Counts CPR zones (S4, S3, S2, S1/PDL, CPR, R1/PDH, R2, R3, R4) strictly between the 20 SMA and the breakout level. Pair zones (CPR, R1/PDH, S1/PDL) count as one. The breakout zone itself is excluded — for DH/DL setups no zone is excluded since DH/DL aren't CPR-defined. If 0 zones in between, the trade fires; if 1 or more, the setup is stale and skipped.
+                    <br/><br/><b>Proximity check (default 50%).</b> The setting reads as "SMA must sit within <i>N%</i> away from the boundary edge" — equivalently, within the closest <i>(100−N)%</i> of the range from the broken level. The 100% range is measured from the broken level to the next-zone edge. <b>Higher N = stricter</b> (SMA must be closer to broken).<br/>
+                    Example: <i>BUY_ABOVE_R1_PDH</i> with broken=R1+PDH=100, next zone above (R2)=105. Range = 5. At N=75, SMA must sit within (100−75)% = 25% of range from broken → SMA ≥ 98.75 (close to broken). SMA at 96 = 80% of range away from broken → skipped (too far). Set to <b>0</b> to disable proximity check (use zone-count only).</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Extended Level Signals (R3/S3, R4/S4)</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="skipR3S3IvOvDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R3/S3 breakouts (and DH above R3 / DL below S3) &mdash; <b>IV / OV days</b></span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="skipR3S3EvDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R3/S3 breakouts (and DH above R3 / DL below S3) &mdash; <b>EV days</b></span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="skipR4S4IvOvDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R4/S4 breakouts (and DH above R4 / DL below S4) &mdash; <b>IV / OV days</b></span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="skipR4S4EvDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R4/S4 breakouts (and DH above R4 / DL below S4) &mdash; <b>EV days</b></span>
+                    </div>
+                    <div class="form-hint">Day type is set by the open print (first 5-min close) vs daily CPR + R2/S2:
+                        <br>&bull; <b>IV</b> &mdash; open inside CPR (between BC and TC)
+                        <br>&bull; <b>OV</b> &mdash; open between CPR and R2/S2
+                        <br>&bull; <b>EV</b> &mdash; open outside R2/S2 (extreme-value gap)
+                        <br>Extended-level breakouts (R3/S3, R4/S4) are far from the daily CPR and historically unreliable on regular days. EV days are different &mdash; an R3 break following an open above R2 is fresh gap momentum, not exhaustion. Toggle the IV/OV and EV gates independently to match your strategy. DH/DL breakouts that have already passed the level are treated identically. R2/S2 always fires regardless. No per-level qty reduction.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Mean-Reversion / Magnet Trades</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableMeanReversionTrades" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable counter-trend setups (magnets + deep mean-reversion fades)</span>
+                    </div>
+                    <div class="form-hint">Master switch for <b>8 counter-trend setups</b>, all day-type agnostic (fire on IV / OV / EV alike):
+                        <br>&nbsp;&nbsp;&bull; <b>Magnets</b> &mdash; <code>BUY_ABOVE_S1_PDL</code>, <code>SELL_BELOW_R1_PDH</code>: bounce off / rejection at the first structural level pair, target back to CPR.
+                        <br>&nbsp;&nbsp;&bull; <b>Deep mean-rev</b> &mdash; <code>BUY_ABOVE_S2/S3/S4</code>, <code>SELL_BELOW_R2/R3/R4</code>: fades from deep support/resistance, target one level back toward value.
+                        <br>All eight bypass the LTF gate (counter-trend by design) and fire as <b>MPT</b>. When this toggle is <b>off</b>, none of the 8 fire &mdash; only direction-aligned breakouts (R1+/R2/R3/R4 buys, S1+/S2/S3/S4 sells, DH/DL) trade. Signal Trail bucket: <code>MEAN_REVERSION_DISABLED</code>.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Volume Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableVolumeFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject if candle volume &lt;</span>
+                        <input type="number" id="volumeMultiple" class="form-control" step="0.5" min="1.0" max="10.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">x avg volume of last</span>
+                        <input type="number" id="volumeLookback" class="form-control" step="1" min="1" max="20" style="width:55px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">candles</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+        <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
+    </div><!-- /tab-filters -->
+
+    <!-- TAB: INDEX ALIGNMENT -->
+    <div class="tab-content" id="tab-index">
+    <div class="section-card fade-in">
+        <div class="section-header">
+            <div class="section-title">
+                <div class="section-title-dot" style="background: var(--accent-cyan);"></div>
+                NIFTY Alignment Filters
+            </div>
+        </div>
+        <div class="section-body">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label">NIFTY Index Alignment Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableIndexAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable NIFTY trend alignment filter</span>
+                    </div>
+                    <div class="form-hint">NIFTY trend state combines <b>three sticky factors</b>, all refreshed only at NIFTY's 5-min candle close:
+                        <br>&nbsp;&nbsp;&bull; <b>CPR</b>: NIFTY LTP above (bullish) or below (bearish) daily CPR
+                        <br>&nbsp;&nbsp;&bull; <b>SMA Price</b>: NIFTY LTP above (bullish) or below (bearish) <i>both</i> 5-min SMA 20 and 50
+                        <br>&nbsp;&nbsp;&bull; <b>SMA Alignment</b>: 5-min SMA 20 &gt; 50 (bullish) or 20 &lt; 50 (bearish)
+                        <br>States:
+                        <br>&nbsp;&nbsp;&bull; <b>BULLISH</b> &mdash; all 3 factors bullish
+                        <br>&nbsp;&nbsp;&bull; <b>BEARISH</b> &mdash; all 3 factors bearish
+                        <br>&nbsp;&nbsp;&bull; <b>BULLISH REVERSAL</b> &mdash; CPR bearish but both SMA factors flipped bullish (downtrend rolling over)
+                        <br>&nbsp;&nbsp;&bull; <b>BEARISH REVERSAL</b> &mdash; CPR bullish but both SMA factors flipped bearish (uptrend rolling over)
+                        <br>&nbsp;&nbsp;&bull; <b>SIDEWAYS</b> &mdash; CPR determined but SMA factors mixed
+                        <br>&nbsp;&nbsp;&bull; <b>NEUTRAL</b> &mdash; NIFTY inside daily CPR or no data
+                        <br>When this filter is on: buys require <b>BULLISH</b> or <b>BULLISH REVERSAL</b>; sells require <b>BEARISH</b> or <b>BEARISH REVERSAL</b>; SIDEWAYS / NEUTRAL / opposite-direction states skip the trade outright. Independent of the other NIFTY filters below; all can be enabled together.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">NIFTY 5m Candle Direction Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableNifty5mCandleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy needs NIFTY's just-closed 5m candle <b>green</b>; sell needs <b>red</b></span>
+                    </div>
+                    <div class="form-hint">Same-timeframe variant of the NIFTY 1h Candle filter, run on the just-closed 5-min bar. When a stock fires a 5-min breakout, NIFTY's matching 5-min candle must agree:
+                        <br>&nbsp;&nbsp;&bull; <b>Buy</b> &mdash; NIFTY 5m close &gt; NIFTY 5m open (green). Reject if NIFTY 5m is strictly red.
+                        <br>&nbsp;&nbsp;&bull; <b>Sell</b> &mdash; NIFTY 5m close &lt; NIFTY 5m open (red). Reject if NIFTY 5m is strictly green.
+                        <br>Doji passes both. NIFTY's last completed 5m bar not yet available &rarr; fail-open. Tighter than the 1h variant &mdash; rejects when NIFTY momentum disagrees with the stock breakout on the same bar that fired it. Signal Trail bucket: <code>NIFTY_5M_CANDLE_OPPOSED</code>.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">NIFTY HTF Hurdle Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableNiftyHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY's prior 1h close hasn't cleared its nearest weekly hurdle</span>
+                    </div>
+                    <div class="form-hint">Macro-level mirror of the per-stock HTF Hurdle, applied to NIFTY's own data. When on, identifies NIFTY's nearest weekly hurdle in trade direction (R1/PWH/weekly TC/Pivot/BC for buys; S1/PWL/... for sells) and rejects every stock signal while NIFTY's prior 1h close hasn't decisively cleared it. While NIFTY's current 1h candle is still in progress and the prior close is on the wrong side, all stock signals are skipped &mdash; we wait for the next 1h close to commit. Signal Trail bucket: <code>NIFTY_HURDLE</code>.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">NIFTY HTF Candle Direction Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableNiftyHtfCandleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy needs NIFTY's in-progress 1h candle <b>green</b>; sell needs <b>red</b></span>
+                    </div>
+                    <div class="form-hint">Macro-level mirror of the per-stock HTF Candle Direction Filter, applied to NIFTY's own 1h bar. When on, every stock breakout must agree with NIFTY's currently-forming 60-min candle body:
+                        <br>&nbsp;&nbsp;&bull; <b>Buy</b> &mdash; NIFTY 1h close &gt; NIFTY 1h open (green). Reject if NIFTY 1h is strictly red.
+                        <br>&nbsp;&nbsp;&bull; <b>Sell</b> &mdash; NIFTY 1h close &lt; NIFTY 1h open (red). Reject if NIFTY 1h is strictly green.
+                        <br>Doji passes both. No in-progress NIFTY 1h bar yet (first ticks of a new 1h bucket) &rarr; fail-open. Signal Trail bucket: <code>NIFTY_HTF_CANDLE_OPPOSED</code>.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">NIFTY SMA-based Defensive Exits</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableNiftySmaCrossExit" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">
+                            <b>NIFTY SMA Cross</b> &mdash; exit when NIFTY's 5-min SMA 20 stacks against trade direction (LONG: 20 &lt; 50; SHORT: 20 &gt; 50)
+                        </span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="enableNiftyPriceSmaExit" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">
+                            <b>NIFTY Price vs SMA 50</b> &mdash; exit when NIFTY's LTP is on the wrong side of its 5-min SMA 50 (LONG: NIFTY &lt; SMA 50; SHORT: NIFTY &gt; SMA 50)
+                        </span>
+                    </div>
+                    <div class="form-hint">Macro safety-net mirrors of the per-stock SMA-based Defensive Exits (Risk tab). Evaluated on every 5-min candle close: when NIFTY's structure rolls against an open trade direction, all positions on that side are squared off &mdash; even if the individual stock's own SMAs still look aligned. Fire before SL / Target / Trailing; cancels both OCO legs and places an exit market order. Reasons recorded: <code>NIFTY_SMA_CROSS_EXIT</code>, <code>NIFTY_PRICE_SMA_EXIT</code>.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+        <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
+    </div><!-- /tab-index -->
+
+    <!-- TAB: HTF ALIGNMENT -->
+    <div class="tab-content" id="tab-htf">
+    <div class="section-card fade-in">
+        <div class="section-header">
+            <div class="section-title">
+                <div class="section-title-dot" style="background: var(--accent-cyan);"></div>
+                Per-Stock HTF Alignment Filters
+            </div>
+        </div>
+        <div class="section-body">
+            <div class="form-grid">
+                <div class="form-group">
                     <label class="form-label">HTF Hurdle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
@@ -514,87 +682,6 @@
                         <br>Doji (close == open) passes both directions. No in-progress 1h bar yet (first ticks of a new 1h bucket) &rarr; fail-open. Independent of HTF Hurdle / HTF SMA filters &mdash; this looks at the <i>currently-forming</i> bar's intra-bar direction, not the prior close. Signal Trail bucket: <code>HTF_CANDLE_OPPOSED</code>.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">NIFTY HTF Hurdle Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableNiftyHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY's prior 1h close hasn't cleared its nearest weekly hurdle</span>
-                    </div>
-                    <div class="form-hint">Macro-level mirror of the per-stock HTF Hurdle, applied to NIFTY's own data. When on, identifies NIFTY's nearest weekly hurdle in trade direction (R1/PWH/weekly TC/Pivot/BC for buys; S1/PWL/... for sells) and rejects every stock signal while NIFTY's prior 1h close hasn't decisively cleared it. While NIFTY's current 1h candle is still in progress and the prior close is on the wrong side, all stock signals are skipped &mdash; we wait for the next 1h close to commit. Independent of the NIFTY trend alignment filter below; both can be enabled together. Signal Trail bucket: <code>NIFTY_HURDLE</code>.</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">20 SMA Level Count Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
-                        <input type="checkbox" id="enableSmaLevelCountFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip if any CPR zone sits between SMA and the broken level</span>
-                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono); margin-left:12px;">SMA must sit within</span>
-                        <input type="number" id="smaLevelMinRangePct" class="form-control" step="5" min="0" max="100" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">% (away from boundary = close to broken level)</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; padding-left: 28px;">
-                        <input type="checkbox" id="smaLevelFilterMorningSkip" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Bypass this filter until</span>
-                        <input type="time" id="smaLevelFilterMorningSkipUntil" class="form-control" style="width:100px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">(IST — momentum often outruns SMA in the first hour)</span>
-                    </div>
-                    <div class="form-hint"><b>Zone count check.</b> Counts CPR zones (S4, S3, S2, S1/PDL, CPR, R1/PDH, R2, R3, R4) strictly between the 20 SMA and the breakout level. Pair zones (CPR, R1/PDH, S1/PDL) count as one. The breakout zone itself is excluded — for DH/DL setups no zone is excluded since DH/DL aren't CPR-defined. If 0 zones in between, the trade fires; if 1 or more, the setup is stale and skipped.
-                    <br/><br/><b>Proximity check (default 50%).</b> The setting reads as "SMA must sit within <i>N%</i> away from the boundary edge" — equivalently, within the closest <i>(100−N)%</i> of the range from the broken level. The 100% range is measured from the broken level to the next-zone edge. <b>Higher N = stricter</b> (SMA must be closer to broken).<br/>
-                    Example: <i>BUY_ABOVE_R1_PDH</i> with broken=R1+PDH=100, next zone above (R2)=105. Range = 5. At N=75, SMA must sit within (100−75)% = 25% of range from broken → SMA ≥ 98.75 (close to broken). SMA at 96 = 80% of range away from broken → skipped (too far). Set to <b>0</b> to disable proximity check (use zone-count only).</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">NIFTY Index Alignment Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableIndexAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable NIFTY trend alignment filter</span>
-                    </div>
-                    <div class="form-hint">NIFTY trend state combines <b>three sticky factors</b>, all refreshed only at NIFTY's 5-min candle close:
-                        <br>&nbsp;&nbsp;&bull; <b>CPR</b>: NIFTY LTP above (bullish) or below (bearish) daily CPR
-                        <br>&nbsp;&nbsp;&bull; <b>SMA Price</b>: NIFTY LTP above (bullish) or below (bearish) <i>both</i> 5-min SMA 20 and 50
-                        <br>&nbsp;&nbsp;&bull; <b>SMA Alignment</b>: 5-min SMA 20 &gt; 50 (bullish) or 20 &lt; 50 (bearish)
-                        <br>States:
-                        <br>&nbsp;&nbsp;&bull; <b>BULLISH</b> &mdash; all 3 factors bullish
-                        <br>&nbsp;&nbsp;&bull; <b>BEARISH</b> &mdash; all 3 factors bearish
-                        <br>&nbsp;&nbsp;&bull; <b>BULLISH REVERSAL</b> &mdash; CPR bearish but both SMA factors flipped bullish (downtrend rolling over)
-                        <br>&nbsp;&nbsp;&bull; <b>BEARISH REVERSAL</b> &mdash; CPR bullish but both SMA factors flipped bearish (uptrend rolling over)
-                        <br>&nbsp;&nbsp;&bull; <b>SIDEWAYS</b> &mdash; CPR determined but SMA factors mixed
-                        <br>&nbsp;&nbsp;&bull; <b>NEUTRAL</b> &mdash; NIFTY inside daily CPR or no data
-                        <br>When this filter is on: buys require <b>BULLISH</b> or <b>BULLISH REVERSAL</b>; sells require <b>BEARISH</b> or <b>BEARISH REVERSAL</b>; SIDEWAYS / NEUTRAL / opposite-direction states skip the trade outright. Independent of the NIFTY HTF Hurdle filter above; both can be enabled together.</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Extended Level Signals (R3/S3, R4/S4)</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="skipR3S3IvOvDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R3/S3 breakouts (and DH above R3 / DL below S3) &mdash; <b>IV / OV days</b></span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="skipR3S3EvDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R3/S3 breakouts (and DH above R3 / DL below S3) &mdash; <b>EV days</b></span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="skipR4S4IvOvDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R4/S4 breakouts (and DH above R4 / DL below S4) &mdash; <b>IV / OV days</b></span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="skipR4S4EvDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R4/S4 breakouts (and DH above R4 / DL below S4) &mdash; <b>EV days</b></span>
-                    </div>
-                    <div class="form-hint">Day type is set by the open print (first 5-min close) vs daily CPR + R2/S2:
-                        <br>&bull; <b>IV</b> &mdash; open inside CPR (between BC and TC)
-                        <br>&bull; <b>OV</b> &mdash; open between CPR and R2/S2
-                        <br>&bull; <b>EV</b> &mdash; open outside R2/S2 (extreme-value gap)
-                        <br>Extended-level breakouts (R3/S3, R4/S4) are far from the daily CPR and historically unreliable on regular days. EV days are different &mdash; an R3 break following an open above R2 is fresh gap momentum, not exhaustion. Toggle the IV/OV and EV gates independently to match your strategy. DH/DL breakouts that have already passed the level are treated identically. R2/S2 always fires regardless. No per-level qty reduction.</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Mean-Reversion / Magnet Trades</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableMeanReversionTrades" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable counter-trend setups (magnets + deep mean-reversion fades)</span>
-                    </div>
-                    <div class="form-hint">Master switch for <b>8 counter-trend setups</b>, all day-type agnostic (fire on IV / OV / EV alike):
-                        <br>&nbsp;&nbsp;&bull; <b>Magnets</b> &mdash; <code>BUY_ABOVE_S1_PDL</code>, <code>SELL_BELOW_R1_PDH</code>: bounce off / rejection at the first structural level pair, target back to CPR.
-                        <br>&nbsp;&nbsp;&bull; <b>Deep mean-rev</b> &mdash; <code>BUY_ABOVE_S2/S3/S4</code>, <code>SELL_BELOW_R2/R3/R4</code>: fades from deep support/resistance, target one level back toward value.
-                        <br>All eight bypass the LTF gate (counter-trend by design) and fire as <b>MPT</b>. When this toggle is <b>off</b>, none of the 8 fire &mdash; only direction-aligned breakouts (R1+/R2/R3/R4 buys, S1+/S2/S3/S4 sells, DH/DL) trade. Signal Trail bucket: <code>MEAN_REVERSION_DISABLED</code>.</div>
-                </div>
-                <div class="form-group">
                     <label class="form-label">HTF Extended Level Filters (Weekly R3/S3, R4/S4)</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="skipHtfR3S3NormalDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
@@ -604,25 +691,14 @@
                         <input type="checkbox" id="skipHtfR4S4NormalDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip any breakout with entry close beyond <b>weekly R4</b> (buys) or <b>weekly S4</b> (sells)</span>
                     </div>
-                    <div class="form-hint">Independent of the daily extended-level skips above. Trades whose entry sits past the weekly extended levels carry the same exhaustion concern as a daily-R3 trade &mdash; even if the daily setup is just an R1 break. Enable both for the strictest gating; either toggle independently otherwise. Fail-open if weekly levels haven't loaded yet.</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Volume Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableVolumeFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject if candle volume &lt;</span>
-                        <input type="number" id="volumeMultiple" class="form-control" step="0.5" min="1.0" max="10.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">x avg volume of last</span>
-                        <input type="number" id="volumeLookback" class="form-control" step="1" min="1" max="20" style="width:55px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">candles</span>
-                    </div>
+                    <div class="form-hint">Independent of the daily extended-level skips on the Filters tab. Trades whose entry sits past the weekly extended levels carry the same exhaustion concern as a daily-R3 trade &mdash; even if the daily setup is just an R1 break. Enable both for the strictest gating; either toggle independently otherwise. Fail-open if weekly levels haven't loaded yet.</div>
                 </div>
             </div>
         </div>
     </div>
 
         <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
-    </div><!-- /tab-filters -->
+    </div><!-- /tab-htf -->
 
     <!-- TAB: TARGETS -->
     <div class="tab-content" id="tab-targets">
@@ -1174,6 +1250,8 @@
             document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
             document.getElementById('enableNiftyHtfHurdleFilter').checked = d.enableNiftyHtfHurdleFilter === true;
             document.getElementById('enableHtfCandleFilter').checked = d.enableHtfCandleFilter === true;
+            document.getElementById('enableNiftyHtfCandleFilter').checked = d.enableNiftyHtfCandleFilter === true;
+            document.getElementById('enableNifty5mCandleFilter').checked = d.enableNifty5mCandleFilter === true;
             document.getElementById('enableSmallCandleFilter').checked = d.enableSmallCandleFilter === true;
             document.getElementById('smallCandleBodyAtrThreshold').value =
                 (d.smallCandleBodyAtrThreshold != null ? d.smallCandleBodyAtrThreshold : (d.smallCandleAtrThreshold != null ? d.smallCandleAtrThreshold : 0.5));
@@ -1187,6 +1265,8 @@
             document.getElementById('enableTrailingSl').checked = d.enableTrailingSl != null ? d.enableTrailingSl : true;
             document.getElementById('enableSmaCrossExit').checked = d.enableSmaCrossExit === true;
             document.getElementById('enablePriceSmaExit').checked = d.enablePriceSmaExit === true;
+            document.getElementById('enableNiftySmaCrossExit').checked = d.enableNiftySmaCrossExit === true;
+            document.getElementById('enableNiftyPriceSmaExit').checked = d.enableNiftyPriceSmaExit === true;
             document.getElementById('perSymbolDailyTradeLimit').value = d.perSymbolDailyTradeLimit != null ? d.perSymbolDailyTradeLimit : 2;
             document.getElementById('fibStage1TriggerPct').value = d.fibStage1TriggerPct != null ? d.fibStage1TriggerPct : 61.8;
             document.getElementById('fibStage1SlAtrMult').value  = d.fibStage1SlAtrMult  != null ? d.fibStage1SlAtrMult  : 1.0;
@@ -1339,6 +1419,8 @@
                 enableIndexAlignment: document.getElementById('enableIndexAlignment').checked,
                 enableNiftyHtfHurdleFilter: document.getElementById('enableNiftyHtfHurdleFilter').checked,
                 enableHtfCandleFilter: document.getElementById('enableHtfCandleFilter').checked,
+                enableNiftyHtfCandleFilter: document.getElementById('enableNiftyHtfCandleFilter').checked,
+                enableNifty5mCandleFilter: document.getElementById('enableNifty5mCandleFilter').checked,
                 enableSmallCandleFilter: document.getElementById('enableSmallCandleFilter').checked,
                 smallCandleBodyAtrThreshold: parseFloat(document.getElementById('smallCandleBodyAtrThreshold').value) || 0.5,
                 smallCandleMoveAtrThreshold: parseFloat(document.getElementById('smallCandleMoveAtrThreshold').value) || 0.15,
@@ -1350,6 +1432,8 @@
                 enableTrailingSl: document.getElementById('enableTrailingSl').checked,
                 enableSmaCrossExit: document.getElementById('enableSmaCrossExit').checked,
                 enablePriceSmaExit: document.getElementById('enablePriceSmaExit').checked,
+                enableNiftySmaCrossExit: document.getElementById('enableNiftySmaCrossExit').checked,
+                enableNiftyPriceSmaExit: document.getElementById('enableNiftyPriceSmaExit').checked,
                 perSymbolDailyTradeLimit: parseInt(document.getElementById('perSymbolDailyTradeLimit').value) || 0,
                 fibStage1TriggerPct: parseFloat(document.getElementById('fibStage1TriggerPct').value) || 61.8,
                 fibStage1SlAtrMult:  parseFloat(document.getElementById('fibStage1SlAtrMult').value)  || 1.0,
