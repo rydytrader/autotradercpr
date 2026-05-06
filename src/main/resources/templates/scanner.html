@@ -478,7 +478,7 @@
             <div class="nifty-change" id="niftyChange" style="font-family:var(--font-mono); font-weight:700; font-size:0.85rem; margin-left:8px;">—</div>
             <div class="nifty-cpr-width" id="niftyCprWidth" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY daily CPR width vs scanner thresholds (Narrow / Normal / Wide)">—</div>
             <div class="nifty-cpr" id="niftyCprBias" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY LTP vs daily CPR (above CPR top / below CPR bottom)">—</div>
-            <div class="nifty-sma-price" id="niftySmaPrice" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY LTP vs 5-min SMA 20 &amp; 50 (above both / below both)">—</div>
+            <div class="nifty-sma-price" id="niftySmaPrice" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY LTP vs 5-min SMA 50, anchored to SMA alignment. Bullish: 20&gt;50 AND price above SMA 50. Bearish: 20&lt;50 AND price below SMA 50.">—</div>
             <div class="nifty-sma-align" id="niftySmaAlign" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="5-min SMA 20 vs 50 (20 &gt; 50 bullish / 20 &lt; 50 bearish)">—</div>
             <div class="nifty-oi-call" id="niftyMaxCallOi" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px; color:var(--accent-red);" title="NIFTY Max Call OI strike — acts as intraday resistance hurdle (refreshed every 15 min)">—</div>
             <div class="nifty-oi-put" id="niftyMaxPutOi" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px; color:var(--accent-green);" title="NIFTY Max Put OI strike — acts as intraday support hurdle (refreshed every 15 min)">—</div>
@@ -1194,17 +1194,20 @@
                     cbEl.style.color = 'var(--text-muted)';
                 }
             }
-            // Factor 2: NIFTY LTP vs 5-min SMA 20 & 50 (above both / below both / between).
+            // Factor 2: NIFTY LTP vs 5-min SMA 50, gated by SMA alignment.
+            // Bullish when 20>50 AND price > 50; bearish when 20<50 AND price < 50.
+            // Trend stays sticky through pullbacks toward SMA-20 — flips only when price
+            // closes through SMA-50 against the trend direction.
             var spEl = document.getElementById('niftySmaPrice');
             if (spEl) {
                 if (d.smaPriceBullish === true) {
-                    spEl.textContent = 'PRICE > 20,50';
+                    spEl.textContent = 'PRICE > 50';
                     spEl.style.color = 'var(--accent-green)';
                 } else if (d.smaPriceBullish === false) {
-                    spEl.textContent = 'PRICE < 20,50';
+                    spEl.textContent = 'PRICE < 50';
                     spEl.style.color = 'var(--accent-red)';
                 } else {
-                    spEl.textContent = 'PRICE ↔ 20,50';
+                    spEl.textContent = 'PRICE ↔ 50';
                     spEl.style.color = 'var(--text-muted)';
                 }
             }

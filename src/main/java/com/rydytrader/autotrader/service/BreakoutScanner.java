@@ -1204,18 +1204,20 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         var cpr = bhavcopyService.getCprLevels("NIFTY50");
         if (cpr == null) return null; // daily CPR not loaded — fail-open
 
+        // Restricted to inner-zone hurdles only — extended levels (R2/R3/R4 and S2/S3/S4)
+        // are far-out projections and rarely come into play for NIFTY's intraday 5-min flow.
         double[] candidates;
         String[] names;
         if (isBuy) {
             candidates = new double[]{ cpr.getBc(), cpr.getPivot(), cpr.getTc(),
-                                       cpr.getR1(), cpr.getR2(), cpr.getR3(), cpr.getR4() };
+                                       cpr.getR1(), cpr.getPh() };
             names      = new String[]{ "daily BC", "daily Pivot", "daily TC",
-                                       "R1", "R2", "R3", "R4" };
+                                       "R1", "PDH" };
         } else {
             candidates = new double[]{ cpr.getTc(), cpr.getPivot(), cpr.getBc(),
-                                       cpr.getS1(), cpr.getS2(), cpr.getS3(), cpr.getS4() };
+                                       cpr.getS1(), cpr.getPl() };
             names      = new String[]{ "daily TC", "daily Pivot", "daily BC",
-                                       "S1", "S2", "S3", "S4" };
+                                       "S1", "PDL" };
         }
 
         // Nearest hurdle in trade direction: highest below LTP for buys, lowest above for sells.

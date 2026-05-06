@@ -563,15 +563,15 @@
                     </div>
                     <div class="form-hint">NIFTY trend state combines <b>three sticky factors</b>, all refreshed only at NIFTY's 5-min candle close:
                         <br>&nbsp;&nbsp;&bull; <b>CPR</b>: NIFTY LTP above (bullish) or below (bearish) daily CPR
-                        <br>&nbsp;&nbsp;&bull; <b>SMA Price</b>: NIFTY LTP above (bullish) or below (bearish) <i>both</i> 5-min SMA 20 and 50
+                        <br>&nbsp;&nbsp;&bull; <b>SMA Price</b>: NIFTY LTP vs 5-min SMA 50, gated by SMA alignment. Bullish when SMA 20 &gt; 50 AND price &gt; SMA 50. Bearish when SMA 20 &lt; 50 AND price &lt; SMA 50. Trend stays intact through pullbacks toward SMA 20 &mdash; only a close through SMA 50 against the trend flips it to sideways.
                         <br>&nbsp;&nbsp;&bull; <b>SMA Alignment</b>: 5-min SMA 20 &gt; 50 (bullish) or 20 &lt; 50 (bearish)
                         <br>States:
-                        <br>&nbsp;&nbsp;&bull; <b>BULLISH</b> &mdash; all 3 factors bullish
-                        <br>&nbsp;&nbsp;&bull; <b>BEARISH</b> &mdash; all 3 factors bearish
+                        <br>&nbsp;&nbsp;&bull; <b>BULLISH</b> &mdash; CPR bullish + both SMA factors bullish; OR inside CPR + both SMA factors bullish (SMA structure drives the trend during NIFTY consolidation)
+                        <br>&nbsp;&nbsp;&bull; <b>BEARISH</b> &mdash; CPR bearish + both SMA factors bearish; OR inside CPR + both SMA factors bearish
                         <br>&nbsp;&nbsp;&bull; <b>BULLISH REVERSAL</b> &mdash; CPR bearish but both SMA factors flipped bullish (downtrend rolling over)
                         <br>&nbsp;&nbsp;&bull; <b>BEARISH REVERSAL</b> &mdash; CPR bullish but both SMA factors flipped bearish (uptrend rolling over)
-                        <br>&nbsp;&nbsp;&bull; <b>SIDEWAYS</b> &mdash; CPR determined but SMA factors mixed
-                        <br>&nbsp;&nbsp;&bull; <b>NEUTRAL</b> &mdash; NIFTY inside daily CPR or no data
+                        <br>&nbsp;&nbsp;&bull; <b>SIDEWAYS</b> &mdash; SMA factors mixed (whether CPR is determined or NIFTY is inside CPR)
+                        <br>&nbsp;&nbsp;&bull; <b>NEUTRAL</b> &mdash; LTP / CPR data missing, or SMAs not yet seeded
                         <br>When this filter is on: buys require <b>BULLISH</b> or <b>BULLISH REVERSAL</b>; sells require <b>BEARISH</b> or <b>BEARISH REVERSAL</b>; SIDEWAYS / NEUTRAL / opposite-direction states skip the trade outright. Independent of the other NIFTY filters below; all can be enabled together.</div>
                 </div>
                 <div class="form-group">
@@ -591,7 +591,7 @@
                         <input type="checkbox" id="enableNifty5mHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY's prior 5m close hasn't cleared its nearest daily CPR hurdle</span>
                     </div>
-                    <div class="form-hint">5-min variant of the NIFTY HTF Hurdle, against NIFTY's <b>daily CPR</b> levels (not weekly). Identifies NIFTY's nearest daily-CPR hurdle in trade direction (R1/R2/R3/R4 + daily TC/Pivot/BC for buys; S1/S2/S3/S4 + TC/Pivot/BC for sells) and rejects every stock signal while NIFTY's <i>prior</i> 5m close hasn't decisively cleared it. Guards against firing while NIFTY's current 5m bar is just now crossing a daily level &mdash; wait for the prior bar's close to confirm. Fail-open at session open (no prior 5m available). Signal Trail bucket: <code>NIFTY_5M_HURDLE</code>.</div>
+                    <div class="form-hint">5-min variant of the NIFTY HTF Hurdle, against NIFTY's <b>daily inner-zone</b> levels only. Identifies NIFTY's nearest hurdle in trade direction (<b>R1, PDH, daily TC, daily Pivot, daily BC</b> for buys; <b>S1, PDL, daily TC, daily Pivot, daily BC</b> for sells) and rejects every stock signal while NIFTY's <i>prior</i> 5m close hasn't decisively cleared it. Extended levels (R2/R3/R4 and S2/S3/S4) are excluded &mdash; far-out projections rarely matter for intraday 5-min flow. Guards against firing while NIFTY's current 5m bar is just now crossing a daily level &mdash; wait for the prior bar's close to confirm. Fail-open at session open (no prior 5m available). Signal Trail bucket: <code>NIFTY_5M_HURDLE</code>.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">NIFTY HTF Candle Direction Filter</label>

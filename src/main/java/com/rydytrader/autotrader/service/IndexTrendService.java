@@ -127,24 +127,51 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         }
 
         // Factors 2 & 3: NIFTY 5-min SMA 20 / 50
+        //
+        // SMA Price factor uses the SMA-50 line (anchored to alignment) as the trigger to flip:
+        //   • Bullish alignment (20 > 50) AND price above SMA-50  → bullish (price can dip below
+        //     SMA-20 and the trend is still considered intact — only a close below SMA-50 flips
+        //     it to sideways).
+        //   • Bearish alignment (20 < 50) AND price below SMA-50  → bearish (mirror).
+        //   • Otherwise → null (alignment sideways, or price has broken SMA-50 against trend).
+        //
+        // This is wider than requiring price above BOTH SMAs — keeps the trend "stickier"
+        // through normal pullbacks toward SMA-20 without flipping sideways.
         Boolean smaPriceBullish = null;
         Boolean smaAlignBullish = null;
         double sma20 = smaService != null ? smaService.getSma(NIFTY_SYMBOL)   : 0;
         double sma50 = smaService != null ? smaService.getSma50(NIFTY_SYMBOL) : 0;
         if (ltp > 0 && sma20 > 0 && sma50 > 0) {
-            if (ltp > sma20 && ltp > sma50)      smaPriceBullish = Boolean.TRUE;
-            else if (ltp < sma20 && ltp < sma50) smaPriceBullish = Boolean.FALSE;
-            // else price between SMAs → null (treated as not-bullish for the all-green check)
+            boolean alignBullish = sma20 > sma50;
+            boolean alignBearish = sma20 < sma50;
 
-            if (sma20 > sma50)      smaAlignBullish = Boolean.TRUE;
-            else if (sma20 < sma50) smaAlignBullish = Boolean.FALSE;
+            if (alignBullish && ltp > sma50)      smaPriceBullish = Boolean.TRUE;
+            else if (alignBearish && ltp < sma50) smaPriceBullish = Boolean.FALSE;
+            // else null — alignment sideways or price broke SMA-50 against trend direction
+
+            if (alignBullish)      smaAlignBullish = Boolean.TRUE;
+            else if (alignBearish) smaAlignBullish = Boolean.FALSE;
         }
 
-        // State combination — all 3 factors must align; otherwise SIDEWAYS (or NEUTRAL when
-        // CPR is undetermined, e.g. inside CPR or no LTP).
+        // State combination:
+        //   • CPR determined (above/below): CPR + both SMA factors must align for BULLISH/BEARISH;
+        //     CPR-vs-SMA-disagreement (CPR bear + SMAs bull, or vice versa) → REVERSAL state;
+        //     mixed SMAs → SIDEWAYS.
+        //   • CPR undetermined (inside daily CPR or no LTP): fall through to SMA factors —
+        //     both SMA factors bullish → BULLISH; both bearish → BEARISH; SMAs not seeded → NEUTRAL;
+        //     SMAs mixed → SIDEWAYS. This lets the SMA structure drive the trend during NIFTY
+        //     consolidation periods inside CPR, instead of forcing NEUTRAL.
         String state;
         if (cprBullish == null) {
-            state = "NEUTRAL";
+            if (Boolean.TRUE.equals(smaPriceBullish) && Boolean.TRUE.equals(smaAlignBullish)) {
+                state = "BULLISH";
+            } else if (Boolean.FALSE.equals(smaPriceBullish) && Boolean.FALSE.equals(smaAlignBullish)) {
+                state = "BEARISH";
+            } else if (smaPriceBullish == null && smaAlignBullish == null) {
+                state = "NEUTRAL"; // no data yet (SMAs not seeded)
+            } else {
+                state = "SIDEWAYS"; // inside CPR with SMAs mixed → genuine no-trend
+            }
         } else if (Boolean.TRUE.equals(cprBullish)
                 && Boolean.TRUE.equals(smaPriceBullish)
                 && Boolean.TRUE.equals(smaAlignBullish)) {

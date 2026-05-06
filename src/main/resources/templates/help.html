@@ -684,26 +684,26 @@
             <table>
                 <tr><th>Factor</th><th>Bullish</th><th>Bearish</th><th>Source</th></tr>
                 <tr><td><b>CPR</b></td><td>NIFTY LTP &gt; max(TC, BC)</td><td>NIFTY LTP &lt; min(TC, BC)</td><td>NIFTY 50 daily CPR (from yesterday's bhavcopy)</td></tr>
-                <tr><td><b>SMA Price</b></td><td>LTP &gt; 5-min SMA 20 AND &gt; SMA 50</td><td>LTP &lt; SMA 20 AND &lt; SMA 50</td><td>NIFTY index 5-min SMAs from <code>SmaService</code></td></tr>
+                <tr><td><b>SMA Price</b></td><td>SMA 20 &gt; 50 AND LTP &gt; SMA 50</td><td>SMA 20 &lt; 50 AND LTP &lt; SMA 50</td><td>NIFTY index 5-min SMAs from <code>SmaService</code> &mdash; sticky through pullbacks toward SMA 20; flips only when LTP closes through SMA 50 against trend.</td></tr>
                 <tr><td><b>SMA Align</b></td><td>SMA 20 &gt; SMA 50</td><td>SMA 20 &lt; SMA 50</td><td>Same</td></tr>
             </table>
 
             <h4>State combination</h4>
             <table>
                 <tr><th>State</th><th>Condition</th></tr>
-                <tr><td><span class="badge-example bg">BULLISH</span></td><td>All 3 factors bullish</td></tr>
-                <tr><td><span class="badge-example br">BEARISH</span></td><td>All 3 factors bearish</td></tr>
+                <tr><td><span class="badge-example bg">BULLISH</span></td><td>CPR bullish + both SMA factors bullish; OR inside CPR + both SMA factors bullish (SMA structure drives the trend during consolidation)</td></tr>
+                <tr><td><span class="badge-example br">BEARISH</span></td><td>CPR bearish + both SMA factors bearish; OR inside CPR + both SMA factors bearish</td></tr>
                 <tr><td><span class="badge-example bg">BULLISH_REVERSAL</span></td><td>CPR bearish but both SMA factors flipped bullish — downtrend rolling over</td></tr>
                 <tr><td><span class="badge-example br">BEARISH_REVERSAL</span></td><td>CPR bullish but both SMA factors flipped bearish — uptrend rolling over</td></tr>
-                <tr><td><span class="badge-example by">SIDEWAYS</span></td><td>CPR is determined (above or below) but SMA factors don't all agree (mixed)</td></tr>
-                <tr><td><span class="badge-example by">NEUTRAL</span></td><td>NIFTY inside daily CPR, or LTP / CPR data missing</td></tr>
+                <tr><td><span class="badge-example by">SIDEWAYS</span></td><td>SMA factors mixed (CPR-determined OR inside CPR with mixed SMAs)</td></tr>
+                <tr><td><span class="badge-example by">NEUTRAL</span></td><td>LTP / CPR data missing, or SMAs not yet seeded</td></tr>
             </table>
 
             <h4>What's on the card</h4>
             <ul>
                 <li><b>LTP</b> + <b>change %</b> — live tick-by-tick, informational only</li>
                 <li><b>CPR</b> chip — bullish / bearish / —</li>
-                <li><b>PRICE &gt; 20,50</b> chip — bullish / bearish / between</li>
+                <li><b>PRICE &gt; 50</b> chip — bullish (20&gt;50 AND price above SMA 50) / bearish (20&lt;50 AND price below SMA 50) / between (price has broken SMA 50 against trend)</li>
                 <li><b>20 &gt; 50</b> chip — bullish / bearish</li>
                 <li><b>SMA values</b> — live 5-min SMA 20 / SMA 50 numbers, display-only</li>
                 <li><b>State chip</b> — BULLISH / BEARISH / BULLISH REVERSAL / BEARISH REVERSAL / SIDEWAYS / NEUTRAL. Reversal cards rendered with a softer tint and dashed border to flag "transitional".</li>
