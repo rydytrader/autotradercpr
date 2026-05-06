@@ -509,7 +509,7 @@
                 <tr><td><span class="badge-example bo">SELL_BELOW_R2</span></td><td>R2</td><td>Mean-rev fade — any day type, target max(R1, PDH).</td></tr>
                 <tr><td><span class="badge-example br">SELL_BELOW_DL</span></td><td>Day low (excl. current candle)</td><td>Lowest priority. Only fires after OR locks. Rejected if dayLow sits inside CPR / R1+PDH / S1+PDL zone.</td></tr>
             </table>
-            <p><i>All 8 counter-trend setups (2 magnets + 6 mean-rev) are gated by the master toggle <code>enableMeanReversionTrades</code>. When off, none fire. See the MEAN REVERSION tab for details.</i></p>
+            <p><i>All 10 counter-trend setups (2 magnets + 6 deep mean-rev + DH/DL breakouts) are gated by the master toggle <code>enableMeanReversionTrades</code>. When off, none fire. See the MEAN REVERSION tab for details.</i></p>
 
             <h4>Two breakout patterns per level</h4>
             <p>The candle qualifies via either:</p>
@@ -601,7 +601,7 @@
             <p>Within the buy detection chain, S4 is checked first, then S3, then S2 &mdash; deepest reclaimed level wins. Same idea for sells (R4 &gt; R3 &gt; R2). The 6 mean-rev setups sit between the S1+PDL magnet (higher priority) and DH (lowest priority).</p>
 
             <h4>Master toggle</h4>
-            <p>The setting <code>enableMeanReversionTrades</code> (default <b>on</b>) is a master switch for <b>all 8 counter-trend setups</b>: the 2 magnets + the 6 mean-rev. When off, all eight skip with bucket <code>MEAN_REVERSION_DISABLED</code> in Signal Trail. Direction-aligned breakouts (R1+/R2/R3/R4 buys, S1+/S2/S3/S4 sells, DH/DL) continue firing.</p>
+            <p>The setting <code>enableMeanReversionTrades</code> (default <b>on</b>) is a master switch for <b>all 10 counter-trend setups</b>: the 2 magnets, the 6 deep mean-rev, and the 2 DH/DL day-extreme breakouts. When off, all ten skip with bucket <code>MEAN_REVERSION_DISABLED</code> in Signal Trail. Only direction-aligned weekly-level breakouts (R1+/R2/R3/R4 buys, S1+/S2/S3/S4 sells) continue firing.</p>
 
             <h4>Quantity</h4>
             <p>Sized by the MPT factor (<code>mptQtyFactor</code>, default 0.75) only. Both the EV-reversal halving and the OV-magnet halving were removed — counter-trend setups (the 8 magnets + mean-rev) get one consistent qty reduction via MPT and no setup-specific extras.</p>
@@ -831,7 +831,7 @@
                 <tr><td><code>NIFTY_OPPOSED</code></td><td>NIFTY trend not aligned: buys need NIFTY = BULLISH or BULLISH_REVERSAL; sells need BEARISH or BEARISH_REVERSAL; everything else (SIDEWAYS / NEUTRAL / opposite) hits this bucket.</td></tr>
                 <tr><td><code>NIFTY_HURDLE</code></td><td>NIFTY HTF Hurdle filter on. NIFTY's prior 1h close hasn't cleared NIFTY's nearest weekly hurdle in trade direction. Detail names the hurdle (R1/PWH/weekly TC/Pivot/BC for buys; mirror for sells), NIFTY's current price, prior 1h close, and the level. Wait for the next 1h close to commit.</td></tr>
                 <tr><td><code>HTF_CANDLE_OPPOSED</code></td><td>HTF Candle Direction filter on. The currently-forming 60-min bar is moving against the trade: buy with 1h red (close &lt; open) or sell with 1h green (close &gt; open). Detail carries the in-progress 1h open and close. Doji 1h passes; missing 1h bar fails-open.</td></tr>
-                <tr><td><code>MEAN_REVERSION_DISABLED</code></td><td>Master toggle <code>enableMeanReversionTrades</code> is off. Setup was one of the 8 counter-trend types: <code>BUY_ABOVE_S1_PDL/S2/S3/S4</code> or <code>SELL_BELOW_R1_PDH/R2/R3/R4</code>. Direction-aligned breakouts continue to fire normally.</td></tr>
+                <tr><td><code>MEAN_REVERSION_DISABLED</code></td><td>Master toggle <code>enableMeanReversionTrades</code> is off. Setup was one of the 10 counter-trend types: <code>BUY_ABOVE_S1_PDL/S2/S3/S4/DH</code> or <code>SELL_BELOW_R1_PDH/R2/R3/R4/DL</code>. Direction-aligned weekly-level breakouts continue to fire normally.</td></tr>
             </table>
 
             <h4>LTF / HTF probability gates (LTF-priority model)</h4>

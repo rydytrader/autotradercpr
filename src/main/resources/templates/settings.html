@@ -521,10 +521,11 @@
                         <input type="checkbox" id="enableMeanReversionTrades" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable counter-trend setups (magnets + deep mean-reversion fades)</span>
                     </div>
-                    <div class="form-hint">Master switch for <b>8 counter-trend setups</b>, all day-type agnostic (fire on IV / OV / EV alike):
+                    <div class="form-hint">Master switch for <b>10 counter-trend setups</b>, all day-type agnostic (fire on IV / OV / EV alike):
                         <br>&nbsp;&nbsp;&bull; <b>Magnets</b> &mdash; <code>BUY_ABOVE_S1_PDL</code>, <code>SELL_BELOW_R1_PDH</code>: bounce off / rejection at the first structural level pair, target back to CPR.
                         <br>&nbsp;&nbsp;&bull; <b>Deep mean-rev</b> &mdash; <code>BUY_ABOVE_S2/S3/S4</code>, <code>SELL_BELOW_R2/R3/R4</code>: fades from deep support/resistance, target one level back toward value.
-                        <br>All eight bypass the LTF gate (counter-trend by design) and fire as <b>MPT</b>. When this toggle is <b>off</b>, none of the 8 fire &mdash; only direction-aligned breakouts (R1+/R2/R3/R4 buys, S1+/S2/S3/S4 sells, DH/DL) trade. Signal Trail bucket: <code>MEAN_REVERSION_DISABLED</code>.</div>
+                        <br>&nbsp;&nbsp;&bull; <b>DH/DL breakouts</b> &mdash; <code>BUY_ABOVE_DH</code>, <code>SELL_BELOW_DL</code>: day high/low breaks. Often reversal in character (DH break after morning sell-off; DL break after morning rally) so they live with the counter-trend family.
+                        <br>All ten bypass the LTF gate (counter-trend by design) and fire as <b>MPT</b>. When this toggle is <b>off</b>, none of the 10 fire &mdash; only direction-aligned weekly-level breakouts (R1+/R2/R3/R4 buys, S1+/S2/S3/S4 sells) trade. Signal Trail bucket: <code>MEAN_REVERSION_DISABLED</code>.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Volume Filter</label>
@@ -597,7 +598,13 @@
                         <input type="checkbox" id="enableNifty5mHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY's prior 5m close hasn't cleared its nearest daily CPR hurdle</span>
                     </div>
-                    <div class="form-hint">5-min variant of the NIFTY HTF Hurdle, against NIFTY's full <b>daily CPR</b> level set. Identifies NIFTY's nearest hurdle in trade direction (<b>R1, PDH, R2, R3, R4, daily TC, daily Pivot, daily BC</b> for buys; <b>S1, PDL, S2, S3, S4, daily TC, daily Pivot, daily BC</b> for sells) and rejects every stock signal while NIFTY's <i>prior</i> 5m close hasn't decisively cleared it. Nearest-in-direction selection means only the most recently cleared level is checked &mdash; extended levels (R2/R3/R4 / S2/S3/S4) only come into play when NIFTY has already pushed past the inner zone. Guards against firing while NIFTY's current 5m bar is just now crossing a daily level &mdash; wait for the prior bar's close to confirm. Fail-open at session open (no prior 5m available). Signal Trail bucket: <code>NIFTY_5M_HURDLE</code>.</div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min headroom to next hurdle:</span>
+                        <input type="number" id="nifty5mHurdleMinHeadroomAtr" class="form-control" step="0.1" min="0" max="5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× NIFTY ATR (0 = off)</span>
+                    </div>
+                    <div class="form-hint">5-min variant of the NIFTY HTF Hurdle, against NIFTY's full <b>daily CPR</b> level set. Identifies NIFTY's nearest hurdle in trade direction (<b>R1, PDH, R2, R3, R4, daily TC, daily Pivot, daily BC</b> for buys; <b>S1, PDL, S2, S3, S4, daily TC, daily Pivot, daily BC</b> for sells) and rejects every stock signal while NIFTY's <i>prior</i> 5m close hasn't decisively cleared it. Nearest-in-direction selection means only the most recently cleared level is checked &mdash; extended levels (R2/R3/R4 / S2/S3/S4) only come into play when NIFTY has already pushed past the inner zone. Guards against firing while NIFTY's current 5m bar is just now crossing a daily level &mdash; wait for the prior bar's close to confirm. Fail-open at session open (no prior 5m available).
+                        <br><br><b>Headroom check.</b> Mirror of the NIFTY HTF Hurdle headroom &mdash; even after the past hurdle is cleared, the filter rejects if the nearest upcoming hurdle (above NIFTY LTP for buys / below for sells, from the same daily-CPR set) is closer than <code>min headroom &times; NIFTY ATR</code>. Default <b>1.0</b> &times; ATR. Set to 0 to disable just the headroom check. Signal Trail bucket: <code>NIFTY_5M_HURDLE</code>.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">NIFTY HTF Candle Direction Filter</label>
@@ -1250,6 +1257,7 @@
             document.getElementById('enableNiftyHtfHurdleFilter').checked = d.enableNiftyHtfHurdleFilter === true;
             document.getElementById('niftyHurdleMinHeadroomAtr').value = (d.niftyHurdleMinHeadroomAtr != null ? d.niftyHurdleMinHeadroomAtr : 1.0);
             document.getElementById('enableNifty5mHurdleFilter').checked = d.enableNifty5mHurdleFilter === true;
+            document.getElementById('nifty5mHurdleMinHeadroomAtr').value = (d.nifty5mHurdleMinHeadroomAtr != null ? d.nifty5mHurdleMinHeadroomAtr : 1.0);
             document.getElementById('enableHtfCandleFilter').checked = d.enableHtfCandleFilter === true;
             document.getElementById('enableNiftyHtfCandleFilter').checked = d.enableNiftyHtfCandleFilter === true;
             document.getElementById('niftyHtfCandleMaxWickRatio').value = (d.niftyHtfCandleMaxWickRatio != null ? d.niftyHtfCandleMaxWickRatio : 2.0);
@@ -1419,6 +1427,7 @@
                 enableNiftyHtfHurdleFilter: document.getElementById('enableNiftyHtfHurdleFilter').checked,
                 niftyHurdleMinHeadroomAtr: parseFloat(document.getElementById('niftyHurdleMinHeadroomAtr').value) || 0,
                 enableNifty5mHurdleFilter: document.getElementById('enableNifty5mHurdleFilter').checked,
+                nifty5mHurdleMinHeadroomAtr: parseFloat(document.getElementById('nifty5mHurdleMinHeadroomAtr').value) || 0,
                 enableHtfCandleFilter: document.getElementById('enableHtfCandleFilter').checked,
                 enableNiftyHtfCandleFilter: document.getElementById('enableNiftyHtfCandleFilter').checked,
                 niftyHtfCandleMaxWickRatio: parseFloat(document.getElementById('niftyHtfCandleMaxWickRatio').value) || 0,

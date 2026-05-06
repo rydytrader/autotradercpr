@@ -474,6 +474,9 @@
     <div id="niftyCard" class="nifty-card nifty-card-neutral">
         <div class="nifty-row">
             <div class="nifty-name">NIFTY 50</div>
+            <button class="chart-icon-btn" onclick="openChartModal('NSE:NIFTY50-INDEX', 'NIFTY 50')" title="View NIFTY 5-min chart" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:3px 6px;margin-left:8px;cursor:pointer;color:var(--text-secondary);line-height:0;display:inline-flex;align-items:center;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 6-6"/></svg>
+            </button>
             <div class="nifty-ltp" id="niftyLtp">—</div>
             <div class="nifty-change" id="niftyChange" style="font-family:var(--font-mono); font-weight:700; font-size:0.85rem; margin-left:8px;">—</div>
             <div class="nifty-cpr-width" id="niftyCprWidth" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY daily CPR width vs scanner thresholds (Narrow / Normal / Wide)">—</div>
@@ -1215,14 +1218,14 @@
             var saEl = document.getElementById('niftySmaAlign');
             if (saEl) {
                 if (d.smaAlignBullish === true) {
-                    saEl.textContent = '20 > 50';
+                    saEl.textContent = 'SMA 20 > 50';
                     saEl.style.color = 'var(--accent-green)';
                 } else if (d.smaAlignBullish === false) {
-                    saEl.textContent = '20 < 50';
+                    saEl.textContent = 'SMA 20 < 50';
                     saEl.style.color = 'var(--accent-red)';
                 } else {
-                    saEl.textContent = '20 ↔ 50';
-                    saEl.style.color = 'var(--text-muted)';
+                    saEl.textContent = 'SMA 20 ↔ 50';
+                    saEl.style.color = 'var(--accent-yellow)';
                 }
             }
 
@@ -2024,6 +2027,9 @@ function toLwcLine(series) {
 function renderChart(d, isFirst) {
     var candles = d.candles || [];
     chartState.lastData = d;
+    // NIFTY index chart hides VWAP (index has no real volume) and SMA 200 (focus on
+    // the 20/50 + CPR + OI levels). Stocks keep all standard layers.
+    var isNifty = d.symbol === 'NSE:NIFTY50-INDEX';
 
     var container = document.getElementById('chartContainer');
 
@@ -2091,13 +2097,15 @@ function renderChart(d, isFirst) {
         });
         chartState.series.setData(bars);
 
-        // VWAP line (pink, dashed)
-        chartState.vwapSeries = chartState.chart.addLineSeries({
-            color: '#ec407a', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed,
-            priceLineVisible: false, lastValueVisible: true, title: 'VWAP',
-            crosshairMarkerVisible: false, visible: chartPrefs.vwap
-        });
-        chartState.vwapSeries.setData(vwapLine);
+        // VWAP line (pink, dashed) — skipped for NIFTY index (no real volume).
+        if (!isNifty) {
+            chartState.vwapSeries = chartState.chart.addLineSeries({
+                color: '#ec407a', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed,
+                priceLineVisible: false, lastValueVisible: true, title: 'VWAP',
+                crosshairMarkerVisible: false, visible: chartPrefs.vwap
+            });
+            chartState.vwapSeries.setData(vwapLine);
+        }
 
         // SMA 20 line (green)
         chartState.sma20Series = chartState.chart.addLineSeries({
@@ -2115,13 +2123,15 @@ function renderChart(d, isFirst) {
         });
         chartState.sma50Series.setData(sma50Line);
 
-        // SMA 200 line (white on dark, black on light)
-        chartState.sma200Series = chartState.chart.addLineSeries({
-            color: dark ? '#ffffff' : '#000000', lineWidth: 2,
-            priceLineVisible: false, lastValueVisible: true, title: 'SMA200',
-            crosshairMarkerVisible: false, visible: chartPrefs.sma200
-        });
-        chartState.sma200Series.setData(sma200Line);
+        // SMA 200 line (white on dark, black on light) — skipped for NIFTY index chart.
+        if (!isNifty) {
+            chartState.sma200Series = chartState.chart.addLineSeries({
+                color: dark ? '#ffffff' : '#000000', lineWidth: 2,
+                priceLineVisible: false, lastValueVisible: true, title: 'SMA200',
+                crosshairMarkerVisible: false, visible: chartPrefs.sma200
+            });
+            chartState.sma200Series.setData(sma200Line);
+        }
 
         chartState.levelSeries = [];
         applyChartLines(d);
@@ -2420,6 +2430,14 @@ function applyChartLines(d) {
     if (chartPrefs.pdhPdl) {
         addLine(cpr.pdh, '#ffa726', 'PDH');
         addLine(cpr.pdl, '#ffa726', 'PDL');
+    }
+
+    // NIFTY-only: Max Call OI (resistance) and Max Put OI (support) strike lines.
+    // Dashed-style accent so they stand out from CPR levels. Backend only sends d.oi
+    // for NSE:NIFTY50-INDEX so the lines just don't draw on stock charts.
+    if (d.oi) {
+        if (+d.oi.maxCallStrike > 0) addLine(+d.oi.maxCallStrike, '#e91e63', 'Max Call OI');
+        if (+d.oi.maxPutStrike  > 0) addLine(+d.oi.maxPutStrike,  '#9c27b0', 'Max Put OI');
     }
 }
 

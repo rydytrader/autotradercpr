@@ -1304,6 +1304,44 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 + ", prior 5m close " + String.format("%.2f", priorClose)
                 + ", level " + String.format("%.2f", chosenLevel);
         }
+
+        // Headroom check — mirror of the NIFTY HTF Hurdle headroom logic, applied to the
+        // 5m filter's daily-CPR candidate set. Reject if the nearest hurdle in the OPPOSITE
+        // direction is closer than minHeadroomAtr × NIFTY ATR.
+        double minHeadroomAtr = riskSettings.getNifty5mHurdleMinHeadroomAtr();
+        if (minHeadroomAtr > 0 && atrService != null) {
+            double niftyAtr = atrService.getAtr(niftySym);
+            if (niftyAtr > 0) {
+                double minHeadroomPts = minHeadroomAtr * niftyAtr;
+                double upcomingLevel = 0;
+                String upcomingName = null;
+                for (int i = 0; i < candidates.length; i++) {
+                    double lv = candidates[i];
+                    if (lv <= 0) continue;
+                    if (isBuy) {
+                        // For buys, upcoming hurdle = lowest level above LTP
+                        if (lv > niftyLtp && (upcomingName == null || lv < upcomingLevel)) {
+                            upcomingLevel = lv; upcomingName = names[i];
+                        }
+                    } else {
+                        // For sells, upcoming hurdle = highest level below LTP
+                        if (lv < niftyLtp && lv > upcomingLevel) {
+                            upcomingLevel = lv; upcomingName = names[i];
+                        }
+                    }
+                }
+                if (upcomingName != null) {
+                    double headroomPts = isBuy ? upcomingLevel - niftyLtp : niftyLtp - upcomingLevel;
+                    if (headroomPts < minHeadroomPts) {
+                        return "NIFTY 5m hurdle ahead at " + upcomingName
+                            + " (" + String.format("%.2f", upcomingLevel) + "): only "
+                            + String.format("%.2f", headroomPts) + " pts headroom, need "
+                            + String.format("%.2f", minHeadroomPts)
+                            + " (" + minHeadroomAtr + " × NIFTY ATR " + String.format("%.2f", niftyAtr) + ")";
+                    }
+                }
+            }
+        }
         return null;
     }
 
@@ -1365,10 +1403,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     }
 
     /**
-     * Counter-trend setup family — magnets (S1+PDL / R1+PDH) plus deep mean-rev
-     * (S2/S3/S4 buys, R2/R3/R4 sells). All eight bypass the LTF gate at probability
-     * assignment and fire as MPT. The master toggle <code>enableMeanReversionTrades</code>
-     * gates the entire family.
+     * Counter-trend setup family — magnets (S1+PDL / R1+PDH), deep mean-rev (S2/S3/S4 buys,
+     * R2/R3/R4 sells), and day high/low breakouts (DH/DL). All ten bypass the LTF gate at
+     * probability assignment and fire as MPT. The master toggle
+     * <code>enableMeanReversionTrades</code> gates the entire family.
+     *
+     * <p>DH/DL are included because in many contexts they're reversal trades — a DH break
+     * after a morning sell-off is the same character as a S2/S3 bounce; a DL break after a
+     * morning rally is a R2/R3 fade. Treating them as part of the family lets them fire even
+     * when the daily LTF direction disagrees with the trade.
      */
     private static boolean isMeanReversionOrMagnet(String setup) {
         if (setup == null) return false;
@@ -1376,10 +1419,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             || "BUY_ABOVE_S2".equals(setup)
             || "BUY_ABOVE_S3".equals(setup)
             || "BUY_ABOVE_S4".equals(setup)
+            || "BUY_ABOVE_DH".equals(setup)
             || "SELL_BELOW_R1_PDH".equals(setup)
             || "SELL_BELOW_R2".equals(setup)
             || "SELL_BELOW_R3".equals(setup)
-            || "SELL_BELOW_R4".equals(setup);
+            || "SELL_BELOW_R4".equals(setup)
+            || "SELL_BELOW_DL".equals(setup);
     }
 
     private boolean isProbabilityEnabled(String prob) {

@@ -53,6 +53,9 @@ public class NiftyOptionOiService {
     @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.context.annotation.Lazy
     private MarketDataService marketDataService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @org.springframework.context.annotation.Lazy
+    private BhavcopyService bhavcopyService;
 
     private volatile double maxCallOiStrike = 0;
     private volatile long   maxCallOi       = 0;
@@ -148,15 +151,27 @@ public class NiftyOptionOiService {
             // accumulated when NIFTY was at 23800 last week) and don't act as intraday support /
             // resistance once price has moved. Only strikes within ±OI_WINDOW_STRIKES (=10 strikes
             // = 500 pts at 50-pt spacing) of the ATM strike are considered.
+            // ATM reference for the window — try live WS LTP first, then bhavcopy yesterday's
+            // close (close enough for strike rounding; intraday drift of a couple hundred points
+            // doesn't move the ATM strike). If neither is available, skip this refresh entirely
+            // rather than pollute the cached OI with all-strikes data (which would let a stale
+            // far-OTM strike like 23000-strike puts win).
             double niftyLtp = marketDataService != null ? marketDataService.getLtp(IndexTrendService.NIFTY_SYMBOL) : 0;
-            double windowMin = 0, windowMax = Double.MAX_VALUE;
-            boolean windowed = false;
-            if (niftyLtp > 0) {
-                double atmStrike = Math.round(niftyLtp / NIFTY_STRIKE_SPACING) * NIFTY_STRIKE_SPACING;
-                windowMin = atmStrike - OI_WINDOW_STRIKES * NIFTY_STRIKE_SPACING;
-                windowMax = atmStrike + OI_WINDOW_STRIKES * NIFTY_STRIKE_SPACING;
-                windowed = true;
+            String ltpSource = "live LTP";
+            if (niftyLtp <= 0 && bhavcopyService != null) {
+                var cpr = bhavcopyService.getCprLevels("NIFTY50");
+                if (cpr != null && cpr.getClose() > 0) {
+                    niftyLtp = cpr.getClose();
+                    ltpSource = "bhavcopy prev close";
+                }
             }
+            if (niftyLtp <= 0) {
+                log.warn("[NiftyOI] Skipping refresh — no NIFTY LTP available (would default to all-strikes scan)");
+                return;
+            }
+            double atmStrike = Math.round(niftyLtp / NIFTY_STRIKE_SPACING) * NIFTY_STRIKE_SPACING;
+            double windowMin = atmStrike - OI_WINDOW_STRIKES * NIFTY_STRIKE_SPACING;
+            double windowMax = atmStrike + OI_WINDOW_STRIKES * NIFTY_STRIKE_SPACING;
 
             double bestCallStrike = 0; long bestCallOi = 0;
             double bestPutStrike  = 0; long bestPutOi  = 0;
@@ -172,7 +187,7 @@ public class NiftyOptionOiService {
                 if (strike <= 0 || oi <= 0) { skipped++; continue; }
 
                 // Window filter — only CE/PE rows; the window is computed from current LTP.
-                if (windowed && (strike < windowMin || strike > windowMax)) { outsideWindow++; continue; }
+                if (strike < windowMin || strike > windowMax) { outsideWindow++; continue; }
 
                 if ("CE".equalsIgnoreCase(type)) {
                     ceSeen++;
@@ -199,10 +214,9 @@ public class NiftyOptionOiService {
             this.maxPutOi        = bestPutOi;
             this.lastUpdated     = Instant.now();
 
-            log.info("[NiftyOI] maxCall={} ({}) maxPut={} ({}) — window {}{}",
+            log.info("[NiftyOI] maxCall={} ({}) maxPut={} ({}) — ATM={} from {}, window=[{}—{}], {} strikes filtered",
                 bestCallStrike, bestCallOi, bestPutStrike, bestPutOi,
-                windowed ? "[" + (long) windowMin + "—" + (long) windowMax + "]" : "all strikes (no LTP)",
-                outsideWindow > 0 ? ", " + outsideWindow + " strikes filtered" : "");
+                (long) atmStrike, ltpSource, (long) windowMin, (long) windowMax, outsideWindow);
             if (!firstSuccessLogged) {
                 eventService.log("[INFO] NIFTY OI loaded: maxCall=" + (long) bestCallStrike
                     + " maxPut=" + (long) bestPutStrike);

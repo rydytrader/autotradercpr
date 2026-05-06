@@ -35,6 +35,8 @@ public class ScannerController {
     private final MarketHolidayService marketHolidayService;
     @org.springframework.beans.factory.annotation.Autowired
     private SymbolMasterService symbolMasterService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.rydytrader.autotrader.service.NiftyOptionOiService niftyOptionOiService;
 
     public ScannerController(MarketDataService marketDataService,
                              BhavcopyService bhavcopyService,
@@ -721,6 +723,17 @@ public class ScannerController {
             cpr.put("pdh", r(lv.getPh()));
             cpr.put("pdl", r(lv.getPl()));
             result.put("cpr", cpr);
+        }
+
+        // NIFTY-only: Max Call OI / Max Put OI strikes (refreshed every 15 min by NiftyOptionOiService).
+        if (com.rydytrader.autotrader.service.IndexTrendService.NIFTY_SYMBOL.equals(symbol) && niftyOptionOiService != null) {
+            Map<String, Object> oi = new LinkedHashMap<>();
+            oi.put("maxCallStrike", niftyOptionOiService.getMaxCallOiStrike());
+            oi.put("maxCallOi",     niftyOptionOiService.getMaxCallOi());
+            oi.put("maxPutStrike",  niftyOptionOiService.getMaxPutOiStrike());
+            oi.put("maxPutOi",      niftyOptionOiService.getMaxPutOi());
+            oi.put("lastUpdated",   niftyOptionOiService.getLastUpdatedFormatted());
+            result.put("oi", oi);
         }
 
         // Indicators (current values)

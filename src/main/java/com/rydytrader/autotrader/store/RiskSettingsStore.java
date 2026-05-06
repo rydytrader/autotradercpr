@@ -70,6 +70,11 @@ public class RiskSettingsStore {
         // its nearest daily-CPR hurdle in trade direction (R1/R2/R3/R4 + daily TC/Pivot/BC for
         // buys; S1/S2/S3/S4 + TC/Pivot/BC for sells). Default off.
         volatile boolean enableNifty5mHurdleFilter = false;
+        // Headroom check for the NIFTY 5m Hurdle filter — mirror of niftyHurdleMinHeadroomAtr
+        // but applied to the 5m filter's daily-CPR candidate set. Trades are also rejected
+        // when the nearest hurdle in the OPPOSITE direction (above NIFTY LTP for buys / below
+        // for sells) is closer than this many NIFTY ATRs. 0 = headroom check off.
+        volatile double nifty5mHurdleMinHeadroomAtr = 1.0;
         volatile boolean enableHtfSmaAlignment = true; // HPT→LPT when live LTP not above/below 1h SMA 20/50 together
         volatile boolean enableHtfSmaAlignmentCheck = false; // HPT→LPT when 1h SMAs not in order (20>50 buy, 20<50 sell)
         // In-progress 1h candle direction must agree with the 5-min breakout direction. Buy
@@ -300,6 +305,7 @@ public class RiskSettingsStore {
     public boolean isEnableNiftyHtfHurdleFilter() { return cfg().enableNiftyHtfHurdleFilter; }
     public double  getNiftyHurdleMinHeadroomAtr() { return cfg().niftyHurdleMinHeadroomAtr; }
     public boolean isEnableNifty5mHurdleFilter()  { return cfg().enableNifty5mHurdleFilter; }
+    public double  getNifty5mHurdleMinHeadroomAtr() { return cfg().nifty5mHurdleMinHeadroomAtr; }
     public boolean isEnableHtfSmaAlignment()    { return cfg().enableHtfSmaAlignment; }
     public boolean isEnableHtfSmaAlignmentCheck() { return cfg().enableHtfSmaAlignmentCheck; }
     public boolean isEnableHtfCandleFilter()      { return cfg().enableHtfCandleFilter; }
@@ -460,6 +466,7 @@ public class RiskSettingsStore {
     public void setEnableNiftyHtfHurdleFilter(boolean v) { cfg().enableNiftyHtfHurdleFilter = v; }
     public void setNiftyHurdleMinHeadroomAtr(double v)   { cfg().niftyHurdleMinHeadroomAtr = Math.max(0, v); }
     public void setEnableNifty5mHurdleFilter(boolean v)  { cfg().enableNifty5mHurdleFilter = v; }
+    public void setNifty5mHurdleMinHeadroomAtr(double v) { cfg().nifty5mHurdleMinHeadroomAtr = Math.max(0, v); }
     public void setEnableHtfSmaAlignment(boolean v)    { cfg().enableHtfSmaAlignment = v; }
     public void setEnableHtfSmaAlignmentCheck(boolean v) { cfg().enableHtfSmaAlignmentCheck = v; }
     public void setEnableHtfCandleFilter(boolean v)      { cfg().enableHtfCandleFilter = v; }
@@ -613,6 +620,7 @@ public class RiskSettingsStore {
             upsert("enableNiftyHtfHurdleFilter", String.valueOf(c.enableNiftyHtfHurdleFilter));
             upsert("niftyHurdleMinHeadroomAtr", String.valueOf(c.niftyHurdleMinHeadroomAtr));
             upsert("enableNifty5mHurdleFilter", String.valueOf(c.enableNifty5mHurdleFilter));
+            upsert("nifty5mHurdleMinHeadroomAtr", String.valueOf(c.nifty5mHurdleMinHeadroomAtr));
             upsert("enableHtfSmaAlignment", String.valueOf(c.enableHtfSmaAlignment));
             upsert("enableHtfSmaAlignmentCheck", String.valueOf(c.enableHtfSmaAlignmentCheck));
             upsert("enableHtfCandleFilter", String.valueOf(c.enableHtfCandleFilter));
@@ -758,6 +766,7 @@ public class RiskSettingsStore {
                     case "enableNiftyHtfHurdleFilter" -> c.enableNiftyHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "niftyHurdleMinHeadroomAtr" -> c.niftyHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
                     case "enableNifty5mHurdleFilter" -> c.enableNifty5mHurdleFilter = Boolean.parseBoolean(v);
+                    case "nifty5mHurdleMinHeadroomAtr" -> c.nifty5mHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
                     case "enableHtfSmaAlignment" -> c.enableHtfSmaAlignment = Boolean.parseBoolean(v);
                     case "enableHtfSmaAlignmentCheck" -> c.enableHtfSmaAlignmentCheck = Boolean.parseBoolean(v);
                     case "enableHtfCandleFilter" -> c.enableHtfCandleFilter = Boolean.parseBoolean(v);

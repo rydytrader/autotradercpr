@@ -67,6 +67,7 @@ public class SettingsController {
         result.put("enableNiftyHtfHurdleFilter", riskSettings.isEnableNiftyHtfHurdleFilter());
         result.put("niftyHurdleMinHeadroomAtr", riskSettings.getNiftyHurdleMinHeadroomAtr());
         result.put("enableNifty5mHurdleFilter", riskSettings.isEnableNifty5mHurdleFilter());
+        result.put("nifty5mHurdleMinHeadroomAtr", riskSettings.getNifty5mHurdleMinHeadroomAtr());
         result.put("enableHtfSmaAlignment", riskSettings.isEnableHtfSmaAlignment());
         result.put("enableHtfSmaAlignmentCheck", riskSettings.isEnableHtfSmaAlignmentCheck());
         result.put("enableHtfCandleFilter", riskSettings.isEnableHtfCandleFilter());
@@ -193,6 +194,7 @@ public class SettingsController {
             if (body.containsKey("enableNiftyHtfHurdleFilter")) riskSettings.setEnableNiftyHtfHurdleFilter(Boolean.parseBoolean(body.get("enableNiftyHtfHurdleFilter").toString()));
             if (body.containsKey("niftyHurdleMinHeadroomAtr")) riskSettings.setNiftyHurdleMinHeadroomAtr(Double.parseDouble(body.get("niftyHurdleMinHeadroomAtr").toString()));
             if (body.containsKey("enableNifty5mHurdleFilter")) riskSettings.setEnableNifty5mHurdleFilter(Boolean.parseBoolean(body.get("enableNifty5mHurdleFilter").toString()));
+            if (body.containsKey("nifty5mHurdleMinHeadroomAtr")) riskSettings.setNifty5mHurdleMinHeadroomAtr(Double.parseDouble(body.get("nifty5mHurdleMinHeadroomAtr").toString()));
             if (body.containsKey("enableHtfSmaAlignment")) riskSettings.setEnableHtfSmaAlignment(Boolean.parseBoolean(body.get("enableHtfSmaAlignment").toString()));
             if (body.containsKey("enableHtfSmaAlignmentCheck")) riskSettings.setEnableHtfSmaAlignmentCheck(Boolean.parseBoolean(body.get("enableHtfSmaAlignmentCheck").toString()));
             if (body.containsKey("enableHtfCandleFilter")) riskSettings.setEnableHtfCandleFilter(Boolean.parseBoolean(body.get("enableHtfCandleFilter").toString()));

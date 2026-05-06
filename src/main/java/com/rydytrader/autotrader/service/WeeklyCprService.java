@@ -636,9 +636,9 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
      *       bypasses the LTF gate by design. Two paths:
      *     <ul>
      *       <li>Standard trade: LTF supports trade, HTF disagrees</li>
-     *       <li>Counter-trend family (8 setups: BUY_ABOVE_S1_PDL/S2/S3/S4 magnets+mean-rev,
-     *           SELL_BELOW_R1_PDH/R2/R3/R4 magnets+mean-rev): LTF gate bypassed; classified
-     *           as MPT regardless of LTF/HTF state.</li>
+     *       <li>Counter-trend family (10 setups: BUY_ABOVE_S1_PDL/S2/S3/S4 magnets+mean-rev,
+     *           SELL_BELOW_R1_PDH/R2/R3/R4 magnets+mean-rev, BUY_ABOVE_DH / SELL_BELOW_DL):
+     *           LTF gate bypassed; classified as MPT regardless of LTF/HTF state.</li>
      *     </ul>
      *   </li>
      *   <li><b>null</b> — non-magnet with LTF neutral or LTF opposing. Trade is rejected.</li>
@@ -653,18 +653,21 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
         boolean wBull = weekly != null && weekly.contains("BULLISH");
         boolean wBear = weekly != null && weekly.contains("BEARISH");
 
-        // Counter-trend family — magnets (S1+PDL / R1+PDH) plus deep mean-rev (S2/S3/S4 buys,
-        // R2/R3/R4 sells). All eight bypass the LTF gate by design and classify as MPT.
-        // Master-toggle gating happens upstream in BreakoutScanner; here we only assign tier.
+        // Counter-trend family — magnets (S1+PDL / R1+PDH), deep mean-rev (S2/S3/S4 buys,
+        // R2/R3/R4 sells), and day high/low breakouts (DH/DL). All ten bypass the LTF gate
+        // by design and classify as MPT. Master-toggle gating happens upstream in
+        // BreakoutScanner; here we only assign tier.
         boolean isCounterTrend = setup != null && (
                "BUY_ABOVE_S1_PDL".equals(setup)
             || "BUY_ABOVE_S2".equals(setup)
             || "BUY_ABOVE_S3".equals(setup)
             || "BUY_ABOVE_S4".equals(setup)
+            || "BUY_ABOVE_DH".equals(setup)
             || "SELL_BELOW_R1_PDH".equals(setup)
             || "SELL_BELOW_R2".equals(setup)
             || "SELL_BELOW_R3".equals(setup)
-            || "SELL_BELOW_R4".equals(setup));
+            || "SELL_BELOW_R4".equals(setup)
+            || "SELL_BELOW_DL".equals(setup));
 
         if (isCounterTrend) return "MPT";
 
