@@ -65,11 +65,13 @@ public class SettingsController {
         result.put("enableWeeklySmaTargetShift", riskSettings.isEnableWeeklySmaTargetShift());
         result.put("enableHtfHurdleFilter", riskSettings.isEnableHtfHurdleFilter());
         result.put("enableNiftyHtfHurdleFilter", riskSettings.isEnableNiftyHtfHurdleFilter());
+        result.put("niftyHurdleMinHeadroomAtr", riskSettings.getNiftyHurdleMinHeadroomAtr());
         result.put("enableNifty5mHurdleFilter", riskSettings.isEnableNifty5mHurdleFilter());
         result.put("enableHtfSmaAlignment", riskSettings.isEnableHtfSmaAlignment());
         result.put("enableHtfSmaAlignmentCheck", riskSettings.isEnableHtfSmaAlignmentCheck());
         result.put("enableHtfCandleFilter", riskSettings.isEnableHtfCandleFilter());
         result.put("enableNiftyHtfCandleFilter", riskSettings.isEnableNiftyHtfCandleFilter());
+        result.put("niftyHtfCandleMaxWickRatio", riskSettings.getNiftyHtfCandleMaxWickRatio());
         result.put("enableStructuralSl",    riskSettings.isEnableStructuralSl());
         result.put("structuralSlBufferAtr", riskSettings.getStructuralSlBufferAtr());
         result.put("singleLevelSlBufferAtr", riskSettings.getSingleLevelSlBufferAtr());
@@ -189,11 +191,13 @@ public class SettingsController {
             if (body.containsKey("enableWeeklySmaTargetShift")) riskSettings.setEnableWeeklySmaTargetShift(Boolean.parseBoolean(body.get("enableWeeklySmaTargetShift").toString()));
             if (body.containsKey("enableHtfHurdleFilter")) riskSettings.setEnableHtfHurdleFilter(Boolean.parseBoolean(body.get("enableHtfHurdleFilter").toString()));
             if (body.containsKey("enableNiftyHtfHurdleFilter")) riskSettings.setEnableNiftyHtfHurdleFilter(Boolean.parseBoolean(body.get("enableNiftyHtfHurdleFilter").toString()));
+            if (body.containsKey("niftyHurdleMinHeadroomAtr")) riskSettings.setNiftyHurdleMinHeadroomAtr(Double.parseDouble(body.get("niftyHurdleMinHeadroomAtr").toString()));
             if (body.containsKey("enableNifty5mHurdleFilter")) riskSettings.setEnableNifty5mHurdleFilter(Boolean.parseBoolean(body.get("enableNifty5mHurdleFilter").toString()));
             if (body.containsKey("enableHtfSmaAlignment")) riskSettings.setEnableHtfSmaAlignment(Boolean.parseBoolean(body.get("enableHtfSmaAlignment").toString()));
             if (body.containsKey("enableHtfSmaAlignmentCheck")) riskSettings.setEnableHtfSmaAlignmentCheck(Boolean.parseBoolean(body.get("enableHtfSmaAlignmentCheck").toString()));
             if (body.containsKey("enableHtfCandleFilter")) riskSettings.setEnableHtfCandleFilter(Boolean.parseBoolean(body.get("enableHtfCandleFilter").toString()));
             if (body.containsKey("enableNiftyHtfCandleFilter")) riskSettings.setEnableNiftyHtfCandleFilter(Boolean.parseBoolean(body.get("enableNiftyHtfCandleFilter").toString()));
+            if (body.containsKey("niftyHtfCandleMaxWickRatio")) riskSettings.setNiftyHtfCandleMaxWickRatio(Double.parseDouble(body.get("niftyHtfCandleMaxWickRatio").toString()));
             if (body.containsKey("enableStructuralSl")) riskSettings.setEnableStructuralSl(Boolean.parseBoolean(body.get("enableStructuralSl").toString()));
             if (body.containsKey("structuralSlBufferAtr")) riskSettings.setStructuralSlBufferAtr(Double.parseDouble(body.get("structuralSlBufferAtr").toString()));
             if (body.containsKey("singleLevelSlBufferAtr")) riskSettings.setSingleLevelSlBufferAtr(Double.parseDouble(body.get("singleLevelSlBufferAtr").toString()));

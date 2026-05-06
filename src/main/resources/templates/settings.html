@@ -580,10 +580,16 @@
                         <input type="checkbox" id="enableNiftyHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY's prior 1h close hasn't cleared its nearest hurdle (weekly levels + Max Call/Put OI)</span>
                     </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min headroom to next hurdle:</span>
+                        <input type="number" id="niftyHurdleMinHeadroomAtr" class="form-control" step="0.1" min="0" max="5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× NIFTY ATR (0 = off)</span>
+                    </div>
                     <div class="form-hint">Macro-level mirror of the per-stock HTF Hurdle, applied to NIFTY's own data. When on, identifies NIFTY's nearest hurdle in trade direction and rejects every stock signal while NIFTY's prior 1h close hasn't decisively cleared it.
                         <br>&nbsp;&nbsp;&bull; <b>Buys</b> &mdash; nearest of {weekly R1, PWH, weekly TC, weekly Pivot, weekly BC, <b>Max Call OI strike</b>} below NIFTY LTP
                         <br>&nbsp;&nbsp;&bull; <b>Sells</b> &mdash; nearest of {weekly S1, PWL, weekly TC, weekly Pivot, weekly BC, <b>Max Put OI strike</b>} above NIFTY LTP
-                        <br>The OI strikes are refreshed every 15 minutes from NIFTY's option chain (<i>Max Call OI</i> = intraday resistance from option writers; <i>Max Put OI</i> = intraday support). They join the candidate set only when loaded &mdash; before the first OI fetch the filter falls back to weekly-levels-only. While NIFTY's current 1h candle is still in progress and the prior close is on the wrong side, all stock signals are skipped &mdash; we wait for the next 1h close to commit. Signal Trail bucket: <code>NIFTY_HURDLE</code>.</div>
+                        <br>The OI strikes are refreshed every 15 minutes from NIFTY's option chain (<i>Max Call OI</i> = intraday resistance from option writers; <i>Max Put OI</i> = intraday support). They join the candidate set only when loaded &mdash; before the first OI fetch the filter falls back to weekly-levels-only. While NIFTY's current 1h candle is still in progress and the prior close is on the wrong side, all stock signals are skipped &mdash; we wait for the next 1h close to commit.
+                        <br><br><b>Headroom check.</b> Even after the past hurdle is cleared, the filter also checks the nearest hurdle in the <i>opposite</i> direction (above NIFTY LTP for buys / below for sells). If that upcoming hurdle is closer than <code>min headroom &times; NIFTY ATR</code>, the trade is rejected &mdash; tight overhead resistance (or floor support for sells) tends to cap the move. Default <b>1.0</b> &times; ATR. Set to 0 to disable just the headroom check (the "cleared past" check stays on). Signal Trail bucket: <code>NIFTY_HURDLE</code> (covers both reject paths).</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">NIFTY 5m Hurdle Filter</label>
@@ -591,7 +597,7 @@
                         <input type="checkbox" id="enableNifty5mHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY's prior 5m close hasn't cleared its nearest daily CPR hurdle</span>
                     </div>
-                    <div class="form-hint">5-min variant of the NIFTY HTF Hurdle, against NIFTY's <b>daily inner-zone</b> levels only. Identifies NIFTY's nearest hurdle in trade direction (<b>R1, PDH, daily TC, daily Pivot, daily BC</b> for buys; <b>S1, PDL, daily TC, daily Pivot, daily BC</b> for sells) and rejects every stock signal while NIFTY's <i>prior</i> 5m close hasn't decisively cleared it. Extended levels (R2/R3/R4 and S2/S3/S4) are excluded &mdash; far-out projections rarely matter for intraday 5-min flow. Guards against firing while NIFTY's current 5m bar is just now crossing a daily level &mdash; wait for the prior bar's close to confirm. Fail-open at session open (no prior 5m available). Signal Trail bucket: <code>NIFTY_5M_HURDLE</code>.</div>
+                    <div class="form-hint">5-min variant of the NIFTY HTF Hurdle, against NIFTY's full <b>daily CPR</b> level set. Identifies NIFTY's nearest hurdle in trade direction (<b>R1, PDH, R2, R3, R4, daily TC, daily Pivot, daily BC</b> for buys; <b>S1, PDL, S2, S3, S4, daily TC, daily Pivot, daily BC</b> for sells) and rejects every stock signal while NIFTY's <i>prior</i> 5m close hasn't decisively cleared it. Nearest-in-direction selection means only the most recently cleared level is checked &mdash; extended levels (R2/R3/R4 / S2/S3/S4) only come into play when NIFTY has already pushed past the inner zone. Guards against firing while NIFTY's current 5m bar is just now crossing a daily level &mdash; wait for the prior bar's close to confirm. Fail-open at session open (no prior 5m available). Signal Trail bucket: <code>NIFTY_5M_HURDLE</code>.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">NIFTY HTF Candle Direction Filter</label>
@@ -599,10 +605,19 @@
                         <input type="checkbox" id="enableNiftyHtfCandleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy needs NIFTY's in-progress 1h candle <b>green</b>; sell needs <b>red</b></span>
                     </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject as wick-rejection candle when wick &gt;</span>
+                        <input type="number" id="niftyHtfCandleMaxWickRatio" class="form-control" step="0.1" min="0" max="10" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× body (0 = off)</span>
+                    </div>
                     <div class="form-hint">Macro-level mirror of the per-stock HTF Candle Direction Filter, applied to NIFTY's own 1h bar. When on, every stock breakout must agree with NIFTY's currently-forming 60-min candle body:
                         <br>&nbsp;&nbsp;&bull; <b>Buy</b> &mdash; NIFTY 1h close &gt; NIFTY 1h open (green). Reject if NIFTY 1h is strictly red.
                         <br>&nbsp;&nbsp;&bull; <b>Sell</b> &mdash; NIFTY 1h close &lt; NIFTY 1h open (red). Reject if NIFTY 1h is strictly green.
-                        <br>Doji passes both. No in-progress NIFTY 1h bar yet (first ticks of a new 1h bucket) &rarr; fail-open. Signal Trail bucket: <code>NIFTY_HTF_CANDLE_OPPOSED</code>.</div>
+                        <br><br><b>Wick rejection check.</b> Even a correct-color candle is rejected if the directional wick is too long relative to the body — a "rejection candle" pattern:
+                        <br>&nbsp;&nbsp;&bull; <b>Buy on green 1h</b>: reject if upper wick (high &minus; close) &gt; ratio &times; body. Buyers couldn't hold the highs &mdash; selling pressure capped the move.
+                        <br>&nbsp;&nbsp;&bull; <b>Sell on red 1h</b>: reject if lower wick (close &minus; low) &gt; ratio &times; body. Sellers couldn't hold the lows &mdash; buying pressure floored the move.
+                        <br>Default ratio <b>2.0</b> &mdash; wick must be more than twice the body. Set to 0 to disable just the wick check; the color check stays on.
+                        <br>Doji bodies skip the wick ratio. No in-progress NIFTY 1h bar yet &rarr; fail-open. Signal Trail bucket: <code>NIFTY_HTF_CANDLE_OPPOSED</code>.</div>
                 </div>
             </div>
         </div>
@@ -1233,9 +1248,11 @@
             document.getElementById('targetToleranceAtr').value = (d.targetToleranceAtr != null ? d.targetToleranceAtr : 0.10);
             document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
             document.getElementById('enableNiftyHtfHurdleFilter').checked = d.enableNiftyHtfHurdleFilter === true;
+            document.getElementById('niftyHurdleMinHeadroomAtr').value = (d.niftyHurdleMinHeadroomAtr != null ? d.niftyHurdleMinHeadroomAtr : 1.0);
             document.getElementById('enableNifty5mHurdleFilter').checked = d.enableNifty5mHurdleFilter === true;
             document.getElementById('enableHtfCandleFilter').checked = d.enableHtfCandleFilter === true;
             document.getElementById('enableNiftyHtfCandleFilter').checked = d.enableNiftyHtfCandleFilter === true;
+            document.getElementById('niftyHtfCandleMaxWickRatio').value = (d.niftyHtfCandleMaxWickRatio != null ? d.niftyHtfCandleMaxWickRatio : 2.0);
             document.getElementById('enableSmallCandleFilter').checked = d.enableSmallCandleFilter === true;
             document.getElementById('smallCandleBodyAtrThreshold').value =
                 (d.smallCandleBodyAtrThreshold != null ? d.smallCandleBodyAtrThreshold : (d.smallCandleAtrThreshold != null ? d.smallCandleAtrThreshold : 0.5));
@@ -1400,9 +1417,11 @@
                 targetToleranceAtr: parseFloat(document.getElementById('targetToleranceAtr').value) || 0,
                 enableIndexAlignment: document.getElementById('enableIndexAlignment').checked,
                 enableNiftyHtfHurdleFilter: document.getElementById('enableNiftyHtfHurdleFilter').checked,
+                niftyHurdleMinHeadroomAtr: parseFloat(document.getElementById('niftyHurdleMinHeadroomAtr').value) || 0,
                 enableNifty5mHurdleFilter: document.getElementById('enableNifty5mHurdleFilter').checked,
                 enableHtfCandleFilter: document.getElementById('enableHtfCandleFilter').checked,
                 enableNiftyHtfCandleFilter: document.getElementById('enableNiftyHtfCandleFilter').checked,
+                niftyHtfCandleMaxWickRatio: parseFloat(document.getElementById('niftyHtfCandleMaxWickRatio').value) || 0,
                 enableSmallCandleFilter: document.getElementById('enableSmallCandleFilter').checked,
                 smallCandleBodyAtrThreshold: parseFloat(document.getElementById('smallCandleBodyAtrThreshold').value) || 0.5,
                 smallCandleMoveAtrThreshold: parseFloat(document.getElementById('smallCandleMoveAtrThreshold').value) || 0.15,

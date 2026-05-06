@@ -1131,7 +1131,46 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     + label + String.format("%.2f", priorHtfClose)
                     + ", level " + String.format("%.2f", chosenLevel);
             }
-            return null; // prior 1h close (or LTP fallback) has cleared the hurdle
+
+            // Headroom check — reject if the nearest hurdle in the OPPOSITE direction (above
+            // NIFTY LTP for buys, below for sells) is closer than minHeadroomAtr × NIFTY ATR.
+            // Guards against firing when an upcoming weekly level is right above NIFTY (likely
+            // to cap the move). Uses the same candidate set as the "cleared past" check.
+            double minHeadroomAtr = riskSettings.getNiftyHurdleMinHeadroomAtr();
+            if (minHeadroomAtr > 0 && atrService != null) {
+                double niftyAtr = atrService.getAtr(niftySym);
+                if (niftyAtr > 0) {
+                    double minHeadroomPts = minHeadroomAtr * niftyAtr;
+                    double upcomingLevel = 0;
+                    String upcomingName = null;
+                    for (int i = 0; i < candidateLevels.size(); i++) {
+                        double lv = candidateLevels.get(i);
+                        if (lv <= 0) continue;
+                        if (isBuy) {
+                            // For buys, upcoming hurdle = lowest level above LTP
+                            if (lv > niftyPrice && (upcomingName == null || lv < upcomingLevel)) {
+                                upcomingLevel = lv; upcomingName = candidateNames.get(i);
+                            }
+                        } else {
+                            // For sells, upcoming hurdle = highest level below LTP
+                            if (lv < niftyPrice && lv > upcomingLevel) {
+                                upcomingLevel = lv; upcomingName = candidateNames.get(i);
+                            }
+                        }
+                    }
+                    if (upcomingName != null) {
+                        double headroomPts = isBuy ? upcomingLevel - niftyPrice : niftyPrice - upcomingLevel;
+                        if (headroomPts < minHeadroomPts) {
+                            return "NIFTY hurdle ahead at " + upcomingName
+                                + " (" + String.format("%.2f", upcomingLevel) + "): only "
+                                + String.format("%.2f", headroomPts) + " pts headroom, need "
+                                + String.format("%.2f", minHeadroomPts)
+                                + " (" + minHeadroomAtr + " × NIFTY ATR " + String.format("%.2f", niftyAtr) + ")";
+                        }
+                    }
+                }
+            }
+            return null; // prior 1h close (or LTP fallback) has cleared the hurdle, headroom OK
         } catch (Exception e) {
             log.warn("[BreakoutScanner] NIFTY hurdle check failed: {}", e.getMessage());
             return null; // fail-open
@@ -1204,20 +1243,27 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         var cpr = bhavcopyService.getCprLevels("NIFTY50");
         if (cpr == null) return null; // daily CPR not loaded — fail-open
 
-        // Restricted to inner-zone hurdles only — extended levels (R2/R3/R4 and S2/S3/S4)
-        // are far-out projections and rarely come into play for NIFTY's intraday 5-min flow.
+        // Full daily-CPR candidate set: inner zone (BC/Pivot/TC) + R1/PDH (buy) or S1/PDL (sell)
+        // + extended levels R2/R3/R4 (buy) or S2/S3/S4 (sell). Nearest-in-direction logic still
+        // picks just one — the most recently cleared level — so adding far-out levels doesn't
+        // make the filter stricter; it only matters when NIFTY has already pushed past the inner
+        // zone and the relevant hurdle is now an extended level.
         double[] candidates;
         String[] names;
         if (isBuy) {
             candidates = new double[]{ cpr.getBc(), cpr.getPivot(), cpr.getTc(),
-                                       cpr.getR1(), cpr.getPh() };
+                                       cpr.getR1(), cpr.getPh(),
+                                       cpr.getR2(), cpr.getR3(), cpr.getR4() };
             names      = new String[]{ "daily BC", "daily Pivot", "daily TC",
-                                       "R1", "PDH" };
+                                       "R1", "PDH",
+                                       "R2", "R3", "R4" };
         } else {
             candidates = new double[]{ cpr.getTc(), cpr.getPivot(), cpr.getBc(),
-                                       cpr.getS1(), cpr.getPl() };
+                                       cpr.getS1(), cpr.getPl(),
+                                       cpr.getS2(), cpr.getS3(), cpr.getS4() };
             names      = new String[]{ "daily TC", "daily Pivot", "daily BC",
-                                       "S1", "PDL" };
+                                       "S1", "PDL",
+                                       "S2", "S3", "S4" };
         }
 
         // Nearest hurdle in trade direction: highest below LTP for buys, lowest above for sells.
@@ -1265,7 +1311,14 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      * Macro-level mirror of {@link #checkHtfCandleColor}: requires NIFTY's currently-forming
      * 1h candle body to agree with the trade direction. Buys reject when NIFTY's 1h bar is
      * strictly red; sells reject when NIFTY's 1h bar is strictly green. Doji passes both.
-     * Fail-open if NIFTY's in-progress 1h bar isn't available yet.
+     *
+     * <p>Also flags <b>rejection candles</b> — even a correct-color candle is rejected when
+     * its directional wick exceeds <code>niftyHtfCandleMaxWickRatio</code> &times; body. For
+     * a buy, a long upper wick on a green 1h bar means buyers couldn't hold the highs (selling
+     * into strength) — bad context for a stock breakout. Mirror for sells (long lower wick on
+     * a red bar = bottom rejection). Doji bodies skip the wick ratio check.
+     *
+     * <p>Fail-open if NIFTY's in-progress 1h bar isn't available yet.
      */
     private String checkNiftyHtfCandleColor(boolean isBuy) {
         if (!riskSettings.isEnableNiftyHtfCandleFilter()) return null;
@@ -1273,6 +1326,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         CandleAggregator.CandleBar bar = marketDataService.getInProgressHtfCandle(IndexTrendService.NIFTY_SYMBOL);
         if (bar == null || bar.open <= 0 || bar.close <= 0) return null; // fail-open
 
+        // 1) Body color check.
         if (isBuy && bar.close < bar.open) {
             return "NIFTY 1h candle red — buy requires green: NIFTY 1h open="
                 + String.format("%.2f", bar.open) + ", close=" + String.format("%.2f", bar.close);
@@ -1280,6 +1334,32 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (!isBuy && bar.close > bar.open) {
             return "NIFTY 1h candle green — sell requires red: NIFTY 1h open="
                 + String.format("%.2f", bar.open) + ", close=" + String.format("%.2f", bar.close);
+        }
+
+        // 2) Wick rejection check. For a green/buy candle, the upper wick (high - close) is the
+        // concerning side — selling pressure capped the move. For a red/sell candle, the lower
+        // wick (close - low) is concerning — buying pressure floored the move.
+        double maxWickRatio = riskSettings.getNiftyHtfCandleMaxWickRatio();
+        if (maxWickRatio > 0 && bar.high > 0 && bar.low > 0) {
+            double body, wick;
+            String wickName;
+            if (isBuy) {
+                body = bar.close - bar.open;          // green body
+                wick = bar.high - bar.close;          // upper wick
+                wickName = "upper";
+            } else {
+                body = bar.open - bar.close;          // red body
+                wick = bar.close - bar.low;           // lower wick
+                wickName = "lower";
+            }
+            if (body > 0 && wick > maxWickRatio * body) {
+                return "NIFTY 1h " + wickName + " wick rejection: wick="
+                    + String.format("%.2f", wick) + " > " + maxWickRatio + " × body="
+                    + String.format("%.2f", body) + " (open=" + String.format("%.2f", bar.open)
+                    + ", high=" + String.format("%.2f", bar.high)
+                    + ", low=" + String.format("%.2f", bar.low)
+                    + ", close=" + String.format("%.2f", bar.close) + ")";
+            }
         }
         return null;
     }

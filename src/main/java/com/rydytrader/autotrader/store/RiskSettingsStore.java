@@ -60,6 +60,11 @@ public class RiskSettingsStore {
         // weekly TC/Pivot/BC for buys; S1/PWL/... for sells). Mirrors per-stock HTF Hurdle
         // applied to NIFTY's own data. Default off — opt-in.
         volatile boolean enableNiftyHtfHurdleFilter = false;
+        // Headroom check for the NIFTY HTF Hurdle filter. When > 0, trades are also rejected if
+        // the nearest hurdle in the OPPOSITE direction (above NIFTY LTP for buys / below for
+        // sells) is closer than this many NIFTY ATRs. Guards against firing when an upcoming
+        // weekly level is right above NIFTY (likely to cap the move). 0 = headroom check off.
+        volatile double niftyHurdleMinHeadroomAtr = 1.0;
         // 5-min variant of the NIFTY HTF Hurdle filter, against NIFTY's *daily* CPR levels.
         // When on, every stock breakout requires NIFTY's prior 5-min close to have cleared
         // its nearest daily-CPR hurdle in trade direction (R1/R2/R3/R4 + daily TC/Pivot/BC for
@@ -76,6 +81,12 @@ public class RiskSettingsStore {
         // sells need NIFTY 1h red. Doji passes both. Fail-open if NIFTY's in-progress 1h bar
         // isn't available yet. Default off.
         volatile boolean enableNiftyHtfCandleFilter = false;
+        // Wick-rejection check for the NIFTY HTF Candle filter. When > 0, even a correct-color
+        // candle is rejected if its wick (upper for green/buy, lower for red/sell) is larger
+        // than this multiple of the body. Catches "rejection candles" — a green 1h with a
+        // long upper wick means buyers couldn't hold the highs (selling pressure capping the
+        // move). Default 2.0 — wick must exceed 2× body to flag rejection. 0 = wick check off.
+        volatile double niftyHtfCandleMaxWickRatio = 2.0;
         // Structural SL — opt-in, anchors SL to the S/R level the trade is testing (per setup family)
         // When on, we compute both structural and default SL and pick the TIGHTER one.
         volatile boolean enableStructuralSl = false;   // when false, always use close ± atrMultiplier × ATR
@@ -287,11 +298,13 @@ public class RiskSettingsStore {
     public boolean isEnableWeeklySmaTargetShift()   { return cfg().enableWeeklySmaTargetShift; }
     public boolean isEnableHtfHurdleFilter()    { return cfg().enableHtfHurdleFilter; }
     public boolean isEnableNiftyHtfHurdleFilter() { return cfg().enableNiftyHtfHurdleFilter; }
+    public double  getNiftyHurdleMinHeadroomAtr() { return cfg().niftyHurdleMinHeadroomAtr; }
     public boolean isEnableNifty5mHurdleFilter()  { return cfg().enableNifty5mHurdleFilter; }
     public boolean isEnableHtfSmaAlignment()    { return cfg().enableHtfSmaAlignment; }
     public boolean isEnableHtfSmaAlignmentCheck() { return cfg().enableHtfSmaAlignmentCheck; }
     public boolean isEnableHtfCandleFilter()      { return cfg().enableHtfCandleFilter; }
     public boolean isEnableNiftyHtfCandleFilter() { return cfg().enableNiftyHtfCandleFilter; }
+    public double  getNiftyHtfCandleMaxWickRatio() { return cfg().niftyHtfCandleMaxWickRatio; }
     public boolean isEnableStructuralSl()    { return cfg().enableStructuralSl; }
     public double  getStructuralSlBufferAtr(){ return cfg().structuralSlBufferAtr; }
     public double  getSingleLevelSlBufferAtr(){ return cfg().singleLevelSlBufferAtr; }
@@ -445,11 +458,13 @@ public class RiskSettingsStore {
     public void setEnableWeeklySmaTargetShift(boolean v)   { cfg().enableWeeklySmaTargetShift = v; }
     public void setEnableHtfHurdleFilter(boolean v)    { cfg().enableHtfHurdleFilter = v; }
     public void setEnableNiftyHtfHurdleFilter(boolean v) { cfg().enableNiftyHtfHurdleFilter = v; }
+    public void setNiftyHurdleMinHeadroomAtr(double v)   { cfg().niftyHurdleMinHeadroomAtr = Math.max(0, v); }
     public void setEnableNifty5mHurdleFilter(boolean v)  { cfg().enableNifty5mHurdleFilter = v; }
     public void setEnableHtfSmaAlignment(boolean v)    { cfg().enableHtfSmaAlignment = v; }
     public void setEnableHtfSmaAlignmentCheck(boolean v) { cfg().enableHtfSmaAlignmentCheck = v; }
     public void setEnableHtfCandleFilter(boolean v)      { cfg().enableHtfCandleFilter = v; }
     public void setEnableNiftyHtfCandleFilter(boolean v) { cfg().enableNiftyHtfCandleFilter = v; }
+    public void setNiftyHtfCandleMaxWickRatio(double v)  { cfg().niftyHtfCandleMaxWickRatio = Math.max(0, v); }
     public void setEnableStructuralSl(boolean v)    { cfg().enableStructuralSl = v; }
     public void setStructuralSlBufferAtr(double v)  { cfg().structuralSlBufferAtr = v; }
     public void setSingleLevelSlBufferAtr(double v) { cfg().singleLevelSlBufferAtr = v; }
@@ -596,11 +611,13 @@ public class RiskSettingsStore {
             upsert("enableWeeklySmaTargetShift", String.valueOf(c.enableWeeklySmaTargetShift));
             upsert("enableHtfHurdleFilter", String.valueOf(c.enableHtfHurdleFilter));
             upsert("enableNiftyHtfHurdleFilter", String.valueOf(c.enableNiftyHtfHurdleFilter));
+            upsert("niftyHurdleMinHeadroomAtr", String.valueOf(c.niftyHurdleMinHeadroomAtr));
             upsert("enableNifty5mHurdleFilter", String.valueOf(c.enableNifty5mHurdleFilter));
             upsert("enableHtfSmaAlignment", String.valueOf(c.enableHtfSmaAlignment));
             upsert("enableHtfSmaAlignmentCheck", String.valueOf(c.enableHtfSmaAlignmentCheck));
             upsert("enableHtfCandleFilter", String.valueOf(c.enableHtfCandleFilter));
             upsert("enableNiftyHtfCandleFilter", String.valueOf(c.enableNiftyHtfCandleFilter));
+            upsert("niftyHtfCandleMaxWickRatio", String.valueOf(c.niftyHtfCandleMaxWickRatio));
             upsert("enableStructuralSl", String.valueOf(c.enableStructuralSl));
             upsert("structuralSlBufferAtr", String.valueOf(c.structuralSlBufferAtr));
             upsert("singleLevelSlBufferAtr", String.valueOf(c.singleLevelSlBufferAtr));
@@ -739,11 +756,13 @@ public class RiskSettingsStore {
                     case "enableWeeklyEmaTargetShift", "enableWeeklySmaTargetShift" -> c.enableWeeklySmaTargetShift = Boolean.parseBoolean(v);
                     case "enableHtfHurdleFilter" -> c.enableHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "enableNiftyHtfHurdleFilter" -> c.enableNiftyHtfHurdleFilter = Boolean.parseBoolean(v);
+                    case "niftyHurdleMinHeadroomAtr" -> c.niftyHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
                     case "enableNifty5mHurdleFilter" -> c.enableNifty5mHurdleFilter = Boolean.parseBoolean(v);
                     case "enableHtfSmaAlignment" -> c.enableHtfSmaAlignment = Boolean.parseBoolean(v);
                     case "enableHtfSmaAlignmentCheck" -> c.enableHtfSmaAlignmentCheck = Boolean.parseBoolean(v);
                     case "enableHtfCandleFilter" -> c.enableHtfCandleFilter = Boolean.parseBoolean(v);
                     case "enableNiftyHtfCandleFilter" -> c.enableNiftyHtfCandleFilter = Boolean.parseBoolean(v);
+                    case "niftyHtfCandleMaxWickRatio" -> c.niftyHtfCandleMaxWickRatio = Math.max(0, Double.parseDouble(v));
                     case "enableStructuralSl"    -> c.enableStructuralSl = Boolean.parseBoolean(v);
                     case "structuralSlBufferAtr" -> c.structuralSlBufferAtr = Double.parseDouble(v);
                     case "singleLevelSlBufferAtr" -> c.singleLevelSlBufferAtr = Double.parseDouble(v);

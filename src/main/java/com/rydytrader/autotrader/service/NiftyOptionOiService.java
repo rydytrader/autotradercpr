@@ -39,13 +39,20 @@ public class NiftyOptionOiService {
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final DateTimeFormatter HHMMSS = DateTimeFormatter.ofPattern("HH:mm:ss");
 
-    private static final int STRIKE_COUNT = 30; // ±30 strikes around ATM
+    private static final int STRIKE_COUNT = 30; // ±30 strikes around ATM (request size — Fyers returns this many)
+    // Window of strikes considered for max-OI selection. Restricting to strikes near current
+    // NIFTY LTP avoids picking up stale far-OTM positions that don't act as intraday hurdles.
+    private static final int OI_WINDOW_STRIKES = 10;       // ±10 strikes from ATM
+    private static final double NIFTY_STRIKE_SPACING = 50; // NIFTY weekly options are 50 pts apart
 
     private final FyersClientRouter fyersClient;
     private final FyersProperties fyersProperties;
     private final TokenStore tokenStore;
     private final EventService eventService;
     private final MarketHolidayService marketHolidayService;
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private MarketDataService marketDataService;
 
     private volatile double maxCallOiStrike = 0;
     private volatile long   maxCallOi       = 0;
@@ -136,9 +143,24 @@ public class NiftyOptionOiService {
                 return;
             }
 
+            // Restrict the max-OI search to a window of strikes near current NIFTY LTP. Far-OTM
+            // strikes can carry heavy stale OI from previous price levels (e.g. 23000-strike puts
+            // accumulated when NIFTY was at 23800 last week) and don't act as intraday support /
+            // resistance once price has moved. Only strikes within ±OI_WINDOW_STRIKES (=10 strikes
+            // = 500 pts at 50-pt spacing) of the ATM strike are considered.
+            double niftyLtp = marketDataService != null ? marketDataService.getLtp(IndexTrendService.NIFTY_SYMBOL) : 0;
+            double windowMin = 0, windowMax = Double.MAX_VALUE;
+            boolean windowed = false;
+            if (niftyLtp > 0) {
+                double atmStrike = Math.round(niftyLtp / NIFTY_STRIKE_SPACING) * NIFTY_STRIKE_SPACING;
+                windowMin = atmStrike - OI_WINDOW_STRIKES * NIFTY_STRIKE_SPACING;
+                windowMax = atmStrike + OI_WINDOW_STRIKES * NIFTY_STRIKE_SPACING;
+                windowed = true;
+            }
+
             double bestCallStrike = 0; long bestCallOi = 0;
             double bestPutStrike  = 0; long bestPutOi  = 0;
-            int ceSeen = 0, peSeen = 0, skipped = 0;
+            int ceSeen = 0, peSeen = 0, skipped = 0, outsideWindow = 0;
 
             for (JsonNode row : chain) {
                 String type = row.path("option_type").asText("");
@@ -148,6 +170,9 @@ public class NiftyOptionOiService {
                 long oi = row.path("oi").asLong(0);
                 if (oi <= 0) oi = row.path("openInterest").asLong(0);
                 if (strike <= 0 || oi <= 0) { skipped++; continue; }
+
+                // Window filter — only CE/PE rows; the window is computed from current LTP.
+                if (windowed && (strike < windowMin || strike > windowMax)) { outsideWindow++; continue; }
 
                 if ("CE".equalsIgnoreCase(type)) {
                     ceSeen++;
@@ -174,8 +199,10 @@ public class NiftyOptionOiService {
             this.maxPutOi        = bestPutOi;
             this.lastUpdated     = Instant.now();
 
-            log.info("[NiftyOI] maxCall={} ({}) maxPut={} ({})",
-                bestCallStrike, bestCallOi, bestPutStrike, bestPutOi);
+            log.info("[NiftyOI] maxCall={} ({}) maxPut={} ({}) — window {}{}",
+                bestCallStrike, bestCallOi, bestPutStrike, bestPutOi,
+                windowed ? "[" + (long) windowMin + "—" + (long) windowMax + "]" : "all strikes (no LTP)",
+                outsideWindow > 0 ? ", " + outsideWindow + " strikes filtered" : "");
             if (!firstSuccessLogged) {
                 eventService.log("[INFO] NIFTY OI loaded: maxCall=" + (long) bestCallStrike
                     + " maxPut=" + (long) bestPutStrike);
