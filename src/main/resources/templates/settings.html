@@ -387,19 +387,6 @@
                     </div>
                     <div class="form-hint">Set to 0 to disable. Gap days (R2/S2) are handled by Opening Range filter.</div>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Probability Qty Factors</label>
-                    <div style="display:flex; flex-direction:column; gap:8px; margin-top:4px;">
-                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-muted);">
-                            HPT Qty × 1.0 (full)
-                        </label>
-                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
-                            MPT Qty ×
-                            <input type="number" id="mptQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        </label>
-                    </div>
-                    <div class="form-hint">Under the LTF-priority probability model: <b>HPT</b> = LTF and HTF both align (full size). <b>MPT</b> = only one of LTF or HTF aligns (medium size — default 0.75). Trades that fail any HTF Hurdle / NIFTY filter are <b>rejected</b>, not downgraded to LPT.</div>
-                </div>
             </div>
         </div>
     </div>
@@ -1316,7 +1303,6 @@
             document.getElementById('smallRangeAdrPct').value = d.smallRangeAdrPct != null ? d.smallRangeAdrPct : 50.0;
             document.getElementById('scanIncludeIS').checked = d.scanIncludeIS !== false;
             document.getElementById('scanIncludeIL').checked = d.scanIncludeIL === true;
-            document.getElementById('mptQtyFactor').value = d.mptQtyFactor != null ? d.mptQtyFactor : 0.75;
             document.getElementById('minAbsoluteProfit').value = d.minAbsoluteProfit != null ? d.minAbsoluteProfit : 500;
             document.getElementById('skipR3S3IvOvDays').checked = d.skipR3S3IvOvDays !== false;
             document.getElementById('skipR3S3EvDays').checked   = d.skipR3S3EvDays   !== false;
@@ -1479,7 +1465,6 @@
                 smallRangeAdrPct: parseFloat(document.getElementById('smallRangeAdrPct').value) || 50.0,
                 scanIncludeIS: document.getElementById('scanIncludeIS').checked,
                 scanIncludeIL: document.getElementById('scanIncludeIL').checked,
-                mptQtyFactor: parseFloat(document.getElementById('mptQtyFactor').value) || 0.75,
                 minAbsoluteProfit: parseFloat(document.getElementById('minAbsoluteProfit').value) || 500,
                 skipR3S3IvOvDays: document.getElementById('skipR3S3IvOvDays').checked,
                 skipR3S3EvDays:   document.getElementById('skipR3S3EvDays').checked,
