@@ -628,34 +628,27 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
     }
 
     /**
-     * LTF-priority probability classification with new MPT tier (scalping mode).
+     * Probability classifier — simplified to a single HPT tier. Returns:
      * <ul>
-     *   <li><b>HPT</b> — LTF (5-min close vs daily CPR) and HTF (weekly state) both align with
-     *       the trade direction. Full size.</li>
-     *   <li><b>MPT</b> — only one of LTF or HTF aligns, or it's a counter-trend setup that
-     *       bypasses the LTF gate by design. Two paths:
-     *     <ul>
-     *       <li>Standard trade: LTF supports trade, HTF disagrees</li>
-     *       <li>Counter-trend family (10 setups: BUY_ABOVE_S1_PDL/S2/S3/S4 magnets+mean-rev,
-     *           SELL_BELOW_R1_PDH/R2/R3/R4 magnets+mean-rev, BUY_ABOVE_DH / SELL_BELOW_DL):
-     *           LTF gate bypassed; classified as MPT regardless of LTF/HTF state.</li>
-     *     </ul>
-     *   </li>
-     *   <li><b>null</b> — non-magnet with LTF neutral or LTF opposing. Trade is rejected.</li>
+     *   <li><b>HPT</b> — for any standard breakout that passes the LTF gate (5-min close on the
+     *       right side of daily CPR), AND for all counter-trend setups (which bypass the LTF
+     *       gate by design).</li>
+     *   <li><b>null</b> — for standard breakouts whose 5-min close is on the wrong side of
+     *       daily CPR. Caller rejects with bucket {@code LTF_OPPOSED}.</li>
      * </ul>
-     * LPT is no longer assigned at initial classification.
+     *
+     * <p>The weekly trend check that previously downgraded HPT → MPT has been removed.
+     * Counter-trend family also classifies as HPT now (was always-MPT). The {@code MPT} tier
+     * is no longer produced by this classifier — its toggles and qty factor remain in place
+     * for backward compatibility but no firing trade matches the MPT bucket.
      *
      * @param breakoutClose the 5-min breakout candle's close (used for LTF position vs daily CPR)
-     * @return "HPT" / "MPT" / null (rejected)
+     * @return "HPT" / null (rejected)
      */
     public String getProbabilityForDirection(String symbol, boolean isBuy, String setup, double breakoutClose) {
-        String weekly = getWeeklyTrend(symbol);
-        boolean wBull = weekly != null && weekly.contains("BULLISH");
-        boolean wBear = weekly != null && weekly.contains("BEARISH");
-
         // Counter-trend family — magnets (S1+PDL / R1+PDH), deep mean-rev (S2/S3/S4 buys,
         // R2/R3/R4 sells), and day high/low breakouts (DH/DL). All ten bypass the LTF gate
-        // by design and classify as MPT. Master-toggle gating happens upstream in
+        // by design and classify as HPT. Master-toggle gating happens upstream in
         // BreakoutScanner; here we only assign tier.
         boolean isCounterTrend = setup != null && (
                "BUY_ABOVE_S1_PDL".equals(setup)
@@ -669,7 +662,7 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
             || "SELL_BELOW_R4".equals(setup)
             || "SELL_BELOW_DL".equals(setup));
 
-        if (isCounterTrend) return "MPT";
+        if (isCounterTrend) return "HPT";
 
         // Standard trade: LTF must support the trade direction.
         com.rydytrader.autotrader.dto.CprLevels cpr = bhavcopyService.getCprLevels(extractTicker(symbol));
@@ -679,13 +672,8 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
         boolean ltfBull = breakoutClose > cprTop;
         boolean ltfBear = breakoutClose < cprBot;
 
-        if (isBuy) {
-            if (!ltfBull) return null;
-            return wBull ? "HPT" : "MPT";
-        } else {
-            if (!ltfBear) return null;
-            return wBear ? "HPT" : "MPT";
-        }
+        if (isBuy)  return ltfBull ? "HPT" : null;
+        else        return ltfBear ? "HPT" : null;
     }
 
     /** Legacy 2-arg overload — falls back to live LTP for the LTF check (best-effort).

@@ -167,6 +167,12 @@ public class RiskSettingsStore {
         // SHORT: close > SMA 20), squareoff the position before SL hits. Independent of the
         // SMA-cross exit above; both can be enabled together. Default off — material behavior change.
         volatile boolean enablePriceSmaExit = false;
+        // NIFTY reversal-CPR-touch defensive exit. When NIFTY is in BULLISH_REVERSAL (NIFTY
+        // below CPR + bullish SMAs) and price climbs back to/past CPR bottom, exit all open
+        // LONG positions — the bullish move played out, NIFTY entering CPR consolidation. Mirror
+        // for BEARISH_REVERSAL: NIFTY above CPR drops to/below CPR top → exit all SHORT positions.
+        // Default off.
+        volatile boolean enableNiftyReversalCprExit = false;
         // Per-symbol daily trade limit. When >0, halts further trades on a symbol once today's
         // count of wins OR today's count of losses (separately, NOT total) reaches the threshold.
         // E.g. limit=2: 2W+0L → stop, 0W+2L → stop, 1W+1L → continue, 2W+1L → stop.
@@ -343,6 +349,7 @@ public class RiskSettingsStore {
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
     public boolean isEnableSmaCrossExit() { return cfg().enableSmaCrossExit; }
     public boolean isEnablePriceSmaExit() { return cfg().enablePriceSmaExit; }
+    public boolean isEnableNiftyReversalCprExit() { return cfg().enableNiftyReversalCprExit; }
     public int getPerSymbolDailyTradeLimit() { return cfg().perSymbolDailyTradeLimit; }
     public double getFibStage1TriggerPct() { return cfg().fibStage1TriggerPct; }
     public double getFibStage1SlAtrMult()  { return cfg().fibStage1SlAtrMult; }
@@ -497,6 +504,7 @@ public class RiskSettingsStore {
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
     public void setEnableSmaCrossExit(boolean v) { cfg().enableSmaCrossExit = v; }
     public void setEnablePriceSmaExit(boolean v) { cfg().enablePriceSmaExit = v; }
+    public void setEnableNiftyReversalCprExit(boolean v) { cfg().enableNiftyReversalCprExit = v; }
     public void setPerSymbolDailyTradeLimit(int v) { cfg().perSymbolDailyTradeLimit = Math.max(0, v); }
     public void setFibStage1TriggerPct(double v) { cfg().fibStage1TriggerPct = v; }
     public void setFibStage1SlAtrMult(double v)  { cfg().fibStage1SlAtrMult = v; }
@@ -666,6 +674,7 @@ public class RiskSettingsStore {
             upsert("enableTrailingSl", String.valueOf(c.enableTrailingSl));
             upsert("enableSmaCrossExit", String.valueOf(c.enableSmaCrossExit));
             upsert("enablePriceSmaExit", String.valueOf(c.enablePriceSmaExit));
+            upsert("enableNiftyReversalCprExit", String.valueOf(c.enableNiftyReversalCprExit));
             upsert("perSymbolDailyTradeLimit", String.valueOf(c.perSymbolDailyTradeLimit));
             upsert("fibStage1TriggerPct", String.valueOf(c.fibStage1TriggerPct));
             upsert("fibStage1SlAtrMult",  String.valueOf(c.fibStage1SlAtrMult));
@@ -822,6 +831,7 @@ public class RiskSettingsStore {
                     case "enableTrailingSl"   -> c.enableTrailingSl = Boolean.parseBoolean(v);
                     case "enableSmaCrossExit" -> c.enableSmaCrossExit = Boolean.parseBoolean(v);
                     case "enablePriceSmaExit" -> c.enablePriceSmaExit = Boolean.parseBoolean(v);
+                    case "enableNiftyReversalCprExit" -> c.enableNiftyReversalCprExit = Boolean.parseBoolean(v);
                     case "perSymbolDailyTradeLimit" -> c.perSymbolDailyTradeLimit = Math.max(0, Integer.parseInt(v));
                     case "fibStage1TriggerPct" -> c.fibStage1TriggerPct = Double.parseDouble(v);
                     case "fibStage1SlAtrMult"  -> c.fibStage1SlAtrMult  = Double.parseDouble(v);

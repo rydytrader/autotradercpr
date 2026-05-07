@@ -112,6 +112,7 @@ public class SettingsController {
         result.put("enableTrailingSl", riskSettings.isEnableTrailingSl(effectiveMode));
         result.put("enableSmaCrossExit", riskSettings.isEnableSmaCrossExit());
         result.put("enablePriceSmaExit", riskSettings.isEnablePriceSmaExit());
+        result.put("enableNiftyReversalCprExit", riskSettings.isEnableNiftyReversalCprExit());
         result.put("perSymbolDailyTradeLimit", riskSettings.getPerSymbolDailyTradeLimit());
         result.put("fibStage1TriggerPct", riskSettings.getFibStage1TriggerPct());
         result.put("fibStage1SlAtrMult",  riskSettings.getFibStage1SlAtrMult());
@@ -239,6 +240,7 @@ public class SettingsController {
             if (body.containsKey("enableTrailingSl")) riskSettings.setEnableTrailingSl(effectiveMode, Boolean.parseBoolean(body.get("enableTrailingSl").toString()));
             if (body.containsKey("enableSmaCrossExit")) riskSettings.setEnableSmaCrossExit(Boolean.parseBoolean(body.get("enableSmaCrossExit").toString()));
             if (body.containsKey("enablePriceSmaExit")) riskSettings.setEnablePriceSmaExit(Boolean.parseBoolean(body.get("enablePriceSmaExit").toString()));
+            if (body.containsKey("enableNiftyReversalCprExit")) riskSettings.setEnableNiftyReversalCprExit(Boolean.parseBoolean(body.get("enableNiftyReversalCprExit").toString()));
             if (body.containsKey("perSymbolDailyTradeLimit")) {
                 try {
                     riskSettings.setPerSymbolDailyTradeLimit(Integer.parseInt(body.get("perSymbolDailyTradeLimit").toString()));

@@ -12,8 +12,8 @@ import org.springframework.stereotype.Service;
 import java.util.Map;
 
 /**
- * Defensive SMA-based exits — two independent checks, each toggled separately. All run on
- * every 5-min candle close, after SmaService has populated {@code candle.sma20} / {@code sma50}.
+ * Defensive exits — three independent checks, each toggled separately. All run on every 5-min
+ * candle close after SmaService has populated {@code candle.sma20} / {@code sma50}.
  *
  * <ol>
  *   <li><b>Stock SMA-cross exit</b> ({@link RiskSettingsStore#isEnableSmaCrossExit()}, default off):
@@ -22,14 +22,21 @@ import java.util.Map;
  *   <li><b>Stock price-vs-SMA exit</b> ({@link RiskSettingsStore#isEnablePriceSmaExit()}, default off):
  *       Stock's just-closed candle on the wrong side of its 5-min SMA 50 → exit.
  *       LONG: close &lt; SMA 50. SHORT: close &gt; SMA 50.</li>
+ *   <li><b>NIFTY reversal CPR-touch exit</b>
+ *       ({@link RiskSettingsStore#isEnableNiftyReversalCprExit()}, default off):
+ *       When NIFTY is in BULLISH_REVERSAL (NIFTY below CPR + bullish SMAs), the bullish move
+ *       has played out once NIFTY climbs back to/past the CPR bottom — exit all open LONG
+ *       positions before NIFTY consolidates inside CPR. Mirror for BEARISH_REVERSAL: NIFTY
+ *       above CPR drops to/below CPR top → exit all SHORT positions.</li>
  * </ol>
  *
  * <p>Stateless evaluation — no "did a cross just happen this bar" tracking. At every boundary
  * each enabled check simply asks "is the trade currently structurally wrong?". If yes -> exit.
  *
- * <p>SMA values come from {@link CandleAggregator.CandleBar#sma20} / {@code sma50}
+ * <p>Stock-side SMA values come from {@link CandleAggregator.CandleBar#sma20} / {@code sma50}
  * (post-close completed-only snapshots stamped by SmaService.onCandleClose before this listener
- * fires).
+ * fires). NIFTY state + CPR levels come from {@link IndexTrendService#getStickyState()} and
+ * {@link BhavcopyService#getCprLevels(String) bhavcopyService.getCprLevels("NIFTY50")}.
  *
  * <p>Checks run in order — first match wins. If multiple fire on the same bar, only the
  * first-evaluated reason is recorded.
@@ -43,6 +50,9 @@ public class SmaCrossExitService implements CandleAggregator.CandleCloseListener
     private final PositionStateStore positionStateStore;
     private final EventService eventService;
     private final PollingService pollingService;
+    @Autowired @Lazy private MarketDataService marketDataService;
+    @Autowired @Lazy private BhavcopyService bhavcopyService;
+    @Autowired @Lazy private IndexTrendService indexTrendService;
 
     public SmaCrossExitService(RiskSettingsStore riskSettings,
                                PositionStateStore positionStateStore,
@@ -94,6 +104,40 @@ public class SmaCrossExitService implements CandleAggregator.CandleCloseListener
                     + position + " position, close=" + String.format("%.2f", close)
                     + " " + (exitLong ? "<" : ">") + " 5m SMA 50=" + String.format("%.2f", sma50));
                 pollingService.squareOff(fyersSymbol, qty, "PRICE_SMA_EXIT");
+                return;
+            }
+        }
+
+        // ── 3. NIFTY reversal CPR-touch exit ──
+        // BULLISH_REVERSAL: NIFTY currently below CPR (cprBullish=false) but SMAs bullish.
+        // We took LONG positions expecting NIFTY to keep rallying. If NIFTY climbs back to /
+        // past the CPR bottom, the bullish move has played out — exit before NIFTY consolidates.
+        // Mirror for BEARISH_REVERSAL.
+        if (riskSettings.isEnableNiftyReversalCprExit()
+            && indexTrendService != null && bhavcopyService != null && marketDataService != null) {
+            String niftyState = indexTrendService.getStickyState();
+            boolean inBullishReversal = "BULLISH_REVERSAL".equals(niftyState);
+            boolean inBearishReversal = "BEARISH_REVERSAL".equals(niftyState);
+            if (inBullishReversal || inBearishReversal) {
+                var cpr = bhavcopyService.getCprLevels("NIFTY50");
+                double niftyLtp = marketDataService.getLtp(IndexTrendService.NIFTY_SYMBOL);
+                if (cpr != null && niftyLtp > 0 && cpr.getTc() > 0 && cpr.getBc() > 0) {
+                    double cprTop = Math.max(cpr.getTc(), cpr.getBc());
+                    double cprBot = Math.min(cpr.getTc(), cpr.getBc());
+                    boolean exitLong  = inBullishReversal && "LONG".equals(position)  && niftyLtp >= cprBot;
+                    boolean exitShort = inBearishReversal && "SHORT".equals(position) && niftyLtp <= cprTop;
+                    if (exitLong || exitShort) {
+                        int qty = readQty(fyersSymbol);
+                        if (qty <= 0) return;
+                        double touchedLevel = exitLong ? cprBot : cprTop;
+                        String levelName = exitLong ? "CPR bottom" : "CPR top";
+                        eventService.log("[INFO] " + fyersSymbol + " NIFTY reversal-CPR exit triggered — "
+                            + position + " position, NIFTY " + niftyState + " touched " + levelName
+                            + " (NIFTY=" + String.format("%.2f", niftyLtp)
+                            + ", " + levelName + "=" + String.format("%.2f", touchedLevel) + ")");
+                        pollingService.squareOff(fyersSymbol, qty, "NIFTY_REVERSAL_CPR_EXIT");
+                    }
+                }
             }
         }
     }

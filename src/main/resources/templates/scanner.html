@@ -858,8 +858,8 @@
             + '<div class="scan-card-header">'
             + '  <span class="scan-symbol">' + d.shortName + '</span>'
             + '  <span style="display:flex; gap:4px; align-items:center;">'
-            + '    <button class="chart-icon-btn" onclick="openChartModal(\'' + d.symbol + '\', \'' + d.shortName + '\')" title="View chart" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:3px 6px;cursor:pointer;color:var(--text-secondary);line-height:0;display:inline-flex;align-items:center;">'
-            + '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="1.5" y="9" width="3" height="5.5" rx="0.5"/><rect x="6.5" y="5" width="3" height="9.5" rx="0.5"/><rect x="11.5" y="7" width="3" height="7.5" rx="0.5"/></svg>'
+            + '    <button class="chart-icon-btn" onclick="openChartModal(\'' + d.symbol + '\', \'' + d.shortName + '\')" title="View 5-min chart" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:3px 6px;cursor:pointer;color:var(--text-secondary);line-height:0;display:inline-flex;align-items:center;">'
+            + '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 6-6"/></svg>'
             + '</button>'
             + ((d.cprTypes || [d.cprType]).filter(function(t){ return ['NARROW','INSIDE'].includes(t); }).map(function(t) {
                 var nrt = d.narrowRangeType;
@@ -1807,7 +1807,7 @@ function showSignalTrail() {
 // ══════════════════════════════════════════════════════════════════════
 // Chart Modal — live candlestick chart with CPR/VWAP/SMA overlays
 // ══════════════════════════════════════════════════════════════════════
-var chartState = { modal: null, chart: null, series: null, vwapSeries: null, sma20Series: null, sma50Series: null, sma200Series: null, levelSeries: [], orSeries: null, symbol: null, interval: null, resizeHandler: null, lastData: null };
+var chartState = { modal: null, chart: null, series: null, vwapSeries: null, sma20Series: null, sma50Series: null, sma200Series: null, levelSeries: [], levelPriceLines: [], orSeries: null, symbol: null, interval: null, resizeHandler: null, lastData: null };
 
 // Chart visibility preferences (persisted in localStorage)
 var chartPrefs = (function() {
@@ -1944,6 +1944,7 @@ function closeChartModal() {
         chartState.sma20Series = null;
         chartState.sma200Series = null;
         chartState.levelSeries = [];
+        chartState.levelPriceLines = [];
         chartState.orSeries = null;
         chartState.tooltip = null;
     }
@@ -2076,7 +2077,8 @@ function renderChart(d, isFirst) {
             grid: { vertLines: { color: grid }, horzLines: { color: grid } },
             rightPriceScale: { borderColor: grid, scaleMargins: { top: 0.08, bottom: 0.08 } },
             timeScale: {
-                borderColor: grid, timeVisible: true, secondsVisible: false, rightOffset: 8, barSpacing: 14, minBarSpacing: 10,
+                borderColor: grid, timeVisible: true, secondsVisible: false,
+                rightOffset: 0, minBarSpacing: 0.5,
                 tickMarkFormatter: function(time) { return istTime(time); }
             },
             localization: {
@@ -2134,31 +2136,39 @@ function renderChart(d, isFirst) {
         }
 
         chartState.levelSeries = [];
+        chartState.levelPriceLines = [];
         applyChartLines(d);
         applyOrBand(d);
         applyTradeMarkers(d);
-        if (candles.length === 0) {
-            // fitContent on an empty candlestick series collapses the time scale to a sliver.
-            // Force the visible range to today's NSE session so the CPR lines span the full
-            // modal width even before any bar has rendered.
-            var now = new Date();
-            var sessStart = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 3, 45, 0) / 1000);
-            var sessEnd = sessStart + (6 * 3600 + 15 * 60);
-            try {
-                chartState.chart.timeScale().setVisibleRange({ from: sessStart, to: sessEnd });
-            } catch (e) {}
+        // Pin the visible time scale to the FULL NSE session (9:15–15:30 IST) regardless of
+        // how many candles are present. This way the chart layout doesn't collapse when only
+        // a few morning bars exist, and CPR/OI horizontal lines extend across the same time
+        // window the trader sees on TradingView. Historical (non-trading-day) renders pin to
+        // the displayed day's session instead of "today".
+        var sessDateMs;
+        if (candles.length > 0) {
+            // Use the date of the first candle so historical renders pin to that trading day.
+            sessDateMs = candles[0].t;
         } else {
-            chartState.chart.timeScale().fitContent();
+            sessDateMs = Date.now();
         }
+        var sessDate = new Date(sessDateMs);
+        // 9:15 IST = 03:45 UTC; 15:30 IST = 10:00 UTC. Build using the candle's UTC date.
+        var sessStart = Math.floor(Date.UTC(sessDate.getUTCFullYear(), sessDate.getUTCMonth(), sessDate.getUTCDate(), 3, 45, 0) / 1000);
+        var sessEnd = sessStart + (6 * 3600 + 15 * 60);
         // Force explicit resize after first layout to work around autoSize hiccups on empty
         // charts / race with modal's display:flex transition. Two RAF ticks ensure the modal
-        // has laid out and the container's final clientWidth/Height are available.
+        // has laid out and the container's final clientWidth/Height are available. Set
+        // barSpacing + visible range AFTER resize so the bars stretch to fit the modal width.
         var resizeChart = function() {
             if (!chartState.chart) return;
             var w = container.clientWidth || 0;
             var h = container.clientHeight || 0;
             if (w > 0 && h > 0) {
                 try { chartState.chart.resize(w, h); } catch (e) {}
+                // fitContent now spans the full session because the level lines have data
+                // points at every 5-min slot from 9:15 to 15:30.
+                try { chartState.chart.timeScale().fitContent(); } catch (e) {}
             }
         };
         requestAnimationFrame(function() { requestAnimationFrame(resizeChart); });
@@ -2334,37 +2344,57 @@ function applyTradeMarkers(d) {
 
 function applyChartLines(d) {
     if (!chartState.chart) return;
-    // Remove existing level-line series from previous render
+    // Remove existing level series (bands) from previous render.
     if (chartState.levelSeries && chartState.levelSeries.length) {
         chartState.levelSeries.forEach(function(s) {
             try { chartState.chart.removeSeries(s); } catch (e) {}
         });
     }
     chartState.levelSeries = [];
-
-    // Determine x-range from candle data, or synthesize today's session (9:15–15:30 IST)
-    // when no candles are available (e.g. pre-market, freshly added symbol).
-    var candles = d.candles || [];
-    var startSec, endSec;
-    if (candles.length === 0) {
-        // Synthesize today's NSE session in IST (UTC+5:30). 9:15 IST = 03:45 UTC, 15:30 IST = 10:00 UTC.
-        var now = new Date();
-        var todayStartIST = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 3, 45, 0));
-        // If "now" is already past midnight IST but still before 03:45 UTC (i.e., pre-9:15 IST), keep today.
-        // If already past 10:00 UTC (post market close), show today's range anyway.
-        startSec = Math.floor(todayStartIST.getTime() / 1000);
-        endSec = startSec + (6 * 3600 + 15 * 60);  // +6h15m → 15:30 IST
-    } else {
-        startSec = Math.floor(candles[0].t / 1000);
-        endSec = Math.floor(candles[candles.length - 1].t / 1000);
-        // Extend end to include the full last bar
-        var tf = (d.timeframeMinutes || 5) * 60;
-        endSec = endSec + tf;
+    // Remove existing horizontal price lines (CPR / OI / etc.) from the main series.
+    // Price lines are attached to a series and span the full chart width regardless of the
+    // candle data range — so they remain visible pre-market when the chart still has no
+    // candles, and during early/late session when the bar window is narrow.
+    if (chartState.levelPriceLines && chartState.levelPriceLines.length && chartState.series) {
+        chartState.levelPriceLines.forEach(function(pl) {
+            try { chartState.series.removePriceLine(pl); } catch (e) {}
+        });
     }
+    chartState.levelPriceLines = [];
+
+    // Lines render strictly inside the NSE session window (9:15–15:30 IST). Visible time-axis
+    // gets 15 min of breathing room on each side via a phantom (transparent) series below.
+    var candles = d.candles || [];
+    var sessAnchorMs = candles.length > 0 ? candles[0].t : Date.now();
+    var sessAnchor = new Date(sessAnchorMs);
+    // 9:15 IST = 03:45 UTC; 15:30 IST = 10:00 UTC.
+    var startSec = Math.floor(Date.UTC(sessAnchor.getUTCFullYear(), sessAnchor.getUTCMonth(), sessAnchor.getUTCDate(), 3, 45, 0) / 1000);
+    var endSec = startSec + (6 * 3600 + 15 * 60);
+    // Padding range — used only to expand the chart's visible time axis, no line is drawn here.
+    var paddingStart = startSec - (30 * 60);  // 8:45 IST
+    var paddingEnd   = endSec   + (30 * 60);  // 16:00 IST
+
+    // Phantom series with 2 points at the padding edges → forces fitContent to include the
+    // padding window in the visible time range without rendering anything inside it.
+    var phantom = chartState.chart.addLineSeries({
+        color: 'rgba(0,0,0,0)', lineWidth: 1,
+        priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false
+    });
+    var phantomY = (d.cpr && d.cpr.pivot) ? d.cpr.pivot : (d.ltp || 0);
+    phantom.setData([
+        { time: paddingStart, value: phantomY },
+        { time: paddingEnd,   value: phantomY }
+    ]);
+    chartState.levelSeries.push(phantom);
 
     var cpr = d.cpr || {};
 
-    // Helper: add a horizontal line
+    // Helper: add a horizontal line via a line series anchored to the full session range.
+    // We populate a data point at every 5-min boundary (76 points: 9:15, 9:20, …, 15:30) so the
+    // chart has logical bars across the entire session — Lightweight Charts groups data by bar
+    // positions, and with only 2 endpoints sparse-candle scenes treat the chart as having just
+    // a handful of logical bars even with setVisibleRange. Filling every bar slot forces the
+    // time scale to span the full session width.
     var addLine = function(value, color, label) {
         if (!value || value <= 0) return;
         var s = chartState.chart.addLineSeries({
@@ -2375,10 +2405,11 @@ function applyChartLines(d) {
             title: label,
             crosshairMarkerVisible: false
         });
-        s.setData([
-            { time: startSec, value: value },
-            { time: endSec, value: value }
-        ]);
+        var data = [];
+        for (var t = startSec; t <= endSec; t += 300) {  // every 5 min (300 sec)
+            data.push({ time: t, value: value });
+        }
+        s.setData(data);
         chartState.levelSeries.push(s);
     };
 

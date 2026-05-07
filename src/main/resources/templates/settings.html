@@ -352,6 +352,17 @@
                     <div class="form-hint">Stock-side defensive-exit checks, evaluated on every 5-min candle close (after the candle's SMAs are stamped). Fire before SL / Target / Trailing; cancels both OCO legs and places an exit market order. Reasons recorded: <code>SMA_CROSS_EXIT</code>, <code>PRICE_SMA_EXIT</code>. Checks run in order; first match wins. NIFTY-side macro safety-net mirrors of these checks live on the <b>Index Alignment</b> tab.</div>
                 </div>
                 <div class="form-group">
+                    <label class="form-label">NIFTY Reversal CPR-Touch Exit</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableNiftyReversalCprExit" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Exit when NIFTY's reversal move touches its CPR boundary (early profit-take)</span>
+                    </div>
+                    <div class="form-hint">Macro defensive exit for trades taken in NIFTY reversal states. Evaluated on every stock 5-min candle close.
+                        <br>&nbsp;&nbsp;&bull; <b>BULLISH_REVERSAL</b> &mdash; NIFTY below CPR + bullish SMAs. We took LONG positions on stocks. When NIFTY climbs back to/past <b>CPR bottom</b>, the bullish move has played out (NIFTY entering CPR consolidation) &rarr; exit all LONG positions.
+                        <br>&nbsp;&nbsp;&bull; <b>BEARISH_REVERSAL</b> &mdash; NIFTY above CPR + bearish SMAs. We took SHORT positions. When NIFTY drops to/below <b>CPR top</b> &rarr; exit all SHORT positions.
+                        <br>Locks in the move's profit before NIFTY consolidates inside CPR and the trade goes against us. Cancels both OCO legs and places a market exit. Reason recorded: <code>NIFTY_REVERSAL_CPR_EXIT</code>.</div>
+                </div>
+                <div class="form-group">
                     <label class="form-label">Session Move Limit</label>
                     <div style="display:flex; align-items:center; gap:8px; margin-top:4px; flex-wrap:wrap;">
                         <input type="checkbox" id="enableSessionMoveLimit" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
@@ -1274,6 +1285,7 @@
             document.getElementById('enableTrailingSl').checked = d.enableTrailingSl != null ? d.enableTrailingSl : true;
             document.getElementById('enableSmaCrossExit').checked = d.enableSmaCrossExit === true;
             document.getElementById('enablePriceSmaExit').checked = d.enablePriceSmaExit === true;
+            document.getElementById('enableNiftyReversalCprExit').checked = d.enableNiftyReversalCprExit === true;
             document.getElementById('perSymbolDailyTradeLimit').value = d.perSymbolDailyTradeLimit != null ? d.perSymbolDailyTradeLimit : 2;
             document.getElementById('fibStage1TriggerPct').value = d.fibStage1TriggerPct != null ? d.fibStage1TriggerPct : 61.8;
             document.getElementById('fibStage1SlAtrMult').value  = d.fibStage1SlAtrMult  != null ? d.fibStage1SlAtrMult  : 1.0;
@@ -1442,6 +1454,7 @@
                 enableTrailingSl: document.getElementById('enableTrailingSl').checked,
                 enableSmaCrossExit: document.getElementById('enableSmaCrossExit').checked,
                 enablePriceSmaExit: document.getElementById('enablePriceSmaExit').checked,
+                enableNiftyReversalCprExit: document.getElementById('enableNiftyReversalCprExit').checked,
                 perSymbolDailyTradeLimit: parseInt(document.getElementById('perSymbolDailyTradeLimit').value) || 0,
                 fibStage1TriggerPct: parseFloat(document.getElementById('fibStage1TriggerPct').value) || 61.8,
                 fibStage1SlAtrMult:  parseFloat(document.getElementById('fibStage1SlAtrMult').value)  || 1.0,
