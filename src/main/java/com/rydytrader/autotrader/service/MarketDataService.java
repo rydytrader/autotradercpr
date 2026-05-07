@@ -435,11 +435,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         if (cpr == null) return;
         double dayHigh = candleAggregator.getDayHighBeforeLast(fyersSymbol);
         double dayLow = candleAggregator.getDayLowBeforeLast(fyersSymbol);
+        double sma20 = smaService != null ? smaService.getSma(fyersSymbol) : 0;
         double base = SignalProcessor.computeBreakoutLevel(setup,
             cpr.getR1(), cpr.getR2(), cpr.getR3(), cpr.getR4(),
             cpr.getS1(), cpr.getS2(), cpr.getS3(), cpr.getS4(),
             cpr.getPh(), cpr.getPl(), cpr.getTc(), cpr.getBc(),
-            dayHigh, dayLow);
+            dayHigh, dayLow, sma20);
         if (base <= 0) {
             log.debug("[TrailingSL] {} — no base for setup={}, skipping", fyersSymbol, setup);
             return;

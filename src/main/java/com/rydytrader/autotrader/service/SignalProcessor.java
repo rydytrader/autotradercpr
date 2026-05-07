@@ -205,26 +205,30 @@ public class SignalProcessor {
         }
 
         // ── 4c. Compute breakout level ──────────────────────────────────────────
-        double breakoutLevel = computeBreakoutLevel(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc, dayHigh, dayLow);
+        // SMA 20 is the breakout "level" for BUY_ABOVE_20SMA / SELL_BELOW_20SMA setups —
+        // read live; for non-SMA setups it's ignored by the switch in computeBreakoutLevel.
+        double sma20 = smaService != null ? smaService.getSma(symbol) : 0;
+        double breakoutLevel = computeBreakoutLevel(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc, dayHigh, dayLow, sma20);
 
         // ── 4c2. Compute stop loss (needed for risk-based qty) ─────────────────
-        // Always compute the close-based (default) SL. If structural SL is enabled for this
-        // setup, also compute the level-anchored SL and pick whichever is TIGHTER (smaller
-        // distance from entry). Structural SL is skipped for DH/DL — no real level to anchor to.
-        boolean isDhDl = "BUY_ABOVE_DH".equals(setup) || "SELL_BELOW_DL".equals(setup);
+        // Always compute the close-based (default) SL. If structural SL is enabled, anchor
+        // either on the broken CPR/R/S level (zone setups) or on the breakout candle's own
+        // low/high (DH/DL and 20 SMA touch — moving levels with no static structural anchor).
+        boolean isCandleAnchor = "BUY_ABOVE_DH".equals(setup) || "SELL_BELOW_DL".equals(setup)
+            || "BUY_ABOVE_20SMA".equals(setup) || "SELL_BELOW_20SMA".equals(setup);
         double atrMultiplier = riskSettings.getAtrMultiplier();
         double defaultSl = isBuy ? (close - atr * atrMultiplier) : (close + atr * atrMultiplier);
         double sl = defaultSl;
         boolean useStructuralSl = false;
         if (riskSettings.isEnableStructuralSl()) {
             // Structural anchor:
-            //  - DH/DL breakouts: the breakout candle's own low (for buys) or high (for sells).
-            //    The candle's extreme is the structural level the breakout defended — if price
-            //    falls back through it, the breakout has failed. Falls back to candle close
-            //    if low/high aren't in the payload.
+            //  - DH/DL and 20 SMA touch breakouts: the breakout candle's own low (for buys) or
+            //    high (for sells). The candle's extreme is the structural level the breakout
+            //    defended — if price falls back through it, the breakout has failed. Falls back
+            //    to candle close if low/high aren't in the payload.
             //  - All other setups: the CPR/R/S level that was broken (computeStructuralAnchor).
             double anchor;
-            if (isDhDl) {
+            if (isCandleAnchor) {
                 anchor = isBuy
                     ? (candleLow  > 0 ? candleLow  : close)
                     : (candleHigh > 0 ? candleHigh : close);
@@ -248,7 +252,7 @@ public class SignalProcessor {
                 useStructuralSl = true;
                 double defaultDist = Math.abs(close - defaultSl);
                 double structDist = Math.abs(close - structSl);
-                String anchorLabel = isDhDl ? (isBuy ? "candle low" : "candle high") : "level";
+                String anchorLabel = isCandleAnchor ? (isBuy ? "candle low" : "candle high") : "level";
                 String bufferLabel = extra > 0
                     ? (totalBufferAtr + "×ATR = " + buffer + " base + " + extra + " single-level")
                     : (buffer + "×ATR");
@@ -587,7 +591,10 @@ public class SignalProcessor {
                 double orLo = candleAggregator.getOpeningRangeLow(symbol);
                 if (orHi > 0 && orLo > 0 && close >= orLo && close <= orHi) insideOr = true;
             }
-            if (!isDhDl && !insideOr && riskSettings.isEnableDayHighLowTargetShift()) {
+            // DH/DL targets ARE the day high/low — applying day-H/L target shift to them is
+            // redundant. 20 SMA touch targets are next CPR levels (not day H/L), so the shift
+            // can still apply to them.
+            if (!isDhDlSetup(setup) && !insideOr && riskSettings.isEnableDayHighLowTargetShift()) {
                 double minDist = riskSettings.getDayHighLowShiftMinDistAtr() * atr;
                 // Session body high/low — ignores wicks. A wick rejection isn't treated as
                 // a confirmed resistance/support for target-capping; only the price level the
@@ -865,7 +872,8 @@ public class SignalProcessor {
                  "BUY_ABOVE_S2", "BUY_ABOVE_S3", "BUY_ABOVE_S4",
                  "SELL_BELOW_R2", "SELL_BELOW_R3", "SELL_BELOW_R4",
                  "SELL_BELOW_S2", "SELL_BELOW_S3", "SELL_BELOW_S4",
-                 "BUY_ABOVE_DH", "SELL_BELOW_DL" -> true;
+                 "BUY_ABOVE_DH", "SELL_BELOW_DL",
+                 "BUY_ABOVE_20SMA", "SELL_BELOW_20SMA" -> true;
             default -> false;
         };
     }
@@ -896,7 +904,7 @@ public class SignalProcessor {
             double r1, double r2, double r3, double r4,
             double s1, double s2, double s3, double s4,
             double ph, double pl, double tc, double bc,
-            double dayHigh, double dayLow) {
+            double dayHigh, double dayLow, double sma20) {
         return switch (setup) {
             case "BUY_ABOVE_CPR"    -> Math.max(tc, bc);
             case "BUY_ABOVE_R1_PDH" -> Math.max(r1, ph);
@@ -908,6 +916,7 @@ public class SignalProcessor {
             case "BUY_ABOVE_S3"     -> s3;
             case "BUY_ABOVE_S4"     -> s4;
             case "BUY_ABOVE_DH"     -> dayHigh;
+            case "BUY_ABOVE_20SMA"  -> sma20;
             case "SELL_BELOW_CPR"    -> Math.min(tc, bc);
             case "SELL_BELOW_S1_PDL" -> Math.min(s1, pl);
             case "SELL_BELOW_S2"     -> s2;
@@ -918,6 +927,7 @@ public class SignalProcessor {
             case "SELL_BELOW_R3"     -> r3;
             case "SELL_BELOW_R4"     -> r4;
             case "SELL_BELOW_DL"     -> dayLow;
+            case "SELL_BELOW_20SMA"  -> sma20;
             default -> 0;
         };
     }
@@ -951,6 +961,10 @@ public class SignalProcessor {
             case "BUY_ABOVE_S3"       -> new double[]{ s2, s2 };
             case "BUY_ABOVE_S2"       -> new double[]{ Math.min(s1, pl), Math.min(s1, pl) };
             case "SELL_BELOW_DL"      -> { yield new double[]{ nextLevelBelow(Math.min(close, dayLow), r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc), 0 }; }
+            // 20 SMA touch — same target pattern as DH/DL: nearest CPR / R / PDH / PDL level
+            // strictly above (buy) or below (sell) the breakout candle's close.
+            case "BUY_ABOVE_20SMA"    -> { yield new double[]{ nextLevelAbove(close, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc), 0 }; }
+            case "SELL_BELOW_20SMA"   -> { yield new double[]{ nextLevelBelow(close, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc), 0 }; }
             default -> new double[]{ 0, 0 };
         };
     }

@@ -802,11 +802,20 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (s2 > 0 && close > s2 && (open < s2 || low < s2)
                 && !broken.contains("BUY_ABOVE_S2")) return "BUY_ABOVE_S2";
 
-        // Day High breakout (lowest priority — only after OR locks)
+        // Day High breakout (lower priority — only after OR locks)
         double dayHigh = candleAggregator.getDayHighExcluding(fyersSymbol, currentCandle.get());
         if (dayHigh > 0 && candleAggregator.isOpeningRangeLocked(fyersSymbol)
                 && close > dayHigh && ((open < dayHigh || low < dayHigh) || (low < dayHigh && open > dayHigh))
                 && !broken.contains("BUY_ABOVE_DH")) return "BUY_ABOVE_DH";
+
+        // 20 SMA touch (lowest priority) — green candle touches the 5-min SMA 20 from below
+        // and closes above. Path 1 = standard touch + close above; Path 2 = wick rejection
+        // (open above SMA, low pierced below, close back above). Green candle gate is enforced
+        // upstream in scanForBreakoutInner (this method is only called for green candles).
+        double sma20Buy = smaService.getSma(fyersSymbol);
+        if (sma20Buy > 0 && close > sma20Buy
+                && ((open < sma20Buy || low < sma20Buy) || (low < sma20Buy && open > sma20Buy))
+                && !broken.contains("BUY_ABOVE_20SMA")) return "BUY_ABOVE_20SMA";
 
         return null;
     }
@@ -909,11 +918,20 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (r2v > 0 && close < r2v && (open > r2v || high > r2v)
                 && !broken.contains("SELL_BELOW_R2")) return "SELL_BELOW_R2";
 
-        // Day Low breakout (lowest priority — only after OR locks)
+        // Day Low breakout (lower priority — only after OR locks)
         double dayLow = candleAggregator.getDayLowExcluding(fyersSymbol, currentCandle.get());
         if (dayLow > 0 && candleAggregator.isOpeningRangeLocked(fyersSymbol)
                 && close < dayLow && ((open > dayLow || high > dayLow) || (high > dayLow && open < dayLow))
                 && !broken.contains("SELL_BELOW_DL")) return "SELL_BELOW_DL";
+
+        // 20 SMA touch (lowest priority) — red candle touches the 5-min SMA 20 from above
+        // and closes below. Path 1 = standard touch + close below; Path 2 = wick rejection
+        // (open below SMA, high pierced above, close back below). Red candle gate is enforced
+        // upstream in scanForBreakoutInner (this method is only called for red candles).
+        double sma20Sell = smaService.getSma(fyersSymbol);
+        if (sma20Sell > 0 && close < sma20Sell
+                && ((open > sma20Sell || high > sma20Sell) || (high > sma20Sell && open < sma20Sell))
+                && !broken.contains("SELL_BELOW_20SMA")) return "SELL_BELOW_20SMA";
 
         return null;
     }
@@ -1694,6 +1712,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             // a real wall between them). Empty exclusion = every CPR zone strictly between
             // SMA and the broken DH/DL gets counted, matching reality.
             case "BUY_ABOVE_DH", "SELL_BELOW_DL" -> "";
+            // 20 SMA touch — SMA 20 is not a CPR zone; same rationale as DH/DL.
+            case "BUY_ABOVE_20SMA", "SELL_BELOW_20SMA" -> "";
             default -> "";
         };
     }
@@ -1725,6 +1745,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             // skipped entirely for DH/DL trades because broken=0 short-circuits to pass.
             case "BUY_ABOVE_DH"      -> candleAggregator.getDayHighExcluding(fyersSymbol, currentCandle.get());
             case "SELL_BELOW_DL"     -> candleAggregator.getDayLowExcluding(fyersSymbol, currentCandle.get());
+            // 20 SMA touch — level is the live 5-min SMA 20 value at signal time.
+            case "BUY_ABOVE_20SMA", "SELL_BELOW_20SMA" -> smaService.getSma(fyersSymbol);
             default -> 0;
         };
     }
