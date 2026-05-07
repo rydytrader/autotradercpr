@@ -539,11 +539,16 @@
                         <input type="checkbox" id="enableMeanReversionTrades" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable counter-trend setups (magnets + deep mean-reversion fades)</span>
                     </div>
-                    <div class="form-hint">Master switch for <b>10 counter-trend setups</b>, all day-type agnostic (fire on IV / OV / EV alike):
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">MPT Qty &times;</span>
+                        <input type="number" id="mptQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.78rem; font-family: var(--font-mono);">(0.75 = three-quarter size)</span>
+                    </div>
+                    <div class="form-hint">Master switch for the counter-trend family. Setups in this family classify as <b>MPT</b> (medium probability) and fire at <b>MPT Qty &times;</b> base size (default 0.75).
                         <br>&nbsp;&nbsp;&bull; <b>Magnets</b> &mdash; <code>BUY_ABOVE_S1_PDL</code>, <code>SELL_BELOW_R1_PDH</code>: bounce off / rejection at the first structural level pair, target back to CPR.
                         <br>&nbsp;&nbsp;&bull; <b>Deep mean-rev</b> &mdash; <code>BUY_ABOVE_S2/S3/S4</code>, <code>SELL_BELOW_R2/R3/R4</code>: fades from deep support/resistance, target one level back toward value.
-                        <br>&nbsp;&nbsp;&bull; <b>DH/DL breakouts</b> &mdash; <code>BUY_ABOVE_DH</code>, <code>SELL_BELOW_DL</code>: day high/low breaks. Often reversal in character (DH break after morning sell-off; DL break after morning rally) so they live with the counter-trend family.
-                        <br>All ten bypass the LTF gate (counter-trend by design) and fire as <b>MPT</b>. When this toggle is <b>off</b>, none of the 10 fire &mdash; only direction-aligned weekly-level breakouts (R1+/R2/R3/R4 buys, S1+/S2/S3/S4 sells) trade. Signal Trail bucket: <code>MEAN_REVERSION_DISABLED</code>.</div>
+                        <br>&nbsp;&nbsp;&bull; <b>DH/DL breakouts</b> &mdash; <code>BUY_ABOVE_DH</code>, <code>SELL_BELOW_DL</code> when the close is on the wrong side of CPR (otherwise they classify as trend-following HPT and skip this gate).
+                        <br>All counter-trend setups bypass the LTF gate by design. When the master toggle is <b>off</b>, none of them fire &mdash; only direction-aligned weekly-level breakouts (R1+/R2/R3/R4 buys, S1+/S2/S3/S4 sells) trade. Signal Trail bucket: <code>MEAN_REVERSION_DISABLED</code>.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Volume Filter</label>
@@ -1317,6 +1322,7 @@
             document.getElementById('skipHtfR3S3NormalDays').checked = d.skipHtfR3S3NormalDays !== false;
             document.getElementById('skipHtfR4S4NormalDays').checked = d.skipHtfR4S4NormalDays !== false;
             document.getElementById('enableMeanReversionTrades').checked = d.enableMeanReversionTrades !== false;
+            document.getElementById('mptQtyFactor').value = d.mptQtyFactor != null ? d.mptQtyFactor : 0.75;
 
             const pnl    = d.todayPnl    || 0;
             const trades = d.todayTrades || 0;
@@ -1480,6 +1486,7 @@
                 skipHtfR3S3NormalDays: document.getElementById('skipHtfR3S3NormalDays').checked,
                 skipHtfR4S4NormalDays: document.getElementById('skipHtfR4S4NormalDays').checked,
                 enableMeanReversionTrades: document.getElementById('enableMeanReversionTrades').checked,
+                mptQtyFactor: parseFloat(document.getElementById('mptQtyFactor').value) || 0.75,
             };
             const r = await fetch('/api/settings/risk', {
                 method: 'POST',

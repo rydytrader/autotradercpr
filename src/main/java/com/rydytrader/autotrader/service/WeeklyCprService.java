@@ -647,8 +647,9 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
      */
     public String getProbabilityForDirection(String symbol, boolean isBuy, String setup, double breakoutClose) {
         // Static counter-trend family — magnets (S1+PDL / R1+PDH) and deep mean-rev
-        // (S2/S3/S4 buys, R2/R3/R4 sells). Always bypass the LTF gate, fire as HPT.
-        // Master-toggle gating happens upstream in BreakoutScanner; here we only assign tier.
+        // (S2/S3/S4 buys, R2/R3/R4 sells). Always bypass the LTF gate and classify as MPT
+        // (medium probability — qty reduced by mptQtyFactor downstream). Master-toggle gating
+        // happens upstream in BreakoutScanner; here we only assign tier.
         boolean isStaticCounterTrend = setup != null && (
                "BUY_ABOVE_S1_PDL".equals(setup)
             || "BUY_ABOVE_S2".equals(setup)
@@ -659,7 +660,7 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
             || "SELL_BELOW_R3".equals(setup)
             || "SELL_BELOW_R4".equals(setup));
 
-        if (isStaticCounterTrend) return "HPT";
+        if (isStaticCounterTrend) return "MPT";
 
         // Standard trade gate: LTF must support the trade direction (5-min close on the
         // right side of daily CPR).
@@ -672,15 +673,15 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
 
         // DH/DL — mean-reversion vs trend-following determined by close-vs-CPR position:
         //   BUY_ABOVE_DH  + close > cprTop  → trend-following continuation (LTF passes naturally → HPT)
-        //   BUY_ABOVE_DH  + close ≤ cprTop  → mean-rev (bypass LTF gate, return HPT)
+        //   BUY_ABOVE_DH  + close ≤ cprTop  → mean-rev (bypass LTF gate, return MPT)
         //   SELL_BELOW_DL + close < cprBot  → trend-following continuation (LTF passes naturally → HPT)
-        //   SELL_BELOW_DL + close ≥ cprBot  → mean-rev (bypass LTF gate, return HPT)
+        //   SELL_BELOW_DL + close ≥ cprBot  → mean-rev (bypass LTF gate, return MPT)
         if ("BUY_ABOVE_DH".equals(setup)) {
-            if (cprTop > 0 && !ltfBull) return "HPT"; // mean-rev path: close inside-or-below CPR
-            // else fall through to standard LTF gate below (will pass since ltfBull)
+            if (cprTop > 0 && !ltfBull) return "MPT"; // mean-rev path: close inside-or-below CPR
+            // else fall through to standard LTF gate below (will pass since ltfBull) → HPT
         } else if ("SELL_BELOW_DL".equals(setup)) {
-            if (cprBot > 0 && !ltfBear) return "HPT"; // mean-rev path: close inside-or-above CPR
-            // else fall through to standard LTF gate below (will pass since ltfBear)
+            if (cprBot > 0 && !ltfBear) return "MPT"; // mean-rev path: close inside-or-above CPR
+            // else fall through to standard LTF gate below (will pass since ltfBear) → HPT
         }
 
         if (isBuy)  return ltfBull ? "HPT" : null;
