@@ -336,13 +336,19 @@
                     <div class="form-hint">Wins and losses are counted <b>separately</b> per symbol per trading day, not summed. With limit = <b>2</b>: <i>2W + 0L</i> → stop, <i>0W + 2L</i> → stop, <i>1W + 1L</i> → continue. T1 partial fills are not counted &mdash; a split trade that hits both T1 and T2 counts as one win. Counter resets daily. Skipped signals appear in Signal Trail under bucket <code>SYMBOL_DAILY_LIMIT</code>.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">LPT Daily Trade Limit (per Symbol)</label>
+                    <label class="form-label">LPT (NIFTY-Misaligned Trades)</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableLpt" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">
+                            Enable LPT &mdash; fire NIFTY-misaligned breakouts at reduced size (lptQtyFactor, default 0.5) instead of rejecting them
+                        </span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Max LPT trades per stock per day</span>
                         <input type="number" id="lptMaxTradesPerStockPerDay" class="form-control" step="1" min="0" max="10" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-muted); font-size: 0.78rem; font-family: var(--font-mono);">(0 = disabled)</span>
                     </div>
-                    <div class="form-hint">Caps how many <b>LPT</b>-tagged trades fire on a single stock per trading day. LPT trades are produced when a stock breakout is misaligned with NIFTY but passes all stock-level filters (NIFTY-misalignment downgrade-not-reject behavior). Default <b>1</b> &mdash; at most one LPT trade per stock per day. T1 partial fills are not counted. Skipped signals appear in Signal Trail under bucket <code>LPT_DAILY_LIMIT</code>.</div>
+                    <div class="form-hint">When a stock breakout passes all stock-level filters but is misaligned with the NIFTY Index Alignment filter, the trade is downgraded to <b>LPT</b> instead of rejected. LPT trades skip remaining NIFTY-level filters (HTF Hurdle, 5m Hurdle, NIFTY HTF Candle Direction) and fire at reduced size. Toggle off to revert to outright rejection. The daily cap (default <b>1</b>) limits LPT count per stock — over the cap, signals reject under bucket <code>LPT_DAILY_LIMIT</code>. T1 partial fills are not counted.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">SMA-based Defensive Exits</label>
@@ -1281,6 +1287,7 @@
             document.getElementById('enablePriceSmaExit').checked = d.enablePriceSmaExit === true;
             document.getElementById('enableNiftyReversalCprExit').checked = d.enableNiftyReversalCprExit === true;
             document.getElementById('perSymbolDailyTradeLimit').value = d.perSymbolDailyTradeLimit != null ? d.perSymbolDailyTradeLimit : 2;
+            document.getElementById('enableLpt').checked = d.enableLpt !== false;
             document.getElementById('lptMaxTradesPerStockPerDay').value = d.lptMaxTradesPerStockPerDay != null ? d.lptMaxTradesPerStockPerDay : 1;
             document.getElementById('fibStage1TriggerPct').value = d.fibStage1TriggerPct != null ? d.fibStage1TriggerPct : 61.8;
             document.getElementById('fibStage1SlAtrMult').value  = d.fibStage1SlAtrMult  != null ? d.fibStage1SlAtrMult  : 1.0;
@@ -1445,6 +1452,7 @@
                 enablePriceSmaExit: document.getElementById('enablePriceSmaExit').checked,
                 enableNiftyReversalCprExit: document.getElementById('enableNiftyReversalCprExit').checked,
                 perSymbolDailyTradeLimit: parseInt(document.getElementById('perSymbolDailyTradeLimit').value) || 0,
+                enableLpt: document.getElementById('enableLpt').checked,
                 lptMaxTradesPerStockPerDay: parseInt(document.getElementById('lptMaxTradesPerStockPerDay').value) || 0,
                 fibStage1TriggerPct: parseFloat(document.getElementById('fibStage1TriggerPct').value) || 61.8,
                 fibStage1SlAtrMult:  parseFloat(document.getElementById('fibStage1SlAtrMult').value)  || 1.0,
