@@ -497,40 +497,56 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 }
                 // SMA level-count filter: skip if any CPR zone sits between SMA and broken level
                 if (evaluateSmaFilter(fyersSymbol, buySetup, close, levels, atr) == 2) return;
-                // NIFTY index alignment filter — hard skip, qty reduction (soft), or no-op.
+                // NIFTY index alignment filter — when on, a misaligned trade is downgraded to
+                // LPT (smaller size) instead of being rejected. LPT trades skip ALL remaining
+                // NIFTY-level filters (HTF Hurdle, 5m Hurdle, NIFTY HTF Candle Direction) — the
+                // trade is taken purely on stock-level merits. If enableLpt is off, the
+                // misaligned trade is rejected outright.
+                boolean niftyDowngraded = false;
                 if (checkIndexAlignment(fyersSymbol, buySetup, true) == NiftyAlignStatus.SKIP) {
                     String niftyState = indexTrendService != null ? indexTrendService.getStickyState() : "?";
-                    recordRejection(fyersSymbol, buySetup, close, "NIFTY_OPPOSED",
-                        "NIFTY " + niftyState + " — buy requires NIFTY BULLISH or BULLISH_REVERSAL");
-                    return;
+                    if (!riskSettings.isEnableLpt()) {
+                        recordRejection(fyersSymbol, buySetup, close, "NIFTY_OPPOSED",
+                            "NIFTY " + niftyState + " — buy would downgrade to LPT but LPT disabled");
+                        return;
+                    }
+                    prob = "LPT";
+                    niftyDowngraded = true;
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " — NIFTY "
+                        + niftyState + " misaligned, downgraded to LPT (NIFTY filters bypassed)");
                 }
-                // NIFTY HTF Hurdle — wait for NIFTY's prior 1h close to clear its nearest weekly hurdle.
-                String niftyHurdleReject = checkNiftyHurdle(true);
-                if (niftyHurdleReject != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + niftyHurdleReject);
-                    recordRejection(fyersSymbol, buySetup, close, "NIFTY_HURDLE", niftyHurdleReject);
-                    return;
-                }
-                // NIFTY 5m Hurdle — prior 5-min NIFTY close must have cleared nearest daily CPR hurdle.
-                String nifty5mHurdleReject = checkNifty5mHurdle(true, candle.startMinute);
-                if (nifty5mHurdleReject != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + nifty5mHurdleReject);
-                    recordRejection(fyersSymbol, buySetup, close, "NIFTY_5M_HURDLE", nifty5mHurdleReject);
-                    return;
+                // NIFTY HTF Hurdle — only when not downgraded to LPT.
+                if (!niftyDowngraded) {
+                    String niftyHurdleReject = checkNiftyHurdle(true);
+                    if (niftyHurdleReject != null) {
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + niftyHurdleReject);
+                        recordRejection(fyersSymbol, buySetup, close, "NIFTY_HURDLE", niftyHurdleReject);
+                        return;
+                    }
+                    // NIFTY 5m Hurdle — prior 5-min NIFTY close must have cleared nearest daily CPR hurdle.
+                    String nifty5mHurdleReject = checkNifty5mHurdle(true, candle.startMinute);
+                    if (nifty5mHurdleReject != null) {
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + nifty5mHurdleReject);
+                        recordRejection(fyersSymbol, buySetup, close, "NIFTY_5M_HURDLE", nifty5mHurdleReject);
+                        return;
+                    }
                 }
                 // In-progress 1h candle direction — buy needs the currently-forming 1h bar to be green.
+                // This is the STOCK's 1h candle, always applied.
                 String htfCandleReject = checkHtfCandleColor(true, fyersSymbol);
                 if (htfCandleReject != null) {
                     eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + htfCandleReject);
                     recordRejection(fyersSymbol, buySetup, close, "HTF_CANDLE_OPPOSED", htfCandleReject);
                     return;
                 }
-                // NIFTY in-progress 1h candle direction — buy needs NIFTY's 1h bar to be green.
-                String niftyHtfCandleReject = checkNiftyHtfCandleColor(true);
-                if (niftyHtfCandleReject != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + niftyHtfCandleReject);
-                    recordRejection(fyersSymbol, buySetup, close, "NIFTY_HTF_CANDLE_OPPOSED", niftyHtfCandleReject);
-                    return;
+                // NIFTY in-progress 1h candle direction — only when not downgraded to LPT.
+                if (!niftyDowngraded) {
+                    String niftyHtfCandleReject = checkNiftyHtfCandleColor(true);
+                    if (niftyHtfCandleReject != null) {
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + niftyHtfCandleReject);
+                        recordRejection(fyersSymbol, buySetup, close, "NIFTY_HTF_CANDLE_OPPOSED", niftyHtfCandleReject);
+                        return;
+                    }
                 }
                 fireSignal(fyersSymbol, buySetup, open, high, low, close, candle.volume, atr, levels, prob, null);
                 return;
@@ -588,40 +604,56 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 }
                 // SMA level-count filter: skip if any CPR zone sits between SMA and broken level
                 if (evaluateSmaFilter(fyersSymbol, sellSetup, close, levels, atr) == 2) return;
-                // NIFTY index alignment filter — hard skip, qty reduction (soft), or no-op.
+                // NIFTY index alignment filter — when on, a misaligned trade is downgraded to
+                // LPT (smaller size) instead of being rejected. LPT trades skip ALL remaining
+                // NIFTY-level filters (HTF Hurdle, 5m Hurdle, NIFTY HTF Candle Direction) — the
+                // trade is taken purely on stock-level merits. If enableLpt is off, the
+                // misaligned trade is rejected outright.
+                boolean niftyDowngraded = false;
                 if (checkIndexAlignment(fyersSymbol, sellSetup, false) == NiftyAlignStatus.SKIP) {
                     String niftyState = indexTrendService != null ? indexTrendService.getStickyState() : "?";
-                    recordRejection(fyersSymbol, sellSetup, close, "NIFTY_OPPOSED",
-                        "NIFTY " + niftyState + " — sell requires NIFTY BEARISH or BEARISH_REVERSAL");
-                    return;
+                    if (!riskSettings.isEnableLpt()) {
+                        recordRejection(fyersSymbol, sellSetup, close, "NIFTY_OPPOSED",
+                            "NIFTY " + niftyState + " — sell would downgrade to LPT but LPT disabled");
+                        return;
+                    }
+                    prob = "LPT";
+                    niftyDowngraded = true;
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " — NIFTY "
+                        + niftyState + " misaligned, downgraded to LPT (NIFTY filters bypassed)");
                 }
-                // NIFTY HTF Hurdle — wait for NIFTY's prior 1h close to clear its nearest weekly hurdle.
-                String niftyHurdleReject = checkNiftyHurdle(false);
-                if (niftyHurdleReject != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + niftyHurdleReject);
-                    recordRejection(fyersSymbol, sellSetup, close, "NIFTY_HURDLE", niftyHurdleReject);
-                    return;
-                }
-                // NIFTY 5m Hurdle — prior 5-min NIFTY close must have cleared nearest daily CPR hurdle.
-                String nifty5mHurdleReject = checkNifty5mHurdle(false, candle.startMinute);
-                if (nifty5mHurdleReject != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + nifty5mHurdleReject);
-                    recordRejection(fyersSymbol, sellSetup, close, "NIFTY_5M_HURDLE", nifty5mHurdleReject);
-                    return;
+                // NIFTY HTF Hurdle — only when not downgraded to LPT.
+                if (!niftyDowngraded) {
+                    String niftyHurdleReject = checkNiftyHurdle(false);
+                    if (niftyHurdleReject != null) {
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + niftyHurdleReject);
+                        recordRejection(fyersSymbol, sellSetup, close, "NIFTY_HURDLE", niftyHurdleReject);
+                        return;
+                    }
+                    // NIFTY 5m Hurdle — prior 5-min NIFTY close must have cleared nearest daily CPR hurdle.
+                    String nifty5mHurdleReject = checkNifty5mHurdle(false, candle.startMinute);
+                    if (nifty5mHurdleReject != null) {
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + nifty5mHurdleReject);
+                        recordRejection(fyersSymbol, sellSetup, close, "NIFTY_5M_HURDLE", nifty5mHurdleReject);
+                        return;
+                    }
                 }
                 // In-progress 1h candle direction — sell needs the currently-forming 1h bar to be red.
+                // This is the STOCK's 1h candle, always applied.
                 String htfCandleReject = checkHtfCandleColor(false, fyersSymbol);
                 if (htfCandleReject != null) {
                     eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + htfCandleReject);
                     recordRejection(fyersSymbol, sellSetup, close, "HTF_CANDLE_OPPOSED", htfCandleReject);
                     return;
                 }
-                // NIFTY in-progress 1h candle direction — sell needs NIFTY's 1h bar to be red.
-                String niftyHtfCandleReject = checkNiftyHtfCandleColor(false);
-                if (niftyHtfCandleReject != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + niftyHtfCandleReject);
-                    recordRejection(fyersSymbol, sellSetup, close, "NIFTY_HTF_CANDLE_OPPOSED", niftyHtfCandleReject);
-                    return;
+                // NIFTY in-progress 1h candle direction — only when not downgraded to LPT.
+                if (!niftyDowngraded) {
+                    String niftyHtfCandleReject = checkNiftyHtfCandleColor(false);
+                    if (niftyHtfCandleReject != null) {
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + niftyHtfCandleReject);
+                        recordRejection(fyersSymbol, sellSetup, close, "NIFTY_HTF_CANDLE_OPPOSED", niftyHtfCandleReject);
+                        return;
+                    }
                 }
                 fireSignal(fyersSymbol, sellSetup, open, high, low, close, candle.volume, atr, levels, prob, null);
             } else {
