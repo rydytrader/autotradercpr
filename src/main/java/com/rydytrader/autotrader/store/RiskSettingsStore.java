@@ -523,7 +523,13 @@ public class RiskSettingsStore {
     public void setSkipR4S4EvDays(boolean v)   { cfg().skipR4S4EvDays = v; }
     public void setSkipHtfR3S3NormalDays(boolean v) { cfg().skipHtfR3S3NormalDays = v; }
     public void setSkipHtfR4S4NormalDays(boolean v) { cfg().skipHtfR4S4NormalDays = v; }
-    public void setEnableMeanReversionTrades(boolean v) { cfg().enableMeanReversionTrades = v; }
+    public void setEnableMeanReversionTrades(boolean v) {
+        cfg().enableMeanReversionTrades = v;
+        // Mean-reversion setups classify as MPT downstream — turning on the master toggle
+        // also turns on the MPT tier gate so the trades aren't silently blocked by a stale
+        // enableMpt=false value. One-directional: turning mean-rev OFF leaves enableMpt alone.
+        if (v) cfg().enableMpt = true;
+    }
     public void setAtrPeriod(int v) { cfg().atrPeriod = v; }
     public void setSmallCandleAtrThreshold(double v) { cfg().smallCandleAtrThreshold = v; }
     public void setSmallCandleBodyAtrThreshold(double v) { cfg().smallCandleBodyAtrThreshold = v; }
