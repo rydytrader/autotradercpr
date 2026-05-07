@@ -471,8 +471,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
             String buySetup = detectBuyBreakout(open, high, low, close, levels, atp, broken, fyersSymbol);
             if (buySetup != null) {
-                // Master toggle for the 8 counter-trend setups (magnets + deep mean-rev).
-                if (isMeanReversionOrMagnet(buySetup) && !riskSettings.isEnableMeanReversionTrades()) {
+                // Master toggle for the counter-trend family — DH classification depends on
+                // close-vs-CPR position (DH above CPR top is trend-following, not mean-rev).
+                if (isMeanReversionOrMagnet(buySetup, close, levels.getTc(), levels.getBc())
+                        && !riskSettings.isEnableMeanReversionTrades()) {
                     String detail = "mean-reversion trades disabled (master toggle off)";
                     eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " — skipped, " + detail);
                     recordRejection(fyersSymbol, buySetup, close, "MEAN_REVERSION_DISABLED", detail);
@@ -591,8 +593,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
             String sellSetup = detectSellBreakout(open, high, low, close, levels, atp, broken, fyersSymbol);
             if (sellSetup != null) {
-                // Master toggle for the 8 counter-trend setups (magnets + deep mean-rev).
-                if (isMeanReversionOrMagnet(sellSetup) && !riskSettings.isEnableMeanReversionTrades()) {
+                // Master toggle for the counter-trend family — DL classification depends on
+                // close-vs-CPR position (DL below CPR bottom is trend-following, not mean-rev).
+                if (isMeanReversionOrMagnet(sellSetup, close, levels.getTc(), levels.getBc())
+                        && !riskSettings.isEnableMeanReversionTrades()) {
                     String detail = "mean-reversion trades disabled (master toggle off)";
                     eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " — skipped, " + detail);
                     recordRejection(fyersSymbol, sellSetup, close, "MEAN_REVERSION_DISABLED", detail);
@@ -1474,27 +1478,48 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
     /**
      * Counter-trend setup family — magnets (S1+PDL / R1+PDH), deep mean-rev (S2/S3/S4 buys,
-     * R2/R3/R4 sells), and day high/low breakouts (DH/DL). All ten bypass the LTF gate at
-     * probability assignment and fire as MPT. The master toggle
-     * <code>enableMeanReversionTrades</code> gates the entire family.
+     * R2/R3/R4 sells), and day-high/day-low breakouts (DH/DL) when they are reversal trades.
+     * Setups in this family are gated by the <code>enableMeanReversionTrades</code> master
+     * toggle and bypass the LTF gate at probability assignment.
      *
-     * <p>DH/DL are included because in many contexts they're reversal trades — a DH break
-     * after a morning sell-off is the same character as a S2/S3 bounce; a DL break after a
-     * morning rally is a R2/R3 fade. Treating them as part of the family lets them fire even
-     * when the daily LTF direction disagrees with the trade.
+     * <p>DH/DL classification is conditional on close vs daily CPR position:
+     * <ul>
+     *   <li><b>BUY_ABOVE_DH with close above CPR top</b> — trend-following continuation
+     *       (going with the bullish CPR bias). NOT classified as mean-reversion.</li>
+     *   <li><b>BUY_ABOVE_DH with close at-or-below CPR top</b> — buying against the bearish
+     *       CPR bias (or inside CPR). Classified as mean-reversion.</li>
+     *   <li><b>SELL_BELOW_DL with close below CPR bottom</b> — trend-following continuation
+     *       (going with the bearish CPR bias). NOT classified as mean-reversion.</li>
+     *   <li><b>SELL_BELOW_DL with close at-or-above CPR bottom</b> — selling against the
+     *       bullish CPR bias (or inside CPR). Classified as mean-reversion.</li>
+     * </ul>
+     *
+     * <p>If CPR is not loaded (tc/bc &le; 0), DH/DL fall back to the legacy "always mean-rev"
+     * behavior — conservative default.
      */
-    private static boolean isMeanReversionOrMagnet(String setup) {
+    private static boolean isMeanReversionOrMagnet(String setup, double close, double tc, double bc) {
         if (setup == null) return false;
-        return "BUY_ABOVE_S1_PDL".equals(setup)
+        // Static list — always mean-reversion.
+        if ("BUY_ABOVE_S1_PDL".equals(setup)
             || "BUY_ABOVE_S2".equals(setup)
             || "BUY_ABOVE_S3".equals(setup)
             || "BUY_ABOVE_S4".equals(setup)
-            || "BUY_ABOVE_DH".equals(setup)
             || "SELL_BELOW_R1_PDH".equals(setup)
             || "SELL_BELOW_R2".equals(setup)
             || "SELL_BELOW_R3".equals(setup)
-            || "SELL_BELOW_R4".equals(setup)
-            || "SELL_BELOW_DL".equals(setup);
+            || "SELL_BELOW_R4".equals(setup)) return true;
+        // DH/DL — conditional on close vs CPR.
+        double cprTop = Math.max(tc, bc);
+        double cprBot = Math.min(tc, bc);
+        if ("BUY_ABOVE_DH".equals(setup)) {
+            // Mean-rev unless close is strictly above CPR top (trend-following continuation).
+            return !(cprTop > 0 && close > cprTop);
+        }
+        if ("SELL_BELOW_DL".equals(setup)) {
+            // Mean-rev unless close is strictly below CPR bottom (trend-following continuation).
+            return !(cprBot > 0 && close < cprBot);
+        }
+        return false;
     }
 
     private boolean isProbabilityEnabled(String prob) {

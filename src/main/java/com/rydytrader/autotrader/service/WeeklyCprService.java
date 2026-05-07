@@ -646,31 +646,42 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
      * @return "HPT" / null (rejected)
      */
     public String getProbabilityForDirection(String symbol, boolean isBuy, String setup, double breakoutClose) {
-        // Counter-trend family — magnets (S1+PDL / R1+PDH), deep mean-rev (S2/S3/S4 buys,
-        // R2/R3/R4 sells), and day high/low breakouts (DH/DL). All ten bypass the LTF gate
-        // by design and classify as HPT. Master-toggle gating happens upstream in
-        // BreakoutScanner; here we only assign tier.
-        boolean isCounterTrend = setup != null && (
+        // Static counter-trend family — magnets (S1+PDL / R1+PDH) and deep mean-rev
+        // (S2/S3/S4 buys, R2/R3/R4 sells). Always bypass the LTF gate, fire as HPT.
+        // Master-toggle gating happens upstream in BreakoutScanner; here we only assign tier.
+        boolean isStaticCounterTrend = setup != null && (
                "BUY_ABOVE_S1_PDL".equals(setup)
             || "BUY_ABOVE_S2".equals(setup)
             || "BUY_ABOVE_S3".equals(setup)
             || "BUY_ABOVE_S4".equals(setup)
-            || "BUY_ABOVE_DH".equals(setup)
             || "SELL_BELOW_R1_PDH".equals(setup)
             || "SELL_BELOW_R2".equals(setup)
             || "SELL_BELOW_R3".equals(setup)
-            || "SELL_BELOW_R4".equals(setup)
-            || "SELL_BELOW_DL".equals(setup));
+            || "SELL_BELOW_R4".equals(setup));
 
-        if (isCounterTrend) return "HPT";
+        if (isStaticCounterTrend) return "HPT";
 
-        // Standard trade: LTF must support the trade direction.
+        // Standard trade gate: LTF must support the trade direction (5-min close on the
+        // right side of daily CPR).
         com.rydytrader.autotrader.dto.CprLevels cpr = bhavcopyService.getCprLevels(extractTicker(symbol));
         if (cpr == null || breakoutClose <= 0) return null;
         double cprTop = Math.max(cpr.getTc(), cpr.getBc());
         double cprBot = Math.min(cpr.getTc(), cpr.getBc());
         boolean ltfBull = breakoutClose > cprTop;
         boolean ltfBear = breakoutClose < cprBot;
+
+        // DH/DL — mean-reversion vs trend-following determined by close-vs-CPR position:
+        //   BUY_ABOVE_DH  + close > cprTop  → trend-following continuation (LTF passes naturally → HPT)
+        //   BUY_ABOVE_DH  + close ≤ cprTop  → mean-rev (bypass LTF gate, return HPT)
+        //   SELL_BELOW_DL + close < cprBot  → trend-following continuation (LTF passes naturally → HPT)
+        //   SELL_BELOW_DL + close ≥ cprBot  → mean-rev (bypass LTF gate, return HPT)
+        if ("BUY_ABOVE_DH".equals(setup)) {
+            if (cprTop > 0 && !ltfBull) return "HPT"; // mean-rev path: close inside-or-below CPR
+            // else fall through to standard LTF gate below (will pass since ltfBull)
+        } else if ("SELL_BELOW_DL".equals(setup)) {
+            if (cprBot > 0 && !ltfBear) return "HPT"; // mean-rev path: close inside-or-above CPR
+            // else fall through to standard LTF gate below (will pass since ltfBear)
+        }
 
         if (isBuy)  return ltfBull ? "HPT" : null;
         else        return ltfBear ? "HPT" : null;
