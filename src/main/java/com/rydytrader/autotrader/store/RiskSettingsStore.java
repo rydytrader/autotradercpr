@@ -178,6 +178,11 @@ public class RiskSettingsStore {
         // E.g. limit=2: 2W+0L → stop, 0W+2L → stop, 1W+1L → continue, 2W+1L → stop.
         // Counts only fully-closed trades (T1 partial-fill rows are excluded). 0 = disabled.
         volatile int perSymbolDailyTradeLimit = 2;
+        // Per-symbol daily LPT trade limit. Caps how many LPT-tagged trades fire on a single
+        // symbol per trading day. LPT is currently produced when a stock is misaligned with
+        // NIFTY but passes all stock-level filters (downgrade-not-reject behavior). 0 = disabled.
+        // Default 1 — at most one LPT trade per stock per day.
+        volatile int lptMaxTradesPerStockPerDay = 1;
         // Fibonacci trailing SL — all four knobs stored as percent (0–100).
         volatile double fibStage1TriggerPct = 61.8;   // LTP hits this % of range → stage 1 activates
         volatile double fibStage1SlAtrMult = 1.0;     // stage 1 SL = entry ± N × ATR
@@ -351,6 +356,7 @@ public class RiskSettingsStore {
     public boolean isEnablePriceSmaExit() { return cfg().enablePriceSmaExit; }
     public boolean isEnableNiftyReversalCprExit() { return cfg().enableNiftyReversalCprExit; }
     public int getPerSymbolDailyTradeLimit() { return cfg().perSymbolDailyTradeLimit; }
+    public int getLptMaxTradesPerStockPerDay() { return cfg().lptMaxTradesPerStockPerDay; }
     public double getFibStage1TriggerPct() { return cfg().fibStage1TriggerPct; }
     public double getFibStage1SlAtrMult()  { return cfg().fibStage1SlAtrMult; }
     public double getFibStage2TriggerPct() { return cfg().fibStage2TriggerPct; }
@@ -506,6 +512,7 @@ public class RiskSettingsStore {
     public void setEnablePriceSmaExit(boolean v) { cfg().enablePriceSmaExit = v; }
     public void setEnableNiftyReversalCprExit(boolean v) { cfg().enableNiftyReversalCprExit = v; }
     public void setPerSymbolDailyTradeLimit(int v) { cfg().perSymbolDailyTradeLimit = Math.max(0, v); }
+    public void setLptMaxTradesPerStockPerDay(int v) { cfg().lptMaxTradesPerStockPerDay = Math.max(0, v); }
     public void setFibStage1TriggerPct(double v) { cfg().fibStage1TriggerPct = v; }
     public void setFibStage1SlAtrMult(double v)  { cfg().fibStage1SlAtrMult = v; }
     public void setFibStage2TriggerPct(double v) { cfg().fibStage2TriggerPct = v; }
@@ -676,6 +683,7 @@ public class RiskSettingsStore {
             upsert("enablePriceSmaExit", String.valueOf(c.enablePriceSmaExit));
             upsert("enableNiftyReversalCprExit", String.valueOf(c.enableNiftyReversalCprExit));
             upsert("perSymbolDailyTradeLimit", String.valueOf(c.perSymbolDailyTradeLimit));
+            upsert("lptMaxTradesPerStockPerDay", String.valueOf(c.lptMaxTradesPerStockPerDay));
             upsert("fibStage1TriggerPct", String.valueOf(c.fibStage1TriggerPct));
             upsert("fibStage1SlAtrMult",  String.valueOf(c.fibStage1SlAtrMult));
             upsert("fibStage2TriggerPct", String.valueOf(c.fibStage2TriggerPct));
@@ -833,6 +841,7 @@ public class RiskSettingsStore {
                     case "enablePriceSmaExit" -> c.enablePriceSmaExit = Boolean.parseBoolean(v);
                     case "enableNiftyReversalCprExit" -> c.enableNiftyReversalCprExit = Boolean.parseBoolean(v);
                     case "perSymbolDailyTradeLimit" -> c.perSymbolDailyTradeLimit = Math.max(0, Integer.parseInt(v));
+                    case "lptMaxTradesPerStockPerDay" -> c.lptMaxTradesPerStockPerDay = Math.max(0, Integer.parseInt(v));
                     case "fibStage1TriggerPct" -> c.fibStage1TriggerPct = Double.parseDouble(v);
                     case "fibStage1SlAtrMult"  -> c.fibStage1SlAtrMult  = Double.parseDouble(v);
                     case "fibStage2TriggerPct" -> c.fibStage2TriggerPct = Double.parseDouble(v);

@@ -114,6 +114,7 @@ public class SettingsController {
         result.put("enablePriceSmaExit", riskSettings.isEnablePriceSmaExit());
         result.put("enableNiftyReversalCprExit", riskSettings.isEnableNiftyReversalCprExit());
         result.put("perSymbolDailyTradeLimit", riskSettings.getPerSymbolDailyTradeLimit());
+        result.put("lptMaxTradesPerStockPerDay", riskSettings.getLptMaxTradesPerStockPerDay());
         result.put("fibStage1TriggerPct", riskSettings.getFibStage1TriggerPct());
         result.put("fibStage1SlAtrMult",  riskSettings.getFibStage1SlAtrMult());
         result.put("fibStage2TriggerPct", riskSettings.getFibStage2TriggerPct());
@@ -244,6 +245,11 @@ public class SettingsController {
             if (body.containsKey("perSymbolDailyTradeLimit")) {
                 try {
                     riskSettings.setPerSymbolDailyTradeLimit(Integer.parseInt(body.get("perSymbolDailyTradeLimit").toString()));
+                } catch (NumberFormatException ignored) { /* leave at current value */ }
+            }
+            if (body.containsKey("lptMaxTradesPerStockPerDay")) {
+                try {
+                    riskSettings.setLptMaxTradesPerStockPerDay(Integer.parseInt(body.get("lptMaxTradesPerStockPerDay").toString()));
                 } catch (NumberFormatException ignored) { /* leave at current value */ }
             }
             if (body.containsKey("fibStage1TriggerPct")) riskSettings.setFibStage1TriggerPct(Double.parseDouble(body.get("fibStage1TriggerPct").toString()));

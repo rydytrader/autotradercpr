@@ -510,6 +510,16 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                             "NIFTY " + niftyState + " — buy would downgrade to LPT but LPT disabled");
                         return;
                     }
+                    int lptLimit = riskSettings.getLptMaxTradesPerStockPerDay();
+                    if (lptLimit > 0 && tradeHistoryService != null) {
+                        int lptToday = tradeHistoryService.getSymbolTodayCountByProbability(fyersSymbol, "LPT");
+                        if (lptToday >= lptLimit) {
+                            recordRejection(fyersSymbol, buySetup, close, "LPT_DAILY_LIMIT",
+                                "buy would downgrade to LPT but " + lptToday + " LPT trade(s) already today (limit "
+                                + lptLimit + ")");
+                            return;
+                        }
+                    }
                     prob = "LPT";
                     niftyDowngraded = true;
                     eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " — NIFTY "
@@ -616,6 +626,16 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                         recordRejection(fyersSymbol, sellSetup, close, "NIFTY_OPPOSED",
                             "NIFTY " + niftyState + " — sell would downgrade to LPT but LPT disabled");
                         return;
+                    }
+                    int lptLimit = riskSettings.getLptMaxTradesPerStockPerDay();
+                    if (lptLimit > 0 && tradeHistoryService != null) {
+                        int lptToday = tradeHistoryService.getSymbolTodayCountByProbability(fyersSymbol, "LPT");
+                        if (lptToday >= lptLimit) {
+                            recordRejection(fyersSymbol, sellSetup, close, "LPT_DAILY_LIMIT",
+                                "sell would downgrade to LPT but " + lptToday + " LPT trade(s) already today (limit "
+                                + lptLimit + ")");
+                            return;
+                        }
                     }
                     prob = "LPT";
                     niftyDowngraded = true;

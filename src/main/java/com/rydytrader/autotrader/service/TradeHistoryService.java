@@ -78,6 +78,24 @@ public class TradeHistoryService {
     public List<TradeRecord> getTrades() { return new ArrayList<>(trades); }
 
     /**
+     * Count today's trades for a symbol that carry the given probability tag.
+     * T1 partial-fill rows are excluded so a split trade counts once.
+     * Used to gate per-stock daily LPT-trade limit in BreakoutScanner.
+     */
+    public int getSymbolTodayCountByProbability(String symbol, String probability) {
+        if (symbol == null || probability == null) return 0;
+        int count = 0;
+        synchronized (trades) {
+            for (TradeRecord r : trades) {
+                if (!symbol.equals(r.getSymbol())) continue;
+                if ("TARGET_1".equals(r.getExitReason())) continue; // partial fill
+                if (probability.equals(r.getProbability())) count++;
+            }
+        }
+        return count;
+    }
+
+    /**
      * Today's wins and losses for a single symbol, used by the per-symbol daily-trade-limit gate.
      * Counts only fully-closed trade rows — TARGET_1 partial fills are excluded so a split
      * trade that hits T1 then T2 counts as one win, not two.
