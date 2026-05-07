@@ -864,21 +864,6 @@
                     </div>
                     <div class="form-hint">Fyers' live tick stream is unreliable during 9:15-9:25 per their own docs — the first 5-min candle built from ticks can have wrong open/high/low/close. At the configured time (default 09:25), the bot refetches today's candles from Fyers <code>/data/history</code> (authoritative exchange-aggregated bars) and overwrites firstCandleClose, dayOpen, OR high/low, SMA, ATR, and the completedCandles deque. This fixes IV/OV/EV classification, DH/DL breakout detection, target shift, and structural SL for late-subscribed symbols.</div>
                 </div>
-                <div class="form-group" style="grid-column: 1 / -1;">
-                    <label class="form-label">Signal Probability</label>
-                    <div style="display: flex; gap: 20px; margin-top: 6px;">
-                        <div style="display:flex; align-items:center; gap:8px; font-family:var(--font-mono); font-size:0.82rem; color:var(--text-secondary);">
-                            <input type="checkbox" id="enableHpt" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> HPT (High Probable)
-                        </div>
-                        <div style="display:flex; align-items:center; gap:8px; font-family:var(--font-mono); font-size:0.82rem; color:var(--text-secondary);">
-                            <input type="checkbox" id="enableMpt" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> MPT (Medium Probable)
-                        </div>
-                        <div style="display:none;">
-                            <input type="checkbox" id="enableLpt" style="width:16px;height:16px;">
-                        </div>
-                    </div>
-                    <div class="form-hint"><b>HPT</b> — LTF (5-min close vs daily CPR) and HTF (weekly state machine) both align with trade direction. Full size. <b>MPT</b> — only one of LTF or HTF aligns (e.g. magnet trades aligned only with HTF, or trend trades where HTF disagrees). Configurable qty factor (default 0.75). LPT is no longer assigned in the new LTF-priority model.</div>
-                </div>
             </div>
         </div>
     </div>
@@ -1314,9 +1299,6 @@
             document.getElementById('smallRangeAdrPct').value = d.smallRangeAdrPct != null ? d.smallRangeAdrPct : 50.0;
             document.getElementById('scanIncludeIS').checked = d.scanIncludeIS !== false;
             document.getElementById('scanIncludeIL').checked = d.scanIncludeIL === true;
-            document.getElementById('enableHpt').checked = d.enableHpt !== false;
-            document.getElementById('enableLpt').checked = d.enableLpt !== false;
-            document.getElementById('enableMpt').checked = d.enableMpt !== false;
             document.getElementById('mptQtyFactor').value = d.mptQtyFactor != null ? d.mptQtyFactor : 0.75;
             document.getElementById('minAbsoluteProfit').value = d.minAbsoluteProfit != null ? d.minAbsoluteProfit : 500;
             document.getElementById('skipR3S3IvOvDays').checked = d.skipR3S3IvOvDays !== false;
@@ -1365,10 +1347,7 @@
             const srcSubEl = document.getElementById('statSignalSourceSub');
             if (srcEl) {
                 srcEl.textContent = d.signalSource || 'INTERNAL';
-                var probs = [];
-                if (d.enableHpt) probs.push('HPT');
-                if (d.enableMpt) probs.push('MPT');
-                srcSubEl.textContent = probs.length > 0 ? probs.join(' + ') : 'No probabilities enabled';
+                if (srcSubEl) srcSubEl.textContent = '';
             }
 
         } catch (e) {
@@ -1481,9 +1460,6 @@
                 smallRangeAdrPct: parseFloat(document.getElementById('smallRangeAdrPct').value) || 50.0,
                 scanIncludeIS: document.getElementById('scanIncludeIS').checked,
                 scanIncludeIL: document.getElementById('scanIncludeIL').checked,
-                enableHpt: document.getElementById('enableHpt').checked,
-                enableLpt: document.getElementById('enableLpt').checked,
-                enableMpt: document.getElementById('enableMpt').checked,
                 mptQtyFactor: parseFloat(document.getElementById('mptQtyFactor').value) || 0.75,
                 minAbsoluteProfit: parseFloat(document.getElementById('minAbsoluteProfit').value) || 500,
                 skipR3S3IvOvDays: document.getElementById('skipR3S3IvOvDays').checked,
