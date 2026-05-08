@@ -591,7 +591,7 @@
 
         const setupb = d.setupBreakdown || {};
         g('setupTable').innerHTML = Object.entries(setupb).filter(([,v])=>v.count>0).map(([setup,s]) =>
-            `<tr><td style="font-family:var(--font-mono);font-size:.75rem;color:var(--accent-cyan)">${setup||'—'}</td><td class="tr">${s.count}</td><td class="tr"><span class="${s.winRate>=50?'pos':'neg'}">${s.winRate}%</span></td><td class="tr"><span class="${s.avgPnl>=0?'pos':'neg'}">${fmtPnl(s.avgPnl)}</span></td><td class="tr"><span class="${s.pnl>=0?'pos':'neg'}">${fmtPnl(s.pnl)}</span></td></tr>`
+            `<tr><td style="font-family:var(--font-mono);font-size:.75rem;color:var(--accent-cyan)">${setup ? setup.replace(/_/g,' ').replace(/(\d)([A-Z])/g,'$1 $2') : '—'}</td><td class="tr">${s.count}</td><td class="tr"><span class="${s.winRate>=50?'pos':'neg'}">${s.winRate}%</span></td><td class="tr"><span class="${s.avgPnl>=0?'pos':'neg'}">${fmtPnl(s.avgPnl)}</span></td><td class="tr"><span class="${s.pnl>=0?'pos':'neg'}">${fmtPnl(s.pnl)}</span></td></tr>`
         ).join('') || '<tr><td colspan="5"><div class="empty-state" style="padding:20px">No data</div></td></tr>';
 
         const symbolb = d.symbolBreakdown || {};

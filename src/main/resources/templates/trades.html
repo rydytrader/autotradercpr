@@ -278,7 +278,8 @@
     // ── TRADE TABLE ───────────────────────────────
     function renderSetup(v) {
         if (!v) return '—';
-        return v.replace(/_/g, ' ');
+        // Underscores → spaces, then split adjacent digit-letter pairs ("20SMA" → "20 SMA").
+        return v.replace(/_/g, ' ').replace(/(\d)([A-Z])/g, '$1 $2');
     }
 
     function renderProb(v) {

@@ -825,7 +825,7 @@
                 var stClass = s.status.toLowerCase();
                 var detailTip = s.detail ? ' title="' + s.detail.replace(/"/g, '&quot;') + '"' : '';
                 return '<div style="display:flex;align-items:center;gap:6px;padding:1px 0;">'
-                    + '<span class="sig-setup">' + s.setup + '</span>'
+                    + '<span class="sig-setup">' + prettySetup(s.setup) + '</span>'
                     + '<span class="sig-time"><span class="sig-at">@ </span>' + s.time + '</span>'
                     + '<span class="scan-signal-status ' + stClass + '" style="margin-left:auto;cursor:help;"' + detailTip + '>' + s.status + '</span>'
                     + '</div>';
@@ -935,7 +935,7 @@
             + '<div class="scan-levels' + (isExpanded(d.symbol, 'signal') ? ' expanded' : '') + '">'
             + '  <div class="scan-levels-title" onclick="toggleLevelSection(this, \'' + d.symbol + '\', \'signal\')">'
             + (d.lastSignal
-                ? 'Latest Signal &#9654; <span class="sig-setup" style="margin-left:4px;">' + d.lastSignal.setup + '</span>'
+                ? 'Latest Signal &#9654; <span class="sig-setup" style="margin-left:4px;">' + prettySetup(d.lastSignal.setup) + '</span>'
                   + '<span class="sig-time" style="margin-left:4px;">@ ' + d.lastSignal.time + '</span>'
                   + '<span class="scan-signal-status ' + d.lastSignal.status.toLowerCase() + '" style="margin-left:auto;cursor:help;"' + (d.lastSignal.detail ? ' title="' + d.lastSignal.detail.replace(/"/g, '&quot;') + '"' : '') + '>' + d.lastSignal.status + '</span>'
                 : 'Latest Signal &#9654; <span style="color:var(--text-muted); margin-left:4px;">No breakout yet</span>')
@@ -949,6 +949,15 @@
         if (v == null || v === 0) return '--';
         return v.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     }
+
+    // Display-friendly setup name: underscores → spaces, digit-letter pairs split
+    // ("BUY_ABOVE_20SMA" → "BUY ABOVE 20 SMA"). Exposed on window so the second IIFE
+    // and any inline callers can reuse it.
+    window.prettySetup = function(s) {
+        if (!s) return '';
+        return s.replace(/_/g, ' ').replace(/(\d)([A-Z])/g, '$1 $2');
+    };
+    var prettySetup = window.prettySetup;
 
     function fmtVol(v) {
         if (v == null || v <= 0) return '--';
@@ -1761,7 +1770,7 @@ function stRerenderRows() {
             + '<td style="padding:9px 12px; color:var(--text-muted);">' + (idx + 1) + '</td>'
             + '<td style="padding:9px 12px; color:var(--text-secondary);">' + (r.time || '--') + '</td>'
             + '<td style="padding:9px 12px;"><strong>' + stShortSymbol(r.symbol) + '</strong></td>'
-            + '<td style="padding:9px 12px; color:var(--text-secondary);">' + (r.setup || '--') + '</td>'
+            + '<td style="padding:9px 12px; color:var(--text-secondary);">' + (r.setup ? window.prettySetup(r.setup) : '--') + '</td>'
             + '<td style="padding:9px 12px;">' + stStatusBadge(r.status) + '</td>'
             + '<td style="padding:9px 12px;">' + stFilterBadge(r.filterName) + '</td>'
             + '<td style="padding:9px 12px; color:var(--text-secondary); font-size:0.7rem; line-height:1.5; word-break:break-word;">' + (r.detail || '--') + '</td>'
@@ -2367,7 +2376,7 @@ function applyTradeMarkers(d) {
                 position: isLong ? 'belowBar' : 'aboveBar',
                 color: isLong ? '#26a69a' : '#ef5350',
                 shape: isLong ? 'arrowUp' : 'arrowDown',
-                text: t.setup + ' @ ' + t.entryPrice.toFixed(2)
+                text: (window.prettySetup ? window.prettySetup(t.setup) : t.setup) + ' @ ' + t.entryPrice.toFixed(2)
             });
         }
         if (t.exitTime) {

@@ -502,7 +502,7 @@
 
     function renderSetup(v) {
         if (!v) return '—';
-        return v.replace(/_/g, ' ');
+        return v.replace(/_/g, ' ').replace(/(\d)([A-Z])/g, '$1 $2');
     }
 
     function renderProb(v) {
