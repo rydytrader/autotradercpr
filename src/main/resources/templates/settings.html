@@ -630,6 +630,15 @@
                         <br><br><b>Headroom check.</b> Mirror of the NIFTY HTF Hurdle headroom &mdash; even after the past hurdle is cleared, the filter rejects if the nearest upcoming hurdle (above NIFTY LTP for buys / below for sells, from the same daily-CPR set) is closer than <code>min headroom &times; NIFTY ATR</code>. Default <b>1.0</b> &times; ATR. Set to 0 to disable just the headroom check. Signal Trail bucket: <code>NIFTY_5M_HURDLE</code>.</div>
                 </div>
                 <div class="form-group">
+                    <label class="form-label">Virgin CPR (NIFTY)</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Active for the next</span>
+                        <input type="number" id="virginCprExpiryDays" class="form-control" step="1" min="0" max="60" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">trading days (0 = disabled)</span>
+                    </div>
+                    <div class="form-hint">When NIFTY's session range never overlapped the daily CPR (BC..TC) by 15:30 IST, that day's CPR levels (TC / Pivot / BC) are cached as a <b>virgin CPR</b> and join the candidate set of the <b>NIFTY 5m Hurdle filter</b> above for the next N trading days. (Not added to the 1h NIFTY HTF Hurdle filter — daily-level concept stays at the daily-CPR gate.) A new virgin CPR replaces any existing active record. Default <b>10</b> trading days. The active virgin CPR is shown as an icon on the NIFTY card on the Watchlist page &mdash; click for the formed-on date and exact levels.</div>
+                </div>
+                <div class="form-group">
                     <label class="form-label">NIFTY HTF Candle Direction Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableNiftyHtfCandleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
@@ -1265,6 +1274,7 @@
             document.getElementById('enableNiftyHtfHurdleFilter').checked = d.enableNiftyHtfHurdleFilter === true;
             document.getElementById('niftyHurdleMinHeadroomAtr').value = (d.niftyHurdleMinHeadroomAtr != null ? d.niftyHurdleMinHeadroomAtr : 1.0);
             document.getElementById('enableNifty5mHurdleFilter').checked = d.enableNifty5mHurdleFilter === true;
+            document.getElementById('virginCprExpiryDays').value = d.virginCprExpiryDays != null ? d.virginCprExpiryDays : 10;
             document.getElementById('nifty5mHurdleMinHeadroomAtr').value = (d.nifty5mHurdleMinHeadroomAtr != null ? d.nifty5mHurdleMinHeadroomAtr : 1.0);
             document.getElementById('enableHtfCandleFilter').checked = d.enableHtfCandleFilter === true;
             document.getElementById('enableNiftyHtfCandleFilter').checked = d.enableNiftyHtfCandleFilter === true;
@@ -1433,6 +1443,7 @@
                 enableNiftyHtfHurdleFilter: document.getElementById('enableNiftyHtfHurdleFilter').checked,
                 niftyHurdleMinHeadroomAtr: parseFloat(document.getElementById('niftyHurdleMinHeadroomAtr').value) || 0,
                 enableNifty5mHurdleFilter: document.getElementById('enableNifty5mHurdleFilter').checked,
+                virginCprExpiryDays: parseInt(document.getElementById('virginCprExpiryDays').value) || 0,
                 nifty5mHurdleMinHeadroomAtr: parseFloat(document.getElementById('nifty5mHurdleMinHeadroomAtr').value) || 0,
                 enableHtfCandleFilter: document.getElementById('enableHtfCandleFilter').checked,
                 enableNiftyHtfCandleFilter: document.getElementById('enableNiftyHtfCandleFilter').checked,

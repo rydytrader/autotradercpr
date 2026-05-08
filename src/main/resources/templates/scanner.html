@@ -477,6 +477,9 @@
             <button class="chart-icon-btn" onclick="openChartModal('NSE:NIFTY50-INDEX', 'NIFTY 50')" title="View NIFTY 5-min chart" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:3px 6px;margin-left:8px;cursor:pointer;color:var(--text-secondary);line-height:0;display:inline-flex;align-items:center;">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 6-6"/></svg>
             </button>
+            <button id="virginCprIconBtn" onclick="openVirginCprModal()" title="Active Virgin CPR — click for details" style="display:none;background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.4);border-radius:4px;padding:3px 6px;margin-left:6px;cursor:pointer;color:#fbbf24;line-height:0;align-items:center;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </button>
             <div class="nifty-ltp" id="niftyLtp">—</div>
             <div class="nifty-change" id="niftyChange" style="font-family:var(--font-mono); font-weight:700; font-size:0.85rem; margin-left:8px;">—</div>
             <div class="nifty-cpr-width" id="niftyCprWidth" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY daily CPR width vs scanner thresholds (Narrow / Normal / Wide)">—</div>
@@ -1298,14 +1301,47 @@
         setInterval(tick, 1000);
     })();
 
+    // ── Virgin CPR icon poller ──────────────────────
+    var __virginCprData = null;
+    function refreshVirginCpr() {
+        fetch('/api/virgin-cpr/status').then(function(r) { return r.json(); }).then(function(d) {
+            var btn = document.getElementById('virginCprIconBtn');
+            if (!btn) return;
+            if (d && d.active === true) {
+                __virginCprData = d;
+                btn.style.display = 'inline-flex';
+                btn.title = 'Virgin CPR formed ' + (d.date || '?')
+                    + ' — ' + (d.daysRemaining != null ? d.daysRemaining : '?')
+                    + ' trading days remaining. Click for details.';
+            } else {
+                __virginCprData = null;
+                btn.style.display = 'none';
+            }
+        }).catch(function() {
+            // silent — endpoint may transiently fail
+        });
+    }
+    window.openVirginCprModal = function() {
+        var d = __virginCprData;
+        var fmt = function(v) { return (v && v > 0) ? Number(v).toFixed(2) : '—'; };
+        document.getElementById('vcModalDate').textContent      = d && d.date ? d.date : '—';
+        document.getElementById('vcModalRemaining').textContent = d && d.daysRemaining != null ? d.daysRemaining + ' day(s)' : '—';
+        document.getElementById('vcModalTc').textContent        = d ? fmt(d.tc)    : '—';
+        document.getElementById('vcModalPivot').textContent     = d ? fmt(d.pivot) : '—';
+        document.getElementById('vcModalBc').textContent        = d ? fmt(d.bc)    : '—';
+        document.getElementById('virginCprModal').style.display = 'block';
+    };
+
     // ── Init ────────────────────────────────────────
     fetchData();
     checkStatus();
     refreshNiftyCard();
+    refreshVirginCpr();
     setTimeout(initWatchlistSse, 1000); // wait for ticker.js to establish SSE
     setInterval(fetchData, 15000); // full refresh every 15s (trends, signals, levels)
     setInterval(checkStatus, 5000);
     setInterval(refreshNiftyCard, 5000);
+    setInterval(refreshVirginCpr, 30000); // 30s — virgin CPR state changes only at 15:30 daily
 })();
 </script>
 
@@ -1544,6 +1580,42 @@ function showInsideCpr() {
                 </div>
             </div>
 
+        </div>
+    </div>
+</div>
+
+<!-- Virgin CPR Modal -->
+<div id="virginCprModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px);" onclick="if(event.target===this)this.style.display='none'">
+    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:480px; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border); background:var(--bg-section-header);">
+            <div>
+                <div style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:#fbbf24;">VIRGIN CPR (NIFTY)</div>
+                <div style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); margin-top:2px;">Untouched daily CPR — acts as a hurdle for the next N trading days</div>
+            </div>
+            <button onclick="document.getElementById('virginCprModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
+        </div>
+        <div style="padding:18px 22px; font-family:var(--font-mono); font-size:0.84rem; color:var(--text-primary); line-height:1.9;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                <span style="color:var(--text-secondary);">Formed on</span>
+                <span id="vcModalDate" style="font-weight:700;">—</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                <span style="color:var(--text-secondary);">Trading days remaining</span>
+                <span id="vcModalRemaining" style="font-weight:700; color:#fbbf24;">—</span>
+            </div>
+            <div style="height:1px; background:var(--border); margin:14px 0;"></div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                <span style="color:var(--text-secondary);">TC</span>
+                <span id="vcModalTc" style="font-weight:700;">—</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                <span style="color:var(--text-secondary);">Pivot</span>
+                <span id="vcModalPivot" style="font-weight:700;">—</span>
+            </div>
+            <div style="display:flex; justify-content:space-between;">
+                <span style="color:var(--text-secondary);">BC</span>
+                <span id="vcModalBc" style="font-weight:700;">—</span>
+            </div>
         </div>
     </div>
 </div>
