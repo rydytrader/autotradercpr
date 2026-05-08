@@ -643,13 +643,29 @@
                         <br><br><b>Headroom check.</b> Mirror of the NIFTY HTF Hurdle headroom &mdash; even after the past hurdle is cleared, the filter rejects if the nearest upcoming hurdle (above NIFTY LTP for buys / below for sells, from the same daily-CPR set) is closer than <code>min headroom &times; NIFTY ATR</code>. Default <b>1.0</b> &times; ATR. Set to 0 to disable just the headroom check. Signal Trail bucket: <code>NIFTY_5M_HURDLE</code>.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Virgin CPR (NIFTY)</label>
+                    <label class="form-label">Virgin CPR Cache (NIFTY)</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Active for the next</span>
                         <input type="number" id="virginCprExpiryDays" class="form-control" step="1" min="0" max="60" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">trading days (0 = disabled)</span>
                     </div>
-                    <div class="form-hint">When NIFTY's session range never overlapped the daily CPR (BC..TC) by 15:30 IST, that day's CPR levels (TC / Pivot / BC) are cached as a <b>virgin CPR</b> and join the candidate set of the <b>NIFTY 5m Hurdle filter</b> above for the next N trading days. (Not added to the 1h NIFTY HTF Hurdle filter — daily-level concept stays at the daily-CPR gate.) A new virgin CPR replaces any existing active record. Default <b>10</b> trading days. The active virgin CPR is shown as an icon on the NIFTY card on the Watchlist page &mdash; click for the formed-on date and exact levels.</div>
+                    <div class="form-hint">When NIFTY's session range never overlapped the daily CPR (BC..TC) by 15:30 IST, that day's CPR levels (TC / Pivot / BC) are cached as a <b>virgin CPR</b> for the next N trading days. A new virgin CPR replaces any existing active record. Default <b>10</b>. The active virgin CPR is consumed by the dedicated <b>Virgin CPR Hurdle Filter</b> below and shown as a shield icon on the NIFTY card &mdash; click for the formed-on date and exact levels.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Virgin CPR Hurdle Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableVirginCprHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY is inside or near the active virgin CPR zone</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min headroom to zone edge:</span>
+                        <input type="number" id="virginCprHurdleHeadroomAtr" class="form-control" step="0.1" min="0" max="5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× NIFTY ATR (0 = off)</span>
+                    </div>
+                    <div class="form-hint">Treats the active virgin CPR as a zone (BC..TC), not individual levels.
+                        <br>&nbsp;&nbsp;&bull; <b>Inside zone</b> &mdash; NIFTY's prior 5m close lands within [BC, TC]: every stock signal rejected, both directions.
+                        <br>&nbsp;&nbsp;&bull; <b>Headroom</b> &mdash; close outside the zone but within <code>headroom × NIFTY ATR</code> of the zone edge in the trade direction: rejected. Buys blocked when zone is overhead and close; sells blocked when zone is underfoot and close. Mirrors the 5m hurdle's directional headroom logic.
+                        <br>Default headroom <b>1.0</b> × ATR. Set to 0 to disable the headroom leg (the inside-zone leg stays on while the master toggle is on). Signal Trail bucket: <code>VIRGIN_CPR_HURDLE</code>.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">NIFTY HTF Candle Direction Filter</label>
@@ -1290,6 +1306,8 @@
             document.getElementById('niftyOiHurdleMinHeadroomAtr').value = (d.niftyOiHurdleMinHeadroomAtr != null ? d.niftyOiHurdleMinHeadroomAtr : 1.0);
             document.getElementById('enableNifty5mHurdleFilter').checked = d.enableNifty5mHurdleFilter === true;
             document.getElementById('virginCprExpiryDays').value = d.virginCprExpiryDays != null ? d.virginCprExpiryDays : 10;
+            document.getElementById('enableVirginCprHurdleFilter').checked = d.enableVirginCprHurdleFilter === true;
+            document.getElementById('virginCprHurdleHeadroomAtr').value = (d.virginCprHurdleHeadroomAtr != null ? d.virginCprHurdleHeadroomAtr : 1.0);
             document.getElementById('nifty5mHurdleMinHeadroomAtr').value = (d.nifty5mHurdleMinHeadroomAtr != null ? d.nifty5mHurdleMinHeadroomAtr : 1.0);
             document.getElementById('enableHtfCandleFilter').checked = d.enableHtfCandleFilter === true;
             document.getElementById('enableNiftyHtfCandleFilter').checked = d.enableNiftyHtfCandleFilter === true;
@@ -1461,6 +1479,8 @@
                 niftyOiHurdleMinHeadroomAtr: parseFloat(document.getElementById('niftyOiHurdleMinHeadroomAtr').value) || 0,
                 enableNifty5mHurdleFilter: document.getElementById('enableNifty5mHurdleFilter').checked,
                 virginCprExpiryDays: parseInt(document.getElementById('virginCprExpiryDays').value) || 0,
+                enableVirginCprHurdleFilter: document.getElementById('enableVirginCprHurdleFilter').checked,
+                virginCprHurdleHeadroomAtr: parseFloat(document.getElementById('virginCprHurdleHeadroomAtr').value) || 0,
                 nifty5mHurdleMinHeadroomAtr: parseFloat(document.getElementById('nifty5mHurdleMinHeadroomAtr').value) || 0,
                 enableHtfCandleFilter: document.getElementById('enableHtfCandleFilter').checked,
                 enableNiftyHtfCandleFilter: document.getElementById('enableNiftyHtfCandleFilter').checked,

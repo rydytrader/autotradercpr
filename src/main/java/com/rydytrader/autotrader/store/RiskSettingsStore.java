@@ -191,9 +191,15 @@ public class RiskSettingsStore {
         volatile int lptMaxTradesPerStockPerDay = 1;
         // Virgin CPR — when NIFTY's session range never overlapped today's daily CPR (BC..TC)
         // by 15:30 IST, that day's CPR levels (TC, Pivot, BC) are cached as a "virgin CPR" and
-        // act as additional hurdles in the NIFTY HTF / 5m hurdle filters for the next N trading
+        // become available to the dedicated Virgin CPR Hurdle filter for the next N trading
         // days. A new virgin CPR replaces any existing active one. 0 = feature disabled.
         volatile int virginCprExpiryDays = 10;
+        // Virgin CPR Hurdle filter — treats the active virgin CPR as a zone (BC..TC). Rejects
+        // all stock signals when NIFTY's prior 5m close is inside the zone, and rejects in the
+        // trade direction when the close is within virginCprHurdleHeadroomAtr × NIFTY ATR of
+        // the zone edge. Default off — opt-in.
+        volatile boolean enableVirginCprHurdleFilter = false;
+        volatile double  virginCprHurdleHeadroomAtr  = 1.0;
         // Fibonacci trailing SL — all four knobs stored as percent (0–100).
         volatile double fibStage1TriggerPct = 61.8;   // LTP hits this % of range → stage 1 activates
         volatile double fibStage1SlAtrMult = 1.0;     // stage 1 SL = entry ± N × ATR
@@ -371,6 +377,8 @@ public class RiskSettingsStore {
     public int getPerSymbolDailyTradeLimit() { return cfg().perSymbolDailyTradeLimit; }
     public int getLptMaxTradesPerStockPerDay() { return cfg().lptMaxTradesPerStockPerDay; }
     public int getVirginCprExpiryDays() { return cfg().virginCprExpiryDays; }
+    public boolean isEnableVirginCprHurdleFilter() { return cfg().enableVirginCprHurdleFilter; }
+    public double  getVirginCprHurdleHeadroomAtr() { return cfg().virginCprHurdleHeadroomAtr; }
     public double getFibStage1TriggerPct() { return cfg().fibStage1TriggerPct; }
     public double getFibStage1SlAtrMult()  { return cfg().fibStage1SlAtrMult; }
     public double getFibStage2TriggerPct() { return cfg().fibStage2TriggerPct; }
@@ -530,6 +538,8 @@ public class RiskSettingsStore {
     public void setPerSymbolDailyTradeLimit(int v) { cfg().perSymbolDailyTradeLimit = Math.max(0, v); }
     public void setLptMaxTradesPerStockPerDay(int v) { cfg().lptMaxTradesPerStockPerDay = Math.max(0, v); }
     public void setVirginCprExpiryDays(int v) { cfg().virginCprExpiryDays = Math.max(0, v); }
+    public void setEnableVirginCprHurdleFilter(boolean v) { cfg().enableVirginCprHurdleFilter = v; }
+    public void setVirginCprHurdleHeadroomAtr(double v)   { cfg().virginCprHurdleHeadroomAtr = Math.max(0, v); }
     public void setFibStage1TriggerPct(double v) { cfg().fibStage1TriggerPct = v; }
     public void setFibStage1SlAtrMult(double v)  { cfg().fibStage1SlAtrMult = v; }
     public void setFibStage2TriggerPct(double v) { cfg().fibStage2TriggerPct = v; }
@@ -710,6 +720,8 @@ public class RiskSettingsStore {
             upsert("perSymbolDailyTradeLimit", String.valueOf(c.perSymbolDailyTradeLimit));
             upsert("lptMaxTradesPerStockPerDay", String.valueOf(c.lptMaxTradesPerStockPerDay));
             upsert("virginCprExpiryDays", String.valueOf(c.virginCprExpiryDays));
+            upsert("enableVirginCprHurdleFilter", String.valueOf(c.enableVirginCprHurdleFilter));
+            upsert("virginCprHurdleHeadroomAtr",  String.valueOf(c.virginCprHurdleHeadroomAtr));
             upsert("fibStage1TriggerPct", String.valueOf(c.fibStage1TriggerPct));
             upsert("fibStage1SlAtrMult",  String.valueOf(c.fibStage1SlAtrMult));
             upsert("fibStage2TriggerPct", String.valueOf(c.fibStage2TriggerPct));
@@ -871,6 +883,8 @@ public class RiskSettingsStore {
                     case "perSymbolDailyTradeLimit" -> c.perSymbolDailyTradeLimit = Math.max(0, Integer.parseInt(v));
                     case "lptMaxTradesPerStockPerDay" -> c.lptMaxTradesPerStockPerDay = Math.max(0, Integer.parseInt(v));
                     case "virginCprExpiryDays" -> c.virginCprExpiryDays = Math.max(0, Integer.parseInt(v));
+                    case "enableVirginCprHurdleFilter" -> c.enableVirginCprHurdleFilter = Boolean.parseBoolean(v);
+                    case "virginCprHurdleHeadroomAtr" -> c.virginCprHurdleHeadroomAtr = Math.max(0, Double.parseDouble(v));
                     case "fibStage1TriggerPct" -> c.fibStage1TriggerPct = Double.parseDouble(v);
                     case "fibStage1SlAtrMult"  -> c.fibStage1SlAtrMult  = Double.parseDouble(v);
                     case "fibStage2TriggerPct" -> c.fibStage2TriggerPct = Double.parseDouble(v);

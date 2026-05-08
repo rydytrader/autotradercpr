@@ -553,6 +553,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                         recordRejection(fyersSymbol, buySetup, close, "NIFTY_5M_HURDLE", nifty5mHurdleReject);
                         return;
                     }
+                    // Virgin CPR Hurdle — zone-based: inside zone or within headroom × ATR rejects.
+                    String virginCprHurdleReject = checkNiftyVirginCprHurdle(true, candle.startMinute);
+                    if (virginCprHurdleReject != null) {
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + virginCprHurdleReject);
+                        recordRejection(fyersSymbol, buySetup, close, "VIRGIN_CPR_HURDLE", virginCprHurdleReject);
+                        return;
+                    }
                 }
                 // In-progress 1h candle direction — buy needs the currently-forming 1h bar to be green.
                 // This is the STOCK's 1h candle, always applied.
@@ -677,6 +684,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     if (nifty5mHurdleReject != null) {
                         eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + nifty5mHurdleReject);
                         recordRejection(fyersSymbol, sellSetup, close, "NIFTY_5M_HURDLE", nifty5mHurdleReject);
+                        return;
+                    }
+                    // Virgin CPR Hurdle — zone-based: inside zone or within headroom × ATR rejects.
+                    String virginCprHurdleReject = checkNiftyVirginCprHurdle(false, candle.startMinute);
+                    if (virginCprHurdleReject != null) {
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + virginCprHurdleReject);
+                        recordRejection(fyersSymbol, sellSetup, close, "VIRGIN_CPR_HURDLE", virginCprHurdleReject);
                         return;
                     }
                 }
@@ -1437,14 +1451,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             candidateList.add(cpr.getS1());    nameList.add("S1");
             candidateList.add(cpr.getPl());    nameList.add("PDL");
         }
-        if (virginCprService != null) {
-            VirginCprService.Snapshot vc = virginCprService.getActiveVirginCpr();
-            if (vc != null) {
-                if (vc.tc    > 0) { candidateList.add(vc.tc);    nameList.add("virgin CPR TC"); }
-                if (vc.pivot > 0) { candidateList.add(vc.pivot); nameList.add("virgin CPR Pivot"); }
-                if (vc.bc    > 0) { candidateList.add(vc.bc);    nameList.add("virgin CPR BC"); }
-            }
-        }
+        // Virgin CPR is now handled by the dedicated checkNiftyVirginCprHurdle filter — it's a
+        // zone, not a level, so flat-list integration here doesn't model "trade rejected when
+        // NIFTY is inside the zone" correctly. See checkNiftyVirginCprHurdle below.
         double[] candidates = new double[candidateList.size()];
         String[] names      = new String[nameList.size()];
         for (int i = 0; i < candidateList.size(); i++) {
@@ -1528,6 +1537,88 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 }
             }
         }
+        return null;
+    }
+
+    /**
+     * NIFTY Virgin CPR Hurdle filter — treats the active virgin CPR as a zone (BC..TC).
+     * <ul>
+     *   <li><b>Inside zone</b> — NIFTY's prior 5m close lands within [BC, TC]: reject every
+     *       stock signal regardless of direction. Price is consolidating in the zone, neither
+     *       direction has clarity.</li>
+     *   <li><b>Headroom check</b> — close outside the zone but within
+     *       {@code virginCprHurdleHeadroomAtr × NIFTY ATR} of the zone edge in trade direction:
+     *       reject. Mirrors the 5m hurdle's headroom logic.
+     *     <ul>
+     *       <li>Buy: zone above NIFTY (close &lt; BC) and (BC − close) &lt; headroom × ATR → reject.</li>
+     *       <li>Sell: zone below NIFTY (close &gt; TC) and (close − TC) &lt; headroom × ATR → reject.</li>
+     *     </ul>
+     *   </li>
+     * </ul>
+     *
+     * <p>Returns null on pass (filter off, no active virgin CPR, no prior 5m close, or NIFTY far
+     * enough from the zone). Returns a non-null reason string to reject. Bucket: {@code VIRGIN_CPR_HURDLE}.
+     */
+    private String checkNiftyVirginCprHurdle(boolean isBuy, long stockBucketStartMinute) {
+        if (!riskSettings.isEnableVirginCprHurdleFilter()) return null;
+        if (virginCprService == null || candleAggregator == null) return null;
+
+        VirginCprService.Snapshot vc = virginCprService.getActiveVirginCpr();
+        if (vc == null || vc.tc <= 0 || vc.bc <= 0) return null;
+
+        String niftySym = IndexTrendService.NIFTY_SYMBOL;
+        // Resolve NIFTY's prior 5m close — same listener-order-safe pattern as checkNifty5mHurdle.
+        long priorStartMinute = stockBucketStartMinute - 5;
+        CandleAggregator.CandleBar priorBar = null;
+        CandleAggregator.CandleBar prev = candleAggregator.getPreviousCandle(niftySym);
+        if (prev != null && prev.startMinute == priorStartMinute && prev.close > 0) {
+            priorBar = prev;
+        } else {
+            CandleAggregator.CandleBar last = candleAggregator.getLastCompletedCandle(niftySym);
+            if (last != null && last.startMinute == priorStartMinute && last.close > 0) {
+                priorBar = last;
+            }
+        }
+        if (priorBar == null) return null; // first 5m of session — fail-open
+
+        double priorClose = priorBar.close;
+        double zoneTop = Math.max(vc.tc, vc.bc);
+        double zoneBot = Math.min(vc.tc, vc.bc);
+
+        // 1) Inside-zone rejection — both directions blocked.
+        if (priorClose >= zoneBot && priorClose <= zoneTop) {
+            return "NIFTY (" + String.format("%.2f", priorClose)
+                + ") inside virgin CPR zone (" + String.format("%.2f", zoneBot)
+                + "—" + String.format("%.2f", zoneTop) + ")";
+        }
+
+        // 2) Headroom check — directional, only when zone is in trade direction.
+        double headroomAtr = riskSettings.getVirginCprHurdleHeadroomAtr();
+        if (headroomAtr <= 0 || atrService == null) return null;
+        double atr = atrService.getAtr(niftySym);
+        if (atr <= 0) return null;
+        double minHeadroomPts = headroomAtr * atr;
+
+        if (isBuy && priorClose < zoneBot) {
+            double dist = zoneBot - priorClose;
+            if (dist < minHeadroomPts) {
+                return "Virgin CPR zone (" + String.format("%.2f", zoneBot)
+                    + "—" + String.format("%.2f", zoneTop) + ") only "
+                    + String.format("%.2f", dist) + " pts above NIFTY (need "
+                    + String.format("%.2f", minHeadroomPts)
+                    + ", " + headroomAtr + " × NIFTY ATR " + String.format("%.2f", atr) + ")";
+            }
+        } else if (!isBuy && priorClose > zoneTop) {
+            double dist = priorClose - zoneTop;
+            if (dist < minHeadroomPts) {
+                return "Virgin CPR zone (" + String.format("%.2f", zoneBot)
+                    + "—" + String.format("%.2f", zoneTop) + ") only "
+                    + String.format("%.2f", dist) + " pts below NIFTY (need "
+                    + String.format("%.2f", minHeadroomPts)
+                    + ", " + headroomAtr + " × NIFTY ATR " + String.format("%.2f", atr) + ")";
+            }
+        }
+
         return null;
     }
 
