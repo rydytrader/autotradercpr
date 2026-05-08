@@ -373,6 +373,14 @@
                         <br>&nbsp;&nbsp;&bull; <b>BEARISH_REVERSAL</b> &mdash; NIFTY above CPR + bearish SMAs. We took SHORT positions. When NIFTY drops to/below <b>CPR top</b> &rarr; exit all SHORT positions.
                         <br>Locks in the move's profit before NIFTY consolidates inside CPR and the trade goes against us. Cancels both OCO legs and places a market exit. Reason recorded: <code>NIFTY_REVERSAL_CPR_EXIT</code>.</div>
                 </div>
+                <div class="form-group">
+                    <label class="form-label">NIFTY Virgin CPR-Touch Exit</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableVirginCprTouchExit" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Exit ALL open positions when NIFTY's 5-min bar touches the active virgin CPR zone</span>
+                    </div>
+                    <div class="form-hint">Direction-agnostic defensive exit. Evaluated on every stock 5-min candle close: if NIFTY's just-completed 5-min bar's range overlaps the active virgin CPR zone (bar high &ge; zone bottom <b>and</b> bar low &le; zone top — touches any of TC / Pivot / BC), every open LONG and SHORT position is closed at market. The zone acts as a magnet; price typically consolidates or reverses on first touch. Requires an active virgin CPR (configured on the <b>Scanner</b> tab). Cancels both OCO legs and places an exit market order. Reason recorded: <code>VIRGIN_CPR_TOUCH</code>.</div>
+                </div>
             </div>
         </div>
     </div>
@@ -1305,6 +1313,7 @@
             document.getElementById('enableSmaCrossExit').checked = d.enableSmaCrossExit === true;
             document.getElementById('enablePriceSmaExit').checked = d.enablePriceSmaExit === true;
             document.getElementById('enableNiftyReversalCprExit').checked = d.enableNiftyReversalCprExit === true;
+            document.getElementById('enableVirginCprTouchExit').checked = d.enableVirginCprTouchExit === true;
             document.getElementById('perSymbolDailyTradeLimit').value = d.perSymbolDailyTradeLimit != null ? d.perSymbolDailyTradeLimit : 2;
             document.getElementById('enableLpt').checked = d.enableLpt !== false;
             document.getElementById('lptQtyFactor').value = d.lptQtyFactor != null ? d.lptQtyFactor : 0.5;
@@ -1469,6 +1478,7 @@
                 enableSmaCrossExit: document.getElementById('enableSmaCrossExit').checked,
                 enablePriceSmaExit: document.getElementById('enablePriceSmaExit').checked,
                 enableNiftyReversalCprExit: document.getElementById('enableNiftyReversalCprExit').checked,
+                enableVirginCprTouchExit: document.getElementById('enableVirginCprTouchExit').checked,
                 perSymbolDailyTradeLimit: parseInt(document.getElementById('perSymbolDailyTradeLimit').value) || 0,
                 enableLpt: document.getElementById('enableLpt').checked,
                 lptQtyFactor: parseFloat(document.getElementById('lptQtyFactor').value) || 0.5,

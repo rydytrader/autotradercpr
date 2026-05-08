@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service;
 import java.util.Map;
 
 /**
- * Defensive exits — three independent checks, each toggled separately. All run on every 5-min
+ * Defensive exits — four independent checks, each toggled separately. All run on every 5-min
  * candle close after SmaService has populated {@code candle.sma20} / {@code sma50}.
  *
  * <ol>
@@ -28,6 +28,11 @@ import java.util.Map;
  *       has played out once NIFTY climbs back to/past the CPR bottom — exit all open LONG
  *       positions before NIFTY consolidates inside CPR. Mirror for BEARISH_REVERSAL: NIFTY
  *       above CPR drops to/below CPR top → exit all SHORT positions.</li>
+ *   <li><b>NIFTY Virgin CPR-Touch exit</b>
+ *       ({@link RiskSettingsStore#isEnableVirginCprTouchExit()}, default off):
+ *       When NIFTY's just-completed 5-min bar's range overlaps the active virgin CPR zone
+ *       (bar high ≥ zoneBot AND bar low ≤ zoneTop), close all open positions at market.
+ *       Direction-agnostic — both LONG and SHORT exit. Reason: VIRGIN_CPR_TOUCH.</li>
  * </ol>
  *
  * <p>Stateless evaluation — no "did a cross just happen this bar" tracking. At every boundary
@@ -53,6 +58,8 @@ public class SmaCrossExitService implements CandleAggregator.CandleCloseListener
     @Autowired @Lazy private MarketDataService marketDataService;
     @Autowired @Lazy private BhavcopyService bhavcopyService;
     @Autowired @Lazy private IndexTrendService indexTrendService;
+    @Autowired @Lazy private VirginCprService virginCprService;
+    @Autowired @Lazy private CandleAggregator candleAggregator;
 
     public SmaCrossExitService(RiskSettingsStore riskSettings,
                                PositionStateStore positionStateStore,
@@ -136,6 +143,35 @@ public class SmaCrossExitService implements CandleAggregator.CandleCloseListener
                             + " (NIFTY=" + String.format("%.2f", niftyLtp)
                             + ", " + levelName + "=" + String.format("%.2f", touchedLevel) + ")");
                         pollingService.squareOff(fyersSymbol, qty, "NIFTY_REVERSAL_CPR_EXIT");
+                        return;
+                    }
+                }
+            }
+        }
+
+        // ── 4. Virgin CPR Touch defensive exit ──
+        // When NIFTY's just-completed 5m bar's range touches the active virgin CPR zone (any
+        // overlap between bar [low, high] and zone [BC, TC]), close all open positions at
+        // market — the zone is a magnet, the move is likely about to consolidate or reverse.
+        // Direction-agnostic: applies to both LONG and SHORT positions.
+        if (riskSettings.isEnableVirginCprTouchExit()
+            && virginCprService != null && candleAggregator != null) {
+            VirginCprService.Snapshot vc = virginCprService.getActiveVirginCpr();
+            if (vc != null && vc.tc > 0 && vc.bc > 0) {
+                CandleAggregator.CandleBar niftyBar = candleAggregator.getLastCompletedCandle(IndexTrendService.NIFTY_SYMBOL);
+                if (niftyBar != null && niftyBar.high > 0 && niftyBar.low > 0) {
+                    double zoneTop = Math.max(vc.tc, vc.bc);
+                    double zoneBot = Math.min(vc.tc, vc.bc);
+                    boolean touched = niftyBar.high >= zoneBot && niftyBar.low <= zoneTop;
+                    if (touched) {
+                        int qty = readQty(fyersSymbol);
+                        if (qty <= 0) return;
+                        eventService.log("[INFO] " + fyersSymbol + " Virgin CPR-Touch exit triggered — "
+                            + position + " position, NIFTY 5m bar ["
+                            + String.format("%.2f", niftyBar.low) + "—" + String.format("%.2f", niftyBar.high)
+                            + "] overlapped virgin CPR zone ["
+                            + String.format("%.2f", zoneBot) + "—" + String.format("%.2f", zoneTop) + "]");
+                        pollingService.squareOff(fyersSymbol, qty, "VIRGIN_CPR_TOUCH");
                     }
                 }
             }

@@ -118,6 +118,7 @@ public class SettingsController {
         result.put("virginCprExpiryDays", riskSettings.getVirginCprExpiryDays());
         result.put("enableVirginCprHurdleFilter", riskSettings.isEnableVirginCprHurdleFilter());
         result.put("virginCprHurdleHeadroomAtr", riskSettings.getVirginCprHurdleHeadroomAtr());
+        result.put("enableVirginCprTouchExit", riskSettings.isEnableVirginCprTouchExit());
         result.put("fibStage1TriggerPct", riskSettings.getFibStage1TriggerPct());
         result.put("fibStage1SlAtrMult",  riskSettings.getFibStage1SlAtrMult());
         result.put("fibStage2TriggerPct", riskSettings.getFibStage2TriggerPct());
@@ -262,6 +263,7 @@ public class SettingsController {
             }
             if (body.containsKey("enableVirginCprHurdleFilter")) riskSettings.setEnableVirginCprHurdleFilter(Boolean.parseBoolean(body.get("enableVirginCprHurdleFilter").toString()));
             if (body.containsKey("virginCprHurdleHeadroomAtr")) riskSettings.setVirginCprHurdleHeadroomAtr(Double.parseDouble(body.get("virginCprHurdleHeadroomAtr").toString()));
+            if (body.containsKey("enableVirginCprTouchExit")) riskSettings.setEnableVirginCprTouchExit(Boolean.parseBoolean(body.get("enableVirginCprTouchExit").toString()));
             if (body.containsKey("fibStage1TriggerPct")) riskSettings.setFibStage1TriggerPct(Double.parseDouble(body.get("fibStage1TriggerPct").toString()));
             if (body.containsKey("fibStage1SlAtrMult"))  riskSettings.setFibStage1SlAtrMult(Double.parseDouble(body.get("fibStage1SlAtrMult").toString()));
             if (body.containsKey("fibStage2TriggerPct")) riskSettings.setFibStage2TriggerPct(Double.parseDouble(body.get("fibStage2TriggerPct").toString()));

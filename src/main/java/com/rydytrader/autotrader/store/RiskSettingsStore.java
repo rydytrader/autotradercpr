@@ -198,6 +198,10 @@ public class RiskSettingsStore {
         // the zone edge. Default off — opt-in.
         volatile boolean enableVirginCprHurdleFilter = false;
         volatile double  virginCprHurdleHeadroomAtr  = 1.0;
+        // Virgin CPR-Touch defensive exit — when NIFTY's just-closed 5-min bar's range touches
+        // the active virgin CPR zone (bar high ≥ zoneBot AND bar low ≤ zoneTop), close all open
+        // positions at market. Trigger reason: VIRGIN_CPR_TOUCH. Default off — opt-in.
+        volatile boolean enableVirginCprTouchExit = false;
         // Fibonacci trailing SL — all four knobs stored as percent (0–100).
         volatile double fibStage1TriggerPct = 61.8;   // LTP hits this % of range → stage 1 activates
         volatile double fibStage1SlAtrMult = 1.0;     // stage 1 SL = entry ± N × ATR
@@ -375,6 +379,7 @@ public class RiskSettingsStore {
     public int getVirginCprExpiryDays() { return cfg().virginCprExpiryDays; }
     public boolean isEnableVirginCprHurdleFilter() { return cfg().enableVirginCprHurdleFilter; }
     public double  getVirginCprHurdleHeadroomAtr() { return cfg().virginCprHurdleHeadroomAtr; }
+    public boolean isEnableVirginCprTouchExit()    { return cfg().enableVirginCprTouchExit; }
     public double getFibStage1TriggerPct() { return cfg().fibStage1TriggerPct; }
     public double getFibStage1SlAtrMult()  { return cfg().fibStage1SlAtrMult; }
     public double getFibStage2TriggerPct() { return cfg().fibStage2TriggerPct; }
@@ -534,6 +539,7 @@ public class RiskSettingsStore {
     public void setVirginCprExpiryDays(int v) { cfg().virginCprExpiryDays = Math.max(0, v); }
     public void setEnableVirginCprHurdleFilter(boolean v) { cfg().enableVirginCprHurdleFilter = v; }
     public void setVirginCprHurdleHeadroomAtr(double v)   { cfg().virginCprHurdleHeadroomAtr = Math.max(0, v); }
+    public void setEnableVirginCprTouchExit(boolean v)    { cfg().enableVirginCprTouchExit = v; }
     public void setFibStage1TriggerPct(double v) { cfg().fibStage1TriggerPct = v; }
     public void setFibStage1SlAtrMult(double v)  { cfg().fibStage1SlAtrMult = v; }
     public void setFibStage2TriggerPct(double v) { cfg().fibStage2TriggerPct = v; }
@@ -712,6 +718,7 @@ public class RiskSettingsStore {
             upsert("virginCprExpiryDays", String.valueOf(c.virginCprExpiryDays));
             upsert("enableVirginCprHurdleFilter", String.valueOf(c.enableVirginCprHurdleFilter));
             upsert("virginCprHurdleHeadroomAtr",  String.valueOf(c.virginCprHurdleHeadroomAtr));
+            upsert("enableVirginCprTouchExit",    String.valueOf(c.enableVirginCprTouchExit));
             upsert("fibStage1TriggerPct", String.valueOf(c.fibStage1TriggerPct));
             upsert("fibStage1SlAtrMult",  String.valueOf(c.fibStage1SlAtrMult));
             upsert("fibStage2TriggerPct", String.valueOf(c.fibStage2TriggerPct));
@@ -875,6 +882,7 @@ public class RiskSettingsStore {
                     case "virginCprExpiryDays" -> c.virginCprExpiryDays = Math.max(0, Integer.parseInt(v));
                     case "enableVirginCprHurdleFilter" -> c.enableVirginCprHurdleFilter = Boolean.parseBoolean(v);
                     case "virginCprHurdleHeadroomAtr" -> c.virginCprHurdleHeadroomAtr = Math.max(0, Double.parseDouble(v));
+                    case "enableVirginCprTouchExit" -> c.enableVirginCprTouchExit = Boolean.parseBoolean(v);
                     case "fibStage1TriggerPct" -> c.fibStage1TriggerPct = Double.parseDouble(v);
                     case "fibStage1SlAtrMult"  -> c.fibStage1SlAtrMult  = Double.parseDouble(v);
                     case "fibStage2TriggerPct" -> c.fibStage2TriggerPct = Double.parseDouble(v);
