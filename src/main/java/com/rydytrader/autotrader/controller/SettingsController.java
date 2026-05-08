@@ -45,8 +45,6 @@ public class SettingsController {
         result.put("maxDailyLoss",     riskSettings.getMaxDailyLoss(effectiveMode));
         result.put("autoSquareOffTime", riskSettings.getAutoSquareOffTime(effectiveMode));
         result.put("atrMultiplier",    riskSettings.getAtrMultiplier(effectiveMode));
-        result.put("enableSessionMoveLimit", riskSettings.isEnableSessionMoveLimit());
-        result.put("sessionMoveLimit", riskSettings.getSessionMoveLimit(effectiveMode));
         result.put("brokeragePerOrder", riskSettings.getBrokeragePerOrder(effectiveMode));
         result.put("sttRate",         riskSettings.getSttRate(effectiveMode));
         result.put("exchangeRate",    riskSettings.getExchangeRate(effectiveMode));
@@ -179,8 +177,6 @@ public class SettingsController {
             if (body.containsKey("riskPerTrade"))     riskSettings.setRiskPerTrade(effectiveMode, Double.parseDouble(body.get("riskPerTrade").toString()));
             if (body.containsKey("autoSquareOffTime")) riskSettings.setAutoSquareOffTime(effectiveMode, body.get("autoSquareOffTime").toString());
             if (body.containsKey("atrMultiplier"))    riskSettings.setAtrMultiplier(effectiveMode, Double.parseDouble(body.get("atrMultiplier").toString()));
-            if (body.containsKey("enableSessionMoveLimit")) riskSettings.setEnableSessionMoveLimit(Boolean.parseBoolean(body.get("enableSessionMoveLimit").toString()));
-            if (body.containsKey("sessionMoveLimit")) riskSettings.setSessionMoveLimit(effectiveMode, Double.parseDouble(body.get("sessionMoveLimit").toString()));
             if (body.containsKey("brokeragePerOrder")) riskSettings.setBrokeragePerOrder(effectiveMode, Double.parseDouble(body.get("brokeragePerOrder").toString()));
             if (body.containsKey("sttRate"))         riskSettings.setSttRate(effectiveMode, Double.parseDouble(body.get("sttRate").toString()));
             if (body.containsKey("exchangeRate"))    riskSettings.setExchangeRate(effectiveMode, Double.parseDouble(body.get("exchangeRate").toString()));

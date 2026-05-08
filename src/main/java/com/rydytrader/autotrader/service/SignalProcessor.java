@@ -715,26 +715,6 @@ public class SignalProcessor {
         // skipped outright on IV/OV days (via skipR3S3NormalDays / skipR4S4NormalDays)
         // or allowed at full size on EV days. No per-level factor.
         int qty = baseQty;
-        String qtyLog = null;
-        // ── Session move limit: reduce qty if price moved too far from day open/PDC ──
-        double sessionMoveLimit = riskSettings.getSessionMoveLimit() / 100.0; // e.g. 2.0 → 0.02
-        if (riskSettings.isEnableSessionMoveLimit() && sessionMoveLimit > 0) {
-            double pivot = (tc + bc) / 2.0;
-            double pdc = pivot * 3 - ph - pl;
-            double moveFromOpen = dayOpen > 0 ? Math.abs(close - dayOpen) / dayOpen : 0;
-            double moveFromPdc  = pdc > 0 ? Math.abs(close - pdc) / pdc : 0;
-            double movePct = Math.max(moveFromOpen, moveFromPdc) * 100;
-            String moveSource = moveFromOpen >= moveFromPdc ? "day open " + fmt(dayOpen) : "PDC " + fmt(pdc);
-            boolean sessionMoveExceeded = Math.max(moveFromOpen, moveFromPdc) > sessionMoveLimit;
-
-            if (sessionMoveExceeded) {
-                int reduced = Math.max(1, qty / 2);
-                String reason = "moved " + fmt(movePct) + "% from " + moveSource + " > " + fmt(riskSettings.getSessionMoveLimit()) + "% limit";
-                qtyLog = "[INFO] " + symbol + " " + setup + " qty halved (" + reason + "): " + qty + " -> " + reduced;
-                adjustments.add("Qty " + qty + " → " + reduced + " (halved — session move " + fmt(movePct) + "% > " + fmt(riskSettings.getSessionMoveLimit()) + "% limit from " + moveSource + ")");
-                qty = reduced;
-            }
-        }
 
         // ── 4i2. Probability-based qty adjustment ─────────────────────────────
         // MPT (medium): qty × mptQtyFactor (default 0.75). LPT: legacy path, no longer
@@ -820,7 +800,7 @@ public class SignalProcessor {
                 .append(" = ").append(riskQty)
                 .append(". Final: ").append(qty).append(".");
         }
-        if (qtyLog != null && qty != baseQty) {
+        if (qty != baseQty) {
             desc.append(" (reduced from ").append(baseQty).append(")");
         }
 
@@ -836,9 +816,6 @@ public class SignalProcessor {
             + " | Tgt: " + fmt(target) + "(" + fmt(Math.abs(target - close)) + ")"
             + " | SL: " + fmt(sl) + "(" + fmt(Math.abs(close - sl)) + ")"
             + " | Qty: " + qty);
-        if (qtyLog != null) {
-            eventService.log(qtyLog);
-        }
         if (target != defaultTarget) {
             eventService.log("[INFO] " + symbol + " " + setup + " target shifted to day high/low: " + fmt(defaultTarget) + " -> " + fmt(target));
         }

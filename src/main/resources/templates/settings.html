@@ -175,15 +175,6 @@
             </div>
         </div>
 
-        <!-- Session Move Limit -->
-        <div class="section-card" style="margin-bottom:0;">
-            <div style="padding:20px 22px; text-align:center;">
-                <div class="stat-label" style="margin-bottom:8px;">Session Move Limit</div>
-                <div class="stat-value" id="statSessionMove" style="font-size:2rem; color:var(--accent-blue);">—</div>
-                <div class="stat-sub" id="statSessionMoveSub" style="margin-top:8px;">Qty halved if exceeded</div>
-            </div>
-        </div>
-
         <!-- Signal Source -->
         <div class="section-card" style="margin-bottom:0;">
             <div style="padding:20px 22px; text-align:center;">
@@ -381,16 +372,6 @@
                         <br>&nbsp;&nbsp;&bull; <b>BULLISH_REVERSAL</b> &mdash; NIFTY below CPR + bullish SMAs. We took LONG positions on stocks. When NIFTY climbs back to/past <b>CPR bottom</b>, the bullish move has played out (NIFTY entering CPR consolidation) &rarr; exit all LONG positions.
                         <br>&nbsp;&nbsp;&bull; <b>BEARISH_REVERSAL</b> &mdash; NIFTY above CPR + bearish SMAs. We took SHORT positions. When NIFTY drops to/below <b>CPR top</b> &rarr; exit all SHORT positions.
                         <br>Locks in the move's profit before NIFTY consolidates inside CPR and the trade goes against us. Cancels both OCO legs and places a market exit. Reason recorded: <code>NIFTY_REVERSAL_CPR_EXIT</code>.</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Session Move Limit</label>
-                    <div style="display:flex; align-items:center; gap:8px; margin-top:4px; flex-wrap:wrap;">
-                        <input type="checkbox" id="enableSessionMoveLimit" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Halve qty if price moved &gt;</span>
-                        <input type="number" id="sessionMoveLimit" class="form-control" step="0.1" min="0.1" max="10" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;" placeholder="2.0">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">% from day open / PDC</span>
-                    </div>
-                    <div class="form-hint">Set to 0 to disable. Gap days (R2/S2) are handled by Opening Range filter.</div>
                 </div>
             </div>
         </div>
@@ -1253,8 +1234,6 @@
             document.getElementById('riskPerTrade').value      = d.riskPerTrade      || 1000;
             document.getElementById('atrPeriod').value          = d.atrPeriod         || 14;
             // atrMultiplier removed from UI — structural SL always used, default SL is silent fallback only
-            document.getElementById('enableSessionMoveLimit').checked = d.enableSessionMoveLimit !== false;
-            document.getElementById('sessionMoveLimit').value   = d.sessionMoveLimit  != null ? d.sessionMoveLimit : 2.0;
             document.getElementById('brokeragePerOrder').value  = d.brokeragePerOrder != null ? d.brokeragePerOrder : 20;
             document.getElementById('brokeragePct').value      = d.brokeragePct != null ? d.brokeragePct : 0.03;
             document.getElementById('sttRate').value            = d.sttRate != null ? d.sttRate : 0.025;
@@ -1395,11 +1374,6 @@
                 ? 'Risk/Trade: ₹' + riskPerTrade.toLocaleString('en-IN')
                 : 'Risk per trade not set';
 
-            // Session move limit stat
-            const moveLimit = d.sessionMoveLimit || 0;
-            document.getElementById('statSessionMove').textContent = moveLimit > 0 ? moveLimit + '%' : 'OFF';
-            document.getElementById('statSessionMoveSub').textContent = moveLimit > 0 ? 'Qty halved if exceeded' : 'No limit set';
-
             // Signal Source stat
             const srcEl = document.getElementById('statSignalSource');
             const srcSubEl = document.getElementById('statSignalSourceSub');
@@ -1427,8 +1401,6 @@
                 maxRiskPerDayPct:  parseFloat(document.getElementById('maxRiskPerDayPct').value) || 0,
                 riskPerTrade:      parseFloat(document.getElementById('riskPerTrade').value) || 0,
                 atrPeriod:         parseInt(document.getElementById('atrPeriod').value) || 14,
-                enableSessionMoveLimit: document.getElementById('enableSessionMoveLimit').checked,
-                sessionMoveLimit:  parseFloat(document.getElementById('sessionMoveLimit').value) || 2.0,
                 brokeragePerOrder: parseFloat(document.getElementById('brokeragePerOrder').value) || 20,
                 brokeragePct:    parseFloat(document.getElementById('brokeragePct').value) || 0.03,
                 sttRate:         parseFloat(document.getElementById('sttRate').value) || 0.025,

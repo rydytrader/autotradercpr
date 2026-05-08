@@ -29,8 +29,6 @@ public class RiskSettingsStore {
         volatile double riskPerTrade      = 1000;  // max ₹ loss per trade if SL hits
         volatile String autoSquareOffTime = "";  // empty = disabled, e.g. "15:15"
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
-        volatile boolean enableSessionMoveLimit = true;
-        volatile double sessionMoveLimit = 2.0;   // qty halved if session move exceeds this %
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
         // Charges rates (regulatory — rarely change)
         volatile double sttRate           = 0.025;   // STT % on sell side
@@ -311,8 +309,6 @@ public class RiskSettingsStore {
     public double getMaxDailyLoss()      { return cfg().totalCapital * cfg().maxRiskPerDayPct / 100.0; }
     public String getAutoSquareOffTime() { return cfg().autoSquareOffTime; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
-    public boolean isEnableSessionMoveLimit() { return cfg().enableSessionMoveLimit; }
-    public double getSessionMoveLimit() { return cfg().sessionMoveLimit; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getSttRate()         { return cfg().sttRate; }
     public double getExchangeRate()    { return cfg().exchangeRate; }
@@ -479,8 +475,6 @@ public class RiskSettingsStore {
     public void setRiskPerTrade(double v)      { cfg().riskPerTrade = v; }
     public void setAutoSquareOffTime(String v) { cfg().autoSquareOffTime = v; }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
-    public void setEnableSessionMoveLimit(boolean v) { cfg().enableSessionMoveLimit = v; }
-    public void setSessionMoveLimit(double v) { cfg().sessionMoveLimit = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setSttRate(double v)         { cfg().sttRate = v; }
     public void setExchangeRate(double v)    { cfg().exchangeRate = v; }
@@ -576,7 +570,6 @@ public class RiskSettingsStore {
     public double getMaxDailyLoss(String mode)      { return cfgFor(mode).totalCapital * cfgFor(mode).maxRiskPerDayPct / 100.0; }
     public String getAutoSquareOffTime(String mode) { return cfgFor(mode).autoSquareOffTime; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
-    public double getSessionMoveLimit(String mode) { return cfgFor(mode).sessionMoveLimit; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
     public double getSttRate(String mode)         { return cfgFor(mode).sttRate; }
     public double getExchangeRate(String mode)    { return cfgFor(mode).exchangeRate; }
@@ -606,7 +599,6 @@ public class RiskSettingsStore {
     public void setRiskPerTrade(String mode, double v)      { cfgFor(mode).riskPerTrade = v; }
     public void setAutoSquareOffTime(String mode, String v) { cfgFor(mode).autoSquareOffTime = v; }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
-    public void setSessionMoveLimit(String mode, double v) { cfgFor(mode).sessionMoveLimit = v; }
     public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
     public void setSttRate(String mode, double v)         { cfgFor(mode).sttRate = v; }
     public void setExchangeRate(String mode, double v)    { cfgFor(mode).exchangeRate = v; }
@@ -646,8 +638,6 @@ public class RiskSettingsStore {
             upsert("riskPerTrade", String.valueOf(c.riskPerTrade));
             upsert("autoSquareOffTime", c.autoSquareOffTime);
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
-            upsert("enableSessionMoveLimit", String.valueOf(c.enableSessionMoveLimit));
-            upsert("sessionMoveLimit", String.valueOf(c.sessionMoveLimit));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("sttRate", String.valueOf(c.sttRate));
             upsert("exchangeRate", String.valueOf(c.exchangeRate));
@@ -798,8 +788,8 @@ public class RiskSettingsStore {
                     case "riskPerTrade"      -> c.riskPerTrade = Double.parseDouble(v);
                     case "autoSquareOffTime" -> c.autoSquareOffTime = v;
                     case "atrMultiplier"     -> c.atrMultiplier = Double.parseDouble(v);
-                    case "enableSessionMoveLimit" -> c.enableSessionMoveLimit = Boolean.parseBoolean(v);
-                    case "sessionMoveLimit"  -> c.sessionMoveLimit = Double.parseDouble(v);
+                    // enableSessionMoveLimit / sessionMoveLimit removed — feature deleted.
+                    case "enableSessionMoveLimit", "sessionMoveLimit" -> { /* legacy, ignored */ }
                     case "brokeragePerOrder" -> c.brokeragePerOrder = Double.parseDouble(v);
                     case "sttRate"           -> c.sttRate = Double.parseDouble(v);
                     case "exchangeRate"      -> c.exchangeRate = Double.parseDouble(v);
@@ -960,7 +950,7 @@ public class RiskSettingsStore {
                     case "indexAlignmentHardSkip", "indexOpposedQtyFactor" -> { /* removed — soft mode deleted */ }
                 }
             }
-            log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} sessionMove={}% brokerage={} fixedQty={} capitalPerTrade={} trailingSl={} skipR3S3(IvOv/Ev)={}/{} skipR4S4(IvOv/Ev)={}/{}", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.sessionMoveLimit, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.enableTrailingSl, c.skipR3S3IvOvDays, c.skipR3S3EvDays, c.skipR4S4IvOvDays, c.skipR4S4EvDays);
+            log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} brokerage={} fixedQty={} capitalPerTrade={} trailingSl={} skipR3S3(IvOv/Ev)={}/{} skipR4S4(IvOv/Ev)={}/{}", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.enableTrailingSl, c.skipR3S3IvOvDays, c.skipR3S3EvDays, c.skipR4S4IvOvDays, c.skipR4S4EvDays);
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to load {}: {}", mode, e.getMessage());
         }
