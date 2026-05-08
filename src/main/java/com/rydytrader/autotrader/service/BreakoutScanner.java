@@ -1590,24 +1590,28 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
     /**
      * Counter-trend setup family — magnets (S1+PDL / R1+PDH), deep mean-rev (S2/S3/S4 buys,
-     * R2/R3/R4 sells), and day-high/day-low breakouts (DH/DL) when they are reversal trades.
-     * Setups in this family are gated by the <code>enableMeanReversionTrades</code> master
-     * toggle and bypass the LTF gate at probability assignment.
+     * R2/R3/R4 sells), DH/DL when reversal-character, and 20 SMA touches when fading the
+     * CPR bias. Setups in this family are gated by the <code>enableMeanReversionTrades</code>
+     * master toggle and bypass the LTF gate at probability assignment.
      *
-     * <p>DH/DL classification is conditional on close vs daily CPR position:
+     * <p>DH/DL classification — mean-rev unless close is strictly past CPR in trade direction:
      * <ul>
-     *   <li><b>BUY_ABOVE_DH with close above CPR top</b> — trend-following continuation
-     *       (going with the bullish CPR bias). NOT classified as mean-reversion.</li>
-     *   <li><b>BUY_ABOVE_DH with close at-or-below CPR top</b> — buying against the bearish
-     *       CPR bias (or inside CPR). Classified as mean-reversion.</li>
-     *   <li><b>SELL_BELOW_DL with close below CPR bottom</b> — trend-following continuation
-     *       (going with the bearish CPR bias). NOT classified as mean-reversion.</li>
-     *   <li><b>SELL_BELOW_DL with close at-or-above CPR bottom</b> — selling against the
-     *       bullish CPR bias (or inside CPR). Classified as mean-reversion.</li>
+     *   <li><b>BUY_ABOVE_DH</b>: trend-following when close &gt; cprTop; mean-rev otherwise.</li>
+     *   <li><b>SELL_BELOW_DL</b>: trend-following when close &lt; cprBot; mean-rev otherwise.</li>
+     * </ul>
+     *
+     * <p>20 SMA touch classification — mean-rev only when strictly on the wrong side of CPR:
+     * <ul>
+     *   <li><b>BUY_ABOVE_20SMA + close &lt; cprBot</b> — bouncing off SMA in a bearish CPR
+     *       position. Mean-rev fade.</li>
+     *   <li><b>SELL_BELOW_20SMA + close &gt; cprTop</b> — rejecting SMA in a bullish CPR
+     *       position. Mean-rev fade.</li>
+     *   <li>Otherwise (close above CPR for buys / below CPR for sells / inside CPR) —
+     *       standard trend-following or LTF-rejected; NOT in this family.</li>
      * </ul>
      *
      * <p>If CPR is not loaded (tc/bc &le; 0), DH/DL fall back to the legacy "always mean-rev"
-     * behavior — conservative default.
+     * behavior — conservative default. 20 SMA needs a valid CPR to qualify as mean-rev.
      */
     private static boolean isMeanReversionOrMagnet(String setup, double close, double tc, double bc) {
         if (setup == null) return false;
@@ -1620,16 +1624,21 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             || "SELL_BELOW_R2".equals(setup)
             || "SELL_BELOW_R3".equals(setup)
             || "SELL_BELOW_R4".equals(setup)) return true;
-        // DH/DL — conditional on close vs CPR.
         double cprTop = Math.max(tc, bc);
         double cprBot = Math.min(tc, bc);
+        // DH/DL — conditional on close vs CPR.
         if ("BUY_ABOVE_DH".equals(setup)) {
-            // Mean-rev unless close is strictly above CPR top (trend-following continuation).
             return !(cprTop > 0 && close > cprTop);
         }
         if ("SELL_BELOW_DL".equals(setup)) {
-            // Mean-rev unless close is strictly below CPR bottom (trend-following continuation).
             return !(cprBot > 0 && close < cprBot);
+        }
+        // 20 SMA touch — mean-rev only when strictly on the wrong side of CPR.
+        if ("BUY_ABOVE_20SMA".equals(setup)) {
+            return cprBot > 0 && close < cprBot;
+        }
+        if ("SELL_BELOW_20SMA".equals(setup)) {
+            return cprTop > 0 && close > cprTop;
         }
         return false;
     }

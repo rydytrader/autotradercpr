@@ -684,6 +684,19 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
             // else fall through to standard LTF gate below (will pass since ltfBear) → HPT
         }
 
+        // 20 SMA touch — mean-rev when strictly on the wrong side of CPR (fade trade against the
+        // CPR bias bouncing on the SMA). Otherwise fall through to standard LTF gate:
+        //   BUY_ABOVE_20SMA  + close < cprBot → mean-rev MPT (bypass LTF gate — close not above CPR)
+        //   BUY_ABOVE_20SMA  + close > cprTop → trend-following (LTF passes → HPT)
+        //   SELL_BELOW_20SMA + close > cprTop → mean-rev MPT (bypass LTF gate — close not below CPR)
+        //   SELL_BELOW_20SMA + close < cprBot → trend-following (LTF passes → HPT)
+        //   Inside CPR (close in BC..TC) → standard path rejects with LTF_OPPOSED.
+        if ("BUY_ABOVE_20SMA".equals(setup)) {
+            if (cprBot > 0 && ltfBear) return "MPT";
+        } else if ("SELL_BELOW_20SMA".equals(setup)) {
+            if (cprTop > 0 && ltfBull) return "MPT";
+        }
+
         if (isBuy)  return ltfBull ? "HPT" : null;
         else        return ltfBear ? "HPT" : null;
     }
