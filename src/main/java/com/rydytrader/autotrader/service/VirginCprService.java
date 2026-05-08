@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.dto.CprLevels;
-import com.rydytrader.autotrader.entity.SettingEntity;
 import com.rydytrader.autotrader.repository.SettingRepository;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import com.rydytrader.autotrader.store.TokenStore;
@@ -20,6 +19,9 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -37,14 +39,17 @@ import java.util.TreeMap;
  * filter — daily-level concept stays at the daily-CPR gate.) A new virgin CPR
  * replaces any existing active record.
  *
- * <p>Persisted as a single JSON blob in the {@code settings} table under key
- * {@value #STATE_KEY} so the state survives restarts.
+ * <p>Persisted as a flat JSON file at {@value #CACHE_FILE} (matches the
+ * {@code nse-holidays.json} cache pattern). On first startup after upgrading from
+ * the legacy H2 settings row, the row is migrated to the JSON file and then deleted.
  */
 @Service
 public class VirginCprService {
 
     private static final Logger log = LoggerFactory.getLogger(VirginCprService.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+    private static final String CACHE_FILE = "../store/cache/virgin-cpr.json";
+    /** Legacy H2 settings key — read once at startup for migration, then removed. */
     private static final String STATE_KEY = "virginCprState";
     private static final ObjectMapper mapper = new ObjectMapper();
 
@@ -334,17 +339,35 @@ public class VirginCprService {
     }
 
     private void save() {
+        if (snapshot == null) return;
         try {
-            String json = mapper.writeValueAsString(snapshot);
-            SettingEntity entity = settingRepo.findBySettingKey(STATE_KEY).orElse(new SettingEntity(STATE_KEY, json));
-            entity.setSettingValue(json);
-            settingRepo.save(entity);
+            Path path = Paths.get(CACHE_FILE);
+            Files.createDirectories(path.getParent());
+            String json = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(snapshot);
+            Files.writeString(path, json);
         } catch (Exception e) {
             log.error("[VirginCPR] Save failed: {}", e.getMessage());
         }
     }
 
     private void load() {
+        // Prefer the JSON cache file. If absent, attempt a one-time migration from the legacy
+        // H2 settings row (the prior persistence path) and remove the row after a successful
+        // copy so the two paths don't drift.
+        try {
+            Path path = Paths.get(CACHE_FILE);
+            if (Files.exists(path)) {
+                snapshot = mapper.readValue(Files.readString(path), Snapshot.class);
+                if (snapshot != null) {
+                    log.info("[VirginCPR] Loaded from JSON: date={} TC={} Pivot={} BC={}",
+                        snapshot.date, fmt(snapshot.tc), fmt(snapshot.pivot), fmt(snapshot.bc));
+                }
+                return;
+            }
+        } catch (Exception e) {
+            log.warn("[VirginCPR] JSON load failed: {}", e.getMessage());
+        }
+        // No JSON file — try migrating from the legacy H2 settings row.
         try {
             settingRepo.findBySettingKey(STATE_KEY).ifPresent(e -> {
                 String json = e.getSettingValue();
@@ -352,11 +375,12 @@ public class VirginCprService {
                 try {
                     snapshot = mapper.readValue(json, Snapshot.class);
                     if (snapshot != null) {
-                        log.info("[VirginCPR] Loaded: date={} TC={} Pivot={} BC={}",
-                            snapshot.date, fmt(snapshot.tc), fmt(snapshot.pivot), fmt(snapshot.bc));
+                        save(); // write JSON file
+                        settingRepo.delete(e);
+                        log.info("[VirginCPR] Migrated H2 settings row -> {} (date={})", CACHE_FILE, snapshot.date);
                     }
                 } catch (Exception ex) {
-                    log.warn("[VirginCPR] Load parse failed: {}", ex.getMessage());
+                    log.warn("[VirginCPR] Legacy H2 row parse failed: {}", ex.getMessage());
                 }
             });
         } catch (Exception e) {
