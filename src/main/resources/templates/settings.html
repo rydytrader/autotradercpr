@@ -184,6 +184,15 @@
             </div>
         </div>
 
+        <!-- Risk : Reward -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div style="padding:20px 22px; text-align:center;">
+                <div class="stat-label" style="margin-bottom:8px;">Risk : Reward</div>
+                <div class="stat-value" id="statRiskReward" style="font-size:2rem; color:var(--accent-green);">—</div>
+                <div class="stat-sub" id="statRiskRewardSub" style="margin-top:8px;">Min RR filter</div>
+            </div>
+        </div>
+
     </div>
 
     <!-- TABS -->
@@ -1389,6 +1398,23 @@
             if (srcEl) {
                 srcEl.textContent = d.signalSource || 'INTERNAL';
                 if (srcSubEl) srcSubEl.textContent = '';
+            }
+
+            // Risk : Reward stat
+            const rrEl    = document.getElementById('statRiskReward');
+            const rrSubEl = document.getElementById('statRiskRewardSub');
+            if (rrEl) {
+                const rrEnabled = d.enableRiskRewardFilter !== false;
+                const rr        = d.minRiskRewardRatio != null ? d.minRiskRewardRatio : 1.0;
+                if (rrEnabled) {
+                    rrEl.textContent = '≥ ' + rr;
+                    rrEl.style.color = 'var(--accent-green)';
+                    if (rrSubEl) rrSubEl.textContent = 'Min reward / risk filter';
+                } else {
+                    rrEl.textContent = 'OFF';
+                    rrEl.style.color = 'var(--text-muted)';
+                    if (rrSubEl) rrSubEl.textContent = 'RR filter disabled';
+                }
             }
 
         } catch (e) {
