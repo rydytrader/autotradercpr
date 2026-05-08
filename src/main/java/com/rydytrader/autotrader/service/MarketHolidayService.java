@@ -194,7 +194,9 @@ public class MarketHolidayService {
             conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
             conn.setRequestProperty("Accept", "*/*");
             conn.setRequestProperty("Accept-Language", "en-US,en;q=0.9");
-            conn.setRequestProperty("Accept-Encoding", "gzip, deflate, br");
+            // gzip + deflate only — Brotli (br) decompression isn't in the JDK and would land
+            // here as raw bytes → UTF-8 replacement chars → JSON parse fails.
+            conn.setRequestProperty("Accept-Encoding", "gzip, deflate");
             conn.setRequestProperty("Connection", "keep-alive");
             conn.setRequestProperty("Referer", "https://www.nseindia.com/resources/exchange-communication-holidays");
             conn.setRequestProperty("X-Requested-With", "XMLHttpRequest");
