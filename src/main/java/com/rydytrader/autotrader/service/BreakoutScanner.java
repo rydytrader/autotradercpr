@@ -1323,12 +1323,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         var cpr = bhavcopyService.getCprLevels("NIFTY50");
         if (cpr == null) return null; // daily CPR not loaded — fail-open
 
-        // Full daily-CPR candidate set: inner zone (BC/Pivot/TC) + R1/PDH (buy) or S1/PDL (sell)
-        // + extended levels R2/R3/R4 (buy) or S2/S3/S4 (sell) + virgin CPR (TC/Pivot/BC) when
-        // an active virgin CPR is in cache. Nearest-in-direction logic still picks just one —
-        // the most recently cleared level — so adding far-out levels doesn't make the filter
-        // stricter; it only matters when NIFTY has already pushed past the inner zone and the
-        // relevant hurdle is now an extended level or a virgin CPR.
+        // Daily-CPR candidate set — inner zone (BC/Pivot/TC) + R1/PDH (buy) or S1/PDL (sell).
+        // Extended levels (R2/R3/R4, S2/S3/S4) are intentionally excluded: the 5m filter is
+        // about confirming inner-zone clearance, not chasing far-out projections. Virgin CPR
+        // (TC/Pivot/BC) is appended when an active record is in cache.
         java.util.List<Double> candidateList = new java.util.ArrayList<>();
         java.util.List<String> nameList = new java.util.ArrayList<>();
         if (isBuy) {
@@ -1337,18 +1335,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             candidateList.add(cpr.getTc());    nameList.add("daily TC");
             candidateList.add(cpr.getR1());    nameList.add("R1");
             candidateList.add(cpr.getPh());    nameList.add("PDH");
-            candidateList.add(cpr.getR2());    nameList.add("R2");
-            candidateList.add(cpr.getR3());    nameList.add("R3");
-            candidateList.add(cpr.getR4());    nameList.add("R4");
         } else {
             candidateList.add(cpr.getTc());    nameList.add("daily TC");
             candidateList.add(cpr.getPivot()); nameList.add("daily Pivot");
             candidateList.add(cpr.getBc());    nameList.add("daily BC");
             candidateList.add(cpr.getS1());    nameList.add("S1");
             candidateList.add(cpr.getPl());    nameList.add("PDL");
-            candidateList.add(cpr.getS2());    nameList.add("S2");
-            candidateList.add(cpr.getS3());    nameList.add("S3");
-            candidateList.add(cpr.getS4());    nameList.add("S4");
         }
         if (virginCprService != null) {
             VirginCprService.Snapshot vc = virginCprService.getActiveVirginCpr();
