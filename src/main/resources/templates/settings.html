@@ -643,15 +643,6 @@
                         <br><br><b>Headroom check.</b> Mirror of the NIFTY HTF Hurdle headroom &mdash; even after the past hurdle is cleared, the filter rejects if the nearest upcoming hurdle (above NIFTY LTP for buys / below for sells, from the same daily-CPR set) is closer than <code>min headroom &times; NIFTY ATR</code>. Default <b>1.0</b> &times; ATR. Set to 0 to disable just the headroom check. Signal Trail bucket: <code>NIFTY_5M_HURDLE</code>.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Virgin CPR Cache (NIFTY)</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Active for the next</span>
-                        <input type="number" id="virginCprExpiryDays" class="form-control" step="1" min="0" max="60" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">trading days (0 = disabled)</span>
-                    </div>
-                    <div class="form-hint">When NIFTY's session range never overlapped the daily CPR (BC..TC) by 15:30 IST, that day's CPR levels (TC / Pivot / BC) are cached as a <b>virgin CPR</b> for the next N trading days. A new virgin CPR replaces any existing active record. Default <b>10</b>. The active virgin CPR is consumed by the dedicated <b>Virgin CPR Hurdle Filter</b> below and shown as a shield icon on the NIFTY card &mdash; click for the formed-on date and exact levels.</div>
-                </div>
-                <div class="form-group">
                     <label class="form-label">Virgin CPR Hurdle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableVirginCprHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
@@ -1017,6 +1008,15 @@
                         <span style="color:var(--text-secondary);font-size:0.82rem;font-family:var(--font-mono);">% of 20d ADR</span>
                     </div>
                     <div class="form-hint">Classifies stocks as SMALL (compressed) if prev day range is at or below this % of 20-day Average Daily Range. Default 50% — stock moved half or less than usual. Lower = stricter (fewer SMALL).</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Virgin CPR Cache (NIFTY)</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Active for the next</span>
+                        <input type="number" id="virginCprExpiryDays" class="form-control" step="1" min="0" max="60" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">trading days (0 = disabled)</span>
+                    </div>
+                    <div class="form-hint">When NIFTY's session range never overlapped the daily CPR (BC..TC) by 15:30 IST, that day's CPR levels (TC / Pivot / BC) are cached as a <b>virgin CPR</b> for the next N trading days. A new virgin CPR replaces any existing active record. Default <b>10</b>. The active virgin CPR is consumed by the <b>Virgin CPR Hurdle Filter</b> on the Index Alignment tab and shown as a shield icon on the NIFTY card &mdash; click for the formed-on date and exact levels.</div>
                 </div>
             </div>
         </div>
