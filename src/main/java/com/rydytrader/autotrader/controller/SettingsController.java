@@ -66,6 +66,8 @@ public class SettingsController {
         result.put("enableHtfHurdleFilter", riskSettings.isEnableHtfHurdleFilter());
         result.put("enableNiftyHtfHurdleFilter", riskSettings.isEnableNiftyHtfHurdleFilter());
         result.put("niftyHurdleMinHeadroomAtr", riskSettings.getNiftyHurdleMinHeadroomAtr());
+        result.put("enableNiftyOiHurdleFilter", riskSettings.isEnableNiftyOiHurdleFilter());
+        result.put("niftyOiHurdleMinHeadroomAtr", riskSettings.getNiftyOiHurdleMinHeadroomAtr());
         result.put("enableNifty5mHurdleFilter", riskSettings.isEnableNifty5mHurdleFilter());
         result.put("nifty5mHurdleMinHeadroomAtr", riskSettings.getNifty5mHurdleMinHeadroomAtr());
         result.put("enableHtfSmaAlignment", riskSettings.isEnableHtfSmaAlignment());
@@ -196,6 +198,8 @@ public class SettingsController {
             if (body.containsKey("enableHtfHurdleFilter")) riskSettings.setEnableHtfHurdleFilter(Boolean.parseBoolean(body.get("enableHtfHurdleFilter").toString()));
             if (body.containsKey("enableNiftyHtfHurdleFilter")) riskSettings.setEnableNiftyHtfHurdleFilter(Boolean.parseBoolean(body.get("enableNiftyHtfHurdleFilter").toString()));
             if (body.containsKey("niftyHurdleMinHeadroomAtr")) riskSettings.setNiftyHurdleMinHeadroomAtr(Double.parseDouble(body.get("niftyHurdleMinHeadroomAtr").toString()));
+            if (body.containsKey("enableNiftyOiHurdleFilter")) riskSettings.setEnableNiftyOiHurdleFilter(Boolean.parseBoolean(body.get("enableNiftyOiHurdleFilter").toString()));
+            if (body.containsKey("niftyOiHurdleMinHeadroomAtr")) riskSettings.setNiftyOiHurdleMinHeadroomAtr(Double.parseDouble(body.get("niftyOiHurdleMinHeadroomAtr").toString()));
             if (body.containsKey("enableNifty5mHurdleFilter")) riskSettings.setEnableNifty5mHurdleFilter(Boolean.parseBoolean(body.get("enableNifty5mHurdleFilter").toString()));
             if (body.containsKey("nifty5mHurdleMinHeadroomAtr")) riskSettings.setNifty5mHurdleMinHeadroomAtr(Double.parseDouble(body.get("nifty5mHurdleMinHeadroomAtr").toString()));
             if (body.containsKey("enableHtfSmaAlignment")) riskSettings.setEnableHtfSmaAlignment(Boolean.parseBoolean(body.get("enableHtfSmaAlignment").toString()));

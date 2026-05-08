@@ -539,6 +539,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                         recordRejection(fyersSymbol, buySetup, close, "NIFTY_HURDLE", niftyHurdleReject);
                         return;
                     }
+                    // NIFTY OI Hurdle — independent toggle for the Max Call OI strike check.
+                    String niftyOiHurdleReject = checkNiftyOiHurdle(true);
+                    if (niftyOiHurdleReject != null) {
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + niftyOiHurdleReject);
+                        recordRejection(fyersSymbol, buySetup, close, "NIFTY_OI_HURDLE", niftyOiHurdleReject);
+                        return;
+                    }
                     // NIFTY 5m Hurdle — prior 5-min NIFTY close must have cleared nearest daily CPR hurdle.
                     String nifty5mHurdleReject = checkNifty5mHurdle(true, candle.startMinute);
                     if (nifty5mHurdleReject != null) {
@@ -656,6 +663,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     if (niftyHurdleReject != null) {
                         eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + niftyHurdleReject);
                         recordRejection(fyersSymbol, sellSetup, close, "NIFTY_HURDLE", niftyHurdleReject);
+                        return;
+                    }
+                    // NIFTY OI Hurdle — independent toggle for the Max Put OI strike check.
+                    String niftyOiHurdleReject = checkNiftyOiHurdle(false);
+                    if (niftyOiHurdleReject != null) {
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + niftyOiHurdleReject);
+                        recordRejection(fyersSymbol, sellSetup, close, "NIFTY_OI_HURDLE", niftyOiHurdleReject);
                         return;
                     }
                     // NIFTY 5m Hurdle — prior 5-min NIFTY close must have cleared nearest daily CPR hurdle.
@@ -1141,23 +1155,16 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 candidateLevels.add(wl.tc);    candidateNames.add("weekly TC");
                 candidateLevels.add(wl.pivot); candidateNames.add("weekly Pivot");
                 candidateLevels.add(wl.bc);    candidateNames.add("weekly BC");
-                if (niftyOptionOiService != null) {
-                    double oi = niftyOptionOiService.getMaxCallOiStrike();
-                    if (oi > 0) { candidateLevels.add(oi); candidateNames.add("Max Call OI"); }
-                }
             } else {
                 candidateLevels.add(wl.s1);    candidateNames.add("weekly S1");
                 candidateLevels.add(wl.pl);    candidateNames.add("weekly PWL");
                 candidateLevels.add(wl.tc);    candidateNames.add("weekly TC");
                 candidateLevels.add(wl.pivot); candidateNames.add("weekly Pivot");
                 candidateLevels.add(wl.bc);    candidateNames.add("weekly BC");
-                if (niftyOptionOiService != null) {
-                    double oi = niftyOptionOiService.getMaxPutOiStrike();
-                    if (oi > 0) { candidateLevels.add(oi); candidateNames.add("Max Put OI"); }
-                }
             }
-            // Virgin CPR is intentionally NOT added here — daily-level concept stays at the
-            // daily-CPR (5m) gate. See checkNifty5mHurdle.
+            // Max Call/Put OI is split into checkNiftyOiHurdle so the user can toggle it
+            // independently of the weekly-levels HTF gate. Virgin CPR is intentionally NOT
+            // added here — daily-level concept stays at the daily-CPR (5m) gate.
 
             // Nearest hurdle in trade direction relative to NIFTY's current price.
             double chosenLevel = 0;
@@ -1254,6 +1261,94 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         } catch (Exception e) {
             log.warn("[BreakoutScanner] NIFTY hurdle check failed: {}", e.getMessage());
             return null; // fail-open
+        }
+    }
+
+    /**
+     * Independent NIFTY OI Hurdle filter — same prior-1h-close + headroom rules as
+     * {@link #checkNiftyHurdle} but with a single candidate (Max Call OI for buys,
+     * Max Put OI for sells). Split out so the OI level can be toggled separately.
+     *
+     * <p>Returns null on pass (filter off, no OI loaded, OI cleared past, or no prior
+     * 1h close available — fail-open). Returns a non-null reason string to reject.
+     */
+    private String checkNiftyOiHurdle(boolean isBuy) {
+        if (!riskSettings.isEnableNiftyOiHurdleFilter()) return null;
+        if (marketDataService == null || niftyOptionOiService == null) return null;
+        try {
+            String niftySym = IndexTrendService.NIFTY_SYMBOL;
+            double niftyPrice = marketDataService.getLtp(niftySym);
+            if (niftyPrice <= 0) return null;
+
+            double oiStrike = isBuy ? niftyOptionOiService.getMaxCallOiStrike()
+                                    : niftyOptionOiService.getMaxPutOiStrike();
+            String oiName = isBuy ? "Max Call OI" : "Max Put OI";
+            if (oiStrike <= 0) return null; // OI not loaded yet — fail-open
+
+            // Cleared-past check applies only when the OI strike is BEHIND NIFTY in trade
+            // direction (i.e., NIFTY has pushed past the resistance/support). Otherwise the
+            // headroom check below handles "OI right ahead of NIFTY".
+            boolean strikeBehindLtp = isBuy ? oiStrike < niftyPrice : oiStrike > niftyPrice;
+            if (strikeBehindLtp) {
+                Double priorHtfClose = weeklyCprService != null ? weeklyCprService.getLastHigherTfClose(niftySym) : null;
+                boolean usedPrevSession = false;
+                boolean usedLiveLtp = false;
+                boolean firstTradingDay = marketHolidayService != null && marketHolidayService.isFirstTradingDayOfWeek();
+                if ((priorHtfClose == null || priorHtfClose <= 0) && !firstTradingDay && htfSmaService != null) {
+                    Double prev = htfSmaService.getLastClose(niftySym);
+                    if (prev != null && prev > 0) {
+                        priorHtfClose = prev;
+                        usedPrevSession = true;
+                    }
+                }
+                if ((priorHtfClose == null || priorHtfClose <= 0) && firstTradingDay) {
+                    priorHtfClose = niftyPrice;
+                    usedLiveLtp = true;
+                }
+                if (priorHtfClose == null || priorHtfClose <= 0) {
+                    return "NIFTY OI hurdle at " + oiName
+                        + ": NIFTY " + String.format("%.2f", niftyPrice)
+                        + ", level " + String.format("%.2f", oiStrike)
+                        + ", no prior 1h close available"
+                        + (firstTradingDay ? " — first trading day of week" : "");
+                }
+                boolean cleared = isBuy ? priorHtfClose > oiStrike : priorHtfClose < oiStrike;
+                if (!cleared) {
+                    String label = usedLiveLtp ? ", live LTP="
+                                 : usedPrevSession ? ", prev session 1h close="
+                                 : ", prior 1h close=";
+                    return "NIFTY OI hurdle at " + oiName
+                        + ": NIFTY " + String.format("%.2f", niftyPrice)
+                        + label + String.format("%.2f", priorHtfClose)
+                        + ", level " + String.format("%.2f", oiStrike);
+                }
+            }
+
+            // Headroom check — when the OI strike is AHEAD of NIFTY in trade direction and
+            // the gap is smaller than minHeadroomAtr × NIFTY ATR, the move is likely capped
+            // by the option-writer wall before the breakout pays.
+            double minHeadroomAtr = riskSettings.getNiftyOiHurdleMinHeadroomAtr();
+            if (minHeadroomAtr > 0 && atrService != null) {
+                double niftyAtr = atrService.getAtr(niftySym);
+                if (niftyAtr > 0) {
+                    boolean strikeAhead = isBuy ? oiStrike > niftyPrice : oiStrike < niftyPrice;
+                    if (strikeAhead) {
+                        double headroomPts = isBuy ? oiStrike - niftyPrice : niftyPrice - oiStrike;
+                        double minHeadroomPts = minHeadroomAtr * niftyAtr;
+                        if (headroomPts < minHeadroomPts) {
+                            return "NIFTY OI hurdle ahead at " + oiName
+                                + " (" + String.format("%.2f", oiStrike) + "): only "
+                                + String.format("%.2f", headroomPts) + " pts headroom, need "
+                                + String.format("%.2f", minHeadroomPts)
+                                + " (" + minHeadroomAtr + " × NIFTY ATR " + String.format("%.2f", niftyAtr) + ")";
+                        }
+                    }
+                }
+            }
+            return null;
+        } catch (Exception e) {
+            log.warn("[BreakoutScanner] NIFTY OI hurdle check failed: {}", e.getMessage());
+            return null;
         }
     }
 

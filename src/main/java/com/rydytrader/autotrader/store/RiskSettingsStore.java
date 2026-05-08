@@ -65,6 +65,12 @@ public class RiskSettingsStore {
         // sells) is closer than this many NIFTY ATRs. Guards against firing when an upcoming
         // weekly level is right above NIFTY (likely to cap the move). 0 = headroom check off.
         volatile double niftyHurdleMinHeadroomAtr = 1.0;
+        // NIFTY OI Hurdle filter — split out from the HTF Hurdle so the Max Call/Put OI level
+        // can be toggled independently. Same prior-1h-close + headroom rules; single candidate
+        // (Max Call OI for buys, Max Put OI for sells). Default off.
+        volatile boolean enableNiftyOiHurdleFilter = false;
+        // Headroom check for the NIFTY OI Hurdle filter — mirror of niftyHurdleMinHeadroomAtr.
+        volatile double niftyOiHurdleMinHeadroomAtr = 1.0;
         // 5-min variant of the NIFTY HTF Hurdle filter, against NIFTY's *daily* CPR levels.
         // When on, every stock breakout requires NIFTY's prior 5-min close to have cleared
         // its nearest daily-CPR hurdle in trade direction (R1/R2/R3/R4 + daily TC/Pivot/BC for
@@ -320,6 +326,8 @@ public class RiskSettingsStore {
     public boolean isEnableHtfHurdleFilter()    { return cfg().enableHtfHurdleFilter; }
     public boolean isEnableNiftyHtfHurdleFilter() { return cfg().enableNiftyHtfHurdleFilter; }
     public double  getNiftyHurdleMinHeadroomAtr() { return cfg().niftyHurdleMinHeadroomAtr; }
+    public boolean isEnableNiftyOiHurdleFilter()  { return cfg().enableNiftyOiHurdleFilter; }
+    public double  getNiftyOiHurdleMinHeadroomAtr() { return cfg().niftyOiHurdleMinHeadroomAtr; }
     public boolean isEnableNifty5mHurdleFilter()  { return cfg().enableNifty5mHurdleFilter; }
     public double  getNifty5mHurdleMinHeadroomAtr() { return cfg().nifty5mHurdleMinHeadroomAtr; }
     public boolean isEnableHtfSmaAlignment()    { return cfg().enableHtfSmaAlignment; }
@@ -484,6 +492,8 @@ public class RiskSettingsStore {
     public void setEnableHtfHurdleFilter(boolean v)    { cfg().enableHtfHurdleFilter = v; }
     public void setEnableNiftyHtfHurdleFilter(boolean v) { cfg().enableNiftyHtfHurdleFilter = v; }
     public void setNiftyHurdleMinHeadroomAtr(double v)   { cfg().niftyHurdleMinHeadroomAtr = Math.max(0, v); }
+    public void setEnableNiftyOiHurdleFilter(boolean v)  { cfg().enableNiftyOiHurdleFilter = v; }
+    public void setNiftyOiHurdleMinHeadroomAtr(double v) { cfg().niftyOiHurdleMinHeadroomAtr = Math.max(0, v); }
     public void setEnableNifty5mHurdleFilter(boolean v)  { cfg().enableNifty5mHurdleFilter = v; }
     public void setNifty5mHurdleMinHeadroomAtr(double v) { cfg().nifty5mHurdleMinHeadroomAtr = Math.max(0, v); }
     public void setEnableHtfSmaAlignment(boolean v)    { cfg().enableHtfSmaAlignment = v; }
@@ -647,6 +657,8 @@ public class RiskSettingsStore {
             upsert("enableHtfHurdleFilter", String.valueOf(c.enableHtfHurdleFilter));
             upsert("enableNiftyHtfHurdleFilter", String.valueOf(c.enableNiftyHtfHurdleFilter));
             upsert("niftyHurdleMinHeadroomAtr", String.valueOf(c.niftyHurdleMinHeadroomAtr));
+            upsert("enableNiftyOiHurdleFilter", String.valueOf(c.enableNiftyOiHurdleFilter));
+            upsert("niftyOiHurdleMinHeadroomAtr", String.valueOf(c.niftyOiHurdleMinHeadroomAtr));
             upsert("enableNifty5mHurdleFilter", String.valueOf(c.enableNifty5mHurdleFilter));
             upsert("nifty5mHurdleMinHeadroomAtr", String.valueOf(c.nifty5mHurdleMinHeadroomAtr));
             upsert("enableHtfSmaAlignment", String.valueOf(c.enableHtfSmaAlignment));
@@ -796,6 +808,8 @@ public class RiskSettingsStore {
                     case "enableHtfHurdleFilter" -> c.enableHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "enableNiftyHtfHurdleFilter" -> c.enableNiftyHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "niftyHurdleMinHeadroomAtr" -> c.niftyHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
+                    case "enableNiftyOiHurdleFilter" -> c.enableNiftyOiHurdleFilter = Boolean.parseBoolean(v);
+                    case "niftyOiHurdleMinHeadroomAtr" -> c.niftyOiHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
                     case "enableNifty5mHurdleFilter" -> c.enableNifty5mHurdleFilter = Boolean.parseBoolean(v);
                     case "nifty5mHurdleMinHeadroomAtr" -> c.nifty5mHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
                     case "enableHtfSmaAlignment" -> c.enableHtfSmaAlignment = Boolean.parseBoolean(v);

@@ -602,18 +602,31 @@
                     <label class="form-label">NIFTY HTF Hurdle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableNiftyHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY's prior 1h close hasn't cleared its nearest hurdle (weekly levels + Max Call/Put OI)</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY's prior 1h close hasn't cleared its nearest weekly-levels hurdle</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min headroom to next hurdle:</span>
                         <input type="number" id="niftyHurdleMinHeadroomAtr" class="form-control" step="0.1" min="0" max="5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× NIFTY ATR (0 = off)</span>
                     </div>
-                    <div class="form-hint">Macro-level mirror of the per-stock HTF Hurdle, applied to NIFTY's own data. When on, identifies NIFTY's nearest hurdle in trade direction and rejects every stock signal while NIFTY's prior 1h close hasn't decisively cleared it.
-                        <br>&nbsp;&nbsp;&bull; <b>Buys</b> &mdash; nearest of {weekly R1, PWH, weekly TC, weekly Pivot, weekly BC, <b>Max Call OI strike</b>} below NIFTY LTP
-                        <br>&nbsp;&nbsp;&bull; <b>Sells</b> &mdash; nearest of {weekly S1, PWL, weekly TC, weekly Pivot, weekly BC, <b>Max Put OI strike</b>} above NIFTY LTP
-                        <br>The OI strikes are refreshed every 15 minutes from NIFTY's option chain (<i>Max Call OI</i> = intraday resistance from option writers; <i>Max Put OI</i> = intraday support). They join the candidate set only when loaded &mdash; before the first OI fetch the filter falls back to weekly-levels-only. While NIFTY's current 1h candle is still in progress and the prior close is on the wrong side, all stock signals are skipped &mdash; we wait for the next 1h close to commit.
-                        <br><br><b>Headroom check.</b> Even after the past hurdle is cleared, the filter also checks the nearest hurdle in the <i>opposite</i> direction (above NIFTY LTP for buys / below for sells). If that upcoming hurdle is closer than <code>min headroom &times; NIFTY ATR</code>, the trade is rejected &mdash; tight overhead resistance (or floor support for sells) tends to cap the move. Default <b>1.0</b> &times; ATR. Set to 0 to disable just the headroom check (the "cleared past" check stays on). Signal Trail bucket: <code>NIFTY_HURDLE</code> (covers both reject paths).</div>
+                    <div class="form-hint">Macro-level mirror of the per-stock HTF Hurdle, applied to NIFTY's own data. Identifies NIFTY's nearest weekly-levels hurdle in trade direction and rejects every stock signal while NIFTY's prior 1h close hasn't decisively cleared it.
+                        <br>&nbsp;&nbsp;&bull; <b>Buys</b> &mdash; nearest of {weekly R1, PWH, weekly TC, weekly Pivot, weekly BC} below NIFTY LTP
+                        <br>&nbsp;&nbsp;&bull; <b>Sells</b> &mdash; nearest of {weekly S1, PWL, weekly TC, weekly Pivot, weekly BC} above NIFTY LTP
+                        <br>Max Call/Put OI is now a separate filter (see below) so it can be toggled independently.
+                        <br><br><b>Headroom check.</b> Even after the past hurdle is cleared, the filter also checks the nearest hurdle in the <i>opposite</i> direction (above NIFTY LTP for buys / below for sells). If that upcoming hurdle is closer than <code>min headroom &times; NIFTY ATR</code>, the trade is rejected. Default <b>1.0</b> &times; ATR. Set to 0 to disable just the headroom check. Signal Trail bucket: <code>NIFTY_HURDLE</code>.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">NIFTY OI Hurdle Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableNiftyOiHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY's prior 1h close hasn't cleared the Max Call/Put OI strike</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min headroom to OI strike:</span>
+                        <input type="number" id="niftyOiHurdleMinHeadroomAtr" class="form-control" step="0.1" min="0" max="5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× NIFTY ATR (0 = off)</span>
+                    </div>
+                    <div class="form-hint">Same prior-1h-close + headroom logic as the HTF Hurdle, but checks only the Max Call OI strike (buys) or Max Put OI strike (sells). Refreshed every 15 minutes from NIFTY's option chain (<i>Max Call OI</i> = intraday resistance from option writers; <i>Max Put OI</i> = intraday support). Fail-open before the first OI fetch (no rejection without data). Signal Trail bucket: <code>NIFTY_OI_HURDLE</code>.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">NIFTY 5m Hurdle Filter</label>
@@ -1273,6 +1286,8 @@
             document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
             document.getElementById('enableNiftyHtfHurdleFilter').checked = d.enableNiftyHtfHurdleFilter === true;
             document.getElementById('niftyHurdleMinHeadroomAtr').value = (d.niftyHurdleMinHeadroomAtr != null ? d.niftyHurdleMinHeadroomAtr : 1.0);
+            document.getElementById('enableNiftyOiHurdleFilter').checked = d.enableNiftyOiHurdleFilter === true;
+            document.getElementById('niftyOiHurdleMinHeadroomAtr').value = (d.niftyOiHurdleMinHeadroomAtr != null ? d.niftyOiHurdleMinHeadroomAtr : 1.0);
             document.getElementById('enableNifty5mHurdleFilter').checked = d.enableNifty5mHurdleFilter === true;
             document.getElementById('virginCprExpiryDays').value = d.virginCprExpiryDays != null ? d.virginCprExpiryDays : 10;
             document.getElementById('nifty5mHurdleMinHeadroomAtr').value = (d.nifty5mHurdleMinHeadroomAtr != null ? d.nifty5mHurdleMinHeadroomAtr : 1.0);
@@ -1442,6 +1457,8 @@
                 enableIndexAlignment: document.getElementById('enableIndexAlignment').checked,
                 enableNiftyHtfHurdleFilter: document.getElementById('enableNiftyHtfHurdleFilter').checked,
                 niftyHurdleMinHeadroomAtr: parseFloat(document.getElementById('niftyHurdleMinHeadroomAtr').value) || 0,
+                enableNiftyOiHurdleFilter: document.getElementById('enableNiftyOiHurdleFilter').checked,
+                niftyOiHurdleMinHeadroomAtr: parseFloat(document.getElementById('niftyOiHurdleMinHeadroomAtr').value) || 0,
                 enableNifty5mHurdleFilter: document.getElementById('enableNifty5mHurdleFilter').checked,
                 virginCprExpiryDays: parseInt(document.getElementById('virginCprExpiryDays').value) || 0,
                 nifty5mHurdleMinHeadroomAtr: parseFloat(document.getElementById('nifty5mHurdleMinHeadroomAtr').value) || 0,
