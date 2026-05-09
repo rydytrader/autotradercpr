@@ -81,10 +81,14 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
     // Track which levels have been broken today per symbol (prevents re-fire)
     private final ConcurrentHashMap<String, Set<String>> brokenLevels = new ConcurrentHashMap<>();
-    /** CPR-level setup names whose level has been crossed (close past) some time today. Armed
-     *  levels are eligible for retest-pattern entries. Cleared alongside brokenLevels. */
-    private final ConcurrentHashMap<String, Set<String>> armedBuyLevels  = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Set<String>> armedSellLevels = new ConcurrentHashMap<>();
+    /** Single armed buy-side setup per symbol — the highest CPR-level setup whose level sits
+     *  strictly below the latest close. Recomputed every candle close so the armed level rolls
+     *  forward as price advances and rolls back if price retreats. Eligible for retest-pattern
+     *  entries (Route 2). Cleared at day rollover. */
+    private final ConcurrentHashMap<String, String> armedBuyLevel  = new ConcurrentHashMap<>();
+    /** Single armed sell-side setup per symbol — lowest CPR-level setup whose level sits strictly
+     *  above the latest close. Mirror of {@link #armedBuyLevel}. */
+    private final ConcurrentHashMap<String, String> armedSellLevel = new ConcurrentHashMap<>();
     /** Trigger-route tag for the most recent fired signal — picked up by fireSignal so the
      *  trade-log description records which path entered ("MARUBOZU_BREAKOUT", "HAMMER_RETEST",
      *  etc.). Per-symbol, accessed only on the candle-close thread for that symbol. */
@@ -824,12 +828,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double s1pl   = Math.max(s1, pl);
 
         // Two routes per level (priority R4 → R3 → R2 → R1+PDH → CPR → S1+PDL → S2 → S3 → S4):
-        //   Route 1 — bullish marubozu that closes past the level fires immediately.
-        //   Route 2 — pattern retest at an armed level (level was crossed earlier today by a
-        //             prior close). Pattern's lowest point across all its bars must reach the
-        //             level. Patterns: hammer, bullish engulfing, bullish doji rev, morning star.
+        //   Route 1 — bullish marubozu that closes past the level fires immediately. Iterates
+        //             every level so the highest level the marubozu broke wins.
+        //   Route 2 — pattern retest at the single armed buy level (closest level below the
+        //             latest close). Pattern's lowest point must reach the level. Patterns:
+        //             hammer, bullish engulfing, bullish doji rev, morning star.
         double atrForPattern = atrService.getAtr(fyersSymbol);
-        Set<String> armed = armedBuyLevels.getOrDefault(fyersSymbol, Collections.emptySet());
+        String armed = armedBuyLevel.get(fyersSymbol);
 
         if (r4 > 0) {
             String hit = checkBuyAtLevel("BUY_ABOVE_R4", r4, open, high, low, close, atrForPattern, broken, armed, fyersSymbol);
@@ -943,11 +948,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
         // Two routes per level (priority S4 → S3 → S2 → S1+PDL → CPR → R1+PDH → R2 → R3 → R4):
         //   Route 1 — bearish marubozu that closes past the level fires immediately.
-        //   Route 2 — pattern retest at an armed level. Pattern's highest point across all its
-        //             bars must reach the level. Patterns: shooting star, bearish engulfing,
-        //             bearish doji rev, evening star.
+        //   Route 2 — pattern retest at the single armed sell level (closest level above the
+        //             latest close). Pattern's highest point must reach the level. Patterns:
+        //             shooting star, bearish engulfing, bearish doji rev, evening star.
         double atrForPattern = atrService.getAtr(fyersSymbol);
-        Set<String> armed = armedSellLevels.getOrDefault(fyersSymbol, Collections.emptySet());
+        String armed = armedSellLevel.get(fyersSymbol);
 
         if (s4 > 0) {
             String hit = checkSellAtLevel("SELL_BELOW_S4", s4, open, high, low, close, atrForPattern, broken, armed, fyersSymbol);
@@ -996,7 +1001,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      */
     private String checkBuyAtLevel(String setupName, double level,
                                     double open, double high, double low, double close,
-                                    double atr, Set<String> broken, Set<String> armed, String fyersSymbol) {
+                                    double atr, Set<String> broken, String armed, String fyersSymbol) {
         if (broken.contains(setupName)) return null;
         // Route 1 — bullish marubozu past the level.
         if (CandlePatternDetector.isBullishMarubozu(open, high, low, close, atr)
@@ -1006,8 +1011,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 return setupName;
             }
         }
-        // Route 2 — retest pattern at an armed level. Pattern's lowest point must reach level.
-        if (!armed.contains(setupName)) return null;
+        // Route 2 — retest pattern at the single armed buy level. Pattern's lowest point must
+        // reach the level.
+        if (!setupName.equals(armed)) return null;
         CandleAggregator.CandleBar curr = candleAggregator.getLastCompletedCandle(fyersSymbol);
         if (curr == null) return null;
         CandleAggregator.CandleBar prev = candleAggregator.getPreviousCandle(fyersSymbol);
@@ -1049,7 +1055,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      */
     private String checkSellAtLevel(String setupName, double level,
                                      double open, double high, double low, double close,
-                                     double atr, Set<String> broken, Set<String> armed, String fyersSymbol) {
+                                     double atr, Set<String> broken, String armed, String fyersSymbol) {
         if (broken.contains(setupName)) return null;
         // Route 1 — bearish marubozu past the level.
         if (CandlePatternDetector.isBearishMarubozu(open, high, low, close, atr)
@@ -1059,8 +1065,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 return setupName;
             }
         }
-        // Route 2 — retest pattern at an armed level. Pattern's highest point must reach level.
-        if (!armed.contains(setupName)) return null;
+        // Route 2 — retest pattern at the single armed sell level. Pattern's highest point
+        // must reach the level.
+        if (!setupName.equals(armed)) return null;
         CandleAggregator.CandleBar curr = candleAggregator.getLastCompletedCandle(fyersSymbol);
         if (curr == null) return null;
         CandleAggregator.CandleBar prev = candleAggregator.getPreviousCandle(fyersSymbol);
@@ -2090,14 +2097,20 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     // ── Public API for scanner dashboard ─────────────────────────────────────
 
     /**
-     * Arm any CPR-level setup whose level today's close has crossed. Buy setups arm when
-     * close &gt; level; sell setups arm when close &lt; level. Armed levels persist for the
-     * rest of the trading day and gate retest-pattern entries downstream.
+     * Recompute the active armed buy / sell setup for this symbol from the current close.
+     * Single armed level per direction, rolling with price:
+     * <ul>
+     *   <li>Armed buy = the highest CPR-level setup whose level &lt; close (closest broken-above
+     *       level — the one the next dip would naturally retest).</li>
+     *   <li>Armed sell = the lowest CPR-level setup whose level &gt; close (closest
+     *       broken-below-from-above level — the one the next pop would retest).</li>
+     * </ul>
+     * If no level qualifies (e.g., close above R4 — nothing higher to retest from), the
+     * corresponding side is cleared. Recomputed on every candle close so the armed level
+     * tracks where price actually is, not stale historical breaks.
      */
     private void armLevelsForCandle(String fyersSymbol, double close, CprLevels levels) {
         if (close <= 0 || levels == null) return;
-        Set<String> buys  = armedBuyLevels.computeIfAbsent(fyersSymbol, k -> ConcurrentHashMap.newKeySet());
-        Set<String> sells = armedSellLevels.computeIfAbsent(fyersSymbol, k -> ConcurrentHashMap.newKeySet());
 
         double r4 = levels.getR4(), r3 = levels.getR3(), r2 = levels.getR2();
         double r1 = levels.getR1(), ph = levels.getPh();
@@ -2107,33 +2120,40 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
         double cprTop = Math.max(tc, bc);
         double cprBot = Math.min(tc, bc);
-        double r1ph   = Math.max(r1, ph);    // upper edge of R1+PDH zone
-        double r1phLo = Math.min(r1, ph);    // lower edge
-        double s1pl   = Math.max(s1, pl);    // upper edge of S1+PDL zone
-        double s1plLo = Math.min(s1, pl);    // lower edge
+        double r1ph   = Math.max(r1, ph);    // upper edge of R1+PDH zone (used for buy retest)
+        double r1phLo = Math.min(r1, ph);    // lower edge (used for sell retest)
+        double s1pl   = Math.max(s1, pl);    // upper edge of S1+PDL zone (used for buy retest)
+        double s1plLo = Math.min(s1, pl);    // lower edge (used for sell retest)
 
-        // Buy-side arming — close > the level's directional boundary ⇒ level is "above the
-        // close threshold" and eligible for retest-pattern buys.
-        if (r4 > 0    && close > r4)    buys.add("BUY_ABOVE_R4");
-        if (r3 > 0    && close > r3)    buys.add("BUY_ABOVE_R3");
-        if (r2 > 0    && close > r2)    buys.add("BUY_ABOVE_R2");
-        if (r1ph > 0  && close > r1ph)  buys.add("BUY_ABOVE_R1_PDH");
-        if (cprTop > 0 && close > cprTop) buys.add("BUY_ABOVE_CPR");
-        if (s1pl > 0  && close > s1pl)  buys.add("BUY_ABOVE_S1_PDL");
-        if (s2 > 0    && close > s2)    buys.add("BUY_ABOVE_S2");
-        if (s3 > 0    && close > s3)    buys.add("BUY_ABOVE_S3");
-        if (s4 > 0    && close > s4)    buys.add("BUY_ABOVE_S4");
+        // Buy-side: scan from highest level to lowest; first one strictly below close wins.
+        // Order matches the priority loop in detectBuyBreakout.
+        String buy = null;
+        if      (r4 > 0    && close > r4)    buy = "BUY_ABOVE_R4";
+        else if (r3 > 0    && close > r3)    buy = "BUY_ABOVE_R3";
+        else if (r2 > 0    && close > r2)    buy = "BUY_ABOVE_R2";
+        else if (r1ph > 0  && close > r1ph)  buy = "BUY_ABOVE_R1_PDH";
+        else if (cprTop > 0 && close > cprTop) buy = "BUY_ABOVE_CPR";
+        else if (s1pl > 0  && close > s1pl)  buy = "BUY_ABOVE_S1_PDL";
+        else if (s2 > 0    && close > s2)    buy = "BUY_ABOVE_S2";
+        else if (s3 > 0    && close > s3)    buy = "BUY_ABOVE_S3";
+        else if (s4 > 0    && close > s4)    buy = "BUY_ABOVE_S4";
 
-        // Sell-side arming — close < the level's directional boundary.
-        if (s4 > 0    && close < s4)    sells.add("SELL_BELOW_S4");
-        if (s3 > 0    && close < s3)    sells.add("SELL_BELOW_S3");
-        if (s2 > 0    && close < s2)    sells.add("SELL_BELOW_S2");
-        if (s1plLo > 0 && close < s1plLo) sells.add("SELL_BELOW_S1_PDL");
-        if (cprBot > 0 && close < cprBot) sells.add("SELL_BELOW_CPR");
-        if (r1phLo > 0 && close < r1phLo) sells.add("SELL_BELOW_R1_PDH");
-        if (r2 > 0    && close < r2)    sells.add("SELL_BELOW_R2");
-        if (r3 > 0    && close < r3)    sells.add("SELL_BELOW_R3");
-        if (r4 > 0    && close < r4)    sells.add("SELL_BELOW_R4");
+        // Sell-side: scan from lowest level to highest; first one strictly above close wins.
+        String sell = null;
+        if      (s4 > 0    && close < s4)    sell = "SELL_BELOW_S4";
+        else if (s3 > 0    && close < s3)    sell = "SELL_BELOW_S3";
+        else if (s2 > 0    && close < s2)    sell = "SELL_BELOW_S2";
+        else if (s1plLo > 0 && close < s1plLo) sell = "SELL_BELOW_S1_PDL";
+        else if (cprBot > 0 && close < cprBot) sell = "SELL_BELOW_CPR";
+        else if (r1phLo > 0 && close < r1phLo) sell = "SELL_BELOW_R1_PDH";
+        else if (r2 > 0    && close < r2)    sell = "SELL_BELOW_R2";
+        else if (r3 > 0    && close < r3)    sell = "SELL_BELOW_R3";
+        else if (r4 > 0    && close < r4)    sell = "SELL_BELOW_R4";
+
+        if (buy != null)  armedBuyLevel.put(fyersSymbol, buy);
+        else              armedBuyLevel.remove(fyersSymbol);
+        if (sell != null) armedSellLevel.put(fyersSymbol, sell);
+        else              armedSellLevel.remove(fyersSymbol);
     }
 
     /** Clear broken levels for a symbol when its position is closed. Allows re-entry.
@@ -2174,8 +2194,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     /** Clear all state for end of day. */
     public void clearAll() {
         brokenLevels.clear();
-        armedBuyLevels.clear();
-        armedSellLevels.clear();
+        armedBuyLevel.clear();
+        armedSellLevel.clear();
         lastTriggerRoute.clear();
         lastSignal.clear();
         signalHistory.clear();
