@@ -1022,6 +1022,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (curr == null) return null;
         CandleAggregator.CandleBar prev = candleAggregator.getPreviousCandle(fyersSymbol);
         double engMin    = riskSettings.getEngulfingMinBodyMultiple();
+        double engAtr    = riskSettings.getEngulfingMinBodyAtrMult();
         double dojiBody  = riskSettings.getDojiBodyMaxRangeRatio();
         double dojiPrev  = riskSettings.getDojiPrevBodyAtrMult();
         double starOuter = riskSettings.getStarOuterBodyAtrMult();
@@ -1034,7 +1035,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             return setupName;
         }
         // Bullish engulfing (2 bars)
-        if (prev != null && CandlePatternDetector.isBullishEngulfing(prev, curr, engMin)
+        if (prev != null && CandlePatternDetector.isBullishEngulfing(prev, curr, engMin, atr, engAtr)
                 && Math.min(prev.low, curr.low) <= level
                 && !isLargeCandleBlocked(close - open, atr)) {
             lastTriggerRoute.put(fyersSymbol, "ENGULFING_RETEST");
@@ -1085,6 +1086,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (curr == null) return null;
         CandleAggregator.CandleBar prev = candleAggregator.getPreviousCandle(fyersSymbol);
         double engMin    = riskSettings.getEngulfingMinBodyMultiple();
+        double engAtr    = riskSettings.getEngulfingMinBodyAtrMult();
         double dojiBody  = riskSettings.getDojiBodyMaxRangeRatio();
         double dojiPrev  = riskSettings.getDojiPrevBodyAtrMult();
         double starOuter = riskSettings.getStarOuterBodyAtrMult();
@@ -1097,7 +1099,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             return setupName;
         }
         // Bearish engulfing (2 bars)
-        if (prev != null && CandlePatternDetector.isBearishEngulfing(prev, curr, engMin)
+        if (prev != null && CandlePatternDetector.isBearishEngulfing(prev, curr, engMin, atr, engAtr)
                 && Math.max(prev.high, curr.high) >= level
                 && !isLargeCandleBlocked(open - close, atr)) {
             lastTriggerRoute.put(fyersSymbol, "ENGULFING_RETEST");

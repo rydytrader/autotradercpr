@@ -51,6 +51,10 @@ public class RiskSettingsStore {
         volatile double pinBarOppositeWickBodyMult  = 0.30;
         // Engulfing: current body ≥ N × prev body. 1.0 = strict; 0.9 allows near-engulfing.
         volatile double engulfingMinBodyMultiple    = 1.0;
+        // Engulfing absolute size floor: current body ≥ N × ATR. Without this, a "weak engulfing"
+        // (engulfer + engulfed both tiny) could fire on noise. 0.5 = current bar must be at least
+        // half an ATR. Set to 0 to disable the floor.
+        volatile double engulfingMinBodyAtrMult     = 0.5;
         // Doji reversal: current body ≤ N × range; prev body ≥ N × ATR (meaningful prior bar).
         volatile double dojiBodyMaxRangeRatio       = 0.10;
         volatile double dojiPrevBodyAtrMult         = 0.5;
@@ -390,6 +394,7 @@ public class RiskSettingsStore {
     public double getPinBarRejectionWickBodyMult() { return cfg().pinBarRejectionWickBodyMult; }
     public double getPinBarOppositeWickBodyMult()  { return cfg().pinBarOppositeWickBodyMult; }
     public double getEngulfingMinBodyMultiple()    { return cfg().engulfingMinBodyMultiple; }
+    public double getEngulfingMinBodyAtrMult()     { return cfg().engulfingMinBodyAtrMult; }
     public double getDojiBodyMaxRangeRatio()       { return cfg().dojiBodyMaxRangeRatio; }
     public double getDojiPrevBodyAtrMult()         { return cfg().dojiPrevBodyAtrMult; }
     public double getStarOuterBodyAtrMult()        { return cfg().starOuterBodyAtrMult; }
@@ -559,6 +564,7 @@ public class RiskSettingsStore {
     public void setPinBarRejectionWickBodyMult(double v) { cfg().pinBarRejectionWickBodyMult = v; }
     public void setPinBarOppositeWickBodyMult(double v)  { cfg().pinBarOppositeWickBodyMult = v; }
     public void setEngulfingMinBodyMultiple(double v)    { cfg().engulfingMinBodyMultiple = v; }
+    public void setEngulfingMinBodyAtrMult(double v)     { cfg().engulfingMinBodyAtrMult = v; }
     public void setDojiBodyMaxRangeRatio(double v)       { cfg().dojiBodyMaxRangeRatio = v; }
     public void setDojiPrevBodyAtrMult(double v)         { cfg().dojiPrevBodyAtrMult = v; }
     public void setStarOuterBodyAtrMult(double v)        { cfg().starOuterBodyAtrMult = v; }
@@ -739,6 +745,7 @@ public class RiskSettingsStore {
             upsert("pinBarRejectionWickBodyMult", String.valueOf(c.pinBarRejectionWickBodyMult));
             upsert("pinBarOppositeWickBodyMult", String.valueOf(c.pinBarOppositeWickBodyMult));
             upsert("engulfingMinBodyMultiple", String.valueOf(c.engulfingMinBodyMultiple));
+            upsert("engulfingMinBodyAtrMult",  String.valueOf(c.engulfingMinBodyAtrMult));
             upsert("dojiBodyMaxRangeRatio", String.valueOf(c.dojiBodyMaxRangeRatio));
             upsert("dojiPrevBodyAtrMult", String.valueOf(c.dojiPrevBodyAtrMult));
             upsert("starOuterBodyAtrMult", String.valueOf(c.starOuterBodyAtrMult));
@@ -907,6 +914,7 @@ public class RiskSettingsStore {
                     case "pinBarRejectionWickBodyMult" -> c.pinBarRejectionWickBodyMult = Double.parseDouble(v);
                     case "pinBarOppositeWickBodyMult"  -> c.pinBarOppositeWickBodyMult = Double.parseDouble(v);
                     case "engulfingMinBodyMultiple"    -> c.engulfingMinBodyMultiple = Double.parseDouble(v);
+                    case "engulfingMinBodyAtrMult"     -> c.engulfingMinBodyAtrMult = Double.parseDouble(v);
                     case "dojiBodyMaxRangeRatio"       -> c.dojiBodyMaxRangeRatio = Double.parseDouble(v);
                     case "dojiPrevBodyAtrMult"         -> c.dojiPrevBodyAtrMult = Double.parseDouble(v);
                     case "starOuterBodyAtrMult"        -> c.starOuterBodyAtrMult = Double.parseDouble(v);

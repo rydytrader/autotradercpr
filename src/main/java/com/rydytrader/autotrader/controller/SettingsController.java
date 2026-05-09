@@ -106,6 +106,7 @@ public class SettingsController {
         result.put("pinBarRejectionWickBodyMult",  riskSettings.getPinBarRejectionWickBodyMult());
         result.put("pinBarOppositeWickBodyMult",   riskSettings.getPinBarOppositeWickBodyMult());
         result.put("engulfingMinBodyMultiple",     riskSettings.getEngulfingMinBodyMultiple());
+        result.put("engulfingMinBodyAtrMult",      riskSettings.getEngulfingMinBodyAtrMult());
         result.put("dojiBodyMaxRangeRatio",        riskSettings.getDojiBodyMaxRangeRatio());
         result.put("dojiPrevBodyAtrMult",          riskSettings.getDojiPrevBodyAtrMult());
         result.put("starOuterBodyAtrMult",         riskSettings.getStarOuterBodyAtrMult());
@@ -248,6 +249,7 @@ public class SettingsController {
             if (body.containsKey("pinBarRejectionWickBodyMult")) riskSettings.setPinBarRejectionWickBodyMult(Double.parseDouble(body.get("pinBarRejectionWickBodyMult").toString()));
             if (body.containsKey("pinBarOppositeWickBodyMult"))  riskSettings.setPinBarOppositeWickBodyMult(Double.parseDouble(body.get("pinBarOppositeWickBodyMult").toString()));
             if (body.containsKey("engulfingMinBodyMultiple"))    riskSettings.setEngulfingMinBodyMultiple(Double.parseDouble(body.get("engulfingMinBodyMultiple").toString()));
+            if (body.containsKey("engulfingMinBodyAtrMult"))     riskSettings.setEngulfingMinBodyAtrMult(Double.parseDouble(body.get("engulfingMinBodyAtrMult").toString()));
             if (body.containsKey("dojiBodyMaxRangeRatio"))       riskSettings.setDojiBodyMaxRangeRatio(Double.parseDouble(body.get("dojiBodyMaxRangeRatio").toString()));
             if (body.containsKey("dojiPrevBodyAtrMult"))         riskSettings.setDojiPrevBodyAtrMult(Double.parseDouble(body.get("dojiPrevBodyAtrMult").toString()));
             if (body.containsKey("starOuterBodyAtrMult"))        riskSettings.setStarOuterBodyAtrMult(Double.parseDouble(body.get("starOuterBodyAtrMult").toString()));

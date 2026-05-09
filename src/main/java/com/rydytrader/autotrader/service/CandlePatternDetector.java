@@ -13,8 +13,9 @@ package com.rydytrader.autotrader.service;
  *   <li><b>Hammer / shooting star (pin bar)</b> — rejection wick ≥
  *       {@code rejectionWickBodyMult} × body, opposite wick ≤
  *       {@code oppositeWickBodyMult} × body, real body present (not a doji).</li>
- *   <li><b>Engulfing</b> — current body ≥ {@code minBodyMultiple} × prev body and
- *       fully engulfs prior body.</li>
+ *   <li><b>Engulfing</b> — current body ≥ {@code minBodyMultiple} × prev body, current
+ *       body ≥ {@code minBodyAtrMult} × ATR (absolute size floor — prevents firing on
+ *       two tiny consecutive bars), and current body fully engulfs prior body.</li>
  *   <li><b>Doji reversal</b> — current candle's body ≤
  *       {@code dojiBodyMaxRangeRatio} × range; prior candle is a meaningful
  *       (≥ {@code prevBodyAtrMult} × ATR body) opposite-direction bar.</li>
@@ -76,25 +77,29 @@ final class CandlePatternDetector {
 
     public static boolean isBullishEngulfing(CandleAggregator.CandleBar prev,
                                              CandleAggregator.CandleBar curr,
-                                             double minBodyMultiple) {
+                                             double minBodyMultiple, double atr,
+                                             double minBodyAtrMult) {
         if (prev == null || curr == null) return false;
         if (!(prev.close < prev.open)) return false;
         if (!(curr.close > curr.open)) return false;
         double prevBody = prev.open - prev.close;
         double currBody = curr.close - curr.open;
         if (currBody < minBodyMultiple * prevBody) return false;
+        if (minBodyAtrMult > 0 && atr > 0 && currBody < minBodyAtrMult * atr) return false;
         return curr.open <= prev.close && curr.close >= prev.open;
     }
 
     public static boolean isBearishEngulfing(CandleAggregator.CandleBar prev,
                                              CandleAggregator.CandleBar curr,
-                                             double minBodyMultiple) {
+                                             double minBodyMultiple, double atr,
+                                             double minBodyAtrMult) {
         if (prev == null || curr == null) return false;
         if (!(prev.close > prev.open)) return false;
         if (!(curr.close < curr.open)) return false;
         double prevBody = prev.close - prev.open;
         double currBody = curr.open - curr.close;
         if (currBody < minBodyMultiple * prevBody) return false;
+        if (minBodyAtrMult > 0 && atr > 0 && currBody < minBodyAtrMult * atr) return false;
         return curr.open >= prev.close && curr.close <= prev.open;
     }
 

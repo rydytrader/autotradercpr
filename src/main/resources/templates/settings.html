@@ -616,8 +616,11 @@
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Current body ≥</span>
                     <input type="number" id="engulfingMinBodyMultiple" class="form-control" step="0.05" min="0.5" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× prev body</span>
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">AND ≥</span>
+                    <input type="number" id="engulfingMinBodyAtrMult" class="form-control" step="0.1" min="0.0" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× ATR (size floor — 0 = off)</span>
                 </div>
-                <div class="form-hint">Strict definition uses 1.0 (current body must be at least as large as prior body and engulf it). Set to 0.9 to allow near-engulfing bars. Default: 1.0.</div>
+                <div class="form-hint">First check: relative size — engulfer ≥ N × prior body. Second check (size floor): engulfer also ≥ M × ATR in absolute terms — prevents firing when both bars are tiny. Defaults: 1.0 × prev body, 0.5 × ATR. Set the ATR floor to 0 to disable it.</div>
             </div>
 
             <!-- Doji Reversal group -->
@@ -1370,6 +1373,7 @@
             document.getElementById('pinBarRejectionWickBodyMult').value  = d.pinBarRejectionWickBodyMult  != null ? d.pinBarRejectionWickBodyMult  : 2.0;
             document.getElementById('pinBarOppositeWickBodyMult').value   = d.pinBarOppositeWickBodyMult   != null ? d.pinBarOppositeWickBodyMult   : 0.30;
             document.getElementById('engulfingMinBodyMultiple').value     = d.engulfingMinBodyMultiple     != null ? d.engulfingMinBodyMultiple     : 1.0;
+            document.getElementById('engulfingMinBodyAtrMult').value      = d.engulfingMinBodyAtrMult      != null ? d.engulfingMinBodyAtrMult      : 0.5;
             document.getElementById('dojiBodyMaxRangeRatio').value        = d.dojiBodyMaxRangeRatio        != null ? d.dojiBodyMaxRangeRatio        : 0.10;
             document.getElementById('dojiPrevBodyAtrMult').value          = d.dojiPrevBodyAtrMult          != null ? d.dojiPrevBodyAtrMult          : 0.5;
             document.getElementById('starOuterBodyAtrMult').value         = d.starOuterBodyAtrMult         != null ? d.starOuterBodyAtrMult         : 0.5;
@@ -1563,6 +1567,7 @@
                 pinBarRejectionWickBodyMult:  parseFloat(document.getElementById('pinBarRejectionWickBodyMult').value)  || 2.0,
                 pinBarOppositeWickBodyMult:   parseFloat(document.getElementById('pinBarOppositeWickBodyMult').value)   || 0.30,
                 engulfingMinBodyMultiple:     parseFloat(document.getElementById('engulfingMinBodyMultiple').value)     || 1.0,
+                engulfingMinBodyAtrMult:      (isNaN(parseFloat(document.getElementById('engulfingMinBodyAtrMult').value)) ? 0.5 : parseFloat(document.getElementById('engulfingMinBodyAtrMult').value)),
                 dojiBodyMaxRangeRatio:        parseFloat(document.getElementById('dojiBodyMaxRangeRatio').value)        || 0.10,
                 dojiPrevBodyAtrMult:          parseFloat(document.getElementById('dojiPrevBodyAtrMult').value)          || 0.5,
                 starOuterBodyAtrMult:         parseFloat(document.getElementById('starOuterBodyAtrMult').value)         || 0.5,
