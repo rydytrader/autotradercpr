@@ -42,6 +42,21 @@ public class RiskSettingsStore {
         volatile int    telegramAlertFrequency = 60; // seconds between Telegram portfolio updates (0 = disabled)
         volatile boolean enableLargeCandleBodyFilter = true;
         volatile double largeCandleBodyAtrThreshold = 4.0; // skip if candle body > N × ATR (exhaustion risk)
+        // ── Candle pattern thresholds (BreakoutScanner / CandlePatternDetector) ──
+        // Marubozu: full-body conviction candle. body ≥ N × ATR, total wicks ≤ N × body.
+        volatile double marubozuBodyAtrMult         = 1.0;
+        volatile double marubozuMaxWicksPctOfBody   = 0.10;
+        // Pin bar (hammer / shooting star): rejection wick ≥ N × body, opposite wick ≤ N × body.
+        volatile double pinBarRejectionWickBodyMult = 2.0;
+        volatile double pinBarOppositeWickBodyMult  = 0.30;
+        // Engulfing: current body ≥ N × prev body. 1.0 = strict; 0.9 allows near-engulfing.
+        volatile double engulfingMinBodyMultiple    = 1.0;
+        // Doji reversal: current body ≤ N × range; prev body ≥ N × ATR (meaningful prior bar).
+        volatile double dojiBodyMaxRangeRatio       = 0.10;
+        volatile double dojiPrevBodyAtrMult         = 0.5;
+        // Morning / evening star: bar1 + bar3 body ≥ N × ATR; bar2 body ≤ N × bar1 body.
+        volatile double starOuterBodyAtrMult        = 0.5;
+        volatile double starMiddleBodyMaxMultOfOuter = 0.3;
         volatile boolean enableTargetShift = true; // shift target to next level if default target < threshold ATR. If false, skip the entry.
         volatile boolean enableGapCheck = true;     // halve qty if day open or first candle beyond R2/S2
         volatile boolean enableDayHighLowTargetShift = true; // shift target to day high/low if between entry and target
@@ -370,6 +385,15 @@ public class RiskSettingsStore {
     public boolean isEnableSmallCandleFilter() { return cfg().enableSmallCandleFilter; }
     public boolean isEnableLargeCandleBodyFilter() { return cfg().enableLargeCandleBodyFilter; }
     public double getLargeCandleBodyAtrThreshold() { return cfg().largeCandleBodyAtrThreshold; }
+    public double getMarubozuBodyAtrMult()         { return cfg().marubozuBodyAtrMult; }
+    public double getMarubozuMaxWicksPctOfBody()   { return cfg().marubozuMaxWicksPctOfBody; }
+    public double getPinBarRejectionWickBodyMult() { return cfg().pinBarRejectionWickBodyMult; }
+    public double getPinBarOppositeWickBodyMult()  { return cfg().pinBarOppositeWickBodyMult; }
+    public double getEngulfingMinBodyMultiple()    { return cfg().engulfingMinBodyMultiple; }
+    public double getDojiBodyMaxRangeRatio()       { return cfg().dojiBodyMaxRangeRatio; }
+    public double getDojiPrevBodyAtrMult()         { return cfg().dojiPrevBodyAtrMult; }
+    public double getStarOuterBodyAtrMult()        { return cfg().starOuterBodyAtrMult; }
+    public double getStarMiddleBodyMaxMultOfOuter() { return cfg().starMiddleBodyMaxMultOfOuter; }
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
     public boolean isEnableSmaCrossExit() { return cfg().enableSmaCrossExit; }
     public boolean isEnablePriceSmaExit() { return cfg().enablePriceSmaExit; }
@@ -530,6 +554,15 @@ public class RiskSettingsStore {
     public void setEnableSmallCandleFilter(boolean v) { cfg().enableSmallCandleFilter = v; }
     public void setEnableLargeCandleBodyFilter(boolean v) { cfg().enableLargeCandleBodyFilter = v; }
     public void setLargeCandleBodyAtrThreshold(double v) { cfg().largeCandleBodyAtrThreshold = v; }
+    public void setMarubozuBodyAtrMult(double v)         { cfg().marubozuBodyAtrMult = v; }
+    public void setMarubozuMaxWicksPctOfBody(double v)   { cfg().marubozuMaxWicksPctOfBody = v; }
+    public void setPinBarRejectionWickBodyMult(double v) { cfg().pinBarRejectionWickBodyMult = v; }
+    public void setPinBarOppositeWickBodyMult(double v)  { cfg().pinBarOppositeWickBodyMult = v; }
+    public void setEngulfingMinBodyMultiple(double v)    { cfg().engulfingMinBodyMultiple = v; }
+    public void setDojiBodyMaxRangeRatio(double v)       { cfg().dojiBodyMaxRangeRatio = v; }
+    public void setDojiPrevBodyAtrMult(double v)         { cfg().dojiPrevBodyAtrMult = v; }
+    public void setStarOuterBodyAtrMult(double v)        { cfg().starOuterBodyAtrMult = v; }
+    public void setStarMiddleBodyMaxMultOfOuter(double v) { cfg().starMiddleBodyMaxMultOfOuter = v; }
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
     public void setEnableSmaCrossExit(boolean v) { cfg().enableSmaCrossExit = v; }
     public void setEnablePriceSmaExit(boolean v) { cfg().enablePriceSmaExit = v; }
@@ -701,6 +734,15 @@ public class RiskSettingsStore {
             upsert("enableSmallCandleFilter", String.valueOf(c.enableSmallCandleFilter));
             upsert("enableLargeCandleBodyFilter", String.valueOf(c.enableLargeCandleBodyFilter));
             upsert("largeCandleBodyAtrThreshold", String.valueOf(c.largeCandleBodyAtrThreshold));
+            upsert("marubozuBodyAtrMult", String.valueOf(c.marubozuBodyAtrMult));
+            upsert("marubozuMaxWicksPctOfBody", String.valueOf(c.marubozuMaxWicksPctOfBody));
+            upsert("pinBarRejectionWickBodyMult", String.valueOf(c.pinBarRejectionWickBodyMult));
+            upsert("pinBarOppositeWickBodyMult", String.valueOf(c.pinBarOppositeWickBodyMult));
+            upsert("engulfingMinBodyMultiple", String.valueOf(c.engulfingMinBodyMultiple));
+            upsert("dojiBodyMaxRangeRatio", String.valueOf(c.dojiBodyMaxRangeRatio));
+            upsert("dojiPrevBodyAtrMult", String.valueOf(c.dojiPrevBodyAtrMult));
+            upsert("starOuterBodyAtrMult", String.valueOf(c.starOuterBodyAtrMult));
+            upsert("starMiddleBodyMaxMultOfOuter", String.valueOf(c.starMiddleBodyMaxMultOfOuter));
             upsert("smallCandleAtrThreshold", String.valueOf(c.smallCandleAtrThreshold));
             upsert("smallCandleBodyAtrThreshold", String.valueOf(c.smallCandleBodyAtrThreshold));
             upsert("smallCandleMoveAtrThreshold", String.valueOf(c.smallCandleMoveAtrThreshold));
@@ -860,6 +902,15 @@ public class RiskSettingsStore {
                     case "enableSmallCandleFilter" -> c.enableSmallCandleFilter = Boolean.parseBoolean(v);
                     case "enableLargeCandleBodyFilter" -> c.enableLargeCandleBodyFilter = Boolean.parseBoolean(v);
                     case "largeCandleBodyAtrThreshold" -> c.largeCandleBodyAtrThreshold = Double.parseDouble(v);
+                    case "marubozuBodyAtrMult"         -> c.marubozuBodyAtrMult = Double.parseDouble(v);
+                    case "marubozuMaxWicksPctOfBody"   -> c.marubozuMaxWicksPctOfBody = Double.parseDouble(v);
+                    case "pinBarRejectionWickBodyMult" -> c.pinBarRejectionWickBodyMult = Double.parseDouble(v);
+                    case "pinBarOppositeWickBodyMult"  -> c.pinBarOppositeWickBodyMult = Double.parseDouble(v);
+                    case "engulfingMinBodyMultiple"    -> c.engulfingMinBodyMultiple = Double.parseDouble(v);
+                    case "dojiBodyMaxRangeRatio"       -> c.dojiBodyMaxRangeRatio = Double.parseDouble(v);
+                    case "dojiPrevBodyAtrMult"         -> c.dojiPrevBodyAtrMult = Double.parseDouble(v);
+                    case "starOuterBodyAtrMult"        -> c.starOuterBodyAtrMult = Double.parseDouble(v);
+                    case "starMiddleBodyMaxMultOfOuter" -> c.starMiddleBodyMaxMultOfOuter = Double.parseDouble(v);
                     case "smallCandleAtrThreshold" -> {
                         // Legacy single knob: also seed the new split fields if those keys haven't been
                         // saved yet. Once the user saves the new fields explicitly, this no-op overwrites

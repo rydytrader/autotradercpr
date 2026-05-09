@@ -1003,8 +1003,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                                     double open, double high, double low, double close,
                                     double atr, Set<String> broken, String armed, String fyersSymbol) {
         if (broken.contains(setupName)) return null;
+        double maruBody  = riskSettings.getMarubozuBodyAtrMult();
+        double maruWicks = riskSettings.getMarubozuMaxWicksPctOfBody();
+        double pinReject = riskSettings.getPinBarRejectionWickBodyMult();
+        double pinOpp    = riskSettings.getPinBarOppositeWickBodyMult();
         // Route 1 — bullish marubozu past the level.
-        if (CandlePatternDetector.isBullishMarubozu(open, high, low, close, atr)
+        if (CandlePatternDetector.isBullishMarubozu(open, high, low, close, atr, maruBody, maruWicks)
                 && close > level && (open <= level || low <= level)) {
             if (!isLargeCandleBlocked(close - open, atr)) {
                 lastTriggerRoute.put(fyersSymbol, "MARUBOZU_BREAKOUT");
@@ -1017,22 +1021,27 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         CandleAggregator.CandleBar curr = candleAggregator.getLastCompletedCandle(fyersSymbol);
         if (curr == null) return null;
         CandleAggregator.CandleBar prev = candleAggregator.getPreviousCandle(fyersSymbol);
+        double engMin    = riskSettings.getEngulfingMinBodyMultiple();
+        double dojiBody  = riskSettings.getDojiBodyMaxRangeRatio();
+        double dojiPrev  = riskSettings.getDojiPrevBodyAtrMult();
+        double starOuter = riskSettings.getStarOuterBodyAtrMult();
+        double starMid   = riskSettings.getStarMiddleBodyMaxMultOfOuter();
         // Hammer (1 bar)
-        if (CandlePatternDetector.isBullishHammer(open, high, low, close)
+        if (CandlePatternDetector.isBullishHammer(open, high, low, close, pinReject, pinOpp)
                 && low <= level
                 && !isLargeCandleBlocked(Math.abs(close - open), atr)) {
             lastTriggerRoute.put(fyersSymbol, "HAMMER_RETEST");
             return setupName;
         }
         // Bullish engulfing (2 bars)
-        if (prev != null && CandlePatternDetector.isBullishEngulfing(prev, curr)
+        if (prev != null && CandlePatternDetector.isBullishEngulfing(prev, curr, engMin)
                 && Math.min(prev.low, curr.low) <= level
                 && !isLargeCandleBlocked(close - open, atr)) {
             lastTriggerRoute.put(fyersSymbol, "ENGULFING_RETEST");
             return setupName;
         }
         // Bullish doji reversal (2 bars)
-        if (prev != null && CandlePatternDetector.isBullishDojiReversal(prev, curr, atr)
+        if (prev != null && CandlePatternDetector.isBullishDojiReversal(prev, curr, atr, dojiBody, dojiPrev)
                 && Math.min(prev.low, curr.low) <= level) {
             // Doji is intentionally a tiny body; large-candle filter doesn't apply.
             lastTriggerRoute.put(fyersSymbol, "DOJI_RETEST");
@@ -1041,7 +1050,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // Morning star (3 bars) — pull bars from the deque.
         CandleAggregator.CandleBar bar1 = thirdMostRecentCandle(fyersSymbol);
         if (bar1 != null && prev != null
-                && CandlePatternDetector.isMorningStar(bar1, prev, curr, atr)
+                && CandlePatternDetector.isMorningStar(bar1, prev, curr, atr, starOuter, starMid)
                 && Math.min(Math.min(bar1.low, prev.low), curr.low) <= level
                 && !isLargeCandleBlocked(close - open, atr)) {
             lastTriggerRoute.put(fyersSymbol, "STAR_RETEST");
@@ -1057,8 +1066,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                                      double open, double high, double low, double close,
                                      double atr, Set<String> broken, String armed, String fyersSymbol) {
         if (broken.contains(setupName)) return null;
+        double maruBody  = riskSettings.getMarubozuBodyAtrMult();
+        double maruWicks = riskSettings.getMarubozuMaxWicksPctOfBody();
+        double pinReject = riskSettings.getPinBarRejectionWickBodyMult();
+        double pinOpp    = riskSettings.getPinBarOppositeWickBodyMult();
         // Route 1 — bearish marubozu past the level.
-        if (CandlePatternDetector.isBearishMarubozu(open, high, low, close, atr)
+        if (CandlePatternDetector.isBearishMarubozu(open, high, low, close, atr, maruBody, maruWicks)
                 && close < level && (open >= level || high >= level)) {
             if (!isLargeCandleBlocked(open - close, atr)) {
                 lastTriggerRoute.put(fyersSymbol, "MARUBOZU_BREAKOUT");
@@ -1071,22 +1084,27 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         CandleAggregator.CandleBar curr = candleAggregator.getLastCompletedCandle(fyersSymbol);
         if (curr == null) return null;
         CandleAggregator.CandleBar prev = candleAggregator.getPreviousCandle(fyersSymbol);
+        double engMin    = riskSettings.getEngulfingMinBodyMultiple();
+        double dojiBody  = riskSettings.getDojiBodyMaxRangeRatio();
+        double dojiPrev  = riskSettings.getDojiPrevBodyAtrMult();
+        double starOuter = riskSettings.getStarOuterBodyAtrMult();
+        double starMid   = riskSettings.getStarMiddleBodyMaxMultOfOuter();
         // Shooting star (1 bar)
-        if (CandlePatternDetector.isShootingStar(open, high, low, close)
+        if (CandlePatternDetector.isShootingStar(open, high, low, close, pinReject, pinOpp)
                 && high >= level
                 && !isLargeCandleBlocked(Math.abs(close - open), atr)) {
             lastTriggerRoute.put(fyersSymbol, "HAMMER_RETEST");
             return setupName;
         }
         // Bearish engulfing (2 bars)
-        if (prev != null && CandlePatternDetector.isBearishEngulfing(prev, curr)
+        if (prev != null && CandlePatternDetector.isBearishEngulfing(prev, curr, engMin)
                 && Math.max(prev.high, curr.high) >= level
                 && !isLargeCandleBlocked(open - close, atr)) {
             lastTriggerRoute.put(fyersSymbol, "ENGULFING_RETEST");
             return setupName;
         }
         // Bearish doji reversal (2 bars)
-        if (prev != null && CandlePatternDetector.isBearishDojiReversal(prev, curr, atr)
+        if (prev != null && CandlePatternDetector.isBearishDojiReversal(prev, curr, atr, dojiBody, dojiPrev)
                 && Math.max(prev.high, curr.high) >= level) {
             lastTriggerRoute.put(fyersSymbol, "DOJI_RETEST");
             return setupName;
@@ -1094,7 +1112,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // Evening star (3 bars)
         CandleAggregator.CandleBar bar1 = thirdMostRecentCandle(fyersSymbol);
         if (bar1 != null && prev != null
-                && CandlePatternDetector.isEveningStar(bar1, prev, curr, atr)
+                && CandlePatternDetector.isEveningStar(bar1, prev, curr, atr, starOuter, starMid)
                 && Math.max(Math.max(bar1.high, prev.high), curr.high) >= level
                 && !isLargeCandleBlocked(open - close, atr)) {
             lastTriggerRoute.put(fyersSymbol, "STAR_RETEST");

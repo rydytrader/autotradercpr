@@ -202,6 +202,7 @@
         <button class="settings-tab" onclick="switchTab('signals', this)">Signals</button>
         <button class="settings-tab" onclick="switchTab('scanner', this)">Scanner</button>
         <button class="settings-tab" onclick="switchTab('filters', this)">Filters</button>
+        <button class="settings-tab" onclick="switchTab('candle', this)">Candle</button>
         <button class="settings-tab" onclick="switchTab('index', this)">Index Alignment</button>
         <button class="settings-tab" onclick="switchTab('htf', this)">HTF Alignment</button>
         <button class="settings-tab" onclick="switchTab('targets', this)">Targets</button>
@@ -565,6 +566,92 @@
 
         <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
     </div><!-- /tab-filters -->
+
+    <!-- TAB: CANDLE PATTERN THRESHOLDS -->
+    <div class="tab-content" id="tab-candle">
+    <div class="section-card fade-in">
+        <div class="section-header">
+            <div class="section-title">
+                <div class="section-title-dot" style="background: var(--accent-cyan);"></div>
+                Candle Pattern Thresholds
+            </div>
+        </div>
+        <div class="section-body">
+            <div class="form-hint" style="margin-bottom:14px;">
+                Tunable thresholds for the bullish/bearish candle patterns used by the CPR retest entries (hammer / shooting star, engulfing, doji reversal, morning / evening star) and the marubozu breakout. Defaults match standard TA conventions. Use higher numbers to make a pattern stricter (fewer signals, higher quality); lower numbers to loosen it.
+            </div>
+
+            <!-- Marubozu group -->
+            <div class="form-group">
+                <label class="form-label">Marubozu (full-body conviction candle)</label>
+                <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Body ≥</span>
+                    <input type="number" id="marubozuBodyAtrMult" class="form-control" step="0.1" min="0.1" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× ATR</span>
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">Total wicks ≤</span>
+                    <input type="number" id="marubozuMaxWicksPctOfBody" class="form-control" step="0.05" min="0.0" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× body (e.g. 0.10 = 10%)</span>
+                </div>
+                <div class="form-hint">Bigger body multiplier = need a stronger ATR-relative bar. Smaller wick fraction = stricter "no wick" rule. Defaults: 1.0 × ATR body, 0.10 × body wicks.</div>
+            </div>
+
+            <!-- Pin Bar group -->
+            <div class="form-group">
+                <label class="form-label">Pin Bar (hammer / shooting star)</label>
+                <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Rejection wick ≥</span>
+                    <input type="number" id="pinBarRejectionWickBodyMult" class="form-control" step="0.1" min="1.0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× body</span>
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">Opposite wick ≤</span>
+                    <input type="number" id="pinBarOppositeWickBodyMult" class="form-control" step="0.05" min="0.0" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× body</span>
+                </div>
+                <div class="form-hint">Hammer (buy) needs a long lower wick + small upper wick. Shooting star (sell) is the mirror. Defaults: 2.0 × body rejection wick, 0.30 × body opposite wick.</div>
+            </div>
+
+            <!-- Engulfing group -->
+            <div class="form-group">
+                <label class="form-label">Engulfing</label>
+                <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Current body ≥</span>
+                    <input type="number" id="engulfingMinBodyMultiple" class="form-control" step="0.05" min="0.5" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× prev body</span>
+                </div>
+                <div class="form-hint">Strict definition uses 1.0 (current body must be at least as large as prior body and engulf it). Set to 0.9 to allow near-engulfing bars. Default: 1.0.</div>
+            </div>
+
+            <!-- Doji Reversal group -->
+            <div class="form-group">
+                <label class="form-label">Doji Reversal</label>
+                <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Doji body ≤</span>
+                    <input type="number" id="dojiBodyMaxRangeRatio" class="form-control" step="0.02" min="0.02" max="0.30" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× range</span>
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">Prev body ≥</span>
+                    <input type="number" id="dojiPrevBodyAtrMult" class="form-control" step="0.1" min="0.1" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× ATR</span>
+                </div>
+                <div class="form-hint">Doji = tiny body relative to its range. Prior bar must have a meaningful body in the opposite direction so the doji actually represents a stall. Defaults: 0.10 × range (10%), 0.5 × ATR prev body.</div>
+            </div>
+
+            <!-- Star group -->
+            <div class="form-group">
+                <label class="form-label">Morning / Evening Star (3-bar)</label>
+                <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Bar 1 + Bar 3 body ≥</span>
+                    <input type="number" id="starOuterBodyAtrMult" class="form-control" step="0.1" min="0.1" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× ATR</span>
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">Bar 2 body ≤</span>
+                    <input type="number" id="starMiddleBodyMaxMultOfOuter" class="form-control" step="0.05" min="0.05" max="0.80" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× bar 1 body</span>
+                </div>
+                <div class="form-hint">Bars 1 and 3 must be strong directional bars; bar 2 (the "star") is small. Bar 3 also needs to close past bar 1's midpoint (built-in, not configurable). Defaults: 0.5 × ATR outer bars, 0.3 × bar1 body for the middle bar.</div>
+            </div>
+        </div>
+    </div>
+
+        <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
+    </div><!-- /tab-candle -->
 
     <!-- TAB: INDEX ALIGNMENT -->
     <div class="tab-content" id="tab-index">
@@ -1278,6 +1365,15 @@
             document.getElementById('enableRiskRewardFilter').checked = d.enableRiskRewardFilter !== false;
             document.getElementById('enableLargeCandleBodyFilter').checked = d.enableLargeCandleBodyFilter !== false;
             document.getElementById('largeCandleBodyAtrThreshold').value = d.largeCandleBodyAtrThreshold != null ? d.largeCandleBodyAtrThreshold : 4.0;
+            document.getElementById('marubozuBodyAtrMult').value          = d.marubozuBodyAtrMult          != null ? d.marubozuBodyAtrMult          : 1.0;
+            document.getElementById('marubozuMaxWicksPctOfBody').value    = d.marubozuMaxWicksPctOfBody    != null ? d.marubozuMaxWicksPctOfBody    : 0.10;
+            document.getElementById('pinBarRejectionWickBodyMult').value  = d.pinBarRejectionWickBodyMult  != null ? d.pinBarRejectionWickBodyMult  : 2.0;
+            document.getElementById('pinBarOppositeWickBodyMult').value   = d.pinBarOppositeWickBodyMult   != null ? d.pinBarOppositeWickBodyMult   : 0.30;
+            document.getElementById('engulfingMinBodyMultiple').value     = d.engulfingMinBodyMultiple     != null ? d.engulfingMinBodyMultiple     : 1.0;
+            document.getElementById('dojiBodyMaxRangeRatio').value        = d.dojiBodyMaxRangeRatio        != null ? d.dojiBodyMaxRangeRatio        : 0.10;
+            document.getElementById('dojiPrevBodyAtrMult').value          = d.dojiPrevBodyAtrMult          != null ? d.dojiPrevBodyAtrMult          : 0.5;
+            document.getElementById('starOuterBodyAtrMult').value         = d.starOuterBodyAtrMult         != null ? d.starOuterBodyAtrMult         : 0.5;
+            document.getElementById('starMiddleBodyMaxMultOfOuter').value = d.starMiddleBodyMaxMultOfOuter != null ? d.starMiddleBodyMaxMultOfOuter : 0.3;
             document.getElementById('minRiskRewardRatio').value = d.minRiskRewardRatio != null ? d.minRiskRewardRatio : 1.0;
             document.getElementById('enableSmaTrendCheck').checked = d.enableSmaTrendCheck !== false;
             document.getElementById('enableSmaTrendCheckLenient').checked = d.enableSmaTrendCheckLenient === true;
@@ -1462,6 +1558,15 @@
                 enableRiskRewardFilter: document.getElementById('enableRiskRewardFilter').checked,
                 enableLargeCandleBodyFilter: document.getElementById('enableLargeCandleBodyFilter').checked,
                 largeCandleBodyAtrThreshold: parseFloat(document.getElementById('largeCandleBodyAtrThreshold').value) || 4.0,
+                marubozuBodyAtrMult:          parseFloat(document.getElementById('marubozuBodyAtrMult').value)          || 1.0,
+                marubozuMaxWicksPctOfBody:    parseFloat(document.getElementById('marubozuMaxWicksPctOfBody').value)    || 0.10,
+                pinBarRejectionWickBodyMult:  parseFloat(document.getElementById('pinBarRejectionWickBodyMult').value)  || 2.0,
+                pinBarOppositeWickBodyMult:   parseFloat(document.getElementById('pinBarOppositeWickBodyMult').value)   || 0.30,
+                engulfingMinBodyMultiple:     parseFloat(document.getElementById('engulfingMinBodyMultiple').value)     || 1.0,
+                dojiBodyMaxRangeRatio:        parseFloat(document.getElementById('dojiBodyMaxRangeRatio').value)        || 0.10,
+                dojiPrevBodyAtrMult:          parseFloat(document.getElementById('dojiPrevBodyAtrMult').value)          || 0.5,
+                starOuterBodyAtrMult:         parseFloat(document.getElementById('starOuterBodyAtrMult').value)         || 0.5,
+                starMiddleBodyMaxMultOfOuter: parseFloat(document.getElementById('starMiddleBodyMaxMultOfOuter').value) || 0.3,
                 minRiskRewardRatio: parseFloat(document.getElementById('minRiskRewardRatio').value) || 1.0,
                 enableSmaTrendCheck: document.getElementById('enableSmaTrendCheck').checked,
                 enableSmaTrendCheckLenient: document.getElementById('enableSmaTrendCheckLenient').checked,
