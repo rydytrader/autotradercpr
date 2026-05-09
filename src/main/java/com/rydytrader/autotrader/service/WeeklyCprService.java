@@ -671,32 +671,6 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
         boolean ltfBull = breakoutClose > cprTop;
         boolean ltfBear = breakoutClose < cprBot;
 
-        // DH/DL — mean-reversion vs trend-following determined by close-vs-CPR position:
-        //   BUY_ABOVE_DH  + close > cprTop  → trend-following continuation (LTF passes naturally → HPT)
-        //   BUY_ABOVE_DH  + close ≤ cprTop  → mean-rev (bypass LTF gate, return MPT)
-        //   SELL_BELOW_DL + close < cprBot  → trend-following continuation (LTF passes naturally → HPT)
-        //   SELL_BELOW_DL + close ≥ cprBot  → mean-rev (bypass LTF gate, return MPT)
-        if ("BUY_ABOVE_DH".equals(setup)) {
-            if (cprTop > 0 && !ltfBull) return "MPT"; // mean-rev path: close inside-or-below CPR
-            // else fall through to standard LTF gate below (will pass since ltfBull) → HPT
-        } else if ("SELL_BELOW_DL".equals(setup)) {
-            if (cprBot > 0 && !ltfBear) return "MPT"; // mean-rev path: close inside-or-above CPR
-            // else fall through to standard LTF gate below (will pass since ltfBear) → HPT
-        }
-
-        // 20 SMA touch — mean-rev when strictly on the wrong side of CPR (fade trade against the
-        // CPR bias bouncing on the SMA). Otherwise fall through to standard LTF gate:
-        //   BUY_ABOVE_20SMA  + close < cprBot → mean-rev MPT (bypass LTF gate — close not above CPR)
-        //   BUY_ABOVE_20SMA  + close > cprTop → trend-following (LTF passes → HPT)
-        //   SELL_BELOW_20SMA + close > cprTop → mean-rev MPT (bypass LTF gate — close not below CPR)
-        //   SELL_BELOW_20SMA + close < cprBot → trend-following (LTF passes → HPT)
-        //   Inside CPR (close in BC..TC) → standard path rejects with LTF_OPPOSED.
-        if ("BUY_ABOVE_20SMA".equals(setup)) {
-            if (cprBot > 0 && ltfBear) return "MPT";
-        } else if ("SELL_BELOW_20SMA".equals(setup)) {
-            if (cprTop > 0 && ltfBull) return "MPT";
-        }
-
         if (isBuy)  return ltfBull ? "HPT" : null;
         else        return ltfBear ? "HPT" : null;
     }
