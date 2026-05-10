@@ -187,6 +187,10 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     // Reference to PollingService for shared state access (set via setter to avoid circular DI)
     private volatile PollingService pollingService;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private BreakoutScanner breakoutScanner;
+
     public OrderEventService(TokenStore tokenStore,
                               FyersProperties fyersProperties, OrderService orderService,
                               EventService eventService, TradeHistoryService tradeHistoryService,
@@ -785,6 +789,16 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         double roundedTarget = orderService.roundToTick(ctx.targetPrice, symbol);
         positionStateStore.save(symbol, ctx.position, ctx.quantity, entryPrice,
             ctx.setup, entryTime, adjustedSl, roundedTarget);
+
+        // NIFTY HTF Hurdle break-guard — if BreakoutScanner captured a guard for this symbol
+        // when checkNiftyHurdle gated the trade, persist it onto the position record so the
+        // NiftyHurdleExitService can defend the level on subsequent NIFTY 5-min closes.
+        if (breakoutScanner != null) {
+            BreakoutScanner.NiftyHurdleGuard guard = breakoutScanner.consumePendingHurdleGuard(symbol);
+            if (guard != null) {
+                positionStateStore.saveNiftyHurdleGuard(symbol, guard.low(), guard.high());
+            }
+        }
 
         eventService.log("[SUCCESS] [WS] " + (ctx.position.equals("LONG") ? "BUY" : "SELL")
             + " order filled for " + symbol + " @ " + entryPrice + " [ID: " + orderId + "] — placing SL + Target");

@@ -93,6 +93,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      *  trade-log description records which path entered ("MARUBOZU_BREAKOUT", "HAMMER_RETEST",
      *  etc.). Per-symbol, accessed only on the candle-close thread for that symbol. */
     private final ConcurrentHashMap<String, String> lastTriggerRoute = new ConcurrentHashMap<>();
+    /** Pending NIFTY HTF Hurdle break-guard per stock symbol. Set by checkNiftyHurdle when the
+     *  filter passes AND a hurdle existed in trade direction (i.e., the NIFTY 15-min close
+     *  cleared an actual level). Consumed by the entry-fill handler which persists the guard
+     *  onto the {@code PositionEntity}. Cleared at day reset. */
+    private final ConcurrentHashMap<String, NiftyHurdleGuard> pendingHurdleGuards = new ConcurrentHashMap<>();
+
+    /** Captured 15-min confirmation-bar level for the NIFTY HTF Hurdle break-guard. {@code low}
+     *  is defended for buys; {@code high} for sells. */
+    public record NiftyHurdleGuard(double low, double high, boolean isBuy) {}
 
     // Track signals generated today (for scanner dashboard)
     private final ConcurrentHashMap<String, SignalInfo> lastSignal = new ConcurrentHashMap<>();
@@ -550,7 +559,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 }
                 // NIFTY HTF Hurdle — only when not downgraded to LPT.
                 if (!niftyDowngraded) {
-                    String niftyHurdleReject = checkNiftyHurdle(true);
+                    String niftyHurdleReject = checkNiftyHurdle(true, fyersSymbol);
                     if (niftyHurdleReject != null) {
                         eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + niftyHurdleReject);
                         recordRejection(fyersSymbol, buySetup, close, "NIFTY_HURDLE", niftyHurdleReject);
@@ -684,7 +693,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 }
                 // NIFTY HTF Hurdle — only when not downgraded to LPT.
                 if (!niftyDowngraded) {
-                    String niftyHurdleReject = checkNiftyHurdle(false);
+                    String niftyHurdleReject = checkNiftyHurdle(false, fyersSymbol);
                     if (niftyHurdleReject != null) {
                         eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + niftyHurdleReject);
                         recordRejection(fyersSymbol, sellSetup, close, "NIFTY_HURDLE", niftyHurdleReject);
@@ -1381,8 +1390,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      *
      * <p>Returns a non-null reason string when the filter rejects, or null when the trade
      * is allowed (filter off, no hurdle, hurdle cleared, or fail-open data missing).
+     *
+     * <p>When the filter passes AND a hurdle existed in trade direction (the trade was
+     * actually gated past something), captures NIFTY's last completed 15-min bar low/high
+     * into {@link #pendingHurdleGuards} keyed by {@code fyersSymbol} for the early-exit
+     * service to persist onto the position record at fill time.
      */
-    private String checkNiftyHurdle(boolean isBuy) {
+    private String checkNiftyHurdle(boolean isBuy, String fyersSymbol) {
         if (!riskSettings.isEnableNiftyHtfHurdleFilter()) return null;
         if (marketDataService == null || weeklyCprService == null) return null;
         try {
@@ -1487,11 +1501,32 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     }
                 }
             }
-            return null; // prior 1h close (or LTP fallback) has cleared the hurdle, headroom OK
+            // Filter passed. Since chosenName was non-null and the prior 15-min close cleared
+            // it, capture the gating 15-min bar's low/high so the early-exit service can
+            // defend that level after the trade fills.
+            CandleAggregator.CandleBar gatingBar = candleAggregator != null
+                ? candleAggregator.getLastCompleted15MinCandle(niftySym) : null;
+            if (gatingBar != null && gatingBar.low > 0 && gatingBar.high > 0 && fyersSymbol != null) {
+                pendingHurdleGuards.put(fyersSymbol,
+                    new NiftyHurdleGuard(gatingBar.low, gatingBar.high, isBuy));
+            }
+            return null; // prior 15-min close has cleared the hurdle, headroom OK
         } catch (Exception e) {
             log.warn("[BreakoutScanner] NIFTY hurdle check failed: {}", e.getMessage());
             return null; // fail-open
         }
+    }
+
+    /**
+     * Consume + clear the pending NIFTY HTF Hurdle break-guard captured at signal-firing
+     * time for {@code fyersSymbol}. Called by the entry-fill handler immediately after
+     * persisting the position record. Returns null if no guard was captured for this symbol
+     * (filter disabled at entry, no hurdle in trade direction, etc.) — caller should treat
+     * null as "no guard applies".
+     */
+    public NiftyHurdleGuard consumePendingHurdleGuard(String fyersSymbol) {
+        if (fyersSymbol == null) return null;
+        return pendingHurdleGuards.remove(fyersSymbol);
     }
 
     /**
@@ -2268,6 +2303,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         armedBuyLevel.clear();
         armedSellLevel.clear();
         lastTriggerRoute.clear();
+        pendingHurdleGuards.clear();
         lastSignal.clear();
         signalHistory.clear();
         tradedCountToday = 0;

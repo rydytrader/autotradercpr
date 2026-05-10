@@ -129,6 +129,7 @@ public class SettingsController {
         result.put("enableSmaCrossExit", riskSettings.isEnableSmaCrossExit());
         result.put("enablePriceSmaExit", riskSettings.isEnablePriceSmaExit());
         result.put("enableNiftyReversalCprExit", riskSettings.isEnableNiftyReversalCprExit());
+        result.put("enableNiftyHtfHurdleExit",   riskSettings.isEnableNiftyHtfHurdleExit());
         result.put("perSymbolDailyTradeLimit", riskSettings.getPerSymbolDailyTradeLimit());
         result.put("lptMaxTradesPerStockPerDay", riskSettings.getLptMaxTradesPerStockPerDay());
         result.put("virginCprExpiryDays", riskSettings.getVirginCprExpiryDays());
@@ -278,6 +279,7 @@ public class SettingsController {
             if (body.containsKey("enableSmaCrossExit")) riskSettings.setEnableSmaCrossExit(Boolean.parseBoolean(body.get("enableSmaCrossExit").toString()));
             if (body.containsKey("enablePriceSmaExit")) riskSettings.setEnablePriceSmaExit(Boolean.parseBoolean(body.get("enablePriceSmaExit").toString()));
             if (body.containsKey("enableNiftyReversalCprExit")) riskSettings.setEnableNiftyReversalCprExit(Boolean.parseBoolean(body.get("enableNiftyReversalCprExit").toString()));
+            if (body.containsKey("enableNiftyHtfHurdleExit"))   riskSettings.setEnableNiftyHtfHurdleExit(Boolean.parseBoolean(body.get("enableNiftyHtfHurdleExit").toString()));
             if (body.containsKey("perSymbolDailyTradeLimit")) {
                 try {
                     riskSettings.setPerSymbolDailyTradeLimit(Integer.parseInt(body.get("perSymbolDailyTradeLimit").toString()));

@@ -186,7 +186,27 @@ public class PositionStateStore {
         map.put("target2Price",    e.getTarget2Price());
         map.put("remainingQty",    e.getRemainingQty());
         map.put("t1Filled",        e.isT1Filled());
+        map.put("niftyHurdleGuardLow",  e.getNiftyHurdleGuardLow());
+        map.put("niftyHurdleGuardHigh", e.getNiftyHurdleGuardHigh());
         return map;
+    }
+
+    /**
+     * Persist the NIFTY HTF Hurdle break-guard levels onto an existing position record.
+     * Captured at entry when the trade was gated by an active NIFTY 15-min hurdle
+     * confirmation. {@code low} is defended for LONG positions, {@code high} for SHORT.
+     * Pass null/0 to clear.
+     */
+    public void saveNiftyHurdleGuard(String symbol, Double low, Double high) {
+        try {
+            positionRepo.findBySymbol(symbol).ifPresent(entity -> {
+                entity.setNiftyHurdleGuardLow(low);
+                entity.setNiftyHurdleGuardHigh(high);
+                positionRepo.save(entity);
+            });
+        } catch (Exception e) {
+            log.error("[PositionStateStore] Failed to saveNiftyHurdleGuard for {}: {}", symbol, e.getMessage());
+        }
     }
 
     /** Updates the probability field for a position. */

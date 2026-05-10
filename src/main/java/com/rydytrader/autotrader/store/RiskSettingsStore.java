@@ -211,6 +211,13 @@ public class RiskSettingsStore {
         // for BEARISH_REVERSAL: NIFTY above CPR drops to/below CPR top → exit all SHORT positions.
         // Default off.
         volatile boolean enableNiftyReversalCprExit = false;
+        // NIFTY HTF Hurdle break — early exit. When a stock trade was taken with the NIFTY
+        // HTF Hurdle filter actively gating it (i.e., a hurdle existed in trade direction
+        // and NIFTY's prior 15-min close had cleared it), capture that 15-min bar's LOW
+        // (for buys) / HIGH (for sells). On every NIFTY 5-min candle close, if the just-
+        // closed bar's close breaches that captured level, the HTF breakout has structurally
+        // failed — square off the position with reason NIFTY_HURDLE_FAIL. Default off.
+        volatile boolean enableNiftyHtfHurdleExit = false;
         // Per-symbol daily trade limit. When >0, halts further trades on a symbol once today's
         // count of wins OR today's count of losses (separately, NOT total) reaches the threshold.
         // E.g. limit=2: 2W+0L → stop, 0W+2L → stop, 1W+1L → continue, 2W+1L → stop.
@@ -424,6 +431,7 @@ public class RiskSettingsStore {
     public boolean isEnableSmaCrossExit() { return cfg().enableSmaCrossExit; }
     public boolean isEnablePriceSmaExit() { return cfg().enablePriceSmaExit; }
     public boolean isEnableNiftyReversalCprExit() { return cfg().enableNiftyReversalCprExit; }
+    public boolean isEnableNiftyHtfHurdleExit()    { return cfg().enableNiftyHtfHurdleExit; }
     public int getPerSymbolDailyTradeLimit() { return cfg().perSymbolDailyTradeLimit; }
     public int getLptMaxTradesPerStockPerDay() { return cfg().lptMaxTradesPerStockPerDay; }
     public int getVirginCprExpiryDays() { return cfg().virginCprExpiryDays; }
@@ -600,6 +608,7 @@ public class RiskSettingsStore {
     public void setEnableSmaCrossExit(boolean v) { cfg().enableSmaCrossExit = v; }
     public void setEnablePriceSmaExit(boolean v) { cfg().enablePriceSmaExit = v; }
     public void setEnableNiftyReversalCprExit(boolean v) { cfg().enableNiftyReversalCprExit = v; }
+    public void setEnableNiftyHtfHurdleExit(boolean v)   { cfg().enableNiftyHtfHurdleExit = v; }
     public void setPerSymbolDailyTradeLimit(int v) { cfg().perSymbolDailyTradeLimit = Math.max(0, v); }
     public void setLptMaxTradesPerStockPerDay(int v) { cfg().lptMaxTradesPerStockPerDay = Math.max(0, v); }
     public void setVirginCprExpiryDays(int v) { cfg().virginCprExpiryDays = Math.max(0, v); }
@@ -795,6 +804,7 @@ public class RiskSettingsStore {
             upsert("enableSmaCrossExit", String.valueOf(c.enableSmaCrossExit));
             upsert("enablePriceSmaExit", String.valueOf(c.enablePriceSmaExit));
             upsert("enableNiftyReversalCprExit", String.valueOf(c.enableNiftyReversalCprExit));
+            upsert("enableNiftyHtfHurdleExit",   String.valueOf(c.enableNiftyHtfHurdleExit));
             upsert("perSymbolDailyTradeLimit", String.valueOf(c.perSymbolDailyTradeLimit));
             upsert("lptMaxTradesPerStockPerDay", String.valueOf(c.lptMaxTradesPerStockPerDay));
             upsert("virginCprExpiryDays", String.valueOf(c.virginCprExpiryDays));
@@ -975,6 +985,7 @@ public class RiskSettingsStore {
                     case "enableSmaCrossExit" -> c.enableSmaCrossExit = Boolean.parseBoolean(v);
                     case "enablePriceSmaExit" -> c.enablePriceSmaExit = Boolean.parseBoolean(v);
                     case "enableNiftyReversalCprExit" -> c.enableNiftyReversalCprExit = Boolean.parseBoolean(v);
+                    case "enableNiftyHtfHurdleExit"   -> c.enableNiftyHtfHurdleExit = Boolean.parseBoolean(v);
                     case "perSymbolDailyTradeLimit" -> c.perSymbolDailyTradeLimit = Math.max(0, Integer.parseInt(v));
                     case "lptMaxTradesPerStockPerDay" -> c.lptMaxTradesPerStockPerDay = Math.max(0, Integer.parseInt(v));
                     case "virginCprExpiryDays" -> c.virginCprExpiryDays = Math.max(0, Integer.parseInt(v));

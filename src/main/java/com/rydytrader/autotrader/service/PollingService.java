@@ -303,6 +303,14 @@ public class PollingService {
                         double roundedTarget = orderService.roundToTick(targetPrice, symbol);
                         positionStateStore.save(symbol, position, quantity, holder.entryFillPrice,
                             setupBySymbol.get(symbol), entryTime, holder.adjustedSl, roundedTarget);
+                        // NIFTY HTF Hurdle break-guard — persist the guard captured at scan
+                        // time onto the position record (mirror of OrderEventService path).
+                        if (breakoutScanner != null) {
+                            BreakoutScanner.NiftyHurdleGuard guard = breakoutScanner.consumePendingHurdleGuard(symbol);
+                            if (guard != null) {
+                                positionStateStore.saveNiftyHurdleGuard(symbol, guard.low(), guard.high());
+                            }
+                        }
                         // Save description from signal processing
                         if (description != null && !description.isEmpty()) {
                             positionStateStore.appendDescription(symbol, description);

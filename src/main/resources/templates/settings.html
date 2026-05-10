@@ -384,6 +384,17 @@
                         <br>Locks in the move's profit before NIFTY consolidates inside CPR and the trade goes against us. Cancels both OCO legs and places a market exit. Reason recorded: <code>NIFTY_REVERSAL_CPR_EXIT</code>.</div>
                 </div>
                 <div class="form-group">
+                    <label class="form-label">NIFTY HTF Hurdle Early Exit</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableNiftyHtfHurdleExit" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Exit when NIFTY breaks the 15-min confirmation candle that gated the trade</span>
+                    </div>
+                    <div class="form-hint">Applies <b>only</b> to trades that fired with the <b>NIFTY HTF Hurdle</b> filter actively gating them (a hurdle existed in trade direction and NIFTY's prior 15-min close cleared it). At entry the gating 15-min bar's <b>low</b> (LONG) / <b>high</b> (SHORT) is captured onto the position record. On every NIFTY 5-min candle close, if the just-closed bar's close breaches that level, the HTF breakout has structurally failed &rarr; exit the position.
+                        <br>&nbsp;&nbsp;&bull; <b>LONG</b> &mdash; NIFTY 5-min close &lt; captured low &rarr; exit.
+                        <br>&nbsp;&nbsp;&bull; <b>SHORT</b> &mdash; NIFTY 5-min close &gt; captured high &rarr; exit.
+                        <br>Trades taken when the HTF Hurdle filter was off (or where no hurdle existed in trade direction at entry) get no guard and are unaffected. Reason recorded: <code>NIFTY_HURDLE_FAIL</code>.</div>
+                </div>
+                <div class="form-group">
                     <label class="form-label">NIFTY Virgin CPR-Touch Exit</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableVirginCprTouchExit" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
@@ -1472,6 +1483,7 @@
             document.getElementById('enableSmaCrossExit').checked = d.enableSmaCrossExit === true;
             document.getElementById('enablePriceSmaExit').checked = d.enablePriceSmaExit === true;
             document.getElementById('enableNiftyReversalCprExit').checked = d.enableNiftyReversalCprExit === true;
+            document.getElementById('enableNiftyHtfHurdleExit').checked   = d.enableNiftyHtfHurdleExit === true;
             document.getElementById('enableVirginCprTouchExit').checked = d.enableVirginCprTouchExit === true;
             document.getElementById('perSymbolDailyTradeLimit').value = d.perSymbolDailyTradeLimit != null ? d.perSymbolDailyTradeLimit : 2;
             document.getElementById('enableLpt').checked = d.enableLpt !== false;
@@ -1670,6 +1682,7 @@
                 enableSmaCrossExit: document.getElementById('enableSmaCrossExit').checked,
                 enablePriceSmaExit: document.getElementById('enablePriceSmaExit').checked,
                 enableNiftyReversalCprExit: document.getElementById('enableNiftyReversalCprExit').checked,
+                enableNiftyHtfHurdleExit:   document.getElementById('enableNiftyHtfHurdleExit').checked,
                 enableVirginCprTouchExit: document.getElementById('enableVirginCprTouchExit').checked,
                 perSymbolDailyTradeLimit: parseInt(document.getElementById('perSymbolDailyTradeLimit').value) || 0,
                 enableLpt: document.getElementById('enableLpt').checked,

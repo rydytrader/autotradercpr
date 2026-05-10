@@ -37,6 +37,13 @@ public class PositionEntity {
 
     private String probability;
 
+    // NIFTY HTF Hurdle break — early-exit guard. Captured at entry when the trade was
+    // gated by an active NIFTY 15-min hurdle confirmation. niftyHurdleGuardLow defended
+    // for LONG; niftyHurdleGuardHigh defended for SHORT. Null = no guard (no early-exit
+    // applies to this position).
+    private Double niftyHurdleGuardLow;
+    private Double niftyHurdleGuardHigh;
+
     public PositionEntity() {}
 
     @PrePersist
@@ -105,4 +112,10 @@ public class PositionEntity {
 
     public boolean isT1Filled() { return t1Filled != null && t1Filled; }
     public void setT1Filled(boolean t1Filled) { this.t1Filled = t1Filled; }
+
+    public Double getNiftyHurdleGuardLow() { return niftyHurdleGuardLow; }
+    public void setNiftyHurdleGuardLow(Double v) { this.niftyHurdleGuardLow = v; }
+
+    public Double getNiftyHurdleGuardHigh() { return niftyHurdleGuardHigh; }
+    public void setNiftyHurdleGuardHigh(Double v) { this.niftyHurdleGuardHigh = v; }
 }
