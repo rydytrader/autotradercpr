@@ -111,6 +111,8 @@ public class SettingsController {
         result.put("piercingPenetrationPct",       riskSettings.getPiercingPenetrationPct());
         result.put("tweezerPrevBodyAtrMult",       riskSettings.getTweezerPrevBodyAtrMult());
         result.put("tweezerLowHighMatchAtr",       riskSettings.getTweezerLowHighMatchAtr());
+        result.put("haramiBodyAtrMult",            riskSettings.getHaramiBodyAtrMult());
+        result.put("haramiInnerBodyMaxRatio",      riskSettings.getHaramiInnerBodyMaxRatio());
         result.put("dojiBodyMaxRangeRatio",        riskSettings.getDojiBodyMaxRangeRatio());
         result.put("dojiPrevBodyAtrMult",          riskSettings.getDojiPrevBodyAtrMult());
         result.put("starOuterBodyAtrMult",         riskSettings.getStarOuterBodyAtrMult());
@@ -258,6 +260,8 @@ public class SettingsController {
             if (body.containsKey("piercingPenetrationPct"))      riskSettings.setPiercingPenetrationPct(Double.parseDouble(body.get("piercingPenetrationPct").toString()));
             if (body.containsKey("tweezerPrevBodyAtrMult"))      riskSettings.setTweezerPrevBodyAtrMult(Double.parseDouble(body.get("tweezerPrevBodyAtrMult").toString()));
             if (body.containsKey("tweezerLowHighMatchAtr"))      riskSettings.setTweezerLowHighMatchAtr(Double.parseDouble(body.get("tweezerLowHighMatchAtr").toString()));
+            if (body.containsKey("haramiBodyAtrMult"))           riskSettings.setHaramiBodyAtrMult(Double.parseDouble(body.get("haramiBodyAtrMult").toString()));
+            if (body.containsKey("haramiInnerBodyMaxRatio"))     riskSettings.setHaramiInnerBodyMaxRatio(Double.parseDouble(body.get("haramiInnerBodyMaxRatio").toString()));
             if (body.containsKey("dojiBodyMaxRangeRatio"))       riskSettings.setDojiBodyMaxRangeRatio(Double.parseDouble(body.get("dojiBodyMaxRangeRatio").toString()));
             if (body.containsKey("dojiPrevBodyAtrMult"))         riskSettings.setDojiPrevBodyAtrMult(Double.parseDouble(body.get("dojiPrevBodyAtrMult").toString()));
             if (body.containsKey("starOuterBodyAtrMult"))        riskSettings.setStarOuterBodyAtrMult(Double.parseDouble(body.get("starOuterBodyAtrMult").toString()));

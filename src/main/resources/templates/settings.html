@@ -679,6 +679,20 @@
                 </div>
                 <div class="form-hint">Bars 1 and 3 must be strong directional bars; bar 2 (the "star") is small. Bar 3 also needs to close past bar 1's midpoint (built-in, not configurable). Defaults: 0.5 × ATR outer bars, 0.3 × bar1 body for the middle bar.</div>
             </div>
+
+            <!-- Three Inside Up / Down (Harami + confirmation) -->
+            <div class="form-group">
+                <label class="form-label">Three Inside Up / Down (Harami + confirmation)</label>
+                <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Bar 1 body ≥</span>
+                    <input type="number" id="haramiBodyAtrMult" class="form-control" step="0.1" min="0.1" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× ATR</span>
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">Bar 2 body ≤</span>
+                    <input type="number" id="haramiInnerBodyMaxRatio" class="form-control" step="0.05" min="0.10" max="1.00" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× bar 1 body</span>
+                </div>
+                <div class="form-hint">3-bar harami + confirmation. Bar 1 large directional bar. Bar 2 opposite-color and body fully INSIDE bar 1's body (harami) and small relative to bar 1. Bar 3 confirms the reversal by closing past bar 1's open in the reversal direction (built-in, not configurable). Different from morning/evening star — that allows bar 2 to break out of bar 1's range; harami requires strict body containment. Defaults: 0.5 × ATR bar 1, 0.5 × bar 1 body inner.</div>
+            </div>
             </div><!-- /form-grid -->
         </div>
     </div>
@@ -1408,6 +1422,8 @@
             document.getElementById('piercingPenetrationPct').value       = d.piercingPenetrationPct       != null ? d.piercingPenetrationPct       : 0.5;
             document.getElementById('tweezerPrevBodyAtrMult').value       = d.tweezerPrevBodyAtrMult       != null ? d.tweezerPrevBodyAtrMult       : 0.5;
             document.getElementById('tweezerLowHighMatchAtr').value       = d.tweezerLowHighMatchAtr       != null ? d.tweezerLowHighMatchAtr       : 0.10;
+            document.getElementById('haramiBodyAtrMult').value            = d.haramiBodyAtrMult            != null ? d.haramiBodyAtrMult            : 0.5;
+            document.getElementById('haramiInnerBodyMaxRatio').value      = d.haramiInnerBodyMaxRatio      != null ? d.haramiInnerBodyMaxRatio      : 0.5;
             document.getElementById('dojiBodyMaxRangeRatio').value        = d.dojiBodyMaxRangeRatio        != null ? d.dojiBodyMaxRangeRatio        : 0.10;
             document.getElementById('dojiPrevBodyAtrMult').value          = d.dojiPrevBodyAtrMult          != null ? d.dojiPrevBodyAtrMult          : 0.5;
             document.getElementById('starOuterBodyAtrMult').value         = d.starOuterBodyAtrMult         != null ? d.starOuterBodyAtrMult         : 0.5;
@@ -1606,6 +1622,8 @@
                 piercingPenetrationPct:       parseFloat(document.getElementById('piercingPenetrationPct').value)       || 0.5,
                 tweezerPrevBodyAtrMult:       parseFloat(document.getElementById('tweezerPrevBodyAtrMult').value)       || 0.5,
                 tweezerLowHighMatchAtr:       (isNaN(parseFloat(document.getElementById('tweezerLowHighMatchAtr').value)) ? 0.10 : parseFloat(document.getElementById('tweezerLowHighMatchAtr').value)),
+                haramiBodyAtrMult:            parseFloat(document.getElementById('haramiBodyAtrMult').value)            || 0.5,
+                haramiInnerBodyMaxRatio:      parseFloat(document.getElementById('haramiInnerBodyMaxRatio').value)      || 0.5,
                 dojiBodyMaxRangeRatio:        parseFloat(document.getElementById('dojiBodyMaxRangeRatio').value)        || 0.10,
                 dojiPrevBodyAtrMult:          parseFloat(document.getElementById('dojiPrevBodyAtrMult').value)          || 0.5,
                 starOuterBodyAtrMult:         parseFloat(document.getElementById('starOuterBodyAtrMult').value)         || 0.5,

@@ -64,6 +64,12 @@ public class RiskSettingsStore {
         // enforced (red→green for bottom, green→red for top — built-in, not configurable).
         volatile double tweezerPrevBodyAtrMult      = 0.5;
         volatile double tweezerLowHighMatchAtr      = 0.10;
+        // Three Inside Up / Three Inside Down (3-bar harami + confirmation). bar1 large
+        // directional (≥ N × ATR), bar2 opposite color with body fully INSIDE bar1's body
+        // and body ≤ N × bar1 body (small inside bar — harami constraint), bar3 closes past
+        // bar1's open in reversal direction (confirmation).
+        volatile double haramiBodyAtrMult           = 0.5;
+        volatile double haramiInnerBodyMaxRatio     = 0.5;
         // Doji reversal: current body ≤ N × range; prev body ≥ N × ATR (meaningful prior bar).
         volatile double dojiBodyMaxRangeRatio       = 0.10;
         volatile double dojiPrevBodyAtrMult         = 0.5;
@@ -408,6 +414,8 @@ public class RiskSettingsStore {
     public double getPiercingPenetrationPct()      { return cfg().piercingPenetrationPct; }
     public double getTweezerPrevBodyAtrMult()      { return cfg().tweezerPrevBodyAtrMult; }
     public double getTweezerLowHighMatchAtr()      { return cfg().tweezerLowHighMatchAtr; }
+    public double getHaramiBodyAtrMult()           { return cfg().haramiBodyAtrMult; }
+    public double getHaramiInnerBodyMaxRatio()     { return cfg().haramiInnerBodyMaxRatio; }
     public double getDojiBodyMaxRangeRatio()       { return cfg().dojiBodyMaxRangeRatio; }
     public double getDojiPrevBodyAtrMult()         { return cfg().dojiPrevBodyAtrMult; }
     public double getStarOuterBodyAtrMult()        { return cfg().starOuterBodyAtrMult; }
@@ -582,6 +590,8 @@ public class RiskSettingsStore {
     public void setPiercingPenetrationPct(double v)      { cfg().piercingPenetrationPct = v; }
     public void setTweezerPrevBodyAtrMult(double v)      { cfg().tweezerPrevBodyAtrMult = v; }
     public void setTweezerLowHighMatchAtr(double v)      { cfg().tweezerLowHighMatchAtr = v; }
+    public void setHaramiBodyAtrMult(double v)           { cfg().haramiBodyAtrMult = v; }
+    public void setHaramiInnerBodyMaxRatio(double v)     { cfg().haramiInnerBodyMaxRatio = v; }
     public void setDojiBodyMaxRangeRatio(double v)       { cfg().dojiBodyMaxRangeRatio = v; }
     public void setDojiPrevBodyAtrMult(double v)         { cfg().dojiPrevBodyAtrMult = v; }
     public void setStarOuterBodyAtrMult(double v)        { cfg().starOuterBodyAtrMult = v; }
@@ -767,6 +777,8 @@ public class RiskSettingsStore {
             upsert("piercingPenetrationPct",   String.valueOf(c.piercingPenetrationPct));
             upsert("tweezerPrevBodyAtrMult",   String.valueOf(c.tweezerPrevBodyAtrMult));
             upsert("tweezerLowHighMatchAtr",   String.valueOf(c.tweezerLowHighMatchAtr));
+            upsert("haramiBodyAtrMult",        String.valueOf(c.haramiBodyAtrMult));
+            upsert("haramiInnerBodyMaxRatio",  String.valueOf(c.haramiInnerBodyMaxRatio));
             upsert("dojiBodyMaxRangeRatio", String.valueOf(c.dojiBodyMaxRangeRatio));
             upsert("dojiPrevBodyAtrMult", String.valueOf(c.dojiPrevBodyAtrMult));
             upsert("starOuterBodyAtrMult", String.valueOf(c.starOuterBodyAtrMult));
@@ -940,6 +952,8 @@ public class RiskSettingsStore {
                     case "piercingPenetrationPct"      -> c.piercingPenetrationPct = Double.parseDouble(v);
                     case "tweezerPrevBodyAtrMult"      -> c.tweezerPrevBodyAtrMult = Double.parseDouble(v);
                     case "tweezerLowHighMatchAtr"      -> c.tweezerLowHighMatchAtr = Double.parseDouble(v);
+                    case "haramiBodyAtrMult"           -> c.haramiBodyAtrMult = Double.parseDouble(v);
+                    case "haramiInnerBodyMaxRatio"     -> c.haramiInnerBodyMaxRatio = Double.parseDouble(v);
                     case "dojiBodyMaxRangeRatio"       -> c.dojiBodyMaxRangeRatio = Double.parseDouble(v);
                     case "dojiPrevBodyAtrMult"         -> c.dojiPrevBodyAtrMult = Double.parseDouble(v);
                     case "starOuterBodyAtrMult"        -> c.starOuterBodyAtrMult = Double.parseDouble(v);

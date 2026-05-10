@@ -25,6 +25,11 @@ package com.rydytrader.autotrader.service;
  *       bar 2. Matching extremes (highs for top, lows for bottom) within
  *       {@code matchAtr} × ATR tolerance. Bar 2 body unconstrained — the matched
  *       extreme is the signature.</li>
+ *   <li><b>Three Inside Up / Down</b> — 3-bar harami + confirmation. Bar 1 large
+ *       directional (body ≥ {@code bodyAtrMult} × ATR), bar 2 opposite color with body
+ *       FULLY INSIDE bar 1's body and body ≤ {@code innerBodyMaxRatio} × bar 1 body
+ *       (harami constraint), bar 3 closes past bar 1's open in the reversal direction
+ *       (full confirmation).</li>
  *   <li><b>Doji reversal</b> — current candle's body ≤
  *       {@code dojiBodyMaxRangeRatio} × range; prior candle is a meaningful
  *       (≥ {@code prevBodyAtrMult} × ATR body) opposite-direction bar.</li>
@@ -196,6 +201,43 @@ final class CandlePatternDetector {
         if (!(prev.close > prev.open)) return false;
         double prevBody = prev.close - prev.open;
         return prevBody >= prevBodyAtrMult * atr;
+    }
+
+    // ── Three Inside Up / Down (3-bar harami + confirmation) ────────────────
+
+    public static boolean isThreeInsideUp(CandleAggregator.CandleBar bar1,
+                                          CandleAggregator.CandleBar bar2,
+                                          CandleAggregator.CandleBar bar3, double atr,
+                                          double bodyAtrMult, double innerBodyMaxRatio) {
+        if (bar1 == null || bar2 == null || bar3 == null || atr <= 0) return false;
+        // Bar 1: large red.
+        if (!(bar1.close < bar1.open)) return false;
+        double bar1Body = bar1.open - bar1.close;
+        if (bar1Body < bodyAtrMult * atr) return false;
+        // Bar 2: green, body fully inside bar 1's body, and small relative to bar 1.
+        if (!(bar2.close > bar2.open)) return false;
+        double bar2Body = bar2.close - bar2.open;
+        if (bar2Body > innerBodyMaxRatio * bar1Body) return false;
+        if (bar2.open < bar1.close || bar2.close > bar1.open) return false;
+        // Bar 3: green, closes past bar 1's open (full confirmation of reversal).
+        if (!(bar3.close > bar3.open)) return false;
+        return bar3.close > bar1.open;
+    }
+
+    public static boolean isThreeInsideDown(CandleAggregator.CandleBar bar1,
+                                            CandleAggregator.CandleBar bar2,
+                                            CandleAggregator.CandleBar bar3, double atr,
+                                            double bodyAtrMult, double innerBodyMaxRatio) {
+        if (bar1 == null || bar2 == null || bar3 == null || atr <= 0) return false;
+        if (!(bar1.close > bar1.open)) return false;
+        double bar1Body = bar1.close - bar1.open;
+        if (bar1Body < bodyAtrMult * atr) return false;
+        if (!(bar2.close < bar2.open)) return false;
+        double bar2Body = bar2.open - bar2.close;
+        if (bar2Body > innerBodyMaxRatio * bar1Body) return false;
+        if (bar2.open > bar1.close || bar2.close < bar1.open) return false;
+        if (!(bar3.close < bar3.open)) return false;
+        return bar3.close < bar1.open;
     }
 
     // ── Morning / Evening star (3-bar) ───────────────────────────────────────

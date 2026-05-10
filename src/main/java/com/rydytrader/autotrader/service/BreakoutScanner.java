@@ -1035,6 +1035,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double dojiPrev  = riskSettings.getDojiPrevBodyAtrMult();
         double starOuter = riskSettings.getStarOuterBodyAtrMult();
         double starMid   = riskSettings.getStarMiddleBodyMaxMultOfOuter();
+        double haramiBody = riskSettings.getHaramiBodyAtrMult();
+        double haramiInner = riskSettings.getHaramiInnerBodyMaxRatio();
         // Hammer (1 bar)
         if (CandlePatternDetector.isBullishHammer(open, high, low, close, pinReject, pinOpp)
                 && low <= level
@@ -1079,6 +1081,14 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             lastTriggerRoute.put(fyersSymbol, "STAR_RETEST");
             return setupName;
         }
+        // Three Inside Up (3-bar harami + confirmation)
+        if (bar1 != null && prev != null
+                && CandlePatternDetector.isThreeInsideUp(bar1, prev, curr, atr, haramiBody, haramiInner)
+                && Math.min(Math.min(bar1.low, prev.low), curr.low) <= level
+                && !isLargeCandleBlocked(close - open, atr)) {
+            lastTriggerRoute.put(fyersSymbol, "HARAMI_RETEST");
+            return setupName;
+        }
         return null;
     }
 
@@ -1121,6 +1131,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double dojiPrev  = riskSettings.getDojiPrevBodyAtrMult();
         double starOuter = riskSettings.getStarOuterBodyAtrMult();
         double starMid   = riskSettings.getStarMiddleBodyMaxMultOfOuter();
+        double haramiBody = riskSettings.getHaramiBodyAtrMult();
+        double haramiInner = riskSettings.getHaramiInnerBodyMaxRatio();
         // Shooting star (1 bar)
         if (CandlePatternDetector.isShootingStar(open, high, low, close, pinReject, pinOpp)
                 && high >= level
@@ -1161,6 +1173,14 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 && Math.max(Math.max(bar1.high, prev.high), curr.high) >= level
                 && !isLargeCandleBlocked(open - close, atr)) {
             lastTriggerRoute.put(fyersSymbol, "STAR_RETEST");
+            return setupName;
+        }
+        // Three Inside Down (3-bar harami + confirmation)
+        if (bar1 != null && prev != null
+                && CandlePatternDetector.isThreeInsideDown(bar1, prev, curr, atr, haramiBody, haramiInner)
+                && Math.max(Math.max(bar1.high, prev.high), curr.high) >= level
+                && !isLargeCandleBlocked(open - close, atr)) {
+            lastTriggerRoute.put(fyersSymbol, "HARAMI_RETEST");
             return setupName;
         }
         return null;
