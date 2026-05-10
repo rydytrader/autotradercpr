@@ -1853,31 +1853,35 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     }
 
     /**
-     * Macro-level mirror of {@link #checkHtfCandleColor}: requires NIFTY's currently-forming
-     * 1h candle body to agree with the trade direction. Buys reject when NIFTY's 1h bar is
-     * strictly red; sells reject when NIFTY's 1h bar is strictly green. Doji passes both.
+     * Macro-level NIFTY direction filter — requires NIFTY's last <b>completed 15-min</b>
+     * candle body to agree with the trade direction. Buys reject when NIFTY's last 15-min
+     * bar is strictly red; sells reject when it's strictly green. Doji passes both.
      *
      * <p>Also flags <b>rejection candles</b> — even a correct-color candle is rejected when
      * its directional wick exceeds <code>niftyHtfCandleMaxWickRatio</code> &times; body. For
-     * a buy, a long upper wick on a green 1h bar means buyers couldn't hold the highs (selling
-     * into strength) — bad context for a stock breakout. Mirror for sells (long lower wick on
-     * a red bar = bottom rejection). Doji bodies skip the wick ratio check.
+     * a buy, a long upper wick on a green 15-min bar means buyers couldn't hold the highs
+     * (selling into strength) — bad context for a stock breakout. Mirror for sells (long
+     * lower wick on a red bar = bottom rejection). Doji bodies skip the wick-ratio check.
      *
-     * <p>Fail-open if NIFTY's in-progress 1h bar isn't available yet.
+     * <p>The 15-min bar is synthesized from three consecutive 5-min bars on the existing
+     * 5-min grid (see {@link CandleAggregator#getLastCompleted15MinCandle}). Filter
+     * fail-opens before 9:30 IST (no completed 15-min window exists yet today) or when
+     * fewer than 3 completed 5-min bars are available for NIFTY.
      */
     private String checkNiftyHtfCandleColor(boolean isBuy) {
         if (!riskSettings.isEnableNiftyHtfCandleFilter()) return null;
-        if (marketDataService == null) return null;
-        CandleAggregator.CandleBar bar = marketDataService.getInProgressHtfCandle(IndexTrendService.NIFTY_SYMBOL);
+        if (candleAggregator == null) return null;
+        CandleAggregator.CandleBar bar = candleAggregator
+            .getLastCompleted15MinCandle(IndexTrendService.NIFTY_SYMBOL);
         if (bar == null || bar.open <= 0 || bar.close <= 0) return null; // fail-open
 
         // 1) Body color check.
         if (isBuy && bar.close < bar.open) {
-            return "NIFTY 1h candle red — buy requires green: NIFTY 1h open="
+            return "NIFTY 15m candle red — buy requires green: NIFTY 15m open="
                 + String.format("%.2f", bar.open) + ", close=" + String.format("%.2f", bar.close);
         }
         if (!isBuy && bar.close > bar.open) {
-            return "NIFTY 1h candle green — sell requires red: NIFTY 1h open="
+            return "NIFTY 15m candle green — sell requires red: NIFTY 15m open="
                 + String.format("%.2f", bar.open) + ", close=" + String.format("%.2f", bar.close);
         }
 
@@ -1898,7 +1902,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 wickName = "lower";
             }
             if (body > 0 && wick > maxWickRatio * body) {
-                return "NIFTY 1h " + wickName + " wick rejection: wick="
+                return "NIFTY 15m " + wickName + " wick rejection: wick="
                     + String.format("%.2f", wick) + " > " + maxWickRatio + " × body="
                     + String.format("%.2f", body) + " (open=" + String.format("%.2f", bar.open)
                     + ", high=" + String.format("%.2f", bar.high)

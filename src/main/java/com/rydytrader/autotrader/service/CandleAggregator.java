@@ -841,6 +841,44 @@ public class CandleAggregator {
     }
 
     /**
+     * Synthesize the most recent <b>completed</b> 15-min candle from the 5-min grid: three
+     * consecutive 5-min bars whose combined window ends on a 15-min boundary (the last bar
+     * has {@code (startMinute + 5) % 15 == 0}). Open = first bar's open, close = last bar's
+     * close, high = max of all three highs, low = min of all three lows.
+     *
+     * <p>Returns null when no complete 15-min window exists yet today (e.g., before 9:30 IST
+     * in normal sessions, or right after a session start with fewer than 3 completed bars),
+     * or when the three bars aren't strictly consecutive (gap from a stale-day boundary).
+     * The caller is responsible for any fallback when null is returned.
+     */
+    public CandleBar getLastCompleted15MinCandle(String symbol) {
+        Deque<CandleBar> history = completedCandles.get(symbol);
+        if (history == null || history.size() < 3) return null;
+        CandleBar[] arr = history.toArray(new CandleBar[0]);
+        int n = arr.length;
+        // Walk newest → oldest; find a bar whose end aligns with 15-min grid AND has two
+        // strictly-preceding 5-min bars in the same 15-min window.
+        for (int i = n - 1; i >= 2; i--) {
+            CandleBar last = arr[i];
+            if (last.close <= 0) continue;
+            if ((last.startMinute + 5) % 15 != 0) continue;
+            CandleBar mid   = arr[i - 1];
+            CandleBar first = arr[i - 2];
+            if (mid.startMinute != last.startMinute - 5)   continue;
+            if (first.startMinute != last.startMinute - 10) continue;
+            if (first.open <= 0) continue;
+            CandleBar bar15 = new CandleBar();
+            bar15.startMinute = first.startMinute;
+            bar15.open  = first.open;
+            bar15.high  = Math.max(Math.max(first.high, mid.high), last.high);
+            bar15.low   = Math.min(Math.min(first.low,  mid.low),  last.low);
+            bar15.close = last.close;
+            return bar15;
+        }
+        return null;
+    }
+
+    /**
      * Get the previous completed candle (the one before the last).
      */
     public CandleBar getPreviousCandle(String symbol) {
