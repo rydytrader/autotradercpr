@@ -20,6 +20,11 @@ package com.rydytrader.autotrader.service;
  *       fully engulf. Bar 1 body ≥ {@code prevBodyAtrMult} × ATR; bar 2 opens past
  *       bar 1's close in the reversal direction; bar 2 closes at least
  *       {@code penetrationPct} of the way into bar 1's body but does NOT engulf.</li>
+ *   <li><b>Tweezer top / bottom</b> — 2-bar matched-extreme reversal. Bar 1 strong
+ *       directional (body ≥ {@code prevBodyAtrMult} × ATR) with strict color flip into
+ *       bar 2. Matching extremes (highs for top, lows for bottom) within
+ *       {@code matchAtr} × ATR tolerance. Bar 2 body unconstrained — the matched
+ *       extreme is the signature.</li>
  *   <li><b>Doji reversal</b> — current candle's body ≤
  *       {@code dojiBodyMaxRangeRatio} × range; prior candle is a meaningful
  *       (≥ {@code prevBodyAtrMult} × ATR body) opposite-direction bar.</li>
@@ -135,6 +140,32 @@ final class CandlePatternDetector {
         double penetrationLevel = prev.close - penetrationPct * prevBody;
         if (curr.close > penetrationLevel) return false;            // closes ≥ N% into bar 1
         return curr.close > prev.open;                              // does NOT engulf
+    }
+
+    // ── Tweezer top / bottom (2-bar matched-extreme reversal) ───────────────
+
+    public static boolean isTweezerBottom(CandleAggregator.CandleBar prev,
+                                          CandleAggregator.CandleBar curr, double atr,
+                                          double prevBodyAtrMult, double matchAtr) {
+        if (prev == null || curr == null || atr <= 0) return false;
+        if (!(prev.close < prev.open)) return false;                // bar 1 red
+        double prevBody = prev.open - prev.close;
+        if (prevBody < prevBodyAtrMult * atr) return false;         // bar 1 strong
+        if (!(curr.close > curr.open)) return false;                // bar 2 green (color flip)
+        double tolerance = matchAtr * atr;
+        return Math.abs(prev.low - curr.low) <= tolerance;          // matching lows
+    }
+
+    public static boolean isTweezerTop(CandleAggregator.CandleBar prev,
+                                       CandleAggregator.CandleBar curr, double atr,
+                                       double prevBodyAtrMult, double matchAtr) {
+        if (prev == null || curr == null || atr <= 0) return false;
+        if (!(prev.close > prev.open)) return false;                // bar 1 green
+        double prevBody = prev.close - prev.open;
+        if (prevBody < prevBodyAtrMult * atr) return false;
+        if (!(curr.close < curr.open)) return false;                // bar 2 red (color flip)
+        double tolerance = matchAtr * atr;
+        return Math.abs(prev.high - curr.high) <= tolerance;        // matching highs
     }
 
     // ── Doji reversal (2-bar) ────────────────────────────────────────────────

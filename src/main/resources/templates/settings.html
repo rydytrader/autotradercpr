@@ -638,6 +638,20 @@
                 <div class="form-hint">2-bar partial reversal that doesn't fully engulf. Bar 1 must be a real directional bar (≥ N × ATR). Bar 2 opens past bar 1's close in the reversal direction and closes at least N% of the way into bar 1's body, but does NOT cross bar 1's open (otherwise it's a full engulfing). Classical TA penetration = 0.5; raise to 0.75 for stronger signals; lower to 0.33 to accept weaker piercing. Defaults: 0.5 × ATR, 0.5 (50%).</div>
             </div>
 
+            <!-- Tweezer Top / Bottom group -->
+            <div class="form-group">
+                <label class="form-label">Tweezer Top / Bottom</label>
+                <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Bar 1 body ≥</span>
+                    <input type="number" id="tweezerPrevBodyAtrMult" class="form-control" step="0.1" min="0.1" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× ATR</span>
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">High/Low match ≤</span>
+                    <input type="number" id="tweezerLowHighMatchAtr" class="form-control" step="0.02" min="0.0" max="0.5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× ATR (tolerance — 0 = exact match)</span>
+                </div>
+                <div class="form-hint">2-bar matched-extreme reversal. <b>Tweezer bottom</b>: bar 1 strong red → bar 2 green, both bars' lows match (within tolerance). <b>Tweezer top</b>: bar 1 strong green → bar 2 red, matching highs. Strict color flip required (red→green or green→red) — no toggle. Bar 2 body unconstrained — the matched extreme is the signature, even an inside-bar tweezer counts. Defaults: 0.5 × ATR bar 1, 0.10 × ATR match tolerance.</div>
+            </div>
+
             <!-- Doji Reversal group -->
             <div class="form-group">
                 <label class="form-label">Doji Reversal</label>
@@ -1392,6 +1406,8 @@
             document.getElementById('engulfingMinBodyAtrMult').value      = d.engulfingMinBodyAtrMult      != null ? d.engulfingMinBodyAtrMult      : 0.5;
             document.getElementById('piercingPrevBodyAtrMult').value      = d.piercingPrevBodyAtrMult      != null ? d.piercingPrevBodyAtrMult      : 0.5;
             document.getElementById('piercingPenetrationPct').value       = d.piercingPenetrationPct       != null ? d.piercingPenetrationPct       : 0.5;
+            document.getElementById('tweezerPrevBodyAtrMult').value       = d.tweezerPrevBodyAtrMult       != null ? d.tweezerPrevBodyAtrMult       : 0.5;
+            document.getElementById('tweezerLowHighMatchAtr').value       = d.tweezerLowHighMatchAtr       != null ? d.tweezerLowHighMatchAtr       : 0.10;
             document.getElementById('dojiBodyMaxRangeRatio').value        = d.dojiBodyMaxRangeRatio        != null ? d.dojiBodyMaxRangeRatio        : 0.10;
             document.getElementById('dojiPrevBodyAtrMult').value          = d.dojiPrevBodyAtrMult          != null ? d.dojiPrevBodyAtrMult          : 0.5;
             document.getElementById('starOuterBodyAtrMult').value         = d.starOuterBodyAtrMult         != null ? d.starOuterBodyAtrMult         : 0.5;
@@ -1588,6 +1604,8 @@
                 engulfingMinBodyAtrMult:      (isNaN(parseFloat(document.getElementById('engulfingMinBodyAtrMult').value)) ? 0.5 : parseFloat(document.getElementById('engulfingMinBodyAtrMult').value)),
                 piercingPrevBodyAtrMult:      parseFloat(document.getElementById('piercingPrevBodyAtrMult').value)      || 0.5,
                 piercingPenetrationPct:       parseFloat(document.getElementById('piercingPenetrationPct').value)       || 0.5,
+                tweezerPrevBodyAtrMult:       parseFloat(document.getElementById('tweezerPrevBodyAtrMult').value)       || 0.5,
+                tweezerLowHighMatchAtr:       (isNaN(parseFloat(document.getElementById('tweezerLowHighMatchAtr').value)) ? 0.10 : parseFloat(document.getElementById('tweezerLowHighMatchAtr').value)),
                 dojiBodyMaxRangeRatio:        parseFloat(document.getElementById('dojiBodyMaxRangeRatio').value)        || 0.10,
                 dojiPrevBodyAtrMult:          parseFloat(document.getElementById('dojiPrevBodyAtrMult').value)          || 0.5,
                 starOuterBodyAtrMult:         parseFloat(document.getElementById('starOuterBodyAtrMult').value)         || 0.5,

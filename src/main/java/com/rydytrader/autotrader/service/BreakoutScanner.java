@@ -1029,6 +1029,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double engAtr    = riskSettings.getEngulfingMinBodyAtrMult();
         double pierPrev  = riskSettings.getPiercingPrevBodyAtrMult();
         double pierPen   = riskSettings.getPiercingPenetrationPct();
+        double tweezPrev = riskSettings.getTweezerPrevBodyAtrMult();
+        double tweezMatch = riskSettings.getTweezerLowHighMatchAtr();
         double dojiBody  = riskSettings.getDojiBodyMaxRangeRatio();
         double dojiPrev  = riskSettings.getDojiPrevBodyAtrMult();
         double starOuter = riskSettings.getStarOuterBodyAtrMult();
@@ -1052,6 +1054,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 && Math.min(prev.low, curr.low) <= level
                 && !isLargeCandleBlocked(close - open, atr)) {
             lastTriggerRoute.put(fyersSymbol, "PIERCING_RETEST");
+            return setupName;
+        }
+        // Tweezer bottom (2 bars) — matching lows, color flip, body sizing relaxed
+        if (prev != null && CandlePatternDetector.isTweezerBottom(prev, curr, atr, tweezPrev, tweezMatch)
+                && Math.min(prev.low, curr.low) <= level) {
+            // Body unconstrained for tweezer — matching extreme is the signature, no large-body check.
+            lastTriggerRoute.put(fyersSymbol, "TWEEZER_RETEST");
             return setupName;
         }
         // Bullish doji reversal (2 bars)
@@ -1106,6 +1115,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double engAtr    = riskSettings.getEngulfingMinBodyAtrMult();
         double pierPrev  = riskSettings.getPiercingPrevBodyAtrMult();
         double pierPen   = riskSettings.getPiercingPenetrationPct();
+        double tweezPrev = riskSettings.getTweezerPrevBodyAtrMult();
+        double tweezMatch = riskSettings.getTweezerLowHighMatchAtr();
         double dojiBody  = riskSettings.getDojiBodyMaxRangeRatio();
         double dojiPrev  = riskSettings.getDojiPrevBodyAtrMult();
         double starOuter = riskSettings.getStarOuterBodyAtrMult();
@@ -1129,6 +1140,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 && Math.max(prev.high, curr.high) >= level
                 && !isLargeCandleBlocked(open - close, atr)) {
             lastTriggerRoute.put(fyersSymbol, "PIERCING_RETEST");
+            return setupName;
+        }
+        // Tweezer top (2 bars) — matching highs, color flip, body sizing relaxed
+        if (prev != null && CandlePatternDetector.isTweezerTop(prev, curr, atr, tweezPrev, tweezMatch)
+                && Math.max(prev.high, curr.high) >= level) {
+            lastTriggerRoute.put(fyersSymbol, "TWEEZER_RETEST");
             return setupName;
         }
         // Bearish doji reversal (2 bars)
