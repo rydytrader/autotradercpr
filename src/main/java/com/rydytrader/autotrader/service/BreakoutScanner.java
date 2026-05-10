@@ -1007,11 +1007,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double maruWicks = riskSettings.getMarubozuMaxWicksPctOfBody();
         double pinReject = riskSettings.getPinBarRejectionWickBodyMult();
         double pinOpp    = riskSettings.getPinBarOppositeWickBodyMult();
-        // Route 1 — bullish marubozu past the level.
+        // Route 1 — bullish marubozu past the level. If the bar's open is already above the
+        // level, the level was broken earlier — this is a retest rejection (tagged
+        // MARUBOZU_RETEST). If the open is at/below the level and the bar punched through,
+        // it's a fresh breakout (tagged MARUBOZU_BREAKOUT).
         if (CandlePatternDetector.isBullishMarubozu(open, high, low, close, atr, maruBody, maruWicks)
                 && close > level && (open <= level || low <= level)) {
             if (!isLargeCandleBlocked(close - open, atr)) {
-                lastTriggerRoute.put(fyersSymbol, "MARUBOZU_BREAKOUT");
+                String tag = (open > level) ? "MARUBOZU_RETEST" : "MARUBOZU_BREAKOUT";
+                lastTriggerRoute.put(fyersSymbol, tag);
                 return setupName;
             }
         }
@@ -1080,11 +1084,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double maruWicks = riskSettings.getMarubozuMaxWicksPctOfBody();
         double pinReject = riskSettings.getPinBarRejectionWickBodyMult();
         double pinOpp    = riskSettings.getPinBarOppositeWickBodyMult();
-        // Route 1 — bearish marubozu past the level.
+        // Route 1 — bearish marubozu past the level. If the bar's open is already below the
+        // level, the level was broken down earlier — this is a retest rejection (tagged
+        // MARUBOZU_RETEST). If the open is at/above the level and the bar punched through,
+        // it's a fresh breakdown (tagged MARUBOZU_BREAKOUT).
         if (CandlePatternDetector.isBearishMarubozu(open, high, low, close, atr, maruBody, maruWicks)
                 && close < level && (open >= level || high >= level)) {
             if (!isLargeCandleBlocked(open - close, atr)) {
-                lastTriggerRoute.put(fyersSymbol, "MARUBOZU_BREAKOUT");
+                String tag = (open < level) ? "MARUBOZU_RETEST" : "MARUBOZU_BREAKOUT";
+                lastTriggerRoute.put(fyersSymbol, tag);
                 return setupName;
             }
         }
