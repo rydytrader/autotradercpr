@@ -55,6 +55,10 @@ public class RiskSettingsStore {
         // (engulfer + engulfed both tiny) could fire on noise. 0.5 = current bar must be at least
         // half an ATR. Set to 0 to disable the floor.
         volatile double engulfingMinBodyAtrMult     = 0.5;
+        // Piercing line / dark cloud cover (2-bar partial reversal — bar 2 doesn't fully engulf).
+        // prev body ≥ N × ATR (bar 1 must be a real directional bar); bar 2 closes ≥ N% into bar 1.
+        volatile double piercingPrevBodyAtrMult     = 0.5;
+        volatile double piercingPenetrationPct      = 0.5;
         // Doji reversal: current body ≤ N × range; prev body ≥ N × ATR (meaningful prior bar).
         volatile double dojiBodyMaxRangeRatio       = 0.10;
         volatile double dojiPrevBodyAtrMult         = 0.5;
@@ -395,6 +399,8 @@ public class RiskSettingsStore {
     public double getPinBarOppositeWickBodyMult()  { return cfg().pinBarOppositeWickBodyMult; }
     public double getEngulfingMinBodyMultiple()    { return cfg().engulfingMinBodyMultiple; }
     public double getEngulfingMinBodyAtrMult()     { return cfg().engulfingMinBodyAtrMult; }
+    public double getPiercingPrevBodyAtrMult()     { return cfg().piercingPrevBodyAtrMult; }
+    public double getPiercingPenetrationPct()      { return cfg().piercingPenetrationPct; }
     public double getDojiBodyMaxRangeRatio()       { return cfg().dojiBodyMaxRangeRatio; }
     public double getDojiPrevBodyAtrMult()         { return cfg().dojiPrevBodyAtrMult; }
     public double getStarOuterBodyAtrMult()        { return cfg().starOuterBodyAtrMult; }
@@ -565,6 +571,8 @@ public class RiskSettingsStore {
     public void setPinBarOppositeWickBodyMult(double v)  { cfg().pinBarOppositeWickBodyMult = v; }
     public void setEngulfingMinBodyMultiple(double v)    { cfg().engulfingMinBodyMultiple = v; }
     public void setEngulfingMinBodyAtrMult(double v)     { cfg().engulfingMinBodyAtrMult = v; }
+    public void setPiercingPrevBodyAtrMult(double v)     { cfg().piercingPrevBodyAtrMult = v; }
+    public void setPiercingPenetrationPct(double v)      { cfg().piercingPenetrationPct = v; }
     public void setDojiBodyMaxRangeRatio(double v)       { cfg().dojiBodyMaxRangeRatio = v; }
     public void setDojiPrevBodyAtrMult(double v)         { cfg().dojiPrevBodyAtrMult = v; }
     public void setStarOuterBodyAtrMult(double v)        { cfg().starOuterBodyAtrMult = v; }
@@ -746,6 +754,8 @@ public class RiskSettingsStore {
             upsert("pinBarOppositeWickBodyMult", String.valueOf(c.pinBarOppositeWickBodyMult));
             upsert("engulfingMinBodyMultiple", String.valueOf(c.engulfingMinBodyMultiple));
             upsert("engulfingMinBodyAtrMult",  String.valueOf(c.engulfingMinBodyAtrMult));
+            upsert("piercingPrevBodyAtrMult",  String.valueOf(c.piercingPrevBodyAtrMult));
+            upsert("piercingPenetrationPct",   String.valueOf(c.piercingPenetrationPct));
             upsert("dojiBodyMaxRangeRatio", String.valueOf(c.dojiBodyMaxRangeRatio));
             upsert("dojiPrevBodyAtrMult", String.valueOf(c.dojiPrevBodyAtrMult));
             upsert("starOuterBodyAtrMult", String.valueOf(c.starOuterBodyAtrMult));
@@ -915,6 +925,8 @@ public class RiskSettingsStore {
                     case "pinBarOppositeWickBodyMult"  -> c.pinBarOppositeWickBodyMult = Double.parseDouble(v);
                     case "engulfingMinBodyMultiple"    -> c.engulfingMinBodyMultiple = Double.parseDouble(v);
                     case "engulfingMinBodyAtrMult"     -> c.engulfingMinBodyAtrMult = Double.parseDouble(v);
+                    case "piercingPrevBodyAtrMult"     -> c.piercingPrevBodyAtrMult = Double.parseDouble(v);
+                    case "piercingPenetrationPct"      -> c.piercingPenetrationPct = Double.parseDouble(v);
                     case "dojiBodyMaxRangeRatio"       -> c.dojiBodyMaxRangeRatio = Double.parseDouble(v);
                     case "dojiPrevBodyAtrMult"         -> c.dojiPrevBodyAtrMult = Double.parseDouble(v);
                     case "starOuterBodyAtrMult"        -> c.starOuterBodyAtrMult = Double.parseDouble(v);

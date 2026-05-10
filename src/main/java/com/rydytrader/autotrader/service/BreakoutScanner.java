@@ -1023,6 +1023,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         CandleAggregator.CandleBar prev = candleAggregator.getPreviousCandle(fyersSymbol);
         double engMin    = riskSettings.getEngulfingMinBodyMultiple();
         double engAtr    = riskSettings.getEngulfingMinBodyAtrMult();
+        double pierPrev  = riskSettings.getPiercingPrevBodyAtrMult();
+        double pierPen   = riskSettings.getPiercingPenetrationPct();
         double dojiBody  = riskSettings.getDojiBodyMaxRangeRatio();
         double dojiPrev  = riskSettings.getDojiPrevBodyAtrMult();
         double starOuter = riskSettings.getStarOuterBodyAtrMult();
@@ -1039,6 +1041,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 && Math.min(prev.low, curr.low) <= level
                 && !isLargeCandleBlocked(close - open, atr)) {
             lastTriggerRoute.put(fyersSymbol, "ENGULFING_RETEST");
+            return setupName;
+        }
+        // Piercing line (2 bars) — partial reversal, weaker than engulfing
+        if (prev != null && CandlePatternDetector.isPiercingLine(prev, curr, atr, pierPrev, pierPen)
+                && Math.min(prev.low, curr.low) <= level
+                && !isLargeCandleBlocked(close - open, atr)) {
+            lastTriggerRoute.put(fyersSymbol, "PIERCING_RETEST");
             return setupName;
         }
         // Bullish doji reversal (2 bars)
@@ -1087,6 +1096,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         CandleAggregator.CandleBar prev = candleAggregator.getPreviousCandle(fyersSymbol);
         double engMin    = riskSettings.getEngulfingMinBodyMultiple();
         double engAtr    = riskSettings.getEngulfingMinBodyAtrMult();
+        double pierPrev  = riskSettings.getPiercingPrevBodyAtrMult();
+        double pierPen   = riskSettings.getPiercingPenetrationPct();
         double dojiBody  = riskSettings.getDojiBodyMaxRangeRatio();
         double dojiPrev  = riskSettings.getDojiPrevBodyAtrMult();
         double starOuter = riskSettings.getStarOuterBodyAtrMult();
@@ -1103,6 +1114,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 && Math.max(prev.high, curr.high) >= level
                 && !isLargeCandleBlocked(open - close, atr)) {
             lastTriggerRoute.put(fyersSymbol, "ENGULFING_RETEST");
+            return setupName;
+        }
+        // Dark cloud cover (2 bars) — partial reversal, weaker than engulfing
+        if (prev != null && CandlePatternDetector.isDarkCloudCover(prev, curr, atr, pierPrev, pierPen)
+                && Math.max(prev.high, curr.high) >= level
+                && !isLargeCandleBlocked(open - close, atr)) {
+            lastTriggerRoute.put(fyersSymbol, "PIERCING_RETEST");
             return setupName;
         }
         // Bearish doji reversal (2 bars)

@@ -16,6 +16,10 @@ package com.rydytrader.autotrader.service;
  *   <li><b>Engulfing</b> — current body ≥ {@code minBodyMultiple} × prev body, current
  *       body ≥ {@code minBodyAtrMult} × ATR (absolute size floor — prevents firing on
  *       two tiny consecutive bars), and current body fully engulfs prior body.</li>
+ *   <li><b>Piercing line / Dark cloud cover</b> — 2-bar partial reversal that doesn't
+ *       fully engulf. Bar 1 body ≥ {@code prevBodyAtrMult} × ATR; bar 2 opens past
+ *       bar 1's close in the reversal direction; bar 2 closes at least
+ *       {@code penetrationPct} of the way into bar 1's body but does NOT engulf.</li>
  *   <li><b>Doji reversal</b> — current candle's body ≤
  *       {@code dojiBodyMaxRangeRatio} × range; prior candle is a meaningful
  *       (≥ {@code prevBodyAtrMult} × ATR body) opposite-direction bar.</li>
@@ -101,6 +105,36 @@ final class CandlePatternDetector {
         if (currBody < minBodyMultiple * prevBody) return false;
         if (minBodyAtrMult > 0 && atr > 0 && currBody < minBodyAtrMult * atr) return false;
         return curr.open >= prev.close && curr.close <= prev.open;
+    }
+
+    // ── Piercing line / Dark cloud cover (2-bar partial reversal) ────────────
+
+    public static boolean isPiercingLine(CandleAggregator.CandleBar prev,
+                                         CandleAggregator.CandleBar curr, double atr,
+                                         double prevBodyAtrMult, double penetrationPct) {
+        if (prev == null || curr == null || atr <= 0) return false;
+        if (!(prev.close < prev.open)) return false;                // bar 1 red
+        double prevBody = prev.open - prev.close;
+        if (prevBody < prevBodyAtrMult * atr) return false;         // bar 1 meaningful
+        if (!(curr.close > curr.open)) return false;                // bar 2 green
+        if (!(curr.open < prev.close)) return false;                // opens past prev close
+        double penetrationLevel = prev.close + penetrationPct * prevBody;
+        if (curr.close < penetrationLevel) return false;            // closes ≥ N% into bar 1
+        return curr.close < prev.open;                              // does NOT engulf
+    }
+
+    public static boolean isDarkCloudCover(CandleAggregator.CandleBar prev,
+                                           CandleAggregator.CandleBar curr, double atr,
+                                           double prevBodyAtrMult, double penetrationPct) {
+        if (prev == null || curr == null || atr <= 0) return false;
+        if (!(prev.close > prev.open)) return false;                // bar 1 green
+        double prevBody = prev.close - prev.open;
+        if (prevBody < prevBodyAtrMult * atr) return false;
+        if (!(curr.close < curr.open)) return false;                // bar 2 red
+        if (!(curr.open > prev.close)) return false;                // opens past prev close
+        double penetrationLevel = prev.close - penetrationPct * prevBody;
+        if (curr.close > penetrationLevel) return false;            // closes ≥ N% into bar 1
+        return curr.close > prev.open;                              // does NOT engulf
     }
 
     // ── Doji reversal (2-bar) ────────────────────────────────────────────────
