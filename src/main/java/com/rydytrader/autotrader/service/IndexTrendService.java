@@ -91,15 +91,11 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
 
     @Override
     public void onDailyReset() {
-        // New trading day — clear sticky state. State stays NEUTRAL until the first NIFTY
-        // 5-min candle close populates the cache (~9:20 IST).
-        cachedCprBullish     = null;
-        cachedFutVwapBullish = null;
-        cachedFutSymbol      = "";
-        cachedNiftyClose     = 0;
-        cachedFutClose       = 0;
-        cachedFutVwap        = 0;
-        cachedState          = "NEUTRAL";
+        // Intentionally NOT clearing the sticky cache on daily reset. The cache reflects
+        // "last known state" — on weekends and holidays we want the user to see the previous
+        // session's last 5-min-close trend state, not a blank NEUTRAL card. The cache is
+        // overwritten naturally at the first NIFTY 5-min close of the next trading day
+        // (~9:20 IST on Monday), so stale values self-correct as soon as fresh data flows.
     }
 
     /** Pure snapshot of the 2 factors + supporting values + combined state. No side effects. */
@@ -186,15 +182,31 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
     public String getStickyState() { return cachedState != null ? cachedState : "NEUTRAL"; }
 
     public IndexTrend getNiftyTrend() {
-        // Sticky values for the UI — NO live recomputation. Chip and state on the card update
-        // only at NIFTY 5-min candle close, identical to what filters and exits read.
+        // Lazy bootstrap — if the cache is empty (server restarted on a weekend / pre-market,
+        // no NIFTY 5-min close has fired yet), try a one-shot recompute from whatever bars
+        // CandleAggregator has seeded from history. This gives the user the last-known
+        // session's trend state on weekends even right after a restart.
+        if ("NEUTRAL".equals(cachedState) && cachedCprBullish == null
+                && cachedFutVwapBullish == null && cachedNiftyClose == 0) {
+            recomputeStates();
+        }
+
+        // Sticky values for the UI — NO live recomputation beyond the lazy bootstrap above.
+        // Chip and state on the card update only at NIFTY 5-min candle close, identical to
+        // what filters and exits read.
         IndexTrend trend = new IndexTrend();
         trend.setSymbol(NIFTY_SYMBOL);
         trend.setDisplayName(NIFTY_DISPLAY);
 
-        // Live LTP for fallback display only (still needed by some downstream UI bits, e.g.
-        // the page's NIFTY-symbol header). The trend factors do NOT use it.
+        // Live LTP for display fallback (the trend factors themselves do NOT use it). On
+        // weekends / pre-market when no tick is flowing, fall back to bhavcopy's prev close
+        // so the card still has a non-zero LTP value to gate the render on.
         double liveTickLtp = marketDataService.getLtp(NIFTY_SYMBOL);
+        double displayLtp = liveTickLtp;
+        if (displayLtp <= 0) {
+            var fallbackCpr = bhavcopyService.getCprLevels("NIFTY50");
+            if (fallbackCpr != null) displayLtp = fallbackCpr.getClose();
+        }
         trend.setLtp(liveTickLtp);
 
         // Live breadth (advancers/decliners across NIFTY 50). Updates every poll — display only.
@@ -251,11 +263,11 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
             trend.setOiLastUpdated(niftyOptionOiService.getLastUpdatedFormatted());
         }
 
-        // dataAvailable gates the whole card render in the UI. We set it true as long as we
-        // have any NIFTY LTP — the trend factors themselves render placeholder ("CPR - —",
-        // "FUT ↔ VWAP", state NEUTRAL) until the first 5-min close populates the sticky cache,
-        // but the card structure stays visible.
-        trend.setDataAvailable(liveTickLtp > 0);
+        // dataAvailable gates the whole card render in the UI. True if we have any LTP
+        // (live tick OR bhavcopy fallback for weekends / pre-market) — the trend chips
+        // themselves render placeholder ("CPR - —", "FUT ↔ VWAP", state NEUTRAL) until the
+        // first 5-min close populates the sticky cache, but the card structure stays visible.
+        trend.setDataAvailable(displayLtp > 0);
         return trend;
     }
 }
