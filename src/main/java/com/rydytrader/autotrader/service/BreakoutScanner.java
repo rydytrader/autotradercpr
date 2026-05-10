@@ -1432,34 +1432,20 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
             if (chosenName == null) return null; // no hurdle in trade direction → clear path
 
-            // Last completed 15-min close on NIFTY. If today's session hasn't reached the first
-            // 15-min boundary yet (pre-9:30 IST), fall back to the most recent completed 5-min
-            // close as a reasonable proxy — better than rejecting every trade in the first 15
-            // minutes of the day.
+            // Last completed 15-min close on NIFTY. Pre-9:30 IST (before NIFTY's first 15-min
+            // boundary of the day), no 15-min close exists yet — silently fail-open so the
+            // filter doesn't reject during the warmup window. Trades only fire from 9:30
+            // onwards anyway, by which time the 9:25-9:30 5-min bar has finalized and IS the
+            // day's first 15-min close.
             Double priorHtfClose = candleAggregator != null
                 ? candleAggregator.getLast15MinClose(niftySym) : null;
-            boolean used5mFallback = false;
-            if (priorHtfClose == null || priorHtfClose <= 0) {
-                CandleAggregator.CandleBar last5m = candleAggregator != null
-                    ? candleAggregator.getLastCompletedCandle(niftySym) : null;
-                if (last5m != null && last5m.close > 0) {
-                    priorHtfClose = last5m.close;
-                    used5mFallback = true;
-                }
-            }
+            if (priorHtfClose == null || priorHtfClose <= 0) return null;
 
-            if (priorHtfClose == null || priorHtfClose <= 0) {
-                return "NIFTY HTF hurdle at " + chosenName
-                    + ": NIFTY " + String.format("%.2f", niftyPrice)
-                    + ", level " + String.format("%.2f", chosenLevel)
-                    + ", no prior 15-min close available";
-            }
             boolean cleared = isBuy ? priorHtfClose > chosenLevel : priorHtfClose < chosenLevel;
             if (!cleared) {
-                String label = used5mFallback ? ", prior 5-min close=" : ", prior 15-min close=";
                 return "NIFTY HTF hurdle at " + chosenName
                     + ": NIFTY " + String.format("%.2f", niftyPrice)
-                    + label + String.format("%.2f", priorHtfClose)
+                    + ", prior 15-min close=" + String.format("%.2f", priorHtfClose)
                     + ", level " + String.format("%.2f", chosenLevel);
             }
 
