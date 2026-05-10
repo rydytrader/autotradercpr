@@ -61,9 +61,6 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
     private volatile double  cachedFutClose;
     private volatile double  cachedFutVwap;
     private volatile String  cachedState = "NEUTRAL";
-    // True once we've received the first NIFTY 5-min candle close for the current trading day.
-    // Until then, both factors stay null and state stays NEUTRAL — no live tick-driven updates.
-    private volatile boolean firstCloseReceived = false;
 
     public IndexTrendService(MarketDataService marketDataService,
                              BhavcopyService bhavcopyService) {
@@ -89,7 +86,6 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         if (fyersSymbol == null) return;
         if (NIFTY_SYMBOL.equals(fyersSymbol)) {
             recomputeStates();
-            firstCloseReceived = true;
         }
     }
 
@@ -104,7 +100,6 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         cachedFutClose       = 0;
         cachedFutVwap        = 0;
         cachedState          = "NEUTRAL";
-        firstCloseReceived   = false;
     }
 
     /** Pure snapshot of the 2 factors + supporting values + combined state. No side effects. */
@@ -256,8 +251,11 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
             trend.setOiLastUpdated(niftyOptionOiService.getLastUpdatedFormatted());
         }
 
-        // dataAvailable = first NIFTY 5-min close has populated the cache.
-        trend.setDataAvailable(firstCloseReceived);
+        // dataAvailable gates the whole card render in the UI. We set it true as long as we
+        // have any NIFTY LTP — the trend factors themselves render placeholder ("CPR - —",
+        // "FUT ↔ VWAP", state NEUTRAL) until the first 5-min close populates the sticky cache,
+        // but the card structure stays visible.
+        trend.setDataAvailable(liveTickLtp > 0);
         return trend;
     }
 }
