@@ -480,14 +480,9 @@
             <button id="virginCprIconBtn" onclick="openVirginCprModal()" title="Active Virgin CPR — click for details" style="display:none;background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.4);border-radius:4px;padding:3px 6px;margin-left:6px;cursor:pointer;color:#fbbf24;line-height:0;align-items:center;">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
             </button>
-            <div class="nifty-ltp" id="niftyLtp">—</div>
-            <div class="nifty-change" id="niftyChange" style="font-family:var(--font-mono); font-weight:700; font-size:0.85rem; margin-left:8px;">—</div>
             <div class="nifty-cpr-width" id="niftyCprWidth" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY daily CPR width vs scanner thresholds (Narrow / Normal / Wide)">—</div>
-            <div class="nifty-cpr" id="niftyCprBias" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY LTP vs daily CPR (above CPR top / below CPR bottom)">—</div>
-            <div class="nifty-sma-price" id="niftySmaPrice" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY LTP vs 5-min SMA 50, anchored to SMA alignment. Bullish: 20&gt;50 AND price above SMA 50. Bearish: 20&lt;50 AND price below SMA 50.">—</div>
-            <div class="nifty-sma-align" id="niftySmaAlign" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="5-min SMA 20 vs 50 (20 &gt; 50 bullish / 20 &lt; 50 bearish)">—</div>
-            <div class="nifty-oi-call" id="niftyMaxCallOi" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px; color:var(--accent-red);" title="NIFTY Max Call OI strike — acts as intraday resistance hurdle (refreshed every 15 min)">—</div>
-            <div class="nifty-oi-put" id="niftyMaxPutOi" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px; color:var(--accent-green);" title="NIFTY Max Put OI strike — acts as intraday support hurdle (refreshed every 15 min)">—</div>
+            <div class="nifty-cpr" id="niftyCprBias" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY index 5-min close vs daily CPR (above CPR top / below CPR bottom). Refreshes only on NIFTY 5-min candle close.">—</div>
+            <div class="nifty-fut-vwap" id="niftyFutVwap" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY futures 5-min close vs that bar's VWAP (Fyers ATP). Refreshes only on NIFTY 5-min candle close.">—</div>
             <div class="nifty-state" id="niftyState" style="margin-left:auto;">—</div>
             <div class="nifty-right" id="niftyMetrics"></div>
         </div>
@@ -1091,35 +1086,8 @@
                 } catch (err) {}
             });
 
-            // Live NIFTY LTP + change% via SSE ticker stream — refresh between 5s composite polls.
-            // Ticker payload uses display name ("Nifty 50") and `lp` / `chp` fields.
-            window.__tickerSSE.addEventListener('ticker', function(e) {
-                try {
-                    var arr = JSON.parse(e.data);
-                    if (!arr || !arr.length) return;
-                    for (var i = 0; i < arr.length; i++) {
-                        var t = arr[i];
-                        var sym = t && t.symbol ? String(t.symbol).toUpperCase() : '';
-                        if (sym === 'NIFTY 50' || sym === 'NIFTY50') {
-                            if (t.lp) {
-                                var el = document.getElementById('niftyLtp');
-                                if (el) el.textContent = (+t.lp).toFixed(2);
-                            }
-                            if (t.chp !== undefined && t.chp !== null) {
-                                var chgEl2 = document.getElementById('niftyChange');
-                                if (chgEl2) {
-                                    var cp2 = +t.chp;
-                                    var arr2 = cp2 > 0 ? '▲' : cp2 < 0 ? '▼' : '▬';
-                                    var sgn2 = cp2 >= 0 ? '+' : '';
-                                    chgEl2.textContent = arr2 + ' ' + sgn2 + cp2.toFixed(2) + '%';
-                                    chgEl2.style.color = cp2 > 0 ? 'var(--accent-green)' : cp2 < 0 ? 'var(--accent-red)' : 'var(--text-muted)';
-                                }
-                            }
-                            break;
-                        }
-                    }
-                } catch (err) {}
-            });
+            // (NIFTY LTP / change% live SSE listener removed — those elements no longer
+            // appear on the card. The card now displays only sticky 5-min-close values.)
         }
     }
 
@@ -1127,14 +1095,9 @@
     function refreshNiftyCard() {
         fetch('/api/index/nifty').then(function(r) { return r.json(); }).then(function(d) {
             if (!d || !d.dataAvailable) {
-                document.getElementById('niftyLtp').textContent = '—';
-                document.getElementById('niftyChange').textContent = '—';
-                var sp0 = document.getElementById('niftySmaPrice'); if (sp0) { sp0.textContent = '—'; sp0.style.color = 'var(--text-muted)'; }
-                var sa0 = document.getElementById('niftySmaAlign'); if (sa0) { sa0.textContent = '—'; sa0.style.color = 'var(--text-muted)'; }
-                var mc0 = document.getElementById('niftyMaxCallOi'); if (mc0) mc0.textContent = '—';
-                var mp0 = document.getElementById('niftyMaxPutOi'); if (mp0) mp0.textContent = '—';
                 var cw0 = document.getElementById('niftyCprWidth'); if (cw0) { cw0.textContent = '—'; cw0.style.color = 'var(--text-muted)'; }
                 var cb0 = document.getElementById('niftyCprBias'); if (cb0) { cb0.textContent = '—'; cb0.style.color = 'var(--text-muted)'; }
+                var fv0 = document.getElementById('niftyFutVwap'); if (fv0) { fv0.textContent = '—'; fv0.style.color = 'var(--text-muted)'; }
                 document.getElementById('niftyState').textContent = 'WAITING';
                 document.getElementById('niftyMetrics').innerHTML = '';
                 document.getElementById('niftyCard').className = 'nifty-card nifty-card-neutral';
@@ -1147,15 +1110,6 @@
             var stateLowerEarly = rawState.toLowerCase();
             document.getElementById('niftyCard').className = 'nifty-card nifty-card-' + stateLowerEarly;
 
-            document.getElementById('niftyLtp').textContent = d.ltp.toFixed(2);
-            var chgEl = document.getElementById('niftyChange');
-            if (chgEl && d.changePct !== undefined && d.changePct !== null) {
-                var cp = +d.changePct;
-                var arrow = cp > 0 ? '▲' : cp < 0 ? '▼' : '▬';
-                var sign = cp >= 0 ? '+' : '';
-                chgEl.textContent = arrow + ' ' + sign + cp.toFixed(2) + '%';
-                chgEl.style.color = cp > 0 ? 'var(--accent-green)' : cp < 0 ? 'var(--accent-red)' : 'var(--text-muted)';
-            }
             document.getElementById('niftyState').textContent = (d.state || 'NEUTRAL').replace('_', ' ');
 
             // CPR width category — NARROW (below narrowCprMaxWidth) or WIDE (at/above).
@@ -1175,7 +1129,7 @@
                 }
             }
 
-            // Factor 1: NIFTY LTP vs daily CPR (above CPR top / below CPR bottom / inside).
+            // Factor 1: NIFTY index 5-min close vs daily CPR (sticky — refreshes only at NIFTY 5-min close).
             var cbEl = document.getElementById('niftyCprBias');
             if (cbEl) {
                 if (d.cprBullish === true) {
@@ -1188,83 +1142,34 @@
                     cbEl.textContent = 'CPR - —';
                     cbEl.style.color = 'var(--text-muted)';
                 }
+                var nClose = +d.niftyClose || 0;
+                cbEl.title = nClose > 0
+                    ? ('NIFTY 5-min close ' + nClose.toFixed(2) + ' vs daily CPR. Refreshes only on NIFTY 5-min candle close.')
+                    : 'NIFTY 5-min close vs daily CPR (no data yet).';
             }
-            // Factor 2: NIFTY LTP vs 5-min SMA 50, gated by SMA alignment.
-            // Bullish when 20>50 AND price > 50; bearish when 20<50 AND price < 50.
-            // Trend stays sticky through pullbacks toward SMA-20 — flips only when price
-            // closes through SMA-50 against the trend direction.
-            var spEl = document.getElementById('niftySmaPrice');
-            if (spEl) {
-                if (d.smaPriceBullish === true) {
-                    spEl.textContent = 'PRICE > 50';
-                    spEl.style.color = 'var(--accent-green)';
-                } else if (d.smaPriceBullish === false) {
-                    spEl.textContent = 'PRICE < 50';
-                    spEl.style.color = 'var(--accent-red)';
+            // Factor 2: NIFTY futures 5-min close vs futures' stamped VWAP at that close.
+            var fvEl = document.getElementById('niftyFutVwap');
+            if (fvEl) {
+                if (d.futVwapBullish === true) {
+                    fvEl.textContent = 'FUT > VWAP';
+                    fvEl.style.color = 'var(--accent-green)';
+                } else if (d.futVwapBullish === false) {
+                    fvEl.textContent = 'FUT < VWAP';
+                    fvEl.style.color = 'var(--accent-red)';
                 } else {
-                    spEl.textContent = 'PRICE ↔ 50';
-                    spEl.style.color = 'var(--text-muted)';
+                    fvEl.textContent = 'FUT ↔ VWAP';
+                    fvEl.style.color = 'var(--text-muted)';
                 }
-            }
-            // Factor 3: 5-min SMA 20 vs 50 (20 > 50 bullish / 20 < 50 bearish).
-            var saEl = document.getElementById('niftySmaAlign');
-            if (saEl) {
-                if (d.smaAlignBullish === true) {
-                    saEl.textContent = 'SMA 20 > 50';
-                    saEl.style.color = 'var(--accent-green)';
-                } else if (d.smaAlignBullish === false) {
-                    saEl.textContent = 'SMA 20 < 50';
-                    saEl.style.color = 'var(--accent-red)';
-                } else {
-                    saEl.textContent = 'SMA 20 ↔ 50';
-                    saEl.style.color = 'var(--accent-yellow)';
-                }
+                var fc = +d.futClose || 0;
+                var fv = +d.futVwap || 0;
+                var fs = d.futSymbol || '';
+                fvEl.title = (fc > 0 && fv > 0)
+                    ? (fs + ' close ' + fc.toFixed(2) + ' vs VWAP ' + fv.toFixed(2)
+                       + '. Refreshes only on NIFTY 5-min candle close.')
+                    : 'NIFTY futures 5-min close vs VWAP (no data yet).';
             }
 
-            // Live SMA values — shown as a tooltip on the "PRICE > 20,50" chip. Hover the chip
-            // to see the actual numeric values "5-min SMA 20: X / SMA 50: Y".
-            var spTipEl = document.getElementById('niftySmaPrice');
-            if (spTipEl) {
-                var s20 = +d.sma20 || 0;
-                var s50 = +d.sma50 || 0;
-                if (s20 > 0 && s50 > 0) {
-                    spTipEl.title = '5-min SMA 20: ' + s20.toFixed(2) + ' / SMA 50: ' + s50.toFixed(2);
-                } else {
-                    spTipEl.title = 'NIFTY 5-min SMA 20 / SMA 50 values (not yet loaded)';
-                }
-            }
-
-            // Max OI strikes — refreshed every 15 min by NiftyOptionOiService. Resistance/support
-            // hurdles also folded into the NIFTY HTF Hurdle filter when enabled.
-            var mcEl = document.getElementById('niftyMaxCallOi');
-            if (mcEl) {
-                var mc = +d.maxCallOiStrike || 0;
-                if (mc > 0) {
-                    mcEl.textContent = 'Max Call OI: ' + mc;
-                    var mcOi = +d.maxCallOi || 0;
-                    mcEl.title = 'Max Call OI: ' + mcOi.toLocaleString()
-                        + (d.oiLastUpdated ? ' (updated ' + d.oiLastUpdated + ')' : '');
-                } else {
-                    mcEl.textContent = '—';
-                    mcEl.title = 'Max Call OI not loaded yet';
-                }
-            }
-            var mpEl = document.getElementById('niftyMaxPutOi');
-            if (mpEl) {
-                var mp = +d.maxPutOiStrike || 0;
-                if (mp > 0) {
-                    mpEl.textContent = 'Max Put OI: ' + mp;
-                    var mpOi = +d.maxPutOi || 0;
-                    mpEl.title = 'Max Put OI: ' + mpOi.toLocaleString()
-                        + (d.oiLastUpdated ? ' (updated ' + d.oiLastUpdated + ')' : '');
-                } else {
-                    mpEl.textContent = '—';
-                    mpEl.title = 'Max Put OI not loaded yet';
-                }
-            }
-
-            // No extra metrics on the right side — card shows LTP, change%, the 3 factor chips,
-            // SMA values, OI strikes, state, and breadth (display-only).
+            // No extra metrics on the right side. Card now shows: CPR width → CPR chip → VWAP chip → state.
             document.getElementById('niftyMetrics').innerHTML = '';
         }).catch(function(err) { console.warn('refreshNiftyCard failed:', err); });
     }

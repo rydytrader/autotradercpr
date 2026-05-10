@@ -1,9 +1,10 @@
 package com.rydytrader.autotrader.dto;
 
 /**
- * Trend snapshot for an index (NIFTY 50). State is set entirely by NIFTY 50 breadth
- * (advancers vs decliners → 7-tier ADD score). Returned via REST API to drive the
- * NIFTY card on the scanner page.
+ * Trend snapshot for the NIFTY 50 index. State is computed at every NIFTY 5-min candle
+ * close from two sticky factors: NIFTY's just-closed candle close vs daily CPR, and
+ * NIFTY futures' just-closed candle close vs that bar's stamped VWAP (Fyers ATP).
+ * Returned via REST API to drive the NIFTY card on the scanner page.
  */
 public class IndexTrend {
 
@@ -17,22 +18,19 @@ public class IndexTrend {
     private int breadthDecliners;   // # below prev close
     private int breadthTotal;       // # with valid LTP + prev close
     private int addScore;           // ADD = advancers count scaled to 50-stock universe — drives 7-tier state
-    // Three sticky factors driving the NIFTY trend state. All TRUE → BULLISH;
-    // all FALSE → BEARISH; null on any factor or mixed → SIDEWAYS (unless CPR is null,
-    // which is NEUTRAL).
-    // Factor 1: NIFTY LTP vs daily CPR. true = above max(TC, BC), false = below min(TC, BC),
-    // null = inside CPR or no CPR data.
+    // Two sticky factors driving the NIFTY trend state. Both refreshed only at NIFTY's
+    // 5-min candle close — read from the just-closed candle, NOT live LTP.
+    // Factor 1: NIFTY index 5-min close vs daily CPR. true = above max(TC, BC),
+    // false = below min(TC, BC), null = inside CPR or no candle yet.
     private Boolean cprBullish;
-    // Factor 2: NIFTY LTP vs 5-min SMA 20 and 50. true = price > both, false = price < both,
-    // null = between (mixed) or SMAs not yet seeded.
-    private Boolean smaPriceBullish;
-    // Factor 3: 5-min SMA 20 vs SMA 50 ordering. true = 20 > 50, false = 20 < 50, null = SMAs
-    // not yet seeded.
-    private Boolean smaAlignBullish;
-    // Live (display-only) SMA values for the NIFTY card. Snapshot at the time the response is
-    // built — not sticky like the factors above. Zero if the SMA hasn't seeded yet.
-    private double sma20;
-    private double sma50;
+    // Factor 2: NIFTY futures 5-min close vs that bar's stamped VWAP (Fyers ATP).
+    // true = futClose > futVwap, false = futClose < futVwap, null = candle missing / vwap 0.
+    private Boolean futVwapBullish;
+    // Underlying values used in the comparisons (sticky — captured at last 5-min close).
+    private double niftyClose;   // NIFTY index 5-min close used for the CPR comparison
+    private String futSymbol;    // active near-month NIFTY futures symbol (e.g., NSE:NIFTY26MARFUT)
+    private double futClose;     // NIFTY futures 5-min close used for the VWAP comparison
+    private double futVwap;      // futures' stamped VWAP at that bar's close (Fyers ATP)
     // NIFTY's daily CPR width as a % of price + a NARROW / NORMAL / WIDE label derived from
     // the user's narrowCprMaxWidth and insideCprMaxWidth scanner thresholds. Display-only.
     private double cprWidthPct;
@@ -70,14 +68,16 @@ public class IndexTrend {
     public void setAddScore(int v) { this.addScore = v; }
     public Boolean getCprBullish() { return cprBullish; }
     public void setCprBullish(Boolean v) { this.cprBullish = v; }
-    public Boolean getSmaPriceBullish() { return smaPriceBullish; }
-    public void setSmaPriceBullish(Boolean v) { this.smaPriceBullish = v; }
-    public Boolean getSmaAlignBullish() { return smaAlignBullish; }
-    public void setSmaAlignBullish(Boolean v) { this.smaAlignBullish = v; }
-    public double getSma20() { return sma20; }
-    public void setSma20(double v) { this.sma20 = v; }
-    public double getSma50() { return sma50; }
-    public void setSma50(double v) { this.sma50 = v; }
+    public Boolean getFutVwapBullish() { return futVwapBullish; }
+    public void setFutVwapBullish(Boolean v) { this.futVwapBullish = v; }
+    public double getNiftyClose() { return niftyClose; }
+    public void setNiftyClose(double v) { this.niftyClose = v; }
+    public String getFutSymbol() { return futSymbol; }
+    public void setFutSymbol(String v) { this.futSymbol = v; }
+    public double getFutClose() { return futClose; }
+    public void setFutClose(double v) { this.futClose = v; }
+    public double getFutVwap() { return futVwap; }
+    public void setFutVwap(double v) { this.futVwap = v; }
     public double getCprWidthPct() { return cprWidthPct; }
     public void setCprWidthPct(double v) { this.cprWidthPct = v; }
     public String getCprWidthCategory() { return cprWidthCategory; }
