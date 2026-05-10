@@ -819,6 +819,28 @@ public class CandleAggregator {
     }
 
     /**
+     * Get the close of the most recent completed 5-min candle whose end aligns with a
+     * 15-minute boundary (e.g., a bar ending at 9:30, 9:45, 10:00, …) — i.e., the
+     * latest "15-min close" derivable from the 5-min grid.
+     *
+     * <p>Returns null if no such bar exists yet today (before 9:30 IST in normal sessions),
+     * or if no completed candles are available for the symbol. The caller is responsible
+     * for any fallback (e.g., to last 5-min close) when null is returned.
+     */
+    public Double getLast15MinClose(String symbol) {
+        Deque<CandleBar> history = completedCandles.get(symbol);
+        if (history == null || history.isEmpty()) return null;
+        Iterator<CandleBar> it = history.descendingIterator();
+        while (it.hasNext()) {
+            CandleBar bar = it.next();
+            if (bar.close <= 0) continue;
+            long endMinute = bar.startMinute + 5;
+            if (endMinute % 15 == 0) return bar.close;
+        }
+        return null;
+    }
+
+    /**
      * Get the previous completed candle (the one before the last).
      */
     public CandleBar getPreviousCandle(String symbol) {
