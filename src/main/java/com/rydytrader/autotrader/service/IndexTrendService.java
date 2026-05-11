@@ -105,6 +105,21 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
                                  String state) {}
 
     /**
+     * Resolve "the last completed bar we know about" for a symbol — prefers today's most
+     * recent completed 5-min candle, falls back to the last bar of the prior trading day
+     * when today hasn't produced any bars yet (Monday morning before the first 5-min close,
+     * or right after a server restart pre-market). Returns null if neither is available.
+     */
+    private CandleAggregator.CandleBar lastAvailableBar(String symbol) {
+        if (candleAggregator == null || symbol == null) return null;
+        CandleAggregator.CandleBar today = candleAggregator.getLastCompletedCandle(symbol);
+        if (today != null && today.close > 0) return today;
+        java.util.List<CandleAggregator.CandleBar> priors = candleAggregator.getPriorDayCandles(symbol);
+        if (priors == null || priors.isEmpty()) return null;
+        return priors.get(priors.size() - 1);
+    }
+
+    /**
      * Reads the just-closed 5-min candles for both NIFTY index and NIFTY futures and computes
      * the two factors. Called only from {@link #onCandleClose} at NIFTY's 5-min boundary, so
      * the "last completed candle" IS the bar that just fired this listener — same-bar
@@ -114,8 +129,7 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         // Factor 1: NIFTY index 5-min close vs daily CPR
         Boolean cprBullish = null;
         double niftyClose = 0;
-        CandleAggregator.CandleBar niftyBar = candleAggregator != null
-            ? candleAggregator.getLastCompletedCandle(NIFTY_SYMBOL) : null;
+        CandleAggregator.CandleBar niftyBar = lastAvailableBar(NIFTY_SYMBOL);
         if (niftyBar != null && niftyBar.close > 0) {
             niftyClose = niftyBar.close;
             var cpr = bhavcopyService.getCprLevels("NIFTY50");
@@ -133,8 +147,7 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
             java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")));
         Boolean futVwapBullish = null;
         double futClose = 0, futVwap = 0;
-        CandleAggregator.CandleBar futBar = candleAggregator != null
-            ? candleAggregator.getLastCompletedCandle(futSym) : null;
+        CandleAggregator.CandleBar futBar = lastAvailableBar(futSym);
         if (futBar != null && futBar.close > 0 && futBar.vwap > 0) {
             futClose = futBar.close;
             futVwap  = futBar.vwap;
