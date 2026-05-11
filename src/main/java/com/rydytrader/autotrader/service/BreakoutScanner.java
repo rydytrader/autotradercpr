@@ -1278,25 +1278,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             boolean allBelow = close < sma20Now && close < sma50Now && close < sma200Now;
             trend = allAbove ? "BULLISH" : allBelow ? "BEARISH" : "NEUTRAL";
         }
-        String pattern5m = "";
-        if (sma20Now > 0 && sma50Now > 0 && atr > 0) {
-            pattern5m = smaService.getSmaPattern(fyersSymbol,
-                riskSettings.getSmaPatternLookback(), atr,
-                riskSettings.getBraidedMinCrossovers(), riskSettings.getBraidedMaxSpreadAtr(),
-                riskSettings.getRailwayMaxCv(), riskSettings.getRailwayMinSpreadAtr());
-        }
-        String patternLabel = "RAILWAY_UP".equals(pattern5m) ? "R-RTP"
-                            : "RAILWAY_DOWN".equals(pattern5m) ? "F-RTP"
-                            : "BRAIDED".equals(pattern5m) ? "ZIG ZAG"
-                            : "--";
         // Include the candle-route tag (MARUBOZU_BREAKOUT, HAMMER_RETEST, ENGULFING_RETEST,
         // PIERCING_RETEST, TWEEZER_RETEST, DOJI_RETEST, STAR_RETEST, HARAMI_RETEST) when present
         // so the event log makes it clear which candle pattern actually fired the entry.
-        // Distinct from the "pattern=" field which is the SMA structure (BRAIDED/RAILWAY/ZIG ZAG).
         String routeTag = (scannerNote != null && !scannerNote.isEmpty()) ? " | route=" + scannerNote : "";
         eventService.log("[SCANNER] " + fyersSymbol + " " + setup + " | close=" + String.format("%.2f", close)
             + " | ATR=" + String.format("%.2f", atr) + " | " + prob + routeTag
-            + " | 5m trend=" + trend + " pattern=" + patternLabel + " | " + timeStr);
+            + " | 5m trend=" + trend + " | " + timeStr);
 
         // Feed into TradingController (same pipeline as TradingView webhook)
         try {
