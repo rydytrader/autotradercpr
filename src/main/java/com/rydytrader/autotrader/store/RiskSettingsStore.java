@@ -85,6 +85,14 @@ public class RiskSettingsStore {
         // needs decent body but doesn't have to be marubozu-shaved. Set to 0 to fire every
         // fresh break that broke the level regardless of body size.
         volatile double goodSizeCandleBodyAtrMult   = 0.6;
+        // Opposing-wick rejection for the same gate. Buy fresh break = upper wick ≤ N × body;
+        // sell fresh break = lower wick ≤ N × body. Catches green-shooting-star or red-hammer
+        // shaped breakouts before they get tagged as GOOD_SIZE — sellers/buyers pushed back at
+        // the extreme even though the body closed in trade direction. Tighter default than
+        // the downstream SignalProcessor opposite-wick check (2.0) so this acts as an upstream
+        // quality gate at the detection step, leaving 2.0 as the downstream safety net.
+        // Set to 0 to disable just the wick check (body floor stays).
+        volatile double goodSizeCandleMaxOppositeWickRatio = 1.0;
         volatile boolean enableTargetShift = true; // shift target to next level if default target < threshold ATR. If false, skip the entry.
         volatile boolean enableGapCheck = true;     // halve qty if day open or first candle beyond R2/S2
         volatile boolean enableDayHighLowTargetShift = true; // shift target to day high/low if between entry and target
@@ -437,6 +445,7 @@ public class RiskSettingsStore {
     public double getStarOuterBodyAtrMult()        { return cfg().starOuterBodyAtrMult; }
     public double getStarMiddleBodyMaxMultOfOuter() { return cfg().starMiddleBodyMaxMultOfOuter; }
     public double getGoodSizeCandleBodyAtrMult()   { return cfg().goodSizeCandleBodyAtrMult; }
+    public double getGoodSizeCandleMaxOppositeWickRatio() { return cfg().goodSizeCandleMaxOppositeWickRatio; }
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
     public boolean isEnableSmaCrossExit() { return cfg().enableSmaCrossExit; }
     public boolean isEnablePriceSmaExit() { return cfg().enablePriceSmaExit; }
@@ -615,6 +624,7 @@ public class RiskSettingsStore {
     public void setStarOuterBodyAtrMult(double v)        { cfg().starOuterBodyAtrMult = v; }
     public void setStarMiddleBodyMaxMultOfOuter(double v) { cfg().starMiddleBodyMaxMultOfOuter = v; }
     public void setGoodSizeCandleBodyAtrMult(double v)   { cfg().goodSizeCandleBodyAtrMult = v; }
+    public void setGoodSizeCandleMaxOppositeWickRatio(double v) { cfg().goodSizeCandleMaxOppositeWickRatio = v; }
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
     public void setEnableSmaCrossExit(boolean v) { cfg().enableSmaCrossExit = v; }
     public void setEnablePriceSmaExit(boolean v) { cfg().enablePriceSmaExit = v; }
@@ -804,6 +814,7 @@ public class RiskSettingsStore {
             upsert("starOuterBodyAtrMult", String.valueOf(c.starOuterBodyAtrMult));
             upsert("starMiddleBodyMaxMultOfOuter", String.valueOf(c.starMiddleBodyMaxMultOfOuter));
             upsert("goodSizeCandleBodyAtrMult", String.valueOf(c.goodSizeCandleBodyAtrMult));
+            upsert("goodSizeCandleMaxOppositeWickRatio", String.valueOf(c.goodSizeCandleMaxOppositeWickRatio));
             upsert("smallCandleAtrThreshold", String.valueOf(c.smallCandleAtrThreshold));
             upsert("smallCandleBodyAtrThreshold", String.valueOf(c.smallCandleBodyAtrThreshold));
             upsert("smallCandleMoveAtrThreshold", String.valueOf(c.smallCandleMoveAtrThreshold));
@@ -981,6 +992,7 @@ public class RiskSettingsStore {
                     case "starOuterBodyAtrMult"        -> c.starOuterBodyAtrMult = Double.parseDouble(v);
                     case "starMiddleBodyMaxMultOfOuter" -> c.starMiddleBodyMaxMultOfOuter = Double.parseDouble(v);
                     case "goodSizeCandleBodyAtrMult"   -> c.goodSizeCandleBodyAtrMult = Double.parseDouble(v);
+                    case "goodSizeCandleMaxOppositeWickRatio" -> c.goodSizeCandleMaxOppositeWickRatio = Double.parseDouble(v);
                     case "smallCandleAtrThreshold" -> {
                         // Legacy single knob: also seed the new split fields if those keys haven't been
                         // saved yet. Once the user saves the new fields explicitly, this no-op overwrites

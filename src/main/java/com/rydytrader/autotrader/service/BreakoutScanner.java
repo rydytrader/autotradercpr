@@ -1066,12 +1066,17 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         boolean isRetest = (prev != null && prev.close > level);
 
         if (!isRetest) {
-            // Fresh-break path: body-strength gate only, no pattern matching with prev bar.
+            // Fresh-break path: body-strength + opposing-wick gates. No pattern math with
+            // prev bar. For a buy the opposing wick is the upper wick (sellers pushing
+            // back at the top); a green bar with a long upper wick is shooting-star-shaped
+            // and shouldn't tag as GOOD_SIZE despite the body being big enough.
             double goodSizeBody = riskSettings.getGoodSizeCandleBodyAtrMult();
-            double body = close - open;
-            if (close > open
-                    && (goodSizeBody <= 0 || (atr > 0 && body >= goodSizeBody * atr))
-                    && !isLargeCandleBlocked(body, atr)) {
+            double oppWickMax   = riskSettings.getGoodSizeCandleMaxOppositeWickRatio();
+            double body         = close - open;
+            double upperWick    = high - Math.max(open, close);
+            boolean bodyOk      = goodSizeBody <= 0 || (atr > 0 && body >= goodSizeBody * atr);
+            boolean wickOk      = oppWickMax  <= 0 || body <= 0 || upperWick <= oppWickMax * body;
+            if (close > open && bodyOk && wickOk && !isLargeCandleBlocked(body, atr)) {
                 lastTriggerRoute.put(fyersSymbol, "GOOD_SIZE_CANDLE_BREAKOUT");
                 return setupName;
             }
@@ -1183,12 +1188,17 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         boolean isRetest = (prev != null && prev.close < level);
 
         if (!isRetest) {
-            // Fresh-breakdown path: body-strength gate only.
+            // Fresh-breakdown path: body-strength + opposing-wick gates. For a sell the
+            // opposing wick is the lower wick (buyers pushing back at the bottom); a red
+            // bar with a long lower wick is hammer-shaped and shouldn't tag as GOOD_SIZE
+            // despite the body being big enough.
             double goodSizeBody = riskSettings.getGoodSizeCandleBodyAtrMult();
-            double body = open - close;
-            if (close < open
-                    && (goodSizeBody <= 0 || (atr > 0 && body >= goodSizeBody * atr))
-                    && !isLargeCandleBlocked(body, atr)) {
+            double oppWickMax   = riskSettings.getGoodSizeCandleMaxOppositeWickRatio();
+            double body         = open - close;
+            double lowerWick    = Math.min(open, close) - low;
+            boolean bodyOk      = goodSizeBody <= 0 || (atr > 0 && body >= goodSizeBody * atr);
+            boolean wickOk      = oppWickMax  <= 0 || body <= 0 || lowerWick <= oppWickMax * body;
+            if (close < open && bodyOk && wickOk && !isLargeCandleBlocked(body, atr)) {
                 lastTriggerRoute.put(fyersSymbol, "GOOD_SIZE_CANDLE_BREAKOUT");
                 return setupName;
             }
