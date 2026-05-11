@@ -1713,7 +1713,7 @@
                 smallRangeAdrPct: parseFloat(document.getElementById('smallRangeAdrPct').value) || 50.0,
                 scanIncludeIS: document.getElementById('scanIncludeIS').checked,
                 scanIncludeIL: document.getElementById('scanIncludeIL').checked,
-                minAbsoluteProfit: parseFloat(document.getElementById('minAbsoluteProfit').value) || 500,
+                minAbsoluteProfit: (function() { var v = parseFloat(document.getElementById('minAbsoluteProfit').value); return isNaN(v) ? 500 : v; })(),
                 skipR3S3IvOvDays: document.getElementById('skipR3S3IvOvDays').checked,
                 skipR3S3EvDays:   document.getElementById('skipR3S3EvDays').checked,
                 skipR4S4IvOvDays: document.getElementById('skipR4S4IvOvDays').checked,
