@@ -1289,8 +1289,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                             : "RAILWAY_DOWN".equals(pattern5m) ? "F-RTP"
                             : "BRAIDED".equals(pattern5m) ? "ZIG ZAG"
                             : "--";
+        // Include the candle-route tag (MARUBOZU_BREAKOUT, HAMMER_RETEST, ENGULFING_RETEST,
+        // PIERCING_RETEST, TWEEZER_RETEST, DOJI_RETEST, STAR_RETEST, HARAMI_RETEST) when present
+        // so the event log makes it clear which candle pattern actually fired the entry.
+        // Distinct from the "pattern=" field which is the SMA structure (BRAIDED/RAILWAY/ZIG ZAG).
+        String routeTag = (scannerNote != null && !scannerNote.isEmpty()) ? " | route=" + scannerNote : "";
         eventService.log("[SCANNER] " + fyersSymbol + " " + setup + " | close=" + String.format("%.2f", close)
-            + " | ATR=" + String.format("%.2f", atr) + " | " + prob
+            + " | ATR=" + String.format("%.2f", atr) + " | " + prob + routeTag
             + " | 5m trend=" + trend + " pattern=" + patternLabel + " | " + timeStr);
 
         // Feed into TradingController (same pipeline as TradingView webhook)
