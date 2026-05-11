@@ -487,14 +487,12 @@ public class SignalProcessor {
             }
         }
 
-        // ── 4e3. Re-check probability after all downgrades ─────────────────────
-        // Only fires when an HPT trade was actually downgraded to LPT inside SignalProcessor
-        // LPT-disabled gate (legacy) — under LTF-priority model, no trade is downgraded to LPT
-        // anymore. All HPT/MPT failure paths return rejected directly. The block below is kept
-        // as a safety net for any historical code path that still assigns LPT.
-        if ("LPT".equals(probability)) {
-            return ProcessedSignal.silentlyRejected(setup, symbol);
-        }
+        // (Removed: a legacy safety-net block here used to silently reject any signal whose
+        // probability was "LPT", on the assumption that SignalProcessor never produced LPT
+        // anymore. That assumption is wrong — BreakoutScanner's checkIndexAlignment still
+        // downgrades NIFTY-misaligned trades to LPT, and those legitimate LPT signals were
+        // being silently dropped here with no event-log breadcrumb. The upstream downgrade
+        // path already checks enableLpt before assigning LPT, so no re-gate is needed.)
 
         // ── 4f. Compute target ──────────────────────────────────────────────────
         double[] targets;
