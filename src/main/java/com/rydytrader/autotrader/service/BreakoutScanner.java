@@ -1874,20 +1874,37 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     }
 
     /**
-     * Macro-level NIFTY direction filter — requires NIFTY's last <b>completed 15-min</b>
-     * candle body to agree with the trade direction. Buys reject when NIFTY's last 15-min
-     * bar is strictly red; sells reject when it's strictly green. Doji passes both.
+     * Macro-level NIFTY direction filter — reads NIFTY's last <b>completed 15-min</b> candle
+     * and rejects stock trades whose direction doesn't agree with the bar.
      *
-     * <p>Also flags <b>rejection candles</b> — even a correct-color candle is rejected when
-     * its directional wick exceeds <code>niftyHtfCandleMaxWickRatio</code> &times; body. For
-     * a buy, a long upper wick on a green 15-min bar means buyers couldn't hold the highs
-     * (selling into strength) — bad context for a stock breakout. Mirror for sells (long
-     * lower wick on a red bar = bottom rejection). Doji bodies skip the wick-ratio check.
+     * <p>Two-stage assessment:
+     * <ol>
+     *   <li><b>Stage 1 — directional classification (body + dominant wick).</b>
+     *       Body color sets the default direction; a long wick on the SAME side as the body's
+     *       favored direction can override:
+     *       <ul>
+     *         <li><b>Red bar + long lower wick (≥ wickRatio × body)</b> = bullish hammer →
+     *             reclassified as <i>bullish</i> despite red body.</li>
+     *         <li><b>Green bar + long upper wick</b> = bearish shooting star → reclassified
+     *             as <i>bearish</i> despite green body.</li>
+     *       </ul>
+     *       BUY needs the bar's final classification to be bullish; SELL needs bearish.
+     *   </li>
+     *   <li><b>Stage 2 — opposing-side wick rejection.</b>
+     *       Even when Stage 1 classifies the bar in the trade direction, reject if the wick
+     *       on the OPPOSITE side of the trade is also long ( &gt; wickRatio × body):
+     *       contested move, counter-pressure was active. For BUY the opposing side is the
+     *       upper wick; for SELL it's the lower wick.
+     *   </li>
+     * </ol>
      *
-     * <p>The 15-min bar is synthesized from three consecutive 5-min bars on the existing
-     * 5-min grid (see {@link CandleAggregator#getLastCompleted15MinCandle}). Filter
-     * fail-opens before 9:30 IST (no completed 15-min window exists yet today) or when
-     * fewer than 3 completed 5-min bars are available for NIFTY.
+     * <p>Doji ({@code close == open}) passes both directions — no clear direction, fail-open.
+     * When {@code niftyHtfCandleMaxWickRatio = 0}, both stages disable; filter degenerates
+     * to pure body-color check (red rejects BUY, green rejects SELL).
+     *
+     * <p>The 15-min bar is synthesized from three consecutive 5-min bars (see
+     * {@link CandleAggregator#getLastCompleted15MinCandle}). Filter fail-opens before 9:30
+     * IST or when fewer than 3 completed 5-min bars are available for NIFTY.
      */
     private String checkNiftyHtfCandleColor(boolean isBuy) {
         if (!riskSettings.isEnableNiftyHtfCandleFilter()) return null;
@@ -1896,36 +1913,49 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             .getLastCompleted15MinCandle(IndexTrendService.NIFTY_SYMBOL);
         if (bar == null || bar.open <= 0 || bar.close <= 0) return null; // fail-open
 
-        // 1) Body color check.
-        if (isBuy && bar.close < bar.open) {
-            return "NIFTY 15m candle red — buy requires green: NIFTY 15m open="
-                + String.format("%.2f", bar.open) + ", close=" + String.format("%.2f", bar.close);
+        // Doji — no directional bias, fail-open for both.
+        if (bar.close == bar.open) return null;
+
+        double body      = Math.abs(bar.close - bar.open);
+        double upperWick = bar.high - Math.max(bar.open, bar.close);
+        double lowerWick = Math.min(bar.open, bar.close) - bar.low;
+        boolean isGreen  = bar.close > bar.open;
+        boolean isRed    = bar.close < bar.open;
+        double  W        = riskSettings.getNiftyHtfCandleMaxWickRatio();
+
+        // ── Stage 1 — directional classification (body + dominant wick) ──
+        boolean dominantLowerWickOnRed   = isRed   && W > 0 && body > 0 && lowerWick > W * body;  // hammer
+        boolean dominantUpperWickOnGreen = isGreen && W > 0 && body > 0 && upperWick > W * body;  // shooting star
+
+        boolean bullishBar = (isGreen && !dominantUpperWickOnGreen) || dominantLowerWickOnRed;
+        boolean bearishBar = (isRed   && !dominantLowerWickOnRed)   || dominantUpperWickOnGreen;
+
+        String barShape = bullishBar
+            ? (dominantLowerWickOnRed ? "red hammer (long lower wick overrides red body)" : "green body")
+            : bearishBar
+                ? (dominantUpperWickOnGreen ? "green shooting star (long upper wick overrides green body)" : "red body")
+                : "non-directional";
+
+        if (isBuy && !bullishBar) {
+            return "NIFTY 15m " + barShape + " — BUY needs bullish bar (open="
+                + String.format("%.2f", bar.open) + ", high=" + String.format("%.2f", bar.high)
+                + ", low=" + String.format("%.2f", bar.low) + ", close=" + String.format("%.2f", bar.close) + ")";
         }
-        if (!isBuy && bar.close > bar.open) {
-            return "NIFTY 15m candle green — sell requires red: NIFTY 15m open="
-                + String.format("%.2f", bar.open) + ", close=" + String.format("%.2f", bar.close);
+        if (!isBuy && !bearishBar) {
+            return "NIFTY 15m " + barShape + " — SELL needs bearish bar (open="
+                + String.format("%.2f", bar.open) + ", high=" + String.format("%.2f", bar.high)
+                + ", low=" + String.format("%.2f", bar.low) + ", close=" + String.format("%.2f", bar.close) + ")";
         }
 
-        // 2) Wick rejection check. For a green/buy candle, the upper wick (high - close) is the
-        // concerning side — selling pressure capped the move. For a red/sell candle, the lower
-        // wick (close - low) is concerning — buying pressure floored the move.
-        double maxWickRatio = riskSettings.getNiftyHtfCandleMaxWickRatio();
-        if (maxWickRatio > 0 && bar.high > 0 && bar.low > 0) {
-            double body, wick;
-            String wickName;
-            if (isBuy) {
-                body = bar.close - bar.open;          // green body
-                wick = bar.high - bar.close;          // upper wick
-                wickName = "upper";
-            } else {
-                body = bar.open - bar.close;          // red body
-                wick = bar.close - bar.low;           // lower wick
-                wickName = "lower";
-            }
-            if (body > 0 && wick > maxWickRatio * body) {
-                return "NIFTY 15m " + wickName + " wick rejection: wick="
-                    + String.format("%.2f", wick) + " > " + maxWickRatio + " × body="
-                    + String.format("%.2f", body) + " (open=" + String.format("%.2f", bar.open)
+        // ── Stage 2 — opposing-side wick rejection (move was contested) ──
+        if (W > 0 && body > 0) {
+            double opposingWick  = isBuy ? upperWick : lowerWick;
+            String opposingName  = isBuy ? "upper"   : "lower";
+            if (opposingWick > W * body) {
+                return "NIFTY 15m " + opposingName + " wick rejection (contested move): "
+                    + opposingName + " wick=" + String.format("%.2f", opposingWick)
+                    + " > " + W + " × body=" + String.format("%.2f", body)
+                    + " (bar: " + barShape + ", open=" + String.format("%.2f", bar.open)
                     + ", high=" + String.format("%.2f", bar.high)
                     + ", low=" + String.format("%.2f", bar.low)
                     + ", close=" + String.format("%.2f", bar.close) + ")";
