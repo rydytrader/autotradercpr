@@ -484,11 +484,6 @@
                         <input type="number" id="wickRejectionRatio" class="form-control" step="0.1" min="1.0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-muted); font-size: 0.75rem; font-family: var(--font-mono);">wick/body to allow small body (default 1.5)</span>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px; padding-left: 28px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Opposite wick ratio:</span>
-                        <input type="number" id="oppositeWickRatio" class="form-control" step="0.1" min="1.0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-muted); font-size: 0.75rem; font-family: var(--font-mono);">wick/body to reject counter-pressure (default 2.0)</span>
-                    </div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Large Candle Body Filter</label>
@@ -718,7 +713,7 @@
                 </div>
                 <div class="form-hint">Two gates for Route 2 <b>fresh breakouts</b> &mdash; when the prior 5-min close hadn't yet crossed the level and this bar broke it. No pattern math with the previous bar (engulfing/piercing/etc. relationship is incidental on a fresh break).
                     <br>&nbsp;&nbsp;&bull; <b>Body floor</b>: body must be ≥ N &times; ATR. Sits between engulfing's 0.5 floor and marubozu's 1.0 &mdash; meaningful body but doesn't need marubozu-shaved wicks. Default <b>0.6</b>.
-                    <br>&nbsp;&nbsp;&bull; <b>Opposing wick cap</b>: BUY = upper wick ≤ N &times; body (sellers didn't push back at the top); SELL = lower wick ≤ N &times; body (buyers didn't push back at the bottom). Rejects shooting-star-shaped green breakouts and hammer-shaped red breakdowns even when the body is big enough. Tighter than the downstream SignalProcessor opposite-wick safety net (default 2.0) so this gate acts at the detection step. Default <b>1.0</b>. Set to <b>0</b> to disable just this wick check (body floor stays).
+                    <br>&nbsp;&nbsp;&bull; <b>Opposing wick cap</b>: BUY = upper wick ≤ N &times; body (sellers didn't push back at the top); SELL = lower wick ≤ N &times; body (buyers didn't push back at the bottom). Rejects shooting-star-shaped green breakouts and hammer-shaped red breakdowns even when the body is big enough. Default <b>1.0</b>. Set to <b>0</b> to disable just this wick check (body floor stays).
                     <br>Tag: <code>GOOD_SIZE_CANDLE_BREAKOUT</code>. <b>Retests</b> (prior close already past the level) still run the full pattern matchers (hammer / engulfing / piercing / tweezer / doji / star / harami) and tag as <code>&lt;PATTERN&gt;_RETEST</code> &mdash; for retests the prev-bar relationship genuinely matters. Set body floor to <b>0</b> to fire every fresh break that broke the level regardless of body size (subject to the global large-candle filter).</div>
             </div>
             </div><!-- /form-grid -->
@@ -1499,7 +1494,6 @@
             document.getElementById('smallCandleMoveAtrThreshold').value =
                 (d.smallCandleMoveAtrThreshold != null ? d.smallCandleMoveAtrThreshold : 0.15);
             document.getElementById('wickRejectionRatio').value = d.wickRejectionRatio || 1.5;
-            document.getElementById('oppositeWickRatio').value = d.oppositeWickRatio || 2.0;
             document.getElementById('enableVolumeFilter').checked = d.enableVolumeFilter || false;
             document.getElementById('volumeMultiple').value = d.volumeMultiple || 2.0;
             document.getElementById('volumeLookback').value = d.volumeLookback || 20;
@@ -1700,7 +1694,6 @@
                 smallCandleBodyAtrThreshold: parseFloat(document.getElementById('smallCandleBodyAtrThreshold').value) || 0.5,
                 smallCandleMoveAtrThreshold: parseFloat(document.getElementById('smallCandleMoveAtrThreshold').value) || 0.15,
                 wickRejectionRatio: parseFloat(document.getElementById('wickRejectionRatio').value) || 1.5,
-                oppositeWickRatio: parseFloat(document.getElementById('oppositeWickRatio').value) || 2.0,
                 enableVolumeFilter: document.getElementById('enableVolumeFilter').checked,
                 volumeMultiple: parseFloat(document.getElementById('volumeMultiple').value) || 2.0,
                 volumeLookback: parseInt(document.getElementById('volumeLookback').value) || 20,

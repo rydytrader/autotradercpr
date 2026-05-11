@@ -123,7 +123,6 @@ public class SettingsController {
         result.put("smallCandleBodyAtrThreshold", riskSettings.getSmallCandleBodyAtrThreshold(effectiveMode));
         result.put("smallCandleMoveAtrThreshold", riskSettings.getSmallCandleMoveAtrThreshold(effectiveMode));
         result.put("wickRejectionRatio", riskSettings.getWickRejectionRatio(effectiveMode));
-        result.put("oppositeWickRatio", riskSettings.getOppositeWickRatio(effectiveMode));
         result.put("enableVolumeFilter", riskSettings.isEnableVolumeFilter(effectiveMode));
         result.put("volumeMultiple", riskSettings.getVolumeMultiple(effectiveMode));
         result.put("volumeLookback", riskSettings.getVolumeLookback(effectiveMode));
@@ -275,7 +274,6 @@ public class SettingsController {
             if (body.containsKey("smallCandleBodyAtrThreshold")) riskSettings.setSmallCandleBodyAtrThreshold(effectiveMode, Double.parseDouble(body.get("smallCandleBodyAtrThreshold").toString()));
             if (body.containsKey("smallCandleMoveAtrThreshold")) riskSettings.setSmallCandleMoveAtrThreshold(effectiveMode, Double.parseDouble(body.get("smallCandleMoveAtrThreshold").toString()));
             if (body.containsKey("wickRejectionRatio")) riskSettings.setWickRejectionRatio(effectiveMode, Double.parseDouble(body.get("wickRejectionRatio").toString()));
-            if (body.containsKey("oppositeWickRatio")) riskSettings.setOppositeWickRatio(effectiveMode, Double.parseDouble(body.get("oppositeWickRatio").toString()));
             if (body.containsKey("enableVolumeFilter")) riskSettings.setEnableVolumeFilter(effectiveMode, Boolean.parseBoolean(body.get("enableVolumeFilter").toString()));
             if (body.containsKey("volumeMultiple")) riskSettings.setVolumeMultiple(effectiveMode, Double.parseDouble(body.get("volumeMultiple").toString()));
             if (body.containsKey("volumeLookback")) riskSettings.setVolumeLookback(effectiveMode, Integer.parseInt(body.get("volumeLookback").toString()));

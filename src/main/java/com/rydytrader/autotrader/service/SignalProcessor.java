@@ -209,7 +209,6 @@ public class SignalProcessor {
             double bodyAtrMult    = riskSettings.getSmallCandleBodyAtrThreshold();
             double moveAtrMult    = riskSettings.getSmallCandleMoveAtrThreshold();
             double wickRatio      = riskSettings.getWickRejectionRatio();
-            double oppWickRatio   = riskSettings.getOppositeWickRatio();
             double moveFromLevel  = isBuy ? (close - breakoutLevel) : (breakoutLevel - close);
             double candleBody     = candleOpen > 0 ? Math.abs(close - candleOpen) : 0;
             double bodyFloor      = atr * bodyAtrMult;
@@ -237,18 +236,11 @@ public class SignalProcessor {
                     + fmt(bodyFloor) + ") AND move from level (" + fmt(moveFromLevel) + ") < "
                     + moveAtrMult + " ATR (" + fmt(moveFloor) + "), no wick defense");
             }
-
-            // Check 4: opposite wick pressure — always checked, even for large bodies.
-            // Buy: long upper wick = sellers pushing down. Sell: long lower wick = buyers pushing up.
-            if (candleOpen > 0 && candleHigh > 0 && candleLow > 0) {
-                double oppositeWick = isBuy
-                    ? (candleHigh - Math.max(close, candleOpen))
-                    : (Math.min(close, candleOpen) - candleLow);
-                if (oppositeWick >= oppWickRatio * candleBody && oppositeWick >= bodyFloor) {
-                    return ProcessedSignal.rejected(setup, symbol,
-                        "Opposite wick pressure (" + fmt(oppositeWick) + ") — counter-pressure against breakout");
-                }
-            }
+            // Opposite-wick rejection has moved upstream into the route-specific gates:
+            //   • Route 1 marubozu        — marubozuMaxWicksPctOfBody (total wicks ≤ % of body)
+            //   • Route 2 fresh break     — goodSizeCandleMaxOppositeWickRatio (upper/lower wick ≤ ratio × body)
+            //   • Route 2 retest patterns — each pattern matcher's own wick rules
+            // No longer enforced here so the trade log doesn't show "fired then rejected".
         }
 
         // ── 4d2. Large candle body filter ──────────────────────────────────────

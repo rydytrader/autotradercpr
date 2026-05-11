@@ -852,7 +852,6 @@
                 <tr><td><code>EV_OR_INSIDE</code></td><td>EV day, close inside OR range, direction opposes the gap.</td></tr>
                 <tr><td><code>EV_GAP_OPPOSED</code></td><td>Trade direction opposes the gap on an EV day (without an OR break to override).</td></tr>
                 <tr><td><code>SMALL_CANDLE</code></td><td>Candle body and move-past-level both below their ATR floors.</td></tr>
-                <tr><td><code>OPPOSITE_WICK</code></td><td>Counter-pressure wick (opposite to trade direction) ≥ <code>oppositeWickRatio</code> × body.</td></tr>
                 <tr><td><code>LARGE_CANDLE</code></td><td>Candle body exceeds <code>largeCandleBodyAtrThreshold</code> × ATR (exhaustion).</td></tr>
                 <tr><td><code>HTF_HURDLE</code></td><td>Prior 1h close hadn't cleared the nearest weekly hurdle (R1/PWH/TC/Pivot/BC for buys; mirror for sells).</td></tr>
                 <tr><td><code>HTF_SMA_TREND</code></td><td>Prior 1h close not above (buy) / below (sell) 1h SMA 20 and 50 together.</td></tr>
@@ -1163,7 +1162,6 @@
                 <tr><td>enableSmallCandleFilter</td><td>false</td><td>Reject tiny breakout candles</td></tr>
                 <tr><td>smallCandleAtrThreshold</td><td>0.5</td><td>Move/body must be ≥ this × ATR (else rejected unless wick defends)</td></tr>
                 <tr><td>wickRejectionRatio</td><td>1.5</td><td>Wick into breakout direction must be ≥ this × body</td></tr>
-                <tr><td>oppositeWickRatio</td><td>2.0</td><td>Opposite wick ≥ this × body = counter-pressure, reject</td></tr>
                 <tr><td>enableLargeCandleBodyFilter</td><td>true</td><td>Reject candle body &gt; threshold × ATR (exhaustion)</td></tr>
                 <tr><td>largeCandleBodyAtrThreshold</td><td>4.0</td><td>Body cap as multiple of ATR</td></tr>
                 <tr><td>enableVolumeFilter</td><td>false</td><td>Reject if candle vol &lt; multiple × 20-avg</td></tr>

@@ -208,7 +208,6 @@ public class RiskSettingsStore {
         volatile double smallCandleBodyAtrThreshold = 0.5;  // body floor — small body = weak conviction
         volatile double smallCandleMoveAtrThreshold = 0.15; // move-past-level floor — tiny push past the level = barely cleared
         volatile double wickRejectionRatio = 1.5; // breakout wick must be >= this * body to allow small body candle
-        volatile double oppositeWickRatio = 2.0; // opposite wick >= this * body = counter-pressure, reject
         volatile boolean enableVolumeFilter = false; // reject if candle volume < volumeMultiple * avg volume
         volatile double volumeMultiple = 2.0; // breakout candle must have this x avg volume
         volatile int volumeLookback = 20; // average volume over last N candles (max 20)
@@ -473,7 +472,6 @@ public class RiskSettingsStore {
     public double getSmallCandleBodyAtrThreshold() { return cfg().smallCandleBodyAtrThreshold; }
     public double getSmallCandleMoveAtrThreshold() { return cfg().smallCandleMoveAtrThreshold; }
     public double getWickRejectionRatio() { return cfg().wickRejectionRatio; }
-    public double getOppositeWickRatio() { return cfg().oppositeWickRatio; }
     public boolean isEnableVolumeFilter() { return cfg().enableVolumeFilter; }
     public double getVolumeMultiple() { return cfg().volumeMultiple; }
     public int getVolumeLookback() { return cfg().volumeLookback; }
@@ -658,7 +656,6 @@ public class RiskSettingsStore {
     public void setSmallCandleBodyAtrThreshold(double v) { cfg().smallCandleBodyAtrThreshold = v; }
     public void setSmallCandleMoveAtrThreshold(double v) { cfg().smallCandleMoveAtrThreshold = v; }
     public void setWickRejectionRatio(double v) { cfg().wickRejectionRatio = v; }
-    public void setOppositeWickRatio(double v) { cfg().oppositeWickRatio = v; }
     public void setEnableVolumeFilter(boolean v) { cfg().enableVolumeFilter = v; }
     public void setVolumeMultiple(double v) { cfg().volumeMultiple = v; }
     public void setVolumeLookback(int v) { cfg().volumeLookback = Math.min(v, 20); }
@@ -689,7 +686,6 @@ public class RiskSettingsStore {
     public double getSmallCandleBodyAtrThreshold(String mode) { return cfgFor(mode).smallCandleBodyAtrThreshold; }
     public double getSmallCandleMoveAtrThreshold(String mode) { return cfgFor(mode).smallCandleMoveAtrThreshold; }
     public double getWickRejectionRatio(String mode) { return cfgFor(mode).wickRejectionRatio; }
-    public double getOppositeWickRatio(String mode) { return cfgFor(mode).oppositeWickRatio; }
     public boolean isEnableVolumeFilter(String mode) { return cfgFor(mode).enableVolumeFilter; }
     public double getVolumeMultiple(String mode) { return cfgFor(mode).volumeMultiple; }
     public int getVolumeLookback(String mode) { return cfgFor(mode).volumeLookback; }
@@ -718,7 +714,6 @@ public class RiskSettingsStore {
     public void setSmallCandleBodyAtrThreshold(String mode, double v) { cfgFor(mode).smallCandleBodyAtrThreshold = v; }
     public void setSmallCandleMoveAtrThreshold(String mode, double v) { cfgFor(mode).smallCandleMoveAtrThreshold = v; }
     public void setWickRejectionRatio(String mode, double v) { cfgFor(mode).wickRejectionRatio = v; }
-    public void setOppositeWickRatio(String mode, double v) { cfgFor(mode).oppositeWickRatio = v; }
     public void setEnableVolumeFilter(String mode, boolean v) { cfgFor(mode).enableVolumeFilter = v; }
     public void setVolumeMultiple(String mode, double v) { cfgFor(mode).volumeMultiple = v; }
     public void setVolumeLookback(String mode, int v) { cfgFor(mode).volumeLookback = Math.min(v, 20); }
@@ -819,7 +814,6 @@ public class RiskSettingsStore {
             upsert("smallCandleBodyAtrThreshold", String.valueOf(c.smallCandleBodyAtrThreshold));
             upsert("smallCandleMoveAtrThreshold", String.valueOf(c.smallCandleMoveAtrThreshold));
             upsert("wickRejectionRatio", String.valueOf(c.wickRejectionRatio));
-            upsert("oppositeWickRatio", String.valueOf(c.oppositeWickRatio));
             upsert("enableVolumeFilter", String.valueOf(c.enableVolumeFilter));
             upsert("volumeMultiple", String.valueOf(c.volumeMultiple));
             upsert("volumeLookback", String.valueOf(c.volumeLookback));
@@ -1002,7 +996,6 @@ public class RiskSettingsStore {
                     case "smallCandleBodyAtrThreshold" -> c.smallCandleBodyAtrThreshold = Double.parseDouble(v);
                     case "smallCandleMoveAtrThreshold" -> c.smallCandleMoveAtrThreshold = Double.parseDouble(v);
                     case "wickRejectionRatio" -> c.wickRejectionRatio = Double.parseDouble(v);
-                    case "oppositeWickRatio" -> c.oppositeWickRatio = Double.parseDouble(v);
                     case "enableVolumeFilter" -> c.enableVolumeFilter = Boolean.parseBoolean(v);
                     case "volumeMultiple" -> c.volumeMultiple = Double.parseDouble(v);
                     case "volumeLookback" -> c.volumeLookback = Integer.parseInt(v);
