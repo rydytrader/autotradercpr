@@ -379,8 +379,8 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Exit when NIFTY's reversal move touches its CPR boundary (early profit-take)</span>
                     </div>
                     <div class="form-hint">Macro defensive exit for trades taken in NIFTY reversal states. Evaluated on every stock 5-min candle close.
-                        <br>&nbsp;&nbsp;&bull; <b>BULLISH_REVERSAL</b> &mdash; NIFTY below CPR + bullish SMAs. We took LONG positions on stocks. When NIFTY climbs back to/past <b>CPR bottom</b>, the bullish move has played out (NIFTY entering CPR consolidation) &rarr; exit all LONG positions.
-                        <br>&nbsp;&nbsp;&bull; <b>BEARISH_REVERSAL</b> &mdash; NIFTY above CPR + bearish SMAs. We took SHORT positions. When NIFTY drops to/below <b>CPR top</b> &rarr; exit all SHORT positions.
+                        <br>&nbsp;&nbsp;&bull; <b>BULLISH_REVERSAL</b> &mdash; NIFTY below CPR + futures above VWAP. We took LONG positions on stocks. When NIFTY climbs back to/past <b>CPR bottom</b>, the bullish move has played out (NIFTY entering CPR consolidation) &rarr; exit all LONG positions.
+                        <br>&nbsp;&nbsp;&bull; <b>BEARISH_REVERSAL</b> &mdash; NIFTY above CPR + futures below VWAP. We took SHORT positions. When NIFTY drops to/below <b>CPR top</b> &rarr; exit all SHORT positions.
                         <br>Locks in the move's profit before NIFTY consolidates inside CPR and the trade goes against us. Cancels both OCO legs and places a market exit. Reason recorded: <code>NIFTY_REVERSAL_CPR_EXIT</code>.</div>
                 </div>
                 <div class="form-group">
@@ -728,35 +728,35 @@
                         <input type="checkbox" id="enableIndexAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable NIFTY trend alignment filter</span>
                     </div>
-                    <div class="form-hint">NIFTY trend state combines <b>three sticky factors</b>, all refreshed only at NIFTY's 5-min candle close:
-                        <br>&nbsp;&nbsp;&bull; <b>CPR</b>: NIFTY LTP above (bullish) or below (bearish) daily CPR
-                        <br>&nbsp;&nbsp;&bull; <b>SMA Price</b>: NIFTY LTP vs 5-min SMA 50, gated by SMA alignment. Bullish when SMA 20 &gt; 50 AND price &gt; SMA 50. Bearish when SMA 20 &lt; 50 AND price &lt; SMA 50. Trend stays intact through pullbacks toward SMA 20 &mdash; only a close through SMA 50 against the trend flips it to sideways.
-                        <br>&nbsp;&nbsp;&bull; <b>SMA Alignment</b>: 5-min SMA 20 &gt; 50 (bullish) or 20 &lt; 50 (bearish)
+                    <div class="form-hint">NIFTY trend state combines <b>two sticky factors</b>, both refreshed only at NIFTY's 5-min candle close (no live tick recomputation between bars):
+                        <br>&nbsp;&nbsp;&bull; <b>CPR</b>: NIFTY index's last-completed 5-min close above (bullish) or below (bearish) daily CPR. Inside CPR leaves this factor null.
+                        <br>&nbsp;&nbsp;&bull; <b>Futures VWAP</b>: NIFTY futures' last-completed 5-min close vs that same bar's stamped VWAP (Fyers ATP frozen at finalize). Close &gt; VWAP = bullish; close &lt; VWAP = bearish. Same-bar coherent &mdash; no mixing of live LTP with frozen VWAP.
                         <br>States:
-                        <br>&nbsp;&nbsp;&bull; <b>BULLISH</b> &mdash; CPR bullish + both SMA factors bullish; OR inside CPR + both SMA factors bullish (SMA structure drives the trend during NIFTY consolidation)
-                        <br>&nbsp;&nbsp;&bull; <b>BEARISH</b> &mdash; CPR bearish + both SMA factors bearish; OR inside CPR + both SMA factors bearish
-                        <br>&nbsp;&nbsp;&bull; <b>BULLISH REVERSAL</b> &mdash; CPR bearish but both SMA factors flipped bullish (downtrend rolling over)
-                        <br>&nbsp;&nbsp;&bull; <b>BEARISH REVERSAL</b> &mdash; CPR bullish but both SMA factors flipped bearish (uptrend rolling over)
-                        <br>&nbsp;&nbsp;&bull; <b>SIDEWAYS</b> &mdash; SMA factors mixed (whether CPR is determined or NIFTY is inside CPR)
-                        <br>&nbsp;&nbsp;&bull; <b>NEUTRAL</b> &mdash; LTP / CPR data missing, or SMAs not yet seeded
-                        <br>When this filter is on: buys require <b>BULLISH</b> or <b>BULLISH REVERSAL</b>; sells require <b>BEARISH</b> or <b>BEARISH REVERSAL</b>; SIDEWAYS / NEUTRAL / opposite-direction states skip the trade outright. Independent of the other NIFTY filters below; all can be enabled together.</div>
+                        <br>&nbsp;&nbsp;&bull; <b>BULLISH</b> &mdash; CPR bullish + futures vs VWAP bullish (clear trend agreement)
+                        <br>&nbsp;&nbsp;&bull; <b>BEARISH</b> &mdash; CPR bearish + futures vs VWAP bearish (mirror)
+                        <br>&nbsp;&nbsp;&bull; <b>BULLISH REVERSAL</b> &mdash; CPR bearish but futures vs VWAP flipped bullish (institutions buying despite spot below CPR &mdash; downtrend rolling over)
+                        <br>&nbsp;&nbsp;&bull; <b>BEARISH REVERSAL</b> &mdash; CPR bullish but futures vs VWAP flipped bearish (institutions selling despite spot above CPR &mdash; uptrend rolling over)
+                        <br>&nbsp;&nbsp;&bull; <b>SIDEWAYS</b> &mdash; one factor determined but the other null (inside CPR with futures determined, or vice versa)
+                        <br>&nbsp;&nbsp;&bull; <b>NEUTRAL</b> &mdash; both factors null (pre-market / no completed 5-min bar yet)
+                        <br>When this filter is on: buys require <b>BULLISH</b> or <b>BULLISH REVERSAL</b>; sells require <b>BEARISH</b> or <b>BEARISH REVERSAL</b>. SIDEWAYS / NEUTRAL / opposite-direction states downgrade the trade to <b>LPT</b> (if LPT is enabled in Filters tab) so misaligned trades still fire at reduced size, otherwise the signal is rejected as <b>MISALIGNED</b>. Independent of the other NIFTY filters below; all can be enabled together.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">NIFTY HTF Hurdle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableNiftyHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY's prior 1h close hasn't cleared its nearest weekly-levels hurdle</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY's prior 15-min close hasn't cleared its nearest weekly-levels hurdle</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min headroom to next hurdle:</span>
                         <input type="number" id="niftyHurdleMinHeadroomAtr" class="form-control" step="0.1" min="0" max="5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× NIFTY ATR (0 = off)</span>
                     </div>
-                    <div class="form-hint">Macro-level mirror of the per-stock HTF Hurdle, applied to NIFTY's own data. Identifies NIFTY's nearest weekly-levels hurdle in trade direction and rejects every stock signal while NIFTY's prior 1h close hasn't decisively cleared it.
+                    <div class="form-hint">Macro-level mirror of the per-stock HTF Hurdle, applied to NIFTY's own data. Identifies NIFTY's nearest weekly-levels hurdle in trade direction and rejects every stock signal while NIFTY's prior <b>15-min</b> close hasn't decisively cleared it. The 15-min boundary aligns to wall-clock quarters (9:30, 9:45, 10:00&hellip;); pre-9:30 IST no 15-min close exists yet so the filter silently fail-opens until the first one finalizes at 9:30.
                         <br>&nbsp;&nbsp;&bull; <b>Buys</b> &mdash; nearest of {weekly R1, PWH, weekly TC, weekly Pivot, weekly BC} below NIFTY LTP
                         <br>&nbsp;&nbsp;&bull; <b>Sells</b> &mdash; nearest of {weekly S1, PWL, weekly TC, weekly Pivot, weekly BC} above NIFTY LTP
-                        <br>Max Call/Put OI is now a separate filter (see below) so it can be toggled independently.
-                        <br><br><b>Headroom check.</b> Even after the past hurdle is cleared, the filter also checks the nearest hurdle in the <i>opposite</i> direction (above NIFTY LTP for buys / below for sells). If that upcoming hurdle is closer than <code>min headroom &times; NIFTY ATR</code>, the trade is rejected. Default <b>1.0</b> &times; ATR. Set to 0 to disable just the headroom check. Signal Trail bucket: <code>NIFTY_HURDLE</code>.</div>
+                        <br>Max Call/Put OI is a separate filter (see below) so it can be toggled independently.
+                        <br><br><b>Headroom check.</b> Even after the past hurdle is cleared, the filter also checks the nearest hurdle in the <i>opposite</i> direction (above NIFTY LTP for buys / below for sells). If that upcoming hurdle is closer than <code>min headroom &times; NIFTY ATR</code>, the trade is rejected. Default <b>1.0</b> &times; ATR (5-min ATR, matches the scanner timeframe so headroom reads against the bar size the bot actually trades on). Set to 0 to disable just the headroom check. Signal Trail bucket: <code>NIFTY_HURDLE</code>.
+                        <br><br><b>Hurdle guard capture.</b> When the filter passes against an actual hurdle (a level existed in trade direction and was cleared), the gating 15-min bar's <b>low</b> (for buys) / <b>high</b> (for sells) is captured onto the position record at entry &mdash; available for the <b>NIFTY HTF Hurdle Early Exit</b> defensive exit on the Risk tab.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">NIFTY OI Hurdle Filter</label>
@@ -805,21 +805,26 @@
                     <label class="form-label">NIFTY HTF Candle Direction Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableNiftyHtfCandleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy needs NIFTY's in-progress 1h candle <b>green</b>; sell needs <b>red</b></span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy needs a <b>bullish</b> NIFTY 15-min bar; sell needs a <b>bearish</b> one (body + dominant wick)</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject as wick-rejection candle when wick &gt;</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Dominant / opposing wick ratio &gt;</span>
                         <input type="number" id="niftyHtfCandleMaxWickRatio" class="form-control" step="0.1" min="0" max="10" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× body (0 = off)</span>
                     </div>
-                    <div class="form-hint">Macro-level mirror of the per-stock HTF Candle Direction Filter, applied to NIFTY's own 1h bar. When on, every stock breakout must agree with NIFTY's currently-forming 60-min candle body:
-                        <br>&nbsp;&nbsp;&bull; <b>Buy</b> &mdash; NIFTY 1h close &gt; NIFTY 1h open (green). Reject if NIFTY 1h is strictly red.
-                        <br>&nbsp;&nbsp;&bull; <b>Sell</b> &mdash; NIFTY 1h close &lt; NIFTY 1h open (red). Reject if NIFTY 1h is strictly green.
-                        <br><br><b>Wick rejection check.</b> Even a correct-color candle is rejected if the directional wick is too long relative to the body — a "rejection candle" pattern:
-                        <br>&nbsp;&nbsp;&bull; <b>Buy on green 1h</b>: reject if upper wick (high &minus; close) &gt; ratio &times; body. Buyers couldn't hold the highs &mdash; selling pressure capped the move.
-                        <br>&nbsp;&nbsp;&bull; <b>Sell on red 1h</b>: reject if lower wick (close &minus; low) &gt; ratio &times; body. Sellers couldn't hold the lows &mdash; buying pressure floored the move.
-                        <br>Default ratio <b>2.0</b> &mdash; wick must be more than twice the body. Set to 0 to disable just the wick check; the color check stays on.
-                        <br>Doji bodies skip the wick ratio. No in-progress NIFTY 1h bar yet &rarr; fail-open. Signal Trail bucket: <code>NIFTY_HTF_CANDLE_OPPOSED</code>.</div>
+                    <div class="form-hint">Macro-level filter applied to NIFTY's <b>last-completed 15-min candle</b> (synthesized from three 5-min bars; aligned to wall-clock quarters 9:30 / 9:45 / 10:00&hellip;). Two stages run in order &mdash; first wins rejects.
+                        <br><br><b>Stage 1 &mdash; directional classification (body color + dominant wick).</b> The bar's combined shape, not just body color, decides direction:
+                        <br>&nbsp;&nbsp;&bull; Green bar with small/normal upper wick &rarr; <b>bullish</b>
+                        <br>&nbsp;&nbsp;&bull; Red bar with small/normal lower wick &rarr; <b>bearish</b>
+                        <br>&nbsp;&nbsp;&bull; <b>Red bar with long lower wick (lower wick &gt; ratio &times; body) &rarr; bullish</b> &mdash; classic <i>hammer</i>, buyers stepped in heavily at the lows even though body closed red. Allows BUY.
+                        <br>&nbsp;&nbsp;&bull; <b>Green bar with long upper wick (upper wick &gt; ratio &times; body) &rarr; bearish</b> &mdash; classic <i>shooting star</i>, sellers stepped in heavily at the highs even though body closed green. Allows SELL.
+                        <br>Trade direction must match the classified direction; otherwise the rejection reason names the actual pattern (e.g. <i>"green shooting star &mdash; BUY needs bullish bar"</i>, <i>"red hammer &mdash; SELL needs bearish bar"</i>).
+                        <br><br><b>Stage 2 &mdash; opposing-side wick rejection.</b> Even after Stage 1 matches the trade direction, the wick on the OPPOSING side of the trade can still reject if it exceeds <code>ratio &times; body</code> &mdash; a contested move where counter-pressure was visible:
+                        <br>&nbsp;&nbsp;&bull; <b>BUY</b>: opposing wick = upper wick. Long upper wick = sellers pushed back at the top.
+                        <br>&nbsp;&nbsp;&bull; <b>SELL</b>: opposing wick = lower wick. Long lower wick = buyers pushed back at the bottom.
+                        <br>Same threshold reused for symmetry.
+                        <br><br>Default ratio <b>2.0</b>. Set to <b>0</b> to disable both stages' wick logic &mdash; filter degenerates to pure body-color check (red rejects BUY, green rejects SELL, no hammer/shooting-star overrides).
+                        <br>Doji bodies (close == open) pass both directions &mdash; direction can't be determined, fail-open. Before 9:30 IST no completed 15-min bar exists &rarr; fail-open. Signal Trail bucket: <code>NIFTY_HTF_CANDLE_OPPOSED</code>.</div>
                 </div>
             </div>
         </div>
