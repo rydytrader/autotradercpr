@@ -1368,9 +1368,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 ? ("BULLISH".equals(state) || "BULLISH_REVERSAL".equals(state))
                 : ("BEARISH".equals(state) || "BEARISH_REVERSAL".equals(state));
             if (aligned) return NiftyAlignStatus.OK;
+            // Log as MISALIGNED (not SKIPPED) — caller decides whether to actually skip or
+            // downgrade-to-LPT. The downgrade-to-LPT path logs its own "downgraded to LPT"
+            // line immediately after this.
             eventService.log("[SCANNER] " + fyersSymbol + " " + setup
-                + " SKIPPED — NIFTY " + state + ", need "
-                + (isBuy ? "BULLISH or BULLISH_REVERSAL for buy" : "BEARISH or BEARISH_REVERSAL for sell"));
+                + " NIFTY MISALIGNED — NIFTY " + state + ", trade direction needs "
+                + (isBuy ? "BULLISH or BULLISH_REVERSAL" : "BEARISH or BEARISH_REVERSAL"));
             return NiftyAlignStatus.SKIP;
         } catch (Exception e) {
             log.warn("[BreakoutScanner] Index alignment check failed for {}: {}", fyersSymbol, e.getMessage());
