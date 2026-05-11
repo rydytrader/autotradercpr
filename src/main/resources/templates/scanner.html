@@ -480,6 +480,7 @@
             <button id="virginCprIconBtn" onclick="openVirginCprModal()" title="Active Virgin CPR — click for details" style="display:none;background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.4);border-radius:4px;padding:3px 6px;margin-left:6px;cursor:pointer;color:#fbbf24;line-height:0;align-items:center;">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
             </button>
+            <div class="nifty-ltp" id="niftyLtp" style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; margin-left:12px; color:var(--text-primary);" title="NIFTY 50 live LTP">—</div>
             <div class="nifty-cpr-width" id="niftyCprWidth" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY daily CPR width vs scanner thresholds (Narrow / Normal / Wide)">—</div>
             <div class="nifty-cpr" id="niftyCprBias" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY index 5-min close vs daily CPR (above CPR top / below CPR bottom). Refreshes only on NIFTY 5-min candle close.">—</div>
             <div class="nifty-fut-vwap" id="niftyFutVwap" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY futures 5-min close vs that bar's VWAP (Fyers ATP). Refreshes only on NIFTY 5-min candle close.">—</div>
@@ -1095,6 +1096,7 @@
     function refreshNiftyCard() {
         fetch('/api/index/nifty').then(function(r) { return r.json(); }).then(function(d) {
             if (!d || !d.dataAvailable) {
+                var lp0 = document.getElementById('niftyLtp');      if (lp0) lp0.textContent = '—';
                 var cw0 = document.getElementById('niftyCprWidth'); if (cw0) { cw0.textContent = '—'; cw0.style.color = 'var(--text-muted)'; }
                 var cb0 = document.getElementById('niftyCprBias'); if (cb0) { cb0.textContent = '—'; cb0.style.color = 'var(--text-muted)'; }
                 var fv0 = document.getElementById('niftyFutVwap'); if (fv0) { fv0.textContent = '—'; fv0.style.color = 'var(--text-muted)'; }
@@ -1111,6 +1113,13 @@
             document.getElementById('niftyCard').className = 'nifty-card nifty-card-' + stateLowerEarly;
 
             document.getElementById('niftyState').textContent = (d.state || 'NEUTRAL').replace('_', ' ');
+
+            // NIFTY LTP (live tick during session, bhavcopy prev close pre-market/weekends).
+            var lpEl = document.getElementById('niftyLtp');
+            if (lpEl) {
+                var lp = +d.ltp || 0;
+                lpEl.textContent = lp > 0 ? lp.toFixed(2) : '—';
+            }
 
             // CPR width category — NARROW (below narrowCprMaxWidth) or WIDE (at/above).
             var cwEl = document.getElementById('niftyCprWidth');

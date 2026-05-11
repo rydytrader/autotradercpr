@@ -211,16 +211,15 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         trend.setSymbol(NIFTY_SYMBOL);
         trend.setDisplayName(NIFTY_DISPLAY);
 
-        // Live LTP for display fallback (the trend factors themselves do NOT use it). On
-        // weekends / pre-market when no tick is flowing, fall back to bhavcopy's prev close
-        // so the card still has a non-zero LTP value to gate the render on.
+        // LTP for the card. Live tick if flowing; otherwise fall back to bhavcopy's prev
+        // close so pre-market / weekends still show a meaningful number instead of 0.
         double liveTickLtp = marketDataService.getLtp(NIFTY_SYMBOL);
         double displayLtp = liveTickLtp;
         if (displayLtp <= 0) {
             var fallbackCpr = bhavcopyService.getCprLevels("NIFTY50");
             if (fallbackCpr != null) displayLtp = fallbackCpr.getClose();
         }
-        trend.setLtp(liveTickLtp);
+        trend.setLtp(displayLtp);
 
         // Live breadth (advancers/decliners across NIFTY 50). Updates every poll — display only.
         int advancers = 0, decliners = 0, breadthCount = 0;
