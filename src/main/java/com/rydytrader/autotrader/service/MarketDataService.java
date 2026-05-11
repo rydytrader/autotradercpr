@@ -433,10 +433,13 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         // Derive breakout level (base) from setup + current CPR data
         CprLevels cpr = bhavcopyService.getCprLevels(fyersSymbol);
         if (cpr == null) return;
+        // VWAP setups (BUY_ABOVE_VWAP / SELL_BELOW_VWAP) use live Fyers ATP as the base level.
+        // CPR setups return 0 for the vwap argument since their switch cases ignore it.
         double base = SignalProcessor.computeBreakoutLevel(setup,
             cpr.getR1(), cpr.getR2(), cpr.getR3(), cpr.getR4(),
             cpr.getS1(), cpr.getS2(), cpr.getS3(), cpr.getS4(),
-            cpr.getPh(), cpr.getPl(), cpr.getTc(), cpr.getBc());
+            cpr.getPh(), cpr.getPl(), cpr.getTc(), cpr.getBc(),
+            candleAggregator.getAtp(fyersSymbol));
         if (base <= 0) {
             log.debug("[TrailingSL] {} — no base for setup={}, skipping", fyersSymbol, setup);
             return;

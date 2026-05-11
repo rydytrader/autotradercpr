@@ -889,6 +889,14 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             String hit = checkBuyAtLevel("BUY_ABOVE_S4", s4, open, high, low, close, atrForPattern, broken, armed, fyersSymbol);
             if (hit != null) return hit;
         }
+        // VWAP — appended at the end of the priority chain so CPR levels always win on a
+        // simultaneous break. Live per-stock VWAP (Fyers ATP). getAtp returns 0 if stale-day
+        // or pre-9:30 (no ticks yet); the guard short-circuits silently in that case.
+        double vwapBuy = candleAggregator.getAtp(fyersSymbol);
+        if (vwapBuy > 0) {
+            String hit = checkBuyAtLevel("BUY_ABOVE_VWAP", vwapBuy, open, high, low, close, atrForPattern, broken, armed, fyersSymbol);
+            if (hit != null) return hit;
+        }
 
         return null;
     }
@@ -1005,6 +1013,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         }
         if (r4v > 0) {
             String hit = checkSellAtLevel("SELL_BELOW_R4", r4v, open, high, low, close, atrForPattern, broken, armed, fyersSymbol);
+            if (hit != null) return hit;
+        }
+        // VWAP — appended at the end of the priority chain (mirror of buy side).
+        double vwapSell = candleAggregator.getAtp(fyersSymbol);
+        if (vwapSell > 0) {
+            String hit = checkSellAtLevel("SELL_BELOW_VWAP", vwapSell, open, high, low, close, atrForPattern, broken, armed, fyersSymbol);
             if (hit != null) return hit;
         }
 
@@ -1330,6 +1344,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         payload.put("bc", levels.getBc());
         payload.put("dayHigh", candleAggregator.getDayHighBeforeLast(fyersSymbol));
         payload.put("dayLow", candleAggregator.getDayLowBeforeLast(fyersSymbol));
+        // VWAP is needed by SignalProcessor for BUY_ABOVE_VWAP / SELL_BELOW_VWAP setups
+        // (breakout level + structural SL anchor). Captured here at fire time so the entry
+        // uses the same VWAP value the scanner detected the break against.
+        payload.put("vwap", candleAggregator.getAtp(fyersSymbol));
         if (scannerNote != null && !scannerNote.isEmpty()) payload.put("scannerNote", scannerNote);
 
         // 5-min SMA trend + pattern snapshot at signal time
@@ -2296,16 +2314,17 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
     /**
      * Recompute the active armed buy / sell setup for this symbol from the current close.
-     * Single armed level per direction, rolling with price:
+     * Single armed level per direction, rolling with price. VWAP joins the CPR levels as a
+     * peer candidate (its value comes from live Fyers ATP), so when VWAP sits closer to
+     * close than any CPR neighbor on the trade-direction side, it wins arming.
      * <ul>
-     *   <li>Armed buy = the highest CPR-level setup whose level &lt; close (closest broken-above
-     *       level — the one the next dip would naturally retest).</li>
-     *   <li>Armed sell = the lowest CPR-level setup whose level &gt; close (closest
-     *       broken-below-from-above level — the one the next pop would retest).</li>
+     *   <li>Armed buy = the candidate with the highest level value strictly below close
+     *       (closest broken-above level — the one the next dip would naturally retest).</li>
+     *   <li>Armed sell = the candidate with the lowest level value strictly above close
+     *       (closest broken-below-from-above level — the one the next pop would retest).</li>
      * </ul>
-     * If no level qualifies (e.g., close above R4 — nothing higher to retest from), the
-     * corresponding side is cleared. Recomputed on every candle close so the armed level
-     * tracks where price actually is, not stale historical breaks.
+     * If no candidate qualifies, the corresponding side is cleared. Recomputed on every
+     * candle close so the armed level tracks where price actually is.
      */
     private void armLevelsForCandle(String fyersSymbol, double close, CprLevels levels) {
         if (close <= 0 || levels == null) return;
@@ -2322,31 +2341,36 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double r1phLo = Math.min(r1, ph);    // lower edge (used for sell retest)
         double s1pl   = Math.max(s1, pl);    // upper edge of S1+PDL zone (used for buy retest)
         double s1plLo = Math.min(s1, pl);    // lower edge (used for sell retest)
+        double vwap   = candleAggregator.getAtp(fyersSymbol);
 
-        // Buy-side: scan from highest level to lowest; first one strictly below close wins.
-        // Order matches the priority loop in detectBuyBreakout.
+        // Buy-side: pick the candidate with the HIGHEST level value strictly BELOW close.
+        // VWAP is just another peer level in the candidate set.
         String buy = null;
-        if      (r4 > 0    && close > r4)    buy = "BUY_ABOVE_R4";
-        else if (r3 > 0    && close > r3)    buy = "BUY_ABOVE_R3";
-        else if (r2 > 0    && close > r2)    buy = "BUY_ABOVE_R2";
-        else if (r1ph > 0  && close > r1ph)  buy = "BUY_ABOVE_R1_PDH";
-        else if (cprTop > 0 && close > cprTop) buy = "BUY_ABOVE_CPR";
-        else if (s1pl > 0  && close > s1pl)  buy = "BUY_ABOVE_S1_PDL";
-        else if (s2 > 0    && close > s2)    buy = "BUY_ABOVE_S2";
-        else if (s3 > 0    && close > s3)    buy = "BUY_ABOVE_S3";
-        else if (s4 > 0    && close > s4)    buy = "BUY_ABOVE_S4";
+        double bestBuyLevel = -Double.MAX_VALUE;
+        if (r4    > 0 && close > r4    && r4    > bestBuyLevel) { bestBuyLevel = r4;    buy = "BUY_ABOVE_R4"; }
+        if (r3    > 0 && close > r3    && r3    > bestBuyLevel) { bestBuyLevel = r3;    buy = "BUY_ABOVE_R3"; }
+        if (r2    > 0 && close > r2    && r2    > bestBuyLevel) { bestBuyLevel = r2;    buy = "BUY_ABOVE_R2"; }
+        if (r1ph  > 0 && close > r1ph  && r1ph  > bestBuyLevel) { bestBuyLevel = r1ph;  buy = "BUY_ABOVE_R1_PDH"; }
+        if (cprTop > 0 && close > cprTop && cprTop > bestBuyLevel) { bestBuyLevel = cprTop; buy = "BUY_ABOVE_CPR"; }
+        if (s1pl  > 0 && close > s1pl  && s1pl  > bestBuyLevel) { bestBuyLevel = s1pl;  buy = "BUY_ABOVE_S1_PDL"; }
+        if (s2    > 0 && close > s2    && s2    > bestBuyLevel) { bestBuyLevel = s2;    buy = "BUY_ABOVE_S2"; }
+        if (s3    > 0 && close > s3    && s3    > bestBuyLevel) { bestBuyLevel = s3;    buy = "BUY_ABOVE_S3"; }
+        if (s4    > 0 && close > s4    && s4    > bestBuyLevel) { bestBuyLevel = s4;    buy = "BUY_ABOVE_S4"; }
+        if (vwap  > 0 && close > vwap  && vwap  > bestBuyLevel) { bestBuyLevel = vwap;  buy = "BUY_ABOVE_VWAP"; }
 
-        // Sell-side: scan from lowest level to highest; first one strictly above close wins.
+        // Sell-side: pick the candidate with the LOWEST level value strictly ABOVE close.
         String sell = null;
-        if      (s4 > 0    && close < s4)    sell = "SELL_BELOW_S4";
-        else if (s3 > 0    && close < s3)    sell = "SELL_BELOW_S3";
-        else if (s2 > 0    && close < s2)    sell = "SELL_BELOW_S2";
-        else if (s1plLo > 0 && close < s1plLo) sell = "SELL_BELOW_S1_PDL";
-        else if (cprBot > 0 && close < cprBot) sell = "SELL_BELOW_CPR";
-        else if (r1phLo > 0 && close < r1phLo) sell = "SELL_BELOW_R1_PDH";
-        else if (r2 > 0    && close < r2)    sell = "SELL_BELOW_R2";
-        else if (r3 > 0    && close < r3)    sell = "SELL_BELOW_R3";
-        else if (r4 > 0    && close < r4)    sell = "SELL_BELOW_R4";
+        double bestSellLevel = Double.MAX_VALUE;
+        if (s4     > 0 && close < s4     && s4     < bestSellLevel) { bestSellLevel = s4;     sell = "SELL_BELOW_S4"; }
+        if (s3     > 0 && close < s3     && s3     < bestSellLevel) { bestSellLevel = s3;     sell = "SELL_BELOW_S3"; }
+        if (s2     > 0 && close < s2     && s2     < bestSellLevel) { bestSellLevel = s2;     sell = "SELL_BELOW_S2"; }
+        if (s1plLo > 0 && close < s1plLo && s1plLo < bestSellLevel) { bestSellLevel = s1plLo; sell = "SELL_BELOW_S1_PDL"; }
+        if (cprBot > 0 && close < cprBot && cprBot < bestSellLevel) { bestSellLevel = cprBot; sell = "SELL_BELOW_CPR"; }
+        if (r1phLo > 0 && close < r1phLo && r1phLo < bestSellLevel) { bestSellLevel = r1phLo; sell = "SELL_BELOW_R1_PDH"; }
+        if (r2     > 0 && close < r2     && r2     < bestSellLevel) { bestSellLevel = r2;     sell = "SELL_BELOW_R2"; }
+        if (r3     > 0 && close < r3     && r3     < bestSellLevel) { bestSellLevel = r3;     sell = "SELL_BELOW_R3"; }
+        if (r4     > 0 && close < r4     && r4     < bestSellLevel) { bestSellLevel = r4;     sell = "SELL_BELOW_R4"; }
+        if (vwap   > 0 && close < vwap   && vwap   < bestSellLevel) { bestSellLevel = vwap;   sell = "SELL_BELOW_VWAP"; }
 
         if (buy != null)  armedBuyLevel.put(fyersSymbol, buy);
         else              armedBuyLevel.remove(fyersSymbol);
