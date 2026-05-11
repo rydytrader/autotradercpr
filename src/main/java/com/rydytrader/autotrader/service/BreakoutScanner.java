@@ -90,13 +90,16 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      *  above the latest close. Mirror of {@link #armedBuyLevel}. */
     private final ConcurrentHashMap<String, String> armedSellLevel = new ConcurrentHashMap<>();
     /** Trigger-route tag for the most recent fired signal — picked up by fireSignal so the
-     *  trade-log description records which path entered. Route 1 fresh breakouts are tagged
-     *  "MARUBOZU_BREAKOUT" / "MARUBOZU_RETEST" depending on whether the bar broke fresh or
-     *  retested. Route 2 fresh breakouts (any non-marubozu pattern that broke the level for
-     *  the first time today) are all tagged "GOOD_SIZE_CANDLE_BREAKOUT". Route 2 genuine
-     *  retests keep their pattern-specific tag ("HAMMER_RETEST", "ENGULFING_RETEST",
-     *  "PIERCING_RETEST", "TWEEZER_RETEST", "DOJI_RETEST", "STAR_RETEST", "HARAMI_RETEST").
-     *  Per-symbol, accessed only on the candle-close thread for that symbol. */
+     *  trade-log description records which path entered. Route 1 (marubozu) tags as
+     *  "MARUBOZU_BREAKOUT" (fresh) / "MARUBOZU_RETEST" (level was already crossed earlier).
+     *  Route 2 splits by prior-bar state: <b>fresh breaks</b> gate only on body strength
+     *  (no pattern math with prev bar — the relationship is incidental for fresh breaks)
+     *  and tag as "GOOD_SIZE_CANDLE_BREAKOUT". <b>Retests</b> (prev close already crossed
+     *  the level) run the full pattern-matcher set (hammer/engulfing/piercing/tweezer/doji/
+     *  star/harami) and tag with their pattern-specific name: "HAMMER_RETEST",
+     *  "ENGULFING_RETEST", "PIERCING_RETEST", "TWEEZER_RETEST", "DOJI_RETEST",
+     *  "STAR_RETEST", "HARAMI_RETEST". Per-symbol, accessed only on the candle-close thread
+     *  for that symbol. */
     private final ConcurrentHashMap<String, String> lastTriggerRoute = new ConcurrentHashMap<>();
     /** Pending NIFTY HTF Hurdle break-guard per stock symbol. Set by checkNiftyHurdle when the
      *  filter passes AND a hurdle existed in trade direction (i.e., the NIFTY 15-min close
@@ -1051,47 +1054,64 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double starMid   = riskSettings.getStarMiddleBodyMaxMultOfOuter();
         double haramiBody = riskSettings.getHaramiBodyAtrMult();
         double haramiInner = riskSettings.getHaramiInnerBodyMaxRatio();
-        // Fresh-break vs genuine-retest tag: if the prior 5m candle's close was already past
-        // the level, the level was broken earlier today and this bar is a retest (the
-        // pattern-name-specific tag, e.g. ENGULFING_RETEST). If prev close was at-or-below
-        // the level for a buy, this bar is the fresh break that armed the level — tag it as
-        // GOOD_SIZE_CANDLE_BREAKOUT (it's a clean breakout that didn't qualify as marubozu,
-        // since Route 1 already filtered marubozus above).
+        // Fresh-break vs genuine-retest split. If the prior 5m close already crossed the level,
+        // the level was broken earlier today and the current bar is a retest — run the existing
+        // pattern matchers (hammer/engulfing/piercing/tweezer/doji/star/harami), tag with their
+        // pattern-specific *_RETEST name. If prev close was at-or-below the level for a buy
+        // (fresh break), the previous-bar relationship is incidental — skip the pattern math
+        // entirely and gate on a single body-strength check (body ≥ N × ATR, directional close,
+        // pass large-candle filter). Tag as GOOD_SIZE_CANDLE_BREAKOUT. Marubozus were already
+        // filtered in Route 1 above, so anything reaching here on a fresh break is by definition
+        // a "non-marubozu good-size candle".
         boolean isRetest = (prev != null && prev.close > level);
-        String breakoutTag = "GOOD_SIZE_CANDLE_BREAKOUT";
+
+        if (!isRetest) {
+            // Fresh-break path: body-strength gate only, no pattern matching with prev bar.
+            double goodSizeBody = riskSettings.getGoodSizeCandleBodyAtrMult();
+            double body = close - open;
+            if (close > open
+                    && (goodSizeBody <= 0 || (atr > 0 && body >= goodSizeBody * atr))
+                    && !isLargeCandleBlocked(body, atr)) {
+                lastTriggerRoute.put(fyersSymbol, "GOOD_SIZE_CANDLE_BREAKOUT");
+                return setupName;
+            }
+            return null;
+        }
+
+        // Retest path: pattern matchers as before.
         // Hammer (1 bar)
         if (CandlePatternDetector.isBullishHammer(open, high, low, close, pinReject, pinOpp)
                 && low <= level
                 && !isLargeCandleBlocked(Math.abs(close - open), atr)) {
-            lastTriggerRoute.put(fyersSymbol, isRetest ? "HAMMER_RETEST" : breakoutTag);
+            lastTriggerRoute.put(fyersSymbol, "HAMMER_RETEST");
             return setupName;
         }
         // Bullish engulfing (2 bars)
         if (prev != null && CandlePatternDetector.isBullishEngulfing(prev, curr, engMin, atr, engAtr)
                 && Math.min(prev.low, curr.low) <= level
                 && !isLargeCandleBlocked(close - open, atr)) {
-            lastTriggerRoute.put(fyersSymbol, isRetest ? "ENGULFING_RETEST" : breakoutTag);
+            lastTriggerRoute.put(fyersSymbol, "ENGULFING_RETEST");
             return setupName;
         }
         // Piercing line (2 bars) — partial reversal, weaker than engulfing
         if (prev != null && CandlePatternDetector.isPiercingLine(prev, curr, atr, pierPrev, pierPen)
                 && Math.min(prev.low, curr.low) <= level
                 && !isLargeCandleBlocked(close - open, atr)) {
-            lastTriggerRoute.put(fyersSymbol, isRetest ? "PIERCING_RETEST" : breakoutTag);
+            lastTriggerRoute.put(fyersSymbol, "PIERCING_RETEST");
             return setupName;
         }
         // Tweezer bottom (2 bars) — matching lows, color flip, body sizing relaxed
         if (prev != null && CandlePatternDetector.isTweezerBottom(prev, curr, atr, tweezPrev, tweezMatch)
                 && Math.min(prev.low, curr.low) <= level) {
             // Body unconstrained for tweezer — matching extreme is the signature, no large-body check.
-            lastTriggerRoute.put(fyersSymbol, isRetest ? "TWEEZER_RETEST" : breakoutTag);
+            lastTriggerRoute.put(fyersSymbol, "TWEEZER_RETEST");
             return setupName;
         }
         // Bullish doji reversal (2 bars)
         if (prev != null && CandlePatternDetector.isBullishDojiReversal(prev, curr, atr, dojiBody, dojiPrev)
                 && Math.min(prev.low, curr.low) <= level) {
             // Doji is intentionally a tiny body; large-candle filter doesn't apply.
-            lastTriggerRoute.put(fyersSymbol, isRetest ? "DOJI_RETEST" : breakoutTag);
+            lastTriggerRoute.put(fyersSymbol, "DOJI_RETEST");
             return setupName;
         }
         // Morning star (3 bars) — pull bars from the deque.
@@ -1100,7 +1120,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 && CandlePatternDetector.isMorningStar(bar1, prev, curr, atr, starOuter, starMid)
                 && Math.min(Math.min(bar1.low, prev.low), curr.low) <= level
                 && !isLargeCandleBlocked(close - open, atr)) {
-            lastTriggerRoute.put(fyersSymbol, isRetest ? "STAR_RETEST" : breakoutTag);
+            lastTriggerRoute.put(fyersSymbol, "STAR_RETEST");
             return setupName;
         }
         // Three Inside Up (3-bar harami + confirmation)
@@ -1108,7 +1128,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 && CandlePatternDetector.isThreeInsideUp(bar1, prev, curr, atr, haramiBody, haramiInner)
                 && Math.min(Math.min(bar1.low, prev.low), curr.low) <= level
                 && !isLargeCandleBlocked(close - open, atr)) {
-            lastTriggerRoute.put(fyersSymbol, isRetest ? "HARAMI_RETEST" : breakoutTag);
+            lastTriggerRoute.put(fyersSymbol, "HARAMI_RETEST");
             return setupName;
         }
         return null;
@@ -1155,44 +1175,58 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double starMid   = riskSettings.getStarMiddleBodyMaxMultOfOuter();
         double haramiBody = riskSettings.getHaramiBodyAtrMult();
         double haramiInner = riskSettings.getHaramiInnerBodyMaxRatio();
-        // Fresh-break vs genuine-retest tag (mirror of buy logic): if the prior 5m candle's
-        // close was already below the level for a sell, the level was broken down earlier
-        // today and this bar is a retest from below (pattern-specific _RETEST tag). If prev
-        // close was at-or-above the level, this bar is the fresh breakdown that armed the
-        // level — tag it as GOOD_SIZE_CANDLE_BREAKOUT (Route 1 already filtered marubozus).
+        // Fresh-break vs genuine-retest split (mirror of buy logic). If prev 5m close already
+        // crossed below the level, the level broke down earlier today and the current bar is
+        // a retest from below — run the existing pattern matchers, tag *_RETEST. If prev close
+        // was at-or-above the level, this bar is a fresh breakdown — gate on body strength
+        // only (no pattern math with prev bar) and tag GOOD_SIZE_CANDLE_BREAKOUT.
         boolean isRetest = (prev != null && prev.close < level);
-        String breakoutTag = "GOOD_SIZE_CANDLE_BREAKOUT";
+
+        if (!isRetest) {
+            // Fresh-breakdown path: body-strength gate only.
+            double goodSizeBody = riskSettings.getGoodSizeCandleBodyAtrMult();
+            double body = open - close;
+            if (close < open
+                    && (goodSizeBody <= 0 || (atr > 0 && body >= goodSizeBody * atr))
+                    && !isLargeCandleBlocked(body, atr)) {
+                lastTriggerRoute.put(fyersSymbol, "GOOD_SIZE_CANDLE_BREAKOUT");
+                return setupName;
+            }
+            return null;
+        }
+
+        // Retest path: pattern matchers as before.
         // Shooting star (1 bar)
         if (CandlePatternDetector.isShootingStar(open, high, low, close, pinReject, pinOpp)
                 && high >= level
                 && !isLargeCandleBlocked(Math.abs(close - open), atr)) {
-            lastTriggerRoute.put(fyersSymbol, isRetest ? "HAMMER_RETEST" : breakoutTag);
+            lastTriggerRoute.put(fyersSymbol, "HAMMER_RETEST");
             return setupName;
         }
         // Bearish engulfing (2 bars)
         if (prev != null && CandlePatternDetector.isBearishEngulfing(prev, curr, engMin, atr, engAtr)
                 && Math.max(prev.high, curr.high) >= level
                 && !isLargeCandleBlocked(open - close, atr)) {
-            lastTriggerRoute.put(fyersSymbol, isRetest ? "ENGULFING_RETEST" : breakoutTag);
+            lastTriggerRoute.put(fyersSymbol, "ENGULFING_RETEST");
             return setupName;
         }
         // Dark cloud cover (2 bars) — partial reversal, weaker than engulfing
         if (prev != null && CandlePatternDetector.isDarkCloudCover(prev, curr, atr, pierPrev, pierPen)
                 && Math.max(prev.high, curr.high) >= level
                 && !isLargeCandleBlocked(open - close, atr)) {
-            lastTriggerRoute.put(fyersSymbol, isRetest ? "PIERCING_RETEST" : breakoutTag);
+            lastTriggerRoute.put(fyersSymbol, "PIERCING_RETEST");
             return setupName;
         }
         // Tweezer top (2 bars) — matching highs, color flip, body sizing relaxed
         if (prev != null && CandlePatternDetector.isTweezerTop(prev, curr, atr, tweezPrev, tweezMatch)
                 && Math.max(prev.high, curr.high) >= level) {
-            lastTriggerRoute.put(fyersSymbol, isRetest ? "TWEEZER_RETEST" : breakoutTag);
+            lastTriggerRoute.put(fyersSymbol, "TWEEZER_RETEST");
             return setupName;
         }
         // Bearish doji reversal (2 bars)
         if (prev != null && CandlePatternDetector.isBearishDojiReversal(prev, curr, atr, dojiBody, dojiPrev)
                 && Math.max(prev.high, curr.high) >= level) {
-            lastTriggerRoute.put(fyersSymbol, isRetest ? "DOJI_RETEST" : breakoutTag);
+            lastTriggerRoute.put(fyersSymbol, "DOJI_RETEST");
             return setupName;
         }
         // Evening star (3 bars)
@@ -1201,7 +1235,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 && CandlePatternDetector.isEveningStar(bar1, prev, curr, atr, starOuter, starMid)
                 && Math.max(Math.max(bar1.high, prev.high), curr.high) >= level
                 && !isLargeCandleBlocked(open - close, atr)) {
-            lastTriggerRoute.put(fyersSymbol, isRetest ? "STAR_RETEST" : breakoutTag);
+            lastTriggerRoute.put(fyersSymbol, "STAR_RETEST");
             return setupName;
         }
         // Three Inside Down (3-bar harami + confirmation)
@@ -1209,7 +1243,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 && CandlePatternDetector.isThreeInsideDown(bar1, prev, curr, atr, haramiBody, haramiInner)
                 && Math.max(Math.max(bar1.high, prev.high), curr.high) >= level
                 && !isLargeCandleBlocked(open - close, atr)) {
-            lastTriggerRoute.put(fyersSymbol, isRetest ? "HARAMI_RETEST" : breakoutTag);
+            lastTriggerRoute.put(fyersSymbol, "HARAMI_RETEST");
             return setupName;
         }
         return null;

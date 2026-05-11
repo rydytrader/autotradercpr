@@ -76,6 +76,15 @@ public class RiskSettingsStore {
         // Morning / evening star: bar1 + bar3 body ≥ N × ATR; bar2 body ≤ N × bar1 body.
         volatile double starOuterBodyAtrMult        = 0.5;
         volatile double starMiddleBodyMaxMultOfOuter = 0.3;
+        // GOOD_SIZE_CANDLE_BREAKOUT (Route 2 fresh-break gate). When the prior 5-min close hasn't
+        // already crossed the level, the breakout bar fires as a Route 2 fresh break — no longer
+        // requires a pattern relationship with the previous bar (since the prev-bar relationship
+        // for engulfing/piercing/etc. was incidental for fresh breaks). Body must be ≥ N × ATR,
+        // directional (close > open for buys, close < open for sells), and pass the
+        // large-candle filter. Sits between engulfing's 0.5 floor and marubozu's 1.0 — the bar
+        // needs decent body but doesn't have to be marubozu-shaved. Set to 0 to fire every
+        // fresh break that broke the level regardless of body size.
+        volatile double goodSizeCandleBodyAtrMult   = 0.6;
         volatile boolean enableTargetShift = true; // shift target to next level if default target < threshold ATR. If false, skip the entry.
         volatile boolean enableGapCheck = true;     // halve qty if day open or first candle beyond R2/S2
         volatile boolean enableDayHighLowTargetShift = true; // shift target to day high/low if between entry and target
@@ -427,6 +436,7 @@ public class RiskSettingsStore {
     public double getDojiPrevBodyAtrMult()         { return cfg().dojiPrevBodyAtrMult; }
     public double getStarOuterBodyAtrMult()        { return cfg().starOuterBodyAtrMult; }
     public double getStarMiddleBodyMaxMultOfOuter() { return cfg().starMiddleBodyMaxMultOfOuter; }
+    public double getGoodSizeCandleBodyAtrMult()   { return cfg().goodSizeCandleBodyAtrMult; }
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
     public boolean isEnableSmaCrossExit() { return cfg().enableSmaCrossExit; }
     public boolean isEnablePriceSmaExit() { return cfg().enablePriceSmaExit; }
@@ -604,6 +614,7 @@ public class RiskSettingsStore {
     public void setDojiPrevBodyAtrMult(double v)         { cfg().dojiPrevBodyAtrMult = v; }
     public void setStarOuterBodyAtrMult(double v)        { cfg().starOuterBodyAtrMult = v; }
     public void setStarMiddleBodyMaxMultOfOuter(double v) { cfg().starMiddleBodyMaxMultOfOuter = v; }
+    public void setGoodSizeCandleBodyAtrMult(double v)   { cfg().goodSizeCandleBodyAtrMult = v; }
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
     public void setEnableSmaCrossExit(boolean v) { cfg().enableSmaCrossExit = v; }
     public void setEnablePriceSmaExit(boolean v) { cfg().enablePriceSmaExit = v; }
@@ -792,6 +803,7 @@ public class RiskSettingsStore {
             upsert("dojiPrevBodyAtrMult", String.valueOf(c.dojiPrevBodyAtrMult));
             upsert("starOuterBodyAtrMult", String.valueOf(c.starOuterBodyAtrMult));
             upsert("starMiddleBodyMaxMultOfOuter", String.valueOf(c.starMiddleBodyMaxMultOfOuter));
+            upsert("goodSizeCandleBodyAtrMult", String.valueOf(c.goodSizeCandleBodyAtrMult));
             upsert("smallCandleAtrThreshold", String.valueOf(c.smallCandleAtrThreshold));
             upsert("smallCandleBodyAtrThreshold", String.valueOf(c.smallCandleBodyAtrThreshold));
             upsert("smallCandleMoveAtrThreshold", String.valueOf(c.smallCandleMoveAtrThreshold));
@@ -968,6 +980,7 @@ public class RiskSettingsStore {
                     case "dojiPrevBodyAtrMult"         -> c.dojiPrevBodyAtrMult = Double.parseDouble(v);
                     case "starOuterBodyAtrMult"        -> c.starOuterBodyAtrMult = Double.parseDouble(v);
                     case "starMiddleBodyMaxMultOfOuter" -> c.starMiddleBodyMaxMultOfOuter = Double.parseDouble(v);
+                    case "goodSizeCandleBodyAtrMult"   -> c.goodSizeCandleBodyAtrMult = Double.parseDouble(v);
                     case "smallCandleAtrThreshold" -> {
                         // Legacy single knob: also seed the new split fields if those keys haven't been
                         // saved yet. Once the user saves the new fields explicitly, this no-op overwrites
