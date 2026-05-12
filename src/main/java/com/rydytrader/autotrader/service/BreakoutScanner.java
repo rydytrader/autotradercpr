@@ -83,10 +83,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     private final ConcurrentHashMap<String, String> armedSellLevel = new ConcurrentHashMap<>();
     /** Trigger-route tag for the most recent fired signal — picked up by fireSignal so the
      *  trade-log description records which path entered. Retest-only model — fresh-break
-     *  paths are removed; every trade waits for a confirmed retest at the armed level
-     *  (prev close already past level). Tags: "HAMMER_RETEST", "ENGULFING_RETEST",
-     *  "PIERCING_RETEST", "TWEEZER_RETEST", "DOJI_RETEST", "STAR_RETEST", "HARAMI_RETEST".
-     *  Per-symbol, accessed only on the candle-close thread for that symbol. */
+     *  paths are removed; every trade waits for a confirmed retest at the armed level.
+     *  Single-bar pattern retests (prev close already past level): "HAMMER_RETEST",
+     *  "ENGULFING_RETEST", "PIERCING_RETEST", "TWEEZER_RETEST", "DOJI_RETEST",
+     *  "STAR_RETEST", "HARAMI_RETEST". Two-bar continuation retests (prev bar dipped to
+     *  level and held, current bar is the continuation): "MARUBOZU_RETEST" and
+     *  "GOOD_SIZE_CANDLE_RETEST". Per-symbol, accessed only on the candle-close thread
+     *  for that symbol. */
     private final ConcurrentHashMap<String, String> lastTriggerRoute = new ConcurrentHashMap<>();
     /** Pending NIFTY HTF Hurdle break-guard per stock symbol. Set by checkNiftyHurdle when the
      *  filter passes AND a hurdle existed in trade direction (i.e., the NIFTY 15-min close
@@ -1083,6 +1086,35 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             lastTriggerRoute.put(fyersSymbol, "HARAMI_RETEST");
             return setupName;
         }
+        // Two-bar Marubozu retest: prev bar carries the dip (open > level, low touched level,
+        // close still > level) and the current bar is a clean bullish marubozu in trade
+        // direction. Geometrically cleaner than a one-bar marubozu touch — the dip wick lives
+        // on prev so the current bar can be strictly shaved.
+        double maruBody  = riskSettings.getMarubozuBodyAtrMult();
+        double maruWicks = riskSettings.getMarubozuMaxWicksPctOfBody();
+        if (prev.open > level && prev.low <= level
+                && CandlePatternDetector.isBullishMarubozu(open, high, low, close, atr, maruBody, maruWicks)
+                && close > level
+                && !isLargeCandleBlocked(close - open, atr)) {
+            lastTriggerRoute.put(fyersSymbol, "MARUBOZU_RETEST");
+            return setupName;
+        }
+        // Two-bar Good-Size Candle retest: same prev-bar dip + a current bar that's a decent
+        // green body without the marubozu strict-wick rule, but with the opposing (upper) wick
+        // capped so shooting-star-shaped bars don't qualify. Checked AFTER marubozu so a
+        // strict marubozu wins the tag.
+        double goodSizeBody = riskSettings.getGoodSizeCandleBodyAtrMult();
+        double goodSizeOpp  = riskSettings.getGoodSizeCandleMaxOppositeWickRatio();
+        double bodyAbs      = close - open;
+        double upperWick    = high - Math.max(open, close);
+        boolean bodyOk      = goodSizeBody <= 0 || (atr > 0 && bodyAbs >= goodSizeBody * atr);
+        boolean wickOk      = goodSizeOpp  <= 0 || bodyAbs <= 0 || upperWick <= goodSizeOpp * bodyAbs;
+        if (prev.open > level && prev.low <= level
+                && close > open && close > level && bodyOk && wickOk
+                && !isLargeCandleBlocked(bodyAbs, atr)) {
+            lastTriggerRoute.put(fyersSymbol, "GOOD_SIZE_CANDLE_RETEST");
+            return setupName;
+        }
         return null;
     }
 
@@ -1167,6 +1199,32 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 && Math.max(Math.max(bar1.high, prev.high), curr.high) >= level
                 && !isLargeCandleBlocked(open - close, atr)) {
             lastTriggerRoute.put(fyersSymbol, "HARAMI_RETEST");
+            return setupName;
+        }
+        // Two-bar Marubozu retest (sell mirror): prev bar poked up to the level and held below
+        // (open < level, high reached level, close still < level); current bar is a clean
+        // bearish marubozu in trade direction.
+        double maruBody  = riskSettings.getMarubozuBodyAtrMult();
+        double maruWicks = riskSettings.getMarubozuMaxWicksPctOfBody();
+        if (prev.open < level && prev.high >= level
+                && CandlePatternDetector.isBearishMarubozu(open, high, low, close, atr, maruBody, maruWicks)
+                && close < level
+                && !isLargeCandleBlocked(open - close, atr)) {
+            lastTriggerRoute.put(fyersSymbol, "MARUBOZU_RETEST");
+            return setupName;
+        }
+        // Two-bar Good-Size Candle retest (sell mirror): prev-bar poke + current decent red
+        // body with opposing (lower) wick capped so hammer-shaped bars don't qualify.
+        double goodSizeBody = riskSettings.getGoodSizeCandleBodyAtrMult();
+        double goodSizeOpp  = riskSettings.getGoodSizeCandleMaxOppositeWickRatio();
+        double bodyAbs      = open - close;
+        double lowerWick    = Math.min(open, close) - low;
+        boolean bodyOk      = goodSizeBody <= 0 || (atr > 0 && bodyAbs >= goodSizeBody * atr);
+        boolean wickOk      = goodSizeOpp  <= 0 || bodyAbs <= 0 || lowerWick <= goodSizeOpp * bodyAbs;
+        if (prev.open < level && prev.high >= level
+                && close < open && close < level && bodyOk && wickOk
+                && !isLargeCandleBlocked(bodyAbs, atr)) {
+            lastTriggerRoute.put(fyersSymbol, "GOOD_SIZE_CANDLE_RETEST");
             return setupName;
         }
         return null;
@@ -1260,10 +1318,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             trend = allAbove ? "BULLISH" : allBelow ? "BEARISH" : "NEUTRAL";
         }
         // Include the candle-route tag (HAMMER_RETEST, ENGULFING_RETEST, PIERCING_RETEST,
-        // TWEEZER_RETEST, DOJI_RETEST, STAR_RETEST, HARAMI_RETEST) when present so the
-        // event log makes it clear which retest pattern fired the entry. Retest-only model
-        // — fresh-break and marubozu paths have been removed; every trade requires a
-        // confirmed multi-bar retest of the broken level.
+        // TWEEZER_RETEST, DOJI_RETEST, STAR_RETEST, HARAMI_RETEST, MARUBOZU_RETEST,
+        // GOOD_SIZE_CANDLE_RETEST) when present so the event log makes it clear which
+        // retest pattern fired the entry. Retest-only model — every trade requires a
+        // confirmed retest of the broken level.
         String routeTag = (scannerNote != null && !scannerNote.isEmpty()) ? " | route=" + scannerNote : "";
         eventService.log("[SCANNER] " + fyersSymbol + " " + setup + " | close=" + String.format("%.2f", close)
             + " | ATR=" + String.format("%.2f", atr) + " | " + prob + routeTag

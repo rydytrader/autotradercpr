@@ -584,10 +584,38 @@
         </div>
         <div class="section-body">
             <div class="form-hint" style="margin-bottom:14px;">
-                Tunable thresholds for the bullish/bearish candle patterns used by the CPR retest entries (hammer / shooting star, engulfing, piercing / dark cloud, tweezer, doji reversal, morning / evening star, harami) and the marubozu Route 1 retest. Defaults match standard TA conventions. Use higher numbers to make a pattern stricter (fewer signals, higher quality); lower numbers to loosen it. <b>Retest-only model</b>: every trade waits for a confirmed retest of the broken level &mdash; fresh-break paths have been removed.
+                Tunable thresholds for the bullish/bearish candle patterns used by the CPR retest entries. <b>Single-bar patterns</b> (hammer / shooting star, engulfing, piercing / dark cloud, tweezer, doji reversal, morning / evening star, harami) and <b>two-bar continuation patterns</b> (marubozu, good-size candle) all share this retest-only model: prev candle must have closed past the level (single-bar) or dipped to and held the level (two-bar) before the current bar can fire. Use higher numbers to make a pattern stricter (fewer signals, higher quality); lower numbers to loosen it.
             </div>
 
             <div class="form-grid">
+            <!-- Marubozu group (two-bar MARUBOZU_RETEST) -->
+            <div class="form-group">
+                <label class="form-label">Marubozu (full-body conviction candle)</label>
+                <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Body ≥</span>
+                    <input type="number" id="marubozuBodyAtrMult" class="form-control" step="0.1" min="0.1" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× ATR</span>
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">Total wicks ≤</span>
+                    <input type="number" id="marubozuMaxWicksPctOfBody" class="form-control" step="0.05" min="0.0" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× body (e.g. 0.10 = 10%)</span>
+                </div>
+                <div class="form-hint">Used by the two-bar <code>MARUBOZU_RETEST</code> pattern. Prev bar dipped to the level and held above (buy) or below (sell); the current bar must be a near-shaved marubozu in trade direction. Defaults: 1.0 &times; ATR body, 0.10 &times; body total wicks.</div>
+            </div>
+
+            <!-- Good-Size Candle group (two-bar GOOD_SIZE_CANDLE_RETEST) -->
+            <div class="form-group">
+                <label class="form-label">Good-Size Candle (clean continuation bar)</label>
+                <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Body ≥</span>
+                    <input type="number" id="goodSizeCandleBodyAtrMult" class="form-control" step="0.05" min="0.0" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× ATR</span>
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">Opposing wick ≤</span>
+                    <input type="number" id="goodSizeCandleMaxOppositeWickRatio" class="form-control" step="0.1" min="0.0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× body</span>
+                </div>
+                <div class="form-hint">Used by the two-bar <code>GOOD_SIZE_CANDLE_RETEST</code> pattern (fires when the current bar has decent body but doesn't qualify as marubozu). Opposing-wick cap rejects shooting-star-shaped green bars on buys and hammer-shaped red bars on sells. Defaults: 0.6 &times; ATR body, 1.0 &times; body opposing wick.</div>
+            </div>
+
             <!-- Pin Bar group -->
             <div class="form-group">
                 <label class="form-label">Pin Bar (hammer / shooting star)</label>
@@ -1336,6 +1364,10 @@
             document.getElementById('enableRiskRewardFilter').checked = d.enableRiskRewardFilter !== false;
             document.getElementById('enableLargeCandleBodyFilter').checked = d.enableLargeCandleBodyFilter !== false;
             document.getElementById('largeCandleBodyAtrThreshold').value = d.largeCandleBodyAtrThreshold != null ? d.largeCandleBodyAtrThreshold : 4.0;
+            document.getElementById('marubozuBodyAtrMult').value          = d.marubozuBodyAtrMult          != null ? d.marubozuBodyAtrMult          : 1.0;
+            document.getElementById('marubozuMaxWicksPctOfBody').value    = d.marubozuMaxWicksPctOfBody    != null ? d.marubozuMaxWicksPctOfBody    : 0.10;
+            document.getElementById('goodSizeCandleBodyAtrMult').value         = d.goodSizeCandleBodyAtrMult         != null ? d.goodSizeCandleBodyAtrMult         : 0.6;
+            document.getElementById('goodSizeCandleMaxOppositeWickRatio').value = d.goodSizeCandleMaxOppositeWickRatio != null ? d.goodSizeCandleMaxOppositeWickRatio : 1.0;
             document.getElementById('pinBarRejectionWickBodyMult').value  = d.pinBarRejectionWickBodyMult  != null ? d.pinBarRejectionWickBodyMult  : 2.0;
             document.getElementById('pinBarOppositeWickBodyMult').value   = d.pinBarOppositeWickBodyMult   != null ? d.pinBarOppositeWickBodyMult   : 0.30;
             document.getElementById('engulfingMinBodyMultiple').value     = d.engulfingMinBodyMultiple     != null ? d.engulfingMinBodyMultiple     : 1.0;
@@ -1526,6 +1558,10 @@
                 enableRiskRewardFilter: document.getElementById('enableRiskRewardFilter').checked,
                 enableLargeCandleBodyFilter: document.getElementById('enableLargeCandleBodyFilter').checked,
                 largeCandleBodyAtrThreshold: parseFloat(document.getElementById('largeCandleBodyAtrThreshold').value) || 4.0,
+                marubozuBodyAtrMult:          parseFloat(document.getElementById('marubozuBodyAtrMult').value)          || 1.0,
+                marubozuMaxWicksPctOfBody:    parseFloat(document.getElementById('marubozuMaxWicksPctOfBody').value)    || 0.10,
+                goodSizeCandleBodyAtrMult:    (function() { var v = parseFloat(document.getElementById('goodSizeCandleBodyAtrMult').value); return isNaN(v) ? 0.6 : v; })(),
+                goodSizeCandleMaxOppositeWickRatio: (function() { var v = parseFloat(document.getElementById('goodSizeCandleMaxOppositeWickRatio').value); return isNaN(v) ? 1.0 : v; })(),
                 pinBarRejectionWickBodyMult:  parseFloat(document.getElementById('pinBarRejectionWickBodyMult').value)  || 2.0,
                 pinBarOppositeWickBodyMult:   parseFloat(document.getElementById('pinBarOppositeWickBodyMult').value)   || 0.30,
                 engulfingMinBodyMultiple:     parseFloat(document.getElementById('engulfingMinBodyMultiple').value)     || 1.0,

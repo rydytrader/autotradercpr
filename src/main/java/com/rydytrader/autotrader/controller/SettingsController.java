@@ -94,6 +94,10 @@ public class SettingsController {
         result.put("enableSmallCandleFilter", riskSettings.isEnableSmallCandleFilter(effectiveMode));
         result.put("enableLargeCandleBodyFilter", riskSettings.isEnableLargeCandleBodyFilter());
         result.put("largeCandleBodyAtrThreshold", riskSettings.getLargeCandleBodyAtrThreshold());
+        result.put("marubozuBodyAtrMult",          riskSettings.getMarubozuBodyAtrMult());
+        result.put("marubozuMaxWicksPctOfBody",    riskSettings.getMarubozuMaxWicksPctOfBody());
+        result.put("goodSizeCandleBodyAtrMult",          riskSettings.getGoodSizeCandleBodyAtrMult());
+        result.put("goodSizeCandleMaxOppositeWickRatio", riskSettings.getGoodSizeCandleMaxOppositeWickRatio());
         result.put("pinBarRejectionWickBodyMult",  riskSettings.getPinBarRejectionWickBodyMult());
         result.put("pinBarOppositeWickBodyMult",   riskSettings.getPinBarOppositeWickBodyMult());
         result.put("engulfingMinBodyMultiple",     riskSettings.getEngulfingMinBodyMultiple());
@@ -230,6 +234,10 @@ public class SettingsController {
             if (body.containsKey("enableSmallCandleFilter")) riskSettings.setEnableSmallCandleFilter(effectiveMode, Boolean.parseBoolean(body.get("enableSmallCandleFilter").toString()));
             if (body.containsKey("enableLargeCandleBodyFilter")) riskSettings.setEnableLargeCandleBodyFilter(Boolean.parseBoolean(body.get("enableLargeCandleBodyFilter").toString()));
             if (body.containsKey("largeCandleBodyAtrThreshold")) riskSettings.setLargeCandleBodyAtrThreshold(Double.parseDouble(body.get("largeCandleBodyAtrThreshold").toString()));
+            if (body.containsKey("marubozuBodyAtrMult"))         riskSettings.setMarubozuBodyAtrMult(Double.parseDouble(body.get("marubozuBodyAtrMult").toString()));
+            if (body.containsKey("marubozuMaxWicksPctOfBody"))   riskSettings.setMarubozuMaxWicksPctOfBody(Double.parseDouble(body.get("marubozuMaxWicksPctOfBody").toString()));
+            if (body.containsKey("goodSizeCandleBodyAtrMult"))   riskSettings.setGoodSizeCandleBodyAtrMult(Double.parseDouble(body.get("goodSizeCandleBodyAtrMult").toString()));
+            if (body.containsKey("goodSizeCandleMaxOppositeWickRatio")) riskSettings.setGoodSizeCandleMaxOppositeWickRatio(Double.parseDouble(body.get("goodSizeCandleMaxOppositeWickRatio").toString()));
             if (body.containsKey("pinBarRejectionWickBodyMult")) riskSettings.setPinBarRejectionWickBodyMult(Double.parseDouble(body.get("pinBarRejectionWickBodyMult").toString()));
             if (body.containsKey("pinBarOppositeWickBodyMult"))  riskSettings.setPinBarOppositeWickBodyMult(Double.parseDouble(body.get("pinBarOppositeWickBodyMult").toString()));
             if (body.containsKey("engulfingMinBodyMultiple"))    riskSettings.setEngulfingMinBodyMultiple(Double.parseDouble(body.get("engulfingMinBodyMultiple").toString()));
