@@ -860,33 +860,15 @@
                     <label class="form-label">HTF Hurdle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject when prior 1h HTF candle hasn't cleared nearest weekly R1/PWH/TC/Pivot/BC (buy) or S1/PWL/TC/Pivot/BC (sell)</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject when prior 15-min close hasn't cleared nearest weekly R1/PWH/TC/Pivot/BC (buy) or S1/PWL/TC/Pivot/BC (sell)</span>
                     </div>
                     <div class="form-hint">For a 5-min breakout, find the nearest weekly hurdle in the trade direction:
                         <b>buys</b> &rarr; the highest of {R1, PWH, weekly TC, weekly Pivot, weekly BC} strictly below the 5-min close;
                         <b>sells</b> &rarr; the lowest of {S1, PWL, weekly TC, weekly Pivot, weekly BC} strictly above the close.
-                        Then check the previous 1-hour HTF candle close:
-                        <b>cleared</b> &rarr; trade fires; <b>didn't clear</b> &rarr; reject; <b>no prior 1h close yet today</b> (first session hour) &rarr; reject.
-                        Weekly CPR (TC/Pivot/BC) is included so that breakouts that fired just past the weekly CPR boundary are gated by the prior 1h close too &mdash; e.g. a buy at R1 in a stock currently inside weekly CPR but BULLISH by the state machine. R2+/S2+ are excluded &mdash; far-out projections, not walls the HTF needs to clear first.
+                        Then check the previous <b>15-min</b> close (mirrors the NIFTY HTF Hurdle):
+                        <b>cleared</b> &rarr; trade fires; <b>didn't clear</b> &rarr; reject; <b>no prior 15-min close yet today</b> (pre-9:30 IST) &rarr; silent fail-open.
+                        Weekly CPR (TC/Pivot/BC) is included so that breakouts that fired just past the weekly CPR boundary are gated by the prior 15-min close too &mdash; e.g. a buy at R1 in a stock currently inside weekly CPR but BULLISH by the state machine. R2+/S2+ are excluded &mdash; far-out projections, not walls the HTF needs to clear first.
                         Applies to all HPT and MPT breakouts. Fail-open when any level is warming up.</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">HTF SMA Trend and Pattern Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableHtfSmaAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Trend</b>: prior 1h candle close above/below 1h SMA 20 and 50 together</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="enableHtfSmaAlignmentCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Pattern</b>: 1h SMAs aligned &mdash; buy requires <b>20 &gt; 50</b>, sell requires <b>20 &lt; 50</b></span>
-                    </div>
-                    <div class="form-hint">Two independent 1-hour HTF SMA checks &mdash; each rejects the trade outright on its own (no qty downgrade under the LTF-priority model).
-                        <br><br>
-                        <b>Trend.</b> Compares the <b>previous completed 1h candle's close</b> against the 1h SMA 20 and SMA 50 (both computed from completed 1h closes only &mdash; no live blending). Sticky between 1h boundaries: the gate stays put until the next 1h close commits a new value. Confirmed structure, not in-progress hope. Tue&ndash;Fri uses the prior session's final 1h close as the first-hour fallback before today's first 1h close fires; Monday morning HPT/MPT signals are rejected until the day's first 1h close.
-                        <br><br>
-                        <b>Pattern.</b> SMA-to-SMA ordering: 1h SMA 20 above 50 for buys, below 50 for sells. Both SMAs from completed 1h closes only. Stricter than Trend &mdash; the HTF SMA structure itself has to be stacked in the trade's direction, independent of where the prior close sits.
-                        <br><br>
-                        Applies to all HPT and MPT breakouts. Fail-open when any SMA is warming up.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">HTF Candle Direction Filter</label>
@@ -939,10 +921,6 @@
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="enableWeeklyLevelTargetShift" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift to Weekly Support / Resistance levels</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="enableWeeklySmaTargetShift" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift to Weekly (1h) SMA 20 / 50 / 200</span>
                     </div>
                     <div class="form-hint">Toggle which level types are considered when shifting the structural target down to the nearest resistance/support between entry and target. The <b>Daily (5-min) SMA 200</b> source is most useful when running the lenient SMA price/alignment gates, since those don't validate against the 200 SMA — keeping it as a target cap captures the intraday resistance/support it provides.</div>
                 </div>
@@ -1428,11 +1406,8 @@
             document.getElementById('enableDayHighLowTargetShift').checked = d.enableDayHighLowTargetShift !== false;
             document.getElementById('dayHighLowShiftMinDistAtr').value = d.dayHighLowShiftMinDistAtr != null ? d.dayHighLowShiftMinDistAtr : 2.0;
             document.getElementById('enableWeeklyLevelTargetShift').checked = d.enableWeeklyLevelTargetShift !== false;
-            document.getElementById('enableWeeklySmaTargetShift').checked = d.enableWeeklySmaTargetShift !== false;
             document.getElementById('enableDailySma200TargetShift').checked = d.enableDailySma200TargetShift !== false;
             document.getElementById('enableHtfHurdleFilter').checked = d.enableHtfHurdleFilter !== false;
-            document.getElementById('enableHtfSmaAlignment').checked = d.enableHtfSmaAlignment !== false;
-            document.getElementById('enableHtfSmaAlignmentCheck').checked = d.enableHtfSmaAlignmentCheck === true;
             document.getElementById('enableStructuralSl').checked = d.enableStructuralSl === true;
             document.getElementById('structuralSlBufferAtr').value = d.structuralSlBufferAtr != null ? d.structuralSlBufferAtr : 1.0;
             document.getElementById('singleLevelSlBufferAtr').value = d.singleLevelSlBufferAtr != null ? d.singleLevelSlBufferAtr : 0.5;
@@ -1630,11 +1605,8 @@
                 enableDayHighLowTargetShift: document.getElementById('enableDayHighLowTargetShift').checked,
                 dayHighLowShiftMinDistAtr: parseFloat(document.getElementById('dayHighLowShiftMinDistAtr').value) || 1.0,
                 enableWeeklyLevelTargetShift: document.getElementById('enableWeeklyLevelTargetShift').checked,
-                enableWeeklySmaTargetShift: document.getElementById('enableWeeklySmaTargetShift').checked,
                 enableDailySma200TargetShift: document.getElementById('enableDailySma200TargetShift').checked,
                 enableHtfHurdleFilter: document.getElementById('enableHtfHurdleFilter').checked,
-                enableHtfSmaAlignment: document.getElementById('enableHtfSmaAlignment').checked,
-                enableHtfSmaAlignmentCheck: document.getElementById('enableHtfSmaAlignmentCheck').checked,
                 enableStructuralSl: document.getElementById('enableStructuralSl').checked,
                 structuralSlBufferAtr: parseFloat(document.getElementById('structuralSlBufferAtr').value) || 1.0,
                 singleLevelSlBufferAtr: parseFloat(document.getElementById('singleLevelSlBufferAtr').value) || 0,

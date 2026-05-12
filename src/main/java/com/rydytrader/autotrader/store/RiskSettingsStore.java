@@ -102,7 +102,6 @@ public class RiskSettingsStore {
         volatile boolean enableDailySma200TargetShift = true;
         volatile double dayHighLowShiftMinDistAtr = 2.0; // skip day H/L shift if distance < N ATR from close
         volatile boolean enableWeeklyLevelTargetShift = true; // shift target to weekly CPR levels if between entry and target
-        volatile boolean enableWeeklySmaTargetShift = true;   // shift target to weekly (HTF 60-min) SMA 20/50/200 if between entry and target
         volatile boolean enableHtfHurdleFilter = true; // HPT→LPT when 5-min close lands inside R1/PWH (buy) or S1/PWL (sell) zone
         // NIFTY-level macro hurdle. When on, skip ALL stock trades while NIFTY's prior 1h close
         // hasn't decisively cleared the nearest weekly hurdle in the trade direction (R1/PWH/
@@ -130,8 +129,6 @@ public class RiskSettingsStore {
         // when the nearest hurdle in the OPPOSITE direction (above NIFTY LTP for buys / below
         // for sells) is closer than this many NIFTY ATRs. 0 = headroom check off.
         volatile double nifty5mHurdleMinHeadroomAtr = 1.0;
-        volatile boolean enableHtfSmaAlignment = true; // HPT→LPT when live LTP not above/below 1h SMA 20/50 together
-        volatile boolean enableHtfSmaAlignmentCheck = false; // HPT→LPT when 1h SMAs not in order (20>50 buy, 20<50 sell)
         // In-progress 1h candle direction must agree with the 5-min breakout direction. Buy
         // requires the currently-forming 1h bar to be green (close > open); sell requires red
         // (close < open). Doji passes both. Fail-open if no in-progress bar yet. Default off.
@@ -177,9 +174,6 @@ public class RiskSettingsStore {
         // 5-min pattern lookback. 24 × 5min = 120 min window — long enough to filter routine
         // pullbacks within real trends, short enough to catch fresh structural shifts within a session.
         volatile int smaPatternLookback = 24;
-        // 1h (HTF) pattern lookback. 10 × 60min = 10 hours — kept short because each bar carries
-        // much more signal at 1h timeframe; same algorithm reads cleanly with fewer samples.
-        volatile int smaPatternLookbackHtf = 10;
         volatile int braidedMinCrossovers = 2;       // ≥ this many crossovers in lookback = BRAIDED
         volatile double braidedMaxSpreadAtr = 0.10;  // mean|spread| ≤ this × ATR = BRAIDED (SMAs truly overlapping)
         volatile double railwayMaxCv = 0.25;         // stddev/mean ratio for RAILWAY (stability)
@@ -385,7 +379,6 @@ public class RiskSettingsStore {
     public boolean isEnableDailySma200TargetShift() { return cfg().enableDailySma200TargetShift; }
     public double getDayHighLowShiftMinDistAtr() { return cfg().dayHighLowShiftMinDistAtr; }
     public boolean isEnableWeeklyLevelTargetShift() { return cfg().enableWeeklyLevelTargetShift; }
-    public boolean isEnableWeeklySmaTargetShift()   { return cfg().enableWeeklySmaTargetShift; }
     public boolean isEnableHtfHurdleFilter()    { return cfg().enableHtfHurdleFilter; }
     public boolean isEnableNiftyHtfHurdleFilter() { return cfg().enableNiftyHtfHurdleFilter; }
     public double  getNiftyHurdleMinHeadroomAtr() { return cfg().niftyHurdleMinHeadroomAtr; }
@@ -393,8 +386,6 @@ public class RiskSettingsStore {
     public double  getNiftyOiHurdleMinHeadroomAtr() { return cfg().niftyOiHurdleMinHeadroomAtr; }
     public boolean isEnableNifty5mHurdleFilter()  { return cfg().enableNifty5mHurdleFilter; }
     public double  getNifty5mHurdleMinHeadroomAtr() { return cfg().nifty5mHurdleMinHeadroomAtr; }
-    public boolean isEnableHtfSmaAlignment()    { return cfg().enableHtfSmaAlignment; }
-    public boolean isEnableHtfSmaAlignmentCheck() { return cfg().enableHtfSmaAlignmentCheck; }
     public boolean isEnableHtfCandleFilter()      { return cfg().enableHtfCandleFilter; }
     public boolean isEnableNiftyHtfCandleFilter() { return cfg().enableNiftyHtfCandleFilter; }
     public double  getNiftyHtfCandleMaxWickRatio() { return cfg().niftyHtfCandleMaxWickRatio; }
@@ -410,7 +401,6 @@ public class RiskSettingsStore {
     public boolean isEnableSmaAlignmentCheckLenient() { return cfg().enableSmaAlignmentCheckLenient; }
     public boolean isEnableSmaVsAtpCheck()          { return cfg().enableSmaVsAtpCheck; }
     public int    getSmaPatternLookback()           { return cfg().smaPatternLookback; }
-    public int    getSmaPatternLookbackHtf()        { return cfg().smaPatternLookbackHtf; }
     public int    getBraidedMinCrossovers()         { return cfg().braidedMinCrossovers; }
     public double getBraidedMaxSpreadAtr()          { return cfg().braidedMaxSpreadAtr; }
     public double getRailwayMaxCv()                 { return cfg().railwayMaxCv; }
@@ -570,7 +560,6 @@ public class RiskSettingsStore {
     public void setEnableDailySma200TargetShift(boolean v) { cfg().enableDailySma200TargetShift = v; }
     public void setDayHighLowShiftMinDistAtr(double v) { cfg().dayHighLowShiftMinDistAtr = v; }
     public void setEnableWeeklyLevelTargetShift(boolean v) { cfg().enableWeeklyLevelTargetShift = v; }
-    public void setEnableWeeklySmaTargetShift(boolean v)   { cfg().enableWeeklySmaTargetShift = v; }
     public void setEnableHtfHurdleFilter(boolean v)    { cfg().enableHtfHurdleFilter = v; }
     public void setEnableNiftyHtfHurdleFilter(boolean v) { cfg().enableNiftyHtfHurdleFilter = v; }
     public void setNiftyHurdleMinHeadroomAtr(double v)   { cfg().niftyHurdleMinHeadroomAtr = Math.max(0, v); }
@@ -578,8 +567,6 @@ public class RiskSettingsStore {
     public void setNiftyOiHurdleMinHeadroomAtr(double v) { cfg().niftyOiHurdleMinHeadroomAtr = Math.max(0, v); }
     public void setEnableNifty5mHurdleFilter(boolean v)  { cfg().enableNifty5mHurdleFilter = v; }
     public void setNifty5mHurdleMinHeadroomAtr(double v) { cfg().nifty5mHurdleMinHeadroomAtr = Math.max(0, v); }
-    public void setEnableHtfSmaAlignment(boolean v)    { cfg().enableHtfSmaAlignment = v; }
-    public void setEnableHtfSmaAlignmentCheck(boolean v) { cfg().enableHtfSmaAlignmentCheck = v; }
     public void setEnableHtfCandleFilter(boolean v)      { cfg().enableHtfCandleFilter = v; }
     public void setEnableNiftyHtfCandleFilter(boolean v) { cfg().enableNiftyHtfCandleFilter = v; }
     public void setNiftyHtfCandleMaxWickRatio(double v)  { cfg().niftyHtfCandleMaxWickRatio = Math.max(0, v); }
@@ -750,7 +737,6 @@ public class RiskSettingsStore {
             upsert("enableDailySma200TargetShift", String.valueOf(c.enableDailySma200TargetShift));
             upsert("dayHighLowShiftMinDistAtr", String.valueOf(c.dayHighLowShiftMinDistAtr));
             upsert("enableWeeklyLevelTargetShift", String.valueOf(c.enableWeeklyLevelTargetShift));
-            upsert("enableWeeklySmaTargetShift", String.valueOf(c.enableWeeklySmaTargetShift));
             upsert("enableHtfHurdleFilter", String.valueOf(c.enableHtfHurdleFilter));
             upsert("enableNiftyHtfHurdleFilter", String.valueOf(c.enableNiftyHtfHurdleFilter));
             upsert("niftyHurdleMinHeadroomAtr", String.valueOf(c.niftyHurdleMinHeadroomAtr));
@@ -758,8 +744,6 @@ public class RiskSettingsStore {
             upsert("niftyOiHurdleMinHeadroomAtr", String.valueOf(c.niftyOiHurdleMinHeadroomAtr));
             upsert("enableNifty5mHurdleFilter", String.valueOf(c.enableNifty5mHurdleFilter));
             upsert("nifty5mHurdleMinHeadroomAtr", String.valueOf(c.nifty5mHurdleMinHeadroomAtr));
-            upsert("enableHtfSmaAlignment", String.valueOf(c.enableHtfSmaAlignment));
-            upsert("enableHtfSmaAlignmentCheck", String.valueOf(c.enableHtfSmaAlignmentCheck));
             upsert("enableHtfCandleFilter", String.valueOf(c.enableHtfCandleFilter));
             upsert("enableNiftyHtfCandleFilter", String.valueOf(c.enableNiftyHtfCandleFilter));
             upsert("niftyHtfCandleMaxWickRatio", String.valueOf(c.niftyHtfCandleMaxWickRatio));
@@ -775,7 +759,6 @@ public class RiskSettingsStore {
             upsert("enableSmaAlignmentCheckLenient", String.valueOf(c.enableSmaAlignmentCheckLenient));
             upsert("enableSmaVsAtpCheck", String.valueOf(c.enableSmaVsAtpCheck));
             upsert("smaPatternLookback", String.valueOf(c.smaPatternLookback));
-            upsert("smaPatternLookbackHtf", String.valueOf(c.smaPatternLookbackHtf));
             upsert("braidedMinCrossovers", String.valueOf(c.braidedMinCrossovers));
             upsert("braidedMaxSpreadAtr", String.valueOf(c.braidedMaxSpreadAtr));
             upsert("railwayMaxCv", String.valueOf(c.railwayMaxCv));
@@ -922,7 +905,6 @@ public class RiskSettingsStore {
                     case "enableDailySma200TargetShift" -> c.enableDailySma200TargetShift = Boolean.parseBoolean(v);
                     case "dayHighLowShiftMinDistAtr" -> c.dayHighLowShiftMinDistAtr = Double.parseDouble(v);
                     case "enableWeeklyLevelTargetShift" -> c.enableWeeklyLevelTargetShift = Boolean.parseBoolean(v);
-                    case "enableWeeklyEmaTargetShift", "enableWeeklySmaTargetShift" -> c.enableWeeklySmaTargetShift = Boolean.parseBoolean(v);
                     case "enableHtfHurdleFilter" -> c.enableHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "enableNiftyHtfHurdleFilter" -> c.enableNiftyHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "niftyHurdleMinHeadroomAtr" -> c.niftyHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
@@ -930,8 +912,6 @@ public class RiskSettingsStore {
                     case "niftyOiHurdleMinHeadroomAtr" -> c.niftyOiHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
                     case "enableNifty5mHurdleFilter" -> c.enableNifty5mHurdleFilter = Boolean.parseBoolean(v);
                     case "nifty5mHurdleMinHeadroomAtr" -> c.nifty5mHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
-                    case "enableHtfSmaAlignment" -> c.enableHtfSmaAlignment = Boolean.parseBoolean(v);
-                    case "enableHtfSmaAlignmentCheck" -> c.enableHtfSmaAlignmentCheck = Boolean.parseBoolean(v);
                     case "enableHtfCandleFilter" -> c.enableHtfCandleFilter = Boolean.parseBoolean(v);
                     case "enableNiftyHtfCandleFilter" -> c.enableNiftyHtfCandleFilter = Boolean.parseBoolean(v);
                     case "niftyHtfCandleMaxWickRatio" -> c.niftyHtfCandleMaxWickRatio = Math.max(0, Double.parseDouble(v));
@@ -949,7 +929,6 @@ public class RiskSettingsStore {
                     case "enableEmaDirectionCheck", "enableEma200DirectionCheck", "enableEmaCrossoverCheck" -> { /* legacy */ }
                     case "enableEmaVsAtpCheck", "enableSmaVsAtpCheck" -> c.enableSmaVsAtpCheck = Boolean.parseBoolean(v);
                     case "emaPatternLookback", "smaPatternLookback" -> c.smaPatternLookback = Integer.parseInt(v);
-                    case "smaPatternLookbackHtf" -> c.smaPatternLookbackHtf = Integer.parseInt(v);
                     case "braidedMinCrossovers" -> c.braidedMinCrossovers = Integer.parseInt(v);
                     case "braidedMaxSpreadAtr" -> c.braidedMaxSpreadAtr = Double.parseDouble(v);
                     case "railwayMaxCv" -> c.railwayMaxCv = Double.parseDouble(v);

@@ -30,7 +30,6 @@ public class ScannerController {
     private final MarginDataService marginDataService;
     private final TradeHistoryService tradeHistoryService;
     private final SmaService smaService;
-    private final HtfSmaService htfSmaService;
     private final IndexTrendService indexTrendService;
     private final MarketHolidayService marketHolidayService;
     @org.springframework.beans.factory.annotation.Autowired
@@ -48,7 +47,6 @@ public class ScannerController {
                              MarginDataService marginDataService,
                              TradeHistoryService tradeHistoryService,
                              SmaService smaService,
-                             HtfSmaService htfSmaService,
                              IndexTrendService indexTrendService,
                              MarketHolidayService marketHolidayService) {
         this.marketDataService = marketDataService;
@@ -61,7 +59,6 @@ public class ScannerController {
         this.marginDataService = marginDataService;
         this.tradeHistoryService = tradeHistoryService;
         this.smaService = smaService;
-        this.htfSmaService = htfSmaService;
         this.indexTrendService = indexTrendService;
         this.marketHolidayService = marketHolidayService;
     }
@@ -184,27 +181,9 @@ public class ScannerController {
             riskSettings.getRailwayMaxCv(),
             riskSettings.getRailwayMinSpreadAtr());
         card.put("smaPattern", smaPattern);
-        // HTF (60-min) SMAs — long-term trend
-        double htfSma20 = htfSmaService.getSma(fyersSymbol);
-        double htfSma50 = htfSmaService.getSma50(fyersSymbol);
-        double htfSma200 = htfSmaService.getSma200(fyersSymbol);
-        card.put("htfSma20",  Math.round(htfSma20  * 100.0) / 100.0);
-        card.put("htfSma50",  Math.round(htfSma50  * 100.0) / 100.0);
-        card.put("htfSma200", Math.round(htfSma200 * 100.0) / 100.0);
-        String htfPattern = (htfSma20 > 0 && htfSma50 > 0)
-            ? htfSmaService.getSmaPattern(fyersSymbol,
-                riskSettings.getSmaPatternLookbackHtf(),
-                atrVal,
-                riskSettings.getBraidedMinCrossovers(),
-                riskSettings.getBraidedMaxSpreadAtr(),
-                riskSettings.getRailwayMaxCv(),
-                riskSettings.getRailwayMinSpreadAtr())
-            : "";
-        card.put("htfSmaPattern", htfPattern);
         // SMA-trend reference price: last completed candle close, LTP fallback for the
         // first candle of the day. Mirrors how WeeklyCprService computes daily/weekly trend.
         card.put("price5m",  Math.round(weeklyCprService.getDailyPrice(fyersSymbol)  * 100.0) / 100.0);
-        card.put("price60m", Math.round(weeklyCprService.getWeeklyPrice(fyersSymbol) * 100.0) / 100.0);
         // "Day Open" on stock card = the open print (close of first 5-min candle), NOT the
         // 9:15 auction open. Open print is the price the day "settles" into and drives the
         // IV/OV/EV classification, so it's the more meaningful reference for traders.
@@ -306,7 +285,7 @@ public class ScannerController {
     private double r(double v) { return Math.round(v * 100.0) / 100.0; }
 
     /** Round derived prices (SMAs etc.) to the symbol's tick size for display.
-     *  Filter math still uses the raw value via SmaService / HtfSmaService. */
+     *  Filter math still uses the raw value via SmaService. */
     private static double roundToTick(double value, double tick) {
         if (tick <= 0) return Math.round(value * 100.0) / 100.0;
         return Math.round(value / tick) * tick;
@@ -483,18 +462,6 @@ public class ScannerController {
                 fn = "SMA_20_DISTANCE";
                 r.put("filterName", fn);
             }
-            // HTF filters renamed to mirror the 5-min naming (SMA_TREND / SMA_ALIGNMENT):
-            //   HTF_SMA_ORDER → HTF_SMA_ALIGNMENT (stack ordering)
-            //   HTF_ALIGNMENT → HTF_SMA_ALIGNMENT (intermediate rename)
-            //   HTF_PRICE     → HTF_SMA_TREND     (LTP vs HTF SMAs)
-            if ("HTF_SMA_ORDER".equals(fn) || "HTF_ALIGNMENT".equals(fn)) {
-                fn = "HTF_SMA_ALIGNMENT";
-                r.put("filterName", fn);
-            }
-            if ("HTF_PRICE".equals(fn)) {
-                fn = "HTF_SMA_TREND";
-                r.put("filterName", fn);
-            }
             if (!fn.isEmpty()) byFilter.merge(fn, 1, Integer::sum);
         }
         // Sort byFilter descending by count (LinkedHashMap rebuild).
@@ -523,12 +490,8 @@ public class ScannerController {
         String s = detail.toLowerCase();
 
         // Composite: "Probability downgraded to LPT (X) — LPT trades disabled". Drill into X.
-        // Order matters: HTF SMA order is checked before HTF SMA not aligned because the order
-        // string contains "not aligned" too — specificity ordering avoids false matches.
         if (s.contains("probability downgraded to lpt") || s.contains("→ lpt")) {
             if (s.contains("htf hurdle"))              return "HTF_HURDLE";
-            if (s.contains("htf sma order"))           return "HTF_SMA_ALIGNMENT";
-            if (s.contains("htf sma not aligned"))     return "HTF_SMA_TREND";
             if (s.contains("nifty opposed"))           return "NIFTY_OPPOSED";
             if (s.contains("inside-or"))               return "INSIDE_OR";
             if (s.contains("ev reversal"))             return "EV_REVERSAL";

@@ -155,8 +155,7 @@
                 <li>ATP / VWAP confirmation (price vs day's VWAP)</li>
                 <li>5-min SMA Price (lenient: vs 20+50; strict: vs 20+50+200)</li>
                 <li>5-min SMA Alignment (lenient: 20 vs 50; strict: 20 vs 50 vs 200)</li>
-                <li>HTF Hurdle — prior 1h close above (buy) / below (sell) nearest weekly hurdle</li>
-                <li>HTF SMA Price + HTF SMA Alignment (60-min)</li>
+                <li>HTF Hurdle — prior 15-min close above (buy) / below (sell) nearest weekly hurdle</li>
                 <li>NIFTY trend filter (CPR + 5-min SMA Price + SMA 20/50 alignment — all 3 factors aligned)</li>
                 <li>Volume, candle-size, R/R, min-profit, day-type extended-level skips</li>
             </ul>
@@ -175,7 +174,7 @@
                 <tr><td>Same but weekly BEARISH (HTF disagrees)</td><td><b>MPT</b>, qty × 0.75</td></tr>
                 <tr><td>Buy trade, close inside daily CPR (LTF undetermined)</td><td>Rejected (LTF_OPPOSED) — no trade</td></tr>
                 <tr><td>Magnet (BUY_ABOVE_S1_PDL) firing — counter-trend bounce setup</td><td><b>MPT</b>, qty × 0.75 (LTF gate bypassed by design)</td></tr>
-                <tr><td>HPT or MPT trade fails HTF Hurdle / HTF SMA / NIFTY filter</td><td>Rejected outright — no LPT downgrade</td></tr>
+                <tr><td>HPT or MPT trade fails HTF Hurdle / NIFTY filter</td><td>Rejected outright — no LPT downgrade</td></tr>
                 <tr><td>NIFTY = SIDEWAYS or NEUTRAL, alignment filter on</td><td>Rejected — buys need BULLISH/BULLISH_REVERSAL; sells need BEARISH/BEARISH_REVERSAL</td></tr>
                 <tr><td>Stock moved &gt; sessionMoveLimit% from open / PDC</td><td>Qty halved on top of any HPT/MPT factor</td></tr>
             </table>
@@ -267,10 +266,6 @@
                 <text class="ttl" x="300" y="422" text-anchor="middle">SmaService (5m)</text>
                 <text class="sub" x="300" y="442" text-anchor="middle">20 / 50 / 200 + pattern</text>
 
-                <rect class="box svc" x="420" y="396" width="180" height="68"/>
-                <text class="ttl" x="510" y="422" text-anchor="middle">HtfSmaService</text>
-                <text class="sub" x="510" y="442" text-anchor="middle">60-min SMA 20/50</text>
-
                 <rect class="box svc" x="620" y="396" width="200" height="68"/>
                 <text class="ttl" x="720" y="422" text-anchor="middle">WeeklyCprService</text>
                 <text class="sub" x="720" y="442" text-anchor="middle">HTF state machine</text>
@@ -299,7 +294,7 @@
                 <!-- Row 6: SignalProcessor -->
                 <rect class="box core" x="180" y="716" width="500" height="120"/>
                 <text class="ttl" x="430" y="744" text-anchor="middle">SignalProcessor</text>
-                <text class="sub" x="430" y="765" text-anchor="middle">HTF Hurdle, HTF SMA Price/Alignment, OR rules (EV days)</text>
+                <text class="sub" x="430" y="765" text-anchor="middle">HTF Hurdle (15-min), OR rules (EV days)</text>
                 <text class="sub" x="430" y="782" text-anchor="middle">extended-level skips (IV/OV vs EV), small/large candle</text>
                 <text class="sub" x="430" y="799" text-anchor="middle">target shift, target tolerance, R/R filter, min profit</text>
                 <text class="sub" x="430" y="816" text-anchor="middle">QuantityService: HPT &times; 1.0, MPT &times; 0.75 (any failure &rarr; reject)</text>
@@ -352,9 +347,9 @@
         <div class="help-body">
             <p>The bot has one signal path (live, internal). At each scanner-timeframe candle close:</p>
             <ol>
-                <li><b>CandleAggregator</b> finalizes the just-closed bar from WebSocket ticks; SmaService / HtfSmaService / AtrService update.</li>
+                <li><b>CandleAggregator</b> finalizes the just-closed bar from WebSocket ticks; SmaService / AtrService update.</li>
                 <li><b>BreakoutScanner</b> runs against every watchlist symbol — applies pre-filters (green/red candle, ATP, 5-min SMA Price/Alignment, volume), walks setup priority (R4 → ... → S1+PDL / R1+PDH magnets → DH/DL), runs the LTF check (close vs daily CPR) and HTF check (weekly state) to assign probability HPT / MPT / null. NIFTY alignment + 20-SMA level-count filters also run here. Counter-LTF non-magnet trades are rejected immediately.</li>
-                <li><b>SignalProcessor</b> applies the higher-level filter chain: DH/DL inside-zone gate, extended-level skips (IV/OV vs EV split for daily R3/S3, R4/S4; HTF weekly R3/S3, R4/S4), small/large candle, OR rules (EV days only), HTF Hurdle, HTF SMA Price &amp; Alignment, target shift, R/R, qty stack, min profit. Failure rejects the trade outright — no qty downgrade.</li>
+                <li><b>SignalProcessor</b> applies the higher-level filter chain: DH/DL inside-zone gate, extended-level skips (IV/OV vs EV split for daily R3/S3, R4/S4; HTF weekly R3/S3, R4/S4), small/large candle, OR rules (EV days only), HTF Hurdle (15-min), target shift, R/R, qty stack, min profit. Failure rejects the trade outright — no qty downgrade.</li>
                 <li><b>OrderService</b> places the entry on Fyers. On fill, the structural SL and split targets (T1 + T2) are computed from the fill price and placed.</li>
                 <li><b>OrderEventService</b> tracks entry / SL / target lifecycle via the Order WebSocket. <b>MarketDataService</b> trails the SL via the tick stream once the Fibonacci stage triggers.</li>
             </ol>
@@ -376,14 +371,14 @@
             <table>
                 <tr><th>Page</th><th>Use</th></tr>
                 <tr><td><b>Home</b></td><td>Day P&amp;L hero, equity curve, win/loss stats. First place to glance.</td></tr>
-                <tr><td><b>Scanner</b></td><td>Live watchlist cards. NIFTY composite at the top. Each card shows LTP, change %, OHL, CPR levels (expandable), 5-min &amp; 1h SMAs (expandable), latest signal (expandable). Expand state persists across refreshes.</td></tr>
+                <tr><td><b>Scanner</b></td><td>Live watchlist cards. NIFTY composite at the top. Each card shows LTP, change %, OHL, CPR levels (expandable), 5-min SMAs (expandable), latest signal (expandable). Expand state persists across refreshes.</td></tr>
                 <tr><td><b>Positions</b></td><td>Live open positions with tick-by-tick P&amp;L, modify SL/Target buttons, manual squareoff.</td></tr>
                 <tr><td><b>Trade Log</b></td><td>Every trade with timestamps, fills, P&amp;L breakdown.</td></tr>
                 <tr><td><b>Journal</b></td><td>Win/loss analysis: time-of-day, setup type, probability, P&amp;L distribution, profit factor.</td></tr>
                 <tr><td><b>Calendar</b></td><td>Daily P&amp;L heatmap.</td></tr>
                 <tr><td><b>Settings</b></td><td>Every toggle and threshold, organized by group.</td></tr>
                 <tr><td><b>Console</b></td><td>Live application logs (color-coded by severity, search/filter).</td></tr>
-                <tr><td><b>Monitoring</b></td><td>Bot internals: WS state, scanner load counts (ATR, SMA, weekly CPR, 1h SMA), traded/filtered today, refresh controls.</td></tr>
+                <tr><td><b>Monitoring</b></td><td>Bot internals: WS state, scanner load counts (ATR, SMA, weekly CPR), traded/filtered today, refresh controls.</td></tr>
             </table>
         </div>
     </div>
@@ -433,7 +428,7 @@
             <p>Logged with full Fyers reason. Position state never created. No retry — investigate root cause (margin, frozen scrip, circuit, etc.).</p>
 
             <h4>Mid-day restart</h4>
-            <p>On startup, the bot loads cached positions from <code>store/data/positions/</code> (one JSON per symbol), reconnects WSs, syncs against Fyers position book to reconcile. ATR, 5-min SMA, 1h SMA, and weekly CPR all restored from disk cache so no warm-up wait.</p>
+            <p>On startup, the bot loads cached positions from <code>store/data/positions/</code> (one JSON per symbol), reconnects WSs, syncs against Fyers position book to reconcile. ATR, 5-min SMA, and weekly CPR all restored from disk cache so no warm-up wait.</p>
 
             <h4>Auto squareoff</h4>
             <p>If <code>autoSquareOffTime</code> is set (e.g., "15:15"), all open positions are exited at market at that time. SL and target orders are cancelled. Single Telegram summary message sent.</p>
@@ -562,7 +557,7 @@
                 <tr><td>BUY_ABOVE_S1_PDL</td><td><b>MPT</b> — always (LTF gate bypassed; HTF state ignored)</td></tr>
                 <tr><td>SELL_BELOW_R1_PDH</td><td><b>MPT</b> — always</td></tr>
             </table>
-            <p>Magnets still pass through the rest of the filter chain (HTF Hurdle, HTF SMA, NIFTY align, OR rules, candle filters, etc.). Failure in any of those rejects the trade outright.</p>
+            <p>Magnets still pass through the rest of the filter chain (HTF Hurdle, NIFTY align, OR rules, candle filters, etc.). Failure in any of those rejects the trade outright.</p>
 
             <h4>Targets</h4>
             <p>Magnet targets aim back to the value area:</p>
@@ -656,17 +651,8 @@
                 <tr><td><span class="badge-example bg">BULLISH</span></td><td>Price &gt; weekly TC (top of CPR) — but not strong</td></tr>
                 <tr><td><span class="badge-example br">BEARISH</span></td><td>Price &lt; weekly BC (bottom of CPR)</td></tr>
                 <tr><td><span class="badge-example br">STRONG_BEARISH</span></td><td>Price &lt; weekly S1 AND &lt; weekly PWL</td></tr>
-                <tr><td><span class="badge-example by">NEUTRAL</span></td><td>Inside weekly CPR <b>and</b> price between 1h SMA 20 &amp; 50</td></tr>
+                <tr><td><span class="badge-example by">NEUTRAL</span></td><td>Inside weekly CPR (between BC and TC)</td></tr>
             </table>
-
-            <h4>Inside-CPR refinement (live)</h4>
-            <p>When price sits inside the weekly CPR (between BC and TC), the bot doesn't blindly call it NEUTRAL. It checks live LTP vs HTF SMA 20 &amp; 50:</p>
-            <ul>
-                <li>LTP &gt; both 1h SMAs → BULLISH (early read of which side is winning)</li>
-                <li>LTP &lt; both 1h SMAs → BEARISH</li>
-                <li>LTP between the two SMAs → truly NEUTRAL</li>
-            </ul>
-            <p>This refinement uses live LTP throughout the day — outside-CPR is sticky (1h close), inside-CPR is a live probe.</p>
         </div>
     </div>
 
@@ -763,9 +749,7 @@
             <ol>
                 <li><b>Extended-level skips</b> — daily R3/S3, R4/S4 (per day-type IV/OV vs EV) and HTF weekly R3/S3, R4/S4.</li>
                 <li><b>OR rules</b> on EV days — direction must match the OR break, or align with the gap if no break yet.</li>
-                <li><b>HTF Hurdle</b> — prior 1h close above (buy) / below (sell) the nearest weekly hurdle (R1, PWH, weekly TC, Pivot, BC for buys; mirror for sells).</li>
-                <li><b>HTF SMA Price</b> — prior 1h close above / below 1h SMA 20 and 50 together.</li>
-                <li><b>HTF SMA Alignment</b> — 1h SMA 20 vs 50 ordering matches direction.</li>
+                <li><b>HTF Hurdle</b> — prior 15-min close above (buy) / below (sell) the nearest weekly hurdle (R1, PWH, weekly TC, Pivot, BC for buys; mirror for sells).</li>
                 <li><b>Small / Large candle filters</b> — body + move-past-level floors; large-body cap as multiple of ATR.</li>
                 <li><b>Session move limit</b> — qty halved if already moved &gt; <code>sessionMoveLimit</code>% from open / PDC.</li>
                 <li><b>Target shift, target tolerance, structural SL, R/R filter, min absolute profit.</b></li>
@@ -853,9 +837,7 @@
                 <tr><td><code>EV_GAP_OPPOSED</code></td><td>Trade direction opposes the gap on an EV day (without an OR break to override).</td></tr>
                 <tr><td><code>SMALL_CANDLE</code></td><td>Candle body and move-past-level both below their ATR floors.</td></tr>
                 <tr><td><code>LARGE_CANDLE</code></td><td>Candle body exceeds <code>largeCandleBodyAtrThreshold</code> × ATR (exhaustion).</td></tr>
-                <tr><td><code>HTF_HURDLE</code></td><td>Prior 1h close hadn't cleared the nearest weekly hurdle (R1/PWH/TC/Pivot/BC for buys; mirror for sells).</td></tr>
-                <tr><td><code>HTF_SMA_TREND</code></td><td>Prior 1h close not above (buy) / below (sell) 1h SMA 20 and 50 together.</td></tr>
-                <tr><td><code>HTF_SMA_ALIGNMENT</code></td><td>1h SMA 20 not above (buy) / below (sell) 50.</td></tr>
+                <tr><td><code>HTF_HURDLE</code></td><td>Prior 15-min close hadn't cleared the nearest weekly hurdle (R1/PWH/TC/Pivot/BC for buys; mirror for sells).</td></tr>
                 <tr><td><code>INVALID_ATR</code></td><td>ATR not available or invalid for the symbol — can't compute SL distance.</td></tr>
                 <tr><td><code>WRONG_SIDE_TARGET</code></td><td>Computed target ended up on the wrong side of entry (degenerate projection — rejected as a safety check).</td></tr>
                 <tr><td><code>RISK_REWARD</code></td><td>Reward / risk &lt; <code>minRiskRewardRatio</code> after target shift and structural SL.</td></tr>
@@ -882,7 +864,7 @@
         <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> Practical use</div></div>
         <div class="help-body">
             <ul>
-                <li><b>End-of-day review</b> — scroll the trail looking for symbols with many filtered rows in one bucket. If, e.g., <code>HTF_SMA_TREND</code> dominates today's blocks, the 1h SMA bundle was misaligned for most stocks — that's a market-context observation, not necessarily a bug.</li>
+                <li><b>End-of-day review</b> — scroll the trail looking for symbols with many filtered rows in one bucket. If, e.g., <code>HTF_HURDLE</code> dominates today's blocks, NIFTY's prior 15-min close didn't clear the nearest weekly level for most stocks — that's a market-context observation, not necessarily a bug.</li>
                 <li><b>Tuning</b> — if a setup repeatedly fails one bucket and you trust the rest of the chain, consider relaxing that gate (e.g. switch SMA Price from strict to lenient). Don't tune off a single day — accumulate a few sessions first.</li>
                 <li><b>Debugging missed trades</b> — found a chart where the move was obvious but no trade fired? Find the symbol+time in the Signal Trail. The bucket and detail tell you exactly which gate skipped it.</li>
                 <li><b>Filter chip filtering</b> — the top-of-modal chips show the day's distribution of buckets. Click one to scope the table to that bucket only.</li>
@@ -963,7 +945,6 @@
             <ul>
                 <li><b>Session high/low shift</b> (<code>enableDayHighLowTargetShift</code>) — shift to today's session body H/L if it's within the path. Bypassed when entry candle is inside OR.</li>
                 <li><b>Weekly level shift</b> (<code>enableWeeklyLevelTargetShift</code>) — pool: weekly R1/R2/R3/R4, S1/S2/S3/S4, PH, PL. <i>Excludes</i> weekly TC/BC/Pivot (pivot range interior, not real S/R).</li>
-                <li><b>Weekly SMA shift</b> (<code>enableWeeklySmaTargetShift</code>) — shift to 1h SMA 20/50/200 if between entry and target.</li>
             </ul>
             <p>The nearest qualifying level wins. Rationale: if there's a wall between you and the structural target, target there instead — better to take a smaller win than have the trade reverse at the wall.</p>
         </div>
@@ -1085,7 +1066,7 @@
             <p>Most filters can be turned off independently from the Settings page. Useful when testing or in unusual market conditions:</p>
             <ul>
                 <li>Disable <code>enableSmaTrendCheck</code> / <code>enableSmaTrendCheckLenient</code> to allow trades against the SMA bundle. Same for the alignment pair.</li>
-                <li>Disable <code>enableHtfHurdleFilter</code>, <code>enableHtfSmaAlignment</code>, <code>enableHtfSmaAlignmentCheck</code> independently.</li>
+                <li>Disable <code>enableHtfHurdleFilter</code> independently.</li>
                 <li>Disable <code>enableIndexAlignment</code> to ignore NIFTY's state entirely.</li>
                 <li>Disable <code>enableMpt</code> to trade HPT-only (only fully-aligned LTF + HTF setups fire — cleanest, fewest trades).</li>
                 <li>Disable <code>enableHpt</code> for the rare case of MPT-only experimentation.</li>
@@ -1147,8 +1128,6 @@
                 <tr><td>smaLevelFilterMorningSkipUntil</td><td>10:15</td><td>Cutoff time IST for morning skip</td></tr>
                 <tr><td>enableIndexAlignment</td><td>false</td><td>NIFTY trend filter — buy needs BULLISH, sell needs BEARISH; else skip</td></tr>
                 <tr><td>enableHtfHurdleFilter</td><td>true</td><td>Reject when prior 1h close hasn't cleared nearest weekly R1/PWH/TC/Pivot/BC (buy) or S1/PWL/TC/Pivot/BC (sell)</td></tr>
-                <tr><td>enableHtfSmaAlignment</td><td>true</td><td>HTF SMA Price — prior 1h close above/below 1h SMA 20 &amp; 50</td></tr>
-                <tr><td>enableHtfSmaAlignmentCheck</td><td>false</td><td>HTF SMA Alignment — 1h SMA 20 &gt; 50 (buy) / 20 &lt; 50 (sell)</td></tr>
                 <tr><td>skipR3S3IvOvDays / skipR3S3EvDays</td><td>true / true</td><td>Skip R3/S3 + DH above R3 / DL below S3, split by day type</td></tr>
                 <tr><td>skipR4S4IvOvDays / skipR4S4EvDays</td><td>true / true</td><td>Skip R4/S4 + DH above R4 / DL below S4, split by day type</td></tr>
                 <tr><td>skipHtfR3S3NormalDays / skipHtfR4S4NormalDays</td><td>true / true</td><td>Skip when entry close is past weekly R3/R4 (buys) or S3/S4 (sells)</td></tr>
@@ -1189,7 +1168,6 @@
                 <tr><td>enableDayHighLowTargetShift</td><td>true</td><td>Shift target to today's session body H/L</td></tr>
                 <tr><td>dayHighLowShiftMinDistAtr</td><td>2.0</td><td>Skip shift if H/L too close (× ATR)</td></tr>
                 <tr><td>enableWeeklyLevelTargetShift</td><td>true</td><td>Shift to weekly R1-R4 / S1-S4 / PH / PL (TC/BC/Pivot excluded)</td></tr>
-                <tr><td>enableWeeklySmaTargetShift</td><td>true</td><td>Shift to 1h SMA 20/50/200</td></tr>
                 <tr><td>enableDailySma200TargetShift</td><td>true</td><td>Shift to daily 5-min SMA 200 between entry and target (most useful when running lenient SMA gates)</td></tr>
                 <tr><td>enableTargetTolerance</td><td>true</td><td>Discount target by ATR fraction so near-miss reversals fill</td></tr>
                 <tr><td>targetToleranceAtr</td><td>0.10</td><td>Discount as multiple of ATR</td></tr>
@@ -1222,7 +1200,7 @@
                 <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
                 <tr><td>signalSource</td><td>INTERNAL</td><td>INTERNAL = bot scanner (live mode default)</td></tr>
                 <tr><td>scannerTimeframe</td><td>5</td><td>Candle resolution in minutes</td></tr>
-                <tr><td>higherTimeframe</td><td>60</td><td>HTF candle resolution (1h SMAs, weekly trend)</td></tr>
+                <tr><td>higherTimeframe</td><td>60</td><td>HTF candle resolution (weekly trend)</td></tr>
             </table>
 
             <h4>SMA pattern detection</h4>
@@ -1258,7 +1236,7 @@
             <h4>Event types</h4>
             <table>
                 <tr><th>Event</th><th>Content</th></tr>
-                <tr><td><b>Bot ready</b></td><td>Watchlist count, NS/NL/IS/IL breakdown, ATR/SMA/weekly CPR/1h SMA load status, mode (LIVE).</td></tr>
+                <tr><td><b>Bot ready</b></td><td>Watchlist count, NS/NL/IS/IL breakdown, ATR/SMA/weekly CPR load status, mode (LIVE).</td></tr>
                 <tr><td><b>Trade opened</b></td><td>Symbol, side, qty, entry, SL, target, setup, probability tier, reasoning summary.</td></tr>
                 <tr><td><b>SL modified (trailing)</b></td><td>New SL, prior SL, current peak / trough.</td></tr>
                 <tr><td><b>T1 hit</b></td><td>Exit price, partial P&amp;L, remaining qty, new SL.</td></tr>

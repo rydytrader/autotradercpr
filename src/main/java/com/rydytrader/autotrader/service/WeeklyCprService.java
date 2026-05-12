@@ -44,9 +44,6 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
     private final com.rydytrader.autotrader.store.RiskSettingsStore riskSettings;
     @org.springframework.beans.factory.annotation.Autowired
     private EventService eventService;
-    @org.springframework.beans.factory.annotation.Autowired
-    @org.springframework.context.annotation.Lazy
-    private HtfSmaService htfSmaService;
     private final ObjectMapper mapper = new ObjectMapper();
 
     // Weekly CPR levels per symbol (fixed for the week, fetched once)

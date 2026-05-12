@@ -60,7 +60,6 @@ public class SettingsController {
         result.put("enableDailySma200TargetShift", riskSettings.isEnableDailySma200TargetShift());
         result.put("dayHighLowShiftMinDistAtr", riskSettings.getDayHighLowShiftMinDistAtr());
         result.put("enableWeeklyLevelTargetShift", riskSettings.isEnableWeeklyLevelTargetShift());
-        result.put("enableWeeklySmaTargetShift", riskSettings.isEnableWeeklySmaTargetShift());
         result.put("enableHtfHurdleFilter", riskSettings.isEnableHtfHurdleFilter());
         result.put("enableNiftyHtfHurdleFilter", riskSettings.isEnableNiftyHtfHurdleFilter());
         result.put("niftyHurdleMinHeadroomAtr", riskSettings.getNiftyHurdleMinHeadroomAtr());
@@ -68,8 +67,6 @@ public class SettingsController {
         result.put("niftyOiHurdleMinHeadroomAtr", riskSettings.getNiftyOiHurdleMinHeadroomAtr());
         result.put("enableNifty5mHurdleFilter", riskSettings.isEnableNifty5mHurdleFilter());
         result.put("nifty5mHurdleMinHeadroomAtr", riskSettings.getNifty5mHurdleMinHeadroomAtr());
-        result.put("enableHtfSmaAlignment", riskSettings.isEnableHtfSmaAlignment());
-        result.put("enableHtfSmaAlignmentCheck", riskSettings.isEnableHtfSmaAlignmentCheck());
         result.put("enableHtfCandleFilter", riskSettings.isEnableHtfCandleFilter());
         result.put("enableNiftyHtfCandleFilter", riskSettings.isEnableNiftyHtfCandleFilter());
         result.put("niftyHtfCandleMaxWickRatio", riskSettings.getNiftyHtfCandleMaxWickRatio());
@@ -211,7 +208,6 @@ public class SettingsController {
             if (body.containsKey("enableDailySma200TargetShift")) riskSettings.setEnableDailySma200TargetShift(Boolean.parseBoolean(body.get("enableDailySma200TargetShift").toString()));
             if (body.containsKey("dayHighLowShiftMinDistAtr")) riskSettings.setDayHighLowShiftMinDistAtr(Double.parseDouble(body.get("dayHighLowShiftMinDistAtr").toString()));
             if (body.containsKey("enableWeeklyLevelTargetShift")) riskSettings.setEnableWeeklyLevelTargetShift(Boolean.parseBoolean(body.get("enableWeeklyLevelTargetShift").toString()));
-            if (body.containsKey("enableWeeklySmaTargetShift")) riskSettings.setEnableWeeklySmaTargetShift(Boolean.parseBoolean(body.get("enableWeeklySmaTargetShift").toString()));
             if (body.containsKey("enableHtfHurdleFilter")) riskSettings.setEnableHtfHurdleFilter(Boolean.parseBoolean(body.get("enableHtfHurdleFilter").toString()));
             if (body.containsKey("enableNiftyHtfHurdleFilter")) riskSettings.setEnableNiftyHtfHurdleFilter(Boolean.parseBoolean(body.get("enableNiftyHtfHurdleFilter").toString()));
             if (body.containsKey("niftyHurdleMinHeadroomAtr")) riskSettings.setNiftyHurdleMinHeadroomAtr(Double.parseDouble(body.get("niftyHurdleMinHeadroomAtr").toString()));
@@ -219,8 +215,6 @@ public class SettingsController {
             if (body.containsKey("niftyOiHurdleMinHeadroomAtr")) riskSettings.setNiftyOiHurdleMinHeadroomAtr(Double.parseDouble(body.get("niftyOiHurdleMinHeadroomAtr").toString()));
             if (body.containsKey("enableNifty5mHurdleFilter")) riskSettings.setEnableNifty5mHurdleFilter(Boolean.parseBoolean(body.get("enableNifty5mHurdleFilter").toString()));
             if (body.containsKey("nifty5mHurdleMinHeadroomAtr")) riskSettings.setNifty5mHurdleMinHeadroomAtr(Double.parseDouble(body.get("nifty5mHurdleMinHeadroomAtr").toString()));
-            if (body.containsKey("enableHtfSmaAlignment")) riskSettings.setEnableHtfSmaAlignment(Boolean.parseBoolean(body.get("enableHtfSmaAlignment").toString()));
-            if (body.containsKey("enableHtfSmaAlignmentCheck")) riskSettings.setEnableHtfSmaAlignmentCheck(Boolean.parseBoolean(body.get("enableHtfSmaAlignmentCheck").toString()));
             if (body.containsKey("enableHtfCandleFilter")) riskSettings.setEnableHtfCandleFilter(Boolean.parseBoolean(body.get("enableHtfCandleFilter").toString()));
             if (body.containsKey("enableNiftyHtfCandleFilter")) riskSettings.setEnableNiftyHtfCandleFilter(Boolean.parseBoolean(body.get("enableNiftyHtfCandleFilter").toString()));
             if (body.containsKey("niftyHtfCandleMaxWickRatio")) riskSettings.setNiftyHtfCandleMaxWickRatio(Double.parseDouble(body.get("niftyHtfCandleMaxWickRatio").toString()));

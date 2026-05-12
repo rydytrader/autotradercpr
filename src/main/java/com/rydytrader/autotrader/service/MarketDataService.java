@@ -56,7 +56,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     private final BreakoutScanner     breakoutScanner;
     private final BhavcopyService     bhavcopyService;
     private final TelegramService     telegramService;
-    private final HtfSmaService       htfSmaService;
     private final SmaCrossExitService smaCrossExitService;
     @org.springframework.beans.factory.annotation.Autowired
     private SymbolMasterService       symbolMasterService;
@@ -161,7 +160,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                               BhavcopyService bhavcopyService,
                               SmaService smaService,
                               TelegramService telegramService,
-                              HtfSmaService htfSmaService,
                               SmaCrossExitService smaCrossExitService) {
         this.tokenStore = tokenStore;
         this.fyersProperties = fyersProperties;
@@ -177,7 +175,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         this.bhavcopyService = bhavcopyService;
         this.smaService = smaService;
         this.telegramService = telegramService;
-        this.htfSmaService = htfSmaService;
         this.smaCrossExitService = smaCrossExitService;
         candleAggregator.addListener(this);
     }
@@ -213,13 +210,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         // SMA cross exit — must register AFTER smaService so candle.sma20/sma50 are populated.
         // Gated by enableSmaCrossExit setting; reads candle's post-close completed-only SMA snapshot.
         candleAggregator.addListener(smaCrossExitService);
-        // Feed each 5-min close into HtfSmaService as the in-progress 60-min bar's current
-        // value — so HTF SMA refreshes every 5 min instead of stepping only at 1h boundaries.
-        candleAggregator.addListener((symbol, candle) -> {
-            if (candle != null && candle.close > 0) {
-                htfSmaService.updatePartialClose(symbol, candle.close);
-            }
-        });
         candleAggregator.start();
 
         // Higher timeframe aggregator for weekly trend (e.g. 75-min candles)
@@ -227,9 +217,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         htfAggregator.setTimeframe(riskSettings.getHigherTimeframe());
         htfAggregator.addListener((symbol, candle) ->
             weeklyCprService.onHigherTimeframeCandleClose(symbol, candle.open, candle.high, candle.low, candle.close));
-        htfAggregator.addListener(htfSmaService);
         htfAggregator.start();
-        log.info("[MarketData] Higher timeframe aggregator started: {}min (listeners: WeeklyCpr, HtfSma)", riskSettings.getHigherTimeframe());
+        log.info("[MarketData] Higher timeframe aggregator started: {}min (listener: WeeklyCpr)", riskSettings.getHigherTimeframe());
 
         // Schedule scanner pre-market data fetch
         scheduleScannerInit();
@@ -693,12 +682,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                     if (s20  > 0) d.put("sma",      Math.round(s20  * 100.0) / 100.0);
                     if (s50  > 0) d.put("sma50",    Math.round(s50  * 100.0) / 100.0);
                     if (s200 > 0) d.put("sma200",   Math.round(s200 * 100.0) / 100.0);
-                    double h20  = htfSmaService.getSma(sym);
-                    double h50  = htfSmaService.getSma50(sym);
-                    double h200 = htfSmaService.getSma200(sym);
-                    if (h20  > 0) d.put("htfSma20",  Math.round(h20  * 100.0) / 100.0);
-                    if (h50  > 0) d.put("htfSma50",  Math.round(h50  * 100.0) / 100.0);
-                    if (h200 > 0) d.put("htfSma200", Math.round(h200 * 100.0) / 100.0);
                     wlPayload.put(sym, d);
                 }
                 if (!wlPayload.isEmpty()) {
@@ -732,7 +715,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
 
     /** Round a derived price to the symbol's tick size. Falls back to 2-decimal rounding
      *  if tick is unknown so the value is still readable. Display only — filter math uses
-     *  the raw value via SmaService / HtfSmaService. */
+     *  the raw value via SmaService. */
     private static double roundToTick(double value, double tick) {
         if (tick <= 0) return Math.round(value * 100.0) / 100.0;
         return Math.round(value / tick) * tick;
@@ -1007,19 +990,16 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         List<String> seedUniverse = buildSeedUniverse(watchlistWithIndex);
         atrService.pruneTo(seedUniverse);
         smaService.pruneTo(seedUniverse);
-        htfSmaService.pruneTo(seedUniverse);
         candleAggregator.pruneTo(seedUniverse);
 
-        // Pre-seed ATR / SMA / weekly / HTF SMA for ALL NIFTY 50 stocks (not just the filtered
-        // watchlist subset). Filter changes mid-day can bring previously-excluded stocks into
-        // the watchlist; pre-seeding ensures their indicators are ready instantly. Cost is one
+        // Pre-seed ATR / SMA / weekly for ALL NIFTY 50 stocks (not just the filtered watchlist
+        // subset). Filter changes mid-day can bring previously-excluded stocks into the
+        // watchlist; pre-seeding ensures their indicators are ready instantly. Cost is one
         // historical fetch per stock at startup vs. lazy seeding on every rebuild.
         log.info("[MarketData] Seeding ATR + 5-min SMA for {} symbols (full NIFTY 50)", seedUniverse.size());
         atrService.fetchAtrForSymbols(seedUniverse);
         log.info("[MarketData] Seeding weekly trends for {} symbols", seedUniverse.size());
         weeklyCprService.fetchWeeklyTrends(seedUniverse);
-        log.info("[MarketData] Seeding HTF (60-min) SMAs for {} symbols", seedUniverse.size());
-        atrService.fetchHtfSmaForSymbols(seedUniverse, htfSmaService);
 
         // Subscribe ALL 50 NIFTY stocks + indices to WebSocket — needed for live LTP on the
         // full universe so NIFTY breadth (advancers vs decliners) reflects the entire 50,
@@ -1053,9 +1033,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         int e20 = smaService.getLoadedCountFor(watchlist);
         int e50 = smaService.getSma50LoadedCountFor(watchlist);
         int e200 = smaService.getSma200LoadedCountFor(watchlist);
-        int he20 = htfSmaService.getLoadedCountFor(watchlist);
-        int he50 = htfSmaService.getSma50LoadedCountFor(watchlist);
-        int he200 = htfSmaService.getSma200LoadedCountFor(watchlist);
         int total = watchlist.size();
         int htfMins = riskSettings.getHigherTimeframe();
 
@@ -1064,13 +1041,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             + ", narrow=" + narrowCount + "/inside=" + insideCount
             + ", CPR=" + cprCount + ", ATR=" + atrLoaded
             + ", weekly-trend=" + weeklyCount
-            + ", 5m SMA 20/50/200=" + e20 + "/" + e50 + "/" + e200
-            + ", " + htfMins + "m SMA 20/50/200=" + he20 + "/" + he50 + "/" + he200 + ")");
+            + ", 5m SMA 20/50/200=" + e20 + "/" + e50 + "/" + e200 + ")");
         eventService.log("[SUCCESS] System ready for trading");
 
         telegramService.notifyBotReady(total, narrowCount, insideCount,
             atrLoaded, weeklyCount, cprCount,
-            e20, e50, e200, he20, he50, he200, htfMins);
+            e20, e50, e200, htfMins);
     }
 
     /**

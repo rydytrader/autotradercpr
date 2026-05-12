@@ -65,10 +65,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
     @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.context.annotation.Lazy
-    private HtfSmaService htfSmaService;
-
-    @org.springframework.beans.factory.annotation.Autowired
-    @org.springframework.context.annotation.Lazy
     private MarketHolidayService marketHolidayService;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -1615,7 +1611,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      * Max Put OI for sells). Split out so the OI level can be toggled separately.
      *
      * <p>Returns null on pass (filter off, no OI loaded, OI cleared past, or no prior
-     * 1h close available — fail-open). Returns a non-null reason string to reject.
+     * 15-min close available — fail-open). Returns a non-null reason string to reject.
      */
     private String checkNiftyOiHurdle(boolean isBuy) {
         if (!riskSettings.isEnableNiftyOiHurdleFilter()) return null;
@@ -1635,36 +1631,19 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             // headroom check below handles "OI right ahead of NIFTY".
             boolean strikeBehindLtp = isBuy ? oiStrike < niftyPrice : oiStrike > niftyPrice;
             if (strikeBehindLtp) {
-                Double priorHtfClose = weeklyCprService != null ? weeklyCprService.getLastHigherTfClose(niftySym) : null;
-                boolean usedPrevSession = false;
-                boolean usedLiveLtp = false;
-                boolean firstTradingDay = marketHolidayService != null && marketHolidayService.isFirstTradingDayOfWeek();
-                if ((priorHtfClose == null || priorHtfClose <= 0) && !firstTradingDay && htfSmaService != null) {
-                    Double prev = htfSmaService.getLastClose(niftySym);
-                    if (prev != null && prev > 0) {
-                        priorHtfClose = prev;
-                        usedPrevSession = true;
-                    }
-                }
-                if ((priorHtfClose == null || priorHtfClose <= 0) && firstTradingDay) {
-                    priorHtfClose = niftyPrice;
-                    usedLiveLtp = true;
-                }
+                // Prior 15-min close (mirrors NIFTY HTF Hurdle). Pre-9:30 IST no 15-min close
+                // exists yet — silent fail-open. Trades only fire from 9:30 onwards anyway,
+                // by which time the day's first 15-min close has finalized.
+                Double priorHtfClose = candleAggregator != null
+                    ? candleAggregator.getLast15MinClose(niftySym) : null;
                 if (priorHtfClose == null || priorHtfClose <= 0) {
-                    return "NIFTY OI hurdle at " + oiName
-                        + ": NIFTY " + String.format("%.2f", niftyPrice)
-                        + ", level " + String.format("%.2f", oiStrike)
-                        + ", no prior 1h close available"
-                        + (firstTradingDay ? " — first trading day of week" : "");
+                    return null; // silent fail-open
                 }
                 boolean cleared = isBuy ? priorHtfClose > oiStrike : priorHtfClose < oiStrike;
                 if (!cleared) {
-                    String label = usedLiveLtp ? ", live LTP="
-                                 : usedPrevSession ? ", prev session 1h close="
-                                 : ", prior 1h close=";
                     return "NIFTY OI hurdle at " + oiName
                         + ": NIFTY " + String.format("%.2f", niftyPrice)
-                        + label + String.format("%.2f", priorHtfClose)
+                        + ", prior 15-min close=" + String.format("%.2f", priorHtfClose)
                         + ", level " + String.format("%.2f", oiStrike);
                 }
             }
@@ -2602,11 +2581,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         String s = responseText.toLowerCase();
 
         // Composite LPT-disabled rejection — drill into the parenthesised inner reason.
-        // Order matters: more specific first (HTF SMA order > HTF SMA not aligned > HTF hurdle).
         if (s.contains("probability downgraded to lpt") || s.contains("→ lpt")) {
             if (s.contains("htf hurdle"))              return "HTF_HURDLE";
-            if (s.contains("htf sma order"))           return "HTF_SMA_ALIGNMENT";
-            if (s.contains("htf sma not aligned"))     return "HTF_SMA_TREND";
             if (s.contains("nifty opposed"))           return "NIFTY_OPPOSED";
             if (s.contains("inside-or"))               return "INSIDE_OR";
             if (s.contains("ev reversal"))             return "EV_REVERSAL";

@@ -19,13 +19,12 @@ public class SignalProcessor {
     private final CandleAggregator candleAggregator;
     private final WeeklyCprService weeklyCprService;
     private final SmaService       smaService;
-    private final HtfSmaService    htfSmaService;
     private final MarketHolidayService marketHolidayService;
 
     public SignalProcessor(RiskSettingsStore riskSettings, EventService eventService,
                            QuantityService quantityService, MarketDataService marketDataService,
                            CandleAggregator candleAggregator, WeeklyCprService weeklyCprService,
-                           SmaService smaService, HtfSmaService htfSmaService,
+                           SmaService smaService,
                            MarketHolidayService marketHolidayService) {
         this.riskSettings = riskSettings;
         this.eventService = eventService;
@@ -33,7 +32,6 @@ public class SignalProcessor {
         this.marketDataService = marketDataService;
         this.candleAggregator = candleAggregator;
         this.smaService = smaService;
-        this.htfSmaService = htfSmaService;
         this.weeklyCprService = weeklyCprService;
         this.marketHolidayService = marketHolidayService;
     }
@@ -362,123 +360,24 @@ public class SignalProcessor {
                     }
                 }
                 if (chosenName != null) {
-                    Double priorHtfClose = weeklyCprService.getLastHigherTfClose(symbol);
-                    boolean usedPrevSession = false;
-                    boolean usedLiveLtp = false;
-                    boolean firstTradingDay = marketHolidayService.isFirstTradingDayOfWeek();
-
-                    // First-hour fallback: before today's first 1h candle closes, there's no
-                    // today's HTF close to check against. On Tue-Fri (not first trading day),
-                    // use the prior session's final 1h close — weekly CPR levels are stable
-                    // across the week, so yesterday's close vs this week's reversal level is a
-                    // meaningful comparison. On Monday/first-day, skip the prior-session fallback
-                    // — weekly levels just went live and last Friday's close was vs last week's
-                    // levels — and instead fall back to live LTP as the in-progress 1h proxy
-                    // (loses "wait for confirmed structure" guarantee for one window, but lets
-                    // Monday morning trade rather than rejecting everything before 10:15 IST).
-                    if ((priorHtfClose == null || priorHtfClose <= 0) && !firstTradingDay) {
-                        Double prev = htfSmaService.getLastClose(symbol);
-                        if (prev != null && prev > 0) {
-                            priorHtfClose = prev;
-                            usedPrevSession = true;
-                        }
-                    }
-                    if ((priorHtfClose == null || priorHtfClose <= 0) && firstTradingDay) {
-                        double ltp = candleAggregator.getLtp(symbol);
-                        if (ltp > 0) {
-                            priorHtfClose = ltp;
-                            usedLiveLtp = true;
-                        }
-                    }
-
+                    // Per-stock HTF Hurdle now uses 15-min boundaries (mirrors the NIFTY HTF
+                    // Hurdle). Pre-9:30 IST no 15-min close exists yet → silent fail-open.
+                    // Trades only fire from 9:30 onwards anyway, so by the time this gate runs
+                    // the 9:25-9:30 5-min bar HAS finalized and IS the day's first 15-min close.
+                    Double priorHtfClose = candleAggregator != null
+                        ? candleAggregator.getLast15MinClose(symbol) : null;
                     if (priorHtfClose == null || priorHtfClose <= 0) {
-                        return ProcessedSignal.rejected(setup, symbol,
-                            "HTF hurdle at weekly " + chosenName
-                            + ": close=" + fmt(close) + ", level=" + fmt(chosenLevel)
-                            + ", no prior 1h close available"
-                            + (firstTradingDay ? " — first trading day of week" : ""));
+                        // Silent fail-open — no rejection log pre-9:30.
                     } else if (isBuy ? priorHtfClose <= chosenLevel : priorHtfClose >= chosenLevel) {
-                        String label = usedLiveLtp ? ", live LTP="
-                                     : usedPrevSession ? ", prev session 1h close="
-                                     : ", prior 1h close=";
                         return ProcessedSignal.rejected(setup, symbol,
                             "HTF hurdle at weekly " + chosenName
                             + ": close=" + fmt(close)
-                            + label + fmt(priorHtfClose)
+                            + ", prior 15-min close=" + fmt(priorHtfClose)
                             + ", level=" + fmt(chosenLevel));
                     }
-                    // else: prior 1h close (or LTP fallback) has cleared the level → trade allowed
+                    // else: prior 15-min close has cleared the level → trade allowed
                 }
                 // else: no weekly level in the relevant direction → filter no-op (e.g. close below all buy candidates)
-            }
-        }
-
-        // ── 4e2c. HTF SMA price — additional HPT→LPT check ──
-        // Prior 1h close must be above (buys) / below (sells) both HTF SMA 20 and HTF SMA 50.
-        // Both inputs are 1h-close-based: the price reference is the previous completed 1h close
-        // (not live LTP), and the SMAs are computed from completed 1h closes only (no live
-        // blending). This makes the filter a "did the committed HTF state confirm the trend?"
-        // check, mirroring the HTF Hurdle's design philosophy. Filter state is sticky between
-        // 1h boundaries — no flicker mid-bar. SMA 200 is excluded — too slow a reference for
-        // near-term HTF alignment.
-        // First-hour fallback: before today's first 1h close, use prior session's final 1h close
-        // (Tue–Fri only — htfSmaService.getLastClose persists across days). On Monday/first-day
-        // with no prior 1h close in cache, fall back to live LTP as the in-progress 1h proxy
-        // so we don't reject every trade for the first hour of the week.
-        if (riskSettings.isEnableHtfSmaAlignment()
-                && ("HPT".equals(probability) || "MPT".equals(probability))) {
-            double htfS20 = htfSmaService != null ? htfSmaService.getSmaCompletedOnly(symbol)   : 0;
-            double htfS50 = htfSmaService != null ? htfSmaService.getSma50CompletedOnly(symbol) : 0;
-            Double priorHtfClose = htfSmaService != null ? htfSmaService.getLastClose(symbol) : null;
-            boolean firstTradingDay = marketHolidayService.isFirstTradingDayOfWeek();
-            boolean usedLiveLtp = false;
-            if ((priorHtfClose == null || priorHtfClose <= 0) && firstTradingDay) {
-                double ltp = candleAggregator.getLtp(symbol);
-                if (ltp > 0) {
-                    priorHtfClose = ltp;
-                    usedLiveLtp = true;
-                }
-            }
-            if (htfS20 > 0 && htfS50 > 0) {
-                if (priorHtfClose == null || priorHtfClose <= 0) {
-                    if (firstTradingDay) {
-                        return ProcessedSignal.rejected(setup, symbol,
-                            "HTF SMA price: first trading day of week, no prior 1h close and no live LTP");
-                    }
-                    return ProcessedSignal.rejected(setup, symbol,
-                        "HTF SMA price: no prior 1h close available");
-                }
-                boolean alignedBuy  = priorHtfClose > htfS20 && priorHtfClose > htfS50;
-                boolean alignedSell = priorHtfClose < htfS20 && priorHtfClose < htfS50;
-                if (isBuy ? !alignedBuy : !alignedSell) {
-                    String label = usedLiveLtp ? "live LTP=" : "prior 1h close=";
-                    return ProcessedSignal.rejected(setup, symbol,
-                        "HTF SMA price not aligned: " + label + fmt(priorHtfClose)
-                        + " vs 1h SMA 20=" + fmt(htfS20) + ", 50=" + fmt(htfS50)
-                        + " — need " + (isBuy ? "above both" : "below both"));
-                }
-            }
-        }
-
-        // ── 4e2d. HTF SMA order — stricter alignment check ──
-        // 1h SMA 20 must be above 1h SMA 50 (buys) or below it (sells). Uses completed-only
-        // SMAs (no live blending) — same 1h-close-based philosophy as 4e2c. Stricter than the
-        // price gate above: the HTF trend structure itself has to be stacked in the trade's
-        // direction. Mirrors the 5-min SMA alignment check (20>50>200) but using only 20/50
-        // since 200 is excluded from HTF structure rules here.
-        if (riskSettings.isEnableHtfSmaAlignmentCheck()
-                && ("HPT".equals(probability) || "MPT".equals(probability))) {
-            double htfS20 = htfSmaService != null ? htfSmaService.getSmaCompletedOnly(symbol)   : 0;
-            double htfS50 = htfSmaService != null ? htfSmaService.getSma50CompletedOnly(symbol) : 0;
-            if (htfS20 > 0 && htfS50 > 0) {
-                boolean orderedBuy  = htfS20 > htfS50;
-                boolean orderedSell = htfS20 < htfS50;
-                if (isBuy ? !orderedBuy : !orderedSell) {
-                    return ProcessedSignal.rejected(setup, symbol,
-                        "HTF SMA order not aligned: 1h SMA 20=" + fmt(htfS20)
-                        + ", 50=" + fmt(htfS50)
-                        + " — need " + (isBuy ? "20 > 50" : "20 < 50"));
-                }
             }
         }
 
@@ -570,17 +469,6 @@ public class SignalProcessor {
                 if (sma200 > 0) {
                     shiftCandidates.putIfAbsent(sma200, "200 SMA");
                 }
-            }
-            // Weekly (HTF 60-min) SMA levels — any of SMA(20/50/200) sitting between close and
-            // the structural target becomes a resistance/support candidate. These are the same
-            // values shown as the "1h" row under the SMA Levels section on the scanner card.
-            if (riskSettings.isEnableWeeklySmaTargetShift() && htfSmaService != null) {
-                double htfS20  = htfSmaService.getSma(symbol);
-                double htfS50  = htfSmaService.getSma50(symbol);
-                double htfS200 = htfSmaService.getSma200(symbol);
-                if (htfS20  > 0) shiftCandidates.putIfAbsent(htfS20,  "weekly SMA 20");
-                if (htfS50  > 0) shiftCandidates.putIfAbsent(htfS50,  "weekly SMA 50");
-                if (htfS200 > 0) shiftCandidates.putIfAbsent(htfS200, "weekly SMA 200");
             }
             Double bestLevel = null;
             String bestName = null;

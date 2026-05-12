@@ -768,7 +768,6 @@
             return { label: 'NEUTRAL', shortLabel: 'NEU', cls: 'neutral', arrow: '&#9644;' };
         }
         var em5  = smaTrendObj((d.price5m  > 0 ? d.price5m  : d.ltp), d.sma20,    d.sma50,    d.sma200,    d.smaPattern);
-        var em60 = smaTrendObj((d.price60m > 0 ? d.price60m : d.ltp), d.htfSma20, d.htfSma50, d.htfSma200, d.htfSmaPattern);
 
         // Build levels — show key levels with broken markers
         var broken = d.brokenLevels || [];
@@ -889,7 +888,6 @@
             + '    <span>SMA Levels</span>'
             + '    <span style="display:flex; gap:8px; margin-left:auto; align-items:center; font-size:0.7rem;">'
             + '      <span class="scan-trend"><span class="label">5m:</span> <span class="' + em5.cls  + '">' + em5.arrow  + ' ' + em5.label  + '</span></span>'
-            + '      <span class="scan-trend"><span class="label">1h:</span> <span class="' + em60.cls + '">' + em60.arrow + ' ' + em60.label + '</span></span>'
             + '      <span class="toggle-arrow">&#9654;</span>'
             + '    </span>'
             + '  </div>'
@@ -915,14 +913,6 @@
                     +   '<span style="text-align:right;">' + valCell(d.sma50) + '</span>'
                     +   '<span style="text-align:right;">' + valCell(d.sma200) + '</span>'
                     +   '<span style="text-align:right;">' + patCell(d.smaPattern) + '</span>'
-                    + '</div>'
-                    + '<div style="' + gridStyle + '">'
-                    +   '<span style="font-weight:700; color:var(--text-muted);">60m</span>'
-                    +   '<span>' + trendBadge(em60) + '</span>'
-                    +   '<span style="text-align:right;">' + valCell(d.htfSma20) + '</span>'
-                    +   '<span style="text-align:right;">' + valCell(d.htfSma50) + '</span>'
-                    +   '<span style="text-align:right;">' + valCell(d.htfSma200) + '</span>'
-                    +   '<span style="text-align:right;">' + patCell(d.htfSmaPattern) + '</span>'
                     + '</div>'
                     + '</div>';
             })()
@@ -1055,18 +1045,14 @@
                         if (update.sma)       d.sma       = update.sma;
                         if (update.sma50)     d.sma50     = update.sma50;
                         if (update.sma200)    d.sma200    = update.sma200;
-                        if (update.htfSma20)  d.htfSma20  = update.htfSma20;
-                        if (update.htfSma50)  d.htfSma50  = update.htfSma50;
-                        if (update.htfSma200) d.htfSma200 = update.htfSma200;
 
                         // Update DOM in-place
                         var card = document.querySelector('[data-symbol="' + d.symbol + '"]');
                         if (!card) continue;
                         // If SMA values changed, the cheapest way to refresh the SMA grid
-                        // (5-min + 1h rows include arrows/scores derived from LTP vs SMA) is
+                        // (5-min row includes arrows/scores derived from LTP vs SMA) is
                         // to re-render the whole card. ~50 cards × small HTML = fast enough.
-                        var smaChanged = update.sma || update.sma50 || update.sma200
-                                       || update.htfSma20 || update.htfSma50 || update.htfSma200;
+                        var smaChanged = update.sma || update.sma50 || update.sma200;
                         if (smaChanged) {
                             card.outerHTML = buildCard(d);
                             continue;
