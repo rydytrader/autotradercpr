@@ -163,8 +163,6 @@ public class BhavcopyService {
                     log.error("[BhavcopyService] Failed to backfill after purge: {}", e.getMessage());
                 }
             }
-            // Classify narrow/inside range types from loaded cache + history
-            classifyNarrowRangeTypes(cache);
             // Only compute beta/cap/avgs if not already in the cached file (avoids slow NSE calls on restart)
             boolean needsEnrichment = cache.values().stream()
                 .anyMatch(c -> c.getBeta() == 0 || c.getCapCategory() == null || c.getAvgVolume20() == 0);
@@ -515,8 +513,6 @@ public class BhavcopyService {
                     backfillHistory(targetDate, cookies, nfoSymbols);
                 }
 
-                // Classify after backfill so z-score has sufficient history
-                classifyNarrowRangeTypes(cache);
                 computeBetas(cache);
                 computeVolumeTurnoverAverages(cache);
                 fetchCapCategories(cookies, cache);
@@ -546,76 +542,8 @@ public class BhavcopyService {
         return false;
     }
 
-    /**
-     * Classify every stock's range as SMALL or LARGE using a per-stock 20-day z-score
-     * of the raw range x = High - Low: z = (x - μ) / σ. z < -1.5 → SMALL (genuinely
-     * tight bar). Otherwise → LARGE.
-     */
-    /**
-     * Classify narrow CPR stocks as SMALL or LARGE based on the ratio of prior day's
-     * range (PDH - PDL) to today's CPR width (|TC - BC|).
-     *
-     * SMALL = low ratio → yesterday was quiet, PDH/PDL close to CPR → coiled spring,
-     *         high breakout potential.
-     * LARGE = high ratio → yesterday was wild, PDH/PDL far from CPR → exhausted,
-     *         likely to stay range-bound.
-     *
-     * Threshold: ratio < 5.0 → SMALL, else LARGE. The rangeZScore field stores the
-     * raw ratio for display (not a z-score anymore despite the field name).
-     */
-    /** Re-run NS/NL classification on current cache (called when ratio threshold changes in settings). */
-    public void reclassifyNarrowRangeTypes() {
-        if (!cache.isEmpty()) {
-            classifyNarrowRangeTypes(cache);
-        }
-    }
-
-    /**
-     * Classify narrow/inside CPR stocks as SMALL or LARGE based on previous day's range
-     * as a percentage of the stock's 20-day Average Daily Range (ADR).
-     *
-     * SMALL (compressed): prev day range ≤ smallRangeAdrPct% of 20-day ADR
-     *   → stock moved less than usual = coiled spring, high breakout potential
-     * LARGE (expanded):   prev day range > smallRangeAdrPct% of 20-day ADR
-     *   → stock already made a big move = possibly exhausted
-     */
-    private void classifyNarrowRangeTypes(Map<String, CprLevels> todayCache) {
-        double threshold = riskSettings != null ? riskSettings.getSmallRangeAdrPct() : 50.0;
-        int classified = 0;
-        int skipped = 0;
-
-        for (CprLevels today : todayCache.values()) {
-            String sym = today.getSymbol();
-            double prevRange = today.getHigh() - today.getLow();
-            if (prevRange <= 0) { skipped++; continue; }
-
-            // 20-day ADR from dailyHistory (excludes today's cached data, which IS the "prev day")
-            double adrSum = 0;
-            int adrCount = 0;
-            int window = Math.min(20, dailyHistory.size());
-            int idx = 0;
-            for (DaySnapshot snap : dailyHistory) {
-                if (idx >= window) break;
-                CprLevels h = snap.symbols.get(sym);
-                if (h != null) {
-                    double r = h.getHigh() - h.getLow();
-                    if (r > 0) { adrSum += r; adrCount++; }
-                }
-                idx++;
-            }
-
-            if (adrCount < 5) { skipped++; continue; } // insufficient history
-
-            double adr = adrSum / adrCount;
-            double pct = (prevRange / adr) * 100.0;
-            today.setRangeAdrPct(Math.round(pct * 10.0) / 10.0);
-            today.setRangeZScore(0); // legacy — keep at 0, display uses rangeAdrPct
-            today.setNarrowRangeType(pct <= threshold ? "SMALL" : "LARGE");
-            classified++;
-        }
-        log.info("[BhavcopyService] Classified narrow range type for {} stocks (prev day range ≤ {}% of 20d ADR = SMALL, {} skipped for insufficient history)",
-            classified, threshold, skipped);
-    }
+    // (Range classification removed — SMALL/LARGE/rangeAdrPct no longer used after the
+    // watchlist filter was simplified to a single NIFTY 50 / ALL universe toggle.)
 
     // ── Volume/Turnover 20-day averages from daily history ───────────────────
 

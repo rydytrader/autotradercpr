@@ -88,7 +88,6 @@ public class ScannerController {
             if (onlyNifty50 && !cpr.isInNifty50()) continue;
             if (cpr.getCprWidthPct() < narrowMinWidth || cpr.getCprWidthPct() >= narrowMaxWidth) continue;
             if (!marketDataService.passesWatchlistFilters(cpr)) continue;
-            String nrt = cpr.getNarrowRangeType();
 
             String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
             List<String> types = new ArrayList<>();
@@ -96,8 +95,6 @@ public class ScannerController {
             if (insideSymbols.contains(cpr.getSymbol())) types.add("INSIDE");
             Map<String, Object> card = buildCard(fyers, cpr, "NARROW", positionSymbols);
             card.put("cprTypes", types);
-            card.put("narrowRangeType", nrt);
-            card.put("rangeAdrPct", cpr.getRangeAdrPct());
             result.add(card);
             seen.add(fyers);
         }
@@ -110,14 +107,11 @@ public class ScannerController {
             if (onlyNifty50 && !cpr.isInNifty50()) continue;
             if (insideMaxWidth > 0 && cpr.getCprWidthPct() > insideMaxWidth) continue;
             if (!marketDataService.passesWatchlistFilters(cpr)) continue;
-            String nrt = cpr.getNarrowRangeType();
 
             List<String> types = new ArrayList<>();
             types.add("INSIDE");
             Map<String, Object> card = buildCard(fyers, cpr, "INSIDE", positionSymbols);
             card.put("cprTypes", types);
-            card.put("narrowRangeType", nrt);
-            card.put("rangeAdrPct", cpr.getRangeAdrPct());
             result.add(card);
             seen.add(fyers);
         }

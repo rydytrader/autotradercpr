@@ -65,11 +65,7 @@
             letter-spacing: 0.05em;
         }
         .scan-badge.narrow { background: rgba(99,179,237,0.12); color: var(--accent-blue); }
-        .scan-badge.narrow-small { background: rgba(52,211,153,0.15); color: var(--accent-green); font-weight: 700; }
-        .scan-badge.narrow-large { background: rgba(251,146,60,0.15); color: #fb923c; font-weight: 700; }
         .scan-badge.inside { background: rgba(251,191,36,0.12); color: var(--accent-yellow); }
-        .scan-badge.inside-small { background: rgba(52,211,153,0.15); color: var(--accent-green); font-weight: 700; }
-        .scan-badge.inside-large { background: rgba(251,146,60,0.15); color: #fb923c; font-weight: 700; }
 
         .scan-price-row {
             display: flex; align-items: baseline; gap: 10px;
@@ -503,11 +499,6 @@
             <button class="filter-btn" onclick="setFilter('INSIDE', this)">Inside</button>
         </span>
         <div class="filter-sep"></div>
-        <span class="range-filter-group">
-            <button class="filter-btn" onclick="toggleRangeFilter('SMALL', this)">Small</button>
-            <button class="filter-btn" onclick="toggleRangeFilter('LARGE', this)">Large</button>
-        </span>
-        <div class="filter-sep"></div>
         <span class="ov-filter-group">
             <button class="filter-btn" onclick="toggleOvFilter('IV', this)">IV</button>
             <button class="filter-btn" onclick="toggleOvFilter('OV', this)">OV</button>
@@ -559,7 +550,6 @@
 (function() {
     var allData = [];
     var cprFilter = 'all';
-    var rangeFilter = null;
     var ovFilter = null;
     var signalFilter = false;
     var filteredFilter = false;
@@ -598,20 +588,6 @@
             b.classList.remove('active');
         });
         btn.classList.add('active');
-        renderCards();
-    };
-
-    window.toggleRangeFilter = function(type, btn) {
-        if (rangeFilter === type) {
-            rangeFilter = null;
-            btn.classList.remove('active');
-        } else {
-            rangeFilter = type;
-            document.querySelectorAll('.range-filter-group .filter-btn').forEach(function(b) {
-                b.classList.remove('active');
-            });
-            btn.classList.add('active');
-        }
         renderCards();
     };
 
@@ -681,7 +657,6 @@
                     if (types.indexOf(cprFilter) === -1) return false;
                 }
             }
-            if (rangeFilter && d.narrowRangeType !== rangeFilter) return false;
             if (ovFilter && d.openClass !== ovFilter) return false;
             if (signalFilter && (!d.lastSignal || d.lastSignal.status !== 'TRADED')) return false;
             if (filteredFilter && (!d.lastSignal || d.lastSignal.status !== 'FILTERED')) return false;
@@ -837,18 +812,10 @@
             + '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 6-6"/></svg>'
             + '</button>'
             + ((d.cprTypes || [d.cprType]).filter(function(t){ return ['NARROW','INSIDE'].includes(t); }).map(function(t) {
-                var nrt = d.narrowRangeType;
-                var rp = d.rangeAdrPct != null ? d.rangeAdrPct : '?';
                 if (t === 'NARROW') {
-                    var cls = nrt === 'SMALL' ? 'narrow-small' : nrt === 'LARGE' ? 'narrow-large' : 'narrow';
-                    var lbl = nrt === 'SMALL' ? 'NS' : nrt === 'LARGE' ? 'NL' : 'N';
-                    var ttl = 'Narrow CPR' + (nrt ? ' — ' + (nrt === 'SMALL' ? 'prev day range ' : 'prev day range ') + rp + '% of 20d ADR — ' + (nrt === 'SMALL' ? 'compressed (coiled spring)' : 'expanded') : '');
-                    return '<span class="scan-badge ' + cls + '" title="' + ttl + '">' + lbl + '</span>';
+                    return '<span class="scan-badge narrow" title="Narrow CPR">N</span>';
                 }
-                var icls = nrt === 'SMALL' ? 'inside-small' : nrt === 'LARGE' ? 'inside-large' : 'inside';
-                var ilbl = nrt === 'SMALL' ? 'IS' : nrt === 'LARGE' ? 'IL' : 'I';
-                var ittl = 'Inside CPR' + (nrt ? ' — ' + (nrt === 'SMALL' ? 'prev day range ' : 'prev day range ') + rp + '% of 20d ADR — ' + (nrt === 'SMALL' ? 'compressed (coiled spring)' : 'expanded') : '');
-                return '<span class="scan-badge ' + icls + '" title="' + ittl + '">' + ilbl + '</span>';
+                return '<span class="scan-badge inside" title="Inside CPR">I</span>';
             }).join(''))
             + '  </span>'
             + '</div>'
@@ -1480,13 +1447,7 @@ function showInsideCpr() {
             <!-- 1. CPR Width -->
             <div style="margin-bottom:28px;">
                 <div style="font-weight:700; font-size:0.85rem; color:var(--accent-cyan); margin-bottom:10px;">1. CPR Width</div>
-                <div style="color:var(--text-secondary); margin-bottom:14px; font-size:0.72rem; line-height:1.6;">Scans FNO stocks with narrow or inside CPR. Both types classified by <b>previous day's range as % of 20-day ADR</b> (Average Daily Range). If prev day range ≤ threshold% of ADR (default 50%) → Small (compressed, coiled spring). Else → Large (expanded, possibly exhausted). Configurable threshold in Settings.</div>
-                <div style="display:flex; flex-wrap:wrap; gap:12px 20px; font-size:0.72rem;">
-                    <div><span class="scan-badge narrow-small" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NS</span> Narrow + Small (coiled spring — yesterday quiet, high breakout potential)</div>
-                    <div><span class="scan-badge narrow-large" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">NL</span> Narrow + Large (exhausted — yesterday wild, lower potential)</div>
-                    <div><span class="scan-badge inside-small" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">IS</span> Inside + Small (coiled spring — yesterday quiet, high breakout potential)</div>
-                    <div><span class="scan-badge inside-large" style="display:inline-block; padding:3px 8px; border-radius:3px; margin-right:8px; font-weight:700;">IL</span> Inside + Large (exhausted — yesterday wild, lower potential)</div>
-                </div>
+                <div style="color:var(--text-secondary); margin-bottom:14px; font-size:0.72rem; line-height:1.6;">Scans FNO stocks with narrow or inside CPR. Cards show <b>N</b> for Narrow CPR and <b>I</b> for Inside CPR (a stock can carry both). Thresholds and the NIFTY 50 / ALL universe gate are configured in Settings.</div>
             </div>
 
         </div>

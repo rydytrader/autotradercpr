@@ -10,9 +10,6 @@ public class CprLevels {
     private double ph, pl;
     private double cprWidth, cprWidthPct;
     private boolean narrowCpr;
-    private double rangeZScore;       // legacy z-score field (kept for serialization compat, now 0)
-    private double rangeAdrPct;       // previous day's range as % of 20-day ADR (drives SMALL/LARGE classification)
-    private String narrowRangeType;   // "SMALL" / "LARGE" / null (only set for narrow/inside CPR)
     private long   volume;
     private double fiftyTwoWeekHigh, fiftyTwoWeekLow;
     private double turnover;          // previous day total traded value (₹)
@@ -102,12 +99,6 @@ public class CprLevels {
     public double  getCprWidth()    { return cprWidth; }
     public double  getCprWidthPct() { return cprWidthPct; }
     public boolean isNarrowCpr()    { return narrowCpr; }
-    public double  getRangeZScore()     { return rangeZScore; }
-    public void    setRangeZScore(double v) { this.rangeZScore = v; }
-    public double  getRangeAdrPct()     { return rangeAdrPct; }
-    public void    setRangeAdrPct(double v) { this.rangeAdrPct = v; }
-    public String  getNarrowRangeType() { return narrowRangeType; }
-    public void    setNarrowRangeType(String v) { this.narrowRangeType = v; }
 
     public long    getVolume()             { return volume; }
     public void    setVolume(long v)       { this.volume = v; }

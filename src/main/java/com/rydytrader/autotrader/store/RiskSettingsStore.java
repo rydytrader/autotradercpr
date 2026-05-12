@@ -275,7 +275,6 @@ public class RiskSettingsStore {
         volatile double mptQtyFactor    = 0.75;
         // Weekly NEUTRAL trades → LPT. Use enableLpt toggle to skip them.
         // Inside-OR breakouts are always downgraded to LPT (no skip toggles, no qty reduction)
-        volatile double smallRangeAdrPct = 50.0; // prev day's range ≤ this % of 20-day ADR → SMALL classification (NS / IS)
         volatile double minAbsoluteProfit = 500; // skip if qty × target_distance < this amount (₹)
         // CPR Width scanner group toggles
         volatile double narrowCprMaxWidth = 0.1;  // CPR width % upper threshold for narrow CPR stocks
@@ -451,7 +450,6 @@ public class RiskSettingsStore {
     public double getLptQtyFactor()       { return cfg().lptQtyFactor; }
     public boolean isEnableMpt()          { return cfg().enableMpt; }
     public double getMptQtyFactor()       { return cfg().mptQtyFactor; }
-    public double getSmallRangeAdrPct() { return cfg().smallRangeAdrPct; }
     public double getMinAbsoluteProfit() { return cfg().minAbsoluteProfit; }
     public double getNarrowCprMaxWidth() { return cfg().narrowCprMaxWidth; }
     public double getNarrowCprMinWidth() { return cfg().narrowCprMinWidth; }
@@ -482,7 +480,6 @@ public class RiskSettingsStore {
     public void setLptQtyFactor(double v)      { cfg().lptQtyFactor = v; }
     public void setEnableMpt(boolean v)        { cfg().enableMpt = v; }
     public void setMptQtyFactor(double v)      { cfg().mptQtyFactor = v; }
-    public void setSmallRangeAdrPct(double v) { cfg().smallRangeAdrPct = v; }
     public void setMinAbsoluteProfit(double v) { cfg().minAbsoluteProfit = v; }
     public void setNarrowCprMaxWidth(double v) { cfg().narrowCprMaxWidth = v; }
     public void setNarrowCprMinWidth(double v) { cfg().narrowCprMinWidth = Math.max(0, v); }
@@ -794,7 +791,6 @@ public class RiskSettingsStore {
             upsert("lptQtyFactor", String.valueOf(c.lptQtyFactor));
             upsert("enableMpt", String.valueOf(c.enableMpt));
             upsert("mptQtyFactor", String.valueOf(c.mptQtyFactor));
-            upsert("smallRangeAdrPct", String.valueOf(c.smallRangeAdrPct));
             upsert("minAbsoluteProfit", String.valueOf(c.minAbsoluteProfit));
             upsert("narrowCprMaxWidth", String.valueOf(c.narrowCprMaxWidth));
             upsert("narrowCprMinWidth", String.valueOf(c.narrowCprMinWidth));
@@ -986,7 +982,6 @@ public class RiskSettingsStore {
                     case "enableNarrowOrOverride", "narrowOrMaxAdrPct", "narrowOrMaxAtr" -> {
                         /* removed — narrow OR override feature deleted */
                     }
-                    case "smallRangeAdrPct" -> c.smallRangeAdrPct = Double.parseDouble(v);
                     case "enableCprDayRelationFilter" -> { /* removed — 2D-CPR feature deleted */ }
                     case "minAbsoluteProfit" -> c.minAbsoluteProfit = Double.parseDouble(v);
                     case "narrowCprMaxWidth" -> c.narrowCprMaxWidth = Double.parseDouble(v);
