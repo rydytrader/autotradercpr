@@ -86,16 +86,14 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      *  above the latest close. Mirror of {@link #armedBuyLevel}. */
     private final ConcurrentHashMap<String, String> armedSellLevel = new ConcurrentHashMap<>();
     /** Trigger-route tag for the most recent fired signal — picked up by fireSignal so the
-     *  trade-log description records which path entered. Route 1 (marubozu) tags as
-     *  "MARUBOZU_BREAKOUT" (fresh) / "MARUBOZU_RETEST" (level was already crossed earlier).
-     *  Route 2 splits by prior-bar state: <b>fresh breaks</b> gate only on body strength
-     *  (no pattern math with prev bar — the relationship is incidental for fresh breaks)
-     *  and tag as "GOOD_SIZE_CANDLE_BREAKOUT". <b>Retests</b> (prev close already crossed
-     *  the level) run the full pattern-matcher set (hammer/engulfing/piercing/tweezer/doji/
-     *  star/harami) and tag with their pattern-specific name: "HAMMER_RETEST",
-     *  "ENGULFING_RETEST", "PIERCING_RETEST", "TWEEZER_RETEST", "DOJI_RETEST",
-     *  "STAR_RETEST", "HARAMI_RETEST". Per-symbol, accessed only on the candle-close thread
-     *  for that symbol. */
+     *  trade-log description records which path entered. Retest-only model — fresh-break
+     *  paths are removed; every trade waits for a confirmed retest.
+     *  Route 1 (marubozu): tags as "MARUBOZU_RETEST" — bar opened past the level, touched
+     *  the level again on this bar, and closed past it.
+     *  Route 2 (pattern retests at the armed level, requires prev close already past level):
+     *  "HAMMER_RETEST", "ENGULFING_RETEST", "PIERCING_RETEST", "TWEEZER_RETEST",
+     *  "DOJI_RETEST", "STAR_RETEST", "HARAMI_RETEST". Per-symbol, accessed only on the
+     *  candle-close thread for that symbol. */
     private final ConcurrentHashMap<String, String> lastTriggerRoute = new ConcurrentHashMap<>();
     /** Pending NIFTY HTF Hurdle break-guard per stock symbol. Set by checkNiftyHurdle when the
      *  filter passes AND a hurdle existed in trade direction (i.e., the NIFTY 15-min close
@@ -1051,15 +1049,14 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double maruWicks = riskSettings.getMarubozuMaxWicksPctOfBody();
         double pinReject = riskSettings.getPinBarRejectionWickBodyMult();
         double pinOpp    = riskSettings.getPinBarOppositeWickBodyMult();
-        // Route 1 — bullish marubozu past the level. If the bar's open is already above the
-        // level, the level was broken earlier — this is a retest rejection (tagged
-        // MARUBOZU_RETEST). If the open is at/below the level and the bar punched through,
-        // it's a fresh breakout (tagged MARUBOZU_BREAKOUT).
+        // Route 1 — bullish marubozu RETESTING the level. The bar must have opened above the
+        // level (level was broken in an earlier bar) AND dipped down to touch the level on
+        // this bar (low <= level) AND closed above. Fresh marubozu breakouts (open at/below
+        // level) no longer fire — every trade must wait for a retest.
         if (CandlePatternDetector.isBullishMarubozu(open, high, low, close, atr, maruBody, maruWicks)
-                && close > level && (open <= level || low <= level)) {
+                && close > level && open > level && low <= level) {
             if (!isLargeCandleBlocked(close - open, atr)) {
-                String tag = (open > level) ? "MARUBOZU_RETEST" : "MARUBOZU_BREAKOUT";
-                lastTriggerRoute.put(fyersSymbol, tag);
+                lastTriggerRoute.put(fyersSymbol, "MARUBOZU_RETEST");
                 return setupName;
             }
         }
@@ -1081,36 +1078,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double starMid   = riskSettings.getStarMiddleBodyMaxMultOfOuter();
         double haramiBody = riskSettings.getHaramiBodyAtrMult();
         double haramiInner = riskSettings.getHaramiInnerBodyMaxRatio();
-        // Fresh-break vs genuine-retest split. If the prior 5m close already crossed the level,
-        // the level was broken earlier today and the current bar is a retest — run the existing
-        // pattern matchers (hammer/engulfing/piercing/tweezer/doji/star/harami), tag with their
-        // pattern-specific *_RETEST name. If prev close was at-or-below the level for a buy
-        // (fresh break), the previous-bar relationship is incidental — skip the pattern math
-        // entirely and gate on a single body-strength check (body ≥ N × ATR, directional close,
-        // pass large-candle filter). Tag as GOOD_SIZE_CANDLE_BREAKOUT. Marubozus were already
-        // filtered in Route 1 above, so anything reaching here on a fresh break is by definition
-        // a "non-marubozu good-size candle".
-        boolean isRetest = (prev != null && prev.close > level);
+        // Retest-only: prev bar's close must have already crossed the level. Fresh-break
+        // good-size candle path has been removed — every Route 2 trade waits for a confirmed
+        // retest pattern (hammer/engulfing/piercing/tweezer/doji/star/harami).
+        if (prev == null || prev.close <= level) return null;
 
-        if (!isRetest) {
-            // Fresh-break path: body-strength + opposing-wick gates. No pattern math with
-            // prev bar. For a buy the opposing wick is the upper wick (sellers pushing
-            // back at the top); a green bar with a long upper wick is shooting-star-shaped
-            // and shouldn't tag as GOOD_SIZE despite the body being big enough.
-            double goodSizeBody = riskSettings.getGoodSizeCandleBodyAtrMult();
-            double oppWickMax   = riskSettings.getGoodSizeCandleMaxOppositeWickRatio();
-            double body         = close - open;
-            double upperWick    = high - Math.max(open, close);
-            boolean bodyOk      = goodSizeBody <= 0 || (atr > 0 && body >= goodSizeBody * atr);
-            boolean wickOk      = oppWickMax  <= 0 || body <= 0 || upperWick <= oppWickMax * body;
-            if (close > open && bodyOk && wickOk && !isLargeCandleBlocked(body, atr)) {
-                lastTriggerRoute.put(fyersSymbol, "GOOD_SIZE_CANDLE_BREAKOUT");
-                return setupName;
-            }
-            return null;
-        }
-
-        // Retest path: pattern matchers as before.
+        // Pattern matchers — retest path.
         // Hammer (1 bar)
         if (CandlePatternDetector.isBullishHammer(open, high, low, close, pinReject, pinOpp)
                 && low <= level
@@ -1177,15 +1150,14 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double maruWicks = riskSettings.getMarubozuMaxWicksPctOfBody();
         double pinReject = riskSettings.getPinBarRejectionWickBodyMult();
         double pinOpp    = riskSettings.getPinBarOppositeWickBodyMult();
-        // Route 1 — bearish marubozu past the level. If the bar's open is already below the
-        // level, the level was broken down earlier — this is a retest rejection (tagged
-        // MARUBOZU_RETEST). If the open is at/above the level and the bar punched through,
-        // it's a fresh breakdown (tagged MARUBOZU_BREAKOUT).
+        // Route 1 — bearish marubozu RETESTING the level. The bar must have opened below the
+        // level (level was broken down in an earlier bar) AND popped up to touch the level on
+        // this bar (high >= level) AND closed below. Fresh marubozu breakdowns (open at/above
+        // level) no longer fire — every trade must wait for a retest.
         if (CandlePatternDetector.isBearishMarubozu(open, high, low, close, atr, maruBody, maruWicks)
-                && close < level && (open >= level || high >= level)) {
+                && close < level && open < level && high >= level) {
             if (!isLargeCandleBlocked(open - close, atr)) {
-                String tag = (open < level) ? "MARUBOZU_RETEST" : "MARUBOZU_BREAKOUT";
-                lastTriggerRoute.put(fyersSymbol, tag);
+                lastTriggerRoute.put(fyersSymbol, "MARUBOZU_RETEST");
                 return setupName;
             }
         }
@@ -1207,32 +1179,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double starMid   = riskSettings.getStarMiddleBodyMaxMultOfOuter();
         double haramiBody = riskSettings.getHaramiBodyAtrMult();
         double haramiInner = riskSettings.getHaramiInnerBodyMaxRatio();
-        // Fresh-break vs genuine-retest split (mirror of buy logic). If prev 5m close already
-        // crossed below the level, the level broke down earlier today and the current bar is
-        // a retest from below — run the existing pattern matchers, tag *_RETEST. If prev close
-        // was at-or-above the level, this bar is a fresh breakdown — gate on body strength
-        // only (no pattern math with prev bar) and tag GOOD_SIZE_CANDLE_BREAKOUT.
-        boolean isRetest = (prev != null && prev.close < level);
+        // Retest-only (mirror of buy logic): prev bar's close must have already crossed below
+        // the level. Fresh-break good-size candle path has been removed — every Route 2 trade
+        // waits for a confirmed retest pattern.
+        if (prev == null || prev.close >= level) return null;
 
-        if (!isRetest) {
-            // Fresh-breakdown path: body-strength + opposing-wick gates. For a sell the
-            // opposing wick is the lower wick (buyers pushing back at the bottom); a red
-            // bar with a long lower wick is hammer-shaped and shouldn't tag as GOOD_SIZE
-            // despite the body being big enough.
-            double goodSizeBody = riskSettings.getGoodSizeCandleBodyAtrMult();
-            double oppWickMax   = riskSettings.getGoodSizeCandleMaxOppositeWickRatio();
-            double body         = open - close;
-            double lowerWick    = Math.min(open, close) - low;
-            boolean bodyOk      = goodSizeBody <= 0 || (atr > 0 && body >= goodSizeBody * atr);
-            boolean wickOk      = oppWickMax  <= 0 || body <= 0 || lowerWick <= oppWickMax * body;
-            if (close < open && bodyOk && wickOk && !isLargeCandleBlocked(body, atr)) {
-                lastTriggerRoute.put(fyersSymbol, "GOOD_SIZE_CANDLE_BREAKOUT");
-                return setupName;
-            }
-            return null;
-        }
-
-        // Retest path: pattern matchers as before.
+        // Pattern matchers — retest path.
         // Shooting star (1 bar)
         if (CandlePatternDetector.isShootingStar(open, high, low, close, pinReject, pinOpp)
                 && high >= level
@@ -1373,11 +1325,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             boolean allBelow = close < sma20Now && close < sma50Now && close < sma200Now;
             trend = allAbove ? "BULLISH" : allBelow ? "BEARISH" : "NEUTRAL";
         }
-        // Include the candle-route tag (MARUBOZU_BREAKOUT / MARUBOZU_RETEST for Route 1;
-        // GOOD_SIZE_CANDLE_BREAKOUT for any Route 2 fresh break; HAMMER_RETEST,
+        // Include the candle-route tag (MARUBOZU_RETEST for Route 1; HAMMER_RETEST,
         // ENGULFING_RETEST, PIERCING_RETEST, TWEEZER_RETEST, DOJI_RETEST, STAR_RETEST,
-        // HARAMI_RETEST for genuine Route 2 retests) when present so the event log makes
-        // it clear which candle structure actually fired the entry.
+        // HARAMI_RETEST for Route 2 retests) when present so the event log makes it clear
+        // which candle structure actually fired the entry. Retest-only model — fresh-break
+        // paths have been removed; every trade requires a confirmed retest.
         String routeTag = (scannerNote != null && !scannerNote.isEmpty()) ? " | route=" + scannerNote : "";
         eventService.log("[SCANNER] " + fyersSymbol + " " + setup + " | close=" + String.format("%.2f", close)
             + " | ATR=" + String.format("%.2f", atr) + " | " + prob + routeTag

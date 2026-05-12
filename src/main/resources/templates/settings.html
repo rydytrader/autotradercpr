@@ -584,7 +584,7 @@
         </div>
         <div class="section-body">
             <div class="form-hint" style="margin-bottom:14px;">
-                Tunable thresholds for the bullish/bearish candle patterns used by the CPR retest entries (hammer / shooting star, engulfing, piercing / dark cloud, tweezer, doji reversal, morning / evening star, harami), the marubozu Route 1 breakout, and the Route 2 fresh-break body gate (Good-Size Candle Breakout). Defaults match standard TA conventions. Use higher numbers to make a pattern stricter (fewer signals, higher quality); lower numbers to loosen it.
+                Tunable thresholds for the bullish/bearish candle patterns used by the CPR retest entries (hammer / shooting star, engulfing, piercing / dark cloud, tweezer, doji reversal, morning / evening star, harami) and the marubozu Route 1 retest. Defaults match standard TA conventions. Use higher numbers to make a pattern stricter (fewer signals, higher quality); lower numbers to loosen it. <b>Retest-only model</b>: every trade waits for a confirmed retest of the broken level &mdash; fresh-break paths have been removed.
             </div>
 
             <div class="form-grid">
@@ -700,22 +700,6 @@
                 <div class="form-hint">3-bar harami + confirmation. Bar 1 large directional bar. Bar 2 opposite-color and body fully INSIDE bar 1's body (harami) and small relative to bar 1. Bar 3 confirms the reversal by closing past bar 1's open in the reversal direction (built-in, not configurable). Different from morning/evening star — that allows bar 2 to break out of bar 1's range; harami requires strict body containment. Defaults: 0.5 × ATR bar 1, 0.5 × bar 1 body inner.</div>
             </div>
 
-            <!-- Good-Size Candle Breakout (Route 2 fresh-break body + wick gate) -->
-            <div class="form-group">
-                <label class="form-label">Good-Size Candle Breakout (Route 2 fresh break)</label>
-                <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
-                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Body ≥</span>
-                    <input type="number" id="goodSizeCandleBodyAtrMult" class="form-control" step="0.05" min="0.0" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× ATR</span>
-                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">Opposing wick ≤</span>
-                    <input type="number" id="goodSizeCandleMaxOppositeWickRatio" class="form-control" step="0.1" min="0.0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× body</span>
-                </div>
-                <div class="form-hint">Two gates for Route 2 <b>fresh breakouts</b> &mdash; when the prior 5-min close hadn't yet crossed the level and this bar broke it. No pattern math with the previous bar (engulfing/piercing/etc. relationship is incidental on a fresh break).
-                    <br>&nbsp;&nbsp;&bull; <b>Body floor</b>: body must be ≥ N &times; ATR. Sits between engulfing's 0.5 floor and marubozu's 1.0 &mdash; meaningful body but doesn't need marubozu-shaved wicks. Default <b>0.6</b>.
-                    <br>&nbsp;&nbsp;&bull; <b>Opposing wick cap</b>: BUY = upper wick ≤ N &times; body (sellers didn't push back at the top); SELL = lower wick ≤ N &times; body (buyers didn't push back at the bottom). Rejects shooting-star-shaped green breakouts and hammer-shaped red breakdowns even when the body is big enough. Default <b>1.0</b>. Set to <b>0</b> to disable just this wick check (body floor stays).
-                    <br>Tag: <code>GOOD_SIZE_CANDLE_BREAKOUT</code>. <b>Retests</b> (prior close already past the level) still run the full pattern matchers (hammer / engulfing / piercing / tweezer / doji / star / harami) and tag as <code>&lt;PATTERN&gt;_RETEST</code> &mdash; for retests the prev-bar relationship genuinely matters. Set body floor to <b>0</b> to fire every fresh break that broke the level regardless of body size (subject to the global large-candle filter).</div>
-            </div>
             </div><!-- /form-grid -->
         </div>
     </div>
@@ -1431,8 +1415,6 @@
             document.getElementById('dojiPrevBodyAtrMult').value          = d.dojiPrevBodyAtrMult          != null ? d.dojiPrevBodyAtrMult          : 0.5;
             document.getElementById('starOuterBodyAtrMult').value         = d.starOuterBodyAtrMult         != null ? d.starOuterBodyAtrMult         : 0.5;
             document.getElementById('starMiddleBodyMaxMultOfOuter').value = d.starMiddleBodyMaxMultOfOuter != null ? d.starMiddleBodyMaxMultOfOuter : 0.3;
-            document.getElementById('goodSizeCandleBodyAtrMult').value    = d.goodSizeCandleBodyAtrMult    != null ? d.goodSizeCandleBodyAtrMult    : 0.6;
-            document.getElementById('goodSizeCandleMaxOppositeWickRatio').value = d.goodSizeCandleMaxOppositeWickRatio != null ? d.goodSizeCandleMaxOppositeWickRatio : 1.0;
             document.getElementById('minRiskRewardRatio').value = d.minRiskRewardRatio != null ? d.minRiskRewardRatio : 1.0;
             document.getElementById('enableSmaTrendCheck').checked = d.enableSmaTrendCheck !== false;
             document.getElementById('enableSmaTrendCheckLenient').checked = d.enableSmaTrendCheckLenient === true;
@@ -1630,8 +1612,6 @@
                 dojiPrevBodyAtrMult:          parseFloat(document.getElementById('dojiPrevBodyAtrMult').value)          || 0.5,
                 starOuterBodyAtrMult:         parseFloat(document.getElementById('starOuterBodyAtrMult').value)         || 0.5,
                 starMiddleBodyMaxMultOfOuter: parseFloat(document.getElementById('starMiddleBodyMaxMultOfOuter').value) || 0.3,
-                goodSizeCandleBodyAtrMult:    (function() { var v = parseFloat(document.getElementById('goodSizeCandleBodyAtrMult').value); return isNaN(v) ? 0.6 : v; })(),
-                goodSizeCandleMaxOppositeWickRatio: (function() { var v = parseFloat(document.getElementById('goodSizeCandleMaxOppositeWickRatio').value); return isNaN(v) ? 1.0 : v; })(),
                 minRiskRewardRatio: parseFloat(document.getElementById('minRiskRewardRatio').value) || 1.0,
                 enableSmaTrendCheck: document.getElementById('enableSmaTrendCheck').checked,
                 enableSmaTrendCheckLenient: document.getElementById('enableSmaTrendCheckLenient').checked,
