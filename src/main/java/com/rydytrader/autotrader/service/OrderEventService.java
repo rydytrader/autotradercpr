@@ -90,37 +90,45 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         public final double atr;
         public final double atrMultiplier;
         public final String description;
-        public final boolean dayHighLowShifted;
+        public final boolean rescueShifted;
         public final boolean useStructuralSl;
+        public final Double target1Price; // nullable — absolute T1 price when Target Rescue split the trade
         public volatile boolean handled = false;
 
         public EntryContext(String symbol, int quantity, String position,
                            int exitSide, double slPrice, double targetPrice, String setup) {
-            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, 0, 0, null, false, false);
+            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, 0, 0, null, false, false, null);
         }
 
         public EntryContext(String symbol, int quantity, String position,
                            int exitSide, double slPrice, double targetPrice, String setup,
                            double atr, double atrMultiplier) {
-            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, null, false, false);
+            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, null, false, false, null);
         }
 
         public EntryContext(String symbol, int quantity, String position,
                            int exitSide, double slPrice, double targetPrice, String setup,
                            double atr, double atrMultiplier, String description) {
-            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, false, false);
+            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, false, false, null);
         }
 
         public EntryContext(String symbol, int quantity, String position,
                            int exitSide, double slPrice, double targetPrice, String setup,
-                           double atr, double atrMultiplier, String description, boolean dayHighLowShifted) {
-            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, dayHighLowShifted, false);
+                           double atr, double atrMultiplier, String description, boolean rescueShifted) {
+            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, rescueShifted, false, null);
         }
 
         public EntryContext(String symbol, int quantity, String position,
                            int exitSide, double slPrice, double targetPrice, String setup,
                            double atr, double atrMultiplier, String description,
-                           boolean dayHighLowShifted, boolean useStructuralSl) {
+                           boolean rescueShifted, boolean useStructuralSl) {
+            this(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, rescueShifted, useStructuralSl, null);
+        }
+
+        public EntryContext(String symbol, int quantity, String position,
+                           int exitSide, double slPrice, double targetPrice, String setup,
+                           double atr, double atrMultiplier, String description,
+                           boolean rescueShifted, boolean useStructuralSl, Double target1Price) {
             this.symbol = symbol;
             this.quantity = quantity;
             this.position = position;
@@ -131,8 +139,9 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             this.atr = atr;
             this.atrMultiplier = atrMultiplier;
             this.description = description;
-            this.dayHighLowShifted = dayHighLowShifted;
+            this.rescueShifted = rescueShifted;
             this.useStructuralSl = useStructuralSl;
+            this.target1Price = target1Price;
         }
     }
 
@@ -836,9 +845,13 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         // Determine if we should split targets
         double targetDist = Math.abs(ctx.targetPrice - entryFillPrice);
         double atr = ctx.atr > 0 ? ctx.atr : 1; // safety
-        boolean shouldSplit = riskSettings.isEnableSplitTarget() && !skipTarget
-            && ctx.quantity >= 4 // need at least 4 for even split
-            && (riskSettings.getSplitMinDistanceAtr() <= 0 || targetDist > atr * riskSettings.getSplitMinDistanceAtr());
+        // Target Rescue: SignalProcessor already produced an absolute T1 price → force a split
+        // regardless of enableSplitTarget. Otherwise fall back to the normal toggle.
+        boolean rescueSplit = ctx.target1Price != null && ctx.target1Price > 0;
+        boolean shouldSplit = rescueSplit
+            || (riskSettings.isEnableSplitTarget() && !skipTarget
+                && ctx.quantity >= 4 // need at least 4 for even split
+                && (riskSettings.getSplitMinDistanceAtr() <= 0 || targetDist > atr * riskSettings.getSplitMinDistanceAtr()));
 
         if (shouldSplit) {
             placeSplitOcoOrders(ctx, entryFillPrice, slPrice);
@@ -925,13 +938,19 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         int t1Qty = (totalQty / 4) * 2; // half, rounded to even
         int t2Qty = totalQty - t1Qty;
 
-        // Calculate T1 price — uses ORIGINAL structural target so T1 stays where math says
-        double t1Pct = riskSettings.getT1DistancePct() / 100.0;
         boolean isBuy = "LONG".equals(ctx.position);
-        double t1Price = isBuy
-            ? entryFillPrice + t1Pct * (ctx.targetPrice - entryFillPrice)
-            : entryFillPrice - t1Pct * (entryFillPrice - ctx.targetPrice);
-        t1Price = orderService.roundToTick(t1Price, symbol);
+        double t1Price;
+        if (ctx.target1Price != null && ctx.target1Price > 0) {
+            // Rescue-driven split: SignalProcessor provided absolute T1 (the original structural target).
+            t1Price = orderService.roundToTick(ctx.target1Price, symbol);
+        } else {
+            // Normal split: T1 at percentage between entry and the structural target.
+            double t1Pct = riskSettings.getT1DistancePct() / 100.0;
+            t1Price = isBuy
+                ? entryFillPrice + t1Pct * (ctx.targetPrice - entryFillPrice)
+                : entryFillPrice - t1Pct * (entryFillPrice - ctx.targetPrice);
+            t1Price = orderService.roundToTick(t1Price, symbol);
+        }
         // T2 uses the DISCOUNTED target (tolerance applied) — T2 sits at the CPR level itself
         double t2Price = orderService.applyTargetTolerance(ctx.targetPrice, isBuy, ctx.atr, symbol);
 

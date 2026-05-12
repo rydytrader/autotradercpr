@@ -189,7 +189,8 @@ public class TradingController {
         double atr         = ps.getAtr();
         double atrMult     = ps.getAtrMultiplier();
         String description = ps.getDescription();
-        boolean dayHighLowShifted = ps.isDayHighLowShifted();
+        Double target1Price = ps.getTarget1Price();   // nullable — non-null only when Target Rescue split the trade
+        boolean rescueShifted = ps.isRescueShifted();
         boolean useStructuralSl = ps.isUseStructuralSl();
 
         log.info("Signal received: {} | SL: {} | Target: {} | Setup: {}", signal, stoploss, target, setup);
@@ -207,7 +208,7 @@ public class TradingController {
 
             // Monitor entry fill, then place SL + Target OCO
             // exitSide = -1 (SELL to exit a LONG)
-            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "LONG", -1, stoploss, target, setup, atr, atrMult, description, dayHighLowShifted, useStructuralSl);
+            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "LONG", -1, stoploss, target, setup, atr, atrMult, description, rescueShifted, useStructuralSl, target1Price);
             pollingService.setProbability(symbol, probability);
 
         } else if (signal.equals("SELL") && !PositionManager.getPosition(symbol).equals("SHORT")) {
@@ -222,7 +223,7 @@ public class TradingController {
             }
 
             // exitSide = 1 (BUY to exit a SHORT)
-            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "SHORT", 1, stoploss, target, setup, atr, atrMult, description, dayHighLowShifted, useStructuralSl);
+            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "SHORT", 1, stoploss, target, setup, atr, atrMult, description, rescueShifted, useStructuralSl, target1Price);
             pollingService.setProbability(symbol, probability);
 
         } else {

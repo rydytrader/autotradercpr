@@ -97,13 +97,20 @@ public class RiskSettingsStore {
         volatile double levelTouchToleranceAtr      = 0.2;
         volatile boolean enableTargetShift = true; // shift target to next level if default target < threshold ATR. If false, skip the entry.
         volatile boolean enableGapCheck = true;     // halve qty if day open or first candle beyond R2/S2
-        volatile boolean enableDayHighLowTargetShift = true; // shift target to day high/low if between entry and target
-        // Shift target to daily 5-min SMA 200 when it sits between entry and target. Useful
-        // mainly when running the lenient SMA price gate (which doesn't validate against 200) —
-        // the 200 SMA can still act as resistance/support on the way to the structural target.
+        // Target Rescue — when the original target gives R/R below minRiskRewardRatio, walk
+        // forward through daily CPR levels + daily CPR mid-points + weekly CPR levels and pick
+        // the closest level beyond the original target that satisfies minRR. Then split into
+        // T1 (original target, kept only if its R/R >= 0.5 x minRR) and T2 (rescued target).
+        // This REPLACES the legacy enableDayHighLowTargetShift / enableWeeklyLevelTargetShift /
+        // enableDailySma200TargetShift behavior — those three are now deprecated no-ops.
+        volatile boolean enableTargetRescue = true;
+        // [DEPRECATED] Legacy single-level shifts. No longer read by SignalProcessor — kept in
+        // the settings store so existing risk-settings.json files don't break on load. The
+        // unified rescue logic above subsumes them.
+        volatile boolean enableDayHighLowTargetShift = true;
         volatile boolean enableDailySma200TargetShift = true;
-        volatile double dayHighLowShiftMinDistAtr = 2.0; // skip day H/L shift if distance < N ATR from close
-        volatile boolean enableWeeklyLevelTargetShift = true; // shift target to weekly CPR levels if between entry and target
+        volatile double dayHighLowShiftMinDistAtr = 2.0; // [DEPRECATED] used only by removed day H/L shift
+        volatile boolean enableWeeklyLevelTargetShift = true; // [DEPRECATED] superseded by enableTargetRescue
         volatile boolean enableHtfHurdleFilter = true; // HPT→LPT when 5-min close lands inside R1/PWH (buy) or S1/PWL (sell) zone
         // NIFTY-level macro hurdle. When on, skip ALL stock trades while NIFTY's prior 1h close
         // hasn't decisively cleared the nearest weekly hurdle in the trade direction (R1/PWH/
@@ -359,6 +366,7 @@ public class RiskSettingsStore {
     public double getCapitalPerTrade() { return cfg().capitalPerTrade; }
     public int    getTelegramAlertFrequency() { return cfg().telegramAlertFrequency; }
     public boolean isEnableGapCheck() { return cfg().enableGapCheck; }
+    public boolean isEnableTargetRescue() { return cfg().enableTargetRescue; }
     public boolean isEnableDayHighLowTargetShift() { return cfg().enableDayHighLowTargetShift; }
     public boolean isEnableDailySma200TargetShift() { return cfg().enableDailySma200TargetShift; }
     public double getDayHighLowShiftMinDistAtr() { return cfg().dayHighLowShiftMinDistAtr; }
@@ -532,6 +540,7 @@ public class RiskSettingsStore {
     public void setCapitalPerTrade(double v) { cfg().capitalPerTrade = v; }
     public void setTelegramAlertFrequency(int v) { cfg().telegramAlertFrequency = v; }
     public void setEnableGapCheck(boolean v) { cfg().enableGapCheck = v; }
+    public void setEnableTargetRescue(boolean v) { cfg().enableTargetRescue = v; }
     public void setEnableDayHighLowTargetShift(boolean v) { cfg().enableDayHighLowTargetShift = v; }
     public void setEnableDailySma200TargetShift(boolean v) { cfg().enableDailySma200TargetShift = v; }
     public void setDayHighLowShiftMinDistAtr(double v) { cfg().dayHighLowShiftMinDistAtr = v; }
@@ -709,6 +718,7 @@ public class RiskSettingsStore {
             upsert("capitalPerTrade", String.valueOf(c.capitalPerTrade));
             upsert("telegramAlertFrequency", String.valueOf(c.telegramAlertFrequency));
             upsert("enableGapCheck", String.valueOf(c.enableGapCheck));
+            upsert("enableTargetRescue", String.valueOf(c.enableTargetRescue));
             upsert("enableDayHighLowTargetShift", String.valueOf(c.enableDayHighLowTargetShift));
             upsert("enableDailySma200TargetShift", String.valueOf(c.enableDailySma200TargetShift));
             upsert("dayHighLowShiftMinDistAtr", String.valueOf(c.dayHighLowShiftMinDistAtr));
@@ -873,6 +883,7 @@ public class RiskSettingsStore {
                     case "telegramAlertFrequency" -> c.telegramAlertFrequency = Integer.parseInt(v);
                     // enableLargeCandleFilter / largeCandleAtrThreshold removed — legacy keys silently ignored
                     case "enableGapCheck" -> c.enableGapCheck = Boolean.parseBoolean(v);
+                    case "enableTargetRescue" -> c.enableTargetRescue = Boolean.parseBoolean(v);
                     case "enableDayHighLowTargetShift" -> c.enableDayHighLowTargetShift = Boolean.parseBoolean(v);
                     case "enableDailySma200TargetShift" -> c.enableDailySma200TargetShift = Boolean.parseBoolean(v);
                     case "dayHighLowShiftMinDistAtr" -> c.dayHighLowShiftMinDistAtr = Double.parseDouble(v);

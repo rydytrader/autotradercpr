@@ -334,7 +334,7 @@ public class SignalProcessor {
         // far-out projections, not walls the HTF needs to clear first.
         if (riskSettings.isEnableHtfHurdleFilter()
                 && ("HPT".equals(probability) || "MPT".equals(probability))) {
-            WeeklyCprService.WeeklyLevels wl = weeklyCprService.getWeeklyLevels(symbol);
+            WeeklyCprService.WeeklyLevels wl = weeklyLv; // reuse cached from line 141
             if (wl != null) {
                 double[] candidates;
                 String[] names;
@@ -397,125 +397,64 @@ public class SignalProcessor {
         double defaultTarget = targets[0];
         double target = defaultTarget;
 
-        // ── 4g. Target shift to nearest resistance/support ──────────────────────
-        // Candidates: session H/L + weekly CPR levels. Pick the nearest level strictly
-        // between entry (close) and the structural target. Single target (no T1/T2 split)
-        // when a shift occurs. DH/DL setups skip session H/L (breakout just created it)
-        // but still consider weekly levels.
-        boolean dayHighLowShifted = false;
-        {
-            java.util.Map<Double, String> shiftCandidates = new java.util.LinkedHashMap<>();
-            // Session H/L shift only applies when the breakout close is OUTSIDE the Opening Range.
-            // Inside-OR breakouts (EV-day LPT or IV/OV-day HPT) shouldn't use session H/L as a
-            // target cap — the OR itself is the immediate overhead structure, not today's session H/L.
-            boolean insideOr = false;
-            if (candleAggregator.isOpeningRangeLocked(symbol)) {
-                double orHi = candleAggregator.getOpeningRangeHigh(symbol);
-                double orLo = candleAggregator.getOpeningRangeLow(symbol);
-                if (orHi > 0 && orLo > 0 && close >= orLo && close <= orHi) insideOr = true;
-            }
-            if (!insideOr && riskSettings.isEnableDayHighLowTargetShift()) {
-                double minDist = riskSettings.getDayHighLowShiftMinDistAtr() * atr;
-                // Session body high/low — ignores wicks. A wick rejection isn't treated as
-                // a confirmed resistance/support for target-capping; only the price level the
-                // candle actually held at (body extreme) qualifies.
-                if (isBuy) {
-                    double sh = candleAggregator.getDayBodyHighBeforeLast(symbol);
-                    if (sh > 0 && (sh - close) >= minDist) {
-                        shiftCandidates.put(sh, "session body high");
-                    } else if (sh > 0) {
-                        eventService.log("[INFO] " + symbol + " " + setup + " session body high " + fmt(sh)
-                            + " too close to close " + fmt(close) + " — shift skipped (dist "
-                            + fmt(sh - close) + " < " + riskSettings.getDayHighLowShiftMinDistAtr()
-                            + "×ATR = " + fmt(minDist) + ")");
-                    }
-                } else {
-                    double sessionLow = candleAggregator.getDayBodyLowBeforeLast(symbol);
-                    if (sessionLow > 0 && (close - sessionLow) >= minDist) {
-                        shiftCandidates.put(sessionLow, "session body low");
-                    } else if (sessionLow > 0) {
-                        eventService.log("[INFO] " + symbol + " " + setup + " session body low " + fmt(sessionLow)
-                            + " too close to close " + fmt(close) + " — shift skipped (dist "
-                            + fmt(close - sessionLow) + " < " + riskSettings.getDayHighLowShiftMinDistAtr()
-                            + "×ATR = " + fmt(minDist) + ")");
-                    }
-                }
-            }
-            WeeklyCprService.WeeklyLevels wl = riskSettings.isEnableWeeklyLevelTargetShift()
-                ? weeklyCprService.getWeeklyLevels(symbol) : null;
-            if (wl != null) {
-                // Weekly S/R levels only — TC / BC / Pivot excluded because they're part of the
-                // pivot range (derived midpoints), not real support/resistance lines. Shifting
-                // to them compresses R/R unnecessarily, especially for trades firing inside
-                // weekly CPR where TC/BC become the first obstacle.
-                shiftCandidates.putIfAbsent(wl.r1, "weekly R1");
-                shiftCandidates.putIfAbsent(wl.r2, "weekly R2");
-                shiftCandidates.putIfAbsent(wl.r3, "weekly R3");
-                shiftCandidates.putIfAbsent(wl.r4, "weekly R4");
-                shiftCandidates.putIfAbsent(wl.s1, "weekly S1");
-                shiftCandidates.putIfAbsent(wl.s2, "weekly S2");
-                shiftCandidates.putIfAbsent(wl.s3, "weekly S3");
-                shiftCandidates.putIfAbsent(wl.s4, "weekly S4");
-                shiftCandidates.putIfAbsent(wl.ph, "weekly PH");
-                shiftCandidates.putIfAbsent(wl.pl, "weekly PL");
-            }
-            // 200 SMA as target shift candidate — gated by the explicit "Daily SMA 200" toggle.
-            // Particularly useful with the lenient price/alignment gates which don't validate
-            // against the 200 SMA: the line still acts as resistance (for buys) or support (for
-            // sells) intraday and is worth capturing as a target cap.
-            if (riskSettings.isEnableDailySma200TargetShift()) {
-                double sma200 = smaService.getSma200(symbol);
-                if (sma200 > 0) {
-                    shiftCandidates.putIfAbsent(sma200, "200 SMA");
-                }
-            }
-            Double bestLevel = null;
-            String bestName = null;
-            double bestDist = Double.MAX_VALUE;
-            for (java.util.Map.Entry<Double, String> e : shiftCandidates.entrySet()) {
-                double lvl = e.getKey();
-                if (lvl <= 0) continue;
-                boolean valid = isBuy
-                    ? (lvl > close && lvl < target)
-                    : (lvl < close && lvl > target);
-                if (!valid) continue;
-                double dist = Math.abs(lvl - close);
-                if (dist < bestDist) {
-                    bestDist = dist;
-                    bestLevel = lvl;
-                    bestName = e.getValue();
-                }
-            }
-            if (bestLevel != null) {
-                eventService.log("[INFO] " + symbol + " " + setup + " target shifted to "
-                    + bestName + ": " + fmt(target) + " → " + fmt(bestLevel)
-                    + " (nearest resistance/support between entry and target)");
-                target = bestLevel;
-                dayHighLowShifted = true;
-            }
-        }
-
         // ── 4g1. Defensive wrong-side target check ──
-        // After target computation + shift, target must sit on the correct side of entry
-        // (above for BUY, below for SELL). Guards against degenerate target projection
-        // (e.g. projected R5 below current close when price has run far past R4).
+        // Target must sit on the correct side of entry (above for BUY, below for SELL).
+        // Guards against degenerate target projection (e.g. projected R5 below current close
+        // when price has run far past R4).
         if ((isBuy && target <= close) || (!isBuy && target >= close)) {
             return ProcessedSignal.rejected(setup, symbol,
                 "Target " + fmt(target) + " on wrong side of entry " + fmt(close)
                 + " (" + (isBuy ? "BUY target must be above" : "SELL target must be below") + ")");
         }
 
-        // ── 4g2. Risk/Reward filter — reject if reward < minRiskRewardRatio × risk ──
+        // ── 4g2. Risk/Reward filter — with optional Target Rescue split ────────
+        // If reward < minRR × risk, normally we'd reject. With rescue enabled, walk forward
+        // through daily CPR levels + daily mid-points + weekly CPR levels (all of them) and
+        // pick the closest level beyond `target` that satisfies minRR. The original target
+        // becomes T1 (if its R/R is at least 0.5 × minRR), else dropped.
+        Double rescueT1 = null;        // when rescue splits, the original target becomes T1
+        boolean rescueShifted = false;
         if (riskSettings.isEnableRiskRewardFilter()) {
             double minRR = riskSettings.getMinRiskRewardRatio();
             double risk   = Math.abs(close - sl);
             double reward = Math.abs(target - close);
-            double rr = risk > 0 ? reward / risk : 0;
-            if (rr < minRR) {
-                return ProcessedSignal.rejected(setup, symbol,
-                    "Risk/Reward " + fmt(rr) + ":1 < " + minRR + ":1 — "
-                    + "entry=" + fmt(close) + " SL=" + fmt(sl) + " target=" + fmt(target)
-                    + " risk=" + fmt(risk) + " reward=" + fmt(reward));
+            double rrOriginal = risk > 0 ? reward / risk : 0;
+            if (rrOriginal < minRR) {
+                if (riskSettings.isEnableTargetRescue()) {
+                    double sessionBodyHi = candleAggregator.getDayBodyHighBeforeLast(symbol);
+                    double sessionBodyLo = candleAggregator.getDayBodyLowBeforeLast(symbol);
+                    RescueResult res = attemptTargetRescue(isBuy, close, sl, target, minRR,
+                        r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc,
+                        sessionBodyHi, sessionBodyLo, weeklyLv); // reuse cached from line 141
+                    if (res == null) {
+                        return ProcessedSignal.rejected(setup, symbol,
+                            "Risk/Reward " + fmt(rrOriginal) + ":1 < " + minRR + ":1 and "
+                            + "rescue failed — no daily/weekly CPR level beyond " + fmt(target)
+                            + " satisfies " + minRR + ":1 (entry=" + fmt(close) + " SL=" + fmt(sl)
+                            + " risk=" + fmt(risk) + ")");
+                    }
+                    double rescueRR = Math.abs(res.target2 - close) / risk;
+                    double t1Floor  = 0.5 * minRR;
+                    if (rrOriginal >= t1Floor) {
+                        rescueT1 = target;
+                        eventService.log("[INFO] " + symbol + " " + setup + " target rescue: original "
+                            + fmt(target) + " gave " + fmt(rrOriginal) + ":1 → split T1=" + fmt(target)
+                            + " | T2=" + fmt(res.target2) + " (" + res.name + ") giving " + fmt(rescueRR) + ":1");
+                    } else {
+                        rescueT1 = null;
+                        eventService.log("[INFO] " + symbol + " " + setup + " target rescue: original "
+                            + fmt(target) + " gave " + fmt(rrOriginal) + ":1 (below T1 floor "
+                            + fmt(t1Floor) + ":1) → T1 dropped, single target " + fmt(res.target2)
+                            + " (" + res.name + ") giving " + fmt(rescueRR) + ":1");
+                    }
+                    target = res.target2;
+                    rescueShifted = true;
+                } else {
+                    return ProcessedSignal.rejected(setup, symbol,
+                        "Risk/Reward " + fmt(rrOriginal) + ":1 < " + minRR + ":1 — "
+                        + "entry=" + fmt(close) + " SL=" + fmt(sl) + " target=" + fmt(target)
+                        + " risk=" + fmt(risk) + " reward=" + fmt(reward));
+                }
             }
         }
 
@@ -590,10 +529,18 @@ public class SignalProcessor {
             desc.append(" (ATR ").append(fmt(atr)).append(" × ").append(riskSettings.getAtrMultiplier()).append(").");
         }
 
-        // [TARGET] line
-        desc.append("\n").append(ts).append(" [TARGET] ").append(fmt(target));
-        if (target != defaultTarget) {
-            desc.append(" (shifted from ").append(fmt(defaultTarget)).append(" to day high/low).");
+        // [TARGET] line — split if Target Rescue produced a T1, otherwise single
+        if (rescueT1 != null) {
+            desc.append("\n").append(ts).append(" [TARGET 1] ").append(fmt(rescueT1))
+                .append(" (original structural target — kept as partial)");
+            desc.append("\n").append(ts).append(" [TARGET 2] ").append(fmt(target))
+                .append(" (rescued — closest CPR level beyond T1 satisfying min R/R)");
+        } else {
+            desc.append("\n").append(ts).append(" [TARGET] ").append(fmt(target));
+            if (rescueShifted) {
+                desc.append(" (rescued from ").append(fmt(defaultTarget))
+                    .append(" — original gave R/R below 0.5 × min, T1 dropped)");
+            }
         }
 
         // [QTY] line
@@ -621,19 +568,20 @@ public class SignalProcessor {
         String description = desc.toString();
 
         // ── 4k. Log the decision ────────────────────────────────────────────────
+        String tgtSummary = rescueT1 != null
+            ? "T1: " + fmt(rescueT1) + "(" + fmt(Math.abs(rescueT1 - close)) + ") | T2: " + fmt(target) + "(" + fmt(Math.abs(target - close)) + ")"
+            : "Tgt: " + fmt(target) + "(" + fmt(Math.abs(target - close)) + ")";
         eventService.log("[SUCCESS] " + signal + " signal received for " + symbol + " | " + setup + " | Entry: " + fmt(close)
-            + " | Tgt: " + fmt(target) + "(" + fmt(Math.abs(target - close)) + ")"
+            + " | " + tgtSummary
             + " | SL: " + fmt(sl) + "(" + fmt(Math.abs(close - sl)) + ")"
             + " | Qty: " + qty);
-        if (target != defaultTarget) {
-            eventService.log("[INFO] " + symbol + " " + setup + " target shifted to day high/low: " + fmt(defaultTarget) + " -> " + fmt(target));
-        }
 
         return new ProcessedSignal.Builder()
             .signal(signal)
             .symbol(symbol)
             .quantity(qty)
             .target(target)
+            .target1Price(rescueT1)
             .stoploss(sl)
             .setup(setup)
             .probability(probability)
@@ -641,9 +589,108 @@ public class SignalProcessor {
             .atrMultiplier(riskSettings.getAtrMultiplier())
             .rejected(false)
             .description(description)
-            .dayHighLowShifted(dayHighLowShifted)
+            .rescueShifted(rescueShifted)
             .useStructuralSl(useStructuralSl)
             .build();
+    }
+
+    /** Result of attemptTargetRescue: the chosen further level + its name (for logging). */
+    private static class RescueResult {
+        final double target2;
+        final String name;
+        RescueResult(double target2, String name) { this.target2 = target2; this.name = name; }
+    }
+
+    /**
+     * Walk forward through daily R/S levels (R1+PDH ... R4 and S1+PDL ... S4) + daily CPR
+     * mid-points (including CPR↔R1+PDH and CPR↔S1+PDL) + session body high/low + ALL weekly
+     * CPR levels (Pivot, TC, BC, R1-R4, S1-S4, PH, PL) that lie strictly beyond
+     * {@code originalTarget} in the trade direction. Return the closest candidate whose R/R
+     * clears {@code minRR}, or null if none qualifies.
+     *
+     * Daily CPR (TC / BC / Pivot) is NOT added as separate candidates — the regular
+     * {@code computeTargets} collapses CPR to a single value (e.g., min(tc,bc) for buys),
+     * so the rescue mirrors that convention. CPR is treated as one zone, not three lines.
+     * The CPR-to-R1+PDH and CPR-to-S1+PDL midpoints ARE included since they're real
+     * intraday levels bridging the gap between the CPR zone and the first R/S line.
+     * Session body high/low are real intraday resistance/support — included as candidates.
+     * SMA200 and extrapolated R5/S5 are excluded.
+     */
+    private RescueResult attemptTargetRescue(boolean isBuy, double entry, double sl,
+                                              double originalTarget, double minRR,
+                                              double r1, double r2, double r3, double r4,
+                                              double s1, double s2, double s3, double s4,
+                                              double ph, double pl, double tc, double bc,
+                                              double sessionBodyHi, double sessionBodyLo,
+                                              WeeklyCprService.WeeklyLevels wl) {
+        double risk = Math.abs(entry - sl);
+        if (risk <= 0) return null;
+        java.util.List<RescueResult> all = new java.util.ArrayList<>();
+        java.util.function.BiConsumer<Double, String> addIf = (lvl, name) -> {
+            if (lvl == null || lvl <= 0) return;
+            all.add(new RescueResult(lvl, name));
+        };
+        // Daily R/S levels
+        addIf.accept(Math.min(r1, ph), "R1+PDH");
+        addIf.accept(r2, "R2");
+        addIf.accept(r3, "R3");
+        addIf.accept(r4, "R4");
+        addIf.accept(Math.max(s1, pl), "S1+PDL");
+        addIf.accept(s2, "S2");
+        addIf.accept(s3, "S3");
+        addIf.accept(s4, "S4");
+        // Daily CPR mid-points between adjacent levels (both R-side and S-side).
+        // CPR↔R1+PDH and CPR↔S1+PDL midpoints use the OUTER edge of CPR (CPR top for buys,
+        // CPR bottom for sells) so the midpoint sits in the gap between CPR and the first
+        // R/S line — useful for rescues like BUY_ABOVE_S1_PDL where the target is BC and
+        // the next stop is across the CPR-to-R1 gap.
+        double r1ph    = Math.min(r1, ph);
+        double s1pl    = Math.max(s1, pl);
+        double cprTop  = Math.max(tc, bc);
+        double cprBot  = Math.min(tc, bc);
+        if (cprTop > 0 && r1ph > 0) addIf.accept((cprTop + r1ph) / 2, "MID CPR-R1+PDH");
+        if (cprBot > 0 && s1pl > 0) addIf.accept((cprBot + s1pl) / 2, "MID CPR-S1+PDL");
+        if (r1ph > 0 && r2 > 0)  addIf.accept((r1ph + r2) / 2, "MID R1-R2");
+        if (r2 > 0 && r3 > 0)    addIf.accept((r2 + r3) / 2, "MID R2-R3");
+        if (r3 > 0 && r4 > 0)    addIf.accept((r3 + r4) / 2, "MID R3-R4");
+        if (s1pl > 0 && s2 > 0)  addIf.accept((s1pl + s2) / 2, "MID S1-S2");
+        if (s2 > 0 && s3 > 0)    addIf.accept((s2 + s3) / 2, "MID S2-S3");
+        if (s3 > 0 && s4 > 0)    addIf.accept((s3 + s4) / 2, "MID S3-S4");
+        // Session body high/low — real intraday resistance/support. The filter below decides
+        // direction (session body high relevant for buys, session body low for sells).
+        addIf.accept(sessionBodyHi, "Session Body High");
+        addIf.accept(sessionBodyLo, "Session Body Low");
+        // All weekly CPR levels — central trio + R/S + PH/PL
+        if (wl != null) {
+            addIf.accept(wl.pivot, "WK Pivot");
+            addIf.accept(wl.tc,    "WK TC");
+            addIf.accept(wl.bc,    "WK BC");
+            addIf.accept(wl.r1,    "WK R1");
+            addIf.accept(wl.r2,    "WK R2");
+            addIf.accept(wl.r3,    "WK R3");
+            addIf.accept(wl.r4,    "WK R4");
+            addIf.accept(wl.s1,    "WK S1");
+            addIf.accept(wl.s2,    "WK S2");
+            addIf.accept(wl.s3,    "WK S3");
+            addIf.accept(wl.s4,    "WK S4");
+            addIf.accept(wl.ph,    "WK PH");
+            addIf.accept(wl.pl,    "WK PL");
+        }
+        // Filter: strictly beyond original target in trade direction
+        java.util.List<RescueResult> beyond = new java.util.ArrayList<>();
+        for (RescueResult c : all) {
+            boolean valid = isBuy ? (c.target2 > originalTarget && c.target2 > entry)
+                                  : (c.target2 < originalTarget && c.target2 < entry);
+            if (valid) beyond.add(c);
+        }
+        // Sort by distance from entry ascending
+        beyond.sort(java.util.Comparator.comparingDouble(c -> Math.abs(c.target2 - entry)));
+        // First candidate that clears minRR wins
+        for (RescueResult c : beyond) {
+            double rr = Math.abs(c.target2 - entry) / risk;
+            if (rr >= minRR) return c;
+        }
+        return null;
     }
 
     /** Single-level breakouts that lack a zone-width cushion — get the extra SL buffer. */

@@ -430,19 +430,28 @@ public class PollingService {
                                         int quantity, String position,
                                         int exitSide, double slPrice, double targetPrice, String setup,
                                         double atr, double atrMultiplier, String description) {
-        monitorEntryAndPlaceOCO(entry, symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, false, false);
+        monitorEntryAndPlaceOCO(entry, symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, false, false, null);
     }
 
     public void monitorEntryAndPlaceOCO(OrderDTO entry, String symbol,
                                         int quantity, String position,
                                         int exitSide, double slPrice, double targetPrice, String setup,
                                         double atr, double atrMultiplier, String description,
-                                        boolean dayHighLowShifted, boolean useStructuralSl) {
+                                        boolean rescueShifted, boolean useStructuralSl) {
+        monitorEntryAndPlaceOCO(entry, symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, rescueShifted, useStructuralSl, null);
+    }
+
+    public void monitorEntryAndPlaceOCO(OrderDTO entry, String symbol,
+                                        int quantity, String position,
+                                        int exitSide, double slPrice, double targetPrice, String setup,
+                                        double atr, double atrMultiplier, String description,
+                                        boolean rescueShifted, boolean useStructuralSl,
+                                        Double target1Price) {
 
         // ── Try WebSocket-based tracking first (WS connected) ──
         if (orderEventService.isConnected()) {
             boolean tracked = orderEventService.trackEntryOrder(entry.getId(),
-                new OrderEventService.EntryContext(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, dayHighLowShifted, useStructuralSl));
+                new OrderEventService.EntryContext(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, rescueShifted, useStructuralSl, target1Price));
             if (tracked) {
                 eventService.log("[INFO] Entry order " + entry.getId() + " tracked via WebSocket for " + symbol);
                 return; // WebSocket will handle fill detection — no polling needed
@@ -532,21 +541,30 @@ public class PollingService {
                     // Check if we should split targets
                     double targetDist = Math.abs(targetPrice - holder.entryFillPrice);
                     double entryAtr = atr > 0 ? atr : 1;
-                    boolean shouldSplit = riskSettings.isEnableSplitTarget() && !skipTarget
-                        && quantity >= 4
-                        && (riskSettings.getSplitMinDistanceAtr() <= 0 || targetDist > entryAtr * riskSettings.getSplitMinDistanceAtr());
+                    // Target Rescue: SignalProcessor already produced an absolute T1 price → force a
+                    // split regardless of enableSplitTarget. Otherwise fall back to the normal toggle.
+                    boolean rescueSplit = target1Price != null && target1Price > 0;
+                    boolean shouldSplit = rescueSplit
+                        || (riskSettings.isEnableSplitTarget() && !skipTarget
+                            && quantity >= 4
+                            && (riskSettings.getSplitMinDistanceAtr() <= 0 || targetDist > entryAtr * riskSettings.getSplitMinDistanceAtr()));
 
                     if (shouldSplit) {
                         // Split target placement: SL (full) + T1 (half) + T2 (half)
                         int t1Qty = (quantity / 4) * 2;
                         int t2Qty = quantity - t1Qty;
-                        double t1Pct = riskSettings.getT1DistancePct() / 100.0;
                         boolean isBuy = "LONG".equals(position);
-                        // T1 uses ORIGINAL structural target — not the discounted value
-                        double t1Price = isBuy
-                            ? holder.entryFillPrice + t1Pct * (targetPrice - holder.entryFillPrice)
-                            : holder.entryFillPrice - t1Pct * (holder.entryFillPrice - targetPrice);
-                        t1Price = orderService.roundToTick(t1Price, symbol);
+                        double t1Price;
+                        if (rescueSplit) {
+                            // Rescue-driven split: use the SignalProcessor's absolute T1 (the original structural target)
+                            t1Price = orderService.roundToTick(target1Price, symbol);
+                        } else {
+                            double t1Pct = riskSettings.getT1DistancePct() / 100.0;
+                            t1Price = isBuy
+                                ? holder.entryFillPrice + t1Pct * (targetPrice - holder.entryFillPrice)
+                                : holder.entryFillPrice - t1Pct * (holder.entryFillPrice - targetPrice);
+                            t1Price = orderService.roundToTick(t1Price, symbol);
+                        }
                         // T2 sits at the structural CPR level — apply tolerance discount
                         double t2Price = orderService.applyTargetTolerance(targetPrice, isBuy, atr, symbol);
 

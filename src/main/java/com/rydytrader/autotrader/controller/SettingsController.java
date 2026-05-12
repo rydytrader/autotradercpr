@@ -56,6 +56,7 @@ public class SettingsController {
         result.put("capitalPerTrade", riskSettings.getCapitalPerTrade(effectiveMode));
         result.put("telegramAlertFrequency", riskSettings.getTelegramAlertFrequency(effectiveMode));
         result.put("enableGapCheck", riskSettings.isEnableGapCheck());
+        result.put("enableTargetRescue", riskSettings.isEnableTargetRescue());
         result.put("enableDayHighLowTargetShift", riskSettings.isEnableDayHighLowTargetShift());
         result.put("enableDailySma200TargetShift", riskSettings.isEnableDailySma200TargetShift());
         result.put("dayHighLowShiftMinDistAtr", riskSettings.getDayHighLowShiftMinDistAtr());
@@ -200,6 +201,7 @@ public class SettingsController {
             if (body.containsKey("capitalPerTrade")) riskSettings.setCapitalPerTrade(effectiveMode, Double.parseDouble(body.get("capitalPerTrade").toString()));
             if (body.containsKey("telegramAlertFrequency")) riskSettings.setTelegramAlertFrequency(effectiveMode, Integer.parseInt(body.get("telegramAlertFrequency").toString()));
             if (body.containsKey("enableGapCheck")) riskSettings.setEnableGapCheck(Boolean.parseBoolean(body.get("enableGapCheck").toString()));
+            if (body.containsKey("enableTargetRescue")) riskSettings.setEnableTargetRescue(Boolean.parseBoolean(body.get("enableTargetRescue").toString()));
             if (body.containsKey("enableDayHighLowTargetShift")) riskSettings.setEnableDayHighLowTargetShift(Boolean.parseBoolean(body.get("enableDayHighLowTargetShift").toString()));
             if (body.containsKey("enableDailySma200TargetShift")) riskSettings.setEnableDailySma200TargetShift(Boolean.parseBoolean(body.get("enableDailySma200TargetShift").toString()));
             if (body.containsKey("dayHighLowShiftMinDistAtr")) riskSettings.setDayHighLowShiftMinDistAtr(Double.parseDouble(body.get("dayHighLowShiftMinDistAtr").toString()));
