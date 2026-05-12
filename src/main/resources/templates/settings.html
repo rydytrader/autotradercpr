@@ -741,19 +741,6 @@
                         <br><br><b>Hurdle guard capture.</b> When the filter passes against an actual hurdle (a level existed in trade direction and was cleared), the gating 15-min bar's <b>low</b> (for buys) / <b>high</b> (for sells) is captured onto the position record at entry &mdash; available for the <b>NIFTY HTF Hurdle Early Exit</b> defensive exit on the Risk tab.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">NIFTY OI Hurdle Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableNiftyOiHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY's prior 1h close hasn't cleared the Max Call/Put OI strike</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min headroom to OI strike:</span>
-                        <input type="number" id="niftyOiHurdleMinHeadroomAtr" class="form-control" step="0.1" min="0" max="5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× NIFTY ATR (0 = off)</span>
-                    </div>
-                    <div class="form-hint">Same prior-1h-close + headroom logic as the HTF Hurdle, but checks only the Max Call OI strike (buys) or Max Put OI strike (sells). Refreshed every 15 minutes from NIFTY's option chain (<i>Max Call OI</i> = intraday resistance from option writers; <i>Max Put OI</i> = intraday support). Fail-open before the first OI fetch (no rejection without data). Signal Trail bucket: <code>NIFTY_OI_HURDLE</code>.</div>
-                </div>
-                <div class="form-group">
                     <label class="form-label">NIFTY 5m Hurdle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableNifty5mHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
@@ -782,31 +769,6 @@
                         <br>&nbsp;&nbsp;&bull; <b>Inside zone</b> &mdash; NIFTY's prior 5m close lands within [BC, TC]: every stock signal rejected, both directions.
                         <br>&nbsp;&nbsp;&bull; <b>Headroom</b> &mdash; close outside the zone but within <code>headroom × NIFTY ATR</code> of the zone edge in the trade direction: rejected. Buys blocked when zone is overhead and close; sells blocked when zone is underfoot and close. Mirrors the 5m hurdle's directional headroom logic.
                         <br>Default headroom <b>1.0</b> × ATR. Set to 0 to disable the headroom leg (the inside-zone leg stays on while the master toggle is on). Signal Trail bucket: <code>VIRGIN_CPR_HURDLE</code>.</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">NIFTY HTF Candle Direction Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableNiftyHtfCandleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy needs a <b>bullish</b> NIFTY 15-min bar; sell needs a <b>bearish</b> one (body + dominant wick)</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Dominant / opposing wick ratio &gt;</span>
-                        <input type="number" id="niftyHtfCandleMaxWickRatio" class="form-control" step="0.1" min="0" max="10" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× body (0 = off)</span>
-                    </div>
-                    <div class="form-hint">Macro-level filter applied to NIFTY's <b>last-completed 15-min candle</b> (synthesized from three 5-min bars; aligned to wall-clock quarters 9:30 / 9:45 / 10:00&hellip;). Two stages run in order &mdash; first wins rejects.
-                        <br><br><b>Stage 1 &mdash; directional classification (body color + dominant wick).</b> The bar's combined shape, not just body color, decides direction:
-                        <br>&nbsp;&nbsp;&bull; Green bar with small/normal upper wick &rarr; <b>bullish</b>
-                        <br>&nbsp;&nbsp;&bull; Red bar with small/normal lower wick &rarr; <b>bearish</b>
-                        <br>&nbsp;&nbsp;&bull; <b>Red bar with long lower wick (lower wick &gt; ratio &times; body) &rarr; bullish</b> &mdash; classic <i>hammer</i>, buyers stepped in heavily at the lows even though body closed red. Allows BUY.
-                        <br>&nbsp;&nbsp;&bull; <b>Green bar with long upper wick (upper wick &gt; ratio &times; body) &rarr; bearish</b> &mdash; classic <i>shooting star</i>, sellers stepped in heavily at the highs even though body closed green. Allows SELL.
-                        <br>Trade direction must match the classified direction; otherwise the rejection reason names the actual pattern (e.g. <i>"green shooting star &mdash; BUY needs bullish bar"</i>, <i>"red hammer &mdash; SELL needs bearish bar"</i>).
-                        <br><br><b>Stage 2 &mdash; opposing-side wick rejection.</b> Even after Stage 1 matches the trade direction, the wick on the OPPOSING side of the trade can still reject if it exceeds <code>ratio &times; body</code> &mdash; a contested move where counter-pressure was visible:
-                        <br>&nbsp;&nbsp;&bull; <b>BUY</b>: opposing wick = upper wick. Long upper wick = sellers pushed back at the top.
-                        <br>&nbsp;&nbsp;&bull; <b>SELL</b>: opposing wick = lower wick. Long lower wick = buyers pushed back at the bottom.
-                        <br>Same threshold reused for symmetry.
-                        <br><br>Default ratio <b>2.0</b>. Set to <b>0</b> to disable both stages' wick logic &mdash; filter degenerates to pure body-color check (red rejects BUY, green rejects SELL, no hammer/shooting-star overrides).
-                        <br>Doji bodies (close == open) pass both directions &mdash; direction can't be determined, fail-open. Before 9:30 IST no completed 15-min bar exists &rarr; fail-open. Signal Trail bucket: <code>NIFTY_HTF_CANDLE_OPPOSED</code>.</div>
                 </div>
             </div>
         </div>
@@ -1408,16 +1370,12 @@
             document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
             document.getElementById('enableNiftyHtfHurdleFilter').checked = d.enableNiftyHtfHurdleFilter === true;
             document.getElementById('niftyHurdleMinHeadroomAtr').value = (d.niftyHurdleMinHeadroomAtr != null ? d.niftyHurdleMinHeadroomAtr : 1.0);
-            document.getElementById('enableNiftyOiHurdleFilter').checked = d.enableNiftyOiHurdleFilter === true;
-            document.getElementById('niftyOiHurdleMinHeadroomAtr').value = (d.niftyOiHurdleMinHeadroomAtr != null ? d.niftyOiHurdleMinHeadroomAtr : 1.0);
             document.getElementById('enableNifty5mHurdleFilter').checked = d.enableNifty5mHurdleFilter === true;
             document.getElementById('virginCprExpiryDays').value = d.virginCprExpiryDays != null ? d.virginCprExpiryDays : 10;
             document.getElementById('enableVirginCprHurdleFilter').checked = d.enableVirginCprHurdleFilter === true;
             document.getElementById('virginCprHurdleHeadroomAtr').value = (d.virginCprHurdleHeadroomAtr != null ? d.virginCprHurdleHeadroomAtr : 1.0);
             document.getElementById('nifty5mHurdleMinHeadroomAtr').value = (d.nifty5mHurdleMinHeadroomAtr != null ? d.nifty5mHurdleMinHeadroomAtr : 1.0);
             document.getElementById('enableHtfCandleFilter').checked = d.enableHtfCandleFilter === true;
-            document.getElementById('enableNiftyHtfCandleFilter').checked = d.enableNiftyHtfCandleFilter === true;
-            document.getElementById('niftyHtfCandleMaxWickRatio').value = (d.niftyHtfCandleMaxWickRatio != null ? d.niftyHtfCandleMaxWickRatio : 2.0);
             document.getElementById('enableSmallCandleFilter').checked = d.enableSmallCandleFilter === true;
             document.getElementById('smallCandleBodyAtrThreshold').value =
                 (d.smallCandleBodyAtrThreshold != null ? d.smallCandleBodyAtrThreshold : (d.smallCandleAtrThreshold != null ? d.smallCandleAtrThreshold : 0.5));
@@ -1602,16 +1560,12 @@
                 enableIndexAlignment: document.getElementById('enableIndexAlignment').checked,
                 enableNiftyHtfHurdleFilter: document.getElementById('enableNiftyHtfHurdleFilter').checked,
                 niftyHurdleMinHeadroomAtr: parseFloat(document.getElementById('niftyHurdleMinHeadroomAtr').value) || 0,
-                enableNiftyOiHurdleFilter: document.getElementById('enableNiftyOiHurdleFilter').checked,
-                niftyOiHurdleMinHeadroomAtr: parseFloat(document.getElementById('niftyOiHurdleMinHeadroomAtr').value) || 0,
                 enableNifty5mHurdleFilter: document.getElementById('enableNifty5mHurdleFilter').checked,
                 virginCprExpiryDays: parseInt(document.getElementById('virginCprExpiryDays').value) || 0,
                 enableVirginCprHurdleFilter: document.getElementById('enableVirginCprHurdleFilter').checked,
                 virginCprHurdleHeadroomAtr: parseFloat(document.getElementById('virginCprHurdleHeadroomAtr').value) || 0,
                 nifty5mHurdleMinHeadroomAtr: parseFloat(document.getElementById('nifty5mHurdleMinHeadroomAtr').value) || 0,
                 enableHtfCandleFilter: document.getElementById('enableHtfCandleFilter').checked,
-                enableNiftyHtfCandleFilter: document.getElementById('enableNiftyHtfCandleFilter').checked,
-                niftyHtfCandleMaxWickRatio: parseFloat(document.getElementById('niftyHtfCandleMaxWickRatio').value) || 0,
                 enableSmallCandleFilter: document.getElementById('enableSmallCandleFilter').checked,
                 smallCandleBodyAtrThreshold: parseFloat(document.getElementById('smallCandleBodyAtrThreshold').value) || 0.5,
                 smallCandleMoveAtrThreshold: parseFloat(document.getElementById('smallCandleMoveAtrThreshold').value) || 0.15,

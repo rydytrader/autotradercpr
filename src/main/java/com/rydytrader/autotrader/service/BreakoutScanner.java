@@ -69,10 +69,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     @org.springframework.context.annotation.Lazy
-    private NiftyOptionOiService niftyOptionOiService;
-
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    @org.springframework.context.annotation.Lazy
     private VirginCprService virginCprService;
 
     // Track which levels have been broken today per symbol (prevents re-fire)
@@ -573,13 +569,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                         recordRejection(fyersSymbol, buySetup, close, "NIFTY_HURDLE", niftyHurdleReject);
                         return;
                     }
-                    // NIFTY OI Hurdle — independent toggle for the Max Call OI strike check.
-                    String niftyOiHurdleReject = checkNiftyOiHurdle(true);
-                    if (niftyOiHurdleReject != null) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + niftyOiHurdleReject);
-                        recordRejection(fyersSymbol, buySetup, close, "NIFTY_OI_HURDLE", niftyOiHurdleReject);
-                        return;
-                    }
                     // NIFTY 5m Hurdle — prior 5-min NIFTY close must have cleared nearest daily CPR hurdle.
                     String nifty5mHurdleReject = checkNifty5mHurdle(true, candle.startMinute);
                     if (nifty5mHurdleReject != null) {
@@ -602,15 +591,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + htfCandleReject);
                     recordRejection(fyersSymbol, buySetup, close, "HTF_CANDLE_OPPOSED", htfCandleReject);
                     return;
-                }
-                // NIFTY in-progress 1h candle direction — only when not downgraded to LPT.
-                if (!niftyDowngraded) {
-                    String niftyHtfCandleReject = checkNiftyHtfCandleColor(true);
-                    if (niftyHtfCandleReject != null) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + niftyHtfCandleReject);
-                        recordRejection(fyersSymbol, buySetup, close, "NIFTY_HTF_CANDLE_OPPOSED", niftyHtfCandleReject);
-                        return;
-                    }
                 }
                 fireSignal(fyersSymbol, buySetup, open, high, low, close, candle.volume, atr, levels, prob,
                     lastTriggerRoute.remove(fyersSymbol));
@@ -715,13 +695,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                         recordRejection(fyersSymbol, sellSetup, close, "NIFTY_HURDLE", niftyHurdleReject);
                         return;
                     }
-                    // NIFTY OI Hurdle — independent toggle for the Max Put OI strike check.
-                    String niftyOiHurdleReject = checkNiftyOiHurdle(false);
-                    if (niftyOiHurdleReject != null) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + niftyOiHurdleReject);
-                        recordRejection(fyersSymbol, sellSetup, close, "NIFTY_OI_HURDLE", niftyOiHurdleReject);
-                        return;
-                    }
                     // NIFTY 5m Hurdle — prior 5-min NIFTY close must have cleared nearest daily CPR hurdle.
                     String nifty5mHurdleReject = checkNifty5mHurdle(false, candle.startMinute);
                     if (nifty5mHurdleReject != null) {
@@ -744,15 +717,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + htfCandleReject);
                     recordRejection(fyersSymbol, sellSetup, close, "HTF_CANDLE_OPPOSED", htfCandleReject);
                     return;
-                }
-                // NIFTY in-progress 1h candle direction — only when not downgraded to LPT.
-                if (!niftyDowngraded) {
-                    String niftyHtfCandleReject = checkNiftyHtfCandleColor(false);
-                    if (niftyHtfCandleReject != null) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + niftyHtfCandleReject);
-                        recordRejection(fyersSymbol, sellSetup, close, "NIFTY_HTF_CANDLE_OPPOSED", niftyHtfCandleReject);
-                        return;
-                    }
                 }
                 fireSignal(fyersSymbol, sellSetup, open, high, low, close, candle.volume, atr, levels, prob,
                     lastTriggerRoute.remove(fyersSymbol));
@@ -1451,10 +1415,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             WeeklyCprService.WeeklyLevels wl = weeklyCprService.getWeeklyLevels(niftySym);
             if (wl == null) return null; // weekly levels not loaded — fail-open
 
-            // Base weekly candidates plus the trade-direction's option-chain Max OI strike when
-            // available. Max Call OI = resistance (joins buy hurdle set); Max Put OI = support
-            // (joins sell hurdle set). OI strikes are zero until NiftyOptionOiService's first
-            // successful fetch — falls through to base set with no regression.
+            // Weekly hurdle candidates in trade direction.
             java.util.List<Double> candidateLevels = new java.util.ArrayList<>(6);
             java.util.List<String> candidateNames  = new java.util.ArrayList<>(6);
             if (isBuy) {
@@ -1470,9 +1431,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 candidateLevels.add(wl.pivot); candidateNames.add("weekly Pivot");
                 candidateLevels.add(wl.bc);    candidateNames.add("weekly BC");
             }
-            // Max Call/Put OI is split into checkNiftyOiHurdle so the user can toggle it
-            // independently of the weekly-levels HTF gate. Virgin CPR is intentionally NOT
-            // added here — daily-level concept stays at the daily-CPR (5m) gate.
+            // Virgin CPR is intentionally NOT added here — daily-level concept stays at
+            // the daily-CPR (5m) gate.
 
             // Nearest hurdle in trade direction relative to NIFTY's current price.
             double chosenLevel = 0;
@@ -1571,77 +1531,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     public NiftyHurdleGuard consumePendingHurdleGuard(String fyersSymbol) {
         if (fyersSymbol == null) return null;
         return pendingHurdleGuards.remove(fyersSymbol);
-    }
-
-    /**
-     * Independent NIFTY OI Hurdle filter — same prior-1h-close + headroom rules as
-     * {@link #checkNiftyHurdle} but with a single candidate (Max Call OI for buys,
-     * Max Put OI for sells). Split out so the OI level can be toggled separately.
-     *
-     * <p>Returns null on pass (filter off, no OI loaded, OI cleared past, or no prior
-     * 15-min close available — fail-open). Returns a non-null reason string to reject.
-     */
-    private String checkNiftyOiHurdle(boolean isBuy) {
-        if (!riskSettings.isEnableNiftyOiHurdleFilter()) return null;
-        if (marketDataService == null || niftyOptionOiService == null) return null;
-        try {
-            String niftySym = IndexTrendService.NIFTY_SYMBOL;
-            double niftyPrice = marketDataService.getLtp(niftySym);
-            if (niftyPrice <= 0) return null;
-
-            double oiStrike = isBuy ? niftyOptionOiService.getMaxCallOiStrike()
-                                    : niftyOptionOiService.getMaxPutOiStrike();
-            String oiName = isBuy ? "Max Call OI" : "Max Put OI";
-            if (oiStrike <= 0) return null; // OI not loaded yet — fail-open
-
-            // Cleared-past check applies only when the OI strike is BEHIND NIFTY in trade
-            // direction (i.e., NIFTY has pushed past the resistance/support). Otherwise the
-            // headroom check below handles "OI right ahead of NIFTY".
-            boolean strikeBehindLtp = isBuy ? oiStrike < niftyPrice : oiStrike > niftyPrice;
-            if (strikeBehindLtp) {
-                // Prior 15-min close (mirrors NIFTY HTF Hurdle). Pre-9:30 IST no 15-min close
-                // exists yet — silent fail-open. Trades only fire from 9:30 onwards anyway,
-                // by which time the day's first 15-min close has finalized.
-                Double priorHtfClose = candleAggregator != null
-                    ? candleAggregator.getLast15MinClose(niftySym) : null;
-                if (priorHtfClose == null || priorHtfClose <= 0) {
-                    return null; // silent fail-open
-                }
-                boolean cleared = isBuy ? priorHtfClose > oiStrike : priorHtfClose < oiStrike;
-                if (!cleared) {
-                    return "NIFTY OI hurdle at " + oiName
-                        + ": NIFTY " + String.format("%.2f", niftyPrice)
-                        + ", prior 15-min close=" + String.format("%.2f", priorHtfClose)
-                        + ", level " + String.format("%.2f", oiStrike);
-                }
-            }
-
-            // Headroom check — when the OI strike is AHEAD of NIFTY in trade direction and
-            // the gap is smaller than minHeadroomAtr × NIFTY ATR, the move is likely capped
-            // by the option-writer wall before the breakout pays.
-            double minHeadroomAtr = riskSettings.getNiftyOiHurdleMinHeadroomAtr();
-            if (minHeadroomAtr > 0 && atrService != null) {
-                double niftyAtr = atrService.getAtr(niftySym);
-                if (niftyAtr > 0) {
-                    boolean strikeAhead = isBuy ? oiStrike > niftyPrice : oiStrike < niftyPrice;
-                    if (strikeAhead) {
-                        double headroomPts = isBuy ? oiStrike - niftyPrice : niftyPrice - oiStrike;
-                        double minHeadroomPts = minHeadroomAtr * niftyAtr;
-                        if (headroomPts < minHeadroomPts) {
-                            return "NIFTY OI hurdle ahead at " + oiName
-                                + " (" + String.format("%.2f", oiStrike) + "): only "
-                                + String.format("%.2f", headroomPts) + " pts headroom, need "
-                                + String.format("%.2f", minHeadroomPts)
-                                + " (" + minHeadroomAtr + " × NIFTY ATR " + String.format("%.2f", niftyAtr) + ")";
-                        }
-                    }
-                }
-            }
-            return null;
-        } catch (Exception e) {
-            log.warn("[BreakoutScanner] NIFTY OI hurdle check failed: {}", e.getMessage());
-            return null;
-        }
     }
 
     /**
@@ -1897,97 +1786,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
         }
 
-        return null;
-    }
-
-    /**
-     * Macro-level NIFTY direction filter — reads NIFTY's last <b>completed 15-min</b> candle
-     * and rejects stock trades whose direction doesn't agree with the bar.
-     *
-     * <p>Two-stage assessment:
-     * <ol>
-     *   <li><b>Stage 1 — directional classification (body + dominant wick).</b>
-     *       Body color sets the default direction; a long wick on the SAME side as the body's
-     *       favored direction can override:
-     *       <ul>
-     *         <li><b>Red bar + long lower wick (≥ wickRatio × body)</b> = bullish hammer →
-     *             reclassified as <i>bullish</i> despite red body.</li>
-     *         <li><b>Green bar + long upper wick</b> = bearish shooting star → reclassified
-     *             as <i>bearish</i> despite green body.</li>
-     *       </ul>
-     *       BUY needs the bar's final classification to be bullish; SELL needs bearish.
-     *   </li>
-     *   <li><b>Stage 2 — opposing-side wick rejection.</b>
-     *       Even when Stage 1 classifies the bar in the trade direction, reject if the wick
-     *       on the OPPOSITE side of the trade is also long ( &gt; wickRatio × body):
-     *       contested move, counter-pressure was active. For BUY the opposing side is the
-     *       upper wick; for SELL it's the lower wick.
-     *   </li>
-     * </ol>
-     *
-     * <p>Doji ({@code close == open}) passes both directions — no clear direction, fail-open.
-     * When {@code niftyHtfCandleMaxWickRatio = 0}, both stages disable; filter degenerates
-     * to pure body-color check (red rejects BUY, green rejects SELL).
-     *
-     * <p>The 15-min bar is synthesized from three consecutive 5-min bars (see
-     * {@link CandleAggregator#getLastCompleted15MinCandle}). Filter fail-opens before 9:30
-     * IST or when fewer than 3 completed 5-min bars are available for NIFTY.
-     */
-    private String checkNiftyHtfCandleColor(boolean isBuy) {
-        if (!riskSettings.isEnableNiftyHtfCandleFilter()) return null;
-        if (candleAggregator == null) return null;
-        CandleAggregator.CandleBar bar = candleAggregator
-            .getLastCompleted15MinCandle(IndexTrendService.NIFTY_SYMBOL);
-        if (bar == null || bar.open <= 0 || bar.close <= 0) return null; // fail-open
-
-        // Doji — no directional bias, fail-open for both.
-        if (bar.close == bar.open) return null;
-
-        double body      = Math.abs(bar.close - bar.open);
-        double upperWick = bar.high - Math.max(bar.open, bar.close);
-        double lowerWick = Math.min(bar.open, bar.close) - bar.low;
-        boolean isGreen  = bar.close > bar.open;
-        boolean isRed    = bar.close < bar.open;
-        double  W        = riskSettings.getNiftyHtfCandleMaxWickRatio();
-
-        // ── Stage 1 — directional classification (body + dominant wick) ──
-        boolean dominantLowerWickOnRed   = isRed   && W > 0 && body > 0 && lowerWick > W * body;  // hammer
-        boolean dominantUpperWickOnGreen = isGreen && W > 0 && body > 0 && upperWick > W * body;  // shooting star
-
-        boolean bullishBar = (isGreen && !dominantUpperWickOnGreen) || dominantLowerWickOnRed;
-        boolean bearishBar = (isRed   && !dominantLowerWickOnRed)   || dominantUpperWickOnGreen;
-
-        String barShape = bullishBar
-            ? (dominantLowerWickOnRed ? "red hammer (long lower wick overrides red body)" : "green body")
-            : bearishBar
-                ? (dominantUpperWickOnGreen ? "green shooting star (long upper wick overrides green body)" : "red body")
-                : "non-directional";
-
-        if (isBuy && !bullishBar) {
-            return "NIFTY 15m " + barShape + " — BUY needs bullish bar (open="
-                + String.format("%.2f", bar.open) + ", high=" + String.format("%.2f", bar.high)
-                + ", low=" + String.format("%.2f", bar.low) + ", close=" + String.format("%.2f", bar.close) + ")";
-        }
-        if (!isBuy && !bearishBar) {
-            return "NIFTY 15m " + barShape + " — SELL needs bearish bar (open="
-                + String.format("%.2f", bar.open) + ", high=" + String.format("%.2f", bar.high)
-                + ", low=" + String.format("%.2f", bar.low) + ", close=" + String.format("%.2f", bar.close) + ")";
-        }
-
-        // ── Stage 2 — opposing-side wick rejection (move was contested) ──
-        if (W > 0 && body > 0) {
-            double opposingWick  = isBuy ? upperWick : lowerWick;
-            String opposingName  = isBuy ? "upper"   : "lower";
-            if (opposingWick > W * body) {
-                return "NIFTY 15m " + opposingName + " wick rejection (contested move): "
-                    + opposingName + " wick=" + String.format("%.2f", opposingWick)
-                    + " > " + W + " × body=" + String.format("%.2f", body)
-                    + " (bar: " + barShape + ", open=" + String.format("%.2f", bar.open)
-                    + ", high=" + String.format("%.2f", bar.high)
-                    + ", low=" + String.format("%.2f", bar.low)
-                    + ", close=" + String.format("%.2f", bar.close) + ")";
-            }
-        }
         return null;
     }
 
