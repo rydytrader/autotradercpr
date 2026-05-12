@@ -56,6 +56,14 @@ public class RiskSettingsStore {
         // Pin bar (hammer / shooting star): rejection wick ≥ N × body, opposite wick ≤ N × body.
         volatile double pinBarRejectionWickBodyMult = 2.0;
         volatile double pinBarOppositeWickBodyMult  = 0.30;
+        // Pin bar small-body fallback — when body ≤ smallBodyMaxRangeRatio × range, the
+        // body-relative test loses meaning (a tiny body makes the wick multiplicative cap
+        // collapse). Fall back to a range-relative geometric test: rejection wick must dominate
+        // the bar's total range, and the opposite wick must stay capped relative to range.
+        // Set smallBodyMaxRangeRatio = 0 to disable the fallback entirely.
+        volatile double pinBarSmallBodyMaxRangeRatio    = 0.25;
+        volatile double pinBarDominantWickMinRangeRatio = 0.60;
+        volatile double pinBarOppositeWickMaxRangeRatio = 0.30;
         // Engulfing: current body ≥ N × prev body. 1.0 = strict; 0.9 allows near-engulfing.
         volatile double engulfingMinBodyMultiple    = 1.0;
         // Engulfing absolute size floor: current body ≥ N × ATR. Without this, a "weak engulfing"
@@ -77,12 +85,16 @@ public class RiskSettingsStore {
         // bar1's open in reversal direction (confirmation).
         volatile double haramiBodyAtrMult           = 0.5;
         volatile double haramiInnerBodyMaxRatio     = 0.5;
-        // Doji reversal: current body ≤ N × range; prev body ≥ N × ATR (meaningful prior bar).
+        // Doji reversal (2-bar): bar 1 (prev) is the doji — body ≤ dojiBodyMaxRangeRatio × range.
+        // Bar 2 (curr) is the strong directional confirmation — body ≥ dojiConfirmBodyAtrMult × ATR.
         volatile double dojiBodyMaxRangeRatio       = 0.10;
-        volatile double dojiPrevBodyAtrMult         = 0.5;
+        volatile double dojiConfirmBodyAtrMult      = 0.5;
         // Morning / evening star: bar1 + bar3 body ≥ N × ATR; bar2 body ≤ N × bar1 body.
         volatile double starOuterBodyAtrMult        = 0.5;
         volatile double starMiddleBodyMaxMultOfOuter = 0.3;
+        // Retest touch rule slack — bar's extreme can fall short of the level by up to
+        // (toleranceAtr × ATR) and still count as a touch. Absorbs tick-level whisker misses.
+        volatile double levelTouchToleranceAtr      = 0.2;
         volatile boolean enableTargetShift = true; // shift target to next level if default target < threshold ATR. If false, skip the entry.
         volatile boolean enableGapCheck = true;     // halve qty if day open or first candle beyond R2/S2
         volatile boolean enableDayHighLowTargetShift = true; // shift target to day high/low if between entry and target
@@ -391,6 +403,9 @@ public class RiskSettingsStore {
     public double getGoodSizeCandleMaxOppositeWickRatio() { return cfg().goodSizeCandleMaxOppositeWickRatio; }
     public double getPinBarRejectionWickBodyMult() { return cfg().pinBarRejectionWickBodyMult; }
     public double getPinBarOppositeWickBodyMult()  { return cfg().pinBarOppositeWickBodyMult; }
+    public double getPinBarSmallBodyMaxRangeRatio()    { return cfg().pinBarSmallBodyMaxRangeRatio; }
+    public double getPinBarDominantWickMinRangeRatio() { return cfg().pinBarDominantWickMinRangeRatio; }
+    public double getPinBarOppositeWickMaxRangeRatio() { return cfg().pinBarOppositeWickMaxRangeRatio; }
     public double getEngulfingMinBodyMultiple()    { return cfg().engulfingMinBodyMultiple; }
     public double getEngulfingMinBodyAtrMult()     { return cfg().engulfingMinBodyAtrMult; }
     public double getPiercingPrevBodyAtrMult()     { return cfg().piercingPrevBodyAtrMult; }
@@ -400,9 +415,10 @@ public class RiskSettingsStore {
     public double getHaramiBodyAtrMult()           { return cfg().haramiBodyAtrMult; }
     public double getHaramiInnerBodyMaxRatio()     { return cfg().haramiInnerBodyMaxRatio; }
     public double getDojiBodyMaxRangeRatio()       { return cfg().dojiBodyMaxRangeRatio; }
-    public double getDojiPrevBodyAtrMult()         { return cfg().dojiPrevBodyAtrMult; }
+    public double getDojiConfirmBodyAtrMult()      { return cfg().dojiConfirmBodyAtrMult; }
     public double getStarOuterBodyAtrMult()        { return cfg().starOuterBodyAtrMult; }
     public double getStarMiddleBodyMaxMultOfOuter() { return cfg().starMiddleBodyMaxMultOfOuter; }
+    public double getLevelTouchToleranceAtr()      { return cfg().levelTouchToleranceAtr; }
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
     public boolean isEnableSmaCrossExit() { return cfg().enableSmaCrossExit; }
     public boolean isEnablePriceSmaExit() { return cfg().enablePriceSmaExit; }
@@ -554,6 +570,9 @@ public class RiskSettingsStore {
     public void setGoodSizeCandleMaxOppositeWickRatio(double v) { cfg().goodSizeCandleMaxOppositeWickRatio = v; }
     public void setPinBarRejectionWickBodyMult(double v) { cfg().pinBarRejectionWickBodyMult = v; }
     public void setPinBarOppositeWickBodyMult(double v)  { cfg().pinBarOppositeWickBodyMult = v; }
+    public void setPinBarSmallBodyMaxRangeRatio(double v)    { cfg().pinBarSmallBodyMaxRangeRatio = Math.max(0, v); }
+    public void setPinBarDominantWickMinRangeRatio(double v) { cfg().pinBarDominantWickMinRangeRatio = v; }
+    public void setPinBarOppositeWickMaxRangeRatio(double v) { cfg().pinBarOppositeWickMaxRangeRatio = v; }
     public void setEngulfingMinBodyMultiple(double v)    { cfg().engulfingMinBodyMultiple = v; }
     public void setEngulfingMinBodyAtrMult(double v)     { cfg().engulfingMinBodyAtrMult = v; }
     public void setPiercingPrevBodyAtrMult(double v)     { cfg().piercingPrevBodyAtrMult = v; }
@@ -563,9 +582,10 @@ public class RiskSettingsStore {
     public void setHaramiBodyAtrMult(double v)           { cfg().haramiBodyAtrMult = v; }
     public void setHaramiInnerBodyMaxRatio(double v)     { cfg().haramiInnerBodyMaxRatio = v; }
     public void setDojiBodyMaxRangeRatio(double v)       { cfg().dojiBodyMaxRangeRatio = v; }
-    public void setDojiPrevBodyAtrMult(double v)         { cfg().dojiPrevBodyAtrMult = v; }
+    public void setDojiConfirmBodyAtrMult(double v)      { cfg().dojiConfirmBodyAtrMult = v; }
     public void setStarOuterBodyAtrMult(double v)        { cfg().starOuterBodyAtrMult = v; }
     public void setStarMiddleBodyMaxMultOfOuter(double v) { cfg().starMiddleBodyMaxMultOfOuter = v; }
+    public void setLevelTouchToleranceAtr(double v)      { cfg().levelTouchToleranceAtr = Math.max(0, v); }
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
     public void setEnableSmaCrossExit(boolean v) { cfg().enableSmaCrossExit = v; }
     public void setEnablePriceSmaExit(boolean v) { cfg().enablePriceSmaExit = v; }
@@ -733,6 +753,9 @@ public class RiskSettingsStore {
             upsert("goodSizeCandleMaxOppositeWickRatio", String.valueOf(c.goodSizeCandleMaxOppositeWickRatio));
             upsert("pinBarRejectionWickBodyMult", String.valueOf(c.pinBarRejectionWickBodyMult));
             upsert("pinBarOppositeWickBodyMult", String.valueOf(c.pinBarOppositeWickBodyMult));
+            upsert("pinBarSmallBodyMaxRangeRatio", String.valueOf(c.pinBarSmallBodyMaxRangeRatio));
+            upsert("pinBarDominantWickMinRangeRatio", String.valueOf(c.pinBarDominantWickMinRangeRatio));
+            upsert("pinBarOppositeWickMaxRangeRatio", String.valueOf(c.pinBarOppositeWickMaxRangeRatio));
             upsert("engulfingMinBodyMultiple", String.valueOf(c.engulfingMinBodyMultiple));
             upsert("engulfingMinBodyAtrMult",  String.valueOf(c.engulfingMinBodyAtrMult));
             upsert("piercingPrevBodyAtrMult",  String.valueOf(c.piercingPrevBodyAtrMult));
@@ -742,9 +765,10 @@ public class RiskSettingsStore {
             upsert("haramiBodyAtrMult",        String.valueOf(c.haramiBodyAtrMult));
             upsert("haramiInnerBodyMaxRatio",  String.valueOf(c.haramiInnerBodyMaxRatio));
             upsert("dojiBodyMaxRangeRatio", String.valueOf(c.dojiBodyMaxRangeRatio));
-            upsert("dojiPrevBodyAtrMult", String.valueOf(c.dojiPrevBodyAtrMult));
+            upsert("dojiConfirmBodyAtrMult", String.valueOf(c.dojiConfirmBodyAtrMult));
             upsert("starOuterBodyAtrMult", String.valueOf(c.starOuterBodyAtrMult));
             upsert("starMiddleBodyMaxMultOfOuter", String.valueOf(c.starMiddleBodyMaxMultOfOuter));
+            upsert("levelTouchToleranceAtr", String.valueOf(c.levelTouchToleranceAtr));
             upsert("smallCandleAtrThreshold", String.valueOf(c.smallCandleAtrThreshold));
             upsert("smallCandleBodyAtrThreshold", String.valueOf(c.smallCandleBodyAtrThreshold));
             upsert("smallCandleMoveAtrThreshold", String.valueOf(c.smallCandleMoveAtrThreshold));
@@ -898,6 +922,9 @@ public class RiskSettingsStore {
                     case "goodSizeCandleMaxOppositeWickRatio" -> c.goodSizeCandleMaxOppositeWickRatio = Double.parseDouble(v);
                     case "pinBarRejectionWickBodyMult" -> c.pinBarRejectionWickBodyMult = Double.parseDouble(v);
                     case "pinBarOppositeWickBodyMult"  -> c.pinBarOppositeWickBodyMult = Double.parseDouble(v);
+                    case "pinBarSmallBodyMaxRangeRatio"    -> c.pinBarSmallBodyMaxRangeRatio = Math.max(0, Double.parseDouble(v));
+                    case "pinBarDominantWickMinRangeRatio" -> c.pinBarDominantWickMinRangeRatio = Double.parseDouble(v);
+                    case "pinBarOppositeWickMaxRangeRatio" -> c.pinBarOppositeWickMaxRangeRatio = Double.parseDouble(v);
                     case "engulfingMinBodyMultiple"    -> c.engulfingMinBodyMultiple = Double.parseDouble(v);
                     case "engulfingMinBodyAtrMult"     -> c.engulfingMinBodyAtrMult = Double.parseDouble(v);
                     case "piercingPrevBodyAtrMult"     -> c.piercingPrevBodyAtrMult = Double.parseDouble(v);
@@ -907,9 +934,11 @@ public class RiskSettingsStore {
                     case "haramiBodyAtrMult"           -> c.haramiBodyAtrMult = Double.parseDouble(v);
                     case "haramiInnerBodyMaxRatio"     -> c.haramiInnerBodyMaxRatio = Double.parseDouble(v);
                     case "dojiBodyMaxRangeRatio"       -> c.dojiBodyMaxRangeRatio = Double.parseDouble(v);
-                    case "dojiPrevBodyAtrMult"         -> c.dojiPrevBodyAtrMult = Double.parseDouble(v);
+                    case "dojiConfirmBodyAtrMult"      -> c.dojiConfirmBodyAtrMult = Double.parseDouble(v);
+                    case "dojiPrevBodyAtrMult"         -> c.dojiConfirmBodyAtrMult = Double.parseDouble(v); // legacy key
                     case "starOuterBodyAtrMult"        -> c.starOuterBodyAtrMult = Double.parseDouble(v);
                     case "starMiddleBodyMaxMultOfOuter" -> c.starMiddleBodyMaxMultOfOuter = Double.parseDouble(v);
+                    case "levelTouchToleranceAtr"      -> c.levelTouchToleranceAtr = Math.max(0, Double.parseDouble(v));
                     case "smallCandleAtrThreshold" -> {
                         // Legacy single knob: also seed the new split fields if those keys haven't been
                         // saved yet. Once the user saves the new fields explicitly, this no-op overwrites

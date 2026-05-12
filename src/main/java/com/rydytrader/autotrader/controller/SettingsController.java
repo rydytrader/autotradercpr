@@ -100,6 +100,9 @@ public class SettingsController {
         result.put("goodSizeCandleMaxOppositeWickRatio", riskSettings.getGoodSizeCandleMaxOppositeWickRatio());
         result.put("pinBarRejectionWickBodyMult",  riskSettings.getPinBarRejectionWickBodyMult());
         result.put("pinBarOppositeWickBodyMult",   riskSettings.getPinBarOppositeWickBodyMult());
+        result.put("pinBarSmallBodyMaxRangeRatio",    riskSettings.getPinBarSmallBodyMaxRangeRatio());
+        result.put("pinBarDominantWickMinRangeRatio", riskSettings.getPinBarDominantWickMinRangeRatio());
+        result.put("pinBarOppositeWickMaxRangeRatio", riskSettings.getPinBarOppositeWickMaxRangeRatio());
         result.put("engulfingMinBodyMultiple",     riskSettings.getEngulfingMinBodyMultiple());
         result.put("engulfingMinBodyAtrMult",      riskSettings.getEngulfingMinBodyAtrMult());
         result.put("piercingPrevBodyAtrMult",      riskSettings.getPiercingPrevBodyAtrMult());
@@ -109,9 +112,10 @@ public class SettingsController {
         result.put("haramiBodyAtrMult",            riskSettings.getHaramiBodyAtrMult());
         result.put("haramiInnerBodyMaxRatio",      riskSettings.getHaramiInnerBodyMaxRatio());
         result.put("dojiBodyMaxRangeRatio",        riskSettings.getDojiBodyMaxRangeRatio());
-        result.put("dojiPrevBodyAtrMult",          riskSettings.getDojiPrevBodyAtrMult());
+        result.put("dojiConfirmBodyAtrMult",       riskSettings.getDojiConfirmBodyAtrMult());
         result.put("starOuterBodyAtrMult",         riskSettings.getStarOuterBodyAtrMult());
         result.put("starMiddleBodyMaxMultOfOuter", riskSettings.getStarMiddleBodyMaxMultOfOuter());
+        result.put("levelTouchToleranceAtr",       riskSettings.getLevelTouchToleranceAtr());
         result.put("smallCandleAtrThreshold", riskSettings.getSmallCandleAtrThreshold(effectiveMode));
         result.put("smallCandleBodyAtrThreshold", riskSettings.getSmallCandleBodyAtrThreshold(effectiveMode));
         result.put("smallCandleMoveAtrThreshold", riskSettings.getSmallCandleMoveAtrThreshold(effectiveMode));
@@ -240,6 +244,9 @@ public class SettingsController {
             if (body.containsKey("goodSizeCandleMaxOppositeWickRatio")) riskSettings.setGoodSizeCandleMaxOppositeWickRatio(Double.parseDouble(body.get("goodSizeCandleMaxOppositeWickRatio").toString()));
             if (body.containsKey("pinBarRejectionWickBodyMult")) riskSettings.setPinBarRejectionWickBodyMult(Double.parseDouble(body.get("pinBarRejectionWickBodyMult").toString()));
             if (body.containsKey("pinBarOppositeWickBodyMult"))  riskSettings.setPinBarOppositeWickBodyMult(Double.parseDouble(body.get("pinBarOppositeWickBodyMult").toString()));
+            if (body.containsKey("pinBarSmallBodyMaxRangeRatio"))    riskSettings.setPinBarSmallBodyMaxRangeRatio(Double.parseDouble(body.get("pinBarSmallBodyMaxRangeRatio").toString()));
+            if (body.containsKey("pinBarDominantWickMinRangeRatio")) riskSettings.setPinBarDominantWickMinRangeRatio(Double.parseDouble(body.get("pinBarDominantWickMinRangeRatio").toString()));
+            if (body.containsKey("pinBarOppositeWickMaxRangeRatio")) riskSettings.setPinBarOppositeWickMaxRangeRatio(Double.parseDouble(body.get("pinBarOppositeWickMaxRangeRatio").toString()));
             if (body.containsKey("engulfingMinBodyMultiple"))    riskSettings.setEngulfingMinBodyMultiple(Double.parseDouble(body.get("engulfingMinBodyMultiple").toString()));
             if (body.containsKey("engulfingMinBodyAtrMult"))     riskSettings.setEngulfingMinBodyAtrMult(Double.parseDouble(body.get("engulfingMinBodyAtrMult").toString()));
             if (body.containsKey("piercingPrevBodyAtrMult"))     riskSettings.setPiercingPrevBodyAtrMult(Double.parseDouble(body.get("piercingPrevBodyAtrMult").toString()));
@@ -249,9 +256,11 @@ public class SettingsController {
             if (body.containsKey("haramiBodyAtrMult"))           riskSettings.setHaramiBodyAtrMult(Double.parseDouble(body.get("haramiBodyAtrMult").toString()));
             if (body.containsKey("haramiInnerBodyMaxRatio"))     riskSettings.setHaramiInnerBodyMaxRatio(Double.parseDouble(body.get("haramiInnerBodyMaxRatio").toString()));
             if (body.containsKey("dojiBodyMaxRangeRatio"))       riskSettings.setDojiBodyMaxRangeRatio(Double.parseDouble(body.get("dojiBodyMaxRangeRatio").toString()));
-            if (body.containsKey("dojiPrevBodyAtrMult"))         riskSettings.setDojiPrevBodyAtrMult(Double.parseDouble(body.get("dojiPrevBodyAtrMult").toString()));
+            if (body.containsKey("dojiConfirmBodyAtrMult"))      riskSettings.setDojiConfirmBodyAtrMult(Double.parseDouble(body.get("dojiConfirmBodyAtrMult").toString()));
+            else if (body.containsKey("dojiPrevBodyAtrMult"))    riskSettings.setDojiConfirmBodyAtrMult(Double.parseDouble(body.get("dojiPrevBodyAtrMult").toString())); // legacy key
             if (body.containsKey("starOuterBodyAtrMult"))        riskSettings.setStarOuterBodyAtrMult(Double.parseDouble(body.get("starOuterBodyAtrMult").toString()));
             if (body.containsKey("starMiddleBodyMaxMultOfOuter")) riskSettings.setStarMiddleBodyMaxMultOfOuter(Double.parseDouble(body.get("starMiddleBodyMaxMultOfOuter").toString()));
+            if (body.containsKey("levelTouchToleranceAtr"))      riskSettings.setLevelTouchToleranceAtr(Double.parseDouble(body.get("levelTouchToleranceAtr").toString()));
             if (body.containsKey("smallCandleAtrThreshold")) riskSettings.setSmallCandleAtrThreshold(effectiveMode, Double.parseDouble(body.get("smallCandleAtrThreshold").toString()));
             if (body.containsKey("smallCandleBodyAtrThreshold")) riskSettings.setSmallCandleBodyAtrThreshold(effectiveMode, Double.parseDouble(body.get("smallCandleBodyAtrThreshold").toString()));
             if (body.containsKey("smallCandleMoveAtrThreshold")) riskSettings.setSmallCandleMoveAtrThreshold(effectiveMode, Double.parseDouble(body.get("smallCandleMoveAtrThreshold").toString()));

@@ -69,22 +69,47 @@ final class CandlePatternDetector {
 
     // ── Pin bar (hammer / shooting star) ─────────────────────────────────────
 
+    // Pin bar test — two-path so very small bodies (where the body-relative multiplicative
+    // test loses meaning) get evaluated geometrically against the bar's total range instead.
+    //   • Normal-body path: original wick:body ratio test.
+    //   • Small-body fallback: when body ≤ smallBodyMaxRangeRatio × range, require the
+    //     rejection wick to dominate the range and the opposite wick to stay capped.
+    //   • smallBodyMaxRangeRatio = 0 disables the fallback (and body=0 still returns false).
+
     public static boolean isBullishHammer(double open, double high, double low, double close,
-                                          double rejectionWickBodyMult, double oppositeWickBodyMult) {
+                                          double rejectionWickBodyMult, double oppositeWickBodyMult,
+                                          double smallBodyMaxRangeRatio,
+                                          double dominantWickMinRangeRatio,
+                                          double oppositeWickMaxRangeRatio) {
+        double range = high - low;
+        if (range <= 0) return false;
         double body = Math.abs(close - open);
-        if (body <= 0) return false;
         double upperWick = high - Math.max(open, close);
         double lowerWick = Math.min(open, close) - low;
+        if (smallBodyMaxRangeRatio > 0 && body <= smallBodyMaxRangeRatio * range) {
+            return lowerWick >= dominantWickMinRangeRatio * range
+                && upperWick <= oppositeWickMaxRangeRatio * range;
+        }
+        if (body <= 0) return false;
         return lowerWick >= rejectionWickBodyMult * body
             && upperWick <= oppositeWickBodyMult * body;
     }
 
     public static boolean isShootingStar(double open, double high, double low, double close,
-                                         double rejectionWickBodyMult, double oppositeWickBodyMult) {
+                                         double rejectionWickBodyMult, double oppositeWickBodyMult,
+                                         double smallBodyMaxRangeRatio,
+                                         double dominantWickMinRangeRatio,
+                                         double oppositeWickMaxRangeRatio) {
+        double range = high - low;
+        if (range <= 0) return false;
         double body = Math.abs(close - open);
-        if (body <= 0) return false;
         double upperWick = high - Math.max(open, close);
         double lowerWick = Math.min(open, close) - low;
+        if (smallBodyMaxRangeRatio > 0 && body <= smallBodyMaxRangeRatio * range) {
+            return upperWick >= dominantWickMinRangeRatio * range
+                && lowerWick <= oppositeWickMaxRangeRatio * range;
+        }
+        if (body <= 0) return false;
         return upperWick >= rejectionWickBodyMult * body
             && lowerWick <= oppositeWickBodyMult * body;
     }
@@ -177,32 +202,38 @@ final class CandlePatternDetector {
 
     // ── Doji reversal (2-bar) ────────────────────────────────────────────────
 
+    // bar 1 (prev) = doji (indecision at the level); bar 2 (curr) = strong directional
+    // confirmation. Bullish reversal: doji → strong green. Bearish reversal: doji → strong red.
+    // confirmBodyAtrMult sizes the confirmation bar (legacy setting: dojiPrevBodyAtrMult).
+
     public static boolean isBullishDojiReversal(CandleAggregator.CandleBar prev,
                                                 CandleAggregator.CandleBar curr, double atr,
                                                 double dojiBodyMaxRangeRatio,
-                                                double prevBodyAtrMult) {
+                                                double confirmBodyAtrMult) {
         if (prev == null || curr == null || atr <= 0) return false;
-        double currRange = curr.high - curr.low;
-        if (currRange <= 0) return false;
-        double currBody = Math.abs(curr.close - curr.open);
-        if (currBody > dojiBodyMaxRangeRatio * currRange) return false;
-        if (!(prev.close < prev.open)) return false;
-        double prevBody = prev.open - prev.close;
-        return prevBody >= prevBodyAtrMult * atr;
+        double prevRange = prev.high - prev.low;
+        if (prevRange <= 0) return false;
+        double prevBody = Math.abs(prev.close - prev.open);
+        if (prevBody > dojiBodyMaxRangeRatio * prevRange) return false;   // prev is doji
+        if (!(curr.close > curr.open)) return false;                       // curr is green
+        double currBody = curr.close - curr.open;
+        if (currBody < confirmBodyAtrMult * atr) return false;             // curr is strong
+        return curr.close > Math.max(prev.open, prev.close);               // closes past doji body
     }
 
     public static boolean isBearishDojiReversal(CandleAggregator.CandleBar prev,
                                                 CandleAggregator.CandleBar curr, double atr,
                                                 double dojiBodyMaxRangeRatio,
-                                                double prevBodyAtrMult) {
+                                                double confirmBodyAtrMult) {
         if (prev == null || curr == null || atr <= 0) return false;
-        double currRange = curr.high - curr.low;
-        if (currRange <= 0) return false;
-        double currBody = Math.abs(curr.close - curr.open);
-        if (currBody > dojiBodyMaxRangeRatio * currRange) return false;
-        if (!(prev.close > prev.open)) return false;
-        double prevBody = prev.close - prev.open;
-        return prevBody >= prevBodyAtrMult * atr;
+        double prevRange = prev.high - prev.low;
+        if (prevRange <= 0) return false;
+        double prevBody = Math.abs(prev.close - prev.open);
+        if (prevBody > dojiBodyMaxRangeRatio * prevRange) return false;   // prev is doji
+        if (!(curr.close < curr.open)) return false;                       // curr is red
+        double currBody = curr.open - curr.close;
+        if (currBody < confirmBodyAtrMult * atr) return false;             // curr is strong
+        return curr.close < Math.min(prev.open, prev.close);               // closes past doji body
     }
 
     // ── Three Inside Up / Down (3-bar harami + confirmation) ────────────────

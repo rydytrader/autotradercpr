@@ -679,11 +679,11 @@
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Doji body ≤</span>
                     <input type="number" id="dojiBodyMaxRangeRatio" class="form-control" step="0.02" min="0.02" max="0.30" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× range</span>
-                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">Prev body ≥</span>
-                    <input type="number" id="dojiPrevBodyAtrMult" class="form-control" step="0.1" min="0.1" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">Confirm body ≥</span>
+                    <input type="number" id="dojiConfirmBodyAtrMult" class="form-control" step="0.1" min="0.1" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                     <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× ATR</span>
                 </div>
-                <div class="form-hint">Doji = tiny body relative to its range. Prior bar must have a meaningful body in the opposite direction so the doji actually represents a stall. Defaults: 0.10 × range (10%), 0.5 × ATR prev body.</div>
+                <div class="form-hint">Bar 1 is the doji (tiny body relative to its range). Bar 2 is the strong directional confirmation that closes past the doji body. Defaults: 0.10 × range (10%) for the doji, 0.5 × ATR body for the confirmation bar.</div>
             </div>
 
             <!-- Star group -->
@@ -712,6 +712,17 @@
                     <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× bar 1 body</span>
                 </div>
                 <div class="form-hint">3-bar harami + confirmation. Bar 1 large directional bar. Bar 2 opposite-color and body fully INSIDE bar 1's body (harami) and small relative to bar 1. Bar 3 confirms the reversal by closing past bar 1's open in the reversal direction (built-in, not configurable). Different from morning/evening star — that allows bar 2 to break out of bar 1's range; harami requires strict body containment. Defaults: 0.5 × ATR bar 1, 0.5 × bar 1 body inner.</div>
+            </div>
+
+            <!-- Level Touch Tolerance -->
+            <div class="form-group">
+                <label class="form-label">Level Touch Tolerance (whisker slack)</label>
+                <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Slack ≤</span>
+                    <input type="number" id="levelTouchToleranceAtr" class="form-control" step="0.05" min="0.00" max="1.00" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× ATR</span>
+                </div>
+                <div class="form-hint">A retest pattern's bar can fall short of the level by up to this much ATR and still count as a touch. Absorbs tick-level whisker misses. Applies to all 9 retest patterns (marubozu, hammer, engulfing, piercing, tweezer, doji, star, harami, good-size). Set to 0 to require strict equality. Default: 0.2 × ATR.</div>
             </div>
 
             </div><!-- /form-grid -->
@@ -1379,9 +1390,10 @@
             document.getElementById('haramiBodyAtrMult').value            = d.haramiBodyAtrMult            != null ? d.haramiBodyAtrMult            : 0.5;
             document.getElementById('haramiInnerBodyMaxRatio').value      = d.haramiInnerBodyMaxRatio      != null ? d.haramiInnerBodyMaxRatio      : 0.5;
             document.getElementById('dojiBodyMaxRangeRatio').value        = d.dojiBodyMaxRangeRatio        != null ? d.dojiBodyMaxRangeRatio        : 0.10;
-            document.getElementById('dojiPrevBodyAtrMult').value          = d.dojiPrevBodyAtrMult          != null ? d.dojiPrevBodyAtrMult          : 0.5;
+            document.getElementById('dojiConfirmBodyAtrMult').value       = d.dojiConfirmBodyAtrMult       != null ? d.dojiConfirmBodyAtrMult       : 0.5;
             document.getElementById('starOuterBodyAtrMult').value         = d.starOuterBodyAtrMult         != null ? d.starOuterBodyAtrMult         : 0.5;
             document.getElementById('starMiddleBodyMaxMultOfOuter').value = d.starMiddleBodyMaxMultOfOuter != null ? d.starMiddleBodyMaxMultOfOuter : 0.3;
+            document.getElementById('levelTouchToleranceAtr').value       = d.levelTouchToleranceAtr       != null ? d.levelTouchToleranceAtr       : 0.2;
             document.getElementById('minRiskRewardRatio').value = d.minRiskRewardRatio != null ? d.minRiskRewardRatio : 1.0;
             document.getElementById('enableSmaTrendCheck').checked = d.enableSmaTrendCheck !== false;
             document.getElementById('enableSmaTrendCheckLenient').checked = d.enableSmaTrendCheckLenient === true;
@@ -1573,9 +1585,10 @@
                 haramiBodyAtrMult:            parseFloat(document.getElementById('haramiBodyAtrMult').value)            || 0.5,
                 haramiInnerBodyMaxRatio:      parseFloat(document.getElementById('haramiInnerBodyMaxRatio').value)      || 0.5,
                 dojiBodyMaxRangeRatio:        parseFloat(document.getElementById('dojiBodyMaxRangeRatio').value)        || 0.10,
-                dojiPrevBodyAtrMult:          parseFloat(document.getElementById('dojiPrevBodyAtrMult').value)          || 0.5,
+                dojiConfirmBodyAtrMult:       parseFloat(document.getElementById('dojiConfirmBodyAtrMult').value)       || 0.5,
                 starOuterBodyAtrMult:         parseFloat(document.getElementById('starOuterBodyAtrMult').value)         || 0.5,
                 starMiddleBodyMaxMultOfOuter: parseFloat(document.getElementById('starMiddleBodyMaxMultOfOuter').value) || 0.3,
+                levelTouchToleranceAtr:       parseFloat(document.getElementById('levelTouchToleranceAtr').value)       || 0.2,
                 minRiskRewardRatio: parseFloat(document.getElementById('minRiskRewardRatio').value) || 1.0,
                 enableSmaTrendCheck: document.getElementById('enableSmaTrendCheck').checked,
                 enableSmaTrendCheckLenient: document.getElementById('enableSmaTrendCheckLenient').checked,

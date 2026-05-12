@@ -1008,6 +1008,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (broken.contains(setupName)) return null;
         double pinReject = riskSettings.getPinBarRejectionWickBodyMult();
         double pinOpp    = riskSettings.getPinBarOppositeWickBodyMult();
+        double pinSmallBody  = riskSettings.getPinBarSmallBodyMaxRangeRatio();
+        double pinDomWickRng = riskSettings.getPinBarDominantWickMinRangeRatio();
+        double pinOppWickRng = riskSettings.getPinBarOppositeWickMaxRangeRatio();
         // Retest-only model — multi-bar pattern retest at the single armed buy level.
         // Pattern's lowest point must reach the level.
         if (!setupName.equals(armed)) return null;
@@ -1021,11 +1024,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double tweezPrev = riskSettings.getTweezerPrevBodyAtrMult();
         double tweezMatch = riskSettings.getTweezerLowHighMatchAtr();
         double dojiBody  = riskSettings.getDojiBodyMaxRangeRatio();
-        double dojiPrev  = riskSettings.getDojiPrevBodyAtrMult();
+        double dojiConfirm = riskSettings.getDojiConfirmBodyAtrMult();
         double starOuter = riskSettings.getStarOuterBodyAtrMult();
         double starMid   = riskSettings.getStarMiddleBodyMaxMultOfOuter();
         double haramiBody = riskSettings.getHaramiBodyAtrMult();
         double haramiInner = riskSettings.getHaramiInnerBodyMaxRatio();
+        // Buy-side touch slack: lows that fall just short of the level by < tol still count
+        // as a touch. Absorbs tick-level whisker misses on retest patterns.
+        double touchTol  = Math.max(0, riskSettings.getLevelTouchToleranceAtr()) * atr;
+        double touchLvl  = level + touchTol;
         // Retest-only: prev bar's close must have already crossed the level. Fresh-break
         // good-size candle path has been removed — every Route 2 trade waits for a confirmed
         // retest pattern (hammer/engulfing/piercing/tweezer/doji/star/harami).
@@ -1038,44 +1045,45 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double maruBody  = riskSettings.getMarubozuBodyAtrMult();
         double maruWicks = riskSettings.getMarubozuMaxWicksPctOfBody();
         if (CandlePatternDetector.isBullishMarubozu(open, high, low, close, atr, maruBody, maruWicks)
-                && Math.min(prev.low, low) <= level
+                && Math.min(prev.low, low) <= touchLvl
                 && close > level
                 && !isLargeCandleBlocked(close - open, atr)) {
             lastTriggerRoute.put(fyersSymbol, "MARUBOZU_RETEST");
             return setupName;
         }
         // Hammer (1 bar) — specific pin-bar reversal shape.
-        if (CandlePatternDetector.isBullishHammer(open, high, low, close, pinReject, pinOpp)
-                && low <= level
+        if (CandlePatternDetector.isBullishHammer(open, high, low, close,
+                    pinReject, pinOpp, pinSmallBody, pinDomWickRng, pinOppWickRng)
+                && low <= touchLvl
                 && !isLargeCandleBlocked(Math.abs(close - open), atr)) {
             lastTriggerRoute.put(fyersSymbol, "HAMMER_RETEST");
             return setupName;
         }
         // Bullish engulfing (2 bars) — strongest 2-bar relationship.
         if (prev != null && CandlePatternDetector.isBullishEngulfing(prev, curr, engMin, atr, engAtr)
-                && Math.min(prev.low, curr.low) <= level
+                && Math.min(prev.low, curr.low) <= touchLvl
                 && !isLargeCandleBlocked(close - open, atr)) {
             lastTriggerRoute.put(fyersSymbol, "ENGULFING_RETEST");
             return setupName;
         }
         // Piercing line (2 bars) — partial reversal, weaker than engulfing.
         if (prev != null && CandlePatternDetector.isPiercingLine(prev, curr, atr, pierPrev, pierPen)
-                && Math.min(prev.low, curr.low) <= level
+                && Math.min(prev.low, curr.low) <= touchLvl
                 && !isLargeCandleBlocked(close - open, atr)) {
             lastTriggerRoute.put(fyersSymbol, "PIERCING_RETEST");
             return setupName;
         }
         // Tweezer bottom (2 bars) — matching lows, color flip, body sizing relaxed.
         if (prev != null && CandlePatternDetector.isTweezerBottom(prev, curr, atr, tweezPrev, tweezMatch)
-                && Math.min(prev.low, curr.low) <= level) {
+                && Math.min(prev.low, curr.low) <= touchLvl) {
             // Body unconstrained for tweezer — matching extreme is the signature, no large-body check.
             lastTriggerRoute.put(fyersSymbol, "TWEEZER_RETEST");
             return setupName;
         }
-        // Bullish doji reversal (2 bars) — specific small-body signature.
-        if (prev != null && CandlePatternDetector.isBullishDojiReversal(prev, curr, atr, dojiBody, dojiPrev)
-                && Math.min(prev.low, curr.low) <= level) {
-            // Doji is intentionally a tiny body; large-candle filter doesn't apply.
+        // Bullish doji reversal (2 bars) — doji at level, then strong green confirmation.
+        if (prev != null && CandlePatternDetector.isBullishDojiReversal(prev, curr, atr, dojiBody, dojiConfirm)
+                && Math.min(prev.low, curr.low) <= touchLvl
+                && !isLargeCandleBlocked(close - open, atr)) {
             lastTriggerRoute.put(fyersSymbol, "DOJI_RETEST");
             return setupName;
         }
@@ -1083,7 +1091,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         CandleAggregator.CandleBar bar1 = thirdMostRecentCandle(fyersSymbol);
         if (bar1 != null && prev != null
                 && CandlePatternDetector.isMorningStar(bar1, prev, curr, atr, starOuter, starMid)
-                && Math.min(Math.min(bar1.low, prev.low), curr.low) <= level
+                && Math.min(Math.min(bar1.low, prev.low), curr.low) <= touchLvl
                 && !isLargeCandleBlocked(close - open, atr)) {
             lastTriggerRoute.put(fyersSymbol, "STAR_RETEST");
             return setupName;
@@ -1091,7 +1099,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // Three Inside Up (3-bar harami + confirmation).
         if (bar1 != null && prev != null
                 && CandlePatternDetector.isThreeInsideUp(bar1, prev, curr, atr, haramiBody, haramiInner)
-                && Math.min(Math.min(bar1.low, prev.low), curr.low) <= level
+                && Math.min(Math.min(bar1.low, prev.low), curr.low) <= touchLvl
                 && !isLargeCandleBlocked(close - open, atr)) {
             lastTriggerRoute.put(fyersSymbol, "HARAMI_RETEST");
             return setupName;
@@ -1106,7 +1114,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         boolean bodyOk      = goodSizeBody <= 0 || (atr > 0 && bodyAbs >= goodSizeBody * atr);
         boolean wickOk      = goodSizeOpp  <= 0 || bodyAbs <= 0 || upperWick <= goodSizeOpp * bodyAbs;
         if (close > open && close > level && bodyOk && wickOk
-                && Math.min(prev.low, low) <= level
+                && Math.min(prev.low, low) <= touchLvl
                 && !isLargeCandleBlocked(bodyAbs, atr)) {
             lastTriggerRoute.put(fyersSymbol, "GOOD_SIZE_CANDLE_RETEST");
             return setupName;
@@ -1123,6 +1131,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (broken.contains(setupName)) return null;
         double pinReject = riskSettings.getPinBarRejectionWickBodyMult();
         double pinOpp    = riskSettings.getPinBarOppositeWickBodyMult();
+        double pinSmallBody  = riskSettings.getPinBarSmallBodyMaxRangeRatio();
+        double pinDomWickRng = riskSettings.getPinBarDominantWickMinRangeRatio();
+        double pinOppWickRng = riskSettings.getPinBarOppositeWickMaxRangeRatio();
         // Retest-only model — multi-bar pattern retest at the single armed sell level.
         // Pattern's highest point must reach the level.
         if (!setupName.equals(armed)) return null;
@@ -1136,11 +1147,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double tweezPrev = riskSettings.getTweezerPrevBodyAtrMult();
         double tweezMatch = riskSettings.getTweezerLowHighMatchAtr();
         double dojiBody  = riskSettings.getDojiBodyMaxRangeRatio();
-        double dojiPrev  = riskSettings.getDojiPrevBodyAtrMult();
+        double dojiConfirm = riskSettings.getDojiConfirmBodyAtrMult();
         double starOuter = riskSettings.getStarOuterBodyAtrMult();
         double starMid   = riskSettings.getStarMiddleBodyMaxMultOfOuter();
         double haramiBody = riskSettings.getHaramiBodyAtrMult();
         double haramiInner = riskSettings.getHaramiInnerBodyMaxRatio();
+        // Sell-side touch slack: highs that fall just short of the level by < tol still count
+        // as a touch. Mirror of the buy-side whisker tolerance.
+        double touchTol  = Math.max(0, riskSettings.getLevelTouchToleranceAtr()) * atr;
+        double touchLvl  = level - touchTol;
         // Retest-only (mirror of buy logic): prev bar's close must have already crossed below
         // the level. Fresh-break good-size candle path has been removed — every Route 2 trade
         // waits for a confirmed retest pattern.
@@ -1151,42 +1166,44 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double maruBody  = riskSettings.getMarubozuBodyAtrMult();
         double maruWicks = riskSettings.getMarubozuMaxWicksPctOfBody();
         if (CandlePatternDetector.isBearishMarubozu(open, high, low, close, atr, maruBody, maruWicks)
-                && Math.max(prev.high, high) >= level
+                && Math.max(prev.high, high) >= touchLvl
                 && close < level
                 && !isLargeCandleBlocked(open - close, atr)) {
             lastTriggerRoute.put(fyersSymbol, "MARUBOZU_RETEST");
             return setupName;
         }
         // Shooting star (1 bar) — specific pin-bar reversal shape.
-        if (CandlePatternDetector.isShootingStar(open, high, low, close, pinReject, pinOpp)
-                && high >= level
+        if (CandlePatternDetector.isShootingStar(open, high, low, close,
+                    pinReject, pinOpp, pinSmallBody, pinDomWickRng, pinOppWickRng)
+                && high >= touchLvl
                 && !isLargeCandleBlocked(Math.abs(close - open), atr)) {
             lastTriggerRoute.put(fyersSymbol, "HAMMER_RETEST");
             return setupName;
         }
         // Bearish engulfing (2 bars) — strongest 2-bar relationship.
         if (prev != null && CandlePatternDetector.isBearishEngulfing(prev, curr, engMin, atr, engAtr)
-                && Math.max(prev.high, curr.high) >= level
+                && Math.max(prev.high, curr.high) >= touchLvl
                 && !isLargeCandleBlocked(open - close, atr)) {
             lastTriggerRoute.put(fyersSymbol, "ENGULFING_RETEST");
             return setupName;
         }
         // Dark cloud cover (2 bars) — partial reversal, weaker than engulfing.
         if (prev != null && CandlePatternDetector.isDarkCloudCover(prev, curr, atr, pierPrev, pierPen)
-                && Math.max(prev.high, curr.high) >= level
+                && Math.max(prev.high, curr.high) >= touchLvl
                 && !isLargeCandleBlocked(open - close, atr)) {
             lastTriggerRoute.put(fyersSymbol, "PIERCING_RETEST");
             return setupName;
         }
         // Tweezer top (2 bars) — matching highs, color flip, body sizing relaxed.
         if (prev != null && CandlePatternDetector.isTweezerTop(prev, curr, atr, tweezPrev, tweezMatch)
-                && Math.max(prev.high, curr.high) >= level) {
+                && Math.max(prev.high, curr.high) >= touchLvl) {
             lastTriggerRoute.put(fyersSymbol, "TWEEZER_RETEST");
             return setupName;
         }
-        // Bearish doji reversal (2 bars) — specific small-body signature.
-        if (prev != null && CandlePatternDetector.isBearishDojiReversal(prev, curr, atr, dojiBody, dojiPrev)
-                && Math.max(prev.high, curr.high) >= level) {
+        // Bearish doji reversal (2 bars) — doji at level, then strong red confirmation.
+        if (prev != null && CandlePatternDetector.isBearishDojiReversal(prev, curr, atr, dojiBody, dojiConfirm)
+                && Math.max(prev.high, curr.high) >= touchLvl
+                && !isLargeCandleBlocked(open - close, atr)) {
             lastTriggerRoute.put(fyersSymbol, "DOJI_RETEST");
             return setupName;
         }
@@ -1194,7 +1211,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         CandleAggregator.CandleBar bar1 = thirdMostRecentCandle(fyersSymbol);
         if (bar1 != null && prev != null
                 && CandlePatternDetector.isEveningStar(bar1, prev, curr, atr, starOuter, starMid)
-                && Math.max(Math.max(bar1.high, prev.high), curr.high) >= level
+                && Math.max(Math.max(bar1.high, prev.high), curr.high) >= touchLvl
                 && !isLargeCandleBlocked(open - close, atr)) {
             lastTriggerRoute.put(fyersSymbol, "STAR_RETEST");
             return setupName;
@@ -1202,7 +1219,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // Three Inside Down (3-bar harami + confirmation).
         if (bar1 != null && prev != null
                 && CandlePatternDetector.isThreeInsideDown(bar1, prev, curr, atr, haramiBody, haramiInner)
-                && Math.max(Math.max(bar1.high, prev.high), curr.high) >= level
+                && Math.max(Math.max(bar1.high, prev.high), curr.high) >= touchLvl
                 && !isLargeCandleBlocked(open - close, atr)) {
             lastTriggerRoute.put(fyersSymbol, "HARAMI_RETEST");
             return setupName;
@@ -1217,7 +1234,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         boolean bodyOk      = goodSizeBody <= 0 || (atr > 0 && bodyAbs >= goodSizeBody * atr);
         boolean wickOk      = goodSizeOpp  <= 0 || bodyAbs <= 0 || lowerWick <= goodSizeOpp * bodyAbs;
         if (close < open && close < level && bodyOk && wickOk
-                && Math.max(prev.high, high) >= level
+                && Math.max(prev.high, high) >= touchLvl
                 && !isLargeCandleBlocked(bodyAbs, atr)) {
             lastTriggerRoute.put(fyersSymbol, "GOOD_SIZE_CANDLE_RETEST");
             return setupName;
