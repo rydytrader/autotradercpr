@@ -533,6 +533,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 }
                 // SMA level-count filter: skip if any CPR zone sits between SMA and broken level
                 if (evaluateSmaFilter(fyersSymbol, buySetup, close, levels, atr) == 2) return;
+                // VWAP-specific NIFTY alignment — always-on for BUY_ABOVE_VWAP, hard reject if
+                // NIFTY isn't BULLISH or BULLISH_REVERSAL. Runs before the general index
+                // alignment filter so it can't be downgraded to LPT.
+                String vwapAlignReject = checkVwapNiftyAlignment(buySetup, true);
+                if (vwapAlignReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + vwapAlignReject);
+                    recordRejection(fyersSymbol, buySetup, close, "NIFTY_OPPOSED", vwapAlignReject);
+                    return;
+                }
                 // NIFTY index alignment filter — when on, a misaligned trade is downgraded to
                 // LPT (smaller size) instead of being rejected. LPT trades skip ALL remaining
                 // NIFTY-level filters (HTF Hurdle, 5m Hurdle, NIFTY HTF Candle Direction) — the
@@ -667,6 +676,14 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 }
                 // SMA level-count filter: skip if any CPR zone sits between SMA and broken level
                 if (evaluateSmaFilter(fyersSymbol, sellSetup, close, levels, atr) == 2) return;
+                // VWAP-specific NIFTY alignment — always-on for SELL_BELOW_VWAP, hard reject if
+                // NIFTY isn't BEARISH or BEARISH_REVERSAL.
+                String vwapAlignReject = checkVwapNiftyAlignment(sellSetup, false);
+                if (vwapAlignReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + vwapAlignReject);
+                    recordRejection(fyersSymbol, sellSetup, close, "NIFTY_OPPOSED", vwapAlignReject);
+                    return;
+                }
                 // NIFTY index alignment filter — when on, a misaligned trade is downgraded to
                 // LPT (smaller size) instead of being rejected. LPT trades skip ALL remaining
                 // NIFTY-level filters (HTF Hurdle, 5m Hurdle, NIFTY HTF Candle Direction) — the
@@ -1417,6 +1434,34 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      */
     /** Result of the NIFTY alignment check. SKIP = trade rejected; OK = aligned or check off. */
     private enum NiftyAlignStatus { OK, SKIP }
+
+    /**
+     * VWAP-specific NIFTY alignment guard. Always-on (ignores {@code enableIndexAlignment} toggle)
+     * and stricter than the global alignment filter:
+     * <ul>
+     *   <li>{@code BUY_ABOVE_VWAP} requires NIFTY state ∈ {BULLISH, BULLISH_REVERSAL}.</li>
+     *   <li>{@code SELL_BELOW_VWAP} requires NIFTY state ∈ {BEARISH, BEARISH_REVERSAL}.</li>
+     *   <li>Any other NIFTY state (SIDEWAYS, NEUTRAL, opposite-direction) → hard reject. No LPT
+     *       downgrade — VWAP is itself a trend-following signal, taking it against NIFTY
+     *       direction is high-risk regardless of size reduction.</li>
+     * </ul>
+     * No-op for non-VWAP setups (returns null). Returns null on pass, a rejection-reason string
+     * to reject.
+     */
+    private String checkVwapNiftyAlignment(String setup, boolean isBuy) {
+        boolean isVwapSetup = isBuy
+            ? "BUY_ABOVE_VWAP".equals(setup)
+            : "SELL_BELOW_VWAP".equals(setup);
+        if (!isVwapSetup) return null;
+        if (indexTrendService == null) return null; // index data unavailable — fail-open
+        String state = indexTrendService.getStickyState();
+        boolean aligned = isBuy
+            ? ("BULLISH".equals(state) || "BULLISH_REVERSAL".equals(state))
+            : ("BEARISH".equals(state) || "BEARISH_REVERSAL".equals(state));
+        if (aligned) return null;
+        return "NIFTY " + state + " — " + setup + " requires "
+            + (isBuy ? "BULLISH or BULLISH_REVERSAL" : "BEARISH or BEARISH_REVERSAL");
+    }
 
     /**
      * NIFTY index alignment filter.
