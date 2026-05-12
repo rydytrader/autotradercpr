@@ -1436,8 +1436,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     private enum NiftyAlignStatus { OK, SKIP }
 
     /**
-     * VWAP-specific NIFTY alignment guard. Always-on (ignores {@code enableIndexAlignment} toggle)
-     * and stricter than the global alignment filter:
+     * VWAP-specific NIFTY alignment guard. Gated by the {@code enableIndexAlignment} toggle
+     * (matches the global alignment filter's gating) but applies a stricter rule when on:
      * <ul>
      *   <li>{@code BUY_ABOVE_VWAP} requires NIFTY state ∈ {BULLISH, BULLISH_REVERSAL}.</li>
      *   <li>{@code SELL_BELOW_VWAP} requires NIFTY state ∈ {BEARISH, BEARISH_REVERSAL}.</li>
@@ -1445,14 +1445,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      *       downgrade — VWAP is itself a trend-following signal, taking it against NIFTY
      *       direction is high-risk regardless of size reduction.</li>
      * </ul>
-     * No-op for non-VWAP setups (returns null). Returns null on pass, a rejection-reason string
-     * to reject.
+     * No-op for non-VWAP setups, and no-op when the alignment toggle is off (returns null).
+     * Returns null on pass, a rejection-reason string to reject.
      */
     private String checkVwapNiftyAlignment(String setup, boolean isBuy) {
         boolean isVwapSetup = isBuy
             ? "BUY_ABOVE_VWAP".equals(setup)
             : "SELL_BELOW_VWAP".equals(setup);
         if (!isVwapSetup) return null;
+        if (!riskSettings.isEnableIndexAlignment()) return null; // toggle off → bypass
         if (indexTrendService == null) return null; // index data unavailable — fail-open
         String state = indexTrendService.getStickyState();
         boolean aligned = isBuy
