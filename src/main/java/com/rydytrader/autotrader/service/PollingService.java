@@ -303,6 +303,13 @@ public class PollingService {
                         double roundedTarget = orderService.roundToTick(targetPrice, symbol);
                         positionStateStore.save(symbol, position, quantity, holder.entryFillPrice,
                             setupBySymbol.get(symbol), entryTime, holder.adjustedSl, roundedTarget);
+                        // Persist the probability cached at signal-fire time onto the entity
+                        // that was just created. Without this, the prob column stays empty in
+                        // the DB and the positions table loses prob after a server restart.
+                        String pendingProb = probabilityBySymbol.getOrDefault(symbol, "");
+                        if (!pendingProb.isEmpty()) {
+                            positionStateStore.saveProbability(symbol, pendingProb);
+                        }
                         // NIFTY HTF Hurdle break-guard — persist the guard captured at scan
                         // time onto the position record (mirror of OrderEventService path).
                         if (breakoutScanner != null) {

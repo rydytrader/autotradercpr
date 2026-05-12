@@ -790,6 +790,14 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         positionStateStore.save(symbol, ctx.position, ctx.quantity, entryPrice,
             ctx.setup, entryTime, adjustedSl, roundedTarget);
 
+        // Persist the probability cached in PollingService onto the entity that was just
+        // created. Without this, the prob column stays empty in the DB and the positions
+        // table loses prob after a server restart.
+        String pendingProb = pollingService.getProbability(symbol);
+        if (pendingProb != null && !pendingProb.isEmpty()) {
+            positionStateStore.saveProbability(symbol, pendingProb);
+        }
+
         // NIFTY HTF Hurdle break-guard — if BreakoutScanner captured a guard for this symbol
         // when checkNiftyHurdle gated the trade, persist it onto the position record so the
         // NiftyHurdleExitService can defend the level on subsequent NIFTY 5-min closes.
