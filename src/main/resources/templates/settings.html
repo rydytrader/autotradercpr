@@ -1095,19 +1095,13 @@
                         <br>IV / OV days don't use OR for gating &mdash; the LTF (5-min close vs daily CPR) gate already enforces direction. Set to <b>Off</b> to disable the EV gates entirely.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Include in Watchlist</label>
+                    <label class="form-label">Watchlist Universe</label>
                     <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
                         <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
-                            <input type="checkbox" id="scanIncludeNS" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> <b style="color:var(--accent-green);">NS</b> — Narrow + Small (coiled spring — yesterday quiet)
+                            <input type="radio" name="scanUniverseChoice" id="scanUniverseNifty50" value="nifty50" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> <b style="color:var(--accent-green);">NIFTY 50</b> — only NIFTY 50 stocks in the watchlist
                         </div>
                         <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
-                            <input type="checkbox" id="scanIncludeNL" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> <b style="color:#fb923c;">NL</b> — Narrow + Large (exhausted — yesterday wild)
-                        </div>
-                        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
-                            <input type="checkbox" id="scanIncludeIS" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> <b style="color:var(--accent-green);">IS</b> — Inside + Small (coiled spring — yesterday quiet)
-                        </div>
-                        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
-                            <input type="checkbox" id="scanIncludeIL" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> <b style="color:#fb923c;">IL</b> — Inside + Large (exhausted — yesterday wild)
+                            <input type="radio" name="scanUniverseChoice" id="scanUniverseAll" value="all" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> <b style="color:#fb923c;">ALL</b> — every stock in the bhavcopy cache, regardless of NIFTY 50 membership
                         </div>
                     </div>
                     <div style="display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);">
@@ -1115,7 +1109,7 @@
                         <input type="number" id="smallRangeAdrPct" class="form-control" step="5" min="10" max="100" style="width:70px;padding:5px 8px;font-size:0.82rem;text-align:center;">
                         <span style="color:var(--text-secondary);font-size:0.82rem;font-family:var(--font-mono);">% of 20d ADR</span>
                     </div>
-                    <div class="form-hint">Classifies stocks as SMALL (compressed) if prev day range is at or below this % of 20-day Average Daily Range. Default 50% — stock moved half or less than usual. Lower = stricter (fewer SMALL).</div>
+                    <div class="form-hint">Universe gate replaces the legacy NS/NL/IS/IL include toggles. The narrow/inside CPR width thresholds still drive eligibility within whichever universe is chosen. The small-range threshold below still classifies stocks as SMALL or LARGE daily range for display on cards.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Virgin CPR Cache (NIFTY)</label>
@@ -1470,11 +1464,11 @@
             document.getElementById('scanMinBeta').value = d.scanMinBeta != null ? d.scanMinBeta : 0;
             document.getElementById('scanMaxBeta').value = d.scanMaxBeta != null ? d.scanMaxBeta : 0;
             document.getElementById('openingRangeMinutes').value = d.openingRangeMinutes != null ? d.openingRangeMinutes : 0;
-            document.getElementById('scanIncludeNS').checked = d.scanIncludeNS !== false;
-            document.getElementById('scanIncludeNL').checked = d.scanIncludeNL !== false;
+            // Watchlist universe radio — default to NIFTY 50 when setting missing or true.
+            var onlyN50 = d.scanOnlyNifty50 !== false;
+            document.getElementById('scanUniverseNifty50').checked = onlyN50;
+            document.getElementById('scanUniverseAll').checked = !onlyN50;
             document.getElementById('smallRangeAdrPct').value = d.smallRangeAdrPct != null ? d.smallRangeAdrPct : 50.0;
-            document.getElementById('scanIncludeIS').checked = d.scanIncludeIS !== false;
-            document.getElementById('scanIncludeIL').checked = d.scanIncludeIL === true;
             document.getElementById('minAbsoluteProfit').value = d.minAbsoluteProfit != null ? d.minAbsoluteProfit : 500;
             document.getElementById('skipR3S3IvOvDays').checked = d.skipR3S3IvOvDays !== false;
             document.getElementById('skipR3S3EvDays').checked   = d.skipR3S3EvDays   !== false;
@@ -1661,11 +1655,8 @@
                 scanMinBeta: parseFloat(document.getElementById('scanMinBeta').value) || 0,
                 scanMaxBeta: parseFloat(document.getElementById('scanMaxBeta').value) || 0,
                 openingRangeMinutes: parseInt(document.getElementById('openingRangeMinutes').value) || 0,
-                scanIncludeNS: document.getElementById('scanIncludeNS').checked,
-                scanIncludeNL: document.getElementById('scanIncludeNL').checked,
+                scanOnlyNifty50: document.getElementById('scanUniverseNifty50').checked,
                 smallRangeAdrPct: parseFloat(document.getElementById('smallRangeAdrPct').value) || 50.0,
-                scanIncludeIS: document.getElementById('scanIncludeIS').checked,
-                scanIncludeIL: document.getElementById('scanIncludeIL').checked,
                 minAbsoluteProfit: (function() { var v = parseFloat(document.getElementById('minAbsoluteProfit').value); return isNaN(v) ? 500 : v; })(),
                 skipR3S3IvOvDays: document.getElementById('skipR3S3IvOvDays').checked,
                 skipR3S3EvDays:   document.getElementById('skipR3S3EvDays').checked,

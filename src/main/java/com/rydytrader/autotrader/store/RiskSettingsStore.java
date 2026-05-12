@@ -293,11 +293,11 @@ public class RiskSettingsStore {
         volatile long   scanMinVolume = 0;       // min previous day volume (0 = no filter)
         volatile double scanMinBeta = 0;         // min stock beta (0 = no filter)
         volatile double scanMaxBeta = 0;         // max stock beta (0 = no filter)
-        // scanCapFilter removed — NIFTY 50 universe means all stocks are LARGE; cap filter was a no-op
-        volatile boolean scanIncludeNS = true;   // Narrow + Small Range (z < -1.5)
-        volatile boolean scanIncludeNL = true;   // Narrow + Large Range
-        volatile boolean scanIncludeIS = true;   // Inside + Small Range
-        volatile boolean scanIncludeIL = false;  // Inside + Large Range
+        // Watchlist universe gate. When true, the watchlist is restricted to NIFTY 50 stocks
+        // only. When false, all stocks in the bhavcopy cache are eligible (subject to the
+        // CPR-width and other scanner filters). Replaces the legacy scanIncludeNS/NL/IS/IL
+        // bucket toggles (which filtered by Narrow/Inside CPR × Small/Large daily range).
+        volatile boolean scanOnlyNifty50 = true;
         // Opening Range
         volatile int openingRangeMinutes = 30; // 0=disabled, 15/30/45/60
         // Opening refresh — re-fetches today's candles from Fyers /data/history after
@@ -463,10 +463,7 @@ public class RiskSettingsStore {
     public long   getScanMinVolume()   { return cfg().scanMinVolume; }
     public double getScanMinBeta() { return cfg().scanMinBeta; }
     public double getScanMaxBeta() { return cfg().scanMaxBeta; }
-    public boolean isScanIncludeNS() { return cfg().scanIncludeNS; }
-    public boolean isScanIncludeNL() { return cfg().scanIncludeNL; }
-    public boolean isScanIncludeIS() { return cfg().scanIncludeIS; }
-    public boolean isScanIncludeIL() { return cfg().scanIncludeIL; }
+    public boolean isScanOnlyNifty50() { return cfg().scanOnlyNifty50; }
     public int getOpeningRangeMinutes()        { return cfg().openingRangeMinutes; }
     public boolean isEnableOpeningRefresh()    { return cfg().enableOpeningRefresh; }
     public String  getOpeningRefreshTime()     { return cfg().openingRefreshTime; }
@@ -501,10 +498,7 @@ public class RiskSettingsStore {
     public void setScanMinVolume(long v)     { cfg().scanMinVolume = v; }
     public void setScanMinBeta(double v) { cfg().scanMinBeta = v; }
     public void setScanMaxBeta(double v) { cfg().scanMaxBeta = v; }
-    public void setScanIncludeNS(boolean v) { cfg().scanIncludeNS = v; }
-    public void setScanIncludeNL(boolean v) { cfg().scanIncludeNL = v; }
-    public void setScanIncludeIS(boolean v) { cfg().scanIncludeIS = v; }
-    public void setScanIncludeIL(boolean v) { cfg().scanIncludeIL = v; }
+    public void setScanOnlyNifty50(boolean v) { cfg().scanOnlyNifty50 = v; }
     public void setOpeningRangeMinutes(int v)  { cfg().openingRangeMinutes = v; }
     public void setEnableOpeningRefresh(boolean v) { cfg().enableOpeningRefresh = v; }
     public void setOpeningRefreshTime(String v)    { cfg().openingRefreshTime = v; }
@@ -813,10 +807,7 @@ public class RiskSettingsStore {
             upsert("scanMinVolume", String.valueOf(c.scanMinVolume));
             upsert("scanMinBeta", String.valueOf(c.scanMinBeta));
             upsert("scanMaxBeta", String.valueOf(c.scanMaxBeta));
-            upsert("scanIncludeNS", String.valueOf(c.scanIncludeNS));
-            upsert("scanIncludeNL", String.valueOf(c.scanIncludeNL));
-            upsert("scanIncludeIS", String.valueOf(c.scanIncludeIS));
-            upsert("scanIncludeIL", String.valueOf(c.scanIncludeIL));
+            upsert("scanOnlyNifty50", String.valueOf(c.scanOnlyNifty50));
             upsert("openingRangeMinutes", String.valueOf(c.openingRangeMinutes));
             upsert("enableOpeningRefresh", String.valueOf(c.enableOpeningRefresh));
             upsert("openingRefreshTime", c.openingRefreshTime);
@@ -1012,10 +1003,7 @@ public class RiskSettingsStore {
                     case "scanMinBeta" -> c.scanMinBeta = Double.parseDouble(v);
                     case "scanMaxBeta" -> c.scanMaxBeta = Double.parseDouble(v);
                     case "scanCapFilter" -> { /* legacy key, silently ignored — cap filter removed */ }
-                    case "scanIncludeNS" -> c.scanIncludeNS = Boolean.parseBoolean(v);
-                    case "scanIncludeNL" -> c.scanIncludeNL = Boolean.parseBoolean(v);
-                    case "scanIncludeIS" -> c.scanIncludeIS = Boolean.parseBoolean(v);
-                    case "scanIncludeIL" -> c.scanIncludeIL = Boolean.parseBoolean(v);
+                    case "scanOnlyNifty50" -> c.scanOnlyNifty50 = Boolean.parseBoolean(v);
                     case "openingRangeMinutes" -> c.openingRangeMinutes = Integer.parseInt(v);
                     case "enableOpeningRefresh" -> c.enableOpeningRefresh = Boolean.parseBoolean(v);
                     case "openingRefreshTime" -> c.openingRefreshTime = v;

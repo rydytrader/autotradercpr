@@ -74,22 +74,21 @@ public class ScannerController {
             insideSymbols.add(cpr.getSymbol());
         }
 
-        // Universe is restricted to NIFTY 50 at the bhavcopy parse stage — cache already
-        // contains only NIFTY 50 stocks (full FNO fallback if NIFTY 50 list was unavailable).
+        // Universe gate — when scanOnlyNifty50 is on, the watchlist is restricted to NIFTY 50
+        // stocks. When off, all stocks in the bhavcopy cache are eligible (subject to the
+        // CPR-width and other scanner filters below).
+        boolean onlyNifty50 = riskSettings.isScanOnlyNifty50();
 
-        // Collect narrow CPR stocks — use configurable width range + filters + NS/NL toggles
+        // Collect narrow CPR stocks — use configurable width range + price/turnover/etc. filters.
         double narrowMaxWidth = riskSettings.getNarrowCprMaxWidth();
         double narrowMinWidth = riskSettings.getNarrowCprMinWidth();
         Set<String> seen = new HashSet<>();
         for (CprLevels cpr : bhavcopyService.getAllCprLevels().values()) {
             if (bhavcopyService.isIndex(cpr.getSymbol())) continue; // NIFTY50/NIFTYBANK etc.
+            if (onlyNifty50 && !cpr.isInNifty50()) continue;
             if (cpr.getCprWidthPct() < narrowMinWidth || cpr.getCprWidthPct() >= narrowMaxWidth) continue;
             if (!marketDataService.passesWatchlistFilters(cpr)) continue;
             String nrt = cpr.getNarrowRangeType();
-            boolean rangeMatches = ("SMALL".equals(nrt) && riskSettings.isScanIncludeNS())
-                                || ("LARGE".equals(nrt) && riskSettings.isScanIncludeNL())
-                                || (nrt == null && (riskSettings.isScanIncludeNS() || riskSettings.isScanIncludeNL()));
-            if (!rangeMatches) continue;
 
             String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
             List<String> types = new ArrayList<>();
@@ -103,18 +102,15 @@ public class ScannerController {
             seen.add(fyers);
         }
 
-        // Collect inside-only CPR stocks — filtered by IS/IL toggles + width filter + price filter
+        // Collect inside-only CPR stocks — width filter + price/turnover/etc. filters.
         double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
         for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
             String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
             if (seen.contains(fyers)) continue;
+            if (onlyNifty50 && !cpr.isInNifty50()) continue;
             if (insideMaxWidth > 0 && cpr.getCprWidthPct() > insideMaxWidth) continue;
             if (!marketDataService.passesWatchlistFilters(cpr)) continue;
             String nrt = cpr.getNarrowRangeType();
-            boolean rangeMatches = ("SMALL".equals(nrt) && riskSettings.isScanIncludeIS())
-                                || ("LARGE".equals(nrt) && riskSettings.isScanIncludeIL())
-                                || (nrt == null && (riskSettings.isScanIncludeIS() || riskSettings.isScanIncludeIL()));
-            if (!rangeMatches) continue;
 
             List<String> types = new ArrayList<>();
             types.add("INSIDE");

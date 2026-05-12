@@ -2033,24 +2033,19 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double minPrice = riskSettings.getScanMinPrice();
         if (minPrice > 0 && cpr.getClose() < minPrice) return false;
 
+        // NIFTY 50 gate — when on, only NIFTY 50 stocks are eligible.
+        if (riskSettings.isScanOnlyNifty50() && !bhavcopyService.isInNifty50(ticker)) return false;
+
         double wpct = cpr.getCprWidthPct();
         boolean isNarrow = wpct >= riskSettings.getNarrowCprMinWidth() && wpct < riskSettings.getNarrowCprMaxWidth();
+        if (isNarrow) return true;
+
+        // Inside-only CPR — width filter still applies via insideCprMaxWidth.
         boolean isInside = bhavcopyService.getInsideCprStocks().stream()
                 .anyMatch(c -> c.getSymbol().equals(ticker));
-        String nrt = cpr.getNarrowRangeType();
-
-        // Narrow CPR → NS/NL toggles
-        if (isNarrow) {
-            if ("SMALL".equals(nrt) && riskSettings.isScanIncludeNS()) return true;
-            if ("LARGE".equals(nrt) && riskSettings.isScanIncludeNL()) return true;
-            if (nrt == null && (riskSettings.isScanIncludeNS() || riskSettings.isScanIncludeNL())) return true;
-        }
-        // Inside-only CPR → IS/IL toggles + width filter
         double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
-        if (!isNarrow && isInside && (insideMaxWidth <= 0 || cpr.getCprWidthPct() <= insideMaxWidth)) {
-            if ("SMALL".equals(nrt) && riskSettings.isScanIncludeIS()) return true;
-            if ("LARGE".equals(nrt) && riskSettings.isScanIncludeIL()) return true;
-            if (nrt == null && (riskSettings.isScanIncludeIS() || riskSettings.isScanIncludeIL())) return true;
+        if (isInside && (insideMaxWidth <= 0 || cpr.getCprWidthPct() <= insideMaxWidth)) {
+            return true;
         }
 
         return false;
