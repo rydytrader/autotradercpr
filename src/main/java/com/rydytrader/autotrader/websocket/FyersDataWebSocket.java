@@ -185,11 +185,9 @@ public class FyersDataWebSocket extends WebSocketClient {
                     + ") at " + arrivedAt + " — " + dropped + " pre-snapshot updates dropped"
                     + (delayMs > 0 ? " (" + (delayMs / 1000) + "s after subscribe)" : "");
                 log.info("[HsmParser] {}", msg);
-                if (eventLogSink != null && dropped > 0) {
-                    // Only surface to event log when there's an actual drop — otherwise
-                    // this would spam 34+ "0 dropped" lines at startup.
-                    eventLogSink.accept("[WARNING] [HsmParser] " + msg);
-                }
+                // Event-log surfacing intentionally removed — even when dropped > 0, surfacing
+                // a "First snapshot" line per symbol was too noisy at startup. Keep the
+                // application log entry for postmortem debugging if needed.
             }
         }
     }
