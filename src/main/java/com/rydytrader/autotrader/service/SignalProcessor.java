@@ -237,11 +237,10 @@ public class SignalProcessor {
                     + fmt(bodyFloor) + ") AND move from level (" + fmt(moveFromLevel) + ") < "
                     + moveAtrMult + " ATR (" + fmt(moveFloor) + "), no wick defense");
             }
-            // Opposite-wick rejection has moved upstream into the route-specific gates:
-            //   • Route 1 marubozu        — marubozuMaxWicksPctOfBody (total wicks ≤ % of body)
-            //   • Route 2 fresh break     — goodSizeCandleMaxOppositeWickRatio (upper/lower wick ≤ ratio × body)
-            //   • Route 2 retest patterns — each pattern matcher's own wick rules
-            // No longer enforced here so the trade log doesn't show "fired then rejected".
+            // Opposite-wick rejection is handled upstream by each retest pattern matcher
+            // (hammer / engulfing / piercing / tweezer / doji / star / harami) in
+            // BreakoutScanner. No longer enforced here so the trade log doesn't show
+            // "fired then rejected".
         }
 
         // ── 4d2. Large candle body filter ──────────────────────────────────────

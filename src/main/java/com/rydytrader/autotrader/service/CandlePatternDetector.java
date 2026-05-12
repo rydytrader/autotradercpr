@@ -2,14 +2,12 @@ package com.rydytrader.autotrader.service;
 
 /**
  * Stateless candle-pattern helpers used by {@link BreakoutScanner} for the CPR-level
- * marubozu-breakout + pattern-retest entry model.
+ * retest-only entry model.
  *
  * <p>All thresholds are passed in by the caller so they can be tuned via the Candle
  * settings tab (see {@code RiskSettingsStore}).
  *
  * <ul>
- *   <li><b>Marubozu</b> — full-body conviction candle. body ≥ {@code bodyAtrMult} × ATR,
- *       total wicks ≤ {@code maxWicksPctOfBody} × body.</li>
  *   <li><b>Hammer / shooting star (pin bar)</b> — rejection wick ≥
  *       {@code rejectionWickBodyMult} × body, opposite wick ≤
  *       {@code oppositeWickBodyMult} × body, real body present (not a doji).</li>
@@ -42,28 +40,6 @@ package com.rydytrader.autotrader.service;
 final class CandlePatternDetector {
 
     private CandlePatternDetector() {}
-
-    // ── Marubozu ──────────────────────────────────────────────────────────────
-
-    public static boolean isBullishMarubozu(double open, double high, double low, double close,
-                                            double atr, double bodyAtrMult, double maxWicksPctOfBody) {
-        if (atr <= 0) return false;
-        if (close <= open) return false;
-        double body = close - open;
-        if (body < bodyAtrMult * atr) return false;
-        double wicks = (high - close) + (open - low);
-        return wicks <= maxWicksPctOfBody * body;
-    }
-
-    public static boolean isBearishMarubozu(double open, double high, double low, double close,
-                                            double atr, double bodyAtrMult, double maxWicksPctOfBody) {
-        if (atr <= 0) return false;
-        if (close >= open) return false;
-        double body = open - close;
-        if (body < bodyAtrMult * atr) return false;
-        double wicks = (high - open) + (close - low);
-        return wicks <= maxWicksPctOfBody * body;
-    }
 
     // ── Pin bar (hammer / shooting star) ─────────────────────────────────────
 

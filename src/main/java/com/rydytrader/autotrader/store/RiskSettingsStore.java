@@ -43,9 +43,6 @@ public class RiskSettingsStore {
         volatile boolean enableLargeCandleBodyFilter = true;
         volatile double largeCandleBodyAtrThreshold = 4.0; // skip if candle body > N × ATR (exhaustion risk)
         // ── Candle pattern thresholds (BreakoutScanner / CandlePatternDetector) ──
-        // Marubozu: full-body conviction candle. body ≥ N × ATR, total wicks ≤ N × body.
-        volatile double marubozuBodyAtrMult         = 1.0;
-        volatile double marubozuMaxWicksPctOfBody   = 0.10;
         // Pin bar (hammer / shooting star): rejection wick ≥ N × body, opposite wick ≤ N × body.
         volatile double pinBarRejectionWickBodyMult = 2.0;
         volatile double pinBarOppositeWickBodyMult  = 0.30;
@@ -400,8 +397,6 @@ public class RiskSettingsStore {
     public boolean isEnableSmallCandleFilter() { return cfg().enableSmallCandleFilter; }
     public boolean isEnableLargeCandleBodyFilter() { return cfg().enableLargeCandleBodyFilter; }
     public double getLargeCandleBodyAtrThreshold() { return cfg().largeCandleBodyAtrThreshold; }
-    public double getMarubozuBodyAtrMult()         { return cfg().marubozuBodyAtrMult; }
-    public double getMarubozuMaxWicksPctOfBody()   { return cfg().marubozuMaxWicksPctOfBody; }
     public double getPinBarRejectionWickBodyMult() { return cfg().pinBarRejectionWickBodyMult; }
     public double getPinBarOppositeWickBodyMult()  { return cfg().pinBarOppositeWickBodyMult; }
     public double getEngulfingMinBodyMultiple()    { return cfg().engulfingMinBodyMultiple; }
@@ -573,8 +568,6 @@ public class RiskSettingsStore {
     public void setEnableSmallCandleFilter(boolean v) { cfg().enableSmallCandleFilter = v; }
     public void setEnableLargeCandleBodyFilter(boolean v) { cfg().enableLargeCandleBodyFilter = v; }
     public void setLargeCandleBodyAtrThreshold(double v) { cfg().largeCandleBodyAtrThreshold = v; }
-    public void setMarubozuBodyAtrMult(double v)         { cfg().marubozuBodyAtrMult = v; }
-    public void setMarubozuMaxWicksPctOfBody(double v)   { cfg().marubozuMaxWicksPctOfBody = v; }
     public void setPinBarRejectionWickBodyMult(double v) { cfg().pinBarRejectionWickBodyMult = v; }
     public void setPinBarOppositeWickBodyMult(double v)  { cfg().pinBarOppositeWickBodyMult = v; }
     public void setEngulfingMinBodyMultiple(double v)    { cfg().engulfingMinBodyMultiple = v; }
@@ -754,8 +747,6 @@ public class RiskSettingsStore {
             upsert("enableSmallCandleFilter", String.valueOf(c.enableSmallCandleFilter));
             upsert("enableLargeCandleBodyFilter", String.valueOf(c.enableLargeCandleBodyFilter));
             upsert("largeCandleBodyAtrThreshold", String.valueOf(c.largeCandleBodyAtrThreshold));
-            upsert("marubozuBodyAtrMult", String.valueOf(c.marubozuBodyAtrMult));
-            upsert("marubozuMaxWicksPctOfBody", String.valueOf(c.marubozuMaxWicksPctOfBody));
             upsert("pinBarRejectionWickBodyMult", String.valueOf(c.pinBarRejectionWickBodyMult));
             upsert("pinBarOppositeWickBodyMult", String.valueOf(c.pinBarOppositeWickBodyMult));
             upsert("engulfingMinBodyMultiple", String.valueOf(c.engulfingMinBodyMultiple));
@@ -925,8 +916,6 @@ public class RiskSettingsStore {
                     case "enableSmallCandleFilter" -> c.enableSmallCandleFilter = Boolean.parseBoolean(v);
                     case "enableLargeCandleBodyFilter" -> c.enableLargeCandleBodyFilter = Boolean.parseBoolean(v);
                     case "largeCandleBodyAtrThreshold" -> c.largeCandleBodyAtrThreshold = Double.parseDouble(v);
-                    case "marubozuBodyAtrMult"         -> c.marubozuBodyAtrMult = Double.parseDouble(v);
-                    case "marubozuMaxWicksPctOfBody"   -> c.marubozuMaxWicksPctOfBody = Double.parseDouble(v);
                     case "pinBarRejectionWickBodyMult" -> c.pinBarRejectionWickBodyMult = Double.parseDouble(v);
                     case "pinBarOppositeWickBodyMult"  -> c.pinBarOppositeWickBodyMult = Double.parseDouble(v);
                     case "engulfingMinBodyMultiple"    -> c.engulfingMinBodyMultiple = Double.parseDouble(v);

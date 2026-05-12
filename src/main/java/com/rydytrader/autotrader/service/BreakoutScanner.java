@@ -87,13 +87,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     private final ConcurrentHashMap<String, String> armedSellLevel = new ConcurrentHashMap<>();
     /** Trigger-route tag for the most recent fired signal — picked up by fireSignal so the
      *  trade-log description records which path entered. Retest-only model — fresh-break
-     *  paths are removed; every trade waits for a confirmed retest.
-     *  Route 1 (marubozu): tags as "MARUBOZU_RETEST" — bar opened past the level, touched
-     *  the level again on this bar, and closed past it.
-     *  Route 2 (pattern retests at the armed level, requires prev close already past level):
-     *  "HAMMER_RETEST", "ENGULFING_RETEST", "PIERCING_RETEST", "TWEEZER_RETEST",
-     *  "DOJI_RETEST", "STAR_RETEST", "HARAMI_RETEST". Per-symbol, accessed only on the
-     *  candle-close thread for that symbol. */
+     *  paths are removed; every trade waits for a confirmed retest at the armed level
+     *  (prev close already past level). Tags: "HAMMER_RETEST", "ENGULFING_RETEST",
+     *  "PIERCING_RETEST", "TWEEZER_RETEST", "DOJI_RETEST", "STAR_RETEST", "HARAMI_RETEST".
+     *  Per-symbol, accessed only on the candle-close thread for that symbol. */
     private final ConcurrentHashMap<String, String> lastTriggerRoute = new ConcurrentHashMap<>();
     /** Pending NIFTY HTF Hurdle break-guard per stock symbol. Set by checkNiftyHurdle when the
      *  filter passes AND a hurdle existed in trade direction (i.e., the NIFTY 15-min close
@@ -855,12 +852,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double r1ph   = Math.max(r1, ph);
         double s1pl   = Math.max(s1, pl);
 
-        // Two routes per level (priority R4 → R3 → R2 → R1+PDH → CPR → S1+PDL → S2 → S3 → S4):
-        //   Route 1 — bullish marubozu that closes past the level fires immediately. Iterates
-        //             every level so the highest level the marubozu broke wins.
-        //   Route 2 — pattern retest at the single armed buy level (closest level below the
-        //             latest close). Pattern's lowest point must reach the level. Patterns:
-        //             hammer, bullish engulfing, bullish doji rev, morning star.
+        // Retest-only model (priority R4 → R3 → R2 → R1+PDH → CPR → S1+PDL → S2 → S3 → S4):
+        // multi-bar pattern retest at the single armed buy level (closest level below the
+        // latest close). Patterns: hammer, bullish engulfing, piercing line, tweezer bottom,
+        // bullish doji reversal, morning star, three inside up. Pattern's lowest point must
+        // reach the level; prev candle's close must already be past the level.
         double atrForPattern = atrService.getAtr(fyersSymbol);
         String armed = armedBuyLevel.get(fyersSymbol);
 
@@ -982,11 +978,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double s1plLo = Math.min(s1, pl);
         double r1phLo = Math.min(r1, ph);
 
-        // Two routes per level (priority S4 → S3 → S2 → S1+PDL → CPR → R1+PDH → R2 → R3 → R4):
-        //   Route 1 — bearish marubozu that closes past the level fires immediately.
-        //   Route 2 — pattern retest at the single armed sell level (closest level above the
-        //             latest close). Pattern's highest point must reach the level. Patterns:
-        //             shooting star, bearish engulfing, bearish doji rev, evening star.
+        // Retest-only model (priority S4 → S3 → S2 → S1+PDL → CPR → R1+PDH → R2 → R3 → R4):
+        // multi-bar pattern retest at the single armed sell level (closest level above the
+        // latest close). Patterns: shooting star, bearish engulfing, dark cloud cover,
+        // tweezer top, bearish doji reversal, evening star, three inside down. Pattern's
+        // highest point must reach the level; prev candle's close must already be past it.
         double atrForPattern = atrService.getAtr(fyersSymbol);
         String armed = armedSellLevel.get(fyersSymbol);
 
@@ -1037,7 +1033,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     }
 
     /**
-     * Check both routes (marubozu breakout + pattern retest) for a single buy setup at one
+     * Check the retest-pattern path for a single buy setup at one
      * level. Returns the setup name on hit, null otherwise. Sets {@code lastTriggerRoute}
      * so {@link #fireSignal} can record which route fired.
      */
@@ -1045,23 +1041,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                                     double open, double high, double low, double close,
                                     double atr, Set<String> broken, String armed, String fyersSymbol) {
         if (broken.contains(setupName)) return null;
-        double maruBody  = riskSettings.getMarubozuBodyAtrMult();
-        double maruWicks = riskSettings.getMarubozuMaxWicksPctOfBody();
         double pinReject = riskSettings.getPinBarRejectionWickBodyMult();
         double pinOpp    = riskSettings.getPinBarOppositeWickBodyMult();
-        // Route 1 — bullish marubozu RETESTING the level. The bar must have opened above the
-        // level (level was broken in an earlier bar) AND dipped down to touch the level on
-        // this bar (low <= level) AND closed above. Fresh marubozu breakouts (open at/below
-        // level) no longer fire — every trade must wait for a retest.
-        if (CandlePatternDetector.isBullishMarubozu(open, high, low, close, atr, maruBody, maruWicks)
-                && close > level && open > level && low <= level) {
-            if (!isLargeCandleBlocked(close - open, atr)) {
-                lastTriggerRoute.put(fyersSymbol, "MARUBOZU_RETEST");
-                return setupName;
-            }
-        }
-        // Route 2 — retest pattern at the single armed buy level. Pattern's lowest point must
-        // reach the level.
+        // Retest-only model — multi-bar pattern retest at the single armed buy level.
+        // Pattern's lowest point must reach the level.
         if (!setupName.equals(armed)) return null;
         CandleAggregator.CandleBar curr = candleAggregator.getLastCompletedCandle(fyersSymbol);
         if (curr == null) return null;
@@ -1146,23 +1129,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                                      double open, double high, double low, double close,
                                      double atr, Set<String> broken, String armed, String fyersSymbol) {
         if (broken.contains(setupName)) return null;
-        double maruBody  = riskSettings.getMarubozuBodyAtrMult();
-        double maruWicks = riskSettings.getMarubozuMaxWicksPctOfBody();
         double pinReject = riskSettings.getPinBarRejectionWickBodyMult();
         double pinOpp    = riskSettings.getPinBarOppositeWickBodyMult();
-        // Route 1 — bearish marubozu RETESTING the level. The bar must have opened below the
-        // level (level was broken down in an earlier bar) AND popped up to touch the level on
-        // this bar (high >= level) AND closed below. Fresh marubozu breakdowns (open at/above
-        // level) no longer fire — every trade must wait for a retest.
-        if (CandlePatternDetector.isBearishMarubozu(open, high, low, close, atr, maruBody, maruWicks)
-                && close < level && open < level && high >= level) {
-            if (!isLargeCandleBlocked(open - close, atr)) {
-                lastTriggerRoute.put(fyersSymbol, "MARUBOZU_RETEST");
-                return setupName;
-            }
-        }
-        // Route 2 — retest pattern at the single armed sell level. Pattern's highest point
-        // must reach the level.
+        // Retest-only model — multi-bar pattern retest at the single armed sell level.
+        // Pattern's highest point must reach the level.
         if (!setupName.equals(armed)) return null;
         CandleAggregator.CandleBar curr = candleAggregator.getLastCompletedCandle(fyersSymbol);
         if (curr == null) return null;
@@ -1325,11 +1295,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             boolean allBelow = close < sma20Now && close < sma50Now && close < sma200Now;
             trend = allAbove ? "BULLISH" : allBelow ? "BEARISH" : "NEUTRAL";
         }
-        // Include the candle-route tag (MARUBOZU_RETEST for Route 1; HAMMER_RETEST,
-        // ENGULFING_RETEST, PIERCING_RETEST, TWEEZER_RETEST, DOJI_RETEST, STAR_RETEST,
-        // HARAMI_RETEST for Route 2 retests) when present so the event log makes it clear
-        // which candle structure actually fired the entry. Retest-only model — fresh-break
-        // paths have been removed; every trade requires a confirmed retest.
+        // Include the candle-route tag (HAMMER_RETEST, ENGULFING_RETEST, PIERCING_RETEST,
+        // TWEEZER_RETEST, DOJI_RETEST, STAR_RETEST, HARAMI_RETEST) when present so the
+        // event log makes it clear which retest pattern fired the entry. Retest-only model
+        // — fresh-break and marubozu paths have been removed; every trade requires a
+        // confirmed multi-bar retest of the broken level.
         String routeTag = (scannerNote != null && !scannerNote.isEmpty()) ? " | route=" + scannerNote : "";
         eventService.log("[SCANNER] " + fyersSymbol + " " + setup + " | close=" + String.format("%.2f", close)
             + " | ATR=" + String.format("%.2f", atr) + " | " + prob + routeTag

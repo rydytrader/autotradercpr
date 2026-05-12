@@ -588,20 +588,6 @@
             </div>
 
             <div class="form-grid">
-            <!-- Marubozu group -->
-            <div class="form-group">
-                <label class="form-label">Marubozu (full-body conviction candle)</label>
-                <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
-                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Body ≥</span>
-                    <input type="number" id="marubozuBodyAtrMult" class="form-control" step="0.1" min="0.1" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× ATR</span>
-                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">Total wicks ≤</span>
-                    <input type="number" id="marubozuMaxWicksPctOfBody" class="form-control" step="0.05" min="0.0" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× body (e.g. 0.10 = 10%)</span>
-                </div>
-                <div class="form-hint">Bigger body multiplier = need a stronger ATR-relative bar. Smaller wick fraction = stricter "no wick" rule. Defaults: 1.0 × ATR body, 0.10 × body wicks.</div>
-            </div>
-
             <!-- Pin Bar group -->
             <div class="form-group">
                 <label class="form-label">Pin Bar (hammer / shooting star)</label>
@@ -1399,8 +1385,6 @@
             document.getElementById('enableRiskRewardFilter').checked = d.enableRiskRewardFilter !== false;
             document.getElementById('enableLargeCandleBodyFilter').checked = d.enableLargeCandleBodyFilter !== false;
             document.getElementById('largeCandleBodyAtrThreshold').value = d.largeCandleBodyAtrThreshold != null ? d.largeCandleBodyAtrThreshold : 4.0;
-            document.getElementById('marubozuBodyAtrMult').value          = d.marubozuBodyAtrMult          != null ? d.marubozuBodyAtrMult          : 1.0;
-            document.getElementById('marubozuMaxWicksPctOfBody').value    = d.marubozuMaxWicksPctOfBody    != null ? d.marubozuMaxWicksPctOfBody    : 0.10;
             document.getElementById('pinBarRejectionWickBodyMult').value  = d.pinBarRejectionWickBodyMult  != null ? d.pinBarRejectionWickBodyMult  : 2.0;
             document.getElementById('pinBarOppositeWickBodyMult').value   = d.pinBarOppositeWickBodyMult   != null ? d.pinBarOppositeWickBodyMult   : 0.30;
             document.getElementById('engulfingMinBodyMultiple').value     = d.engulfingMinBodyMultiple     != null ? d.engulfingMinBodyMultiple     : 1.0;
@@ -1596,8 +1580,6 @@
                 enableRiskRewardFilter: document.getElementById('enableRiskRewardFilter').checked,
                 enableLargeCandleBodyFilter: document.getElementById('enableLargeCandleBodyFilter').checked,
                 largeCandleBodyAtrThreshold: parseFloat(document.getElementById('largeCandleBodyAtrThreshold').value) || 4.0,
-                marubozuBodyAtrMult:          parseFloat(document.getElementById('marubozuBodyAtrMult').value)          || 1.0,
-                marubozuMaxWicksPctOfBody:    parseFloat(document.getElementById('marubozuMaxWicksPctOfBody').value)    || 0.10,
                 pinBarRejectionWickBodyMult:  parseFloat(document.getElementById('pinBarRejectionWickBodyMult').value)  || 2.0,
                 pinBarOppositeWickBodyMult:   parseFloat(document.getElementById('pinBarOppositeWickBodyMult').value)   || 0.30,
                 engulfingMinBodyMultiple:     parseFloat(document.getElementById('engulfingMinBodyMultiple').value)     || 1.0,
