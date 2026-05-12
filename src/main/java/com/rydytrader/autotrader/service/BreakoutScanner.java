@@ -82,12 +82,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      *  above the latest close. Mirror of {@link #armedBuyLevel}. */
     private final ConcurrentHashMap<String, String> armedSellLevel = new ConcurrentHashMap<>();
     /** Trigger-route tag for the most recent fired signal — picked up by fireSignal so the
-     *  trade-log description records which path entered. Retest-only model — fresh-break
-     *  paths are removed; every trade waits for a confirmed retest at the armed level.
-     *  Single-bar pattern retests (prev close already past level): "HAMMER_RETEST",
-     *  "ENGULFING_RETEST", "PIERCING_RETEST", "TWEEZER_RETEST", "DOJI_RETEST",
-     *  "STAR_RETEST", "HARAMI_RETEST". Two-bar continuation retests (prev bar dipped to
-     *  level and held, current bar is the continuation): "MARUBOZU_RETEST" and
+     *  trade-log description records which path entered. Retest-only model — every trade
+     *  requires (a) prev close already past the level and (b) some bar in the pattern
+     *  touching the level. Tags: "HAMMER_RETEST", "ENGULFING_RETEST", "PIERCING_RETEST",
+     *  "TWEEZER_RETEST", "DOJI_RETEST", "STAR_RETEST", "HARAMI_RETEST", "MARUBOZU_RETEST",
      *  "GOOD_SIZE_CANDLE_RETEST". Per-symbol, accessed only on the candle-close thread
      *  for that symbol. */
     private final ConcurrentHashMap<String, String> lastTriggerRoute = new ConcurrentHashMap<>();
@@ -1086,31 +1084,31 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             lastTriggerRoute.put(fyersSymbol, "HARAMI_RETEST");
             return setupName;
         }
-        // Two-bar Marubozu retest: prev bar carries the dip (open > level, low touched level,
-        // close still > level) and the current bar is a clean bullish marubozu in trade
-        // direction. Geometrically cleaner than a one-bar marubozu touch — the dip wick lives
-        // on prev so the current bar can be strictly shaved.
+        // Marubozu retest: bullish marubozu where EITHER prev or curr bar's low touched the
+        // level. Matches the touch-rule of the other multi-bar retest patterns — any bar in
+        // the pattern can carry the touch. Route 2 gate at the top already ensures the level
+        // was broken in some earlier bar (prev close > level).
         double maruBody  = riskSettings.getMarubozuBodyAtrMult();
         double maruWicks = riskSettings.getMarubozuMaxWicksPctOfBody();
-        if (prev.open > level && prev.low <= level
-                && CandlePatternDetector.isBullishMarubozu(open, high, low, close, atr, maruBody, maruWicks)
+        if (CandlePatternDetector.isBullishMarubozu(open, high, low, close, atr, maruBody, maruWicks)
+                && Math.min(prev.low, low) <= level
                 && close > level
                 && !isLargeCandleBlocked(close - open, atr)) {
             lastTriggerRoute.put(fyersSymbol, "MARUBOZU_RETEST");
             return setupName;
         }
-        // Two-bar Good-Size Candle retest: same prev-bar dip + a current bar that's a decent
-        // green body without the marubozu strict-wick rule, but with the opposing (upper) wick
-        // capped so shooting-star-shaped bars don't qualify. Checked AFTER marubozu so a
-        // strict marubozu wins the tag.
+        // Good-Size Candle retest: green bar with decent body without the marubozu strict-wick
+        // rule, opposing (upper) wick capped so shooting-star-shaped bars don't qualify.
+        // Same touch-rule: prev or curr's low must have reached the level. Checked AFTER
+        // marubozu so a strict marubozu wins the tag.
         double goodSizeBody = riskSettings.getGoodSizeCandleBodyAtrMult();
         double goodSizeOpp  = riskSettings.getGoodSizeCandleMaxOppositeWickRatio();
         double bodyAbs      = close - open;
         double upperWick    = high - Math.max(open, close);
         boolean bodyOk      = goodSizeBody <= 0 || (atr > 0 && bodyAbs >= goodSizeBody * atr);
         boolean wickOk      = goodSizeOpp  <= 0 || bodyAbs <= 0 || upperWick <= goodSizeOpp * bodyAbs;
-        if (prev.open > level && prev.low <= level
-                && close > open && close > level && bodyOk && wickOk
+        if (close > open && close > level && bodyOk && wickOk
+                && Math.min(prev.low, low) <= level
                 && !isLargeCandleBlocked(bodyAbs, atr)) {
             lastTriggerRoute.put(fyersSymbol, "GOOD_SIZE_CANDLE_RETEST");
             return setupName;
@@ -1201,28 +1199,27 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             lastTriggerRoute.put(fyersSymbol, "HARAMI_RETEST");
             return setupName;
         }
-        // Two-bar Marubozu retest (sell mirror): prev bar poked up to the level and held below
-        // (open < level, high reached level, close still < level); current bar is a clean
-        // bearish marubozu in trade direction.
+        // Marubozu retest (sell mirror): bearish marubozu where EITHER prev or curr bar's
+        // high reached up to the level. Route 2 gate above ensures prev.close < level.
         double maruBody  = riskSettings.getMarubozuBodyAtrMult();
         double maruWicks = riskSettings.getMarubozuMaxWicksPctOfBody();
-        if (prev.open < level && prev.high >= level
-                && CandlePatternDetector.isBearishMarubozu(open, high, low, close, atr, maruBody, maruWicks)
+        if (CandlePatternDetector.isBearishMarubozu(open, high, low, close, atr, maruBody, maruWicks)
+                && Math.max(prev.high, high) >= level
                 && close < level
                 && !isLargeCandleBlocked(open - close, atr)) {
             lastTriggerRoute.put(fyersSymbol, "MARUBOZU_RETEST");
             return setupName;
         }
-        // Two-bar Good-Size Candle retest (sell mirror): prev-bar poke + current decent red
-        // body with opposing (lower) wick capped so hammer-shaped bars don't qualify.
+        // Good-Size Candle retest (sell mirror): red bar with decent body, opposing (lower)
+        // wick capped so hammer-shaped bars don't qualify. Same touch-rule as buy mirror.
         double goodSizeBody = riskSettings.getGoodSizeCandleBodyAtrMult();
         double goodSizeOpp  = riskSettings.getGoodSizeCandleMaxOppositeWickRatio();
         double bodyAbs      = open - close;
         double lowerWick    = Math.min(open, close) - low;
         boolean bodyOk      = goodSizeBody <= 0 || (atr > 0 && bodyAbs >= goodSizeBody * atr);
         boolean wickOk      = goodSizeOpp  <= 0 || bodyAbs <= 0 || lowerWick <= goodSizeOpp * bodyAbs;
-        if (prev.open < level && prev.high >= level
-                && close < open && close < level && bodyOk && wickOk
+        if (close < open && close < level && bodyOk && wickOk
+                && Math.max(prev.high, high) >= level
                 && !isLargeCandleBlocked(bodyAbs, atr)) {
             lastTriggerRoute.put(fyersSymbol, "GOOD_SIZE_CANDLE_RETEST");
             return setupName;
