@@ -108,12 +108,23 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     // Watchlist symbols (set by MarketDataService)
     private volatile List<String> watchlistSymbols = Collections.emptyList();
 
-    // Last scan cycle stats
-    private volatile int lastScanCount = 0;
+    // Last scan cycle stats — atomic so multi-threaded scanning maintains accurate counts
+    private final java.util.concurrent.atomic.AtomicInteger lastScanCount = new java.util.concurrent.atomic.AtomicInteger();
     private volatile String lastScanTime = "";
-    private volatile long lastScanBoundary = 0;
+    private final java.util.concurrent.atomic.AtomicLong lastScanBoundary = new java.util.concurrent.atomic.AtomicLong();
     private volatile int tradedCountToday = 0;
     private volatile int filteredCountToday = 0;
+
+    // Worker pool for per-symbol scanning. All scans happen off the CandleAggregator thread so
+    // (a) one slow symbol can't block the others and (b) the aggregator thread stays free to
+    // process incoming ticks while scans are in flight. Sized for the typical NIFTY-50 watchlist;
+    // newCachedThreadPool would create more under load but a fixed pool gives bounded resource use.
+    private final java.util.concurrent.ExecutorService scanExecutor =
+        java.util.concurrent.Executors.newFixedThreadPool(12, r -> {
+            Thread t = new Thread(r, "scanner-worker");
+            t.setDaemon(true);
+            return t;
+        });
 
     public BreakoutScanner(BhavcopyService bhavcopyService,
                            AtrService atrService,
@@ -302,23 +313,31 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // would silence a legitimate post-start-time fire on the same level.
         if (!isWithinTradingWindow()) return;
 
-        // Track scan cycle — reset counter when boundary changes
-        if (completedCandle.startMinute != lastScanBoundary) {
-            lastScanBoundary = completedCandle.startMinute;
-            lastScanCount = 0;
+        // Track scan cycle — reset counter when boundary changes. Atomic compare-and-set so
+        // the first scan into a new boundary resets the count cleanly even with parallel
+        // workers racing in.
+        long prevBoundary = lastScanBoundary.get();
+        if (completedCandle.startMinute != prevBoundary) {
+            if (lastScanBoundary.compareAndSet(prevBoundary, completedCandle.startMinute)) {
+                lastScanCount.set(0);
+            }
         }
-        lastScanCount++;
+        lastScanCount.incrementAndGet();
         lastScanTime = ZonedDateTime.now(IST).toLocalTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"));
 
-        try {
-            log.info("[Scanner] Candle close: {} start={} O={} H={} L={} C={}",
-                fyersSymbol, completedCandle.startMinute,
-                String.format("%.2f", completedCandle.open), String.format("%.2f", completedCandle.high),
-                String.format("%.2f", completedCandle.low), String.format("%.2f", completedCandle.close));
-            scanForBreakout(fyersSymbol, completedCandle);
-        } catch (Exception e) {
-            log.error("[Scanner] Error scanning {}: {}", fyersSymbol, e.getMessage());
-        }
+        // Dispatch the per-symbol scan to the worker pool so all symbols at this boundary
+        // can scan in parallel instead of serialized on the CandleAggregator scheduler thread.
+        scanExecutor.submit(() -> {
+            try {
+                log.info("[Scanner] Candle close: {} start={} O={} H={} L={} C={}",
+                    fyersSymbol, completedCandle.startMinute,
+                    String.format("%.2f", completedCandle.open), String.format("%.2f", completedCandle.high),
+                    String.format("%.2f", completedCandle.low), String.format("%.2f", completedCandle.close));
+                scanForBreakout(fyersSymbol, completedCandle);
+            } catch (Exception e) {
+                log.error("[Scanner] Error scanning {}: {}", fyersSymbol, e.getMessage());
+            }
+        });
     }
 
     /** True when current IST time is within [tradingStartTime, tradingEndTime]. Falls back
@@ -2200,7 +2219,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         return brokenLevels.getOrDefault(symbol, Collections.emptySet());
     }
 
-    public int getLastScanCount() { return lastScanCount; }
+    public int getLastScanCount() { return lastScanCount.get(); }
     public String getLastScanTime() { return lastScanTime; }
     public int getTradedCountToday() { return tradedCountToday; }
     public int getFilteredCountToday() { return filteredCountToday; }
@@ -2234,9 +2253,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         signalHistory.clear();
         tradedCountToday = 0;
         filteredCountToday = 0;
-        lastScanCount = 0;
+        lastScanCount.set(0);
         lastScanTime = "";
-        lastScanBoundary = 0;
+        lastScanBoundary.set(0);
         saveState();
     }
 
