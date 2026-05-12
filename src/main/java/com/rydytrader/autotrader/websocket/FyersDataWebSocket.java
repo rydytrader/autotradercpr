@@ -168,27 +168,12 @@ public class FyersDataWebSocket extends WebSocketClient {
             callback.onTick(tick);
         }
 
-        // Diagnostic: any topic whose SymbolMeta just got populated by this frame and
-        // that we haven't logged yet is a "first snapshot arrival". Log it once with
-        // the accumulated drop count so we can see which symbols had pre-snapshot data loss.
+        // First-snapshot diagnostics removed — the per-symbol log noise at startup outweighed
+        // its debugging value. firstSnapshotTimes is still populated so other code paths can
+        // distinguish snapshot-arrived from still-pending if needed.
         for (Map.Entry<Integer, HsmBinaryParser.SymbolMeta> e : symbolMeta.entrySet()) {
             Integer topicId = e.getKey();
-            if (firstSnapshotTimes.putIfAbsent(topicId, System.currentTimeMillis()) == null) {
-                String topicName = e.getValue().topicName;
-                String fyersSymbol = hsmToFyersSymbol.getOrDefault(topicName, topicName);
-                int dropped = preSnapshotDropCounts.getOrDefault(topicId, 0);
-                String arrivedAt = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata"))
-                    .toLocalTime()
-                    .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss.SSS"));
-                long delayMs = subscribeTime > 0 ? System.currentTimeMillis() - subscribeTime : 0;
-                String msg = "First snapshot for " + fyersSymbol + " (" + topicName
-                    + ") at " + arrivedAt + " — " + dropped + " pre-snapshot updates dropped"
-                    + (delayMs > 0 ? " (" + (delayMs / 1000) + "s after subscribe)" : "");
-                log.info("[HsmParser] {}", msg);
-                // Event-log surfacing intentionally removed — even when dropped > 0, surfacing
-                // a "First snapshot" line per symbol was too noisy at startup. Keep the
-                // application log entry for postmortem debugging if needed.
-            }
+            firstSnapshotTimes.putIfAbsent(topicId, System.currentTimeMillis());
         }
     }
 
