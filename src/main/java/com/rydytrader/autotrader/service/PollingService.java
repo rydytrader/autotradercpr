@@ -103,13 +103,7 @@ public class PollingService {
                 Map<String, Object> saved = entry.getValue();
                 String symbol    = saved.get("symbol").toString();
                 String side      = saved.get("side").toString();
-                int    origQty   = Integer.parseInt(saved.get("qty").toString());
-                // After T1 partial fill, remaining qty is what's actually held at broker
-                boolean t1Filled = Boolean.parseBoolean(String.valueOf(saved.getOrDefault("t1Filled", "false")));
-                int remQty = 0;
-                try { remQty = Integer.parseInt(String.valueOf(saved.getOrDefault("remainingQty", "0"))); }
-                catch (NumberFormatException ignored) {}
-                int qty = (t1Filled && remQty > 0) ? remQty : origQty;
+                int qty = Integer.parseInt(saved.get("qty").toString());
                 double avgPrice  = Double.parseDouble(saved.get("avgPrice").toString());
                 String setup     = saved.getOrDefault("setup", "").toString();
                 String entryTime = saved.getOrDefault("entryTime", "").toString();
@@ -125,75 +119,9 @@ public class PollingService {
                 // Restart OCO monitor if SL/Target order IDs were persisted
                 String slOrderId      = saved.getOrDefault("slOrderId", "").toString();
                 String targetOrderId  = saved.getOrDefault("targetOrderId", "").toString();
-                Object t1IdObj        = saved.get("target1OrderId");
-                Object t2IdObj        = saved.get("target2OrderId");
-                String target1OrderId = t1IdObj != null ? t1IdObj.toString() : "";
-                String target2OrderId = t2IdObj != null ? t2IdObj.toString() : "";
                 int exitSide          = "LONG".equals(side) ? -1 : 1;
 
-                // Split-target setup BEFORE T1 fill — both T1 and T2 still alive at broker
-                boolean splitPreT1 = !t1Filled && !target1OrderId.isEmpty() && !target2OrderId.isEmpty();
-
-                if (splitPreT1 && !slOrderId.isEmpty()) {
-                    double slPrice      = Double.parseDouble(saved.getOrDefault("slPrice", "0").toString());
-                    double target1Price = Double.parseDouble(saved.getOrDefault("target1Price", "0").toString());
-                    double target2Price = Double.parseDouble(saved.getOrDefault("target2Price", "0").toString());
-                    // Qty split mirrors placement formula in monitorEntryAndPlaceOCO
-                    int t1Qty = (origQty / 4) * 2;
-                    int t2Qty = origQty - t1Qty;
-
-                    SplitRestoreOutcome outcome = checkSplitOcoFilledOnRestore(
-                        slOrderId, target1OrderId, target2OrderId,
-                        symbol, origQty, t1Qty, t2Qty, exitSide, side, setup, avgPrice,
-                        slPrice, target1Price, target2Price);
-
-                    if (outcome == SplitRestoreOutcome.CLOSED) continue;
-
-                    // T1 may have filled while bot was down — checkSplitOcoFilledOnRestore
-                    // would have replaced the SL and updated state. Reload to get the new IDs/qty.
-                    String activeSlId = slOrderId;
-                    String activeT2Id = target2OrderId;
-                    int    activeQty  = origQty;
-                    double activeSlPrice = slPrice;
-                    if (outcome == SplitRestoreOutcome.T1_REPLACED) {
-                        Map<String, Object> refreshed = positionStateStore.load(symbol);
-                        if (refreshed != null) {
-                            activeSlId = refreshed.getOrDefault("slOrderId", "").toString();
-                            activeT2Id = refreshed.getOrDefault("targetOrderId", "").toString();
-                            try { activeQty = Integer.parseInt(String.valueOf(refreshed.getOrDefault("remainingQty", String.valueOf(t2Qty)))); }
-                            catch (NumberFormatException ignored) { activeQty = t2Qty; }
-                            activeSlPrice = Double.parseDouble(refreshed.getOrDefault("slPrice", String.valueOf(slPrice)).toString());
-                        } else {
-                            activeQty = t2Qty;
-                        }
-                        // Post-T1: single-target OCO (new SL + T2 only)
-                        boolean wsTracked = orderEventService.trackOcoOrders(activeSlId, activeT2Id,
-                            symbol, activeQty, side, exitSide, setup, avgPrice, activeSlPrice, target2Price);
-                        if (wsTracked) {
-                            log.info("[PollingService] Restored split OCO post-T1 via WebSocket for {} — SL: {} | T2: {}", symbol, activeSlId, activeT2Id);
-                        } else {
-                            monitorOCO(activeSlId, activeT2Id, symbol, activeQty, exitSide,
-                                activeSlPrice, target2Price, side, setup, avgPrice);
-                            log.info("[PollingService] Restored split OCO post-T1 via polling for {} — SL: {} | T2: {}", symbol, activeSlId, activeT2Id);
-                        }
-                    } else {
-                        // Pre-T1: full split OCO tracking
-                        boolean wsTracked = orderEventService.trackSplitOcoOrders(
-                            slOrderId, target1OrderId, target2OrderId,
-                            symbol, origQty, t1Qty, t2Qty, side, exitSide, setup, avgPrice,
-                            slPrice, target1Price, target2Price);
-                        if (wsTracked) {
-                            log.info("[PollingService] Restored split OCO via WebSocket for {} — SL: {} | T1: {} | T2: {}",
-                                symbol, slOrderId, target1OrderId, target2OrderId);
-                        } else {
-                            monitorSplitOCO(slOrderId, target1OrderId, target2OrderId,
-                                symbol, origQty, t1Qty, t2Qty, exitSide,
-                                slPrice, target1Price, target2Price, side, setup, avgPrice);
-                            log.info("[PollingService] Restored split OCO via polling for {} — SL: {} | T1: {} | T2: {}",
-                                symbol, slOrderId, target1OrderId, target2OrderId);
-                        }
-                    }
-                } else if (!slOrderId.isEmpty() && !targetOrderId.isEmpty()) {
+                if (!slOrderId.isEmpty() && !targetOrderId.isEmpty()) {
                     double slPrice     = Double.parseDouble(saved.getOrDefault("slPrice", "0").toString());
                     double targetPrice = Double.parseDouble(saved.getOrDefault("targetPrice", "0").toString());
 
@@ -291,132 +219,6 @@ public class PollingService {
         return false;
     }
 
-    private enum SplitRestoreOutcome {
-        NONE_FILLED,    // Caller should track all three orders (SL + T1 + T2)
-        T1_REPLACED,    // T1 already filled; SL was re-placed at breakeven; caller should track new SL + T2
-        CLOSED          // SL or T2 already filled — position fully closed and recorded
-    }
-
-    /**
-     * On restore of a split-target position, check the broker order book for any leg that
-     * already filled while the bot was down. Handles three outcomes:
-     *   - SL filled → record full-position loss, cancel surviving T1/T2.
-     *   - T2 filled → record full-position trade, cancel surviving SL/T1.
-     *   - T1 filled (only) → record T1 partial trade, cancel old SL, place new SL at breakeven
-     *                        (or original price when trailing is off) for remaining qty,
-     *                        call saveT1FilledState. Caller then tracks new SL + T2 as single OCO.
-     */
-    private SplitRestoreOutcome checkSplitOcoFilledOnRestore(String slOrderId, String t1OrderId, String t2OrderId,
-                                                              String symbol, int totalQty, int t1Qty, int t2Qty,
-                                                              int exitSide, String side, String setup, double avgPrice,
-                                                              double slPrice, double t1Price, double t2Price) {
-        try {
-            String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
-            if (auth.contains("null")) return SplitRestoreOutcome.NONE_FILLED;
-
-            JsonNode orderBook = fyersClient.getOrders(auth);
-            JsonNode orders = orderBook != null ? orderBook.get("orderBook") : null;
-            if (orders == null || !orders.isArray()) return SplitRestoreOutcome.NONE_FILLED;
-
-            String slStatus = null, t1Status = null, t2Status = null;
-            double slFill = 0, t1Fill = 0, t2Fill = 0;
-            for (JsonNode order : orders) {
-                String oid = order.has("id") ? order.get("id").asText() : "";
-                String onum = order.has("orderNumber") ? order.get("orderNumber").asText() : "";
-                int status = order.has("status") ? order.get("status").asInt() : 0;
-                double tradedPrice = order.has("tradedPrice") ? order.get("tradedPrice").asDouble() : 0;
-                if (slOrderId.equals(oid) || slOrderId.equals(onum)) { slStatus = String.valueOf(status); slFill = tradedPrice; }
-                if (t1OrderId.equals(oid) || t1OrderId.equals(onum)) { t1Status = String.valueOf(status); t1Fill = tradedPrice; }
-                if (t2OrderId.equals(oid) || t2OrderId.equals(onum)) { t2Status = String.valueOf(status); t2Fill = tradedPrice; }
-            }
-
-            // SL filled — full position closed
-            if ("2".equals(slStatus)) {
-                double exitPrice = slFill > 0 ? slFill : slPrice;
-                int exitQty = totalQty; // T1 hasn't filled (otherwise SL would have been cancelled and replaced)
-                double pnl = "LONG".equals(side) ? (exitPrice - avgPrice) * exitQty : (avgPrice - exitPrice) * exitQty;
-                log.info("[PollingService] Split SL already filled on restore for {} at {}", symbol, exitPrice);
-                eventService.log("[SUCCESS] SL hit for " + symbol + " at " + exitPrice
-                    + " (split, detected on restart) | " + (pnl >= 0 ? "PROFIT" : "LOSS") + " ₹" + String.format("%.2f", Math.abs(pnl)));
-                orderService.cancelOrder(t1OrderId);
-                orderService.cancelOrder(t2OrderId);
-                tradeHistoryService.record(symbol, side, exitQty, avgPrice, exitPrice, "SL", setup, null,
-                    probabilityBySymbol.getOrDefault(symbol, ""));
-                clearSymbolState(symbol);
-                return SplitRestoreOutcome.CLOSED;
-            }
-
-            // T2 filled — full position closed (T1 may or may not have filled before T2)
-            if ("2".equals(t2Status)) {
-                boolean t1AlsoFilled = "2".equals(t1Status);
-                double exitPrice = t2Fill > 0 ? t2Fill : t2Price;
-                int exitQty = t1AlsoFilled ? t2Qty : totalQty;
-                double pnl = "LONG".equals(side) ? (exitPrice - avgPrice) * exitQty : (avgPrice - exitPrice) * exitQty;
-                log.info("[PollingService] T2 already filled on restore for {} at {} (t1Filled={})", symbol, exitPrice, t1AlsoFilled);
-                eventService.log("[SUCCESS] T2 hit for " + symbol + " at " + exitPrice
-                    + " (split, detected on restart) | " + (pnl >= 0 ? "PROFIT" : "LOSS") + " ₹" + String.format("%.2f", Math.abs(pnl)));
-                orderService.cancelOrder(slOrderId);
-                if (!t1AlsoFilled) orderService.cancelOrder(t1OrderId);
-                else {
-                    // Record the T1 partial that the bot missed
-                    double t1ExitPrice = t1Fill > 0 ? t1Fill : t1Price;
-                    tradeHistoryService.record(symbol, side, t1Qty, avgPrice, t1ExitPrice, "TARGET_1", setup, null,
-                        probabilityBySymbol.getOrDefault(symbol, ""));
-                }
-                tradeHistoryService.record(symbol, side, exitQty, avgPrice, exitPrice, "TARGET_2", setup, null,
-                    probabilityBySymbol.getOrDefault(symbol, ""));
-                clearSymbolState(symbol);
-                return SplitRestoreOutcome.CLOSED;
-            }
-
-            // T1 filled (only) — partial close; replace SL and continue with T2
-            if ("2".equals(t1Status)) {
-                double exitPrice = t1Fill > 0 ? t1Fill : t1Price;
-                double pnl = "LONG".equals(side) ? (exitPrice - avgPrice) * t1Qty : (avgPrice - exitPrice) * t1Qty;
-                log.info("[PollingService] T1 already filled on restore for {} at {} — replacing SL for remaining qty={}",
-                    symbol, exitPrice, t2Qty);
-                eventService.log("[SUCCESS] T1 hit for " + symbol + " at " + exitPrice
-                    + " (split, detected on restart) | qty=" + t1Qty + " | P&L ₹" + String.format("%.2f", pnl));
-
-                positionStateStore.appendDescription(symbol,
-                    "[T1_HIT] @ " + String.format("%.2f", exitPrice) + " qty=" + t1Qty + " (detected on restart)");
-                tradeHistoryService.record(symbol, side, t1Qty, avgPrice, exitPrice, "TARGET_1", setup, null,
-                    probabilityBySymbol.getOrDefault(symbol, ""));
-
-                // Cancel the original full-qty SL and place a new SL for remaining qty
-                boolean moveToBreakeven = riskSettings.isEnableTrailingSl();
-                orderService.cancelOrder(slOrderId);
-                double newSlPrice = moveToBreakeven
-                    ? orderService.roundToTick(avgPrice, symbol)
-                    : orderService.roundToTick(slPrice, symbol);
-                OrderDTO newSl = orderService.placeStopLoss(symbol, t2Qty, exitSide, newSlPrice);
-                String newSlId = (newSl != null && newSl.getId() != null) ? newSl.getId() : "";
-                if (newSlId.isEmpty()) {
-                    eventService.log("[ERROR] T1 detected on restart for " + symbol
-                        + " but failed to place replacement SL — UNPROTECTED. Cancelling T2 to avoid naked position.");
-                    orderService.cancelOrder(t2OrderId);
-                    clearSymbolState(symbol);
-                    return SplitRestoreOutcome.CLOSED;
-                }
-
-                positionStateStore.saveT1FilledState(symbol, newSlId, newSlPrice, t2Qty);
-                updateCachedPositionQty(symbol, t2Qty);
-                String slLabel = moveToBreakeven ? "breakeven" : "original price";
-                eventService.log("[SUCCESS] SL re-placed at " + slLabel + " " + newSlPrice + " for " + symbol
-                    + " remaining qty=" + t2Qty + " [" + newSlId + "]");
-                positionStateStore.appendDescription(symbol,
-                    (moveToBreakeven ? "[SL_BREAKEVEN]" : "[SL_RESIZED]")
-                    + " New SL @ " + String.format("%.2f", newSlPrice) + " qty=" + t2Qty);
-
-                telegramService.notifyT1Hit(symbol, side, t1Qty, exitPrice, pnl, newSlPrice, t2Qty, moveToBreakeven);
-                return SplitRestoreOutcome.T1_REPLACED;
-            }
-
-        } catch (Exception e) {
-            log.error("[PollingService] Error checking split OCO on restore for {}: {}", symbol, e.getMessage());
-        }
-        return SplitRestoreOutcome.NONE_FILLED;
-    }
 
     // ── ENTRY MONITOR + OCO ───────────────────────────────────────────────────
     public void monitorEntryAndPlaceOCO(OrderDTO entry, String symbol,
@@ -430,7 +232,7 @@ public class PollingService {
                                         int quantity, String position,
                                         int exitSide, double slPrice, double targetPrice, String setup,
                                         double atr, double atrMultiplier, String description) {
-        monitorEntryAndPlaceOCO(entry, symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, false, false, null);
+        monitorEntryAndPlaceOCO(entry, symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, false, false);
     }
 
     public void monitorEntryAndPlaceOCO(OrderDTO entry, String symbol,
@@ -438,20 +240,11 @@ public class PollingService {
                                         int exitSide, double slPrice, double targetPrice, String setup,
                                         double atr, double atrMultiplier, String description,
                                         boolean rescueShifted, boolean useStructuralSl) {
-        monitorEntryAndPlaceOCO(entry, symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, rescueShifted, useStructuralSl, null);
-    }
-
-    public void monitorEntryAndPlaceOCO(OrderDTO entry, String symbol,
-                                        int quantity, String position,
-                                        int exitSide, double slPrice, double targetPrice, String setup,
-                                        double atr, double atrMultiplier, String description,
-                                        boolean rescueShifted, boolean useStructuralSl,
-                                        Double target1Price) {
 
         // ── Try WebSocket-based tracking first (WS connected) ──
         if (orderEventService.isConnected()) {
             boolean tracked = orderEventService.trackEntryOrder(entry.getId(),
-                new OrderEventService.EntryContext(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, rescueShifted, useStructuralSl, target1Price));
+                new OrderEventService.EntryContext(symbol, quantity, position, exitSide, slPrice, targetPrice, setup, atr, atrMultiplier, description, rescueShifted, useStructuralSl));
             if (tracked) {
                 eventService.log("[INFO] Entry order " + entry.getId() + " tracked via WebSocket for " + symbol);
                 return; // WebSocket will handle fill detection — no polling needed
@@ -538,89 +331,12 @@ public class PollingService {
                     // Fibonacci trailing always requires a target to compute range — no-target mode removed.
                     boolean skipTarget = false;
 
-                    // Check if we should split targets
-                    double targetDist = Math.abs(targetPrice - holder.entryFillPrice);
-                    double entryAtr = atr > 0 ? atr : 1;
-                    // Target Rescue: SignalProcessor already produced an absolute T1 price → force a
-                    // split regardless of enableSplitTarget. Otherwise fall back to the normal toggle.
-                    boolean rescueSplit = target1Price != null && target1Price > 0;
-                    boolean shouldSplit = rescueSplit
-                        || (riskSettings.isEnableSplitTarget() && !skipTarget
-                            && quantity >= 4
-                            && (riskSettings.getSplitMinDistanceAtr() <= 0 || targetDist > entryAtr * riskSettings.getSplitMinDistanceAtr()));
-
-                    if (shouldSplit) {
-                        // Split target placement: SL (full) + T1 (half) + T2 (half)
-                        int t1Qty = (quantity / 4) * 2;
-                        int t2Qty = quantity - t1Qty;
-                        boolean isBuy = "LONG".equals(position);
-                        double t1Price;
-                        if (rescueSplit) {
-                            // Rescue-driven split: use the SignalProcessor's absolute T1 (the original structural target)
-                            t1Price = orderService.roundToTick(target1Price, symbol);
-                        } else {
-                            double t1Pct = riskSettings.getT1DistancePct() / 100.0;
-                            t1Price = isBuy
-                                ? holder.entryFillPrice + t1Pct * (targetPrice - holder.entryFillPrice)
-                                : holder.entryFillPrice - t1Pct * (holder.entryFillPrice - targetPrice);
-                            t1Price = orderService.roundToTick(t1Price, symbol);
-                        }
-                        // T2 sits at the structural CPR level — apply tolerance discount
-                        double t2Price = orderService.applyTargetTolerance(targetPrice, isBuy, atr, symbol);
-
-                        OrderDTO slOrder = orderService.placeStopLoss(symbol, quantity, exitSide, holder.adjustedSl);
-                        OrderDTO t1Order = orderService.placeTarget(symbol, t1Qty, exitSide, t1Price);
-                        OrderDTO t2Order = orderService.placeTarget(symbol, t2Qty, exitSide, t2Price);
-
-                        boolean slOk = slOrder != null && slOrder.getId() != null && !slOrder.getId().isEmpty();
-                        boolean t1Ok = t1Order != null && t1Order.getId() != null && !t1Order.getId().isEmpty();
-                        boolean t2Ok = t2Order != null && t2Order.getId() != null && !t2Order.getId().isEmpty();
-
-                        if (slOk && t1Ok && t2Ok) {
-                            double rSl = orderService.roundToTick(holder.adjustedSl, symbol);
-                            eventService.log("[SUCCESS] Split targets for " + symbol
-                                + " — SL: " + rSl + " [" + slOrder.getId() + "]"
-                                + " | T1: " + t1Price + " qty=" + t1Qty + " [" + t1Order.getId() + "]"
-                                + " | T2: " + t2Price + " qty=" + t2Qty + " [" + t2Order.getId() + "]");
-                            positionStateStore.appendDescription(symbol,
-                                "[SPLIT_TARGETS] T1 @ " + String.format("%.2f", t1Price) + " qty=" + t1Qty
-                                + " | T2 @ " + String.format("%.2f", t2Price) + " qty=" + t2Qty);
-                            positionStateStore.appendDescription(symbol,
-                                "[SL_PLACED] @ " + String.format("%.2f", rSl) + " qty=" + quantity);
-                            positionStateStore.saveSplitOcoState(symbol, slOrder.getId(),
-                                t1Order.getId(), t2Order.getId(), holder.adjustedSl, t1Price, t2Price);
-
-                            boolean wsTracked = orderEventService.trackSplitOcoOrders(
-                                slOrder.getId(), t1Order.getId(), t2Order.getId(),
-                                symbol, quantity, t1Qty, t2Qty,
-                                position, exitSide, setup, holder.entryFillPrice,
-                                holder.adjustedSl, t1Price, t2Price);
-                            if (!wsTracked) {
-                                monitorSplitOCO(slOrder.getId(), t1Order.getId(), t2Order.getId(),
-                                    symbol, quantity, t1Qty, t2Qty, exitSide,
-                                    holder.adjustedSl, t1Price, t2Price, position, setup, holder.entryFillPrice);
-                            }
-                            String prob = probabilityBySymbol.getOrDefault(symbol, "");
-                            telegramService.notifyTradeOpened(symbol, position, quantity,
-                                holder.entryFillPrice, holder.adjustedSl, t2Price, setup, prob);
-                            if (holder.future != null) holder.future.cancel(false);
-                        } else {
-                            if (slOk) orderService.cancelOrder(slOrder.getId());
-                            if (t1Ok) orderService.cancelOrder(t1Order.getId());
-                            if (t2Ok) orderService.cancelOrder(t2Order.getId());
-                            eventService.log("[ERROR] Split target placement failed for " + symbol
-                                + " (attempt " + holder.ocoRetries + ") SL=" + slOk + " T1=" + t1Ok + " T2=" + t2Ok);
-                            if (holder.ocoRetries >= Holder.MAX_OCO_RETRIES) {
-                                eventService.log("[ERROR] Split target failed for " + symbol
-                                    + " — squaring off to avoid unprotected position");
-                                boolean closed = squareOff(symbol, quantity, "SL_TARGET_FAILED");
-                                if (!closed) eventService.log("[ERROR] Emergency squareoff FAILED for " + symbol);
-                                // Alert removed — emergency squareoff logged in event log
-                                if (holder.future != null) holder.future.cancel(false);
-                            }
-                        }
-                    } else {
-                    // Single target placement (existing logic)
+                    // Single target placement — splits are no longer created for new trades.
+                    // The existing split-tracking machinery (handleT1Fill, handleT2Fill,
+                    // handleSplitSlFill, trackSplitOcoOrders, the restoreStateOnStartup /
+                    // handoffOcoToWebSocket split branches) stays in place for any pre-existing
+                    // split positions at the broker to finish their lifecycle.
+                    {
                     boolean isBuyForTol = "LONG".equals(position);
                     double placedTargetPrice = orderService.applyTargetTolerance(targetPrice, isBuyForTol, atr, symbol);
 
@@ -682,7 +398,7 @@ public class PollingService {
                                 + " (attempt " + holder.ocoRetries + "/" + Holder.MAX_OCO_RETRIES + ")");
                         }
                     }
-                    } // end single-target else
+                    } // end single-target block
 
                 } else if ("5".equals(status)) {
                     pendingEntrySymbols.remove(symbol);
@@ -954,144 +670,6 @@ public class PollingService {
         ocoPollingFutures.put(symbol, s.future);
     }
 
-    /** Split target OCO monitor — polls SL + T1 + T2 orders. */
-    private void monitorSplitOCO(String slId, String t1Id, String t2Id,
-                                  String symbol, int totalQty, int t1Qty, int t2Qty,
-                                  int exitSide, double slPrice, double t1Price, double t2Price,
-                                  String positionSide, String setup, double entryFillPrice) {
-        if (ocoMonitoredSymbols.contains(symbol)) return;
-        ocoMonitoredSymbols.add(symbol);
-
-        class State {
-            ScheduledFuture<?> future;
-            boolean handled = false;
-            boolean t1Hit = false;
-            boolean slAtBreakeven = false;
-            String currentSlId;
-            int remainingQty;
-            int ticks = 0;
-            State() { currentSlId = slId; remainingQty = totalQty; }
-        }
-        State s = new State();
-
-        s.future = scheduler.scheduleAtFixedRate(() -> {
-            try {
-                if (s.handled || ++s.ticks > 4680) {
-                    if (s.ticks > 4680) eventService.log("[WARNING] Split OCO monitor timed out for " + symbol);
-                    ocoMonitoredSymbols.remove(symbol);
-                    ocoPollingFutures.remove(symbol);
-                    if (s.future != null) s.future.cancel(false);
-                    return;
-                }
-
-                String slStatus = getOrderStatus(s.currentSlId);
-                String t1Status = !s.t1Hit ? getOrderStatus(t1Id) : "2"; // already filled
-                String t2Status = getOrderStatus(t2Id);
-
-                // T1 filled (before T2 and SL)
-                if (!s.t1Hit && "2".equals(t1Status) && !"2".equals(slStatus)) {
-                    s.t1Hit = true;
-                    s.remainingQty = totalQty - t1Qty;
-
-                    double exitPrice = orderService.getFilledPriceByOrderId(t1Id);
-                    double pnl = "LONG".equals(positionSide) ? (exitPrice - entryFillPrice) * t1Qty
-                                                              : (entryFillPrice - exitPrice) * t1Qty;
-                    eventService.log("[SUCCESS] T1 hit for " + symbol + " @ " + exitPrice + " qty=" + t1Qty
-                        + " P&L ₹" + String.format("%.2f", pnl));
-
-                    positionStateStore.appendDescription(symbol,
-                        "[T1_HIT] @ " + String.format("%.2f", exitPrice) + " qty=" + t1Qty);
-                    String desc = positionStateStore.getDescription(symbol);
-                    String prob = probabilityBySymbol.getOrDefault(symbol, "");
-                    tradeHistoryService.record(symbol, positionSide, t1Qty, entryFillPrice, exitPrice, "TARGET_1", setup, desc, prob);
-
-                    // Cancel old SL and place a new SL for the remaining qty.
-                    // If trailing SL is enabled, move to breakeven. Otherwise keep at
-                    // the original SL price — just resize the order.
-                    boolean moveToBreakeven = riskSettings.isEnableTrailingSl();
-                    s.slAtBreakeven = moveToBreakeven;
-                    orderService.cancelOrder(s.currentSlId);
-                    double newSlPrice = moveToBreakeven
-                        ? orderService.roundToTick(entryFillPrice, symbol)
-                        : orderService.roundToTick(slPrice, symbol);
-                    OrderDTO newSl = orderService.placeStopLoss(symbol, s.remainingQty, exitSide, newSlPrice);
-                    if (newSl != null && newSl.getId() != null && !newSl.getId().isEmpty()) {
-                        s.currentSlId = newSl.getId();
-                        positionStateStore.saveT1FilledState(symbol, s.currentSlId, newSlPrice, s.remainingQty);
-                        updateCachedPositionQty(symbol, s.remainingQty);
-                        String descTag = moveToBreakeven ? "[SL_BREAKEVEN]" : "[SL_RESIZED]";
-                        positionStateStore.appendDescription(symbol,
-                            descTag + " New SL @ " + String.format("%.2f", newSlPrice) + " qty=" + s.remainingQty);
-                        String slLabel = moveToBreakeven ? "breakeven" : "original price";
-                        eventService.log("[SUCCESS] SL re-placed at " + slLabel + " " + newSlPrice + " for " + symbol + " remaining qty=" + s.remainingQty);
-                    } else {
-                        eventService.log("[ERROR] Failed to place new SL for " + symbol + " — UNPROTECTED");
-                    }
-
-                    telegramService.notifyT1Hit(symbol, positionSide, t1Qty, exitPrice, pnl, newSlPrice, s.remainingQty, moveToBreakeven);
-                }
-
-                // T2 filled
-                if ("2".equals(t2Status) && !s.handled) {
-                    s.handled = true;
-                    orderService.cancelOrder(s.currentSlId);
-                    double exitPrice = orderService.getFilledPriceByOrderId(t2Id);
-                    int exitQty = s.t1Hit ? t2Qty : totalQty; // shouldn't happen: T2 without T1
-                    double pnl = "LONG".equals(positionSide) ? (exitPrice - entryFillPrice) * exitQty
-                                                              : (entryFillPrice - exitPrice) * exitQty;
-                    eventService.log("[SUCCESS] T2 hit for " + symbol + " @ " + exitPrice + " — fully closed");
-
-                    positionStateStore.appendDescription(symbol,
-                        "[T2_HIT] @ " + String.format("%.2f", exitPrice) + " qty=" + exitQty);
-                    String desc = positionStateStore.getDescription(symbol);
-                    String prob = probabilityBySymbol.getOrDefault(symbol, "");
-                    tradeHistoryService.record(symbol, positionSide, exitQty, entryFillPrice, exitPrice, "TARGET_2", setup, desc, prob);
-
-                    telegramService.notifyT2Hit(symbol, positionSide, exitQty, exitPrice, pnl);
-
-                    clearSymbolState(symbol);
-                    ocoMonitoredSymbols.remove(symbol);
-                    ocoPollingFutures.remove(symbol);
-                    if (s.future != null) s.future.cancel(false);
-                }
-
-                // SL filled
-                if ("2".equals(slStatus) && !s.handled) {
-                    s.handled = true;
-                    if (!s.t1Hit) orderService.cancelOrder(t1Id);
-                    orderService.cancelOrder(t2Id);
-
-                    double exitPrice = orderService.getFilledPriceByOrderId(s.currentSlId);
-                    int exitQty = s.t1Hit ? s.remainingQty : totalQty;
-                    double pnl = "LONG".equals(positionSide) ? (exitPrice - entryFillPrice) * exitQty
-                                                              : (entryFillPrice - exitPrice) * exitQty;
-                    String reason = (s.t1Hit && s.slAtBreakeven) ? "SL_BREAKEVEN" : "SL";
-                    eventService.log("[SUCCESS] " + reason + " for " + symbol + " @ " + exitPrice
-                        + " qty=" + exitQty
-                        + (s.t1Hit ? (s.slAtBreakeven ? " (after T1, breakeven)" : " (after T1, original SL)") : " (before T1)"));
-
-                    positionStateStore.appendDescription(symbol,
-                        "[EXIT] " + reason + " @ " + String.format("%.2f", exitPrice) + " qty=" + exitQty);
-                    String desc = positionStateStore.getDescription(symbol);
-                    String prob = probabilityBySymbol.getOrDefault(symbol, "");
-                    tradeHistoryService.record(symbol, positionSide, exitQty, entryFillPrice, exitPrice, reason, setup, desc, prob);
-
-                    telegramService.notifySlHit(symbol, positionSide, exitQty, exitPrice, pnl, reason);
-
-                    clearSymbolState(symbol);
-                    ocoMonitoredSymbols.remove(symbol);
-                    ocoPollingFutures.remove(symbol);
-                    if (s.future != null) s.future.cancel(false);
-                }
-
-            } catch (Exception e) {
-                eventService.log("[ERROR] Split OCO monitor exception for " + symbol + ": " + e.getMessage());
-                log.error("[PollingService] Split OCO monitor exception for {}", symbol, e);
-            }
-        }, 5, 5, TimeUnit.SECONDS);
-        ocoPollingFutures.put(symbol, s.future);
-    }
-
     /** Clears all in-memory and persisted state for a single symbol. */
     private void clearSymbolState(String symbol) {
         positionStateStore.clear(symbol);
@@ -1149,6 +727,11 @@ public class PollingService {
     /**
      * Called when Order WebSocket connects — hand off polling OCO monitors to WebSocket tracking.
      * This handles the case where OCO was restored via polling on startup before WS was ready.
+     *
+     * Critically aware of split-target setups (T1 + T2 placed). Without the split branch, every
+     * split trade would silently get downgraded to single-target tracking — the T1 fill would
+     * then route to the plain TARGET handler, which cancels the SL but NOT T2, leaving the
+     * remaining T2 qty naked at the broker and double-counting PnL with the full quantity.
      */
     public void handoffOcoToWebSocket() {
         Map<String, Map<String, Object>> allSaved = positionStateStore.loadAll();

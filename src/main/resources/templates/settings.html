@@ -878,38 +878,12 @@
         <div class="section-body">
             <div class="form-grid">
                 <div class="form-group">
-                    <label class="form-label">Target Rescue</label>
+                    <label class="form-label">Weekly CPR Intercept</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableTargetRescue" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Find further level when R/R fails (instead of rejecting the trade)</span>
+                        <input type="checkbox" id="enableWeeklyLevelTargetShift" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Shift target to weekly CPR level when one sits between entry and chosen daily target</span>
                     </div>
-                    <div class="form-hint">When the original target gives R/R below the minimum, walk forward through daily CPR levels + daily CPR mid-points + weekly CPR levels (Pivot, TC, BC, R1-R4, S1-S4, PH, PL) and pick the closest level beyond the original target that satisfies min R/R. The original target becomes <b>T1</b> if its own R/R is at least 50% of the minimum (otherwise dropped); the rescued level becomes <b>T2</b>. When disabled, trades with low R/R are rejected as before. This replaces the legacy day-H/L, weekly, and SMA-200 single-level target shifts.</div>
-                </div>
-                <div class="form-group" style="display:none;">
-                    <!-- Legacy shift inputs retained as hidden so existing JS still binds without errors. Replaced by Target Rescue above. -->
-                    <input type="checkbox" id="enableDayHighLowTargetShift">
-                    <input type="number" id="dayHighLowShiftMinDistAtr">
-                    <input type="checkbox" id="enableDailySma200TargetShift">
-                    <input type="checkbox" id="enableWeeklyLevelTargetShift">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Split Targets (T1 + T2)</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableSplitTarget" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">T1 at</span>
-                        <select id="t1DistancePct" class="form-control" style="width:75px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                            <option value="25">25%</option>
-                            <option value="50">50%</option>
-                            <option value="75">75%</option>
-                        </select>
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">of target, T2 at full target (half qty each)</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min distance:</span>
-                        <input type="number" id="splitMinDistanceAtr" class="form-control" step="0.5" min="0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR (0 = always split)</span>
-                    </div>
-                    <div class="form-hint">When T1 hits, SL moves to breakeven for remaining half. Min qty 4 required for split. Skipped when target is shifted to a nearer level.</div>
+                    <div class="form-hint">The target picker walks the daily CPR ladder (S4 ... R4 plus mid-points) closest-first until a level satisfies min R/R. With this <b>on</b>, the picker then checks all weekly CPR levels (Pivot, TC, BC, R1-R4, S1-S4, PWH, PWL) — if one sits strictly between entry and the chosen daily, the target is shifted to the weekly closest to entry and R/R is re-checked. If the shifted R/R falls below the minimum, the trade is rejected. With this <b>off</b>, only daily CPR levels are considered — whatever the daily walk picks becomes the final target as-is.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Target Tolerance</label>
@@ -919,7 +893,7 @@
                         <input type="number" id="targetToleranceAtr" class="form-control" step="0.05" min="0" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">ATR (places target inside the level)</span>
                     </div>
-                    <div class="form-hint">Markets often reverse just before touching CPR levels. The target order is placed slightly inside the level so near-miss reversals still fill. Applies to single targets and the T2 leg of split trades — T1 is unaffected.</div>
+                    <div class="form-hint">Markets often reverse just before touching CPR levels. The target order is placed slightly inside the level so near-miss reversals still fill.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Minimum Absolute Profit</label>
@@ -1360,12 +1334,7 @@
             // telegramAlertFrequency removed — notifications are event-driven only
             // enableTargetShift removed — replaced by min target distance check
             // enableGapCheck removed — replaced by Opening Range filter
-            document.getElementById('enableTargetRescue').checked = d.enableTargetRescue !== false;
-            // Legacy shift toggles — hidden in UI but still bound so save() doesn't NPE on lookup
-            document.getElementById('enableDayHighLowTargetShift').checked = d.enableDayHighLowTargetShift !== false;
-            document.getElementById('dayHighLowShiftMinDistAtr').value = d.dayHighLowShiftMinDistAtr != null ? d.dayHighLowShiftMinDistAtr : 2.0;
             document.getElementById('enableWeeklyLevelTargetShift').checked = d.enableWeeklyLevelTargetShift !== false;
-            document.getElementById('enableDailySma200TargetShift').checked = d.enableDailySma200TargetShift !== false;
             document.getElementById('enableHtfHurdleFilter').checked = d.enableHtfHurdleFilter !== false;
             document.getElementById('enableStructuralSl').checked = d.enableStructuralSl === true;
             document.getElementById('structuralSlBufferAtr').value = d.structuralSlBufferAtr != null ? d.structuralSlBufferAtr : 1.0;
@@ -1405,9 +1374,6 @@
             document.getElementById('smaLevelMinRangePct').value = d.smaLevelMinRangePct != null ? d.smaLevelMinRangePct : 50;
             document.getElementById('smaLevelFilterMorningSkip').checked = d.smaLevelFilterMorningSkip === true;
             document.getElementById('smaLevelFilterMorningSkipUntil').value = d.smaLevelFilterMorningSkipUntil || '10:15';
-            document.getElementById('enableSplitTarget').checked = d.enableSplitTarget !== false;
-            document.getElementById('t1DistancePct').value = d.t1DistancePct || 50;
-            document.getElementById('splitMinDistanceAtr').value = d.splitMinDistanceAtr || 0;
             document.getElementById('enableTargetTolerance').checked = d.enableTargetTolerance !== false;
             document.getElementById('targetToleranceAtr').value = (d.targetToleranceAtr != null ? d.targetToleranceAtr : 0.10);
             document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
@@ -1556,13 +1522,7 @@
                 fixedQuantity:    parseInt(document.getElementById('fixedQuantity').value),
                 capitalPerTrade:  parseFloat(document.getElementById('capitalPerTrade').value) || 0,
                 // telegramAlertFrequency removed
-                // enableTargetShift removed
-                enableTargetRescue: document.getElementById('enableTargetRescue').checked,
-                // Legacy single-level shifts (no-ops after Target Rescue replaced them) — still POSTed so existing JSON keys keep round-tripping
-                enableDayHighLowTargetShift: document.getElementById('enableDayHighLowTargetShift').checked,
-                dayHighLowShiftMinDistAtr: parseFloat(document.getElementById('dayHighLowShiftMinDistAtr').value) || 1.0,
                 enableWeeklyLevelTargetShift: document.getElementById('enableWeeklyLevelTargetShift').checked,
-                enableDailySma200TargetShift: document.getElementById('enableDailySma200TargetShift').checked,
                 enableHtfHurdleFilter: document.getElementById('enableHtfHurdleFilter').checked,
                 enableStructuralSl: document.getElementById('enableStructuralSl').checked,
                 structuralSlBufferAtr: parseFloat(document.getElementById('structuralSlBufferAtr').value) || 1.0,
@@ -1602,9 +1562,6 @@
                 smaLevelMinRangePct: parseInt(document.getElementById('smaLevelMinRangePct').value) || 0,
                 smaLevelFilterMorningSkip: document.getElementById('smaLevelFilterMorningSkip').checked,
                 smaLevelFilterMorningSkipUntil: document.getElementById('smaLevelFilterMorningSkipUntil').value || '10:15',
-                enableSplitTarget: document.getElementById('enableSplitTarget').checked,
-                t1DistancePct: parseInt(document.getElementById('t1DistancePct').value) || 50,
-                splitMinDistanceAtr: parseFloat(document.getElementById('splitMinDistanceAtr').value) || 0,
                 enableTargetTolerance: document.getElementById('enableTargetTolerance').checked,
                 targetToleranceAtr: parseFloat(document.getElementById('targetToleranceAtr').value) || 0,
                 enableIndexAlignment: document.getElementById('enableIndexAlignment').checked,

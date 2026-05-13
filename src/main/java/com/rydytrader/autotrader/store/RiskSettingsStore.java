@@ -97,20 +97,13 @@ public class RiskSettingsStore {
         volatile double levelTouchToleranceAtr      = 0.2;
         volatile boolean enableTargetShift = true; // shift target to next level if default target < threshold ATR. If false, skip the entry.
         volatile boolean enableGapCheck = true;     // halve qty if day open or first candle beyond R2/S2
-        // Target Rescue — when the original target gives R/R below minRiskRewardRatio, walk
-        // forward through daily CPR levels + daily CPR mid-points + weekly CPR levels and pick
-        // the closest level beyond the original target that satisfies minRR. Then split into
-        // T1 (original target, kept only if its R/R >= 0.5 x minRR) and T2 (rescued target).
-        // This REPLACES the legacy enableDayHighLowTargetShift / enableWeeklyLevelTargetShift /
-        // enableDailySma200TargetShift behavior — those three are now deprecated no-ops.
-        volatile boolean enableTargetRescue = true;
-        // [DEPRECATED] Legacy single-level shifts. No longer read by SignalProcessor — kept in
-        // the settings store so existing risk-settings.json files don't break on load. The
-        // unified rescue logic above subsumes them.
-        volatile boolean enableDayHighLowTargetShift = true;
-        volatile boolean enableDailySma200TargetShift = true;
-        volatile double dayHighLowShiftMinDistAtr = 2.0; // [DEPRECATED] used only by removed day H/L shift
-        volatile boolean enableWeeklyLevelTargetShift = true; // [DEPRECATED] superseded by enableTargetRescue
+        // Weekly CPR intercept inside the walk-and-shift target picker. When ON: after the
+        // walk picks a daily level satisfying minRR, the picker checks whether any weekly
+        // CPR level (Pivot, TC, BC, R1-R4, S1-S4, PWH, PWL) sits strictly between entry and
+        // that daily level. If yes, shift target to the closest weekly to entry; if the
+        // shifted R/R falls below minRR, the trade is rejected. When OFF: skip the weekly
+        // check entirely — the chosen daily level becomes the final target as-is.
+        volatile boolean enableWeeklyLevelTargetShift = true;
         volatile boolean enableHtfHurdleFilter = true; // HPT→LPT when 5-min close lands inside R1/PWH (buy) or S1/PWL (sell) zone
         // NIFTY-level macro hurdle. When on, skip ALL stock trades while NIFTY's prior 1h close
         // hasn't decisively cleared the nearest weekly hurdle in the trade direction (R1/PWH/
@@ -317,10 +310,6 @@ public class RiskSettingsStore {
         // firstCandleClose, dayOpen, OR. Configurable HH:mm time (IST).
         volatile boolean enableOpeningRefresh = true;
         volatile String  openingRefreshTime   = "09:25"; // IST, HH:mm
-        // Split Targets (T1/T2)
-        volatile boolean enableSplitTarget = true;
-        volatile int t1DistancePct = 50;           // T1 at N% of target distance (25/50/75)
-        volatile double splitMinDistanceAtr = 0;   // min distance in ATR multiples to split (0 = always)
         // Target Tolerance — discount structural target by ATR fraction so near-miss reversals fill
         volatile boolean enableTargetTolerance = true;
         volatile double targetToleranceAtr = 0.10; // discount structural target by this fraction of ATR
@@ -366,10 +355,6 @@ public class RiskSettingsStore {
     public double getCapitalPerTrade() { return cfg().capitalPerTrade; }
     public int    getTelegramAlertFrequency() { return cfg().telegramAlertFrequency; }
     public boolean isEnableGapCheck() { return cfg().enableGapCheck; }
-    public boolean isEnableTargetRescue() { return cfg().enableTargetRescue; }
-    public boolean isEnableDayHighLowTargetShift() { return cfg().enableDayHighLowTargetShift; }
-    public boolean isEnableDailySma200TargetShift() { return cfg().enableDailySma200TargetShift; }
-    public double getDayHighLowShiftMinDistAtr() { return cfg().dayHighLowShiftMinDistAtr; }
     public boolean isEnableWeeklyLevelTargetShift() { return cfg().enableWeeklyLevelTargetShift; }
     public boolean isEnableHtfHurdleFilter()    { return cfg().enableHtfHurdleFilter; }
     public boolean isEnableNiftyHtfHurdleFilter() { return cfg().enableNiftyHtfHurdleFilter; }
@@ -482,9 +467,6 @@ public class RiskSettingsStore {
     public int getOpeningRangeMinutes()        { return cfg().openingRangeMinutes; }
     public boolean isEnableOpeningRefresh()    { return cfg().enableOpeningRefresh; }
     public String  getOpeningRefreshTime()     { return cfg().openingRefreshTime; }
-    public boolean isEnableSplitTarget()       { return cfg().enableSplitTarget; }
-    public int getT1DistancePct()              { return cfg().t1DistancePct; }
-    public double getSplitMinDistanceAtr()     { return cfg().splitMinDistanceAtr; }
     public boolean isEnableTargetTolerance()   { return cfg().enableTargetTolerance; }
     public double getTargetToleranceAtr()      { return cfg().targetToleranceAtr; }
     public boolean isEnableIndexAlignment()    { return cfg().enableIndexAlignment; }
@@ -516,9 +498,6 @@ public class RiskSettingsStore {
     public void setOpeningRangeMinutes(int v)  { cfg().openingRangeMinutes = v; }
     public void setEnableOpeningRefresh(boolean v) { cfg().enableOpeningRefresh = v; }
     public void setOpeningRefreshTime(String v)    { cfg().openingRefreshTime = v; }
-    public void setEnableSplitTarget(boolean v) { cfg().enableSplitTarget = v; }
-    public void setT1DistancePct(int v)        { cfg().t1DistancePct = v; }
-    public void setSplitMinDistanceAtr(double v) { cfg().splitMinDistanceAtr = v; }
     public void setEnableTargetTolerance(boolean v) { cfg().enableTargetTolerance = v; }
     public void setTargetToleranceAtr(double v) { cfg().targetToleranceAtr = v; }
     public void setEnableIndexAlignment(boolean v)        { cfg().enableIndexAlignment = v; }
@@ -540,10 +519,6 @@ public class RiskSettingsStore {
     public void setCapitalPerTrade(double v) { cfg().capitalPerTrade = v; }
     public void setTelegramAlertFrequency(int v) { cfg().telegramAlertFrequency = v; }
     public void setEnableGapCheck(boolean v) { cfg().enableGapCheck = v; }
-    public void setEnableTargetRescue(boolean v) { cfg().enableTargetRescue = v; }
-    public void setEnableDayHighLowTargetShift(boolean v) { cfg().enableDayHighLowTargetShift = v; }
-    public void setEnableDailySma200TargetShift(boolean v) { cfg().enableDailySma200TargetShift = v; }
-    public void setDayHighLowShiftMinDistAtr(double v) { cfg().dayHighLowShiftMinDistAtr = v; }
     public void setEnableWeeklyLevelTargetShift(boolean v) { cfg().enableWeeklyLevelTargetShift = v; }
     public void setEnableHtfHurdleFilter(boolean v)    { cfg().enableHtfHurdleFilter = v; }
     public void setEnableNiftyHtfHurdleFilter(boolean v) { cfg().enableNiftyHtfHurdleFilter = v; }
@@ -718,10 +693,6 @@ public class RiskSettingsStore {
             upsert("capitalPerTrade", String.valueOf(c.capitalPerTrade));
             upsert("telegramAlertFrequency", String.valueOf(c.telegramAlertFrequency));
             upsert("enableGapCheck", String.valueOf(c.enableGapCheck));
-            upsert("enableTargetRescue", String.valueOf(c.enableTargetRescue));
-            upsert("enableDayHighLowTargetShift", String.valueOf(c.enableDayHighLowTargetShift));
-            upsert("enableDailySma200TargetShift", String.valueOf(c.enableDailySma200TargetShift));
-            upsert("dayHighLowShiftMinDistAtr", String.valueOf(c.dayHighLowShiftMinDistAtr));
             upsert("enableWeeklyLevelTargetShift", String.valueOf(c.enableWeeklyLevelTargetShift));
             upsert("enableHtfHurdleFilter", String.valueOf(c.enableHtfHurdleFilter));
             upsert("enableNiftyHtfHurdleFilter", String.valueOf(c.enableNiftyHtfHurdleFilter));
@@ -834,9 +805,6 @@ public class RiskSettingsStore {
             upsert("openingRangeMinutes", String.valueOf(c.openingRangeMinutes));
             upsert("enableOpeningRefresh", String.valueOf(c.enableOpeningRefresh));
             upsert("openingRefreshTime", c.openingRefreshTime);
-            upsert("enableSplitTarget", String.valueOf(c.enableSplitTarget));
-            upsert("t1DistancePct", String.valueOf(c.t1DistancePct));
-            upsert("splitMinDistanceAtr", String.valueOf(c.splitMinDistanceAtr));
             upsert("enableTargetTolerance", String.valueOf(c.enableTargetTolerance));
             upsert("targetToleranceAtr", String.valueOf(c.targetToleranceAtr));
             upsert("enableIndexAlignment", String.valueOf(c.enableIndexAlignment));
@@ -883,11 +851,11 @@ public class RiskSettingsStore {
                     case "telegramAlertFrequency" -> c.telegramAlertFrequency = Integer.parseInt(v);
                     // enableLargeCandleFilter / largeCandleAtrThreshold removed — legacy keys silently ignored
                     case "enableGapCheck" -> c.enableGapCheck = Boolean.parseBoolean(v);
-                    case "enableTargetRescue" -> c.enableTargetRescue = Boolean.parseBoolean(v);
-                    case "enableDayHighLowTargetShift" -> c.enableDayHighLowTargetShift = Boolean.parseBoolean(v);
-                    case "enableDailySma200TargetShift" -> c.enableDailySma200TargetShift = Boolean.parseBoolean(v);
-                    case "dayHighLowShiftMinDistAtr" -> c.dayHighLowShiftMinDistAtr = Double.parseDouble(v);
                     case "enableWeeklyLevelTargetShift" -> c.enableWeeklyLevelTargetShift = Boolean.parseBoolean(v);
+                    // Silently ignored legacy keys (removed features): enableTargetRescue,
+                    // enableDayHighLowTargetShift, enableDailySma200TargetShift,
+                    // dayHighLowShiftMinDistAtr, enableSplitTarget, t1DistancePct,
+                    // splitMinDistanceAtr. Old JSON files round-trip without errors.
                     case "enableHtfHurdleFilter" -> c.enableHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "enableNiftyHtfHurdleFilter" -> c.enableNiftyHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "niftyHurdleMinHeadroomAtr" -> c.niftyHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
@@ -1035,9 +1003,6 @@ public class RiskSettingsStore {
                     case "openingRangeMinutes" -> c.openingRangeMinutes = Integer.parseInt(v);
                     case "enableOpeningRefresh" -> c.enableOpeningRefresh = Boolean.parseBoolean(v);
                     case "openingRefreshTime" -> c.openingRefreshTime = v;
-                    case "enableSplitTarget" -> c.enableSplitTarget = Boolean.parseBoolean(v);
-                    case "t1DistancePct" -> c.t1DistancePct = Integer.parseInt(v);
-                    case "splitMinDistanceAtr" -> c.splitMinDistanceAtr = Double.parseDouble(v);
                     case "enableTargetTolerance" -> c.enableTargetTolerance = Boolean.parseBoolean(v);
                     case "targetToleranceAtr" -> c.targetToleranceAtr = Double.parseDouble(v);
                     case "enableIndexAlignment" -> c.enableIndexAlignment = Boolean.parseBoolean(v);

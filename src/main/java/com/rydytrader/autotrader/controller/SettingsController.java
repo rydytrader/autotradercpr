@@ -56,10 +56,6 @@ public class SettingsController {
         result.put("capitalPerTrade", riskSettings.getCapitalPerTrade(effectiveMode));
         result.put("telegramAlertFrequency", riskSettings.getTelegramAlertFrequency(effectiveMode));
         result.put("enableGapCheck", riskSettings.isEnableGapCheck());
-        result.put("enableTargetRescue", riskSettings.isEnableTargetRescue());
-        result.put("enableDayHighLowTargetShift", riskSettings.isEnableDayHighLowTargetShift());
-        result.put("enableDailySma200TargetShift", riskSettings.isEnableDailySma200TargetShift());
-        result.put("dayHighLowShiftMinDistAtr", riskSettings.getDayHighLowShiftMinDistAtr());
         result.put("enableWeeklyLevelTargetShift", riskSettings.isEnableWeeklyLevelTargetShift());
         result.put("enableHtfHurdleFilter", riskSettings.isEnableHtfHurdleFilter());
         result.put("enableNiftyHtfHurdleFilter", riskSettings.isEnableNiftyHtfHurdleFilter());
@@ -86,9 +82,6 @@ public class SettingsController {
         result.put("smaLevelFilterMorningSkip", riskSettings.isSmaLevelFilterMorningSkip());
         result.put("smaLevelFilterMorningSkipUntil", riskSettings.getSmaLevelFilterMorningSkipUntil());
         result.put("enableTargetShift", riskSettings.isEnableTargetShift(effectiveMode));
-        result.put("enableSplitTarget", riskSettings.isEnableSplitTarget());
-        result.put("t1DistancePct", riskSettings.getT1DistancePct());
-        result.put("splitMinDistanceAtr", riskSettings.getSplitMinDistanceAtr());
         result.put("enableTargetTolerance", riskSettings.isEnableTargetTolerance());
         result.put("targetToleranceAtr", riskSettings.getTargetToleranceAtr());
         result.put("enableIndexAlignment", riskSettings.isEnableIndexAlignment());
@@ -201,10 +194,6 @@ public class SettingsController {
             if (body.containsKey("capitalPerTrade")) riskSettings.setCapitalPerTrade(effectiveMode, Double.parseDouble(body.get("capitalPerTrade").toString()));
             if (body.containsKey("telegramAlertFrequency")) riskSettings.setTelegramAlertFrequency(effectiveMode, Integer.parseInt(body.get("telegramAlertFrequency").toString()));
             if (body.containsKey("enableGapCheck")) riskSettings.setEnableGapCheck(Boolean.parseBoolean(body.get("enableGapCheck").toString()));
-            if (body.containsKey("enableTargetRescue")) riskSettings.setEnableTargetRescue(Boolean.parseBoolean(body.get("enableTargetRescue").toString()));
-            if (body.containsKey("enableDayHighLowTargetShift")) riskSettings.setEnableDayHighLowTargetShift(Boolean.parseBoolean(body.get("enableDayHighLowTargetShift").toString()));
-            if (body.containsKey("enableDailySma200TargetShift")) riskSettings.setEnableDailySma200TargetShift(Boolean.parseBoolean(body.get("enableDailySma200TargetShift").toString()));
-            if (body.containsKey("dayHighLowShiftMinDistAtr")) riskSettings.setDayHighLowShiftMinDistAtr(Double.parseDouble(body.get("dayHighLowShiftMinDistAtr").toString()));
             if (body.containsKey("enableWeeklyLevelTargetShift")) riskSettings.setEnableWeeklyLevelTargetShift(Boolean.parseBoolean(body.get("enableWeeklyLevelTargetShift").toString()));
             if (body.containsKey("enableHtfHurdleFilter")) riskSettings.setEnableHtfHurdleFilter(Boolean.parseBoolean(body.get("enableHtfHurdleFilter").toString()));
             if (body.containsKey("enableNiftyHtfHurdleFilter")) riskSettings.setEnableNiftyHtfHurdleFilter(Boolean.parseBoolean(body.get("enableNiftyHtfHurdleFilter").toString()));
@@ -231,9 +220,6 @@ public class SettingsController {
             if (body.containsKey("smaLevelFilterMorningSkip")) riskSettings.setSmaLevelFilterMorningSkip(Boolean.parseBoolean(body.get("smaLevelFilterMorningSkip").toString()));
             if (body.containsKey("smaLevelFilterMorningSkipUntil")) riskSettings.setSmaLevelFilterMorningSkipUntil(body.get("smaLevelFilterMorningSkipUntil").toString());
             if (body.containsKey("enableTargetShift")) riskSettings.setEnableTargetShift(effectiveMode, Boolean.parseBoolean(body.get("enableTargetShift").toString()));
-            if (body.containsKey("enableSplitTarget")) riskSettings.setEnableSplitTarget(Boolean.parseBoolean(body.get("enableSplitTarget").toString()));
-            if (body.containsKey("t1DistancePct")) riskSettings.setT1DistancePct(Integer.parseInt(body.get("t1DistancePct").toString()));
-            if (body.containsKey("splitMinDistanceAtr")) riskSettings.setSplitMinDistanceAtr(Double.parseDouble(body.get("splitMinDistanceAtr").toString()));
             if (body.containsKey("enableTargetTolerance")) riskSettings.setEnableTargetTolerance(Boolean.parseBoolean(body.get("enableTargetTolerance").toString()));
             if (body.containsKey("targetToleranceAtr")) riskSettings.setTargetToleranceAtr(Double.parseDouble(body.get("targetToleranceAtr").toString()));
             if (body.containsKey("enableIndexAlignment")) riskSettings.setEnableIndexAlignment(Boolean.parseBoolean(body.get("enableIndexAlignment").toString()));

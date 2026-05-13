@@ -509,7 +509,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 String wouldMatch = detectBuyBreakout(open, high, low, close, levels, 0, broken, fyersSymbol);
                 if (wouldMatch != null) {
                     String detail = "close (" + String.format("%.2f", close) + ") below ATP (" + String.format("%.2f", atp) + ")";
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + wouldMatch + " — skipped, " + detail);
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + wouldMatch + routeFor(fyersSymbol) + " — skipped, " + detail);
                     recordRejection(fyersSymbol, wouldMatch, close, "ATP", detail);
                 }
                 return;
@@ -521,7 +521,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (isMeanReversionOrMagnet(buySetup, close, levels.getTc(), levels.getBc())
                         && !riskSettings.isEnableMeanReversionTrades()) {
                     String detail = "mean-reversion trades disabled (master toggle off)";
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " — skipped, " + detail);
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " — skipped, " + detail);
                     recordRejection(fyersSymbol, buySetup, close, "MEAN_REVERSION_DISABLED", detail);
                     return;
                 }
@@ -531,14 +531,14 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     // support). Magnets always fire (HTF/LTF bypassed) so they don't reach here.
                     String detail = "buy requires close > daily TC (LTF bullish); close="
                         + String.format("%.2f", close);
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " — skipped, " + detail);
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " — skipped, " + detail);
                     recordRejection(fyersSymbol, buySetup, close, "LTF_OPPOSED", detail);
                     return;
                 }
                 if (!isProbabilityEnabled(prob)) {
                     // Probability tier toggled off in settings (e.g. enableMpt=false).
                     String detail = prob + " not enabled";
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " — skipped, " + detail);
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " — skipped, " + detail);
                     recordRejection(fyersSymbol, buySetup, close, "PROB_DISABLED", detail);
                     return;
                 }
@@ -549,7 +549,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 // alignment filter so it can't be downgraded to LPT.
                 String vwapAlignReject = checkVwapNiftyAlignment(buySetup, true);
                 if (vwapAlignReject != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + vwapAlignReject);
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + vwapAlignReject);
                     recordRejection(fyersSymbol, buySetup, close, "NIFTY_OPPOSED", vwapAlignReject);
                     return;
                 }
@@ -578,28 +578,28 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     }
                     prob = "LPT";
                     niftyDowngraded = true;
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " — NIFTY "
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " — NIFTY "
                         + niftyState + " misaligned, downgraded to LPT (NIFTY filters bypassed)");
                 }
                 // NIFTY HTF Hurdle — only when not downgraded to LPT.
                 if (!niftyDowngraded) {
                     String niftyHurdleReject = checkNiftyHurdle(true, fyersSymbol);
                     if (niftyHurdleReject != null) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + niftyHurdleReject);
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + niftyHurdleReject);
                         recordRejection(fyersSymbol, buySetup, close, "NIFTY_HURDLE", niftyHurdleReject);
                         return;
                     }
                     // NIFTY 5m Hurdle — prior 5-min NIFTY close must have cleared nearest daily CPR hurdle.
                     String nifty5mHurdleReject = checkNifty5mHurdle(true, candle.startMinute);
                     if (nifty5mHurdleReject != null) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + nifty5mHurdleReject);
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + nifty5mHurdleReject);
                         recordRejection(fyersSymbol, buySetup, close, "NIFTY_5M_HURDLE", nifty5mHurdleReject);
                         return;
                     }
                     // Virgin CPR Hurdle — zone-based: inside zone or within headroom × ATR rejects.
                     String virginCprHurdleReject = checkNiftyVirginCprHurdle(true, candle.startMinute);
                     if (virginCprHurdleReject != null) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + virginCprHurdleReject);
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + virginCprHurdleReject);
                         recordRejection(fyersSymbol, buySetup, close, "VIRGIN_CPR_HURDLE", virginCprHurdleReject);
                         return;
                     }
@@ -608,7 +608,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 // This is the STOCK's 1h candle, always applied.
                 String htfCandleReject = checkHtfCandleColor(true, fyersSymbol);
                 if (htfCandleReject != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + " SKIPPED — " + htfCandleReject);
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + htfCandleReject);
                     recordRejection(fyersSymbol, buySetup, close, "HTF_CANDLE_OPPOSED", htfCandleReject);
                     return;
                 }
@@ -639,7 +639,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 String wouldMatch = detectSellBreakout(open, high, low, close, levels, 0, broken, fyersSymbol);
                 if (wouldMatch != null) {
                     String detail = "close (" + String.format("%.2f", close) + ") above ATP (" + String.format("%.2f", atp) + ")";
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + wouldMatch + " — skipped, " + detail);
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + wouldMatch + routeFor(fyersSymbol) + " — skipped, " + detail);
                     recordRejection(fyersSymbol, wouldMatch, close, "ATP", detail);
                 }
                 return;
@@ -651,7 +651,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (isMeanReversionOrMagnet(sellSetup, close, levels.getTc(), levels.getBc())
                         && !riskSettings.isEnableMeanReversionTrades()) {
                     String detail = "mean-reversion trades disabled (master toggle off)";
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " — skipped, " + detail);
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " — skipped, " + detail);
                     recordRejection(fyersSymbol, sellSetup, close, "MEAN_REVERSION_DISABLED", detail);
                     return;
                 }
@@ -659,13 +659,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (prob == null) {
                     String detail = "sell requires close < daily BC (LTF bearish); close="
                         + String.format("%.2f", close);
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " — skipped, " + detail);
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " — skipped, " + detail);
                     recordRejection(fyersSymbol, sellSetup, close, "LTF_OPPOSED", detail);
                     return;
                 }
                 if (!isProbabilityEnabled(prob)) {
                     String detail = prob + " not enabled";
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " — skipped, " + detail);
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " — skipped, " + detail);
                     recordRejection(fyersSymbol, sellSetup, close, "PROB_DISABLED", detail);
                     return;
                 }
@@ -675,7 +675,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 // NIFTY isn't BEARISH or BEARISH_REVERSAL.
                 String vwapAlignReject = checkVwapNiftyAlignment(sellSetup, false);
                 if (vwapAlignReject != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + vwapAlignReject);
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + vwapAlignReject);
                     recordRejection(fyersSymbol, sellSetup, close, "NIFTY_OPPOSED", vwapAlignReject);
                     return;
                 }
@@ -704,28 +704,28 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     }
                     prob = "LPT";
                     niftyDowngraded = true;
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " — NIFTY "
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " — NIFTY "
                         + niftyState + " misaligned, downgraded to LPT (NIFTY filters bypassed)");
                 }
                 // NIFTY HTF Hurdle — only when not downgraded to LPT.
                 if (!niftyDowngraded) {
                     String niftyHurdleReject = checkNiftyHurdle(false, fyersSymbol);
                     if (niftyHurdleReject != null) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + niftyHurdleReject);
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + niftyHurdleReject);
                         recordRejection(fyersSymbol, sellSetup, close, "NIFTY_HURDLE", niftyHurdleReject);
                         return;
                     }
                     // NIFTY 5m Hurdle — prior 5-min NIFTY close must have cleared nearest daily CPR hurdle.
                     String nifty5mHurdleReject = checkNifty5mHurdle(false, candle.startMinute);
                     if (nifty5mHurdleReject != null) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + nifty5mHurdleReject);
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + nifty5mHurdleReject);
                         recordRejection(fyersSymbol, sellSetup, close, "NIFTY_5M_HURDLE", nifty5mHurdleReject);
                         return;
                     }
                     // Virgin CPR Hurdle — zone-based: inside zone or within headroom × ATR rejects.
                     String virginCprHurdleReject = checkNiftyVirginCprHurdle(false, candle.startMinute);
                     if (virginCprHurdleReject != null) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + virginCprHurdleReject);
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + virginCprHurdleReject);
                         recordRejection(fyersSymbol, sellSetup, close, "VIRGIN_CPR_HURDLE", virginCprHurdleReject);
                         return;
                     }
@@ -734,7 +734,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 // This is the STOCK's 1h candle, always applied.
                 String htfCandleReject = checkHtfCandleColor(false, fyersSymbol);
                 if (htfCandleReject != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + " SKIPPED — " + htfCandleReject);
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + htfCandleReject);
                     recordRejection(fyersSymbol, sellSetup, close, "HTF_CANDLE_OPPOSED", htfCandleReject);
                     return;
                 }
@@ -1259,6 +1259,20 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             return setupName;
         }
         return null;
+    }
+
+    /**
+     * Build a `" [PATTERN_NAME]"` suffix for log lines so traders can see which candlestick
+     * pattern formed at the bar — both for trades that fired and for trades that got rejected
+     * by downstream filters (NIFTY hurdle, R/R, etc.). Pattern is set by
+     * {@code checkBuyAtLevel} / {@code checkSellAtLevel} into {@code lastTriggerRoute} when a
+     * match is detected, BEFORE the post-pattern filter chain runs. Returns empty string when
+     * no pattern was detected for this symbol's current scan (e.g. ATP / SMA-trend reject
+     * before pattern matching even began).
+     */
+    private String routeFor(String fyersSymbol) {
+        String r = lastTriggerRoute.get(fyersSymbol);
+        return r != null && !r.isEmpty() ? " [" + r + "]" : "";
     }
 
     /** Returns the 3rd-most-recent completed candle (for morning/evening star), or null. */

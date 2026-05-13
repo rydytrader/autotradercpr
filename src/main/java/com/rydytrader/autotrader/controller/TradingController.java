@@ -175,7 +175,12 @@ public class TradingController {
             // Silent rejections (native-LPT when LPT disabled, etc.) skip the event log —
             // reserved for expected skips the user has already opted out of via settings.
             if (!ps.isSilent()) {
-                eventService.log("[SIGNAL] " + psSymbol + " " + ps.getSetup() + " filtered — " + ps.getRejectionReason());
+                // Include the candlestick pattern (e.g. ENGULFING_RETEST) so the trader can
+                // see which pattern formed AND why downstream filtering rejected it.
+                Object routeObj = payload.get("scannerNote");
+                String routeSuffix = (routeObj instanceof String && !((String) routeObj).isEmpty())
+                    ? " [" + routeObj + "]" : "";
+                eventService.log("[SIGNAL] " + psSymbol + " " + ps.getSetup() + routeSuffix + " filtered — " + ps.getRejectionReason());
             }
             return ResponseEntity.ok("Signal filtered: " + (ps.getRejectionReason() != null ? ps.getRejectionReason() : "silent"));
         }
@@ -189,7 +194,6 @@ public class TradingController {
         double atr         = ps.getAtr();
         double atrMult     = ps.getAtrMultiplier();
         String description = ps.getDescription();
-        Double target1Price = ps.getTarget1Price();   // nullable — non-null only when Target Rescue split the trade
         boolean rescueShifted = ps.isRescueShifted();
         boolean useStructuralSl = ps.isUseStructuralSl();
 
@@ -208,7 +212,7 @@ public class TradingController {
 
             // Monitor entry fill, then place SL + Target OCO
             // exitSide = -1 (SELL to exit a LONG)
-            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "LONG", -1, stoploss, target, setup, atr, atrMult, description, rescueShifted, useStructuralSl, target1Price);
+            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "LONG", -1, stoploss, target, setup, atr, atrMult, description, rescueShifted, useStructuralSl);
             pollingService.setProbability(symbol, probability);
 
         } else if (signal.equals("SELL") && !PositionManager.getPosition(symbol).equals("SHORT")) {
@@ -223,7 +227,7 @@ public class TradingController {
             }
 
             // exitSide = 1 (BUY to exit a SHORT)
-            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "SHORT", 1, stoploss, target, setup, atr, atrMult, description, rescueShifted, useStructuralSl, target1Price);
+            pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "SHORT", 1, stoploss, target, setup, atr, atrMult, description, rescueShifted, useStructuralSl);
             pollingService.setProbability(symbol, probability);
 
         } else {

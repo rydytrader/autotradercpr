@@ -6,7 +6,6 @@ public class ProcessedSignal {
     private final String symbol;
     private final int    quantity;
     private final double target;
-    private final Double target1Price; // nullable — absolute T1 price when target rescue splits the trade; null means single-target
     private final double stoploss;
     private final String setup;
     private final String probability;
@@ -24,7 +23,6 @@ public class ProcessedSignal {
         this.symbol          = b.symbol;
         this.quantity        = b.quantity;
         this.target          = b.target;
-        this.target1Price    = b.target1Price;
         this.stoploss        = b.stoploss;
         this.setup           = b.setup;
         this.probability     = b.probability;
@@ -51,7 +49,6 @@ public class ProcessedSignal {
     public String  getSymbol()          { return symbol; }
     public int     getQuantity()        { return quantity; }
     public double  getTarget()          { return target; }
-    public Double  getTarget1Price()    { return target1Price; }
     public double  getStoploss()        { return stoploss; }
     public String  getSetup()           { return setup; }
     public String  getProbability()     { return probability; }
@@ -69,7 +66,6 @@ public class ProcessedSignal {
         private String symbol;
         private int    quantity;
         private double target;
-        private Double target1Price;
         private double stoploss;
         private String setup;
         private String probability;
@@ -86,7 +82,6 @@ public class ProcessedSignal {
         public Builder symbol(String v)          { this.symbol = v; return this; }
         public Builder quantity(int v)            { this.quantity = v; return this; }
         public Builder target(double v)           { this.target = v; return this; }
-        public Builder target1Price(Double v)     { this.target1Price = v; return this; }
         public Builder stoploss(double v)         { this.stoploss = v; return this; }
         public Builder setup(String v)            { this.setup = v; return this; }
         public Builder probability(String v)      { this.probability = v; return this; }

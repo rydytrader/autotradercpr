@@ -407,55 +407,38 @@ public class SignalProcessor {
                 + " (" + (isBuy ? "BUY target must be above" : "SELL target must be below") + ")");
         }
 
-        // ── 4g2. Risk/Reward filter — with optional Target Rescue split ────────
-        // If reward < minRR × risk, normally we'd reject. With rescue enabled, walk forward
-        // through daily CPR levels + daily mid-points + weekly CPR levels (all of them) and
-        // pick the closest level beyond `target` that satisfies minRR. The original target
-        // becomes T1 (if its R/R is at least 0.5 × minRR), else dropped.
-        Double rescueT1 = null;        // when rescue splits, the original target becomes T1
+        // ── 4g2. Walk-and-shift target picker ──────────────────────────────────
+        // Single target only — no splits. Algorithm per user spec:
+        //   1. Walk daily R/S levels (closest to entry first, beyond entry in trade direction)
+        //   2. Find first daily level whose R/R clears minRR
+        //   3. Check if any weekly CPR level lies strictly between entry and that daily level
+        //   4. If a weekly intervenes, shift target to the weekly closest to entry
+        //   5. Re-check R/R after the shift — reject if shifted R/R falls below minRR
+        //   6. If no daily level satisfies minRR → reject
         boolean rescueShifted = false;
         if (riskSettings.isEnableRiskRewardFilter()) {
             double minRR = riskSettings.getMinRiskRewardRatio();
-            double risk   = Math.abs(close - sl);
-            double reward = Math.abs(target - close);
-            double rrOriginal = risk > 0 ? reward / risk : 0;
-            if (rrOriginal < minRR) {
-                if (riskSettings.isEnableTargetRescue()) {
-                    double sessionBodyHi = candleAggregator.getDayBodyHighBeforeLast(symbol);
-                    double sessionBodyLo = candleAggregator.getDayBodyLowBeforeLast(symbol);
-                    RescueResult res = attemptTargetRescue(isBuy, close, sl, target, minRR,
-                        r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc,
-                        sessionBodyHi, sessionBodyLo, weeklyLv); // reuse cached from line 141
-                    if (res == null) {
-                        return ProcessedSignal.rejected(setup, symbol,
-                            "Risk/Reward " + fmt(rrOriginal) + ":1 < " + minRR + ":1 and "
-                            + "rescue failed — no daily/weekly CPR level beyond " + fmt(target)
-                            + " satisfies " + minRR + ":1 (entry=" + fmt(close) + " SL=" + fmt(sl)
-                            + " risk=" + fmt(risk) + ")");
-                    }
-                    double rescueRR = Math.abs(res.target2 - close) / risk;
-                    double t1Floor  = 0.5 * minRR;
-                    if (rrOriginal >= t1Floor) {
-                        rescueT1 = target;
-                        eventService.log("[INFO] " + symbol + " " + setup + " target rescue: original "
-                            + fmt(target) + " gave " + fmt(rrOriginal) + ":1 → split T1=" + fmt(target)
-                            + " | T2=" + fmt(res.target2) + " (" + res.name + ") giving " + fmt(rescueRR) + ":1");
-                    } else {
-                        rescueT1 = null;
-                        eventService.log("[INFO] " + symbol + " " + setup + " target rescue: original "
-                            + fmt(target) + " gave " + fmt(rrOriginal) + ":1 (below T1 floor "
-                            + fmt(t1Floor) + ":1) → T1 dropped, single target " + fmt(res.target2)
-                            + " (" + res.name + ") giving " + fmt(rescueRR) + ":1");
-                    }
-                    target = res.target2;
-                    rescueShifted = true;
-                } else {
-                    return ProcessedSignal.rejected(setup, symbol,
-                        "Risk/Reward " + fmt(rrOriginal) + ":1 < " + minRR + ":1 — "
-                        + "entry=" + fmt(close) + " SL=" + fmt(sl) + " target=" + fmt(target)
-                        + " risk=" + fmt(risk) + " reward=" + fmt(reward));
-                }
+            double risk  = Math.abs(close - sl);
+            TargetPick pick = pickTarget(isBuy, close, risk, minRR,
+                r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc, weeklyLv);
+            if (pick == null) {
+                return ProcessedSignal.rejected(setup, symbol,
+                    "No daily CPR level satisfies R/R " + minRR + ":1 (walk-and-shift) — "
+                    + "entry=" + fmt(close) + " SL=" + fmt(sl) + " risk=" + fmt(risk));
             }
+            double finalRR = Math.abs(pick.target - close) / risk;
+            if (pick.shifted) {
+                eventService.log("[INFO] " + symbol + " " + setup
+                    + " target: daily " + pick.dailyName + " = " + fmt(pick.dailyValue)
+                    + " shifted to weekly " + pick.weeklyName + " = " + fmt(pick.target)
+                    + " (between entry and daily) | R/R " + fmt(finalRR) + ":1");
+                rescueShifted = true;
+            } else {
+                eventService.log("[INFO] " + symbol + " " + setup
+                    + " target: daily " + pick.dailyName + " = " + fmt(pick.target)
+                    + " | R/R " + fmt(finalRR) + ":1");
+            }
+            target = pick.target;
         }
 
         // ── 4i. Quantity ────────────────────────────────────────────────────────
@@ -529,18 +512,10 @@ public class SignalProcessor {
             desc.append(" (ATR ").append(fmt(atr)).append(" × ").append(riskSettings.getAtrMultiplier()).append(").");
         }
 
-        // [TARGET] line — split if Target Rescue produced a T1, otherwise single
-        if (rescueT1 != null) {
-            desc.append("\n").append(ts).append(" [TARGET 1] ").append(fmt(rescueT1))
-                .append(" (original structural target — kept as partial)");
-            desc.append("\n").append(ts).append(" [TARGET 2] ").append(fmt(target))
-                .append(" (rescued — closest CPR level beyond T1 satisfying min R/R)");
-        } else {
-            desc.append("\n").append(ts).append(" [TARGET] ").append(fmt(target));
-            if (rescueShifted) {
-                desc.append(" (rescued from ").append(fmt(defaultTarget))
-                    .append(" — original gave R/R below 0.5 × min, T1 dropped)");
-            }
+        // [TARGET] line — always single target (no splits).
+        desc.append("\n").append(ts).append(" [TARGET] ").append(fmt(target));
+        if (rescueShifted) {
+            desc.append(" (walk-and-shift: shifted to weekly between entry and chosen daily)");
         }
 
         // [QTY] line
@@ -568,10 +543,9 @@ public class SignalProcessor {
         String description = desc.toString();
 
         // ── 4k. Log the decision ────────────────────────────────────────────────
-        String tgtSummary = rescueT1 != null
-            ? "T1: " + fmt(rescueT1) + "(" + fmt(Math.abs(rescueT1 - close)) + ") | T2: " + fmt(target) + "(" + fmt(Math.abs(target - close)) + ")"
-            : "Tgt: " + fmt(target) + "(" + fmt(Math.abs(target - close)) + ")";
-        eventService.log("[SUCCESS] " + signal + " signal received for " + symbol + " | " + setup + " | Entry: " + fmt(close)
+        String tgtSummary = "Tgt: " + fmt(target) + "(" + fmt(Math.abs(target - close)) + ")";
+        String routeSuffix = (scannerNote != null && !scannerNote.isEmpty()) ? " [" + scannerNote + "]" : "";
+        eventService.log("[SUCCESS] " + signal + " signal received for " + symbol + " | " + setup + routeSuffix + " | Entry: " + fmt(close)
             + " | " + tgtSummary
             + " | SL: " + fmt(sl) + "(" + fmt(Math.abs(close - sl)) + ")"
             + " | Qty: " + qty);
@@ -581,7 +555,6 @@ public class SignalProcessor {
             .symbol(symbol)
             .quantity(qty)
             .target(target)
-            .target1Price(rescueT1)
             .stoploss(sl)
             .setup(setup)
             .probability(probability)
@@ -594,103 +567,164 @@ public class SignalProcessor {
             .build();
     }
 
-    /** Result of attemptTargetRescue: the chosen further level + its name (for logging). */
-    private static class RescueResult {
-        final double target2;
-        final String name;
-        RescueResult(double target2, String name) { this.target2 = target2; this.name = name; }
+    /** Result of pickTarget: the chosen target + names for logging. */
+    private static class TargetPick {
+        final double target;
+        final double dailyValue;
+        final String dailyName;
+        final String weeklyName;   // null when no shift happened
+        final boolean shifted;
+        TargetPick(double target, double dailyValue, String dailyName, String weeklyName, boolean shifted) {
+            this.target = target;
+            this.dailyValue = dailyValue;
+            this.dailyName = dailyName;
+            this.weeklyName = weeklyName;
+            this.shifted = shifted;
+        }
     }
 
     /**
-     * Walk forward through daily R/S levels (R1+PDH ... R4 and S1+PDL ... S4) + daily CPR
-     * mid-points (including CPR↔R1+PDH and CPR↔S1+PDL) + session body high/low + ALL weekly
-     * CPR levels (Pivot, TC, BC, R1-R4, S1-S4, PH, PL) that lie strictly beyond
-     * {@code originalTarget} in the trade direction. Return the closest candidate whose R/R
-     * clears {@code minRR}, or null if none qualifies.
+     * Walk-and-shift target picker — single target, no splits.
+     * <ol>
+     *   <li>Walk daily R-side (buy) or S-side (sell) levels closest-to-entry first.</li>
+     *   <li>Find the first daily level whose R/R clears {@code minRR}.</li>
+     *   <li>Check if any weekly CPR level sits strictly between entry and that daily level.</li>
+     *   <li>If a weekly intervenes, shift target to the weekly closest to entry.</li>
+     *   <li>Re-check R/R after shift. If the shift drops R/R below minRR, return null (reject).</li>
+     *   <li>If no daily level satisfies minRR, return null (reject).</li>
+     * </ol>
+     * Daily walk is the FULL daily CPR ladder, low to high:
+     *     S4 - S3 - S2 - S1+PDL - Daily CPR - R1+PDH - R2 - R3 - R4
+     * Mid-points are inserted between every adjacent pair. The chain candidates above entry
+     * are kept for buys (sorted ascending); the ones below entry for sells (descending).
      *
-     * Daily CPR (TC / BC / Pivot) is NOT added as separate candidates — the regular
-     * {@code computeTargets} collapses CPR to a single value (e.g., min(tc,bc) for buys),
-     * so the rescue mirrors that convention. CPR is treated as one zone, not three lines.
-     * The CPR-to-R1+PDH and CPR-to-S1+PDL midpoints ARE included since they're real
-     * intraday levels bridging the gap between the CPR zone and the first R/S line.
-     * Session body high/low are real intraday resistance/support — included as candidates.
-     * SMA200 and extrapolated R5/S5 are excluded.
+     * This handles every setup — BUY_ABOVE_S4/S3/S2 walk up through their nearby S-levels
+     * first, BUY_ABOVE_S1_PDL starts at Daily CPR, BUY_ABOVE_R1_PDH starts at R2, and so on.
+     * Mirror for sells.
+     *
+     * Zone levels (S1+PDL, Daily CPR, R1+PDH) use the close-to-entry edge as their walk
+     * value: lower edge (= min) for buys going up, upper edge (= max) for sells going down.
+     * Mid-points are the geometric midpoint of the gap between two adjacent items — using
+     * the UPPER edge of the lower item and the LOWER edge of the upper item. Single-line
+     * items have upper = lower = the line itself.
+     *
+     * Weekly candidates for the intercept check: Pivot, TC, BC, R1-R4, S1-S4, PWH, PWL.
      */
-    private RescueResult attemptTargetRescue(boolean isBuy, double entry, double sl,
-                                              double originalTarget, double minRR,
-                                              double r1, double r2, double r3, double r4,
-                                              double s1, double s2, double s3, double s4,
-                                              double ph, double pl, double tc, double bc,
-                                              double sessionBodyHi, double sessionBodyLo,
-                                              WeeklyCprService.WeeklyLevels wl) {
-        double risk = Math.abs(entry - sl);
+    private TargetPick pickTarget(boolean isBuy, double entry, double risk, double minRR,
+                                   double r1, double r2, double r3, double r4,
+                                   double s1, double s2, double s3, double s4,
+                                   double ph, double pl, double tc, double bc,
+                                   WeeklyCprService.WeeklyLevels wl) {
         if (risk <= 0) return null;
-        java.util.List<RescueResult> all = new java.util.ArrayList<>();
-        java.util.function.BiConsumer<Double, String> addIf = (lvl, name) -> {
-            if (lvl == null || lvl <= 0) return;
-            all.add(new RescueResult(lvl, name));
+        // Zone edges (low / high). For single-line levels, low == high == level value.
+        double s1pl_lo = Math.min(s1, pl), s1pl_hi = Math.max(s1, pl);
+        double cpr_lo  = Math.min(tc, bc), cpr_hi  = Math.max(tc, bc);
+        double r1ph_lo = Math.min(r1, ph), r1ph_hi = Math.max(r1, ph);
+
+        // Build full chain low-to-high. Each entry: name, value-for-walk.
+        // Zone close-edge = lower for buys (going up), upper for sells (going down).
+        double s1plVal = isBuy ? s1pl_lo : s1pl_hi;
+        double cprVal  = isBuy ? cpr_lo  : cpr_hi;
+        double r1phVal = isBuy ? r1ph_lo : r1ph_hi;
+
+        // Mid-points: (upper-of-low-item + lower-of-high-item) / 2. Direction-independent.
+        double midS4S3   = (s4 > 0 && s3 > 0) ? (s4 + s3) / 2 : 0;
+        double midS3S2   = (s3 > 0 && s2 > 0) ? (s3 + s2) / 2 : 0;
+        double midS2S1   = (s2 > 0 && s1pl_lo > 0) ? (s2 + s1pl_lo) / 2 : 0;
+        double midS1CPR  = (s1pl_hi > 0 && cpr_lo > 0) ? (s1pl_hi + cpr_lo) / 2 : 0;
+        double midCPRR1  = (cpr_hi > 0 && r1ph_lo > 0) ? (cpr_hi + r1ph_lo) / 2 : 0;
+        double midR1R2   = (r1ph_hi > 0 && r2 > 0) ? (r1ph_hi + r2) / 2 : 0;
+        double midR2R3   = (r2 > 0 && r3 > 0) ? (r2 + r3) / 2 : 0;
+        double midR3R4   = (r3 > 0 && r4 > 0) ? (r3 + r4) / 2 : 0;
+
+        String[] names = {
+            "S4", "MID S4-S3",
+            "S3", "MID S3-S2",
+            "S2", "MID S2-S1+PDL",
+            "S1+PDL", "MID S1+PDL-CPR",
+            "Daily CPR", "MID CPR-R1+PDH",
+            "R1+PDH", "MID R1+PDH-R2",
+            "R2", "MID R2-R3",
+            "R3", "MID R3-R4",
+            "R4"
         };
-        // Daily R/S levels
-        addIf.accept(Math.min(r1, ph), "R1+PDH");
-        addIf.accept(r2, "R2");
-        addIf.accept(r3, "R3");
-        addIf.accept(r4, "R4");
-        addIf.accept(Math.max(s1, pl), "S1+PDL");
-        addIf.accept(s2, "S2");
-        addIf.accept(s3, "S3");
-        addIf.accept(s4, "S4");
-        // Daily CPR mid-points between adjacent levels (both R-side and S-side).
-        // CPR↔R1+PDH and CPR↔S1+PDL midpoints use the OUTER edge of CPR (CPR top for buys,
-        // CPR bottom for sells) so the midpoint sits in the gap between CPR and the first
-        // R/S line — useful for rescues like BUY_ABOVE_S1_PDL where the target is BC and
-        // the next stop is across the CPR-to-R1 gap.
-        double r1ph    = Math.min(r1, ph);
-        double s1pl    = Math.max(s1, pl);
-        double cprTop  = Math.max(tc, bc);
-        double cprBot  = Math.min(tc, bc);
-        if (cprTop > 0 && r1ph > 0) addIf.accept((cprTop + r1ph) / 2, "MID CPR-R1+PDH");
-        if (cprBot > 0 && s1pl > 0) addIf.accept((cprBot + s1pl) / 2, "MID CPR-S1+PDL");
-        if (r1ph > 0 && r2 > 0)  addIf.accept((r1ph + r2) / 2, "MID R1-R2");
-        if (r2 > 0 && r3 > 0)    addIf.accept((r2 + r3) / 2, "MID R2-R3");
-        if (r3 > 0 && r4 > 0)    addIf.accept((r3 + r4) / 2, "MID R3-R4");
-        if (s1pl > 0 && s2 > 0)  addIf.accept((s1pl + s2) / 2, "MID S1-S2");
-        if (s2 > 0 && s3 > 0)    addIf.accept((s2 + s3) / 2, "MID S2-S3");
-        if (s3 > 0 && s4 > 0)    addIf.accept((s3 + s4) / 2, "MID S3-S4");
-        // Session body high/low — real intraday resistance/support. The filter below decides
-        // direction (session body high relevant for buys, session body low for sells).
-        addIf.accept(sessionBodyHi, "Session Body High");
-        addIf.accept(sessionBodyLo, "Session Body Low");
-        // All weekly CPR levels — central trio + R/S + PH/PL
-        if (wl != null) {
-            addIf.accept(wl.pivot, "WK Pivot");
-            addIf.accept(wl.tc,    "WK TC");
-            addIf.accept(wl.bc,    "WK BC");
-            addIf.accept(wl.r1,    "WK R1");
-            addIf.accept(wl.r2,    "WK R2");
-            addIf.accept(wl.r3,    "WK R3");
-            addIf.accept(wl.r4,    "WK R4");
-            addIf.accept(wl.s1,    "WK S1");
-            addIf.accept(wl.s2,    "WK S2");
-            addIf.accept(wl.s3,    "WK S3");
-            addIf.accept(wl.s4,    "WK S4");
-            addIf.accept(wl.ph,    "WK PH");
-            addIf.accept(wl.pl,    "WK PL");
+        double[] vals = {
+            s4, midS4S3,
+            s3, midS3S2,
+            s2, midS2S1,
+            s1plVal, midS1CPR,
+            cprVal, midCPRR1,
+            r1phVal, midR1R2,
+            r2, midR2R3,
+            r3, midR3R4,
+            r4
+        };
+
+        // Filter by trade direction (above entry for buys, below for sells) and sort by proximity.
+        java.util.List<double[]> walk = new java.util.ArrayList<>();
+        for (int i = 0; i < vals.length; i++) {
+            if (vals[i] <= 0) continue;
+            if (isBuy  && vals[i] > entry) walk.add(new double[]{ vals[i], i });
+            if (!isBuy && vals[i] < entry) walk.add(new double[]{ vals[i], i });
         }
-        // Filter: strictly beyond original target in trade direction
-        java.util.List<RescueResult> beyond = new java.util.ArrayList<>();
-        for (RescueResult c : all) {
-            boolean valid = isBuy ? (c.target2 > originalTarget && c.target2 > entry)
-                                  : (c.target2 < originalTarget && c.target2 < entry);
-            if (valid) beyond.add(c);
+        if (isBuy) walk.sort((a, b) -> Double.compare(a[0], b[0])); // closest above entry first
+        else       walk.sort((a, b) -> Double.compare(b[0], a[0])); // closest below entry first
+
+        // Step 2: find first daily level satisfying minRR
+        boolean checkWeekly = riskSettings.isEnableWeeklyLevelTargetShift();
+        for (double[] d : walk) {
+            double dailyValue = d[0];
+            String dailyName  = names[(int) d[1]];
+            double dailyRR = Math.abs(dailyValue - entry) / risk;
+            if (dailyRR < minRR) continue;
+
+            // Step 3: optional weekly intercept (toggled via enableWeeklyLevelTargetShift).
+            // When OFF, the chosen daily becomes the final target as-is.
+            if (!checkWeekly) {
+                return new TargetPick(dailyValue, dailyValue, dailyName, null, false);
+            }
+
+            // Closest weekly strictly between entry and this daily level
+            String[] weeklyName = { null };
+            Double weeklyValue = findClosestWeeklyBetween(isBuy, entry, dailyValue, wl, weeklyName);
+            if (weeklyValue == null) {
+                return new TargetPick(dailyValue, dailyValue, dailyName, null, false);
+            }
+
+            // Step 4: re-check R/R with weekly-shifted target. Reject if shift drops below minRR.
+            double weeklyRR = Math.abs(weeklyValue - entry) / risk;
+            if (weeklyRR >= minRR) {
+                return new TargetPick(weeklyValue, dailyValue, dailyName, weeklyName[0], true);
+            }
+            return null; // weekly shift failed R/R — reject per spec
         }
-        // Sort by distance from entry ascending
-        beyond.sort(java.util.Comparator.comparingDouble(c -> Math.abs(c.target2 - entry)));
-        // First candidate that clears minRR wins
-        for (RescueResult c : beyond) {
-            double rr = Math.abs(c.target2 - entry) / risk;
-            if (rr >= minRR) return c;
+        return null; // no daily level satisfies minRR
+    }
+
+    /** Closest weekly CPR level strictly between entry and dailyTarget (in trade direction). */
+    private Double findClosestWeeklyBetween(boolean isBuy, double entry, double dailyTarget,
+                                             WeeklyCprService.WeeklyLevels wl, String[] outName) {
+        if (wl == null) return null;
+        double[] vals = { wl.pivot, wl.tc, wl.bc, wl.r1, wl.r2, wl.r3, wl.r4,
+                          wl.s1, wl.s2, wl.s3, wl.s4, wl.ph, wl.pl };
+        String[] names = { "WK Pivot", "WK TC", "WK BC", "WK R1", "WK R2", "WK R3", "WK R4",
+                           "WK S1", "WK S2", "WK S3", "WK S4", "WK PWH", "WK PWL" };
+        Double best = null;
+        double bestDist = Double.MAX_VALUE;
+        for (int i = 0; i < vals.length; i++) {
+            double v = vals[i];
+            if (v <= 0) continue;
+            boolean between = isBuy ? (v > entry && v < dailyTarget)
+                                    : (v < entry && v > dailyTarget);
+            if (!between) continue;
+            double dist = Math.abs(v - entry);
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = v;
+                outName[0] = names[i];
+            }
         }
-        return null;
+        return best;
     }
 
     /** Single-level breakouts that lack a zone-width cushion — get the extra SL buffer. */
