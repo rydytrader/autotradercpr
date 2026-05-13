@@ -806,12 +806,12 @@
             + '  </span>'
             + '</div>'
             + '<div class="scan-data-grid scan-data-grid-3">'
+            + '  <div class="scan-data-item"><div class="scan-data-label">ATR</div><div class="scan-data-value">' + fmt(d.atr) + '</div></div>'
             + (function() {
                 var atpTrend = smaTrendObj(d.ltp, d.atp);
                 var color = atpTrend.cls === 'bullish' ? 'var(--accent-green)' : atpTrend.cls === 'bearish' ? 'var(--accent-red)' : 'var(--text-secondary)';
                 return '  <div class="scan-data-item"><div class="scan-data-label">ATP (VWAP)</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + (d.atp > 0 ? fmt(d.atp) + ' ' + atpTrend.arrow : '--') + '</div></div>';
             })()
-            + '  <div class="scan-data-item"><div class="scan-data-label">ATR</div><div class="scan-data-value">' + fmt(d.atr) + '</div></div>'
             + (function() {
                 var color = em5.cls === 'bullish' ? 'var(--accent-green)' : em5.cls === 'bearish' ? 'var(--accent-red)' : 'var(--text-secondary)';
                 return '  <div class="scan-data-item"><div class="scan-data-label">SMA 20</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + (d.sma20 > 0 ? fmt(d.sma20) + ' ' + em5.arrow : '--') + '</div></div>';
