@@ -142,33 +142,10 @@ public class RiskSettingsStore {
         volatile boolean enableRiskRewardFilter = true;
         volatile double  minRiskRewardRatio     = 1.0;
         // SMA filters
-        // 5-min SMA trend gate: buy requires close above SMA(20/50/200), sell requires below all three.
-        // Matches the BULL/BEAR chip on scanner cards. Fail-open if any SMA not loaded.
+        // 5-min SMA trend gate: buy requires close above SMA 20, sell requires close below SMA 20.
+        // Matches the BULL/BEAR chip on scanner cards. Fail-open if SMA not loaded.
         volatile boolean enableSmaTrendCheck = true;
-        // Lenient variant: only requires close above/below SMA 20 AND SMA 50 (skips SMA 200).
-        // If enableSmaTrendCheck is also on, the strict 3-SMA gate wins (strict implies lenient).
-        volatile boolean enableSmaTrendCheckLenient = false;
-        // SMA alignment gate (stricter than trend check): buy requires 20>50>200, sell requires 20<50<200.
-        volatile boolean enableSmaAlignmentCheck = false;
-        // Lenient alignment: buy requires only 20 > 50 (skips 50 > 200); mirror for sells.
-        // If enableSmaAlignmentCheck is also on, the strict 3-SMA gate wins (strict implies lenient).
-        volatile boolean enableSmaAlignmentCheckLenient = false;
         volatile boolean enableSmaVsAtpCheck = true; // buy requires 20 SMA > ATP (VWAP), sell requires 20 SMA < ATP
-        // SMA 20/50 pattern detection thresholds (Braided vs Railway Track).
-        // Bumped for SMA behaviour (smoother, smaller spreads, shallower slopes than EMA).
-        // 5-min pattern lookback. 24 × 5min = 120 min window — long enough to filter routine
-        // pullbacks within real trends, short enough to catch fresh structural shifts within a session.
-        volatile int smaPatternLookback = 24;
-        volatile int braidedMinCrossovers = 2;       // ≥ this many crossovers in lookback = BRAIDED
-        volatile double braidedMaxSpreadAtr = 0.10;  // mean|spread| ≤ this × ATR = BRAIDED (SMAs truly overlapping)
-        volatile double railwayMaxCv = 0.25;         // stddev/mean ratio for RAILWAY (stability)
-        volatile double railwayMinSpreadAtr = 0.20;  // mean|spread| ≥ this × ATR for RAILWAY (meaningful separation; SMA spreads smaller than EMA)
-        volatile double railwayMinSlopeAtr = 0.20;   // (sma[last]−sma[first])/ATR ≥ this for R-RTP (both 20 & 50 must actually rise; symmetric for F-RTP). SMA lag makes slopes shallower.
-        // SMA pattern trade filters
-        // When ON, buys require R-RTP pattern and sells require F-RTP pattern (direction-matched).
-        volatile boolean requireRtpPattern = false;
-        volatile boolean skipTradesInZigZag = true; // when ON (default), all trades (buy & sell) blocked when pattern is ZIG ZAG
-        volatile double smaCloseDistanceAtr = 0.75;  // legacy — kept for backward compat with old risk-settings.json
         // SMA level-count filter — counts CPR zones strictly between SMA and the broken level.
         // Allow only when count == 0 (SMA is in the zone immediately adjacent to the broken level).
         volatile boolean enableSmaLevelCountFilter = true;
@@ -191,14 +168,10 @@ public class RiskSettingsStore {
         volatile double volumeMultiple = 2.0; // breakout candle must have this x avg volume
         volatile int volumeLookback = 20; // average volume over last N candles (max 20)
         volatile boolean enableTrailingSl = true; // enable Fibonacci-based trailing SL (base=breakout level, ceiling=target, stages at 61.8% and 78.6%)
-        // Defensive 5-min SMA cross exit: at every 5-min candle close, if SMA 20 has stacked
-        // against the trade direction (LONG: SMA 20 < SMA 50; SHORT: SMA 20 > SMA 50) the bot
-        // squareoffs the position before SL hits. Default off — material behavior change.
-        volatile boolean enableSmaCrossExit = false;
         // Defensive Price-vs-SMA exit. At every 5-min candle close, if the just-closed bar's
         // close is against the trade direction relative to the 5-min SMA 20 (LONG: close < SMA 20;
-        // SHORT: close > SMA 20), squareoff the position before SL hits. Independent of the
-        // SMA-cross exit above; both can be enabled together. Default off — material behavior change.
+        // SHORT: close > SMA 20), squareoff the position before SL hits. Default off — material
+        // behavior change.
         volatile boolean enablePriceSmaExit = false;
         // NIFTY reversal-CPR-touch defensive exit. When NIFTY is in BULLISH_REVERSAL (NIFTY
         // below CPR + bullish SMAs) and price climbs back to/past CPR bottom, exit all open
@@ -369,19 +342,7 @@ public class RiskSettingsStore {
     public boolean isEnableRiskRewardFilter()      { return cfg().enableRiskRewardFilter; }
     public double  getMinRiskRewardRatio()         { return cfg().minRiskRewardRatio; }
     public boolean isEnableSmaTrendCheck()          { return cfg().enableSmaTrendCheck; }
-    public boolean isEnableSmaTrendCheckLenient()   { return cfg().enableSmaTrendCheckLenient; }
-    public boolean isEnableSmaAlignmentCheck()      { return cfg().enableSmaAlignmentCheck; }
-    public boolean isEnableSmaAlignmentCheckLenient() { return cfg().enableSmaAlignmentCheckLenient; }
     public boolean isEnableSmaVsAtpCheck()          { return cfg().enableSmaVsAtpCheck; }
-    public int    getSmaPatternLookback()           { return cfg().smaPatternLookback; }
-    public int    getBraidedMinCrossovers()         { return cfg().braidedMinCrossovers; }
-    public double getBraidedMaxSpreadAtr()          { return cfg().braidedMaxSpreadAtr; }
-    public double getRailwayMaxCv()                 { return cfg().railwayMaxCv; }
-    public double getRailwayMinSpreadAtr()          { return cfg().railwayMinSpreadAtr; }
-    public double getRailwayMinSlopeAtr()           { return cfg().railwayMinSlopeAtr; }
-    public boolean isRequireRtpPattern()            { return cfg().requireRtpPattern; }
-    public boolean isSkipTradesInZigZag()           { return cfg().skipTradesInZigZag; }
-    public double getSmaCloseDistanceAtr()         { return cfg().smaCloseDistanceAtr; }
     public boolean isEnableSmaLevelCountFilter()   { return cfg().enableSmaLevelCountFilter; }
     public int getSmaLevelMinRangePct()            { return cfg().smaLevelMinRangePct; }
     public boolean isSmaLevelFilterMorningSkip()       { return cfg().smaLevelFilterMorningSkip; }
@@ -413,7 +374,6 @@ public class RiskSettingsStore {
     public double getStarMiddleBodyMaxMultOfOuter() { return cfg().starMiddleBodyMaxMultOfOuter; }
     public double getLevelTouchToleranceAtr()      { return cfg().levelTouchToleranceAtr; }
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
-    public boolean isEnableSmaCrossExit() { return cfg().enableSmaCrossExit; }
     public boolean isEnablePriceSmaExit() { return cfg().enablePriceSmaExit; }
     public boolean isEnableNiftyReversalCprExit() { return cfg().enableNiftyReversalCprExit; }
     public boolean isEnableNiftyHtfHurdleExit()    { return cfg().enableNiftyHtfHurdleExit; }
@@ -533,13 +493,7 @@ public class RiskSettingsStore {
     public void setEnableRiskRewardFilter(boolean v)       { cfg().enableRiskRewardFilter = v; }
     public void setMinRiskRewardRatio(double v)            { cfg().minRiskRewardRatio = v; }
     public void setEnableSmaTrendCheck(boolean v)         { cfg().enableSmaTrendCheck = v; }
-    public void setEnableSmaTrendCheckLenient(boolean v)  { cfg().enableSmaTrendCheckLenient = v; }
-    public void setEnableSmaAlignmentCheck(boolean v)     { cfg().enableSmaAlignmentCheck = v; }
-    public void setEnableSmaAlignmentCheckLenient(boolean v) { cfg().enableSmaAlignmentCheckLenient = v; }
     public void setEnableSmaVsAtpCheck(boolean v)         { cfg().enableSmaVsAtpCheck = v; }
-    public void setRequireRtpPattern(boolean v)           { cfg().requireRtpPattern = v; }
-    public void setSkipTradesInZigZag(boolean v)          { cfg().skipTradesInZigZag = v; }
-    public void setSmaCloseDistanceAtr(double v)           { cfg().smaCloseDistanceAtr = v; }
     public void setEnableSmaLevelCountFilter(boolean v)    { cfg().enableSmaLevelCountFilter = v; }
     public void setSmaLevelMinRangePct(int v)               { cfg().smaLevelMinRangePct = Math.max(0, Math.min(100, v)); }
     public void setSmaLevelFilterMorningSkip(boolean v)     { cfg().smaLevelFilterMorningSkip = v; }
@@ -571,7 +525,6 @@ public class RiskSettingsStore {
     public void setStarMiddleBodyMaxMultOfOuter(double v) { cfg().starMiddleBodyMaxMultOfOuter = v; }
     public void setLevelTouchToleranceAtr(double v)      { cfg().levelTouchToleranceAtr = Math.max(0, v); }
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
-    public void setEnableSmaCrossExit(boolean v) { cfg().enableSmaCrossExit = v; }
     public void setEnablePriceSmaExit(boolean v) { cfg().enablePriceSmaExit = v; }
     public void setEnableNiftyReversalCprExit(boolean v) { cfg().enableNiftyReversalCprExit = v; }
     public void setEnableNiftyHtfHurdleExit(boolean v)   { cfg().enableNiftyHtfHurdleExit = v; }
@@ -707,19 +660,7 @@ public class RiskSettingsStore {
             upsert("enableRiskRewardFilter", String.valueOf(c.enableRiskRewardFilter));
             upsert("minRiskRewardRatio", String.valueOf(c.minRiskRewardRatio));
             upsert("enableSmaTrendCheck", String.valueOf(c.enableSmaTrendCheck));
-            upsert("enableSmaTrendCheckLenient", String.valueOf(c.enableSmaTrendCheckLenient));
-            upsert("enableSmaAlignmentCheck", String.valueOf(c.enableSmaAlignmentCheck));
-            upsert("enableSmaAlignmentCheckLenient", String.valueOf(c.enableSmaAlignmentCheckLenient));
             upsert("enableSmaVsAtpCheck", String.valueOf(c.enableSmaVsAtpCheck));
-            upsert("smaPatternLookback", String.valueOf(c.smaPatternLookback));
-            upsert("braidedMinCrossovers", String.valueOf(c.braidedMinCrossovers));
-            upsert("braidedMaxSpreadAtr", String.valueOf(c.braidedMaxSpreadAtr));
-            upsert("railwayMaxCv", String.valueOf(c.railwayMaxCv));
-            upsert("railwayMinSpreadAtr", String.valueOf(c.railwayMinSpreadAtr));
-            upsert("railwayMinSlopeAtr", String.valueOf(c.railwayMinSlopeAtr));
-            upsert("requireRtpPattern", String.valueOf(c.requireRtpPattern));
-            upsert("skipTradesInZigZag", String.valueOf(c.skipTradesInZigZag));
-            upsert("smaCloseDistanceAtr", String.valueOf(c.smaCloseDistanceAtr));
             upsert("enableSmaLevelCountFilter", String.valueOf(c.enableSmaLevelCountFilter));
             upsert("smaLevelMinRangePct", String.valueOf(c.smaLevelMinRangePct));
             upsert("smaLevelFilterMorningSkip", String.valueOf(c.smaLevelFilterMorningSkip));
@@ -758,7 +699,6 @@ public class RiskSettingsStore {
             upsert("volumeMultiple", String.valueOf(c.volumeMultiple));
             upsert("volumeLookback", String.valueOf(c.volumeLookback));
             upsert("enableTrailingSl", String.valueOf(c.enableTrailingSl));
-            upsert("enableSmaCrossExit", String.valueOf(c.enableSmaCrossExit));
             upsert("enablePriceSmaExit", String.valueOf(c.enablePriceSmaExit));
             upsert("enableNiftyReversalCprExit", String.valueOf(c.enableNiftyReversalCprExit));
             upsert("enableNiftyHtfHurdleExit",   String.valueOf(c.enableNiftyHtfHurdleExit));
@@ -869,24 +809,18 @@ public class RiskSettingsStore {
                     case "enableRiskRewardFilter" -> c.enableRiskRewardFilter = Boolean.parseBoolean(v);
                     case "minRiskRewardRatio" -> c.minRiskRewardRatio = Double.parseDouble(v);
                     case "enableEmaTrendCheck", "enableSmaTrendCheck" -> c.enableSmaTrendCheck = Boolean.parseBoolean(v);
-                    case "enableSmaTrendCheckLenient" -> c.enableSmaTrendCheckLenient = Boolean.parseBoolean(v);
-                    case "enableSmaAlignmentCheck" -> c.enableSmaAlignmentCheck = Boolean.parseBoolean(v);
-                    case "enableSmaAlignmentCheckLenient" -> c.enableSmaAlignmentCheckLenient = Boolean.parseBoolean(v);
-                    // Legacy keys — silently ignored (semantics differ, no safe fold).
-                    case "enableEmaDirectionCheck", "enableEma200DirectionCheck", "enableEmaCrossoverCheck" -> { /* legacy */ }
+                    // Legacy keys — silently ignored.
+                    case "enableSmaTrendCheckLenient",
+                         "enableSmaAlignmentCheck",
+                         "enableSmaAlignmentCheckLenient",
+                         "enableEmaDirectionCheck", "enableEma200DirectionCheck", "enableEmaCrossoverCheck",
+                         "emaPatternLookback", "smaPatternLookback",
+                         "braidedMinCrossovers", "braidedMaxSpreadAtr",
+                         "railwayMaxCv", "railwayMinSpreadAtr", "railwayMinSlopeAtr",
+                         "requireRtpPattern", "buyRequiresRrtp", "sellRequiresFrtp",
+                         "skipTradesInZigZag", "allowTradesInZigZag",
+                         "emaCloseDistanceAtr", "smaCloseDistanceAtr" -> { /* legacy — SMA50/200/pattern removed */ }
                     case "enableEmaVsAtpCheck", "enableSmaVsAtpCheck" -> c.enableSmaVsAtpCheck = Boolean.parseBoolean(v);
-                    case "emaPatternLookback", "smaPatternLookback" -> c.smaPatternLookback = Integer.parseInt(v);
-                    case "braidedMinCrossovers" -> c.braidedMinCrossovers = Integer.parseInt(v);
-                    case "braidedMaxSpreadAtr" -> c.braidedMaxSpreadAtr = Double.parseDouble(v);
-                    case "railwayMaxCv" -> c.railwayMaxCv = Double.parseDouble(v);
-                    case "railwayMinSpreadAtr" -> c.railwayMinSpreadAtr = Double.parseDouble(v);
-                    case "railwayMinSlopeAtr" -> c.railwayMinSlopeAtr = Double.parseDouble(v);
-                    case "requireRtpPattern" -> c.requireRtpPattern = Boolean.parseBoolean(v);
-                    // Legacy: if either old toggle was ON, new combined toggle is ON.
-                    case "buyRequiresRrtp", "sellRequiresFrtp" -> { if (Boolean.parseBoolean(v)) c.requireRtpPattern = true; }
-                    case "skipTradesInZigZag" -> c.skipTradesInZigZag = Boolean.parseBoolean(v);
-                    case "allowTradesInZigZag" -> c.skipTradesInZigZag = !Boolean.parseBoolean(v); // legacy (inverted semantic)
-                    case "emaCloseDistanceAtr", "smaCloseDistanceAtr" -> c.smaCloseDistanceAtr = Double.parseDouble(v);
                     case "enableEmaLevelCountFilter", "enableSmaLevelCountFilter" -> c.enableSmaLevelCountFilter = Boolean.parseBoolean(v);
                     case "smaLevelMinRangePct" -> c.smaLevelMinRangePct = Math.max(0, Math.min(100, Integer.parseInt(v)));
                     case "smaLevelFilterMorningSkip" -> c.smaLevelFilterMorningSkip = Boolean.parseBoolean(v);
@@ -931,7 +865,7 @@ public class RiskSettingsStore {
                     case "volumeMultiple" -> c.volumeMultiple = Double.parseDouble(v);
                     case "volumeLookback" -> c.volumeLookback = Integer.parseInt(v);
                     case "enableTrailingSl"   -> c.enableTrailingSl = Boolean.parseBoolean(v);
-                    case "enableSmaCrossExit" -> c.enableSmaCrossExit = Boolean.parseBoolean(v);
+                    case "enableSmaCrossExit" -> { /* legacy — SMA cross exit removed */ }
                     case "enablePriceSmaExit" -> c.enablePriceSmaExit = Boolean.parseBoolean(v);
                     case "enableNiftyReversalCprExit" -> c.enableNiftyReversalCprExit = Boolean.parseBoolean(v);
                     case "enableNiftyHtfHurdleExit"   -> c.enableNiftyHtfHurdleExit = Boolean.parseBoolean(v);

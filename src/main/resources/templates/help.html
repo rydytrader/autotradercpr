@@ -523,8 +523,7 @@
             <ul>
                 <li><b>Green/red candle</b> — buys need green, sells need red. Dojis skipped.</li>
                 <li><b>ATP / VWAP check</b> (<code>enableAtpCheck</code>) — buy needs close above ATP; sell below.</li>
-                <li><b>5-min SMA Price</b> — lenient (<code>enableSmaTrendCheckLenient</code>): close above/below SMA 20 &amp; 50. Strict (<code>enableSmaTrendCheck</code>): close above/below SMA 20, 50, 200 together. Strict implies lenient.</li>
-                <li><b>5-min SMA Alignment</b> — lenient (<code>enableSmaAlignmentCheckLenient</code>): 20 vs 50 ordering. Strict (<code>enableSmaAlignmentCheck</code>): 20 &gt; 50 &gt; 200 (buy) / 20 &lt; 50 &lt; 200 (sell). Strict implies lenient.</li>
+                <li><b>5-min SMA Price</b> (<code>enableSmaTrendCheck</code>) — buy needs close above SMA 20; sell needs close below SMA 20.</li>
                 <li><b>SMA vs ATP</b> (<code>enableSmaVsAtpCheck</code>) — buy needs 20 SMA &gt; ATP; sell &lt; ATP.</li>
                 <li><b>SMA level-count filter</b> (<code>enableSmaLevelCountFilter</code>) — skip if any CPR zone sits between 20 SMA and the broken level. Plus a proximity check (<code>smaLevelMinRangePct</code>). Optional <b>morning skip</b> bypass before <code>smaLevelFilterMorningSkipUntil</code> (default 10:15 IST).</li>
                 <li><b>Volume filter</b> (<code>enableVolumeFilter</code>) — candle volume must be ≥ <code>volumeMultiple</code> × N-candle average.</li>
@@ -736,8 +735,7 @@
             <ol>
                 <li><b>Green/red candle</b> — buys need green, sells need red; dojis skipped.</li>
                 <li><b>ATP / VWAP</b> (<code>enableAtpCheck</code>) — buy needs close &gt; ATP; sell &lt; ATP.</li>
-                <li><b>5-min SMA Price</b> — lenient (<code>enableSmaTrendCheckLenient</code>): close above/below SMA 20 &amp; 50. Strict (<code>enableSmaTrendCheck</code>): close above/below SMA 20, 50, 200 together.</li>
-                <li><b>5-min SMA Alignment</b> — lenient (<code>enableSmaAlignmentCheckLenient</code>): 20 vs 50. Strict (<code>enableSmaAlignmentCheck</code>): 20 &gt; 50 &gt; 200 (buy) / 20 &lt; 50 &lt; 200 (sell).</li>
+                <li><b>5-min SMA Price</b> (<code>enableSmaTrendCheck</code>) — buy needs close above SMA 20; sell needs close below SMA 20.</li>
                 <li><b>SMA vs ATP</b> (<code>enableSmaVsAtpCheck</code>) — buy needs 20 SMA &gt; ATP; sell &lt; ATP.</li>
                 <li><b>20-SMA level-count</b> (<code>enableSmaLevelCountFilter</code>) — skip if a CPR zone sits between the 20 SMA and the broken level; plus proximity check (<code>smaLevelMinRangePct</code>).</li>
                 <li><b>Volume filter</b> (<code>enableVolumeFilter</code>) — candle volume ≥ <code>volumeMultiple</code> × N-candle average.</li>
@@ -1065,7 +1063,7 @@
             <h4>Filter "kill switches"</h4>
             <p>Most filters can be turned off independently from the Settings page. Useful when testing or in unusual market conditions:</p>
             <ul>
-                <li>Disable <code>enableSmaTrendCheck</code> / <code>enableSmaTrendCheckLenient</code> to allow trades against the SMA bundle. Same for the alignment pair.</li>
+                <li>Disable <code>enableSmaTrendCheck</code> to allow trades against the 5-min SMA 20.</li>
                 <li>Disable <code>enableHtfHurdleFilter</code> independently.</li>
                 <li>Disable <code>enableIndexAlignment</code> to ignore NIFTY's state entirely.</li>
                 <li>Disable <code>enableMpt</code> to trade HPT-only (only fully-aligned LTF + HTF setups fire — cleanest, fewest trades).</li>
@@ -1116,10 +1114,7 @@
             <table>
                 <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
                 <tr><td>enableAtpCheck</td><td>true</td><td>Buy needs close &gt; ATP, sell &lt; ATP</td></tr>
-                <tr><td>enableSmaTrendCheckLenient</td><td>false</td><td>5-min SMA Price (lenient): close above/below SMA 20 &amp; 50 (skip 200)</td></tr>
-                <tr><td>enableSmaTrendCheck</td><td>true</td><td>5-min SMA Price (strict): close above/below SMA 20, 50, 200 together</td></tr>
-                <tr><td>enableSmaAlignmentCheckLenient</td><td>false</td><td>5-min SMA Alignment (lenient): 20 &gt; 50 (buy) / 20 &lt; 50 (sell)</td></tr>
-                <tr><td>enableSmaAlignmentCheck</td><td>false</td><td>5-min SMA Alignment (strict): 20 &gt; 50 &gt; 200 (buy) / 20 &lt; 50 &lt; 200 (sell)</td></tr>
+                <tr><td>enableSmaTrendCheck</td><td>true</td><td>5-min SMA Price: buy needs close &gt; SMA 20, sell needs close &lt; SMA 20</td></tr>
                 <tr><td>enableSmaVsAtpCheck</td><td>true</td><td>20 SMA vs ATP/VWAP</td></tr>
                 <tr><td>enableSmaLevelCountFilter</td><td>true</td><td>Skip if CPR zones sit between 20 SMA and broken level</td></tr>
                 <tr><td>smaLevelMinRangePct</td><td>50</td><td>Proximity: SMA must be within (100−N)% of range from broken level</td></tr>
@@ -1164,10 +1159,7 @@
             <h4>Targets &amp; R/R</h4>
             <table>
                 <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
-                <tr><td>enableDayHighLowTargetShift</td><td>true</td><td>Shift target to today's session body H/L</td></tr>
-                <tr><td>dayHighLowShiftMinDistAtr</td><td>2.0</td><td>Skip shift if H/L too close (× ATR)</td></tr>
                 <tr><td>enableWeeklyLevelTargetShift</td><td>true</td><td>Shift to weekly R1-R4 / S1-S4 / PH / PL (TC/BC/Pivot excluded)</td></tr>
-                <tr><td>enableDailySma200TargetShift</td><td>true</td><td>Shift to daily 5-min SMA 200 between entry and target (most useful when running lenient SMA gates)</td></tr>
                 <tr><td>enableTargetTolerance</td><td>true</td><td>Discount target by ATR fraction so near-miss reversals fill</td></tr>
                 <tr><td>targetToleranceAtr</td><td>0.10</td><td>Discount as multiple of ATR</td></tr>
                 <tr><td>enableRiskRewardFilter</td><td>true</td><td>Reject if reward / risk &lt; minRiskRewardRatio</td></tr>
@@ -1202,17 +1194,6 @@
                 <tr><td>higherTimeframe</td><td>60</td><td>HTF candle resolution (weekly trend)</td></tr>
             </table>
 
-            <h4>SMA pattern detection</h4>
-            <p>Pattern toggles (<code>requireRtpPattern</code>, <code>skipTradesInZigZag</code>) are still wired in <code>RiskSettingsStore</code> but hidden from the Settings UI. The detection thresholds below are kept for informational completeness.</p>
-            <table>
-                <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
-                <tr><td>smaPatternLookback</td><td>10</td><td>Candles for pattern detection</td></tr>
-                <tr><td>braidedMinCrossovers</td><td>2</td><td>≥ this many crossovers = BRAIDED</td></tr>
-                <tr><td>braidedMaxSpreadAtr</td><td>0.10</td><td>Mean spread ≤ this × ATR = BRAIDED</td></tr>
-                <tr><td>railwayMaxCv</td><td>0.25</td><td>Stability cap for RAILWAY (stddev/mean)</td></tr>
-                <tr><td>railwayMinSpreadAtr</td><td>0.20</td><td>Min spread for RAILWAY (× ATR)</td></tr>
-                <tr><td>railwayMinSlopeAtr</td><td>0.20</td><td>Min slope for R-RTP / F-RTP</td></tr>
-            </table>
 
             <h4>Telegram</h4>
             <table>

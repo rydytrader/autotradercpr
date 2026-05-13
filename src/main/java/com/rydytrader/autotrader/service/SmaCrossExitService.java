@@ -12,16 +12,13 @@ import org.springframework.stereotype.Service;
 import java.util.Map;
 
 /**
- * Defensive exits — four independent checks, each toggled separately. All run on every 5-min
- * candle close after SmaService has populated {@code candle.sma20} / {@code sma50}.
+ * Defensive exits — three independent checks, each toggled separately. All run on every 5-min
+ * candle close after SmaService has populated {@code candle.sma20}.
  *
  * <ol>
- *   <li><b>Stock SMA-cross exit</b> ({@link RiskSettingsStore#isEnableSmaCrossExit()}, default off):
- *       Stock's 5-min SMA stack against trade direction → exit.
- *       LONG: SMA 20 &lt; SMA 50. SHORT: SMA 20 &gt; SMA 50.</li>
  *   <li><b>Stock price-vs-SMA exit</b> ({@link RiskSettingsStore#isEnablePriceSmaExit()}, default off):
- *       Stock's just-closed candle on the wrong side of its 5-min SMA 50 → exit.
- *       LONG: close &lt; SMA 50. SHORT: close &gt; SMA 50.</li>
+ *       Stock's just-closed candle on the wrong side of its 5-min SMA 20 → exit.
+ *       LONG: close &lt; SMA 20. SHORT: close &gt; SMA 20.</li>
  *   <li><b>NIFTY reversal CPR-touch exit</b>
  *       ({@link RiskSettingsStore#isEnableNiftyReversalCprExit()}, default off):
  *       When NIFTY is in BULLISH_REVERSAL (NIFTY below CPR + bullish SMAs), the bullish move
@@ -38,7 +35,7 @@ import java.util.Map;
  * <p>Stateless evaluation — no "did a cross just happen this bar" tracking. At every boundary
  * each enabled check simply asks "is the trade currently structurally wrong?". If yes -> exit.
  *
- * <p>Stock-side SMA values come from {@link CandleAggregator.CandleBar#sma20} / {@code sma50}
+ * <p>Stock-side SMA values come from {@link CandleAggregator.CandleBar#sma20}
  * (post-close completed-only snapshots stamped by SmaService.onCandleClose before this listener
  * fires). NIFTY state + CPR levels come from {@link IndexTrendService#getStickyState()} and
  * {@link BhavcopyService#getCprLevels(String) bhavcopyService.getCprLevels("NIFTY50")}.
@@ -81,41 +78,25 @@ public class SmaCrossExitService implements CandleAggregator.CandleCloseListener
         if (!"LONG".equals(position) && !"SHORT".equals(position)) return;
 
         double sma20 = candle.sma20;
-        double sma50 = candle.sma50;
         double close = candle.close;
         if (sma20 <= 0) return; // not seeded yet — fail-open
 
-        // ── 1. Stock SMA-cross exit: SMA 20 vs SMA 50 stack against the trade ──
-        if (riskSettings.isEnableSmaCrossExit() && sma50 > 0) {
-            boolean exitLong  = "LONG".equals(position)  && sma20 < sma50;
-            boolean exitShort = "SHORT".equals(position) && sma20 > sma50;
-            if (exitLong || exitShort) {
-                int qty = readQty(fyersSymbol);
-                if (qty <= 0) return;
-                eventService.log("[INFO] " + fyersSymbol + " SMA cross exit triggered — "
-                    + position + " position, 5m SMA 20=" + String.format("%.2f", sma20)
-                    + " " + (exitLong ? "<" : ">") + " SMA 50=" + String.format("%.2f", sma50));
-                pollingService.squareOff(fyersSymbol, qty, "SMA_CROSS_EXIT");
-                return;
-            }
-        }
-
-        // ── 2. Stock price-vs-SMA exit: close on the wrong side of the 5-min SMA 50 ──
-        if (riskSettings.isEnablePriceSmaExit() && close > 0 && sma50 > 0) {
-            boolean exitLong  = "LONG".equals(position)  && close < sma50;
-            boolean exitShort = "SHORT".equals(position) && close > sma50;
+        // ── 1. Stock price-vs-SMA exit: close on the wrong side of the 5-min SMA 20 ──
+        if (riskSettings.isEnablePriceSmaExit() && close > 0) {
+            boolean exitLong  = "LONG".equals(position)  && close < sma20;
+            boolean exitShort = "SHORT".equals(position) && close > sma20;
             if (exitLong || exitShort) {
                 int qty = readQty(fyersSymbol);
                 if (qty <= 0) return;
                 eventService.log("[INFO] " + fyersSymbol + " Price-SMA exit triggered — "
                     + position + " position, close=" + String.format("%.2f", close)
-                    + " " + (exitLong ? "<" : ">") + " 5m SMA 50=" + String.format("%.2f", sma50));
+                    + " " + (exitLong ? "<" : ">") + " 5m SMA 20=" + String.format("%.2f", sma20));
                 pollingService.squareOff(fyersSymbol, qty, "PRICE_SMA_EXIT");
                 return;
             }
         }
 
-        // ── 3. NIFTY reversal CPR-touch exit ──
+        // ── 2. NIFTY reversal CPR-touch exit ──
         // BULLISH_REVERSAL: NIFTY currently below CPR (cprBullish=false) but SMAs bullish.
         // We took LONG positions expecting NIFTY to keep rallying. If NIFTY climbs back to /
         // past the CPR bottom, the bullish move has played out — exit before NIFTY consolidates.
@@ -149,7 +130,7 @@ public class SmaCrossExitService implements CandleAggregator.CandleCloseListener
             }
         }
 
-        // ── 4. Virgin CPR Touch defensive exit ──
+        // ── 3. Virgin CPR Touch defensive exit ──
         // When NIFTY's just-completed 5m bar's range touches the active virgin CPR zone (any
         // overlap between bar [low, high] and zone [BC, TC]), close all open positions at
         // market — the zone is a magnet, the move is likely about to consolidate or reverse.

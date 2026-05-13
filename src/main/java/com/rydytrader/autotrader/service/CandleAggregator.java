@@ -1102,10 +1102,7 @@ public class CandleAggregator {
         // Snapshot of indicator values at candle close (populated by CandleAggregator.finalizeCandle + SmaService.onCandleClose + AtrService.onCandleClose)
         public double vwap;      // exchange-provided ATP at candle close (Fyers)
         public double sma20;     // 20-period SMA after this candle was included
-        public double sma50;     // 50-period SMA after this candle was included
-        public double sma200;    // 200-period SMA after this candle was included
         public double atr;       // ATR after this candle was included (Wilder-smoothed)
-        public String smaPattern; // "RAILWAY_UP" (R-RTP), "RAILWAY_DOWN" (F-RTP), "BRAIDED" (ZIG ZAG), or "" at close
         public double trueRange(CandleBar prev) {
             if (prev == null) return high - low;
             return Math.max(high - low, Math.max(Math.abs(high - prev.close), Math.abs(low - prev.close)));

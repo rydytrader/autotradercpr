@@ -207,8 +207,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         candleAggregator.addListener(smaService);
         candleAggregator.addListener(weeklyCprService);
         candleAggregator.addListener(breakoutScanner);
-        // SMA cross exit — must register AFTER smaService so candle.sma20/sma50 are populated.
-        // Gated by enableSmaCrossExit setting; reads candle's post-close completed-only SMA snapshot.
+        // Defensive exits — must register AFTER smaService so candle.sma20 is populated.
+        // Reads candle's post-close completed-only SMA snapshot.
         candleAggregator.addListener(smaCrossExitService);
         candleAggregator.start();
 
@@ -677,11 +677,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                     // Rounded to 2 decimals only (TV does not snap SMAs to tick size — keeping
                     // raw value rounded to ₹0.01 lets the bot's display match TV exactly).
                     double s20  = smaService.getSma(sym);
-                    double s50  = smaService.getSma50(sym);
-                    double s200 = smaService.getSma200(sym);
                     if (s20  > 0) d.put("sma",      Math.round(s20  * 100.0) / 100.0);
-                    if (s50  > 0) d.put("sma50",    Math.round(s50  * 100.0) / 100.0);
-                    if (s200 > 0) d.put("sma200",   Math.round(s200 * 100.0) / 100.0);
                     wlPayload.put(sym, d);
                 }
                 if (!wlPayload.isEmpty()) {
@@ -1031,8 +1027,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         int weeklyCount = weeklyCprService.getLoadedCountFor(watchlist);
         int cprCount = bhavcopyService.getLoadedCountFor(watchlist);
         int e20 = smaService.getLoadedCountFor(watchlist);
-        int e50 = smaService.getSma50LoadedCountFor(watchlist);
-        int e200 = smaService.getSma200LoadedCountFor(watchlist);
         int total = watchlist.size();
         int htfMins = riskSettings.getHigherTimeframe();
 
@@ -1041,12 +1035,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             + ", narrow=" + narrowCount + "/inside=" + insideCount
             + ", CPR=" + cprCount + ", ATR=" + atrLoaded
             + ", weekly-trend=" + weeklyCount
-            + ", 5m SMA 20/50/200=" + e20 + "/" + e50 + "/" + e200 + ")");
+            + ", 5m SMA 20=" + e20 + ")");
         eventService.log("[SUCCESS] System ready for trading");
 
         telegramService.notifyBotReady(total, narrowCount, insideCount,
             atrLoaded, weeklyCount, cprCount,
-            e20, e50, e200, htfMins);
+            e20, htfMins);
     }
 
     /**

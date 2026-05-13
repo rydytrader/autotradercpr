@@ -722,27 +722,19 @@
         var dArrow = dTrend.includes('BULLISH') ? '&#9650;' : dTrend.includes('BEARISH') ? '&#9660;' : '&#9644;';
 
         // SMA trend per timeframe — shown in SMA Levels title and body
-        function smaTrendObj(price, e20, e50, e200, pattern) {
-            if (price <= 0 || e20 <= 0 || e50 <= 0) {
+        function smaTrendObj(price, e20) {
+            if (price <= 0 || e20 <= 0) {
                 return { label: '--', shortLabel: '--', cls: 'neutral', arrow: '&#9644;' };
             }
-            var bullBase = price > e20 && price > e50 && e20 > e50;
-            var bearBase = price < e20 && price < e50 && e20 < e50;
-            if (bullBase) {
-                if (e200 > 0 && price > e200 && e50 > e200) {
-                    return { label: 'S.BULLISH', shortLabel: 'S.BULL', cls: 'strong_bullish', arrow: '&#9650;' };
-                }
+            if (price > e20) {
                 return { label: 'BULLISH', shortLabel: 'BULL', cls: 'bullish', arrow: '&#9650;' };
             }
-            if (bearBase) {
-                if (e200 > 0 && price < e200 && e50 < e200) {
-                    return { label: 'S.BEARISH', shortLabel: 'S.BEAR', cls: 'strong_bearish', arrow: '&#9660;' };
-                }
+            if (price < e20) {
                 return { label: 'BEARISH', shortLabel: 'BEAR', cls: 'bearish', arrow: '&#9660;' };
             }
             return { label: 'NEUTRAL', shortLabel: 'NEU', cls: 'neutral', arrow: '&#9644;' };
         }
-        var em5  = smaTrendObj((d.price5m  > 0 ? d.price5m  : d.ltp), d.sma20,    d.sma50,    d.sma200,    d.smaPattern);
+        var em5  = smaTrendObj((d.price5m  > 0 ? d.price5m  : d.ltp), d.sma20);
 
         // Build levels — show key levels with broken markers
         var broken = d.brokenLevels || [];
@@ -828,13 +820,15 @@
             + '  </span>'
             + '</div>'
             + '<div class="scan-data-grid scan-data-grid-3">'
-            + '  <div class="scan-data-item"><div class="scan-data-label">ATP (VWAP)</div><div class="scan-data-value">' + fmt(d.atp) + '</div></div>'
+            + (function() {
+                var atpTrend = smaTrendObj(d.ltp, d.atp);
+                var color = atpTrend.cls === 'bullish' ? 'var(--accent-green)' : atpTrend.cls === 'bearish' ? 'var(--accent-red)' : 'var(--text-secondary)';
+                return '  <div class="scan-data-item"><div class="scan-data-label">ATP (VWAP)</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + (d.atp > 0 ? fmt(d.atp) + ' ' + atpTrend.arrow : '--') + '</div></div>';
+            })()
             + '  <div class="scan-data-item"><div class="scan-data-label">ATR</div><div class="scan-data-value">' + fmt(d.atr) + '</div></div>'
             + (function() {
-                var ratio = (d.avgVolume > 0 && d.candleVolume > 0) ? (d.candleVolume / d.avgVolume) : 0;
-                var color = ratio >= 1.5 ? 'var(--accent-green)' : ratio >= 1.0 ? 'var(--text-primary)' : 'var(--text-secondary)';
-                var ratioText = ratio > 0 ? ' (' + ratio.toFixed(1) + 'x)' : '';
-                return '  <div class="scan-data-item"><div class="scan-data-label">Vol / 20-Avg</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + (d.candleVolume > 0 ? fmtVol(d.candleVolume) : '--') + ' / ' + (d.avgVolume > 0 ? fmtVol(d.avgVolume) : '--') + ratioText + '</div></div>';
+                var color = em5.cls === 'bullish' ? 'var(--accent-green)' : em5.cls === 'bearish' ? 'var(--accent-red)' : 'var(--text-secondary)';
+                return '  <div class="scan-data-item"><div class="scan-data-label">SMA 20</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + (d.sma20 > 0 ? fmt(d.sma20) + ' ' + em5.arrow : '--') + '</div></div>';
             })()
             + '</div>'
             + '<div style="border-top:1px solid var(--border);"></div>'
@@ -843,46 +837,10 @@
             + '    <span>CPR Levels</span>'
             + '    <span style="display:flex; gap:8px; margin-left:auto; align-items:center; font-size:0.7rem;">'
             + '      <span class="scan-trend"><span class="label">D:</span> <span class="' + dClass + '">' + dArrow + ' ' + dLabel + '</span></span>'
-            + '      <span class="scan-trend"><span class="label">W:</span> <span class="' + wClass + '">' + wArrow + ' ' + wLabel + '</span></span>'
             + '      <span class="toggle-arrow">&#9654;</span>'
             + '    </span>'
             + '  </div>'
             + '  <div class="scan-levels-body">' + levelsHtml + '</div>'
-            + '</div>'
-            + '<div style="border-top:1px solid var(--border);"></div>'
-            + '<div class="scan-levels' + (isExpanded(d.symbol, 'sma') ? ' expanded' : '') + '">'
-            + '  <div class="scan-levels-title" onclick="toggleLevelSection(this, \'' + d.symbol + '\', \'sma\')">'
-            + '    <span>SMA Levels</span>'
-            + '    <span style="display:flex; gap:8px; margin-left:auto; align-items:center; font-size:0.7rem;">'
-            + '      <span class="scan-trend"><span class="label">5m:</span> <span class="' + em5.cls  + '">' + em5.arrow  + ' ' + em5.label  + '</span></span>'
-            + '      <span class="toggle-arrow">&#9654;</span>'
-            + '    </span>'
-            + '  </div>'
-            + (function() {
-                function patCell(p) {
-                    if (p === 'RAILWAY_UP')   return '<span style="color:var(--accent-green);font-weight:700;">R-RTP</span>';
-                    if (p === 'RAILWAY_DOWN') return '<span style="color:var(--accent-red);font-weight:700;">F-RTP</span>';
-                    if (p === 'BRAIDED')      return '<span style="color:var(--accent-red);font-weight:700;">ZIG ZAG</span>';
-                    return '<span style="color:var(--text-muted);">NONE</span>';
-                }
-                function valCell(v) { return v > 0 ? fmt(v) : '<span style="color:var(--text-muted);">--</span>'; }
-                function trendBadge(t) {
-                    return '<span class="scan-trend"><span class="' + t.cls + '">' + t.arrow + ' ' + t.shortLabel + '</span></span>';
-                }
-                var gridStyle = 'display:grid; grid-template-columns:38px 60px 1fr 1fr 1fr 70px; gap:6px; align-items:center; font-size:0.7rem; padding:4px 6px;';
-                var headStyle = gridStyle + ' color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; font-size:0.6rem; font-weight:700; border-bottom:1px solid var(--border);';
-                return '<div class="scan-levels-body">'
-                    + '<div style="' + headStyle + '"><span>TF</span><span>Trend</span><span style="text-align:right;">20</span><span style="text-align:right;">50</span><span style="text-align:right;">200</span><span style="text-align:right;">Pattern</span></div>'
-                    + '<div style="' + gridStyle + '">'
-                    +   '<span style="font-weight:700; color:var(--text-muted);">5m</span>'
-                    +   '<span>' + trendBadge(em5) + '</span>'
-                    +   '<span style="text-align:right;">' + valCell(d.sma20) + '</span>'
-                    +   '<span style="text-align:right;">' + valCell(d.sma50) + '</span>'
-                    +   '<span style="text-align:right;">' + valCell(d.sma200) + '</span>'
-                    +   '<span style="text-align:right;">' + patCell(d.smaPattern) + '</span>'
-                    + '</div>'
-                    + '</div>';
-            })()
             + '</div>'
             + '<div style="border-top:1px solid var(--border);"></div>'
             + '<div class="scan-levels' + (isExpanded(d.symbol, 'signal') ? ' expanded' : '') + '">'
@@ -1010,8 +968,6 @@
                         if (update.candleLow) d.candleLow = update.candleLow;
                         // Live SMA values pushed from server every tick
                         if (update.sma)       d.sma       = update.sma;
-                        if (update.sma50)     d.sma50     = update.sma50;
-                        if (update.sma200)    d.sma200    = update.sma200;
 
                         // Update DOM in-place
                         var card = document.querySelector('[data-symbol="' + d.symbol + '"]');
@@ -1019,7 +975,7 @@
                         // If SMA values changed, the cheapest way to refresh the SMA grid
                         // (5-min row includes arrows/scores derived from LTP vs SMA) is
                         // to re-render the whole card. ~50 cards × small HTML = fast enough.
-                        var smaChanged = update.sma || update.sma50 || update.sma200;
+                        var smaChanged = update.sma;
                         if (smaChanged) {
                             card.outerHTML = buildCard(d);
                             continue;
@@ -1719,14 +1675,14 @@ function showSignalTrail() {
 // ══════════════════════════════════════════════════════════════════════
 // Chart Modal — live candlestick chart with CPR/VWAP/SMA overlays
 // ══════════════════════════════════════════════════════════════════════
-var chartState = { modal: null, chart: null, series: null, vwapSeries: null, sma20Series: null, sma50Series: null, sma200Series: null, levelSeries: [], levelPriceLines: [], orSeries: null, symbol: null, interval: null, resizeHandler: null, lastData: null };
+var chartState = { modal: null, chart: null, series: null, vwapSeries: null, sma20Series: null, levelSeries: [], levelPriceLines: [], orSeries: null, symbol: null, interval: null, resizeHandler: null, lastData: null };
 
 // Chart visibility preferences (persisted in localStorage)
 var chartPrefs = (function() {
     var defaults = {
         cprBand: true, r1pdhBand: true, s1pdlBand: true, orBand: true,
         cprLines: true, rLines: true, sLines: true, pdhPdl: true, pivot: true,
-        orLines: true, vwap: true, sma20: true, sma50: true, sma200: true, trades: true
+        orLines: true, vwap: true, sma20: true, trades: true
     };
     try {
         var stored = JSON.parse(localStorage.getItem('chartPrefs') || '{}');
@@ -1786,9 +1742,7 @@ function renderChartSettings() {
         ]},
         { label: 'Indicators', items: [
             { key: 'vwap', label: 'VWAP', color: '#ec407a' },
-            { key: 'sma20', label: 'SMA 20', color: '#66bb6a' },
-            { key: 'sma50', label: 'SMA 50', color: '#ef5350' },
-            { key: 'sma200', label: 'SMA 200', color: document.documentElement.getAttribute('data-theme') === 'light' ? '#000' : '#fff' }
+            { key: 'sma20', label: 'SMA 20', color: '#66bb6a' }
         ]},
         { label: 'Trades', items: [
             { key: 'trades', label: 'Trade markers', color: '#888' }
@@ -1819,8 +1773,6 @@ function onChartPrefChange(el) {
         applyTradeMarkers(chartState.lastData);
         if (chartState.vwapSeries) chartState.vwapSeries.applyOptions({ visible: chartPrefs.vwap });
         if (chartState.sma20Series) chartState.sma20Series.applyOptions({ visible: chartPrefs.sma20 });
-        if (chartState.sma50Series) chartState.sma50Series.applyOptions({ visible: chartPrefs.sma50 });
-        if (chartState.sma200Series) chartState.sma200Series.applyOptions({ visible: chartPrefs.sma200 });
     }
 }
 
@@ -1854,7 +1806,6 @@ function closeChartModal() {
         chartState.series = null;
         chartState.vwapSeries = null;
         chartState.sma20Series = null;
-        chartState.sma200Series = null;
         chartState.levelSeries = [];
         chartState.levelPriceLines = [];
         chartState.orSeries = null;
@@ -1940,8 +1891,7 @@ function toLwcLine(series) {
 function renderChart(d, isFirst) {
     var candles = d.candles || [];
     chartState.lastData = d;
-    // NIFTY index chart hides VWAP (index has no real volume) and SMA 200 (focus on
-    // the 20/50 + CPR + OI levels). Stocks keep all standard layers.
+    // NIFTY index chart hides VWAP (index has no real volume).
     var isNifty = d.symbol === 'NSE:NIFTY50-INDEX';
 
     var container = document.getElementById('chartContainer');
@@ -1963,8 +1913,6 @@ function renderChart(d, isFirst) {
     chartState.volMap = volMap;
     var vwapLine = toLwcLine(d.vwapSeries);
     var sma20Line = toLwcLine(d.sma20Series);
-    var sma50Line = toLwcLine(d.sma50Series);
-    var sma200Line = toLwcLine(d.sma200Series);
 
     var theme = document.documentElement.getAttribute('data-theme');
     var dark = theme !== 'light';
@@ -2029,24 +1977,6 @@ function renderChart(d, isFirst) {
         });
         chartState.sma20Series.setData(sma20Line);
 
-        // SMA 50 line (red)
-        chartState.sma50Series = chartState.chart.addLineSeries({
-            color: '#ef5350', lineWidth: 2,
-            priceLineVisible: false, lastValueVisible: true, title: 'SMA50',
-            crosshairMarkerVisible: false, visible: chartPrefs.sma50
-        });
-        chartState.sma50Series.setData(sma50Line);
-
-        // SMA 200 line (white on dark, black on light) — skipped for NIFTY index chart.
-        if (!isNifty) {
-            chartState.sma200Series = chartState.chart.addLineSeries({
-                color: dark ? '#ffffff' : '#000000', lineWidth: 2,
-                priceLineVisible: false, lastValueVisible: true, title: 'SMA200',
-                crosshairMarkerVisible: false, visible: chartPrefs.sma200
-            });
-            chartState.sma200Series.setData(sma200Line);
-        }
-
         chartState.levelSeries = [];
         chartState.levelPriceLines = [];
         applyChartLines(d);
@@ -2101,8 +2031,6 @@ function renderChart(d, isFirst) {
             if (!priceData) { tooltip.style.display = 'none'; return; }
             var vwapData = param.seriesData.get(chartState.vwapSeries);
             var sma20Data = param.seriesData.get(chartState.sma20Series);
-            var sma50Data = param.seriesData.get(chartState.sma50Series);
-            var sma200Data = param.seriesData.get(chartState.sma200Series);
             var changePct = priceData.open > 0 ? ((priceData.close - priceData.open) / priceData.open * 100) : 0;
             var changeColor = priceData.close >= priceData.open ? '#26a69a' : '#ef5350';
             var vol = chartState.volMap ? chartState.volMap[param.time] : null;
@@ -2115,8 +2043,6 @@ function renderChart(d, isFirst) {
                 '<div style="color:' + (dark ? '#aab0b6' : '#666') + ';">Vol: ' + fmtChartVol(vol) + '</div>';
             if (vwapData && vwapData.value) html += '<div style="color:#ec407a;">VWAP: ' + vwapData.value.toFixed(2) + '</div>';
             if (sma20Data && sma20Data.value) html += '<div style="color:#66bb6a;">SMA20: ' + sma20Data.value.toFixed(2) + '</div>';
-            if (sma50Data && sma50Data.value) html += '<div style="color:#ef5350;">SMA50: ' + sma50Data.value.toFixed(2) + '</div>';
-            if (sma200Data && sma200Data.value) html += '<div style="color:' + (dark ? '#ffffff' : '#000000') + ';">SMA200: ' + sma200Data.value.toFixed(2) + '</div>';
             tooltip.innerHTML = html;
             // Position: offset from cursor, flip if near right/bottom edge
             var rect = container.getBoundingClientRect();
@@ -2137,8 +2063,6 @@ function renderChart(d, isFirst) {
     if (lastBar) chartState.series.update(lastBar);
     if (chartState.vwapSeries) chartState.vwapSeries.setData(vwapLine);
     if (chartState.sma20Series) chartState.sma20Series.setData(sma20Line);
-    if (chartState.sma50Series) chartState.sma50Series.setData(sma50Line);
-    if (chartState.sma200Series) chartState.sma200Series.setData(sma200Line);
     applyChartLines(d);
     applyOrBand(d);
     applyTradeMarkers(d);

@@ -441,8 +441,6 @@ public class TradingController {
         scanner.put("tradedToday", breakoutScanner.getTradedCountToday());
         scanner.put("filteredToday", breakoutScanner.getFilteredCountToday());
         scanner.put("smaLoaded", smaService.getLoadedCountFor(marketDataService.getWatchlist()));
-        scanner.put("sma50Loaded", smaService.getSma50LoadedCountFor(marketDataService.getWatchlist()));
-        scanner.put("sma200Loaded", smaService.getSma200LoadedCountFor(marketDataService.getWatchlist()));
         scanner.put("firstCandleLoaded", candleAggregator.getFirstCandleCloseCountFor(marketDataService.getWatchlist()));
         scanner.put("validationPass", marketDataService.getValidationPass());
         scanner.put("validationFail", marketDataService.getValidationFail());

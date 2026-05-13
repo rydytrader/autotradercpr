@@ -359,18 +359,12 @@
                 <div class="form-group">
                     <label class="form-label">SMA-based Defensive Exits</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableSmaCrossExit" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">
-                            <b>Stock SMA Cross</b> &mdash; exit when stock's 5-min SMA 20 stacks against trade direction (LONG: 20 &lt; 50; SHORT: 20 &gt; 50)
-                        </span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="enablePriceSmaExit" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">
-                            <b>Stock Price vs SMA 50</b> &mdash; exit when stock's 5-min candle close is on the wrong side of its SMA 50 (LONG: close &lt; SMA 50; SHORT: close &gt; SMA 50)
+                            <b>Stock Price vs SMA 20</b> &mdash; exit when stock's 5-min candle close is on the wrong side of its SMA 20 (LONG: close &lt; SMA 20; SHORT: close &gt; SMA 20)
                         </span>
                     </div>
-                    <div class="form-hint">Stock-side defensive-exit checks, evaluated on every 5-min candle close (after the candle's SMAs are stamped). Fire before SL / Target / Trailing; cancels both OCO legs and places an exit market order. Reasons recorded: <code>SMA_CROSS_EXIT</code>, <code>PRICE_SMA_EXIT</code>. Checks run in order; first match wins. NIFTY-side macro safety-net mirrors of these checks live on the <b>Index Alignment</b> tab.</div>
+                    <div class="form-hint">Stock-side defensive-exit check, evaluated on every 5-min candle close (after the candle's SMA is stamped). Fires before SL / Target / Trailing; cancels both OCO legs and places an exit market order. Reason recorded: <code>PRICE_SMA_EXIT</code>. NIFTY-side macro safety-net mirrors of this check live on the <b>Index Alignment</b> tab.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">NIFTY Reversal CPR-Touch Exit</label>
@@ -422,39 +416,12 @@
         <div class="section-body">
             <div class="form-grid">
                 <div class="form-group">
-                    <label class="form-label">SMA Price and Pattern Filter</label>
+                    <label class="form-label">SMA Price Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableSmaTrendCheckLenient" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Price (lenient)</b>: 5-min SMA trend — close above/below SMA 20 and 50 (skip 200)</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="enableSmaTrendCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Price (strict)</b>: 5-min SMA trend — close above/below SMA 20, 50, 200 together</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Price</b>: 5-min SMA trend — close above SMA 20 for buys, close below SMA 20 for sells</span>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="enableSmaAlignmentCheckLenient" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Alignment (lenient)</b>: SMAs aligned — buy requires <b>20 &gt; 50</b> only, sell requires <b>20 &lt; 50</b> only (skip 200)</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="enableSmaAlignmentCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Alignment (strict)</b>: SMAs aligned — buy requires <b>20 &gt; 50 &gt; 200</b>, sell requires <b>20 &lt; 50 &lt; 200</b></span>
-                    </div>
-                    <!-- Pattern toggles hidden from UI but settings still wired (load/save preserved) -->
-                    <div style="display: none;">
-                        <input type="checkbox" id="requireRtpPattern" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Pattern</b>: require direction-matched 5-min pattern — <b style="color:var(--accent-green);">R-RTP</b> for buys, <b style="color:var(--accent-red);">F-RTP</b> for sells</span>
-                    </div>
-                    <div style="display: none;">
-                        <input type="checkbox" id="skipTradesInZigZag" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Pattern</b>: skip trades when 5-min pattern is <b style="color:var(--accent-red);">ZIG ZAG</b> (choppy)</span>
-                    </div>
-                    <div class="form-hint">Two dimensions gate an entry: <b>price position</b> (close vs SMAs) and <b>alignment</b> (SMA-to-SMA ordering). Each has a <b>lenient</b> (uses 20 + 50 only) and a <b>strict</b> (uses 20 + 50 + 200) variant — strict implies lenient, so when both are on the strict gate wins.
-                        <br><br>
-                        <b>Price (lenient)</b>: close above/below 20 and 50. <b>Price (strict)</b>: close above/below 20, 50, 200 together.
-                        <br>
-                        <b>Alignment (lenient)</b>: 20 &gt; 50 (buy) / 20 &lt; 50 (sell). <b>Alignment (strict)</b>: 20 &gt; 50 &gt; 200 (buy) / 20 &lt; 50 &lt; 200 (sell).
-                        <br><br>
-                        Failing any enabled gate rejects the trade (no qty downgrade under the LTF-priority model). Fail-open when any SMA is still warming up. When both price gates are OFF, the daily 200 SMA becomes a target-shift candidate (see Target Shift Sources).</div>
+                    <div class="form-hint">Gates entries by price position relative to the 5-min SMA 20. Buys require close &gt; SMA 20; sells require close &lt; SMA 20. Failing the gate rejects the trade. Fail-open when SMA 20 is still warming up.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">VWAP Confirmation (ATP)</label>
@@ -1364,12 +1331,7 @@
             document.getElementById('levelTouchToleranceAtr').value       = d.levelTouchToleranceAtr       != null ? d.levelTouchToleranceAtr       : 0.2;
             document.getElementById('minRiskRewardRatio').value = d.minRiskRewardRatio != null ? d.minRiskRewardRatio : 1.0;
             document.getElementById('enableSmaTrendCheck').checked = d.enableSmaTrendCheck !== false;
-            document.getElementById('enableSmaTrendCheckLenient').checked = d.enableSmaTrendCheckLenient === true;
-            document.getElementById('enableSmaAlignmentCheck').checked = d.enableSmaAlignmentCheck === true;
-            document.getElementById('enableSmaAlignmentCheckLenient').checked = d.enableSmaAlignmentCheckLenient === true;
             document.getElementById('enableSmaVsAtpCheck').checked = d.enableSmaVsAtpCheck !== false;
-            document.getElementById('requireRtpPattern').checked = d.requireRtpPattern === true;
-            document.getElementById('skipTradesInZigZag').checked = d.skipTradesInZigZag !== false;
             document.getElementById('enableSmaLevelCountFilter').checked = d.enableSmaLevelCountFilter !== false;
             document.getElementById('smaLevelMinRangePct').value = d.smaLevelMinRangePct != null ? d.smaLevelMinRangePct : 50;
             document.getElementById('smaLevelFilterMorningSkip').checked = d.smaLevelFilterMorningSkip === true;
@@ -1395,7 +1357,6 @@
             document.getElementById('volumeMultiple').value = d.volumeMultiple || 2.0;
             document.getElementById('volumeLookback').value = d.volumeLookback || 20;
             document.getElementById('enableTrailingSl').checked = d.enableTrailingSl != null ? d.enableTrailingSl : true;
-            document.getElementById('enableSmaCrossExit').checked = d.enableSmaCrossExit === true;
             document.getElementById('enablePriceSmaExit').checked = d.enablePriceSmaExit === true;
             document.getElementById('enableNiftyReversalCprExit').checked = d.enableNiftyReversalCprExit === true;
             document.getElementById('enableNiftyHtfHurdleExit').checked   = d.enableNiftyHtfHurdleExit === true;
@@ -1552,12 +1513,7 @@
                 levelTouchToleranceAtr:       parseFloat(document.getElementById('levelTouchToleranceAtr').value)       || 0.2,
                 minRiskRewardRatio: parseFloat(document.getElementById('minRiskRewardRatio').value) || 1.0,
                 enableSmaTrendCheck: document.getElementById('enableSmaTrendCheck').checked,
-                enableSmaTrendCheckLenient: document.getElementById('enableSmaTrendCheckLenient').checked,
-                enableSmaAlignmentCheck: document.getElementById('enableSmaAlignmentCheck').checked,
-                enableSmaAlignmentCheckLenient: document.getElementById('enableSmaAlignmentCheckLenient').checked,
                 enableSmaVsAtpCheck: document.getElementById('enableSmaVsAtpCheck').checked,
-                requireRtpPattern: document.getElementById('requireRtpPattern').checked,
-                skipTradesInZigZag: document.getElementById('skipTradesInZigZag').checked,
                 enableSmaLevelCountFilter: document.getElementById('enableSmaLevelCountFilter').checked,
                 smaLevelMinRangePct: parseInt(document.getElementById('smaLevelMinRangePct').value) || 0,
                 smaLevelFilterMorningSkip: document.getElementById('smaLevelFilterMorningSkip').checked,
@@ -1581,7 +1537,6 @@
                 volumeMultiple: parseFloat(document.getElementById('volumeMultiple').value) || 2.0,
                 volumeLookback: parseInt(document.getElementById('volumeLookback').value) || 20,
                 enableTrailingSl: document.getElementById('enableTrailingSl').checked,
-                enableSmaCrossExit: document.getElementById('enableSmaCrossExit').checked,
                 enablePriceSmaExit: document.getElementById('enablePriceSmaExit').checked,
                 enableNiftyReversalCprExit: document.getElementById('enableNiftyReversalCprExit').checked,
                 enableNiftyHtfHurdleExit:   document.getElementById('enableNiftyHtfHurdleExit').checked,

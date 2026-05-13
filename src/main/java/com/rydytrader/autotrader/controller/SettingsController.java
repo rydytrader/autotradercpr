@@ -70,13 +70,7 @@ public class SettingsController {
         result.put("enableRiskRewardFilter", riskSettings.isEnableRiskRewardFilter());
         result.put("minRiskRewardRatio", riskSettings.getMinRiskRewardRatio());
         result.put("enableSmaTrendCheck", riskSettings.isEnableSmaTrendCheck());
-        result.put("enableSmaTrendCheckLenient", riskSettings.isEnableSmaTrendCheckLenient());
-        result.put("enableSmaAlignmentCheck", riskSettings.isEnableSmaAlignmentCheck());
-        result.put("enableSmaAlignmentCheckLenient", riskSettings.isEnableSmaAlignmentCheckLenient());
         result.put("enableSmaVsAtpCheck", riskSettings.isEnableSmaVsAtpCheck());
-        result.put("requireRtpPattern", riskSettings.isRequireRtpPattern());
-        result.put("skipTradesInZigZag", riskSettings.isSkipTradesInZigZag());
-        result.put("smaCloseDistanceAtr", riskSettings.getSmaCloseDistanceAtr());
         result.put("enableSmaLevelCountFilter", riskSettings.isEnableSmaLevelCountFilter());
         result.put("smaLevelMinRangePct", riskSettings.getSmaLevelMinRangePct());
         result.put("smaLevelFilterMorningSkip", riskSettings.isSmaLevelFilterMorningSkip());
@@ -118,7 +112,6 @@ public class SettingsController {
         result.put("volumeMultiple", riskSettings.getVolumeMultiple(effectiveMode));
         result.put("volumeLookback", riskSettings.getVolumeLookback(effectiveMode));
         result.put("enableTrailingSl", riskSettings.isEnableTrailingSl(effectiveMode));
-        result.put("enableSmaCrossExit", riskSettings.isEnableSmaCrossExit());
         result.put("enablePriceSmaExit", riskSettings.isEnablePriceSmaExit());
         result.put("enableNiftyReversalCprExit", riskSettings.isEnableNiftyReversalCprExit());
         result.put("enableNiftyHtfHurdleExit",   riskSettings.isEnableNiftyHtfHurdleExit());
@@ -208,13 +201,7 @@ public class SettingsController {
             if (body.containsKey("enableRiskRewardFilter")) riskSettings.setEnableRiskRewardFilter(Boolean.parseBoolean(body.get("enableRiskRewardFilter").toString()));
             if (body.containsKey("minRiskRewardRatio")) riskSettings.setMinRiskRewardRatio(Double.parseDouble(body.get("minRiskRewardRatio").toString()));
             if (body.containsKey("enableSmaTrendCheck")) riskSettings.setEnableSmaTrendCheck(Boolean.parseBoolean(body.get("enableSmaTrendCheck").toString()));
-            if (body.containsKey("enableSmaTrendCheckLenient")) riskSettings.setEnableSmaTrendCheckLenient(Boolean.parseBoolean(body.get("enableSmaTrendCheckLenient").toString()));
-            if (body.containsKey("enableSmaAlignmentCheck")) riskSettings.setEnableSmaAlignmentCheck(Boolean.parseBoolean(body.get("enableSmaAlignmentCheck").toString()));
-            if (body.containsKey("enableSmaAlignmentCheckLenient")) riskSettings.setEnableSmaAlignmentCheckLenient(Boolean.parseBoolean(body.get("enableSmaAlignmentCheckLenient").toString()));
             if (body.containsKey("enableSmaVsAtpCheck")) riskSettings.setEnableSmaVsAtpCheck(Boolean.parseBoolean(body.get("enableSmaVsAtpCheck").toString()));
-            if (body.containsKey("requireRtpPattern")) riskSettings.setRequireRtpPattern(Boolean.parseBoolean(body.get("requireRtpPattern").toString()));
-            if (body.containsKey("skipTradesInZigZag")) riskSettings.setSkipTradesInZigZag(Boolean.parseBoolean(body.get("skipTradesInZigZag").toString()));
-            if (body.containsKey("smaCloseDistanceAtr")) riskSettings.setSmaCloseDistanceAtr(Double.parseDouble(body.get("smaCloseDistanceAtr").toString()));
             if (body.containsKey("enableSmaLevelCountFilter")) riskSettings.setEnableSmaLevelCountFilter(Boolean.parseBoolean(body.get("enableSmaLevelCountFilter").toString()));
             if (body.containsKey("smaLevelMinRangePct")) riskSettings.setSmaLevelMinRangePct(Integer.parseInt(body.get("smaLevelMinRangePct").toString()));
             if (body.containsKey("smaLevelFilterMorningSkip")) riskSettings.setSmaLevelFilterMorningSkip(Boolean.parseBoolean(body.get("smaLevelFilterMorningSkip").toString()));
@@ -257,7 +244,6 @@ public class SettingsController {
             if (body.containsKey("volumeMultiple")) riskSettings.setVolumeMultiple(effectiveMode, Double.parseDouble(body.get("volumeMultiple").toString()));
             if (body.containsKey("volumeLookback")) riskSettings.setVolumeLookback(effectiveMode, Integer.parseInt(body.get("volumeLookback").toString()));
             if (body.containsKey("enableTrailingSl")) riskSettings.setEnableTrailingSl(effectiveMode, Boolean.parseBoolean(body.get("enableTrailingSl").toString()));
-            if (body.containsKey("enableSmaCrossExit")) riskSettings.setEnableSmaCrossExit(Boolean.parseBoolean(body.get("enableSmaCrossExit").toString()));
             if (body.containsKey("enablePriceSmaExit")) riskSettings.setEnablePriceSmaExit(Boolean.parseBoolean(body.get("enablePriceSmaExit").toString()));
             if (body.containsKey("enableNiftyReversalCprExit")) riskSettings.setEnableNiftyReversalCprExit(Boolean.parseBoolean(body.get("enableNiftyReversalCprExit").toString()));
             if (body.containsKey("enableNiftyHtfHurdleExit"))   riskSettings.setEnableNiftyHtfHurdleExit(Boolean.parseBoolean(body.get("enableNiftyHtfHurdleExit").toString()));

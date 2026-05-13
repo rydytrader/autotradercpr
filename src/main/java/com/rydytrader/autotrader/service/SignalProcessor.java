@@ -54,18 +54,6 @@ public class SignalProcessor {
         double close       = dbl(alert, "close");
         double atr         = dbl(alert, "atr");
         double dayOpen     = dbl(alert, "dayOpen");
-        // SMA 20/50 pattern at time of signal (for post-trade analysis)
-        try {
-            if (atr > 0 && smaService != null) {
-                String smaPattern = smaService.getSmaPattern(symbol,
-                    riskSettings.getSmaPatternLookback(), atr,
-                    riskSettings.getBraidedMinCrossovers(), riskSettings.getBraidedMaxSpreadAtr(),
-                    riskSettings.getRailwayMaxCv(), riskSettings.getRailwayMinSpreadAtr());
-                if ("RAILWAY_UP".equals(smaPattern)) adjustments.add("SMA 20/50: R-RTP (rising railway track — bullish parallel trend)");
-                else if ("RAILWAY_DOWN".equals(smaPattern)) adjustments.add("SMA 20/50: F-RTP (falling railway track — bearish parallel trend)");
-                else if ("BRAIDED".equals(smaPattern)) adjustments.add("SMA 20/50: ZIG ZAG (braided — choppy, whipsaw risk)");
-            }
-        } catch (Exception ignored) {}
         // Volume snapshot at signal time: breakout candle volume vs 20-candle average
         try {
             CandleAggregator.CandleBar breakoutCandle = candleAggregator.getLastCompletedCandle(symbol);

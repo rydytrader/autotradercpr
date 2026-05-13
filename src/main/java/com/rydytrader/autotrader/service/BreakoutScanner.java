@@ -424,79 +424,26 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // 5-min SMA trend log — fires only when a structural breakout WOULD have matched but
         // was blocked by the SMA trend filter. Prevents noisy "blocked by SMA" logs on every
         // candle close for symbols that have no potential setup at all.
-        double sma20Now  = smaService.getSma(fyersSymbol);
-        double sma50Now  = smaService.getSma50(fyersSymbol);
-        double sma200Now = smaService.getSma200(fyersSymbol);
-        boolean strictTrendOn  = riskSettings.isEnableSmaTrendCheck();
-        boolean lenientTrendOn = riskSettings.isEnableSmaTrendCheckLenient();
-        if ((strictTrendOn || lenientTrendOn) && sma20Now > 0 && sma50Now > 0
-                && (lenientTrendOn || sma200Now > 0)) {
-            boolean bullClose;
-            boolean bearClose;
-            String priceFailReason;
-            if (strictTrendOn) {
-                // Strict gate wins when both are on (it implies the lenient gate).
-                bullClose = close > sma20Now && close > sma50Now && close > sma200Now;
-                bearClose = close < sma20Now && close < sma50Now && close < sma200Now;
-                priceFailReason = "close not above all SMAs (20/50/200)";
-            } else {
-                // Lenient-only: 200 SMA is ignored.
-                bullClose = close > sma20Now && close > sma50Now;
-                bearClose = close < sma20Now && close < sma50Now;
-                priceFailReason = "close not above SMA 20 and 50 (lenient)";
-            }
-            // Alignment evaluation: strict needs 200; lenient only needs 20 vs 50.
-            boolean strictAlignOn  = riskSettings.isEnableSmaAlignmentCheck();
-            boolean lenientAlignOn = riskSettings.isEnableSmaAlignmentCheckLenient();
-            boolean canEvalStrictAlign = sma200Now > 0;
-            boolean bullAligned;
-            boolean bearAligned;
-            if (strictAlignOn && canEvalStrictAlign) {
-                // Strict wins when both are on.
-                bullAligned = sma20Now > sma50Now && sma50Now > sma200Now;
-                bearAligned = sma20Now < sma50Now && sma50Now < sma200Now;
-            } else {
-                // Lenient-only or strict can't be evaluated yet (200 warming up).
-                bullAligned = sma20Now > sma50Now;
-                bearAligned = sma20Now < sma50Now;
-            }
-            boolean alignmentOn = (strictAlignOn && canEvalStrictAlign) || lenientAlignOn;
-            String priceFailReasonSell = priceFailReason.replace("not above", "not below");
-            // Alignment rejection labels follow the gate that's actually evaluating.
-            boolean strictAlignEvaluated = strictAlignOn && canEvalStrictAlign;
-            String alignBuyReason  = strictAlignEvaluated
-                ? "SMA not aligned (need 20>50>200)"
-                : "SMA not aligned (need 20>50, lenient)";
-            String alignSellReason = strictAlignEvaluated
-                ? "SMA not aligned (need 20<50<200)"
-                : "SMA not aligned (need 20<50, lenient)";
-            if (greenCandle && !(bullClose && (!alignmentOn || bullAligned))) {
+        // 5-min SMA trend check — close vs SMA20 only (SMA50/200 removed from the system).
+        // BUY allowed when close > SMA20; SELL allowed when close < SMA20. SMA20 alignment
+        // / pattern filters were dropped — they required multiple SMAs.
+        double sma20Now = smaService.getSma(fyersSymbol);
+        if (riskSettings.isEnableSmaTrendCheck() && sma20Now > 0) {
+            if (greenCandle && close <= sma20Now) {
                 String potentialSetup = detectBuyBreakout(open, high, low, close, levels, atp, broken, fyersSymbol, true);
                 if (potentialSetup != null) {
-                    // Two distinct rejection causes share this branch — surface them as separate
-                    // filterName values so the EOD page can chip-filter by which check tripped.
-                    boolean priceFail = !bullClose;
-                    String reason = priceFail ? priceFailReason : alignBuyReason;
-                    String filterName = priceFail ? "SMA_TREND" : "SMA_ALIGNMENT";
-                    String detail = reason + ": close=" + String.format("%.2f", close)
-                        + " sma20=" + String.format("%.2f", sma20Now)
-                        + " sma50=" + String.format("%.2f", sma50Now)
-                        + " sma200=" + String.format("%.2f", sma200Now);
+                    String detail = "close (" + String.format("%.2f", close) + ") not above SMA20 ("
+                        + String.format("%.2f", sma20Now) + ")";
                     eventService.log("[SCANNER] " + fyersSymbol + " " + potentialSetup + " blocked by 5-min SMA trend — " + detail);
-                    recordRejection(fyersSymbol, potentialSetup, close, filterName, detail);
+                    recordRejection(fyersSymbol, potentialSetup, close, "SMA_TREND", detail);
                 }
-            } else if (redCandle && !(bearClose && (!alignmentOn || bearAligned))) {
+            } else if (redCandle && close >= sma20Now) {
                 String potentialSetup = detectSellBreakout(open, high, low, close, levels, atp, broken, fyersSymbol, true);
                 if (potentialSetup != null) {
-                    boolean priceFail = !bearClose;
-                    String reason = priceFail ? priceFailReasonSell : alignSellReason;
-                    String filterName = priceFail ? "SMA_TREND" : "SMA_ALIGNMENT";
-                    String detail = reason + ": close=" + String.format("%.2f", close)
-                        + " sma20=" + String.format("%.2f", sma20Now)
-                        + " sma50=" + String.format("%.2f", sma50Now)
-                        + " sma200=" + String.format("%.2f", sma200Now);
+                    String detail = "close (" + String.format("%.2f", close) + ") not below SMA20 ("
+                        + String.format("%.2f", sma20Now) + ")";
                     eventService.log("[SCANNER] " + fyersSymbol + " " + potentialSetup + " blocked by 5-min SMA trend — " + detail);
-                    recordRejection(fyersSymbol, potentialSetup, close, filterName, detail);
+                    recordRejection(fyersSymbol, potentialSetup, close, "SMA_TREND", detail);
                 }
             }
         }
@@ -782,49 +729,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                                       boolean skipTrendFilters) {
         // ATP check for buys: close must be above ATP
         if (!skipTrendFilters && riskSettings.isEnableAtpCheck() && atp > 0 && close < atp) return null;
-        // 5-min SMA trend check — now gated at the caller level (scanForBreakoutInner)
-        // before reaching this function, so no double-logging on diagnostic re-calls.
-        double sma    = smaService.getSma(fyersSymbol);      // still needed by isEnableSmaVsAtpCheck below
-        double sma50  = smaService.getSma50(fyersSymbol);
-        double sma200 = smaService.getSma200(fyersSymbol);
+        // 5-min SMA trend check — primary log fires at the caller level (scanForBreakoutInner);
+        // this guard re-applies it silently on the actual detect path.
+        double sma = smaService.getSma(fyersSymbol);
         if (!skipTrendFilters && riskSettings.isEnableSmaTrendCheck()
-                && sma > 0 && sma50 > 0 && sma200 > 0
-                && !(close > sma && close > sma50 && close > sma200)) {
-            return null;  // silently — the log fired once at the caller
-        }
-        // Lenient 5-min SMA trend check (close > SMA 20 AND > SMA 50, ignores 200). Independent
-        // of the strict gate above; if both are on, the strict check has already filtered.
-        if (!skipTrendFilters && riskSettings.isEnableSmaTrendCheckLenient()
-                && sma > 0 && sma50 > 0
-                && !(close > sma && close > sma50)) {
-            return null;
-        }
-        // SMA alignment check for buys: 20 > 50 > 200 (stricter than close > SMAs)
-        if (!skipTrendFilters && riskSettings.isEnableSmaAlignmentCheck()
-                && sma > 0 && sma50 > 0 && sma200 > 0
-                && !(sma > sma50 && sma50 > sma200)) {
-            return null;
-        }
-        // Lenient alignment for buys: only requires 20 > 50 (skips 50 > 200).
-        if (!skipTrendFilters && riskSettings.isEnableSmaAlignmentCheckLenient()
-                && sma > 0 && sma50 > 0
-                && !(sma > sma50)) {
+                && sma > 0 && close <= sma) {
             return null;
         }
         // 20 SMA vs ATP/VWAP check for buys: 20 SMA must be above ATP
         if (!skipTrendFilters && riskSettings.isEnableSmaVsAtpCheck() && sma > 0 && atp > 0 && sma < atp) return null;
-        // SMA 20/50 pattern filters for buys
-        if (!skipTrendFilters && (riskSettings.isRequireRtpPattern() || riskSettings.isSkipTradesInZigZag())) {
-            double atrForPattern = atrService.getAtr(fyersSymbol);
-            if (atrForPattern > 0) {
-                String pat = smaService.getSmaPattern(fyersSymbol,
-                    riskSettings.getSmaPatternLookback(), atrForPattern,
-                    riskSettings.getBraidedMinCrossovers(), riskSettings.getBraidedMaxSpreadAtr(),
-                    riskSettings.getRailwayMaxCv(), riskSettings.getRailwayMinSpreadAtr());
-                if (riskSettings.isSkipTradesInZigZag() && "BRAIDED".equals(pat)) return null;
-                if (riskSettings.isRequireRtpPattern() && !"RAILWAY_UP".equals(pat)) return null;
-            }
-        }
 
         double r4 = levels.getR4(), r3 = levels.getR3(), r2 = levels.getR2();
         double r1 = levels.getR1(), ph = levels.getPh();
@@ -909,48 +822,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                                        boolean skipTrendFilters) {
         // ATP check for sells: close must be below ATP
         if (!skipTrendFilters && riskSettings.isEnableAtpCheck() && atp > 0 && close > atp) return null;
-        // 5-min SMA trend check — now gated at the caller level (scanForBreakoutInner) before
-        // reaching this function, so no double-logging on diagnostic re-calls.
-        double sma    = smaService.getSma(fyersSymbol);      // still needed by isEnableSmaVsAtpCheck below
-        double sma50  = smaService.getSma50(fyersSymbol);
-        double sma200 = smaService.getSma200(fyersSymbol);
+        // 5-min SMA trend check — primary log fires at the caller level (scanForBreakoutInner);
+        // this guard re-applies it silently on the actual detect path.
+        double sma = smaService.getSma(fyersSymbol);
         if (!skipTrendFilters && riskSettings.isEnableSmaTrendCheck()
-                && sma > 0 && sma50 > 0 && sma200 > 0
-                && !(close < sma && close < sma50 && close < sma200)) {
-            return null;  // silently — the log fired once at the caller
-        }
-        // Lenient 5-min SMA trend check (close < SMA 20 AND < SMA 50, ignores 200).
-        if (!skipTrendFilters && riskSettings.isEnableSmaTrendCheckLenient()
-                && sma > 0 && sma50 > 0
-                && !(close < sma && close < sma50)) {
-            return null;
-        }
-        // SMA alignment check for sells: 20 < 50 < 200 (stricter than close < SMAs)
-        if (!skipTrendFilters && riskSettings.isEnableSmaAlignmentCheck()
-                && sma > 0 && sma50 > 0 && sma200 > 0
-                && !(sma < sma50 && sma50 < sma200)) {
-            return null;
-        }
-        // Lenient alignment for sells: only requires 20 < 50 (skips 50 < 200).
-        if (!skipTrendFilters && riskSettings.isEnableSmaAlignmentCheckLenient()
-                && sma > 0 && sma50 > 0
-                && !(sma < sma50)) {
+                && sma > 0 && close >= sma) {
             return null;
         }
         // 20 SMA vs ATP/VWAP check for sells: 20 SMA must be below ATP
         if (!skipTrendFilters && riskSettings.isEnableSmaVsAtpCheck() && sma > 0 && atp > 0 && sma > atp) return null;
-        // SMA 20/50 pattern filters for sells
-        if (!skipTrendFilters && (riskSettings.isRequireRtpPattern() || riskSettings.isSkipTradesInZigZag())) {
-            double atrForPattern = atrService.getAtr(fyersSymbol);
-            if (atrForPattern > 0) {
-                String pat = smaService.getSmaPattern(fyersSymbol,
-                    riskSettings.getSmaPatternLookback(), atrForPattern,
-                    riskSettings.getBraidedMinCrossovers(), riskSettings.getBraidedMaxSpreadAtr(),
-                    riskSettings.getRailwayMaxCv(), riskSettings.getRailwayMinSpreadAtr());
-                if (riskSettings.isSkipTradesInZigZag() && "BRAIDED".equals(pat)) return null;
-                if (riskSettings.isRequireRtpPattern() && !"RAILWAY_DOWN".equals(pat)) return null;
-            }
-        }
 
         double s4 = levels.getS4(), s3 = levels.getS3(), s2 = levels.getS2();
         double s1 = levels.getS1(), pl = levels.getPl();
@@ -1352,15 +1232,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         payload.put("vwap", candleAggregator.getAtp(fyersSymbol));
         if (scannerNote != null && !scannerNote.isEmpty()) payload.put("scannerNote", scannerNote);
 
-        // 5-min SMA trend + pattern snapshot at signal time
-        double sma20Now  = smaService.getSma(fyersSymbol);
-        double sma50Now  = smaService.getSma50(fyersSymbol);
-        double sma200Now = smaService.getSma200(fyersSymbol);
+        // 5-min SMA trend snapshot at signal time — single SMA20 trendline only.
+        double sma20Now = smaService.getSma(fyersSymbol);
         String trend = "--";
-        if (sma20Now > 0 && sma50Now > 0 && sma200Now > 0) {
-            boolean allAbove = close > sma20Now && close > sma50Now && close > sma200Now;
-            boolean allBelow = close < sma20Now && close < sma50Now && close < sma200Now;
-            trend = allAbove ? "BULLISH" : allBelow ? "BEARISH" : "NEUTRAL";
+        if (sma20Now > 0) {
+            trend = close > sma20Now ? "BULLISH" : close < sma20Now ? "BEARISH" : "NEUTRAL";
         }
         // Include the candle-route tag (HAMMER_RETEST, ENGULFING_RETEST, PIERCING_RETEST,
         // TWEEZER_RETEST, DOJI_RETEST, STAR_RETEST, HARAMI_RETEST, MARUBOZU_RETEST,

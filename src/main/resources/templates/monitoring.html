@@ -162,12 +162,8 @@ function renderMonitoring(d) {
     var wc = sc.watchlistCount || 0;
     var atrOk    = (sc.atrLoaded    || 0) >= wc && wc > 0;
     var smaOk    = (sc.smaLoaded    || 0) >= wc && wc > 0;
-    var sma50Ok  = (sc.sma50Loaded  || 0) >= wc && wc > 0;
-    var sma200Ok = (sc.sma200Loaded || 0) >= wc && wc > 0;
     html += row('ATR Loaded',     (sc.atrLoaded    || 0) + '/' + wc, atrOk    ? 'ok' : (sc.atrLoaded    > 0 ? 'warn' : 'err'));
     html += row('SMA 20 Loaded',  (sc.smaLoaded    || 0) + '/' + wc, smaOk    ? 'ok' : (sc.smaLoaded    > 0 ? 'warn' : 'err'));
-    html += row('SMA 50 Loaded',  (sc.sma50Loaded  || 0) + '/' + wc, sma50Ok  ? 'ok' : (sc.sma50Loaded  > 0 ? 'warn' : 'err'));
-    html += row('SMA 200 Loaded', (sc.sma200Loaded || 0) + '/' + wc, sma200Ok ? 'ok' : (sc.sma200Loaded > 0 ? 'warn' : 'err'));
     var vPass = sc.validationPass, vFail = sc.validationFail, vTotal = sc.validationTotal;
     if (vTotal != null && vTotal >= 0) {
         html += row('Open Refresh Validate', vFail === 0 ? vPass + '/' + vTotal + ' OK' : vFail + '/' + vTotal + ' FAIL', vFail === 0 ? 'ok' : 'err');
