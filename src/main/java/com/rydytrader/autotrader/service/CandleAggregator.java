@@ -80,9 +80,6 @@ public class CandleAggregator {
     // Candle close listeners
     private final List<CandleCloseListener> listeners = new CopyOnWriteArrayList<>();
 
-    // Track which symbols have logged their time source (one-time per symbol per day)
-    private final Set<String> timeSourceLogged = ConcurrentHashMap.newKeySet();
-
     @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.context.annotation.Lazy
     private EventService eventService;
@@ -91,8 +88,29 @@ public class CandleAggregator {
     private volatile int lastCycleProcessed = 0;
     private volatile String lastCycleTime = "";
 
+    // Coalesced priors-to-disk persistence. finalizeCandle sets the dirty flag instead of
+    // writing the ~7MB JSON file inline; a background single-thread scheduler picks it up
+    // and writes once per tick. Without this, 24 stocks closing at the same 5-min boundary
+    // would each trigger a full file write on the boundary thread (~7s of serial I/O).
+    private final java.util.concurrent.atomic.AtomicBoolean priorsDirty = new java.util.concurrent.atomic.AtomicBoolean(false);
+    private final java.util.concurrent.ScheduledExecutorService priorsSaver =
+        java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "priors-saver");
+            t.setDaemon(true);
+            return t;
+        });
+
     public CandleAggregator(RiskSettingsStore riskSettings) {
         this.riskSettings = riskSettings;
+        // Drain the dirty flag every 1 second on a background thread. Coalesces any number
+        // of finalize-driven save requests in the prior second into a single file write.
+        priorsSaver.scheduleAtFixedRate(this::flushPriorsIfDirty, 1, 1, java.util.concurrent.TimeUnit.SECONDS);
+    }
+
+    private void flushPriorsIfDirty() {
+        if (priorsDirty.compareAndSet(true, false)) {
+            try { savePriorsToDisk(); } catch (Exception e) { log.error("[CandleAggregator] priorsSaver flush failed: {}", e.getMessage()); }
+        }
     }
 
     /**
@@ -220,12 +238,6 @@ public class CandleAggregator {
         // post-close window and shouldn't extend today's chart or create a phantom 15:30 candle.
         if (nowMinute < MarketHolidayService.MARKET_OPEN_MINUTE
             || nowMinute >= MarketHolidayService.MARKET_CLOSE_MINUTE) return;
-
-        // One-time log per symbol: which time source is used for candle assignment
-        if (timeSourceLogged.add(symbol)) {
-            String src = raw.exchFeedTime > 0 ? "exchange feed time (exchFeedTime=" + raw.exchFeedTime + ")" : "system clock fallback (exchFeedTime=0)";
-            log.info("[CandleAggregator] {} using {} for candle assignment", symbol, src);
-        }
 
         // Track day open from HSM open_price field
         if (raw.open > 0) dayOpen.putIfAbsent(symbol, raw.open);
@@ -424,9 +436,11 @@ public class CandleAggregator {
             }
         }
 
-        // Persist priors + today's completedCandles on every close so a mid-day crash
-        // restart can skip the Fyers catch-up fetch for CandleAggregator state.
-        savePriorsToDisk();
+        // Mark priors as dirty — the background priorsSaver will flush once per second,
+        // coalescing all the close-driven save requests for this boundary into a single
+        // ~7MB file write. Was previously a synchronous inline call that blocked the
+        // boundary thread for ~200-400ms per symbol (10s+ across the watchlist).
+        priorsDirty.set(true);
     }
 
     /**
@@ -1032,7 +1046,6 @@ public class CandleAggregator {
         savePriorsToDisk();
         currentCandles.clear();
         completedCandles.clear();
-        timeSourceLogged.clear();
         dayOpen.clear();
         firstCandleClose.clear();
         openingRangeHigh.clear();
