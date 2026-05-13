@@ -135,7 +135,7 @@ public class ScannerController {
         //                 Both source maps already apply a stale-day guard so yesterday's
         //                 cached LTP doesn't bleed in.
         //   ltp         — internal value used downstream (probability, OR status). Falls back
-        //                 to bhavcopy prev close so HPT/LPT logic has a non-zero reference.
+        //                 to bhavcopy prev close so probability logic has a non-zero reference.
         // The card displays liveTickLtp directly: pre-market on a new day → "0.00", once
         // ticks start arriving → today's actual price.
         double liveTickLtp = candleAggregator.getLtp(fyersSymbol);
@@ -190,28 +190,9 @@ public class ScannerController {
         card.put("openClass", openClass);
 
         card.put("candleVolume", candleAggregator.getCurrentCandleVolume(fyersSymbol));
-        card.put("avgVolume", Math.round(candleAggregator.getAvgVolume(fyersSymbol, riskSettings.getVolumeLookback())));
         card.put("weeklyTrend", weeklyCprService.getWeeklyTrend(fyersSymbol));
         card.put("dailyTrend", weeklyCprService.getDailyTrend(fyersSymbol));
         card.put("probability", computeCardProbability(fyersSymbol, ltp));
-
-        // Opening Range status
-        String orStatus = null;
-        if (riskSettings.getOpeningRangeMinutes() > 0) {
-            double orHigh = candleAggregator.getOpeningRangeHigh(fyersSymbol);
-            double orLow  = candleAggregator.getOpeningRangeLow(fyersSymbol);
-            boolean orLocked = candleAggregator.isOpeningRangeLocked(fyersSymbol);
-            if (!orLocked) {
-                orStatus = "FORMING";
-            } else if (orHigh > 0 && orLow > 0) {
-                if (ltp > orHigh) orStatus = "BULLISH";
-                else if (ltp < orLow) orStatus = "BEARISH";
-                else orStatus = "NEUTRAL";
-            }
-            card.put("orHigh", r(orHigh));
-            card.put("orLow", r(orLow));
-        }
-        card.put("orStatus", orStatus);
 
         // CPR levels
         Map<String, Object> lvls = new LinkedHashMap<>();
@@ -446,21 +427,25 @@ public class ScannerController {
     }
 
     /** Backfill heuristic for legacy SignalHistory entries without a filterName field, plus
-     *  classifier for the full set of SignalProcessor rejection reasons. Order matters —
-     *  composite "downgraded to LPT (X)" patterns inspect the inner X to surface the actual
-     *  filter that triggered the downgrade chain. */
+     *  classifier for the full set of SignalProcessor rejection reasons. The legacy
+     *  LPT-downgrade composite messages still map back to their original buckets so old
+     *  signal-trail entries surface the right filter category. */
     private String classifyByDetail(String detail) {
         if (detail == null || detail.isEmpty()) return "UNKNOWN";
         String s = detail.toLowerCase();
 
-        // Composite: "Probability downgraded to LPT (X) — LPT trades disabled". Drill into X.
+        // Legacy composite "Probability downgraded to LPT (X)" lines — backfill to the
+        // appropriate inner bucket. Live trades no longer produce these strings (LPT
+        // downgrade removed) but persisted signal-history entries still reference them.
         if (s.contains("probability downgraded to lpt") || s.contains("→ lpt")) {
             if (s.contains("htf hurdle"))              return "HTF_HURDLE";
             if (s.contains("nifty opposed"))           return "NIFTY_OPPOSED";
             if (s.contains("inside-or"))               return "INSIDE_OR";
             if (s.contains("ev reversal"))             return "EV_REVERSAL";
-            return "LPT_DISABLED";
+            return "NIFTY_OPPOSED";
         }
+        // New hard-reject phrasing for NIFTY opposed.
+        if (s.contains("opposes nifty composite"))     return "NIFTY_OPPOSED";
 
         // Order-layer (TradingController) gates
         if (s.contains("outside trading hours"))                  return "TRADING_HOURS";
@@ -549,15 +534,10 @@ public class ScannerController {
         status.put("higherTimeframe", riskSettings.getHigherTimeframe());
         status.put("enableHpt", riskSettings.isEnableHpt());
         status.put("enableMpt", riskSettings.isEnableMpt());
-        status.put("enableLpt", riskSettings.isEnableLpt());
         status.put("enableAtp", riskSettings.isEnableAtpCheck());
         status.put("enableSmaTrend", riskSettings.isEnableSmaTrendCheck());
         status.put("minPrice", riskSettings.getScanMinPrice());
         status.put("maxPrice", riskSettings.getScanMaxPrice());
-        status.put("minTurnover", riskSettings.getScanMinTurnover());
-        status.put("minVolume", riskSettings.getScanMinVolume());
-        status.put("minBeta", riskSettings.getScanMinBeta());
-        status.put("maxBeta", riskSettings.getScanMaxBeta());
         status.put("narrowMaxWidth", riskSettings.getNarrowCprMaxWidth());
         status.put("narrowMinWidth", riskSettings.getNarrowCprMinWidth());
         status.put("insideMaxWidth", riskSettings.getInsideCprMaxWidth());
@@ -663,50 +643,6 @@ public class ScannerController {
         result.put("ltp", r(candleAggregator.getLtp(symbol)));
         result.put("vwap", r(candleAggregator.getAtp(symbol)));
         result.put("sma20", r(smaService.getSma(symbol)));
-
-        // Opening Range (high/low for the OR window, plus time bounds)
-        Map<String, Object> or = new LinkedHashMap<>();
-        int orMinutes = riskSettings.getOpeningRangeMinutes();
-        double orHigh = 0, orLow = 0;
-        java.time.ZoneId orIst = java.time.ZoneId.of("Asia/Kolkata");
-        java.time.LocalDate orDate = null;
-        if (tradingDay) {
-            orHigh = candleAggregator.getOpeningRangeHigh(symbol);
-            orLow = candleAggregator.getOpeningRangeLow(symbol);
-            orDate = java.time.LocalDate.now(orIst);
-        } else {
-            // Historical: compute OR from display day's first N candles
-            if (!candleList.isEmpty()) {
-                try {
-                    long firstTs = (long) candleList.get(0).get("t");
-                    orDate = java.time.Instant.ofEpochMilli(firstTs).atZone(orIst).toLocalDate();
-                    int orEndMin = com.rydytrader.autotrader.service.MarketHolidayService.MARKET_OPEN_MINUTE + orMinutes;
-                    double hi = 0, lo = Double.MAX_VALUE;
-                    for (Map<String, Object> bar : candleList) {
-                        long tMs = (long) bar.get("t");
-                        java.time.LocalTime lt = java.time.Instant.ofEpochMilli(tMs).atZone(orIst).toLocalTime();
-                        int barMin = lt.getHour() * 60 + lt.getMinute();
-                        if (barMin >= com.rydytrader.autotrader.service.MarketHolidayService.MARKET_OPEN_MINUTE
-                            && barMin < orEndMin) {
-                            double h = ((Number) bar.get("h")).doubleValue();
-                            double l = ((Number) bar.get("l")).doubleValue();
-                            if (h > hi) hi = h;
-                            if (l < lo) lo = l;
-                        }
-                    }
-                    if (hi > 0 && lo < Double.MAX_VALUE) { orHigh = hi; orLow = lo; }
-                } catch (Exception ignored) {}
-            }
-        }
-        if (orHigh > 0 && orLow > 0 && orDate != null && orMinutes > 0) {
-            long orStartSec = orDate.atTime(9, 15).atZone(orIst).toEpochSecond();
-            long orEndSec = orStartSec + (orMinutes * 60L);
-            or.put("high", r(orHigh));
-            or.put("low", r(orLow));
-            or.put("startMs", orStartSec * 1000L);
-            or.put("endMs", orEndSec * 1000L);
-            result.put("or", or);
-        }
 
         // Trades for this symbol (today's trades only, for live mode)
         List<Map<String, Object>> trades = new ArrayList<>();

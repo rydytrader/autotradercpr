@@ -143,10 +143,6 @@
         .scan-badge.hpt { background: rgba(52,211,153,0.12); color: var(--accent-green); }
         .scan-badge.mpt { background: rgba(99,179,237,0.12); color: var(--accent-blue); }
         .scan-badge.lpt { background: rgba(251,191,36,0.12); color: var(--accent-yellow); }
-        .scan-badge.or-bullish { background: rgba(52,211,153,0.15); color: var(--accent-green); }
-        .scan-badge.or-bearish { background: rgba(239,68,68,0.15); color: var(--accent-red); }
-        .scan-badge.or-neutral { background: rgba(128,128,128,0.12); color: var(--text-muted); }
-        .scan-badge.or-forming { background: rgba(251,191,36,0.12); color: var(--accent-yellow); }
 
         .scan-levels {
             padding: 8px 16px 10px;
@@ -439,18 +435,6 @@
         <div class="ss-item">
             <span class="ss-label">Price:</span>
             <span class="ss-value" id="ssPrice">--</span>
-        </div>
-        <div class="ss-item">
-            <span class="ss-label">T/O:</span>
-            <span class="ss-value" id="ssTurnover">--</span>
-        </div>
-        <div class="ss-item">
-            <span class="ss-label">Vol:</span>
-            <span class="ss-value" id="ssVolume">--</span>
-        </div>
-        <div class="ss-item">
-            <span class="ss-label">Beta:</span>
-            <span class="ss-value" id="ssBeta">--</span>
         </div>
         <div class="ss-item">
             <span class="ss-label">Probability:</span>
@@ -880,26 +864,12 @@
             else priceText += '+';
             document.getElementById('ssPrice').textContent = priceText;
 
-            // Turnover
-            document.getElementById('ssTurnover').textContent = s.minTurnover > 0 ? '≥' + s.minTurnover + 'Cr' : 'All';
-            var mv = s.minVolume || 0;
-            document.getElementById('ssVolume').textContent = mv > 0 ? '≥' + (mv >= 100000 ? (mv/100000).toFixed(0) + 'L' : mv >= 1000 ? (mv/1000).toFixed(0) + 'K' : mv) : 'All';
-
-            // Beta
-            var minB = s.minBeta || 0, maxB = s.maxBeta || 0;
-            if (minB > 0 || maxB > 0) {
-                document.getElementById('ssBeta').textContent = (minB > 0 ? minB : '0') + '–' + (maxB > 0 ? maxB : '∞');
-            } else {
-                document.getElementById('ssBeta').textContent = 'All';
-            }
-
             // Probability — enabled tier badges
             var probEl = document.getElementById('ssProbability');
             if (probEl) {
                 var tiers = [];
                 if (s.enableHpt) tiers.push({ label: 'HPT', cls: 'hpt' });
                 if (s.enableMpt) tiers.push({ label: 'MPT', cls: 'mpt' });
-                if (s.enableLpt) tiers.push({ label: 'LPT', cls: 'lpt' });
                 probEl.innerHTML = tiers.length > 0
                     ? tiers.map(function(t) { return '<span class="scan-badge ' + t.cls + '" style="margin-left:2px;">' + t.label + '</span>'; }).join(' ')
                     : '<span style="color:var(--text-muted);">None</span>';
@@ -1658,14 +1628,14 @@ function showSignalTrail() {
 // ══════════════════════════════════════════════════════════════════════
 // Chart Modal — live candlestick chart with CPR/VWAP/SMA overlays
 // ══════════════════════════════════════════════════════════════════════
-var chartState = { modal: null, chart: null, series: null, vwapSeries: null, sma20Series: null, levelSeries: [], levelPriceLines: [], orSeries: null, symbol: null, interval: null, resizeHandler: null, lastData: null };
+var chartState = { modal: null, chart: null, series: null, vwapSeries: null, sma20Series: null, levelSeries: [], levelPriceLines: [], symbol: null, interval: null, resizeHandler: null, lastData: null };
 
 // Chart visibility preferences (persisted in localStorage)
 var chartPrefs = (function() {
     var defaults = {
-        cprBand: true, r1pdhBand: true, s1pdlBand: true, orBand: true,
+        cprBand: true, r1pdhBand: true, s1pdlBand: true,
         cprLines: true, rLines: true, sLines: true, pdhPdl: true, pivot: true,
-        orLines: true, vwap: true, sma20: true, trades: true
+        vwap: true, sma20: true, trades: true
     };
     try {
         var stored = JSON.parse(localStorage.getItem('chartPrefs') || '{}');
@@ -1710,8 +1680,7 @@ function renderChartSettings() {
         { label: 'Bands', items: [
             { key: 'cprBand', label: 'CPR band', color: '#6496ff' },
             { key: 'r1pdhBand', label: 'R1/PDH band', color: '#26a69a' },
-            { key: 's1pdlBand', label: 'S1/PDL band', color: '#ef5350' },
-            { key: 'orBand', label: 'OR band', color: '#ffb300' }
+            { key: 's1pdlBand', label: 'S1/PDL band', color: '#ef5350' }
         ]},
         { label: 'CPR & Pivot', items: [
             { key: 'cprLines', label: 'CPR Top/Bot', color: '#6496ff' },
@@ -1720,8 +1689,7 @@ function renderChartSettings() {
         { label: 'Resistance / Support', items: [
             { key: 'rLines', label: 'R1 / R2 / R3 / R4', color: '#26a69a' },
             { key: 'sLines', label: 'S1 / S2 / S3 / S4', color: '#ef5350' },
-            { key: 'pdhPdl', label: 'PDH / PDL', color: '#ffa726' },
-            { key: 'orLines', label: 'OR High / OR Low', color: '#ffb300' }
+            { key: 'pdhPdl', label: 'PDH / PDL', color: '#ffa726' }
         ]},
         { label: 'Indicators', items: [
             { key: 'vwap', label: 'VWAP', color: '#ec407a' },
@@ -1791,7 +1759,6 @@ function closeChartModal() {
         chartState.sma20Series = null;
         chartState.levelSeries = [];
         chartState.levelPriceLines = [];
-        chartState.orSeries = null;
         chartState.tooltip = null;
     }
     chartState.symbol = null;
@@ -2047,84 +2014,9 @@ function renderChart(d, isFirst) {
     if (chartState.vwapSeries) chartState.vwapSeries.setData(vwapLine);
     if (chartState.sma20Series) chartState.sma20Series.setData(sma20Line);
     applyChartLines(d);
-    applyOrBand(d);
     applyTradeMarkers(d);
     return;
 
-}
-
-function applyOrBand(d) {
-    if (!chartState.chart) return;
-    // Remove previous OR series (band + 2 lines)
-    if (chartState.orSeries) {
-        if (Array.isArray(chartState.orSeries)) {
-            chartState.orSeries.forEach(function(s) { try { chartState.chart.removeSeries(s); } catch (e) {} });
-        } else {
-            try { chartState.chart.removeSeries(chartState.orSeries); } catch (e) {}
-        }
-        chartState.orSeries = null;
-    }
-    var or = d.or;
-    if (!or || !or.high || !or.low || !or.startMs || !or.endMs) return;
-    // Don't draw OR on an empty chart — OR only becomes meaningful AFTER the opening-range
-    // window (usually first 15 min) has locked. Rendering it pre-market or pre-OR-lock paints
-    // stale or uninitialized values onto what should be a structural-levels-only view.
-    var candles = d.candles || [];
-    if (candles.length === 0) return;
-    var nowSec = Math.floor(Date.now() / 1000);
-    if (nowSec < Math.floor(or.endMs / 1000)) return;  // OR window not locked yet
-
-    var startSec = Math.floor(or.startMs / 1000);
-    var endSec = Math.floor(or.endMs / 1000);
-    // Session end for extending OR high/low as reference lines
-    var sessionEndSec = candles.length ? Math.floor(candles[candles.length - 1].t / 1000) + (d.timeframeMinutes || 5) * 60 : endSec;
-    if (sessionEndSec < endSec) sessionEndSec = endSec;
-
-    var series = [];
-
-    // 1. Shaded band (9:15-9:30 only)
-    if (chartPrefs.orBand) {
-        var band = chartState.chart.addBaselineSeries({
-            baseValue: { type: 'price', price: or.low },
-            topLineColor: 'transparent',
-            topFillColor1: 'rgba(255,193,7,0.22)',
-            topFillColor2: 'rgba(255,193,7,0.10)',
-            bottomLineColor: 'transparent',
-            bottomFillColor1: 'transparent',
-            bottomFillColor2: 'transparent',
-            priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false
-        });
-        band.setData([
-            { time: startSec, value: or.high },
-            { time: endSec, value: or.high }
-        ]);
-        series.push(band);
-    }
-
-    if (chartPrefs.orLines) {
-        var hi = chartState.chart.addLineSeries({
-            color: '#ffb300', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted,
-            priceLineVisible: false, lastValueVisible: true, title: 'OR High',
-            crosshairMarkerVisible: false
-        });
-        hi.setData([
-            { time: startSec, value: or.high },
-            { time: sessionEndSec, value: or.high }
-        ]);
-        series.push(hi);
-        var lo = chartState.chart.addLineSeries({
-            color: '#ffb300', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted,
-            priceLineVisible: false, lastValueVisible: true, title: 'OR Low',
-            crosshairMarkerVisible: false
-        });
-        lo.setData([
-            { time: startSec, value: or.low },
-            { time: sessionEndSec, value: or.low }
-        ]);
-        series.push(lo);
-    }
-
-    chartState.orSeries = series;
 }
 
 function applyTradeMarkers(d) {

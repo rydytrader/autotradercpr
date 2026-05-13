@@ -401,21 +401,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             return;
         }
 
-        // Per-symbol daily trade limit. Halt new trades on the symbol once today's wins OR
-        // losses (counted separately, not summed) reach the threshold. 0 = disabled.
-        int perSymbolLimit = riskSettings.getPerSymbolDailyTradeLimit();
-        if (perSymbolLimit > 0 && tradeHistoryService != null) {
-            int[] wl = tradeHistoryService.getSymbolTodayResult(fyersSymbol);
-            int wins = wl[0], losses = wl[1];
-            if (wins >= perSymbolLimit || losses >= perSymbolLimit) {
-                String detail = "today " + wins + "W / " + losses + "L — limit " + perSymbolLimit
-                    + " (" + (wins >= perSymbolLimit ? "wins" : "losses") + ") reached";
-                eventService.log("[SCANNER] " + fyersSymbol + " — skipped, " + detail);
-                recordRejection(fyersSymbol, "", close, "SYMBOL_DAILY_LIMIT", detail);
-                return;
-            }
-        }
-
         Set<String> broken = brokenLevels.getOrDefault(fyersSymbol, Collections.emptySet());
 
         double low = candle.low;
@@ -508,64 +493,42 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 // SMA level-count filter: skip if any CPR zone sits between SMA and broken level
                 if (evaluateSmaFilter(fyersSymbol, buySetup, close, levels, atr) == 2) return;
                 // VWAP-specific NIFTY alignment — always-on for BUY_ABOVE_VWAP, hard reject if
-                // NIFTY isn't BULLISH or BULLISH_REVERSAL. Runs before the general index
-                // alignment filter so it can't be downgraded to LPT.
+                // NIFTY isn't BULLISH or BULLISH_REVERSAL.
                 String vwapAlignReject = checkVwapNiftyAlignment(buySetup, true);
                 if (vwapAlignReject != null) {
                     eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + vwapAlignReject);
                     recordRejection(fyersSymbol, buySetup, close, "NIFTY_OPPOSED", vwapAlignReject);
                     return;
                 }
-                // NIFTY index alignment filter — when on, a misaligned trade is downgraded to
-                // LPT (smaller size) instead of being rejected. LPT trades skip ALL remaining
-                // NIFTY-level filters (HTF Hurdle, 5m Hurdle, NIFTY HTF Candle Direction) — the
-                // trade is taken purely on stock-level merits. If enableLpt is off, the
-                // misaligned trade is rejected outright.
-                boolean niftyDowngraded = false;
+                // NIFTY index alignment filter — misaligned trades are hard-rejected. The
+                // previous LPT downgrade path has been removed: a stock-trade direction that
+                // opposes the NIFTY composite trend has no edge on its own.
                 if (checkIndexAlignment(fyersSymbol, buySetup, true) == NiftyAlignStatus.SKIP) {
                     String niftyState = indexTrendService != null ? indexTrendService.getStickyState() : "?";
-                    if (!riskSettings.isEnableLpt()) {
-                        recordRejection(fyersSymbol, buySetup, close, "NIFTY_OPPOSED",
-                            "NIFTY " + niftyState + " — buy would downgrade to LPT but LPT disabled");
-                        return;
-                    }
-                    int lptLimit = riskSettings.getLptMaxTradesPerStockPerDay();
-                    if (lptLimit > 0 && tradeHistoryService != null) {
-                        int lptToday = tradeHistoryService.getSymbolTodayCountByProbability(fyersSymbol, "LPT");
-                        if (lptToday >= lptLimit) {
-                            recordRejection(fyersSymbol, buySetup, close, "LPT_DAILY_LIMIT",
-                                "buy would downgrade to LPT but " + lptToday + " LPT trade(s) already today (limit "
-                                + lptLimit + ")");
-                            return;
-                        }
-                    }
-                    prob = "LPT";
-                    niftyDowngraded = true;
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " — NIFTY "
-                        + niftyState + " misaligned, downgraded to LPT (NIFTY filters bypassed)");
+                    recordRejection(fyersSymbol, buySetup, close, "NIFTY_OPPOSED",
+                        "NIFTY " + niftyState + " — buy direction opposes NIFTY composite trend");
+                    return;
                 }
-                // NIFTY HTF Hurdle — only when not downgraded to LPT.
-                if (!niftyDowngraded) {
-                    String niftyHurdleReject = checkNiftyHurdle(true, fyersSymbol);
-                    if (niftyHurdleReject != null) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + niftyHurdleReject);
-                        recordRejection(fyersSymbol, buySetup, close, "NIFTY_HURDLE", niftyHurdleReject);
-                        return;
-                    }
-                    // NIFTY 5m Hurdle — prior 5-min NIFTY close must have cleared nearest daily CPR hurdle.
-                    String nifty5mHurdleReject = checkNifty5mHurdle(true, candle.startMinute);
-                    if (nifty5mHurdleReject != null) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + nifty5mHurdleReject);
-                        recordRejection(fyersSymbol, buySetup, close, "NIFTY_5M_HURDLE", nifty5mHurdleReject);
-                        return;
-                    }
-                    // Virgin CPR Hurdle — zone-based: inside zone or within headroom × ATR rejects.
-                    String virginCprHurdleReject = checkNiftyVirginCprHurdle(true, candle.startMinute);
-                    if (virginCprHurdleReject != null) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + virginCprHurdleReject);
-                        recordRejection(fyersSymbol, buySetup, close, "VIRGIN_CPR_HURDLE", virginCprHurdleReject);
-                        return;
-                    }
+                // NIFTY HTF Hurdle.
+                String niftyHurdleReject = checkNiftyHurdle(true, fyersSymbol);
+                if (niftyHurdleReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + niftyHurdleReject);
+                    recordRejection(fyersSymbol, buySetup, close, "NIFTY_HURDLE", niftyHurdleReject);
+                    return;
+                }
+                // NIFTY 5m Hurdle — prior 5-min NIFTY close must have cleared nearest daily CPR hurdle.
+                String nifty5mHurdleReject = checkNifty5mHurdle(true, candle.startMinute);
+                if (nifty5mHurdleReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + nifty5mHurdleReject);
+                    recordRejection(fyersSymbol, buySetup, close, "NIFTY_5M_HURDLE", nifty5mHurdleReject);
+                    return;
+                }
+                // Virgin CPR Hurdle — zone-based: inside zone or within headroom × ATR rejects.
+                String virginCprHurdleReject = checkNiftyVirginCprHurdle(true, candle.startMinute);
+                if (virginCprHurdleReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + virginCprHurdleReject);
+                    recordRejection(fyersSymbol, buySetup, close, "VIRGIN_CPR_HURDLE", virginCprHurdleReject);
+                    return;
                 }
                 // In-progress 1h candle direction — buy needs the currently-forming 1h bar to be green.
                 // This is the STOCK's 1h candle, always applied.
@@ -655,56 +618,34 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     recordRejection(fyersSymbol, sellSetup, close, "NIFTY_OPPOSED", vwapAlignReject);
                     return;
                 }
-                // NIFTY index alignment filter — when on, a misaligned trade is downgraded to
-                // LPT (smaller size) instead of being rejected. LPT trades skip ALL remaining
-                // NIFTY-level filters (HTF Hurdle, 5m Hurdle, NIFTY HTF Candle Direction) — the
-                // trade is taken purely on stock-level merits. If enableLpt is off, the
-                // misaligned trade is rejected outright.
-                boolean niftyDowngraded = false;
+                // NIFTY index alignment filter — misaligned trades are hard-rejected. The
+                // previous LPT downgrade path has been removed.
                 if (checkIndexAlignment(fyersSymbol, sellSetup, false) == NiftyAlignStatus.SKIP) {
                     String niftyState = indexTrendService != null ? indexTrendService.getStickyState() : "?";
-                    if (!riskSettings.isEnableLpt()) {
-                        recordRejection(fyersSymbol, sellSetup, close, "NIFTY_OPPOSED",
-                            "NIFTY " + niftyState + " — sell would downgrade to LPT but LPT disabled");
-                        return;
-                    }
-                    int lptLimit = riskSettings.getLptMaxTradesPerStockPerDay();
-                    if (lptLimit > 0 && tradeHistoryService != null) {
-                        int lptToday = tradeHistoryService.getSymbolTodayCountByProbability(fyersSymbol, "LPT");
-                        if (lptToday >= lptLimit) {
-                            recordRejection(fyersSymbol, sellSetup, close, "LPT_DAILY_LIMIT",
-                                "sell would downgrade to LPT but " + lptToday + " LPT trade(s) already today (limit "
-                                + lptLimit + ")");
-                            return;
-                        }
-                    }
-                    prob = "LPT";
-                    niftyDowngraded = true;
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " — NIFTY "
-                        + niftyState + " misaligned, downgraded to LPT (NIFTY filters bypassed)");
+                    recordRejection(fyersSymbol, sellSetup, close, "NIFTY_OPPOSED",
+                        "NIFTY " + niftyState + " — sell direction opposes NIFTY composite trend");
+                    return;
                 }
-                // NIFTY HTF Hurdle — only when not downgraded to LPT.
-                if (!niftyDowngraded) {
-                    String niftyHurdleReject = checkNiftyHurdle(false, fyersSymbol);
-                    if (niftyHurdleReject != null) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + niftyHurdleReject);
-                        recordRejection(fyersSymbol, sellSetup, close, "NIFTY_HURDLE", niftyHurdleReject);
-                        return;
-                    }
-                    // NIFTY 5m Hurdle — prior 5-min NIFTY close must have cleared nearest daily CPR hurdle.
-                    String nifty5mHurdleReject = checkNifty5mHurdle(false, candle.startMinute);
-                    if (nifty5mHurdleReject != null) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + nifty5mHurdleReject);
-                        recordRejection(fyersSymbol, sellSetup, close, "NIFTY_5M_HURDLE", nifty5mHurdleReject);
-                        return;
-                    }
-                    // Virgin CPR Hurdle — zone-based: inside zone or within headroom × ATR rejects.
-                    String virginCprHurdleReject = checkNiftyVirginCprHurdle(false, candle.startMinute);
-                    if (virginCprHurdleReject != null) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + virginCprHurdleReject);
-                        recordRejection(fyersSymbol, sellSetup, close, "VIRGIN_CPR_HURDLE", virginCprHurdleReject);
-                        return;
-                    }
+                // NIFTY HTF Hurdle.
+                String niftyHurdleReject = checkNiftyHurdle(false, fyersSymbol);
+                if (niftyHurdleReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + niftyHurdleReject);
+                    recordRejection(fyersSymbol, sellSetup, close, "NIFTY_HURDLE", niftyHurdleReject);
+                    return;
+                }
+                // NIFTY 5m Hurdle — prior 5-min NIFTY close must have cleared nearest daily CPR hurdle.
+                String nifty5mHurdleReject = checkNifty5mHurdle(false, candle.startMinute);
+                if (nifty5mHurdleReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + nifty5mHurdleReject);
+                    recordRejection(fyersSymbol, sellSetup, close, "NIFTY_5M_HURDLE", nifty5mHurdleReject);
+                    return;
+                }
+                // Virgin CPR Hurdle — zone-based: inside zone or within headroom × ATR rejects.
+                String virginCprHurdleReject = checkNiftyVirginCprHurdle(false, candle.startMinute);
+                if (virginCprHurdleReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + virginCprHurdleReject);
+                    recordRejection(fyersSymbol, sellSetup, close, "VIRGIN_CPR_HURDLE", virginCprHurdleReject);
+                    return;
                 }
                 // In-progress 1h candle direction — sell needs the currently-forming 1h bar to be red.
                 // This is the STOCK's 1h candle, always applied.
@@ -737,7 +678,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
     /**
      * Detect buy breakout — returns setup name or null.
-     * Priority: R4 > R3 > R2 > R1/PDH > CPR > S1/PDL (only if LPT enabled)
+     * Priority: R4 > R3 > R2 > R1/PDH > CPR > S1/PDL (counter-trend levels via mean-reversion master toggle)
      * Two paths per level:
      *   Path 1 (standard breakout): open or low below level, close above — candle broke through
      *   Path 2 (wick rejection):    open above level, low dips below level, close above — buyers defended
@@ -836,7 +777,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
     /**
      * Detect sell breakout — returns setup name or null.
-     * Priority: S4 > S3 > S2 > S1/PDL > CPR > R1/PDH (only if LPT enabled)
+     * Priority: S4 > S3 > S2 > S1/PDL > CPR > R1/PDH (counter-trend levels via mean-reversion master toggle)
      * Two paths per level:
      *   Path 1 (standard breakdown): open or high above level, close below — candle broke through
      *   Path 2 (wick rejection):     open below level, high pokes above level, close below — sellers defended
@@ -1236,7 +1177,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         payload.put("candleHigh", high);
         payload.put("candleLow", low);
         payload.put("candleVolume", candleVolume);
-        payload.put("avgVolume", candleAggregator.getAvgVolume(fyersSymbol, riskSettings.getVolumeLookback()));
         payload.put("atr", atr);
         payload.put("dayOpen", candleAggregator.getDayOpen(fyersSymbol));
         payload.put("firstCandleClose", candleAggregator.getFirstCandleClose(fyersSymbol));
@@ -1316,15 +1256,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     }
 
     /**
-     * NIFTY index alignment filter. Two modes (controlled by riskSettings.isIndexAlignmentHardSkip):
-     *
-     *   Soft mode (default): downgrades HPT trades to LPT when trade direction opposes NIFTY.
-     *                        LPT trades pass through unchanged.
-     *   Hard skip mode:      returns null (signal to caller: skip the trade entirely) when ANY
-     *                        trade (HPT or LPT) opposes NIFTY. Skips magnets/reversals too if
-     *                        they happen to be in the opposition direction — by design.
-     *
-     * Returns the (possibly modified) probability string, or null to signal "skip this trade".
+     * NIFTY index alignment filter. Hard-reject mode only — a trade direction that opposes
+     * the NIFTY composite trend is rejected outright. (The previous LPT-downgrade soft path
+     * has been removed.)
      */
     /** Result of the NIFTY alignment check. SKIP = trade rejected; OK = aligned or check off. */
     private enum NiftyAlignStatus { OK, SKIP }
@@ -1335,9 +1269,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      * <ul>
      *   <li>{@code BUY_ABOVE_VWAP} requires NIFTY state ∈ {BULLISH, BULLISH_REVERSAL}.</li>
      *   <li>{@code SELL_BELOW_VWAP} requires NIFTY state ∈ {BEARISH, BEARISH_REVERSAL}.</li>
-     *   <li>Any other NIFTY state (SIDEWAYS, NEUTRAL, opposite-direction) → hard reject. No LPT
-     *       downgrade — VWAP is itself a trend-following signal, taking it against NIFTY
-     *       direction is high-risk regardless of size reduction.</li>
+     *   <li>Any other NIFTY state (SIDEWAYS, NEUTRAL, opposite-direction) → hard reject.
+     *       VWAP is itself a trend-following signal, taking it against NIFTY direction is
+     *       high-risk regardless of size reduction.</li>
      * </ul>
      * No-op for non-VWAP setups, and no-op when the alignment toggle is off (returns null).
      * Returns null on pass, a rejection-reason string to reject.
@@ -1381,9 +1315,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 ? ("BULLISH".equals(state) || "BULLISH_REVERSAL".equals(state))
                 : ("BEARISH".equals(state) || "BEARISH_REVERSAL".equals(state));
             if (aligned) return NiftyAlignStatus.OK;
-            // Log as MISALIGNED (not SKIPPED) — caller decides whether to actually skip or
-            // downgrade-to-LPT. The downgrade-to-LPT path logs its own "downgraded to LPT"
-            // line immediately after this.
+            // Log as MISALIGNED — caller hard-rejects after this with NIFTY_OPPOSED.
             eventService.log("[SCANNER] " + fyersSymbol + " " + setup
                 + " NIFTY MISALIGNED — NIFTY " + state + ", trade direction needs "
                 + (isBuy ? "BULLISH or BULLISH_REVERSAL" : "BEARISH or BEARISH_REVERSAL"));
@@ -1856,7 +1788,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         return switch (prob) {
             case "HPT" -> riskSettings.isEnableHpt();
             case "MPT" -> riskSettings.isEnableMpt();
-            case "LPT" -> riskSettings.isEnableLpt();
             default -> false;
         };
     }
@@ -2384,14 +2315,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (responseText == null) return "DOWNSTREAM";
         String s = responseText.toLowerCase();
 
-        // Composite LPT-disabled rejection — drill into the parenthesised inner reason.
-        if (s.contains("probability downgraded to lpt") || s.contains("→ lpt")) {
-            if (s.contains("htf hurdle"))              return "HTF_HURDLE";
-            if (s.contains("nifty opposed"))           return "NIFTY_OPPOSED";
-            if (s.contains("inside-or"))               return "INSIDE_OR";
-            if (s.contains("ev reversal"))             return "EV_REVERSAL";
-            return "LPT_DISABLED";
-        }
+        // NIFTY opposed (hard reject) — replaces the legacy LPT-downgrade composite bucket.
+        if (s.contains("opposes nifty composite") || s.contains("nifty opposed")) return "NIFTY_OPPOSED";
 
         // LTF/HTF probability gates (new under LTF-priority classification)
         if (s.contains("ltf opposed") || s.contains("requires close >") || s.contains("requires close <")) return "LTF_OPPOSED";

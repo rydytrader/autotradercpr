@@ -306,14 +306,6 @@ public class PollingService {
                         if (!pendingProb.isEmpty()) {
                             positionStateStore.saveProbability(symbol, pendingProb);
                         }
-                        // NIFTY HTF Hurdle break-guard — persist the guard captured at scan
-                        // time onto the position record (mirror of OrderEventService path).
-                        if (breakoutScanner != null) {
-                            BreakoutScanner.NiftyHurdleGuard guard = breakoutScanner.consumePendingHurdleGuard(symbol);
-                            if (guard != null) {
-                                positionStateStore.saveNiftyHurdleGuard(symbol, guard.low(), guard.high());
-                            }
-                        }
                         // Save description from signal processing
                         if (description != null && !description.isEmpty()) {
                             positionStateStore.appendDescription(symbol, description);
@@ -328,7 +320,7 @@ public class PollingService {
                     }
 
                     holder.ocoRetries++;
-                    // Fibonacci trailing always requires a target to compute range — no-target mode removed.
+                    // Breakeven SL always requires a target to compute the (entry→target) range — no-target mode removed.
                     boolean skipTarget = false;
 
                     // Single target placement — splits are no longer created for new trades.

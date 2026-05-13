@@ -79,7 +79,6 @@ public class SettingsController {
         result.put("enableTargetTolerance", riskSettings.isEnableTargetTolerance());
         result.put("targetToleranceAtr", riskSettings.getTargetToleranceAtr());
         result.put("enableIndexAlignment", riskSettings.isEnableIndexAlignment());
-        result.put("enableSmallCandleFilter", riskSettings.isEnableSmallCandleFilter(effectiveMode));
         result.put("enableLargeCandleBodyFilter", riskSettings.isEnableLargeCandleBodyFilter());
         result.put("largeCandleBodyAtrThreshold", riskSettings.getLargeCandleBodyAtrThreshold());
         result.put("marubozuBodyAtrMult",          riskSettings.getMarubozuBodyAtrMult());
@@ -104,27 +103,13 @@ public class SettingsController {
         result.put("starOuterBodyAtrMult",         riskSettings.getStarOuterBodyAtrMult());
         result.put("starMiddleBodyMaxMultOfOuter", riskSettings.getStarMiddleBodyMaxMultOfOuter());
         result.put("levelTouchToleranceAtr",       riskSettings.getLevelTouchToleranceAtr());
-        result.put("smallCandleAtrThreshold", riskSettings.getSmallCandleAtrThreshold(effectiveMode));
-        result.put("smallCandleBodyAtrThreshold", riskSettings.getSmallCandleBodyAtrThreshold(effectiveMode));
-        result.put("smallCandleMoveAtrThreshold", riskSettings.getSmallCandleMoveAtrThreshold(effectiveMode));
-        result.put("wickRejectionRatio", riskSettings.getWickRejectionRatio(effectiveMode));
-        result.put("enableVolumeFilter", riskSettings.isEnableVolumeFilter(effectiveMode));
-        result.put("volumeMultiple", riskSettings.getVolumeMultiple(effectiveMode));
-        result.put("volumeLookback", riskSettings.getVolumeLookback(effectiveMode));
         result.put("enableTrailingSl", riskSettings.isEnableTrailingSl(effectiveMode));
         result.put("enablePriceSmaExit", riskSettings.isEnablePriceSmaExit());
-        result.put("enableNiftyReversalCprExit", riskSettings.isEnableNiftyReversalCprExit());
-        result.put("enableNiftyHtfHurdleExit",   riskSettings.isEnableNiftyHtfHurdleExit());
-        result.put("perSymbolDailyTradeLimit", riskSettings.getPerSymbolDailyTradeLimit());
-        result.put("lptMaxTradesPerStockPerDay", riskSettings.getLptMaxTradesPerStockPerDay());
         result.put("virginCprExpiryDays", riskSettings.getVirginCprExpiryDays());
         result.put("enableVirginCprHurdleFilter", riskSettings.isEnableVirginCprHurdleFilter());
         result.put("virginCprHurdleHeadroomAtr", riskSettings.getVirginCprHurdleHeadroomAtr());
-        result.put("enableVirginCprTouchExit", riskSettings.isEnableVirginCprTouchExit());
-        result.put("fibStage1TriggerPct", riskSettings.getFibStage1TriggerPct());
-        result.put("fibStage1SlAtrMult",  riskSettings.getFibStage1SlAtrMult());
-        result.put("fibStage2TriggerPct", riskSettings.getFibStage2TriggerPct());
-        result.put("fibStage2SlPct",      riskSettings.getFibStage2SlPct());
+        result.put("breakevenTriggerPct", riskSettings.getBreakevenTriggerPct());
+        result.put("breakevenSlAtrMult",  riskSettings.getBreakevenSlAtrMult());
         result.put("skipR3S3IvOvDays", riskSettings.isSkipR3S3IvOvDays());
         result.put("skipR3S3EvDays",   riskSettings.isSkipR3S3EvDays());
         result.put("skipR4S4IvOvDays", riskSettings.isSkipR4S4IvOvDays());
@@ -143,17 +128,10 @@ public class SettingsController {
         result.put("scanUniverse", riskSettings.getScanUniverse());
         result.put("scanMinPrice", riskSettings.getScanMinPrice());
         result.put("scanMaxPrice", riskSettings.getScanMaxPrice());
-        result.put("scanMinTurnover", riskSettings.getScanMinTurnover());
-        result.put("scanMinVolume", riskSettings.getScanMinVolume());
-        result.put("scanMinBeta", riskSettings.getScanMinBeta());
-        result.put("scanMaxBeta", riskSettings.getScanMaxBeta());
-        result.put("openingRangeMinutes", riskSettings.getOpeningRangeMinutes());
         result.put("enableOpeningRefresh", riskSettings.isEnableOpeningRefresh());
         result.put("openingRefreshTime", riskSettings.getOpeningRefreshTime());
         result.put("scanOnlyNifty50", riskSettings.isScanOnlyNifty50());
         result.put("enableHpt", riskSettings.isEnableHpt());
-        result.put("enableLpt", riskSettings.isEnableLpt());
-        result.put("lptQtyFactor", riskSettings.getLptQtyFactor());
         result.put("enableMpt", riskSettings.isEnableMpt());
         result.put("mptQtyFactor", riskSettings.getMptQtyFactor());
         result.put("minAbsoluteProfit", riskSettings.getMinAbsoluteProfit());
@@ -210,7 +188,6 @@ public class SettingsController {
             if (body.containsKey("enableTargetTolerance")) riskSettings.setEnableTargetTolerance(Boolean.parseBoolean(body.get("enableTargetTolerance").toString()));
             if (body.containsKey("targetToleranceAtr")) riskSettings.setTargetToleranceAtr(Double.parseDouble(body.get("targetToleranceAtr").toString()));
             if (body.containsKey("enableIndexAlignment")) riskSettings.setEnableIndexAlignment(Boolean.parseBoolean(body.get("enableIndexAlignment").toString()));
-            if (body.containsKey("enableSmallCandleFilter")) riskSettings.setEnableSmallCandleFilter(effectiveMode, Boolean.parseBoolean(body.get("enableSmallCandleFilter").toString()));
             if (body.containsKey("enableLargeCandleBodyFilter")) riskSettings.setEnableLargeCandleBodyFilter(Boolean.parseBoolean(body.get("enableLargeCandleBodyFilter").toString()));
             if (body.containsKey("largeCandleBodyAtrThreshold")) riskSettings.setLargeCandleBodyAtrThreshold(Double.parseDouble(body.get("largeCandleBodyAtrThreshold").toString()));
             if (body.containsKey("marubozuBodyAtrMult"))         riskSettings.setMarubozuBodyAtrMult(Double.parseDouble(body.get("marubozuBodyAtrMult").toString()));
@@ -236,27 +213,8 @@ public class SettingsController {
             if (body.containsKey("starOuterBodyAtrMult"))        riskSettings.setStarOuterBodyAtrMult(Double.parseDouble(body.get("starOuterBodyAtrMult").toString()));
             if (body.containsKey("starMiddleBodyMaxMultOfOuter")) riskSettings.setStarMiddleBodyMaxMultOfOuter(Double.parseDouble(body.get("starMiddleBodyMaxMultOfOuter").toString()));
             if (body.containsKey("levelTouchToleranceAtr"))      riskSettings.setLevelTouchToleranceAtr(Double.parseDouble(body.get("levelTouchToleranceAtr").toString()));
-            if (body.containsKey("smallCandleAtrThreshold")) riskSettings.setSmallCandleAtrThreshold(effectiveMode, Double.parseDouble(body.get("smallCandleAtrThreshold").toString()));
-            if (body.containsKey("smallCandleBodyAtrThreshold")) riskSettings.setSmallCandleBodyAtrThreshold(effectiveMode, Double.parseDouble(body.get("smallCandleBodyAtrThreshold").toString()));
-            if (body.containsKey("smallCandleMoveAtrThreshold")) riskSettings.setSmallCandleMoveAtrThreshold(effectiveMode, Double.parseDouble(body.get("smallCandleMoveAtrThreshold").toString()));
-            if (body.containsKey("wickRejectionRatio")) riskSettings.setWickRejectionRatio(effectiveMode, Double.parseDouble(body.get("wickRejectionRatio").toString()));
-            if (body.containsKey("enableVolumeFilter")) riskSettings.setEnableVolumeFilter(effectiveMode, Boolean.parseBoolean(body.get("enableVolumeFilter").toString()));
-            if (body.containsKey("volumeMultiple")) riskSettings.setVolumeMultiple(effectiveMode, Double.parseDouble(body.get("volumeMultiple").toString()));
-            if (body.containsKey("volumeLookback")) riskSettings.setVolumeLookback(effectiveMode, Integer.parseInt(body.get("volumeLookback").toString()));
             if (body.containsKey("enableTrailingSl")) riskSettings.setEnableTrailingSl(effectiveMode, Boolean.parseBoolean(body.get("enableTrailingSl").toString()));
             if (body.containsKey("enablePriceSmaExit")) riskSettings.setEnablePriceSmaExit(Boolean.parseBoolean(body.get("enablePriceSmaExit").toString()));
-            if (body.containsKey("enableNiftyReversalCprExit")) riskSettings.setEnableNiftyReversalCprExit(Boolean.parseBoolean(body.get("enableNiftyReversalCprExit").toString()));
-            if (body.containsKey("enableNiftyHtfHurdleExit"))   riskSettings.setEnableNiftyHtfHurdleExit(Boolean.parseBoolean(body.get("enableNiftyHtfHurdleExit").toString()));
-            if (body.containsKey("perSymbolDailyTradeLimit")) {
-                try {
-                    riskSettings.setPerSymbolDailyTradeLimit(Integer.parseInt(body.get("perSymbolDailyTradeLimit").toString()));
-                } catch (NumberFormatException ignored) { /* leave at current value */ }
-            }
-            if (body.containsKey("lptMaxTradesPerStockPerDay")) {
-                try {
-                    riskSettings.setLptMaxTradesPerStockPerDay(Integer.parseInt(body.get("lptMaxTradesPerStockPerDay").toString()));
-                } catch (NumberFormatException ignored) { /* leave at current value */ }
-            }
             if (body.containsKey("virginCprExpiryDays")) {
                 try {
                     riskSettings.setVirginCprExpiryDays(Integer.parseInt(body.get("virginCprExpiryDays").toString()));
@@ -264,11 +222,8 @@ public class SettingsController {
             }
             if (body.containsKey("enableVirginCprHurdleFilter")) riskSettings.setEnableVirginCprHurdleFilter(Boolean.parseBoolean(body.get("enableVirginCprHurdleFilter").toString()));
             if (body.containsKey("virginCprHurdleHeadroomAtr")) riskSettings.setVirginCprHurdleHeadroomAtr(Double.parseDouble(body.get("virginCprHurdleHeadroomAtr").toString()));
-            if (body.containsKey("enableVirginCprTouchExit")) riskSettings.setEnableVirginCprTouchExit(Boolean.parseBoolean(body.get("enableVirginCprTouchExit").toString()));
-            if (body.containsKey("fibStage1TriggerPct")) riskSettings.setFibStage1TriggerPct(Double.parseDouble(body.get("fibStage1TriggerPct").toString()));
-            if (body.containsKey("fibStage1SlAtrMult"))  riskSettings.setFibStage1SlAtrMult(Double.parseDouble(body.get("fibStage1SlAtrMult").toString()));
-            if (body.containsKey("fibStage2TriggerPct")) riskSettings.setFibStage2TriggerPct(Double.parseDouble(body.get("fibStage2TriggerPct").toString()));
-            if (body.containsKey("fibStage2SlPct"))      riskSettings.setFibStage2SlPct(Double.parseDouble(body.get("fibStage2SlPct").toString()));
+            if (body.containsKey("breakevenTriggerPct")) riskSettings.setBreakevenTriggerPct(Double.parseDouble(body.get("breakevenTriggerPct").toString()));
+            if (body.containsKey("breakevenSlAtrMult"))  riskSettings.setBreakevenSlAtrMult(Double.parseDouble(body.get("breakevenSlAtrMult").toString()));
             if (body.containsKey("skipR3S3IvOvDays")) riskSettings.setSkipR3S3IvOvDays(Boolean.parseBoolean(body.get("skipR3S3IvOvDays").toString()));
             if (body.containsKey("skipR3S3EvDays"))   riskSettings.setSkipR3S3EvDays(Boolean.parseBoolean(body.get("skipR3S3EvDays").toString()));
             if (body.containsKey("skipR4S4IvOvDays")) riskSettings.setSkipR4S4IvOvDays(Boolean.parseBoolean(body.get("skipR4S4IvOvDays").toString()));
@@ -287,17 +242,10 @@ public class SettingsController {
             if (body.containsKey("scanUniverse")) riskSettings.setScanUniverse(body.get("scanUniverse").toString());
             if (body.containsKey("scanMinPrice")) riskSettings.setScanMinPrice(Double.parseDouble(body.get("scanMinPrice").toString()));
             if (body.containsKey("scanMaxPrice")) riskSettings.setScanMaxPrice(Double.parseDouble(body.get("scanMaxPrice").toString()));
-            if (body.containsKey("scanMinTurnover")) riskSettings.setScanMinTurnover(Double.parseDouble(body.get("scanMinTurnover").toString()));
-            if (body.containsKey("scanMinVolume")) riskSettings.setScanMinVolume(Long.parseLong(body.get("scanMinVolume").toString()));
-            if (body.containsKey("scanMinBeta")) riskSettings.setScanMinBeta(Double.parseDouble(body.get("scanMinBeta").toString()));
-            if (body.containsKey("scanMaxBeta")) riskSettings.setScanMaxBeta(Double.parseDouble(body.get("scanMaxBeta").toString()));
-            if (body.containsKey("openingRangeMinutes")) riskSettings.setOpeningRangeMinutes(Integer.parseInt(body.get("openingRangeMinutes").toString()));
             if (body.containsKey("enableOpeningRefresh")) riskSettings.setEnableOpeningRefresh(Boolean.parseBoolean(body.get("enableOpeningRefresh").toString()));
             if (body.containsKey("openingRefreshTime")) riskSettings.setOpeningRefreshTime(body.get("openingRefreshTime").toString());
             if (body.containsKey("scanOnlyNifty50")) riskSettings.setScanOnlyNifty50(Boolean.parseBoolean(body.get("scanOnlyNifty50").toString()));
             if (body.containsKey("enableHpt")) riskSettings.setEnableHpt(Boolean.parseBoolean(body.get("enableHpt").toString()));
-            if (body.containsKey("enableLpt")) riskSettings.setEnableLpt(Boolean.parseBoolean(body.get("enableLpt").toString()));
-            if (body.containsKey("lptQtyFactor")) riskSettings.setLptQtyFactor(Double.parseDouble(body.get("lptQtyFactor").toString()));
             if (body.containsKey("enableMpt")) riskSettings.setEnableMpt(Boolean.parseBoolean(body.get("enableMpt").toString()));
             if (body.containsKey("mptQtyFactor")) riskSettings.setMptQtyFactor(Double.parseDouble(body.get("mptQtyFactor").toString()));
             if (body.containsKey("minAbsoluteProfit")) riskSettings.setMinAbsoluteProfit(Double.parseDouble(body.get("minAbsoluteProfit").toString()));

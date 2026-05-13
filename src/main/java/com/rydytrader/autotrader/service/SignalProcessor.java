@@ -187,50 +187,6 @@ public class SignalProcessor {
         int baseQty = quantityService.computeBaseQty(symbol, close, sl, setup);
 
         // ── 4d. Small candle filter ─────────────────────────────────────────────
-        // Two independent ATR floors:
-        //   bodyFloor — minimum candle body required to claim "meaningful conviction"
-        //   moveFloor — minimum push past the breakout level required to claim "level
-        //               actually cleared" (defaults much smaller than bodyFloor — a
-        //               strong-body candle that closes only just past the level is fine)
-        // OR-logic: pass if EITHER body ≥ bodyFloor OR moveFromLevel ≥ moveFloor.
-        // Wick defense and opposite-wick checks are body-based, so both use bodyFloor.
-        if (riskSettings.isEnableSmallCandleFilter()) {
-            double bodyAtrMult    = riskSettings.getSmallCandleBodyAtrThreshold();
-            double moveAtrMult    = riskSettings.getSmallCandleMoveAtrThreshold();
-            double wickRatio      = riskSettings.getWickRejectionRatio();
-            double moveFromLevel  = isBuy ? (close - breakoutLevel) : (breakoutLevel - close);
-            double candleBody     = candleOpen > 0 ? Math.abs(close - candleOpen) : 0;
-            double bodyFloor      = atr * bodyAtrMult;
-            double moveFloor      = atr * moveAtrMult;
-
-            boolean bodyOk = candleBody    >= bodyFloor;
-            boolean moveOk = moveFromLevel >= moveFloor;
-            boolean meaningfulSize = bodyOk || moveOk;
-
-            // Wick defense: tiny-body doji with a long wick into the breakout direction.
-            // Buyers/sellers pushed the price to the wick extreme but the close
-            // recovered — committed directional intent even if the body is small.
-            boolean wickDefense = false;
-            if (candleOpen > 0 && candleHigh > 0 && candleLow > 0 && candleBody < bodyFloor) {
-                double breakoutWick = isBuy
-                    ? (Math.min(close, candleOpen) - candleLow)
-                    : (candleHigh - Math.max(close, candleOpen));
-                wickDefense = breakoutWick >= wickRatio * candleBody
-                    && breakoutWick >= bodyFloor;
-            }
-
-            if (!meaningfulSize && !wickDefense) {
-                return ProcessedSignal.rejected(setup, symbol,
-                    "Small candle — body (" + fmt(candleBody) + ") < " + bodyAtrMult + " ATR ("
-                    + fmt(bodyFloor) + ") AND move from level (" + fmt(moveFromLevel) + ") < "
-                    + moveAtrMult + " ATR (" + fmt(moveFloor) + "), no wick defense");
-            }
-            // Opposite-wick rejection is handled upstream by each retest pattern matcher
-            // (hammer / engulfing / piercing / tweezer / doji / star / harami) in
-            // BreakoutScanner. No longer enforced here so the trade log doesn't show
-            // "fired then rejected".
-        }
-
         // ── 4d2. Large candle body filter ──────────────────────────────────────
         if (riskSettings.isEnableLargeCandleBodyFilter() && candleOpen > 0 && atr > 0) {
             double candleBody = Math.abs(close - candleOpen);
@@ -241,79 +197,10 @@ public class SignalProcessor {
             }
         }
 
-        // ── 4e. Volume filter ─────────────────────────────────────────────────
-        double candleVolume = dbl(alert, "candleVolume");
-        double avgVolume = dbl(alert, "avgVolume");
-        if (riskSettings.isEnableVolumeFilter() && candleVolume > 0 && avgVolume > 0) {
-            double volumeMultiple = riskSettings.getVolumeMultiple();
-            if (candleVolume < avgVolume * volumeMultiple) {
-                return ProcessedSignal.rejected(setup, symbol,
-                    "Low volume — candle vol (" + (long) candleVolume + ") < " + volumeMultiple + "x avg (" + (long) avgVolume + ")");
-            }
-        }
-
-        // ── 4e2. Opening Range filter ──
-        // On EV days: if OR is broken, trade direction must match OR break. Gap-fade (counter-gap) still fires
-        //   as LPT mean-reversion (isReversal=true) to use reversal targets.
-        // Any day type (EV/IV/OV): if breakout close is INSIDE the OR range, downgrade HPT→LPT and proceed
-        //   (no skip, no qty reduction — just LPT).
-        int orMinutes = riskSettings.getOpeningRangeMinutes();
-        boolean isReversal = false;
-        if (orMinutes > 0) {
-            double firstClose = candleAggregator.getFirstCandleClose(symbol);
-            boolean gapUp   = firstClose > 0 && r2 > 0 && firstClose >= r2;
-            boolean gapDown = firstClose > 0 && s2 > 0 && firstClose <= s2;
-            boolean isEv = gapUp || gapDown;
-
-            // Mean-reversion setups (S2/S3/S4 buys, R2/R3/R4 sells) fire on any day type.
-            // Master gate is the BreakoutScanner's enableMeanReversionTrades toggle, applied
-            // before this point. Earlier "EV-only" restriction was removed.
-
-            if (candleAggregator.isOpeningRangeLocked(symbol)) {
-                double orHigh = candleAggregator.getOpeningRangeHigh(symbol);
-                double orLow  = candleAggregator.getOpeningRangeLow(symbol);
-
-                if (isEv) {
-                    boolean orBullish = close > orHigh;
-                    boolean orBearish = close < orLow;
-
-                    // EV + OR broken: direction must match the break
-                    if (orBullish || orBearish) {
-                        boolean directionMatchesOR = (isBuy && orBullish) || (!isBuy && orBearish);
-                        if (!directionMatchesOR) {
-                            return ProcessedSignal.rejected(setup, symbol,
-                                "EV " + (gapUp ? "up" : "down") + " — trade direction opposes OR break ("
-                                + (orBullish ? "OR Bullish" : "OR Bearish") + ") — skipped");
-                        }
-                        // (EV gap-fade rejection removed — already caught by the LTF-priority gate
-                        //  in WeeklyCprService.getProbabilityForDirection upstream.)
-                    }
-                }
-
-                // Inside-OR handling on EV days only — IV/OV inside-OR check removed
-                // (redundant under LTF-priority model; LTF gate already enforces direction match).
-                if (orHigh > 0 && orLow > 0 && close >= orLow && close <= orHigh && isEv) {
-                    boolean opposesGap = (gapUp && !isBuy) || (gapDown && isBuy);
-                    if (opposesGap) {
-                        return ProcessedSignal.rejected(setup, symbol,
-                            "EV " + (gapUp ? "up" : "down") + " — inside OR range [" + fmt(orLow) + "-" + fmt(orHigh)
-                            + "] and trade direction opposes gap (no OR break yet) — skipped");
-                    }
-                    // EV gap-aligned inside OR → trade allowed
-                }
-            } else if (isEv) {
-                // EV detected but OR still forming — skip trade
-                return ProcessedSignal.rejected(setup, symbol,
-                    "EV " + (gapUp ? "up" : "down") + " detected (1st candle close " + fmt(firstClose)
-                    + (gapUp ? " >= R2 " + fmt(r2) : " <= S2 " + fmt(s2))
-                    + ") but Opening Range still forming — skipped");
-            }
-        }
-
-        // ── 4e2b. HTF Hurdle: nearest-weekly-level HPT→LPT downgrade ──
+        // ── 4e2b. HTF Hurdle: prior 15-min close must have cleared the nearest weekly level ──
         // When a 5-min breakout closes above (for buys) the nearest weekly hurdle, the previous
-        // 1h HTF candle must have closed above that level too — otherwise the HTF hasn't
-        // confirmed the move and we downgrade HPT → LPT. Mirror for sells.
+        // 15-min HTF bar must have closed above that level too — otherwise the HTF hasn't
+        // confirmed the move and the trade is rejected. Mirror for sells.
         // Hurdle candidates: R1, PWH, weekly TC, weekly Pivot, weekly BC for buys; S1, PWL,
         // weekly TC, weekly Pivot, weekly BC for sells. Including weekly CPR levels (TC/Pivot/BC)
         // catches breakouts that fired just above (or below) weekly CPR while the prior 1h
@@ -368,20 +255,11 @@ public class SignalProcessor {
             }
         }
 
-        // (Removed: a legacy safety-net block here used to silently reject any signal whose
-        // probability was "LPT", on the assumption that SignalProcessor never produced LPT
-        // anymore. That assumption is wrong — BreakoutScanner's checkIndexAlignment still
-        // downgrades NIFTY-misaligned trades to LPT, and those legitimate LPT signals were
-        // being silently dropped here with no event-log breadcrumb. The upstream downgrade
-        // path already checks enableLpt before assigning LPT, so no re-gate is needed.)
+        // (LPT probability classification has been removed — all NIFTY-misaligned trades are
+        // hard-rejected upstream in BreakoutScanner.)
 
         // ── 4f. Compute target ──────────────────────────────────────────────────
-        double[] targets;
-        if (isReversal) {
-            targets = computeReversalTargets(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
-        } else {
-            targets = computeTargets(setup, close, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc, vwap, atr);
-        }
+        double[] targets = computeTargets(setup, close, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc, vwap, atr);
         double defaultTarget = targets[0];
         double target = defaultTarget;
 
@@ -436,19 +314,13 @@ public class SignalProcessor {
         int qty = baseQty;
 
         // ── 4i2. Probability-based qty adjustment ─────────────────────────────
-        // MPT (medium): qty × mptQtyFactor (default 0.75). LPT: legacy path, no longer
-        // assigned by new classification but kept for backward compat with any old payload.
+        // MPT (medium): qty × mptQtyFactor (default 0.75). LPT classification has been
+        // removed; the bot now hard-rejects NIFTY-misaligned trades instead of downsizing.
         if ("MPT".equals(probability)) {
             double factor = riskSettings.getMptQtyFactor();
             int reduced = Math.max(1, (int)(qty * factor));
             eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (MPT ×" + factor + "): " + qty + " -> " + reduced);
             adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — MPT probability)");
-            qty = reduced;
-        } else if ("LPT".equals(probability)) {
-            double factor = riskSettings.getLptQtyFactor();
-            int reduced = Math.max(1, (int)(qty * factor));
-            eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (LPT ×" + factor + "): " + qty + " -> " + reduced);
-            adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — LPT probability)");
             qty = reduced;
         }
 
@@ -476,7 +348,6 @@ public class SignalProcessor {
 
         // Header
         desc.append("═══ TRADE DETAILS ═══");
-        if (isReversal) desc.append("\n").append(ts).append(" [REVERSAL] EV mean-reversion trade — OR counter-trend");
 
         // [ENTRY] line
         String levelName = levelNameForSetup(setup);
@@ -851,32 +722,6 @@ public class SignalProcessor {
         double t2 = cands.size() > 1 ? cands.get(1) : t1;
         return new double[]{ t1, t2 };
     }
-
-    /**
-     * Mean-reversion targets for EV reversal trades.
-     * Gap up + OR bearish: sell breakdowns target the next level back toward value.
-     * Gap down + OR bullish: buy breakouts target the next level back toward value.
-     */
-    private double[] computeReversalTargets(String setup,
-            double r1, double r2, double r3, double r4,
-            double s1, double s2, double s3, double s4,
-            double ph, double pl, double tc, double bc) {
-        return switch (setup) {
-            // Gap up reversal (selling back down)
-            case "SELL_BELOW_R4"      -> new double[]{ r3, r3 };
-            case "SELL_BELOW_R3"      -> new double[]{ r2, r2 };
-            case "SELL_BELOW_R2"      -> new double[]{ Math.max(r1, ph), Math.max(r1, ph) };
-            case "SELL_BELOW_R1_PDH"  -> new double[]{ Math.max(tc, bc), Math.max(s1, pl) }; // magnet target
-            // Gap down reversal (buying back up)
-            case "BUY_ABOVE_S4"       -> new double[]{ s3, s3 };
-            case "BUY_ABOVE_S3"       -> new double[]{ s2, s2 };
-            case "BUY_ABOVE_S2"       -> new double[]{ Math.min(s1, pl), Math.min(s1, pl) };
-            case "BUY_ABOVE_S1_PDL"   -> new double[]{ Math.min(tc, bc), Math.min(r1, ph) }; // magnet target
-            // Other setups — fall back to normal targets (shouldn't reach here in EV reversal)
-            default -> new double[]{ 0, 0 };
-        };
-    }
-
 
     // ── Level name for description ──────────────────────────────────────────────
     private static String levelNameForSetup(String setup) {

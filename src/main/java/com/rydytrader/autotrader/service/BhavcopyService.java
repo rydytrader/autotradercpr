@@ -163,23 +163,8 @@ public class BhavcopyService {
                     log.error("[BhavcopyService] Failed to backfill after purge: {}", e.getMessage());
                 }
             }
-            // Only compute beta/cap/avgs if not already in the cached file (avoids slow NSE calls on restart)
-            boolean needsEnrichment = cache.values().stream()
-                .anyMatch(c -> c.getBeta() == 0 || c.getCapCategory() == null || c.getAvgVolume20() == 0);
-            if (needsEnrichment) {
-                log.info("[BhavcopyService] Enriching cache: betas + cap categories + vol/turnover averages");
-                computeBetas(cache);
-                computeVolumeTurnoverAverages(cache);
-                try {
-                    String cookies = getNseCookies();
-                    if (cookies != null && !cookies.isEmpty()) fetchCapCategories(cookies, cache);
-                } catch (Exception e) {
-                    log.warn("[BhavcopyService] Cap category fetch failed on cache load: {}", e.getMessage());
-                }
-                saveToFile();
-            } else {
-                log.info("[BhavcopyService] Beta + cap + averages already cached — skipping enrichment");
-            }
+            // Beta / cap category / volume-turnover averages no longer computed —
+            // stock-eligibility filters using those fields have been removed.
             double narrowMaxWidth = riskSettings != null ? riskSettings.getNarrowCprMaxWidth() : 0.1;
             double narrowMinWidth = riskSettings != null ? riskSettings.getNarrowCprMinWidth() : 0.0;
             long narrowCount = cache.values().stream()
@@ -513,10 +498,6 @@ public class BhavcopyService {
                     backfillHistory(targetDate, cookies, nfoSymbols);
                 }
 
-                computeBetas(cache);
-                computeVolumeTurnoverAverages(cache);
-                fetchCapCategories(cookies, cache);
-
                 saveToFile();
 
                 double narrowMaxWidth = riskSettings != null ? riskSettings.getNarrowCprMaxWidth() : 0.1;
@@ -544,100 +525,6 @@ public class BhavcopyService {
 
     // (Range classification removed — SMALL/LARGE/rangeAdrPct no longer used after the
     // watchlist filter was simplified to a single NIFTY 50 / ALL universe toggle.)
-
-    // ── Volume/Turnover 20-day averages from daily history ───────────────────
-
-    private void computeVolumeTurnoverAverages(Map<String, CprLevels> todayCache) {
-        if (dailyHistory.size() < 5) {
-            log.info("[BhavcopyService] Insufficient history for vol/turnover avg ({} days)", dailyHistory.size());
-            return;
-        }
-        int window = Math.min(20, dailyHistory.size());
-        int computed = 0;
-        for (CprLevels today : todayCache.values()) {
-            String sym = today.getSymbol();
-            long volSum = 0;
-            double tovSum = 0;
-            int volDays = 0, tovDays = 0;
-            for (int i = 0; i < window && i < dailyHistory.size(); i++) {
-                CprLevels h = dailyHistory.get(i).symbols.get(sym);
-                if (h == null) continue;
-                if (h.getVolume() > 0) { volSum += h.getVolume(); volDays++; }
-                if (h.getTurnover() > 0) { tovSum += h.getTurnover(); tovDays++; }
-            }
-            if (volDays >= 5) {
-                long avgVol = volSum / volDays;
-                today.setAvgVolume20(avgVol);
-                if (avgVol > 0 && today.getVolume() > 0) {
-                    today.setVolumeMultiple(Math.round((double) today.getVolume() / avgVol * 100.0) / 100.0);
-                }
-            }
-            if (tovDays >= 5) {
-                double avgTov = tovSum / tovDays;
-                today.setAvgTurnover20(avgTov);
-                if (avgTov > 0 && today.getTurnover() > 0) {
-                    today.setTurnoverMultiple(Math.round(today.getTurnover() / avgTov * 100.0) / 100.0);
-                }
-            }
-            if (volDays >= 5 || tovDays >= 5) computed++;
-        }
-        log.info("[BhavcopyService] Computed vol/turnover averages for {} stocks ({}-day window)", computed, window);
-    }
-
-    // ── Beta computation from 25-day daily history ────────────────────────────
-
-    private void computeBetas(Map<String, CprLevels> todayCache) {
-        List<Map<String, CprLevels>> history = new ArrayList<>();
-        if (!cache.isEmpty()) history.add(cache);
-        for (DaySnapshot snap : dailyHistory) history.add(snap.symbols);
-
-        if (history.size() < 10) {
-            log.info("[BhavcopyService] Insufficient history for beta ({} days, need 10+)", history.size());
-            return;
-        }
-
-        // Gather NIFTY daily closes
-        double[] niftyCloses = new double[history.size()];
-        for (int i = 0; i < history.size(); i++) {
-            CprLevels n = history.get(i).get("NIFTY50");
-            niftyCloses[i] = (n != null) ? n.getClose() : 0;
-        }
-
-        long niftyDays = java.util.Arrays.stream(niftyCloses).filter(v -> v > 0).count();
-        log.info("[BhavcopyService] Beta: NIFTY50 present in {}/{} history days", niftyDays, history.size());
-
-        int computed = 0, fallback = 0;
-        for (CprLevels today : todayCache.values()) {
-            String sym = today.getSymbol();
-            List<Double> stockRet = new ArrayList<>();
-            List<Double> niftyRet = new ArrayList<>();
-            for (int i = 0; i < history.size() - 1; i++) {
-                CprLevels s = history.get(i).get(sym);
-                CprLevels sNext = history.get(i + 1).get(sym);
-                if (s == null || sNext == null || sNext.getClose() <= 0) continue;
-                if (niftyCloses[i] <= 0 || niftyCloses[i + 1] <= 0) continue;
-                stockRet.add((s.getClose() - sNext.getClose()) / sNext.getClose());
-                niftyRet.add((niftyCloses[i] - niftyCloses[i + 1]) / niftyCloses[i + 1]);
-            }
-            if (stockRet.size() < 10) {
-                log.info("[BhavcopyService] Beta fallback for {} — {} return pairs (need 10)", sym, stockRet.size());
-                today.setBeta(1.0); fallback++; continue;
-            }
-
-            double sMean = stockRet.stream().mapToDouble(Double::doubleValue).average().orElse(0);
-            double nMean = niftyRet.stream().mapToDouble(Double::doubleValue).average().orElse(0);
-            double cov = 0, nVar = 0;
-            for (int i = 0; i < stockRet.size(); i++) {
-                double sd = stockRet.get(i) - sMean;
-                double nd = niftyRet.get(i) - nMean;
-                cov += sd * nd;
-                nVar += nd * nd;
-            }
-            today.setBeta(nVar > 0 ? Math.round(cov / nVar * 100.0) / 100.0 : 1.0);
-            computed++;
-        }
-        log.info("[BhavcopyService] Computed beta for {} stocks ({} fallback to 1.0)", computed, fallback);
-    }
 
     // ── Market cap classification from NSE index CSVs ───────────────────────
 
@@ -734,37 +621,6 @@ public class BhavcopyService {
         } catch (Exception e) {
             log.warn("[BhavcopyService] Failed to load NIFTY 50 list from disk: {}", e.getMessage());
             return Collections.emptySet();
-        }
-    }
-
-    private void fetchCapCategories(String cookies, Map<String, CprLevels> todayCache) {
-        // When NIFTY 50 filter is active, every cached entry is a NIFTY 50 constituent by
-        // construction — all are LARGE caps. Skip the NIFTY 100 / MIDCAP 150 fetches and
-        // just mark everyone LARGE.
-        if (!nifty50Symbols.isEmpty()) {
-            for (CprLevels cpr : todayCache.values()) {
-                if (!isIndex(cpr.getSymbol())) cpr.setCapCategory("LARGE");
-            }
-            log.info("[BhavcopyService] Cap categories: all {} entries marked LARGE (NIFTY 50 universe)",
-                todayCache.size());
-            return;
-        }
-        // Fallback path — NIFTY 50 list unavailable, universe is full FNO. Classify via
-        // NIFTY 100 (large) and MIDCAP 150 (mid); everything else is small.
-        try {
-            Set<String> largeCaps = fetchIndexSymbols(NIFTY100_URL, cookies);
-            Set<String> midCaps = fetchIndexSymbols(MIDCAP150_URL, cookies);
-            int lc = 0, mc = 0, sc = 0;
-            for (CprLevels cpr : todayCache.values()) {
-                String sym = cpr.getSymbol();
-                if (largeCaps.contains(sym)) { cpr.setCapCategory("LARGE"); lc++; }
-                else if (midCaps.contains(sym)) { cpr.setCapCategory("MID"); mc++; }
-                else { cpr.setCapCategory("SMALL"); sc++; }
-            }
-            log.info("[BhavcopyService] Cap categories (fallback mode): {} large, {} mid, {} small", lc, mc, sc);
-        } catch (Exception e) {
-            log.warn("[BhavcopyService] Failed to fetch cap categories: {} — defaulting all to SMALL", e.getMessage());
-            todayCache.values().forEach(c -> { if (c.getCapCategory() == null) c.setCapCategory("SMALL"); });
         }
     }
 

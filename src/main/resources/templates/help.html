@@ -351,7 +351,7 @@
                 <li><b>BreakoutScanner</b> runs against every watchlist symbol — applies pre-filters (green/red candle, ATP, 5-min SMA Price/Alignment, volume), walks setup priority (R4 → ... → S1+PDL / R1+PDH magnets → DH/DL), runs the LTF check (close vs daily CPR) and HTF check (weekly state) to assign probability HPT / MPT / null. NIFTY alignment + 20-SMA level-count filters also run here. Counter-LTF non-magnet trades are rejected immediately.</li>
                 <li><b>SignalProcessor</b> applies the higher-level filter chain: DH/DL inside-zone gate, extended-level skips (IV/OV vs EV split for daily R3/S3, R4/S4; HTF weekly R3/S3, R4/S4), small/large candle, OR rules (EV days only), HTF Hurdle (15-min), target shift, R/R, qty stack, min profit. Failure rejects the trade outright — no qty downgrade.</li>
                 <li><b>OrderService</b> places the entry on Fyers. On fill, the structural SL and split targets (T1 + T2) are computed from the fill price and placed.</li>
-                <li><b>OrderEventService</b> tracks entry / SL / target lifecycle via the Order WebSocket. <b>MarketDataService</b> trails the SL via the tick stream once the Fibonacci stage triggers.</li>
+                <li><b>OrderEventService</b> tracks entry / SL / target lifecycle via the Order WebSocket. <b>MarketDataService</b> moves the SL to breakeven on candle close once the trigger % is reached.</li>
             </ol>
             <h4>Two WebSockets, zero polling (in steady state)</h4>
             <ul>
@@ -403,8 +403,8 @@
             <h4>4. T1 hit</h4>
             <p>When T1 fills, the SL is re-placed for the remaining quantity at the original SL price. (Optional behaviour: SL moves to entry / breakeven if configured.) T2 stays in place.</p>
 
-            <h4>5. Trailing SL (Fibonacci-based)</h4>
-            <p>If <code>enableTrailingSl</code> is on, MarketDataService monitors LTP. When LTP reaches <code>fibStage1TriggerPct</code>% (default 61.8%) of the (target − entry) range, SL trails up using <code>fibStage1SlAtrMult</code> × ATR from entry. At <code>fibStage2TriggerPct</code>% (default 78.6%), SL moves higher by <code>fibStage2SlPct</code>% of the range. Each trail modifies the existing SL order on Fyers, no cancel-and-replace.</p>
+            <h4>5. Breakeven SL</h4>
+            <p>If <code>enableTrailingSl</code> is on, MarketDataService watches the peak (long) / trough (short) since entry. When that extreme reaches <code>breakevenTriggerPct</code>% (default 61.8%) of the (target − entry) range, the SL is moved to <code>entry ± breakevenSlAtrMult × ATR</code> (default 1.0 ATR). Single-stage — once moved, the never-widen guard keeps it there for the rest of the trade. The move modifies the existing SL order on Fyers, no cancel-and-replace.</p>
 
             <h4>6. Exit</h4>
             <p>Either T2 hits, SL hits, trailing SL hits, manual squareoff, or auto-squareoff time. The bot detects via order WebSocket, cancels the counterpart OCO leg, records the trade with P&amp;L, clears position state, releases the level (so it can re-fire later if the conditions reset).</p>
@@ -754,7 +754,7 @@
             </ol>
 
             <h4>Probability toggles</h4>
-            <p><code>enableHpt</code> and <code>enableMpt</code> independently disable each tier. With <code>enableMpt = false</code>, only HPT signals fire (cleaner setups, fewer trades). The legacy <code>enableLpt</code> setting is preserved in <code>RiskSettingsStore</code> for backward-compat config loading and historical Trade Log display only — no new trade is ever classified or downgraded to LPT.</p>
+            <p><code>enableHpt</code> and <code>enableMpt</code> independently disable each tier. With <code>enableMpt = false</code>, only HPT signals fire (cleaner setups, fewer trades). LPT classification has been removed entirely — historical Trade Log rows tagged LPT still display, but no new trade is ever classified as LPT.</p>
 
             <h4>Quantity impact</h4>
             <p>HPT = full base qty (× 1.0). MPT = base qty × <code>mptQtyFactor</code> (default 0.75 → 25% reduction). Other multipliers stack on top (session move limit) — see the QTY STACKING tab.</p>
@@ -978,13 +978,9 @@
             <h4>Single-level extra buffer</h4>
             <p>Single-level setups (R2+, S2+, DH/DL) get an additional <code>singleLevelSlBufferAtr</code> × ATR (default 0.5) added to the base buffer. Reason: zone setups have built-in zone-width cushion; single-level setups don't, so SL gets nicked too easily on routine retests. Default total: zone = 1.0 × ATR, single-level = 1.5 × ATR from anchor.</p>
 
-            <h4>Trailing SL (Fibonacci-based)</h4>
-            <p>When <code>enableTrailingSl</code> is on, MarketDataService monitors LTP. As LTP advances toward the target:</p>
-            <ul>
-                <li><b>Stage 1</b> at <code>fibStage1TriggerPct</code>% of (target − entry) range (default 61.8%) — SL trails to entry ± <code>fibStage1SlAtrMult</code> × ATR (default 1.0). For a buy this typically locks in breakeven plus a small buffer.</li>
-                <li><b>Stage 2</b> at <code>fibStage2TriggerPct</code>% (default 78.6%) — SL moves to entry + <code>fibStage2SlPct</code>% of range (default 61.8%). Locks in most of the move.</li>
-            </ul>
-            <p>The SL order is modified in place on Fyers (no cancel-replace). Trailing only ratchets in the trade's favour; it never moves backward.</p>
+            <h4>Breakeven SL</h4>
+            <p>When <code>enableTrailingSl</code> is on, MarketDataService tracks the peak (long) / trough (short) since entry. Once that extreme reaches <code>breakevenTriggerPct</code>% of (target − entry) range (default 61.8%), the SL is moved to <code>entry ± breakevenSlAtrMult × ATR</code> (default 1.0). For a buy this typically locks in breakeven plus a small buffer; for a short, mirror. Single-stage — once moved, the never-widen guard keeps it locked.</p>
+            <p>The SL order is modified in place on Fyers (no cancel-replace). The move only ratchets in the trade's favour; it never moves backward.</p>
         </div>
     </div>
 
@@ -1126,7 +1122,7 @@
                 <tr><td>skipR4S4IvOvDays / skipR4S4EvDays</td><td>true / true</td><td>Skip R4/S4 + DH above R4 / DL below S4, split by day type</td></tr>
                 <tr><td>skipHtfR3S3NormalDays / skipHtfR4S4NormalDays</td><td>true / true</td><td>Skip when entry close is past weekly R3/R4 (buys) or S3/S4 (sells)</td></tr>
                 <tr><td>enableVolumeFilter / volumeMultiple / volumeLookback</td><td>false / 2.0 / 20</td><td>Reject if candle volume &lt; multiple × N-candle average</td></tr>
-                <tr><td>enableHpt / enableMpt</td><td>true / true</td><td>Allow HPT / MPT trades. <code>enableLpt</code> retained as legacy; not honored for new trades.</td></tr>
+                <tr><td>enableHpt / enableMpt</td><td>true / true</td><td>Allow HPT / MPT trades. LPT tier removed; historical rows still display.</td></tr>
             </table>
 
             <h4>Candle quality</h4>
@@ -1149,11 +1145,9 @@
                 <tr><td>enableStructuralSl</td><td>true</td><td>Anchor SL to broken level / candle wick</td></tr>
                 <tr><td>structuralSlBufferAtr</td><td>1.0</td><td>Base buffer around structural anchor (× ATR)</td></tr>
                 <tr><td>singleLevelSlBufferAtr</td><td>0.5</td><td>Extra buffer for single-level setups (R2+, S2+, DH/DL)</td></tr>
-                <tr><td>enableTrailingSl</td><td>true</td><td>Fibonacci-staged trailing</td></tr>
-                <tr><td>fibStage1TriggerPct</td><td>61.8</td><td>% of (target−entry) range to trigger stage 1</td></tr>
-                <tr><td>fibStage1SlAtrMult</td><td>1.0</td><td>Stage 1 SL = entry ± this × ATR</td></tr>
-                <tr><td>fibStage2TriggerPct</td><td>78.6</td><td>% of range to trigger stage 2</td></tr>
-                <tr><td>fibStage2SlPct</td><td>61.8</td><td>Stage 2 SL = entry + this % of range</td></tr>
+                <tr><td>enableTrailingSl</td><td>true</td><td>Enable breakeven SL (single-stage)</td></tr>
+                <tr><td>breakevenTriggerPct</td><td>61.8</td><td>% of (target−entry) range that the peak/trough must reach to fire</td></tr>
+                <tr><td>breakevenSlAtrMult</td><td>1.0</td><td>New SL = entry ± this × ATR</td></tr>
             </table>
 
             <h4>Targets &amp; R/R</h4>
@@ -1175,7 +1169,6 @@
                 <tr><td>enableSessionMoveLimit</td><td>true</td><td>Halve qty if price moved too far from open or PDC</td></tr>
                 <tr><td>sessionMoveLimit</td><td>2.0</td><td>Threshold % move</td></tr>
                 <tr><td>mptQtyFactor</td><td>0.75</td><td>MPT qty multiplier</td></tr>
-                <tr><td>lptQtyFactor</td><td>0.50</td><td>Legacy — no longer applied to new trades; kept for historical Trade Log display</td></tr>
             </table>
 
             <h4>Opening Range</h4>

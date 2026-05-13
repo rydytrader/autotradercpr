@@ -159,43 +159,12 @@ public class RiskSettingsStore {
         // behind, making the filter reject otherwise valid breakouts.
         volatile boolean smaLevelFilterMorningSkip = false;
         volatile String  smaLevelFilterMorningSkipUntil = "10:15"; // HH:mm IST
-        volatile boolean enableSmallCandleFilter = false; // reject if candle body and move past level both fall short of their ATR floors
-        volatile double smallCandleAtrThreshold = 0.5; // legacy single-knob (kept for backward-compat load only; no longer drives logic)
-        volatile double smallCandleBodyAtrThreshold = 0.5;  // body floor — small body = weak conviction
-        volatile double smallCandleMoveAtrThreshold = 0.15; // move-past-level floor — tiny push past the level = barely cleared
-        volatile double wickRejectionRatio = 1.5; // breakout wick must be >= this * body to allow small body candle
-        volatile boolean enableVolumeFilter = false; // reject if candle volume < volumeMultiple * avg volume
-        volatile double volumeMultiple = 2.0; // breakout candle must have this x avg volume
-        volatile int volumeLookback = 20; // average volume over last N candles (max 20)
-        volatile boolean enableTrailingSl = true; // enable Fibonacci-based trailing SL (base=breakout level, ceiling=target, stages at 61.8% and 78.6%)
+        volatile boolean enableTrailingSl = true; // enable breakeven SL — moves SL to entry ± buffer once price reaches breakevenTriggerPct of (entry→target) range
         // Defensive Price-vs-SMA exit. At every 5-min candle close, if the just-closed bar's
         // close is against the trade direction relative to the 5-min SMA 20 (LONG: close < SMA 20;
         // SHORT: close > SMA 20), squareoff the position before SL hits. Default off — material
         // behavior change.
         volatile boolean enablePriceSmaExit = false;
-        // NIFTY reversal-CPR-touch defensive exit. When NIFTY is in BULLISH_REVERSAL (NIFTY
-        // below CPR + bullish SMAs) and price climbs back to/past CPR bottom, exit all open
-        // LONG positions — the bullish move played out, NIFTY entering CPR consolidation. Mirror
-        // for BEARISH_REVERSAL: NIFTY above CPR drops to/below CPR top → exit all SHORT positions.
-        // Default off.
-        volatile boolean enableNiftyReversalCprExit = false;
-        // NIFTY HTF Hurdle break — early exit. When a stock trade was taken with the NIFTY
-        // HTF Hurdle filter actively gating it (i.e., a hurdle existed in trade direction
-        // and NIFTY's prior 15-min close had cleared it), capture that 15-min bar's LOW
-        // (for buys) / HIGH (for sells). On every NIFTY 5-min candle close, if the just-
-        // closed bar's close breaches that captured level, the HTF breakout has structurally
-        // failed — square off the position with reason NIFTY_HURDLE_FAIL. Default off.
-        volatile boolean enableNiftyHtfHurdleExit = false;
-        // Per-symbol daily trade limit. When >0, halts further trades on a symbol once today's
-        // count of wins OR today's count of losses (separately, NOT total) reaches the threshold.
-        // E.g. limit=2: 2W+0L → stop, 0W+2L → stop, 1W+1L → continue, 2W+1L → stop.
-        // Counts only fully-closed trades (T1 partial-fill rows are excluded). 0 = disabled.
-        volatile int perSymbolDailyTradeLimit = 2;
-        // Per-symbol daily LPT trade limit. Caps how many LPT-tagged trades fire on a single
-        // symbol per trading day. LPT is currently produced when a stock is misaligned with
-        // NIFTY but passes all stock-level filters (downgrade-not-reject behavior). 0 = disabled.
-        // Default 1 — at most one LPT trade per stock per day.
-        volatile int lptMaxTradesPerStockPerDay = 1;
         // Virgin CPR — when NIFTY's session range never overlapped today's daily CPR (BC..TC)
         // by 15:30 IST, that day's CPR levels (TC, Pivot, BC) are cached as a "virgin CPR" and
         // become available to the dedicated Virgin CPR Hurdle filter for the next N trading
@@ -207,15 +176,11 @@ public class RiskSettingsStore {
         // the zone edge. Default off — opt-in.
         volatile boolean enableVirginCprHurdleFilter = false;
         volatile double  virginCprHurdleHeadroomAtr  = 1.0;
-        // Virgin CPR-Touch defensive exit — when NIFTY's just-closed 5-min bar's range touches
-        // the active virgin CPR zone (bar high ≥ zoneBot AND bar low ≤ zoneTop), close all open
-        // positions at market. Trigger reason: VIRGIN_CPR_TOUCH. Default off — opt-in.
-        volatile boolean enableVirginCprTouchExit = false;
-        // Fibonacci trailing SL — all four knobs stored as percent (0–100).
-        volatile double fibStage1TriggerPct = 61.8;   // LTP hits this % of range → stage 1 activates
-        volatile double fibStage1SlAtrMult = 1.0;     // stage 1 SL = entry ± N × ATR
-        volatile double fibStage2TriggerPct = 78.6;   // LTP hits this % of range → stage 2 activates
-        volatile double fibStage2SlPct = 61.8;        // stage 2 SL = base + this % of range
+        // Breakeven SL — single-stage move. When the peak (long) / trough (short) reaches
+        // {@code breakevenTriggerPct}% of the range from entry to target, the SL is moved to
+        // {@code entry ± breakevenSlAtrMult × ATR}. Once moved, it stays put (never widens).
+        volatile double breakevenTriggerPct = 61.8;   // peak/trough hits this % of (entry→target) range
+        volatile double breakevenSlAtrMult  = 1.0;    // new SL = entry ± N × ATR
         // Extended-level breakouts (R3/S3, R4/S4) are skipped on normal IV/OV days but allowed
         // on EV (gap up/down) days regardless. Toggles default ON (skip on normal days).
         // Daily extended-level skip — split by day type. IV/OV = open print inside CPR or
@@ -244,15 +209,10 @@ public class RiskSettingsStore {
         volatile int    higherTimeframe  = 60;  // higher TF for weekly trend (minutes) — Fyers native resolution
         volatile boolean enableAtpCheck = true; // require ATP confirmation for scanner signals
         volatile boolean enableHpt      = true;  // High Probable Trade signals (weekly+daily aligned)
-        volatile boolean enableLpt      = true;  // Low Probable Trade signals (everything else, half qty)
-        volatile double lptQtyFactor    = 0.50;  // LPT qty multiplier (0.50 = half)
-        // Medium Probable Trade — new tier under LTF-priority probability model. Trade fires
-        // as MPT when only one of LTF (5-min vs daily CPR) or HTF (weekly) aligns with trade
-        // direction; magnet trades also classify as MPT (HTF-only alignment).
+        // Medium Probable Trade — produced by static counter-trend setups (S1+PDL/S2-S4 buys,
+        // R1+PDH/R2-R4 sells). Trades at reduced qty via mptQtyFactor.
         volatile boolean enableMpt      = true;
         volatile double mptQtyFactor    = 0.75;
-        // Weekly NEUTRAL trades → LPT. Use enableLpt toggle to skip them.
-        // Inside-OR breakouts are always downgraded to LPT (no skip toggles, no qty reduction)
         volatile double minAbsoluteProfit = 500; // skip if qty × target_distance < this amount (₹)
         // CPR Width scanner group toggles
         volatile double narrowCprMaxWidth = 0.1;  // CPR width % upper threshold for narrow CPR stocks
@@ -266,21 +226,15 @@ public class RiskSettingsStore {
         volatile String scanUniverse = "NIFTY100";
         volatile double scanMinPrice = 300;      // min stock price filter (0 = no filter)
         volatile double scanMaxPrice = 0;        // max stock price filter (0 = no max)
-        volatile double scanMinTurnover = 0;     // min daily turnover in ₹ Cr (0 = no filter)
-        volatile long   scanMinVolume = 0;       // min previous day volume (0 = no filter)
-        volatile double scanMinBeta = 0;         // min stock beta (0 = no filter)
-        volatile double scanMaxBeta = 0;         // max stock beta (0 = no filter)
         // Watchlist universe gate. When true, the watchlist is restricted to NIFTY 50 stocks
         // only. When false, all stocks in the bhavcopy cache are eligible (subject to the
         // CPR-width and other scanner filters). Replaces the legacy scanIncludeNS/NL/IS/IL
         // bucket toggles (which filtered by Narrow/Inside CPR × Small/Large daily range).
         volatile boolean scanOnlyNifty50 = true;
-        // Opening Range
-        volatile int openingRangeMinutes = 30; // 0=disabled, 15/30/45/60
         // Opening refresh — re-fetches today's candles from Fyers /data/history after
         // 9:20 to correct any wrong live-tick-built first candle (Fyers' live WS data is
         // unreliable during 9:15-9:25 per their own docs). Re-seeds completedCandles, SMA, ATR,
-        // firstCandleClose, dayOpen, OR. Configurable HH:mm time (IST).
+        // firstCandleClose, dayOpen. Configurable HH:mm time (IST).
         volatile boolean enableOpeningRefresh = true;
         volatile String  openingRefreshTime   = "09:25"; // IST, HH:mm
         // Target Tolerance — discount structural target by ATR fraction so near-miss reversals fill
@@ -348,7 +302,6 @@ public class RiskSettingsStore {
     public boolean isSmaLevelFilterMorningSkip()       { return cfg().smaLevelFilterMorningSkip; }
     public String  getSmaLevelFilterMorningSkipUntil() { return cfg().smaLevelFilterMorningSkipUntil; }
     public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
-    public boolean isEnableSmallCandleFilter() { return cfg().enableSmallCandleFilter; }
     public boolean isEnableLargeCandleBodyFilter() { return cfg().enableLargeCandleBodyFilter; }
     public double getLargeCandleBodyAtrThreshold() { return cfg().largeCandleBodyAtrThreshold; }
     public double getMarubozuBodyAtrMult()         { return cfg().marubozuBodyAtrMult; }
@@ -375,18 +328,11 @@ public class RiskSettingsStore {
     public double getLevelTouchToleranceAtr()      { return cfg().levelTouchToleranceAtr; }
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
     public boolean isEnablePriceSmaExit() { return cfg().enablePriceSmaExit; }
-    public boolean isEnableNiftyReversalCprExit() { return cfg().enableNiftyReversalCprExit; }
-    public boolean isEnableNiftyHtfHurdleExit()    { return cfg().enableNiftyHtfHurdleExit; }
-    public int getPerSymbolDailyTradeLimit() { return cfg().perSymbolDailyTradeLimit; }
-    public int getLptMaxTradesPerStockPerDay() { return cfg().lptMaxTradesPerStockPerDay; }
     public int getVirginCprExpiryDays() { return cfg().virginCprExpiryDays; }
     public boolean isEnableVirginCprHurdleFilter() { return cfg().enableVirginCprHurdleFilter; }
     public double  getVirginCprHurdleHeadroomAtr() { return cfg().virginCprHurdleHeadroomAtr; }
-    public boolean isEnableVirginCprTouchExit()    { return cfg().enableVirginCprTouchExit; }
-    public double getFibStage1TriggerPct() { return cfg().fibStage1TriggerPct; }
-    public double getFibStage1SlAtrMult()  { return cfg().fibStage1SlAtrMult; }
-    public double getFibStage2TriggerPct() { return cfg().fibStage2TriggerPct; }
-    public double getFibStage2SlPct()      { return cfg().fibStage2SlPct; }
+    public double getBreakevenTriggerPct() { return cfg().breakevenTriggerPct; }
+    public double getBreakevenSlAtrMult()  { return cfg().breakevenSlAtrMult; }
     public boolean isSkipR3S3IvOvDays() { return cfg().skipR3S3IvOvDays; }
     public boolean isSkipR3S3EvDays()   { return cfg().skipR3S3EvDays; }
     public boolean isSkipR4S4IvOvDays() { return cfg().skipR4S4IvOvDays; }
@@ -395,21 +341,12 @@ public class RiskSettingsStore {
     public boolean isSkipHtfR4S4NormalDays() { return cfg().skipHtfR4S4NormalDays; }
     public boolean isEnableMeanReversionTrades() { return cfg().enableMeanReversionTrades; }
     public int getAtrPeriod() { return cfg().atrPeriod; }
-    public double getSmallCandleAtrThreshold() { return cfg().smallCandleAtrThreshold; }
-    public double getSmallCandleBodyAtrThreshold() { return cfg().smallCandleBodyAtrThreshold; }
-    public double getSmallCandleMoveAtrThreshold() { return cfg().smallCandleMoveAtrThreshold; }
-    public double getWickRejectionRatio() { return cfg().wickRejectionRatio; }
-    public boolean isEnableVolumeFilter() { return cfg().enableVolumeFilter; }
-    public double getVolumeMultiple() { return cfg().volumeMultiple; }
-    public int getVolumeLookback() { return cfg().volumeLookback; }
 
     public String  getSignalSource()      { return cfg().signalSource; }
     public int     getScannerTimeframe()  { return cfg().scannerTimeframe; }
     public int     getHigherTimeframe()   { return cfg().higherTimeframe; }
     public boolean isEnableAtpCheck()    { return cfg().enableAtpCheck; }
     public boolean isEnableHpt()          { return cfg().enableHpt; }
-    public boolean isEnableLpt()          { return cfg().enableLpt; }
-    public double getLptQtyFactor()       { return cfg().lptQtyFactor; }
     public boolean isEnableMpt()          { return cfg().enableMpt; }
     public double getMptQtyFactor()       { return cfg().mptQtyFactor; }
     public double getMinAbsoluteProfit() { return cfg().minAbsoluteProfit; }
@@ -419,12 +356,7 @@ public class RiskSettingsStore {
     public String getScanUniverse() { String u = cfg().scanUniverse; return u != null && !u.isEmpty() ? u : "NIFTY100"; }
     public double getScanMinPrice() { return cfg().scanMinPrice; }
     public double getScanMaxPrice() { return cfg().scanMaxPrice; }
-    public double getScanMinTurnover() { return cfg().scanMinTurnover; }
-    public long   getScanMinVolume()   { return cfg().scanMinVolume; }
-    public double getScanMinBeta() { return cfg().scanMinBeta; }
-    public double getScanMaxBeta() { return cfg().scanMaxBeta; }
     public boolean isScanOnlyNifty50() { return cfg().scanOnlyNifty50; }
-    public int getOpeningRangeMinutes()        { return cfg().openingRangeMinutes; }
     public boolean isEnableOpeningRefresh()    { return cfg().enableOpeningRefresh; }
     public String  getOpeningRefreshTime()     { return cfg().openingRefreshTime; }
     public boolean isEnableTargetTolerance()   { return cfg().enableTargetTolerance; }
@@ -435,8 +367,6 @@ public class RiskSettingsStore {
     public void setHigherTimeframe(int v)      { cfg().higherTimeframe = v; }
     public void setEnableAtpCheck(boolean v)  { cfg().enableAtpCheck = v; }
     public void setEnableHpt(boolean v)        { cfg().enableHpt = v; }
-    public void setEnableLpt(boolean v)        { cfg().enableLpt = v; }
-    public void setLptQtyFactor(double v)      { cfg().lptQtyFactor = v; }
     public void setEnableMpt(boolean v)        { cfg().enableMpt = v; }
     public void setMptQtyFactor(double v)      { cfg().mptQtyFactor = v; }
     public void setMinAbsoluteProfit(double v) { cfg().minAbsoluteProfit = v; }
@@ -450,12 +380,7 @@ public class RiskSettingsStore {
     }
     public void setScanMinPrice(double v) { cfg().scanMinPrice = v; }
     public void setScanMaxPrice(double v) { cfg().scanMaxPrice = v; }
-    public void setScanMinTurnover(double v) { cfg().scanMinTurnover = v; }
-    public void setScanMinVolume(long v)     { cfg().scanMinVolume = v; }
-    public void setScanMinBeta(double v) { cfg().scanMinBeta = v; }
-    public void setScanMaxBeta(double v) { cfg().scanMaxBeta = v; }
     public void setScanOnlyNifty50(boolean v) { cfg().scanOnlyNifty50 = v; }
-    public void setOpeningRangeMinutes(int v)  { cfg().openingRangeMinutes = v; }
     public void setEnableOpeningRefresh(boolean v) { cfg().enableOpeningRefresh = v; }
     public void setOpeningRefreshTime(String v)    { cfg().openingRefreshTime = v; }
     public void setEnableTargetTolerance(boolean v) { cfg().enableTargetTolerance = v; }
@@ -499,7 +424,6 @@ public class RiskSettingsStore {
     public void setSmaLevelFilterMorningSkip(boolean v)     { cfg().smaLevelFilterMorningSkip = v; }
     public void setSmaLevelFilterMorningSkipUntil(String v) { if (v != null && !v.isEmpty()) cfg().smaLevelFilterMorningSkipUntil = v; }
     public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
-    public void setEnableSmallCandleFilter(boolean v) { cfg().enableSmallCandleFilter = v; }
     public void setEnableLargeCandleBodyFilter(boolean v) { cfg().enableLargeCandleBodyFilter = v; }
     public void setLargeCandleBodyAtrThreshold(double v) { cfg().largeCandleBodyAtrThreshold = v; }
     public void setMarubozuBodyAtrMult(double v)         { cfg().marubozuBodyAtrMult = v; }
@@ -526,18 +450,11 @@ public class RiskSettingsStore {
     public void setLevelTouchToleranceAtr(double v)      { cfg().levelTouchToleranceAtr = Math.max(0, v); }
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
     public void setEnablePriceSmaExit(boolean v) { cfg().enablePriceSmaExit = v; }
-    public void setEnableNiftyReversalCprExit(boolean v) { cfg().enableNiftyReversalCprExit = v; }
-    public void setEnableNiftyHtfHurdleExit(boolean v)   { cfg().enableNiftyHtfHurdleExit = v; }
-    public void setPerSymbolDailyTradeLimit(int v) { cfg().perSymbolDailyTradeLimit = Math.max(0, v); }
-    public void setLptMaxTradesPerStockPerDay(int v) { cfg().lptMaxTradesPerStockPerDay = Math.max(0, v); }
     public void setVirginCprExpiryDays(int v) { cfg().virginCprExpiryDays = Math.max(0, v); }
     public void setEnableVirginCprHurdleFilter(boolean v) { cfg().enableVirginCprHurdleFilter = v; }
     public void setVirginCprHurdleHeadroomAtr(double v)   { cfg().virginCprHurdleHeadroomAtr = Math.max(0, v); }
-    public void setEnableVirginCprTouchExit(boolean v)    { cfg().enableVirginCprTouchExit = v; }
-    public void setFibStage1TriggerPct(double v) { cfg().fibStage1TriggerPct = v; }
-    public void setFibStage1SlAtrMult(double v)  { cfg().fibStage1SlAtrMult = v; }
-    public void setFibStage2TriggerPct(double v) { cfg().fibStage2TriggerPct = v; }
-    public void setFibStage2SlPct(double v)      { cfg().fibStage2SlPct = v; }
+    public void setBreakevenTriggerPct(double v) { cfg().breakevenTriggerPct = v; }
+    public void setBreakevenSlAtrMult(double v)  { cfg().breakevenSlAtrMult = v; }
     public void setSkipR3S3IvOvDays(boolean v) { cfg().skipR3S3IvOvDays = v; }
     public void setSkipR3S3EvDays(boolean v)   { cfg().skipR3S3EvDays = v; }
     public void setSkipR4S4IvOvDays(boolean v) { cfg().skipR4S4IvOvDays = v; }
@@ -552,13 +469,6 @@ public class RiskSettingsStore {
         if (v) cfg().enableMpt = true;
     }
     public void setAtrPeriod(int v) { cfg().atrPeriod = v; }
-    public void setSmallCandleAtrThreshold(double v) { cfg().smallCandleAtrThreshold = v; }
-    public void setSmallCandleBodyAtrThreshold(double v) { cfg().smallCandleBodyAtrThreshold = v; }
-    public void setSmallCandleMoveAtrThreshold(double v) { cfg().smallCandleMoveAtrThreshold = v; }
-    public void setWickRejectionRatio(double v) { cfg().wickRejectionRatio = v; }
-    public void setEnableVolumeFilter(boolean v) { cfg().enableVolumeFilter = v; }
-    public void setVolumeMultiple(double v) { cfg().volumeMultiple = v; }
-    public void setVolumeLookback(int v) { cfg().volumeLookback = Math.min(v, 20); }
 
     // ── mode-specific getters/setters (used by SettingsController) ────────────
     public String getTradingStartTime(String mode)  { return cfgFor(mode).tradingStartTime; }
@@ -580,15 +490,7 @@ public class RiskSettingsStore {
     public double getCapitalPerTrade(String mode) { return cfgFor(mode).capitalPerTrade; }
     public int    getTelegramAlertFrequency(String mode) { return cfgFor(mode).telegramAlertFrequency; }
     public boolean isEnableTargetShift(String mode) { return cfgFor(mode).enableTargetShift; }
-    public boolean isEnableSmallCandleFilter(String mode) { return cfgFor(mode).enableSmallCandleFilter; }
     public boolean isEnableTrailingSl(String mode) { return cfgFor(mode).enableTrailingSl; }
-    public double getSmallCandleAtrThreshold(String mode) { return cfgFor(mode).smallCandleAtrThreshold; }
-    public double getSmallCandleBodyAtrThreshold(String mode) { return cfgFor(mode).smallCandleBodyAtrThreshold; }
-    public double getSmallCandleMoveAtrThreshold(String mode) { return cfgFor(mode).smallCandleMoveAtrThreshold; }
-    public double getWickRejectionRatio(String mode) { return cfgFor(mode).wickRejectionRatio; }
-    public boolean isEnableVolumeFilter(String mode) { return cfgFor(mode).enableVolumeFilter; }
-    public double getVolumeMultiple(String mode) { return cfgFor(mode).volumeMultiple; }
-    public int getVolumeLookback(String mode) { return cfgFor(mode).volumeLookback; }
 
     public void setTradingStartTime(String mode, String v)  { cfgFor(mode).tradingStartTime = v; }
     public void setTradingEndTime(String mode, String v)    { cfgFor(mode).tradingEndTime = v; }
@@ -608,15 +510,7 @@ public class RiskSettingsStore {
     public void setCapitalPerTrade(String mode, double v) { cfgFor(mode).capitalPerTrade = v; }
     public void setTelegramAlertFrequency(String mode, int v) { cfgFor(mode).telegramAlertFrequency = v; }
     public void setEnableTargetShift(String mode, boolean v) { cfgFor(mode).enableTargetShift = v; }
-    public void setEnableSmallCandleFilter(String mode, boolean v) { cfgFor(mode).enableSmallCandleFilter = v; }
     public void setEnableTrailingSl(String mode, boolean v) { cfgFor(mode).enableTrailingSl = v; }
-    public void setSmallCandleAtrThreshold(String mode, double v) { cfgFor(mode).smallCandleAtrThreshold = v; }
-    public void setSmallCandleBodyAtrThreshold(String mode, double v) { cfgFor(mode).smallCandleBodyAtrThreshold = v; }
-    public void setSmallCandleMoveAtrThreshold(String mode, double v) { cfgFor(mode).smallCandleMoveAtrThreshold = v; }
-    public void setWickRejectionRatio(String mode, double v) { cfgFor(mode).wickRejectionRatio = v; }
-    public void setEnableVolumeFilter(String mode, boolean v) { cfgFor(mode).enableVolumeFilter = v; }
-    public void setVolumeMultiple(String mode, double v) { cfgFor(mode).volumeMultiple = v; }
-    public void setVolumeLookback(String mode, int v) { cfgFor(mode).volumeLookback = Math.min(v, 20); }
 
     // ── save ──────────────────────────────────────────────────────────────────
     /** Saves the current settings. */
@@ -666,7 +560,6 @@ public class RiskSettingsStore {
             upsert("smaLevelFilterMorningSkip", String.valueOf(c.smaLevelFilterMorningSkip));
             upsert("smaLevelFilterMorningSkipUntil", c.smaLevelFilterMorningSkipUntil);
             upsert("enableTargetShift", String.valueOf(c.enableTargetShift));
-            upsert("enableSmallCandleFilter", String.valueOf(c.enableSmallCandleFilter));
             upsert("enableLargeCandleBodyFilter", String.valueOf(c.enableLargeCandleBodyFilter));
             upsert("largeCandleBodyAtrThreshold", String.valueOf(c.largeCandleBodyAtrThreshold));
             upsert("marubozuBodyAtrMult", String.valueOf(c.marubozuBodyAtrMult));
@@ -691,27 +584,13 @@ public class RiskSettingsStore {
             upsert("starOuterBodyAtrMult", String.valueOf(c.starOuterBodyAtrMult));
             upsert("starMiddleBodyMaxMultOfOuter", String.valueOf(c.starMiddleBodyMaxMultOfOuter));
             upsert("levelTouchToleranceAtr", String.valueOf(c.levelTouchToleranceAtr));
-            upsert("smallCandleAtrThreshold", String.valueOf(c.smallCandleAtrThreshold));
-            upsert("smallCandleBodyAtrThreshold", String.valueOf(c.smallCandleBodyAtrThreshold));
-            upsert("smallCandleMoveAtrThreshold", String.valueOf(c.smallCandleMoveAtrThreshold));
-            upsert("wickRejectionRatio", String.valueOf(c.wickRejectionRatio));
-            upsert("enableVolumeFilter", String.valueOf(c.enableVolumeFilter));
-            upsert("volumeMultiple", String.valueOf(c.volumeMultiple));
-            upsert("volumeLookback", String.valueOf(c.volumeLookback));
             upsert("enableTrailingSl", String.valueOf(c.enableTrailingSl));
             upsert("enablePriceSmaExit", String.valueOf(c.enablePriceSmaExit));
-            upsert("enableNiftyReversalCprExit", String.valueOf(c.enableNiftyReversalCprExit));
-            upsert("enableNiftyHtfHurdleExit",   String.valueOf(c.enableNiftyHtfHurdleExit));
-            upsert("perSymbolDailyTradeLimit", String.valueOf(c.perSymbolDailyTradeLimit));
-            upsert("lptMaxTradesPerStockPerDay", String.valueOf(c.lptMaxTradesPerStockPerDay));
             upsert("virginCprExpiryDays", String.valueOf(c.virginCprExpiryDays));
             upsert("enableVirginCprHurdleFilter", String.valueOf(c.enableVirginCprHurdleFilter));
             upsert("virginCprHurdleHeadroomAtr",  String.valueOf(c.virginCprHurdleHeadroomAtr));
-            upsert("enableVirginCprTouchExit",    String.valueOf(c.enableVirginCprTouchExit));
-            upsert("fibStage1TriggerPct", String.valueOf(c.fibStage1TriggerPct));
-            upsert("fibStage1SlAtrMult",  String.valueOf(c.fibStage1SlAtrMult));
-            upsert("fibStage2TriggerPct", String.valueOf(c.fibStage2TriggerPct));
-            upsert("fibStage2SlPct",      String.valueOf(c.fibStage2SlPct));
+            upsert("breakevenTriggerPct", String.valueOf(c.breakevenTriggerPct));
+            upsert("breakevenSlAtrMult",  String.valueOf(c.breakevenSlAtrMult));
             upsert("skipR3S3IvOvDays", String.valueOf(c.skipR3S3IvOvDays));
             upsert("skipR3S3EvDays",   String.valueOf(c.skipR3S3EvDays));
             upsert("skipR4S4IvOvDays", String.valueOf(c.skipR4S4IvOvDays));
@@ -725,8 +604,6 @@ public class RiskSettingsStore {
             upsert("higherTimeframe", String.valueOf(c.higherTimeframe));
             upsert("enableAtpCheck", String.valueOf(c.enableAtpCheck));
             upsert("enableHpt", String.valueOf(c.enableHpt));
-            upsert("enableLpt", String.valueOf(c.enableLpt));
-            upsert("lptQtyFactor", String.valueOf(c.lptQtyFactor));
             upsert("enableMpt", String.valueOf(c.enableMpt));
             upsert("mptQtyFactor", String.valueOf(c.mptQtyFactor));
             upsert("minAbsoluteProfit", String.valueOf(c.minAbsoluteProfit));
@@ -737,12 +614,7 @@ public class RiskSettingsStore {
             upsert("scanUniverse", "NIFTY100");  // toggle removed — always pinned
             upsert("scanMinPrice", String.valueOf(c.scanMinPrice));
             upsert("scanMaxPrice", String.valueOf(c.scanMaxPrice));
-            upsert("scanMinTurnover", String.valueOf(c.scanMinTurnover));
-            upsert("scanMinVolume", String.valueOf(c.scanMinVolume));
-            upsert("scanMinBeta", String.valueOf(c.scanMinBeta));
-            upsert("scanMaxBeta", String.valueOf(c.scanMaxBeta));
             upsert("scanOnlyNifty50", String.valueOf(c.scanOnlyNifty50));
-            upsert("openingRangeMinutes", String.valueOf(c.openingRangeMinutes));
             upsert("enableOpeningRefresh", String.valueOf(c.enableOpeningRefresh));
             upsert("openingRefreshTime", c.openingRefreshTime);
             upsert("enableTargetTolerance", String.valueOf(c.enableTargetTolerance));
@@ -826,7 +698,6 @@ public class RiskSettingsStore {
                     case "smaLevelFilterMorningSkip" -> c.smaLevelFilterMorningSkip = Boolean.parseBoolean(v);
                     case "smaLevelFilterMorningSkipUntil" -> { if (v != null && !v.isEmpty()) c.smaLevelFilterMorningSkipUntil = v; }
                     case "enableTargetShift" -> c.enableTargetShift = Boolean.parseBoolean(v);
-                    case "enableSmallCandleFilter" -> c.enableSmallCandleFilter = Boolean.parseBoolean(v);
                     case "enableLargeCandleBodyFilter" -> c.enableLargeCandleBodyFilter = Boolean.parseBoolean(v);
                     case "largeCandleBodyAtrThreshold" -> c.largeCandleBodyAtrThreshold = Double.parseDouble(v);
                     case "marubozuBodyAtrMult"         -> c.marubozuBodyAtrMult = Double.parseDouble(v);
@@ -852,33 +723,34 @@ public class RiskSettingsStore {
                     case "starOuterBodyAtrMult"        -> c.starOuterBodyAtrMult = Double.parseDouble(v);
                     case "starMiddleBodyMaxMultOfOuter" -> c.starMiddleBodyMaxMultOfOuter = Double.parseDouble(v);
                     case "levelTouchToleranceAtr"      -> c.levelTouchToleranceAtr = Math.max(0, Double.parseDouble(v));
-                    case "smallCandleAtrThreshold" -> {
-                        // Legacy single knob: also seed the new split fields if those keys haven't been
-                        // saved yet. Once the user saves the new fields explicitly, this no-op overwrites
-                        // are harmless because save() writes both keys.
-                        c.smallCandleAtrThreshold = Double.parseDouble(v);
-                    }
-                    case "smallCandleBodyAtrThreshold" -> c.smallCandleBodyAtrThreshold = Double.parseDouble(v);
-                    case "smallCandleMoveAtrThreshold" -> c.smallCandleMoveAtrThreshold = Double.parseDouble(v);
-                    case "wickRejectionRatio" -> c.wickRejectionRatio = Double.parseDouble(v);
-                    case "enableVolumeFilter" -> c.enableVolumeFilter = Boolean.parseBoolean(v);
-                    case "volumeMultiple" -> c.volumeMultiple = Double.parseDouble(v);
-                    case "volumeLookback" -> c.volumeLookback = Integer.parseInt(v);
+                    // Legacy small-candle / volume filter keys — features removed.
+                    case "enableSmallCandleFilter",
+                         "smallCandleAtrThreshold",
+                         "smallCandleBodyAtrThreshold",
+                         "smallCandleMoveAtrThreshold",
+                         "wickRejectionRatio",
+                         "enableVolumeFilter",
+                         "volumeMultiple",
+                         "volumeLookback" -> { /* legacy — removed */ }
                     case "enableTrailingSl"   -> c.enableTrailingSl = Boolean.parseBoolean(v);
                     case "enableSmaCrossExit" -> { /* legacy — SMA cross exit removed */ }
                     case "enablePriceSmaExit" -> c.enablePriceSmaExit = Boolean.parseBoolean(v);
-                    case "enableNiftyReversalCprExit" -> c.enableNiftyReversalCprExit = Boolean.parseBoolean(v);
-                    case "enableNiftyHtfHurdleExit"   -> c.enableNiftyHtfHurdleExit = Boolean.parseBoolean(v);
-                    case "perSymbolDailyTradeLimit" -> c.perSymbolDailyTradeLimit = Math.max(0, Integer.parseInt(v));
-                    case "lptMaxTradesPerStockPerDay" -> c.lptMaxTradesPerStockPerDay = Math.max(0, Integer.parseInt(v));
+                    // Legacy exit toggles + per-symbol trade limit — features removed.
+                    case "enableNiftyReversalCprExit",
+                         "enableNiftyHtfHurdleExit",
+                         "enableVirginCprTouchExit",
+                         "perSymbolDailyTradeLimit",
+                         "lptMaxTradesPerStockPerDay" -> { /* legacy — removed */ }
                     case "virginCprExpiryDays" -> c.virginCprExpiryDays = Math.max(0, Integer.parseInt(v));
                     case "enableVirginCprHurdleFilter" -> c.enableVirginCprHurdleFilter = Boolean.parseBoolean(v);
                     case "virginCprHurdleHeadroomAtr" -> c.virginCprHurdleHeadroomAtr = Math.max(0, Double.parseDouble(v));
-                    case "enableVirginCprTouchExit" -> c.enableVirginCprTouchExit = Boolean.parseBoolean(v);
-                    case "fibStage1TriggerPct" -> c.fibStage1TriggerPct = Double.parseDouble(v);
-                    case "fibStage1SlAtrMult"  -> c.fibStage1SlAtrMult  = Double.parseDouble(v);
-                    case "fibStage2TriggerPct" -> c.fibStage2TriggerPct = Double.parseDouble(v);
-                    case "fibStage2SlPct"      -> c.fibStage2SlPct      = Double.parseDouble(v);
+                    case "breakevenTriggerPct" -> c.breakevenTriggerPct = Double.parseDouble(v);
+                    case "breakevenSlAtrMult"  -> c.breakevenSlAtrMult  = Double.parseDouble(v);
+                    // Legacy fib-stage keys — fold old stage-1 values into the new breakeven
+                    // knobs (same semantics) and silently ignore stage-2 (feature removed).
+                    case "fibStage1TriggerPct" -> c.breakevenTriggerPct = Double.parseDouble(v);
+                    case "fibStage1SlAtrMult"  -> c.breakevenSlAtrMult  = Double.parseDouble(v);
+                    case "fibStage2TriggerPct", "fibStage2SlPct" -> { /* legacy — stage 2 removed */ }
                     // Legacy NormalDays keys: split into the new IvOv + Ev pair, both seeded
                     // with the legacy value so the user's prior intent is preserved on first
                     // load after upgrade. Once any save happens, the new keys overwrite.
@@ -905,14 +777,13 @@ public class RiskSettingsStore {
                     case "higherTimeframe"   -> c.higherTimeframe = Integer.parseInt(v);
                     case "enableAtpCheck"   -> c.enableAtpCheck = Boolean.parseBoolean(v);
                     case "enableHpt"         -> c.enableHpt = Boolean.parseBoolean(v);
-                    case "enableLpt"         -> c.enableLpt = Boolean.parseBoolean(v);
-                    case "lptQtyFactor"      -> c.lptQtyFactor = Double.parseDouble(v);
+                    case "enableLpt", "lptQtyFactor" -> { /* legacy — LPT tier removed */ }
                     case "enableMpt"         -> c.enableMpt = Boolean.parseBoolean(v);
                     case "mptQtyFactor"      -> c.mptQtyFactor = Double.parseDouble(v);
-                    case "neutralWeeklyQtyFactor" -> { /* removed — weekly NEUTRAL is plain LPT now */ }
-                    case "enableWeeklyNeutralTrades" -> { /* removed — weekly NEUTRAL is LPT; use enableLpt to skip */ }
+                    case "neutralWeeklyQtyFactor" -> { /* removed — weekly NEUTRAL no longer downgraded */ }
+                    case "enableWeeklyNeutralTrades" -> { /* removed — weekly NEUTRAL no longer downgraded */ }
                     case "insideOrQtyFactor", "skipInsideOrOnEv", "skipInsideOrOnIv", "skipInsideOrOnOv" -> {
-                        /* removed — inside-OR breakouts always just become LPT, no skip/qty-reduction */
+                        /* removed — inside-OR special-cases gone */
                     }
                     case "enableNarrowOrOverride", "narrowOrMaxAdrPct", "narrowOrMaxAtr" -> {
                         /* removed — narrow OR override feature deleted */
@@ -928,13 +799,12 @@ public class RiskSettingsStore {
                     case "scanUniverse" -> c.scanUniverse = "NIFTY100";
                     case "scanMinPrice" -> c.scanMinPrice = Double.parseDouble(v);
                     case "scanMaxPrice" -> c.scanMaxPrice = Double.parseDouble(v);
-                    case "scanMinTurnover" -> c.scanMinTurnover = Double.parseDouble(v);
-                    case "scanMinVolume" -> c.scanMinVolume = Long.parseLong(v);
-                    case "scanMinBeta" -> c.scanMinBeta = Double.parseDouble(v);
-                    case "scanMaxBeta" -> c.scanMaxBeta = Double.parseDouble(v);
-                    case "scanCapFilter" -> { /* legacy key, silently ignored — cap filter removed */ }
+                    // Legacy watchlist + OR keys — features removed.
+                    case "scanMinTurnover", "scanMinVolume",
+                         "scanMinBeta", "scanMaxBeta",
+                         "scanCapFilter",
+                         "openingRangeMinutes" -> { /* legacy — removed */ }
                     case "scanOnlyNifty50" -> c.scanOnlyNifty50 = Boolean.parseBoolean(v);
-                    case "openingRangeMinutes" -> c.openingRangeMinutes = Integer.parseInt(v);
                     case "enableOpeningRefresh" -> c.enableOpeningRefresh = Boolean.parseBoolean(v);
                     case "openingRefreshTime" -> c.openingRefreshTime = v;
                     case "enableTargetTolerance" -> c.enableTargetTolerance = Boolean.parseBoolean(v);

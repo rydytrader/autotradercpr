@@ -50,9 +50,6 @@ public class CandleAggregator {
     private final ConcurrentHashMap<String, Double> firstCandleClose = new ConcurrentHashMap<>();
 
     // Opening Range tracking
-    private final ConcurrentHashMap<String, Double> openingRangeHigh = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Double> openingRangeLow = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Boolean> openingRangeLocked = new ConcurrentHashMap<>();
 
     // Latest ATP per symbol (from exchange avg_trade_price)
     private final ConcurrentHashMap<String, Double> latestAtp = new ConcurrentHashMap<>();
@@ -242,26 +239,6 @@ public class CandleAggregator {
         // Track day open from HSM open_price field
         if (raw.open > 0) dayOpen.putIfAbsent(symbol, raw.open);
 
-        // Track Opening Range high/low from live ticks
-        int orMinutes = riskSettings.getOpeningRangeMinutes();
-        if (orMinutes > 0 && !openingRangeLocked.getOrDefault(symbol, false)) {
-            long orEnd = MarketHolidayService.MARKET_OPEN_MINUTE + orMinutes;
-            if (nowMinute >= MarketHolidayService.MARKET_OPEN_MINUTE && nowMinute < orEnd) {
-                openingRangeHigh.merge(symbol, ltp, Math::max);
-                openingRangeLow.merge(symbol, ltp, Math::min);
-            } else if (nowMinute >= orEnd) {
-                // OR window passed — if we have data, lock it; if not (late start), build from day high/low
-                if (!openingRangeHigh.containsKey(symbol) && raw.high > 0 && raw.low > 0) {
-                    openingRangeHigh.put(symbol, raw.high);
-                    openingRangeLow.put(symbol, raw.low);
-                    log.info("[CandleAggregator] {} OR late-start fallback: using day high/low H={} L={}",
-                        symbol, raw.high, raw.low);
-                }
-                openingRangeLocked.put(symbol, true);
-                saveOrState();
-            }
-        }
-
         // Track cumulative volume — only update when Fyers sends a non-zero value
         // (delta updates may not include volume, so we keep the last known value)
         long tickVol = raw.volume;
@@ -400,21 +377,6 @@ public class CandleAggregator {
         if (candle.startMinute == 555 && candle.close > 0) { // 555 = 9:15 AM, 9:15-9:20 candle
             firstCandleClose.put(symbol, candle.close);
             saveOrState();
-        }
-
-        // Update Opening Range from completed candle high/low
-        int orMinutes = riskSettings.getOpeningRangeMinutes();
-        if (orMinutes > 0 && !openingRangeLocked.getOrDefault(symbol, false)) {
-            long orEnd = MarketHolidayService.MARKET_OPEN_MINUTE + orMinutes;
-            if (candle.startMinute >= MarketHolidayService.MARKET_OPEN_MINUTE && candle.startMinute < orEnd) {
-                if (candle.high > 0) openingRangeHigh.merge(symbol, candle.high, Math::max);
-                if (candle.low > 0) openingRangeLow.merge(symbol, candle.low, Math::min);
-            }
-            // Lock OR when candle starts at or after OR end
-            if (candle.startMinute >= orEnd) {
-                openingRangeLocked.put(symbol, true);
-                saveOrState();
-            }
         }
 
         // Add to completed candles buffer. Cap must cover a full trading session for
@@ -571,9 +533,6 @@ public class CandleAggregator {
         int before = firstCandleClose.size();
         firstCandleClose.keySet().retainAll(keep);
         dayOpen.keySet().retainAll(keep);
-        openingRangeHigh.keySet().retainAll(keep);
-        openingRangeLow.keySet().retainAll(keep);
-        openingRangeLocked.keySet().retainAll(keep);
         latestAtp.keySet().retainAll(keep);
         latestLtp.keySet().retainAll(keep);
         latestChangePct.keySet().retainAll(keep);
@@ -590,21 +549,6 @@ public class CandleAggregator {
         return removed;
     }
 
-    /** Opening Range high (highest price in first N minutes). */
-    public double getOpeningRangeHigh(String symbol) {
-        return openingRangeHigh.getOrDefault(symbol, 0.0);
-    }
-
-    /** Opening Range low (lowest price in first N minutes). */
-    public double getOpeningRangeLow(String symbol) {
-        return openingRangeLow.getOrDefault(symbol, 0.0);
-    }
-
-    /** Whether the Opening Range period has completed and range is locked. */
-    public boolean isOpeningRangeLocked(String symbol) {
-        return openingRangeLocked.getOrDefault(symbol, false);
-    }
-
     // ── OR State Persistence ─────────────────────────────────────────────────
     public void saveOrState() {
         try {
@@ -613,15 +557,6 @@ public class CandleAggregator {
 
             Map<String, Double> fcMap = new LinkedHashMap<>(firstCandleClose);
             state.put("firstCandleClose", fcMap);
-
-            Map<String, Double> orHighMap = new LinkedHashMap<>(openingRangeHigh);
-            state.put("openingRangeHigh", orHighMap);
-
-            Map<String, Double> orLowMap = new LinkedHashMap<>(openingRangeLow);
-            state.put("openingRangeLow", orLowMap);
-
-            Map<String, Boolean> orLockedMap = new LinkedHashMap<>(openingRangeLocked);
-            state.put("openingRangeLocked", orLockedMap);
 
             Map<String, Double> dayOpenMap = new LinkedHashMap<>(dayOpen);
             state.put("dayOpen", dayOpenMap);
@@ -650,25 +585,13 @@ public class CandleAggregator {
             if (fcNode != null) {
                 fcNode.fields().forEachRemaining(e -> firstCandleClose.putIfAbsent(e.getKey(), e.getValue().asDouble()));
             }
-            JsonNode orHNode = root.get("openingRangeHigh");
-            if (orHNode != null) {
-                orHNode.fields().forEachRemaining(e -> openingRangeHigh.putIfAbsent(e.getKey(), e.getValue().asDouble()));
-            }
-            JsonNode orLNode = root.get("openingRangeLow");
-            if (orLNode != null) {
-                orLNode.fields().forEachRemaining(e -> openingRangeLow.putIfAbsent(e.getKey(), e.getValue().asDouble()));
-            }
-            JsonNode orLockedNode = root.get("openingRangeLocked");
-            if (orLockedNode != null) {
-                orLockedNode.fields().forEachRemaining(e -> openingRangeLocked.putIfAbsent(e.getKey(), e.getValue().asBoolean()));
-            }
             JsonNode dayOpenNode = root.get("dayOpen");
             if (dayOpenNode != null) {
                 dayOpenNode.fields().forEachRemaining(e -> dayOpen.putIfAbsent(e.getKey(), e.getValue().asDouble()));
             }
 
-            log.info("[CandleAggregator] Loaded OR state: {} symbols, OR locked: {}",
-                firstCandleClose.size(), openingRangeLocked.values().stream().filter(b -> b).count());
+            log.info("[CandleAggregator] Loaded day-open / first-candle state: {} symbols",
+                firstCandleClose.size());
         } catch (Exception e) {
             log.error("[CandleAggregator] Failed to load OR state: {}", e.getMessage());
         }
@@ -974,24 +897,6 @@ public class CandleAggregator {
             firstCandleClose.put(symbol, firstBar.close);
             if (firstBar.open > 0) dayOpen.put(symbol, firstBar.open);
         }
-        int orMinutes = riskSettings.getOpeningRangeMinutes();
-        if (orMinutes > 0) {
-            long orEnd = MarketHolidayService.MARKET_OPEN_MINUTE + orMinutes;
-            double orHi = 0, orLo = Double.MAX_VALUE;
-            for (CandleBar c : todays) {
-                if (c.startMinute >= MarketHolidayService.MARKET_OPEN_MINUTE && c.startMinute < orEnd) {
-                    if (c.high > orHi) orHi = c.high;
-                    if (c.low > 0 && c.low < orLo) orLo = c.low;
-                }
-            }
-            if (orHi > 0 && orLo < Double.MAX_VALUE) {
-                openingRangeHigh.put(symbol, orHi);
-                openingRangeLow.put(symbol, orLo);
-                long nowMinute = ZonedDateTime.now(IST).toLocalTime().getHour() * 60L
-                    + ZonedDateTime.now(IST).toLocalTime().getMinute();
-                if (nowMinute >= orEnd) openingRangeLocked.put(symbol, true);
-            }
-        }
         saveOrState();
     }
 
@@ -1048,9 +953,6 @@ public class CandleAggregator {
         completedCandles.clear();
         dayOpen.clear();
         firstCandleClose.clear();
-        openingRangeHigh.clear();
-        openingRangeLow.clear();
-        openingRangeLocked.clear();
         latestAtp.clear();
         latestLtp.clear();
         latestChangePct.clear();

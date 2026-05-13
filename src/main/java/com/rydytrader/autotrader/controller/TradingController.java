@@ -172,8 +172,8 @@ public class TradingController {
         latencyTracker.mark(psSymbol, ps.getSetup(), LatencyTracker.Stage.SIGNAL_PROCESSED);
         if (ps.isRejected()) {
             latencyTracker.cancel(psSymbol);
-            // Silent rejections (native-LPT when LPT disabled, etc.) skip the event log —
-            // reserved for expected skips the user has already opted out of via settings.
+            // Silent rejections (expected skips the user has opted out of via settings)
+            // skip the event log.
             if (!ps.isSilent()) {
                 // Include the candlestick pattern (e.g. ENGULFING_RETEST) so the trader can
                 // see which pattern formed AND why downstream filtering rejected it.
@@ -744,9 +744,11 @@ public class TradingController {
         }
         result.put("timeBreakdown", timeMap);
 
-        // Probability breakdown — HPT / LPT
+        // Probability breakdown — includes HPT (current), MPT (counter-trend), and LPT (legacy
+        // historical trades). The bot no longer produces LPT trades, but past entries persist
+        // in the trade log.
         Map<String, Object> probMap = new java.util.LinkedHashMap<>();
-        for (String p : new String[]{"HPT","LPT"}) {
+        for (String p : new String[]{"HPT","MPT","LPT"}) {
             final String pf2 = p;
             var pt = trades.stream().filter(t -> pf2.equals(t.getProbability())).collect(java.util.stream.Collectors.toList());
             if (pt.isEmpty()) continue;

@@ -376,11 +376,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         dirty = true;
     }
 
-    // ── FIBONACCI TRAILING SL (called on every candle close) ─────────────────
-    // Range = |target - breakoutLevel| (100%). Two stages:
-    //   stage 1 (LTP hits 61.8% Fib): SL → entry ± 1 ATR
-    //   stage 2 (LTP hits 78.6% Fib): SL → 61.8% Fib level
-    // Split-target trades: trailer suppressed until T1 fills; then activates on remaining qty.
+    // ── BREAKEVEN SL (called on every candle close) ──────────────────────────
+    // Single-stage move. Range = |target - entry|. When the peak (long) / trough (short)
+    // reaches breakevenTriggerPct% of that range, SL is moved to entry ± breakevenSlAtrMult
+    // × ATR. Once moved, the never-widen guard keeps it there for the remainder of the trade.
+    // Split-target trades: suppressed until T1 fills; then activates on remaining qty.
 
     @Override
     public void onCandleClose(String fyersSymbol, CandleAggregator.CandleBar completedCandle) {
@@ -395,10 +395,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         if (slOrderId.isEmpty()) return;
 
         String side = state.getOrDefault("side", "").toString();
-        String setup = state.getOrDefault("setup", "").toString();
-        if (setup.isEmpty() || (!"LONG".equals(side) && !"SHORT".equals(side))) return;
+        if (!"LONG".equals(side) && !"SHORT".equals(side)) return;
 
-        // Split-target gate: wait for T1 fill before Fibonacci kicks in
+        // Split-target gate: wait for T1 fill before breakeven kicks in.
         Object t1Obj = state.get("target1OrderId");
         String target1OrderId = t1Obj != null ? t1Obj.toString() : "";
         boolean isSplit = !target1OrderId.isEmpty() && !"null".equalsIgnoreCase(target1OrderId);
@@ -419,53 +418,27 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         double ltp = getLtp(fyersSymbol);
         if (entry <= 0 || target <= 0 || atr <= 0 || ltp <= 0) return;
 
-        // Derive breakout level (base) from setup + current CPR data
-        CprLevels cpr = bhavcopyService.getCprLevels(fyersSymbol);
-        if (cpr == null) return;
-        // VWAP setups (BUY_ABOVE_VWAP / SELL_BELOW_VWAP) use live Fyers ATP as the base level.
-        // CPR setups return 0 for the vwap argument since their switch cases ignore it.
-        double base = SignalProcessor.computeBreakoutLevel(setup,
-            cpr.getR1(), cpr.getR2(), cpr.getR3(), cpr.getR4(),
-            cpr.getS1(), cpr.getS2(), cpr.getS3(), cpr.getS4(),
-            cpr.getPh(), cpr.getPl(), cpr.getTc(), cpr.getBc(),
-            candleAggregator.getAtp(fyersSymbol));
-        if (base <= 0) {
-            log.debug("[TrailingSL] {} — no base for setup={}, skipping", fyersSymbol, setup);
-            return;
-        }
-
-        double range = Math.abs(target - base);
+        double range = Math.abs(target - entry);
         if (range <= 0) return;
 
         boolean isBuy = "LONG".equals(side);
         int sign = isBuy ? 1 : -1;
-        double s1Trigger = riskSettings.getFibStage1TriggerPct() / 100.0;
-        double s1AtrMult = riskSettings.getFibStage1SlAtrMult();
-        double s2Trigger = riskSettings.getFibStage2TriggerPct() / 100.0;
-        double s2SlPct   = riskSettings.getFibStage2SlPct() / 100.0;
-        double stage1TriggerPx = base + sign * s1Trigger * range;
-        double stage2TriggerPx = base + sign * s2Trigger * range;
-        double stage1Sl        = entry + sign * s1AtrMult * atr;   // entry ± N × ATR
-        double stage2Sl        = base + sign * s2SlPct * range;    // base + M% of range
+        double triggerPct = riskSettings.getBreakevenTriggerPct() / 100.0;
+        double slAtrMult  = riskSettings.getBreakevenSlAtrMult();
+        double triggerPx  = entry + sign * triggerPct * range;
+        double desiredSl  = entry + sign * slAtrMult * atr;
 
         double extreme = isBuy
             ? peakPrice.getOrDefault(fyersSymbol, ltp)
             : troughPrice.getOrDefault(fyersSymbol, ltp);
 
-        double desiredSl;
-        String stageLabel;
-        String s1Lbl = String.format("%.1f%%", riskSettings.getFibStage1TriggerPct());
-        String s2Lbl = String.format("%.1f%%", riskSettings.getFibStage2TriggerPct());
-        String s2SlLbl = String.format("%.1f%%", riskSettings.getFibStage2SlPct());
-        if (isBuy) {
-            if (extreme >= stage2TriggerPx) { desiredSl = stage2Sl; stageLabel = s2Lbl + " Fib → SL at " + s2SlLbl + " Fib"; }
-            else if (extreme >= stage1TriggerPx) { desiredSl = stage1Sl; stageLabel = s1Lbl + " Fib → SL at entry+" + s1AtrMult + " ATR"; }
-            else return; // no stage reached
-        } else {
-            if (extreme <= stage2TriggerPx) { desiredSl = stage2Sl; stageLabel = s2Lbl + " Fib → SL at " + s2SlLbl + " Fib"; }
-            else if (extreme <= stage1TriggerPx) { desiredSl = stage1Sl; stageLabel = s1Lbl + " Fib → SL at entry-" + s1AtrMult + " ATR"; }
-            else return;
-        }
+        // Stage not reached yet — wait.
+        if (isBuy  && extreme < triggerPx) return;
+        if (!isBuy && extreme > triggerPx) return;
+
+        String stageLabel = String.format("%.1f%% of range → SL at entry%s%.2f ATR",
+            riskSettings.getBreakevenTriggerPct(),
+            slAtrMult >= 0 ? "+" : "-", Math.abs(slAtrMult));
 
         desiredSl = orderService.roundToTick(desiredSl, fyersSymbol);
 
@@ -473,22 +446,22 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         if (isBuy && desiredSl <= currentSl) return;
         if (!isBuy && desiredSl >= currentSl) return;
 
-        log.info("[TrailingSL] {} {} — {}: desiredSl={} currentSl={} base={} target={} stage1Trigger={} stage2Trigger={} extreme={} atr={}",
+        log.info("[BreakevenSL] {} {} — {}: desiredSl={} currentSl={} entry={} target={} trigger={} extreme={} atr={}",
             fyersSymbol, side, stageLabel,
             String.format("%.2f", desiredSl), String.format("%.2f", currentSl),
-            String.format("%.2f", base), String.format("%.2f", target),
-            String.format("%.2f", stage1TriggerPx), String.format("%.2f", stage2TriggerPx),
+            String.format("%.2f", entry), String.format("%.2f", target),
+            String.format("%.2f", triggerPx),
             String.format("%.2f", extreme), String.format("%.2f", atr));
 
         int modResult = orderService.modifySlOrder(slOrderId, desiredSl, fyersSymbol);
         if (modResult == -1) {
-            eventService.log("[INFO] Trailing SL skipped for " + fyersSymbol
+            eventService.log("[INFO] Breakeven SL skipped for " + fyersSymbol
                 + " — SL order already filled/cancelled, syncing position state");
             if (pollingService != null) pollingService.syncPositionOnce();
             return;
         }
         if (modResult != 1) {
-            eventService.log("[ERROR] Trailing SL failed for " + fyersSymbol
+            eventService.log("[ERROR] Breakeven SL failed for " + fyersSymbol
                 + " — could not modify SL to " + String.format("%.2f", desiredSl));
             return;
         }
@@ -500,14 +473,14 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
 
         String tsTrail = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
         positionStateStore.appendDescription(fyersSymbol,
-            tsTrail + " [TRAILING_SL] SL → " + String.format("%.2f", desiredSl)
-            + " (" + stageLabel + "; base=" + String.format("%.2f", base)
+            tsTrail + " [BREAKEVEN_SL] SL → " + String.format("%.2f", desiredSl)
+            + " (" + stageLabel + "; entry=" + String.format("%.2f", entry)
             + " target=" + String.format("%.2f", target) + ")");
 
         String direction = isBuy ? "up" : "down";
         eventService.log("[SUCCESS] " + fyersSymbol + " " + side + " SL moved " + direction
             + ": " + String.format("%.2f", currentSl) + " → " + String.format("%.2f", desiredSl)
-            + " (" + stageLabel + ", range " + String.format("%.2f", base) + "→" + String.format("%.2f", target) + ")");
+            + " (" + stageLabel + ", range " + String.format("%.2f", entry) + "→" + String.format("%.2f", target) + ")");
 
         int qty = 0;
         try { qty = Integer.parseInt(state.getOrDefault("qty", "0").toString()); } catch (NumberFormatException ignored) {}
@@ -1089,15 +1062,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         double maxPrice = riskSettings.getScanMaxPrice();
         if (minPrice > 0 && cpr.getClose() < minPrice) return false;
         if (maxPrice > 0 && cpr.getClose() > maxPrice) return false;
-        double minTurnover = riskSettings.getScanMinTurnover();
-        if (minTurnover > 0 && cpr.getAvgTurnover20() > 0 && cpr.getAvgTurnover20() / 1e7 < minTurnover) return false;
-        long minVolume = riskSettings.getScanMinVolume();
-        if (minVolume > 0 && cpr.getAvgVolume20() > 0 && cpr.getAvgVolume20() < minVolume) return false;
-        double minBeta = riskSettings.getScanMinBeta();
-        double maxBeta = riskSettings.getScanMaxBeta();
-        if (minBeta > 0 && cpr.getBeta() > 0 && cpr.getBeta() < minBeta) return false;
-        if (maxBeta > 0 && cpr.getBeta() > 0 && cpr.getBeta() > maxBeta) return false;
-        // Cap filter removed — universe is NIFTY 50 (all LARGE caps by definition).
+        // Turnover / volume / beta / cap filters removed — universe is NIFTY 50.
         return true;
     }
 

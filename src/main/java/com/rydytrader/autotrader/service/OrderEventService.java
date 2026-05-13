@@ -740,16 +740,6 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             positionStateStore.saveProbability(symbol, pendingProb);
         }
 
-        // NIFTY HTF Hurdle break-guard — if BreakoutScanner captured a guard for this symbol
-        // when checkNiftyHurdle gated the trade, persist it onto the position record so the
-        // NiftyHurdleExitService can defend the level on subsequent NIFTY 5-min closes.
-        if (breakoutScanner != null) {
-            BreakoutScanner.NiftyHurdleGuard guard = breakoutScanner.consumePendingHurdleGuard(symbol);
-            if (guard != null) {
-                positionStateStore.saveNiftyHurdleGuard(symbol, guard.low(), guard.high());
-            }
-        }
-
         eventService.log("[SUCCESS] [WS] " + (ctx.position.equals("LONG") ? "BUY" : "SELL")
             + " order filled for " + symbol + " @ " + entryPrice + " [ID: " + orderId + "] — placing SL + Target");
 
@@ -772,7 +762,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         String symbol = ctx.symbol;
         int retries = 0;
         final int MAX_RETRIES = 3;
-        // Fibonacci trailing always requires a target to compute range — no-target mode removed.
+        // Breakeven SL always requires a target to compute the (entry→target) range — no-target mode removed.
         boolean skipTarget = false;
 
         // Single target only — splits are no longer placed for new trades.
