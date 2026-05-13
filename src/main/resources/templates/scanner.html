@@ -707,24 +707,10 @@
         var chClass = d.changePercent >= 0 ? 'up' : 'down';
         var chArrow = d.changePercent >= 0 ? '&#9650;' : '&#9660;';
 
-        var wTrend = d.weeklyTrend || 'NEUTRAL';
-        var dTrend = d.dailyTrend || 'NEUTRAL';
-        var wClass = wTrend.toLowerCase();
-        var dClass = dTrend.toLowerCase();
-        function shortTrendLabel(t) {
-            if (t === 'STRONG_BULLISH') return 'S.BULLISH';
-            if (t === 'STRONG_BEARISH') return 'S.BEARISH';
-            return t.replace('_', ' ');
-        }
-        var wLabel = shortTrendLabel(wTrend);
-        var dLabel = shortTrendLabel(dTrend);
-        var wArrow = wTrend.includes('BULLISH') ? '&#9650;' : wTrend.includes('BEARISH') ? '&#9660;' : '&#9644;';
-        var dArrow = dTrend.includes('BULLISH') ? '&#9650;' : dTrend.includes('BEARISH') ? '&#9660;' : '&#9644;';
-
         // SMA trend per timeframe — shown in SMA Levels title and body
         function smaTrendObj(price, e20) {
             if (price <= 0 || e20 <= 0) {
-                return { label: '--', shortLabel: '--', cls: 'neutral', arrow: '&#9644;' };
+                return { label: '--', shortLabel: '--', cls: 'neutral', arrow: '' };
             }
             if (price > e20) {
                 return { label: 'BULLISH', shortLabel: 'BULL', cls: 'bullish', arrow: '&#9650;' };
@@ -732,7 +718,7 @@
             if (price < e20) {
                 return { label: 'BEARISH', shortLabel: 'BEAR', cls: 'bearish', arrow: '&#9660;' };
             }
-            return { label: 'NEUTRAL', shortLabel: 'NEU', cls: 'neutral', arrow: '&#9644;' };
+            return { label: 'NEUTRAL', shortLabel: 'NEU', cls: 'neutral', arrow: '' };
         }
         var em5  = smaTrendObj((d.price5m  > 0 ? d.price5m  : d.ltp), d.sma20);
 
@@ -835,10 +821,7 @@
             + '<div class="scan-levels' + (isExpanded(d.symbol, 'cpr') ? ' expanded' : '') + '">'
             + '  <div class="scan-levels-title" onclick="toggleLevelSection(this, \'' + d.symbol + '\', \'cpr\')">'
             + '    <span>CPR Levels</span>'
-            + '    <span style="display:flex; gap:8px; margin-left:auto; align-items:center; font-size:0.7rem;">'
-            + '      <span class="scan-trend"><span class="label">D:</span> <span class="' + dClass + '">' + dArrow + ' ' + dLabel + '</span></span>'
-            + '      <span class="toggle-arrow">&#9654;</span>'
-            + '    </span>'
+            + '    <span class="toggle-arrow" style="margin-left:auto;">&#9654;</span>'
             + '  </div>'
             + '  <div class="scan-levels-body">' + levelsHtml + '</div>'
             + '</div>'
@@ -1057,8 +1040,8 @@
                     cbEl.textContent = 'CPR - BEARISH';
                     cbEl.style.color = 'var(--accent-red)';
                 } else {
-                    cbEl.textContent = 'CPR - —';
-                    cbEl.style.color = 'var(--text-muted)';
+                    cbEl.textContent = 'CPR - NEUTRAL';
+                    cbEl.style.color = 'var(--accent-yellow)';
                 }
                 var nClose = +d.niftyClose || 0;
                 cbEl.title = nClose > 0

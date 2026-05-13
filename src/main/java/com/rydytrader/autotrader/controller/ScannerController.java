@@ -485,6 +485,10 @@ public class ScannerController {
         if (s.contains("inside or range"))                         return "EV_OR_INSIDE";
         if (s.contains("ev ") && s.contains("detected"))           return "EV_GAP_OPPOSED";
 
+        // VWAP range gate (close inside R1/PDH band or S1/PDL band)
+        if (s.contains("close inside r1/pdh band")
+                || s.contains("close inside s1/pdl band"))         return "VWAP_INSIDE_RANGE";
+
         // Risk / reward / profit gates
         if (s.contains("risk/reward") || s.contains("risk\\reward")) return "RISK_REWARD";
         if (s.contains("absolute profit too low"))                 return "MIN_PROFIT";

@@ -463,6 +463,19 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
             String buySetup = detectBuyBreakout(open, high, low, close, levels, atp, broken, fyersSymbol);
             if (buySetup != null) {
+                // VWAP setups: reject when close sits inside either the R1/PDH band or the
+                // S1/PDL band — those zones are treated as range bands (like CPR). Inside
+                // CPR is already rejected downstream by the LTF gate (LTF_OPPOSED). The
+                // gaps BETWEEN bands (between CPR and S1/PDL, between CPR and R1/PDH, plus
+                // the open territory beyond R1/PDH or below S1/PDL) remain allowed.
+                if ("BUY_ABOVE_VWAP".equals(buySetup)) {
+                    String rangeReject = vwapBandReject(close, levels);
+                    if (rangeReject != null) {
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " — skipped, " + rangeReject);
+                        recordRejection(fyersSymbol, buySetup, close, "VWAP_INSIDE_RANGE", rangeReject);
+                        return;
+                    }
+                }
                 // Master toggle for the counter-trend family — DH classification depends on
                 // close-vs-CPR position (DH above CPR top is trend-following, not mean-rev).
                 if (isMeanReversionOrMagnet(buySetup, close, levels.getTc(), levels.getBc())
@@ -474,10 +487,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 }
                 String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, true, buySetup, close);
                 if (prob == null) {
-                    // LTF-priority gate rejected: standard buy with close ≤ daily TC (no LTF
+                    // LTF-priority gate rejected: standard buy with close ≤ daily CPR top (no LTF
                     // support). Magnets always fire (HTF/LTF bypassed) so they don't reach here.
-                    String detail = "buy requires close > daily TC (LTF bullish); close="
-                        + String.format("%.2f", close);
+                    // CPR can invert (BC > TC) — always reference the actual upper edge, not the
+                    // TC label, so the message matches the real gate.
+                    double cprTop = Math.max(levels.getTc(), levels.getBc());
+                    String detail = "buy requires close > daily CPR top (" + String.format("%.2f", cprTop)
+                        + ") (LTF bullish); close=" + String.format("%.2f", close);
                     eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " — skipped, " + detail);
                     recordRejection(fyersSymbol, buySetup, close, "LTF_OPPOSED", detail);
                     return;
@@ -593,6 +609,16 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
             String sellSetup = detectSellBreakout(open, high, low, close, levels, atp, broken, fyersSymbol);
             if (sellSetup != null) {
+                // VWAP setups: reject when close sits inside either the R1/PDH or S1/PDL
+                // band — mirror of the BUY_ABOVE_VWAP gate above.
+                if ("SELL_BELOW_VWAP".equals(sellSetup)) {
+                    String rangeReject = vwapBandReject(close, levels);
+                    if (rangeReject != null) {
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " — skipped, " + rangeReject);
+                        recordRejection(fyersSymbol, sellSetup, close, "VWAP_INSIDE_RANGE", rangeReject);
+                        return;
+                    }
+                }
                 // Master toggle for the counter-trend family — DL classification depends on
                 // close-vs-CPR position (DL below CPR bottom is trend-following, not mean-rev).
                 if (isMeanReversionOrMagnet(sellSetup, close, levels.getTc(), levels.getBc())
@@ -604,8 +630,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 }
                 String prob = weeklyCprService.getProbabilityForDirection(fyersSymbol, false, sellSetup, close);
                 if (prob == null) {
-                    String detail = "sell requires close < daily BC (LTF bearish); close="
-                        + String.format("%.2f", close);
+                    // CPR can invert (BC > TC) — always reference the actual lower edge, not the
+                    // BC label, so the message matches the real gate (close < min(TC, BC)).
+                    double cprBot = Math.min(levels.getTc(), levels.getBc());
+                    String detail = "sell requires close < daily CPR bottom (" + String.format("%.2f", cprBot)
+                        + ") (LTF bearish); close=" + String.format("%.2f", close);
                     eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " — skipped, " + detail);
                     recordRejection(fyersSymbol, sellSetup, close, "LTF_OPPOSED", detail);
                     return;
@@ -1773,11 +1802,34 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      * R2/R3/R4 sells). Gated by the <code>enableMeanReversionTrades</code> master toggle and
      * bypass the LTF gate at probability assignment.
      */
+    /**
+     * Reject VWAP setups whose close lands inside the R1/PDH band or the S1/PDL band —
+     * those zones are treated as resistance/support ranges (like CPR) where neither a
+     * mean-reversion nor a trend thesis has confirmed. Inside-CPR is handled separately
+     * by the existing LTF gate. Returns the rejection detail string, or null if the close
+     * is outside both bands.
+     */
+    private static String vwapBandReject(double close, CprLevels levels) {
+        double r1Top = Math.max(levels.getR1(), levels.getPh());
+        double r1Bot = Math.min(levels.getR1(), levels.getPh());
+        if (r1Top > 0 && r1Bot > 0 && close > r1Bot && close < r1Top) {
+            return "close inside R1/PDH band; close=" + String.format("%.2f", close)
+                + " band=[" + String.format("%.2f", r1Bot) + "–" + String.format("%.2f", r1Top) + "]";
+        }
+        double s1Top = Math.max(levels.getS1(), levels.getPl());
+        double s1Bot = Math.min(levels.getS1(), levels.getPl());
+        if (s1Top > 0 && s1Bot > 0 && close > s1Bot && close < s1Top) {
+            return "close inside S1/PDL band; close=" + String.format("%.2f", close)
+                + " band=[" + String.format("%.2f", s1Bot) + "–" + String.format("%.2f", s1Top) + "]";
+        }
+        return null;
+    }
+
     private static boolean isMeanReversionOrMagnet(String setup, double close, double tc, double bc) {
         if (setup == null) return false;
         // Static counter-trend list — magnets (S1+PDL / R1+PDH) and deep mean-rev (S2-S4 buys,
         // R2-R4 sells). DH/DL and 20-SMA setups are removed on this branch.
-        return "BUY_ABOVE_S1_PDL".equals(setup)
+        boolean staticCt = "BUY_ABOVE_S1_PDL".equals(setup)
             || "BUY_ABOVE_S2".equals(setup)
             || "BUY_ABOVE_S3".equals(setup)
             || "BUY_ABOVE_S4".equals(setup)
@@ -1785,6 +1837,18 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             || "SELL_BELOW_R2".equals(setup)
             || "SELL_BELOW_R3".equals(setup)
             || "SELL_BELOW_R4".equals(setup);
+        if (staticCt) return true;
+
+        // VWAP reclaim — counter-trend only when the close is on the opposite side of CPR
+        // from the trade direction (BUY_ABOVE_VWAP from below CPR / SELL_BELOW_VWAP from
+        // above CPR). On the same side, it's a normal trend continuation and the master
+        // mean-reversion toggle does not gate it.
+        double cprTop = Math.max(tc, bc);
+        double cprBot = Math.min(tc, bc);
+        if ("BUY_ABOVE_VWAP".equals(setup)  && close < cprBot) return true;
+        if ("SELL_BELOW_VWAP".equals(setup) && close > cprTop) return true;
+
+        return false;
     }
 
     private boolean isProbabilityEnabled(String prob) {
