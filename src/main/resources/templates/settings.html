@@ -633,9 +633,14 @@
                         <input type="checkbox" id="enableIndexAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable NIFTY trend alignment filter</span>
                     </div>
-                    <div class="form-hint">NIFTY trend state combines <b>two sticky factors</b>, both refreshed only at NIFTY's 5-min candle close (no live tick recomputation between bars):
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px; padding-left: 28px;">
+                        <input type="checkbox" id="enableNiftySma20Factor" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Include NIFTY 20 SMA in trend identification</span>
+                    </div>
+                    <div class="form-hint">NIFTY trend state combines <b>CPR + Futures VWAP</b> (always) plus optionally <b>SMA 20</b>:
                         <br>&nbsp;&nbsp;&bull; <b>CPR</b>: NIFTY index's last-completed 5-min close above (bullish) or below (bearish) daily CPR. Inside CPR leaves this factor null.
                         <br>&nbsp;&nbsp;&bull; <b>Futures VWAP</b>: NIFTY futures' last-completed 5-min close vs that same bar's stamped VWAP (Fyers ATP frozen at finalize). Close &gt; VWAP = bullish; close &lt; VWAP = bearish. Same-bar coherent &mdash; no mixing of live LTP with frozen VWAP.
+                        <br>&nbsp;&nbsp;&bull; <b>SMA 20</b> (optional): NIFTY's last-completed 5-min close vs its 20-period 5-min SMA. When enabled, this becomes a third confirmation gating the BULLISH&nbsp;REVERSAL / BEARISH&nbsp;REVERSAL states &mdash; the reversal only fires when SMA and futures VWAP both agree. When disabled, the reversal states rely purely on CPR-disagrees-with-futVwap (the original behavior).
                         <br>States:
                         <br>&nbsp;&nbsp;&bull; <b>BULLISH</b> &mdash; CPR bullish + futures vs VWAP bullish (clear trend agreement)
                         <br>&nbsp;&nbsp;&bull; <b>BEARISH</b> &mdash; CPR bearish + futures vs VWAP bearish (mirror)
@@ -1225,6 +1230,7 @@
             document.getElementById('enableTargetTolerance').checked = d.enableTargetTolerance !== false;
             document.getElementById('targetToleranceAtr').value = (d.targetToleranceAtr != null ? d.targetToleranceAtr : 0.10);
             document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
+            document.getElementById('enableNiftySma20Factor').checked = d.enableNiftySma20Factor !== false;
             document.getElementById('enableNiftyHtfHurdleFilter').checked = d.enableNiftyHtfHurdleFilter === true;
             document.getElementById('niftyHurdleMinHeadroomAtr').value = (d.niftyHurdleMinHeadroomAtr != null ? d.niftyHurdleMinHeadroomAtr : 1.0);
             document.getElementById('enableNifty5mHurdleFilter').checked = d.enableNifty5mHurdleFilter === true;
@@ -1388,7 +1394,8 @@
                 smaLevelFilterMorningSkipUntil: document.getElementById('smaLevelFilterMorningSkipUntil').value || '10:15',
                 enableTargetTolerance: document.getElementById('enableTargetTolerance').checked,
                 targetToleranceAtr: parseFloat(document.getElementById('targetToleranceAtr').value) || 0,
-                enableIndexAlignment: document.getElementById('enableIndexAlignment').checked,
+                enableIndexAlignment:    document.getElementById('enableIndexAlignment').checked,
+                enableNiftySma20Factor:  document.getElementById('enableNiftySma20Factor').checked,
                 enableNiftyHtfHurdleFilter: document.getElementById('enableNiftyHtfHurdleFilter').checked,
                 niftyHurdleMinHeadroomAtr: parseFloat(document.getElementById('niftyHurdleMinHeadroomAtr').value) || 0,
                 enableNifty5mHurdleFilter: document.getElementById('enableNifty5mHurdleFilter').checked,

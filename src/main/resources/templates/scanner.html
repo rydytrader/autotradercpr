@@ -1030,8 +1030,22 @@
 
             document.getElementById('niftyState').textContent = (d.state || 'NEUTRAL').replace('_', ' ');
 
+            // Hide / show the SMA 20 chip based on the user setting. When the SMA factor
+            // is disabled it isn't being used in trend identification, so showing the chip
+            // would be misleading.
+            var smaChipEl = document.getElementById('niftySma20');
+            if (smaChipEl) smaChipEl.style.display = d.sma20FactorEnabled === false ? 'none' : '';
+
             // NIFTY LTP + change + % change (live during session, bhavcopy prev close pre-market).
-            applyNiftyLtpUpdate(+d.ltp || 0, typeof d.changePct === 'number' ? d.changePct : null);
+            // sma20 is sent on every poll so the chip stays visible after market close even
+            // when the SSE tick stream goes silent. When the factor toggle is off, the chip
+            // is hidden above and no SMA value is passed in (the backend zeros it anyway).
+            applyNiftyLtpUpdate(
+                +d.ltp || 0,
+                typeof d.changePct === 'number' ? d.changePct : null,
+                null,
+                d.sma20FactorEnabled === false ? null : (typeof d.sma20 === 'number' ? d.sma20 : null)
+            );
 
             // CPR width category — NARROW (below narrowCprMaxWidth) or WIDE (at/above).
             var cwEl = document.getElementById('niftyCprWidth');

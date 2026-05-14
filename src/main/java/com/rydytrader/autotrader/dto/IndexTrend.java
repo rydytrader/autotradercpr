@@ -35,6 +35,14 @@ public class IndexTrend {
     // the user's narrowCprMaxWidth and insideCprMaxWidth scanner thresholds. Display-only.
     private double cprWidthPct;
     private String cprWidthCategory;
+    // NIFTY 5-min SMA 20 — drives the NIFTY card's "SMA 20: X" chip color (green when LTP
+    // is above, red when below). Sent on every REST poll AND every SSE tick so the chip
+    // remains visible after market close instead of going blank when ticks stop.
+    private double sma20;
+    // True iff the user has enabled the NIFTY SMA20 factor in trend identification. UI
+    // hides the SMA chip on the NIFTY card when this is false (the factor isn't being
+    // used downstream, so there's no point showing the chip).
+    private boolean sma20FactorEnabled;
     // NIFTY option-chain Max OI strikes refreshed every 15 minutes during market hours.
     // Max Call OI = intraday resistance hurdle; Max Put OI = intraday support hurdle.
     // Zero = not yet loaded.
@@ -82,6 +90,10 @@ public class IndexTrend {
     public void setCprWidthPct(double v) { this.cprWidthPct = v; }
     public String getCprWidthCategory() { return cprWidthCategory; }
     public void setCprWidthCategory(String v) { this.cprWidthCategory = v; }
+    public double getSma20() { return sma20; }
+    public void setSma20(double v) { this.sma20 = v; }
+    public boolean isSma20FactorEnabled() { return sma20FactorEnabled; }
+    public void setSma20FactorEnabled(boolean v) { this.sma20FactorEnabled = v; }
     public double getMaxCallOiStrike() { return maxCallOiStrike; }
     public void setMaxCallOiStrike(double v) { this.maxCallOiStrike = v; }
     public long getMaxCallOi() { return maxCallOi; }

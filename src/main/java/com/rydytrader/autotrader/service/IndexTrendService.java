@@ -158,13 +158,15 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
             // futClose == futVwap → leave null
         }
 
-        // SMA 20 gate for reversals: only flip to BULLISH_REVERSAL when NIFTY's last close is
-        // above its 20 SMA (and futures vs VWAP is bullish); mirror for BEARISH_REVERSAL.
-        // Keeps the reversal call from firing prematurely while the index is still trading
-        // under its short-term mean.
-        double sma20 = smaService != null ? smaService.getSma(NIFTY_SYMBOL) : 0;
+        // SMA 20 factor — optional, gated by enableNiftySma20Factor. When enabled, NIFTY's
+        // last close vs SMA20 acts as a third confirmation for the reversal states (keeps
+        // them from firing prematurely while the index trades under its short-term mean).
+        // When disabled, reversal states fall back to the pure CPR-disagrees-with-futVwap
+        // definition.
+        boolean smaEnabled = riskSettings != null && riskSettings.isEnableNiftySma20Factor();
+        double sma20 = (smaEnabled && smaService != null) ? smaService.getSma(NIFTY_SYMBOL) : 0;
         Boolean smaBullish = null;
-        if (niftyClose > 0 && sma20 > 0) {
+        if (smaEnabled && niftyClose > 0 && sma20 > 0) {
             if (niftyClose > sma20)      smaBullish = Boolean.TRUE;
             else if (niftyClose < sma20) smaBullish = Boolean.FALSE;
         }
@@ -177,9 +179,17 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
             state = "BULLISH";
         } else if (cprBullish != null && futVwapBullish != null && !cprBullish && !futVwapBullish) {
             state = "BEARISH";
-        } else if (Boolean.TRUE.equals(smaBullish) && Boolean.TRUE.equals(futVwapBullish)) {
+        } else if (smaEnabled
+                && Boolean.TRUE.equals(smaBullish) && Boolean.TRUE.equals(futVwapBullish)) {
             state = "BULLISH_REVERSAL";
-        } else if (Boolean.FALSE.equals(smaBullish) && Boolean.FALSE.equals(futVwapBullish)) {
+        } else if (smaEnabled
+                && Boolean.FALSE.equals(smaBullish) && Boolean.FALSE.equals(futVwapBullish)) {
+            state = "BEARISH_REVERSAL";
+        } else if (!smaEnabled
+                && Boolean.FALSE.equals(cprBullish) && Boolean.TRUE.equals(futVwapBullish)) {
+            state = "BULLISH_REVERSAL";
+        } else if (!smaEnabled
+                && Boolean.TRUE.equals(cprBullish) && Boolean.FALSE.equals(futVwapBullish)) {
             state = "BEARISH_REVERSAL";
         } else {
             state = "SIDEWAYS";
@@ -307,10 +317,11 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
                 }
             }
             // Re-derive the display state from the augmented factors using the same logic as
-            // computeSnapshot — SMA20 gates the reversals.
-            double sma20Live = smaService != null ? smaService.getSma(NIFTY_SYMBOL) : 0;
+            // computeSnapshot — SMA20 optionally gates the reversals.
+            boolean smaEnabledLive = riskSettings != null && riskSettings.isEnableNiftySma20Factor();
+            double sma20Live = (smaEnabledLive && smaService != null) ? smaService.getSma(NIFTY_SYMBOL) : 0;
             Boolean smaBullishLive = null;
-            if (dispNiftyClose > 0 && sma20Live > 0) {
+            if (smaEnabledLive && dispNiftyClose > 0 && sma20Live > 0) {
                 if (dispNiftyClose > sma20Live)      smaBullishLive = Boolean.TRUE;
                 else if (dispNiftyClose < sma20Live) smaBullishLive = Boolean.FALSE;
             }
@@ -320,9 +331,17 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
                 dispState = "BULLISH";
             } else if (dispCpr != null && dispFutVwap != null && !dispCpr && !dispFutVwap) {
                 dispState = "BEARISH";
-            } else if (Boolean.TRUE.equals(smaBullishLive) && Boolean.TRUE.equals(dispFutVwap)) {
+            } else if (smaEnabledLive
+                    && Boolean.TRUE.equals(smaBullishLive) && Boolean.TRUE.equals(dispFutVwap)) {
                 dispState = "BULLISH_REVERSAL";
-            } else if (Boolean.FALSE.equals(smaBullishLive) && Boolean.FALSE.equals(dispFutVwap)) {
+            } else if (smaEnabledLive
+                    && Boolean.FALSE.equals(smaBullishLive) && Boolean.FALSE.equals(dispFutVwap)) {
+                dispState = "BEARISH_REVERSAL";
+            } else if (!smaEnabledLive
+                    && Boolean.FALSE.equals(dispCpr) && Boolean.TRUE.equals(dispFutVwap)) {
+                dispState = "BULLISH_REVERSAL";
+            } else if (!smaEnabledLive
+                    && Boolean.TRUE.equals(dispCpr) && Boolean.FALSE.equals(dispFutVwap)) {
                 dispState = "BEARISH_REVERSAL";
             } else {
                 dispState = "SIDEWAYS";
@@ -364,6 +383,16 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         // themselves render placeholder ("CPR - —", "FUT ↔ VWAP", state NEUTRAL) until the
         // first 5-min close populates the sticky cache, but the card structure stays visible.
         trend.setDataAvailable(displayLtp > 0);
+
+        // NIFTY 5-min SMA 20 for the card chip. Always populated when SmaService has enough
+        // data, so the chip stays visible after market close (no need for live SSE ticks).
+        // sma20FactorEnabled mirrors the user setting — UI hides the chip when this is off.
+        boolean smaFactorEnabled = riskSettings != null && riskSettings.isEnableNiftySma20Factor();
+        trend.setSma20FactorEnabled(smaFactorEnabled);
+        if (smaFactorEnabled && smaService != null) {
+            double sma20 = smaService.getSma(NIFTY_SYMBOL);
+            trend.setSma20(Math.round(sma20 * 100.0) / 100.0);
+        }
         return trend;
     }
 }

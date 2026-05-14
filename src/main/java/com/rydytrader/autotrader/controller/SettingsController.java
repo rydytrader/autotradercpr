@@ -79,6 +79,7 @@ public class SettingsController {
         result.put("enableTargetTolerance", riskSettings.isEnableTargetTolerance());
         result.put("targetToleranceAtr", riskSettings.getTargetToleranceAtr());
         result.put("enableIndexAlignment", riskSettings.isEnableIndexAlignment());
+        result.put("enableNiftySma20Factor", riskSettings.isEnableNiftySma20Factor());
         result.put("marubozuBodyAtrMult",          riskSettings.getMarubozuBodyAtrMult());
         result.put("marubozuMaxBodyAtrMult",       riskSettings.getMarubozuMaxBodyAtrMult());
         result.put("marubozuMaxWicksPctOfBody",    riskSettings.getMarubozuMaxWicksPctOfBody());
@@ -193,7 +194,8 @@ public class SettingsController {
             if (body.containsKey("enableTargetShift")) riskSettings.setEnableTargetShift(effectiveMode, Boolean.parseBoolean(body.get("enableTargetShift").toString()));
             if (body.containsKey("enableTargetTolerance")) riskSettings.setEnableTargetTolerance(Boolean.parseBoolean(body.get("enableTargetTolerance").toString()));
             if (body.containsKey("targetToleranceAtr")) riskSettings.setTargetToleranceAtr(Double.parseDouble(body.get("targetToleranceAtr").toString()));
-            if (body.containsKey("enableIndexAlignment")) riskSettings.setEnableIndexAlignment(Boolean.parseBoolean(body.get("enableIndexAlignment").toString()));
+            if (body.containsKey("enableIndexAlignment"))   riskSettings.setEnableIndexAlignment(Boolean.parseBoolean(body.get("enableIndexAlignment").toString()));
+            if (body.containsKey("enableNiftySma20Factor")) riskSettings.setEnableNiftySma20Factor(Boolean.parseBoolean(body.get("enableNiftySma20Factor").toString()));
             if (body.containsKey("marubozuBodyAtrMult"))         riskSettings.setMarubozuBodyAtrMult(Double.parseDouble(body.get("marubozuBodyAtrMult").toString()));
             if (body.containsKey("marubozuMaxBodyAtrMult"))      riskSettings.setMarubozuMaxBodyAtrMult(Double.parseDouble(body.get("marubozuMaxBodyAtrMult").toString()));
             if (body.containsKey("marubozuMaxWicksPctOfBody"))   riskSettings.setMarubozuMaxWicksPctOfBody(Double.parseDouble(body.get("marubozuMaxWicksPctOfBody").toString()));
