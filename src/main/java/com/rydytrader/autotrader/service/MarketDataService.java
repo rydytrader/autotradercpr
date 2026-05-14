@@ -638,6 +638,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                     double chPct = candleAggregator.getChangePct(sym);
                     if (chPct == 0) chPct = getChangePercent(sym);
                     d.put("changePercent", Math.round(chPct * 100.0) / 100.0);
+                    // Absolute change in points (ltp - prev close), pre-computed by TickData.
+                    double ch = getChange(sym);
+                    d.put("change", Math.round(ch * 100.0) / 100.0);
                     d.put("candleVolume", candleAggregator.getCurrentCandleVolume(sym));
                     CandleAggregator.CandleBar cb = candleAggregator.getCurrentCandle(sym);
                     if (cb != null) {
@@ -1546,6 +1549,15 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         String today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).toString();
         if (tick.getLastTickDate() != null && !today.equals(tick.getLastTickDate())) return 0;
         return tick.getChangePercent();
+    }
+
+    /** Absolute change vs prev close in points. Same stale-day guard as getChangePercent. */
+    public double getChange(String fyersSymbol) {
+        TickData tick = currentTicks.get(fyersSymbol);
+        if (tick == null) return 0;
+        String today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).toString();
+        if (tick.getLastTickDate() != null && !today.equals(tick.getLastTickDate())) return 0;
+        return tick.getChange();
     }
 
     /** Get today's day open for a symbol. */

@@ -522,6 +522,14 @@
         }).catch(() => {});
     }
 
+    // Open the scanner's chart modal for this symbol. Opens in a new tab so the user
+    // doesn't lose the positions view; the scanner page reads ?chart= on load and
+    // auto-pops the modal once data is ready.
+    function openChartFor(fyersSymbol) {
+        var url = '/scanner?chart=' + encodeURIComponent(fyersSymbol);
+        window.open(url, '_blank');
+    }
+
     function executeSquareOff() {
         if (currentPositions.length === 0) return;
         currentPositions.forEach(pos => squareOffSymbol(pos.symbol, Math.abs(pos.qty)));
@@ -656,7 +664,7 @@
                 <td class="text-right">${pos.ltp.toFixed(2)}</td>
                 <td class="text-right"><span class="${pnlClass}">${fmtPnl(pos.pnl)}</span></td>
                 <td class="text-center admin-only"><button onclick="squareOffSymbol('${sym}',${Math.abs(pos.qty)})" style="background:none;border:1px solid rgba(248,113,113,0.3);border-radius:6px;color:var(--accent-red);cursor:pointer;padding:4px 8px;font-size:0.85rem;line-height:1;" title="Square off ${pos.symbol}">&#x2715;</button></td>
-                <td class="text-center"><button onclick="showPosInfo(${idx})" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);cursor:pointer;padding:4px 8px;font-size:0.75rem;" title="Position details">ℹ</button></td>
+                <td class="text-center" style="white-space:nowrap;"><button class="chart-icon-btn" onclick="openChartFor('${sym}')" title="View 5-min chart for ${pos.symbol}" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:3px 6px;cursor:pointer;color:var(--text-secondary);line-height:0;display:inline-flex;align-items:center;vertical-align:middle;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 6-6"/></svg></button><span style="display:inline-block;width:8px;"></span><button onclick="showPosInfo(${idx})" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);cursor:pointer;padding:4px 8px;font-size:0.75rem;vertical-align:middle;" title="Position details">ℹ</button></td>
             </tr>`;
         }).join('');
         // Re-apply admin-only visibility after dynamic render
