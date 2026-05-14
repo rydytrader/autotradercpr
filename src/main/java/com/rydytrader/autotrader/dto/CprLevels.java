@@ -19,6 +19,7 @@ public class CprLevels {
     private double volumeMultiple;    // volume / avgVolume20
     private double beta;              // stock beta vs NIFTY (25-day)
     private String capCategory;       // "LARGE", "MID", "SMALL"
+    private String sector;            // NSE industry classification (e.g. "Financial Services", "Information Technology", "Healthcare"). Populated from the NIFTY 100 constituent CSV.
     private boolean inNifty50;        // true if symbol is part of NIFTY 50 (always tracked — drives breadth + index trend)
     private boolean inNifty100;       // true if symbol is part of NIFTY 100 (NIFTY 50 ⊂ NIFTY 100, so inNifty50=true ⇒ inNifty100=true)
 
@@ -120,6 +121,8 @@ public class CprLevels {
     public void    setBeta(double v)      { this.beta = v; }
     public String  getCapCategory()       { return capCategory; }
     public void    setCapCategory(String v) { this.capCategory = v; }
+    public String  getSector()            { return sector; }
+    public void    setSector(String v)    { this.sector = v; }
     public boolean isInNifty50()          { return inNifty50; }
     public void    setInNifty50(boolean v) { this.inNifty50 = v; }
     public boolean isInNifty100()         { return inNifty100; }

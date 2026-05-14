@@ -47,16 +47,108 @@ public class BhavcopyService {
      * The ticker key must match what extractTicker() produces from the Fyers symbol so
      * downstream lookups (e.g. getCprLevels(extractTicker("NSE:NIFTY50-INDEX"))) work.
      * extractTicker strips the "NSE:" prefix and the "-INDEX" suffix → "NIFTY50".
+     *
+     * Sectoral indices included so the per-stock sector chip on the watchlist card can
+     * surface the sector's CPR bias (above/below/inside CPR) as a color hint. Each is also
+     * subscribed via Fyers WS so the scrolling market ticker shows live LTP + change%.
      */
-    private static final Map<String, String> SUPPORTED_INDICES = Map.of(
-        "Nifty 50",       "NIFTY50",
-        "Nifty Bank",     "NIFTYBANK",
-        "Nifty Fin Service", "FINNIFTY"
+    private static final Map<String, String> SUPPORTED_INDICES = new java.util.LinkedHashMap<>() {{
+        // Bhavcopy "Index Name" → ticker key. Ticker keys MUST match what extractTicker()
+        // produces from the Fyers symbol (e.g. NSE:NIFTYHEALTHCARE-INDEX → NIFTYHEALTHCARE).
+        // Fyers symbol names for 3 sectors differ from the obvious form:
+        //   NSE:NIFTYHEALTHCARE-INDEX  (not NIFTYHEALTH)
+        //   NSE:NIFTYOILANDGAS-INDEX   (not NIFTYOILGAS)
+        //   NSE:NIFTYCONSRDURBL-INDEX  (not NIFTYCONSUMDURABLES)
+        put("Nifty 50",                  "NIFTY50");
+        put("Nifty Bank",                "NIFTYBANK");
+        // NSE's ind_close_all CSV publishes this as "Nifty Financial Services" (full form).
+        // Keep the short "Nifty Fin Service" alias too in case any older NSE file uses it.
+        put("Nifty Financial Services",  "FINNIFTY");
+        put("Nifty Fin Service",         "FINNIFTY");
+        put("Nifty IT",                  "NIFTYIT");
+        put("Nifty Pharma",              "NIFTYPHARMA");
+        put("Nifty Auto",                "NIFTYAUTO");
+        put("Nifty FMCG",                "NIFTYFMCG");
+        put("Nifty Metal",               "NIFTYMETAL");
+        put("Nifty Energy",              "NIFTYENERGY");
+        put("Nifty Healthcare Index",    "NIFTYHEALTHCARE");
+        put("Nifty Realty",              "NIFTYREALTY");
+        put("Nifty Media",               "NIFTYMEDIA");
+        put("Nifty Oil & Gas",           "NIFTYOILANDGAS");
+        put("Nifty Consumer Durables",   "NIFTYCONSRDURBL");
+        // Broader thematic indices used as fallbacks for industries without a direct
+        // sectoral index (Capital Goods, Chemicals, Construction, Services, etc.).
+        put("Nifty Services Sector",     "NIFTYSERVSECTOR");
+        // NSE's ind_close_all CSV publishes this as "Nifty India Consumption" (full form).
+        // Keep the short "Nifty Consumption" alias too for resilience.
+        put("Nifty India Consumption",   "NIFTYCONSUMPTION");
+        put("Nifty Consumption",         "NIFTYCONSUMPTION");
+        put("Nifty Infrastructure",      "NIFTYINFRA");
+        put("Nifty Commodities",         "NIFTYCOMMODITIES");
+        // Speculative: NSE publishes Nifty Chemicals in ind_close_all CSV. CPR levels
+        // available even if Fyers WS doesn't deliver live LTP (chip color will fall
+        // back to neutral, but bhavcopy prevClose is still useful for future features).
+        put("Nifty Chemicals",           "NIFTYCHEM");
+        // NIFTY MidSmall IT & Telecom — used as the live LTP proxy for Telecom-tagged
+        // stocks (NSE doesn't publish a standalone Nifty Telecom index).
+        put("Nifty MidSmall IT & Telecom", "NIFTYMSITTELCM");
+    }};
+
+    /**
+     * Map: display sector name (as produced by {@link #fetchOrLoadSectorMap}) → CPR-cache
+     * ticker key. Used by {@link #getSectorIndexTicker} so the scanner can look up the
+     * sector's index CPR state for the per-stock sector chip.
+     */
+    private static final Map<String, String> SECTOR_TO_INDEX = Map.ofEntries(
+        Map.entry("Banking",                  "NIFTYBANK"),
+        Map.entry("Financial Services",       "FINNIFTY"),
+        Map.entry("IT",                       "NIFTYIT"),
+        Map.entry("Pharma",                   "NIFTYPHARMA"),
+        Map.entry("Auto",                     "NIFTYAUTO"),
+        Map.entry("FMCG",                     "NIFTYFMCG"),
+        Map.entry("Metal",                    "NIFTYMETAL"),
+        Map.entry("Energy",                   "NIFTYENERGY"),
+        Map.entry("Healthcare",               "NIFTYHEALTHCARE"),
+        Map.entry("Realty",                   "NIFTYREALTY"),
+        Map.entry("Media",                    "NIFTYMEDIA"),
+        Map.entry("Oil & Gas",                "NIFTYOILANDGAS"),
+        Map.entry("Consumer Durables",        "NIFTYCONSRDURBL"),
+        // Broader thematic indices for industries without a direct sectoral index:
+        Map.entry("Services",                 "NIFTYSERVSECTOR"),
+        // Telecom uses NIFTY MidSmall IT & Telecom — closest to a pure telecom signal
+        // on Fyers since NSE doesn't expose a standalone Nifty Telecom index.
+        Map.entry("Telecom",                  "NIFTYMSITTELCM"),
+        Map.entry("Consumer Services",        "NIFTYCONSUMPTION"),
+        // Capital Goods / Construction / Construction Materials are normalized to "Infra"
+        // upstream (see normalizeIndustryName), so the live label is "Infra". The legacy
+        // long-form keys stay as defensive aliases in case any cached sector-map.json on
+        // disk was written before the rename — they all point to the same NIFTYINFRA index.
+        Map.entry("Infra",                    "NIFTYINFRA"),
+        Map.entry("Construction",             "NIFTYINFRA"),
+        Map.entry("Construction Materials",   "NIFTYINFRA"),
+        Map.entry("Capital Goods",            "NIFTYINFRA"),
+        Map.entry("Commodities",              "NIFTYCOMMODITIES"),
+        // Chemicals points at its own NIFTYCHEM index. If Fyers WS doesn't deliver live
+        // LTP for NSE:NIFTYCHEM-INDEX (symbol master shows it's not exposed), the chip
+        // falls back to neutral. The bhavcopy CPR levels are still loaded for future use.
+        Map.entry("Chemicals",                "NIFTYCHEM")
     );
+
+    /** Returns the index ticker (e.g. NIFTYBANK) for a sector display name, or null. */
+    public String getSectorIndexTicker(String sector) {
+        return sector == null ? null : SECTOR_TO_INDEX.get(sector);
+    }
+
+    /** Returns all sectoral index ticker keys we track CPR for. Used by MarketDataService
+     *  to build the WS subscription set so the ticker shows live LTPs. */
+    public java.util.Collection<String> getAllSectoralIndexTickers() {
+        return SECTOR_TO_INDEX.values();
+    }
     private static final String STORE_FILE = "../store/cache/cpr-data.json";
     private static final String LEGACY_STORE_FILE = "../store/config/cpr-data.json";
     private static final String NIFTY50_LIST_FILE  = "../store/cache/nifty50-list.json";
     private static final String NIFTY100_LIST_FILE = "../store/cache/nifty100-list.json";
+    private static final String SECTOR_MAP_FILE    = "../store/cache/sector-map.json";
     private static final String NSE_BASE_URL = "https://www.nseindia.com/";
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
@@ -78,6 +170,10 @@ public class BhavcopyService {
     // independently because index breadth + the NIFTY 50 trend card always use the 50 set.
     private volatile Set<String> nifty50Symbols  = Collections.emptySet();
     private volatile Set<String> nifty100Symbols = Collections.emptySet();
+    // Symbol → NSE Industry (sector) mapping, populated from the NIFTY 100 constituent CSV
+    // which has an "Industry" column alongside "Symbol". Persisted to sector-map.json so the
+    // mapping survives across restarts; refreshed on every bhavcopy refresh.
+    private volatile Map<String, String> sectorBySymbol = Collections.emptyMap();
 
     // Rolling 5-day history (most recent first) for weekly CPR and inside-CPR detection
     private final LinkedList<DaySnapshot> dailyHistory = new LinkedList<>();
@@ -116,6 +212,64 @@ public class BhavcopyService {
     @PostConstruct
     public void init() {
         loadFromFile();
+        // Load the sector map so watchlist sector chips appear even when the bhavcopy refresh
+        // path is skipped (today's CPR data already cached on disk). Disk first; if disk is
+        // empty and we already have CPR records (=> we won't fetch in this session), do a
+        // one-shot live pull so the very first run with this feature still gets sectors.
+        Map<String, String> diskSectorMap = loadSectorMapFromDisk();
+        // Freshness check — older sector-map.json files have unnormalized NSE long-form
+        // industry names ("Automobile and Auto Components", "Information Technology",
+        // "Fast Moving Consumer Goods", etc.) or only the broad Industry tags without the
+        // sectoral-index overlay ("Banking" / "IT" / "Pharma" never appear). Treat either
+        // case as stale and refetch so the chip displays the short canonical name and
+        // resolves to its sectoral index for coloring.
+        boolean hasShortNames = diskSectorMap.values().stream()
+            .anyMatch(v -> "Banking".equals(v) || "IT".equals(v) || "Pharma".equals(v));
+        boolean hasLongNames = diskSectorMap.values().stream()
+            .anyMatch(v -> "Automobile and Auto Components".equals(v)
+                        || "Information Technology".equals(v)
+                        || "Fast Moving Consumer Goods".equals(v)
+                        || "Pharmaceuticals".equals(v)
+                        || "Chemicals".equals(v));
+        boolean staleSectorMap = !diskSectorMap.isEmpty() && (!hasShortNames || hasLongNames);
+        if (staleSectorMap) {
+            log.info("[BhavcopyService] Sector map disk cache is stale ({} stocks) — refetching", diskSectorMap.size());
+            diskSectorMap = Collections.emptyMap();
+        }
+        if (diskSectorMap.isEmpty() && !cache.isEmpty()) {
+            try {
+                String cookies = getNseCookies();
+                if (cookies != null && !cookies.isEmpty()) {
+                    // Use the full multi-index resolver (NIFTY 100 Industry baseline + sectoral
+                    // overlays) so the seed has Banking / IT / Pharma etc., not just the broad
+                    // Industry tag.
+                    fetchOrLoadSectorMap(cookies);
+                    diskSectorMap = sectorBySymbol;
+                }
+            } catch (Exception e) {
+                log.warn("[BhavcopyService] One-shot sector map fetch failed: {}", e.getMessage());
+            }
+        }
+        if (!diskSectorMap.isEmpty()) {
+            sectorBySymbol = diskSectorMap;
+            for (Map.Entry<String, CprLevels> e : cache.entrySet()) {
+                String s = diskSectorMap.get(e.getKey());
+                if (s != null && !s.isEmpty()) e.getValue().setSector(s);
+            }
+            log.info("[BhavcopyService] Sector map active: {} stocks", diskSectorMap.size());
+        }
+        // If the cached CPR data is missing any of the SUPPORTED_INDICES (e.g. after adding
+        // new sectoral indices in code), force a refresh so the new indices pick up their
+        // prev close + CPR levels. Without this, only the indices that were in the cache
+        // before the code change have data — newly-added ones stay blank until tomorrow's
+        // bhavcopy.
+        boolean cacheMissingIndices = !cache.isEmpty() && SUPPORTED_INDICES.values().stream()
+            .anyMatch(idx -> !cache.containsKey(idx));
+        if (cacheMissingIndices) {
+            log.info("[BhavcopyService] Cached CPR is missing newly-added sectoral indices — forcing refresh");
+            cachedDate = ""; // invalidate so the date-check below triggers a refetch
+        }
+
         String expectedDate = getLastTradingDay().toString();
         if (!expectedDate.equals(cachedDate)) {
             boolean ok = fetchAndCompute();
@@ -351,7 +505,16 @@ public class BhavcopyService {
     }
 
     private Map<String, CprLevels> getPreviousDaySymbols() {
-        return dailyHistory.isEmpty() ? Collections.emptyMap() : dailyHistory.getFirst().symbols;
+        // Skip corrupted snapshots: empty date (legacy save bug) OR same date as today's cache
+        // (a duplicate-of-today entry pushed by a buggy rollover). Both produce a "previous"
+        // day that equals today, causing getInsideCprStocks to mark everything as inside.
+        for (DaySnapshot snap : dailyHistory) {
+            if (snap.symbols.isEmpty()) continue;
+            if (snap.date == null || snap.date.isEmpty()) continue;
+            if (snap.date.equals(cachedDate)) continue;
+            return snap.symbols;
+        }
+        return Collections.emptyMap();
     }
     public CprLevels getPreviousCpr(String symbol) {
         Map<String, CprLevels> prev = getPreviousDaySymbols();
@@ -402,6 +565,10 @@ public class BhavcopyService {
                 // so the FO bhavcopy fetch is skipped when either list is available.
                 Set<String> nifty50  = fetchOrLoadNifty50List(cookies);
                 Set<String> nifty100 = fetchOrLoadNifty100List(cookies);
+                // Sector map shares the NIFTY 100 CSV (has Symbol + Industry columns).
+                // Fetched separately because the existing fetchIndexSymbols helper only
+                // extracts the Symbol column.
+                fetchOrLoadSectorMap(cookies);
                 String universe = riskSettings != null ? riskSettings.getScanUniverse() : "NIFTY50";
                 Set<String> nfoSymbols;
                 Set<String> chosen = "NIFTY100".equals(universe) ? nifty100 : nifty50;
@@ -462,6 +629,9 @@ public class BhavcopyService {
                     // Mark membership independently — N50 ⊂ N100, so an N50 stock has both flags set.
                     if (nifty50Symbols.contains(entry.getKey()))  lvl.setInNifty50(true);
                     if (nifty100Symbols.contains(entry.getKey())) lvl.setInNifty100(true);
+                    // Sector — NSE "Industry" classification from the NIFTY 100 constituent CSV.
+                    String sector = sectorBySymbol.get(entry.getKey());
+                    if (sector != null && !sector.isEmpty()) lvl.setSector(sector);
                     if (symbolMasterService != null) {
                         double tick = symbolMasterService.getTickSize("NSE:" + entry.getKey() + "-EQ");
                         lvl.roundToTick(tick);
@@ -469,8 +639,13 @@ public class BhavcopyService {
                     newCache.put(entry.getKey(), lvl);
                 }
 
-                // Push current cache into daily history (rolling buffer)
-                if (!cache.isEmpty() && !cachedDate.equals(targetDate.toString())) {
+                // Push current cache into daily history (rolling buffer). Only roll when
+                // cachedDate is non-empty AND differs from the new target — otherwise we
+                // were either bootstrapping (no real prior day to preserve) or a duplicate
+                // would be inserted, which silently breaks the inside-CPR detection later.
+                if (!cache.isEmpty()
+                        && cachedDate != null && !cachedDate.isEmpty()
+                        && !cachedDate.equals(targetDate.toString())) {
                     DaySnapshot snapshot = new DaySnapshot();
                     snapshot.date = cachedDate;
                     snapshot.symbols.putAll(cache);
@@ -478,8 +653,12 @@ public class BhavcopyService {
                     while (dailyHistory.size() > MAX_HISTORY_DAYS) dailyHistory.removeLast();
                 }
 
-                // Purge empty history snapshots and backfill before classification
-                dailyHistory.removeIf(snap -> snap.symbols.isEmpty());
+                // Purge empty history snapshots AND any legacy duplicate-of-today entries
+                // (no date, or date equal to today's cachedDate) left over from earlier saves.
+                final String todayStamp = targetDate.toString();
+                dailyHistory.removeIf(snap -> snap.symbols.isEmpty()
+                        || snap.date == null || snap.date.isEmpty()
+                        || snap.date.equals(todayStamp));
 
                 // Fetch index bhavcopy and merge into the cache so NIFTY etc. live alongside stocks.
                 // Failure here is non-fatal — index alignment filter will fall back to NEUTRAL if missing.
@@ -577,6 +756,175 @@ public class BhavcopyService {
         }
         log.warn("[BhavcopyService] NIFTY 100 list unavailable (live fetch + disk cache both empty)");
         return Collections.emptySet();
+    }
+
+    /**
+     * Sectoral-index priority list. Iterated in order so later entries overwrite earlier:
+     * broader sectoral indices come first, more specific ones last. E.g. NIFTY Bank is a
+     * subset of NIFTY Financial Services — ICICI Bank ends up tagged "Banking" rather than
+     * "Financial Services". Pharma is a subset of Healthcare → SUN PHARMA → "Pharma".
+     * The base sector (from ind_nifty100list.csv's Industry column) is loaded first as a
+     * fallback for stocks that don't appear in any sectoral index.
+     */
+    private static final String[][] SECTORAL_INDICES = {
+        // {display name, NSE CSV URL}
+        // Broader umbrellas first (overwritten by sub-sectoral indices below):
+        {"Healthcare",         "https://nsearchives.nseindia.com/content/indices/ind_niftyhealthcarelist.csv"},
+        {"Financial Services", "https://nsearchives.nseindia.com/content/indices/ind_niftyfinancelist.csv"},
+        // Sector-specific indices (overwrite the broader ones for any stock that appears here):
+        {"Banking",            "https://nsearchives.nseindia.com/content/indices/ind_niftybanklist.csv"},
+        {"Pharma",             "https://nsearchives.nseindia.com/content/indices/ind_niftypharmalist.csv"},
+        {"IT",                 "https://nsearchives.nseindia.com/content/indices/ind_niftyitlist.csv"},
+        {"Auto",               "https://nsearchives.nseindia.com/content/indices/ind_niftyautolist.csv"},
+        {"FMCG",               "https://nsearchives.nseindia.com/content/indices/ind_niftyfmcglist.csv"},
+        {"Metal",              "https://nsearchives.nseindia.com/content/indices/ind_niftymetallist.csv"},
+        {"Energy",             "https://nsearchives.nseindia.com/content/indices/ind_niftyenergylist.csv"},
+        {"Oil & Gas",          "https://nsearchives.nseindia.com/content/indices/ind_niftyoilgaslist.csv"},
+        {"Realty",             "https://nsearchives.nseindia.com/content/indices/ind_niftyrealtylist.csv"},
+        {"Media",              "https://nsearchives.nseindia.com/content/indices/ind_niftymedialist.csv"},
+        {"Consumer Durables",  "https://nsearchives.nseindia.com/content/indices/ind_niftyconsumerdurableslist.csv"},
+        // NIFTY Chemicals constituents — tagged as "Chemicals", mapped via SECTOR_TO_INDEX
+        // to NIFTYCOMMODITIES for chip coloring (NIFTY Chemicals isn't in our sectoral CPR
+        // set, so we use the broader Commodities index as the color proxy). This overlay
+        // catches chemicals stocks that NIFTY 100's Industry column may miss or mislabel.
+        {"Chemicals",          "https://nsearchives.nseindia.com/content/indices/ind_niftychemicalslist.csv"}
+    };
+
+    /**
+     * Build the per-symbol sector map. Strategy:
+     *   1. Seed from the NIFTY 100 CSV's Industry column (broadest fallback — every N100 stock
+     *      has an Industry tag).
+     *   2. Iterate {@link #SECTORAL_INDICES} in order, overwriting with the specific sectoral
+     *      index name. Order is broad → specific so e.g. NIFTY Bank overwrites NIFTY Financial
+     *      Services for banks.
+     * Persists the combined map to disk so future startups can use it offline. Disk cache is
+     * the fallback when any/all CSV pulls fail.
+     */
+    private void fetchOrLoadSectorMap(String cookies) {
+        Map<String, String> fresh = new HashMap<>();
+        // Step 1: broad Industry tags from the NIFTY 100 constituent CSV.
+        fresh.putAll(fetchSectorMap(NIFTY100_URL, cookies));
+        // Step 2: overlay sectoral-index-specific names (broad first, specific last).
+        int sectoralHits = 0;
+        for (String[] entry : SECTORAL_INDICES) {
+            Set<String> members = fetchIndexSymbols(entry[1], cookies);
+            for (String sym : members) {
+                fresh.put(sym, entry[0]);
+                sectoralHits++;
+            }
+        }
+        if (!fresh.isEmpty()) {
+            sectorBySymbol = fresh;
+            saveSectorMapToDisk(fresh);
+            log.info("[BhavcopyService] Sector map fetched from NSE: {} stocks ({} sectoral-index overlays)",
+                fresh.size(), sectoralHits);
+            return;
+        }
+        Map<String, String> cached = loadSectorMapFromDisk();
+        if (!cached.isEmpty()) {
+            sectorBySymbol = cached;
+            log.warn("[BhavcopyService] Sector map live fetch failed — using disk cache ({} stocks)", cached.size());
+            return;
+        }
+        log.warn("[BhavcopyService] Sector map unavailable (live + disk both empty)");
+    }
+
+    /**
+     * Normalize NSE's verbose NIFTY 100 industry names (effective 2023 classification) to
+     * the shorter canonical names used by the SECTOR_TO_INDEX lookup. So an auto-components
+     * stock that's NOT in the NIFTY Auto constituents still resolves to the NIFTY Auto index
+     * for chip coloring, instead of staying as the unrecognized "Automobile and Auto
+     * Components" string.
+     */
+    private static String normalizeIndustryName(String raw) {
+        if (raw == null) return null;
+        String trimmed = raw.trim();
+        switch (trimmed) {
+            case "Automobile and Auto Components": return "Auto";
+            case "Fast Moving Consumer Goods":     return "FMCG";
+            case "Information Technology":         return "IT";
+            case "Metals & Mining":                return "Metal";
+            case "Oil Gas & Consumable Fuels":     return "Oil & Gas";
+            case "Pharmaceuticals":                return "Pharma";
+            case "Power":                          return "Energy";
+            case "Media Entertainment & Publication": return "Media";
+            case "Telecommunication":              return "Telecom";
+            // Capital Goods, Construction, and Construction Materials all roll up to the
+            // broader Infrastructure index for chip coloring — collapse the display labels
+            // to a single "Infra" tag aligned with the NIFTY Infrastructure index.
+            case "Capital Goods":
+            case "Construction":
+            case "Construction Materials": return "Infra";
+            default: return trimmed;
+        }
+    }
+
+    /**
+     * Parse the Symbol + Industry columns from a constituent CSV like ind_nifty100list.csv.
+     * Used as the broad-Industry fallback step in {@link #fetchOrLoadSectorMap}.
+     */
+    private Map<String, String> fetchSectorMap(String url, String cookies) {
+        Map<String, String> map = new HashMap<>();
+        try {
+            byte[] data = downloadPlain(url, cookies);
+            if (data == null || data.length == 0) return map;
+            BufferedReader br = new BufferedReader(new InputStreamReader(new ByteArrayInputStream(data)));
+            String header = br.readLine();
+            if (header == null) return map;
+            String[] cols = header.split(",");
+            int symIdx = -1, indIdx = -1;
+            for (int i = 0; i < cols.length; i++) {
+                String h = cols[i].trim().replace("\"", "");
+                if (h.equalsIgnoreCase("Symbol"))   symIdx = i;
+                if (h.equalsIgnoreCase("Industry")) indIdx = i;
+            }
+            if (symIdx < 0 || indIdx < 0) {
+                log.warn("[BhavcopyService] Sector CSV missing Symbol or Industry column (header={})", header);
+                return map;
+            }
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] parts = line.split(",", -1);
+                if (parts.length > symIdx && parts.length > indIdx) {
+                    String sym = parts[symIdx].trim().replace("\"", "");
+                    String ind = normalizeIndustryName(parts[indIdx].trim().replace("\"", ""));
+                    if (!sym.isEmpty() && ind != null && !ind.isEmpty()) map.put(sym, ind);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[BhavcopyService] Error fetching sector CSV from {}: {}", url, e.getMessage());
+        }
+        return map;
+    }
+
+    private void saveSectorMapToDisk(Map<String, String> map) {
+        try {
+            java.nio.file.Path path = java.nio.file.Paths.get(SECTOR_MAP_FILE);
+            java.nio.file.Files.createDirectories(path.getParent());
+            java.nio.file.Files.writeString(path, mapper.writeValueAsString(map));
+        } catch (Exception e) {
+            log.warn("[BhavcopyService] Failed to save sector map to disk: {}", e.getMessage());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, String> loadSectorMapFromDisk() {
+        try {
+            java.nio.file.Path path = java.nio.file.Paths.get(SECTOR_MAP_FILE);
+            if (!java.nio.file.Files.exists(path)) return Collections.emptyMap();
+            String json = java.nio.file.Files.readString(path);
+            return mapper.readValue(json, Map.class);
+        } catch (Exception e) {
+            log.warn("[BhavcopyService] Failed to load sector map from disk: {}", e.getMessage());
+            return Collections.emptyMap();
+        }
+    }
+
+    /** Returns the NSE sector / industry classification for a ticker, or empty if unknown. */
+    public String getSector(String ticker) {
+        if (ticker == null) return "";
+        String sector = sectorBySymbol.get(ticker);
+        return sector != null ? sector : "";
     }
 
     private void saveSymbolsToDisk(Set<String> symbols, String file, String label) {
@@ -1234,6 +1582,18 @@ public class BhavcopyService {
                     });
                     dailyHistory.addFirst(snap);
                 }
+            }
+            // Scrub corrupted history snapshots: empty dates (legacy save bug) and any
+            // entry whose date equals today's cachedDate (duplicate-of-today inserted by an
+            // earlier rollover bug). Without this scrub the inside-CPR detection breaks.
+            int historyBefore = dailyHistory.size();
+            dailyHistory.removeIf(snap -> snap.symbols.isEmpty()
+                    || snap.date == null || snap.date.isEmpty()
+                    || (cachedDate != null && snap.date.equals(cachedDate)));
+            int scrubbed = historyBefore - dailyHistory.size();
+            if (scrubbed > 0) {
+                log.warn("[BhavcopyService] Scrubbed {} corrupted history snapshot(s) on load", scrubbed);
+                saveToFile();
             }
             log.info("[BhavcopyService] Loaded from file: date={}, {} stocks, {} days history",
                 cachedDate, cache.size(), dailyHistory.size());

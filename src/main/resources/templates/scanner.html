@@ -491,12 +491,6 @@
             <button class="filter-btn" onclick="setFilter('INSIDE', this)">Inside</button>
         </span>
         <div class="filter-sep"></div>
-        <span class="ov-filter-group">
-            <button class="filter-btn" onclick="toggleOvFilter('IV', this)">IV</button>
-            <button class="filter-btn" onclick="toggleOvFilter('OV', this)">OV</button>
-            <button class="filter-btn" onclick="toggleOvFilter('EV', this)">EV</button>
-        </span>
-        <div class="filter-sep"></div>
         <button class="filter-btn" onclick="toggleSignalFilter(this)">Has Signal</button>
         <button class="filter-btn" onclick="toggleFilteredFilter(this)">Filtered</button>
         <select id="timeFilter" onchange="applyTimeFilter()" style="
@@ -510,6 +504,12 @@
             padding: 5px 8px; border-radius: 8px; font-family: var(--font-mono); font-size: 0.75rem;
             cursor: pointer;">
             <option value="">All Symbols</option>
+        </select>
+        <select id="sectorFilter" onchange="applySectorFilter()" style="
+            background: var(--bg-card); border: 1px solid var(--border); color: var(--text-secondary);
+            padding: 5px 8px; border-radius: 8px; font-family: var(--font-mono); font-size: 0.75rem;
+            cursor: pointer;">
+            <option value="">All Sectors</option>
         </select>
         <span class="scan-count" id="scanCount">0 stocks</span>
     </div>
@@ -542,11 +542,11 @@
 (function() {
     var allData = [];
     var cprFilter = 'all';
-    var ovFilter = null;
     var signalFilter = false;
     var filteredFilter = false;
     var timeFilter = '';
     var symbolFilter = '';
+    var sectorFilter = '';
     var universeFilter = 'ALL'; // 'ALL' (NIFTY 100) or 'N50' (NIFTY 50 only)
 
     // Populate time dropdown (9:15 to 15:30 in 15-min intervals)
@@ -595,17 +595,8 @@
         renderCards();
     };
 
-    window.toggleOvFilter = function(type, btn) {
-        if (ovFilter === type) {
-            ovFilter = null;
-            btn.classList.remove('active');
-        } else {
-            ovFilter = type;
-            document.querySelectorAll('.ov-filter-group .filter-btn').forEach(function(b) {
-                b.classList.remove('active');
-            });
-            btn.classList.add('active');
-        }
+    window.applySectorFilter = function() {
+        sectorFilter = document.getElementById('sectorFilter').value;
         renderCards();
     };
 
@@ -635,6 +626,28 @@
         sel.value = current;
     }
 
+    function populateSectorDropdown() {
+        var sel = document.getElementById('sectorFilter');
+        if (!sel) return;
+        var current = sel.value;
+        while (sel.options.length > 1) sel.remove(1);
+        // Build unique non-empty sector list, sorted alphabetically.
+        var seen = {};
+        var sectors = [];
+        for (var i = 0; i < allData.length; i++) {
+            var s = allData[i].sector;
+            if (s && !seen[s]) { seen[s] = true; sectors.push(s); }
+        }
+        sectors.sort();
+        for (var j = 0; j < sectors.length; j++) {
+            var opt = document.createElement('option');
+            opt.value = sectors[j];
+            opt.textContent = sectors[j];
+            sel.appendChild(opt);
+        }
+        sel.value = current;
+    }
+
     // ── Render cards ────────────────────────────────
     function renderCards() {
         var grid = document.getElementById('scannerGrid');
@@ -649,7 +662,7 @@
                     if (types.indexOf(cprFilter) === -1) return false;
                 }
             }
-            if (ovFilter && d.openClass !== ovFilter) return false;
+            if (sectorFilter && d.sector !== sectorFilter) return false;
             if (signalFilter && (!d.lastSignal || d.lastSignal.status !== 'TRADED')) return false;
             if (filteredFilter && (!d.lastSignal || d.lastSignal.status !== 'FILTERED')) return false;
             if (timeFilter && d.lastSignal && d.lastSignal.time) {
@@ -774,6 +787,25 @@
             sigHtml = '<span class="sig-none">No history</span>';
         }
 
+        // Color the sector chip green / red / muted based on whether the sector index is
+        // above or below its previous close. BULLISH = up, BEARISH = down, empty = no data.
+        var sectorChip = '';
+        if (d.sector && d.sector.length > 0) {
+            var sCol = 'var(--text-muted)';
+            var sBorder = 'var(--border)';
+            var sTip = 'NSE sector: ' + d.sector;
+            var chPct = (typeof d.sectorChangePct === 'number') ? d.sectorChangePct : null;
+            var chSuffix = (chPct !== null) ? ' (' + (chPct >= 0 ? '+' : '') + chPct.toFixed(2) + '%)' : '';
+            if (d.sectorState === 'BULLISH') {
+                sCol = 'var(--accent-green)'; sBorder = 'var(--accent-green)';
+                sTip += ' — sector index above prev close' + chSuffix;
+            } else if (d.sectorState === 'BEARISH') {
+                sCol = 'var(--accent-red)'; sBorder = 'var(--accent-red)';
+                sTip += ' — sector index below prev close' + chSuffix;
+            }
+            sectorChip = '<span style="font-family:var(--font-mono); font-size:0.65rem; font-weight:600; color:' + sCol + '; padding:1px 5px; border:1px solid ' + sBorder + '; border-radius:3px; text-transform:uppercase; letter-spacing:0.3px;" title="' + sTip + '">' + d.sector + '</span>';
+        }
+
         return '<div class="' + cardClass + '" data-symbol="' + d.symbol + '">'
             + '<div class="scan-card-header">'
             + '  <span class="scan-symbol">' + d.shortName + '</span>'
@@ -787,6 +819,7 @@
                 }
                 return '<span class="scan-badge inside" title="Inside CPR">I</span>';
             }).join(''))
+            + sectorChip
             + '  </span>'
             + '</div>'
             + '<div class="scan-price-row">'
@@ -858,6 +891,7 @@
         fetch('/api/scanner/watchlist').then(function(r) { return r.json(); }).then(function(data) {
             allData = data;
             populateSymbolDropdown();
+            populateSectorDropdown();
             renderCards();
         }).catch(function() {});
 

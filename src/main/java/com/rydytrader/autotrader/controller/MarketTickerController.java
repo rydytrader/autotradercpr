@@ -29,10 +29,18 @@ public class MarketTickerController {
     private final MarketHolidayService marketHolidayService;
     private final BhavcopyService bhavcopyService;
 
-    // Only indices stay hardcoded — used by MarketDataService to ensure the WebSocket
-    // always subscribes to them for the NIFTY trend calc. Stocks on the ticker come
-    // dynamically from the NIFTY 50 list via bhavcopy.
-    private static final String BASE_SYMBOLS = "NSE:NIFTY50-INDEX,NSE:NIFTYBANK-INDEX";
+    // Indices stay hardcoded — used by MarketDataService to ensure the WebSocket always
+    // subscribes to them for the NIFTY trend calc + sector chips on the scanner page.
+    // Stocks on the ticker come dynamically from the NIFTY 50 list via bhavcopy.
+    private static final String BASE_SYMBOLS =
+        "NSE:NIFTY50-INDEX,NSE:NIFTYBANK-INDEX,NSE:FINNIFTY-INDEX,"
+      + "NSE:NIFTYIT-INDEX,NSE:NIFTYPHARMA-INDEX,NSE:NIFTYAUTO-INDEX,"
+      + "NSE:NIFTYFMCG-INDEX,NSE:NIFTYMETAL-INDEX,NSE:NIFTYENERGY-INDEX,"
+      + "NSE:NIFTYHEALTHCARE-INDEX,NSE:NIFTYREALTY-INDEX,NSE:NIFTYMEDIA-INDEX,"
+      + "NSE:NIFTYOILANDGAS-INDEX,NSE:NIFTYCONSRDURBL-INDEX,"
+      + "NSE:NIFTYSERVSECTOR-INDEX,NSE:NIFTYCONSUMPTION-INDEX,"
+      + "NSE:NIFTYINFRA-INDEX,NSE:NIFTYCOMMODITIES-INDEX,"
+      + "NSE:NIFTYCHEM-INDEX,NSE:NIFTYMSITTELCM-INDEX";
 
     /** Returns the base index symbols. Used by MarketDataService for WebSocket subscription. */
     public static String[] getBaseSymbols() {

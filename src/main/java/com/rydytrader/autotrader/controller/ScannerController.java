@@ -63,6 +63,44 @@ public class ScannerController {
         this.marketHolidayService = marketHolidayService;
     }
 
+    /**
+     * Live snapshot of the NSE sectoral indices we track CPR for. Used by the scrolling
+     * market ticker to show sector LTP + change% + CPR bias chip. Empty list if cookies
+     * / bhavcopy haven't loaded yet.
+     */
+    @GetMapping("/api/scanner/sectors")
+    public List<Map<String, Object>> getSectoralIndices() {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (String ticker : bhavcopyService.getAllSectoralIndexTickers()) {
+            CprLevels idx = bhavcopyService.getCprLevels(ticker);
+            if (idx == null) continue;
+            String fyersSym = "NSE:" + ticker + "-INDEX";
+            double ltp = marketDataService.getLtp(fyersSym);
+            double prevClose = idx.getClose();
+            double changePct = (ltp > 0 && prevClose > 0) ? ((ltp - prevClose) / prevClose) * 100.0 : 0;
+            double top = idx.getTc() > 0 && idx.getBc() > 0 ? Math.max(idx.getTc(), idx.getBc()) : 0;
+            double bot = idx.getTc() > 0 && idx.getBc() > 0 ? Math.min(idx.getTc(), idx.getBc()) : 0;
+            String state = "";
+            double refLtp = ltp > 0 ? ltp : prevClose;
+            if (refLtp > 0 && top > 0 && bot > 0) {
+                if (refLtp > top)      state = "BULLISH";
+                else if (refLtp < bot) state = "BEARISH";
+                else                   state = "INSIDE";
+            }
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("ticker",      ticker);
+            m.put("symbol",      fyersSym);
+            m.put("ltp",         Math.round((ltp > 0 ? ltp : prevClose) * 100.0) / 100.0);
+            m.put("prevClose",   Math.round(prevClose * 100.0) / 100.0);
+            m.put("changePct",   Math.round(changePct * 100.0) / 100.0);
+            m.put("cprTop",      Math.round(top * 100.0) / 100.0);
+            m.put("cprBot",      Math.round(bot * 100.0) / 100.0);
+            m.put("state",       state);
+            out.add(m);
+        }
+        return out;
+    }
+
     @GetMapping("/api/scanner/watchlist")
     public List<Map<String, Object>> getWatchlist() {
         List<Map<String, Object>> result = new ArrayList<>();
@@ -129,6 +167,32 @@ public class ScannerController {
         // Universe membership flags drive the scanner-page client-side N50 vs All filter.
         card.put("inNifty50", levels.isInNifty50());
         card.put("inNifty100", levels.isInNifty100());
+        // Sector — NSE industry classification (Financial Services / IT / Pharma / etc.).
+        // Populated from the NIFTY 100 constituent CSV at bhavcopy fetch time. Empty
+        // string for stocks the map doesn't cover (rare).
+        String sector = levels.getSector();
+        card.put("sector", sector != null ? sector : "");
+
+        // Sector-index day-change state — BULLISH if index LTP > previous close, BEARISH
+        // if below. Empty when there's no live LTP yet or the sector isn't mapped to an
+        // index. Pure intraday direction — no deadband; even a 1-paise tick flips the color.
+        String sectorIndexTicker = sector != null ? bhavcopyService.getSectorIndexTicker(sector) : null;
+        String sectorState = "";
+        double sectorChangePct = 0;
+        if (sectorIndexTicker != null) {
+            CprLevels idx = bhavcopyService.getCprLevels(sectorIndexTicker);
+            if (idx != null) {
+                double prevClose = idx.getClose();
+                double idxLtp = marketDataService.getLtp("NSE:" + sectorIndexTicker + "-INDEX");
+                if (idxLtp > 0 && prevClose > 0) {
+                    sectorChangePct = (idxLtp - prevClose) / prevClose * 100.0;
+                    if (idxLtp > prevClose)      sectorState = "BULLISH";
+                    else if (idxLtp < prevClose) sectorState = "BEARISH";
+                }
+            }
+        }
+        card.put("sectorState", sectorState);
+        card.put("sectorChangePct", Math.round(sectorChangePct * 100.0) / 100.0);
 
         // LTP separated into two values:
         //   liveTickLtp — the LTP from today's WS ticks (0 if none, e.g. pre-market new day).
