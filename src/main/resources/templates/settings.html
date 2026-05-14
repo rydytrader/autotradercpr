@@ -369,17 +369,7 @@
                     </div>
                     <div class="form-hint">ATP is the exchange's VWAP — today's volume-weighted average price. Resets daily, independent of SMAs (which span days). Captures intraday sentiment: price above ATP = bulls in control today, below = bears. Complements the SMA filter above.</div>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Large Candle Body Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableLargeCandleBodyFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip if candle body &gt;</span>
-                        <input type="number" id="largeCandleBodyAtrThreshold" class="form-control" step="0.5" min="1.0" max="10.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">× ATR</span>
-                    </div>
-                    <div class="form-hint">Rejects breakout candles with excessively large body (|close − open|). Catches exhaustion moves where the stock has already run too far on a single candle. Default 4.0 ATR catches only extreme spikes.</div>
-                </div>
-                <div class="form-group">
+<div class="form-group">
                     <label class="form-label">20 SMA Level Count Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
                         <input type="checkbox" id="enableSmaLevelCountFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
@@ -423,21 +413,30 @@
                         <br>Extended-level breakouts (R3/S3, R4/S4) are far from the daily CPR and historically unreliable on regular days. EV days are different &mdash; an R3 break following an open above R2 is fresh gap momentum, not exhaustion. Toggle the IV/OV and EV gates independently to match your strategy. DH/DL breakouts that have already passed the level are treated identically. R2/S2 always fires regardless. No per-level qty reduction.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Mean-Reversion / Magnet Trades</label>
+                    <label class="form-label">Magnet Trades</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableMeanReversionTrades" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable counter-trend setups (magnets + deep mean-reversion fades)</span>
+                        <input type="checkbox" id="enableMagnetTrades" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable magnet setups (first structural level pair)</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">MPT Qty &times;</span>
-                        <input type="number" id="mptQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Magnet Qty &times;</span>
+                        <input type="number" id="magnetTradesQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-muted); font-size: 0.78rem; font-family: var(--font-mono);">(0.75 = three-quarter size)</span>
                     </div>
-                    <div class="form-hint">Master switch for the counter-trend family. Setups in this family classify as <b>MPT</b> (medium probability) and fire at <b>MPT Qty &times;</b> base size (default 0.75).
-                        <br>&nbsp;&nbsp;&bull; <b>Magnets</b> &mdash; <code>BUY_ABOVE_S1_PDL</code>, <code>SELL_BELOW_R1_PDH</code>: bounce off / rejection at the first structural level pair, target back to CPR.
-                        <br>&nbsp;&nbsp;&bull; <b>Deep mean-rev</b> &mdash; <code>BUY_ABOVE_S2/S3/S4</code>, <code>SELL_BELOW_R2/R3/R4</code>: fades from deep support/resistance, target one level back toward value.
-                        <br>&nbsp;&nbsp;&bull; <b>DH/DL breakouts</b> &mdash; <code>BUY_ABOVE_DH</code>, <code>SELL_BELOW_DL</code> when the close is on the wrong side of CPR (otherwise they classify as trend-following HPT and skip this gate).
-                        <br>All counter-trend setups bypass the LTF gate by design. When the master toggle is <b>off</b>, none of them fire &mdash; only direction-aligned weekly-level breakouts (R1+/R2/R3/R4 buys, S1+/S2/S3/S4 sells) trade. Signal Trail bucket: <code>MEAN_REVERSION_DISABLED</code>.</div>
+                    <div class="form-hint">Setups: <code>BUY_ABOVE_S1_PDL</code>, <code>SELL_BELOW_R1_PDH</code> — bounce off / rejection at the first structural level pair, target back to CPR. Classify as <b>MPT</b> and bypass the LTF gate. Signal Trail bucket when disabled: <code>MAGNET_DISABLED</code>.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Mean-Reversion Trades</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableMeanReversionTrades" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable deep mean-reversion fades from far support/resistance</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Mean-Rev Qty &times;</span>
+                        <input type="number" id="meanReversionQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.78rem; font-family: var(--font-mono);">(0.5 = half size)</span>
+                    </div>
+                    <div class="form-hint">Setups: <code>BUY_ABOVE_S2/S3/S4</code>, <code>SELL_BELOW_R2/R3/R4</code> — fades from deep support/resistance, target one level back toward value. Classify as <b>MPT</b> and bypass the LTF gate. Signal Trail bucket when disabled: <code>MEAN_REVERSION_DISABLED</code>.</div>
                 </div>
             </div>
         </div>
@@ -468,11 +467,14 @@
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Body ≥</span>
                     <input type="number" id="marubozuBodyAtrMult" class="form-control" step="0.1" min="0.1" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× ATR</span>
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">and ≤</span>
+                    <input type="number" id="marubozuMaxBodyAtrMult" class="form-control" step="0.1" min="0.0" max="6.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× ATR (0 = no cap)</span>
                     <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">Total wicks ≤</span>
                     <input type="number" id="marubozuMaxWicksPctOfBody" class="form-control" step="0.05" min="0.0" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                     <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× body (e.g. 0.10 = 10%)</span>
                 </div>
-                <div class="form-hint">Used by the two-bar <code>MARUBOZU_RETEST</code> pattern. Prev bar dipped to the level and held above (buy) or below (sell); the current bar must be a near-shaved marubozu in trade direction. Defaults: 1.0 &times; ATR body, 0.10 &times; body total wicks.</div>
+                <div class="form-hint">Body lives inside a goldilocks band [min × ATR, max × ATR]. Min keeps weak/tiny marubozus out; max kills exhaustion / blow-off bars. Defaults: 1.0–2.0 × ATR body, 0.10 × body total wicks.</div>
             </div>
 
             <!-- Good-Size Candle group (two-bar GOOD_SIZE_CANDLE_RETEST) -->
@@ -482,11 +484,14 @@
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Body ≥</span>
                     <input type="number" id="goodSizeCandleBodyAtrMult" class="form-control" step="0.05" min="0.0" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× ATR</span>
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">and ≤</span>
+                    <input type="number" id="goodSizeCandleMaxBodyAtrMult" class="form-control" step="0.1" min="0.0" max="6.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× ATR (0 = no cap)</span>
                     <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">Opposing wick ≤</span>
                     <input type="number" id="goodSizeCandleMaxOppositeWickRatio" class="form-control" step="0.1" min="0.0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                     <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× body</span>
                 </div>
-                <div class="form-hint">Used by the two-bar <code>GOOD_SIZE_CANDLE_RETEST</code> pattern (fires when the current bar has decent body but doesn't qualify as marubozu). Opposing-wick cap rejects shooting-star-shaped green bars on buys and hammer-shaped red bars on sells. Defaults: 0.6 &times; ATR body, 1.0 &times; body opposing wick.</div>
+                <div class="form-hint">Used by both <code>GOOD_SIZE_CANDLE_BREAKOUT</code> (fresh break) and <code>GOOD_SIZE_CANDLE_RETEST</code> paths. Body must sit inside the [floor, ceiling] × ATR band — floor keeps weak bars out, ceiling kills oversized exhaustion / blow-off bars. Opposing-wick cap rejects shooting-star-shaped green bars on buys and hammer-shaped red bars on sells. Defaults: 0.6–2.0 &times; ATR body, 1.0 &times; body opposing wick.</div>
             </div>
 
             <!-- Pin Bar group -->
@@ -510,11 +515,13 @@
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Current body ≥</span>
                     <input type="number" id="engulfingMinBodyMultiple" class="form-control" step="0.05" min="0.5" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× prev body</span>
-                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">AND ≥</span>
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">AND in [</span>
                     <input type="number" id="engulfingMinBodyAtrMult" class="form-control" step="0.1" min="0.0" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× ATR (size floor — 0 = off)</span>
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">,</span>
+                    <input type="number" id="engulfingMaxBodyAtrMult" class="form-control" step="0.1" min="0.0" max="6.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">] × ATR (floor / ceiling — 0 = off)</span>
                 </div>
-                <div class="form-hint">First check: relative size — engulfer ≥ N × prior body. Second check (size floor): engulfer also ≥ M × ATR in absolute terms — prevents firing when both bars are tiny. Defaults: 1.0 × prev body, 0.5 × ATR. Set the ATR floor to 0 to disable it.</div>
+                <div class="form-hint">First check: relative size — engulfer ≥ N × prior body. Second check: engulfer body must sit inside the absolute ATR band — floor prevents weak engulfings on noise, ceiling rejects exhaustion bars. Defaults: 1.0 × prev body, 0.5–2.0 × ATR. Set the floor or ceiling to 0 to disable that side.</div>
             </div>
 
             <!-- Piercing Line / Dark Cloud Cover group -->
@@ -552,25 +559,29 @@
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Doji body ≤</span>
                     <input type="number" id="dojiBodyMaxRangeRatio" class="form-control" step="0.02" min="0.02" max="0.30" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× range</span>
-                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">Confirm body ≥</span>
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">Confirm body in [</span>
                     <input type="number" id="dojiConfirmBodyAtrMult" class="form-control" step="0.1" min="0.1" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× ATR</span>
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">,</span>
+                    <input type="number" id="dojiConfirmMaxBodyAtrMult" class="form-control" step="0.1" min="0.0" max="6.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">] × ATR</span>
                 </div>
-                <div class="form-hint">Bar 1 is the doji (tiny body relative to its range). Bar 2 is the strong directional confirmation that closes past the doji body. Defaults: 0.10 × range (10%) for the doji, 0.5 × ATR body for the confirmation bar.</div>
+                <div class="form-hint">Bar 1 is the doji (tiny body relative to its range). Bar 2 is the directional confirmation — body must sit inside the band [floor, ceiling] × ATR. Defaults: 0.10 × range (10%) for the doji, 0.5–2.0 × ATR for the confirmation. Set the ceiling to 0 to disable the cap.</div>
             </div>
 
             <!-- Star group -->
             <div class="form-group">
                 <label class="form-label">Morning / Evening Star (3-bar)</label>
                 <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
-                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Bar 1 + Bar 3 body ≥</span>
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Bar 1 + Bar 3 body in [</span>
                     <input type="number" id="starOuterBodyAtrMult" class="form-control" step="0.1" min="0.1" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× ATR</span>
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">,</span>
+                    <input type="number" id="starOuterMaxBodyAtrMult" class="form-control" step="0.1" min="0.0" max="6.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">] × ATR</span>
                     <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">Bar 2 body ≤</span>
                     <input type="number" id="starMiddleBodyMaxMultOfOuter" class="form-control" step="0.05" min="0.05" max="0.80" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                     <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× bar 1 body</span>
                 </div>
-                <div class="form-hint">Bars 1 and 3 must be strong directional bars; bar 2 (the "star") is small. Bar 3 also needs to close past bar 1's midpoint (built-in, not configurable). Defaults: 0.5 × ATR outer bars, 0.3 × bar1 body for the middle bar.</div>
+                <div class="form-hint">Bars 1 and 3 (outer bars) must sit inside the [floor, ceiling] × ATR band; bar 2 (the "star") stays small relative to bar 1. Bar 3 also needs to close past bar 1's midpoint (built-in, not configurable). Defaults: 0.5–2.0 × ATR outer bars, 0.3 × bar1 body for the middle bar. Set the ceiling to 0 to disable the cap.</div>
             </div>
 
             <!-- Three Inside Up / Down (Harami + confirmation) -->
@@ -1180,16 +1191,17 @@
             document.getElementById('singleLevelSlBufferAtr').value = d.singleLevelSlBufferAtr != null ? d.singleLevelSlBufferAtr : 0.5;
             // dayHighLowMinAtr removed — single min target distance check handles both
             document.getElementById('enableRiskRewardFilter').checked = d.enableRiskRewardFilter !== false;
-            document.getElementById('enableLargeCandleBodyFilter').checked = d.enableLargeCandleBodyFilter !== false;
-            document.getElementById('largeCandleBodyAtrThreshold').value = d.largeCandleBodyAtrThreshold != null ? d.largeCandleBodyAtrThreshold : 4.0;
             document.getElementById('marubozuBodyAtrMult').value          = d.marubozuBodyAtrMult          != null ? d.marubozuBodyAtrMult          : 1.0;
+            document.getElementById('marubozuMaxBodyAtrMult').value       = d.marubozuMaxBodyAtrMult       != null ? d.marubozuMaxBodyAtrMult       : 2.0;
             document.getElementById('marubozuMaxWicksPctOfBody').value    = d.marubozuMaxWicksPctOfBody    != null ? d.marubozuMaxWicksPctOfBody    : 0.10;
             document.getElementById('goodSizeCandleBodyAtrMult').value         = d.goodSizeCandleBodyAtrMult         != null ? d.goodSizeCandleBodyAtrMult         : 0.6;
+            document.getElementById('goodSizeCandleMaxBodyAtrMult').value      = d.goodSizeCandleMaxBodyAtrMult      != null ? d.goodSizeCandleMaxBodyAtrMult      : 2.0;
             document.getElementById('goodSizeCandleMaxOppositeWickRatio').value = d.goodSizeCandleMaxOppositeWickRatio != null ? d.goodSizeCandleMaxOppositeWickRatio : 1.0;
             document.getElementById('pinBarRejectionWickBodyMult').value  = d.pinBarRejectionWickBodyMult  != null ? d.pinBarRejectionWickBodyMult  : 2.0;
             document.getElementById('pinBarOppositeWickBodyMult').value   = d.pinBarOppositeWickBodyMult   != null ? d.pinBarOppositeWickBodyMult   : 0.30;
             document.getElementById('engulfingMinBodyMultiple').value     = d.engulfingMinBodyMultiple     != null ? d.engulfingMinBodyMultiple     : 1.0;
             document.getElementById('engulfingMinBodyAtrMult').value      = d.engulfingMinBodyAtrMult      != null ? d.engulfingMinBodyAtrMult      : 0.5;
+            document.getElementById('engulfingMaxBodyAtrMult').value      = d.engulfingMaxBodyAtrMult      != null ? d.engulfingMaxBodyAtrMult      : 2.0;
             document.getElementById('piercingPrevBodyAtrMult').value      = d.piercingPrevBodyAtrMult      != null ? d.piercingPrevBodyAtrMult      : 0.5;
             document.getElementById('piercingPenetrationPct').value       = d.piercingPenetrationPct       != null ? d.piercingPenetrationPct       : 0.5;
             document.getElementById('tweezerPrevBodyAtrMult').value       = d.tweezerPrevBodyAtrMult       != null ? d.tweezerPrevBodyAtrMult       : 0.5;
@@ -1198,7 +1210,9 @@
             document.getElementById('haramiInnerBodyMaxRatio').value      = d.haramiInnerBodyMaxRatio      != null ? d.haramiInnerBodyMaxRatio      : 0.5;
             document.getElementById('dojiBodyMaxRangeRatio').value        = d.dojiBodyMaxRangeRatio        != null ? d.dojiBodyMaxRangeRatio        : 0.10;
             document.getElementById('dojiConfirmBodyAtrMult').value       = d.dojiConfirmBodyAtrMult       != null ? d.dojiConfirmBodyAtrMult       : 0.5;
+            document.getElementById('dojiConfirmMaxBodyAtrMult').value    = d.dojiConfirmMaxBodyAtrMult    != null ? d.dojiConfirmMaxBodyAtrMult    : 2.0;
             document.getElementById('starOuterBodyAtrMult').value         = d.starOuterBodyAtrMult         != null ? d.starOuterBodyAtrMult         : 0.5;
+            document.getElementById('starOuterMaxBodyAtrMult').value      = d.starOuterMaxBodyAtrMult      != null ? d.starOuterMaxBodyAtrMult      : 2.0;
             document.getElementById('starMiddleBodyMaxMultOfOuter').value = d.starMiddleBodyMaxMultOfOuter != null ? d.starMiddleBodyMaxMultOfOuter : 0.3;
             document.getElementById('levelTouchToleranceAtr').value       = d.levelTouchToleranceAtr       != null ? d.levelTouchToleranceAtr       : 0.2;
             document.getElementById('minRiskRewardRatio').value = d.minRiskRewardRatio != null ? d.minRiskRewardRatio : 1.0;
@@ -1248,7 +1262,9 @@
             document.getElementById('skipHtfR3S3NormalDays').checked = d.skipHtfR3S3NormalDays !== false;
             document.getElementById('skipHtfR4S4NormalDays').checked = d.skipHtfR4S4NormalDays !== false;
             document.getElementById('enableMeanReversionTrades').checked = d.enableMeanReversionTrades !== false;
-            document.getElementById('mptQtyFactor').value = d.mptQtyFactor != null ? d.mptQtyFactor : 0.75;
+            document.getElementById('enableMagnetTrades').checked        = d.enableMagnetTrades !== false;
+            document.getElementById('magnetTradesQtyFactor').value       = d.magnetTradesQtyFactor != null ? d.magnetTradesQtyFactor : 0.75;
+            document.getElementById('meanReversionQtyFactor').value      = d.meanReversionQtyFactor != null ? d.meanReversionQtyFactor : 0.5;
 
             const pnl    = d.todayPnl    || 0;
             const trades = d.todayTrades || 0;
@@ -1339,16 +1355,17 @@
                 singleLevelSlBufferAtr: parseFloat(document.getElementById('singleLevelSlBufferAtr').value) || 0,
                 // dayHighLowMinAtr removed
                 enableRiskRewardFilter: document.getElementById('enableRiskRewardFilter').checked,
-                enableLargeCandleBodyFilter: document.getElementById('enableLargeCandleBodyFilter').checked,
-                largeCandleBodyAtrThreshold: parseFloat(document.getElementById('largeCandleBodyAtrThreshold').value) || 4.0,
                 marubozuBodyAtrMult:          parseFloat(document.getElementById('marubozuBodyAtrMult').value)          || 1.0,
+                marubozuMaxBodyAtrMult:       (isNaN(parseFloat(document.getElementById('marubozuMaxBodyAtrMult').value)) ? 2.0 : parseFloat(document.getElementById('marubozuMaxBodyAtrMult').value)),
                 marubozuMaxWicksPctOfBody:    parseFloat(document.getElementById('marubozuMaxWicksPctOfBody').value)    || 0.10,
                 goodSizeCandleBodyAtrMult:    (function() { var v = parseFloat(document.getElementById('goodSizeCandleBodyAtrMult').value); return isNaN(v) ? 0.6 : v; })(),
+                goodSizeCandleMaxBodyAtrMult: (function() { var v = parseFloat(document.getElementById('goodSizeCandleMaxBodyAtrMult').value); return isNaN(v) ? 2.0 : v; })(),
                 goodSizeCandleMaxOppositeWickRatio: (function() { var v = parseFloat(document.getElementById('goodSizeCandleMaxOppositeWickRatio').value); return isNaN(v) ? 1.0 : v; })(),
                 pinBarRejectionWickBodyMult:  parseFloat(document.getElementById('pinBarRejectionWickBodyMult').value)  || 2.0,
                 pinBarOppositeWickBodyMult:   parseFloat(document.getElementById('pinBarOppositeWickBodyMult').value)   || 0.30,
                 engulfingMinBodyMultiple:     parseFloat(document.getElementById('engulfingMinBodyMultiple').value)     || 1.0,
                 engulfingMinBodyAtrMult:      (isNaN(parseFloat(document.getElementById('engulfingMinBodyAtrMult').value)) ? 0.5 : parseFloat(document.getElementById('engulfingMinBodyAtrMult').value)),
+                engulfingMaxBodyAtrMult:      (isNaN(parseFloat(document.getElementById('engulfingMaxBodyAtrMult').value)) ? 2.0 : parseFloat(document.getElementById('engulfingMaxBodyAtrMult').value)),
                 piercingPrevBodyAtrMult:      parseFloat(document.getElementById('piercingPrevBodyAtrMult').value)      || 0.5,
                 piercingPenetrationPct:       parseFloat(document.getElementById('piercingPenetrationPct').value)       || 0.5,
                 tweezerPrevBodyAtrMult:       parseFloat(document.getElementById('tweezerPrevBodyAtrMult').value)       || 0.5,
@@ -1357,7 +1374,9 @@
                 haramiInnerBodyMaxRatio:      parseFloat(document.getElementById('haramiInnerBodyMaxRatio').value)      || 0.5,
                 dojiBodyMaxRangeRatio:        parseFloat(document.getElementById('dojiBodyMaxRangeRatio').value)        || 0.10,
                 dojiConfirmBodyAtrMult:       parseFloat(document.getElementById('dojiConfirmBodyAtrMult').value)       || 0.5,
+                dojiConfirmMaxBodyAtrMult:    (isNaN(parseFloat(document.getElementById('dojiConfirmMaxBodyAtrMult').value)) ? 2.0 : parseFloat(document.getElementById('dojiConfirmMaxBodyAtrMult').value)),
                 starOuterBodyAtrMult:         parseFloat(document.getElementById('starOuterBodyAtrMult').value)         || 0.5,
+                starOuterMaxBodyAtrMult:      (isNaN(parseFloat(document.getElementById('starOuterMaxBodyAtrMult').value)) ? 2.0 : parseFloat(document.getElementById('starOuterMaxBodyAtrMult').value)),
                 starMiddleBodyMaxMultOfOuter: parseFloat(document.getElementById('starMiddleBodyMaxMultOfOuter').value) || 0.3,
                 levelTouchToleranceAtr:       parseFloat(document.getElementById('levelTouchToleranceAtr').value)       || 0.2,
                 minRiskRewardRatio: parseFloat(document.getElementById('minRiskRewardRatio').value) || 1.0,
@@ -1402,7 +1421,9 @@
                 skipHtfR3S3NormalDays: document.getElementById('skipHtfR3S3NormalDays').checked,
                 skipHtfR4S4NormalDays: document.getElementById('skipHtfR4S4NormalDays').checked,
                 enableMeanReversionTrades: document.getElementById('enableMeanReversionTrades').checked,
-                mptQtyFactor: parseFloat(document.getElementById('mptQtyFactor').value) || 0.75,
+                enableMagnetTrades:        document.getElementById('enableMagnetTrades').checked,
+                magnetTradesQtyFactor:     parseFloat(document.getElementById('magnetTradesQtyFactor').value) || 0.75,
+                meanReversionQtyFactor:    parseFloat(document.getElementById('meanReversionQtyFactor').value) || 0.5,
             };
             const r = await fetch('/api/settings/risk', {
                 method: 'POST',

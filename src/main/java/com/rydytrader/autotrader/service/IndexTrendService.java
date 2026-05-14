@@ -265,13 +265,77 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         trend.setChangePct(Math.round(changePct * 100.0) / 100.0);
 
         // Trend factors + supporting values — STICKY (set at last NIFTY 5-min close).
-        trend.setCprBullish(cachedCprBullish);
-        trend.setFutVwapBullish(cachedFutVwapBullish);
-        trend.setNiftyClose(cachedNiftyClose);
-        trend.setFutSymbol(cachedFutSymbol);
-        trend.setFutClose(cachedFutClose);
-        trend.setFutVwap(cachedFutVwap);
-        trend.setState(cachedState);
+        Boolean dispCpr      = cachedCprBullish;
+        Boolean dispFutVwap  = cachedFutVwapBullish;
+        double  dispNiftyClose = cachedNiftyClose;
+        double  dispFutClose   = cachedFutClose;
+        double  dispFutVwapVal = cachedFutVwap;
+        String  dispFutSym     = cachedFutSymbol;
+        String  dispState      = cachedState;
+
+        // Live-LTP fallback for the UI only. After a restart the sticky cache stays NEUTRAL
+        // until the next NIFTY 5-min boundary fires — that's a 0-5 min window where the
+        // card would otherwise show nothing. Fill in any null factor from live LTP + live
+        // ATP (running session VWAP) so the user sees an immediate read. Sticky cache and
+        // getStickyState() (used by filters/exits) are untouched — they keep updating only
+        // at 5-min closes to avoid intra-bar oscillation.
+        if (dispCpr == null || dispFutVwap == null) {
+            // Factor 1 — NIFTY LTP vs daily CPR
+            if (dispCpr == null) {
+                double niftyLtp = marketDataService.getLtp(NIFTY_SYMBOL);
+                var cpr = bhavcopyService.getCprLevels("NIFTY50");
+                if (niftyLtp > 0 && cpr != null && cpr.getTc() > 0 && cpr.getBc() > 0) {
+                    double top = Math.max(cpr.getTc(), cpr.getBc());
+                    double bot = Math.min(cpr.getTc(), cpr.getBc());
+                    if (niftyLtp > top)      dispCpr = Boolean.TRUE;
+                    else if (niftyLtp < bot) dispCpr = Boolean.FALSE;
+                    dispNiftyClose = niftyLtp;
+                }
+            }
+            // Factor 2 — futures LTP vs futures running VWAP (Fyers ATP)
+            if (dispFutVwap == null) {
+                String futSym = marketDataService.computeNearMonthNiftyFuturesSymbol(
+                    java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")));
+                double futLtp = marketDataService.getLtp(futSym);
+                double futAtp = candleAggregator != null ? candleAggregator.getAtp(futSym) : 0;
+                if (futLtp > 0 && futAtp > 0) {
+                    if (futLtp > futAtp)      dispFutVwap = Boolean.TRUE;
+                    else if (futLtp < futAtp) dispFutVwap = Boolean.FALSE;
+                    dispFutClose   = futLtp;
+                    dispFutVwapVal = futAtp;
+                    dispFutSym     = futSym;
+                }
+            }
+            // Re-derive the display state from the augmented factors using the same logic as
+            // computeSnapshot — SMA20 gates the reversals.
+            double sma20Live = smaService != null ? smaService.getSma(NIFTY_SYMBOL) : 0;
+            Boolean smaBullishLive = null;
+            if (dispNiftyClose > 0 && sma20Live > 0) {
+                if (dispNiftyClose > sma20Live)      smaBullishLive = Boolean.TRUE;
+                else if (dispNiftyClose < sma20Live) smaBullishLive = Boolean.FALSE;
+            }
+            if (dispCpr == null && dispFutVwap == null) {
+                dispState = "NEUTRAL";
+            } else if (dispCpr != null && dispFutVwap != null && dispCpr && dispFutVwap) {
+                dispState = "BULLISH";
+            } else if (dispCpr != null && dispFutVwap != null && !dispCpr && !dispFutVwap) {
+                dispState = "BEARISH";
+            } else if (Boolean.TRUE.equals(smaBullishLive) && Boolean.TRUE.equals(dispFutVwap)) {
+                dispState = "BULLISH_REVERSAL";
+            } else if (Boolean.FALSE.equals(smaBullishLive) && Boolean.FALSE.equals(dispFutVwap)) {
+                dispState = "BEARISH_REVERSAL";
+            } else {
+                dispState = "SIDEWAYS";
+            }
+        }
+
+        trend.setCprBullish(dispCpr);
+        trend.setFutVwapBullish(dispFutVwap);
+        trend.setNiftyClose(dispNiftyClose);
+        trend.setFutSymbol(dispFutSym);
+        trend.setFutClose(dispFutClose);
+        trend.setFutVwap(dispFutVwapVal);
+        trend.setState(dispState);
 
         // CPR width category — NARROW if below the scanner's narrowCprMaxWidth (the upper end
         // of the "narrow" band; narrowCprMinWidth is the lower bound but is typically 0), WIDE

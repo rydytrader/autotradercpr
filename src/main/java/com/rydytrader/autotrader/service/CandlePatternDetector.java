@@ -48,21 +48,25 @@ final class CandlePatternDetector {
     // ── Marubozu ──────────────────────────────────────────────────────────────
 
     public static boolean isBullishMarubozu(double open, double high, double low, double close,
-                                            double atr, double bodyAtrMult, double maxWicksPctOfBody) {
+                                            double atr, double bodyAtrMult, double maxBodyAtrMult,
+                                            double maxWicksPctOfBody) {
         if (atr <= 0) return false;
         if (close <= open) return false;
         double body = close - open;
         if (body < bodyAtrMult * atr) return false;
+        if (maxBodyAtrMult > 0 && body > maxBodyAtrMult * atr) return false;
         double wicks = (high - close) + (open - low);
         return wicks <= maxWicksPctOfBody * body;
     }
 
     public static boolean isBearishMarubozu(double open, double high, double low, double close,
-                                            double atr, double bodyAtrMult, double maxWicksPctOfBody) {
+                                            double atr, double bodyAtrMult, double maxBodyAtrMult,
+                                            double maxWicksPctOfBody) {
         if (atr <= 0) return false;
         if (close >= open) return false;
         double body = open - close;
         if (body < bodyAtrMult * atr) return false;
+        if (maxBodyAtrMult > 0 && body > maxBodyAtrMult * atr) return false;
         double wicks = (high - open) + (close - low);
         return wicks <= maxWicksPctOfBody * body;
     }
@@ -119,7 +123,7 @@ final class CandlePatternDetector {
     public static boolean isBullishEngulfing(CandleAggregator.CandleBar prev,
                                              CandleAggregator.CandleBar curr,
                                              double minBodyMultiple, double atr,
-                                             double minBodyAtrMult) {
+                                             double minBodyAtrMult, double maxBodyAtrMult) {
         if (prev == null || curr == null) return false;
         if (!(prev.close < prev.open)) return false;
         if (!(curr.close > curr.open)) return false;
@@ -127,13 +131,14 @@ final class CandlePatternDetector {
         double currBody = curr.close - curr.open;
         if (currBody < minBodyMultiple * prevBody) return false;
         if (minBodyAtrMult > 0 && atr > 0 && currBody < minBodyAtrMult * atr) return false;
+        if (maxBodyAtrMult > 0 && atr > 0 && currBody > maxBodyAtrMult * atr) return false;
         return curr.open <= prev.close && curr.close >= prev.open;
     }
 
     public static boolean isBearishEngulfing(CandleAggregator.CandleBar prev,
                                              CandleAggregator.CandleBar curr,
                                              double minBodyMultiple, double atr,
-                                             double minBodyAtrMult) {
+                                             double minBodyAtrMult, double maxBodyAtrMult) {
         if (prev == null || curr == null) return false;
         if (!(prev.close > prev.open)) return false;
         if (!(curr.close < curr.open)) return false;
@@ -141,6 +146,7 @@ final class CandlePatternDetector {
         double currBody = curr.open - curr.close;
         if (currBody < minBodyMultiple * prevBody) return false;
         if (minBodyAtrMult > 0 && atr > 0 && currBody < minBodyAtrMult * atr) return false;
+        if (maxBodyAtrMult > 0 && atr > 0 && currBody > maxBodyAtrMult * atr) return false;
         return curr.open >= prev.close && curr.close <= prev.open;
     }
 
@@ -209,7 +215,8 @@ final class CandlePatternDetector {
     public static boolean isBullishDojiReversal(CandleAggregator.CandleBar prev,
                                                 CandleAggregator.CandleBar curr, double atr,
                                                 double dojiBodyMaxRangeRatio,
-                                                double confirmBodyAtrMult) {
+                                                double confirmBodyAtrMult,
+                                                double confirmMaxBodyAtrMult) {
         if (prev == null || curr == null || atr <= 0) return false;
         double prevRange = prev.high - prev.low;
         if (prevRange <= 0) return false;
@@ -218,13 +225,15 @@ final class CandlePatternDetector {
         if (!(curr.close > curr.open)) return false;                       // curr is green
         double currBody = curr.close - curr.open;
         if (currBody < confirmBodyAtrMult * atr) return false;             // curr is strong
+        if (confirmMaxBodyAtrMult > 0 && currBody > confirmMaxBodyAtrMult * atr) return false; // not exhaustion
         return curr.close > Math.max(prev.open, prev.close);               // closes past doji body
     }
 
     public static boolean isBearishDojiReversal(CandleAggregator.CandleBar prev,
                                                 CandleAggregator.CandleBar curr, double atr,
                                                 double dojiBodyMaxRangeRatio,
-                                                double confirmBodyAtrMult) {
+                                                double confirmBodyAtrMult,
+                                                double confirmMaxBodyAtrMult) {
         if (prev == null || curr == null || atr <= 0) return false;
         double prevRange = prev.high - prev.low;
         if (prevRange <= 0) return false;
@@ -233,6 +242,7 @@ final class CandlePatternDetector {
         if (!(curr.close < curr.open)) return false;                       // curr is red
         double currBody = curr.open - curr.close;
         if (currBody < confirmBodyAtrMult * atr) return false;             // curr is strong
+        if (confirmMaxBodyAtrMult > 0 && currBody > confirmMaxBodyAtrMult * atr) return false; // not exhaustion
         return curr.close < Math.min(prev.open, prev.close);               // closes past doji body
     }
 
@@ -279,16 +289,19 @@ final class CandlePatternDetector {
                                         CandleAggregator.CandleBar bar2,
                                         CandleAggregator.CandleBar bar3, double atr,
                                         double outerBodyAtrMult,
+                                        double outerMaxBodyAtrMult,
                                         double middleBodyMaxMultOfOuter) {
         if (bar1 == null || bar2 == null || bar3 == null || atr <= 0) return false;
         if (!(bar1.close < bar1.open)) return false;
         double bar1Body = bar1.open - bar1.close;
         if (bar1Body < outerBodyAtrMult * atr) return false;
+        if (outerMaxBodyAtrMult > 0 && bar1Body > outerMaxBodyAtrMult * atr) return false;
         double bar2Body = Math.abs(bar2.close - bar2.open);
         if (bar2Body > middleBodyMaxMultOfOuter * bar1Body) return false;
         if (!(bar3.close > bar3.open)) return false;
         double bar3Body = bar3.close - bar3.open;
         if (bar3Body < outerBodyAtrMult * atr) return false;
+        if (outerMaxBodyAtrMult > 0 && bar3Body > outerMaxBodyAtrMult * atr) return false;
         double bar1Mid = (bar1.open + bar1.close) / 2.0;
         return bar3.close > bar1Mid;
     }
@@ -297,16 +310,19 @@ final class CandlePatternDetector {
                                         CandleAggregator.CandleBar bar2,
                                         CandleAggregator.CandleBar bar3, double atr,
                                         double outerBodyAtrMult,
+                                        double outerMaxBodyAtrMult,
                                         double middleBodyMaxMultOfOuter) {
         if (bar1 == null || bar2 == null || bar3 == null || atr <= 0) return false;
         if (!(bar1.close > bar1.open)) return false;
         double bar1Body = bar1.close - bar1.open;
         if (bar1Body < outerBodyAtrMult * atr) return false;
+        if (outerMaxBodyAtrMult > 0 && bar1Body > outerMaxBodyAtrMult * atr) return false;
         double bar2Body = Math.abs(bar2.close - bar2.open);
         if (bar2Body > middleBodyMaxMultOfOuter * bar1Body) return false;
         if (!(bar3.close < bar3.open)) return false;
         double bar3Body = bar3.open - bar3.close;
         if (bar3Body < outerBodyAtrMult * atr) return false;
+        if (outerMaxBodyAtrMult > 0 && bar3Body > outerMaxBodyAtrMult * atr) return false;
         double bar1Mid = (bar1.open + bar1.close) / 2.0;
         return bar3.close < bar1Mid;
     }

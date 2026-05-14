@@ -40,18 +40,22 @@ public class RiskSettingsStore {
         volatile int    fixedQuantity    = 2;     // -1 = use capital-based calculation
         volatile double capitalPerTrade  = 0;     // ₹ per trade (used when fixedQuantity == -1)
         volatile int    telegramAlertFrequency = 60; // seconds between Telegram portfolio updates (0 = disabled)
-        volatile boolean enableLargeCandleBodyFilter = true;
-        volatile double largeCandleBodyAtrThreshold = 4.0; // skip if candle body > N × ATR (exhaustion risk)
+        // Global large-candle filter retired — each named pattern (Marubozu, Engulfing,
+        // Doji reversal, Morning/Evening star) now enforces its own per-pattern max body
+        // cap (xxxMaxBodyAtrMult). See the candle-pattern block below.
         // ── Candle pattern thresholds (BreakoutScanner / CandlePatternDetector) ──
         // Marubozu (used in two-bar MARUBOZU_RETEST): full-body conviction candle.
-        // body ≥ N × ATR AND total wicks ≤ N × body.
+        // body in [minBodyAtr, maxBodyAtr] × ATR AND total wicks ≤ N × body. The max-body
+        // cap kills exhaustion / blow-off entries that would have fired with a 4+ ATR body.
         volatile double marubozuBodyAtrMult         = 1.0;
+        volatile double marubozuMaxBodyAtrMult      = 2.0;
         volatile double marubozuMaxWicksPctOfBody   = 0.10;
         // Good-size candle (used in two-bar GOOD_SIZE_CANDLE_RETEST): decent body without
         // marubozu-strict wick rules. body ≥ N × ATR; opposing wick ≤ N × body so a green
         // bar with a long upper wick (shooting-star-shape) or red bar with long lower wick
         // (hammer-shape) doesn't qualify even though the body is big enough.
         volatile double goodSizeCandleBodyAtrMult           = 0.6;
+        volatile double goodSizeCandleMaxBodyAtrMult        = 2.0;
         volatile double goodSizeCandleMaxOppositeWickRatio  = 1.0;
         // Pin bar (hammer / shooting star): rejection wick ≥ N × body, opposite wick ≤ N × body.
         volatile double pinBarRejectionWickBodyMult = 2.0;
@@ -68,8 +72,10 @@ public class RiskSettingsStore {
         volatile double engulfingMinBodyMultiple    = 1.0;
         // Engulfing absolute size floor: current body ≥ N × ATR. Without this, a "weak engulfing"
         // (engulfer + engulfed both tiny) could fire on noise. 0.5 = current bar must be at least
-        // half an ATR. Set to 0 to disable the floor.
+        // half an ATR. Set to 0 to disable the floor. Max cap (default 2.0 × ATR) kills oversized
+        // exhaustion bars; set to 0 to disable the ceiling.
         volatile double engulfingMinBodyAtrMult     = 0.5;
+        volatile double engulfingMaxBodyAtrMult     = 2.0;
         // Piercing line / dark cloud cover (2-bar partial reversal — bar 2 doesn't fully engulf).
         // prev body ≥ N × ATR (bar 1 must be a real directional bar); bar 2 closes ≥ N% into bar 1.
         volatile double piercingPrevBodyAtrMult     = 0.5;
@@ -86,11 +92,15 @@ public class RiskSettingsStore {
         volatile double haramiBodyAtrMult           = 0.5;
         volatile double haramiInnerBodyMaxRatio     = 0.5;
         // Doji reversal (2-bar): bar 1 (prev) is the doji — body ≤ dojiBodyMaxRangeRatio × range.
-        // Bar 2 (curr) is the strong directional confirmation — body ≥ dojiConfirmBodyAtrMult × ATR.
+        // Bar 2 (curr) is the strong directional confirmation —
+        // body in [dojiConfirmBodyAtrMult, dojiConfirmMaxBodyAtrMult] × ATR.
         volatile double dojiBodyMaxRangeRatio       = 0.10;
         volatile double dojiConfirmBodyAtrMult      = 0.5;
-        // Morning / evening star: bar1 + bar3 body ≥ N × ATR; bar2 body ≤ N × bar1 body.
+        volatile double dojiConfirmMaxBodyAtrMult   = 2.0;
+        // Morning / evening star: bar1 + bar3 body in [outerBodyAtrMult, outerMaxBodyAtrMult] × ATR;
+        // bar2 body ≤ N × bar1 body.
         volatile double starOuterBodyAtrMult        = 0.5;
+        volatile double starOuterMaxBodyAtrMult     = 2.0;
         volatile double starMiddleBodyMaxMultOfOuter = 0.3;
         // Retest touch rule slack — bar's extreme can fall short of the level by up to
         // (toleranceAtr × ATR) and still count as a touch. Absorbs tick-level whisker misses.
@@ -197,11 +207,18 @@ public class RiskSettingsStore {
         // regardless of the daily setup. Default true (matches daily skip stance).
         volatile boolean skipHtfR3S3NormalDays = true;
         volatile boolean skipHtfR4S4NormalDays = true;
-        // Master toggle for the 8 counter-trend setups: 2 magnets (BUY_ABOVE_S1_PDL,
-        // SELL_BELOW_R1_PDH) + 6 deep mean-rev (BUY_ABOVE_S2/S3/S4, SELL_BELOW_R2/R3/R4).
-        // When off, none of them fire. All 8 are day-type agnostic — fire on IV/OV/EV alike.
-        // Default on — preserves existing magnet behavior.
+        // Counter-trend setups split into two independent families. Each has its own
+        // enable toggle and qty factor.
+        //   • Magnets        — BUY_ABOVE_S1_PDL, SELL_BELOW_R1_PDH (first structural pair).
+        //   • Mean-reversion — BUY_ABOVE_S2/S3/S4, SELL_BELOW_R2/R3/R4 (deep fades).
+        // All 8 are day-type agnostic — fire on IV/OV/EV alike.
         volatile boolean enableMeanReversionTrades = true;
+        volatile boolean enableMagnetTrades        = true;
+        // Per-family qty factors override the legacy mptQtyFactor for these specific setups.
+        // Magnets are higher-probability than deep mean-rev, so default magnet at 0.75 (same
+        // as the prior shared MPT factor) and mean-rev at 0.5 (riskier — half size).
+        volatile double magnetTradesQtyFactor      = 0.75;
+        volatile double meanReversionQtyFactor     = 0.5;
         volatile int    atrPeriod = 14;        // ATR lookback period for initial SL
         // Scanner settings
         volatile String signalSource    = "TRADINGVIEW"; // TRADINGVIEW or INTERNAL
@@ -302,11 +319,11 @@ public class RiskSettingsStore {
     public boolean isSmaLevelFilterMorningSkip()       { return cfg().smaLevelFilterMorningSkip; }
     public String  getSmaLevelFilterMorningSkipUntil() { return cfg().smaLevelFilterMorningSkipUntil; }
     public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
-    public boolean isEnableLargeCandleBodyFilter() { return cfg().enableLargeCandleBodyFilter; }
-    public double getLargeCandleBodyAtrThreshold() { return cfg().largeCandleBodyAtrThreshold; }
     public double getMarubozuBodyAtrMult()         { return cfg().marubozuBodyAtrMult; }
+    public double getMarubozuMaxBodyAtrMult()      { return cfg().marubozuMaxBodyAtrMult; }
     public double getMarubozuMaxWicksPctOfBody()   { return cfg().marubozuMaxWicksPctOfBody; }
     public double getGoodSizeCandleBodyAtrMult()          { return cfg().goodSizeCandleBodyAtrMult; }
+    public double getGoodSizeCandleMaxBodyAtrMult()       { return cfg().goodSizeCandleMaxBodyAtrMult; }
     public double getGoodSizeCandleMaxOppositeWickRatio() { return cfg().goodSizeCandleMaxOppositeWickRatio; }
     public double getPinBarRejectionWickBodyMult() { return cfg().pinBarRejectionWickBodyMult; }
     public double getPinBarOppositeWickBodyMult()  { return cfg().pinBarOppositeWickBodyMult; }
@@ -315,6 +332,7 @@ public class RiskSettingsStore {
     public double getPinBarOppositeWickMaxRangeRatio() { return cfg().pinBarOppositeWickMaxRangeRatio; }
     public double getEngulfingMinBodyMultiple()    { return cfg().engulfingMinBodyMultiple; }
     public double getEngulfingMinBodyAtrMult()     { return cfg().engulfingMinBodyAtrMult; }
+    public double getEngulfingMaxBodyAtrMult()     { return cfg().engulfingMaxBodyAtrMult; }
     public double getPiercingPrevBodyAtrMult()     { return cfg().piercingPrevBodyAtrMult; }
     public double getPiercingPenetrationPct()      { return cfg().piercingPenetrationPct; }
     public double getTweezerPrevBodyAtrMult()      { return cfg().tweezerPrevBodyAtrMult; }
@@ -323,7 +341,9 @@ public class RiskSettingsStore {
     public double getHaramiInnerBodyMaxRatio()     { return cfg().haramiInnerBodyMaxRatio; }
     public double getDojiBodyMaxRangeRatio()       { return cfg().dojiBodyMaxRangeRatio; }
     public double getDojiConfirmBodyAtrMult()      { return cfg().dojiConfirmBodyAtrMult; }
+    public double getDojiConfirmMaxBodyAtrMult()   { return cfg().dojiConfirmMaxBodyAtrMult; }
     public double getStarOuterBodyAtrMult()        { return cfg().starOuterBodyAtrMult; }
+    public double getStarOuterMaxBodyAtrMult()     { return cfg().starOuterMaxBodyAtrMult; }
     public double getStarMiddleBodyMaxMultOfOuter() { return cfg().starMiddleBodyMaxMultOfOuter; }
     public double getLevelTouchToleranceAtr()      { return cfg().levelTouchToleranceAtr; }
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
@@ -340,6 +360,9 @@ public class RiskSettingsStore {
     public boolean isSkipHtfR3S3NormalDays() { return cfg().skipHtfR3S3NormalDays; }
     public boolean isSkipHtfR4S4NormalDays() { return cfg().skipHtfR4S4NormalDays; }
     public boolean isEnableMeanReversionTrades() { return cfg().enableMeanReversionTrades; }
+    public boolean isEnableMagnetTrades()        { return cfg().enableMagnetTrades; }
+    public double  getMagnetTradesQtyFactor()    { return cfg().magnetTradesQtyFactor; }
+    public double  getMeanReversionQtyFactor()   { return cfg().meanReversionQtyFactor; }
     public int getAtrPeriod() { return cfg().atrPeriod; }
 
     public String  getSignalSource()      { return cfg().signalSource; }
@@ -424,11 +447,11 @@ public class RiskSettingsStore {
     public void setSmaLevelFilterMorningSkip(boolean v)     { cfg().smaLevelFilterMorningSkip = v; }
     public void setSmaLevelFilterMorningSkipUntil(String v) { if (v != null && !v.isEmpty()) cfg().smaLevelFilterMorningSkipUntil = v; }
     public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
-    public void setEnableLargeCandleBodyFilter(boolean v) { cfg().enableLargeCandleBodyFilter = v; }
-    public void setLargeCandleBodyAtrThreshold(double v) { cfg().largeCandleBodyAtrThreshold = v; }
     public void setMarubozuBodyAtrMult(double v)         { cfg().marubozuBodyAtrMult = v; }
+    public void setMarubozuMaxBodyAtrMult(double v)      { cfg().marubozuMaxBodyAtrMult = v; }
     public void setMarubozuMaxWicksPctOfBody(double v)   { cfg().marubozuMaxWicksPctOfBody = v; }
     public void setGoodSizeCandleBodyAtrMult(double v)          { cfg().goodSizeCandleBodyAtrMult = v; }
+    public void setGoodSizeCandleMaxBodyAtrMult(double v)       { cfg().goodSizeCandleMaxBodyAtrMult = v; }
     public void setGoodSizeCandleMaxOppositeWickRatio(double v) { cfg().goodSizeCandleMaxOppositeWickRatio = v; }
     public void setPinBarRejectionWickBodyMult(double v) { cfg().pinBarRejectionWickBodyMult = v; }
     public void setPinBarOppositeWickBodyMult(double v)  { cfg().pinBarOppositeWickBodyMult = v; }
@@ -437,6 +460,7 @@ public class RiskSettingsStore {
     public void setPinBarOppositeWickMaxRangeRatio(double v) { cfg().pinBarOppositeWickMaxRangeRatio = v; }
     public void setEngulfingMinBodyMultiple(double v)    { cfg().engulfingMinBodyMultiple = v; }
     public void setEngulfingMinBodyAtrMult(double v)     { cfg().engulfingMinBodyAtrMult = v; }
+    public void setEngulfingMaxBodyAtrMult(double v)     { cfg().engulfingMaxBodyAtrMult = v; }
     public void setPiercingPrevBodyAtrMult(double v)     { cfg().piercingPrevBodyAtrMult = v; }
     public void setPiercingPenetrationPct(double v)      { cfg().piercingPenetrationPct = v; }
     public void setTweezerPrevBodyAtrMult(double v)      { cfg().tweezerPrevBodyAtrMult = v; }
@@ -445,7 +469,9 @@ public class RiskSettingsStore {
     public void setHaramiInnerBodyMaxRatio(double v)     { cfg().haramiInnerBodyMaxRatio = v; }
     public void setDojiBodyMaxRangeRatio(double v)       { cfg().dojiBodyMaxRangeRatio = v; }
     public void setDojiConfirmBodyAtrMult(double v)      { cfg().dojiConfirmBodyAtrMult = v; }
+    public void setDojiConfirmMaxBodyAtrMult(double v)   { cfg().dojiConfirmMaxBodyAtrMult = v; }
     public void setStarOuterBodyAtrMult(double v)        { cfg().starOuterBodyAtrMult = v; }
+    public void setStarOuterMaxBodyAtrMult(double v)     { cfg().starOuterMaxBodyAtrMult = v; }
     public void setStarMiddleBodyMaxMultOfOuter(double v) { cfg().starMiddleBodyMaxMultOfOuter = v; }
     public void setLevelTouchToleranceAtr(double v)      { cfg().levelTouchToleranceAtr = Math.max(0, v); }
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
@@ -468,6 +494,13 @@ public class RiskSettingsStore {
         // enableMpt=false value. One-directional: turning mean-rev OFF leaves enableMpt alone.
         if (v) cfg().enableMpt = true;
     }
+    public void setEnableMagnetTrades(boolean v) {
+        cfg().enableMagnetTrades = v;
+        // Magnets also classify as MPT downstream. Same auto-on-MPT behavior as mean-rev.
+        if (v) cfg().enableMpt = true;
+    }
+    public void setMagnetTradesQtyFactor(double v)  { cfg().magnetTradesQtyFactor  = v; }
+    public void setMeanReversionQtyFactor(double v) { cfg().meanReversionQtyFactor = v; }
     public void setAtrPeriod(int v) { cfg().atrPeriod = v; }
 
     // ── mode-specific getters/setters (used by SettingsController) ────────────
@@ -560,11 +593,11 @@ public class RiskSettingsStore {
             upsert("smaLevelFilterMorningSkip", String.valueOf(c.smaLevelFilterMorningSkip));
             upsert("smaLevelFilterMorningSkipUntil", c.smaLevelFilterMorningSkipUntil);
             upsert("enableTargetShift", String.valueOf(c.enableTargetShift));
-            upsert("enableLargeCandleBodyFilter", String.valueOf(c.enableLargeCandleBodyFilter));
-            upsert("largeCandleBodyAtrThreshold", String.valueOf(c.largeCandleBodyAtrThreshold));
-            upsert("marubozuBodyAtrMult", String.valueOf(c.marubozuBodyAtrMult));
+            upsert("marubozuBodyAtrMult",    String.valueOf(c.marubozuBodyAtrMult));
+            upsert("marubozuMaxBodyAtrMult", String.valueOf(c.marubozuMaxBodyAtrMult));
             upsert("marubozuMaxWicksPctOfBody", String.valueOf(c.marubozuMaxWicksPctOfBody));
-            upsert("goodSizeCandleBodyAtrMult", String.valueOf(c.goodSizeCandleBodyAtrMult));
+            upsert("goodSizeCandleBodyAtrMult",    String.valueOf(c.goodSizeCandleBodyAtrMult));
+            upsert("goodSizeCandleMaxBodyAtrMult", String.valueOf(c.goodSizeCandleMaxBodyAtrMult));
             upsert("goodSizeCandleMaxOppositeWickRatio", String.valueOf(c.goodSizeCandleMaxOppositeWickRatio));
             upsert("pinBarRejectionWickBodyMult", String.valueOf(c.pinBarRejectionWickBodyMult));
             upsert("pinBarOppositeWickBodyMult", String.valueOf(c.pinBarOppositeWickBodyMult));
@@ -573,6 +606,7 @@ public class RiskSettingsStore {
             upsert("pinBarOppositeWickMaxRangeRatio", String.valueOf(c.pinBarOppositeWickMaxRangeRatio));
             upsert("engulfingMinBodyMultiple", String.valueOf(c.engulfingMinBodyMultiple));
             upsert("engulfingMinBodyAtrMult",  String.valueOf(c.engulfingMinBodyAtrMult));
+            upsert("engulfingMaxBodyAtrMult",  String.valueOf(c.engulfingMaxBodyAtrMult));
             upsert("piercingPrevBodyAtrMult",  String.valueOf(c.piercingPrevBodyAtrMult));
             upsert("piercingPenetrationPct",   String.valueOf(c.piercingPenetrationPct));
             upsert("tweezerPrevBodyAtrMult",   String.valueOf(c.tweezerPrevBodyAtrMult));
@@ -580,8 +614,10 @@ public class RiskSettingsStore {
             upsert("haramiBodyAtrMult",        String.valueOf(c.haramiBodyAtrMult));
             upsert("haramiInnerBodyMaxRatio",  String.valueOf(c.haramiInnerBodyMaxRatio));
             upsert("dojiBodyMaxRangeRatio", String.valueOf(c.dojiBodyMaxRangeRatio));
-            upsert("dojiConfirmBodyAtrMult", String.valueOf(c.dojiConfirmBodyAtrMult));
-            upsert("starOuterBodyAtrMult", String.valueOf(c.starOuterBodyAtrMult));
+            upsert("dojiConfirmBodyAtrMult",    String.valueOf(c.dojiConfirmBodyAtrMult));
+            upsert("dojiConfirmMaxBodyAtrMult", String.valueOf(c.dojiConfirmMaxBodyAtrMult));
+            upsert("starOuterBodyAtrMult",      String.valueOf(c.starOuterBodyAtrMult));
+            upsert("starOuterMaxBodyAtrMult",   String.valueOf(c.starOuterMaxBodyAtrMult));
             upsert("starMiddleBodyMaxMultOfOuter", String.valueOf(c.starMiddleBodyMaxMultOfOuter));
             upsert("levelTouchToleranceAtr", String.valueOf(c.levelTouchToleranceAtr));
             upsert("enableTrailingSl", String.valueOf(c.enableTrailingSl));
@@ -598,6 +634,9 @@ public class RiskSettingsStore {
             upsert("skipHtfR3S3NormalDays", String.valueOf(c.skipHtfR3S3NormalDays));
             upsert("skipHtfR4S4NormalDays", String.valueOf(c.skipHtfR4S4NormalDays));
             upsert("enableMeanReversionTrades", String.valueOf(c.enableMeanReversionTrades));
+            upsert("enableMagnetTrades",        String.valueOf(c.enableMagnetTrades));
+            upsert("magnetTradesQtyFactor",     String.valueOf(c.magnetTradesQtyFactor));
+            upsert("meanReversionQtyFactor",    String.valueOf(c.meanReversionQtyFactor));
             upsert("atrPeriod", String.valueOf(c.atrPeriod));
             upsert("signalSource", c.signalSource);
             upsert("scannerTimeframe", String.valueOf(c.scannerTimeframe));
@@ -698,11 +737,13 @@ public class RiskSettingsStore {
                     case "smaLevelFilterMorningSkip" -> c.smaLevelFilterMorningSkip = Boolean.parseBoolean(v);
                     case "smaLevelFilterMorningSkipUntil" -> { if (v != null && !v.isEmpty()) c.smaLevelFilterMorningSkipUntil = v; }
                     case "enableTargetShift" -> c.enableTargetShift = Boolean.parseBoolean(v);
-                    case "enableLargeCandleBodyFilter" -> c.enableLargeCandleBodyFilter = Boolean.parseBoolean(v);
-                    case "largeCandleBodyAtrThreshold" -> c.largeCandleBodyAtrThreshold = Double.parseDouble(v);
+                    case "enableLargeCandleBodyFilter",
+                         "largeCandleBodyAtrThreshold" -> { /* legacy — global filter retired in favor of per-pattern max */ }
                     case "marubozuBodyAtrMult"         -> c.marubozuBodyAtrMult = Double.parseDouble(v);
+                    case "marubozuMaxBodyAtrMult"      -> c.marubozuMaxBodyAtrMult = Double.parseDouble(v);
                     case "marubozuMaxWicksPctOfBody"   -> c.marubozuMaxWicksPctOfBody = Double.parseDouble(v);
                     case "goodSizeCandleBodyAtrMult"          -> c.goodSizeCandleBodyAtrMult = Double.parseDouble(v);
+                    case "goodSizeCandleMaxBodyAtrMult"       -> c.goodSizeCandleMaxBodyAtrMult = Double.parseDouble(v);
                     case "goodSizeCandleMaxOppositeWickRatio" -> c.goodSizeCandleMaxOppositeWickRatio = Double.parseDouble(v);
                     case "pinBarRejectionWickBodyMult" -> c.pinBarRejectionWickBodyMult = Double.parseDouble(v);
                     case "pinBarOppositeWickBodyMult"  -> c.pinBarOppositeWickBodyMult = Double.parseDouble(v);
@@ -711,6 +752,7 @@ public class RiskSettingsStore {
                     case "pinBarOppositeWickMaxRangeRatio" -> c.pinBarOppositeWickMaxRangeRatio = Double.parseDouble(v);
                     case "engulfingMinBodyMultiple"    -> c.engulfingMinBodyMultiple = Double.parseDouble(v);
                     case "engulfingMinBodyAtrMult"     -> c.engulfingMinBodyAtrMult = Double.parseDouble(v);
+                    case "engulfingMaxBodyAtrMult"     -> c.engulfingMaxBodyAtrMult = Double.parseDouble(v);
                     case "piercingPrevBodyAtrMult"     -> c.piercingPrevBodyAtrMult = Double.parseDouble(v);
                     case "piercingPenetrationPct"      -> c.piercingPenetrationPct = Double.parseDouble(v);
                     case "tweezerPrevBodyAtrMult"      -> c.tweezerPrevBodyAtrMult = Double.parseDouble(v);
@@ -719,8 +761,10 @@ public class RiskSettingsStore {
                     case "haramiInnerBodyMaxRatio"     -> c.haramiInnerBodyMaxRatio = Double.parseDouble(v);
                     case "dojiBodyMaxRangeRatio"       -> c.dojiBodyMaxRangeRatio = Double.parseDouble(v);
                     case "dojiConfirmBodyAtrMult"      -> c.dojiConfirmBodyAtrMult = Double.parseDouble(v);
+                    case "dojiConfirmMaxBodyAtrMult"   -> c.dojiConfirmMaxBodyAtrMult = Double.parseDouble(v);
                     case "dojiPrevBodyAtrMult"         -> c.dojiConfirmBodyAtrMult = Double.parseDouble(v); // legacy key
                     case "starOuterBodyAtrMult"        -> c.starOuterBodyAtrMult = Double.parseDouble(v);
+                    case "starOuterMaxBodyAtrMult"     -> c.starOuterMaxBodyAtrMult = Double.parseDouble(v);
                     case "starMiddleBodyMaxMultOfOuter" -> c.starMiddleBodyMaxMultOfOuter = Double.parseDouble(v);
                     case "levelTouchToleranceAtr"      -> c.levelTouchToleranceAtr = Math.max(0, Double.parseDouble(v));
                     // Legacy small-candle / volume filter keys — features removed.
@@ -771,6 +815,9 @@ public class RiskSettingsStore {
                     case "skipHtfR3S3NormalDays" -> c.skipHtfR3S3NormalDays = Boolean.parseBoolean(v);
                     case "skipHtfR4S4NormalDays" -> c.skipHtfR4S4NormalDays = Boolean.parseBoolean(v);
                     case "enableMeanReversionTrades" -> c.enableMeanReversionTrades = Boolean.parseBoolean(v);
+                    case "enableMagnetTrades"        -> c.enableMagnetTrades        = Boolean.parseBoolean(v);
+                    case "magnetTradesQtyFactor"     -> c.magnetTradesQtyFactor     = Double.parseDouble(v);
+                    case "meanReversionQtyFactor"    -> c.meanReversionQtyFactor    = Double.parseDouble(v);
                     case "atrPeriod" -> c.atrPeriod = Integer.parseInt(v);
                     case "signalSource"      -> c.signalSource = v;
                     case "scannerTimeframe"  -> c.scannerTimeframe = Integer.parseInt(v);

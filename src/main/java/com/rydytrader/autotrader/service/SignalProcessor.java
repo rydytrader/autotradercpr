@@ -178,16 +178,10 @@ public class SignalProcessor {
         // ── 4c3. Compute base quantity (uses SL for risk-based sizing) ─────────
         int baseQty = quantityService.computeBaseQty(symbol, close, sl, setup);
 
-        // ── 4d. Small candle filter ─────────────────────────────────────────────
-        // ── 4d2. Large candle body filter ──────────────────────────────────────
-        if (riskSettings.isEnableLargeCandleBodyFilter() && candleOpen > 0 && atr > 0) {
-            double candleBody = Math.abs(close - candleOpen);
-            double largeThreshold = riskSettings.getLargeCandleBodyAtrThreshold();
-            if (candleBody > atr * largeThreshold) {
-                return ProcessedSignal.rejected(setup, symbol,
-                    "Large candle body (" + fmt(candleBody) + ") > " + largeThreshold + " ATR (" + fmt(atr * largeThreshold) + ") — exhaustion risk");
-            }
-        }
+        // Global large-candle filter retired — each named pattern (Marubozu, Engulfing,
+        // Doji reversal, Morning/Evening star) now enforces its own per-pattern body cap
+        // inside CandlePatternDetector. Patterns without a body floor (Hammer, Piercing,
+        // Tweezer, Three Inside) rely on their structural signature instead.
 
         // ── 4e2b. HTF Hurdle: prior 15-min close must have cleared the nearest weekly level ──
         // When a 5-min breakout closes above (for buys) the nearest weekly hurdle, the previous
@@ -306,13 +300,28 @@ public class SignalProcessor {
         int qty = baseQty;
 
         // ── 4i2. Probability-based qty adjustment ─────────────────────────────
-        // MPT (medium): qty × mptQtyFactor (default 0.75). LPT classification has been
-        // removed; the bot now hard-rejects NIFTY-misaligned trades instead of downsizing.
+        // MPT (medium): qty × per-family factor. Setup type picks the factor:
+        //   • Magnet (S1+PDL buys, R1+PDH sells)      → magnetTradesQtyFactor  (default 0.75)
+        //   • Deep mean-rev (S2/S3/S4, R2/R3/R4)      → meanReversionQtyFactor (default 0.50)
+        //   • Any other MPT trade (currently none)    → mptQtyFactor           (legacy fallback)
+        // LPT classification has been removed; the bot hard-rejects NIFTY-misaligned trades.
         if ("MPT".equals(probability)) {
-            double factor = riskSettings.getMptQtyFactor();
+            double factor;
+            String tag;
+            if ("BUY_ABOVE_S1_PDL".equals(setup) || "SELL_BELOW_R1_PDH".equals(setup)) {
+                factor = riskSettings.getMagnetTradesQtyFactor();
+                tag = "MAGNET";
+            } else if ("BUY_ABOVE_S2".equals(setup) || "BUY_ABOVE_S3".equals(setup) || "BUY_ABOVE_S4".equals(setup)
+                    || "SELL_BELOW_R2".equals(setup) || "SELL_BELOW_R3".equals(setup) || "SELL_BELOW_R4".equals(setup)) {
+                factor = riskSettings.getMeanReversionQtyFactor();
+                tag = "MEAN_REVERSION";
+            } else {
+                factor = riskSettings.getMptQtyFactor();
+                tag = "MPT";
+            }
             int reduced = Math.max(1, (int)(qty * factor));
-            eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (MPT ×" + factor + "): " + qty + " -> " + reduced);
-            adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — MPT probability)");
+            eventService.log("[INFO] " + symbol + " " + setup + " qty reduced (" + tag + " ×" + factor + "): " + qty + " -> " + reduced);
+            adjustments.add("Qty " + qty + " → " + reduced + " (×" + factor + " — " + tag + ")");
             qty = reduced;
         }
 

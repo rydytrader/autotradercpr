@@ -79,11 +79,11 @@ public class SettingsController {
         result.put("enableTargetTolerance", riskSettings.isEnableTargetTolerance());
         result.put("targetToleranceAtr", riskSettings.getTargetToleranceAtr());
         result.put("enableIndexAlignment", riskSettings.isEnableIndexAlignment());
-        result.put("enableLargeCandleBodyFilter", riskSettings.isEnableLargeCandleBodyFilter());
-        result.put("largeCandleBodyAtrThreshold", riskSettings.getLargeCandleBodyAtrThreshold());
         result.put("marubozuBodyAtrMult",          riskSettings.getMarubozuBodyAtrMult());
+        result.put("marubozuMaxBodyAtrMult",       riskSettings.getMarubozuMaxBodyAtrMult());
         result.put("marubozuMaxWicksPctOfBody",    riskSettings.getMarubozuMaxWicksPctOfBody());
         result.put("goodSizeCandleBodyAtrMult",          riskSettings.getGoodSizeCandleBodyAtrMult());
+        result.put("goodSizeCandleMaxBodyAtrMult",       riskSettings.getGoodSizeCandleMaxBodyAtrMult());
         result.put("goodSizeCandleMaxOppositeWickRatio", riskSettings.getGoodSizeCandleMaxOppositeWickRatio());
         result.put("pinBarRejectionWickBodyMult",  riskSettings.getPinBarRejectionWickBodyMult());
         result.put("pinBarOppositeWickBodyMult",   riskSettings.getPinBarOppositeWickBodyMult());
@@ -92,6 +92,7 @@ public class SettingsController {
         result.put("pinBarOppositeWickMaxRangeRatio", riskSettings.getPinBarOppositeWickMaxRangeRatio());
         result.put("engulfingMinBodyMultiple",     riskSettings.getEngulfingMinBodyMultiple());
         result.put("engulfingMinBodyAtrMult",      riskSettings.getEngulfingMinBodyAtrMult());
+        result.put("engulfingMaxBodyAtrMult",      riskSettings.getEngulfingMaxBodyAtrMult());
         result.put("piercingPrevBodyAtrMult",      riskSettings.getPiercingPrevBodyAtrMult());
         result.put("piercingPenetrationPct",       riskSettings.getPiercingPenetrationPct());
         result.put("tweezerPrevBodyAtrMult",       riskSettings.getTweezerPrevBodyAtrMult());
@@ -100,7 +101,9 @@ public class SettingsController {
         result.put("haramiInnerBodyMaxRatio",      riskSettings.getHaramiInnerBodyMaxRatio());
         result.put("dojiBodyMaxRangeRatio",        riskSettings.getDojiBodyMaxRangeRatio());
         result.put("dojiConfirmBodyAtrMult",       riskSettings.getDojiConfirmBodyAtrMult());
+        result.put("dojiConfirmMaxBodyAtrMult",    riskSettings.getDojiConfirmMaxBodyAtrMult());
         result.put("starOuterBodyAtrMult",         riskSettings.getStarOuterBodyAtrMult());
+        result.put("starOuterMaxBodyAtrMult",      riskSettings.getStarOuterMaxBodyAtrMult());
         result.put("starMiddleBodyMaxMultOfOuter", riskSettings.getStarMiddleBodyMaxMultOfOuter());
         result.put("levelTouchToleranceAtr",       riskSettings.getLevelTouchToleranceAtr());
         result.put("enableTrailingSl", riskSettings.isEnableTrailingSl(effectiveMode));
@@ -117,6 +120,9 @@ public class SettingsController {
         result.put("skipHtfR3S3NormalDays", riskSettings.isSkipHtfR3S3NormalDays());
         result.put("skipHtfR4S4NormalDays", riskSettings.isSkipHtfR4S4NormalDays());
         result.put("enableMeanReversionTrades", riskSettings.isEnableMeanReversionTrades());
+        result.put("enableMagnetTrades",        riskSettings.isEnableMagnetTrades());
+        result.put("magnetTradesQtyFactor",     riskSettings.getMagnetTradesQtyFactor());
+        result.put("meanReversionQtyFactor",    riskSettings.getMeanReversionQtyFactor());
         result.put("atrPeriod", riskSettings.getAtrPeriod());
         result.put("signalSource", riskSettings.getSignalSource());
         result.put("scannerTimeframe", riskSettings.getScannerTimeframe());
@@ -188,11 +194,11 @@ public class SettingsController {
             if (body.containsKey("enableTargetTolerance")) riskSettings.setEnableTargetTolerance(Boolean.parseBoolean(body.get("enableTargetTolerance").toString()));
             if (body.containsKey("targetToleranceAtr")) riskSettings.setTargetToleranceAtr(Double.parseDouble(body.get("targetToleranceAtr").toString()));
             if (body.containsKey("enableIndexAlignment")) riskSettings.setEnableIndexAlignment(Boolean.parseBoolean(body.get("enableIndexAlignment").toString()));
-            if (body.containsKey("enableLargeCandleBodyFilter")) riskSettings.setEnableLargeCandleBodyFilter(Boolean.parseBoolean(body.get("enableLargeCandleBodyFilter").toString()));
-            if (body.containsKey("largeCandleBodyAtrThreshold")) riskSettings.setLargeCandleBodyAtrThreshold(Double.parseDouble(body.get("largeCandleBodyAtrThreshold").toString()));
             if (body.containsKey("marubozuBodyAtrMult"))         riskSettings.setMarubozuBodyAtrMult(Double.parseDouble(body.get("marubozuBodyAtrMult").toString()));
+            if (body.containsKey("marubozuMaxBodyAtrMult"))      riskSettings.setMarubozuMaxBodyAtrMult(Double.parseDouble(body.get("marubozuMaxBodyAtrMult").toString()));
             if (body.containsKey("marubozuMaxWicksPctOfBody"))   riskSettings.setMarubozuMaxWicksPctOfBody(Double.parseDouble(body.get("marubozuMaxWicksPctOfBody").toString()));
             if (body.containsKey("goodSizeCandleBodyAtrMult"))   riskSettings.setGoodSizeCandleBodyAtrMult(Double.parseDouble(body.get("goodSizeCandleBodyAtrMult").toString()));
+            if (body.containsKey("goodSizeCandleMaxBodyAtrMult")) riskSettings.setGoodSizeCandleMaxBodyAtrMult(Double.parseDouble(body.get("goodSizeCandleMaxBodyAtrMult").toString()));
             if (body.containsKey("goodSizeCandleMaxOppositeWickRatio")) riskSettings.setGoodSizeCandleMaxOppositeWickRatio(Double.parseDouble(body.get("goodSizeCandleMaxOppositeWickRatio").toString()));
             if (body.containsKey("pinBarRejectionWickBodyMult")) riskSettings.setPinBarRejectionWickBodyMult(Double.parseDouble(body.get("pinBarRejectionWickBodyMult").toString()));
             if (body.containsKey("pinBarOppositeWickBodyMult"))  riskSettings.setPinBarOppositeWickBodyMult(Double.parseDouble(body.get("pinBarOppositeWickBodyMult").toString()));
@@ -201,6 +207,7 @@ public class SettingsController {
             if (body.containsKey("pinBarOppositeWickMaxRangeRatio")) riskSettings.setPinBarOppositeWickMaxRangeRatio(Double.parseDouble(body.get("pinBarOppositeWickMaxRangeRatio").toString()));
             if (body.containsKey("engulfingMinBodyMultiple"))    riskSettings.setEngulfingMinBodyMultiple(Double.parseDouble(body.get("engulfingMinBodyMultiple").toString()));
             if (body.containsKey("engulfingMinBodyAtrMult"))     riskSettings.setEngulfingMinBodyAtrMult(Double.parseDouble(body.get("engulfingMinBodyAtrMult").toString()));
+            if (body.containsKey("engulfingMaxBodyAtrMult"))     riskSettings.setEngulfingMaxBodyAtrMult(Double.parseDouble(body.get("engulfingMaxBodyAtrMult").toString()));
             if (body.containsKey("piercingPrevBodyAtrMult"))     riskSettings.setPiercingPrevBodyAtrMult(Double.parseDouble(body.get("piercingPrevBodyAtrMult").toString()));
             if (body.containsKey("piercingPenetrationPct"))      riskSettings.setPiercingPenetrationPct(Double.parseDouble(body.get("piercingPenetrationPct").toString()));
             if (body.containsKey("tweezerPrevBodyAtrMult"))      riskSettings.setTweezerPrevBodyAtrMult(Double.parseDouble(body.get("tweezerPrevBodyAtrMult").toString()));
@@ -210,7 +217,9 @@ public class SettingsController {
             if (body.containsKey("dojiBodyMaxRangeRatio"))       riskSettings.setDojiBodyMaxRangeRatio(Double.parseDouble(body.get("dojiBodyMaxRangeRatio").toString()));
             if (body.containsKey("dojiConfirmBodyAtrMult"))      riskSettings.setDojiConfirmBodyAtrMult(Double.parseDouble(body.get("dojiConfirmBodyAtrMult").toString()));
             else if (body.containsKey("dojiPrevBodyAtrMult"))    riskSettings.setDojiConfirmBodyAtrMult(Double.parseDouble(body.get("dojiPrevBodyAtrMult").toString())); // legacy key
+            if (body.containsKey("dojiConfirmMaxBodyAtrMult"))   riskSettings.setDojiConfirmMaxBodyAtrMult(Double.parseDouble(body.get("dojiConfirmMaxBodyAtrMult").toString()));
             if (body.containsKey("starOuterBodyAtrMult"))        riskSettings.setStarOuterBodyAtrMult(Double.parseDouble(body.get("starOuterBodyAtrMult").toString()));
+            if (body.containsKey("starOuterMaxBodyAtrMult"))     riskSettings.setStarOuterMaxBodyAtrMult(Double.parseDouble(body.get("starOuterMaxBodyAtrMult").toString()));
             if (body.containsKey("starMiddleBodyMaxMultOfOuter")) riskSettings.setStarMiddleBodyMaxMultOfOuter(Double.parseDouble(body.get("starMiddleBodyMaxMultOfOuter").toString()));
             if (body.containsKey("levelTouchToleranceAtr"))      riskSettings.setLevelTouchToleranceAtr(Double.parseDouble(body.get("levelTouchToleranceAtr").toString()));
             if (body.containsKey("enableTrailingSl")) riskSettings.setEnableTrailingSl(effectiveMode, Boolean.parseBoolean(body.get("enableTrailingSl").toString()));
@@ -231,6 +240,9 @@ public class SettingsController {
             if (body.containsKey("skipHtfR3S3NormalDays")) riskSettings.setSkipHtfR3S3NormalDays(Boolean.parseBoolean(body.get("skipHtfR3S3NormalDays").toString()));
             if (body.containsKey("skipHtfR4S4NormalDays")) riskSettings.setSkipHtfR4S4NormalDays(Boolean.parseBoolean(body.get("skipHtfR4S4NormalDays").toString()));
             if (body.containsKey("enableMeanReversionTrades")) riskSettings.setEnableMeanReversionTrades(Boolean.parseBoolean(body.get("enableMeanReversionTrades").toString()));
+            if (body.containsKey("enableMagnetTrades"))        riskSettings.setEnableMagnetTrades(Boolean.parseBoolean(body.get("enableMagnetTrades").toString()));
+            if (body.containsKey("magnetTradesQtyFactor"))     riskSettings.setMagnetTradesQtyFactor(Double.parseDouble(body.get("magnetTradesQtyFactor").toString()));
+            if (body.containsKey("meanReversionQtyFactor"))    riskSettings.setMeanReversionQtyFactor(Double.parseDouble(body.get("meanReversionQtyFactor").toString()));
             if (body.containsKey("atrPeriod")) riskSettings.setAtrPeriod(Integer.parseInt(body.get("atrPeriod").toString()));
             if (body.containsKey("signalSource")) riskSettings.setSignalSource(body.get("signalSource").toString());
             if (body.containsKey("scannerTimeframe")) riskSettings.setScannerTimeframe(Integer.parseInt(body.get("scannerTimeframe").toString()));
