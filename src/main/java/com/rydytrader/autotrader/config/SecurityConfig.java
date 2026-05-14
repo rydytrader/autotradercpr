@@ -48,12 +48,29 @@ public class SecurityConfig {
         CsrfTokenRequestAttributeHandler csrfHandler = new CsrfTokenRequestAttributeHandler();
         csrfHandler.setCsrfRequestAttributeName("_csrf");
 
+        // Only save real browser navigations as the "post-login redirect target". Without this,
+        // a background fetch('/api/user/me') from common.js that 302s to /login gets captured as
+        // the saved request — so after the user later logs in via /h2-console, Spring replays
+        // the stale XHR URL instead of taking them to /h2-console.
+        org.springframework.security.web.savedrequest.HttpSessionRequestCache requestCache =
+            new org.springframework.security.web.savedrequest.HttpSessionRequestCache();
+        requestCache.setRequestMatcher(req -> {
+            String accept = req.getHeader("Accept");
+            String xrw    = req.getHeader("X-Requested-With");
+            if ("XMLHttpRequest".equalsIgnoreCase(xrw)) return false;
+            if (accept != null && accept.contains("application/json") && !accept.contains("text/html")) return false;
+            if (req.getRequestURI() != null && req.getRequestURI().startsWith("/api/")) return false;
+            return true;
+        });
+
         http
+            .requestCache(rc -> rc.requestCache(requestCache))
             .csrf(csrf -> csrf
                 .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                 .csrfTokenRequestHandler(csrfHandler)
-                // Exempt TradingView webhook, login and logout from CSRF
-                .ignoringRequestMatchers("/placeorder", "/login", "/app-logout")
+                // Exempt TradingView webhook, login, logout, and the H2 console
+                // (its own form login POSTs without a Spring Security CSRF token).
+                .ignoringRequestMatchers("/placeorder", "/login", "/app-logout", "/h2-console/**")
             )
             // Eagerly load CSRF token so the cookie is always set
             .addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class)
@@ -84,7 +101,9 @@ public class SecurityConfig {
                 .loginProcessingUrl("/login")
                 .usernameParameter("email")
                 .passwordParameter("password")
-                .defaultSuccessUrl("/home", true)
+                // alwaysUse=false → after login, return to the originally requested URL
+                // (e.g. /h2-console) instead of always bouncing to /home.
+                .defaultSuccessUrl("/home", false)
                 .failureUrl("/login?error=true")
                 .permitAll()
             )

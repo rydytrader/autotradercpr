@@ -448,19 +448,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
             String buySetup = detectBuyBreakout(open, high, low, close, levels, atp, broken, fyersSymbol);
             if (buySetup != null) {
-                // VWAP setups: reject when close sits inside either the R1/PDH band or the
-                // S1/PDL band — those zones are treated as range bands (like CPR). Inside
-                // CPR is already rejected downstream by the LTF gate (LTF_OPPOSED). The
-                // gaps BETWEEN bands (between CPR and S1/PDL, between CPR and R1/PDH, plus
-                // the open territory beyond R1/PDH or below S1/PDL) remain allowed.
-                if ("BUY_ABOVE_VWAP".equals(buySetup)) {
-                    String rangeReject = vwapBandReject(close, levels);
-                    if (rangeReject != null) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " — skipped, " + rangeReject);
-                        recordRejection(fyersSymbol, buySetup, close, "VWAP_INSIDE_RANGE", rangeReject);
-                        return;
-                    }
-                }
                 // Master toggle for the counter-trend family — DH classification depends on
                 // close-vs-CPR position (DH above CPR top is trend-following, not mean-rev).
                 if (isMeanReversionOrMagnet(buySetup, close, levels.getTc(), levels.getBc())
@@ -492,14 +479,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 }
                 // SMA level-count filter: skip if any CPR zone sits between SMA and broken level
                 if (evaluateSmaFilter(fyersSymbol, buySetup, close, levels, atr) == 2) return;
-                // VWAP-specific NIFTY alignment — always-on for BUY_ABOVE_VWAP, hard reject if
-                // NIFTY isn't BULLISH or BULLISH_REVERSAL.
-                String vwapAlignReject = checkVwapNiftyAlignment(buySetup, true);
-                if (vwapAlignReject != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + vwapAlignReject);
-                    recordRejection(fyersSymbol, buySetup, close, "NIFTY_OPPOSED", vwapAlignReject);
-                    return;
-                }
                 // NIFTY index alignment filter — misaligned trades are hard-rejected. The
                 // previous LPT downgrade path has been removed: a stock-trade direction that
                 // opposes the NIFTY composite trend has no edge on its own.
@@ -572,16 +551,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
             String sellSetup = detectSellBreakout(open, high, low, close, levels, atp, broken, fyersSymbol);
             if (sellSetup != null) {
-                // VWAP setups: reject when close sits inside either the R1/PDH or S1/PDL
-                // band — mirror of the BUY_ABOVE_VWAP gate above.
-                if ("SELL_BELOW_VWAP".equals(sellSetup)) {
-                    String rangeReject = vwapBandReject(close, levels);
-                    if (rangeReject != null) {
-                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " — skipped, " + rangeReject);
-                        recordRejection(fyersSymbol, sellSetup, close, "VWAP_INSIDE_RANGE", rangeReject);
-                        return;
-                    }
-                }
                 // Master toggle for the counter-trend family — DL classification depends on
                 // close-vs-CPR position (DL below CPR bottom is trend-following, not mean-rev).
                 if (isMeanReversionOrMagnet(sellSetup, close, levels.getTc(), levels.getBc())
@@ -610,14 +579,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 }
                 // SMA level-count filter: skip if any CPR zone sits between SMA and broken level
                 if (evaluateSmaFilter(fyersSymbol, sellSetup, close, levels, atr) == 2) return;
-                // VWAP-specific NIFTY alignment — always-on for SELL_BELOW_VWAP, hard reject if
-                // NIFTY isn't BEARISH or BEARISH_REVERSAL.
-                String vwapAlignReject = checkVwapNiftyAlignment(sellSetup, false);
-                if (vwapAlignReject != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + vwapAlignReject);
-                    recordRejection(fyersSymbol, sellSetup, close, "NIFTY_OPPOSED", vwapAlignReject);
-                    return;
-                }
                 // NIFTY index alignment filter — misaligned trades are hard-rejected. The
                 // previous LPT downgrade path has been removed.
                 if (checkIndexAlignment(fyersSymbol, sellSetup, false) == NiftyAlignStatus.SKIP) {
@@ -763,15 +724,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             String hit = checkBuyAtLevel("BUY_ABOVE_S4", s4, open, high, low, close, atrForPattern, broken, armed, fyersSymbol);
             if (hit != null) return hit;
         }
-        // VWAP — appended at the end of the priority chain so CPR levels always win on a
-        // simultaneous break. Live per-stock VWAP (Fyers ATP). getAtp returns 0 if stale-day
-        // or pre-9:30 (no ticks yet); the guard short-circuits silently in that case.
-        double vwapBuy = candleAggregator.getAtp(fyersSymbol);
-        if (vwapBuy > 0) {
-            String hit = checkBuyAtLevel("BUY_ABOVE_VWAP", vwapBuy, open, high, low, close, atrForPattern, broken, armed, fyersSymbol);
-            if (hit != null) return hit;
-        }
-
         return null;
     }
 
@@ -856,13 +808,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             String hit = checkSellAtLevel("SELL_BELOW_R4", r4v, open, high, low, close, atrForPattern, broken, armed, fyersSymbol);
             if (hit != null) return hit;
         }
-        // VWAP — appended at the end of the priority chain (mirror of buy side).
-        double vwapSell = candleAggregator.getAtp(fyersSymbol);
-        if (vwapSell > 0) {
-            String hit = checkSellAtLevel("SELL_BELOW_VWAP", vwapSell, open, high, low, close, atrForPattern, broken, armed, fyersSymbol);
-            if (hit != null) return hit;
-        }
-
         return null;
     }
 
@@ -1195,10 +1140,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         payload.put("bc", levels.getBc());
         payload.put("dayHigh", candleAggregator.getDayHighBeforeLast(fyersSymbol));
         payload.put("dayLow", candleAggregator.getDayLowBeforeLast(fyersSymbol));
-        // VWAP is needed by SignalProcessor for BUY_ABOVE_VWAP / SELL_BELOW_VWAP setups
-        // (breakout level + structural SL anchor). Captured here at fire time so the entry
-        // uses the same VWAP value the scanner detected the break against.
-        payload.put("vwap", candleAggregator.getAtp(fyersSymbol));
         if (scannerNote != null && !scannerNote.isEmpty()) payload.put("scannerNote", scannerNote);
 
         // 5-min SMA trend snapshot at signal time — single SMA20 trendline only.
@@ -1262,35 +1203,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      */
     /** Result of the NIFTY alignment check. SKIP = trade rejected; OK = aligned or check off. */
     private enum NiftyAlignStatus { OK, SKIP }
-
-    /**
-     * VWAP-specific NIFTY alignment guard. Gated by the {@code enableIndexAlignment} toggle
-     * (matches the global alignment filter's gating) but applies a stricter rule when on:
-     * <ul>
-     *   <li>{@code BUY_ABOVE_VWAP} requires NIFTY state ∈ {BULLISH, BULLISH_REVERSAL}.</li>
-     *   <li>{@code SELL_BELOW_VWAP} requires NIFTY state ∈ {BEARISH, BEARISH_REVERSAL}.</li>
-     *   <li>Any other NIFTY state (SIDEWAYS, NEUTRAL, opposite-direction) → hard reject.
-     *       VWAP is itself a trend-following signal, taking it against NIFTY direction is
-     *       high-risk regardless of size reduction.</li>
-     * </ul>
-     * No-op for non-VWAP setups, and no-op when the alignment toggle is off (returns null).
-     * Returns null on pass, a rejection-reason string to reject.
-     */
-    private String checkVwapNiftyAlignment(String setup, boolean isBuy) {
-        boolean isVwapSetup = isBuy
-            ? "BUY_ABOVE_VWAP".equals(setup)
-            : "SELL_BELOW_VWAP".equals(setup);
-        if (!isVwapSetup) return null;
-        if (!riskSettings.isEnableIndexAlignment()) return null; // toggle off → bypass
-        if (indexTrendService == null) return null; // index data unavailable — fail-open
-        String state = indexTrendService.getStickyState();
-        boolean aligned = isBuy
-            ? ("BULLISH".equals(state) || "BULLISH_REVERSAL".equals(state))
-            : ("BEARISH".equals(state) || "BEARISH_REVERSAL".equals(state));
-        if (aligned) return null;
-        return "NIFTY " + state + " — " + setup + " requires "
-            + (isBuy ? "BULLISH or BULLISH_REVERSAL" : "BEARISH or BEARISH_REVERSAL");
-    }
 
     /**
      * NIFTY index alignment filter.
@@ -1734,28 +1646,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      * R2/R3/R4 sells). Gated by the <code>enableMeanReversionTrades</code> master toggle and
      * bypass the LTF gate at probability assignment.
      */
-    /**
-     * Reject VWAP setups whose close lands inside the R1/PDH band or the S1/PDL band —
-     * those zones are treated as resistance/support ranges (like CPR) where neither a
-     * mean-reversion nor a trend thesis has confirmed. Inside-CPR is handled separately
-     * by the existing LTF gate. Returns the rejection detail string, or null if the close
-     * is outside both bands.
-     */
-    private static String vwapBandReject(double close, CprLevels levels) {
-        double r1Top = Math.max(levels.getR1(), levels.getPh());
-        double r1Bot = Math.min(levels.getR1(), levels.getPh());
-        if (r1Top > 0 && r1Bot > 0 && close > r1Bot && close < r1Top) {
-            return "close inside R1/PDH band; close=" + String.format("%.2f", close)
-                + " band=[" + String.format("%.2f", r1Bot) + "–" + String.format("%.2f", r1Top) + "]";
-        }
-        double s1Top = Math.max(levels.getS1(), levels.getPl());
-        double s1Bot = Math.min(levels.getS1(), levels.getPl());
-        if (s1Top > 0 && s1Bot > 0 && close > s1Bot && close < s1Top) {
-            return "close inside S1/PDL band; close=" + String.format("%.2f", close)
-                + " band=[" + String.format("%.2f", s1Bot) + "–" + String.format("%.2f", s1Top) + "]";
-        }
-        return null;
-    }
 
     private static boolean isMeanReversionOrMagnet(String setup, double close, double tc, double bc) {
         if (setup == null) return false;
@@ -1769,18 +1659,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             || "SELL_BELOW_R2".equals(setup)
             || "SELL_BELOW_R3".equals(setup)
             || "SELL_BELOW_R4".equals(setup);
-        if (staticCt) return true;
-
-        // VWAP reclaim — counter-trend only when the close is on the opposite side of CPR
-        // from the trade direction (BUY_ABOVE_VWAP from below CPR / SELL_BELOW_VWAP from
-        // above CPR). On the same side, it's a normal trend continuation and the master
-        // mean-reversion toggle does not gate it.
-        double cprTop = Math.max(tc, bc);
-        double cprBot = Math.min(tc, bc);
-        if ("BUY_ABOVE_VWAP".equals(setup)  && close < cprBot) return true;
-        if ("SELL_BELOW_VWAP".equals(setup) && close > cprTop) return true;
-
-        return false;
+        return staticCt;
     }
 
     private boolean isProbabilityEnabled(String prob) {
@@ -2070,7 +1949,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (s2    > 0 && close > s2    && s2    > bestBuyLevel) { bestBuyLevel = s2;    buy = "BUY_ABOVE_S2"; }
         if (s3    > 0 && close > s3    && s3    > bestBuyLevel) { bestBuyLevel = s3;    buy = "BUY_ABOVE_S3"; }
         if (s4    > 0 && close > s4    && s4    > bestBuyLevel) { bestBuyLevel = s4;    buy = "BUY_ABOVE_S4"; }
-        if (vwap  > 0 && close > vwap  && vwap  > bestBuyLevel) { bestBuyLevel = vwap;  buy = "BUY_ABOVE_VWAP"; }
 
         // Sell-side: pick the candidate with the LOWEST level value strictly ABOVE close.
         String sell = null;
@@ -2084,7 +1962,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (r2     > 0 && close < r2     && r2     < bestSellLevel) { bestSellLevel = r2;     sell = "SELL_BELOW_R2"; }
         if (r3     > 0 && close < r3     && r3     < bestSellLevel) { bestSellLevel = r3;     sell = "SELL_BELOW_R3"; }
         if (r4     > 0 && close < r4     && r4     < bestSellLevel) { bestSellLevel = r4;     sell = "SELL_BELOW_R4"; }
-        if (vwap   > 0 && close < vwap   && vwap   < bestSellLevel) { bestSellLevel = vwap;   sell = "SELL_BELOW_VWAP"; }
 
         if (buy != null)  armedBuyLevel.put(fyersSymbol, buy);
         else              armedBuyLevel.remove(fyersSymbol);

@@ -623,10 +623,15 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         // 3. Watchlist event (lightweight LTP + change% + volume for scanner page)
         String watchlistJson = null;
         List<String> wl = getWatchlist();
-        if (!wl.isEmpty()) {
+        // Add NIFTY 50 index to the SSE payload so the scanner's NIFTY card can update
+        // ltp/change/sma in real time. buildWatchlist() excludes indices because they're not
+        // tradable, but the dashboard still needs NIFTY's tick data.
+        List<String> ssePayloadSymbols = new ArrayList<>(wl);
+        ssePayloadSymbols.add(IndexTrendService.NIFTY_SYMBOL);
+        if (!ssePayloadSymbols.isEmpty()) {
             try {
                 Map<String, Map<String, Object>> wlPayload = new LinkedHashMap<>();
-                for (String sym : wl) {
+                for (String sym : ssePayloadSymbols) {
                     double ltp = candleAggregator.getLtp(sym);
                     if (ltp <= 0) ltp = getLtp(sym);  // fallback to TickData (same source as scrolling ticker)
                     if (ltp <= 0) continue;

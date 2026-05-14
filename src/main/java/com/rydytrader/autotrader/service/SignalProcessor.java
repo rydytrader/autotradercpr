@@ -53,7 +53,6 @@ public class SignalProcessor {
         // ATR comes from the alert payload below, so we defer pattern check until after atr is parsed.
         double close       = dbl(alert, "close");
         double atr         = dbl(alert, "atr");
-        double dayOpen     = dbl(alert, "dayOpen");
         // Volume snapshot at signal time: breakout candle volume vs 20-candle average
         try {
             CandleAggregator.CandleBar breakoutCandle = candleAggregator.getLastCompletedCandle(symbol);
@@ -71,14 +70,7 @@ public class SignalProcessor {
         double s1 = dbl(alert, "s1"), s2 = dbl(alert, "s2"), s3 = dbl(alert, "s3"), s4 = dbl(alert, "s4");
         double ph = dbl(alert, "ph"), pl = dbl(alert, "pl");
         double tc = dbl(alert, "tc"), bc = dbl(alert, "bc");
-        // VWAP — present only for BUY_ABOVE_VWAP / SELL_BELOW_VWAP setups, captured at signal-fire
-        // time by BreakoutScanner. 0 for all CPR-level setups (those switch cases default to 0).
-        double vwap = dbl(alert, "vwap");
         double candleOpen = dbl(alert, "candleOpen");
-        double candleHigh = dbl(alert, "candleHigh");
-        double candleLow  = dbl(alert, "candleLow");
-        double dayHigh = dbl(alert, "dayHigh");
-        double dayLow  = dbl(alert, "dayLow");
 
         // ── Reject if ATR is invalid (NaN or zero — Pine Script may send NaN for insufficient bars)
         if (Double.isNaN(atr) || atr <= 0) {
@@ -151,7 +143,7 @@ public class SignalProcessor {
         }
 
         // ── 4c. Compute breakout level ──────────────────────────────────────────
-        double breakoutLevel = computeBreakoutLevel(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc, vwap);
+        double breakoutLevel = computeBreakoutLevel(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
 
         // ── 4c2. Compute stop loss (needed for risk-based qty) ─────────────────
         // Always compute the close-based (default) SL. If structural SL is enabled, anchor
@@ -161,7 +153,7 @@ public class SignalProcessor {
         double sl = defaultSl;
         boolean useStructuralSl = false;
         if (riskSettings.isEnableStructuralSl()) {
-            double anchor = computeStructuralAnchor(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc, vwap);
+            double anchor = computeStructuralAnchor(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
             if (anchor > 0) {
                 double buffer = riskSettings.getStructuralSlBufferAtr();
                 // Single-level setups (R2/R3/R4, S2/S3/S4) lack the zone-width cushion that
@@ -259,7 +251,7 @@ public class SignalProcessor {
         // hard-rejected upstream in BreakoutScanner.)
 
         // ── 4f. Compute target ──────────────────────────────────────────────────
-        double[] targets = computeTargets(setup, close, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc, vwap, atr);
+        double[] targets = computeTargets(setup, close, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc, atr);
         double defaultTarget = targets[0];
         double target = defaultTarget;
 
@@ -359,7 +351,7 @@ public class SignalProcessor {
         // [SL] line
         desc.append("\n").append(ts).append(" [SL] ").append(fmt(sl));
         if (useStructuralSl) {
-            double anchor = computeStructuralAnchor(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc, vwap);
+            double anchor = computeStructuralAnchor(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
             double base = riskSettings.getStructuralSlBufferAtr();
             double extra = isSingleLevelSetup(setup) ? riskSettings.getSingleLevelSlBufferAtr() : 0;
             desc.append(" (structural anchor ").append(fmt(anchor))
@@ -592,8 +584,7 @@ public class SignalProcessor {
             case "BUY_ABOVE_R2", "BUY_ABOVE_R3", "BUY_ABOVE_R4",
                  "BUY_ABOVE_S2", "BUY_ABOVE_S3", "BUY_ABOVE_S4",
                  "SELL_BELOW_R2", "SELL_BELOW_R3", "SELL_BELOW_R4",
-                 "SELL_BELOW_S2", "SELL_BELOW_S3", "SELL_BELOW_S4",
-                 "BUY_ABOVE_VWAP", "SELL_BELOW_VWAP" -> true;
+                 "SELL_BELOW_S2", "SELL_BELOW_S3", "SELL_BELOW_S4" -> true;
             default -> false;
         };
     }
@@ -601,7 +592,7 @@ public class SignalProcessor {
     private static double computeStructuralAnchor(String setup,
             double r1, double r2, double r3, double r4,
             double s1, double s2, double s3, double s4,
-            double ph, double pl, double tc, double bc, double vwap) {
+            double ph, double pl, double tc, double bc) {
         return switch (setup) {
             case "BUY_ABOVE_CPR"     -> Math.min(tc, bc);
             case "SELL_BELOW_CPR"    -> Math.max(tc, bc);
@@ -615,9 +606,6 @@ public class SignalProcessor {
             case "BUY_ABOVE_S2", "SELL_BELOW_S2" -> s2;
             case "BUY_ABOVE_S3", "SELL_BELOW_S3" -> s3;
             case "BUY_ABOVE_S4", "SELL_BELOW_S4" -> s4;
-            // VWAP single-line setups — SL anchors to VWAP itself with single-level extra buffer
-            // applied via isSingleLevelSetup so the buffer-addition machinery kicks in.
-            case "BUY_ABOVE_VWAP", "SELL_BELOW_VWAP" -> vwap;
             default -> 0;
         };
     }
@@ -626,7 +614,7 @@ public class SignalProcessor {
     public static double computeBreakoutLevel(String setup,
             double r1, double r2, double r3, double r4,
             double s1, double s2, double s3, double s4,
-            double ph, double pl, double tc, double bc, double vwap) {
+            double ph, double pl, double tc, double bc) {
         return switch (setup) {
             case "BUY_ABOVE_CPR"    -> Math.max(tc, bc);
             case "BUY_ABOVE_R1_PDH" -> Math.max(r1, ph);
@@ -646,7 +634,6 @@ public class SignalProcessor {
             case "SELL_BELOW_R2"     -> r2;
             case "SELL_BELOW_R3"     -> r3;
             case "SELL_BELOW_R4"     -> r4;
-            case "BUY_ABOVE_VWAP", "SELL_BELOW_VWAP" -> vwap;
             default -> 0;
         };
     }
@@ -655,7 +642,7 @@ public class SignalProcessor {
     private double[] computeTargets(String setup, double close,
             double r1, double r2, double r3, double r4,
             double s1, double s2, double s3, double s4,
-            double ph, double pl, double tc, double bc, double vwap, double atr) {
+            double ph, double pl, double tc, double bc, double atr) {
         return switch (setup) {
             case "BUY_ABOVE_CPR"     -> new double[]{ Math.min(r1, ph), r2 };
             case "BUY_ABOVE_R1_PDH"  -> new double[]{ r2, r3 };
@@ -677,50 +664,8 @@ public class SignalProcessor {
             case "BUY_ABOVE_S4"       -> new double[]{ s3, s3 };
             case "BUY_ABOVE_S3"       -> new double[]{ s2, s2 };
             case "BUY_ABOVE_S2"       -> new double[]{ Math.min(s1, pl), Math.min(s1, pl) };
-            // VWAP setups — nearest CPR level beyond entry in trade direction, with ATR fallback.
-            case "BUY_ABOVE_VWAP"     -> vwapTargets(true,  close, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc, atr);
-            case "SELL_BELOW_VWAP"    -> vwapTargets(false, close, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc, atr);
             default -> new double[]{ 0, 0 };
         };
-    }
-
-    /**
-     * Targets for BUY_ABOVE_VWAP / SELL_BELOW_VWAP — VWAP is a single line, no "next VWAP"
-     * above/below, so we borrow from the CPR chain. Primary target = nearest CPR level
-     * strictly beyond entry in trade direction. Secondary target = next CPR after primary.
-     * If no CPR level lies in direction, fall back to entry ± (2 × atrMultiplier × ATR)
-     * so the target-shift / min-R-R machinery still has a measurable distance to evaluate.
-     */
-    private double[] vwapTargets(boolean isBuy, double entry,
-            double r1, double r2, double r3, double r4,
-            double s1, double s2, double s3, double s4,
-            double ph, double pl, double tc, double bc, double atr) {
-        // Build the full CPR-level set for the trade direction beyond entry.
-        // For BUY: levels strictly above entry, sorted ascending → nearest first.
-        // For SELL: levels strictly below entry, sorted descending → nearest first.
-        java.util.List<Double> cands = new java.util.ArrayList<>();
-        double[] allLevels = { r4, r3, r2, Math.max(r1, ph), Math.min(r1, ph),
-                               Math.max(tc, bc), Math.min(tc, bc),
-                               Math.max(s1, pl), Math.min(s1, pl), s2, s3, s4 };
-        for (double lv : allLevels) {
-            if (lv <= 0) continue;
-            if (isBuy && lv > entry)   cands.add(lv);
-            if (!isBuy && lv < entry)  cands.add(lv);
-        }
-        if (isBuy) cands.sort(java.util.Comparator.naturalOrder());
-        else       cands.sort(java.util.Comparator.reverseOrder());
-
-        if (cands.isEmpty()) {
-            // No CPR level in direction — ATR fallback. 2 × atrMultiplier matches the rough
-            // distance of an R2/R3 step, giving the min-R-R check a sensible number.
-            double atrMult = riskSettings.getAtrMultiplier();
-            double dist = atr * atrMult * 2;
-            double t = isBuy ? entry + dist : entry - dist;
-            return new double[]{ t, t };
-        }
-        double t1 = cands.get(0);
-        double t2 = cands.size() > 1 ? cands.get(1) : t1;
-        return new double[]{ t1, t2 };
     }
 
     // ── Level name for description ──────────────────────────────────────────────
@@ -744,7 +689,6 @@ public class SignalProcessor {
             case "BUY_ABOVE_S2"      -> "S2";
             case "BUY_ABOVE_S3"      -> "S3";
             case "BUY_ABOVE_S4"      -> "S4";
-            case "BUY_ABOVE_VWAP", "SELL_BELOW_VWAP" -> "VWAP";
             default -> setup;
         };
     }

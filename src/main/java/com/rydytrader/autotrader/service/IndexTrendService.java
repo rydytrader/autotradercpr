@@ -22,12 +22,12 @@ import jakarta.annotation.PostConstruct;
  *
  * <p>State combinations:
  * <pre>
- *   CPR bullish + futures vs VWAP bullish    → BULLISH
- *   CPR bearish + futures vs VWAP bearish    → BEARISH
- *   CPR bearish + futures vs VWAP bullish    → BULLISH_REVERSAL  (downtrend rolling over)
- *   CPR bullish + futures vs VWAP bearish    → BEARISH_REVERSAL  (uptrend rolling over)
- *   either factor null + other determined    → SIDEWAYS
- *   both factors null                        → NEUTRAL
+ *   CPR bullish + futures vs VWAP bullish              → BULLISH
+ *   CPR bearish + futures vs VWAP bearish              → BEARISH
+ *   NIFTY close > SMA20 + futures vs VWAP bullish      → BULLISH_REVERSAL (downtrend rolling over)
+ *   NIFTY close < SMA20 + futures vs VWAP bearish      → BEARISH_REVERSAL (uptrend rolling over)
+ *   either factor null + other determined              → SIDEWAYS
+ *   both factors null                                  → NEUTRAL
  * </pre>
  *
  * <p>The UI card endpoint {@link #getNiftyTrend()} also returns sticky values (not live
@@ -49,6 +49,8 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
     private CandleAggregator candleAggregator;
     @org.springframework.beans.factory.annotation.Autowired
     private com.rydytrader.autotrader.store.RiskSettingsStore riskSettings;
+    @org.springframework.beans.factory.annotation.Autowired
+    private SmaService smaService;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private NiftyOptionOiService niftyOptionOiService;
 
@@ -156,14 +158,32 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
             // futClose == futVwap → leave null
         }
 
+        // SMA 20 gate for reversals: only flip to BULLISH_REVERSAL when NIFTY's last close is
+        // above its 20 SMA (and futures vs VWAP is bullish); mirror for BEARISH_REVERSAL.
+        // Keeps the reversal call from firing prematurely while the index is still trading
+        // under its short-term mean.
+        double sma20 = smaService != null ? smaService.getSma(NIFTY_SYMBOL) : 0;
+        Boolean smaBullish = null;
+        if (niftyClose > 0 && sma20 > 0) {
+            if (niftyClose > sma20)      smaBullish = Boolean.TRUE;
+            else if (niftyClose < sma20) smaBullish = Boolean.FALSE;
+        }
+
         // State combination
         String state;
-        if (cprBullish == null && futVwapBullish == null)      state = "NEUTRAL";
-        else if (cprBullish == null || futVwapBullish == null) state = "SIDEWAYS";
-        else if (cprBullish && futVwapBullish)                 state = "BULLISH";
-        else if (!cprBullish && !futVwapBullish)               state = "BEARISH";
-        else if (!cprBullish && futVwapBullish)                state = "BULLISH_REVERSAL";
-        else                                                    state = "BEARISH_REVERSAL";
+        if (cprBullish == null && futVwapBullish == null) {
+            state = "NEUTRAL";
+        } else if (cprBullish != null && futVwapBullish != null && cprBullish && futVwapBullish) {
+            state = "BULLISH";
+        } else if (cprBullish != null && futVwapBullish != null && !cprBullish && !futVwapBullish) {
+            state = "BEARISH";
+        } else if (Boolean.TRUE.equals(smaBullish) && Boolean.TRUE.equals(futVwapBullish)) {
+            state = "BULLISH_REVERSAL";
+        } else if (Boolean.FALSE.equals(smaBullish) && Boolean.FALSE.equals(futVwapBullish)) {
+            state = "BEARISH_REVERSAL";
+        } else {
+            state = "SIDEWAYS";
+        }
 
         return new TrendSnapshot(cprBullish, futVwapBullish, futSym,
                                  niftyClose, futClose, futVwap, state);

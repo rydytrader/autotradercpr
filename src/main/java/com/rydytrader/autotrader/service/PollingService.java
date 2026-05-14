@@ -98,6 +98,28 @@ public class PollingService {
     private void restoreStateOnStartup() {
         Map<String, Map<String, Object>> allSaved = positionStateStore.loadAll();
         if (allSaved.isEmpty()) return;
+
+        // Verify against the broker before restoring. A stale DB row from a previous session
+        // (auto-squareoff failure, manual close on the Fyers app while the bot was down,
+        // regulatory 3:30 close) would otherwise stay in cachedPositions for days. If we have
+        // a live token, ask the broker for actual net positions and drop any saved symbol the
+        // broker doesn't have. On token/API failure, fall through and restore everything — a
+        // bad cache is better than refusing to restore real positions.
+        Set<String> brokerActive = fetchActiveBrokerSymbols();
+        if (brokerActive != null) {
+            List<String> stale = new ArrayList<>();
+            for (String sym : allSaved.keySet()) {
+                if (!brokerActive.contains(sym)) stale.add(sym);
+            }
+            for (String sym : stale) {
+                log.info("[PollingService] Clearing stale DB position {} — not present at broker", sym);
+                eventService.log("[INFO] Cleared stale position " + sym + " from store — no matching broker position");
+                positionStateStore.clear(sym);
+                allSaved.remove(sym);
+            }
+            if (allSaved.isEmpty()) return;
+        }
+
         try {
             for (Map.Entry<String, Map<String, Object>> entry : allSaved.entrySet()) {
                 Map<String, Object> saved = entry.getValue();
@@ -108,7 +130,8 @@ public class PollingService {
                 String setup     = saved.getOrDefault("setup", "").toString();
                 String entryTime = saved.getOrDefault("entryTime", "").toString();
 
-                String probability = saved.getOrDefault("probability", "").toString();
+                Object probObj = saved.get("probability");
+                String probability = probObj != null ? probObj.toString() : "";
                 setupBySymbol.put(symbol, setup);
                 probabilityBySymbol.put(symbol, probability);
                 entryTimeBySymbol.put(symbol, entryTime);
@@ -149,6 +172,34 @@ public class PollingService {
             justRestored = true;
         } catch (Exception e) {
             log.error("[PollingService] Failed to restore state: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Returns the set of symbols the broker currently has an open net position on,
+     * or null if we can't reach Fyers (no token / network error). Used at startup to
+     * sanity-check the persisted positions table.
+     */
+    private Set<String> fetchActiveBrokerSymbols() {
+        try {
+            if (!tokenStore.isTokenAvailable()) return null;
+            String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
+            if (auth.contains("null")) return null;
+            JsonNode node = fyersClient.getPositions(auth);
+            JsonNode positions = node != null ? node.get("netPositions") : null;
+            if (positions == null) return null;
+            Set<String> active = new HashSet<>();
+            for (JsonNode pos : positions) {
+                int qty = pos.has("netQty") ? pos.get("netQty").asInt()
+                                            : pos.has("qty") ? pos.get("qty").asInt() : 0;
+                if (qty == 0) continue;
+                String sym = pos.has("symbol") ? pos.get("symbol").asText() : "";
+                if (!sym.isEmpty()) active.add(sym);
+            }
+            return active;
+        } catch (Exception e) {
+            log.warn("[PollingService] Could not fetch broker positions for startup verification: {}", e.getMessage());
+            return null;
         }
     }
 

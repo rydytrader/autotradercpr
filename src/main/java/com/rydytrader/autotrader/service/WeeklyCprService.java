@@ -668,14 +668,6 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
         boolean ltfBull = breakoutClose > cprTop;
         boolean ltfBear = breakoutClose < cprBot;
 
-        // VWAP reclaim — conditional counter-trend. When the close is on the OPPOSITE side
-        // of CPR from the trade direction (buy from below CPR / sell from above CPR), the
-        // trade is a mean-reversion VWAP reclaim → MPT, bypasses the LTF gate. When on the
-        // SAME side as the trade direction, it's a normal continuation and falls through to
-        // the standard LTF check below (returns HPT).
-        if ("BUY_ABOVE_VWAP".equals(setup)  && breakoutClose < cprBot) return "MPT";
-        if ("SELL_BELOW_VWAP".equals(setup) && breakoutClose > cprTop) return "MPT";
-
         if (isBuy)  return ltfBull ? "HPT" : null;
         else        return ltfBear ? "HPT" : null;
     }

@@ -97,7 +97,7 @@
             padding: 6px 16px 10px;
         }
         .scan-data-grid.scan-data-grid-3 {
-            grid-template-columns: 1fr 1fr 1.5fr;
+            grid-template-columns: 1fr 1fr 1fr;
         }
         .scan-data-item {
             text-align: center;
@@ -442,8 +442,8 @@
         </div>
         <div class="ss-item" id="candleTimerChip" style="margin-left:auto; display:flex; align-items:center; gap:8px; padding:4px 12px; border-radius:8px; background:var(--bg-card); border:1px solid var(--border); position:relative; overflow:hidden; font-family:var(--font-mono); min-width:104px;" title="Time until next 5-min candle close">
             <span class="ss-label" style="font-size:0.62rem; opacity:0.7; z-index:1;">BAR</span>
-            <span id="candleTimerText" style="font-size:0.78rem; font-weight:700; color:var(--accent-blue); z-index:1;">--:--</span>
-            <div id="candleTimerFill" style="position:absolute; left:0; top:0; bottom:0; width:0%; background:rgba(99,179,237,0.12); transition:width 0.5s linear; z-index:0;"></div>
+            <span id="candleTimerText" style="font-size:0.78rem; font-weight:700; color:var(--accent-yellow); z-index:1;">--:--</span>
+            <div id="candleTimerFill" style="position:absolute; left:0; top:0; bottom:0; width:0%; background:rgba(251,191,36,0.12); transition:width 0.5s linear; z-index:0;"></div>
         </div>
         <div class="ss-item" title="Open positions count">
             <span class="ss-label">Open:</span>
@@ -470,6 +470,7 @@
             <div id="niftyChangePct" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:4px; color:var(--text-muted);" title="NIFTY 50 % change vs previous close">—</div>
             <div class="nifty-cpr-width" id="niftyCprWidth" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY daily CPR width vs scanner thresholds (Narrow / Normal / Wide)">—</div>
             <div class="nifty-cpr" id="niftyCprBias" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY index 5-min close vs daily CPR (above CPR top / below CPR bottom). Refreshes only on NIFTY 5-min candle close.">—</div>
+            <div id="niftySma20" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY 5-min SMA 20 — green when LTP &gt; SMA 20, red when LTP &lt; SMA 20">—</div>
             <div class="nifty-fut-vwap" id="niftyFutVwap" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY futures 5-min close vs that bar's VWAP (Fyers ATP). Refreshes only on NIFTY 5-min candle close.">—</div>
             <div class="nifty-state" id="niftyState" style="margin-left:auto;">—</div>
             <div class="nifty-right" id="niftyMetrics"></div>
@@ -792,12 +793,12 @@
             + '  <span class="scan-ltp">' + fmt(d.ltp) + '</span>'
             + '  <span class="scan-change ' + chClass + '">' + chArrow + ' ' + d.changePercent.toFixed(2) + '%</span>'
             + '  <span style="margin-left:auto; display:inline-flex; align-items:baseline; gap:6px;">'
-            +     '<span class="scan-data-label">Day Open</span>'
-            +     '<span class="scan-data-value">' + (d.dayOpen > 0 ? fmt(d.dayOpen) : '--') + (d.openClass ? ' (' + d.openClass + ')' : '') + '</span>'
+            +     '<span class="scan-data-label">DO</span>'
+            +     '<span class="scan-data-value">' + (d.dayOpen > 0 ? fmt(d.dayOpen) : '--') + '</span>'
             + '  </span>'
             + '</div>'
             + '<div class="scan-data-grid scan-data-grid-3">'
-            + '  <div class="scan-data-item"><div class="scan-data-label">ATR</div><div class="scan-data-value">' + fmt(d.atr) + '</div></div>'
+            + '  <div class="scan-data-item" style="text-align:left;"><div class="scan-data-label">ATR</div><div class="scan-data-value">' + fmt(d.atr) + '</div></div>'
             + (function() {
                 var atpTrend = smaTrendObj(d.ltp, d.atp);
                 var color = atpTrend.cls === 'bullish' ? 'var(--accent-green)' : atpTrend.cls === 'bearish' ? 'var(--accent-red)' : 'var(--text-secondary)';
@@ -805,7 +806,7 @@
             })()
             + (function() {
                 var color = em5.cls === 'bullish' ? 'var(--accent-green)' : em5.cls === 'bearish' ? 'var(--accent-red)' : 'var(--text-secondary)';
-                return '  <div class="scan-data-item"><div class="scan-data-label">SMA 20</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + (d.sma20 > 0 ? fmt(d.sma20) + ' ' + em5.arrow : '--') + '</div></div>';
+                return '  <div class="scan-data-item" style="text-align:right;"><div class="scan-data-label">SMA 20</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + (d.sma20 > 0 ? fmt(d.sma20) + ' ' + em5.arrow : '--') + '</div></div>';
             })()
             + '</div>'
             + '<div style="border-top:1px solid var(--border);"></div>'
@@ -966,7 +967,8 @@
                         applyNiftyLtpUpdate(
                             n.ltp,
                             typeof n.changePercent === 'number' ? n.changePercent : null,
-                            typeof n.change === 'number' ? n.change : null
+                            typeof n.change === 'number' ? n.change : null,
+                            typeof n.sma === 'number' ? n.sma : null
                         );
                     }
                 } catch (err) {}
@@ -974,13 +976,23 @@
         }
     }
 
-    // ── NIFTY LTP/Change render helper (used by both poll + SSE) ─────────
+    // ── NIFTY LTP/Change/SMA render helper (used by both poll + SSE) ─────
     // change is the absolute pts move (ltp - prev close). When the SSE payload doesn't
     // carry it (older messages or REST-poll path), fall back to deriving it from
-    // ltp + changePct so the field still updates.
-    function applyNiftyLtpUpdate(ltp, changePct, change) {
+    // ltp + changePct so the field still updates. sma20 is optional — only updates the
+    // chip when present in the payload.
+    function applyNiftyLtpUpdate(ltp, changePct, change, sma20) {
         var lpEl = document.getElementById('niftyLtp');
         if (lpEl) lpEl.textContent = ltp > 0 ? ltp.toFixed(2) : '—';
+        // SMA 20 chip — green when LTP > SMA, red when LTP < SMA, muted otherwise.
+        var smaEl = document.getElementById('niftySma20');
+        if (smaEl && sma20 != null && isFinite(sma20) && sma20 > 0 && ltp > 0) {
+            var smaColor = ltp > sma20 ? 'var(--accent-green)'
+                         : ltp < sma20 ? 'var(--accent-red)'
+                         : 'var(--text-secondary)';
+            smaEl.textContent = 'SMA 20: ' + sma20.toFixed(2);
+            smaEl.style.color = smaColor;
+        }
         if (changePct == null || !isFinite(changePct) || ltp <= 0) return;
         if (change == null || !isFinite(change)) {
             change = ltp * changePct / (100 + changePct);
@@ -1000,6 +1012,7 @@
                 var lp0 = document.getElementById('niftyLtp');      if (lp0) lp0.textContent = '—';
                 var cg0 = document.getElementById('niftyChange');   if (cg0) { cg0.textContent = '—'; cg0.style.color = 'var(--text-muted)'; }
                 var cp0 = document.getElementById('niftyChangePct');if (cp0) { cp0.textContent = '—'; cp0.style.color = 'var(--text-muted)'; }
+                var sm0 = document.getElementById('niftySma20'); if (sm0) { sm0.textContent = '—'; sm0.style.color = 'var(--text-muted)'; }
                 var cw0 = document.getElementById('niftyCprWidth'); if (cw0) { cw0.textContent = '—'; cw0.style.color = 'var(--text-muted)'; }
                 var cb0 = document.getElementById('niftyCprBias'); if (cb0) { cb0.textContent = '—'; cb0.style.color = 'var(--text-muted)'; }
                 var fv0 = document.getElementById('niftyFutVwap'); if (fv0) { fv0.textContent = '—'; fv0.style.color = 'var(--text-muted)'; }

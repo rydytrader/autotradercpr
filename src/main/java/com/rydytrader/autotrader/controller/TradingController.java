@@ -201,6 +201,14 @@ public class TradingController {
 
         if (signal.equals("BUY") && !PositionManager.getPosition(symbol).equals("LONG")) {
 
+            // Cache probability BEFORE placing the order so the entry-fill handler
+            // (WS-side handleEntryFill races sub-100ms after placeOrder returns) can
+            // read it when persisting the new PositionEntity. Setting it after
+            // monitorEntryAndPlaceOCO left a window where a fast WS fill saved the
+            // entity with probability=null, which survived restart as blank in the
+            // trade log.
+            pollingService.setProbability(symbol, probability);
+
             latencyTracker.mark(symbol, setup, LatencyTracker.Stage.ORDER_PLACED);
             OrderDTO order = orderService.placeOrder(symbol, quantity, 1, stoploss);
             latencyTracker.mark(symbol, setup, LatencyTracker.Stage.ORDER_RESPONSE);
@@ -213,9 +221,10 @@ public class TradingController {
             // Monitor entry fill, then place SL + Target OCO
             // exitSide = -1 (SELL to exit a LONG)
             pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "LONG", -1, stoploss, target, setup, atr, atrMult, description, rescueShifted, useStructuralSl);
-            pollingService.setProbability(symbol, probability);
 
         } else if (signal.equals("SELL") && !PositionManager.getPosition(symbol).equals("SHORT")) {
+
+            pollingService.setProbability(symbol, probability);
 
             latencyTracker.mark(symbol, setup, LatencyTracker.Stage.ORDER_PLACED);
             OrderDTO order = orderService.placeOrder(symbol, quantity, -1, stoploss);
@@ -228,7 +237,6 @@ public class TradingController {
 
             // exitSide = 1 (BUY to exit a SHORT)
             pollingService.monitorEntryAndPlaceOCO(order, symbol, quantity, "SHORT", 1, stoploss, target, setup, atr, atrMult, description, rescueShifted, useStructuralSl);
-            pollingService.setProbability(symbol, probability);
 
         } else {
             String msg = "Signal ignored — existing position: " + PositionManager.getPosition(symbol);
