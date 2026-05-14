@@ -918,15 +918,10 @@
                 </div>
                 <div class="form-group">
                     <label class="form-label">Watchlist Universe</label>
-                    <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
-                        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
-                            <input type="radio" name="scanUniverseChoice" id="scanUniverseNifty50" value="nifty50" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> <b style="color:var(--accent-green);">NIFTY 50</b> — only NIFTY 50 stocks in the watchlist
-                        </div>
-                        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
-                            <input type="radio" name="scanUniverseChoice" id="scanUniverseAll" value="all" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> <b style="color:#fb923c;">ALL</b> — every stock in the bhavcopy cache, regardless of NIFTY 50 membership
-                        </div>
+                    <div style="font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);margin-top:4px;">
+                        <b style="color:var(--accent-green);">NIFTY 50</b> — locked to NIFTY 50 stocks only on this branch.
                     </div>
-                    <div class="form-hint">Universe gate replaces the legacy NS/NL/IS/IL include toggles. The narrow/inside CPR width thresholds still drive eligibility within whichever universe is chosen.</div>
+                    <div class="form-hint">This branch is hardcoded to the NIFTY 50 universe. NIFTY Next 50 stocks are not eligible for the watchlist or trading.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Virgin CPR Cache (NIFTY)</label>
@@ -1250,10 +1245,7 @@
             document.getElementById('insideCprMaxWidth').value = d.insideCprMaxWidth != null ? d.insideCprMaxWidth : 0.5;
             document.getElementById('scanMinPrice').value = d.scanMinPrice != null ? d.scanMinPrice : 300;
             document.getElementById('scanMaxPrice').value = d.scanMaxPrice != null ? d.scanMaxPrice : 0;
-            // Watchlist universe radio — default to NIFTY 50 when setting missing or true.
-            var onlyN50 = d.scanOnlyNifty50 !== false;
-            document.getElementById('scanUniverseNifty50').checked = onlyN50;
-            document.getElementById('scanUniverseAll').checked = !onlyN50;
+            // Watchlist universe — hardcoded to NIFTY 50 on this branch (no inputs to load).
             document.getElementById('minAbsoluteProfit').value = d.minAbsoluteProfit != null ? d.minAbsoluteProfit : 500;
             document.getElementById('skipR3S3IvOvDays').checked = d.skipR3S3IvOvDays !== false;
             document.getElementById('skipR3S3EvDays').checked   = d.skipR3S3EvDays   !== false;
@@ -1412,7 +1404,7 @@
                 insideCprMaxWidth: parseFloat(document.getElementById('insideCprMaxWidth').value) || 0,
                 scanMinPrice: parseFloat(document.getElementById('scanMinPrice').value) || 0,
                 scanMaxPrice: parseFloat(document.getElementById('scanMaxPrice').value) || 0,
-                scanOnlyNifty50: document.getElementById('scanUniverseNifty50').checked,
+                // scanOnlyNifty50 is hardcoded to true on this branch — not sent.
                 minAbsoluteProfit: (function() { var v = parseFloat(document.getElementById('minAbsoluteProfit').value); return isNaN(v) ? 500 : v; })(),
                 skipR3S3IvOvDays: document.getElementById('skipR3S3IvOvDays').checked,
                 skipR3S3EvDays:   document.getElementById('skipR3S3EvDays').checked,

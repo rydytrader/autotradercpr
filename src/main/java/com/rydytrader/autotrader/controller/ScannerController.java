@@ -74,46 +74,34 @@ public class ScannerController {
             insideSymbols.add(cpr.getSymbol());
         }
 
-        // Universe gate — when scanOnlyNifty50 is on, the watchlist is restricted to NIFTY 50
-        // stocks. When off, all stocks in the bhavcopy cache are eligible (subject to the
-        // CPR-width and other scanner filters below).
+        // Universe is hardcoded to NIFTY 50 on this branch. ALL 50 stocks are always present
+        // in the watchlist — CPR width is used only for CLASSIFICATION (NARROW / WIDE), not
+        // for filtering anyone out. The INSIDE tag is appended when today's CPR sits inside
+        // yesterday's CPR for that stock; it can coexist with either width class.
         boolean onlyNifty50 = riskSettings.isScanOnlyNifty50();
-
-        // Collect narrow CPR stocks — use configurable width range + price/turnover/etc. filters.
         double narrowMaxWidth = riskSettings.getNarrowCprMaxWidth();
         double narrowMinWidth = riskSettings.getNarrowCprMinWidth();
-        Set<String> seen = new HashSet<>();
+
         for (CprLevels cpr : bhavcopyService.getAllCprLevels().values()) {
             if (bhavcopyService.isIndex(cpr.getSymbol())) continue; // NIFTY50/NIFTYBANK etc.
             if (onlyNifty50 && !cpr.isInNifty50()) continue;
-            if (cpr.getCprWidthPct() < narrowMinWidth || cpr.getCprWidthPct() >= narrowMaxWidth) continue;
             if (!marketDataService.passesWatchlistFilters(cpr)) continue;
 
-            String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
+            double widthPct = cpr.getCprWidthPct();
+            boolean isNarrow = widthPct >= narrowMinWidth && widthPct < narrowMaxWidth;
+            boolean isInside = insideSymbols.contains(cpr.getSymbol());
+
+            // Primary class for the card header — NARROW takes precedence over WIDE for
+            // styling purposes. INSIDE is orthogonal and always rides along as a tag.
+            String primary = isNarrow ? "NARROW" : "WIDE";
             List<String> types = new ArrayList<>();
-            types.add("NARROW");
-            if (insideSymbols.contains(cpr.getSymbol())) types.add("INSIDE");
-            Map<String, Object> card = buildCard(fyers, cpr, "NARROW", positionSymbols);
+            types.add(primary);
+            if (isInside) types.add("INSIDE");
+
+            String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
+            Map<String, Object> card = buildCard(fyers, cpr, primary, positionSymbols);
             card.put("cprTypes", types);
             result.add(card);
-            seen.add(fyers);
-        }
-
-        // Collect inside-only CPR stocks — width filter + price/turnover/etc. filters.
-        double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
-        for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
-            String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
-            if (seen.contains(fyers)) continue;
-            if (onlyNifty50 && !cpr.isInNifty50()) continue;
-            if (insideMaxWidth > 0 && cpr.getCprWidthPct() > insideMaxWidth) continue;
-            if (!marketDataService.passesWatchlistFilters(cpr)) continue;
-
-            List<String> types = new ArrayList<>();
-            types.add("INSIDE");
-            Map<String, Object> card = buildCard(fyers, cpr, "INSIDE", positionSymbols);
-            card.put("cprTypes", types);
-            result.add(card);
-            seen.add(fyers);
         }
 
         // Default sort alphabetically by symbol for stable scanner ordering

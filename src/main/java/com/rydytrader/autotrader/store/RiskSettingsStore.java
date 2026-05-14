@@ -379,7 +379,9 @@ public class RiskSettingsStore {
     public String getScanUniverse() { String u = cfg().scanUniverse; return u != null && !u.isEmpty() ? u : "NIFTY100"; }
     public double getScanMinPrice() { return cfg().scanMinPrice; }
     public double getScanMaxPrice() { return cfg().scanMaxPrice; }
-    public boolean isScanOnlyNifty50() { return cfg().scanOnlyNifty50; }
+    /** This branch is hardcoded to NIFTY 50 only — the toggle was removed from the settings
+     *  UI and the getter always returns true regardless of any persisted value. */
+    public boolean isScanOnlyNifty50() { return true; }
     public boolean isEnableOpeningRefresh()    { return cfg().enableOpeningRefresh; }
     public String  getOpeningRefreshTime()     { return cfg().openingRefreshTime; }
     public boolean isEnableTargetTolerance()   { return cfg().enableTargetTolerance; }
@@ -403,7 +405,9 @@ public class RiskSettingsStore {
     }
     public void setScanMinPrice(double v) { cfg().scanMinPrice = v; }
     public void setScanMaxPrice(double v) { cfg().scanMaxPrice = v; }
-    public void setScanOnlyNifty50(boolean v) { cfg().scanOnlyNifty50 = v; }
+    /** No-op on this branch — see {@link #isScanOnlyNifty50}. Kept as a stub so stale UI
+     *  clients that POST the field don't blow up. */
+    public void setScanOnlyNifty50(boolean v) { /* always NIFTY 50 on this branch */ }
     public void setEnableOpeningRefresh(boolean v) { cfg().enableOpeningRefresh = v; }
     public void setOpeningRefreshTime(String v)    { cfg().openingRefreshTime = v; }
     public void setEnableTargetTolerance(boolean v) { cfg().enableTargetTolerance = v; }

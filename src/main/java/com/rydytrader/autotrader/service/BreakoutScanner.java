@@ -1941,8 +1941,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     }
 
     /**
-     * Check if a stock passes the CPR Width Scanner settings.
-     * A stock must match at least one enabled group to be eligible for breakout signals.
+     * Eligibility gate for breakout signals. On the all-cpr-with-nifty-50 branch every
+     * NIFTY 50 stock that meets the min-price floor is eligible regardless of CPR width —
+     * width is used only for classification (NARROW / WIDE), not for filtering. INSIDE
+     * is an orthogonal flag that doesn't gate eligibility either.
      */
     private boolean isBreakoutEligible(String fyersSymbol) {
         String ticker = extractTicker(fyersSymbol);
@@ -1953,22 +1955,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double minPrice = riskSettings.getScanMinPrice();
         if (minPrice > 0 && cpr.getClose() < minPrice) return false;
 
-        // NIFTY 50 gate — when on, only NIFTY 50 stocks are eligible.
+        // NIFTY 50 gate — always on this branch.
         if (riskSettings.isScanOnlyNifty50() && !bhavcopyService.isInNifty50(ticker)) return false;
 
-        double wpct = cpr.getCprWidthPct();
-        boolean isNarrow = wpct >= riskSettings.getNarrowCprMinWidth() && wpct < riskSettings.getNarrowCprMaxWidth();
-        if (isNarrow) return true;
-
-        // Inside-only CPR — width filter still applies via insideCprMaxWidth.
-        boolean isInside = bhavcopyService.getInsideCprStocks().stream()
-                .anyMatch(c -> c.getSymbol().equals(ticker));
-        double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
-        if (isInside && (insideMaxWidth <= 0 || cpr.getCprWidthPct() <= insideMaxWidth)) {
-            return true;
-        }
-
-        return false;
+        return true;
     }
 
     /**

@@ -136,7 +136,7 @@ public class SettingsController {
         result.put("scanMaxPrice", riskSettings.getScanMaxPrice());
         result.put("enableOpeningRefresh", riskSettings.isEnableOpeningRefresh());
         result.put("openingRefreshTime", riskSettings.getOpeningRefreshTime());
-        result.put("scanOnlyNifty50", riskSettings.isScanOnlyNifty50());
+        // scanOnlyNifty50 hardcoded to true on this branch — no longer exposed to UI.
         result.put("enableHpt", riskSettings.isEnableHpt());
         result.put("enableMpt", riskSettings.isEnableMpt());
         result.put("mptQtyFactor", riskSettings.getMptQtyFactor());
@@ -256,7 +256,7 @@ public class SettingsController {
             if (body.containsKey("scanMaxPrice")) riskSettings.setScanMaxPrice(Double.parseDouble(body.get("scanMaxPrice").toString()));
             if (body.containsKey("enableOpeningRefresh")) riskSettings.setEnableOpeningRefresh(Boolean.parseBoolean(body.get("enableOpeningRefresh").toString()));
             if (body.containsKey("openingRefreshTime")) riskSettings.setOpeningRefreshTime(body.get("openingRefreshTime").toString());
-            if (body.containsKey("scanOnlyNifty50")) riskSettings.setScanOnlyNifty50(Boolean.parseBoolean(body.get("scanOnlyNifty50").toString()));
+            // scanOnlyNifty50 hardcoded to true on this branch — POST silently ignored.
             if (body.containsKey("enableHpt")) riskSettings.setEnableHpt(Boolean.parseBoolean(body.get("enableHpt").toString()));
             if (body.containsKey("enableMpt")) riskSettings.setEnableMpt(Boolean.parseBoolean(body.get("enableMpt").toString()));
             if (body.containsKey("mptQtyFactor")) riskSettings.setMptQtyFactor(Double.parseDouble(body.get("mptQtyFactor").toString()));
