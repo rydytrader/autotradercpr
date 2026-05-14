@@ -1392,32 +1392,41 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     private enum NiftyAlignStatus { OK, SKIP }
 
     /**
-     * NIFTY index alignment filter.
+     * NIFTY index alignment filter. The allowed-NIFTY-state set depends on the setup family:
      * <ul>
-     *   <li>Buys allowed when NIFTY state ∈ {BULLISH, BULLISH_REVERSAL}.</li>
-     *   <li>Sells allowed when NIFTY state ∈ {BEARISH, BEARISH_REVERSAL}.</li>
-     *   <li>SIDEWAYS / NEUTRAL / opposite-direction → skip.</li>
+     *   <li><b>Counter-trend (magnet + mean-reversion)</b> setups require FULL agreement on
+     *       NIFTY direction — only BULLISH for buys, only BEARISH for sells. Reversal states
+     *       (NIFTY rolling over with CPR still on the opposite side) are NOT enough — a magnet
+     *       bounce at S1+PDL while NIFTY is BEARISH_REVERSAL (above CPR but rolling bearish)
+     *       has no edge.</li>
+     *   <li><b>Trend-following (HPT)</b> setups also accept the matching reversal state, since
+     *       a reversal hand-off lines up with the breakout direction even before CPR confirms.</li>
+     *   <li>SIDEWAYS / NEUTRAL / opposite-direction → skip in both cases.</li>
      * </ul>
-     * BULLISH_REVERSAL = CPR bearish but both 5-min SMA factors flipped bullish (downtrend rolling
-     * over). BEARISH_REVERSAL is the mirror — taken on the assumption the structural turn anticipates
-     * the trade direction. Returns OK if the filter is disabled or index data isn't available yet.
+     * Returns OK if the filter is disabled or index data isn't available yet.
      */
     private NiftyAlignStatus checkIndexAlignment(String fyersSymbol, String setup, boolean isBuy) {
         if (!riskSettings.isEnableIndexAlignment()) return NiftyAlignStatus.OK;
         if (indexTrendService == null) return NiftyAlignStatus.OK;
         try {
-            // Sticky state — only updates at NIFTY 5-min candle close, so trade decisions
-            // don't oscillate tick-to-tick during a bar.
             String state = indexTrendService.getStickyState();
             if ("NEUTRAL".equals(state)) return NiftyAlignStatus.OK; // no data / inside CPR
-            boolean aligned = isBuy
-                ? ("BULLISH".equals(state) || "BULLISH_REVERSAL".equals(state))
-                : ("BEARISH".equals(state) || "BEARISH_REVERSAL".equals(state));
+
+            boolean isCounterTrend = isMagnet(setup) || isMeanReversion(setup);
+            boolean aligned;
+            String requiredStates;
+            if (isCounterTrend) {
+                aligned = isBuy ? "BULLISH".equals(state) : "BEARISH".equals(state);
+                requiredStates = isBuy ? "BULLISH" : "BEARISH";
+            } else {
+                aligned = isBuy
+                    ? ("BULLISH".equals(state) || "BULLISH_REVERSAL".equals(state))
+                    : ("BEARISH".equals(state) || "BEARISH_REVERSAL".equals(state));
+                requiredStates = isBuy ? "BULLISH or BULLISH_REVERSAL" : "BEARISH or BEARISH_REVERSAL";
+            }
             if (aligned) return NiftyAlignStatus.OK;
-            // Log as MISALIGNED — caller hard-rejects after this with NIFTY_OPPOSED.
             eventService.log("[SCANNER] " + fyersSymbol + " " + setup
-                + " NIFTY MISALIGNED — NIFTY " + state + ", trade direction needs "
-                + (isBuy ? "BULLISH or BULLISH_REVERSAL" : "BEARISH or BEARISH_REVERSAL"));
+                + " NIFTY MISALIGNED — NIFTY " + state + ", trade direction needs " + requiredStates);
             return NiftyAlignStatus.SKIP;
         } catch (Exception e) {
             log.warn("[BreakoutScanner] Index alignment check failed for {}: {}", fyersSymbol, e.getMessage());
@@ -1558,6 +1567,77 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             log.warn("[BreakoutScanner] NIFTY hurdle check failed: {}", e.getMessage());
             return null; // fail-open
         }
+    }
+
+    /**
+     * Read-only "is NIFTY currently at a crucial level" check for the open-positions UI.
+     * Runs the same 3 hurdle filters used at trade-entry time (HTF, 5-min, virgin CPR) but
+     * does NOT capture any guards or fire side effects. Returns a human-readable reason
+     * string (or pipe-joined concatenation if more than one fires) describing the active
+     * hurdles, or {@code null} if all three are clear / disabled. Used by the positions
+     * table to highlight rows where NIFTY's current position would block a NEW trade in
+     * the same direction — informational only, doesn't affect the open position.
+     */
+    public String getNiftyHurdleAlert(boolean isBuy) {
+        long stockBucket = 0L;
+        if (candleAggregator != null) {
+            CandleAggregator.CandleBar lastNifty =
+                candleAggregator.getLastCompletedCandle(IndexTrendService.NIFTY_SYMBOL);
+            if (lastNifty != null) {
+                // checkNifty5mHurdle / checkNiftyVirginCprHurdle compute priorStartMinute as
+                // stockBucket - 5, so add 5 to the last completed NIFTY 5m bar's startMinute
+                // to make it the "prior" bar that the filter consumes.
+                stockBucket = lastNifty.startMinute + 5;
+            }
+        }
+        String htf    = checkNiftyHurdle(isBuy, null);          // null fyersSymbol = skip guard capture
+        String fiveM  = checkNifty5mHurdle(isBuy, stockBucket);
+        String virgin = checkNiftyVirginCprHurdle(isBuy, stockBucket);
+        java.util.List<String> parts = new java.util.ArrayList<>(3);
+        if (htf    != null) parts.add(htf);
+        if (fiveM  != null) parts.add(fiveM);
+        if (virgin != null) parts.add(virgin);
+        return parts.isEmpty() ? null : String.join(" | ", parts);
+    }
+
+    /**
+     * Current sticky NIFTY trend state (BULLISH / BEARISH / BULLISH_REVERSAL /
+     * BEARISH_REVERSAL / SIDEWAYS / NEUTRAL). Stable across a 5-min candle; flips only
+     * on NIFTY's 5-min candle close. Used by entry-fill handlers to snapshot the trend
+     * at trade time so the positions UI can later detect a flip.
+     */
+    public String getCurrentNiftyTrend() {
+        if (indexTrendService == null) return "NEUTRAL";
+        String state = indexTrendService.getStickyState();
+        return state != null ? state : "NEUTRAL";
+    }
+
+    /**
+     * True if the current NIFTY trend has flipped its directional bias since the position's
+     * entry. Treats the 4 trend states as two sides:
+     * <ul>
+     *   <li>Bullish side: BULLISH, BULLISH_REVERSAL</li>
+     *   <li>Bearish side: BEARISH, BEARISH_REVERSAL</li>
+     * </ul>
+     * A flip is a cross between the two sides (BULLISH → BEARISH_REVERSAL counts, but
+     * BULLISH → BULLISH_REVERSAL does not — the bias is still bullish, just weaker). The
+     * natural cycle BULLISH → BEARISH_REVERSAL → BEARISH → BULLISH_REVERSAL → BULLISH
+     * triggers a single flip when crossing the bullish/bearish boundary, not on every
+     * adjacent-state transition.
+     *
+     * <p>SIDEWAYS and NEUTRAL belong to neither side — transitions involving them never
+     * count as a flip.
+     */
+    public boolean isNiftyTrendFlipped(String entryTrend) {
+        if (entryTrend == null || entryTrend.isEmpty()) return false;
+        String current = getCurrentNiftyTrend();
+        if (current == null) return false;
+        boolean entryBullish = "BULLISH".equals(entryTrend)  || "BULLISH_REVERSAL".equals(entryTrend);
+        boolean entryBearish = "BEARISH".equals(entryTrend)  || "BEARISH_REVERSAL".equals(entryTrend);
+        boolean nowBullish   = "BULLISH".equals(current)     || "BULLISH_REVERSAL".equals(current);
+        boolean nowBearish   = "BEARISH".equals(current)     || "BEARISH_REVERSAL".equals(current);
+        if (!entryBullish && !entryBearish) return false;    // entry had no side (SIDEWAYS/NEUTRAL)
+        return (entryBullish && nowBearish) || (entryBearish && nowBullish);
     }
 
     /**

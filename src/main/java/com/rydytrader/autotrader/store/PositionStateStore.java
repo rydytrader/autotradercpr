@@ -141,7 +141,21 @@ public class PositionStateStore {
         map.put("probability",     e.getProbability());
         map.put("niftyHurdleGuardLow",  e.getNiftyHurdleGuardLow());
         map.put("niftyHurdleGuardHigh", e.getNiftyHurdleGuardHigh());
+        map.put("niftyTrendAtEntry",    e.getNiftyTrendAtEntry());
         return map;
+    }
+
+    /** Persist the NIFTY sticky-trend state at entry-fill time. Reads the value back into
+     *  the positions API so the UI can flag a red stripe when current trend diverges. */
+    public void saveNiftyTrendAtEntry(String symbol, String trend) {
+        try {
+            positionRepo.findBySymbol(symbol).ifPresent(entity -> {
+                entity.setNiftyTrendAtEntry(trend != null ? trend : "");
+                positionRepo.save(entity);
+            });
+        } catch (Exception e) {
+            log.error("[PositionStateStore] Failed to saveNiftyTrendAtEntry for {}: {}", symbol, e.getMessage());
+        }
     }
 
     /**

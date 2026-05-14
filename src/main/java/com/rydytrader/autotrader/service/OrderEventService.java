@@ -739,6 +739,11 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         if (pendingProb != null && !pendingProb.isEmpty()) {
             positionStateStore.saveProbability(symbol, pendingProb);
         }
+        // Snapshot the current NIFTY sticky trend so the positions UI can flag a red
+        // stripe later if the trend flips while the position is open.
+        if (breakoutScanner != null) {
+            positionStateStore.saveNiftyTrendAtEntry(symbol, breakoutScanner.getCurrentNiftyTrend());
+        }
 
         eventService.log("[SUCCESS] [WS] " + (ctx.position.equals("LONG") ? "BUY" : "SELL")
             + " order filled for " + symbol + " @ " + entryPrice + " [ID: " + orderId + "] — placing SL + Target");

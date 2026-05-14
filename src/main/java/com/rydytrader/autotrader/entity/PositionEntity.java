@@ -37,6 +37,13 @@ public class PositionEntity {
     private Double niftyHurdleGuardLow;
     private Double niftyHurdleGuardHigh;
 
+    // NIFTY sticky trend state at entry-fill time (BULLISH / BEARISH / BULLISH_REVERSAL /
+    // BEARISH_REVERSAL / SIDEWAYS / NEUTRAL). Persisted so the positions UI can flag a
+    // "trend-flipped" red stripe when the current state diverges from the entry state
+    // (excluding SIDEWAYS / NEUTRAL ambiguity). Null/empty for positions opened before
+    // this field was added.
+    private String niftyTrendAtEntry;
+
     public PositionEntity() {}
 
     @PrePersist
@@ -93,4 +100,7 @@ public class PositionEntity {
 
     public Double getNiftyHurdleGuardHigh() { return niftyHurdleGuardHigh; }
     public void setNiftyHurdleGuardHigh(Double v) { this.niftyHurdleGuardHigh = v; }
+
+    public String getNiftyTrendAtEntry() { return niftyTrendAtEntry; }
+    public void setNiftyTrendAtEntry(String v) { this.niftyTrendAtEntry = v; }
 }

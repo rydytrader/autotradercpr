@@ -357,6 +357,9 @@ public class PollingService {
                         if (!pendingProb.isEmpty()) {
                             positionStateStore.saveProbability(symbol, pendingProb);
                         }
+                        // Snapshot the current NIFTY sticky trend so the positions UI can flag
+                        // a red stripe later if the trend flips while the position is open.
+                        positionStateStore.saveNiftyTrendAtEntry(symbol, breakoutScanner.getCurrentNiftyTrend());
                         // Save description from signal processing
                         if (description != null && !description.isEmpty()) {
                             positionStateStore.appendDescription(symbol, description);

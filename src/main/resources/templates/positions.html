@@ -657,8 +657,24 @@
             const trailArrow = pos.slTrailed
                 ? (pos.side === 'LONG' ? ' <span style="color:var(--accent-green);" title="Trailing SL tightened">&#9650;</span>' : ' <span style="color:var(--accent-red);" title="Trailing SL tightened">&#9660;</span>')
                 : '';
-            return `<tr>
-                <td style="font-family:var(--font-mono);color:var(--text-muted);font-size:0.75rem;">${idx + 1}</td>
+            // Left-edge alert stripe — informational, doesn't affect the trade. Red takes
+            // priority over yellow: if NIFTY trend has flipped since entry, that's the more
+            // serious alert and overrides the "NIFTY at a crucial level" hurdle marker.
+            //   • Red:    NIFTY trend flipped (BULLISH/BR side ↔ BEARISH/BR side).
+            //   • Yellow: NIFTY at a crucial level (HTF / 5m / virgin CPR hurdle active).
+            let stripeColor = null;
+            let stripeReason = null;
+            if (pos.niftyTrendFlipped) {
+                stripeColor = '#ef4444';
+                stripeReason = 'NIFTY trend flipped: ' + pos.niftyTrendAtEntry + ' → ' + pos.niftyTrendNow;
+            } else if (pos.niftyHurdleActive) {
+                stripeColor = '#facc15';
+                stripeReason = 'NIFTY at crucial level: ' + (pos.niftyHurdleReason || '');
+            }
+            const stripeStyle = stripeColor ? `box-shadow: inset 4px 0 0 0 ${stripeColor};` : '';
+            const stripeTitle = stripeReason ? ` title="${stripeReason.replace(/"/g, '&quot;')}"` : '';
+            return `<tr${stripeTitle}>
+                <td style="font-family:var(--font-mono);color:var(--text-muted);font-size:0.75rem;${stripeStyle}padding-left:${stripeColor ? '10' : '4'}px;">${idx + 1}</td>
                 <td style="font-family:var(--font-mono);color:var(--text-secondary)">${pos.entryTime || '—'}</td>
                 <td><span class="symbol-cell">${pos.symbol}</span></td>
                 <td class="text-right">${pos.qty}</td>
