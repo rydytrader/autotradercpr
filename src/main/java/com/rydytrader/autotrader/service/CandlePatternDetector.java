@@ -15,18 +15,11 @@ package com.rydytrader.autotrader.service;
  *   <li><b>Hammer / shooting star (pin bar)</b> — rejection wick ≥
  *       {@code rejectionWickBodyMult} × body, opposite wick ≤
  *       {@code oppositeWickBodyMult} × body, real body present (not a doji).</li>
- *   <li><b>Engulfing</b> — current body ≥ {@code minBodyMultiple} × prev body, current
- *       body ≥ {@code minBodyAtrMult} × ATR (absolute size floor — prevents firing on
- *       two tiny consecutive bars), and current body fully engulfs prior body.</li>
- *   <li><b>Piercing line / Dark cloud cover</b> — 2-bar partial reversal that doesn't
- *       fully engulf. Bar 1 body ≥ {@code prevBodyAtrMult} × ATR; bar 2 opens past
- *       bar 1's close in the reversal direction; bar 2 closes at least
- *       {@code penetrationPct} of the way into bar 1's body but does NOT engulf.</li>
- *   <li><b>Tweezer top / bottom</b> — 2-bar matched-extreme reversal. Bar 1 strong
- *       directional (body ≥ {@code prevBodyAtrMult} × ATR) with strict color flip into
- *       bar 2. Matching extremes (highs for top, lows for bottom) within
- *       {@code matchAtr} × ATR tolerance. Bar 2 body unconstrained — the matched
- *       extreme is the signature.</li>
+ *   <li><b>Outside Reversal (Engulfing)</b> — 2-bar bullish/bearish engulfing.
+ *       Strict color flip between bars, both bodies in {@code [minBodyAtrMult,
+ *       maxBodyAtrMult]} × ATR, bar 2 opens at/past bar 1's close in the reversal
+ *       direction, bar 2 closes ≥ {@code penetrationPct} of the way into bar 1's body
+ *       (default 1.0 = past bar 1's open, classical strict engulfing).</li>
  *   <li><b>Three Inside Up / Down</b> — 3-bar harami + confirmation. Bar 1 large
  *       directional (body ≥ {@code bodyAtrMult} × ATR), bar 2 opposite color with body
  *       FULLY INSIDE bar 1's body and body ≤ {@code innerBodyMaxRatio} × bar 1 body
@@ -92,17 +85,16 @@ final class CandlePatternDetector {
             && lowerWick <= oppositeWickBodyMult * body;
     }
 
-    // ── Outside Reversal (unified 2-bar body reversal) ──────────────────────
-    // Replaces Engulfing + Piercing/Dark Cloud + Tweezer Top/Bottom. Strict color flip,
-    // shared body band on both bars, configurable penetration into bar 1's body:
-    //   • penetration 1.0 = strict classical engulfing (close past bar 1's open)
-    //   • penetration 0.5 = covers piercing AND engulfing (close past bar 1's midpoint)
-    //   • penetration 0.0 = any directional recovery past bar 1's close
+    // ── Outside Reversal (Engulfing) ────────────────────────────────────────
+    // Classical 2-bar bullish/bearish engulfing. Strict color flip, shared body band
+    // on both bars, bar 2 closes past bar 1's open at penetration 1.0 (default).
+    // Lowering penetration accepts shallower bar 2 closes (0.5 = past midpoint).
 
     public static boolean isBullishOutsideReversal(CandleAggregator.CandleBar prev,
                                                    CandleAggregator.CandleBar curr, double atr,
                                                    double minBodyAtrMult, double maxBodyAtrMult,
-                                                   double penetrationPct) {
+                                                   double penetrationPct,
+                                                   double oppositeWickMaxRatio) {
         if (prev == null || curr == null || atr <= 0) return false;
         if (!(prev.close < prev.open)) return false;                // bar 1 red
         if (!(curr.close > curr.open)) return false;                // bar 2 green (color flip)
@@ -117,6 +109,11 @@ final class CandlePatternDetector {
             if (currBody > maxBodyAtrMult * atr) return false;
         }
         if (!(curr.open <= prev.close)) return false;               // bar 2 opens at/below bar 1's close
+        // Opposing wick on the confirmation bar (curr) — upper wick must not dwarf the body.
+        if (oppositeWickMaxRatio > 0 && currBody > 0) {
+            double upperWick = curr.high - curr.close;
+            if (upperWick > oppositeWickMaxRatio * currBody) return false;
+        }
         double threshold = prev.close + penetrationPct * prevBody;
         return curr.close >= threshold;                             // closes ≥ N% into bar 1's body
     }
@@ -124,7 +121,8 @@ final class CandlePatternDetector {
     public static boolean isBearishOutsideReversal(CandleAggregator.CandleBar prev,
                                                    CandleAggregator.CandleBar curr, double atr,
                                                    double minBodyAtrMult, double maxBodyAtrMult,
-                                                   double penetrationPct) {
+                                                   double penetrationPct,
+                                                   double oppositeWickMaxRatio) {
         if (prev == null || curr == null || atr <= 0) return false;
         if (!(prev.close > prev.open)) return false;                // bar 1 green
         if (!(curr.close < curr.open)) return false;                // bar 2 red (color flip)
@@ -139,6 +137,11 @@ final class CandlePatternDetector {
             if (currBody > maxBodyAtrMult * atr) return false;
         }
         if (!(curr.open >= prev.close)) return false;               // bar 2 opens at/above bar 1's close
+        // Opposing wick on the confirmation bar (curr) — lower wick must not dwarf the body.
+        if (oppositeWickMaxRatio > 0 && currBody > 0) {
+            double lowerWick = curr.close - curr.low;
+            if (lowerWick > oppositeWickMaxRatio * currBody) return false;
+        }
         double threshold = prev.close - penetrationPct * prevBody;
         return curr.close <= threshold;
     }
@@ -153,7 +156,8 @@ final class CandlePatternDetector {
                                                 CandleAggregator.CandleBar curr, double atr,
                                                 double dojiBodyMaxRangeRatio,
                                                 double confirmBodyAtrMult,
-                                                double confirmMaxBodyAtrMult) {
+                                                double confirmMaxBodyAtrMult,
+                                                double oppositeWickMaxRatio) {
         if (prev == null || curr == null || atr <= 0) return false;
         double prevRange = prev.high - prev.low;
         if (prevRange <= 0) return false;
@@ -163,6 +167,11 @@ final class CandlePatternDetector {
         double currBody = curr.close - curr.open;
         if (currBody < confirmBodyAtrMult * atr) return false;             // curr is strong
         if (confirmMaxBodyAtrMult > 0 && currBody > confirmMaxBodyAtrMult * atr) return false; // not exhaustion
+        // Opposing wick on the confirmation bar — upper wick must not dwarf the green body.
+        if (oppositeWickMaxRatio > 0 && currBody > 0) {
+            double upperWick = curr.high - curr.close;
+            if (upperWick > oppositeWickMaxRatio * currBody) return false;
+        }
         // Confirmation must close past the doji's HIGH (not just the doji body) — hardcoded
         // rule. Closes above the entire prior bar's range, including any upper wick.
         return curr.close > prev.high;
@@ -172,7 +181,8 @@ final class CandlePatternDetector {
                                                 CandleAggregator.CandleBar curr, double atr,
                                                 double dojiBodyMaxRangeRatio,
                                                 double confirmBodyAtrMult,
-                                                double confirmMaxBodyAtrMult) {
+                                                double confirmMaxBodyAtrMult,
+                                                double oppositeWickMaxRatio) {
         if (prev == null || curr == null || atr <= 0) return false;
         double prevRange = prev.high - prev.low;
         if (prevRange <= 0) return false;
@@ -182,6 +192,11 @@ final class CandlePatternDetector {
         double currBody = curr.open - curr.close;
         if (currBody < confirmBodyAtrMult * atr) return false;             // curr is strong
         if (confirmMaxBodyAtrMult > 0 && currBody > confirmMaxBodyAtrMult * atr) return false; // not exhaustion
+        // Opposing wick on the confirmation bar — lower wick must not dwarf the red body.
+        if (oppositeWickMaxRatio > 0 && currBody > 0) {
+            double lowerWick = curr.close - curr.low;
+            if (lowerWick > oppositeWickMaxRatio * currBody) return false;
+        }
         // Confirmation must close past the doji's LOW (not just the doji body) — hardcoded
         // rule. Closes below the entire prior bar's range, including any lower wick.
         return curr.close < prev.low;
@@ -193,7 +208,8 @@ final class CandlePatternDetector {
                                           CandleAggregator.CandleBar bar2,
                                           CandleAggregator.CandleBar bar3, double atr,
                                           double bodyAtrMult, double bodyMaxAtrMult,
-                                          double bar3PenetrationPct) {
+                                          double bar3PenetrationPct,
+                                          double oppositeWickMaxRatio) {
         if (bar1 == null || bar2 == null || bar3 == null || atr <= 0) return false;
         if (!(bar1.close < bar1.open)) return false;
         if (!(bar2.close > bar2.open)) return false;
@@ -212,6 +228,11 @@ final class CandlePatternDetector {
         }
         // Bar 2: body fully INSIDE bar 1's body (classical harami containment).
         if (bar2.open < bar1.close || bar2.close > bar1.open) return false;
+        // Opposing wick on bar 3 (confirmation) — upper wick must not dwarf the green body.
+        if (oppositeWickMaxRatio > 0 && bar3Body > 0) {
+            double upperWick = bar3.high - bar3.close;
+            if (upperWick > oppositeWickMaxRatio * bar3Body) return false;
+        }
         // Bar 3 closes past a configurable penetration point into bar 1's body.
         // 0.0 = past bar 1's close; 0.5 = midpoint; 1.0 = past bar 1's open.
         double threshold = bar1.close + bar3PenetrationPct * (bar1.open - bar1.close);
@@ -222,7 +243,8 @@ final class CandlePatternDetector {
                                             CandleAggregator.CandleBar bar2,
                                             CandleAggregator.CandleBar bar3, double atr,
                                             double bodyAtrMult, double bodyMaxAtrMult,
-                                            double bar3PenetrationPct) {
+                                            double bar3PenetrationPct,
+                                            double oppositeWickMaxRatio) {
         if (bar1 == null || bar2 == null || bar3 == null || atr <= 0) return false;
         if (!(bar1.close > bar1.open)) return false;
         if (!(bar2.close < bar2.open)) return false;
@@ -238,6 +260,11 @@ final class CandlePatternDetector {
             if (bar3Body > bodyMaxAtrMult * atr) return false;
         }
         if (bar2.open > bar1.close || bar2.close < bar1.open) return false;
+        // Opposing wick on bar 3 (confirmation) — lower wick must not dwarf the red body.
+        if (oppositeWickMaxRatio > 0 && bar3Body > 0) {
+            double lowerWick = bar3.close - bar3.low;
+            if (lowerWick > oppositeWickMaxRatio * bar3Body) return false;
+        }
         double threshold = bar1.close - bar3PenetrationPct * (bar1.close - bar1.open);
         return bar3.close <= threshold;
     }
@@ -250,7 +277,8 @@ final class CandlePatternDetector {
                                         double outerBodyAtrMult,
                                         double outerMaxBodyAtrMult,
                                         double middleBodyMaxMultOfOuter,
-                                        double bar3PenetrationPct) {
+                                        double bar3PenetrationPct,
+                                        double oppositeWickMaxRatio) {
         if (bar1 == null || bar2 == null || bar3 == null || atr <= 0) return false;
         if (!(bar1.close < bar1.open)) return false;
         double bar1Body = bar1.open - bar1.close;
@@ -262,6 +290,11 @@ final class CandlePatternDetector {
         double bar3Body = bar3.close - bar3.open;
         if (bar3Body < outerBodyAtrMult * atr) return false;
         if (outerMaxBodyAtrMult > 0 && bar3Body > outerMaxBodyAtrMult * atr) return false;
+        // Opposing wick on bar 3 (confirmation) — upper wick must not dwarf the green body.
+        if (oppositeWickMaxRatio > 0 && bar3Body > 0) {
+            double upperWick = bar3.high - bar3.close;
+            if (upperWick > oppositeWickMaxRatio * bar3Body) return false;
+        }
         // Bar 3 close must reach a configurable penetration point into bar 1's red body.
         // 0.0 = past bar 1's close; 0.5 = past midpoint (Nison default); 1.0 = past bar 1's open.
         double threshold = bar1.close + bar3PenetrationPct * (bar1.open - bar1.close);
@@ -274,7 +307,8 @@ final class CandlePatternDetector {
                                         double outerBodyAtrMult,
                                         double outerMaxBodyAtrMult,
                                         double middleBodyMaxMultOfOuter,
-                                        double bar3PenetrationPct) {
+                                        double bar3PenetrationPct,
+                                        double oppositeWickMaxRatio) {
         if (bar1 == null || bar2 == null || bar3 == null || atr <= 0) return false;
         if (!(bar1.close > bar1.open)) return false;
         double bar1Body = bar1.close - bar1.open;
@@ -286,6 +320,11 @@ final class CandlePatternDetector {
         double bar3Body = bar3.open - bar3.close;
         if (bar3Body < outerBodyAtrMult * atr) return false;
         if (outerMaxBodyAtrMult > 0 && bar3Body > outerMaxBodyAtrMult * atr) return false;
+        // Opposing wick on bar 3 (confirmation) — lower wick must not dwarf the red body.
+        if (oppositeWickMaxRatio > 0 && bar3Body > 0) {
+            double lowerWick = bar3.close - bar3.low;
+            if (lowerWick > oppositeWickMaxRatio * bar3Body) return false;
+        }
         // Mirror of Morning Star — penetrate down into bar 1's green body. 0 = past close,
         // 0.5 = midpoint, 1.0 = past open.
         double threshold = bar1.close - bar3PenetrationPct * (bar1.close - bar1.open);

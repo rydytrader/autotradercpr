@@ -50,7 +50,12 @@ public class RiskSettingsStore {
         // (hammer-shape) doesn't qualify even though the body is big enough.
         volatile double goodSizeCandleBodyAtrMult           = 0.6;
         volatile double goodSizeCandleMaxBodyAtrMult        = 2.0;
-        volatile double goodSizeCandleMaxOppositeWickRatio  = 1.0;
+        // Shared opposing-wick cap applied to the confirmation bar of every pattern:
+        // Outside Reversal (bar 2), Doji Reversal (bar 2), Morning/Evening Star (bar 3),
+        // Three Inside Up/Down (bar 3), AND the single-bar Good Size catch-all. For bullish
+        // patterns this caps the upper wick; for bearish, the lower wick. 0.5 = wick can be
+        // at most half the body. 0 disables the check.
+        volatile double confirmationMaxOppositeWickRatio    = 0.5;
         // Pin bar (hammer / shooting star): rejection wick ≥ N × body, opposite wick ≤ N × body.
         volatile double pinBarRejectionWickBodyMult = 2.0;
         volatile double pinBarOppositeWickBodyMult  = 0.30;
@@ -62,18 +67,13 @@ public class RiskSettingsStore {
         volatile double pinBarSmallBodyMaxRangeRatio    = 0.25;
         volatile double pinBarDominantWickMinRangeRatio = 0.60;
         volatile double pinBarOppositeWickMaxRangeRatio = 0.30;
-        // Outside Reversal — unified 2-bar reversal that replaces Engulfing, Piercing Line,
-        // Dark Cloud Cover, and Tweezer Top/Bottom. Strict color flip on both bars + shared
-        // body band + configurable penetration into bar 1's body:
-        //   • 0.50 (default) = catches the piercing range and the engulfing range together
-        //   • 1.00 = strict engulfing only (bar 2 closes past bar 1's open)
-        //   • 0.30 = weak piercing acceptable too
-        // Tweezer's match-tolerance discriminator was dropped — most standalone tweezers
-        // also satisfy ≥50% penetration; the matched-extreme-but-no-penetration case was
-        // a weak signal anyway.
+        // Outside Reversal (Engulfing) — classical 2-bar bullish/bearish engulfing.
+        // Strict color flip on both bars + shared body band + bar 2 closes past bar 1's
+        // open (penetration 1.0). Lowering penetration accepts weaker reversal cousins
+        // (0.5 = closes past bar 1's midpoint), but the default is strict engulfing.
         volatile double outsideReversalMinBodyAtrMult = 0.5;
         volatile double outsideReversalMaxBodyAtrMult = 2.0;
-        volatile double outsideReversalPenetrationPct = 0.5;
+        volatile double outsideReversalPenetrationPct = 1.0;
         // Three Inside Up / Three Inside Down (3-bar harami + confirmation). bar1 large
         // directional (≥ N × ATR), bar2 opposite color with body fully INSIDE bar1's body
         // and body ≤ N × bar1 body (small inside bar — harami constraint), bar3 closes past
@@ -343,7 +343,7 @@ public class RiskSettingsStore {
     public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
     public double getGoodSizeCandleBodyAtrMult()          { return cfg().goodSizeCandleBodyAtrMult; }
     public double getGoodSizeCandleMaxBodyAtrMult()       { return cfg().goodSizeCandleMaxBodyAtrMult; }
-    public double getGoodSizeCandleMaxOppositeWickRatio() { return cfg().goodSizeCandleMaxOppositeWickRatio; }
+    public double getConfirmationMaxOppositeWickRatio()   { return cfg().confirmationMaxOppositeWickRatio; }
     public double getPinBarRejectionWickBodyMult() { return cfg().pinBarRejectionWickBodyMult; }
     public double getPinBarOppositeWickBodyMult()  { return cfg().pinBarOppositeWickBodyMult; }
     public double getPinBarSmallBodyMaxRangeRatio()    { return cfg().pinBarSmallBodyMaxRangeRatio; }
@@ -472,7 +472,7 @@ public class RiskSettingsStore {
     public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
     public void setGoodSizeCandleBodyAtrMult(double v)          { cfg().goodSizeCandleBodyAtrMult = v; }
     public void setGoodSizeCandleMaxBodyAtrMult(double v)       { cfg().goodSizeCandleMaxBodyAtrMult = v; }
-    public void setGoodSizeCandleMaxOppositeWickRatio(double v) { cfg().goodSizeCandleMaxOppositeWickRatio = v; }
+    public void setConfirmationMaxOppositeWickRatio(double v)   { cfg().confirmationMaxOppositeWickRatio = v; }
     public void setPinBarRejectionWickBodyMult(double v) { cfg().pinBarRejectionWickBodyMult = v; }
     public void setPinBarOppositeWickBodyMult(double v)  { cfg().pinBarOppositeWickBodyMult = v; }
     public void setPinBarSmallBodyMaxRangeRatio(double v)    { cfg().pinBarSmallBodyMaxRangeRatio = Math.max(0, v); }
@@ -613,7 +613,7 @@ public class RiskSettingsStore {
             upsert("enableTargetShift", String.valueOf(c.enableTargetShift));
             upsert("goodSizeCandleBodyAtrMult",    String.valueOf(c.goodSizeCandleBodyAtrMult));
             upsert("goodSizeCandleMaxBodyAtrMult", String.valueOf(c.goodSizeCandleMaxBodyAtrMult));
-            upsert("goodSizeCandleMaxOppositeWickRatio", String.valueOf(c.goodSizeCandleMaxOppositeWickRatio));
+            upsert("confirmationMaxOppositeWickRatio", String.valueOf(c.confirmationMaxOppositeWickRatio));
             upsert("pinBarRejectionWickBodyMult", String.valueOf(c.pinBarRejectionWickBodyMult));
             upsert("pinBarOppositeWickBodyMult", String.valueOf(c.pinBarOppositeWickBodyMult));
             upsert("pinBarSmallBodyMaxRangeRatio", String.valueOf(c.pinBarSmallBodyMaxRangeRatio));
@@ -778,7 +778,10 @@ public class RiskSettingsStore {
                          "marubozuMaxWicksPctOfBody" -> { /* legacy keys — patterns retired; ignored on load */ }
                     case "goodSizeCandleBodyAtrMult"          -> c.goodSizeCandleBodyAtrMult = Double.parseDouble(v);
                     case "goodSizeCandleMaxBodyAtrMult"       -> c.goodSizeCandleMaxBodyAtrMult = Double.parseDouble(v);
-                    case "goodSizeCandleMaxOppositeWickRatio" -> c.goodSizeCandleMaxOppositeWickRatio = Double.parseDouble(v);
+                    // Shared opposing-wick cap. Accepts the new name + the legacy good-size
+                    // key so existing risk-settings.json files keep loading without losing the value.
+                    case "confirmationMaxOppositeWickRatio",
+                         "goodSizeCandleMaxOppositeWickRatio" -> c.confirmationMaxOppositeWickRatio = Double.parseDouble(v);
                     case "pinBarRejectionWickBodyMult" -> c.pinBarRejectionWickBodyMult = Double.parseDouble(v);
                     case "pinBarOppositeWickBodyMult"  -> c.pinBarOppositeWickBodyMult = Double.parseDouble(v);
                     case "pinBarSmallBodyMaxRangeRatio"    -> c.pinBarSmallBodyMaxRangeRatio = Math.max(0, Double.parseDouble(v));
@@ -788,9 +791,8 @@ public class RiskSettingsStore {
                     case "outsideReversalMinBodyAtrMult" -> c.outsideReversalMinBodyAtrMult = Double.parseDouble(v);
                     case "outsideReversalMaxBodyAtrMult" -> c.outsideReversalMaxBodyAtrMult = Double.parseDouble(v);
                     case "outsideReversalPenetrationPct" -> c.outsideReversalPenetrationPct = Double.parseDouble(v);
-                    // Legacy keys from the pre-merge Engulfing/Piercing/Tweezer settings —
-                    // each maps onto the closest outsideReversal* equivalent so existing
-                    // risk-settings.json files keep working.
+                    // Legacy keys from earlier pattern variants — each maps onto the closest
+                    // outsideReversal* equivalent so older risk-settings.json files keep working.
                     case "engulfingMinBodyAtrMult",
                          "piercingMinBodyAtrMult",
                          "tweezerMinBodyAtrMult",
@@ -801,7 +803,7 @@ public class RiskSettingsStore {
                          "tweezerMaxBodyAtrMult"         -> c.outsideReversalMaxBodyAtrMult = Double.parseDouble(v);
                     case "engulfingBar2PenetrationPct",
                          "piercingPenetrationPct"        -> c.outsideReversalPenetrationPct = Double.parseDouble(v);
-                    case "tweezerLowHighMatchAtr"        -> { /* legacy — Tweezer pattern retired into Outside Reversal */ }
+                    case "tweezerLowHighMatchAtr"        -> { /* legacy — discriminator no longer applicable */ }
                     case "engulfingPrevMinBodyAtrMult",
                          "engulfingPrevMaxBodyAtrMult" -> { /* legacy — folded into the shared engulfingMin/MaxBodyAtrMult band */ }
                     case "haramiBodyAtrMult"           -> c.haramiBodyAtrMult = Double.parseDouble(v);

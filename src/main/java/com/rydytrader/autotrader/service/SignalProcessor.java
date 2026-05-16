@@ -191,10 +191,10 @@ public class SignalProcessor {
         // ── 4c3. Compute base quantity (uses SL for risk-based sizing) ─────────
         int baseQty = quantityService.computeBaseQty(symbol, close, sl, setup);
 
-        // Global large-candle filter retired — each named pattern (Marubozu, Engulfing,
-        // Doji reversal, Morning/Evening star) now enforces its own per-pattern body cap
-        // inside CandlePatternDetector. Patterns without a body floor (Hammer, Piercing,
-        // Tweezer, Three Inside) rely on their structural signature instead.
+        // Global large-candle filter retired — each named pattern (Outside Reversal,
+        // Doji reversal, Morning/Evening star, Three Inside) now enforces its own
+        // per-pattern body cap inside CandlePatternDetector. Hammer relies on its
+        // structural pin-bar signature instead.
 
         // ── 4e2b. HTF Hurdle: prior 15-min close must have cleared the nearest weekly level ──
         // When a 5-min breakout closes above (for buys) the nearest weekly hurdle, the previous

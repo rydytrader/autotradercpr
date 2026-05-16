@@ -461,7 +461,7 @@
         </div>
         <div class="section-body">
             <div class="form-hint" style="margin-bottom:14px;">
-                Tunable thresholds for the bullish/bearish candle patterns used by the CPR retest entries: hammer / shooting star, outside reversal (Engulfing + Piercing/Dark Cloud + Tweezer merged), doji reversal, morning / evening star, harami, and good-size candle (catch-all). All share the retest-only model: the level must already be broken (state captured by the level-broken state machine) and the current bar must touch the level and close back in trade direction. Use higher numbers to make a pattern stricter (fewer signals, higher quality); lower numbers to loosen it.
+                Tunable thresholds for the bullish/bearish candle patterns used by the CPR retest entries: hammer / shooting star, outside reversal (engulfing), doji reversal, morning / evening star, harami, and good-size candle (catch-all). All share the retest-only model: the level must already be broken (state captured by the level-broken state machine) and the current bar must touch the level and close back in trade direction. Use higher numbers to make a pattern stricter (fewer signals, higher quality); lower numbers to loosen it.
             </div>
 
             <div class="form-grid">
@@ -472,12 +472,13 @@
                      1. Morning / Evening Star (gap-and-confirm, highest conviction)
                      2. Three Inside / Harami (containment + confirmation)
                    2-bar tier
-                     3. Outside Reversal (Engulfing + Piercing + Tweezer merged)
+                     3. Outside Reversal (classical Engulfing)
                      4. Doji Reversal (doji + directional confirmation)
                    1-bar tier
                      5. Pin Bar (wick rejection)
                      6. Good-Size Candle (catch-all)
-                 Level Touch Tolerance stays last (cross-pattern slack). -->
+                 Level Touch Tolerance (cross-pattern slack) and Confirmation Max Opposing
+                 Wick (shared across patterns) sit at the bottom of the form. -->
 
             <!-- Star group -->
             <div class="form-group">
@@ -518,9 +519,9 @@
                 <div class="form-hint"><b>Bars 1 and 3 share the same [floor, ceiling] × ATR band</b> — symmetric with Morning/Evening Star. Floor keeps both outer bars meaningful; ceiling skips climactic exhaustion. <b>Bar 2</b> opposite-color, body fully INSIDE bar 1's body — classical Harami containment, no extra size cap. <b>Bar 3 penetration</b>: 1.0 = past bar 1's open (classical Nison Three Inside Up/Down), 0.5 = past midpoint, 0.0 = past bar 1's close (any recovery). Defaults: 0.5–2.0 × ATR shared band, 1.0 penetration. Set any side to 0 to disable.</div>
             </div>
 
-            <!-- Outside Reversal group (replaces Engulfing + Piercing/Dark Cloud + Tweezer) -->
+            <!-- Outside Reversal (classical Engulfing) -->
             <div class="form-group">
-                <label class="form-label">Outside Reversal (Engulfing + Piercing combined)</label>
+                <label class="form-label">Outside Reversal (Engulfing)</label>
                 <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Bar 1 and Bar 2 body in [</span>
                     <input type="number" id="outsideReversalMinBodyAtrMult" class="form-control" step="0.1" min="0.0" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
@@ -531,9 +532,9 @@
                 <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
                     <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">Bar 2 penetrates ≥</span>
                     <input type="number" id="outsideReversalPenetrationPct" class="form-control" step="0.05" min="0.00" max="1.00" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">into bar 1 body (0.5 = piercing+engulfing, 1.0 = strict engulfing only)</span>
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">into bar 1 body (1.0 = classical engulfing — bar 2 closes past bar 1's open)</span>
                 </div>
-                <div class="form-hint">Unified 2-bar reversal that replaces the separate Engulfing, Piercing Line / Dark Cloud Cover, and Tweezer Top/Bottom patterns. Strict color flip required (red→green for bullish, green→red for bearish). <b>Bars 1 and 2 share the same [floor, ceiling] × ATR band</b>. <b>Bar 2 penetration</b>: 1.0 = past bar 1's open (classical strict engulfing); 0.5 = past midpoint (catches piercing AND engulfing in one shot); 0.0 = past bar 1's close (any directional recovery). Defaults: 0.5–2.0 × ATR shared band, 0.5 penetration. Trade-log tag: <code>OUTSIDE_REVERSAL_RETEST</code>.</div>
+                <div class="form-hint">Classical 2-bar bullish/bearish engulfing. Strict color flip required (red→green for bullish, green→red for bearish). <b>Bars 1 and 2 share the same [floor, ceiling] × ATR band</b>. <b>Bar 2 penetration</b>: 1.0 = past bar 1's open (classical strict engulfing, default); 0.5 = past midpoint (accepts shallower reversals); 0.0 = past bar 1's close (any directional recovery). Defaults: 0.5–2.0 × ATR shared band, 1.0 penetration. Trade-log tag: <code>OUTSIDE_REVERSAL_RETEST</code>.</div>
             </div>
 
             <!-- Doji Reversal group -->
@@ -577,12 +578,7 @@
                     <input type="number" id="goodSizeCandleMaxBodyAtrMult" class="form-control" step="0.1" min="0.0" max="6.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">] × ATR</span>
                 </div>
-                <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
-                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">Opposing wick ≤</span>
-                    <input type="number" id="goodSizeCandleMaxOppositeWickRatio" class="form-control" step="0.1" min="0.0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× body</span>
-                </div>
-                <div class="form-hint">Last in the matcher chain — fires only when no stricter named pattern matched. Body must sit inside the [floor, ceiling] × ATR band — floor keeps weak bars out, ceiling kills oversized exhaustion / blow-off bars. Opposing-wick cap rejects shooting-star-shaped green bars on buys and hammer-shaped red bars on sells. Defaults: 0.6–2.0 &times; ATR body, 1.0 &times; body opposing wick.</div>
+                <div class="form-hint">Last in the matcher chain — fires only when no stricter named pattern matched. Body must sit inside the [floor, ceiling] × ATR band — floor keeps weak bars out, ceiling kills oversized exhaustion / blow-off bars. The opposing-wick cap is controlled by the shared <b>Confirmation Max Opposing Wick</b> setting at the top of this section. Defaults: 0.6–2.0 &times; ATR body.</div>
             </div>
 
             <!-- Level Touch Tolerance -->
@@ -594,6 +590,17 @@
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× ATR</span>
                 </div>
                 <div class="form-hint">A retest pattern's bar can fall short of the level by up to this much ATR and still count as a touch. Absorbs tick-level whisker misses. Applies to all 6 retest patterns (hammer, outside-reversal, doji, star, harami, good-size). Set to 0 to require strict equality. Default: 0.2 × ATR.</div>
+            </div>
+
+            <!-- Shared: Confirmation Max Opposing Wick -->
+            <div class="form-group">
+                <label class="form-label">Confirmation Max Opposing Wick (shared)</label>
+                <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Opposing wick ≤</span>
+                    <input type="number" id="confirmationMaxOppositeWickRatio" class="form-control" step="0.1" min="0.0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× body</span>
+                </div>
+                <div class="form-hint">Applied to the confirmation bar of every pattern — bar 2 of Outside Reversal / Doji Reversal, bar 3 of Morning/Evening Star and Three Inside Up/Down, and the single-bar Good Size catch-all. For bullish patterns this caps the <b>upper</b> wick; for bearish, the <b>lower</b> wick. Default <b>0.5</b> (wick can be at most half the body). Set to 0 to disable entirely. Rejects bars whose body says "buyer/seller commitment" but whose wick says "got rejected at the extreme."</div>
             </div>
 
             </div><!-- /form-grid -->
@@ -1190,12 +1197,12 @@
             document.getElementById('enableRiskRewardFilter').checked = d.enableRiskRewardFilter !== false;
             document.getElementById('goodSizeCandleBodyAtrMult').value         = d.goodSizeCandleBodyAtrMult         != null ? d.goodSizeCandleBodyAtrMult         : 0.6;
             document.getElementById('goodSizeCandleMaxBodyAtrMult').value      = d.goodSizeCandleMaxBodyAtrMult      != null ? d.goodSizeCandleMaxBodyAtrMult      : 2.0;
-            document.getElementById('goodSizeCandleMaxOppositeWickRatio').value = d.goodSizeCandleMaxOppositeWickRatio != null ? d.goodSizeCandleMaxOppositeWickRatio : 1.0;
+            document.getElementById('confirmationMaxOppositeWickRatio').value = d.confirmationMaxOppositeWickRatio != null ? d.confirmationMaxOppositeWickRatio : 0.5;
             document.getElementById('pinBarRejectionWickBodyMult').value  = d.pinBarRejectionWickBodyMult  != null ? d.pinBarRejectionWickBodyMult  : 2.0;
             document.getElementById('pinBarOppositeWickBodyMult').value   = d.pinBarOppositeWickBodyMult   != null ? d.pinBarOppositeWickBodyMult   : 0.30;
             document.getElementById('outsideReversalMinBodyAtrMult').value = d.outsideReversalMinBodyAtrMult != null ? d.outsideReversalMinBodyAtrMult : 0.5;
             document.getElementById('outsideReversalMaxBodyAtrMult').value = d.outsideReversalMaxBodyAtrMult != null ? d.outsideReversalMaxBodyAtrMult : 2.0;
-            document.getElementById('outsideReversalPenetrationPct').value = d.outsideReversalPenetrationPct != null ? d.outsideReversalPenetrationPct : 0.5;
+            document.getElementById('outsideReversalPenetrationPct').value = d.outsideReversalPenetrationPct != null ? d.outsideReversalPenetrationPct : 1.0;
             document.getElementById('haramiBodyAtrMult').value            = d.haramiBodyAtrMult            != null ? d.haramiBodyAtrMult            : 0.5;
             document.getElementById('haramiBodyMaxAtrMult').value         = d.haramiBodyMaxAtrMult         != null ? d.haramiBodyMaxAtrMult         : 2.0;
             document.getElementById('haramiBar3PenetrationPct').value     = d.haramiBar3PenetrationPct     != null ? d.haramiBar3PenetrationPct     : 1.0;
@@ -1352,12 +1359,12 @@
                 enableRiskRewardFilter: document.getElementById('enableRiskRewardFilter').checked,
                 goodSizeCandleBodyAtrMult:    (function() { var v = parseFloat(document.getElementById('goodSizeCandleBodyAtrMult').value); return isNaN(v) ? 0.6 : v; })(),
                 goodSizeCandleMaxBodyAtrMult: (function() { var v = parseFloat(document.getElementById('goodSizeCandleMaxBodyAtrMult').value); return isNaN(v) ? 2.0 : v; })(),
-                goodSizeCandleMaxOppositeWickRatio: (function() { var v = parseFloat(document.getElementById('goodSizeCandleMaxOppositeWickRatio').value); return isNaN(v) ? 1.0 : v; })(),
+                confirmationMaxOppositeWickRatio: (function() { var v = parseFloat(document.getElementById('confirmationMaxOppositeWickRatio').value); return isNaN(v) ? 0.5 : v; })(),
                 pinBarRejectionWickBodyMult:  parseFloat(document.getElementById('pinBarRejectionWickBodyMult').value)  || 2.0,
                 pinBarOppositeWickBodyMult:   parseFloat(document.getElementById('pinBarOppositeWickBodyMult').value)   || 0.30,
                 outsideReversalMinBodyAtrMult: (function() { var v = parseFloat(document.getElementById('outsideReversalMinBodyAtrMult').value); return isNaN(v) ? 0.5 : v; })(),
                 outsideReversalMaxBodyAtrMult: (function() { var v = parseFloat(document.getElementById('outsideReversalMaxBodyAtrMult').value); return isNaN(v) ? 2.0 : v; })(),
-                outsideReversalPenetrationPct: (function() { var v = parseFloat(document.getElementById('outsideReversalPenetrationPct').value); return isNaN(v) ? 0.5 : v; })(),
+                outsideReversalPenetrationPct: (function() { var v = parseFloat(document.getElementById('outsideReversalPenetrationPct').value); return isNaN(v) ? 1.0 : v; })(),
                 haramiBodyAtrMult:            parseFloat(document.getElementById('haramiBodyAtrMult').value)            || 0.5,
                 haramiBodyMaxAtrMult:         (function() { var v = parseFloat(document.getElementById('haramiBodyMaxAtrMult').value); return isNaN(v) ? 2.0 : v; })(),
                 haramiBar3PenetrationPct:     (function() { var v = parseFloat(document.getElementById('haramiBar3PenetrationPct').value); return isNaN(v) ? 1.0 : v; })(),
