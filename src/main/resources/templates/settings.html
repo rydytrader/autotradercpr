@@ -162,7 +162,7 @@
                 <div class="stat-label" style="margin-bottom:8px;">Structural SL</div>
                 <div class="stat-value" id="statDefaultSl" style="font-size:2rem; color:var(--accent-red);">—</div>
                 <div class="stat-sub" id="statDefaultSlSub" style="margin-top:8px;">Level ± Buffer × ATR</div>
-                <div class="stat-sub" id="statTrailSlSub" style="margin-top:4px;">Trailing SL status</div>
+                <div class="stat-sub" id="statTrailSlSub" style="margin-top:4px;">Breakeven SL status</div>
             </div>
         </div>
 
@@ -333,7 +333,7 @@
                             <b>Stock Price vs EMA 20</b> &mdash; exit when stock's 5-min candle close is on the wrong side of its EMA 20 (LONG: close &lt; EMA 20; SHORT: close &gt; EMA 20)
                         </span>
                     </div>
-                    <div class="form-hint">Stock-side defensive-exit check, evaluated on every 5-min candle close (after the candle's EMA is stamped). Fires before SL / Target / Trailing; cancels both OCO legs and places an exit market order. Reason recorded: <code>PRICE_EMA_EXIT</code>. NIFTY-side macro safety-net mirrors of this check live on the <b>Index Alignment</b> tab.</div>
+                    <div class="form-hint">Stock-side defensive-exit check, evaluated on every 5-min candle close (after the candle's EMA is stamped). Fires before SL / Target / Breakeven; cancels both OCO legs and places an exit market order. Reason recorded: <code>PRICE_EMA_EXIT</code>. NIFTY-side macro safety-net mirrors of this check live on the <b>Index Alignment</b> tab.</div>
                 </div>
             </div>
         </div>

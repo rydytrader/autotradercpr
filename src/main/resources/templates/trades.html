@@ -151,7 +151,7 @@
                 outline:none;cursor:pointer;margin-right:10px;">
                 <option value="">All Reasons</option>
                 <option value="SL">SL</option>
-                <option value="TRAILING_SL">Trailing SL</option>
+                <option value="TRAILING_SL">Breakeven</option>
                 <option value="SL_BREAKEVEN">SL Breakeven</option>
                 <option value="TARGET">Target</option>
                 <option value="TARGET_1">T1</option>
@@ -298,7 +298,7 @@
         }
         if (type === 'reason') {
             if (value === 'SL')              return `<span class="side-badge side-short">SL</span>`;
-            if (value === 'TRAILING_SL')     return `<span class="side-badge" style="background:rgba(251,146,60,0.1);border:1px solid rgba(251,146,60,0.25);color:#fb923c">TRAILING SL</span>`;
+            if (value === 'TRAILING_SL')     return `<span class="side-badge" style="background:rgba(251,146,60,0.1);border:1px solid rgba(251,146,60,0.25);color:#fb923c">BREAKEVEN</span>`;
             if (value === 'SL_BREAKEVEN')    return `<span class="side-badge" style="background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.25);color:var(--accent-yellow)">SL BE</span>`;
             if (value === 'TARGET')          return `<span class="side-badge side-long">TARGET</span>`;
             if (value === 'TARGET_1')        return `<span class="side-badge side-long">T1</span>`;

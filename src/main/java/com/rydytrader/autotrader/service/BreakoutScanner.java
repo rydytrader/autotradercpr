@@ -321,6 +321,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (!"INTERNAL".equalsIgnoreCase(riskSettings.getSignalSource())) return;
         if (!watchlistSymbols.contains(fyersSymbol)) return;
 
+        // Defence-in-depth: skip the scan entirely on non-trading days (NSE holiday / weekend).
+        // SignalProcessor also blocks at signal entry, but suppressing here avoids event-log
+        // noise from mock-session ticks that build 5-min bars on Saturdays.
+        if (marketHolidayService != null && !marketHolidayService.isTradingDay()) return;
+
         // Check if stock passes the CPR Width Scanner settings (NS/NL/IS/IL)
         if (!isBreakoutEligible(fyersSymbol)) return;
 
@@ -443,7 +448,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (potentialSetup != null) {
                     String detail = "close (" + String.format("%.2f", close) + ") not above EMA20 ("
                         + String.format("%.2f", ema20Now) + ")";
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + potentialSetup + " blocked by 5-min EMA trend — " + detail);
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + potentialSetup + routeFor(fyersSymbol) + " blocked by 5-min EMA trend — " + detail);
                     recordRejection(fyersSymbol, potentialSetup, close, "EMA_TREND", detail);
                 }
             } else if (redCandle && close >= ema20Now) {
@@ -451,7 +456,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (potentialSetup != null) {
                     String detail = "close (" + String.format("%.2f", close) + ") not below EMA20 ("
                         + String.format("%.2f", ema20Now) + ")";
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + potentialSetup + " blocked by 5-min EMA trend — " + detail);
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + potentialSetup + routeFor(fyersSymbol) + " blocked by 5-min EMA trend — " + detail);
                     recordRejection(fyersSymbol, potentialSetup, close, "EMA_TREND", detail);
                 }
             }

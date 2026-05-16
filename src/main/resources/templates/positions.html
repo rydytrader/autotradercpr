@@ -655,7 +655,7 @@
                 tgtStr = tgt > 0 ? tgt.toFixed(2) : 'Trail';
             }
             const trailArrow = pos.slTrailed
-                ? (pos.side === 'LONG' ? ' <span style="color:var(--accent-green);" title="Trailing SL tightened">&#9650;</span>' : ' <span style="color:var(--accent-red);" title="Trailing SL tightened">&#9660;</span>')
+                ? (pos.side === 'LONG' ? ' <span style="color:var(--accent-green);" title="SL moved to breakeven">&#9650;</span>' : ' <span style="color:var(--accent-red);" title="SL moved to breakeven">&#9660;</span>')
                 : '';
             // Left-edge alert stripe — informational, doesn't affect the trade. Red takes
             // priority over yellow: if NIFTY trend has flipped since entry, that's the more
@@ -936,7 +936,7 @@
             'Entry:   ' + entry.toFixed(2),
             'LTP:     ' + ltp.toFixed(2),
             'SL:      ' + (sl > 0 ? sl.toFixed(2) + '  (' + slDist + '% away)' : '—'),
-            'Target:  ' + (tgt > 0 ? tgt.toFixed(2) + '  (' + tgtDist + '% away)' : 'Trailing SL'),
+            'Target:  ' + (tgt > 0 ? tgt.toFixed(2) + '  (' + tgtDist + '% away)' : 'Breakeven SL'),
             '',
             'Current P&L:      ' + fmtInr(curPnl),
             'Potential Loss:   ' + fmtInr(-potLoss) + (sl > 0 ? '  (if SL hit)' : ''),

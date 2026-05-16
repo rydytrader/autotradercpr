@@ -66,6 +66,8 @@
         }
         .scan-badge.narrow { background: rgba(99,179,237,0.12); color: var(--accent-blue); }
         .scan-badge.inside { background: rgba(251,191,36,0.12); color: var(--accent-yellow); }
+        .scan-badge.bm-bull { background: rgba(52,211,153,0.12); color: var(--accent-green); }
+        .scan-badge.bm-bear { background: rgba(248,113,113,0.12); color: var(--accent-red); }
 
         .scan-price-row {
             display: flex; align-items: baseline; gap: 10px;
@@ -499,14 +501,14 @@
             <button class="filter-btn" onclick="setFilter('INSIDE', this)">Inside</button>
         </span>
         <div class="filter-sep"></div>
+        <span class="momentum-filter-group">
+            <button class="filter-btn active" onclick="setMomentumFilter('all', this)">All</button>
+            <button class="filter-btn" onclick="setMomentumFilter('BULL', this)">Bullish Momentum</button>
+            <button class="filter-btn" onclick="setMomentumFilter('BEAR', this)">Bearish Momentum</button>
+        </span>
+        <div class="filter-sep"></div>
         <button class="filter-btn" onclick="toggleSignalFilter(this)">Has Signal</button>
         <button class="filter-btn" onclick="toggleFilteredFilter(this)">Filtered</button>
-        <select id="timeFilter" onchange="applyTimeFilter()" style="
-            background: var(--bg-card); border: 1px solid var(--border); color: var(--text-secondary);
-            padding: 5px 8px; border-radius: 8px; font-family: var(--font-mono); font-size: 0.75rem;
-            cursor: pointer;">
-            <option value="">All Times</option>
-        </select>
         <select id="symbolFilter" onchange="applySymbolFilter()" style="
             background: var(--bg-card); border: 1px solid var(--border); color: var(--text-secondary);
             padding: 5px 8px; border-radius: 8px; font-family: var(--font-mono); font-size: 0.75rem;
@@ -552,25 +554,10 @@
     var cprFilter = 'all';
     var signalFilter = false;
     var filteredFilter = false;
-    var timeFilter = '';
+    var momentumFilter = 'all';  // 'all' | 'BULL' | 'BEAR'
     var symbolFilter = '';
     var sectorFilter = '';
     var universeFilter = 'ALL'; // 'ALL' (NIFTY 100) or 'N50' (NIFTY 50 only)
-
-    // Populate time dropdown (9:15 to 15:30 in 15-min intervals)
-    (function() {
-        var sel = document.getElementById('timeFilter');
-        for (var h = 9; h <= 15; h++) {
-            for (var m = (h === 9 ? 15 : 0); m < 60; m += 15) {
-                if (h === 15 && m > 30) break;
-                var t = (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
-                var opt = document.createElement('option');
-                opt.value = t;
-                opt.textContent = t;
-                sel.appendChild(opt);
-            }
-        }
-    })();
 
     // ── Filter controls ─────────────────────────────
     window.setUniverseFilter = function(type, btn) {
@@ -608,8 +595,12 @@
         renderCards();
     };
 
-    window.applyTimeFilter = function() {
-        timeFilter = document.getElementById('timeFilter').value;
+    window.setMomentumFilter = function(type, btn) {
+        momentumFilter = type; // 'all' | 'BULL' | 'BEAR'
+        document.querySelectorAll('.momentum-filter-group .filter-btn').forEach(function(b) {
+            b.classList.remove('active');
+        });
+        btn.classList.add('active');
         renderCards();
     };
 
@@ -673,10 +664,14 @@
             if (sectorFilter && d.sector !== sectorFilter) return false;
             if (signalFilter && (!d.lastSignal || d.lastSignal.status !== 'TRADED')) return false;
             if (filteredFilter && (!d.lastSignal || d.lastSignal.status !== 'FILTERED')) return false;
-            if (timeFilter && d.lastSignal && d.lastSignal.time) {
-                if (d.lastSignal.time !== timeFilter) return false;
-            } else if (timeFilter && !d.lastSignal) {
-                return false;
+            if (momentumFilter !== 'all') {
+                var wl = d.weeklyLevels;
+                if (!wl || !d.ltp) return false;
+                var mR1 = +wl.r1 || 0, mS1 = +wl.s1 || 0, mPh = +wl.ph || 0, mPl = +wl.pl || 0;
+                var isBull = (mR1 > 0 && mPh > 0 && d.ltp > mR1 && d.ltp > mPh);
+                var isBear = (mS1 > 0 && mPl > 0 && d.ltp < mS1 && d.ltp < mPl);
+                if (momentumFilter === 'BULL' && !isBull) return false;
+                if (momentumFilter === 'BEAR' && !isBear) return false;
             }
             return true;
         });
@@ -711,6 +706,22 @@
         if (nowOpen) expandedSections[key] = true;
         else delete expandedSections[key];
     };
+
+    // Bullish/bearish momentum pill — based on LTP vs weekly R1/PWH (bullish) or
+    // weekly S1/PWL (bearish). Returns the pill HTML or empty string when neutral
+    // or the weekly levels haven't loaded yet.
+    function buildBmPill(d) {
+        var wl = d.weeklyLevels;
+        if (!wl || !d.ltp) return '';
+        var r1 = +wl.r1 || 0, s1 = +wl.s1 || 0, ph = +wl.ph || 0, pl = +wl.pl || 0;
+        if (r1 > 0 && ph > 0 && d.ltp > r1 && d.ltp > ph) {
+            return '<span class="scan-badge bm-bull" title="Bullish momentum: LTP ' + d.ltp.toFixed(2) + ' &gt; weekly R1 ' + r1.toFixed(2) + ' and PWH ' + ph.toFixed(2) + '">BM</span>';
+        }
+        if (s1 > 0 && pl > 0 && d.ltp < s1 && d.ltp < pl) {
+            return '<span class="scan-badge bm-bear" title="Bearish momentum: LTP ' + d.ltp.toFixed(2) + ' &lt; weekly S1 ' + s1.toFixed(2) + ' and PWL ' + pl.toFixed(2) + '">BM</span>';
+        }
+        return '';
+    }
 
     function buildCard(d) {
         var cardClass = 'scan-card';
@@ -827,6 +838,7 @@
                 }
                 return '<span class="scan-badge inside" title="Inside CPR">I</span>';
             }).join(''))
+            + '<span class="bm-slot" style="display:inline-flex;">' + buildBmPill(d) + '</span>'
             + sectorChip
             + '  </span>'
             + '</div>'
@@ -990,6 +1002,11 @@
                             var up = d.changePercent >= 0;
                             chEl.className = 'scan-change ' + (up ? 'up' : 'down');
                             chEl.innerHTML = (up ? '&#9650;' : '&#9660;') + ' ' + d.changePercent.toFixed(2) + '%';
+                        }
+                        var bmSlot = card.querySelector('.bm-slot');
+                        if (bmSlot) {
+                            var nextBm = buildBmPill(d);
+                            if (bmSlot.innerHTML !== nextBm) bmSlot.innerHTML = nextBm;
                         }
                         var ohlEl = card.querySelector('.scan-ohl');
                         if (ohlEl && d.candleOpen) {

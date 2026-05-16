@@ -43,6 +43,17 @@ public class SignalProcessor {
         String rawSymbol   = str(alert, "symbol");
         // TradingView uses _ in symbols (e.g. BAJAJ_AUTO), Fyers uses - (BAJAJ-AUTO)
         String symbol      = rawSymbol.replace("_", "-");
+
+        // ── Non-trading-day gate ────────────────────────────────────────────────
+        // Block weekends / NSE holidays. WebSocket ticks still flow on NSE mock-session
+        // Saturdays and trades would otherwise execute against the user's real account.
+        // Both TradingView webhook and internal-scanner signals funnel through this method,
+        // so this single check covers every entry path. MarketDataService and CandleAggregator
+        // remain day-agnostic by design (data feed layer); the gate belongs here.
+        if (marketHolidayService != null && !marketHolidayService.isTradingDay()) {
+            return ProcessedSignal.rejected(setup, symbol, "Non-trading day (weekend / NSE holiday)");
+        }
+
         String probability = str(alert, "probability");
         // Accumulates every probability/qty adjustment for inclusion in the trade description.
         java.util.List<String> adjustments = new java.util.ArrayList<>();

@@ -312,6 +312,19 @@ public class ScannerController {
         card.put("dailyTrend", weeklyCprService.getDailyTrend(fyersSymbol));
         card.put("probability", computeCardProbability(fyersSymbol, ltp));
 
+        // Weekly levels for the client-side BM (bullish/bearish momentum) pill on each
+        // card: LTP above weekly R1 AND PWH -> bullish; below weekly S1 AND PWL -> bearish.
+        // Only the four consumed levels are exposed.
+        WeeklyCprService.WeeklyLevels wl = weeklyCprService.getWeeklyLevels(fyersSymbol);
+        if (wl != null) {
+            Map<String, Object> wlMap = new LinkedHashMap<>();
+            wlMap.put("r1", r(wl.r1));
+            wlMap.put("s1", r(wl.s1));
+            wlMap.put("ph", r(wl.ph));
+            wlMap.put("pl", r(wl.pl));
+            card.put("weeklyLevels", wlMap);
+        }
+
         // CPR levels
         Map<String, Object> lvls = new LinkedHashMap<>();
         lvls.put("r4", r(levels.getR4())); lvls.put("r3", r(levels.getR3()));
