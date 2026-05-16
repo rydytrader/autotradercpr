@@ -835,7 +835,7 @@ public class CandleAggregator {
         return new ArrayList<>(history);
     }
 
-    /** Prior-day candles kept for volume-avg fallback and chart SMA warmup (ordered oldest → newest). */
+    /** Prior-day candles kept for volume-avg fallback and chart EMA warmup (ordered oldest → newest). */
     public List<CandleBar> getPriorDayCandles(String symbol) {
         List<CandleBar> priors = priorDayCandles.get(symbol);
         if (priors == null) return Collections.emptyList();
@@ -1001,9 +1001,9 @@ public class CandleAggregator {
         public double close;
         public long volume;      // candle volume (delta of cumulative vol)
         public long volAtStart;  // cumulative vol when candle opened (internal)
-        // Snapshot of indicator values at candle close (populated by CandleAggregator.finalizeCandle + SmaService.onCandleClose + AtrService.onCandleClose)
+        // Snapshot of indicator values at candle close (populated by CandleAggregator.finalizeCandle + EmaService.onCandleClose + AtrService.onCandleClose)
         public double vwap;      // exchange-provided ATP at candle close (Fyers)
-        public double sma20;     // 20-period SMA after this candle was included
+        public double ema20;     // 20-period EMA after this candle was included
         public double atr;       // ATR after this candle was included (Wilder-smoothed)
         public double trueRange(CandleBar prev) {
             if (prev == null) return high - low;

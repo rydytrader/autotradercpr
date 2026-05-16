@@ -18,20 +18,20 @@ public class SignalProcessor {
     private final MarketDataService marketDataService;
     private final CandleAggregator candleAggregator;
     private final WeeklyCprService weeklyCprService;
-    private final SmaService       smaService;
+    private final EmaService       emaService;
     private final MarketHolidayService marketHolidayService;
 
     public SignalProcessor(RiskSettingsStore riskSettings, EventService eventService,
                            QuantityService quantityService, MarketDataService marketDataService,
                            CandleAggregator candleAggregator, WeeklyCprService weeklyCprService,
-                           SmaService smaService,
+                           EmaService emaService,
                            MarketHolidayService marketHolidayService) {
         this.riskSettings = riskSettings;
         this.eventService = eventService;
         this.quantityService = quantityService;
         this.marketDataService = marketDataService;
         this.candleAggregator = candleAggregator;
-        this.smaService = smaService;
+        this.emaService = emaService;
         this.weeklyCprService = weeklyCprService;
         this.marketHolidayService = marketHolidayService;
     }
@@ -49,7 +49,7 @@ public class SignalProcessor {
         // Scanner may have already downgraded probability (e.g. NIFTY index alignment) — surface that note.
         String scannerNote = str(alert, "scannerNote");
         if (scannerNote != null && !scannerNote.isEmpty()) adjustments.add(scannerNote);
-        // Capture SMA 20/50 pattern at time of signal (informational — for post-trade analysis).
+        // Capture EMA 20/50 pattern at time of signal (informational — for post-trade analysis).
         // ATR comes from the alert payload below, so we defer pattern check until after atr is parsed.
         double close       = dbl(alert, "close");
         double atr         = dbl(alert, "atr");

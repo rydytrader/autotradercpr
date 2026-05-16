@@ -1,18 +1,18 @@
 // ══════════════════════════════════════════════════════════════════════
-// Chart Modal — live candlestick chart with CPR/VWAP/SMA overlays.
+// Chart Modal — live candlestick chart with CPR/VWAP/EMA overlays.
 // Shared between /scanner and /positions pages.
 // Requires Lightweight Charts (loaded via CDN <script> on each page).
 // Exposes:  openChartModal(symbol, shortName)  / closeChartModal()
 // ══════════════════════════════════════════════════════════════════════
 
-var chartState = { modal: null, chart: null, series: null, vwapSeries: null, sma20Series: null, levelSeries: [], levelPriceLines: [], symbol: null, interval: null, resizeHandler: null, lastData: null };
+var chartState = { modal: null, chart: null, series: null, vwapSeries: null, ema20Series: null, levelSeries: [], levelPriceLines: [], symbol: null, interval: null, resizeHandler: null, lastData: null };
 
 // Chart visibility preferences (persisted in localStorage)
 var chartPrefs = (function() {
     var defaults = {
         cprBand: true, r1pdhBand: true, s1pdlBand: true,
         cprLines: true, rLines: true, sLines: true, pdhPdl: true, pivot: true,
-        vwap: true, sma20: true, trades: true
+        vwap: true, ema20: true, trades: true
     };
     try {
         var stored = JSON.parse(localStorage.getItem('chartPrefs') || '{}');
@@ -69,7 +69,7 @@ function renderChartSettings() {
         ]},
         { label: 'Indicators', items: [
             { key: 'vwap', label: 'VWAP', color: '#ec407a' },
-            { key: 'sma20', label: 'SMA 20', color: '#66bb6a' }
+            { key: 'ema20', label: 'EMA 20', color: '#66bb6a' }
         ]},
         { label: 'Trades', items: [
             { key: 'trades', label: 'Trade markers', color: '#888' }
@@ -97,7 +97,7 @@ function onChartPrefChange(el) {
         applyChartLines(chartState.lastData);
         applyTradeMarkers(chartState.lastData);
         if (chartState.vwapSeries) chartState.vwapSeries.applyOptions({ visible: chartPrefs.vwap });
-        if (chartState.sma20Series) chartState.sma20Series.applyOptions({ visible: chartPrefs.sma20 });
+        if (chartState.ema20Series) chartState.ema20Series.applyOptions({ visible: chartPrefs.ema20 });
     }
 }
 
@@ -129,7 +129,7 @@ function closeChartModal() {
         chartState.chart = null;
         chartState.series = null;
         chartState.vwapSeries = null;
-        chartState.sma20Series = null;
+        chartState.ema20Series = null;
         chartState.levelSeries = [];
         chartState.levelPriceLines = [];
         chartState.tooltip = null;
@@ -230,7 +230,7 @@ function renderChart(d, isFirst) {
     var volMap = buildVolumeMap(candles);
     chartState.volMap = volMap;
     var vwapLine = toLwcLine(d.vwapSeries);
-    var sma20Line = toLwcLine(d.sma20Series);
+    var ema20Line = toLwcLine(d.ema20Series);
 
     var theme = document.documentElement.getAttribute('data-theme');
     var dark = theme !== 'light';
@@ -288,12 +288,12 @@ function renderChart(d, isFirst) {
             chartState.vwapSeries.setData(vwapLine);
         }
 
-        chartState.sma20Series = chartState.chart.addLineSeries({
+        chartState.ema20Series = chartState.chart.addLineSeries({
             color: '#66bb6a', lineWidth: 2,
-            priceLineVisible: false, lastValueVisible: true, title: 'SMA20',
-            crosshairMarkerVisible: false, visible: chartPrefs.sma20
+            priceLineVisible: false, lastValueVisible: true, title: 'EMA20',
+            crosshairMarkerVisible: false, visible: chartPrefs.ema20
         });
-        chartState.sma20Series.setData(sma20Line);
+        chartState.ema20Series.setData(ema20Line);
 
         chartState.levelSeries = [];
         chartState.levelPriceLines = [];
@@ -345,7 +345,7 @@ function renderChart(d, isFirst) {
             var priceData = param.seriesData.get(chartState.series);
             if (!priceData) { tooltip.style.display = 'none'; return; }
             var vwapData = param.seriesData.get(chartState.vwapSeries);
-            var sma20Data = param.seriesData.get(chartState.sma20Series);
+            var ema20Data = param.seriesData.get(chartState.ema20Series);
             var changePct = priceData.open > 0 ? ((priceData.close - priceData.open) / priceData.open * 100) : 0;
             var changeColor = priceData.close >= priceData.open ? '#26a69a' : '#ef5350';
             var vol = chartState.volMap ? chartState.volMap[param.time] : null;
@@ -357,7 +357,7 @@ function renderChart(d, isFirst) {
                 '<div>C: <span style="color:' + changeColor + ';">' + priceData.close.toFixed(2) + '</span> <span style="color:' + changeColor + ';font-size:10px;">(' + (changePct >= 0 ? '+' : '') + changePct.toFixed(2) + '%)</span></div>' +
                 '<div style="color:' + (dark ? '#aab0b6' : '#666') + ';">Vol: ' + fmtChartVol(vol) + '</div>';
             if (vwapData && vwapData.value) html += '<div style="color:#ec407a;">VWAP: ' + vwapData.value.toFixed(2) + '</div>';
-            if (sma20Data && sma20Data.value) html += '<div style="color:#66bb6a;">SMA20: ' + sma20Data.value.toFixed(2) + '</div>';
+            if (ema20Data && ema20Data.value) html += '<div style="color:#66bb6a;">EMA20: ' + ema20Data.value.toFixed(2) + '</div>';
             tooltip.innerHTML = html;
             var rect = container.getBoundingClientRect();
             var left = param.point.x + 15;
@@ -375,7 +375,7 @@ function renderChart(d, isFirst) {
     var lastBar = bars[bars.length - 1];
     if (lastBar) chartState.series.update(lastBar);
     if (chartState.vwapSeries) chartState.vwapSeries.setData(vwapLine);
-    if (chartState.sma20Series) chartState.sma20Series.setData(sma20Line);
+    if (chartState.ema20Series) chartState.ema20Series.setData(ema20Line);
     applyChartLines(d);
     applyTradeMarkers(d);
 }

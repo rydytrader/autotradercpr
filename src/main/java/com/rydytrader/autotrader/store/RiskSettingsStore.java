@@ -154,30 +154,30 @@ public class RiskSettingsStore {
         // Risk/Reward filter — skip trade if |target−entry| / |entry−SL| < minRiskRewardRatio
         volatile boolean enableRiskRewardFilter = true;
         volatile double  minRiskRewardRatio     = 1.0;
-        // SMA filters
-        // 5-min SMA trend gate: buy requires close above SMA 20, sell requires close below SMA 20.
-        // Matches the BULL/BEAR chip on scanner cards. Fail-open if SMA not loaded.
-        volatile boolean enableSmaTrendCheck = true;
-        volatile boolean enableSmaVsAtpCheck = true; // buy requires 20 SMA > ATP (VWAP), sell requires 20 SMA < ATP
-        // SMA level-count filter — counts CPR zones strictly between SMA and the broken level.
-        // Allow only when count == 0 (SMA is in the zone immediately adjacent to the broken level).
-        volatile boolean enableSmaLevelCountFilter = true;
-        // Secondary proximity constraint on top of the level-count filter. Requires SMA to sit
-        // within (100 - smaLevelMinRangePct)% of the range from the broken level to the nearest
-        // non-broken zone edge on the other side. 50 = SMA must be in the upper half of that
+        // EMA filters
+        // 5-min EMA trend gate: buy requires close above EMA 20, sell requires close below EMA 20.
+        // Matches the BULL/BEAR chip on scanner cards. Fail-open if EMA not loaded.
+        volatile boolean enableEmaTrendCheck = true;
+        volatile boolean enableEmaVsAtpCheck = true; // buy requires 20 EMA > ATP (VWAP), sell requires 20 EMA < ATP
+        // EMA level-count filter — counts CPR zones strictly between EMA and the broken level.
+        // Allow only when count == 0 (EMA is in the zone immediately adjacent to the broken level).
+        volatile boolean enableEmaLevelCountFilter = true;
+        // Secondary proximity constraint on top of the level-count filter. Requires EMA to sit
+        // within (100 - emaLevelMinRangePct)% of the range from the broken level to the nearest
+        // non-broken zone edge on the other side. 50 = EMA must be in the upper half of that
         // range (buy) / lower half (sell). 0 = proximity check disabled.
-        volatile int smaLevelMinRangePct = 50;
-        // Morning skip: when enabled, the SMA level-count filter is bypassed before this time.
-        // Rationale: in the first hour of the session price can run hard while SMA(20) lags
+        volatile int emaLevelMinRangePct = 50;
+        // Morning skip: when enabled, the EMA level-count filter is bypassed before this time.
+        // Rationale: in the first hour of the session price can run hard while EMA(20) lags
         // behind, making the filter reject otherwise valid breakouts.
-        volatile boolean smaLevelFilterMorningSkip = false;
-        volatile String  smaLevelFilterMorningSkipUntil = "10:15"; // HH:mm IST
+        volatile boolean emaLevelFilterMorningSkip = false;
+        volatile String  emaLevelFilterMorningSkipUntil = "10:15"; // HH:mm IST
         volatile boolean enableTrailingSl = true; // enable breakeven SL — moves SL to entry ± buffer once price reaches breakevenTriggerPct of (entry→target) range
-        // Defensive Price-vs-SMA exit. At every 5-min candle close, if the just-closed bar's
-        // close is against the trade direction relative to the 5-min SMA 20 (LONG: close < SMA 20;
-        // SHORT: close > SMA 20), squareoff the position before SL hits. Default off — material
+        // Defensive Price-vs-EMA exit. At every 5-min candle close, if the just-closed bar's
+        // close is against the trade direction relative to the 5-min EMA 20 (LONG: close < EMA 20;
+        // SHORT: close > EMA 20), squareoff the position before SL hits. Default off — material
         // behavior change.
-        volatile boolean enablePriceSmaExit = false;
+        volatile boolean enablePriceEmaExit = false;
         // Virgin CPR — when NIFTY's session range never overlapped today's daily CPR (BC..TC)
         // by 15:30 IST, that day's CPR levels (TC, Pivot, BC) are cached as a "virgin CPR" and
         // become available to the dedicated Virgin CPR Hurdle filter for the next N trading
@@ -272,14 +272,14 @@ public class RiskSettingsStore {
         // sells require BEARISH; every other state (SIDEWAYS / NEUTRAL / opposite-direction)
         // skips the trade outright. No soft mode / qty reduction.
         volatile boolean enableIndexAlignment = false;        // master toggle, opt-in
-        // When ON, NIFTY's last-close vs SMA20 becomes a third factor gating the reversal
+        // When ON, NIFTY's last-close vs EMA20 becomes a third factor gating the reversal
         // states. When OFF, BULLISH_REVERSAL / BEARISH_REVERSAL fall back to the pure
-        // CPR-disagrees-with-futVwap definition (no SMA gate). BULLISH / BEARISH always
+        // CPR-disagrees-with-futVwap definition (no EMA gate). BULLISH / BEARISH always
         // require unanimous CPR + futVwap regardless of this flag.
-        volatile boolean enableNiftySma20Factor = true;
+        volatile boolean enableNiftyEma20Factor = true;
         // When ON (default), NIFTY futures 5-min close vs that bar's stamped VWAP is one of
         // the trend factors. When OFF, the state machine drops it entirely — trend reduces
-        // to CPR (plus SMA20 if that factor is also enabled). With both this and the SMA20
+        // to CPR (plus EMA20 if that factor is also enabled). With both this and the EMA20
         // factor disabled, only BULLISH / BEARISH / NEUTRAL / SIDEWAYS can fire; reversal
         // states never appear (they require an enabled optional factor to disagree with CPR).
         volatile boolean enableNiftyFutVwapFactor = true;
@@ -334,12 +334,12 @@ public class RiskSettingsStore {
     public double getDayHighLowMinAtr()            { return cfg().dayHighLowMinAtr; }
     public boolean isEnableRiskRewardFilter()      { return cfg().enableRiskRewardFilter; }
     public double  getMinRiskRewardRatio()         { return cfg().minRiskRewardRatio; }
-    public boolean isEnableSmaTrendCheck()          { return cfg().enableSmaTrendCheck; }
-    public boolean isEnableSmaVsAtpCheck()          { return cfg().enableSmaVsAtpCheck; }
-    public boolean isEnableSmaLevelCountFilter()   { return cfg().enableSmaLevelCountFilter; }
-    public int getSmaLevelMinRangePct()            { return cfg().smaLevelMinRangePct; }
-    public boolean isSmaLevelFilterMorningSkip()       { return cfg().smaLevelFilterMorningSkip; }
-    public String  getSmaLevelFilterMorningSkipUntil() { return cfg().smaLevelFilterMorningSkipUntil; }
+    public boolean isEnableEmaTrendCheck()          { return cfg().enableEmaTrendCheck; }
+    public boolean isEnableEmaVsAtpCheck()          { return cfg().enableEmaVsAtpCheck; }
+    public boolean isEnableEmaLevelCountFilter()   { return cfg().enableEmaLevelCountFilter; }
+    public int getEmaLevelMinRangePct()            { return cfg().emaLevelMinRangePct; }
+    public boolean isEmaLevelFilterMorningSkip()       { return cfg().emaLevelFilterMorningSkip; }
+    public String  getEmaLevelFilterMorningSkipUntil() { return cfg().emaLevelFilterMorningSkipUntil; }
     public boolean isEnableTargetShift() { return cfg().enableTargetShift; }
     public double getGoodSizeCandleBodyAtrMult()          { return cfg().goodSizeCandleBodyAtrMult; }
     public double getGoodSizeCandleMaxBodyAtrMult()       { return cfg().goodSizeCandleMaxBodyAtrMult; }
@@ -364,7 +364,7 @@ public class RiskSettingsStore {
     public double getStarBar3PenetrationPct()       { return cfg().starBar3PenetrationPct; }
     public double getLevelTouchToleranceAtr()      { return cfg().levelTouchToleranceAtr; }
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
-    public boolean isEnablePriceSmaExit() { return cfg().enablePriceSmaExit; }
+    public boolean isEnablePriceEmaExit() { return cfg().enablePriceEmaExit; }
     public int getVirginCprExpiryDays() { return cfg().virginCprExpiryDays; }
     public boolean isEnableVirginCprHurdleFilter() { return cfg().enableVirginCprHurdleFilter; }
     public double  getVirginCprHurdleHeadroomAtr() { return cfg().virginCprHurdleHeadroomAtr; }
@@ -403,7 +403,7 @@ public class RiskSettingsStore {
     public boolean isEnableTargetTolerance()   { return cfg().enableTargetTolerance; }
     public double getTargetToleranceAtr()      { return cfg().targetToleranceAtr; }
     public boolean isEnableIndexAlignment()    { return cfg().enableIndexAlignment; }
-    public boolean isEnableNiftySma20Factor()  { return cfg().enableNiftySma20Factor; }
+    public boolean isEnableNiftyEma20Factor()  { return cfg().enableNiftyEma20Factor; }
     public boolean isEnableNiftyFutVwapFactor(){ return cfg().enableNiftyFutVwapFactor; }
     public void setSignalSource(String v)      { cfg().signalSource = v; }
     public void setScannerTimeframe(int v)     { cfg().scannerTimeframe = v; }
@@ -430,7 +430,7 @@ public class RiskSettingsStore {
     public void setEnableTargetTolerance(boolean v) { cfg().enableTargetTolerance = v; }
     public void setTargetToleranceAtr(double v) { cfg().targetToleranceAtr = v; }
     public void setEnableIndexAlignment(boolean v)        { cfg().enableIndexAlignment = v; }
-    public void setEnableNiftySma20Factor(boolean v)      { cfg().enableNiftySma20Factor = v; }
+    public void setEnableNiftyEma20Factor(boolean v)      { cfg().enableNiftyEma20Factor = v; }
     public void setEnableNiftyFutVwapFactor(boolean v)    { cfg().enableNiftyFutVwapFactor = v; }
     public void setTradingStartTime(String v)  { cfg().tradingStartTime = v; }
     public void setTradingEndTime(String v)    { cfg().tradingEndTime = v; }
@@ -463,12 +463,12 @@ public class RiskSettingsStore {
     public void setDayHighLowMinAtr(double v)              { cfg().dayHighLowMinAtr = v; }
     public void setEnableRiskRewardFilter(boolean v)       { cfg().enableRiskRewardFilter = v; }
     public void setMinRiskRewardRatio(double v)            { cfg().minRiskRewardRatio = v; }
-    public void setEnableSmaTrendCheck(boolean v)         { cfg().enableSmaTrendCheck = v; }
-    public void setEnableSmaVsAtpCheck(boolean v)         { cfg().enableSmaVsAtpCheck = v; }
-    public void setEnableSmaLevelCountFilter(boolean v)    { cfg().enableSmaLevelCountFilter = v; }
-    public void setSmaLevelMinRangePct(int v)               { cfg().smaLevelMinRangePct = Math.max(0, Math.min(100, v)); }
-    public void setSmaLevelFilterMorningSkip(boolean v)     { cfg().smaLevelFilterMorningSkip = v; }
-    public void setSmaLevelFilterMorningSkipUntil(String v) { if (v != null && !v.isEmpty()) cfg().smaLevelFilterMorningSkipUntil = v; }
+    public void setEnableEmaTrendCheck(boolean v)         { cfg().enableEmaTrendCheck = v; }
+    public void setEnableEmaVsAtpCheck(boolean v)         { cfg().enableEmaVsAtpCheck = v; }
+    public void setEnableEmaLevelCountFilter(boolean v)    { cfg().enableEmaLevelCountFilter = v; }
+    public void setEmaLevelMinRangePct(int v)               { cfg().emaLevelMinRangePct = Math.max(0, Math.min(100, v)); }
+    public void setEmaLevelFilterMorningSkip(boolean v)     { cfg().emaLevelFilterMorningSkip = v; }
+    public void setEmaLevelFilterMorningSkipUntil(String v) { if (v != null && !v.isEmpty()) cfg().emaLevelFilterMorningSkipUntil = v; }
     public void setEnableTargetShift(boolean v) { cfg().enableTargetShift = v; }
     public void setGoodSizeCandleBodyAtrMult(double v)          { cfg().goodSizeCandleBodyAtrMult = v; }
     public void setGoodSizeCandleMaxBodyAtrMult(double v)       { cfg().goodSizeCandleMaxBodyAtrMult = v; }
@@ -493,7 +493,7 @@ public class RiskSettingsStore {
     public void setStarBar3PenetrationPct(double v)       { cfg().starBar3PenetrationPct = v; }
     public void setLevelTouchToleranceAtr(double v)      { cfg().levelTouchToleranceAtr = Math.max(0, v); }
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
-    public void setEnablePriceSmaExit(boolean v) { cfg().enablePriceSmaExit = v; }
+    public void setEnablePriceEmaExit(boolean v) { cfg().enablePriceEmaExit = v; }
     public void setVirginCprExpiryDays(int v) { cfg().virginCprExpiryDays = Math.max(0, v); }
     public void setEnableVirginCprHurdleFilter(boolean v) { cfg().enableVirginCprHurdleFilter = v; }
     public void setVirginCprHurdleHeadroomAtr(double v)   { cfg().virginCprHurdleHeadroomAtr = Math.max(0, v); }
@@ -604,12 +604,12 @@ public class RiskSettingsStore {
             upsert("dayHighLowMinAtr", String.valueOf(c.dayHighLowMinAtr));
             upsert("enableRiskRewardFilter", String.valueOf(c.enableRiskRewardFilter));
             upsert("minRiskRewardRatio", String.valueOf(c.minRiskRewardRatio));
-            upsert("enableSmaTrendCheck", String.valueOf(c.enableSmaTrendCheck));
-            upsert("enableSmaVsAtpCheck", String.valueOf(c.enableSmaVsAtpCheck));
-            upsert("enableSmaLevelCountFilter", String.valueOf(c.enableSmaLevelCountFilter));
-            upsert("smaLevelMinRangePct", String.valueOf(c.smaLevelMinRangePct));
-            upsert("smaLevelFilterMorningSkip", String.valueOf(c.smaLevelFilterMorningSkip));
-            upsert("smaLevelFilterMorningSkipUntil", c.smaLevelFilterMorningSkipUntil);
+            upsert("enableEmaTrendCheck", String.valueOf(c.enableEmaTrendCheck));
+            upsert("enableEmaVsAtpCheck", String.valueOf(c.enableEmaVsAtpCheck));
+            upsert("enableEmaLevelCountFilter", String.valueOf(c.enableEmaLevelCountFilter));
+            upsert("emaLevelMinRangePct", String.valueOf(c.emaLevelMinRangePct));
+            upsert("emaLevelFilterMorningSkip", String.valueOf(c.emaLevelFilterMorningSkip));
+            upsert("emaLevelFilterMorningSkipUntil", c.emaLevelFilterMorningSkipUntil);
             upsert("enableTargetShift", String.valueOf(c.enableTargetShift));
             upsert("goodSizeCandleBodyAtrMult",    String.valueOf(c.goodSizeCandleBodyAtrMult));
             upsert("goodSizeCandleMaxBodyAtrMult", String.valueOf(c.goodSizeCandleMaxBodyAtrMult));
@@ -634,7 +634,7 @@ public class RiskSettingsStore {
             upsert("starBar3PenetrationPct",       String.valueOf(c.starBar3PenetrationPct));
             upsert("levelTouchToleranceAtr", String.valueOf(c.levelTouchToleranceAtr));
             upsert("enableTrailingSl", String.valueOf(c.enableTrailingSl));
-            upsert("enablePriceSmaExit", String.valueOf(c.enablePriceSmaExit));
+            upsert("enablePriceEmaExit", String.valueOf(c.enablePriceEmaExit));
             upsert("virginCprExpiryDays", String.valueOf(c.virginCprExpiryDays));
             upsert("enableVirginCprHurdleFilter", String.valueOf(c.enableVirginCprHurdleFilter));
             upsert("virginCprHurdleHeadroomAtr",  String.valueOf(c.virginCprHurdleHeadroomAtr));
@@ -673,7 +673,7 @@ public class RiskSettingsStore {
             upsert("enableTargetTolerance", String.valueOf(c.enableTargetTolerance));
             upsert("targetToleranceAtr", String.valueOf(c.targetToleranceAtr));
             upsert("enableIndexAlignment",   String.valueOf(c.enableIndexAlignment));
-            upsert("enableNiftySma20Factor", String.valueOf(c.enableNiftySma20Factor));
+            upsert("enableNiftyEma20Factor", String.valueOf(c.enableNiftyEma20Factor));
             upsert("enableNiftyFutVwapFactor", String.valueOf(c.enableNiftyFutVwapFactor));
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to save {}: {}", mode, e.getMessage());
@@ -735,7 +735,10 @@ public class RiskSettingsStore {
                     case "dayHighLowMinAtr" -> c.dayHighLowMinAtr = Double.parseDouble(v);
                     case "enableRiskRewardFilter" -> c.enableRiskRewardFilter = Boolean.parseBoolean(v);
                     case "minRiskRewardRatio" -> c.minRiskRewardRatio = Double.parseDouble(v);
-                    case "enableEmaTrendCheck", "enableSmaTrendCheck" -> c.enableSmaTrendCheck = Boolean.parseBoolean(v);
+                    case "enableEmaTrendCheck", "enableSmaTrendCheck" -> {
+                        c.enableEmaTrendCheck = Boolean.parseBoolean(v);
+                        if ("enableSmaTrendCheck".equals(k)) logLegacyOnce("enableSmaTrendCheck");
+                    }
                     // Legacy keys — silently ignored.
                     case "enableSmaTrendCheckLenient",
                          "enableSmaAlignmentCheck",
@@ -747,11 +750,26 @@ public class RiskSettingsStore {
                          "requireRtpPattern", "buyRequiresRrtp", "sellRequiresFrtp",
                          "skipTradesInZigZag", "allowTradesInZigZag",
                          "emaCloseDistanceAtr", "smaCloseDistanceAtr" -> { /* legacy — SMA50/200/pattern removed */ }
-                    case "enableEmaVsAtpCheck", "enableSmaVsAtpCheck" -> c.enableSmaVsAtpCheck = Boolean.parseBoolean(v);
-                    case "enableEmaLevelCountFilter", "enableSmaLevelCountFilter" -> c.enableSmaLevelCountFilter = Boolean.parseBoolean(v);
-                    case "smaLevelMinRangePct" -> c.smaLevelMinRangePct = Math.max(0, Math.min(100, Integer.parseInt(v)));
-                    case "smaLevelFilterMorningSkip" -> c.smaLevelFilterMorningSkip = Boolean.parseBoolean(v);
-                    case "smaLevelFilterMorningSkipUntil" -> { if (v != null && !v.isEmpty()) c.smaLevelFilterMorningSkipUntil = v; }
+                    case "enableEmaVsAtpCheck", "enableSmaVsAtpCheck" -> {
+                        c.enableEmaVsAtpCheck = Boolean.parseBoolean(v);
+                        if ("enableSmaVsAtpCheck".equals(k)) logLegacyOnce("enableSmaVsAtpCheck");
+                    }
+                    case "enableEmaLevelCountFilter", "enableSmaLevelCountFilter" -> {
+                        c.enableEmaLevelCountFilter = Boolean.parseBoolean(v);
+                        if ("enableSmaLevelCountFilter".equals(k)) logLegacyOnce("enableSmaLevelCountFilter");
+                    }
+                    case "emaLevelMinRangePct", "smaLevelMinRangePct" -> {
+                        c.emaLevelMinRangePct = Math.max(0, Math.min(100, Integer.parseInt(v)));
+                        if ("smaLevelMinRangePct".equals(k)) logLegacyOnce("smaLevelMinRangePct");
+                    }
+                    case "emaLevelFilterMorningSkip", "smaLevelFilterMorningSkip" -> {
+                        c.emaLevelFilterMorningSkip = Boolean.parseBoolean(v);
+                        if ("smaLevelFilterMorningSkip".equals(k)) logLegacyOnce("smaLevelFilterMorningSkip");
+                    }
+                    case "emaLevelFilterMorningSkipUntil", "smaLevelFilterMorningSkipUntil" -> {
+                        if (v != null && !v.isEmpty()) c.emaLevelFilterMorningSkipUntil = v;
+                        if ("smaLevelFilterMorningSkipUntil".equals(k)) logLegacyOnce("smaLevelFilterMorningSkipUntil");
+                    }
                     case "enableTargetShift" -> c.enableTargetShift = Boolean.parseBoolean(v);
                     case "enableLargeCandleBodyFilter",
                          "largeCandleBodyAtrThreshold",
@@ -812,7 +830,10 @@ public class RiskSettingsStore {
                          "volumeLookback" -> { /* legacy — removed */ }
                     case "enableTrailingSl"   -> c.enableTrailingSl = Boolean.parseBoolean(v);
                     case "enableSmaCrossExit" -> { /* legacy — SMA cross exit removed */ }
-                    case "enablePriceSmaExit" -> c.enablePriceSmaExit = Boolean.parseBoolean(v);
+                    case "enablePriceEmaExit", "enablePriceSmaExit" -> {
+                        c.enablePriceEmaExit = Boolean.parseBoolean(v);
+                        if ("enablePriceSmaExit".equals(k)) logLegacyOnce("enablePriceSmaExit");
+                    }
                     // Legacy exit toggles + per-symbol trade limit — features removed.
                     case "enableNiftyReversalCprExit",
                          "enableNiftyHtfHurdleExit",
@@ -892,7 +913,10 @@ public class RiskSettingsStore {
                     case "enableTargetTolerance" -> c.enableTargetTolerance = Boolean.parseBoolean(v);
                     case "targetToleranceAtr" -> c.targetToleranceAtr = Double.parseDouble(v);
                     case "enableIndexAlignment"   -> c.enableIndexAlignment = Boolean.parseBoolean(v);
-                    case "enableNiftySma20Factor" -> c.enableNiftySma20Factor = Boolean.parseBoolean(v);
+                    case "enableNiftyEma20Factor", "enableNiftySma20Factor" -> {
+                        c.enableNiftyEma20Factor = Boolean.parseBoolean(v);
+                        if ("enableNiftySma20Factor".equals(k)) logLegacyOnce("enableNiftySma20Factor");
+                    }
                     case "enableNiftyFutVwapFactor" -> c.enableNiftyFutVwapFactor = Boolean.parseBoolean(v);
                     case "indexAlignmentHardSkip", "indexOpposedQtyFactor" -> { /* removed — soft mode deleted */ }
                 }
@@ -900,6 +924,16 @@ public class RiskSettingsStore {
             log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} brokerage={} fixedQty={} capitalPerTrade={} trailingSl={} skipR3S3(IvOv/Ev)={}/{} skipR4S4(IvOv/Ev)={}/{}", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.enableTrailingSl, c.skipR3S3IvOvDays, c.skipR3S3EvDays, c.skipR4S4IvOvDays, c.skipR4S4EvDays);
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to load {}: {}", mode, e.getMessage());
+        }
+    }
+
+    // ── Legacy-key migration logging ──────────────────────────────────────────
+    // Tracks which legacy SMA-named keys we've already announced this process so the SMA→EMA
+    // rename migration logs each key exactly once instead of spamming the log per load() call.
+    private final java.util.Set<String> loggedLegacyKeys = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private void logLegacyOnce(String legacyKey) {
+        if (loggedLegacyKeys.add(legacyKey)) {
+            log.info("[RiskSettingsStore] Migrated legacy SMA setting key '{}' → new EMA-named field (will rewrite on next save)", legacyKey);
         }
     }
 }

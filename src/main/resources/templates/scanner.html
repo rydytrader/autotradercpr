@@ -478,7 +478,7 @@
             <div id="niftyChangePct" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:4px; color:var(--text-muted);" title="NIFTY 50 % change vs previous close">—</div>
             <div class="nifty-cpr-width" id="niftyCprWidth" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY daily CPR width vs scanner thresholds (Narrow / Normal / Wide)">—</div>
             <div class="nifty-cpr" id="niftyCprBias" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY index 5-min close vs daily CPR (above CPR top / below CPR bottom). Refreshes only on NIFTY 5-min candle close.">—</div>
-            <div id="niftySma20" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY 5-min SMA 20 — green when LTP &gt; SMA 20, red when LTP &lt; SMA 20">—</div>
+            <div id="niftyEma20" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY 5-min EMA 20 — green when LTP &gt; EMA 20, red when LTP &lt; EMA 20">—</div>
             <div class="nifty-fut-vwap" id="niftyFutVwap" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY futures 5-min close vs that bar's VWAP (Fyers ATP). Refreshes only on NIFTY 5-min candle close.">—</div>
             <div class="nifty-state" id="niftyState" style="margin-left:auto;">—</div>
             <div class="nifty-right" id="niftyMetrics"></div>
@@ -696,7 +696,7 @@
     }
 
     // ── Persistent expand state for scan-levels sections ─────────────────
-    // Cards get re-rendered every 15s (fetchData) and on SMA tick updates (SSE),
+    // Cards get re-rendered every 15s (fetchData) and on EMA tick updates (SSE),
     // which used to wipe the user's expand choices. We remember them here keyed
     // by (symbol, section) so re-renders restore the open state.
     var expandedSections = {};  // { "NSE:X-EQ|cpr": true, ... }
@@ -720,8 +720,8 @@
         var chClass = d.changePercent >= 0 ? 'up' : 'down';
         var chArrow = d.changePercent >= 0 ? '&#9650;' : '&#9660;';
 
-        // SMA trend per timeframe — shown in SMA Levels title and body
-        function smaTrendObj(price, e20) {
+        // EMA trend per timeframe — shown in EMA Levels title and body
+        function emaTrendObj(price, e20) {
             if (price <= 0 || e20 <= 0) {
                 return { label: '--', shortLabel: '--', cls: 'neutral', arrow: '' };
             }
@@ -733,7 +733,7 @@
             }
             return { label: 'NEUTRAL', shortLabel: 'NEU', cls: 'neutral', arrow: '' };
         }
-        var em5  = smaTrendObj((d.price5m  > 0 ? d.price5m  : d.ltp), d.sma20);
+        var em5  = emaTrendObj((d.price5m  > 0 ? d.price5m  : d.ltp), d.ema20);
 
         // Build levels — show key levels with broken markers
         var broken = d.brokenLevels || [];
@@ -841,13 +841,13 @@
             + '<div class="scan-data-grid scan-data-grid-3">'
             + '  <div class="scan-data-item" style="text-align:left;"><div class="scan-data-label">ATR</div><div class="scan-data-value">' + fmt(d.atr) + '</div></div>'
             + (function() {
-                var atpTrend = smaTrendObj(d.ltp, d.atp);
+                var atpTrend = emaTrendObj(d.ltp, d.atp);
                 var color = atpTrend.cls === 'bullish' ? 'var(--accent-green)' : atpTrend.cls === 'bearish' ? 'var(--accent-red)' : 'var(--text-secondary)';
                 return '  <div class="scan-data-item"><div class="scan-data-label">ATP (VWAP)</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + (d.atp > 0 ? fmt(d.atp) + ' ' + atpTrend.arrow : '--') + '</div></div>';
             })()
             + (function() {
                 var color = em5.cls === 'bullish' ? 'var(--accent-green)' : em5.cls === 'bearish' ? 'var(--accent-red)' : 'var(--text-secondary)';
-                return '  <div class="scan-data-item" style="text-align:right;"><div class="scan-data-label">SMA 20</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + (d.sma20 > 0 ? fmt(d.sma20) + ' ' + em5.arrow : '--') + '</div></div>';
+                return '  <div class="scan-data-item" style="text-align:right;"><div class="scan-data-label">EMA 20</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + (d.ema20 > 0 ? fmt(d.ema20) + ' ' + em5.arrow : '--') + '</div></div>';
             })()
             + '</div>'
             + '<div style="border-top:1px solid var(--border);"></div>'
@@ -878,7 +878,7 @@
     }
 
     // Display-friendly setup name: underscores → spaces, digit-letter pairs split
-    // ("BUY_ABOVE_20SMA" → "BUY ABOVE 20 SMA"). Exposed on window so the second IIFE
+    // ("BUY_ABOVE_20EMA" → "BUY ABOVE 20 EMA"). Exposed on window so the second IIFE
     // and any inline callers can reuse it.
     window.prettySetup = function(s) {
         if (!s) return '';
@@ -969,17 +969,17 @@
                         if (update.candleOpen) d.candleOpen = update.candleOpen;
                         if (update.candleHigh) d.candleHigh = update.candleHigh;
                         if (update.candleLow) d.candleLow = update.candleLow;
-                        // Live SMA values pushed from server every tick
-                        if (update.sma)       d.sma       = update.sma;
+                        // Live EMA values pushed from server every tick
+                        if (update.ema)       d.ema       = update.ema;
 
                         // Update DOM in-place
                         var card = document.querySelector('[data-symbol="' + d.symbol + '"]');
                         if (!card) continue;
-                        // If SMA values changed, the cheapest way to refresh the SMA grid
-                        // (5-min row includes arrows/scores derived from LTP vs SMA) is
+                        // If EMA values changed, the cheapest way to refresh the EMA grid
+                        // (5-min row includes arrows/scores derived from LTP vs EMA) is
                         // to re-render the whole card. ~50 cards × small HTML = fast enough.
-                        var smaChanged = update.sma;
-                        if (smaChanged) {
+                        var emaChanged = update.ema;
+                        if (emaChanged) {
                             card.outerHTML = buildCard(d);
                             continue;
                         }
@@ -1010,7 +1010,7 @@
                             n.ltp,
                             typeof n.changePercent === 'number' ? n.changePercent : null,
                             typeof n.change === 'number' ? n.change : null,
-                            typeof n.sma === 'number' ? n.sma : null
+                            typeof n.ema === 'number' ? n.ema : null
                         );
                     }
                 } catch (err) {}
@@ -1018,22 +1018,22 @@
         }
     }
 
-    // ── NIFTY LTP/Change/SMA render helper (used by both poll + SSE) ─────
+    // ── NIFTY LTP/Change/EMA render helper (used by both poll + SSE) ─────
     // change is the absolute pts move (ltp - prev close). When the SSE payload doesn't
     // carry it (older messages or REST-poll path), fall back to deriving it from
-    // ltp + changePct so the field still updates. sma20 is optional — only updates the
+    // ltp + changePct so the field still updates. ema20 is optional — only updates the
     // chip when present in the payload.
-    function applyNiftyLtpUpdate(ltp, changePct, change, sma20) {
+    function applyNiftyLtpUpdate(ltp, changePct, change, ema20) {
         var lpEl = document.getElementById('niftyLtp');
         if (lpEl) lpEl.textContent = ltp > 0 ? ltp.toFixed(2) : '—';
-        // SMA 20 chip — green when LTP > SMA, red when LTP < SMA, muted otherwise.
-        var smaEl = document.getElementById('niftySma20');
-        if (smaEl && sma20 != null && isFinite(sma20) && sma20 > 0 && ltp > 0) {
-            var smaColor = ltp > sma20 ? 'var(--accent-green)'
-                         : ltp < sma20 ? 'var(--accent-red)'
+        // EMA 20 chip — green when LTP > EMA, red when LTP < EMA, muted otherwise.
+        var emaEl = document.getElementById('niftyEma20');
+        if (emaEl && ema20 != null && isFinite(ema20) && ema20 > 0 && ltp > 0) {
+            var emaColor = ltp > ema20 ? 'var(--accent-green)'
+                         : ltp < ema20 ? 'var(--accent-red)'
                          : 'var(--text-secondary)';
-            smaEl.textContent = 'SMA 20 - ' + sma20.toFixed(2);
-            smaEl.style.color = smaColor;
+            emaEl.textContent = 'EMA 20 - ' + ema20.toFixed(2);
+            emaEl.style.color = emaColor;
         }
         if (changePct == null || !isFinite(changePct) || ltp <= 0) return;
         if (change == null || !isFinite(change)) {
@@ -1054,7 +1054,7 @@
                 var lp0 = document.getElementById('niftyLtp');      if (lp0) lp0.textContent = '—';
                 var cg0 = document.getElementById('niftyChange');   if (cg0) { cg0.textContent = '—'; cg0.style.color = 'var(--text-muted)'; }
                 var cp0 = document.getElementById('niftyChangePct');if (cp0) { cp0.textContent = '—'; cp0.style.color = 'var(--text-muted)'; }
-                var sm0 = document.getElementById('niftySma20'); if (sm0) { sm0.textContent = '—'; sm0.style.color = 'var(--text-muted)'; }
+                var sm0 = document.getElementById('niftyEma20'); if (sm0) { sm0.textContent = '—'; sm0.style.color = 'var(--text-muted)'; }
                 var cw0 = document.getElementById('niftyCprWidth'); if (cw0) { cw0.textContent = '—'; cw0.style.color = 'var(--text-muted)'; }
                 var cb0 = document.getElementById('niftyCprBias'); if (cb0) { cb0.textContent = '—'; cb0.style.color = 'var(--text-muted)'; }
                 var fv0 = document.getElementById('niftyFutVwap'); if (fv0) { fv0.textContent = '—'; fv0.style.color = 'var(--text-muted)'; }
@@ -1072,25 +1072,25 @@
 
             document.getElementById('niftyState').textContent = (d.state || 'NEUTRAL').replace('_', ' ');
 
-            // Hide / show the SMA 20 chip based on the user setting. When the SMA factor
+            // Hide / show the EMA 20 chip based on the user setting. When the EMA factor
             // is disabled it isn't being used in trend identification, so showing the chip
             // would be misleading.
-            var smaChipEl = document.getElementById('niftySma20');
-            if (smaChipEl) smaChipEl.style.display = d.sma20FactorEnabled === false ? 'none' : '';
+            var emaChipEl = document.getElementById('niftyEma20');
+            if (emaChipEl) emaChipEl.style.display = d.ema20FactorEnabled === false ? 'none' : '';
             // Same gate for the FUT VWAP chip — hidden when the user has turned off the
             // FUT VWAP factor in trend identification.
             var futVwapChipEl = document.getElementById('niftyFutVwap');
             if (futVwapChipEl) futVwapChipEl.style.display = d.futVwapFactorEnabled === false ? 'none' : '';
 
             // NIFTY LTP + change + % change (live during session, bhavcopy prev close pre-market).
-            // sma20 is sent on every poll so the chip stays visible after market close even
+            // ema20 is sent on every poll so the chip stays visible after market close even
             // when the SSE tick stream goes silent. When the factor toggle is off, the chip
-            // is hidden above and no SMA value is passed in (the backend zeros it anyway).
+            // is hidden above and no EMA value is passed in (the backend zeros it anyway).
             applyNiftyLtpUpdate(
                 +d.ltp || 0,
                 typeof d.changePct === 'number' ? d.changePct : null,
                 null,
-                d.sma20FactorEnabled === false ? null : (typeof d.sma20 === 'number' ? d.sma20 : null)
+                d.ema20FactorEnabled === false ? null : (typeof d.ema20 === 'number' ? d.ema20 : null)
             );
 
             // CPR width category — NARROW (below narrowCprMaxWidth) or WIDE (at/above).

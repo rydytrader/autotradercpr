@@ -73,17 +73,17 @@ public class SettingsController {
         result.put("dayHighLowMinAtr", riskSettings.getDayHighLowMinAtr());
         result.put("enableRiskRewardFilter", riskSettings.isEnableRiskRewardFilter());
         result.put("minRiskRewardRatio", riskSettings.getMinRiskRewardRatio());
-        result.put("enableSmaTrendCheck", riskSettings.isEnableSmaTrendCheck());
-        result.put("enableSmaVsAtpCheck", riskSettings.isEnableSmaVsAtpCheck());
-        result.put("enableSmaLevelCountFilter", riskSettings.isEnableSmaLevelCountFilter());
-        result.put("smaLevelMinRangePct", riskSettings.getSmaLevelMinRangePct());
-        result.put("smaLevelFilterMorningSkip", riskSettings.isSmaLevelFilterMorningSkip());
-        result.put("smaLevelFilterMorningSkipUntil", riskSettings.getSmaLevelFilterMorningSkipUntil());
+        result.put("enableEmaTrendCheck", riskSettings.isEnableEmaTrendCheck());
+        result.put("enableEmaVsAtpCheck", riskSettings.isEnableEmaVsAtpCheck());
+        result.put("enableEmaLevelCountFilter", riskSettings.isEnableEmaLevelCountFilter());
+        result.put("emaLevelMinRangePct", riskSettings.getEmaLevelMinRangePct());
+        result.put("emaLevelFilterMorningSkip", riskSettings.isEmaLevelFilterMorningSkip());
+        result.put("emaLevelFilterMorningSkipUntil", riskSettings.getEmaLevelFilterMorningSkipUntil());
         result.put("enableTargetShift", riskSettings.isEnableTargetShift(effectiveMode));
         result.put("enableTargetTolerance", riskSettings.isEnableTargetTolerance());
         result.put("targetToleranceAtr", riskSettings.getTargetToleranceAtr());
         result.put("enableIndexAlignment", riskSettings.isEnableIndexAlignment());
-        result.put("enableNiftySma20Factor", riskSettings.isEnableNiftySma20Factor());
+        result.put("enableNiftyEma20Factor", riskSettings.isEnableNiftyEma20Factor());
         result.put("enableNiftyFutVwapFactor", riskSettings.isEnableNiftyFutVwapFactor());
         result.put("goodSizeCandleBodyAtrMult",          riskSettings.getGoodSizeCandleBodyAtrMult());
         result.put("goodSizeCandleMaxBodyAtrMult",       riskSettings.getGoodSizeCandleMaxBodyAtrMult());
@@ -108,7 +108,7 @@ public class SettingsController {
         result.put("starBar3PenetrationPct",       riskSettings.getStarBar3PenetrationPct());
         result.put("levelTouchToleranceAtr",       riskSettings.getLevelTouchToleranceAtr());
         result.put("enableTrailingSl", riskSettings.isEnableTrailingSl(effectiveMode));
-        result.put("enablePriceSmaExit", riskSettings.isEnablePriceSmaExit());
+        result.put("enablePriceEmaExit", riskSettings.isEnablePriceEmaExit());
         result.put("virginCprExpiryDays", riskSettings.getVirginCprExpiryDays());
         result.put("enableVirginCprHurdleFilter", riskSettings.isEnableVirginCprHurdleFilter());
         result.put("virginCprHurdleHeadroomAtr", riskSettings.getVirginCprHurdleHeadroomAtr());
@@ -186,17 +186,17 @@ public class SettingsController {
             if (body.containsKey("dayHighLowMinAtr")) riskSettings.setDayHighLowMinAtr(Double.parseDouble(body.get("dayHighLowMinAtr").toString()));
             if (body.containsKey("enableRiskRewardFilter")) riskSettings.setEnableRiskRewardFilter(Boolean.parseBoolean(body.get("enableRiskRewardFilter").toString()));
             if (body.containsKey("minRiskRewardRatio")) riskSettings.setMinRiskRewardRatio(Double.parseDouble(body.get("minRiskRewardRatio").toString()));
-            if (body.containsKey("enableSmaTrendCheck")) riskSettings.setEnableSmaTrendCheck(Boolean.parseBoolean(body.get("enableSmaTrendCheck").toString()));
-            if (body.containsKey("enableSmaVsAtpCheck")) riskSettings.setEnableSmaVsAtpCheck(Boolean.parseBoolean(body.get("enableSmaVsAtpCheck").toString()));
-            if (body.containsKey("enableSmaLevelCountFilter")) riskSettings.setEnableSmaLevelCountFilter(Boolean.parseBoolean(body.get("enableSmaLevelCountFilter").toString()));
-            if (body.containsKey("smaLevelMinRangePct")) riskSettings.setSmaLevelMinRangePct(Integer.parseInt(body.get("smaLevelMinRangePct").toString()));
-            if (body.containsKey("smaLevelFilterMorningSkip")) riskSettings.setSmaLevelFilterMorningSkip(Boolean.parseBoolean(body.get("smaLevelFilterMorningSkip").toString()));
-            if (body.containsKey("smaLevelFilterMorningSkipUntil")) riskSettings.setSmaLevelFilterMorningSkipUntil(body.get("smaLevelFilterMorningSkipUntil").toString());
+            if (body.containsKey("enableEmaTrendCheck")) riskSettings.setEnableEmaTrendCheck(Boolean.parseBoolean(body.get("enableEmaTrendCheck").toString()));
+            if (body.containsKey("enableEmaVsAtpCheck")) riskSettings.setEnableEmaVsAtpCheck(Boolean.parseBoolean(body.get("enableEmaVsAtpCheck").toString()));
+            if (body.containsKey("enableEmaLevelCountFilter")) riskSettings.setEnableEmaLevelCountFilter(Boolean.parseBoolean(body.get("enableEmaLevelCountFilter").toString()));
+            if (body.containsKey("emaLevelMinRangePct")) riskSettings.setEmaLevelMinRangePct(Integer.parseInt(body.get("emaLevelMinRangePct").toString()));
+            if (body.containsKey("emaLevelFilterMorningSkip")) riskSettings.setEmaLevelFilterMorningSkip(Boolean.parseBoolean(body.get("emaLevelFilterMorningSkip").toString()));
+            if (body.containsKey("emaLevelFilterMorningSkipUntil")) riskSettings.setEmaLevelFilterMorningSkipUntil(body.get("emaLevelFilterMorningSkipUntil").toString());
             if (body.containsKey("enableTargetShift")) riskSettings.setEnableTargetShift(effectiveMode, Boolean.parseBoolean(body.get("enableTargetShift").toString()));
             if (body.containsKey("enableTargetTolerance")) riskSettings.setEnableTargetTolerance(Boolean.parseBoolean(body.get("enableTargetTolerance").toString()));
             if (body.containsKey("targetToleranceAtr")) riskSettings.setTargetToleranceAtr(Double.parseDouble(body.get("targetToleranceAtr").toString()));
             if (body.containsKey("enableIndexAlignment"))   riskSettings.setEnableIndexAlignment(Boolean.parseBoolean(body.get("enableIndexAlignment").toString()));
-            if (body.containsKey("enableNiftySma20Factor")) riskSettings.setEnableNiftySma20Factor(Boolean.parseBoolean(body.get("enableNiftySma20Factor").toString()));
+            if (body.containsKey("enableNiftyEma20Factor")) riskSettings.setEnableNiftyEma20Factor(Boolean.parseBoolean(body.get("enableNiftyEma20Factor").toString()));
             if (body.containsKey("enableNiftyFutVwapFactor")) riskSettings.setEnableNiftyFutVwapFactor(Boolean.parseBoolean(body.get("enableNiftyFutVwapFactor").toString()));
             if (body.containsKey("goodSizeCandleBodyAtrMult"))   riskSettings.setGoodSizeCandleBodyAtrMult(Double.parseDouble(body.get("goodSizeCandleBodyAtrMult").toString()));
             if (body.containsKey("goodSizeCandleMaxBodyAtrMult")) riskSettings.setGoodSizeCandleMaxBodyAtrMult(Double.parseDouble(body.get("goodSizeCandleMaxBodyAtrMult").toString()));
@@ -222,7 +222,7 @@ public class SettingsController {
             if (body.containsKey("starBar3PenetrationPct"))       riskSettings.setStarBar3PenetrationPct(Double.parseDouble(body.get("starBar3PenetrationPct").toString()));
             if (body.containsKey("levelTouchToleranceAtr"))      riskSettings.setLevelTouchToleranceAtr(Double.parseDouble(body.get("levelTouchToleranceAtr").toString()));
             if (body.containsKey("enableTrailingSl")) riskSettings.setEnableTrailingSl(effectiveMode, Boolean.parseBoolean(body.get("enableTrailingSl").toString()));
-            if (body.containsKey("enablePriceSmaExit")) riskSettings.setEnablePriceSmaExit(Boolean.parseBoolean(body.get("enablePriceSmaExit").toString()));
+            if (body.containsKey("enablePriceEmaExit")) riskSettings.setEnablePriceEmaExit(Boolean.parseBoolean(body.get("enablePriceEmaExit").toString()));
             if (body.containsKey("virginCprExpiryDays")) {
                 try {
                     riskSettings.setVirginCprExpiryDays(Integer.parseInt(body.get("virginCprExpiryDays").toString()));
@@ -265,7 +265,7 @@ public class SettingsController {
             // If a trend-factor toggle changed, refresh the sticky NIFTY trend state so the
             // UI reflects the new setting immediately instead of waiting for the next NIFTY
             // 5-min candle close.
-            if (body.containsKey("enableNiftySma20Factor") || body.containsKey("enableNiftyFutVwapFactor")) {
+            if (body.containsKey("enableNiftyEma20Factor") || body.containsKey("enableNiftyFutVwapFactor")) {
                 try { indexTrendService.recomputeStates(); } catch (Exception ignored) {}
             }
             return ResponseEntity.ok(Map.of("ok", true, "message", "Settings saved"));

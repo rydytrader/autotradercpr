@@ -51,12 +51,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     private final RiskSettingsStore   riskSettings;
     private final CandleAggregator    candleAggregator;
     private final AtrService          atrService;
-    private final SmaService          smaService;
+    private final EmaService          emaService;
     private final WeeklyCprService    weeklyCprService;
     private final BreakoutScanner     breakoutScanner;
     private final BhavcopyService     bhavcopyService;
     private final TelegramService     telegramService;
-    private final SmaCrossExitService smaCrossExitService;
+    private final EmaCrossExitService emaCrossExitService;
     @org.springframework.beans.factory.annotation.Autowired
     private SymbolMasterService       symbolMasterService;
     @org.springframework.beans.factory.annotation.Autowired
@@ -192,9 +192,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                               WeeklyCprService weeklyCprService,
                               BreakoutScanner breakoutScanner,
                               BhavcopyService bhavcopyService,
-                              SmaService smaService,
+                              EmaService emaService,
                               TelegramService telegramService,
-                              SmaCrossExitService smaCrossExitService) {
+                              EmaCrossExitService emaCrossExitService) {
         this.tokenStore = tokenStore;
         this.fyersProperties = fyersProperties;
         this.positionStateStore = positionStateStore;
@@ -207,9 +207,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         this.weeklyCprService = weeklyCprService;
         this.breakoutScanner = breakoutScanner;
         this.bhavcopyService = bhavcopyService;
-        this.smaService = smaService;
+        this.emaService = emaService;
         this.telegramService = telegramService;
-        this.smaCrossExitService = smaCrossExitService;
+        this.emaCrossExitService = emaCrossExitService;
         candleAggregator.addListener(this);
     }
 
@@ -238,12 +238,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         // Register candle close listeners
         candleAggregator.setTimeframe(riskSettings.getScannerTimeframe());
         candleAggregator.addListener(atrService);
-        candleAggregator.addListener(smaService);
+        candleAggregator.addListener(emaService);
         candleAggregator.addListener(weeklyCprService);
         candleAggregator.addListener(breakoutScanner);
-        // Defensive exits — must register AFTER smaService so candle.sma20 is populated.
-        // Reads candle's post-close completed-only SMA snapshot.
-        candleAggregator.addListener(smaCrossExitService);
+        // Defensive exits — must register AFTER emaService so candle.ema20 is populated.
+        // Reads candle's post-close completed-only EMA snapshot.
+        candleAggregator.addListener(emaCrossExitService);
         candleAggregator.start();
 
         // Higher timeframe aggregator for weekly trend (e.g. 75-min candles)
@@ -699,7 +699,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         String watchlistJson = null;
         List<String> wl = getWatchlist();
         // Add NIFTY 50 index to the SSE payload so the scanner's NIFTY card can update
-        // ltp/change/sma in real time. buildWatchlist() excludes indices because they're not
+        // ltp/change/ema in real time. buildWatchlist() excludes indices because they're not
         // tradable, but the dashboard still needs NIFTY's tick data.
         List<String> ssePayloadSymbols = new ArrayList<>(wl);
         ssePayloadSymbols.add(IndexTrendService.NIFTY_SYMBOL);
@@ -728,12 +728,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                         d.put("candleHigh", Math.round(cb.high * 100.0) / 100.0);
                         d.put("candleLow", Math.round(cb.low * 100.0) / 100.0);
                     }
-                    // Live SMA values — both compute lazily with current LTP blending,
+                    // Live EMA values — both compute lazily with current LTP blending,
                     // so the UI sees tick-fresh values instead of waiting for the 15s full refresh.
-                    // Rounded to 2 decimals only (TV does not snap SMAs to tick size — keeping
+                    // Rounded to 2 decimals only (TV does not snap EMAs to tick size — keeping
                     // raw value rounded to ₹0.01 lets the bot's display match TV exactly).
-                    double s20  = smaService.getSma(sym);
-                    if (s20  > 0) d.put("sma",      Math.round(s20  * 100.0) / 100.0);
+                    double s20  = emaService.getEma(sym);
+                    if (s20  > 0) d.put("ema",      Math.round(s20  * 100.0) / 100.0);
                     wlPayload.put(sym, d);
                 }
                 if (!wlPayload.isEmpty()) {
@@ -767,7 +767,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
 
     /** Round a derived price to the symbol's tick size. Falls back to 2-decimal rounding
      *  if tick is unknown so the value is still readable. Display only — filter math uses
-     *  the raw value via SmaService. */
+     *  the raw value via EmaService. */
     private static double roundToTick(double value, double tick) {
         if (tick <= 0) return Math.round(value * 100.0) / 100.0;
         return Math.round(value / tick) * tick;
@@ -1041,14 +1041,14 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         // only removes data for non-NIFTY-50 stocks (e.g., legacy positions that closed).
         List<String> seedUniverse = buildSeedUniverse(watchlistWithIndex);
         atrService.pruneTo(seedUniverse);
-        smaService.pruneTo(seedUniverse);
+        emaService.pruneTo(seedUniverse);
         candleAggregator.pruneTo(seedUniverse);
 
-        // Pre-seed ATR / SMA / weekly for ALL NIFTY 50 stocks (not just the filtered watchlist
+        // Pre-seed ATR / EMA / weekly for ALL NIFTY 50 stocks (not just the filtered watchlist
         // subset). Filter changes mid-day can bring previously-excluded stocks into the
         // watchlist; pre-seeding ensures their indicators are ready instantly. Cost is one
         // historical fetch per stock at startup vs. lazy seeding on every rebuild.
-        log.info("[MarketData] Seeding ATR + 5-min SMA for {} symbols (full NIFTY 50)", seedUniverse.size());
+        log.info("[MarketData] Seeding ATR + 5-min EMA for {} symbols (full NIFTY 50)", seedUniverse.size());
         atrService.fetchAtrForSymbols(seedUniverse);
         log.info("[MarketData] Seeding weekly trends for {} symbols", seedUniverse.size());
         weeklyCprService.fetchWeeklyTrends(seedUniverse);
@@ -1082,7 +1082,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         int atrLoaded = atrService.getLoadedCountFor(watchlist);
         int weeklyCount = weeklyCprService.getLoadedCountFor(watchlist);
         int cprCount = bhavcopyService.getLoadedCountFor(watchlist);
-        int e20 = smaService.getLoadedCountFor(watchlist);
+        int e20 = emaService.getLoadedCountFor(watchlist);
         int total = watchlist.size();
         int htfMins = riskSettings.getHigherTimeframe();
 
@@ -1091,7 +1091,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             + ", narrow=" + narrowCount + "/inside=" + insideCount
             + ", CPR=" + cprCount + ", ATR=" + atrLoaded
             + ", weekly-trend=" + weeklyCount
-            + ", 5m SMA 20=" + e20 + ")");
+            + ", 5m EMA 20=" + e20 + ")");
         eventService.log("[SUCCESS] System ready for trading");
 
         telegramService.notifyBotReady(total, narrowCount, insideCount,
@@ -1128,7 +1128,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     /** Build the indicator-seeding universe: ALL stocks in the configured scan universe
      *  (NIFTY 50 or NIFTY 100) + NIFTY index + everything in the filtered watchlist
      *  (which is a subset already, but include for safety). Used at startup and on
-     *  watchlist rebuild so filter changes don't strand stocks without ATR/SMA. */
+     *  watchlist rebuild so filter changes don't strand stocks without ATR/EMA. */
     private List<String> buildSeedUniverse(List<String> filteredWatchlistWithIndex) {
         Set<String> universe = new LinkedHashSet<>(filteredWatchlistWithIndex);
         for (var cpr : bhavcopyService.getAllCprLevels().values()) {
@@ -1217,7 +1217,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
      * Periodic check (every 30s) — triggers the opening refresh exactly once per trading day,
      * at or shortly after the configured time (default 09:25 IST). Re-fetches today's candles
      * from Fyers /data/history for every watchlist symbol and re-seeds firstCandleClose,
-     * dayOpen, openingRangeHigh/Low, SMA, ATR, and the completedCandles deque. This corrects
+     * dayOpen, openingRangeHigh/Low, EMA, ATR, and the completedCandles deque. This corrects
      * any wrong values from the unreliable live tick stream during 9:15-9:25 (Fyers-documented
      * issue — their live WS can't deliver ticks fast enough for all subscribed symbols in the
      * first 5-10 minutes).
@@ -1326,7 +1326,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
 
             // Reuse existing seeding path — fetchAtrForSymbols re-fetches history,
             // re-computes ATR, re-seeds candleAggregator.completedCandles (today-only filter
-            // picks the correct 9:15-9:20 bar from history), and re-seeds SMA from the raw list.
+            // picks the correct 9:15-9:20 bar from history), and re-seeds EMA from the raw list.
             // Also re-writes firstCandleClose, dayOpen, OR via seedCandles' direct put calls.
             // forceFetch=true bypasses the catch-up's "skip when current" optimization — the
             // whole point of the opening refresh is to overwrite live-tick-built bars even if
@@ -1334,7 +1334,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             atrService.fetchAtrForSymbols(withIndex, true);
 
             lastOpeningRefreshDate = today;
-            eventService.log("[SUCCESS] Opening refresh complete — firstCandleClose, dayOpen, OR, SMA, ATR all re-seeded from authoritative Fyers history");
+            eventService.log("[SUCCESS] Opening refresh complete — firstCandleClose, dayOpen, OR, EMA, ATR all re-seeded from authoritative Fyers history");
 
             // Diagnostic: log pre-snapshot drop summary captured by the HSM parser between
             // subscribe-time and now. Tells us whether the 9:15-9:20 data loss came from

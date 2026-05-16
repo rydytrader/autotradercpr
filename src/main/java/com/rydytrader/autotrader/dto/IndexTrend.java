@@ -11,7 +11,7 @@ public class IndexTrend {
     private String symbol;          // e.g. NSE:NIFTY50-INDEX
     private String displayName;     // e.g. NIFTY 50
     private double ltp;
-    private String state;           // BULLISH / BEARISH / SIDEWAYS / NEUTRAL — set from CPR + 5m SMA factors
+    private String state;           // BULLISH / BEARISH / SIDEWAYS / NEUTRAL — set from CPR + 5m EMA factors
     private boolean dataAvailable;  // false if any input is missing (e.g. before market open)
     private double changePct;       // % change of LTP vs prev day close
     private int breadthAdvancers;   // # NIFTY 50 stocks trading above prev close
@@ -35,17 +35,17 @@ public class IndexTrend {
     // the user's narrowCprMaxWidth and insideCprMaxWidth scanner thresholds. Display-only.
     private double cprWidthPct;
     private String cprWidthCategory;
-    // NIFTY 5-min SMA 20 — drives the NIFTY card's "SMA 20: X" chip color (green when LTP
+    // NIFTY 5-min EMA 20 — drives the NIFTY card's "EMA 20: X" chip color (green when LTP
     // is above, red when below). Sent on every REST poll AND every SSE tick so the chip
     // remains visible after market close instead of going blank when ticks stop.
-    private double sma20;
-    // True iff the user has enabled the NIFTY SMA20 factor in trend identification. UI
-    // hides the SMA chip on the NIFTY card when this is false (the factor isn't being
+    private double ema20;
+    // True iff the user has enabled the NIFTY EMA20 factor in trend identification. UI
+    // hides the EMA chip on the NIFTY card when this is false (the factor isn't being
     // used downstream, so there's no point showing the chip).
-    private boolean sma20FactorEnabled;
+    private boolean ema20FactorEnabled;
     // True iff the user has enabled the NIFTY FUT VWAP factor in trend identification.
     // UI hides the FUT VWAP chip on the NIFTY card when this is false — same pattern
-    // as sma20FactorEnabled.
+    // as ema20FactorEnabled.
     private boolean futVwapFactorEnabled;
     // NIFTY option-chain Max OI strikes refreshed every 15 minutes during market hours.
     // Max Call OI = intraday resistance hurdle; Max Put OI = intraday support hurdle.
@@ -94,10 +94,10 @@ public class IndexTrend {
     public void setCprWidthPct(double v) { this.cprWidthPct = v; }
     public String getCprWidthCategory() { return cprWidthCategory; }
     public void setCprWidthCategory(String v) { this.cprWidthCategory = v; }
-    public double getSma20() { return sma20; }
-    public void setSma20(double v) { this.sma20 = v; }
-    public boolean isSma20FactorEnabled() { return sma20FactorEnabled; }
-    public void setSma20FactorEnabled(boolean v) { this.sma20FactorEnabled = v; }
+    public double getEma20() { return ema20; }
+    public void setEma20(double v) { this.ema20 = v; }
+    public boolean isEma20FactorEnabled() { return ema20FactorEnabled; }
+    public void setEma20FactorEnabled(boolean v) { this.ema20FactorEnabled = v; }
     public boolean isFutVwapFactorEnabled() { return futVwapFactorEnabled; }
     public void setFutVwapFactorEnabled(boolean v) { this.futVwapFactorEnabled = v; }
     public double getMaxCallOiStrike() { return maxCallOiStrike; }

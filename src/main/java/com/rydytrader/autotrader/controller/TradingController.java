@@ -19,7 +19,7 @@ import com.rydytrader.autotrader.manager.PositionManager;
 import com.rydytrader.autotrader.service.EventService;
 import com.rydytrader.autotrader.service.AtrService;
 import com.rydytrader.autotrader.service.BhavcopyService;
-import com.rydytrader.autotrader.service.SmaService;
+import com.rydytrader.autotrader.service.EmaService;
 import com.rydytrader.autotrader.service.BreakoutScanner;
 import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.service.LatencyTracker;
@@ -54,7 +54,7 @@ public class TradingController {
     private final LatencyTracker      latencyTracker;
     private final BreakoutScanner     breakoutScanner;
     private final MarginDataService   marginDataService;
-    private final SmaService          smaService;
+    private final EmaService          emaService;
     private final BhavcopyService     bhavcopyService;
 
     public TradingController(PollingService pollingService,
@@ -72,7 +72,7 @@ public class TradingController {
                               LatencyTracker latencyTracker,
                               BreakoutScanner breakoutScanner,
                               MarginDataService marginDataService,
-                              SmaService smaService,
+                              EmaService emaService,
                               BhavcopyService bhavcopyService) {
         this.pollingService      = pollingService;
         this.orderService        = orderService;
@@ -89,7 +89,7 @@ public class TradingController {
         this.latencyTracker      = latencyTracker;
         this.breakoutScanner     = breakoutScanner;
         this.marginDataService   = marginDataService;
-        this.smaService          = smaService;
+        this.emaService          = emaService;
         this.bhavcopyService     = bhavcopyService;
     }
 
@@ -463,7 +463,7 @@ public class TradingController {
         scanner.put("lastScanTime", breakoutScanner.getLastScanTime());
         scanner.put("tradedToday", breakoutScanner.getTradedCountToday());
         scanner.put("filteredToday", breakoutScanner.getFilteredCountToday());
-        scanner.put("smaLoaded", smaService.getLoadedCountFor(marketDataService.getWatchlist()));
+        scanner.put("emaLoaded", emaService.getLoadedCountFor(marketDataService.getWatchlist()));
         scanner.put("firstCandleLoaded", candleAggregator.getFirstCandleCloseCountFor(marketDataService.getWatchlist()));
         scanner.put("validationPass", marketDataService.getValidationPass());
         scanner.put("validationFail", marketDataService.getValidationFail());

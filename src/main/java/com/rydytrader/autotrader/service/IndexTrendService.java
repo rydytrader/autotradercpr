@@ -24,8 +24,8 @@ import jakarta.annotation.PostConstruct;
  * <pre>
  *   CPR bullish + futures vs VWAP bullish              → BULLISH
  *   CPR bearish + futures vs VWAP bearish              → BEARISH
- *   NIFTY close > SMA20 + futures vs VWAP bullish      → BULLISH_REVERSAL (downtrend rolling over)
- *   NIFTY close < SMA20 + futures vs VWAP bearish      → BEARISH_REVERSAL (uptrend rolling over)
+ *   NIFTY close > EMA20 + futures vs VWAP bullish      → BULLISH_REVERSAL (downtrend rolling over)
+ *   NIFTY close < EMA20 + futures vs VWAP bearish      → BEARISH_REVERSAL (uptrend rolling over)
  *   either factor null + other determined              → SIDEWAYS
  *   both factors null                                  → NEUTRAL
  * </pre>
@@ -50,7 +50,7 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
     @org.springframework.beans.factory.annotation.Autowired
     private com.rydytrader.autotrader.store.RiskSettingsStore riskSettings;
     @org.springframework.beans.factory.annotation.Autowired
-    private SmaService smaService;
+    private EmaService emaService;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private NiftyOptionOiService niftyOptionOiService;
 
@@ -158,35 +158,35 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
             // futClose == futVwap → leave null
         }
 
-        // SMA 20 factor — optional, gated by enableNiftySma20Factor. When enabled, NIFTY's
-        // last close vs SMA20 contributes as one of the optional trend factors. When
+        // EMA 20 factor — optional, gated by enableNiftyEma20Factor. When enabled, NIFTY's
+        // last close vs EMA20 contributes as one of the optional trend factors. When
         // disabled, drops out of the state calculation entirely.
-        boolean smaEnabled = riskSettings != null && riskSettings.isEnableNiftySma20Factor();
-        double sma20 = (smaEnabled && smaService != null) ? smaService.getSma(NIFTY_SYMBOL) : 0;
-        Boolean smaBullish = null;
-        if (smaEnabled && niftyClose > 0 && sma20 > 0) {
-            if (niftyClose > sma20)      smaBullish = Boolean.TRUE;
-            else if (niftyClose < sma20) smaBullish = Boolean.FALSE;
+        boolean emaEnabled = riskSettings != null && riskSettings.isEnableNiftyEma20Factor();
+        double ema20 = (emaEnabled && emaService != null) ? emaService.getEma(NIFTY_SYMBOL) : 0;
+        Boolean emaBullish = null;
+        if (emaEnabled && niftyClose > 0 && ema20 > 0) {
+            if (niftyClose > ema20)      emaBullish = Boolean.TRUE;
+            else if (niftyClose < ema20) emaBullish = Boolean.FALSE;
         }
 
         // FUT VWAP factor — optional, gated by enableNiftyFutVwapFactor (parallel to the
-        // SMA 20 factor). When OFF, trend reduces to CPR (plus SMA20 if that factor is on).
+        // EMA 20 factor). When OFF, trend reduces to CPR (plus EMA20 if that factor is on).
         boolean futVwapEnabled = riskSettings == null || riskSettings.isEnableNiftyFutVwapFactor();
 
         // Effective optional votes — null when the factor is disabled OR no data yet. The
         // state machine below treats null as "doesn't participate."
         Boolean futVwapVote = futVwapEnabled ? futVwapBullish : null;
-        Boolean smaVote     = smaEnabled     ? smaBullish     : null;
+        Boolean emaVote     = emaEnabled     ? emaBullish     : null;
 
-        // Tally bullish vs bearish among the active optional factors (futVwap, SMA20).
+        // Tally bullish vs bearish among the active optional factors (futVwap, EMA20).
         int optBull = 0, optBear = 0;
         if (Boolean.TRUE.equals(futVwapVote))  optBull++;
         if (Boolean.FALSE.equals(futVwapVote)) optBear++;
-        if (Boolean.TRUE.equals(smaVote))      optBull++;
-        if (Boolean.FALSE.equals(smaVote))     optBear++;
-        boolean anyOptionalEnabled = futVwapEnabled || smaEnabled;
+        if (Boolean.TRUE.equals(emaVote))      optBull++;
+        if (Boolean.FALSE.equals(emaVote))     optBear++;
+        boolean anyOptionalEnabled = futVwapEnabled || emaEnabled;
 
-        // State combination — works across all 4 (futVwap × SMA20) toggle combinations.
+        // State combination — works across all 4 (futVwap × EMA20) toggle combinations.
         // NEUTRAL: no CPR signal (inside CPR or no data).
         // BULLISH / BEARISH: CPR aligned AND every active optional factor agrees with CPR.
         // BULLISH_REVERSAL / BEARISH_REVERSAL: CPR disagrees but ALL active optional factors
@@ -332,13 +332,13 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
                 }
             }
             // Re-derive the display state from the augmented factors using the same logic as
-            // computeSnapshot — SMA20 optionally gates the reversals.
-            boolean smaEnabledLive = riskSettings != null && riskSettings.isEnableNiftySma20Factor();
-            double sma20Live = (smaEnabledLive && smaService != null) ? smaService.getSma(NIFTY_SYMBOL) : 0;
-            Boolean smaBullishLive = null;
-            if (smaEnabledLive && dispNiftyClose > 0 && sma20Live > 0) {
-                if (dispNiftyClose > sma20Live)      smaBullishLive = Boolean.TRUE;
-                else if (dispNiftyClose < sma20Live) smaBullishLive = Boolean.FALSE;
+            // computeSnapshot — EMA20 optionally gates the reversals.
+            boolean emaEnabledLive = riskSettings != null && riskSettings.isEnableNiftyEma20Factor();
+            double ema20Live = (emaEnabledLive && emaService != null) ? emaService.getEma(NIFTY_SYMBOL) : 0;
+            Boolean emaBullishLive = null;
+            if (emaEnabledLive && dispNiftyClose > 0 && ema20Live > 0) {
+                if (dispNiftyClose > ema20Live)      emaBullishLive = Boolean.TRUE;
+                else if (dispNiftyClose < ema20Live) emaBullishLive = Boolean.FALSE;
             }
             if (dispCpr == null && dispFutVwap == null) {
                 dispState = "NEUTRAL";
@@ -346,16 +346,16 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
                 dispState = "BULLISH";
             } else if (dispCpr != null && dispFutVwap != null && !dispCpr && !dispFutVwap) {
                 dispState = "BEARISH";
-            } else if (smaEnabledLive
-                    && Boolean.TRUE.equals(smaBullishLive) && Boolean.TRUE.equals(dispFutVwap)) {
+            } else if (emaEnabledLive
+                    && Boolean.TRUE.equals(emaBullishLive) && Boolean.TRUE.equals(dispFutVwap)) {
                 dispState = "BULLISH_REVERSAL";
-            } else if (smaEnabledLive
-                    && Boolean.FALSE.equals(smaBullishLive) && Boolean.FALSE.equals(dispFutVwap)) {
+            } else if (emaEnabledLive
+                    && Boolean.FALSE.equals(emaBullishLive) && Boolean.FALSE.equals(dispFutVwap)) {
                 dispState = "BEARISH_REVERSAL";
-            } else if (!smaEnabledLive
+            } else if (!emaEnabledLive
                     && Boolean.FALSE.equals(dispCpr) && Boolean.TRUE.equals(dispFutVwap)) {
                 dispState = "BULLISH_REVERSAL";
-            } else if (!smaEnabledLive
+            } else if (!emaEnabledLive
                     && Boolean.TRUE.equals(dispCpr) && Boolean.FALSE.equals(dispFutVwap)) {
                 dispState = "BEARISH_REVERSAL";
             } else {
@@ -399,14 +399,14 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         // first 5-min close populates the sticky cache, but the card structure stays visible.
         trend.setDataAvailable(displayLtp > 0);
 
-        // NIFTY 5-min SMA 20 for the card chip. Always populated when SmaService has enough
+        // NIFTY 5-min EMA 20 for the card chip. Always populated when EmaService has enough
         // data, so the chip stays visible after market close (no need for live SSE ticks).
-        // sma20FactorEnabled mirrors the user setting — UI hides the chip when this is off.
-        boolean smaFactorEnabled = riskSettings != null && riskSettings.isEnableNiftySma20Factor();
-        trend.setSma20FactorEnabled(smaFactorEnabled);
-        if (smaFactorEnabled && smaService != null) {
-            double sma20 = smaService.getSma(NIFTY_SYMBOL);
-            trend.setSma20(Math.round(sma20 * 100.0) / 100.0);
+        // ema20FactorEnabled mirrors the user setting — UI hides the chip when this is off.
+        boolean emaFactorEnabled = riskSettings != null && riskSettings.isEnableNiftyEma20Factor();
+        trend.setEma20FactorEnabled(emaFactorEnabled);
+        if (emaFactorEnabled && emaService != null) {
+            double ema20Val = emaService.getEma(NIFTY_SYMBOL);
+            trend.setEma20(Math.round(ema20Val * 100.0) / 100.0);
         }
         // FUT VWAP factor flag — UI hides the FUT VWAP chip when this is off. Cached close
         // and vwap values are still set above (so the chip can render its number when

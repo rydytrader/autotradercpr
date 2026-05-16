@@ -326,14 +326,14 @@
                     <div class="form-hint">Range = entry (0%) → target (100%). When peak/trough reaches the trigger %, SL moves to entry ± buffer × ATR (locks in a small profit, never widens). For split-target trades, breakeven is suppressed until T1 fills, then activates on the remaining qty. Defaults: 61.8 / 1.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">SMA-based Defensive Exits</label>
+                    <label class="form-label">EMA-based Defensive Exits</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enablePriceSmaExit" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <input type="checkbox" id="enablePriceEmaExit" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">
-                            <b>Stock Price vs SMA 20</b> &mdash; exit when stock's 5-min candle close is on the wrong side of its SMA 20 (LONG: close &lt; SMA 20; SHORT: close &gt; SMA 20)
+                            <b>Stock Price vs EMA 20</b> &mdash; exit when stock's 5-min candle close is on the wrong side of its EMA 20 (LONG: close &lt; EMA 20; SHORT: close &gt; EMA 20)
                         </span>
                     </div>
-                    <div class="form-hint">Stock-side defensive-exit check, evaluated on every 5-min candle close (after the candle's SMA is stamped). Fires before SL / Target / Trailing; cancels both OCO legs and places an exit market order. Reason recorded: <code>PRICE_SMA_EXIT</code>. NIFTY-side macro safety-net mirrors of this check live on the <b>Index Alignment</b> tab.</div>
+                    <div class="form-hint">Stock-side defensive-exit check, evaluated on every 5-min candle close (after the candle's EMA is stamped). Fires before SL / Target / Trailing; cancels both OCO legs and places an exit market order. Reason recorded: <code>PRICE_EMA_EXIT</code>. NIFTY-side macro safety-net mirrors of this check live on the <b>Index Alignment</b> tab.</div>
                 </div>
             </div>
         </div>
@@ -355,12 +355,12 @@
         <div class="section-body">
             <div class="form-grid">
                 <div class="form-group">
-                    <label class="form-label">SMA Price Filter</label>
+                    <label class="form-label">EMA Price Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableSmaTrendCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Price</b>: 5-min SMA trend — close above SMA 20 for buys, close below SMA 20 for sells</span>
+                        <input type="checkbox" id="enableEmaTrendCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Price</b>: 5-min EMA trend — close above EMA 20 for buys, close below EMA 20 for sells</span>
                     </div>
-                    <div class="form-hint">Gates entries by price position relative to the 5-min SMA 20. Buys require close &gt; SMA 20; sells require close &lt; SMA 20. Failing the gate rejects the trade. Fail-open when SMA 20 is still warming up.</div>
+                    <div class="form-hint">Gates entries by price position relative to the 5-min EMA 20. Buys require close &gt; EMA 20; sells require close &lt; EMA 20. Failing the gate rejects the trade. Fail-open when EMA 20 is still warming up.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">VWAP Confirmation (ATP)</label>
@@ -369,29 +369,29 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only above ATP (VWAP), sell only below ATP</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="enableSmaVsAtpCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only when 20 SMA &gt; ATP, sell only when 20 SMA &lt; ATP</span>
+                        <input type="checkbox" id="enableEmaVsAtpCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Buy only when 20 EMA &gt; ATP, sell only when 20 EMA &lt; ATP</span>
                     </div>
-                    <div class="form-hint">ATP is the exchange's VWAP — today's volume-weighted average price. Resets daily, independent of SMAs (which span days). Captures intraday sentiment: price above ATP = bulls in control today, below = bears. Complements the SMA filter above.</div>
+                    <div class="form-hint">ATP is the exchange's VWAP — today's volume-weighted average price. Resets daily, independent of EMAs (which span days). Captures intraday sentiment: price above ATP = bulls in control today, below = bears. Complements the EMA filter above.</div>
                 </div>
 <div class="form-group">
-                    <label class="form-label">20 SMA Level Count Filter</label>
+                    <label class="form-label">20 EMA Level Count Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
-                        <input type="checkbox" id="enableSmaLevelCountFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip if any CPR zone sits between SMA and the broken level</span>
-                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono); margin-left:12px;">SMA must sit within</span>
-                        <input type="number" id="smaLevelMinRangePct" class="form-control" step="5" min="0" max="100" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <input type="checkbox" id="enableEmaLevelCountFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip if any CPR zone sits between EMA and the broken level</span>
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono); margin-left:12px;">EMA must sit within</span>
+                        <input type="number" id="emaLevelMinRangePct" class="form-control" step="5" min="0" max="100" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">% (away from boundary = close to broken level)</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; padding-left: 28px;">
-                        <input type="checkbox" id="smaLevelFilterMorningSkip" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <input type="checkbox" id="emaLevelFilterMorningSkip" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Bypass this filter until</span>
-                        <input type="time" id="smaLevelFilterMorningSkipUntil" class="form-control" style="width:100px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">(IST — momentum often outruns SMA in the first hour)</span>
+                        <input type="time" id="emaLevelFilterMorningSkipUntil" class="form-control" style="width:100px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">(IST — momentum often outruns EMA in the first hour)</span>
                     </div>
-                    <div class="form-hint"><b>Zone count check.</b> Counts CPR zones (S4, S3, S2, S1/PDL, CPR, R1/PDH, R2, R3, R4) strictly between the 20 SMA and the breakout level. Pair zones (CPR, R1/PDH, S1/PDL) count as one. The breakout zone itself is excluded. If 0 zones in between, the trade fires; if 1 or more, the setup is stale and skipped.
-                    <br/><br/><b>Proximity check (default 50%).</b> The setting reads as "SMA must sit within <i>N%</i> away from the boundary edge" — equivalently, within the closest <i>(100−N)%</i> of the range from the broken level. The 100% range is measured from the broken level to the next-zone edge. <b>Higher N = stricter</b> (SMA must be closer to broken).<br/>
-                    Example: <i>BUY_ABOVE_R1_PDH</i> with broken=R1+PDH=100, next zone above (R2)=105. Range = 5. At N=75, SMA must sit within (100−75)% = 25% of range from broken → SMA ≥ 98.75 (close to broken). SMA at 96 = 80% of range away from broken → skipped (too far). Set to <b>0</b> to disable proximity check (use zone-count only).</div>
+                    <div class="form-hint"><b>Zone count check.</b> Counts CPR zones (S4, S3, S2, S1/PDL, CPR, R1/PDH, R2, R3, R4) strictly between the 20 EMA and the breakout level. Pair zones (CPR, R1/PDH, S1/PDL) count as one. The breakout zone itself is excluded. If 0 zones in between, the trade fires; if 1 or more, the setup is stale and skipped.
+                    <br/><br/><b>Proximity check (default 50%).</b> The setting reads as "EMA must sit within <i>N%</i> away from the boundary edge" — equivalently, within the closest <i>(100−N)%</i> of the range from the broken level. The 100% range is measured from the broken level to the next-zone edge. <b>Higher N = stricter</b> (EMA must be closer to broken).<br/>
+                    Example: <i>BUY_ABOVE_R1_PDH</i> with broken=R1+PDH=100, next zone above (R2)=105. Range = 5. At N=75, EMA must sit within (100−75)% = 25% of range from broken → EMA ≥ 98.75 (close to broken). EMA at 96 = 80% of range away from broken → skipped (too far). Set to <b>0</b> to disable proximity check (use zone-count only).</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Extended Level Signals (R3/S3, R4/S4)</label>
@@ -621,17 +621,17 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable NIFTY trend alignment filter</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px; padding-left: 28px;">
-                        <input type="checkbox" id="enableNiftySma20Factor" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Include NIFTY 20 SMA in trend identification</span>
+                        <input type="checkbox" id="enableNiftyEma20Factor" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Include NIFTY 20 EMA in trend identification</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px; padding-left: 28px;">
                         <input type="checkbox" id="enableNiftyFutVwapFactor" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Include NIFTY FUT VWAP in trend identification</span>
                     </div>
-                    <div class="form-hint">NIFTY trend state combines <b>CPR + Futures VWAP</b> (always) plus optionally <b>SMA 20</b>:
+                    <div class="form-hint">NIFTY trend state combines <b>CPR + Futures VWAP</b> (always) plus optionally <b>EMA 20</b>:
                         <br>&nbsp;&nbsp;&bull; <b>CPR</b>: NIFTY index's last-completed 5-min close above (bullish) or below (bearish) daily CPR. Inside CPR leaves this factor null.
                         <br>&nbsp;&nbsp;&bull; <b>Futures VWAP</b>: NIFTY futures' last-completed 5-min close vs that same bar's stamped VWAP (Fyers ATP frozen at finalize). Close &gt; VWAP = bullish; close &lt; VWAP = bearish. Same-bar coherent &mdash; no mixing of live LTP with frozen VWAP.
-                        <br>&nbsp;&nbsp;&bull; <b>SMA 20</b> (optional): NIFTY's last-completed 5-min close vs its 20-period 5-min SMA. When enabled, this becomes a third confirmation gating the BULLISH&nbsp;REVERSAL / BEARISH&nbsp;REVERSAL states &mdash; the reversal only fires when SMA and futures VWAP both agree. When disabled, the reversal states rely purely on CPR-disagrees-with-futVwap (the original behavior).
+                        <br>&nbsp;&nbsp;&bull; <b>EMA 20</b> (optional): NIFTY's last-completed 5-min close vs its 20-period 5-min EMA. When enabled, this becomes a third confirmation gating the BULLISH&nbsp;REVERSAL / BEARISH&nbsp;REVERSAL states &mdash; the reversal only fires when EMA and futures VWAP both agree. When disabled, the reversal states rely purely on CPR-disagrees-with-futVwap (the original behavior).
                         <br>States:
                         <br>&nbsp;&nbsp;&bull; <b>BULLISH</b> &mdash; CPR bullish + futures vs VWAP bullish (clear trend agreement)
                         <br>&nbsp;&nbsp;&bull; <b>BEARISH</b> &mdash; CPR bearish + futures vs VWAP bearish (mirror)
@@ -730,7 +730,7 @@
                     <div class="form-hint">Per-stock candle-direction confluence check. When on, every 5-min breakout must agree with the currently-forming 60-min HTF candle's body direction:
                         <br>&nbsp;&nbsp;&bull; <b>Buy</b> &mdash; 1h close &gt; 1h open (green). Reject if 1h is strictly red.
                         <br>&nbsp;&nbsp;&bull; <b>Sell</b> &mdash; 1h close &lt; 1h open (red). Reject if 1h is strictly green.
-                        <br>Doji (close == open) passes both directions. No in-progress 1h bar yet (first ticks of a new 1h bucket) &rarr; fail-open. Independent of HTF Hurdle / HTF SMA filters &mdash; this looks at the <i>currently-forming</i> bar's intra-bar direction, not the prior close. Signal Trail bucket: <code>HTF_CANDLE_OPPOSED</code>.</div>
+                        <br>Doji (close == open) passes both directions. No in-progress 1h bar yet (first ticks of a new 1h bucket) &rarr; fail-open. Independent of HTF Hurdle / HTF EMA filters &mdash; this looks at the <i>currently-forming</i> bar's intra-bar direction, not the prior close. Signal Trail bucket: <code>HTF_CANDLE_OPPOSED</code>.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">HTF Extended Level Filters (Weekly R3/S3, R4/S4)</label>
@@ -848,7 +848,7 @@
                 <div class="form-group">
                     <label class="form-label">Trading Timeframe</label>
                     <input type="number" id="scannerTimeframe" class="form-control" min="1" max="60" step="1" placeholder="5">
-                    <div class="form-hint">Candle timeframe in minutes for breakout detection, ATR, SMA and daily trend</div>
+                    <div class="form-hint">Candle timeframe in minutes for breakout detection, ATR, EMA and daily trend</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Higher Timeframe</label>
@@ -900,7 +900,7 @@
                             % (0 = no filter)
                         </label>
                     </div>
-                    <div class="form-hint">Width as % of close price. Stocks with CPR wider than threshold are excluded. You can tighten mid-day (fewer stocks from the existing set), but widening requires a restart (new stocks need WebSocket subscription + ATR/SMA seed).</div>
+                    <div class="form-hint">Width as % of close price. Stocks with CPR wider than threshold are excluded. You can tighten mid-day (fewer stocks from the existing set), but widening requires a restart (new stocks need WebSocket subscription + ATR/EMA seed).</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Stock Price Range (₹)</label>
@@ -1208,16 +1208,16 @@
             document.getElementById('starBar3PenetrationPct').value       = d.starBar3PenetrationPct       != null ? d.starBar3PenetrationPct       : 0.5;
             document.getElementById('levelTouchToleranceAtr').value       = d.levelTouchToleranceAtr       != null ? d.levelTouchToleranceAtr       : 0.2;
             document.getElementById('minRiskRewardRatio').value = d.minRiskRewardRatio != null ? d.minRiskRewardRatio : 1.0;
-            document.getElementById('enableSmaTrendCheck').checked = d.enableSmaTrendCheck !== false;
-            document.getElementById('enableSmaVsAtpCheck').checked = d.enableSmaVsAtpCheck !== false;
-            document.getElementById('enableSmaLevelCountFilter').checked = d.enableSmaLevelCountFilter !== false;
-            document.getElementById('smaLevelMinRangePct').value = d.smaLevelMinRangePct != null ? d.smaLevelMinRangePct : 50;
-            document.getElementById('smaLevelFilterMorningSkip').checked = d.smaLevelFilterMorningSkip === true;
-            document.getElementById('smaLevelFilterMorningSkipUntil').value = d.smaLevelFilterMorningSkipUntil || '10:15';
+            document.getElementById('enableEmaTrendCheck').checked = d.enableEmaTrendCheck !== false;
+            document.getElementById('enableEmaVsAtpCheck').checked = d.enableEmaVsAtpCheck !== false;
+            document.getElementById('enableEmaLevelCountFilter').checked = d.enableEmaLevelCountFilter !== false;
+            document.getElementById('emaLevelMinRangePct').value = d.emaLevelMinRangePct != null ? d.emaLevelMinRangePct : 50;
+            document.getElementById('emaLevelFilterMorningSkip').checked = d.emaLevelFilterMorningSkip === true;
+            document.getElementById('emaLevelFilterMorningSkipUntil').value = d.emaLevelFilterMorningSkipUntil || '10:15';
             document.getElementById('enableTargetTolerance').checked = d.enableTargetTolerance !== false;
             document.getElementById('targetToleranceAtr').value = (d.targetToleranceAtr != null ? d.targetToleranceAtr : 0.10);
             document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
-            document.getElementById('enableNiftySma20Factor').checked = d.enableNiftySma20Factor !== false;
+            document.getElementById('enableNiftyEma20Factor').checked = d.enableNiftyEma20Factor !== false;
             document.getElementById('enableNiftyFutVwapFactor').checked = d.enableNiftyFutVwapFactor !== false;
             document.getElementById('enableNiftyHtfHurdleFilter').checked = d.enableNiftyHtfHurdleFilter === true;
             document.getElementById('niftyHurdleMinHeadroomAtr').value = (d.niftyHurdleMinHeadroomAtr != null ? d.niftyHurdleMinHeadroomAtr : 1.0);
@@ -1228,7 +1228,7 @@
             document.getElementById('nifty5mHurdleMinHeadroomAtr').value = (d.nifty5mHurdleMinHeadroomAtr != null ? d.nifty5mHurdleMinHeadroomAtr : 1.0);
             document.getElementById('enableHtfCandleFilter').checked = d.enableHtfCandleFilter === true;
             document.getElementById('enableTrailingSl').checked = d.enableTrailingSl != null ? d.enableTrailingSl : true;
-            document.getElementById('enablePriceSmaExit').checked = d.enablePriceSmaExit === true;
+            document.getElementById('enablePriceEmaExit').checked = d.enablePriceEmaExit === true;
             document.getElementById('breakevenTriggerPct').value = d.breakevenTriggerPct != null ? d.breakevenTriggerPct : 61.8;
             document.getElementById('breakevenSlAtrMult').value  = d.breakevenSlAtrMult  != null ? d.breakevenSlAtrMult  : 1.0;
 
@@ -1370,16 +1370,16 @@
                 starBar3PenetrationPct:       (function() { var v = parseFloat(document.getElementById('starBar3PenetrationPct').value); return isNaN(v) ? 0.5 : v; })(),
                 levelTouchToleranceAtr:       parseFloat(document.getElementById('levelTouchToleranceAtr').value)       || 0.2,
                 minRiskRewardRatio: parseFloat(document.getElementById('minRiskRewardRatio').value) || 1.0,
-                enableSmaTrendCheck: document.getElementById('enableSmaTrendCheck').checked,
-                enableSmaVsAtpCheck: document.getElementById('enableSmaVsAtpCheck').checked,
-                enableSmaLevelCountFilter: document.getElementById('enableSmaLevelCountFilter').checked,
-                smaLevelMinRangePct: parseInt(document.getElementById('smaLevelMinRangePct').value) || 0,
-                smaLevelFilterMorningSkip: document.getElementById('smaLevelFilterMorningSkip').checked,
-                smaLevelFilterMorningSkipUntil: document.getElementById('smaLevelFilterMorningSkipUntil').value || '10:15',
+                enableEmaTrendCheck: document.getElementById('enableEmaTrendCheck').checked,
+                enableEmaVsAtpCheck: document.getElementById('enableEmaVsAtpCheck').checked,
+                enableEmaLevelCountFilter: document.getElementById('enableEmaLevelCountFilter').checked,
+                emaLevelMinRangePct: parseInt(document.getElementById('emaLevelMinRangePct').value) || 0,
+                emaLevelFilterMorningSkip: document.getElementById('emaLevelFilterMorningSkip').checked,
+                emaLevelFilterMorningSkipUntil: document.getElementById('emaLevelFilterMorningSkipUntil').value || '10:15',
                 enableTargetTolerance: document.getElementById('enableTargetTolerance').checked,
                 targetToleranceAtr: parseFloat(document.getElementById('targetToleranceAtr').value) || 0,
                 enableIndexAlignment:    document.getElementById('enableIndexAlignment').checked,
-                enableNiftySma20Factor:  document.getElementById('enableNiftySma20Factor').checked,
+                enableNiftyEma20Factor:  document.getElementById('enableNiftyEma20Factor').checked,
                 enableNiftyFutVwapFactor: document.getElementById('enableNiftyFutVwapFactor').checked,
                 enableNiftyHtfHurdleFilter: document.getElementById('enableNiftyHtfHurdleFilter').checked,
                 niftyHurdleMinHeadroomAtr: parseFloat(document.getElementById('niftyHurdleMinHeadroomAtr').value) || 0,
@@ -1390,7 +1390,7 @@
                 nifty5mHurdleMinHeadroomAtr: parseFloat(document.getElementById('nifty5mHurdleMinHeadroomAtr').value) || 0,
                 enableHtfCandleFilter: document.getElementById('enableHtfCandleFilter').checked,
                 enableTrailingSl: document.getElementById('enableTrailingSl').checked,
-                enablePriceSmaExit: document.getElementById('enablePriceSmaExit').checked,
+                enablePriceEmaExit: document.getElementById('enablePriceEmaExit').checked,
                 breakevenTriggerPct: parseFloat(document.getElementById('breakevenTriggerPct').value) || 61.8,
                 breakevenSlAtrMult:  parseFloat(document.getElementById('breakevenSlAtrMult').value)  || 1.0,
                 signalSource: document.getElementById('signalSource').value,

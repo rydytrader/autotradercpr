@@ -29,7 +29,7 @@ public class ScannerController {
     private final RiskSettingsStore riskSettings;
     private final MarginDataService marginDataService;
     private final TradeHistoryService tradeHistoryService;
-    private final SmaService smaService;
+    private final EmaService emaService;
     private final IndexTrendService indexTrendService;
     private final MarketHolidayService marketHolidayService;
     @org.springframework.beans.factory.annotation.Autowired
@@ -46,7 +46,7 @@ public class ScannerController {
                              RiskSettingsStore riskSettings,
                              MarginDataService marginDataService,
                              TradeHistoryService tradeHistoryService,
-                             SmaService smaService,
+                             EmaService emaService,
                              IndexTrendService indexTrendService,
                              MarketHolidayService marketHolidayService) {
         this.marketDataService = marketDataService;
@@ -58,7 +58,7 @@ public class ScannerController {
         this.riskSettings = riskSettings;
         this.marginDataService = marginDataService;
         this.tradeHistoryService = tradeHistoryService;
-        this.smaService = smaService;
+        this.emaService = emaService;
         this.indexTrendService = indexTrendService;
         this.marketHolidayService = marketHolidayService;
     }
@@ -274,10 +274,10 @@ public class ScannerController {
 
         card.put("atp", Math.round(candleAggregator.getAtp(fyersSymbol) * 100.0) / 100.0);
         card.put("atr", Math.round(atrService.getAtr(fyersSymbol) * 100.0) / 100.0);
-        // SMAs rounded to 2 decimals only — TV does not snap SMA values to tick size, so
+        // EMAs rounded to 2 decimals only — TV does not snap EMA values to tick size, so
         // tick-rounding here would cause a small visible mismatch on stocks with non-0.01 ticks.
-        card.put("sma20",  Math.round(smaService.getSma(fyersSymbol)    * 100.0) / 100.0);
-        // SMA-trend reference price: last completed candle close, LTP fallback for the
+        card.put("ema20",  Math.round(emaService.getEma(fyersSymbol)    * 100.0) / 100.0);
+        // EMA-trend reference price: last completed candle close, LTP fallback for the
         // first candle of the day. Mirrors how WeeklyCprService computes daily/weekly trend.
         card.put("price5m",  Math.round(weeklyCprService.getDailyPrice(fyersSymbol)  * 100.0) / 100.0);
         // "Day Open" on stock card = the open print (close of first 5-min candle), NOT the
@@ -361,8 +361,8 @@ public class ScannerController {
 
     private double r(double v) { return Math.round(v * 100.0) / 100.0; }
 
-    /** Round derived prices (SMAs etc.) to the symbol's tick size for display.
-     *  Filter math still uses the raw value via SmaService. */
+    /** Round derived prices (EMAs etc.) to the symbol's tick size for display.
+     *  Filter math still uses the raw value via EmaService. */
     private static double roundToTick(double value, double tick) {
         if (tick <= 0) return Math.round(value * 100.0) / 100.0;
         return Math.round(value / tick) * tick;
@@ -389,10 +389,10 @@ public class ScannerController {
 
     private void addIndicatorPoints(CandleAggregator.CandleBar c,
                                     List<Map<String, Object>> vwapSeries,
-                                    List<Map<String, Object>> sma20Series) {
+                                    List<Map<String, Object>> ema20Series) {
         long tMs = c.epochSec * 1000L;
         if (c.vwap > 0) vwapSeries.add(point(tMs, c.vwap));
-        if (c.sma20 > 0) sma20Series.add(point(tMs, c.sma20));
+        if (c.ema20 > 0) ema20Series.add(point(tMs, c.ema20));
     }
 
     private void computeIndicatorsAndBuild(List<CandleAggregator.CandleBar> history,
@@ -400,10 +400,14 @@ public class ScannerController {
                                            java.time.ZoneId ist,
                                            List<Map<String, Object>> candleList,
                                            List<Map<String, Object>> vwapSeries,
-                                           List<Map<String, Object>> sma20Series) {
-        // Rolling-window SMA: keep last N closes and average. Walks the full merged history
-        // (prior-day warmup + today) so each plotted point has a correctly-warmed-up SMA.
-        java.util.ArrayDeque<Double> closes20 = new java.util.ArrayDeque<>();
+                                           List<Map<String, Object>> ema20Series) {
+        // Rolling-window EMA: maintain an exponentially-weighted average over closes. Walks
+        // the full merged history (prior-day warmup + today) so each plotted point has a
+        // correctly-warmed-up EMA value. Period 20, alpha = 2/21.
+        final int emaPeriod = 20;
+        final double alpha = 2.0 / (emaPeriod + 1);
+        Double ema20Val = null;
+        int barsForEma = 0;
         double dayCumPV = 0, dayCumV = 0;
         java.time.LocalDate curDay = null;
         for (CandleAggregator.CandleBar c : history) {
@@ -419,27 +423,24 @@ public class ScannerController {
                 dayCumV += c.volume;
             }
             double vwap = dayCumV > 0 ? dayCumPV / dayCumV : c.close;
-            closes20.addLast(c.close);
-            while (closes20.size() > 20) closes20.removeFirst();
-            double sma20  = closes20.size()  == 20  ? avg(closes20)  : 0;
+            if (c.close > 0) {
+                if (ema20Val == null) ema20Val = c.close;
+                else                  ema20Val = alpha * c.close + (1 - alpha) * ema20Val;
+                barsForEma++;
+            }
+            double ema20 = barsForEma >= emaPeriod && ema20Val != null ? ema20Val : 0;
             if (d.equals(displayDate)) {
                 candleList.add(barToMap(c, false));
                 long tMs = c.epochSec * 1000L;
                 vwapSeries.add(point(tMs, vwap));
-                if (sma20  > 0) sma20Series.add(point(tMs, sma20));
+                if (ema20  > 0) ema20Series.add(point(tMs, ema20));
             }
         }
     }
 
-    private static double avg(java.util.Deque<Double> d) {
-        double sum = 0;
-        for (Double v : d) sum += v;
-        return sum / d.size();
-    }
-
     /**
      * Compute card-level probability preview using all pre-checkable conditions (8 of 10).
-     * More accurate than the basic weekly+daily check — includes SMA, VWAP, crossover, NIFTY.
+     * More accurate than the basic weekly+daily check — includes EMA, VWAP, crossover, NIFTY.
      * Direction derived from daily trend (bullish → buy preview, bearish → sell preview).
      */
     private String computeCardProbability(String symbol, double ltp) {
@@ -450,7 +451,7 @@ public class ScannerController {
 
         // Pure CPR alignment: LTF (5-min/LTP vs daily CPR) + HTF (weekly state).
         // HPT = both aligned, MPT = only one aligned, null = LTF opposed → "--".
-        // SMA / VWAP / NIFTY filters intentionally NOT applied here — those are
+        // EMA / VWAP / NIFTY filters intentionally NOT applied here — those are
         // execution-time gates in the real pipeline; the card forecast reflects
         // CPR alignment only.
         String baseProb = weeklyCprService.getProbabilityForDirection(symbol, isBuy);
@@ -513,16 +514,16 @@ public class ScannerController {
                 fn = classifyByDetail(detail);
                 r.put("filterName", fn);
             }
-            // SMA_TREND was overloaded before the split — entries whose detail says "not aligned"
+            // EMA_TREND was overloaded before the split — entries whose detail says "not aligned"
             // were really alignment failures. Reclassify by the source-of-truth detail text.
-            if ("SMA_TREND".equals(fn) && detail != null && detail.toLowerCase().contains("not aligned")) {
-                fn = "SMA_ALIGNMENT";
+            if ("EMA_TREND".equals(fn) && detail != null && detail.toLowerCase().contains("not aligned")) {
+                fn = "EMA_ALIGNMENT";
                 r.put("filterName", fn);
             }
-            // LEVEL_COUNT was renamed to SMA_20_DISTANCE — reclassify legacy entries so they
+            // LEVEL_COUNT was renamed to EMA_20_DISTANCE — reclassify legacy entries so they
             // show under the new chip name without needing a state-file rewrite.
             if ("LEVEL_COUNT".equals(fn)) {
-                fn = "SMA_20_DISTANCE";
+                fn = "EMA_20_DISTANCE";
                 r.put("filterName", fn);
             }
             if (!fn.isEmpty()) byFilter.merge(fn, 1, Integer::sum);
@@ -600,14 +601,17 @@ public class ScannerController {
             return "PROB_DISABLED";
 
         // BreakoutScanner-side filters
-        if (s.contains("zone(s) away"))                            return "SMA_20_DISTANCE";
+        if (s.contains("zone(s) away"))                            return "EMA_20_DISTANCE";
         if (s.contains("too far from broken zone"))                return "LEVEL_PROXIMITY";
-        // Distinguish price-vs-SMA (SMA_TREND) from stack-ordering (SMA_ALIGNMENT) within
-        // the unified "blocked by 5-min SMA trend" log line.
-        if (s.contains("blocked by 5-min sma trend") && s.contains("not aligned")) return "SMA_ALIGNMENT";
-        if (s.contains("not aligned (need 20"))                    return "SMA_ALIGNMENT";
-        if (s.contains("blocked by 5-min sma trend"))              return "SMA_TREND";
-        if (s.contains("close not above all smas") || s.contains("close not below all smas")) return "SMA_TREND";
+        // Distinguish price-vs-EMA (EMA_TREND) from stack-ordering (EMA_ALIGNMENT) within
+        // the unified "blocked by 5-min EMA trend" log line. Also accepts the legacy
+        // "sma trend" / "smas" wording so today's pre-rename log lines still classify.
+        if ((s.contains("blocked by 5-min ema trend") || s.contains("blocked by 5-min sma trend"))
+                && s.contains("not aligned")) return "EMA_ALIGNMENT";
+        if (s.contains("not aligned (need 20"))                    return "EMA_ALIGNMENT";
+        if (s.contains("blocked by 5-min ema trend") || s.contains("blocked by 5-min sma trend")) return "EMA_TREND";
+        if (s.contains("close not above all emas") || s.contains("close not below all emas")
+                || s.contains("close not above all smas") || s.contains("close not below all smas")) return "EMA_TREND";
         if (s.contains("below atp") || s.contains("above atp"))    return "ATP";
         if (s.contains("nifty") && s.contains("opposes"))          return "NIFTY_OPPOSED";
 
@@ -639,7 +643,7 @@ public class ScannerController {
         status.put("universeSize", bhavcopyService.getScanUniverseCount());
         status.put("scanUniverse", riskSettings.getScanUniverse());
         status.put("atrLoaded", atrService.getLoadedCountFor(marketDataService.getWatchlist()));
-        status.put("smaLoaded", smaService.getLoadedCountFor(marketDataService.getWatchlist()));
+        status.put("emaLoaded", emaService.getLoadedCountFor(marketDataService.getWatchlist()));
         status.put("firstCandleLoaded", candleAggregator.getFirstCandleCloseCountFor(marketDataService.getWatchlist()));
         status.put("validationPass", marketDataService.getValidationPass());
         status.put("validationFail", marketDataService.getValidationFail());
@@ -649,7 +653,7 @@ public class ScannerController {
         status.put("enableHpt", riskSettings.isEnableHpt());
         status.put("enableMpt", riskSettings.isEnableMpt());
         status.put("enableAtp", riskSettings.isEnableAtpCheck());
-        status.put("enableSmaTrend", riskSettings.isEnableSmaTrendCheck());
+        status.put("enableEmaTrend", riskSettings.isEnableEmaTrendCheck());
         status.put("minPrice", riskSettings.getScanMinPrice());
         status.put("maxPrice", riskSettings.getScanMaxPrice());
         status.put("narrowMaxWidth", riskSettings.getNarrowCprMaxWidth());
@@ -666,11 +670,11 @@ public class ScannerController {
         boolean tradingDay = marketHolidayService.isTradingDay();
         List<Map<String, Object>> candleList = new ArrayList<>();
         List<Map<String, Object>> vwapSeries = new ArrayList<>();
-        List<Map<String, Object>> sma20Series = new ArrayList<>();
+        List<Map<String, Object>> ema20Series = new ArrayList<>();
 
         if (tradingDay) {
             // Live path: compute indicators progressively over prior-day warmup + today so
-            // every today's bar has a fully-warmed-up SMA (bar 1 included).
+            // every today's bar has a fully-warmed-up EMA (bar 1 included).
             java.time.ZoneId ist = java.time.ZoneId.of("Asia/Kolkata");
             java.time.LocalDate today = java.time.LocalDate.now(ist);
             List<CandleAggregator.CandleBar> priors = candleAggregator.getPriorDayCandles(symbol);
@@ -678,7 +682,7 @@ public class ScannerController {
             List<CandleAggregator.CandleBar> merged = new ArrayList<>();
             if (priors != null) merged.addAll(priors);
             if (todays != null) merged.addAll(todays);
-            computeIndicatorsAndBuild(merged, today, ist, candleList, vwapSeries, sma20Series);
+            computeIndicatorsAndBuild(merged, today, ist, candleList, vwapSeries, ema20Series);
 
             // Forming (current, still-open) candle — append with live indicator values
             CandleAggregator.CandleBar current = candleAggregator.getCurrentCandle(symbol);
@@ -686,9 +690,9 @@ public class ScannerController {
                 candleList.add(barToMap(current, true));
                 long tMs = current.epochSec * 1000L;
                 double liveVwap = candleAggregator.getAtp(symbol);
-                double liveSma20 = smaService.getSma(symbol);
+                double liveEma20 = emaService.getEma(symbol);
                 if (liveVwap > 0) vwapSeries.add(point(tMs, liveVwap));
-                if (liveSma20 > 0) sma20Series.add(point(tMs, liveSma20));
+                if (liveEma20 > 0) ema20Series.add(point(tMs, liveEma20));
             }
             result.put("dataSource", "live");
         } else {
@@ -704,7 +708,7 @@ public class ScannerController {
                     }
                     if (latestDate != null) {
                         // Compute indicators progressively (Fyers API doesn't return them)
-                        computeIndicatorsAndBuild(hist, latestDate, ist, candleList, vwapSeries, sma20Series);
+                        computeIndicatorsAndBuild(hist, latestDate, ist, candleList, vwapSeries, ema20Series);
                         result.put("dataDate", latestDate.toString());
                     }
                 }
@@ -716,7 +720,7 @@ public class ScannerController {
         }
         result.put("candles", candleList);
         result.put("vwapSeries", vwapSeries);
-        result.put("sma20Series", sma20Series);
+        result.put("ema20Series", ema20Series);
         result.put("tradingDay", tradingDay);
 
         // CPR levels:
@@ -756,7 +760,7 @@ public class ScannerController {
         // Indicators (current values)
         result.put("ltp", r(candleAggregator.getLtp(symbol)));
         result.put("vwap", r(candleAggregator.getAtp(symbol)));
-        result.put("sma20", r(smaService.getSma(symbol)));
+        result.put("ema20", r(emaService.getEma(symbol)));
 
         // Trades for this symbol (today's trades only, for live mode)
         List<Map<String, Object>> trades = new ArrayList<>();

@@ -113,14 +113,14 @@ public class TelegramService {
 
     public void notifyBotReady(int watchlistCount, int narrowCount, int insideCount,
                                 int atrLoaded, int weeklyLevels, int cprLoaded,
-                                int sma20, int higherTfMinutes) {
+                                int ema20, int higherTfMinutes) {
         sendMessage("BOT READY\n"
             + "Watchlist: " + watchlistCount + " symbols\n"
             + "Narrow CPR: " + narrowCount + " | Inside CPR: " + insideCount + "\n"
             + "CPR levels: " + cprLoaded + "/" + watchlistCount
             + " | ATR: " + atrLoaded + "/" + watchlistCount
             + " | Weekly trend: " + weeklyLevels + "/" + watchlistCount + "\n"
-            + "5m SMA 20: " + sma20 + "/" + watchlistCount + "\n"
+            + "5m EMA 20: " + ema20 + "/" + watchlistCount + "\n"
             + "Trading TF: 5 min | Higher TF: " + higherTfMinutes + " min\n"
             + "System ready for trading");
     }

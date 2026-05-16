@@ -45,7 +45,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     private final RiskSettingsStore riskSettings;
     private final EventService eventService;
     private final LatencyTracker latencyTracker;
-    private final SmaService smaService;
+    private final EmaService emaService;
 
     @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.context.annotation.Lazy
@@ -149,7 +149,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                            RiskSettingsStore riskSettings,
                            EventService eventService,
                            LatencyTracker latencyTracker,
-                           SmaService smaService) {
+                           EmaService emaService) {
         this.bhavcopyService = bhavcopyService;
         this.atrService = atrService;
         this.weeklyCprService = weeklyCprService;
@@ -157,14 +157,14 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         this.riskSettings = riskSettings;
         this.eventService = eventService;
         this.latencyTracker = latencyTracker;
-        this.smaService = smaService;
+        this.emaService = emaService;
         loadState();
         backfillFromEventLog();
     }
 
     /**
      * One-shot recovery for today's pre-recordRejection-shipment rejections. Pre-fireSignal
-     * filters (SMA trend, ATP, level-count, level-proximity, NIFTY hard-skip, position-open,
+     * filters (EMA trend, ATP, level-count, level-proximity, NIFTY hard-skip, position-open,
      * level-broken) only logged to event-log.txt before the structured capture sites shipped.
      * This parser scans today's event log for [SCANNER] / [INFO] rejection lines, classifies
      * them by reason, and injects SignalInfo entries into signalHistory so the EOD-Analysis
@@ -239,14 +239,17 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
                     String filterName;
                     String detail;
-                    if (restLower.contains("blocked by 5-min sma trend")) {
-                        // Strip the "blocked by 5-min SMA trend — " prefix to keep detail concise.
+                    if (restLower.contains("blocked by 5-min ema trend")
+                            || restLower.contains("blocked by 5-min sma trend")) {
+                        // Strip the "blocked by 5-min EMA trend — " prefix to keep detail concise.
+                        // Also accepts the legacy "SMA trend" wording so today's pre-rename log
+                        // lines still get reclassified on the EOD audit.
                         String dash = " — ";
                         int idx = rest.indexOf(dash);
                         detail = idx >= 0 ? rest.substring(idx + dash.length()) : rest;
-                        filterName = restLower.contains("not aligned") ? "SMA_ALIGNMENT" : "SMA_TREND";
+                        filterName = restLower.contains("not aligned") ? "EMA_ALIGNMENT" : "EMA_TREND";
                     } else if (restLower.contains("zone(s) away from broken")) {
-                        filterName = "SMA_20_DISTANCE";
+                        filterName = "EMA_20_DISTANCE";
                         detail = stripSkippedPrefix(rest);
                     } else if (restLower.contains("too far from broken zone")) {
                         filterName = "LEVEL_PROXIMITY";
@@ -427,29 +430,29 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double low = candle.low;
         double high = candle.high;
 
-        // 5-min SMA trend log — fires only when a structural breakout WOULD have matched but
-        // was blocked by the SMA trend filter. Prevents noisy "blocked by SMA" logs on every
+        // 5-min EMA trend log — fires only when a structural breakout WOULD have matched but
+        // was blocked by the EMA trend filter. Prevents noisy "blocked by EMA" logs on every
         // candle close for symbols that have no potential setup at all.
-        // 5-min SMA trend check — close vs SMA20 only (SMA50/200 removed from the system).
-        // BUY allowed when close > SMA20; SELL allowed when close < SMA20. SMA20 alignment
-        // / pattern filters were dropped — they required multiple SMAs.
-        double sma20Now = smaService.getSma(fyersSymbol);
-        if (riskSettings.isEnableSmaTrendCheck() && sma20Now > 0) {
-            if (greenCandle && close <= sma20Now) {
+        // 5-min EMA trend check — close vs EMA20 only (EMA50/200 not used in the system).
+        // BUY allowed when close > EMA20; SELL allowed when close < EMA20. EMA20 alignment
+        // / pattern filters were dropped — they required multiple EMAs.
+        double ema20Now = emaService.getEma(fyersSymbol);
+        if (riskSettings.isEnableEmaTrendCheck() && ema20Now > 0) {
+            if (greenCandle && close <= ema20Now) {
                 String potentialSetup = detectBuyBreakout(open, high, low, close, levels, atp, broken, fyersSymbol, true);
                 if (potentialSetup != null) {
-                    String detail = "close (" + String.format("%.2f", close) + ") not above SMA20 ("
-                        + String.format("%.2f", sma20Now) + ")";
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + potentialSetup + " blocked by 5-min SMA trend — " + detail);
-                    recordRejection(fyersSymbol, potentialSetup, close, "SMA_TREND", detail);
+                    String detail = "close (" + String.format("%.2f", close) + ") not above EMA20 ("
+                        + String.format("%.2f", ema20Now) + ")";
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + potentialSetup + " blocked by 5-min EMA trend — " + detail);
+                    recordRejection(fyersSymbol, potentialSetup, close, "EMA_TREND", detail);
                 }
-            } else if (redCandle && close >= sma20Now) {
+            } else if (redCandle && close >= ema20Now) {
                 String potentialSetup = detectSellBreakout(open, high, low, close, levels, atp, broken, fyersSymbol, true);
                 if (potentialSetup != null) {
-                    String detail = "close (" + String.format("%.2f", close) + ") not below SMA20 ("
-                        + String.format("%.2f", sma20Now) + ")";
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + potentialSetup + " blocked by 5-min SMA trend — " + detail);
-                    recordRejection(fyersSymbol, potentialSetup, close, "SMA_TREND", detail);
+                    String detail = "close (" + String.format("%.2f", close) + ") not below EMA20 ("
+                        + String.format("%.2f", ema20Now) + ")";
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + potentialSetup + " blocked by 5-min EMA trend — " + detail);
+                    recordRejection(fyersSymbol, potentialSetup, close, "EMA_TREND", detail);
                 }
             }
         }
@@ -503,8 +506,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     recordRejection(fyersSymbol, buySetup, close, "PROB_DISABLED", detail);
                     return;
                 }
-                // SMA level-count filter: skip if any CPR zone sits between SMA and broken level
-                if (evaluateSmaFilter(fyersSymbol, buySetup, close, levels, atr) == 2) return;
+                // EMA level-count filter: skip if any CPR zone sits between EMA and broken level
+                if (evaluateEmaFilter(fyersSymbol, buySetup, close, levels, atr) == 2) return;
                 // NIFTY index alignment filter — misaligned trades are hard-rejected. The
                 // previous LPT downgrade path has been removed: a stock-trade direction that
                 // opposes the NIFTY composite trend has no edge on its own.
@@ -608,8 +611,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     recordRejection(fyersSymbol, sellSetup, close, "PROB_DISABLED", detail);
                     return;
                 }
-                // SMA level-count filter: skip if any CPR zone sits between SMA and broken level
-                if (evaluateSmaFilter(fyersSymbol, sellSetup, close, levels, atr) == 2) return;
+                // EMA level-count filter: skip if any CPR zone sits between EMA and broken level
+                if (evaluateEmaFilter(fyersSymbol, sellSetup, close, levels, atr) == 2) return;
                 // NIFTY index alignment filter — misaligned trades are hard-rejected. The
                 // previous LPT downgrade path has been removed.
                 if (checkIndexAlignment(fyersSymbol, sellSetup, false) == NiftyAlignStatus.SKIP) {
@@ -681,7 +684,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     }
 
     /**
-     * @param skipTrendFilters when true, bypasses ATP / SMA-trend / SMA-vs-ATP / pattern
+     * @param skipTrendFilters when true, bypasses ATP / EMA-trend / EMA-vs-ATP / pattern
      *                         filter gates and only checks the structural candle-vs-level
      *                         patterns. Used by the caller to pre-detect "would there be a
      *                         setup if filters were off?" before logging filter rejections.
@@ -691,15 +694,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                                       boolean skipTrendFilters) {
         // ATP check for buys: close must be above ATP
         if (!skipTrendFilters && riskSettings.isEnableAtpCheck() && atp > 0 && close < atp) return null;
-        // 5-min SMA trend check — primary log fires at the caller level (scanForBreakoutInner);
+        // 5-min EMA trend check — primary log fires at the caller level (scanForBreakoutInner);
         // this guard re-applies it silently on the actual detect path.
-        double sma = smaService.getSma(fyersSymbol);
-        if (!skipTrendFilters && riskSettings.isEnableSmaTrendCheck()
-                && sma > 0 && close <= sma) {
+        double ema = emaService.getEma(fyersSymbol);
+        if (!skipTrendFilters && riskSettings.isEnableEmaTrendCheck()
+                && ema > 0 && close <= ema) {
             return null;
         }
-        // 20 SMA vs ATP/VWAP check for buys: 20 SMA must be above ATP
-        if (!skipTrendFilters && riskSettings.isEnableSmaVsAtpCheck() && sma > 0 && atp > 0 && sma < atp) return null;
+        // 20 EMA vs ATP/VWAP check for buys: 20 EMA must be above ATP
+        if (!skipTrendFilters && riskSettings.isEnableEmaVsAtpCheck() && ema > 0 && atp > 0 && ema < atp) return null;
 
         double r4 = levels.getR4(), r3 = levels.getR3(), r2 = levels.getR2();
         double r1 = levels.getR1(), ph = levels.getPh();
@@ -779,15 +782,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                                        boolean skipTrendFilters) {
         // ATP check for sells: close must be below ATP
         if (!skipTrendFilters && riskSettings.isEnableAtpCheck() && atp > 0 && close > atp) return null;
-        // 5-min SMA trend check — primary log fires at the caller level (scanForBreakoutInner);
+        // 5-min EMA trend check — primary log fires at the caller level (scanForBreakoutInner);
         // this guard re-applies it silently on the actual detect path.
-        double sma = smaService.getSma(fyersSymbol);
-        if (!skipTrendFilters && riskSettings.isEnableSmaTrendCheck()
-                && sma > 0 && close >= sma) {
+        double ema = emaService.getEma(fyersSymbol);
+        if (!skipTrendFilters && riskSettings.isEnableEmaTrendCheck()
+                && ema > 0 && close >= ema) {
             return null;
         }
-        // 20 SMA vs ATP/VWAP check for sells: 20 SMA must be below ATP
-        if (!skipTrendFilters && riskSettings.isEnableSmaVsAtpCheck() && sma > 0 && atp > 0 && sma > atp) return null;
+        // 20 EMA vs ATP/VWAP check for sells: 20 EMA must be below ATP
+        if (!skipTrendFilters && riskSettings.isEnableEmaVsAtpCheck() && ema > 0 && atp > 0 && ema > atp) return null;
 
         double s4 = levels.getS4(), s3 = levels.getS3(), s2 = levels.getS2();
         double s1 = levels.getS1(), pl = levels.getPl();
@@ -1075,7 +1078,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      * by downstream filters (NIFTY hurdle, R/R, etc.). Pattern is set by
      * {@code checkBuyAtLevel} / {@code checkSellAtLevel} into {@code lastTriggerRoute} when a
      * match is detected, BEFORE the post-pattern filter chain runs. Returns empty string when
-     * no pattern was detected for this symbol's current scan (e.g. ATP / SMA-trend reject
+     * no pattern was detected for this symbol's current scan (e.g. ATP / EMA-trend reject
      * before pattern matching even began).
      */
     private String routeFor(String fyersSymbol) {
@@ -1228,11 +1231,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         payload.put("dayLow", candleAggregator.getDayLowBeforeLast(fyersSymbol));
         if (scannerNote != null && !scannerNote.isEmpty()) payload.put("scannerNote", scannerNote);
 
-        // 5-min SMA trend snapshot at signal time — single SMA20 trendline only.
-        double sma20Now = smaService.getSma(fyersSymbol);
+        // 5-min EMA trend snapshot at signal time — single EMA20 trendline only.
+        double ema20Now = emaService.getEma(fyersSymbol);
         String trend = "--";
-        if (sma20Now > 0) {
-            trend = close > sma20Now ? "BULLISH" : close < sma20Now ? "BEARISH" : "NEUTRAL";
+        if (ema20Now > 0) {
+            trend = close > ema20Now ? "BULLISH" : close < ema20Now ? "BEARISH" : "NEUTRAL";
         }
         // Include the candle-route tag (HAMMER_RETEST, OUTSIDE_REVERSAL_RETEST,
         // DOJI_RETEST, STAR_RETEST, HARAMI_RETEST, GOOD_SIZE_CANDLE_RETEST) when present
@@ -1871,20 +1874,20 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     }
 
     /**
-     * SMA level-count filter. Counts CPR zones strictly between SMA and the broken level.
+     * EMA level-count filter. Counts CPR zones strictly between EMA and the broken level.
      * Pair zones (CPR, R1/PDH, S1/PDL) are collapsed — each counted at most once.
      * The setup's own zone is excluded. For DH/DL, the highest R-zone (or lowest S-zone)
      * that price has already passed is excluded — e.g. if DH is above R3, R3 is excluded.
      *
      * Returns 0 = pass, 2 = skip. No halve tier. If filter disabled, always returns 0.
      */
-    private int evaluateSmaFilter(String fyersSymbol, String setup, double close,
+    private int evaluateEmaFilter(String fyersSymbol, String setup, double close,
                                    CprLevels levels, double atr) {
-        if (!riskSettings.isEnableSmaLevelCountFilter()) return 0;
+        if (!riskSettings.isEnableEmaLevelCountFilter()) return 0;
 
-        // Morning skip: bypass the filter while price runs hard and SMA(20) lags.
-        if (riskSettings.isSmaLevelFilterMorningSkip()) {
-            String until = riskSettings.getSmaLevelFilterMorningSkipUntil();
+        // Morning skip: bypass the filter while price runs hard and EMA(20) lags.
+        if (riskSettings.isEmaLevelFilterMorningSkip()) {
+            String until = riskSettings.getEmaLevelFilterMorningSkipUntil();
             if (until != null && !until.isEmpty()) {
                 try {
                     java.time.LocalTime nowIst = java.time.ZonedDateTime.now(IST).toLocalTime();
@@ -1894,13 +1897,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
         }
 
-        double sma = smaService.getSma(fyersSymbol);
-        if (sma <= 0) return 0;
+        double ema = emaService.getEma(fyersSymbol);
+        if (ema <= 0) return 0;
         double broken = getBreakoutLevelPrice(setup, levels, fyersSymbol);
         if (broken <= 0) return 0;
 
-        double lo = Math.min(sma, broken);
-        double hi = Math.max(sma, broken);
+        double lo = Math.min(ema, broken);
+        double hi = Math.max(ema, broken);
 
         double cprBot = Math.min(levels.getTc(), levels.getBc());
         double cprTop = Math.max(levels.getTc(), levels.getBc());
@@ -1925,12 +1928,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             { levels.getR4() }
         };
 
-        // A zone counts as "between" SMA and broken only if the SMA-to-broken path FULLY
+        // A zone counts as "between" EMA and broken only if the EMA-to-broken path FULLY
         // crosses through it — i.e., ALL of its valid edges sit inside the interval. For a
         // single-edge level (R2/R3/R4/S2/S3/S4/DH/DL) that's the one edge. For a two-edge
         // zone (R1+PDH, CPR, S1+PDL) it requires BOTH edges. If only one edge is in the
-        // interval, the SMA is sitting INSIDE the zone (or straddling its boundary), which
-        // means the zone is at the SMA's level — not a wall between them.
+        // interval, the EMA is sitting INSIDE the zone (or straddling its boundary), which
+        // means the zone is at the EMA's level — not a wall between them.
         int count = 0;
         StringBuilder between = new StringBuilder();
         for (int i = 0; i < zoneNames.length; i++) {
@@ -1951,24 +1954,24 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         }
 
         if (count > 0) {
-            String detail = "SMA(" + String.format("%.2f", sma) + ") is "
+            String detail = "EMA(" + String.format("%.2f", ema) + ") is "
                 + count + " zone(s) away from broken " + String.format("%.2f", broken)
                 + " [zones between: " + between + "]";
             eventService.log("[SCANNER] " + fyersSymbol + " " + setup + " — skipped, " + detail);
-            recordRejection(fyersSymbol, setup, close, "SMA_20_DISTANCE", detail);
+            recordRejection(fyersSymbol, setup, close, "EMA_20_DISTANCE", detail);
             return 2;
         }
 
-        // Secondary proximity check: SMA must be within (100 - smaLevelMinRangePct)% of the
+        // Secondary proximity check: EMA must be within (100 - emaLevelMinRangePct)% of the
         // range between the NEAR edge of the broken zone and the nearest zone edge on the
         // other side. Anchoring at the near edge (bottom of zone for buy, top for sell) means
         // the zone's own width doesn't get counted as proximity distance — wider zones aren't
         // double-penalised. Single-edge levels (R2/R3/R4 etc.) keep nearEdge == broken.
-        int minRangePct = riskSettings.getSmaLevelMinRangePct();
+        int minRangePct = riskSettings.getEmaLevelMinRangePct();
         if (minRangePct > 0) {
             boolean isBuy = setup.startsWith("BUY_");
 
-            // Near edge of the broken zone — the inner edge facing the SMA.
+            // Near edge of the broken zone — the inner edge facing the EMA.
             double nearEdge = broken;
             for (int i = 0; i < zoneNames.length; i++) {
                 if (!zoneNames[i].equals(excludedZone)) continue;
@@ -1996,14 +1999,14 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             if (boundaryEdge > 0) {
                 double range = Math.abs(nearEdge - boundaryEdge);
                 double maxDist = range * (100 - minRangePct) / 100.0;
-                // Directional subtraction + clamp at 0: SMA inside or past the broken zone
+                // Directional subtraction + clamp at 0: EMA inside or past the broken zone
                 // (at/above nearEdge for buys, at/below for sells) is "0% distance" — the
                 // breakout has already swept through it.
-                double rawDist = isBuy ? (nearEdge - sma) : (sma - nearEdge);
+                double rawDist = isBuy ? (nearEdge - ema) : (ema - nearEdge);
                 double actualDist = Math.max(0, rawDist);
                 if (actualDist > maxDist) {
                     int actualPct = (int) Math.round(actualDist / range * 100.0);
-                    String detail = "SMA(" + String.format("%.2f", sma)
+                    String detail = "EMA(" + String.format("%.2f", ema)
                         + ") too far from broken zone — must sit within "
                         + (100 - minRangePct) + "% of range from "
                         + (isBuy ? "bottom" : "top") + " of broken zone"
