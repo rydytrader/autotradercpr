@@ -2,6 +2,7 @@ package com.rydytrader.autotrader.controller;
 
 import com.rydytrader.autotrader.dto.CprLevels;
 import com.rydytrader.autotrader.service.BhavcopyService;
+import com.rydytrader.autotrader.service.IndexTrendService;
 import com.rydytrader.autotrader.service.TradeHistoryService;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.http.ResponseEntity;
@@ -16,13 +17,16 @@ public class SettingsController {
     private final RiskSettingsStore   riskSettings;
     private final TradeHistoryService tradeHistoryService;
     private final BhavcopyService     bhavcopyService;
+    private final IndexTrendService   indexTrendService;
 
     public SettingsController(RiskSettingsStore riskSettings,
                                TradeHistoryService tradeHistoryService,
-                               BhavcopyService bhavcopyService) {
+                               BhavcopyService bhavcopyService,
+                               IndexTrendService indexTrendService) {
         this.riskSettings        = riskSettings;
         this.tradeHistoryService = tradeHistoryService;
         this.bhavcopyService     = bhavcopyService;
+        this.indexTrendService   = indexTrendService;
     }
 
     // ── GET SETTINGS + TODAY'S STATUS ─────────────────────────────────────────
@@ -80,9 +84,7 @@ public class SettingsController {
         result.put("targetToleranceAtr", riskSettings.getTargetToleranceAtr());
         result.put("enableIndexAlignment", riskSettings.isEnableIndexAlignment());
         result.put("enableNiftySma20Factor", riskSettings.isEnableNiftySma20Factor());
-        result.put("marubozuBodyAtrMult",          riskSettings.getMarubozuBodyAtrMult());
-        result.put("marubozuMaxBodyAtrMult",       riskSettings.getMarubozuMaxBodyAtrMult());
-        result.put("marubozuMaxWicksPctOfBody",    riskSettings.getMarubozuMaxWicksPctOfBody());
+        result.put("enableNiftyFutVwapFactor", riskSettings.isEnableNiftyFutVwapFactor());
         result.put("goodSizeCandleBodyAtrMult",          riskSettings.getGoodSizeCandleBodyAtrMult());
         result.put("goodSizeCandleMaxBodyAtrMult",       riskSettings.getGoodSizeCandleMaxBodyAtrMult());
         result.put("goodSizeCandleMaxOppositeWickRatio", riskSettings.getGoodSizeCandleMaxOppositeWickRatio());
@@ -91,21 +93,19 @@ public class SettingsController {
         result.put("pinBarSmallBodyMaxRangeRatio",    riskSettings.getPinBarSmallBodyMaxRangeRatio());
         result.put("pinBarDominantWickMinRangeRatio", riskSettings.getPinBarDominantWickMinRangeRatio());
         result.put("pinBarOppositeWickMaxRangeRatio", riskSettings.getPinBarOppositeWickMaxRangeRatio());
-        result.put("engulfingMinBodyMultiple",     riskSettings.getEngulfingMinBodyMultiple());
-        result.put("engulfingMinBodyAtrMult",      riskSettings.getEngulfingMinBodyAtrMult());
-        result.put("engulfingMaxBodyAtrMult",      riskSettings.getEngulfingMaxBodyAtrMult());
-        result.put("piercingPrevBodyAtrMult",      riskSettings.getPiercingPrevBodyAtrMult());
-        result.put("piercingPenetrationPct",       riskSettings.getPiercingPenetrationPct());
-        result.put("tweezerPrevBodyAtrMult",       riskSettings.getTweezerPrevBodyAtrMult());
-        result.put("tweezerLowHighMatchAtr",       riskSettings.getTweezerLowHighMatchAtr());
+        result.put("outsideReversalMinBodyAtrMult", riskSettings.getOutsideReversalMinBodyAtrMult());
+        result.put("outsideReversalMaxBodyAtrMult", riskSettings.getOutsideReversalMaxBodyAtrMult());
+        result.put("outsideReversalPenetrationPct", riskSettings.getOutsideReversalPenetrationPct());
         result.put("haramiBodyAtrMult",            riskSettings.getHaramiBodyAtrMult());
-        result.put("haramiInnerBodyMaxRatio",      riskSettings.getHaramiInnerBodyMaxRatio());
+        result.put("haramiBodyMaxAtrMult",         riskSettings.getHaramiBodyMaxAtrMult());
+        result.put("haramiBar3PenetrationPct",     riskSettings.getHaramiBar3PenetrationPct());
         result.put("dojiBodyMaxRangeRatio",        riskSettings.getDojiBodyMaxRangeRatio());
         result.put("dojiConfirmBodyAtrMult",       riskSettings.getDojiConfirmBodyAtrMult());
         result.put("dojiConfirmMaxBodyAtrMult",    riskSettings.getDojiConfirmMaxBodyAtrMult());
         result.put("starOuterBodyAtrMult",         riskSettings.getStarOuterBodyAtrMult());
         result.put("starOuterMaxBodyAtrMult",      riskSettings.getStarOuterMaxBodyAtrMult());
         result.put("starMiddleBodyMaxMultOfOuter", riskSettings.getStarMiddleBodyMaxMultOfOuter());
+        result.put("starBar3PenetrationPct",       riskSettings.getStarBar3PenetrationPct());
         result.put("levelTouchToleranceAtr",       riskSettings.getLevelTouchToleranceAtr());
         result.put("enableTrailingSl", riskSettings.isEnableTrailingSl(effectiveMode));
         result.put("enablePriceSmaExit", riskSettings.isEnablePriceSmaExit());
@@ -132,6 +132,7 @@ public class SettingsController {
         result.put("narrowCprMaxWidth", riskSettings.getNarrowCprMaxWidth());
         result.put("narrowCprMinWidth", riskSettings.getNarrowCprMinWidth());
         result.put("insideCprMaxWidth", riskSettings.getInsideCprMaxWidth());
+        result.put("narrowCprZoneCollapseWidthPct", riskSettings.getNarrowCprZoneCollapseWidthPct());
         result.put("scanUniverse", riskSettings.getScanUniverse());
         result.put("scanMinPrice", riskSettings.getScanMinPrice());
         result.put("scanMaxPrice", riskSettings.getScanMaxPrice());
@@ -196,9 +197,7 @@ public class SettingsController {
             if (body.containsKey("targetToleranceAtr")) riskSettings.setTargetToleranceAtr(Double.parseDouble(body.get("targetToleranceAtr").toString()));
             if (body.containsKey("enableIndexAlignment"))   riskSettings.setEnableIndexAlignment(Boolean.parseBoolean(body.get("enableIndexAlignment").toString()));
             if (body.containsKey("enableNiftySma20Factor")) riskSettings.setEnableNiftySma20Factor(Boolean.parseBoolean(body.get("enableNiftySma20Factor").toString()));
-            if (body.containsKey("marubozuBodyAtrMult"))         riskSettings.setMarubozuBodyAtrMult(Double.parseDouble(body.get("marubozuBodyAtrMult").toString()));
-            if (body.containsKey("marubozuMaxBodyAtrMult"))      riskSettings.setMarubozuMaxBodyAtrMult(Double.parseDouble(body.get("marubozuMaxBodyAtrMult").toString()));
-            if (body.containsKey("marubozuMaxWicksPctOfBody"))   riskSettings.setMarubozuMaxWicksPctOfBody(Double.parseDouble(body.get("marubozuMaxWicksPctOfBody").toString()));
+            if (body.containsKey("enableNiftyFutVwapFactor")) riskSettings.setEnableNiftyFutVwapFactor(Boolean.parseBoolean(body.get("enableNiftyFutVwapFactor").toString()));
             if (body.containsKey("goodSizeCandleBodyAtrMult"))   riskSettings.setGoodSizeCandleBodyAtrMult(Double.parseDouble(body.get("goodSizeCandleBodyAtrMult").toString()));
             if (body.containsKey("goodSizeCandleMaxBodyAtrMult")) riskSettings.setGoodSizeCandleMaxBodyAtrMult(Double.parseDouble(body.get("goodSizeCandleMaxBodyAtrMult").toString()));
             if (body.containsKey("goodSizeCandleMaxOppositeWickRatio")) riskSettings.setGoodSizeCandleMaxOppositeWickRatio(Double.parseDouble(body.get("goodSizeCandleMaxOppositeWickRatio").toString()));
@@ -207,15 +206,12 @@ public class SettingsController {
             if (body.containsKey("pinBarSmallBodyMaxRangeRatio"))    riskSettings.setPinBarSmallBodyMaxRangeRatio(Double.parseDouble(body.get("pinBarSmallBodyMaxRangeRatio").toString()));
             if (body.containsKey("pinBarDominantWickMinRangeRatio")) riskSettings.setPinBarDominantWickMinRangeRatio(Double.parseDouble(body.get("pinBarDominantWickMinRangeRatio").toString()));
             if (body.containsKey("pinBarOppositeWickMaxRangeRatio")) riskSettings.setPinBarOppositeWickMaxRangeRatio(Double.parseDouble(body.get("pinBarOppositeWickMaxRangeRatio").toString()));
-            if (body.containsKey("engulfingMinBodyMultiple"))    riskSettings.setEngulfingMinBodyMultiple(Double.parseDouble(body.get("engulfingMinBodyMultiple").toString()));
-            if (body.containsKey("engulfingMinBodyAtrMult"))     riskSettings.setEngulfingMinBodyAtrMult(Double.parseDouble(body.get("engulfingMinBodyAtrMult").toString()));
-            if (body.containsKey("engulfingMaxBodyAtrMult"))     riskSettings.setEngulfingMaxBodyAtrMult(Double.parseDouble(body.get("engulfingMaxBodyAtrMult").toString()));
-            if (body.containsKey("piercingPrevBodyAtrMult"))     riskSettings.setPiercingPrevBodyAtrMult(Double.parseDouble(body.get("piercingPrevBodyAtrMult").toString()));
-            if (body.containsKey("piercingPenetrationPct"))      riskSettings.setPiercingPenetrationPct(Double.parseDouble(body.get("piercingPenetrationPct").toString()));
-            if (body.containsKey("tweezerPrevBodyAtrMult"))      riskSettings.setTweezerPrevBodyAtrMult(Double.parseDouble(body.get("tweezerPrevBodyAtrMult").toString()));
-            if (body.containsKey("tweezerLowHighMatchAtr"))      riskSettings.setTweezerLowHighMatchAtr(Double.parseDouble(body.get("tweezerLowHighMatchAtr").toString()));
+            if (body.containsKey("outsideReversalMinBodyAtrMult")) riskSettings.setOutsideReversalMinBodyAtrMult(Double.parseDouble(body.get("outsideReversalMinBodyAtrMult").toString()));
+            if (body.containsKey("outsideReversalMaxBodyAtrMult")) riskSettings.setOutsideReversalMaxBodyAtrMult(Double.parseDouble(body.get("outsideReversalMaxBodyAtrMult").toString()));
+            if (body.containsKey("outsideReversalPenetrationPct")) riskSettings.setOutsideReversalPenetrationPct(Double.parseDouble(body.get("outsideReversalPenetrationPct").toString()));
             if (body.containsKey("haramiBodyAtrMult"))           riskSettings.setHaramiBodyAtrMult(Double.parseDouble(body.get("haramiBodyAtrMult").toString()));
-            if (body.containsKey("haramiInnerBodyMaxRatio"))     riskSettings.setHaramiInnerBodyMaxRatio(Double.parseDouble(body.get("haramiInnerBodyMaxRatio").toString()));
+            if (body.containsKey("haramiBodyMaxAtrMult"))        riskSettings.setHaramiBodyMaxAtrMult(Double.parseDouble(body.get("haramiBodyMaxAtrMult").toString()));
+            if (body.containsKey("haramiBar3PenetrationPct"))    riskSettings.setHaramiBar3PenetrationPct(Double.parseDouble(body.get("haramiBar3PenetrationPct").toString()));
             if (body.containsKey("dojiBodyMaxRangeRatio"))       riskSettings.setDojiBodyMaxRangeRatio(Double.parseDouble(body.get("dojiBodyMaxRangeRatio").toString()));
             if (body.containsKey("dojiConfirmBodyAtrMult"))      riskSettings.setDojiConfirmBodyAtrMult(Double.parseDouble(body.get("dojiConfirmBodyAtrMult").toString()));
             else if (body.containsKey("dojiPrevBodyAtrMult"))    riskSettings.setDojiConfirmBodyAtrMult(Double.parseDouble(body.get("dojiPrevBodyAtrMult").toString())); // legacy key
@@ -223,6 +219,7 @@ public class SettingsController {
             if (body.containsKey("starOuterBodyAtrMult"))        riskSettings.setStarOuterBodyAtrMult(Double.parseDouble(body.get("starOuterBodyAtrMult").toString()));
             if (body.containsKey("starOuterMaxBodyAtrMult"))     riskSettings.setStarOuterMaxBodyAtrMult(Double.parseDouble(body.get("starOuterMaxBodyAtrMult").toString()));
             if (body.containsKey("starMiddleBodyMaxMultOfOuter")) riskSettings.setStarMiddleBodyMaxMultOfOuter(Double.parseDouble(body.get("starMiddleBodyMaxMultOfOuter").toString()));
+            if (body.containsKey("starBar3PenetrationPct"))       riskSettings.setStarBar3PenetrationPct(Double.parseDouble(body.get("starBar3PenetrationPct").toString()));
             if (body.containsKey("levelTouchToleranceAtr"))      riskSettings.setLevelTouchToleranceAtr(Double.parseDouble(body.get("levelTouchToleranceAtr").toString()));
             if (body.containsKey("enableTrailingSl")) riskSettings.setEnableTrailingSl(effectiveMode, Boolean.parseBoolean(body.get("enableTrailingSl").toString()));
             if (body.containsKey("enablePriceSmaExit")) riskSettings.setEnablePriceSmaExit(Boolean.parseBoolean(body.get("enablePriceSmaExit").toString()));
@@ -253,6 +250,7 @@ public class SettingsController {
             if (body.containsKey("narrowCprMaxWidth")) riskSettings.setNarrowCprMaxWidth(Double.parseDouble(body.get("narrowCprMaxWidth").toString()));
             if (body.containsKey("narrowCprMinWidth")) riskSettings.setNarrowCprMinWidth(Double.parseDouble(body.get("narrowCprMinWidth").toString()));
             if (body.containsKey("insideCprMaxWidth")) riskSettings.setInsideCprMaxWidth(Double.parseDouble(body.get("insideCprMaxWidth").toString()));
+            if (body.containsKey("narrowCprZoneCollapseWidthPct")) riskSettings.setNarrowCprZoneCollapseWidthPct(Double.parseDouble(body.get("narrowCprZoneCollapseWidthPct").toString()));
             if (body.containsKey("scanUniverse")) riskSettings.setScanUniverse(body.get("scanUniverse").toString());
             if (body.containsKey("scanMinPrice")) riskSettings.setScanMinPrice(Double.parseDouble(body.get("scanMinPrice").toString()));
             if (body.containsKey("scanMaxPrice")) riskSettings.setScanMaxPrice(Double.parseDouble(body.get("scanMaxPrice").toString()));
@@ -264,6 +262,12 @@ public class SettingsController {
             if (body.containsKey("mptQtyFactor")) riskSettings.setMptQtyFactor(Double.parseDouble(body.get("mptQtyFactor").toString()));
             if (body.containsKey("minAbsoluteProfit")) riskSettings.setMinAbsoluteProfit(Double.parseDouble(body.get("minAbsoluteProfit").toString()));
             riskSettings.saveFor(effectiveMode);
+            // If a trend-factor toggle changed, refresh the sticky NIFTY trend state so the
+            // UI reflects the new setting immediately instead of waiting for the next NIFTY
+            // 5-min candle close.
+            if (body.containsKey("enableNiftySma20Factor") || body.containsKey("enableNiftyFutVwapFactor")) {
+                try { indexTrendService.recomputeStates(); } catch (Exception ignored) {}
+            }
             return ResponseEntity.ok(Map.of("ok", true, "message", "Settings saved"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("ok", false, "message", e.getMessage()));

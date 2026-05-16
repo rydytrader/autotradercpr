@@ -68,16 +68,66 @@ public class ScannerController {
      * market ticker to show sector LTP + change% + CPR bias chip. Empty list if cookies
      * / bhavcopy haven't loaded yet.
      */
+    /**
+     * Counts how many distinct stocks in the current watchlist map to each sectoral index
+     * ticker (e.g. {@code NIFTYBANK → 5}). Mirrors the {@link #getWatchlist} universe +
+     * filter gates so the Sector Trends modal only shows indices the user is actually
+     * scanning against, with the per-sector stock count.
+     */
+    private Map<String, Integer> watchlistSectorIndexCounts() {
+        Map<String, Set<String>> symbolsByTicker = new LinkedHashMap<>();
+        boolean onlyNifty50 = riskSettings.isScanOnlyNifty50();
+        double narrowMaxWidth = riskSettings.getNarrowCprMaxWidth();
+        double narrowMinWidth = riskSettings.getNarrowCprMinWidth();
+        double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
+
+        java.util.function.Consumer<CprLevels> recordSector = (cpr) -> {
+            String sector = cpr.getSector();
+            if (sector == null || sector.isEmpty()) return;
+            String ticker = bhavcopyService.getSectorIndexTicker(sector);
+            if (ticker == null) return;
+            // Dedupe by stock symbol — a stock that hits both narrow and inside passes
+            // mustn't be double-counted toward its sector.
+            symbolsByTicker.computeIfAbsent(ticker, k -> new HashSet<>()).add(cpr.getSymbol());
+        };
+
+        // Narrow CPR pass — same gates as getWatchlist.
+        for (CprLevels cpr : bhavcopyService.getAllCprLevels().values()) {
+            if (bhavcopyService.isIndex(cpr.getSymbol())) continue;
+            if (onlyNifty50 && !cpr.isInNifty50()) continue;
+            if (cpr.getCprWidthPct() < narrowMinWidth || cpr.getCprWidthPct() >= narrowMaxWidth) continue;
+            if (!marketDataService.passesWatchlistFilters(cpr)) continue;
+            recordSector.accept(cpr);
+        }
+        // Inside CPR pass — same gates as getWatchlist (no narrow-width upper cap).
+        for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
+            if (onlyNifty50 && !cpr.isInNifty50()) continue;
+            if (insideMaxWidth > 0 && cpr.getCprWidthPct() > insideMaxWidth) continue;
+            if (!marketDataService.passesWatchlistFilters(cpr)) continue;
+            recordSector.accept(cpr);
+        }
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (Map.Entry<String, Set<String>> e : symbolsByTicker.entrySet()) {
+            counts.put(e.getKey(), e.getValue().size());
+        }
+        return counts;
+    }
+
     @GetMapping("/api/scanner/sectors")
     public List<Map<String, Object>> getSectoralIndices() {
+        // Only surface indices whose sector has at least one stock in the current
+        // watchlist — the rest aren't relevant to what the user is scanning.
+        Map<String, Integer> watchlistCounts = watchlistSectorIndexCounts();
         List<Map<String, Object>> out = new ArrayList<>();
         for (String ticker : bhavcopyService.getAllSectoralIndexTickers()) {
+            if (!watchlistCounts.containsKey(ticker)) continue;
             CprLevels idx = bhavcopyService.getCprLevels(ticker);
             if (idx == null) continue;
             String fyersSym = "NSE:" + ticker + "-INDEX";
             double ltp = marketDataService.getLtp(fyersSym);
             double prevClose = idx.getClose();
             double changePct = (ltp > 0 && prevClose > 0) ? ((ltp - prevClose) / prevClose) * 100.0 : 0;
+            double changePts = (ltp > 0 && prevClose > 0) ? (ltp - prevClose) : 0;
             double top = idx.getTc() > 0 && idx.getBc() > 0 ? Math.max(idx.getTc(), idx.getBc()) : 0;
             double bot = idx.getTc() > 0 && idx.getBc() > 0 ? Math.min(idx.getTc(), idx.getBc()) : 0;
             String state = "";
@@ -87,15 +137,19 @@ public class ScannerController {
                 else if (refLtp < bot) state = "BEARISH";
                 else                   state = "INSIDE";
             }
+            String displayName = bhavcopyService.getIndexDisplayName(ticker);
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("ticker",      ticker);
             m.put("symbol",      fyersSym);
+            m.put("displayName", displayName != null ? displayName : ticker);
             m.put("ltp",         Math.round((ltp > 0 ? ltp : prevClose) * 100.0) / 100.0);
             m.put("prevClose",   Math.round(prevClose * 100.0) / 100.0);
+            m.put("change",      Math.round(changePts * 100.0) / 100.0);
             m.put("changePct",   Math.round(changePct * 100.0) / 100.0);
             m.put("cprTop",      Math.round(top * 100.0) / 100.0);
             m.put("cprBot",      Math.round(bot * 100.0) / 100.0);
             m.put("state",       state);
+            m.put("stockCount",  watchlistCounts.get(ticker));
             out.add(m);
         }
         return out;

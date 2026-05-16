@@ -158,8 +158,10 @@ public class SignalProcessor {
                 double buffer = riskSettings.getStructuralSlBufferAtr();
                 // Single-level setups (R2/R3/R4, S2/S3/S4) lack the zone-width cushion that
                 // zone setups (CPR, R1+PDH, S1+PDL, magnets) get for free, so add an extra
-                // ATR buffer to push the SL further from the anchor.
-                double extra = isSingleLevelSetup(setup) ? riskSettings.getSingleLevelSlBufferAtr() : 0;
+                // ATR buffer to push the SL further from the anchor. Zone setups also receive
+                // the same extra cushion when CPR width is below narrowCprZoneCollapseWidthPct
+                // — their zone is too tight to absorb a normal pullback.
+                double extra = appliesSingleLevelSlBuffer(setup, tc, bc) ? riskSettings.getSingleLevelSlBufferAtr() : 0;
                 double totalBufferAtr = buffer + extra;
                 double structSl = isBuy ? (anchor - atr * totalBufferAtr) : (anchor + atr * totalBufferAtr);
                 sl = structSl;
@@ -362,7 +364,7 @@ public class SignalProcessor {
         if (useStructuralSl) {
             double anchor = computeStructuralAnchor(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
             double base = riskSettings.getStructuralSlBufferAtr();
-            double extra = isSingleLevelSetup(setup) ? riskSettings.getSingleLevelSlBufferAtr() : 0;
+            double extra = appliesSingleLevelSlBuffer(setup, tc, bc) ? riskSettings.getSingleLevelSlBufferAtr() : 0;
             desc.append(" (structural anchor ").append(fmt(anchor))
                 .append(" ").append(isBuy ? "−" : "+").append(" ").append(base + extra)
                 .append(" × ATR ").append(fmt(atr));
@@ -596,6 +598,37 @@ public class SignalProcessor {
                  "SELL_BELOW_S2", "SELL_BELOW_S3", "SELL_BELOW_S4" -> true;
             default -> false;
         };
+    }
+
+    /** Two-line zone setups (CPR, R1+PDH, S1+PDL incl. magnets). When the underlying CPR
+     *  is very narrow, these effectively behave like a single line for SL purposes — the
+     *  zone-width cushion is too tight to absorb a normal pullback — and they get the
+     *  extra singleLevelSlBufferAtr cushion. Breakout detection still uses the zone. */
+    private static boolean isZoneSetup(String setup) {
+        return switch (setup) {
+            case "BUY_ABOVE_CPR", "BUY_ABOVE_R1_PDH", "BUY_ABOVE_S1_PDL",
+                 "SELL_BELOW_CPR", "SELL_BELOW_R1_PDH", "SELL_BELOW_S1_PDL" -> true;
+            default -> false;
+        };
+    }
+
+    /** CPR width % from TC/BC. Uses the zone midpoint as the reference price (matches
+     *  CprLevels.cprWidthPct semantics). Returns 0 if either edge is missing. */
+    private static double cprWidthPct(double tc, double bc) {
+        if (tc <= 0 || bc <= 0) return 0;
+        double mid = (tc + bc) / 2.0;
+        if (mid <= 0) return 0;
+        return Math.abs(tc - bc) / mid * 100.0;
+    }
+
+    /** True when the setup needs the extra single-level SL buffer — either it's a pure
+     *  single-level setup OR it's a zone setup with CPR width below the collapse threshold. */
+    private boolean appliesSingleLevelSlBuffer(String setup, double tc, double bc) {
+        if (isSingleLevelSetup(setup)) return true;
+        if (!isZoneSetup(setup)) return false;
+        double threshold = riskSettings.getNarrowCprZoneCollapseWidthPct();
+        if (threshold <= 0) return false;
+        return cprWidthPct(tc, bc) < threshold;
     }
 
     private static double computeStructuralAnchor(String setup,

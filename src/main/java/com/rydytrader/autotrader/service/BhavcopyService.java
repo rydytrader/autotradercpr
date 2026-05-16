@@ -89,9 +89,9 @@ public class BhavcopyService {
         // available even if Fyers WS doesn't deliver live LTP (chip color will fall
         // back to neutral, but bhavcopy prevClose is still useful for future features).
         put("Nifty Chemicals",           "NIFTYCHEM");
-        // NIFTY MidSmall IT & Telecom — used as the live LTP proxy for Telecom-tagged
-        // stocks (NSE doesn't publish a standalone Nifty Telecom index).
-        put("Nifty MidSmall IT & Telecom", "NIFTYMSITTELCM");
+        // Note: NIFTY MidSmall IT & Telecom is NOT included — HSM doesn't publish it
+        // (absent from Fyers Python SDK index_dict). Telecom chip uses NIFTYSERVSECTOR
+        // as proxy in SECTOR_TO_INDEX.
     }};
 
     /**
@@ -115,9 +115,10 @@ public class BhavcopyService {
         Map.entry("Consumer Durables",        "NIFTYCONSRDURBL"),
         // Broader thematic indices for industries without a direct sectoral index:
         Map.entry("Services",                 "NIFTYSERVSECTOR"),
-        // Telecom uses NIFTY MidSmall IT & Telecom — closest to a pure telecom signal
-        // on Fyers since NSE doesn't expose a standalone Nifty Telecom index.
-        Map.entry("Telecom",                  "NIFTYMSITTELCM"),
+        // Telecom: NIFTY MidSmall IT & Telecom is missing from Fyers' HSM index_dict, so
+        // we fall back to NIFTY Services Sector (BHARTIARTL — the only NIFTY 50 telecom
+        // name — is itself a Services Sector constituent).
+        Map.entry("Telecom",                  "NIFTYSERVSECTOR"),
         Map.entry("Consumer Services",        "NIFTYCONSUMPTION"),
         // Capital Goods / Construction / Construction Materials are normalized to "Infra"
         // upstream (see normalizeIndustryName), so the live label is "Infra". The legacy
@@ -139,10 +140,23 @@ public class BhavcopyService {
         return sector == null ? null : SECTOR_TO_INDEX.get(sector);
     }
 
-    /** Returns all sectoral index ticker keys we track CPR for. Used by MarketDataService
-     *  to build the WS subscription set so the ticker shows live LTPs. */
+    /** Returns all distinct sectoral index ticker keys we track CPR for. Several display
+     *  sector names can map to the same ticker (e.g. "Infra", "Construction", "Construction
+     *  Materials", "Capital Goods" all → NIFTYINFRA), so the values are deduped here. Used
+     *  by MarketDataService for the WS subscription set and the Sector Trends modal. */
     public java.util.Collection<String> getAllSectoralIndexTickers() {
-        return SECTOR_TO_INDEX.values();
+        return new java.util.LinkedHashSet<>(SECTOR_TO_INDEX.values());
+    }
+
+    /** Reverse lookup: returns the bhavcopy "Index Name" (e.g. "Nifty Bank") for a ticker
+     *  (e.g. NIFTYBANK), or null if the ticker isn't in the SUPPORTED_INDICES map. Used by
+     *  the Sector Trends UI to show full index display names. */
+    public String getIndexDisplayName(String ticker) {
+        if (ticker == null) return null;
+        for (Map.Entry<String, String> e : SUPPORTED_INDICES.entrySet()) {
+            if (ticker.equals(e.getValue())) return e.getKey();
+        }
+        return null;
     }
     private static final String STORE_FILE = "../store/cache/cpr-data.json";
     private static final String LEGACY_STORE_FILE = "../store/config/cpr-data.json";

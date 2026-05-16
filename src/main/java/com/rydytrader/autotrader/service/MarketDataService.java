@@ -149,28 +149,32 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         Map.entry("NSE:NIFTYFMCG-INDEX",        "Nifty FMCG"),
         Map.entry("NSE:NIFTYMETAL-INDEX",       "Nifty Metal"),
         Map.entry("NSE:NIFTYENERGY-INDEX",      "Nifty Energy"),
-        // HSM publishes this as "Nifty Healthcare" (no "Index" suffix), even though
-        // the bhavcopy CSV "Index Name" column reads "Nifty Healthcare Index".
-        Map.entry("NSE:NIFTYHEALTHCARE-INDEX",  "Nifty Healthcare"),
+        // HSM name per Fyers Python SDK index_dict (FyersWebsocket/map.json): uppercase
+        // "NIFTY HEALTHCARE". Differs from the bhavcopy CSV column ("Nifty Healthcare Index").
+        Map.entry("NSE:NIFTYHEALTHCARE-INDEX",  "NIFTY HEALTHCARE"),
         Map.entry("NSE:NIFTYREALTY-INDEX",      "Nifty Realty"),
         Map.entry("NSE:NIFTYMEDIA-INDEX",       "Nifty Media"),
-        // Fyers HSM publishes this index under "Nifty Oil and Gas" (with "and"), not the
-        // bhavcopy CSV's "Nifty Oil & Gas" form. Matches the Fyers symbol's ANDGAS convention.
-        Map.entry("NSE:NIFTYOILANDGAS-INDEX",   "Nifty Oil and Gas"),
-        Map.entry("NSE:NIFTYCONSRDURBL-INDEX",  "Nifty Consumer Durables"),
+        // HSM name per Fyers Python SDK index_dict: uppercase "NIFTY OIL AND GAS".
+        Map.entry("NSE:NIFTYOILANDGAS-INDEX",   "NIFTY OIL AND GAS"),
+        // HSM name per Fyers Python SDK: abbreviated "NIFTY CONSR DURBL" (not the
+        // bhavcopy CSV's "Nifty Consumer Durables").
+        Map.entry("NSE:NIFTYCONSRDURBL-INDEX",  "NIFTY CONSR DURBL"),
         // Broader thematic indices used as fallback for industries without a direct sectoral index.
-        Map.entry("NSE:NIFTYSERVSECTOR-INDEX",  "Nifty Services Sector"),
+        // HSM name per Fyers Python SDK: "Nifty Serv Sector" (abbreviated "Serv").
+        Map.entry("NSE:NIFTYSERVSECTOR-INDEX",  "Nifty Serv Sector"),
         Map.entry("NSE:NIFTYCONSUMPTION-INDEX", "Nifty Consumption"),
         // HSM publishes this as "Nifty Infra" (short form, matches the Fyers symbol
         // "NIFTYINFRA"), not the bhavcopy CSV's "Nifty Infrastructure".
         Map.entry("NSE:NIFTYINFRA-INDEX",       "Nifty Infra"),
         Map.entry("NSE:NIFTYCOMMODITIES-INDEX", "Nifty Commodities"),
-        // Speculative: NIFTY Chemicals isn't in the Fyers equity symbol master, but try
-        // anyway in case Fyers' symbol-token API resolves it. If not, the subscription
-        // silently fails (no harm) and the Chemicals chip stays neutral.
+        // Speculative: NIFTY Chemicals isn't in the Fyers equity symbol master and is
+        // also absent from the Fyers Python SDK's index_dict (no HSM publication).
+        // Subscription silently fails — Chemicals chip stays neutral.
         Map.entry("NSE:NIFTYCHEM-INDEX",        "Nifty Chemicals"),
-        // Telecom proxy — NIFTY MidSmall IT & Telecom.
-        Map.entry("NSE:NIFTYMSITTELCM-INDEX",   "Nifty MidSmall IT & Telecom"),
+        // NOTE: NIFTYMSITTELCM (MidSmall IT & Telecom) is also absent from Fyers' index_dict
+        // — HSM doesn't publish it. Telecom chip now points at NIFTYSERVSECTOR (BHARTIARTL
+        // is a Services Sector constituent) as the live-LTP proxy. See SECTOR_TO_INDEX in
+        // BhavcopyService.
         Map.entry("NSE:MIDCPNIFTY-INDEX",       "NIFTY MID SELECT"),
         Map.entry("NSE:NIFTYNEXT50-INDEX",      "Nifty Next 50"),
         Map.entry("NSE:INDIAVIX-INDEX",         "India VIX")

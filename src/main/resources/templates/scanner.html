@@ -423,6 +423,14 @@
             " onmouseover="this.style.background='rgba(99,179,237,0.18)'" onmouseout="this.style.background='rgba(99,179,237,0.1)'">
                 Signal Trail
             </button>
+            <button onclick="showSectorTrends()" style="
+                background: rgba(34,211,238,0.1); border: 1px solid rgba(34,211,238,0.35);
+                color: var(--accent-cyan); padding: 6px 14px; border-radius: 8px;
+                font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
+                cursor: pointer; transition: all 0.2s; margin-left: 8px;
+            " onmouseover="this.style.background='rgba(34,211,238,0.2)'" onmouseout="this.style.background='rgba(34,211,238,0.1)'">
+                Sector Trends
+            </button>
         </div>
     </div>
 
@@ -1024,7 +1032,7 @@
             var smaColor = ltp > sma20 ? 'var(--accent-green)'
                          : ltp < sma20 ? 'var(--accent-red)'
                          : 'var(--text-secondary)';
-            smaEl.textContent = 'SMA 20: ' + sma20.toFixed(2);
+            smaEl.textContent = 'SMA 20 - ' + sma20.toFixed(2);
             smaEl.style.color = smaColor;
         }
         if (changePct == null || !isFinite(changePct) || ltp <= 0) return;
@@ -1069,6 +1077,10 @@
             // would be misleading.
             var smaChipEl = document.getElementById('niftySma20');
             if (smaChipEl) smaChipEl.style.display = d.sma20FactorEnabled === false ? 'none' : '';
+            // Same gate for the FUT VWAP chip — hidden when the user has turned off the
+            // FUT VWAP factor in trend identification.
+            var futVwapChipEl = document.getElementById('niftyFutVwap');
+            if (futVwapChipEl) futVwapChipEl.style.display = d.futVwapFactorEnabled === false ? 'none' : '';
 
             // NIFTY LTP + change + % change (live during session, bhavcopy prev close pre-market).
             // sma20 is sent on every poll so the chip stays visible after market close even
@@ -1480,6 +1492,36 @@ function showInsideCpr() {
     </div>
 </div>
 
+<!-- Sector Trends Modal -->
+<div id="sectorTrendsModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px);" onclick="if(event.target===this)this.style.display='none'">
+    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:880px; max-height:88vh; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border); background:var(--bg-section-header);">
+            <div>
+                <div style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:var(--accent-blue);">SECTOR TRENDS</div>
+                <div style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); margin-top:2px;">Live LTP, change &amp; CPR state for sectors present in your watchlist (with stock count)</div>
+            </div>
+            <button onclick="document.getElementById('sectorTrendsModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
+        </div>
+        <div style="overflow-y:auto; flex:1; min-height:0; padding:0; scrollbar-width:thin; scrollbar-color:var(--border) transparent;">
+            <table style="width:100%; border-collapse:collapse; font-family:var(--font-mono); font-size:0.78rem;">
+                <thead>
+                    <tr style="background:var(--bg-surface); position:sticky; top:0; z-index:1;">
+                        <th style="padding:10px 14px; text-align:left;  color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">#</th>
+                        <th style="padding:10px 14px; text-align:left;  color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Sector</th>
+                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">LTP</th>
+                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Change</th>
+                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">% Chg</th>
+                        <th style="padding:10px 14px; text-align:center;color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">CPR</th>
+                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Stocks</th>
+                    </tr>
+                </thead>
+                <tbody id="sectorTrendsBody"></tbody>
+            </table>
+            <div id="sectorTrendsEmpty" style="display:none; padding:40px; text-align:center; color:var(--text-muted); font-family:var(--font-mono); font-size:0.85rem;">No sector data available</div>
+        </div>
+    </div>
+</div>
+
 <!-- Signal Trail Modal -->
 <div id="signalTrailModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px);" onclick="if(event.target===this)this.style.display='none'">
     <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:1200px; max-height:90vh; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
@@ -1707,6 +1749,73 @@ function showSignalTrail() {
 }
 
 // Chart Modal lives in /js/chart-modal.js (shared with /positions).
+
+// ── Sector Trends Modal ──────────────────────────────────────────────────────
+var sectorTrendsTimer = null;
+function showSectorTrends() {
+    document.getElementById('sectorTrendsModal').style.display = 'block';
+    loadSectorTrends();
+    if (sectorTrendsTimer) clearInterval(sectorTrendsTimer);
+    sectorTrendsTimer = setInterval(function() {
+        if (document.getElementById('sectorTrendsModal').style.display === 'block') {
+            loadSectorTrends();
+        } else {
+            clearInterval(sectorTrendsTimer);
+            sectorTrendsTimer = null;
+        }
+    }, 5000);
+}
+
+function loadSectorTrends() {
+    fetch('/api/scanner/sectors')
+        .then(function(r) { return r.json(); })
+        .then(function(rows) {
+            var tbody = document.getElementById('sectorTrendsBody');
+            var empty = document.getElementById('sectorTrendsEmpty');
+            if (!rows || rows.length === 0) {
+                tbody.innerHTML = '';
+                empty.style.display = 'block';
+                return;
+            }
+            empty.style.display = 'none';
+            // Sort alphabetically by the second word of the display name (e.g. "Nifty Auto"
+            // → "Auto", "Nifty FMCG" → "FMCG"), case-insensitive. Falls back to full name
+            // when the display name has no second word.
+            function sortKey(name) {
+                if (!name) return '';
+                var parts = String(name).trim().split(/\s+/);
+                var key = parts.length > 1 ? parts[1] : parts[0];
+                return key.toUpperCase();
+            }
+            rows.sort(function(a, b) {
+                return sortKey(a.displayName || a.ticker).localeCompare(sortKey(b.displayName || b.ticker));
+            });
+            tbody.innerHTML = rows.map(function(s, idx) {
+                var chg = +s.change || 0;
+                var chgPct = +s.changePct || 0;
+                var chgColor = chgPct > 0 ? 'var(--accent-green)' : chgPct < 0 ? 'var(--accent-red)' : 'var(--text-secondary)';
+                var arrow = chgPct > 0 ? '▲' : chgPct < 0 ? '▼' : '–';
+                var ltp = +s.ltp || 0;
+                var cprState = s.state || '';
+                var cprColor = cprState === 'BULLISH' ? 'var(--accent-green)'
+                             : cprState === 'BEARISH' ? 'var(--accent-red)'
+                             : cprState === 'INSIDE'  ? 'var(--accent-yellow)'
+                             : 'var(--text-muted)';
+                var cprLabel = cprState || '—';
+                var stockCount = +s.stockCount || 0;
+                return '<tr style="border-bottom:1px solid var(--border);">'
+                    + '<td style="padding:8px 14px; color:var(--text-muted);">' + (idx + 1) + '</td>'
+                    + '<td style="padding:8px 14px; color:var(--text-primary); font-weight:600;">' + (s.displayName || s.ticker) + '</td>'
+                    + '<td style="padding:8px 14px; text-align:right; color:var(--text-primary);">' + ltp.toFixed(2) + '</td>'
+                    + '<td style="padding:8px 14px; text-align:right; color:' + chgColor + ';">' + arrow + ' ' + Math.abs(chg).toFixed(2) + '</td>'
+                    + '<td style="padding:8px 14px; text-align:right; color:' + chgColor + '; font-weight:600;">' + (chgPct >= 0 ? '+' : '') + chgPct.toFixed(2) + '%</td>'
+                    + '<td style="padding:8px 14px; text-align:center; color:' + cprColor + '; font-weight:600;">' + cprLabel + '</td>'
+                    + '<td style="padding:8px 14px; text-align:right; color:var(--text-primary); font-weight:600;">' + stockCount + '</td>'
+                    + '</tr>';
+            }).join('');
+        })
+        .catch(function(err) { console.warn('loadSectorTrends failed:', err); });
+}
 
 </script>
 <script src="/js/chart-modal.js?v=1"></script>

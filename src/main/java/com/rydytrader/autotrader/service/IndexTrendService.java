@@ -159,10 +159,8 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         }
 
         // SMA 20 factor — optional, gated by enableNiftySma20Factor. When enabled, NIFTY's
-        // last close vs SMA20 acts as a third confirmation for the reversal states (keeps
-        // them from firing prematurely while the index trades under its short-term mean).
-        // When disabled, reversal states fall back to the pure CPR-disagrees-with-futVwap
-        // definition.
+        // last close vs SMA20 contributes as one of the optional trend factors. When
+        // disabled, drops out of the state calculation entirely.
         boolean smaEnabled = riskSettings != null && riskSettings.isEnableNiftySma20Factor();
         double sma20 = (smaEnabled && smaService != null) ? smaService.getSma(NIFTY_SYMBOL) : 0;
         Boolean smaBullish = null;
@@ -171,25 +169,39 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
             else if (niftyClose < sma20) smaBullish = Boolean.FALSE;
         }
 
-        // State combination
+        // FUT VWAP factor — optional, gated by enableNiftyFutVwapFactor (parallel to the
+        // SMA 20 factor). When OFF, trend reduces to CPR (plus SMA20 if that factor is on).
+        boolean futVwapEnabled = riskSettings == null || riskSettings.isEnableNiftyFutVwapFactor();
+
+        // Effective optional votes — null when the factor is disabled OR no data yet. The
+        // state machine below treats null as "doesn't participate."
+        Boolean futVwapVote = futVwapEnabled ? futVwapBullish : null;
+        Boolean smaVote     = smaEnabled     ? smaBullish     : null;
+
+        // Tally bullish vs bearish among the active optional factors (futVwap, SMA20).
+        int optBull = 0, optBear = 0;
+        if (Boolean.TRUE.equals(futVwapVote))  optBull++;
+        if (Boolean.FALSE.equals(futVwapVote)) optBear++;
+        if (Boolean.TRUE.equals(smaVote))      optBull++;
+        if (Boolean.FALSE.equals(smaVote))     optBear++;
+        boolean anyOptionalEnabled = futVwapEnabled || smaEnabled;
+
+        // State combination — works across all 4 (futVwap × SMA20) toggle combinations.
+        // NEUTRAL: no CPR signal (inside CPR or no data).
+        // BULLISH / BEARISH: CPR aligned AND every active optional factor agrees with CPR.
+        // BULLISH_REVERSAL / BEARISH_REVERSAL: CPR disagrees but ALL active optional factors
+        //   point the same direction (requires at least one optional factor enabled).
+        // SIDEWAYS: factors disagree / partial data → no actionable bias.
         String state;
-        if (cprBullish == null && futVwapBullish == null) {
+        if (cprBullish == null) {
             state = "NEUTRAL";
-        } else if (cprBullish != null && futVwapBullish != null && cprBullish && futVwapBullish) {
+        } else if (cprBullish && optBear == 0 && (optBull > 0 || !anyOptionalEnabled)) {
             state = "BULLISH";
-        } else if (cprBullish != null && futVwapBullish != null && !cprBullish && !futVwapBullish) {
+        } else if (!cprBullish && optBull == 0 && (optBear > 0 || !anyOptionalEnabled)) {
             state = "BEARISH";
-        } else if (smaEnabled
-                && Boolean.TRUE.equals(smaBullish) && Boolean.TRUE.equals(futVwapBullish)) {
+        } else if (!cprBullish && optBull > 0 && optBear == 0) {
             state = "BULLISH_REVERSAL";
-        } else if (smaEnabled
-                && Boolean.FALSE.equals(smaBullish) && Boolean.FALSE.equals(futVwapBullish)) {
-            state = "BEARISH_REVERSAL";
-        } else if (!smaEnabled
-                && Boolean.FALSE.equals(cprBullish) && Boolean.TRUE.equals(futVwapBullish)) {
-            state = "BULLISH_REVERSAL";
-        } else if (!smaEnabled
-                && Boolean.TRUE.equals(cprBullish) && Boolean.FALSE.equals(futVwapBullish)) {
+        } else if (cprBullish && optBear > 0 && optBull == 0) {
             state = "BEARISH_REVERSAL";
         } else {
             state = "SIDEWAYS";
@@ -203,7 +215,10 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
      * Sticky update path — called only by {@link #onCandleClose} at NIFTY 5-min boundaries.
      * Snapshots the just-closed candle values and writes them to the cache.
      */
-    private void recomputeStates() {
+    /** Force a sticky-state recompute from the most recent inputs. Called from
+     *  SettingsController right after a trend-factor toggle change so the NIFTY card
+     *  reflects the new setting immediately instead of waiting for the next 5-min close. */
+    public void recomputeStates() {
         TrendSnapshot s = computeSnapshot();
         String prev = cachedState;
         cachedCprBullish     = s.cprBullish();
@@ -393,6 +408,11 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
             double sma20 = smaService.getSma(NIFTY_SYMBOL);
             trend.setSma20(Math.round(sma20 * 100.0) / 100.0);
         }
+        // FUT VWAP factor flag — UI hides the FUT VWAP chip when this is off. Cached close
+        // and vwap values are still set above (so the chip can render its number when
+        // visible); only the trend-state contribution is gated.
+        boolean futVwapFactorEnabled = riskSettings != null && riskSettings.isEnableNiftyFutVwapFactor();
+        trend.setFutVwapFactorEnabled(futVwapFactorEnabled);
         return trend;
     }
 }

@@ -43,6 +43,10 @@ public class IndexTrend {
     // hides the SMA chip on the NIFTY card when this is false (the factor isn't being
     // used downstream, so there's no point showing the chip).
     private boolean sma20FactorEnabled;
+    // True iff the user has enabled the NIFTY FUT VWAP factor in trend identification.
+    // UI hides the FUT VWAP chip on the NIFTY card when this is false — same pattern
+    // as sma20FactorEnabled.
+    private boolean futVwapFactorEnabled;
     // NIFTY option-chain Max OI strikes refreshed every 15 minutes during market hours.
     // Max Call OI = intraday resistance hurdle; Max Put OI = intraday support hurdle.
     // Zero = not yet loaded.
@@ -94,6 +98,8 @@ public class IndexTrend {
     public void setSma20(double v) { this.sma20 = v; }
     public boolean isSma20FactorEnabled() { return sma20FactorEnabled; }
     public void setSma20FactorEnabled(boolean v) { this.sma20FactorEnabled = v; }
+    public boolean isFutVwapFactorEnabled() { return futVwapFactorEnabled; }
+    public void setFutVwapFactorEnabled(boolean v) { this.futVwapFactorEnabled = v; }
     public double getMaxCallOiStrike() { return maxCallOiStrike; }
     public void setMaxCallOiStrike(double v) { this.maxCallOiStrike = v; }
     public long getMaxCallOi() { return maxCallOi; }

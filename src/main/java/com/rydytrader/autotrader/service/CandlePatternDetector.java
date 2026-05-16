@@ -45,32 +45,6 @@ final class CandlePatternDetector {
 
     private CandlePatternDetector() {}
 
-    // ── Marubozu ──────────────────────────────────────────────────────────────
-
-    public static boolean isBullishMarubozu(double open, double high, double low, double close,
-                                            double atr, double bodyAtrMult, double maxBodyAtrMult,
-                                            double maxWicksPctOfBody) {
-        if (atr <= 0) return false;
-        if (close <= open) return false;
-        double body = close - open;
-        if (body < bodyAtrMult * atr) return false;
-        if (maxBodyAtrMult > 0 && body > maxBodyAtrMult * atr) return false;
-        double wicks = (high - close) + (open - low);
-        return wicks <= maxWicksPctOfBody * body;
-    }
-
-    public static boolean isBearishMarubozu(double open, double high, double low, double close,
-                                            double atr, double bodyAtrMult, double maxBodyAtrMult,
-                                            double maxWicksPctOfBody) {
-        if (atr <= 0) return false;
-        if (close >= open) return false;
-        double body = open - close;
-        if (body < bodyAtrMult * atr) return false;
-        if (maxBodyAtrMult > 0 && body > maxBodyAtrMult * atr) return false;
-        double wicks = (high - open) + (close - low);
-        return wicks <= maxWicksPctOfBody * body;
-    }
-
     // ── Pin bar (hammer / shooting star) ─────────────────────────────────────
 
     // Pin bar test — two-path so very small bodies (where the body-relative multiplicative
@@ -118,92 +92,55 @@ final class CandlePatternDetector {
             && lowerWick <= oppositeWickBodyMult * body;
     }
 
-    // ── Engulfing ─────────────────────────────────────────────────────────────
+    // ── Outside Reversal (unified 2-bar body reversal) ──────────────────────
+    // Replaces Engulfing + Piercing/Dark Cloud + Tweezer Top/Bottom. Strict color flip,
+    // shared body band on both bars, configurable penetration into bar 1's body:
+    //   • penetration 1.0 = strict classical engulfing (close past bar 1's open)
+    //   • penetration 0.5 = covers piercing AND engulfing (close past bar 1's midpoint)
+    //   • penetration 0.0 = any directional recovery past bar 1's close
 
-    public static boolean isBullishEngulfing(CandleAggregator.CandleBar prev,
-                                             CandleAggregator.CandleBar curr,
-                                             double minBodyMultiple, double atr,
-                                             double minBodyAtrMult, double maxBodyAtrMult) {
-        if (prev == null || curr == null) return false;
-        if (!(prev.close < prev.open)) return false;
-        if (!(curr.close > curr.open)) return false;
+    public static boolean isBullishOutsideReversal(CandleAggregator.CandleBar prev,
+                                                   CandleAggregator.CandleBar curr, double atr,
+                                                   double minBodyAtrMult, double maxBodyAtrMult,
+                                                   double penetrationPct) {
+        if (prev == null || curr == null || atr <= 0) return false;
+        if (!(prev.close < prev.open)) return false;                // bar 1 red
+        if (!(curr.close > curr.open)) return false;                // bar 2 green (color flip)
         double prevBody = prev.open - prev.close;
         double currBody = curr.close - curr.open;
-        if (currBody < minBodyMultiple * prevBody) return false;
-        if (minBodyAtrMult > 0 && atr > 0 && currBody < minBodyAtrMult * atr) return false;
-        if (maxBodyAtrMult > 0 && atr > 0 && currBody > maxBodyAtrMult * atr) return false;
-        return curr.open <= prev.close && curr.close >= prev.open;
+        if (minBodyAtrMult > 0) {
+            if (prevBody < minBodyAtrMult * atr) return false;
+            if (currBody < minBodyAtrMult * atr) return false;
+        }
+        if (maxBodyAtrMult > 0) {
+            if (prevBody > maxBodyAtrMult * atr) return false;
+            if (currBody > maxBodyAtrMult * atr) return false;
+        }
+        if (!(curr.open <= prev.close)) return false;               // bar 2 opens at/below bar 1's close
+        double threshold = prev.close + penetrationPct * prevBody;
+        return curr.close >= threshold;                             // closes ≥ N% into bar 1's body
     }
 
-    public static boolean isBearishEngulfing(CandleAggregator.CandleBar prev,
-                                             CandleAggregator.CandleBar curr,
-                                             double minBodyMultiple, double atr,
-                                             double minBodyAtrMult, double maxBodyAtrMult) {
-        if (prev == null || curr == null) return false;
-        if (!(prev.close > prev.open)) return false;
-        if (!(curr.close < curr.open)) return false;
+    public static boolean isBearishOutsideReversal(CandleAggregator.CandleBar prev,
+                                                   CandleAggregator.CandleBar curr, double atr,
+                                                   double minBodyAtrMult, double maxBodyAtrMult,
+                                                   double penetrationPct) {
+        if (prev == null || curr == null || atr <= 0) return false;
+        if (!(prev.close > prev.open)) return false;                // bar 1 green
+        if (!(curr.close < curr.open)) return false;                // bar 2 red (color flip)
         double prevBody = prev.close - prev.open;
         double currBody = curr.open - curr.close;
-        if (currBody < minBodyMultiple * prevBody) return false;
-        if (minBodyAtrMult > 0 && atr > 0 && currBody < minBodyAtrMult * atr) return false;
-        if (maxBodyAtrMult > 0 && atr > 0 && currBody > maxBodyAtrMult * atr) return false;
-        return curr.open >= prev.close && curr.close <= prev.open;
-    }
-
-    // ── Piercing line / Dark cloud cover (2-bar partial reversal) ────────────
-
-    public static boolean isPiercingLine(CandleAggregator.CandleBar prev,
-                                         CandleAggregator.CandleBar curr, double atr,
-                                         double prevBodyAtrMult, double penetrationPct) {
-        if (prev == null || curr == null || atr <= 0) return false;
-        if (!(prev.close < prev.open)) return false;                // bar 1 red
-        double prevBody = prev.open - prev.close;
-        if (prevBody < prevBodyAtrMult * atr) return false;         // bar 1 meaningful
-        if (!(curr.close > curr.open)) return false;                // bar 2 green
-        if (!(curr.open < prev.close)) return false;                // opens past prev close
-        double penetrationLevel = prev.close + penetrationPct * prevBody;
-        if (curr.close < penetrationLevel) return false;            // closes ≥ N% into bar 1
-        return curr.close < prev.open;                              // does NOT engulf
-    }
-
-    public static boolean isDarkCloudCover(CandleAggregator.CandleBar prev,
-                                           CandleAggregator.CandleBar curr, double atr,
-                                           double prevBodyAtrMult, double penetrationPct) {
-        if (prev == null || curr == null || atr <= 0) return false;
-        if (!(prev.close > prev.open)) return false;                // bar 1 green
-        double prevBody = prev.close - prev.open;
-        if (prevBody < prevBodyAtrMult * atr) return false;
-        if (!(curr.close < curr.open)) return false;                // bar 2 red
-        if (!(curr.open > prev.close)) return false;                // opens past prev close
-        double penetrationLevel = prev.close - penetrationPct * prevBody;
-        if (curr.close > penetrationLevel) return false;            // closes ≥ N% into bar 1
-        return curr.close > prev.open;                              // does NOT engulf
-    }
-
-    // ── Tweezer top / bottom (2-bar matched-extreme reversal) ───────────────
-
-    public static boolean isTweezerBottom(CandleAggregator.CandleBar prev,
-                                          CandleAggregator.CandleBar curr, double atr,
-                                          double prevBodyAtrMult, double matchAtr) {
-        if (prev == null || curr == null || atr <= 0) return false;
-        if (!(prev.close < prev.open)) return false;                // bar 1 red
-        double prevBody = prev.open - prev.close;
-        if (prevBody < prevBodyAtrMult * atr) return false;         // bar 1 strong
-        if (!(curr.close > curr.open)) return false;                // bar 2 green (color flip)
-        double tolerance = matchAtr * atr;
-        return Math.abs(prev.low - curr.low) <= tolerance;          // matching lows
-    }
-
-    public static boolean isTweezerTop(CandleAggregator.CandleBar prev,
-                                       CandleAggregator.CandleBar curr, double atr,
-                                       double prevBodyAtrMult, double matchAtr) {
-        if (prev == null || curr == null || atr <= 0) return false;
-        if (!(prev.close > prev.open)) return false;                // bar 1 green
-        double prevBody = prev.close - prev.open;
-        if (prevBody < prevBodyAtrMult * atr) return false;
-        if (!(curr.close < curr.open)) return false;                // bar 2 red (color flip)
-        double tolerance = matchAtr * atr;
-        return Math.abs(prev.high - curr.high) <= tolerance;        // matching highs
+        if (minBodyAtrMult > 0) {
+            if (prevBody < minBodyAtrMult * atr) return false;
+            if (currBody < minBodyAtrMult * atr) return false;
+        }
+        if (maxBodyAtrMult > 0) {
+            if (prevBody > maxBodyAtrMult * atr) return false;
+            if (currBody > maxBodyAtrMult * atr) return false;
+        }
+        if (!(curr.open >= prev.close)) return false;               // bar 2 opens at/above bar 1's close
+        double threshold = prev.close - penetrationPct * prevBody;
+        return curr.close <= threshold;
     }
 
     // ── Doji reversal (2-bar) ────────────────────────────────────────────────
@@ -226,7 +163,9 @@ final class CandlePatternDetector {
         double currBody = curr.close - curr.open;
         if (currBody < confirmBodyAtrMult * atr) return false;             // curr is strong
         if (confirmMaxBodyAtrMult > 0 && currBody > confirmMaxBodyAtrMult * atr) return false; // not exhaustion
-        return curr.close > Math.max(prev.open, prev.close);               // closes past doji body
+        // Confirmation must close past the doji's HIGH (not just the doji body) — hardcoded
+        // rule. Closes above the entire prior bar's range, including any upper wick.
+        return curr.close > prev.high;
     }
 
     public static boolean isBearishDojiReversal(CandleAggregator.CandleBar prev,
@@ -243,7 +182,9 @@ final class CandlePatternDetector {
         double currBody = curr.open - curr.close;
         if (currBody < confirmBodyAtrMult * atr) return false;             // curr is strong
         if (confirmMaxBodyAtrMult > 0 && currBody > confirmMaxBodyAtrMult * atr) return false; // not exhaustion
-        return curr.close < Math.min(prev.open, prev.close);               // closes past doji body
+        // Confirmation must close past the doji's LOW (not just the doji body) — hardcoded
+        // rule. Closes below the entire prior bar's range, including any lower wick.
+        return curr.close < prev.low;
     }
 
     // ── Three Inside Up / Down (3-bar harami + confirmation) ────────────────
@@ -251,36 +192,54 @@ final class CandlePatternDetector {
     public static boolean isThreeInsideUp(CandleAggregator.CandleBar bar1,
                                           CandleAggregator.CandleBar bar2,
                                           CandleAggregator.CandleBar bar3, double atr,
-                                          double bodyAtrMult, double innerBodyMaxRatio) {
+                                          double bodyAtrMult, double bodyMaxAtrMult,
+                                          double bar3PenetrationPct) {
         if (bar1 == null || bar2 == null || bar3 == null || atr <= 0) return false;
-        // Bar 1: large red.
         if (!(bar1.close < bar1.open)) return false;
-        double bar1Body = bar1.open - bar1.close;
-        if (bar1Body < bodyAtrMult * atr) return false;
-        // Bar 2: green, body fully inside bar 1's body, and small relative to bar 1.
         if (!(bar2.close > bar2.open)) return false;
-        double bar2Body = bar2.close - bar2.open;
-        if (bar2Body > innerBodyMaxRatio * bar1Body) return false;
-        if (bar2.open < bar1.close || bar2.close > bar1.open) return false;
-        // Bar 3: green, closes past bar 1's open (full confirmation of reversal).
         if (!(bar3.close > bar3.open)) return false;
-        return bar3.close > bar1.open;
+        double bar1Body = bar1.open - bar1.close;
+        double bar3Body = bar3.close - bar3.open;
+        // Shared body band applied to BOTH bar 1 AND bar 3 (mirrors Morning Star's
+        // symmetric outer-bar band).
+        if (bodyAtrMult > 0) {
+            if (bar1Body < bodyAtrMult * atr) return false;
+            if (bar3Body < bodyAtrMult * atr) return false;
+        }
+        if (bodyMaxAtrMult > 0) {
+            if (bar1Body > bodyMaxAtrMult * atr) return false;
+            if (bar3Body > bodyMaxAtrMult * atr) return false;
+        }
+        // Bar 2: body fully INSIDE bar 1's body (classical harami containment).
+        if (bar2.open < bar1.close || bar2.close > bar1.open) return false;
+        // Bar 3 closes past a configurable penetration point into bar 1's body.
+        // 0.0 = past bar 1's close; 0.5 = midpoint; 1.0 = past bar 1's open.
+        double threshold = bar1.close + bar3PenetrationPct * (bar1.open - bar1.close);
+        return bar3.close >= threshold;
     }
 
     public static boolean isThreeInsideDown(CandleAggregator.CandleBar bar1,
                                             CandleAggregator.CandleBar bar2,
                                             CandleAggregator.CandleBar bar3, double atr,
-                                            double bodyAtrMult, double innerBodyMaxRatio) {
+                                            double bodyAtrMult, double bodyMaxAtrMult,
+                                            double bar3PenetrationPct) {
         if (bar1 == null || bar2 == null || bar3 == null || atr <= 0) return false;
         if (!(bar1.close > bar1.open)) return false;
-        double bar1Body = bar1.close - bar1.open;
-        if (bar1Body < bodyAtrMult * atr) return false;
         if (!(bar2.close < bar2.open)) return false;
-        double bar2Body = bar2.open - bar2.close;
-        if (bar2Body > innerBodyMaxRatio * bar1Body) return false;
-        if (bar2.open > bar1.close || bar2.close < bar1.open) return false;
         if (!(bar3.close < bar3.open)) return false;
-        return bar3.close < bar1.open;
+        double bar1Body = bar1.close - bar1.open;
+        double bar3Body = bar3.open - bar3.close;
+        if (bodyAtrMult > 0) {
+            if (bar1Body < bodyAtrMult * atr) return false;
+            if (bar3Body < bodyAtrMult * atr) return false;
+        }
+        if (bodyMaxAtrMult > 0) {
+            if (bar1Body > bodyMaxAtrMult * atr) return false;
+            if (bar3Body > bodyMaxAtrMult * atr) return false;
+        }
+        if (bar2.open > bar1.close || bar2.close < bar1.open) return false;
+        double threshold = bar1.close - bar3PenetrationPct * (bar1.close - bar1.open);
+        return bar3.close <= threshold;
     }
 
     // ── Morning / Evening star (3-bar) ───────────────────────────────────────
@@ -290,7 +249,8 @@ final class CandlePatternDetector {
                                         CandleAggregator.CandleBar bar3, double atr,
                                         double outerBodyAtrMult,
                                         double outerMaxBodyAtrMult,
-                                        double middleBodyMaxMultOfOuter) {
+                                        double middleBodyMaxMultOfOuter,
+                                        double bar3PenetrationPct) {
         if (bar1 == null || bar2 == null || bar3 == null || atr <= 0) return false;
         if (!(bar1.close < bar1.open)) return false;
         double bar1Body = bar1.open - bar1.close;
@@ -302,8 +262,10 @@ final class CandlePatternDetector {
         double bar3Body = bar3.close - bar3.open;
         if (bar3Body < outerBodyAtrMult * atr) return false;
         if (outerMaxBodyAtrMult > 0 && bar3Body > outerMaxBodyAtrMult * atr) return false;
-        double bar1Mid = (bar1.open + bar1.close) / 2.0;
-        return bar3.close > bar1Mid;
+        // Bar 3 close must reach a configurable penetration point into bar 1's red body.
+        // 0.0 = past bar 1's close; 0.5 = past midpoint (Nison default); 1.0 = past bar 1's open.
+        double threshold = bar1.close + bar3PenetrationPct * (bar1.open - bar1.close);
+        return bar3.close >= threshold;
     }
 
     public static boolean isEveningStar(CandleAggregator.CandleBar bar1,
@@ -311,7 +273,8 @@ final class CandlePatternDetector {
                                         CandleAggregator.CandleBar bar3, double atr,
                                         double outerBodyAtrMult,
                                         double outerMaxBodyAtrMult,
-                                        double middleBodyMaxMultOfOuter) {
+                                        double middleBodyMaxMultOfOuter,
+                                        double bar3PenetrationPct) {
         if (bar1 == null || bar2 == null || bar3 == null || atr <= 0) return false;
         if (!(bar1.close > bar1.open)) return false;
         double bar1Body = bar1.close - bar1.open;
@@ -323,7 +286,9 @@ final class CandlePatternDetector {
         double bar3Body = bar3.open - bar3.close;
         if (bar3Body < outerBodyAtrMult * atr) return false;
         if (outerMaxBodyAtrMult > 0 && bar3Body > outerMaxBodyAtrMult * atr) return false;
-        double bar1Mid = (bar1.open + bar1.close) / 2.0;
-        return bar3.close < bar1Mid;
+        // Mirror of Morning Star — penetrate down into bar 1's green body. 0 = past close,
+        // 0.5 = midpoint, 1.0 = past open.
+        double threshold = bar1.close - bar3PenetrationPct * (bar1.close - bar1.open);
+        return bar3.close <= threshold;
     }
 }
