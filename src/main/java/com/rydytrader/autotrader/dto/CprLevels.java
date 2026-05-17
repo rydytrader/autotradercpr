@@ -1,5 +1,8 @@
 package com.rydytrader.autotrader.dto;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 public class CprLevels {
 
     private String symbol;
@@ -26,7 +29,19 @@ public class CprLevels {
     /** No-arg constructor for Jackson deserialization. */
     public CprLevels() {}
 
-    public CprLevels(String symbol, double high, double low, double close) {
+    /**
+     * Primary constructor — also used by Jackson as the JSON creator. Annotated explicitly so
+     * Jackson always routes a JSON object through this constructor (which populates close +
+     * recomputes pivot/tc/bc/r1-r4/s1-s4 deterministically from H/L/C). Without the explicit
+     * @JsonCreator + @JsonProperty hints, Jackson sometimes falls back to the no-arg
+     * constructor and — since the core fields have no setters — leaves close at 0,
+     * silently breaking the entire CPR cache load on weekend restarts.
+     */
+    @JsonCreator
+    public CprLevels(@JsonProperty("symbol") String symbol,
+                     @JsonProperty("high") double high,
+                     @JsonProperty("low") double low,
+                     @JsonProperty("close") double close) {
         this.symbol = symbol;
         this.high   = high;
         this.low    = low;

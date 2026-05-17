@@ -283,9 +283,21 @@ public class ScannerController {
                 double prevClose = idx.getClose();
                 double idxLtp = marketDataService.getLtp("NSE:" + sectorIndexTicker + "-INDEX");
                 if (idxLtp > 0 && prevClose > 0) {
+                    // Live trading: today's tick vs cached prev close
                     sectorChangePct = (idxLtp - prevClose) / prevClose * 100.0;
                     if (idxLtp > prevClose)      sectorState = "BULLISH";
                     else if (idxLtp < prevClose) sectorState = "BEARISH";
+                } else if (prevClose > 0) {
+                    // Weekend / holiday / pre-market: fall back to the last-session change
+                    // (Friday close vs Thursday close) from bhavcopy daily snapshots so the
+                    // pill stays colored even when no live tick is flowing. Mirrors the
+                    // fallback in the Sector Trends modal endpoint.
+                    CprLevels priorDay = bhavcopyService.getPreviousCpr(sectorIndexTicker);
+                    if (priorDay != null && priorDay.getClose() > 0) {
+                        sectorChangePct = (prevClose - priorDay.getClose()) / priorDay.getClose() * 100.0;
+                        if (prevClose > priorDay.getClose())      sectorState = "BULLISH";
+                        else if (prevClose < priorDay.getClose()) sectorState = "BEARISH";
+                    }
                 }
             }
         }
