@@ -131,7 +131,12 @@ public class ScannerController {
             double ltp = marketDataService.getLtp(fyersSym);
             double prevClose = idx.getClose();
             double changePct, changePts;
-            if (ltp > 0 && prevClose > 0) {
+            // Live-compute branch only on actual trading days. Stale Saturday mock-session ticks
+            // can leave currentTicks with ltp = Friday's close (because the mock didn't move
+            // the index), which would make `ltp - prevClose = 0` and produce a fake "0% change".
+            // On non-trading days, always go through the cached-tick / bhavcopy fallback.
+            boolean isTradingDay = marketHolidayService == null || marketHolidayService.isTradingDay();
+            if (isTradingDay && ltp > 0 && prevClose > 0) {
                 changePct = ((ltp - prevClose) / prevClose) * 100.0;
                 changePts = ltp - prevClose;
             } else {
@@ -149,17 +154,6 @@ public class ScannerController {
                         changePct = (changePts / priorDay.getClose()) * 100.0;
                     }
                 }
-            }
-            // ── DIAGNOSTIC (NIFTYAUTO) ── prints every branch so we can see exactly which path
-            // produced the final changePts/changePct. Remove after weekend behaviour is verified.
-            if ("NIFTYAUTO".equals(ticker)) {
-                CprLevels priorDayDbg = bhavcopyService.getPreviousCpr(ticker);
-                log.info("[SectorDiag] {} ltp={} prevClose={} mdsChangePct={} mdsChange={} priorDay={} priorClose={} FINAL changePts={} changePct={}",
-                    ticker, ltp, prevClose,
-                    marketDataService.getChangePercent(fyersSym),
-                    marketDataService.getChange(fyersSym),
-                    priorDayDbg, priorDayDbg != null ? priorDayDbg.getClose() : "n/a",
-                    changePts, changePct);
             }
             double top = idx.getTc() > 0 && idx.getBc() > 0 ? Math.max(idx.getTc(), idx.getBc()) : 0;
             double bot = idx.getTc() > 0 && idx.getBc() > 0 ? Math.min(idx.getTc(), idx.getBc()) : 0;
@@ -297,7 +291,10 @@ public class ScannerController {
             if (idx != null) {
                 double prevClose = idx.getClose();
                 double idxLtp = marketDataService.getLtp("NSE:" + sectorIndexTicker + "-INDEX");
-                if (idxLtp > 0 && prevClose > 0) {
+                // Live branch only on actual trading days — same stale-Saturday-mock-tick
+                // protection as the Sector Trends modal endpoint.
+                boolean tradingDay = marketHolidayService == null || marketHolidayService.isTradingDay();
+                if (tradingDay && idxLtp > 0 && prevClose > 0) {
                     // Live trading: today's tick vs cached prev close
                     sectorChangePct = (idxLtp - prevClose) / prevClose * 100.0;
                     if (idxLtp > prevClose)      sectorState = "BULLISH";
