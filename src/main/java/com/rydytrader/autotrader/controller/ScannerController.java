@@ -148,14 +148,18 @@ public class ScannerController {
                         changePts = prevClose - priorDay.getClose();
                         changePct = (changePts / priorDay.getClose()) * 100.0;
                     }
-                    // One-shot diagnostic — remove after the weekend-change behaviour is verified.
-                    if ("NIFTYAUTO".equals(ticker)) {
-                        log.info("[SectorDiag] {} prevClose={} priorDay={} priorClose={} -> changePts={} changePct={}",
-                            ticker, prevClose, priorDay,
-                            priorDay != null ? priorDay.getClose() : "n/a",
-                            changePts, changePct);
-                    }
                 }
+            }
+            // ── DIAGNOSTIC (NIFTYAUTO) ── prints every branch so we can see exactly which path
+            // produced the final changePts/changePct. Remove after weekend behaviour is verified.
+            if ("NIFTYAUTO".equals(ticker)) {
+                CprLevels priorDayDbg = bhavcopyService.getPreviousCpr(ticker);
+                log.info("[SectorDiag] {} ltp={} prevClose={} mdsChangePct={} mdsChange={} priorDay={} priorClose={} FINAL changePts={} changePct={}",
+                    ticker, ltp, prevClose,
+                    marketDataService.getChangePercent(fyersSym),
+                    marketDataService.getChange(fyersSym),
+                    priorDayDbg, priorDayDbg != null ? priorDayDbg.getClose() : "n/a",
+                    changePts, changePct);
             }
             double top = idx.getTc() > 0 && idx.getBc() > 0 ? Math.max(idx.getTc(), idx.getBc()) : 0;
             double bot = idx.getTc() > 0 && idx.getBc() > 0 ? Math.min(idx.getTc(), idx.getBc()) : 0;
