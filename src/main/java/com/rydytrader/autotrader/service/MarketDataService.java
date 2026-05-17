@@ -167,10 +167,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         // "NIFTYINFRA"), not the bhavcopy CSV's "Nifty Infrastructure".
         Map.entry("NSE:NIFTYINFRA-INDEX",       "Nifty Infra"),
         Map.entry("NSE:NIFTYCOMMODITIES-INDEX", "Nifty Commodities"),
-        // Speculative: NIFTY Chemicals isn't in the Fyers equity symbol master and is
-        // also absent from the Fyers Python SDK's index_dict (no HSM publication).
-        // Subscription silently fails — Chemicals chip stays neutral.
-        Map.entry("NSE:NIFTYCHEM-INDEX",        "Nifty Chemicals"),
         // NOTE: NIFTYMSITTELCM (MidSmall IT & Telecom) is also absent from Fyers' index_dict
         // — HSM doesn't publish it. Telecom chip now points at NIFTYSERVSECTOR (BHARTIARTL
         // is a Services Sector constituent) as the live-LTP proxy. See SECTOR_TO_INDEX in
@@ -1137,6 +1133,13 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                 universe.add("NSE:" + cpr.getSymbol() + "-EQ");
             }
         }
+        // Include sector indices in the seed so AtrService.fetchAtrForSymbols fetches their
+        // historical 5-min candles and seeds EmaService — gives the Sector Trends modal a
+        // fully warmed-up EMA20 from the first live candle of the session, parallel to
+        // how NIFTY 50 stocks and the NIFTY index are seeded.
+        for (String ticker : bhavcopyService.getAllSectoralIndexTickers()) {
+            universe.add("NSE:" + ticker + "-INDEX");
+        }
         return new ArrayList<>(universe);
     }
 
@@ -1626,8 +1629,14 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     public double getChangePercent(String fyersSymbol) {
         TickData tick = currentTicks.get(fyersSymbol);
         if (tick == null) return 0;
-        String today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).toString();
-        if (tick.getLastTickDate() != null && !today.equals(tick.getLastTickDate())) return 0;
+        // Stale-day guard applies only on trading days. On weekends / holidays the cached
+        // value (from the last trading session's final tick) IS the meaningful "session
+        // change" — Friday's close vs Thursday's close shown on Saturday/Sunday, etc.
+        boolean tradingDay = marketHolidayService == null || marketHolidayService.isTradingDay();
+        if (tradingDay) {
+            String today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).toString();
+            if (tick.getLastTickDate() != null && !today.equals(tick.getLastTickDate())) return 0;
+        }
         return tick.getChangePercent();
     }
 
@@ -1635,8 +1644,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     public double getChange(String fyersSymbol) {
         TickData tick = currentTicks.get(fyersSymbol);
         if (tick == null) return 0;
-        String today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).toString();
-        if (tick.getLastTickDate() != null && !today.equals(tick.getLastTickDate())) return 0;
+        boolean tradingDay = marketHolidayService == null || marketHolidayService.isTradingDay();
+        if (tradingDay) {
+            String today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).toString();
+            if (tick.getLastTickDate() != null && !today.equals(tick.getLastTickDate())) return 0;
+        }
         return tick.getChange();
     }
 

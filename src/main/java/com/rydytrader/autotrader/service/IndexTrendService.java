@@ -11,23 +11,23 @@ import jakarta.annotation.PostConstruct;
  * Computes the NIFTY 50 trend snapshot for the scanner-page card and downstream filters.
  *
  * <p>Two sticky factors, both refreshed only at NIFTY's 5-min candle close — read from
- * the just-closed candles, never live LTP:
+ * the just-closed candle, never live LTP. Mirrors the per-sector state machine in
+ * {@link #getSectorTrendForTicker(String)}:
  * <ul>
- *   <li>{@code cprBullish}     — NIFTY index 5-min close vs daily CPR
- *       (above top / below bottom / inside)</li>
- *   <li>{@code futVwapBullish} — NIFTY futures 5-min close vs that bar's stamped VWAP
- *       (Fyers ATP at finalize). Same-bar coherent — both numbers come from the same
- *       futures {@link CandleAggregator.CandleBar}.</li>
+ *   <li>{@code cprBullish} — NIFTY index 5-min close vs daily CPR (above top / below
+ *       bottom / inside).</li>
+ *   <li>{@code emaBullish} — NIFTY index 5-min close vs 20-period 5-min EMA. Always-on,
+ *       no user toggle.</li>
  * </ul>
  *
  * <p>State combinations:
  * <pre>
- *   CPR bullish + futures vs VWAP bullish              → BULLISH
- *   CPR bearish + futures vs VWAP bearish              → BEARISH
- *   NIFTY close > EMA20 + futures vs VWAP bullish      → BULLISH_REVERSAL (downtrend rolling over)
- *   NIFTY close < EMA20 + futures vs VWAP bearish      → BEARISH_REVERSAL (uptrend rolling over)
- *   either factor null + other determined              → SIDEWAYS
- *   both factors null                                  → NEUTRAL
+ *   CPR bullish + EMA not bearish    → BULLISH
+ *   CPR bearish + EMA not bullish    → BEARISH
+ *   CPR bearish + EMA bullish        → BULLISH_REVERSAL (downtrend rolling over)
+ *   CPR bullish + EMA bearish        → BEARISH_REVERSAL (uptrend rolling over)
+ *   CPR null (inside / no data)      → NEUTRAL
+ *   otherwise                        → SIDEWAYS
  * </pre>
  *
  * <p>The UI card endpoint {@link #getNiftyTrend()} also returns sticky values (not live
@@ -57,11 +57,8 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
     // Sticky cached factors + supporting values — refreshed only on NIFTY 5-min candle close.
     // null on a Boolean = not yet computed or insufficient data.
     private volatile Boolean cachedCprBullish;
-    private volatile Boolean cachedFutVwapBullish;
-    private volatile String  cachedFutSymbol = "";
+    private volatile Boolean cachedEmaBullish;
     private volatile double  cachedNiftyClose;
-    private volatile double  cachedFutClose;
-    private volatile double  cachedFutVwap;
     private volatile String  cachedState = "NEUTRAL";
 
     public IndexTrendService(MarketDataService marketDataService,
@@ -101,9 +98,8 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
     }
 
     /** Pure snapshot of the 2 factors + supporting values + combined state. No side effects. */
-    private record TrendSnapshot(Boolean cprBullish, Boolean futVwapBullish,
-                                 String futSymbol,
-                                 double niftyClose, double futClose, double futVwap,
+    private record TrendSnapshot(Boolean cprBullish, Boolean emaBullish,
+                                 double niftyClose,
                                  String state) {}
 
     /**
@@ -122,10 +118,10 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
     }
 
     /**
-     * Reads the just-closed 5-min candles for both NIFTY index and NIFTY futures and computes
-     * the two factors. Called only from {@link #onCandleClose} at NIFTY's 5-min boundary, so
-     * the "last completed candle" IS the bar that just fired this listener — same-bar
-     * coherent values for both NIFTY's CPR comparison and the futures VWAP comparison.
+     * Reads the just-closed 5-min NIFTY index candle and computes the two factors
+     * (CPR + EMA20). Called only from {@link #onCandleClose} at NIFTY's 5-min boundary,
+     * so the "last completed candle" IS the bar that just fired this listener.
+     * Mirrors the per-sector state machine in {@link #getSectorTrendForTicker(String)}.
      */
     private TrendSnapshot computeSnapshot() {
         // Factor 1: NIFTY index 5-min close vs daily CPR
@@ -144,94 +140,48 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
             }
         }
 
-        // Factor 2: NIFTY futures 5-min close vs that bar's stamped VWAP (same-bar snapshot)
-        String futSym = marketDataService.computeNearMonthNiftyFuturesSymbol(
-            java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")));
-        Boolean futVwapBullish = null;
-        double futClose = 0, futVwap = 0;
-        CandleAggregator.CandleBar futBar = lastAvailableBar(futSym);
-        if (futBar != null && futBar.close > 0 && futBar.vwap > 0) {
-            futClose = futBar.close;
-            futVwap  = futBar.vwap;
-            if (futClose > futVwap)      futVwapBullish = Boolean.TRUE;
-            else if (futClose < futVwap) futVwapBullish = Boolean.FALSE;
-            // futClose == futVwap → leave null
-        }
-
-        // EMA 20 factor — optional, gated by enableNiftyEma20Factor. When enabled, NIFTY's
-        // last close vs EMA20 contributes as one of the optional trend factors. When
-        // disabled, drops out of the state calculation entirely.
-        boolean emaEnabled = riskSettings != null && riskSettings.isEnableNiftyEma20Factor();
-        double ema20 = (emaEnabled && emaService != null) ? emaService.getEma(NIFTY_SYMBOL) : 0;
+        // Factor 2: NIFTY index 5-min close vs 5-min EMA20. Always-on, no user toggle.
+        double ema20 = emaService != null ? emaService.getEma(NIFTY_SYMBOL) : 0;
         Boolean emaBullish = null;
-        if (emaEnabled && niftyClose > 0 && ema20 > 0) {
+        if (niftyClose > 0 && ema20 > 0) {
             if (niftyClose > ema20)      emaBullish = Boolean.TRUE;
             else if (niftyClose < ema20) emaBullish = Boolean.FALSE;
         }
 
-        // FUT VWAP factor — optional, gated by enableNiftyFutVwapFactor (parallel to the
-        // EMA 20 factor). When OFF, trend reduces to CPR (plus EMA20 if that factor is on).
-        boolean futVwapEnabled = riskSettings == null || riskSettings.isEnableNiftyFutVwapFactor();
+        String state = deriveState(cprBullish, emaBullish);
+        return new TrendSnapshot(cprBullish, emaBullish, niftyClose, state);
+    }
 
-        // Effective optional votes — null when the factor is disabled OR no data yet. The
-        // state machine below treats null as "doesn't participate."
-        Boolean futVwapVote = futVwapEnabled ? futVwapBullish : null;
-        Boolean emaVote     = emaEnabled     ? emaBullish     : null;
-
-        // Tally bullish vs bearish among the active optional factors (futVwap, EMA20).
-        int optBull = 0, optBear = 0;
-        if (Boolean.TRUE.equals(futVwapVote))  optBull++;
-        if (Boolean.FALSE.equals(futVwapVote)) optBear++;
-        if (Boolean.TRUE.equals(emaVote))      optBull++;
-        if (Boolean.FALSE.equals(emaVote))     optBear++;
-        boolean anyOptionalEnabled = futVwapEnabled || emaEnabled;
-
-        // State combination — works across all 4 (futVwap × EMA20) toggle combinations.
-        // NEUTRAL: no CPR signal (inside CPR or no data).
-        // BULLISH / BEARISH: CPR aligned AND every active optional factor agrees with CPR.
-        // BULLISH_REVERSAL / BEARISH_REVERSAL: CPR disagrees but ALL active optional factors
-        //   point the same direction (requires at least one optional factor enabled).
-        // SIDEWAYS: factors disagree / partial data → no actionable bias.
-        String state;
-        if (cprBullish == null) {
-            state = "NEUTRAL";
-        } else if (cprBullish && optBear == 0 && (optBull > 0 || !anyOptionalEnabled)) {
-            state = "BULLISH";
-        } else if (!cprBullish && optBull == 0 && (optBear > 0 || !anyOptionalEnabled)) {
-            state = "BEARISH";
-        } else if (!cprBullish && optBull > 0 && optBear == 0) {
-            state = "BULLISH_REVERSAL";
-        } else if (cprBullish && optBear > 0 && optBull == 0) {
-            state = "BEARISH_REVERSAL";
-        } else {
-            state = "SIDEWAYS";
-        }
-
-        return new TrendSnapshot(cprBullish, futVwapBullish, futSym,
-                                 niftyClose, futClose, futVwap, state);
+    /**
+     * 2-factor state machine — identical to {@link #getSectorTrendForTicker(String)}
+     * except null-CPR returns NEUTRAL (the sector helper returns INSIDE) so the NIFTY
+     * card / downstream filters keep their pre-existing state vocabulary.
+     */
+    private static String deriveState(Boolean cprBullish, Boolean emaBullish) {
+        if (cprBullish == null) return "NEUTRAL";
+        if (Boolean.TRUE.equals(cprBullish)  && !Boolean.FALSE.equals(emaBullish)) return "BULLISH";
+        if (Boolean.FALSE.equals(cprBullish) && !Boolean.TRUE.equals(emaBullish))  return "BEARISH";
+        if (Boolean.FALSE.equals(cprBullish) && Boolean.TRUE.equals(emaBullish))   return "BULLISH_REVERSAL";
+        if (Boolean.TRUE.equals(cprBullish)  && Boolean.FALSE.equals(emaBullish))  return "BEARISH_REVERSAL";
+        return "SIDEWAYS";
     }
 
     /**
      * Sticky update path — called only by {@link #onCandleClose} at NIFTY 5-min boundaries.
      * Snapshots the just-closed candle values and writes them to the cache.
      */
-    /** Force a sticky-state recompute from the most recent inputs. Called from
-     *  SettingsController right after a trend-factor toggle change so the NIFTY card
-     *  reflects the new setting immediately instead of waiting for the next 5-min close. */
+    /** Force a sticky-state recompute from the most recent inputs. Kept for callers
+     *  (e.g. SettingsController) that previously refreshed the cache after a toggle. */
     public void recomputeStates() {
         TrendSnapshot s = computeSnapshot();
         String prev = cachedState;
-        cachedCprBullish     = s.cprBullish();
-        cachedFutVwapBullish = s.futVwapBullish();
-        cachedFutSymbol      = s.futSymbol() != null ? s.futSymbol() : "";
-        cachedNiftyClose     = s.niftyClose();
-        cachedFutClose       = s.futClose();
-        cachedFutVwap        = s.futVwap();
-        cachedState          = s.state();
+        cachedCprBullish = s.cprBullish();
+        cachedEmaBullish = s.emaBullish();
+        cachedNiftyClose = s.niftyClose();
+        cachedState      = s.state();
         if (!s.state().equals(prev)) {
-            log.info("[IndexTrend] NIFTY state {} → {} (cpr={} futVwap={} niftyClose={} futClose={} futVwap={})",
-                prev, s.state(), s.cprBullish(), s.futVwapBullish(),
-                s.niftyClose(), s.futClose(), s.futVwap());
+            log.info("[IndexTrend] NIFTY state {} → {} (cpr={} ema={} niftyClose={})",
+                prev, s.state(), s.cprBullish(), s.emaBullish(), s.niftyClose());
         }
     }
 
@@ -245,7 +195,7 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         // CandleAggregator has seeded from history. This gives the user the last-known
         // session's trend state on weekends even right after a restart.
         if ("NEUTRAL".equals(cachedState) && cachedCprBullish == null
-                && cachedFutVwapBullish == null && cachedNiftyClose == 0) {
+                && cachedEmaBullish == null && cachedNiftyClose == 0) {
             recomputeStates();
         }
 
@@ -290,85 +240,37 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         trend.setChangePct(Math.round(changePct * 100.0) / 100.0);
 
         // Trend factors + supporting values — STICKY (set at last NIFTY 5-min close).
-        Boolean dispCpr      = cachedCprBullish;
-        Boolean dispFutVwap  = cachedFutVwapBullish;
+        Boolean dispCpr        = cachedCprBullish;
+        Boolean dispEma        = cachedEmaBullish;
         double  dispNiftyClose = cachedNiftyClose;
-        double  dispFutClose   = cachedFutClose;
-        double  dispFutVwapVal = cachedFutVwap;
-        String  dispFutSym     = cachedFutSymbol;
         String  dispState      = cachedState;
 
         // Live-LTP fallback for the UI only. After a restart the sticky cache stays NEUTRAL
-        // until the next NIFTY 5-min boundary fires — that's a 0-5 min window where the
-        // card would otherwise show nothing. Fill in any null factor from live LTP + live
-        // ATP (running session VWAP) so the user sees an immediate read. Sticky cache and
-        // getStickyState() (used by filters/exits) are untouched — they keep updating only
-        // at 5-min closes to avoid intra-bar oscillation.
-        if (dispCpr == null || dispFutVwap == null) {
-            // Factor 1 — NIFTY LTP vs daily CPR
-            if (dispCpr == null) {
-                double niftyLtp = marketDataService.getLtp(NIFTY_SYMBOL);
-                var cpr = bhavcopyService.getCprLevels("NIFTY50");
-                if (niftyLtp > 0 && cpr != null && cpr.getTc() > 0 && cpr.getBc() > 0) {
-                    double top = Math.max(cpr.getTc(), cpr.getBc());
-                    double bot = Math.min(cpr.getTc(), cpr.getBc());
-                    if (niftyLtp > top)      dispCpr = Boolean.TRUE;
-                    else if (niftyLtp < bot) dispCpr = Boolean.FALSE;
-                    dispNiftyClose = niftyLtp;
-                }
+        // until the next NIFTY 5-min boundary fires — that's a 0-5 min window where the card
+        // would otherwise show nothing. Fill in the CPR factor from live LTP so the user sees
+        // an immediate read. Sticky cache and getStickyState() (used by filters/exits) are
+        // untouched — they keep updating only at 5-min closes to avoid intra-bar oscillation.
+        if (dispCpr == null) {
+            double niftyLtp = marketDataService.getLtp(NIFTY_SYMBOL);
+            var cpr = bhavcopyService.getCprLevels("NIFTY50");
+            if (niftyLtp > 0 && cpr != null && cpr.getTc() > 0 && cpr.getBc() > 0) {
+                double top = Math.max(cpr.getTc(), cpr.getBc());
+                double bot = Math.min(cpr.getTc(), cpr.getBc());
+                if (niftyLtp > top)      dispCpr = Boolean.TRUE;
+                else if (niftyLtp < bot) dispCpr = Boolean.FALSE;
+                dispNiftyClose = niftyLtp;
             }
-            // Factor 2 — futures LTP vs futures running VWAP (Fyers ATP)
-            if (dispFutVwap == null) {
-                String futSym = marketDataService.computeNearMonthNiftyFuturesSymbol(
-                    java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")));
-                double futLtp = marketDataService.getLtp(futSym);
-                double futAtp = candleAggregator != null ? candleAggregator.getAtp(futSym) : 0;
-                if (futLtp > 0 && futAtp > 0) {
-                    if (futLtp > futAtp)      dispFutVwap = Boolean.TRUE;
-                    else if (futLtp < futAtp) dispFutVwap = Boolean.FALSE;
-                    dispFutClose   = futLtp;
-                    dispFutVwapVal = futAtp;
-                    dispFutSym     = futSym;
-                }
+            // Re-derive EMA factor against the live close we just took, when possible.
+            double ema20Live = emaService != null ? emaService.getEma(NIFTY_SYMBOL) : 0;
+            if (dispNiftyClose > 0 && ema20Live > 0) {
+                if (dispNiftyClose > ema20Live)      dispEma = Boolean.TRUE;
+                else if (dispNiftyClose < ema20Live) dispEma = Boolean.FALSE;
             }
-            // Re-derive the display state from the augmented factors using the same logic as
-            // computeSnapshot — EMA20 optionally gates the reversals.
-            boolean emaEnabledLive = riskSettings != null && riskSettings.isEnableNiftyEma20Factor();
-            double ema20Live = (emaEnabledLive && emaService != null) ? emaService.getEma(NIFTY_SYMBOL) : 0;
-            Boolean emaBullishLive = null;
-            if (emaEnabledLive && dispNiftyClose > 0 && ema20Live > 0) {
-                if (dispNiftyClose > ema20Live)      emaBullishLive = Boolean.TRUE;
-                else if (dispNiftyClose < ema20Live) emaBullishLive = Boolean.FALSE;
-            }
-            if (dispCpr == null && dispFutVwap == null) {
-                dispState = "NEUTRAL";
-            } else if (dispCpr != null && dispFutVwap != null && dispCpr && dispFutVwap) {
-                dispState = "BULLISH";
-            } else if (dispCpr != null && dispFutVwap != null && !dispCpr && !dispFutVwap) {
-                dispState = "BEARISH";
-            } else if (emaEnabledLive
-                    && Boolean.TRUE.equals(emaBullishLive) && Boolean.TRUE.equals(dispFutVwap)) {
-                dispState = "BULLISH_REVERSAL";
-            } else if (emaEnabledLive
-                    && Boolean.FALSE.equals(emaBullishLive) && Boolean.FALSE.equals(dispFutVwap)) {
-                dispState = "BEARISH_REVERSAL";
-            } else if (!emaEnabledLive
-                    && Boolean.FALSE.equals(dispCpr) && Boolean.TRUE.equals(dispFutVwap)) {
-                dispState = "BULLISH_REVERSAL";
-            } else if (!emaEnabledLive
-                    && Boolean.TRUE.equals(dispCpr) && Boolean.FALSE.equals(dispFutVwap)) {
-                dispState = "BEARISH_REVERSAL";
-            } else {
-                dispState = "SIDEWAYS";
-            }
+            dispState = deriveState(dispCpr, dispEma);
         }
 
         trend.setCprBullish(dispCpr);
-        trend.setFutVwapBullish(dispFutVwap);
         trend.setNiftyClose(dispNiftyClose);
-        trend.setFutSymbol(dispFutSym);
-        trend.setFutClose(dispFutClose);
-        trend.setFutVwap(dispFutVwapVal);
         trend.setState(dispState);
 
         // CPR width category — NARROW if below the scanner's narrowCprMaxWidth (the upper end
@@ -399,20 +301,73 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         // first 5-min close populates the sticky cache, but the card structure stays visible.
         trend.setDataAvailable(displayLtp > 0);
 
-        // NIFTY 5-min EMA 20 for the card chip. Always populated when EmaService has enough
-        // data, so the chip stays visible after market close (no need for live SSE ticks).
-        // ema20FactorEnabled mirrors the user setting — UI hides the chip when this is off.
-        boolean emaFactorEnabled = riskSettings != null && riskSettings.isEnableNiftyEma20Factor();
-        trend.setEma20FactorEnabled(emaFactorEnabled);
-        if (emaFactorEnabled && emaService != null) {
+        // NIFTY 5-min EMA 20 for the card chip. EMA20 is always-on now — no user toggle —
+        // so the chip is always populated when EmaService has enough data, keeping it
+        // visible after market close (no need for live SSE ticks).
+        if (emaService != null) {
             double ema20Val = emaService.getEma(NIFTY_SYMBOL);
             trend.setEma20(Math.round(ema20Val * 100.0) / 100.0);
         }
-        // FUT VWAP factor flag — UI hides the FUT VWAP chip when this is off. Cached close
-        // and vwap values are still set above (so the chip can render its number when
-        // visible); only the trend-state contribution is gated.
-        boolean futVwapFactorEnabled = riskSettings != null && riskSettings.isEnableNiftyFutVwapFactor();
-        trend.setFutVwapFactorEnabled(futVwapFactorEnabled);
         return trend;
+    }
+
+    /**
+     * Compute the combined trend state for any sector index ticker (e.g. "NIFTYBANK").
+     * Two-factor: LTP vs daily CPR zone + LTP vs 5-min EMA20. Returns one of:
+     *   BULLISH, BEARISH, BULLISH_REVERSAL, BEARISH_REVERSAL, INSIDE, NEUTRAL.
+     * Same state machine the Sector Trends modal uses. Used by the Sector Alignment
+     * filter in BreakoutScanner so per-stock entries can be gated by their sector's
+     * trend, parallel to the existing NIFTY Index Alignment filter.
+     */
+    public String getSectorTrendForTicker(String sectorIndexTicker) {
+        if (sectorIndexTicker == null || sectorIndexTicker.isEmpty()) return "NEUTRAL";
+        var cpr = bhavcopyService.getCprLevels(sectorIndexTicker);
+        if (cpr == null) return "NEUTRAL";
+        String fyersSym = "NSE:" + sectorIndexTicker + "-INDEX";
+        double ltp = marketDataService.getLtp(fyersSym);
+        double prevClose = cpr.getClose();
+        double refLtp = ltp > 0 ? ltp : prevClose;
+        if (refLtp <= 0) return "NEUTRAL";
+
+        double top = (cpr.getTc() > 0 && cpr.getBc() > 0) ? Math.max(cpr.getTc(), cpr.getBc()) : 0;
+        double bot = (cpr.getTc() > 0 && cpr.getBc() > 0) ? Math.min(cpr.getTc(), cpr.getBc()) : 0;
+        double ema20 = emaService != null ? emaService.getEma(fyersSym) : 0;
+
+        Boolean cprBullish = null;
+        if (top > 0 && bot > 0) {
+            if (refLtp > top)      cprBullish = Boolean.TRUE;
+            else if (refLtp < bot) cprBullish = Boolean.FALSE;
+        }
+        Boolean emaBullish = null;
+        if (ema20 > 0) {
+            if (refLtp > ema20)      emaBullish = Boolean.TRUE;
+            else if (refLtp < ema20) emaBullish = Boolean.FALSE;
+        }
+        if (cprBullish == null) return "INSIDE";
+        if (Boolean.TRUE.equals(cprBullish)  && !Boolean.FALSE.equals(emaBullish)) return "BULLISH";
+        if (Boolean.FALSE.equals(cprBullish) && !Boolean.TRUE.equals(emaBullish))  return "BEARISH";
+        if (Boolean.FALSE.equals(cprBullish) && Boolean.TRUE.equals(emaBullish))   return "BULLISH_REVERSAL";
+        if (Boolean.TRUE.equals(cprBullish)  && Boolean.FALSE.equals(emaBullish))  return "BEARISH_REVERSAL";
+        return "SIDEWAYS";
+    }
+
+    /**
+     * Look up the sector index that a stock belongs to and return its trend state.
+     * Returns NEUTRAL when the stock has no sector mapping, no sector-index mapping,
+     * or the sector index has no CPR/LTP data yet — in all those cases the alignment
+     * filter should fall through (fail-open).
+     */
+    public String getSectorTrendForStock(String fyersSymbol) {
+        if (fyersSymbol == null) return "NEUTRAL";
+        // Strip "NSE:" prefix and "-EQ"/"-INDEX" suffix to get the bare ticker.
+        String ticker = fyersSymbol;
+        int colon = ticker.indexOf(':');
+        if (colon >= 0) ticker = ticker.substring(colon + 1);
+        ticker = ticker.replaceAll("-(EQ|INDEX|MF|BE|BL|SM)$", "");
+        String sector = bhavcopyService.getSector(ticker);
+        if (sector == null || sector.isEmpty()) return "NEUTRAL";
+        String sectorTicker = bhavcopyService.getSectorIndexTicker(sector);
+        if (sectorTicker == null) return "NEUTRAL";
+        return getSectorTrendForTicker(sectorTicker);
     }
 }

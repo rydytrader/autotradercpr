@@ -272,17 +272,12 @@ public class RiskSettingsStore {
         // sells require BEARISH; every other state (SIDEWAYS / NEUTRAL / opposite-direction)
         // skips the trade outright. No soft mode / qty reduction.
         volatile boolean enableIndexAlignment = false;        // master toggle, opt-in
-        // When ON, NIFTY's last-close vs EMA20 becomes a third factor gating the reversal
-        // states. When OFF, BULLISH_REVERSAL / BEARISH_REVERSAL fall back to the pure
-        // CPR-disagrees-with-futVwap definition (no EMA gate). BULLISH / BEARISH always
-        // require unanimous CPR + futVwap regardless of this flag.
-        volatile boolean enableNiftyEma20Factor = true;
-        // When ON (default), NIFTY futures 5-min close vs that bar's stamped VWAP is one of
-        // the trend factors. When OFF, the state machine drops it entirely — trend reduces
-        // to CPR (plus EMA20 if that factor is also enabled). With both this and the EMA20
-        // factor disabled, only BULLISH / BEARISH / NEUTRAL / SIDEWAYS can fire; reversal
-        // states never appear (they require an enabled optional factor to disagree with CPR).
-        volatile boolean enableNiftyFutVwapFactor = true;
+        // Sector Alignment — secondary filter that mirrors Index Alignment but operates on
+        // the stock's sector index (NIFTYBANK / NIFTYIT / etc.) instead of NIFTY 50. Same
+        // strict/reversal logic: counter-trend setups require strict BULLISH/BEARISH; HPT
+        // setups also accept the matching reversal state. NEUTRAL / unknown sector =
+        // fail-open (no skip). Composes with enableIndexAlignment — both must pass.
+        volatile boolean enableSectorAlignment = false;
     }
 
     private final Cfg live = new Cfg();
@@ -403,8 +398,7 @@ public class RiskSettingsStore {
     public boolean isEnableTargetTolerance()   { return cfg().enableTargetTolerance; }
     public double getTargetToleranceAtr()      { return cfg().targetToleranceAtr; }
     public boolean isEnableIndexAlignment()    { return cfg().enableIndexAlignment; }
-    public boolean isEnableNiftyEma20Factor()  { return cfg().enableNiftyEma20Factor; }
-    public boolean isEnableNiftyFutVwapFactor(){ return cfg().enableNiftyFutVwapFactor; }
+    public boolean isEnableSectorAlignment()   { return cfg().enableSectorAlignment; }
     public void setSignalSource(String v)      { cfg().signalSource = v; }
     public void setScannerTimeframe(int v)     { cfg().scannerTimeframe = v; }
     public void setHigherTimeframe(int v)      { cfg().higherTimeframe = v; }
@@ -430,8 +424,7 @@ public class RiskSettingsStore {
     public void setEnableTargetTolerance(boolean v) { cfg().enableTargetTolerance = v; }
     public void setTargetToleranceAtr(double v) { cfg().targetToleranceAtr = v; }
     public void setEnableIndexAlignment(boolean v)        { cfg().enableIndexAlignment = v; }
-    public void setEnableNiftyEma20Factor(boolean v)      { cfg().enableNiftyEma20Factor = v; }
-    public void setEnableNiftyFutVwapFactor(boolean v)    { cfg().enableNiftyFutVwapFactor = v; }
+    public void setEnableSectorAlignment(boolean v)       { cfg().enableSectorAlignment = v; }
     public void setTradingStartTime(String v)  { cfg().tradingStartTime = v; }
     public void setTradingEndTime(String v)    { cfg().tradingEndTime = v; }
     public void setTotalCapital(double v)       { cfg().totalCapital = v; }
@@ -673,8 +666,7 @@ public class RiskSettingsStore {
             upsert("enableTargetTolerance", String.valueOf(c.enableTargetTolerance));
             upsert("targetToleranceAtr", String.valueOf(c.targetToleranceAtr));
             upsert("enableIndexAlignment",   String.valueOf(c.enableIndexAlignment));
-            upsert("enableNiftyEma20Factor", String.valueOf(c.enableNiftyEma20Factor));
-            upsert("enableNiftyFutVwapFactor", String.valueOf(c.enableNiftyFutVwapFactor));
+            upsert("enableSectorAlignment",  String.valueOf(c.enableSectorAlignment));
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to save {}: {}", mode, e.getMessage());
         }
@@ -915,11 +907,12 @@ public class RiskSettingsStore {
                     case "enableTargetTolerance" -> c.enableTargetTolerance = Boolean.parseBoolean(v);
                     case "targetToleranceAtr" -> c.targetToleranceAtr = Double.parseDouble(v);
                     case "enableIndexAlignment"   -> c.enableIndexAlignment = Boolean.parseBoolean(v);
-                    case "enableNiftyEma20Factor", "enableNiftySma20Factor" -> {
-                        c.enableNiftyEma20Factor = Boolean.parseBoolean(v);
-                        if ("enableNiftySma20Factor".equals(k)) logLegacyOnce("enableNiftySma20Factor");
-                    }
-                    case "enableNiftyFutVwapFactor" -> c.enableNiftyFutVwapFactor = Boolean.parseBoolean(v);
+                    case "enableSectorAlignment"  -> c.enableSectorAlignment = Boolean.parseBoolean(v);
+                    // Legacy NIFTY trend-factor toggles — features removed (EMA20 is now
+                    // always-on; FUT VWAP factor dropped entirely). Old risk-settings.json
+                    // files keep loading without errors; values are silently ignored.
+                    case "enableNiftyEma20Factor", "enableNiftySma20Factor",
+                         "enableNiftyFutVwapFactor" -> { /* legacy — removed */ }
                     case "indexAlignmentHardSkip", "indexOpposedQtyFactor" -> { /* removed — soft mode deleted */ }
                 }
             }

@@ -522,6 +522,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                         "NIFTY " + niftyState + " — buy direction opposes NIFTY composite trend");
                     return;
                 }
+                // Sector alignment — same strict/reversal rules as NIFTY alignment but on the
+                // stock's sector index. NEUTRAL / INSIDE / unknown sector = fail-open.
+                if (checkSectorAlignment(fyersSymbol, buySetup, true) == NiftyAlignStatus.SKIP) {
+                    String sectorState = indexTrendService != null
+                        ? indexTrendService.getSectorTrendForStock(fyersSymbol) : "?";
+                    recordRejection(fyersSymbol, buySetup, close, "SECTOR_OPPOSED",
+                        "Sector " + sectorState + " — buy direction opposes sector trend");
+                    return;
+                }
                 // NIFTY HTF Hurdle.
                 String niftyHurdleReject = checkNiftyHurdle(true, fyersSymbol);
                 if (niftyHurdleReject != null) {
@@ -624,6 +633,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     String niftyState = indexTrendService != null ? indexTrendService.getStickyState() : "?";
                     recordRejection(fyersSymbol, sellSetup, close, "NIFTY_OPPOSED",
                         "NIFTY " + niftyState + " — sell direction opposes NIFTY composite trend");
+                    return;
+                }
+                // Sector alignment — same strict/reversal rules as NIFTY alignment but on the
+                // stock's sector index. NEUTRAL / INSIDE / unknown sector = fail-open.
+                if (checkSectorAlignment(fyersSymbol, sellSetup, false) == NiftyAlignStatus.SKIP) {
+                    String sectorState = indexTrendService != null
+                        ? indexTrendService.getSectorTrendForStock(fyersSymbol) : "?";
+                    recordRejection(fyersSymbol, sellSetup, close, "SECTOR_OPPOSED",
+                        "Sector " + sectorState + " — sell direction opposes sector trend");
                     return;
                 }
                 // NIFTY HTF Hurdle.
@@ -1338,6 +1356,48 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             return NiftyAlignStatus.SKIP;
         } catch (Exception e) {
             log.warn("[BreakoutScanner] Index alignment check failed for {}: {}", fyersSymbol, e.getMessage());
+        }
+        return NiftyAlignStatus.OK;
+    }
+
+    /**
+     * Sector alignment filter. Mirrors {@link #checkIndexAlignment} exactly but checks the
+     * stock's sector index state (e.g. NIFTYBANK for HDFCBANK) instead of NIFTY 50.
+     *
+     * <p>Counter-trend setups (magnet, mean-reversion) require strict BULLISH (buys) or
+     * BEARISH (sells) on the sector. Trend-following (HPT) setups also accept the matching
+     * reversal state. NEUTRAL / unknown sector → fail-open (no skip).
+     *
+     * <p>Composes with the NIFTY index alignment check — both must pass for the trade to
+     * fire when both filters are on.
+     */
+    private NiftyAlignStatus checkSectorAlignment(String fyersSymbol, String setup, boolean isBuy) {
+        if (!riskSettings.isEnableSectorAlignment()) return NiftyAlignStatus.OK;
+        if (indexTrendService == null) return NiftyAlignStatus.OK;
+        try {
+            String state = indexTrendService.getSectorTrendForStock(fyersSymbol);
+            // NEUTRAL = no sector mapping, no CPR data, or no LTP → fail-open.
+            // INSIDE  = LTP inside the sector's daily CPR → no actionable bias → fail-open.
+            if ("NEUTRAL".equals(state) || "INSIDE".equals(state)) return NiftyAlignStatus.OK;
+
+            boolean isCounterTrend = isMagnet(setup) || isMeanReversion(setup);
+            boolean aligned;
+            String requiredStates;
+            if (isCounterTrend) {
+                aligned = isBuy ? "BULLISH".equals(state) : "BEARISH".equals(state);
+                requiredStates = isBuy ? "BULLISH" : "BEARISH";
+            } else {
+                aligned = isBuy
+                    ? ("BULLISH".equals(state) || "BULLISH_REVERSAL".equals(state))
+                    : ("BEARISH".equals(state) || "BEARISH_REVERSAL".equals(state));
+                requiredStates = isBuy ? "BULLISH or BULLISH_REVERSAL" : "BEARISH or BEARISH_REVERSAL";
+            }
+            if (aligned) return NiftyAlignStatus.OK;
+            eventService.log("[SCANNER] " + fyersSymbol + " " + setup
+                + " SECTOR MISALIGNED — sector " + state + ", trade direction needs " + requiredStates);
+            return NiftyAlignStatus.SKIP;
+        } catch (Exception e) {
+            log.warn("[BreakoutScanner] Sector alignment check failed for {}: {}", fyersSymbol, e.getMessage());
         }
         return NiftyAlignStatus.OK;
     }

@@ -627,26 +627,31 @@
                         <input type="checkbox" id="enableIndexAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable NIFTY trend alignment filter</span>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px; padding-left: 28px;">
-                        <input type="checkbox" id="enableNiftyEma20Factor" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Include NIFTY 20 EMA in trend identification</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px; padding-left: 28px;">
-                        <input type="checkbox" id="enableNiftyFutVwapFactor" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Include NIFTY FUT VWAP in trend identification</span>
-                    </div>
-                    <div class="form-hint">NIFTY trend state combines <b>CPR + Futures VWAP</b> (always) plus optionally <b>EMA 20</b>:
+                    <div class="form-hint">Two-factor trend on the NIFTY 50 index: <b>CPR + EMA 20</b> (same state machine as the Sector Alignment filter below). Both factors are sticky &mdash; refreshed only at NIFTY's 5-min candle close, read from the just-closed candle (never live LTP), so trend decisions don't oscillate tick-to-tick within a bar.
                         <br>&nbsp;&nbsp;&bull; <b>CPR</b>: NIFTY index's last-completed 5-min close above (bullish) or below (bearish) daily CPR. Inside CPR leaves this factor null.
-                        <br>&nbsp;&nbsp;&bull; <b>Futures VWAP</b>: NIFTY futures' last-completed 5-min close vs that same bar's stamped VWAP (Fyers ATP frozen at finalize). Close &gt; VWAP = bullish; close &lt; VWAP = bearish. Same-bar coherent &mdash; no mixing of live LTP with frozen VWAP.
-                        <br>&nbsp;&nbsp;&bull; <b>EMA 20</b> (optional): NIFTY's last-completed 5-min close vs its 20-period 5-min EMA. When enabled, this becomes a third confirmation gating the BULLISH&nbsp;REVERSAL / BEARISH&nbsp;REVERSAL states &mdash; the reversal only fires when EMA and futures VWAP both agree. When disabled, the reversal states rely purely on CPR-disagrees-with-futVwap (the original behavior).
+                        <br>&nbsp;&nbsp;&bull; <b>EMA 20</b>: NIFTY's last-completed 5-min close vs its 20-period 5-min EMA. Always-on, no separate toggle.
                         <br>States:
-                        <br>&nbsp;&nbsp;&bull; <b>BULLISH</b> &mdash; CPR bullish + futures vs VWAP bullish (clear trend agreement)
-                        <br>&nbsp;&nbsp;&bull; <b>BEARISH</b> &mdash; CPR bearish + futures vs VWAP bearish (mirror)
-                        <br>&nbsp;&nbsp;&bull; <b>BULLISH REVERSAL</b> &mdash; CPR bearish but futures vs VWAP flipped bullish (institutions buying despite spot below CPR &mdash; downtrend rolling over)
-                        <br>&nbsp;&nbsp;&bull; <b>BEARISH REVERSAL</b> &mdash; CPR bullish but futures vs VWAP flipped bearish (institutions selling despite spot above CPR &mdash; uptrend rolling over)
-                        <br>&nbsp;&nbsp;&bull; <b>SIDEWAYS</b> &mdash; one factor determined but the other null (inside CPR with futures determined, or vice versa)
-                        <br>&nbsp;&nbsp;&bull; <b>NEUTRAL</b> &mdash; both factors null (pre-market / no completed 5-min bar yet)
+                        <br>&nbsp;&nbsp;&bull; <b>BULLISH</b> &mdash; CPR bullish + EMA not bearish
+                        <br>&nbsp;&nbsp;&bull; <b>BEARISH</b> &mdash; CPR bearish + EMA not bullish
+                        <br>&nbsp;&nbsp;&bull; <b>BULLISH REVERSAL</b> &mdash; CPR bearish but EMA flipped bullish (downtrend rolling over)
+                        <br>&nbsp;&nbsp;&bull; <b>BEARISH REVERSAL</b> &mdash; CPR bullish but EMA flipped bearish (uptrend rolling over)
+                        <br>&nbsp;&nbsp;&bull; <b>SIDEWAYS</b> &mdash; factors disagree / partial data &mdash; no actionable bias
+                        <br>&nbsp;&nbsp;&bull; <b>NEUTRAL</b> &mdash; inside CPR or no completed 5-min bar yet
                         <br>When this filter is on: buys require <b>BULLISH</b> or <b>BULLISH REVERSAL</b>; sells require <b>BEARISH</b> or <b>BEARISH REVERSAL</b>. SIDEWAYS / NEUTRAL / opposite-direction states <b>hard-reject</b> the signal as <code>NIFTY_OPPOSED</code>. Independent of the other NIFTY filters below; all can be enabled together.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Sector Alignment Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableSectorAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable sector trend alignment filter</span>
+                    </div>
+                    <div class="form-hint">Mirrors the NIFTY Index Alignment rules on the stock's <b>sector index</b> (e.g. NIFTYBANK for HDFCBANK, NIFTYIT for INFY). Two-factor trend on each sector index: <b>CPR + EMA 20</b> (same state machine as the Sector Trends modal). Composes with the NIFTY filter above &mdash; both must pass when both are on.
+                        <br>States: <b>BULLISH</b>, <b>BEARISH</b>, <b>BULLISH REVERSAL</b>, <b>BEARISH REVERSAL</b>, <b>INSIDE</b> (LTP inside sector CPR), <b>NEUTRAL</b> (no data).
+                        <br>Strict / reversal rules match NIFTY:
+                        <br>&nbsp;&nbsp;&bull; <b>Counter-trend setups</b> (magnet, mean-reversion): buys require strict <b>BULLISH</b>; sells require strict <b>BEARISH</b>. Reversal states <b>not</b> enough.
+                        <br>&nbsp;&nbsp;&bull; <b>Trend-following setups</b> (HPT): buys also accept <b>BULLISH REVERSAL</b>; sells also accept <b>BEARISH REVERSAL</b>.
+                        <br>&nbsp;&nbsp;&bull; <b>INSIDE</b> / <b>NEUTRAL</b> / unknown sector &rarr; <b>fail-open</b> (no skip). Sectors without a mapped index, sectors whose CPR hasn't loaded, or stocks with no sector classification all pass through unfiltered.
+                        <br>Rejections logged as <code>SECTOR_OPPOSED</code>.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">NIFTY HTF Hurdle Filter</label>
@@ -1224,8 +1229,7 @@
             document.getElementById('enableTargetTolerance').checked = d.enableTargetTolerance !== false;
             document.getElementById('targetToleranceAtr').value = (d.targetToleranceAtr != null ? d.targetToleranceAtr : 0.10);
             document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
-            document.getElementById('enableNiftyEma20Factor').checked = d.enableNiftyEma20Factor !== false;
-            document.getElementById('enableNiftyFutVwapFactor').checked = d.enableNiftyFutVwapFactor !== false;
+            document.getElementById('enableSectorAlignment').checked = d.enableSectorAlignment === true;
             document.getElementById('enableNiftyHtfHurdleFilter').checked = d.enableNiftyHtfHurdleFilter === true;
             document.getElementById('niftyHurdleMinHeadroomAtr').value = (d.niftyHurdleMinHeadroomAtr != null ? d.niftyHurdleMinHeadroomAtr : 1.0);
             document.getElementById('enableNifty5mHurdleFilter').checked = d.enableNifty5mHurdleFilter === true;
@@ -1386,8 +1390,7 @@
                 enableTargetTolerance: document.getElementById('enableTargetTolerance').checked,
                 targetToleranceAtr: parseFloat(document.getElementById('targetToleranceAtr').value) || 0,
                 enableIndexAlignment:    document.getElementById('enableIndexAlignment').checked,
-                enableNiftyEma20Factor:  document.getElementById('enableNiftyEma20Factor').checked,
-                enableNiftyFutVwapFactor: document.getElementById('enableNiftyFutVwapFactor').checked,
+                enableSectorAlignment:   document.getElementById('enableSectorAlignment').checked,
                 enableNiftyHtfHurdleFilter: document.getElementById('enableNiftyHtfHurdleFilter').checked,
                 niftyHurdleMinHeadroomAtr: parseFloat(document.getElementById('niftyHurdleMinHeadroomAtr').value) || 0,
                 enableNifty5mHurdleFilter: document.getElementById('enableNifty5mHurdleFilter').checked,

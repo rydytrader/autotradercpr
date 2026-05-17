@@ -2,7 +2,6 @@ package com.rydytrader.autotrader.controller;
 
 import com.rydytrader.autotrader.dto.CprLevels;
 import com.rydytrader.autotrader.service.BhavcopyService;
-import com.rydytrader.autotrader.service.IndexTrendService;
 import com.rydytrader.autotrader.service.TradeHistoryService;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.http.ResponseEntity;
@@ -17,16 +16,13 @@ public class SettingsController {
     private final RiskSettingsStore   riskSettings;
     private final TradeHistoryService tradeHistoryService;
     private final BhavcopyService     bhavcopyService;
-    private final IndexTrendService   indexTrendService;
 
     public SettingsController(RiskSettingsStore riskSettings,
                                TradeHistoryService tradeHistoryService,
-                               BhavcopyService bhavcopyService,
-                               IndexTrendService indexTrendService) {
+                               BhavcopyService bhavcopyService) {
         this.riskSettings        = riskSettings;
         this.tradeHistoryService = tradeHistoryService;
         this.bhavcopyService     = bhavcopyService;
-        this.indexTrendService   = indexTrendService;
     }
 
     // ── GET SETTINGS + TODAY'S STATUS ─────────────────────────────────────────
@@ -83,8 +79,7 @@ public class SettingsController {
         result.put("enableTargetTolerance", riskSettings.isEnableTargetTolerance());
         result.put("targetToleranceAtr", riskSettings.getTargetToleranceAtr());
         result.put("enableIndexAlignment", riskSettings.isEnableIndexAlignment());
-        result.put("enableNiftyEma20Factor", riskSettings.isEnableNiftyEma20Factor());
-        result.put("enableNiftyFutVwapFactor", riskSettings.isEnableNiftyFutVwapFactor());
+        result.put("enableSectorAlignment", riskSettings.isEnableSectorAlignment());
         result.put("goodSizeCandleBodyAtrMult",          riskSettings.getGoodSizeCandleBodyAtrMult());
         result.put("goodSizeCandleMaxBodyAtrMult",       riskSettings.getGoodSizeCandleMaxBodyAtrMult());
         result.put("confirmationMaxOppositeWickRatio",   riskSettings.getConfirmationMaxOppositeWickRatio());
@@ -196,8 +191,7 @@ public class SettingsController {
             if (body.containsKey("enableTargetTolerance")) riskSettings.setEnableTargetTolerance(Boolean.parseBoolean(body.get("enableTargetTolerance").toString()));
             if (body.containsKey("targetToleranceAtr")) riskSettings.setTargetToleranceAtr(Double.parseDouble(body.get("targetToleranceAtr").toString()));
             if (body.containsKey("enableIndexAlignment"))   riskSettings.setEnableIndexAlignment(Boolean.parseBoolean(body.get("enableIndexAlignment").toString()));
-            if (body.containsKey("enableNiftyEma20Factor")) riskSettings.setEnableNiftyEma20Factor(Boolean.parseBoolean(body.get("enableNiftyEma20Factor").toString()));
-            if (body.containsKey("enableNiftyFutVwapFactor")) riskSettings.setEnableNiftyFutVwapFactor(Boolean.parseBoolean(body.get("enableNiftyFutVwapFactor").toString()));
+            if (body.containsKey("enableSectorAlignment"))  riskSettings.setEnableSectorAlignment(Boolean.parseBoolean(body.get("enableSectorAlignment").toString()));
             if (body.containsKey("goodSizeCandleBodyAtrMult"))   riskSettings.setGoodSizeCandleBodyAtrMult(Double.parseDouble(body.get("goodSizeCandleBodyAtrMult").toString()));
             if (body.containsKey("goodSizeCandleMaxBodyAtrMult")) riskSettings.setGoodSizeCandleMaxBodyAtrMult(Double.parseDouble(body.get("goodSizeCandleMaxBodyAtrMult").toString()));
             if (body.containsKey("confirmationMaxOppositeWickRatio")) riskSettings.setConfirmationMaxOppositeWickRatio(Double.parseDouble(body.get("confirmationMaxOppositeWickRatio").toString()));
@@ -262,12 +256,6 @@ public class SettingsController {
             if (body.containsKey("mptQtyFactor")) riskSettings.setMptQtyFactor(Double.parseDouble(body.get("mptQtyFactor").toString()));
             if (body.containsKey("minAbsoluteProfit")) riskSettings.setMinAbsoluteProfit(Double.parseDouble(body.get("minAbsoluteProfit").toString()));
             riskSettings.saveFor(effectiveMode);
-            // If a trend-factor toggle changed, refresh the sticky NIFTY trend state so the
-            // UI reflects the new setting immediately instead of waiting for the next NIFTY
-            // 5-min candle close.
-            if (body.containsKey("enableNiftyEma20Factor") || body.containsKey("enableNiftyFutVwapFactor")) {
-                try { indexTrendService.recomputeStates(); } catch (Exception ignored) {}
-            }
             return ResponseEntity.ok(Map.of("ok", true, "message", "Settings saved"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("ok", false, "message", e.getMessage()));

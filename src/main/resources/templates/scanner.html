@@ -438,7 +438,20 @@
 
     <!-- Scanner Settings Bar -->
     <div class="scanner-status" id="scannerStatus">
-        <div class="ss-item">
+        <div class="ss-item" title="Open positions count">
+            <span class="ss-label">Open:</span>
+            <span class="ss-value" id="ssOpenPositions">0</span>
+        </div>
+        <div class="ss-item" title="Today's realised + unrealised P&L (₹) across all positions and closed trades">
+            <span class="ss-label">Net P&amp;L:</span>
+            <span class="ss-value" id="ssNetPnl">—</span>
+        </div>
+        <div class="ss-item" id="candleTimerChip" style="display:flex; align-items:center; gap:8px; padding:4px 12px; border-radius:8px; background:var(--bg-card); border:1px solid var(--border); position:relative; overflow:hidden; font-family:var(--font-mono); min-width:104px;" title="Time until next 5-min candle close">
+            <span class="ss-label" style="font-size:0.62rem; opacity:0.7; z-index:1;">BAR</span>
+            <span id="candleTimerText" style="font-size:0.78rem; font-weight:700; color:var(--accent-yellow); z-index:1;">--:--</span>
+            <div id="candleTimerFill" style="position:absolute; left:0; top:0; bottom:0; width:0%; background:rgba(251,191,36,0.12); transition:width 0.5s linear; z-index:0;"></div>
+        </div>
+        <div class="ss-item" style="margin-left:auto;">
             <span class="ss-label">Stocks:</span>
             <span class="ss-value" id="ssWatchlist">0</span>
         </div>
@@ -449,19 +462,6 @@
         <div class="ss-item">
             <span class="ss-label">Probability:</span>
             <span id="ssProbability">--</span>
-        </div>
-        <div class="ss-item" id="candleTimerChip" style="margin-left:auto; display:flex; align-items:center; gap:8px; padding:4px 12px; border-radius:8px; background:var(--bg-card); border:1px solid var(--border); position:relative; overflow:hidden; font-family:var(--font-mono); min-width:104px;" title="Time until next 5-min candle close">
-            <span class="ss-label" style="font-size:0.62rem; opacity:0.7; z-index:1;">BAR</span>
-            <span id="candleTimerText" style="font-size:0.78rem; font-weight:700; color:var(--accent-yellow); z-index:1;">--:--</span>
-            <div id="candleTimerFill" style="position:absolute; left:0; top:0; bottom:0; width:0%; background:rgba(251,191,36,0.12); transition:width 0.5s linear; z-index:0;"></div>
-        </div>
-        <div class="ss-item" title="Open positions count">
-            <span class="ss-label">Open:</span>
-            <span class="ss-value" id="ssOpenPositions">0</span>
-        </div>
-        <div class="ss-item" title="Today's realised + unrealised P&L (₹) across all positions and closed trades">
-            <span class="ss-label">Net P&amp;L:</span>
-            <span class="ss-value" id="ssNetPnl">—</span>
         </div>
     </div>
 
@@ -480,8 +480,7 @@
             <div id="niftyChangePct" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:4px; color:var(--text-muted);" title="NIFTY 50 % change vs previous close">—</div>
             <div class="nifty-cpr-width" id="niftyCprWidth" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY daily CPR width vs scanner thresholds (Narrow / Normal / Wide)">—</div>
             <div class="nifty-cpr" id="niftyCprBias" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY index 5-min close vs daily CPR (above CPR top / below CPR bottom). Refreshes only on NIFTY 5-min candle close.">—</div>
-            <div id="niftyEma20" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY 5-min EMA 20 — green when LTP &gt; EMA 20, red when LTP &lt; EMA 20">—</div>
-            <div class="nifty-fut-vwap" id="niftyFutVwap" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY futures 5-min close vs that bar's VWAP (Fyers ATP). Refreshes only on NIFTY 5-min candle close.">—</div>
+            <div id="niftyEma20" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY 5-min close vs 5-min EMA 20 — green when above, red when below. Refreshes only on NIFTY 5-min candle close.">—</div>
             <div class="nifty-state" id="niftyState" style="margin-left:auto;">—</div>
             <div class="nifty-right" id="niftyMetrics"></div>
         </div>
@@ -808,6 +807,8 @@
 
         // Color the sector chip green / red / muted based on whether the sector index is
         // above or below its previous close. BULLISH = up, BEARISH = down, empty = no data.
+        // Clickable when the stock has a mapped sector index — opens the chart modal for
+        // that sector index (e.g. NIFTYBANK chart for an HDFCBANK card).
         var sectorChip = '';
         if (d.sector && d.sector.length > 0) {
             var sCol = 'var(--text-muted)';
@@ -822,7 +823,15 @@
                 sCol = 'var(--accent-red)'; sBorder = 'var(--accent-red)';
                 sTip += ' — sector index below prev close' + chSuffix;
             }
-            sectorChip = '<span style="font-family:var(--font-mono); font-size:0.65rem; font-weight:600; color:' + sCol + '; padding:1px 5px; border:1px solid ' + sBorder + '; border-radius:3px; text-transform:uppercase; letter-spacing:0.3px;" title="' + sTip + '">' + d.sector + '</span>';
+            var clickAttr = '';
+            var cursorStyle = '';
+            if (d.sectorIndexSymbol) {
+                var name = (d.sectorIndexName || d.sector).replace(/'/g, "\\'");
+                clickAttr = ' onclick="openChartModal(\'' + d.sectorIndexSymbol + '\', \'' + name + '\')"';
+                cursorStyle = 'cursor:pointer; ';
+                sTip += ' — click to view ' + (d.sectorIndexName || d.sector) + ' chart';
+            }
+            sectorChip = '<span' + clickAttr + ' style="' + cursorStyle + 'font-family:var(--font-mono); font-size:0.65rem; font-weight:600; color:' + sCol + '; padding:1px 5px; border:1px solid ' + sBorder + '; border-radius:3px; text-transform:uppercase; letter-spacing:0.3px;" title="' + sTip + '">' + d.sector + '</span>';
         }
 
         return '<div class="' + cardClass + '" data-symbol="' + d.symbol + '">'
@@ -1074,7 +1083,6 @@
                 var sm0 = document.getElementById('niftyEma20'); if (sm0) { sm0.textContent = '—'; sm0.style.color = 'var(--text-muted)'; }
                 var cw0 = document.getElementById('niftyCprWidth'); if (cw0) { cw0.textContent = '—'; cw0.style.color = 'var(--text-muted)'; }
                 var cb0 = document.getElementById('niftyCprBias'); if (cb0) { cb0.textContent = '—'; cb0.style.color = 'var(--text-muted)'; }
-                var fv0 = document.getElementById('niftyFutVwap'); if (fv0) { fv0.textContent = '—'; fv0.style.color = 'var(--text-muted)'; }
                 document.getElementById('niftyState').textContent = 'WAITING';
                 document.getElementById('niftyMetrics').innerHTML = '';
                 document.getElementById('niftyCard').className = 'nifty-card nifty-card-neutral';
@@ -1089,25 +1097,15 @@
 
             document.getElementById('niftyState').textContent = (d.state || 'NEUTRAL').replace('_', ' ');
 
-            // Hide / show the EMA 20 chip based on the user setting. When the EMA factor
-            // is disabled it isn't being used in trend identification, so showing the chip
-            // would be misleading.
-            var emaChipEl = document.getElementById('niftyEma20');
-            if (emaChipEl) emaChipEl.style.display = d.ema20FactorEnabled === false ? 'none' : '';
-            // Same gate for the FUT VWAP chip — hidden when the user has turned off the
-            // FUT VWAP factor in trend identification.
-            var futVwapChipEl = document.getElementById('niftyFutVwap');
-            if (futVwapChipEl) futVwapChipEl.style.display = d.futVwapFactorEnabled === false ? 'none' : '';
-
             // NIFTY LTP + change + % change (live during session, bhavcopy prev close pre-market).
             // ema20 is sent on every poll so the chip stays visible after market close even
-            // when the SSE tick stream goes silent. When the factor toggle is off, the chip
-            // is hidden above and no EMA value is passed in (the backend zeros it anyway).
+            // when the SSE tick stream goes silent. EMA20 is always-on as a NIFTY trend factor —
+            // no toggle to gate visibility.
             applyNiftyLtpUpdate(
                 +d.ltp || 0,
                 typeof d.changePct === 'number' ? d.changePct : null,
                 null,
-                d.ema20FactorEnabled === false ? null : (typeof d.ema20 === 'number' ? d.ema20 : null)
+                typeof d.ema20 === 'number' ? d.ema20 : null
             );
 
             // CPR width category — NARROW (below narrowCprMaxWidth) or WIDE (at/above).
@@ -1145,29 +1143,7 @@
                     ? ('NIFTY 5-min close ' + nClose.toFixed(2) + ' vs daily CPR. Refreshes only on NIFTY 5-min candle close.')
                     : 'NIFTY 5-min close vs daily CPR (no data yet).';
             }
-            // Factor 2: NIFTY futures 5-min close vs futures' stamped VWAP at that close.
-            var fvEl = document.getElementById('niftyFutVwap');
-            if (fvEl) {
-                if (d.futVwapBullish === true) {
-                    fvEl.textContent = 'FUT > VWAP';
-                    fvEl.style.color = 'var(--accent-green)';
-                } else if (d.futVwapBullish === false) {
-                    fvEl.textContent = 'FUT < VWAP';
-                    fvEl.style.color = 'var(--accent-red)';
-                } else {
-                    fvEl.textContent = 'FUT ↔ VWAP';
-                    fvEl.style.color = 'var(--text-muted)';
-                }
-                var fc = +d.futClose || 0;
-                var fv = +d.futVwap || 0;
-                var fs = d.futSymbol || '';
-                fvEl.title = (fc > 0 && fv > 0)
-                    ? (fs + ' close ' + fc.toFixed(2) + ' vs VWAP ' + fv.toFixed(2)
-                       + '. Refreshes only on NIFTY 5-min candle close.')
-                    : 'NIFTY futures 5-min close vs VWAP (no data yet).';
-            }
-
-            // No extra metrics on the right side. Card now shows: CPR width → CPR chip → VWAP chip → state.
+            // No extra metrics on the right side. Card now shows: CPR width → CPR chip → EMA20 chip → state.
             document.getElementById('niftyMetrics').innerHTML = '';
         }).catch(function(err) { console.warn('refreshNiftyCard failed:', err); });
     }
@@ -1515,7 +1491,7 @@ function showInsideCpr() {
         <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border); background:var(--bg-section-header);">
             <div>
                 <div style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:var(--accent-blue);">SECTOR TRENDS</div>
-                <div style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); margin-top:2px;">Live LTP, change &amp; CPR state for sectors present in your watchlist (with stock count)</div>
+                <div style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); margin-top:2px;">Live LTP, change &amp; combined trend (CPR + 5-min EMA20) for sectors present in your watchlist</div>
             </div>
             <button onclick="document.getElementById('sectorTrendsModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
         </div>
@@ -1529,6 +1505,8 @@ function showInsideCpr() {
                         <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Change</th>
                         <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">% Chg</th>
                         <th style="padding:10px 14px; text-align:center;color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">CPR</th>
+                        <th style="padding:10px 14px; text-align:center;color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">EMA 20</th>
+                        <th style="padding:10px 14px; text-align:center;color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Trend</th>
                         <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Stocks</th>
                     </tr>
                 </thead>
@@ -1813,12 +1791,48 @@ function loadSectorTrends() {
                 var chgColor = chgPct > 0 ? 'var(--accent-green)' : chgPct < 0 ? 'var(--accent-red)' : 'var(--text-secondary)';
                 var arrow = chgPct > 0 ? '▲' : chgPct < 0 ? '▼' : '–';
                 var ltp = +s.ltp || 0;
-                var cprState = s.state || '';
-                var cprColor = cprState === 'BULLISH' ? 'var(--accent-green)'
-                             : cprState === 'BEARISH' ? 'var(--accent-red)'
-                             : cprState === 'INSIDE'  ? 'var(--accent-yellow)'
-                             : 'var(--text-muted)';
-                var cprLabel = cprState || '—';
+                var trState = s.state || '';
+                var trColor, trLabel;
+                switch (trState) {
+                    case 'BULLISH':          trColor = 'var(--accent-green)';  trLabel = 'BULLISH';   break;
+                    case 'BEARISH':          trColor = 'var(--accent-red)';    trLabel = 'BEARISH';   break;
+                    case 'BULLISH_REVERSAL': trColor = 'var(--accent-green)';  trLabel = 'BULL REV';  break;
+                    case 'BEARISH_REVERSAL': trColor = '#fb923c';              trLabel = 'BEAR REV';  break;
+                    case 'INSIDE':           trColor = 'var(--accent-yellow)'; trLabel = 'INSIDE';    break;
+                    case 'SIDEWAYS':         trColor = 'var(--text-muted)';    trLabel = 'SIDEWAYS';  break;
+                    default:                 trColor = 'var(--text-muted)';    trLabel = '—';         break;
+                }
+                var top = +s.cprTop || 0, bot = +s.cprBot || 0, ema = +s.ema20 || 0;
+                // CPR cell: BULLISH / BEARISH / INSIDE based on LTP vs the CPR zone.
+                var cprCellText, cprCellColor;
+                if (top > 0 && bot > 0) {
+                    if (ltp > top)      { cprCellText = 'BULLISH'; cprCellColor = 'var(--accent-green)';  }
+                    else if (ltp < bot) { cprCellText = 'BEARISH'; cprCellColor = 'var(--accent-red)';    }
+                    else                { cprCellText = 'INSIDE';  cprCellColor = 'var(--accent-yellow)'; }
+                } else {
+                    cprCellText = '—'; cprCellColor = 'var(--text-muted)';
+                }
+                // EMA cell: BULLISH / BEARISH based on LTP vs EMA20. "—" when not seeded yet.
+                var emaCellText, emaCellColor;
+                if (ema > 0) {
+                    if (ltp > ema)      { emaCellText = 'BULLISH'; emaCellColor = 'var(--accent-green)'; }
+                    else if (ltp < ema) { emaCellText = 'BEARISH'; emaCellColor = 'var(--accent-red)';   }
+                    else                { emaCellText = '—';       emaCellColor = 'var(--text-muted)';   }
+                } else {
+                    emaCellText = '—'; emaCellColor = 'var(--text-muted)';
+                }
+                // Tooltip on the trend cell — rationale that drove the classification.
+                var cprPart = (top > 0 && bot > 0)
+                    ? (ltp > top ? 'LTP above CPR (' + top.toFixed(2) + ')'
+                        : ltp < bot ? 'LTP below CPR (' + bot.toFixed(2) + ')'
+                        : 'LTP inside CPR (' + bot.toFixed(2) + '-' + top.toFixed(2) + ')')
+                    : 'CPR n/a';
+                var emaPart = ema > 0
+                    ? (ltp > ema ? 'LTP &gt; EMA20 (' + ema.toFixed(2) + ')'
+                        : ltp < ema ? 'LTP &lt; EMA20 (' + ema.toFixed(2) + ')'
+                        : 'LTP = EMA20')
+                    : 'EMA20 not yet seeded (warming up)';
+                var tip = cprPart + ' • ' + emaPart;
                 var stockCount = +s.stockCount || 0;
                 return '<tr style="border-bottom:1px solid var(--border);">'
                     + '<td style="padding:8px 14px; color:var(--text-muted);">' + (idx + 1) + '</td>'
@@ -1826,7 +1840,9 @@ function loadSectorTrends() {
                     + '<td style="padding:8px 14px; text-align:right; color:var(--text-primary);">' + ltp.toFixed(2) + '</td>'
                     + '<td style="padding:8px 14px; text-align:right; color:' + chgColor + ';">' + arrow + ' ' + Math.abs(chg).toFixed(2) + '</td>'
                     + '<td style="padding:8px 14px; text-align:right; color:' + chgColor + '; font-weight:600;">' + (chgPct >= 0 ? '+' : '') + chgPct.toFixed(2) + '%</td>'
-                    + '<td style="padding:8px 14px; text-align:center; color:' + cprColor + '; font-weight:600;">' + cprLabel + '</td>'
+                    + '<td style="padding:8px 14px; text-align:center; color:' + cprCellColor + '; font-weight:600; cursor:help;" title="Top: ' + (top > 0 ? top.toFixed(2) : '—') + '  |  Bot: ' + (bot > 0 ? bot.toFixed(2) : '—') + '">' + cprCellText + '</td>'
+                    + '<td style="padding:8px 14px; text-align:center; color:' + emaCellColor + '; font-weight:600; cursor:help;" title="EMA 20: ' + (ema > 0 ? ema.toFixed(2) : 'not yet seeded') + '">' + emaCellText + '</td>'
+                    + '<td style="padding:8px 14px; text-align:center; color:' + trColor + '; font-weight:600; cursor:help;" title="' + tip + '">' + trLabel + '</td>'
                     + '<td style="padding:8px 14px; text-align:right; color:var(--text-primary); font-weight:600;">' + stockCount + '</td>'
                     + '</tr>';
             }).join('');

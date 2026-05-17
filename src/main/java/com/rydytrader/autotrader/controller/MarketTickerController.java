@@ -39,8 +39,7 @@ public class MarketTickerController {
       + "NSE:NIFTYHEALTHCARE-INDEX,NSE:NIFTYREALTY-INDEX,NSE:NIFTYMEDIA-INDEX,"
       + "NSE:NIFTYOILANDGAS-INDEX,NSE:NIFTYCONSRDURBL-INDEX,"
       + "NSE:NIFTYSERVSECTOR-INDEX,NSE:NIFTYCONSUMPTION-INDEX,"
-      + "NSE:NIFTYINFRA-INDEX,NSE:NIFTYCOMMODITIES-INDEX,"
-      + "NSE:NIFTYCHEM-INDEX";
+      + "NSE:NIFTYINFRA-INDEX,NSE:NIFTYCOMMODITIES-INDEX";
 
     /** Returns the base index symbols. Used by MarketDataService for WebSocket subscription. */
     public static String[] getBaseSymbols() {

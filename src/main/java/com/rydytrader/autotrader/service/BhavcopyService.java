@@ -85,13 +85,10 @@ public class BhavcopyService {
         put("Nifty Consumption",         "NIFTYCONSUMPTION");
         put("Nifty Infrastructure",      "NIFTYINFRA");
         put("Nifty Commodities",         "NIFTYCOMMODITIES");
-        // Speculative: NSE publishes Nifty Chemicals in ind_close_all CSV. CPR levels
-        // available even if Fyers WS doesn't deliver live LTP (chip color will fall
-        // back to neutral, but bhavcopy prevClose is still useful for future features).
-        put("Nifty Chemicals",           "NIFTYCHEM");
         // Note: NIFTY MidSmall IT & Telecom is NOT included — HSM doesn't publish it
         // (absent from Fyers Python SDK index_dict). Telecom chip uses NIFTYSERVSECTOR
-        // as proxy in SECTOR_TO_INDEX.
+        // as proxy in SECTOR_TO_INDEX. NIFTYCHEM removed — Fyers serves no historical
+        // data for it (HTTP 422), so it cannot be seeded into ATR/EMA.
     }};
 
     /**
@@ -129,10 +126,10 @@ public class BhavcopyService {
         Map.entry("Construction Materials",   "NIFTYINFRA"),
         Map.entry("Capital Goods",            "NIFTYINFRA"),
         Map.entry("Commodities",              "NIFTYCOMMODITIES"),
-        // Chemicals points at its own NIFTYCHEM index. If Fyers WS doesn't deliver live
-        // LTP for NSE:NIFTYCHEM-INDEX (symbol master shows it's not exposed), the chip
-        // falls back to neutral. The bhavcopy CPR levels are still loaded for future use.
-        Map.entry("Chemicals",                "NIFTYCHEM")
+        // Chemicals stocks fall back to NIFTYCOMMODITIES for chip coloring — NIFTY Chemicals
+        // isn't available on Fyers (no history, no live LTP), so we point Chemicals at the
+        // broader commodities index. Stocks tagged as "Chemicals" sector still get a chip.
+        Map.entry("Chemicals",                "NIFTYCOMMODITIES")
     );
 
     /** Returns the index ticker (e.g. NIFTYBANK) for a sector display name, or null. */

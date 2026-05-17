@@ -126,17 +126,60 @@ public class ScannerController {
             String fyersSym = "NSE:" + ticker + "-INDEX";
             double ltp = marketDataService.getLtp(fyersSym);
             double prevClose = idx.getClose();
-            double changePct = (ltp > 0 && prevClose > 0) ? ((ltp - prevClose) / prevClose) * 100.0 : 0;
-            double changePts = (ltp > 0 && prevClose > 0) ? (ltp - prevClose) : 0;
+            double changePct, changePts;
+            if (ltp > 0 && prevClose > 0) {
+                changePct = ((ltp - prevClose) / prevClose) * 100.0;
+                changePts = ltp - prevClose;
+            } else {
+                // Weekend / holiday / fresh restart: try the cached tick first (preserves
+                // Friday's session change when the bot was running through Friday's close).
+                changePct = marketDataService.getChangePercent(fyersSym);
+                changePts = marketDataService.getChange(fyersSym);
+                // If no cached tick (bot restarted on a non-trading day), fall back to
+                // bhavcopy snapshots: latest close (Friday) minus the prior snapshot's
+                // close (Thursday) = Friday's actual session change.
+                if (changePct == 0 && changePts == 0 && prevClose > 0) {
+                    CprLevels priorDay = bhavcopyService.getPreviousCpr(ticker);
+                    if (priorDay != null && priorDay.getClose() > 0) {
+                        changePts = prevClose - priorDay.getClose();
+                        changePct = (changePts / priorDay.getClose()) * 100.0;
+                    }
+                }
+            }
             double top = idx.getTc() > 0 && idx.getBc() > 0 ? Math.max(idx.getTc(), idx.getBc()) : 0;
             double bot = idx.getTc() > 0 && idx.getBc() > 0 ? Math.min(idx.getTc(), idx.getBc()) : 0;
-            String state = "";
             double refLtp = ltp > 0 ? ltp : prevClose;
+            double ema20 = emaService.getEma(fyersSym);
+
+            // Two-factor trend: LTP vs daily CPR (top/bot zone) AND LTP vs 5-min EMA20.
+            // Mirrors NIFTY's state machine but with only two factors (no futures VWAP).
+            Boolean cprBullish = null;
             if (refLtp > 0 && top > 0 && bot > 0) {
-                if (refLtp > top)      state = "BULLISH";
-                else if (refLtp < bot) state = "BEARISH";
-                else                   state = "INSIDE";
+                if (refLtp > top)      cprBullish = Boolean.TRUE;
+                else if (refLtp < bot) cprBullish = Boolean.FALSE;
             }
+            Boolean emaBullish = null;
+            if (refLtp > 0 && ema20 > 0) {
+                if (refLtp > ema20)      emaBullish = Boolean.TRUE;
+                else if (refLtp < ema20) emaBullish = Boolean.FALSE;
+            }
+            String state;
+            if (refLtp <= 0) {
+                state = "NEUTRAL";
+            } else if (cprBullish == null) {
+                state = "INSIDE";
+            } else if (Boolean.TRUE.equals(cprBullish) && !Boolean.FALSE.equals(emaBullish)) {
+                state = "BULLISH";
+            } else if (Boolean.FALSE.equals(cprBullish) && !Boolean.TRUE.equals(emaBullish)) {
+                state = "BEARISH";
+            } else if (Boolean.FALSE.equals(cprBullish) && Boolean.TRUE.equals(emaBullish)) {
+                state = "BULLISH_REVERSAL";  // below CPR but reclaimed EMA20
+            } else if (Boolean.TRUE.equals(cprBullish) && Boolean.FALSE.equals(emaBullish)) {
+                state = "BEARISH_REVERSAL";  // above CPR but lost EMA20
+            } else {
+                state = "SIDEWAYS";
+            }
+
             String displayName = bhavcopyService.getIndexDisplayName(ticker);
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("ticker",      ticker);
@@ -148,6 +191,7 @@ public class ScannerController {
             m.put("changePct",   Math.round(changePct * 100.0) / 100.0);
             m.put("cprTop",      Math.round(top * 100.0) / 100.0);
             m.put("cprBot",      Math.round(bot * 100.0) / 100.0);
+            m.put("ema20",       Math.round(ema20 * 100.0) / 100.0);
             m.put("state",       state);
             m.put("stockCount",  watchlistCounts.get(ticker));
             out.add(m);
@@ -247,6 +291,14 @@ public class ScannerController {
         }
         card.put("sectorState", sectorState);
         card.put("sectorChangePct", Math.round(sectorChangePct * 100.0) / 100.0);
+        // Sector index Fyers symbol + display name — used to make the sector chip clickable
+        // (opens the chart modal for the sector index, parallel to the chart button on each
+        // card). Null/empty when the stock has no sector index mapping.
+        if (sectorIndexTicker != null) {
+            card.put("sectorIndexSymbol", "NSE:" + sectorIndexTicker + "-INDEX");
+            String idxDisplay = bhavcopyService.getIndexDisplayName(sectorIndexTicker);
+            card.put("sectorIndexName", idxDisplay != null ? idxDisplay : sectorIndexTicker);
+        }
 
         // LTP separated into two values:
         //   liveTickLtp — the LTP from today's WS ticks (0 if none, e.g. pre-market new day).
