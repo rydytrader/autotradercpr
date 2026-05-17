@@ -4,6 +4,8 @@ import com.rydytrader.autotrader.dto.CprLevels;
 import com.rydytrader.autotrader.manager.PositionManager;
 import com.rydytrader.autotrader.service.*;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +21,8 @@ import java.util.*;
  */
 @RestController
 public class ScannerController {
+
+    private static final Logger log = LoggerFactory.getLogger(ScannerController.class);
 
     private final MarketDataService marketDataService;
     private final BhavcopyService bhavcopyService;
@@ -143,6 +147,13 @@ public class ScannerController {
                     if (priorDay != null && priorDay.getClose() > 0) {
                         changePts = prevClose - priorDay.getClose();
                         changePct = (changePts / priorDay.getClose()) * 100.0;
+                    }
+                    // One-shot diagnostic — remove after the weekend-change behaviour is verified.
+                    if ("NIFTYAUTO".equals(ticker)) {
+                        log.info("[SectorDiag] {} prevClose={} priorDay={} priorClose={} -> changePts={} changePct={}",
+                            ticker, prevClose, priorDay,
+                            priorDay != null ? priorDay.getClose() : "n/a",
+                            changePts, changePct);
                     }
                 }
             }
