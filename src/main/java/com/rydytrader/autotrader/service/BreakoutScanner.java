@@ -1546,6 +1546,203 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      * table to highlight rows where NIFTY's current position would block a NEW trade in
      * the same direction — informational only, doesn't affect the open position.
      */
+    /**
+     * Structured single-chip view of the *nearest* NIFTY hurdle in trade direction.
+     * Used by the scanner page's NIFTY card. Considers all three filters (HTF / 5m /
+     * Virgin CPR) and returns the one whose relevant level is geometrically nearest
+     * to NIFTY's current LTP. Tie-break order: HTF > 5m > Virgin.
+     *
+     * <p>State map:
+     * <ul>
+     *   <li>{@code WAITING} — behind level/zone exists and the relevant close (5m for
+     *       daily/Virgin, 15m for HTF) hasn't yet cleared it. Entries are blocked.</li>
+     *   <li>{@code AHEAD_BLOCKED} — no behind blocker, but the nearest level ahead is
+     *       within {@code minHeadroomAtr × ATR}. Entries are blocked via headroom.</li>
+     *   <li>{@code AHEAD_CLEAR} — nearest level ahead is beyond the headroom threshold.
+     *       Informational only; entries pass this filter.</li>
+     * </ul>
+     *
+     * <p>Returns {@code null} when no level exists in trade direction across all enabled
+     * filters, or when required data is missing.
+     */
+    public record HurdleStatus(String level, String category, String state, double distance) {}
+
+    public HurdleStatus getNiftyNearestHurdle(boolean isBuy) {
+        if (marketDataService == null) return null;
+        String niftySym = IndexTrendService.NIFTY_SYMBOL;
+        double niftyLtp = marketDataService.getLtp(niftySym);
+        if (niftyLtp <= 0) return null;
+        double niftyAtr = atrService != null ? atrService.getAtr(niftySym) : 0;
+
+        // Same-bucket NIFTY 5m close, used by the 5m / Virgin filters. May be null when
+        // the matching bucket hasn't completed yet — those filters then drop out.
+        Double niftyClose = resolveCurrentBucket5mClose(niftySym);
+
+        java.util.List<HurdleStatus> candidates = new java.util.ArrayList<>(3);
+        HurdleStatus c;
+        if ((c = computeHtfCandidate(isBuy, niftyLtp, niftyAtr))     != null) candidates.add(c);
+        if ((c = compute5mCandidate(isBuy, niftyLtp, niftyAtr, niftyClose)) != null) candidates.add(c);
+        if ((c = computeVirginCandidate(isBuy, niftyLtp, niftyAtr, niftyClose)) != null) candidates.add(c);
+        if (candidates.isEmpty()) return null;
+
+        candidates.sort((a, b) -> {
+            int d = Double.compare(a.distance(), b.distance());
+            if (d != 0) return d;
+            return hurdleCategoryRank(a.category()) - hurdleCategoryRank(b.category());
+        });
+        return candidates.get(0);
+    }
+
+    private static int hurdleCategoryRank(String cat) {
+        return switch (cat) {
+            case "HTF"    -> 0;
+            case "5m"     -> 1;
+            case "Virgin" -> 2;
+            default       -> 99;
+        };
+    }
+
+    /** Most recent NIFTY 5-min completed bar's close, matched to the bar that just fired
+     *  the scanner. Mirrors the same-bucket lookup in checkNifty5mHurdle. */
+    private Double resolveCurrentBucket5mClose(String niftySym) {
+        if (candleAggregator == null) return null;
+        CandleAggregator.CandleBar last = candleAggregator.getLastCompletedCandle(niftySym);
+        if (last != null && last.close > 0) return last.close;
+        return null;
+    }
+
+    /** HTF candidate — weekly level closest to NIFTY in trade direction. */
+    private HurdleStatus computeHtfCandidate(boolean isBuy, double niftyLtp, double niftyAtr) {
+        if (!riskSettings.isEnableNiftyHtfHurdleFilter()) return null;
+        if (weeklyCprService == null) return null;
+        WeeklyCprService.WeeklyLevels wl = weeklyCprService.getWeeklyLevels(IndexTrendService.NIFTY_SYMBOL);
+        if (wl == null) return null;
+
+        double[] levels;
+        String[] names;
+        if (isBuy) {
+            levels = new double[]{ wl.r1, wl.ph, wl.tc, wl.pivot, wl.bc };
+            names  = new String[]{ "Weekly R1", "Weekly PWH", "Weekly TC", "Weekly Pivot", "Weekly BC" };
+        } else {
+            levels = new double[]{ wl.s1, wl.pl, wl.tc, wl.pivot, wl.bc };
+            names  = new String[]{ "Weekly S1", "Weekly PWL", "Weekly TC", "Weekly Pivot", "Weekly BC" };
+        }
+
+        // Behind = nearest level we've already passed in trade direction.
+        // For buy: highest level below LTP. For sell: lowest level above LTP.
+        double behindLvl = 0; String behindName = null;
+        double aheadLvl  = 0; String aheadName  = null;
+        for (int i = 0; i < levels.length; i++) {
+            double lv = levels[i];
+            if (lv <= 0) continue;
+            if (isBuy) {
+                if (lv < niftyLtp && lv > behindLvl) { behindLvl = lv; behindName = names[i]; }
+                if (lv > niftyLtp && (aheadName == null || lv < aheadLvl)) { aheadLvl = lv; aheadName = names[i]; }
+            } else {
+                if (lv > niftyLtp && (behindName == null || lv < behindLvl)) { behindLvl = lv; behindName = names[i]; }
+                if (lv < niftyLtp && lv > aheadLvl) { aheadLvl = lv; aheadName = names[i]; }
+            }
+        }
+
+        // WAITING: behind level not yet cleared by 15-min close.
+        if (behindName != null && candleAggregator != null) {
+            Double htfClose = candleAggregator.getLast15MinClose(IndexTrendService.NIFTY_SYMBOL);
+            if (htfClose != null && htfClose > 0) {
+                boolean cleared = isBuy ? htfClose > behindLvl : htfClose < behindLvl;
+                if (!cleared) {
+                    return new HurdleStatus(behindName, "HTF", "WAITING", Math.abs(behindLvl - niftyLtp));
+                }
+            }
+        }
+
+        // AHEAD_BLOCKED / AHEAD_CLEAR
+        if (aheadName == null) return null;
+        double headroomPts = Math.abs(aheadLvl - niftyLtp);
+        double minHeadroom = riskSettings.getNiftyHurdleMinHeadroomAtr() * niftyAtr;
+        String state = (minHeadroom > 0 && headroomPts < minHeadroom) ? "AHEAD_BLOCKED" : "AHEAD_CLEAR";
+        return new HurdleStatus(aheadName, "HTF", state, headroomPts);
+    }
+
+    /** 5-min daily-zone candidate — nearest CPR / R1+PDH / S1+PDL zone in trade direction. */
+    private HurdleStatus compute5mCandidate(boolean isBuy, double niftyLtp, double niftyAtr, Double niftyClose) {
+        if (!riskSettings.isEnableNifty5mHurdleFilter()) return null;
+        if (bhavcopyService == null) return null;
+        var cpr = bhavcopyService.getCprLevels("NIFTY50");
+        if (cpr == null) return null;
+
+        double[][] zoneEdges = {
+            { Math.min(cpr.getTc(), cpr.getBc()), Math.max(cpr.getTc(), cpr.getBc()) },
+            { Math.min(cpr.getR1(), cpr.getPh()), Math.max(cpr.getR1(), cpr.getPh()) },
+            { Math.min(cpr.getS1(), cpr.getPl()), Math.max(cpr.getS1(), cpr.getPl()) }
+        };
+        String[] zoneNames = { "Daily CPR", "Daily R1+PDH", "Daily S1+PDL" };
+
+        // Behind zone — for buy: zone whose LO ≤ LTP (LTP entered from below) with the
+        // highest HI; for sell: zone whose HI ≥ LTP with the lowest LO.
+        int behindIdx = -1;
+        double behindAnchor = isBuy ? -Double.MAX_VALUE : Double.MAX_VALUE;
+        int aheadIdx = -1;
+        double aheadAnchor = isBuy ? Double.MAX_VALUE : -Double.MAX_VALUE;
+        for (int i = 0; i < zoneEdges.length; i++) {
+            double lo = zoneEdges[i][0], hi = zoneEdges[i][1];
+            if (lo <= 0 || hi <= 0) continue;
+            if (isBuy) {
+                if (lo <= niftyLtp && hi > behindAnchor) { behindAnchor = hi; behindIdx = i; }
+                if (lo > niftyLtp  && lo < aheadAnchor)  { aheadAnchor  = lo; aheadIdx  = i; }
+            } else {
+                if (hi >= niftyLtp && lo < behindAnchor) { behindAnchor = lo; behindIdx = i; }
+                if (hi < niftyLtp  && hi > aheadAnchor)  { aheadAnchor  = hi; aheadIdx  = i; }
+            }
+        }
+
+        // WAITING: same-bucket 5m close hasn't cleared the behind zone's far edge.
+        if (behindIdx >= 0 && niftyClose != null) {
+            double zLo = zoneEdges[behindIdx][0], zHi = zoneEdges[behindIdx][1];
+            boolean cleared = isBuy ? niftyClose > zHi : niftyClose < zLo;
+            if (!cleared) {
+                double farEdge = isBuy ? zHi : zLo;
+                return new HurdleStatus(zoneNames[behindIdx], "5m", "WAITING", Math.abs(farEdge - niftyLtp));
+            }
+        }
+
+        // AHEAD_BLOCKED / AHEAD_CLEAR
+        if (aheadIdx < 0) return null;
+        double headroomPts = Math.abs(aheadAnchor - niftyLtp);
+        double minHeadroom = riskSettings.getNifty5mHurdleMinHeadroomAtr() * niftyAtr;
+        String state = (minHeadroom > 0 && headroomPts < minHeadroom) ? "AHEAD_BLOCKED" : "AHEAD_CLEAR";
+        return new HurdleStatus(zoneNames[aheadIdx], "5m", state, headroomPts);
+    }
+
+    /** Virgin CPR candidate — the single active virgin CPR zone, if any. */
+    private HurdleStatus computeVirginCandidate(boolean isBuy, double niftyLtp, double niftyAtr, Double niftyClose) {
+        if (!riskSettings.isEnableVirginCprHurdleFilter()) return null;
+        if (virginCprService == null) return null;
+        var vc = virginCprService.getActiveVirginCpr();
+        if (vc == null || vc.tc <= 0 || vc.bc <= 0) return null;
+        double zoneTop = Math.max(vc.tc, vc.bc);
+        double zoneBot = Math.min(vc.tc, vc.bc);
+
+        // WAITING: NIFTY 5m close is inside the zone (both directions blocked).
+        if (niftyClose != null && niftyClose >= zoneBot && niftyClose <= zoneTop) {
+            double farEdge = isBuy ? zoneTop : zoneBot;
+            return new HurdleStatus("Virgin CPR", "Virgin", "WAITING", Math.abs(farEdge - niftyLtp));
+        }
+
+        // Directional ahead check.
+        double minHeadroom = riskSettings.getVirginCprHurdleHeadroomAtr() * niftyAtr;
+        if (isBuy && niftyLtp < zoneBot) {
+            double dist = zoneBot - niftyLtp;
+            String state = (minHeadroom > 0 && dist < minHeadroom) ? "AHEAD_BLOCKED" : "AHEAD_CLEAR";
+            return new HurdleStatus("Virgin CPR", "Virgin", state, dist);
+        }
+        if (!isBuy && niftyLtp > zoneTop) {
+            double dist = niftyLtp - zoneTop;
+            String state = (minHeadroom > 0 && dist < minHeadroom) ? "AHEAD_BLOCKED" : "AHEAD_CLEAR";
+            return new HurdleStatus("Virgin CPR", "Virgin", state, dist);
+        }
+        return null; // zone is behind in non-trade direction → no candidate
+    }
+
     public String getNiftyHurdleAlert(boolean isBuy) {
         long stockBucket = 0L;
         if (candleAggregator != null) {

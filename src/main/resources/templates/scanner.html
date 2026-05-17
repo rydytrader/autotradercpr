@@ -481,6 +481,7 @@
             <div class="nifty-cpr-width" id="niftyCprWidth" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY daily CPR width vs scanner thresholds (Narrow / Normal / Wide)">—</div>
             <div class="nifty-cpr" id="niftyCprBias" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY index 5-min close vs daily CPR (above CPR top / below CPR bottom). Refreshes only on NIFTY 5-min candle close.">—</div>
             <div id="niftyEma20" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY 5-min close vs 5-min EMA 20 — green when above, red when below. Refreshes only on NIFTY 5-min candle close.">—</div>
+            <div id="niftyHurdle" style="font-family:var(--font-mono); font-weight:700; font-size:0.72rem; margin-left:14px; padding:2px 8px; border-radius:4px; display:none;" title=""></div>
             <div class="nifty-state" id="niftyState" style="margin-left:auto;">—</div>
             <div class="nifty-right" id="niftyMetrics"></div>
         </div>
@@ -1083,6 +1084,7 @@
                 var sm0 = document.getElementById('niftyEma20'); if (sm0) { sm0.textContent = '—'; sm0.style.color = 'var(--text-muted)'; }
                 var cw0 = document.getElementById('niftyCprWidth'); if (cw0) { cw0.textContent = '—'; cw0.style.color = 'var(--text-muted)'; }
                 var cb0 = document.getElementById('niftyCprBias'); if (cb0) { cb0.textContent = '—'; cb0.style.color = 'var(--text-muted)'; }
+                var hd0 = document.getElementById('niftyHurdle'); if (hd0) hd0.style.display = 'none';
                 document.getElementById('niftyState').textContent = 'WAITING';
                 document.getElementById('niftyMetrics').innerHTML = '';
                 document.getElementById('niftyCard').className = 'nifty-card nifty-card-neutral';
@@ -1143,6 +1145,37 @@
                     ? ('NIFTY 5-min close ' + nClose.toFixed(2) + ' vs daily CPR. Refreshes only on NIFTY 5-min candle close.')
                     : 'NIFTY 5-min close vs daily CPR (no data yet).';
             }
+            // Nearest hurdle chip — single chip showing the geographically nearest NIFTY hurdle
+            // in trade direction. Three states (colour-coded): WAITING (red, active blocker),
+            // AHEAD_BLOCKED (yellow, within headroom → blocks via headroom check), AHEAD_CLEAR
+            // (white, informational peek-ahead). Hidden when NIFTY is SIDEWAYS/NEUTRAL or no
+            // hurdle exists in trade direction across all three filters.
+            var hurdleEl = document.getElementById('niftyHurdle');
+            if (hurdleEl) {
+                var h = d.hurdle;
+                if (!h || !h.level) {
+                    hurdleEl.style.display = 'none';
+                } else {
+                    var bg, color, border, tipState;
+                    if (h.state === 'WAITING') {
+                        bg = 'rgba(248,113,113,0.18)'; color = 'var(--accent-red)'; border = 'rgba(248,113,113,0.5)';
+                        tipState = 'active — waiting for close past level (entries blocked)';
+                    } else if (h.state === 'AHEAD_BLOCKED') {
+                        bg = 'rgba(251,191,36,0.18)'; color = 'var(--accent-yellow)'; border = 'rgba(251,191,36,0.5)';
+                        tipState = 'upcoming, inside headroom threshold (entries blocked)';
+                    } else { // AHEAD_CLEAR
+                        bg = 'rgba(255,255,255,0.08)'; color = 'var(--text-primary)'; border = 'rgba(255,255,255,0.35)';
+                        tipState = 'upcoming, beyond headroom threshold (not blocking — peek-ahead)';
+                    }
+                    hurdleEl.style.background = bg;
+                    hurdleEl.style.color = color;
+                    hurdleEl.style.border = '1px solid ' + border;
+                    hurdleEl.title = (h.category || '') + ' hurdle — ' + tipState;
+                    hurdleEl.textContent = 'Hurdle: ' + h.level;
+                    hurdleEl.style.display = 'inline-block';
+                }
+            }
+
             // No extra metrics on the right side. Card now shows: CPR width → CPR chip → EMA20 chip → state.
             document.getElementById('niftyMetrics').innerHTML = '';
         }).catch(function(err) { console.warn('refreshNiftyCard failed:', err); });

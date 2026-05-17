@@ -40,6 +40,28 @@ public class IndexTrend {
     private double maxPutOiStrike;
     private long   maxPutOi;
     private String oiLastUpdated;
+    // Nearest NIFTY hurdle in trade direction (BULLISH/BULLISH_REVERSAL → buy-side levels
+    // above LTP; BEARISH/BEARISH_REVERSAL → sell-side levels below). Drives the scanner
+    // page's "Hurdle: …" chip on the NIFTY card. Null when state is SIDEWAYS / NEUTRAL or
+    // when no hurdle exists in trade direction across all three filters (HTF / 5m / Virgin).
+    private HurdleInfo hurdle;
+
+    public static class HurdleInfo {
+        private String level;     // e.g. "Daily R1+PDH" / "Weekly TC" / "Virgin CPR"
+        private String category;  // "5m" | "HTF" | "Virgin"
+        private String state;     // "WAITING" | "AHEAD_BLOCKED" | "AHEAD_CLEAR"
+
+        public HurdleInfo() {}
+        public HurdleInfo(String level, String category, String state) {
+            this.level = level; this.category = category; this.state = state;
+        }
+        public String getLevel()    { return level; }
+        public void   setLevel(String v) { this.level = v; }
+        public String getCategory() { return category; }
+        public void   setCategory(String v) { this.category = v; }
+        public String getState()    { return state; }
+        public void   setState(String v) { this.state = v; }
+    }
 
     public IndexTrend() {}
 
@@ -83,4 +105,6 @@ public class IndexTrend {
     public void setMaxPutOi(long v) { this.maxPutOi = v; }
     public String getOiLastUpdated() { return oiLastUpdated; }
     public void setOiLastUpdated(String v) { this.oiLastUpdated = v; }
+    public HurdleInfo getHurdle() { return hurdle; }
+    public void setHurdle(HurdleInfo v) { this.hurdle = v; }
 }
