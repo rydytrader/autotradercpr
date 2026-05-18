@@ -147,6 +147,31 @@ public class CandleAggregator {
     }
 
     /**
+     * Force-finalize a symbol's in-progress candle if it matches the given bucket. Used by
+     * BreakoutScanner to guarantee that NIFTY's (and the stock's sector index's) same-bucket
+     * 5-min bar is finalized before the stock scanner reads any trend state — fixes the race
+     * where a stock tick arriving before NIFTY's tick in the same bucket would have the
+     * scanner reading a stale prior-bucket NIFTY trend.
+     *
+     * <p>Idempotent: if the current candle is already past {@code bucketStartMinute} (already
+     * finalized) or doesn't exist, this is a no-op. Open=0 candles are also skipped (empty
+     * placeholder before any tick has arrived).
+     *
+     * <p>After finalizing, leaves {@code currentCandles} empty for the symbol — the next
+     * incoming tick will create a fresh candle for whatever bucket it falls into, exactly
+     * the same as the normal new-bucket-tick path.
+     */
+    public void forceFinalizeBucket(String fyersSymbol, long bucketStartMinute) {
+        if (fyersSymbol == null) return;
+        currentCandles.computeIfPresent(fyersSymbol, (k, existing) -> {
+            if (existing.startMinute != bucketStartMinute) return existing; // not our bucket — no-op
+            if (existing.open <= 0) return existing; // empty placeholder — no-op
+            finalizeCandle(fyersSymbol, existing);
+            return null; // clear; next tick creates the new-bucket candle
+        });
+    }
+
+    /**
      * Start the candle close scheduler. Call after market data service starts.
      */
     private ScheduledFuture<?> boundaryCheckerFuture;

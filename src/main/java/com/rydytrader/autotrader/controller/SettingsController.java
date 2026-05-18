@@ -128,12 +128,10 @@ public class SettingsController {
         result.put("narrowCprMinWidth", riskSettings.getNarrowCprMinWidth());
         result.put("insideCprMaxWidth", riskSettings.getInsideCprMaxWidth());
         result.put("narrowCprZoneCollapseWidthPct", riskSettings.getNarrowCprZoneCollapseWidthPct());
-        result.put("scanUniverse", riskSettings.getScanUniverse());
         result.put("scanMinPrice", riskSettings.getScanMinPrice());
         result.put("scanMaxPrice", riskSettings.getScanMaxPrice());
         result.put("enableOpeningRefresh", riskSettings.isEnableOpeningRefresh());
         result.put("openingRefreshTime", riskSettings.getOpeningRefreshTime());
-        result.put("scanOnlyNifty50", riskSettings.isScanOnlyNifty50());
         result.put("enableHpt", riskSettings.isEnableHpt());
         result.put("enableMpt", riskSettings.isEnableMpt());
         result.put("mptQtyFactor", riskSettings.getMptQtyFactor());
@@ -245,12 +243,10 @@ public class SettingsController {
             if (body.containsKey("narrowCprMinWidth")) riskSettings.setNarrowCprMinWidth(Double.parseDouble(body.get("narrowCprMinWidth").toString()));
             if (body.containsKey("insideCprMaxWidth")) riskSettings.setInsideCprMaxWidth(Double.parseDouble(body.get("insideCprMaxWidth").toString()));
             if (body.containsKey("narrowCprZoneCollapseWidthPct")) riskSettings.setNarrowCprZoneCollapseWidthPct(Double.parseDouble(body.get("narrowCprZoneCollapseWidthPct").toString()));
-            if (body.containsKey("scanUniverse")) riskSettings.setScanUniverse(body.get("scanUniverse").toString());
             if (body.containsKey("scanMinPrice")) riskSettings.setScanMinPrice(Double.parseDouble(body.get("scanMinPrice").toString()));
             if (body.containsKey("scanMaxPrice")) riskSettings.setScanMaxPrice(Double.parseDouble(body.get("scanMaxPrice").toString()));
             if (body.containsKey("enableOpeningRefresh")) riskSettings.setEnableOpeningRefresh(Boolean.parseBoolean(body.get("enableOpeningRefresh").toString()));
             if (body.containsKey("openingRefreshTime")) riskSettings.setOpeningRefreshTime(body.get("openingRefreshTime").toString());
-            if (body.containsKey("scanOnlyNifty50")) riskSettings.setScanOnlyNifty50(Boolean.parseBoolean(body.get("scanOnlyNifty50").toString()));
             if (body.containsKey("enableHpt")) riskSettings.setEnableHpt(Boolean.parseBoolean(body.get("enableHpt").toString()));
             if (body.containsKey("enableMpt")) riskSettings.setEnableMpt(Boolean.parseBoolean(body.get("enableMpt").toString()));
             if (body.containsKey("mptQtyFactor")) riskSettings.setMptQtyFactor(Double.parseDouble(body.get("mptQtyFactor").toString()));

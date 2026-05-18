@@ -1,6 +1,7 @@
 package com.rydytrader.autotrader.controller;
 
 import com.rydytrader.autotrader.dto.IndexTrend;
+import com.rydytrader.autotrader.service.AtrService;
 import com.rydytrader.autotrader.service.BreakoutScanner;
 import com.rydytrader.autotrader.service.IndexTrendService;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,15 +18,22 @@ public class IndexTrendController {
 
     private final IndexTrendService indexTrendService;
     private final BreakoutScanner   breakoutScanner;
+    private final AtrService        atrService;
 
-    public IndexTrendController(IndexTrendService indexTrendService, BreakoutScanner breakoutScanner) {
+    public IndexTrendController(IndexTrendService indexTrendService,
+                                 BreakoutScanner breakoutScanner,
+                                 AtrService atrService) {
         this.indexTrendService = indexTrendService;
         this.breakoutScanner   = breakoutScanner;
+        this.atrService        = atrService;
     }
 
     @GetMapping("/nifty")
     public IndexTrend getNifty() {
         IndexTrend trend = indexTrendService.getNiftyTrend();
+        // NIFTY ATR (scanner-timeframe candles, 14-period Wilder) — shown as a tooltip on
+        // the LTP element so the user can see the current NIFTY volatility scale.
+        trend.setAtr(atrService.getAtr(IndexTrendService.NIFTY_SYMBOL));
         // Enrich with the single nearest NIFTY hurdle in trade direction. Direction
         // follows the trend state: bullish flavours look at resistance above LTP,
         // bearish flavours at support below. SIDEWAYS / NEUTRAL leave hurdle = null.

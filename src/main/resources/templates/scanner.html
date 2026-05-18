@@ -272,7 +272,8 @@
             border: 1px solid rgba(248,113,113,0.55);
             color: var(--accent-red);
         }
-        .nifty-card-sideways {
+        .nifty-card-sideways,
+        .nifty-card-inside {
             background: linear-gradient(135deg, rgba(252,211,77,0.10), rgba(252,211,77,0.04));
             border: 1px solid rgba(252,211,77,0.40);
             color: var(--accent-yellow, #f59e0b);
@@ -630,18 +631,24 @@
         if (!sel) return;
         var current = sel.value;
         while (sel.options.length > 1) sel.remove(1);
-        // Build unique non-empty sector list, sorted alphabetically.
+        // Build unique non-empty index ticker list (e.g. NIFTYINFRA, NIFTYBANK), sorted
+        // alphabetically by the part after "NIFTY". Several sectors share an index
+        // (Power/Cement/Construction/Infrastructure → NIFTYINFRA) so deduping yields
+        // ~14 entries instead of 18 sector names.
         var seen = {};
-        var sectors = [];
+        var tickers = [];
         for (var i = 0; i < allData.length; i++) {
-            var s = allData[i].sector;
-            if (s && !seen[s]) { seen[s] = true; sectors.push(s); }
+            var t = allData[i].sectorIndexTicker;
+            if (t && !seen[t]) { seen[t] = true; tickers.push(t); }
         }
-        sectors.sort();
-        for (var j = 0; j < sectors.length; j++) {
+        function sortKey(t) {
+            return (t.startsWith('NIFTY') && t.length > 5 ? t.substring(5) : t).toUpperCase();
+        }
+        tickers.sort(function(a, b) { return sortKey(a).localeCompare(sortKey(b)); });
+        for (var j = 0; j < tickers.length; j++) {
             var opt = document.createElement('option');
-            opt.value = sectors[j];
-            opt.textContent = sectors[j];
+            opt.value = tickers[j];
+            opt.textContent = formatIndexTickerScanner(tickers[j]);
             sel.appendChild(opt);
         }
         sel.value = current;
@@ -661,7 +668,7 @@
                     if (types.indexOf(cprFilter) === -1) return false;
                 }
             }
-            if (sectorFilter && d.sector !== sectorFilter) return false;
+            if (sectorFilter && d.sectorIndexTicker !== sectorFilter) return false;
             if (signalFilter && (!d.lastSignal || d.lastSignal.status !== 'TRADED')) return false;
             if (filteredFilter && (!d.lastSignal || d.lastSignal.status !== 'FILTERED')) return false;
             if (momentumFilter !== 'all') {
@@ -806,33 +813,58 @@
             sigHtml = '<span class="sig-none">No history</span>';
         }
 
-        // Color the sector chip green / red / muted based on whether the sector index is
-        // above or below its previous close. BULLISH = up, BEARISH = down, empty = no data.
-        // Clickable when the stock has a mapped sector index — opens the chart modal for
-        // that sector index (e.g. NIFTYBANK chart for an HDFCBANK card).
+        // Color the sector chip based on the same 2-factor trend used by the Sector Trends
+        // modal and the sector alignment filter:
+        //   BULLISH / BULLISH_REVERSAL  → green
+        //   BEARISH / BEARISH_REVERSAL  → red
+        //   INSIDE                       → yellow
+        //   SIDEWAYS / NEUTRAL / unknown → muted
+        // Tooltip shows the underlying CPR top/bot and EMA20 values of the sector index.
+        // Clickable when mapped — opens the sector index chart modal.
         var sectorChip = '';
         if (d.sector && d.sector.length > 0) {
             var sCol = 'var(--text-muted)';
             var sBorder = 'var(--border)';
-            var sTip = 'NSE sector: ' + d.sector;
-            var chPct = (typeof d.sectorChangePct === 'number') ? d.sectorChangePct : null;
-            var chSuffix = (chPct !== null) ? ' (' + (chPct >= 0 ? '+' : '') + chPct.toFixed(2) + '%)' : '';
-            if (d.sectorState === 'BULLISH') {
+            var stateLabel = d.sectorState || '';
+            if (stateLabel === 'BULLISH' || stateLabel === 'BULLISH_REVERSAL') {
                 sCol = 'var(--accent-green)'; sBorder = 'var(--accent-green)';
-                sTip += ' — sector index above prev close' + chSuffix;
-            } else if (d.sectorState === 'BEARISH') {
+            } else if (stateLabel === 'BEARISH' || stateLabel === 'BEARISH_REVERSAL') {
                 sCol = 'var(--accent-red)'; sBorder = 'var(--accent-red)';
-                sTip += ' — sector index below prev close' + chSuffix;
+            } else if (stateLabel === 'INSIDE') {
+                sCol = 'var(--accent-yellow)'; sBorder = 'var(--accent-yellow)';
+            }
+            // Build a multi-line tooltip — sector name, state, change%, CPR levels, EMA20.
+            var chPct = (typeof d.sectorChangePct === 'number') ? d.sectorChangePct : null;
+            var top   = (typeof d.sectorCprTop === 'number') ? d.sectorCprTop : 0;
+            var bot   = (typeof d.sectorCprBot === 'number') ? d.sectorCprBot : 0;
+            var ema   = (typeof d.sectorEma20  === 'number') ? d.sectorEma20  : 0;
+            var idxLabel = d.sectorIndexTicker ? formatIndexTickerScanner(d.sectorIndexTicker) : d.sector;
+            var sTipLines = ['Index: ' + idxLabel];
+            if (stateLabel) {
+                sTipLines.push('State: ' + stateLabel.replace('_', ' '));
+            }
+            if (chPct !== null) {
+                sTipLines.push('Change: ' + (chPct >= 0 ? '+' : '') + chPct.toFixed(2) + '%');
+            }
+            if (top > 0 && bot > 0) {
+                sTipLines.push('CPR: ' + top.toFixed(2) + ' / ' + bot.toFixed(2));
+            }
+            if (ema > 0) {
+                sTipLines.push('EMA 20: ' + ema.toFixed(2));
             }
             var clickAttr = '';
             var cursorStyle = '';
             if (d.sectorIndexSymbol) {
-                var name = (d.sectorIndexName || d.sector).replace(/'/g, "\\'");
-                clickAttr = ' onclick="openChartModal(\'' + d.sectorIndexSymbol + '\', \'' + name + '\')"';
+                var chartLabel = (d.sectorIndexTicker ? formatIndexTickerScanner(d.sectorIndexTicker) : d.sector).replace(/'/g, "\\'");
+                clickAttr = ' onclick="openChartModal(\'' + d.sectorIndexSymbol + '\', \'' + chartLabel + '\')"';
                 cursorStyle = 'cursor:pointer; ';
-                sTip += ' — click to view ' + (d.sectorIndexName || d.sector) + ' chart';
+                sTipLines.push('Click to view ' + chartLabel + ' chart');
             }
-            sectorChip = '<span' + clickAttr + ' style="' + cursorStyle + 'font-family:var(--font-mono); font-size:0.65rem; font-weight:600; color:' + sCol + '; padding:1px 5px; border:1px solid ' + sBorder + '; border-radius:3px; text-transform:uppercase; letter-spacing:0.3px;" title="' + sTip + '">' + d.sector + '</span>';
+            var sTip = sTipLines.join('\n').replace(/"/g, '&quot;');
+            // Chip text shows the raw index ticker (NIFTY BANK / NIFTY INFRA / …) — falls
+            // back to the sector display name when no index mapping exists.
+            var chipText = d.sectorIndexTicker ? formatIndexTickerScanner(d.sectorIndexTicker) : d.sector;
+            sectorChip = '<span' + clickAttr + ' style="' + cursorStyle + 'font-family:var(--font-mono); font-size:0.65rem; font-weight:600; color:' + sCol + '; padding:1px 5px; border:1px solid ' + sBorder + '; border-radius:3px; text-transform:uppercase; letter-spacing:0.3px;" title="' + sTip + '">' + chipText + '</span>';
         }
 
         return '<div class="' + cardClass + '" data-symbol="' + d.symbol + '">'
@@ -1050,9 +1082,17 @@
     // carry it (older messages or REST-poll path), fall back to deriving it from
     // ltp + changePct so the field still updates. ema20 is optional — only updates the
     // chip when present in the payload.
-    function applyNiftyLtpUpdate(ltp, changePct, change, ema20) {
+    function applyNiftyLtpUpdate(ltp, changePct, change, ema20, atr) {
         var lpEl = document.getElementById('niftyLtp');
-        if (lpEl) lpEl.textContent = ltp > 0 ? ltp.toFixed(2) : '—';
+        if (lpEl) {
+            lpEl.textContent = ltp > 0 ? ltp.toFixed(2) : '—';
+            // Only update the title when atr is supplied (REST-poll path); SSE-tick path
+            // passes no atr, so we preserve the tooltip set by the previous REST poll
+            // rather than blanking it on every tick.
+            if (atr != null && isFinite(atr) && atr > 0) {
+                lpEl.title = 'NIFTY 50 live LTP\nATR (14, 5-min): ' + atr.toFixed(2);
+            }
+        }
         // EMA 20 chip — green when LTP > EMA, red when LTP < EMA, muted otherwise.
         var emaEl = document.getElementById('niftyEma20');
         if (emaEl && ema20 != null && isFinite(ema20) && ema20 > 0 && ltp > 0) {
@@ -1107,7 +1147,8 @@
                 +d.ltp || 0,
                 typeof d.changePct === 'number' ? d.changePct : null,
                 null,
-                typeof d.ema20 === 'number' ? d.ema20 : null
+                typeof d.ema20 === 'number' ? d.ema20 : null,
+                typeof d.atr === 'number' ? d.atr : null
             );
 
             // CPR width category — NARROW (below narrowCprMaxWidth) or WIDE (at/above).
@@ -1794,6 +1835,12 @@ function showSectorTrends() {
     }, 5000);
 }
 
+// "NIFTYINFRA" → "NIFTY INFRA", "NIFTYIT" → "NIFTY IT". Leaves FINNIFTY untouched.
+function formatIndexTickerScanner(t) {
+    if (!t) return '';
+    return t.startsWith('NIFTY') && t.length > 5 ? 'NIFTY ' + t.substring(5) : t;
+}
+
 function loadSectorTrends() {
     fetch('/api/scanner/sectors')
         .then(function(r) { return r.json(); })
@@ -1806,17 +1853,14 @@ function loadSectorTrends() {
                 return;
             }
             empty.style.display = 'none';
-            // Sort alphabetically by the second word of the display name (e.g. "Nifty Auto"
-            // → "Auto", "Nifty FMCG" → "FMCG"), case-insensitive. Falls back to full name
-            // when the display name has no second word.
-            function sortKey(name) {
-                if (!name) return '';
-                var parts = String(name).trim().split(/\s+/);
-                var key = parts.length > 1 ? parts[1] : parts[0];
-                return key.toUpperCase();
+            // Sort alphabetically by the part after "NIFTY" (e.g. NIFTYAUTO → AUTO,
+            // NIFTYFMCG → FMCG). Non-prefixed tickers like FINNIFTY sort by full name.
+            function sortKey(ticker) {
+                if (!ticker) return '';
+                return (ticker.startsWith('NIFTY') && ticker.length > 5 ? ticker.substring(5) : ticker).toUpperCase();
             }
             rows.sort(function(a, b) {
-                return sortKey(a.displayName || a.ticker).localeCompare(sortKey(b.displayName || b.ticker));
+                return sortKey(a.ticker).localeCompare(sortKey(b.ticker));
             });
             tbody.innerHTML = rows.map(function(s, idx) {
                 var chg = +s.change || 0;
@@ -1869,7 +1913,7 @@ function loadSectorTrends() {
                 var stockCount = +s.stockCount || 0;
                 return '<tr style="border-bottom:1px solid var(--border);">'
                     + '<td style="padding:8px 14px; color:var(--text-muted);">' + (idx + 1) + '</td>'
-                    + '<td style="padding:8px 14px; color:var(--text-primary); font-weight:600;">' + (s.displayName || s.ticker) + '</td>'
+                    + '<td style="padding:8px 14px; color:var(--text-primary); font-weight:600;">' + formatIndexTickerScanner(s.ticker) + '</td>'
                     + '<td style="padding:8px 14px; text-align:right; color:var(--text-primary);">' + ltp.toFixed(2) + '</td>'
                     + '<td style="padding:8px 14px; text-align:right; color:' + chgColor + ';">' + arrow + ' ' + Math.abs(chg).toFixed(2) + '</td>'
                     + '<td style="padding:8px 14px; text-align:right; color:' + chgColor + '; font-weight:600;">' + (chgPct >= 0 ? '+' : '') + chgPct.toFixed(2) + '%</td>'

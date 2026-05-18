@@ -80,13 +80,14 @@ public class ScannerController {
      */
     private Map<String, Integer> watchlistSectorIndexCounts() {
         Map<String, Set<String>> symbolsByTicker = new LinkedHashMap<>();
-        boolean onlyNifty50 = riskSettings.isScanOnlyNifty50();
         double narrowMaxWidth = riskSettings.getNarrowCprMaxWidth();
         double narrowMinWidth = riskSettings.getNarrowCprMinWidth();
         double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
 
         java.util.function.Consumer<CprLevels> recordSector = (cpr) -> {
-            String sector = cpr.getSector();
+            // Sourced from the Settings → Stock Universe master table (DB-backed) — falls
+            // back to the NSE-CSV industry mapping only for tickers not in the DB.
+            String sector = bhavcopyService.getSector(cpr.getSymbol());
             if (sector == null || sector.isEmpty()) return;
             String ticker = bhavcopyService.getSectorIndexTicker(sector);
             if (ticker == null) return;
@@ -98,14 +99,14 @@ public class ScannerController {
         // Narrow CPR pass — same gates as getWatchlist.
         for (CprLevels cpr : bhavcopyService.getAllCprLevels().values()) {
             if (bhavcopyService.isIndex(cpr.getSymbol())) continue;
-            if (onlyNifty50 && !cpr.isInNifty50()) continue;
+            if (!bhavcopyService.isInScanUniverse(cpr.getSymbol())) continue;
             if (cpr.getCprWidthPct() < narrowMinWidth || cpr.getCprWidthPct() >= narrowMaxWidth) continue;
             if (!marketDataService.passesWatchlistFilters(cpr)) continue;
             recordSector.accept(cpr);
         }
         // Inside CPR pass — same gates as getWatchlist (no narrow-width upper cap).
         for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
-            if (onlyNifty50 && !cpr.isInNifty50()) continue;
+            if (!bhavcopyService.isInScanUniverse(cpr.getSymbol())) continue;
             if (insideMaxWidth > 0 && cpr.getCprWidthPct() > insideMaxWidth) continue;
             if (!marketDataService.passesWatchlistFilters(cpr)) continue;
             recordSector.accept(cpr);
@@ -219,10 +220,9 @@ public class ScannerController {
             insideSymbols.add(cpr.getSymbol());
         }
 
-        // Universe gate — when scanOnlyNifty50 is on, the watchlist is restricted to NIFTY 50
-        // stocks. When off, all stocks in the bhavcopy cache are eligible (subject to the
-        // CPR-width and other scanner filters below).
-        boolean onlyNifty50 = riskSettings.isScanOnlyNifty50();
+        // Universe gate — the DB-backed Stock Universe (Settings → Stock Universe) is the
+        // single source of truth. isInScanUniverse() returns true for stocks with
+        // enabled=true in the stocks table, false otherwise.
 
         // Collect narrow CPR stocks — use configurable width range + price/turnover/etc. filters.
         double narrowMaxWidth = riskSettings.getNarrowCprMaxWidth();
@@ -230,7 +230,7 @@ public class ScannerController {
         Set<String> seen = new HashSet<>();
         for (CprLevels cpr : bhavcopyService.getAllCprLevels().values()) {
             if (bhavcopyService.isIndex(cpr.getSymbol())) continue; // NIFTY50/NIFTYBANK etc.
-            if (onlyNifty50 && !cpr.isInNifty50()) continue;
+            if (!bhavcopyService.isInScanUniverse(cpr.getSymbol())) continue;
             if (cpr.getCprWidthPct() < narrowMinWidth || cpr.getCprWidthPct() >= narrowMaxWidth) continue;
             if (!marketDataService.passesWatchlistFilters(cpr)) continue;
 
@@ -249,7 +249,7 @@ public class ScannerController {
         for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
             String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
             if (seen.contains(fyers)) continue;
-            if (onlyNifty50 && !cpr.isInNifty50()) continue;
+            if (!bhavcopyService.isInScanUniverse(cpr.getSymbol())) continue;
             if (insideMaxWidth > 0 && cpr.getCprWidthPct() > insideMaxWidth) continue;
             if (!marketDataService.passesWatchlistFilters(cpr)) continue;
 
@@ -274,47 +274,78 @@ public class ScannerController {
         // Universe membership flags drive the scanner-page client-side N50 vs All filter.
         card.put("inNifty50", levels.isInNifty50());
         card.put("inNifty100", levels.isInNifty100());
-        // Sector — NSE industry classification (Financial Services / IT / Pharma / etc.).
-        // Populated from the NIFTY 100 constituent CSV at bhavcopy fetch time. Empty
-        // string for stocks the map doesn't cover (rare).
-        String sector = levels.getSector();
+        // Sector — sourced from the Settings → Stock Universe master table (DB-backed).
+        // BhavcopyService.getSector() consults the DB stocks table first and only falls
+        // back to the NSE NIFTY 100 CSV Industry column for tickers not in the DB.
+        String sector = bhavcopyService.getSector(levels.getSymbol());
         card.put("sector", sector != null ? sector : "");
 
-        // Sector-index day-change state — BULLISH if index LTP > previous close, BEARISH
-        // if below. Empty when there's no live LTP yet or the sector isn't mapped to an
-        // index. Pure intraday direction — no deadband; even a 1-paise tick flips the color.
+        // Sector-index trend state — 2-factor classification matching the Sector Trends
+        // modal (LTP vs daily CPR + LTP vs 5-min EMA20). Yields BULLISH / BEARISH /
+        // BULLISH_REVERSAL / BEARISH_REVERSAL / INSIDE / SIDEWAYS / NEUTRAL — same state the
+        // sector alignment filter uses. Falls back to bhavcopy snapshot close on weekends.
         String sectorIndexTicker = sector != null ? bhavcopyService.getSectorIndexTicker(sector) : null;
         String sectorState = "";
         double sectorChangePct = 0;
+        double sectorTop = 0, sectorBot = 0, sectorEma20 = 0;
         if (sectorIndexTicker != null) {
             CprLevels idx = bhavcopyService.getCprLevels(sectorIndexTicker);
             if (idx != null) {
+                String sectorFyersSym = "NSE:" + sectorIndexTicker + "-INDEX";
                 double prevClose = idx.getClose();
-                double idxLtp = marketDataService.getLtp("NSE:" + sectorIndexTicker + "-INDEX");
-                // Live branch only on actual trading days — same stale-Saturday-mock-tick
-                // protection as the Sector Trends modal endpoint.
+                double idxLtp = marketDataService.getLtp(sectorFyersSym);
                 boolean tradingDay = marketHolidayService == null || marketHolidayService.isTradingDay();
+
+                // Reference price: live LTP on a trading day, prevClose otherwise.
+                double refPrice = (tradingDay && idxLtp > 0) ? idxLtp : prevClose;
+
+                // Change% for tooltip — same logic as the modal endpoint.
                 if (tradingDay && idxLtp > 0 && prevClose > 0) {
-                    // Live trading: today's tick vs cached prev close
                     sectorChangePct = (idxLtp - prevClose) / prevClose * 100.0;
-                    if (idxLtp > prevClose)      sectorState = "BULLISH";
-                    else if (idxLtp < prevClose) sectorState = "BEARISH";
                 } else if (prevClose > 0) {
-                    // Weekend / holiday / pre-market: fall back to the last-session change
-                    // (Friday close vs Thursday close) from bhavcopy daily snapshots so the
-                    // pill stays colored even when no live tick is flowing. Mirrors the
-                    // fallback in the Sector Trends modal endpoint.
                     CprLevels priorDay = bhavcopyService.getPreviousCpr(sectorIndexTicker);
                     if (priorDay != null && priorDay.getClose() > 0) {
                         sectorChangePct = (prevClose - priorDay.getClose()) / priorDay.getClose() * 100.0;
-                        if (prevClose > priorDay.getClose())      sectorState = "BULLISH";
-                        else if (prevClose < priorDay.getClose()) sectorState = "BEARISH";
+                    }
+                }
+
+                // CPR zone + EMA factors.
+                sectorTop   = (idx.getTc() > 0 && idx.getBc() > 0) ? Math.max(idx.getTc(), idx.getBc()) : 0;
+                sectorBot   = (idx.getTc() > 0 && idx.getBc() > 0) ? Math.min(idx.getTc(), idx.getBc()) : 0;
+                sectorEma20 = emaService != null ? emaService.getEma(sectorFyersSym) : 0;
+
+                if (refPrice > 0) {
+                    Boolean cprBullish = null;
+                    if (sectorTop > 0 && sectorBot > 0) {
+                        if (refPrice > sectorTop)      cprBullish = Boolean.TRUE;
+                        else if (refPrice < sectorBot) cprBullish = Boolean.FALSE;
+                    }
+                    Boolean emaBullish = null;
+                    if (sectorEma20 > 0) {
+                        if (refPrice > sectorEma20)      emaBullish = Boolean.TRUE;
+                        else if (refPrice < sectorEma20) emaBullish = Boolean.FALSE;
+                    }
+                    if (cprBullish == null) {
+                        sectorState = (sectorTop > 0 && sectorBot > 0) ? "INSIDE" : "NEUTRAL";
+                    } else if (Boolean.TRUE.equals(cprBullish)  && !Boolean.FALSE.equals(emaBullish)) {
+                        sectorState = "BULLISH";
+                    } else if (Boolean.FALSE.equals(cprBullish) && !Boolean.TRUE.equals(emaBullish)) {
+                        sectorState = "BEARISH";
+                    } else if (Boolean.FALSE.equals(cprBullish) && Boolean.TRUE.equals(emaBullish)) {
+                        sectorState = "BULLISH_REVERSAL";
+                    } else if (Boolean.TRUE.equals(cprBullish)  && Boolean.FALSE.equals(emaBullish)) {
+                        sectorState = "BEARISH_REVERSAL";
+                    } else {
+                        sectorState = "SIDEWAYS";
                     }
                 }
             }
         }
         card.put("sectorState", sectorState);
         card.put("sectorChangePct", Math.round(sectorChangePct * 100.0) / 100.0);
+        card.put("sectorCprTop",   Math.round(sectorTop   * 100.0) / 100.0);
+        card.put("sectorCprBot",   Math.round(sectorBot   * 100.0) / 100.0);
+        card.put("sectorEma20",    Math.round(sectorEma20 * 100.0) / 100.0);
         // Sector index Fyers symbol + display name — used to make the sector chip clickable
         // (opens the chart modal for the sector index, parallel to the chart button on each
         // card). Null/empty when the stock has no sector index mapping.
@@ -322,6 +353,9 @@ public class ScannerController {
             card.put("sectorIndexSymbol", "NSE:" + sectorIndexTicker + "-INDEX");
             String idxDisplay = bhavcopyService.getIndexDisplayName(sectorIndexTicker);
             card.put("sectorIndexName", idxDisplay != null ? idxDisplay : sectorIndexTicker);
+            // Raw index ticker (e.g. NIFTYBANK, NIFTYINFRA) — used by the chip text on
+            // the scanner card so the chip shows the index, not the sector display name.
+            card.put("sectorIndexTicker", sectorIndexTicker);
         }
 
         // LTP separated into two values:
@@ -730,7 +764,6 @@ public class ScannerController {
         status.put("signalSource", riskSettings.getSignalSource());
         status.put("watchlistCount", marketDataService.getWatchlist().size());
         status.put("universeSize", bhavcopyService.getScanUniverseCount());
-        status.put("scanUniverse", riskSettings.getScanUniverse());
         status.put("atrLoaded", atrService.getLoadedCountFor(marketDataService.getWatchlist()));
         status.put("emaLoaded", emaService.getLoadedCountFor(marketDataService.getWatchlist()));
         status.put("firstCandleLoaded", candleAggregator.getFirstCandleCloseCountFor(marketDataService.getWatchlist()));

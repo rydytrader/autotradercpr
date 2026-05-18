@@ -247,18 +247,11 @@ public class RiskSettingsStore {
         volatile double narrowCprMinWidth = 0.0;  // CPR width % lower threshold — narrow = [min, max). 0 = no min.
         // narrowRangeRatioThreshold removed — z-score of PDH-PDL/CPR ratio is self-calibrating
         volatile double insideCprMaxWidth = 0.5;  // max CPR width % for inside CPR stocks (0 = no filter)
-        // Scan universe — fixed at NIFTY 100. The backend always loads + subscribes the full
-        // 100-stock universe so NIFTY 100 stocks (beyond the 50-index) can still be scanned for
-        // signals. The scanner page has a client-side filter chip to view N50-only or all 100.
-        // Field kept for forward-compat in case a per-user override is ever exposed again.
-        volatile String scanUniverse = "NIFTY100";
+        // Watchlist universe is fully driven by the DB Stock Universe (Settings → Stock
+        // Universe). Legacy fields (`scanUniverse`, `scanOnlyNifty50`) have been removed —
+        // the bhavcopy fetcher hardcodes NIFTY 100 cap-flag seeding.
         volatile double scanMinPrice = 300;      // min stock price filter (0 = no filter)
         volatile double scanMaxPrice = 0;        // max stock price filter (0 = no max)
-        // Watchlist universe gate. When true, the watchlist is restricted to NIFTY 50 stocks
-        // only. When false, all stocks in the bhavcopy cache are eligible (subject to the
-        // CPR-width and other scanner filters). Replaces the legacy scanIncludeNS/NL/IS/IL
-        // bucket toggles (which filtered by Narrow/Inside CPR × Small/Large daily range).
-        volatile boolean scanOnlyNifty50 = true;
         // Opening refresh — re-fetches today's candles from Fyers /data/history after
         // 9:20 to correct any wrong live-tick-built first candle (Fyers' live WS data is
         // unreliable during 9:15-9:25 per their own docs). Re-seeds completedCandles, SMA, ATR,
@@ -389,10 +382,8 @@ public class RiskSettingsStore {
     public double getNarrowCprMinWidth() { return cfg().narrowCprMinWidth; }
     public double getInsideCprMaxWidth() { return cfg().insideCprMaxWidth; }
     public double getNarrowCprZoneCollapseWidthPct() { return cfg().narrowCprZoneCollapseWidthPct; }
-    public String getScanUniverse() { String u = cfg().scanUniverse; return u != null && !u.isEmpty() ? u : "NIFTY100"; }
     public double getScanMinPrice() { return cfg().scanMinPrice; }
     public double getScanMaxPrice() { return cfg().scanMaxPrice; }
-    public boolean isScanOnlyNifty50() { return cfg().scanOnlyNifty50; }
     public boolean isEnableOpeningRefresh()    { return cfg().enableOpeningRefresh; }
     public String  getOpeningRefreshTime()     { return cfg().openingRefreshTime; }
     public boolean isEnableTargetTolerance()   { return cfg().enableTargetTolerance; }
@@ -411,14 +402,8 @@ public class RiskSettingsStore {
     public void setNarrowCprMinWidth(double v) { cfg().narrowCprMinWidth = Math.max(0, v); }
     public void setInsideCprMaxWidth(double v) { cfg().insideCprMaxWidth = v; }
     public void setNarrowCprZoneCollapseWidthPct(double v) { cfg().narrowCprZoneCollapseWidthPct = v; }
-    public void setScanUniverse(String v) {
-        // Always NIFTY 100 — the toggle was removed. Setter ignores input, kept only so
-        // settings-save calls don't blow up if a stale UI client still posts the field.
-        cfg().scanUniverse = "NIFTY100";
-    }
     public void setScanMinPrice(double v) { cfg().scanMinPrice = v; }
     public void setScanMaxPrice(double v) { cfg().scanMaxPrice = v; }
-    public void setScanOnlyNifty50(boolean v) { cfg().scanOnlyNifty50 = v; }
     public void setEnableOpeningRefresh(boolean v) { cfg().enableOpeningRefresh = v; }
     public void setOpeningRefreshTime(String v)    { cfg().openingRefreshTime = v; }
     public void setEnableTargetTolerance(boolean v) { cfg().enableTargetTolerance = v; }
@@ -657,10 +642,8 @@ public class RiskSettingsStore {
             // narrowRangeRatioThreshold removed — z-score is self-calibrating
             upsert("insideCprMaxWidth", String.valueOf(c.insideCprMaxWidth));
             upsert("narrowCprZoneCollapseWidthPct", String.valueOf(c.narrowCprZoneCollapseWidthPct));
-            upsert("scanUniverse", "NIFTY100");  // toggle removed — always pinned
             upsert("scanMinPrice", String.valueOf(c.scanMinPrice));
             upsert("scanMaxPrice", String.valueOf(c.scanMaxPrice));
-            upsert("scanOnlyNifty50", String.valueOf(c.scanOnlyNifty50));
             upsert("enableOpeningRefresh", String.valueOf(c.enableOpeningRefresh));
             upsert("openingRefreshTime", c.openingRefreshTime);
             upsert("enableTargetTolerance", String.valueOf(c.enableTargetTolerance));
@@ -891,9 +874,8 @@ public class RiskSettingsStore {
                     // narrowRangeRatioThreshold — legacy key, silently ignored
                     case "insideCprMaxWidth" -> c.insideCprMaxWidth = Double.parseDouble(v);
                     case "narrowCprZoneCollapseWidthPct" -> c.narrowCprZoneCollapseWidthPct = Double.parseDouble(v);
-                    // scanUniverse — always NIFTY 100 (the toggle was removed). Any legacy
-                    // persisted value (NIFTY50) gets migrated forward on load.
-                    case "scanUniverse" -> c.scanUniverse = "NIFTY100";
+                    // Legacy watchlist gate — removed. DB Stock Universe is the source of truth.
+                    case "scanUniverse" -> { /* ignored — field removed */ }
                     case "scanMinPrice" -> c.scanMinPrice = Double.parseDouble(v);
                     case "scanMaxPrice" -> c.scanMaxPrice = Double.parseDouble(v);
                     // Legacy watchlist + OR keys — features removed.
@@ -901,7 +883,7 @@ public class RiskSettingsStore {
                          "scanMinBeta", "scanMaxBeta",
                          "scanCapFilter",
                          "openingRangeMinutes" -> { /* legacy — removed */ }
-                    case "scanOnlyNifty50" -> c.scanOnlyNifty50 = Boolean.parseBoolean(v);
+                    case "scanOnlyNifty50" -> { /* ignored — field removed, DB Stock Universe gates the watchlist */ }
                     case "enableOpeningRefresh" -> c.enableOpeningRefresh = Boolean.parseBoolean(v);
                     case "openingRefreshTime" -> c.openingRefreshTime = v;
                     case "enableTargetTolerance" -> c.enableTargetTolerance = Boolean.parseBoolean(v);

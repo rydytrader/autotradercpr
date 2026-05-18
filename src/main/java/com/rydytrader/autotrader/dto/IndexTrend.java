@@ -32,6 +32,10 @@ public class IndexTrend {
     // remains visible after market close instead of going blank when ticks stop.
     // EMA20 is always-on as the second NIFTY trend factor — no user toggle.
     private double ema20;
+    // NIFTY 14-period ATR on the scanner timeframe (5-min by default). Display-only — shown
+    // as a tooltip on the NIFTY card's LTP element so the user can see the current volatility
+    // scale without opening another page.
+    private double atr;
     // NIFTY option-chain Max OI strikes refreshed every 15 minutes during market hours.
     // Max Call OI = intraday resistance hurdle; Max Put OI = intraday support hurdle.
     // Zero = not yet loaded.
@@ -95,6 +99,8 @@ public class IndexTrend {
     public void setCprWidthCategory(String v) { this.cprWidthCategory = v; }
     public double getEma20() { return ema20; }
     public void setEma20(double v) { this.ema20 = v; }
+    public double getAtr() { return atr; }
+    public void setAtr(double v) { this.atr = v; }
     public double getMaxCallOiStrike() { return maxCallOiStrike; }
     public void setMaxCallOiStrike(double v) { this.maxCallOiStrike = v; }
     public long getMaxCallOi() { return maxCallOi; }

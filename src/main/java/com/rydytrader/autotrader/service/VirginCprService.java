@@ -44,7 +44,7 @@ import java.util.TreeMap;
  * the legacy H2 settings row, the row is migrated to the JSON file and then deleted.
  */
 @Service
-public class VirginCprService {
+public class VirginCprService implements CandleAggregator.CandleCloseListener {
 
     private static final Logger log = LoggerFactory.getLogger(VirginCprService.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
@@ -74,6 +74,38 @@ public class VirginCprService {
     @PostConstruct
     public void init() {
         load();
+        // Register for NIFTY 5-min candle closes so we can invalidate the active virgin CPR
+        // the moment NIFTY's close lands inside the BC..TC zone. Listener is symbol-agnostic;
+        // the body filters to NIFTY_SYMBOL only.
+        if (candleAggregator != null) {
+            candleAggregator.addListener(this);
+        }
+    }
+
+    /**
+     * NIFTY 5-min candle close handler. Invalidates the active virgin CPR snapshot the
+     * moment NIFTY's bar closes inside the (BC..TC) zone — classical "virgin = untouched"
+     * rule. Bars on other symbols are ignored.
+     */
+    @Override
+    public void onCandleClose(String fyersSymbol, CandleAggregator.CandleBar candle) {
+        if (!IndexTrendService.NIFTY_SYMBOL.equals(fyersSymbol)) return;
+        if (candle == null || candle.close <= 0) return;
+        Snapshot s = snapshot;
+        if (s == null || s.tc <= 0 || s.bc <= 0) return;
+        double zoneTop = Math.max(s.tc, s.bc);
+        double zoneBot = Math.min(s.tc, s.bc);
+        if (candle.close >= zoneBot && candle.close <= zoneTop) {
+            log.info("[VirginCPR] Invalidated by NIFTY 5m close at {} inside zone [{}..{}] (formed {})",
+                fmt(candle.close), fmt(zoneBot), fmt(zoneTop), s.date);
+            eventService.log("[INFO] NIFTY Virgin CPR invalidated — 5m close "
+                + fmt(candle.close) + " inside zone [" + fmt(zoneBot) + ".." + fmt(zoneTop)
+                + "] (formed " + s.date + ")");
+            synchronized (this) {
+                this.snapshot = null;
+                save();
+            }
+        }
     }
 
     /**
@@ -89,6 +121,22 @@ public class VirginCprService {
 
     /** Manual trigger — for diagnostics / out-of-hours testing. */
     public void triggerDetect() { detect(); }
+
+    /**
+     * Manually clear the active virgin CPR snapshot (in-memory + on-disk). Used by the
+     * admin endpoint to invalidate when the close-inside-zone rule hasn't fired but the
+     * user has observed real price action that should have invalidated.
+     */
+    public synchronized void clearSnapshot() {
+        Snapshot prev = this.snapshot;
+        if (prev == null) return;
+        this.snapshot = null;
+        save();
+        log.info("[VirginCPR] Manually cleared (was formed {})", prev.date);
+        if (eventService != null) {
+            eventService.log("[INFO] NIFTY Virgin CPR manually cleared (was formed " + prev.date + ")");
+        }
+    }
 
     private synchronized void detect() {
         try {
@@ -339,9 +387,13 @@ public class VirginCprService {
     }
 
     private void save() {
-        if (snapshot == null) return;
         try {
             Path path = Paths.get(CACHE_FILE);
+            if (snapshot == null) {
+                // Invalidated → delete the file so a restart doesn't restore the stale record.
+                Files.deleteIfExists(path);
+                return;
+            }
             Files.createDirectories(path.getParent());
             String json = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(snapshot);
             Files.writeString(path, json);

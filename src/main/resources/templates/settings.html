@@ -42,6 +42,11 @@
         .form-control:focus { outline: none; border-color: var(--accent-blue); box-shadow: 0 0 0 3px rgba(99,179,237,0.12); }
         .form-control::-webkit-calendar-picker-indicator { filter: invert(0.6); cursor: pointer; }
 
+        /* Native <select> dropdown options inherit OS defaults (white) on Windows
+           unless we explicitly style them. Force dark-theme colors on the options
+           list so it matches the rest of the settings UI. */
+        select option { background: var(--bg-card); color: var(--text-primary); }
+
         .disabled-note { font-size: 0.68rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 3px; }
 
         /* ── TABS ───────────────────────────────── */
@@ -209,6 +214,8 @@
         <button class="settings-tab" onclick="switchTab('hours', this)">Hours</button>
         <button class="settings-tab" onclick="switchTab('charges', this)">Charges</button>
         <button class="settings-tab" onclick="switchTab('users', this)">Users</button>
+        <button class="settings-tab" onclick="switchTab('universe', this); loadStockUniverse();">Stock Universe</button>
+        <button class="settings-tab" onclick="switchTab('sectors', this); loadSectorsTab();">Sectors</button>
     </div>
 
     <!-- TAB: MONEY -->
@@ -925,18 +932,6 @@
                     <div class="form-hint">Exclude stocks outside this price range. Set to 0 to disable either bound. Restart required.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Watchlist Universe</label>
-                    <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
-                        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
-                            <input type="radio" name="scanUniverseChoice" id="scanUniverseNifty50" value="nifty50" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> <b style="color:var(--accent-green);">NIFTY 50</b> — only NIFTY 50 stocks in the watchlist
-                        </div>
-                        <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
-                            <input type="radio" name="scanUniverseChoice" id="scanUniverseAll" value="all" style="width:16px;height:16px;accent-color:var(--accent-cyan);cursor:pointer;"> <b style="color:#fb923c;">ALL</b> — every stock in the bhavcopy cache, regardless of NIFTY 50 membership
-                        </div>
-                    </div>
-                    <div class="form-hint">Universe gate replaces the legacy NS/NL/IS/IL include toggles. The narrow/inside CPR width thresholds still drive eligibility within whichever universe is chosen.</div>
-                </div>
-                <div class="form-group">
                     <label class="form-label">Virgin CPR Cache (NIFTY)</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Active for the next</span>
@@ -1043,6 +1038,141 @@
     </div>
 
     </div><!-- /tab-users -->
+
+    <!-- STOCK UNIVERSE TAB ─────────────────────────────────────────────── -->
+    <div class="tab-content" id="tab-universe">
+        <div class="section-card fade-in" style="margin-top:20px;">
+            <div class="section-header">
+                <div class="section-title">
+                    <div class="section-title-dot" style="background: var(--accent-cyan);"></div>
+                    Stock Universe
+                    <span style="font-family:var(--font-mono);font-size:0.68rem;color:var(--text-muted);font-weight:400;margin-left:10px;">
+                        Enabled stocks form the default scanner universe.
+                    </span>
+                </div>
+                <button onclick="showAddStockModal()" style="
+                    background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.2);
+                    color:var(--accent-green);padding:6px 16px;border-radius:6px;
+                    font-family:var(--font-mono);font-size:0.72rem;font-weight:700;
+                    cursor:pointer;transition:all 0.2s;">+ Add Stock</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
+                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Filter Sector:</label>
+                <select id="stockUniverseSectorFilter" onchange="loadStockUniverse()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.74rem;outline:none;min-width:200px;">
+                    <option value="">All sectors</option>
+                </select>
+                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-left:10px;">Filter Index:</label>
+                <select id="stockUniverseIndexFilter" onchange="loadStockUniverse()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.74rem;outline:none;min-width:180px;">
+                    <option value="">All indices</option>
+                </select>
+                <span id="stockUniverseCount" style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);margin-left:auto;"></span>
+            </div>
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th style="width:50px;" class="text-center">#</th>
+                            <th>Ticker</th>
+                            <th>Name</th>
+                            <th>Sector</th>
+                            <th class="text-center">Enabled</th>
+                            <th class="text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stockUniverseBody">
+                        <tr><td colspan="6"><div class="empty-state" style="padding:20px"><div class="empty-icon" style="font-size:1.2rem">◎</div>Loading...</div></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div><!-- /tab-universe -->
+
+    <!-- SECTORS TAB ─────────────────────────────────────────────────────── -->
+    <div class="tab-content" id="tab-sectors">
+        <div class="section-card fade-in" style="margin-top:20px;">
+            <div class="section-header">
+                <div class="section-title">
+                    <div class="section-title-dot" style="background: var(--accent-purple, #a78bfa);"></div>
+                    Sectors
+                    <span style="font-family:var(--font-mono);font-size:0.68rem;color:var(--text-muted);font-weight:400;margin-left:10px;">
+                        Sector name + NSE index ticker. Index ticker drives chip color on scanner cards.
+                    </span>
+                </div>
+                <button onclick="showAddSectorModal()" style="
+                    background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.2);
+                    color:var(--accent-green);padding:6px 16px;border-radius:6px;
+                    font-family:var(--font-mono);font-size:0.72rem;font-weight:700;
+                    cursor:pointer;transition:all 0.2s;">+ Add Sector</button>
+            </div>
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th style="width:50px;" class="text-center">#</th>
+                            <th>Sector Name</th>
+                            <th>Index Ticker</th>
+                            <th class="text-center" style="width:160px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sectorsTabBody">
+                        <tr><td colspan="4"><div class="empty-state" style="padding:20px"><div class="empty-icon" style="font-size:1.2rem">◎</div>Loading...</div></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div><!-- /tab-sectors -->
+
+    <!-- ADD/EDIT SECTOR MODAL -->
+    <div id="sectorEditModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:999;
+        align-items:center;justify-content:center;">
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;
+            padding:28px;width:440px;max-width:90vw;box-shadow:0 16px 48px rgba(0,0,0,0.3);">
+            <div style="font-family:var(--font-mono);font-size:0.82rem;font-weight:700;color:var(--text-primary);margin-bottom:20px;" id="sectorEditModalTitle">Add Sector</div>
+            <input type="hidden" id="sectorEditModalId">
+            <div style="margin-bottom:12px;">
+                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Sector Name</label>
+                <input type="text" id="sectorEditModalName" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;" placeholder="e.g. Nifty Bank">
+            </div>
+            <div style="margin-bottom:18px;">
+                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Index Ticker</label>
+                <input type="text" id="sectorEditModalTicker" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;" placeholder="e.g. NIFTYBANK (no spaces)">
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:10px;">
+                <button onclick="closeSectorEditModal()" style="background:transparent;border:1px solid var(--border);color:var(--text-secondary);padding:8px 18px;border-radius:6px;font-family:var(--font-mono);font-size:0.74rem;cursor:pointer;">Cancel</button>
+                <button onclick="saveSectorEditModal()" style="background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.4);color:var(--accent-green);padding:8px 18px;border-radius:6px;font-family:var(--font-mono);font-size:0.74rem;font-weight:700;cursor:pointer;">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ADD/EDIT STOCK MODAL -->
+    <div id="stockModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:999;
+        align-items:center;justify-content:center;">
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;
+            padding:28px;width:440px;max-width:90vw;box-shadow:0 16px 48px rgba(0,0,0,0.3);">
+            <div style="font-family:var(--font-mono);font-size:0.82rem;font-weight:700;color:var(--text-primary);margin-bottom:20px;" id="stockModalTitle">Add Stock</div>
+            <input type="hidden" id="stockModalId">
+            <div style="margin-bottom:12px;">
+                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Ticker</label>
+                <input type="text" id="stockModalTicker" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;" placeholder="e.g. RELIANCE">
+            </div>
+            <div style="margin-bottom:12px;">
+                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Name</label>
+                <input type="text" id="stockModalName" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;" placeholder="Display name">
+            </div>
+            <div style="margin-bottom:12px;">
+                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Sector</label>
+                <select id="stockModalSector" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;"></select>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:18px;">
+                <input type="checkbox" id="stockModalEnabled" checked>
+                <label for="stockModalEnabled" style="font-family:var(--font-mono);font-size:0.78rem;color:var(--text-primary);cursor:pointer;">Enabled (included in scanner universe)</label>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:10px;">
+                <button onclick="closeStockModal()" style="background:transparent;border:1px solid var(--border);color:var(--text-secondary);padding:8px 18px;border-radius:6px;font-family:var(--font-mono);font-size:0.74rem;cursor:pointer;">Cancel</button>
+                <button onclick="saveStockModal()" style="background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.4);color:var(--accent-green);padding:8px 18px;border-radius:6px;font-family:var(--font-mono);font-size:0.74rem;font-weight:700;cursor:pointer;">Save</button>
+            </div>
+        </div>
+    </div>
 
     <!-- ADD/EDIT USER MODAL -->
     <div id="userModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:999;
@@ -1255,10 +1385,7 @@
             document.getElementById('insideCprMaxWidth').value = d.insideCprMaxWidth != null ? d.insideCprMaxWidth : 0.5;
             document.getElementById('scanMinPrice').value = d.scanMinPrice != null ? d.scanMinPrice : 300;
             document.getElementById('scanMaxPrice').value = d.scanMaxPrice != null ? d.scanMaxPrice : 0;
-            // Watchlist universe radio — default to NIFTY 50 when setting missing or true.
-            var onlyN50 = d.scanOnlyNifty50 !== false;
-            document.getElementById('scanUniverseNifty50').checked = onlyN50;
-            document.getElementById('scanUniverseAll').checked = !onlyN50;
+            // Watchlist universe radio retired — Settings → Stock Universe is the source.
             document.getElementById('minAbsoluteProfit').value = d.minAbsoluteProfit != null ? d.minAbsoluteProfit : 500;
             document.getElementById('skipR3S3IvOvDays').checked = d.skipR3S3IvOvDays !== false;
             document.getElementById('skipR3S3EvDays').checked   = d.skipR3S3EvDays   !== false;
@@ -1414,7 +1541,6 @@
                 insideCprMaxWidth: parseFloat(document.getElementById('insideCprMaxWidth').value) || 0,
                 scanMinPrice: parseFloat(document.getElementById('scanMinPrice').value) || 0,
                 scanMaxPrice: parseFloat(document.getElementById('scanMaxPrice').value) || 0,
-                scanOnlyNifty50: document.getElementById('scanUniverseNifty50').checked,
                 minAbsoluteProfit: (function() { var v = parseFloat(document.getElementById('minAbsoluteProfit').value); return isNaN(v) ? 500 : v; })(),
                 skipR3S3IvOvDays: document.getElementById('skipR3S3IvOvDays').checked,
                 skipR3S3EvDays:   document.getElementById('skipR3S3EvDays').checked,
@@ -1539,6 +1665,295 @@
                 if (d.ok) { loadUsers(); showToast('User deleted', 'success'); }
                 else showToast(d.error || 'Failed', 'error');
             }).catch(() => showToast('Failed to delete user', 'error'));
+    }
+
+    // ── STOCK UNIVERSE TAB ────────────────────────────────────────────────
+    // DB-backed sector + stock list. Sectors come from the sectors table; stocks from
+    // the stocks table. The "enabled" toggle controls whether a stock is included in
+    // the default scanner universe — disabling here removes it from BhavcopyService's
+    // isInScanUniverse() check on the next refresh.
+    var stockUniverseSectors = [];   // cached sectors list for dropdown population
+
+    function loadStockUniverse() {
+        var tbody = document.getElementById('stockUniverseBody');
+        var filterSel = document.getElementById('stockUniverseSectorFilter');
+        var indexSel = document.getElementById('stockUniverseIndexFilter');
+        var filterValue = filterSel ? filterSel.value : '';
+        var indexValue = indexSel ? indexSel.value : '';
+        Promise.all([
+            fetch('/api/sectors').then(r => r.json()),
+            fetch('/api/stocks').then(r => r.json())
+        ]).then(function(arr) {
+            stockUniverseSectors = arr[0] || [];
+            var stocks = arr[1] || [];
+
+            // Repopulate sector filter dropdown (preserve current selection across reloads).
+            if (filterSel) {
+                var opts = '<option value="">All sectors</option>';
+                stockUniverseSectors.forEach(function(s) {
+                    var sel = (String(s.id) === String(filterValue)) ? ' selected' : '';
+                    opts += '<option value="' + s.id + '"' + sel + '>' + sectorLabel(s) + '</option>';
+                });
+                filterSel.innerHTML = opts;
+            }
+
+            // Repopulate index filter — distinct index tickers across all sectors. Several
+            // sectors can share an index (e.g. Cement / Construction / Power → NIFTYINFRA),
+            // so filtering by index pulls stocks from all of those sectors together.
+            if (indexSel) {
+                var seen = {};
+                var distinctIndices = [];
+                stockUniverseSectors.forEach(function(s) {
+                    if (s.indexTicker && !seen[s.indexTicker]) {
+                        seen[s.indexTicker] = true;
+                        distinctIndices.push(s.indexTicker);
+                    }
+                });
+                distinctIndices.sort();
+                var idxOpts = '<option value="">All indices</option>';
+                distinctIndices.forEach(function(t) {
+                    var sel = (t === indexValue) ? ' selected' : '';
+                    idxOpts += '<option value="' + escapeHtml(t) + '"' + sel + '>' + escapeHtml(formatIndexTicker(t)) + '</option>';
+                });
+                indexSel.innerHTML = idxOpts;
+            }
+
+            // Apply both filters (AND). Sector filter wins specificity if both set.
+            var filtered = stocks;
+            if (filterValue) {
+                filtered = filtered.filter(function(s) { return String(s.sectorId || '') === String(filterValue); });
+            }
+            if (indexValue) {
+                filtered = filtered.filter(function(s) { return (s.sectorIndexTicker || '') === indexValue; });
+            }
+
+            var countEl = document.getElementById('stockUniverseCount');
+            if (countEl) countEl.textContent = filtered.length + ' of ' + stocks.length + ' stocks';
+
+            if (filtered.length === 0) {
+                var emptyMsg = stocks.length === 0
+                    ? 'No stocks yet — click + Add Stock to begin.'
+                    : 'No stocks match the selected sector.';
+                tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state" style="padding:20px"><div class="empty-icon" style="font-size:1.2rem">◎</div>' + emptyMsg + '</div></td></tr>';
+                return;
+            }
+            var rows = filtered.map(function(s, idx) {
+                // Display the formatted index ticker (NIFTY INFRA, NIFTY BANK, …) instead
+                // of the sector display name — so e.g. Power / Cement / Construction stocks
+                // all surface as NIFTY INFRA on this row. Sector name is still shown in the
+                // tooltip for disambiguation.
+                var sectorDisplay = s.sectorIndexTicker
+                    ? escapeHtml(formatIndexTicker(s.sectorIndexTicker))
+                    : (s.sectorName ? escapeHtml(s.sectorName) : '—');
+                var sectorTitle = s.sectorName ? ' title="' + escapeHtml(s.sectorName) + '"' : '';
+                var enabledBadge = s.enabled
+                    ? '<span style="color:var(--accent-green);font-weight:700;">ON</span>'
+                    : '<span style="color:var(--text-muted);">OFF</span>';
+                return '<tr>'
+                    + '<td class="text-center" style="color:var(--text-muted);">' + (idx + 1) + '</td>'
+                    + '<td style="font-weight:700;">' + escapeHtml(s.ticker) + '</td>'
+                    + '<td>' + escapeHtml(s.name || '') + '</td>'
+                    + '<td' + sectorTitle + '>' + sectorDisplay + '</td>'
+                    + '<td class="text-center">' + enabledBadge + '</td>'
+                    + '<td class="text-center">'
+                    +   '<button onclick="editStock(' + s.id + ')" style="background:transparent;border:1px solid var(--border);color:var(--text-secondary);padding:4px 10px;border-radius:4px;font-family:var(--font-mono);font-size:0.68rem;cursor:pointer;margin-right:4px;">Edit</button>'
+                    +   '<button onclick="deleteStock(' + s.id + ',\'' + escapeJs(s.ticker) + '\')" style="background:transparent;border:1px solid rgba(248,113,113,0.4);color:var(--accent-red);padding:4px 10px;border-radius:4px;font-family:var(--font-mono);font-size:0.68rem;cursor:pointer;">Delete</button>'
+                    + '</td>'
+                    + '</tr>';
+            }).join('');
+            tbody.innerHTML = rows;
+        }).catch(function(e) {
+            tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state" style="padding:20px;color:var(--accent-red);">Failed to load: ' + (e && e.message ? e.message : 'error') + '</div></td></tr>';
+        });
+    }
+
+    function escapeHtml(s) {
+        if (s == null) return '';
+        return String(s).replace(/[&<>"']/g, function(c) {
+            return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
+        });
+    }
+    function escapeJs(s) {
+        return String(s == null ? '' : s).replace(/['\\]/g, '\\$&');
+    }
+
+    function formatIndexTicker(t) {
+        // Insert a space after the "NIFTY" prefix for readability:
+        // NIFTYINFRA → NIFTY INFRA, NIFTYIT → NIFTY IT. Leaves FINNIFTY untouched.
+        if (!t) return '';
+        return t.startsWith('NIFTY') && t.length > 5 ? 'NIFTY ' + t.substring(5) : t;
+    }
+
+    function sectorLabel(s) {
+        // "Sector Name (NIFTY INDEX)" — index ticker omitted if blank.
+        var n = escapeHtml(s.name || '');
+        return s.indexTicker ? n + ' (' + escapeHtml(formatIndexTicker(s.indexTicker)) + ')' : n;
+    }
+
+    function populateSectorDropdown(selectedSectorId) {
+        var dropdown = document.getElementById('stockModalSector');
+        var html = '<option value="">— none —</option>';
+        stockUniverseSectors.forEach(function(s) {
+            var selAttr = (selectedSectorId != null && Number(selectedSectorId) === Number(s.id)) ? ' selected' : '';
+            html += '<option value="' + s.id + '"' + selAttr + '>' + sectorLabel(s) + '</option>';
+        });
+        dropdown.innerHTML = html;
+    }
+
+    function showAddStockModal() {
+        // Ensure sectors are loaded (in case the tab hasn't been opened yet).
+        if (stockUniverseSectors.length === 0) {
+            fetch('/api/sectors').then(r => r.json()).then(function(rows) {
+                stockUniverseSectors = rows || [];
+                openStockModal(null);
+            });
+        } else {
+            openStockModal(null);
+        }
+    }
+
+    function openStockModal(stock) {
+        document.getElementById('stockModalTitle').textContent = stock ? 'Edit Stock' : 'Add Stock';
+        document.getElementById('stockModalId').value = stock ? stock.id : '';
+        document.getElementById('stockModalTicker').value = stock ? stock.ticker : '';
+        document.getElementById('stockModalTicker').disabled = !!stock; // ticker is the natural key — don't allow rename
+        document.getElementById('stockModalName').value = stock ? (stock.name || '') : '';
+        document.getElementById('stockModalEnabled').checked = stock ? !!stock.enabled : true;
+        populateSectorDropdown(stock ? stock.sectorId : null);
+        document.getElementById('stockModal').style.display = 'flex';
+    }
+
+    function closeStockModal() {
+        document.getElementById('stockModal').style.display = 'none';
+    }
+
+    function editStock(id) {
+        fetch('/api/stocks').then(r => r.json()).then(function(stocks) {
+            var s = (stocks || []).find(function(x) { return x.id === id; });
+            if (s) openStockModal(s);
+        });
+    }
+
+    function saveStockModal() {
+        var id = document.getElementById('stockModalId').value;
+        var ticker = document.getElementById('stockModalTicker').value.trim().toUpperCase();
+        var name = document.getElementById('stockModalName').value.trim();
+        var sectorId = document.getElementById('stockModalSector').value;
+        var enabled = document.getElementById('stockModalEnabled').checked;
+
+        if (!ticker) { showToast('Ticker is required', 'error'); return; }
+
+        var body = { name: name, sectorId: sectorId ? Number(sectorId) : null, enabled: enabled };
+        var url, method;
+        if (id) {
+            url = '/api/stocks/' + id;
+            method = 'PUT';
+        } else {
+            url = '/api/stocks';
+            method = 'POST';
+            body.ticker = ticker;
+        }
+        fetch(url, {
+            method: method,
+            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders()),
+            body: JSON.stringify(body)
+        }).then(r => r.json()).then(function(d) {
+            if (d && d.error) { showToast(d.error, 'error'); return; }
+            closeStockModal();
+            loadStockUniverse();
+            showToast(id ? 'Stock updated' : 'Stock added', 'success');
+        }).catch(function() { showToast('Save failed', 'error'); });
+    }
+
+    function deleteStock(id, ticker) {
+        if (!confirm('Delete stock ' + ticker + '?')) return;
+        fetch('/api/stocks/' + id, { method: 'DELETE', headers: csrfHeaders() })
+            .then(r => r.json())
+            .then(function(d) {
+                if (d && d.error) { showToast(d.error, 'error'); return; }
+                loadStockUniverse();
+                showToast('Stock deleted', 'success');
+            }).catch(function() { showToast('Delete failed', 'error'); });
+    }
+
+    // ── SECTORS TAB (full CRUD) ───────────────────────────────────────────
+    function loadSectorsTab() {
+        var tbody = document.getElementById('sectorsTabBody');
+        fetch('/api/sectors').then(r => r.json()).then(function(rows) {
+            stockUniverseSectors = rows || [];
+            if (!rows || rows.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state" style="padding:20px"><div class="empty-icon" style="font-size:1.2rem">◎</div>No sectors yet — click + Add Sector.</div></td></tr>';
+                return;
+            }
+            tbody.innerHTML = rows.map(function(s, idx) {
+                return '<tr>'
+                    + '<td class="text-center" style="color:var(--text-muted);">' + (idx + 1) + '</td>'
+                    + '<td style="font-weight:700;">' + escapeHtml(s.name) + '</td>'
+                    + '<td style="font-family:var(--font-mono);">' + escapeHtml(formatIndexTicker(s.indexTicker || '')) + '</td>'
+                    + '<td class="text-center">'
+                    +   '<button onclick="editSector(' + s.id + ')" style="background:transparent;border:1px solid var(--border);color:var(--text-secondary);padding:4px 10px;border-radius:4px;font-family:var(--font-mono);font-size:0.68rem;cursor:pointer;margin-right:4px;">Edit</button>'
+                    +   '<button onclick="deleteSectorById(' + s.id + ',\'' + escapeJs(s.name) + '\')" style="background:transparent;border:1px solid rgba(248,113,113,0.4);color:var(--accent-red);padding:4px 10px;border-radius:4px;font-family:var(--font-mono);font-size:0.68rem;cursor:pointer;">Delete</button>'
+                    + '</td>'
+                    + '</tr>';
+            }).join('');
+        }).catch(function() {
+            tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state" style="padding:20px;color:var(--accent-red);">Failed to load sectors.</div></td></tr>';
+        });
+    }
+
+    function showAddSectorModal() {
+        document.getElementById('sectorEditModalTitle').textContent = 'Add Sector';
+        document.getElementById('sectorEditModalId').value = '';
+        document.getElementById('sectorEditModalName').value = '';
+        document.getElementById('sectorEditModalTicker').value = '';
+        document.getElementById('sectorEditModal').style.display = 'flex';
+    }
+
+    function editSector(id) {
+        var s = (stockUniverseSectors || []).find(function(x) { return x.id === id; });
+        if (!s) return;
+        document.getElementById('sectorEditModalTitle').textContent = 'Edit Sector';
+        document.getElementById('sectorEditModalId').value = s.id;
+        document.getElementById('sectorEditModalName').value = s.name || '';
+        document.getElementById('sectorEditModalTicker').value = s.indexTicker || '';
+        document.getElementById('sectorEditModal').style.display = 'flex';
+    }
+
+    function closeSectorEditModal() {
+        document.getElementById('sectorEditModal').style.display = 'none';
+    }
+
+    function saveSectorEditModal() {
+        var id = document.getElementById('sectorEditModalId').value;
+        var name = document.getElementById('sectorEditModalName').value.trim();
+        var indexTicker = document.getElementById('sectorEditModalTicker').value.trim().toUpperCase();
+        if (!name) { showToast('Sector name is required', 'error'); return; }
+        var url = id ? ('/api/sectors/' + id) : '/api/sectors';
+        var method = id ? 'PUT' : 'POST';
+        fetch(url, {
+            method: method,
+            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders()),
+            body: JSON.stringify({ name: name, indexTicker: indexTicker })
+        }).then(r => r.json()).then(function(d) {
+            if (d && d.error) { showToast(d.error, 'error'); return; }
+            closeSectorEditModal();
+            loadSectorsTab();
+            // Stock universe references sectorName, so refresh that too if it was loaded.
+            stockUniverseSectors = [];
+            showToast(id ? 'Sector updated' : 'Sector added', 'success');
+        }).catch(function() { showToast('Save failed', 'error'); });
+    }
+
+    function deleteSectorById(id, name) {
+        if (!confirm('Delete sector "' + name + '"?\n\n(Will fail if any stock still references it.)')) return;
+        fetch('/api/sectors/' + id, { method: 'DELETE', headers: csrfHeaders() })
+            .then(r => r.json())
+            .then(function(d) {
+                if (d && d.error) { showToast(d.error, 'error'); return; }
+                loadSectorsTab();
+                stockUniverseSectors = [];
+                showToast('Sector deleted', 'success');
+            }).catch(function() { showToast('Delete failed', 'error'); });
     }
 
     // ── INIT ─────────────────────────────────────────────────────────────────

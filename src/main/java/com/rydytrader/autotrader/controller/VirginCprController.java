@@ -46,4 +46,17 @@ public class VirginCprController {
     public Map<String, Object> backfill(@RequestParam(defaultValue = "10") int days) {
         return virginCprService.backfill(days);
     }
+
+    /**
+     * Manually clear the active virgin CPR. Accepts GET (browser address bar) and POST.
+     * Use when the auto-invalidation rule (close-inside-zone) hasn't fired but the user
+     * has observed price action that should have invalidated the snapshot (e.g. a gap
+     * straight through the zone where no 5-min close landed inside).
+     */
+    @RequestMapping(value = "/api/virgin-cpr/clear", method = { RequestMethod.GET, RequestMethod.POST })
+    public Map<String, Object> clear() {
+        boolean wasActive = virginCprService.getActiveVirginCpr() != null;
+        virginCprService.clearSnapshot();
+        return Map.of("cleared", wasActive);
+    }
 }

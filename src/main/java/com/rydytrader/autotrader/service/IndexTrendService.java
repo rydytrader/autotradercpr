@@ -126,6 +126,7 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
     private TrendSnapshot computeSnapshot() {
         // Factor 1: NIFTY index 5-min close vs daily CPR
         Boolean cprBullish = null;
+        boolean insideCpr = false;
         double niftyClose = 0;
         CandleAggregator.CandleBar niftyBar = lastAvailableBar(NIFTY_SYMBOL);
         if (niftyBar != null && niftyBar.close > 0) {
@@ -136,7 +137,7 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
                 double bot = Math.min(cpr.getTc(), cpr.getBc());
                 if (niftyClose > top)      cprBullish = Boolean.TRUE;
                 else if (niftyClose < bot) cprBullish = Boolean.FALSE;
-                // else inside CPR → leave null
+                else                       insideCpr = true; // close is inside the CPR band — distinct from no-data
             }
         }
 
@@ -148,17 +149,20 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
             else if (niftyClose < ema20) emaBullish = Boolean.FALSE;
         }
 
-        String state = deriveState(cprBullish, emaBullish);
+        String state = deriveState(cprBullish, emaBullish, insideCpr);
         return new TrendSnapshot(cprBullish, emaBullish, niftyClose, state);
     }
 
     /**
-     * 2-factor state machine — identical to {@link #getSectorTrendForTicker(String)}
-     * except null-CPR returns NEUTRAL (the sector helper returns INSIDE) so the NIFTY
-     * card / downstream filters keep their pre-existing state vocabulary.
+     * 2-factor state machine. When cprBullish is null:
+     *   • insideCpr == true  → INSIDE  (close is between TC and BC — sideways, downstream
+     *                                    alignment treats this as a hard block, matching
+     *                                    the sector alignment behaviour)
+     *   • insideCpr == false → NEUTRAL (no CPR data / no close yet — fail-open at downstream
+     *                                    filters)
      */
-    private static String deriveState(Boolean cprBullish, Boolean emaBullish) {
-        if (cprBullish == null) return "NEUTRAL";
+    private static String deriveState(Boolean cprBullish, Boolean emaBullish, boolean insideCpr) {
+        if (cprBullish == null) return insideCpr ? "INSIDE" : "NEUTRAL";
         if (Boolean.TRUE.equals(cprBullish)  && !Boolean.FALSE.equals(emaBullish)) return "BULLISH";
         if (Boolean.FALSE.equals(cprBullish) && !Boolean.TRUE.equals(emaBullish))  return "BEARISH";
         if (Boolean.FALSE.equals(cprBullish) && Boolean.TRUE.equals(emaBullish))   return "BULLISH_REVERSAL";
@@ -251,6 +255,7 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         // an immediate read. Sticky cache and getStickyState() (used by filters/exits) are
         // untouched — they keep updating only at 5-min closes to avoid intra-bar oscillation.
         if (dispCpr == null) {
+            boolean dispInsideCpr = false;
             double niftyLtp = marketDataService.getLtp(NIFTY_SYMBOL);
             var cpr = bhavcopyService.getCprLevels("NIFTY50");
             if (niftyLtp > 0 && cpr != null && cpr.getTc() > 0 && cpr.getBc() > 0) {
@@ -258,6 +263,7 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
                 double bot = Math.min(cpr.getTc(), cpr.getBc());
                 if (niftyLtp > top)      dispCpr = Boolean.TRUE;
                 else if (niftyLtp < bot) dispCpr = Boolean.FALSE;
+                else                     dispInsideCpr = true;
                 dispNiftyClose = niftyLtp;
             }
             // Re-derive EMA factor against the live close we just took, when possible.
@@ -266,7 +272,7 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
                 if (dispNiftyClose > ema20Live)      dispEma = Boolean.TRUE;
                 else if (dispNiftyClose < ema20Live) dispEma = Boolean.FALSE;
             }
-            dispState = deriveState(dispCpr, dispEma);
+            dispState = deriveState(dispCpr, dispEma, dispInsideCpr);
         }
 
         trend.setCprBullish(dispCpr);

@@ -88,7 +88,8 @@ public class BhavcopyService {
         // Note: NIFTY MidSmall IT & Telecom is NOT included — HSM doesn't publish it
         // (absent from Fyers Python SDK index_dict). Telecom chip uses NIFTYSERVSECTOR
         // as proxy in SECTOR_TO_INDEX. NIFTYCHEM removed — Fyers serves no historical
-        // data for it (HTTP 422), so it cannot be seeded into ATR/EMA.
+        // data for it (HTTP 422), so it cannot be seeded into ATR/EMA. Nifty Power is
+        // not subscribed — the "Power" sector falls back to NIFTYINFRA via SECTOR_TO_INDEX.
     }};
 
     /**
@@ -97,6 +98,11 @@ public class BhavcopyService {
      * sector's index CPR state for the per-stock sector chip.
      */
     private static final Map<String, String> SECTOR_TO_INDEX = Map.ofEntries(
+        // Canonical sector display names — these match the SectorEntity.name values
+        // seeded into the DB by StockUniverseSeederService. The DB is the source of
+        // truth at runtime; this map is the fallback when the DB hasn't been read yet
+        // or for legacy sector labels that NSE CSV produces ("Banking", "Energy" etc.).
+        Map.entry("Bank",                     "NIFTYBANK"),
         Map.entry("Banking",                  "NIFTYBANK"),
         Map.entry("Financial Services",       "FINNIFTY"),
         Map.entry("IT",                       "NIFTYIT"),
@@ -110,18 +116,24 @@ public class BhavcopyService {
         Map.entry("Media",                    "NIFTYMEDIA"),
         Map.entry("Oil & Gas",                "NIFTYOILANDGAS"),
         Map.entry("Consumer Durables",        "NIFTYCONSRDURBL"),
+        // Power: no dedicated NSE sectoral index — falls back to NIFTYINFRA (NTPC and
+        // POWERGRID are both NIFTY 50 power utilities and Infrastructure constituents).
+        Map.entry("Power",                    "NIFTYINFRA"),
         // Broader thematic indices for industries without a direct sectoral index:
         Map.entry("Services",                 "NIFTYSERVSECTOR"),
         // Telecom: NIFTY MidSmall IT & Telecom is missing from Fyers' HSM index_dict, so
         // we fall back to NIFTY Services Sector (BHARTIARTL — the only NIFTY 50 telecom
         // name — is itself a Services Sector constituent).
         Map.entry("Telecom",                  "NIFTYSERVSECTOR"),
+        Map.entry("Telecommunication",        "NIFTYSERVSECTOR"),
         Map.entry("Consumer Services",        "NIFTYCONSUMPTION"),
         // Capital Goods / Construction / Construction Materials are normalized to "Infra"
         // upstream (see normalizeIndustryName), so the live label is "Infra". The legacy
         // long-form keys stay as defensive aliases in case any cached sector-map.json on
         // disk was written before the rename — they all point to the same NIFTYINFRA index.
         Map.entry("Infra",                    "NIFTYINFRA"),
+        Map.entry("Infrastructure",           "NIFTYINFRA"),
+        Map.entry("Cement",                   "NIFTYINFRA"),
         Map.entry("Construction",             "NIFTYINFRA"),
         Map.entry("Construction Materials",   "NIFTYINFRA"),
         Map.entry("Capital Goods",            "NIFTYINFRA"),
@@ -132,16 +144,43 @@ public class BhavcopyService {
         Map.entry("Chemicals",                "NIFTYCOMMODITIES")
     );
 
-    /** Returns the index ticker (e.g. NIFTYBANK) for a sector display name, or null. */
+    /** Returns the index ticker (e.g. NIFTYBANK) for a sector display name, or null.
+     *  Consults the DB-backed sectors table first; falls back to the in-memory
+     *  SECTOR_TO_INDEX map for legacy/alias names not seeded into the DB. */
     public String getSectorIndexTicker(String sector) {
-        return sector == null ? null : SECTOR_TO_INDEX.get(sector);
+        if (sector == null) return null;
+        if (sectorRepository != null) {
+            try {
+                var row = sectorRepository.findByName(sector);
+                if (row.isPresent() && row.get().getIndexTicker() != null
+                        && !row.get().getIndexTicker().isBlank()) {
+                    return row.get().getIndexTicker();
+                }
+            } catch (Exception ignored) { /* fall through to map */ }
+        }
+        return SECTOR_TO_INDEX.get(sector);
     }
 
     /** Returns all distinct sectoral index ticker keys we track CPR for. Several display
-     *  sector names can map to the same ticker (e.g. "Infra", "Construction", "Construction
-     *  Materials", "Capital Goods" all → NIFTYINFRA), so the values are deduped here. Used
-     *  by MarketDataService for the WS subscription set and the Sector Trends modal. */
+     *  sector names can map to the same ticker (e.g. "Cement" / "Construction" / "Power"
+     *  all → NIFTYINFRA), so values are deduped here. Used by MarketDataService for the
+     *  WS subscription set and the Sector Trends modal.
+     *
+     *  Primary source = the Settings → Stock Universe sectors master table (DB-backed).
+     *  Only falls back to the in-memory SECTOR_TO_INDEX map when the DB hasn't been
+     *  initialized yet (e.g. very early startup before the seeder has run). */
     public java.util.Collection<String> getAllSectoralIndexTickers() {
+        if (sectorRepository != null) {
+            try {
+                java.util.LinkedHashSet<String> fromDb = new java.util.LinkedHashSet<>();
+                for (var s : sectorRepository.findAll()) {
+                    if (s.getIndexTicker() != null && !s.getIndexTicker().isBlank()) {
+                        fromDb.add(s.getIndexTicker());
+                    }
+                }
+                if (!fromDb.isEmpty()) return fromDb;
+            } catch (Exception ignored) { /* fall through to legacy map */ }
+        }
         return new java.util.LinkedHashSet<>(SECTOR_TO_INDEX.values());
     }
 
@@ -214,6 +253,16 @@ public class BhavcopyService {
     @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.context.annotation.Lazy
     private com.rydytrader.autotrader.store.RiskSettingsStore riskSettings;
+
+    // DB-backed stock-sector universe — source of truth at runtime. Lazy-wired to avoid
+    // chicken-and-egg with the seeder (which runs in its own @PostConstruct).
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private com.rydytrader.autotrader.repository.StockRepository stockRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private com.rydytrader.autotrader.repository.SectorRepository sectorRepository;
 
     public BhavcopyService(EventService eventService) {
         this.eventService = eventService;
@@ -433,12 +482,32 @@ public class BhavcopyService {
         return cpr != null && cpr.isInNifty100();
     }
 
-    /** True if the symbol is in the configured scan universe (NIFTY 50 or NIFTY 100). */
+    /** True if the symbol is in the configured scan universe. The DB-backed stocks table
+     *  is consulted first — if the ticker has a row, its `enabled` flag wins. For tickers
+     *  not in the DB (or when the DB hasn't been initialized yet) we fall back to the
+     *  legacy NIFTY 50 / NIFTY 100 membership flags on the CPR cache. */
     public boolean isInScanUniverse(String ticker) {
-        if (riskSettings != null && "NIFTY100".equals(riskSettings.getScanUniverse())) {
-            return isInNifty100(ticker);
+        if (ticker == null) return false;
+        if (stockRepository != null) {
+            try {
+                var row = stockRepository.findByTicker(ticker);
+                if (row.isPresent()) return row.get().isEnabled();
+            } catch (Exception ignored) { /* fall through to legacy NIFTY 100 flag */ }
         }
-        return isInNifty50(ticker);
+        // DB not initialized yet — broad-default to NIFTY 100 (the broader of the two
+        // legacy cap flags) until the seeder runs and rows appear.
+        return isInNifty100(ticker);
+    }
+
+    /** Count of stocks in the DB-backed universe with enabled=true. Returns -1 when the
+     *  DB hasn't been initialized yet so callers can fall back to legacy counts. */
+    public int getEnabledUniverseCount() {
+        if (stockRepository == null) return -1;
+        try {
+            return stockRepository.findByEnabledTrue().size();
+        } catch (Exception e) {
+            return -1;
+        }
     }
 
     /** Total NIFTY 50 stocks marked in the current cache. Returns 0 if the list fetch failed. */
@@ -446,12 +515,12 @@ public class BhavcopyService {
         return (int) cache.values().stream().filter(CprLevels::isInNifty50).count();
     }
 
-    /** Total stocks in the configured scan universe (NIFTY 50 or NIFTY 100). */
+    /** Total stocks in the scan universe = enabled rows in the DB stocks table. Falls back
+     *  to the NIFTY 100 cap-flag count only when the DB hasn't been initialized yet. */
     public int getScanUniverseCount() {
-        if (riskSettings != null && "NIFTY100".equals(riskSettings.getScanUniverse())) {
-            return (int) cache.values().stream().filter(CprLevels::isInNifty100).count();
-        }
-        return getNifty50Count();
+        int dbCount = getEnabledUniverseCount();
+        if (dbCount > 0) return dbCount;
+        return (int) cache.values().stream().filter(CprLevels::isInNifty100).count();
     }
 
     public List<CprLevels> getNarrowCprStocks() {
@@ -570,28 +639,27 @@ public class BhavcopyService {
                     return false;
                 }
 
-                // Universe selection. NIFTY 50 ⊂ NIFTY 100 ⊂ FNO. We always fetch BOTH index
-                // lists so the bhavcopy parse can intersect with whichever the user has
-                // configured (scanUniverse). NIFTY 50 / NIFTY 100 guarantees FNO membership,
-                // so the FO bhavcopy fetch is skipped when either list is available.
+                // Universe selection. The scanner watchlist is now DB-driven (Settings →
+                // Stock Universe), so the bhavcopy fetch always pulls the broader NIFTY 100
+                // set — this guarantees CPR + ATR + EMA data is cached for any stock a user
+                // might enable in the DB. NIFTY 50 ⊂ NIFTY 100 ⊂ FNO, so NIFTY 100 covers all
+                // NIFTY 50 names plus 50 extras.
                 Set<String> nifty50  = fetchOrLoadNifty50List(cookies);
                 Set<String> nifty100 = fetchOrLoadNifty100List(cookies);
                 // Sector map shares the NIFTY 100 CSV (has Symbol + Industry columns).
                 // Fetched separately because the existing fetchIndexSymbols helper only
                 // extracts the Symbol column.
                 fetchOrLoadSectorMap(cookies);
-                String universe = riskSettings != null ? riskSettings.getScanUniverse() : "NIFTY50";
                 Set<String> nfoSymbols;
-                Set<String> chosen = "NIFTY100".equals(universe) ? nifty100 : nifty50;
-                if (!chosen.isEmpty()) {
-                    nfoSymbols = new HashSet<>(chosen);
-                    log.info("[BhavcopyService] {} universe active — skipping FO bhavcopy fetch ({} symbols)",
-                        universe, nfoSymbols.size());
+                if (!nifty100.isEmpty()) {
+                    nfoSymbols = new HashSet<>(nifty100);
+                    log.info("[BhavcopyService] NIFTY 100 universe — skipping FO bhavcopy fetch ({} symbols)",
+                        nfoSymbols.size());
                 } else if (!nifty50.isEmpty()) {
-                    // Requested NIFTY 100 but it failed to load; fall back to NIFTY 50.
+                    // NIFTY 100 list failed; fall back to NIFTY 50.
                     nfoSymbols = new HashSet<>(nifty50);
-                    log.warn("[BhavcopyService] {} list unavailable, falling back to NIFTY 50 ({} symbols)",
-                        universe, nfoSymbols.size());
+                    log.warn("[BhavcopyService] NIFTY 100 list unavailable, falling back to NIFTY 50 ({} symbols)",
+                        nfoSymbols.size());
                 } else {
                     // Fallback: fetch FO bhavcopy for full FNO universe
                     String foUrl = String.format(FO_URL_TEMPLATE, dateStr);
@@ -931,9 +999,20 @@ public class BhavcopyService {
         }
     }
 
-    /** Returns the NSE sector / industry classification for a ticker, or empty if unknown. */
+    /** Returns the NSE sector / industry classification for a ticker, or empty if unknown.
+     *  Consults the DB-backed stocks table first; falls back to the NSE-CSV-derived map
+     *  for tickers not present in the DB (e.g. non-NIFTY-50 symbols). */
     public String getSector(String ticker) {
         if (ticker == null) return "";
+        if (stockRepository != null) {
+            try {
+                var row = stockRepository.findByTicker(ticker);
+                if (row.isPresent() && row.get().getSector() != null) {
+                    String name = row.get().getSector().getName();
+                    if (name != null && !name.isBlank()) return name;
+                }
+            } catch (Exception ignored) { /* fall through to NSE-CSV map */ }
+        }
         String sector = sectorBySymbol.get(ticker);
         return sector != null ? sector : "";
     }

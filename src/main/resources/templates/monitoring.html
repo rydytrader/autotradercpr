@@ -143,12 +143,12 @@ function renderMonitoring(d) {
     // Scanner card
     html += '<div class="mon-card">';
     html += '<div class="mon-card-title">Scanner</div>';
-    var universeName = sc.scanUniverse === 'NIFTY100' ? 'Nifty 100' : 'Nifty 50';
-    var expectedSize = sc.scanUniverse === 'NIFTY100' ? 100 : 50;
-    var actualSize   = sc.universeSize || sc.nifty50Count || 0;
-    html += row('Scan Universe', universeName + ' (' + actualSize + ')',
-                actualSize >= expectedSize ? 'ok' : 'warn');
-    html += row('Watchlist', (sc.watchlistCount || 0) + ' / ' + (actualSize || expectedSize)
+    // Universe size = enabled stocks in the DB Stock Universe (Settings → Stock Universe).
+    // No legacy NIFTY 50 / NIFTY 100 expected-size compare — green when populated, red when empty.
+    var actualSize = sc.universeSize || 0;
+    html += row('Stock Universe', actualSize + ' enabled stocks',
+                actualSize > 0 ? 'ok' : 'err');
+    html += row('Watchlist', (sc.watchlistCount || 0) + ' / ' + actualSize
                 + ' (filtered / universe)', sc.watchlistCount > 0 ? 'ok' : 'err');
     html += '<div style="border-top:1px dashed var(--border);margin:6px 0;"></div>';
     html += row('Active Candles', (sc.activeCandles || 0) + ' (total) / ' + (sc.watchlistCount || 0) + ' (watchlist)', sc.activeCandles >= sc.watchlistCount ? 'ok' : 'warn');

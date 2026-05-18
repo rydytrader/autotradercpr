@@ -337,6 +337,26 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // would silence a legitimate post-start-time fire on the same level.
         if (!isWithinTradingWindow()) return;
 
+        // Race-fix: force-finalize NIFTY's and the stock's sector index's same-bucket bar
+        // BEFORE reading any trend state. Without this, a stock tick arriving before
+        // NIFTY's tick in the same bucket would have the scanner reading stale prior-bucket
+        // NIFTY (and sector-index EMA) state. The forceFinalize is idempotent — if NIFTY's
+        // bar already finalized, it's a no-op.
+        if (candleAggregator != null) {
+            candleAggregator.forceFinalizeBucket(IndexTrendService.NIFTY_SYMBOL, completedCandle.startMinute);
+            if (bhavcopyService != null) {
+                String stockTicker = extractTicker(fyersSymbol);
+                String sector = bhavcopyService.getSector(stockTicker);
+                if (sector != null && !sector.isEmpty()) {
+                    String sectorTicker = bhavcopyService.getSectorIndexTicker(sector);
+                    if (sectorTicker != null) {
+                        candleAggregator.forceFinalizeBucket(
+                            "NSE:" + sectorTicker + "-INDEX", completedCandle.startMinute);
+                    }
+                }
+            }
+        }
+
         // Track scan cycle — reset counter when boundary changes. Atomic compare-and-set so
         // the first scan into a new boundary resets the count cleanly even with parallel
         // workers racing in.
@@ -984,7 +1004,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         boolean bodyCapOk = goodSizeMaxBody <= 0 || atr <= 0 || bodyAbs <= goodSizeMaxBody * atr;
         boolean wickOk    = confirmWickMax  <= 0 || bodyAbs <= 0 || upperWick <= confirmWickMax * bodyAbs;
         if (close > open && close > level && bodyOk && bodyCapOk && wickOk
-                && Math.min(prev.low, low) <= touchLvl) {
+                && low <= touchLvl) {
             lastTriggerRoute.put(fyersSymbol, "GOOD_SIZE_CANDLE_RETEST");
             return setupName;
         }
@@ -1090,7 +1110,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         boolean bodyCapOk = goodSizeMaxBody <= 0 || atr <= 0 || bodyAbs <= goodSizeMaxBody * atr;
         boolean wickOk    = confirmWickMax  <= 0 || bodyAbs <= 0 || lowerWick <= confirmWickMax * bodyAbs;
         if (close < open && close < level && bodyOk && bodyCapOk && wickOk
-                && Math.max(prev.high, high) >= touchLvl) {
+                && high >= touchLvl) {
             lastTriggerRoute.put(fyersSymbol, "GOOD_SIZE_CANDLE_RETEST");
             return setupName;
         }
@@ -1336,7 +1356,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (indexTrendService == null) return NiftyAlignStatus.OK;
         try {
             String state = indexTrendService.getStickyState();
-            if ("NEUTRAL".equals(state)) return NiftyAlignStatus.OK; // no data / inside CPR
+            // NEUTRAL = genuine no-data (pre-market, CPR not loaded) → fail-open.
+            // INSIDE  = NIFTY close inside its daily CPR → treated as a hard BLOCK, mirroring
+            // the sector alignment behaviour (no clear directional bias, don't trade).
+            if ("NEUTRAL".equals(state)) return NiftyAlignStatus.OK;
 
             boolean isCounterTrend = isMagnet(setup) || isMeanReversion(setup);
             boolean aligned;
@@ -1376,9 +1399,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (indexTrendService == null) return NiftyAlignStatus.OK;
         try {
             String state = indexTrendService.getSectorTrendForStock(fyersSymbol);
-            // NEUTRAL = no sector mapping, no CPR data, or no LTP → fail-open.
-            // INSIDE  = LTP inside the sector's daily CPR → no actionable bias → fail-open.
-            if ("NEUTRAL".equals(state) || "INSIDE".equals(state)) return NiftyAlignStatus.OK;
+            // NEUTRAL = no sector mapping, no CPR data, or no LTP → fail-open (genuine no-data).
+            // INSIDE  = sector's LTP inside its daily CPR → treated as a BLOCK (no clear sector
+            // direction, mirrors the "don't trade inside CPR" rule applied to NIFTY).
+            if ("NEUTRAL".equals(state)) return NiftyAlignStatus.OK;
 
             boolean isCounterTrend = isMagnet(setup) || isMeanReversion(setup);
             boolean aligned;
@@ -1440,12 +1464,18 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 candidateLevels.add(wl.tc);    candidateNames.add("weekly TC");
                 candidateLevels.add(wl.pivot); candidateNames.add("weekly Pivot");
                 candidateLevels.add(wl.bc);    candidateNames.add("weekly BC");
+                candidateLevels.add(wl.r2);    candidateNames.add("weekly R2");
+                candidateLevels.add(wl.r3);    candidateNames.add("weekly R3");
+                candidateLevels.add(wl.r4);    candidateNames.add("weekly R4");
             } else {
                 candidateLevels.add(wl.s1);    candidateNames.add("weekly S1");
                 candidateLevels.add(wl.pl);    candidateNames.add("weekly PWL");
                 candidateLevels.add(wl.tc);    candidateNames.add("weekly TC");
                 candidateLevels.add(wl.pivot); candidateNames.add("weekly Pivot");
                 candidateLevels.add(wl.bc);    candidateNames.add("weekly BC");
+                candidateLevels.add(wl.s2);    candidateNames.add("weekly S2");
+                candidateLevels.add(wl.s3);    candidateNames.add("weekly S3");
+                candidateLevels.add(wl.s4);    candidateNames.add("weekly S4");
             }
             // Virgin CPR is intentionally NOT added here — daily-level concept stays at
             // the daily-CPR (5m) gate.
@@ -1621,11 +1651,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double[] levels;
         String[] names;
         if (isBuy) {
-            levels = new double[]{ wl.r1, wl.ph, wl.tc, wl.pivot, wl.bc };
-            names  = new String[]{ "Weekly R1", "Weekly PWH", "Weekly TC", "Weekly Pivot", "Weekly BC" };
+            levels = new double[]{ wl.r1, wl.ph, wl.tc, wl.pivot, wl.bc, wl.r2, wl.r3, wl.r4 };
+            names  = new String[]{ "Weekly R1", "Weekly PWH", "Weekly TC", "Weekly Pivot", "Weekly BC",
+                                    "Weekly R2", "Weekly R3", "Weekly R4" };
         } else {
-            levels = new double[]{ wl.s1, wl.pl, wl.tc, wl.pivot, wl.bc };
-            names  = new String[]{ "Weekly S1", "Weekly PWL", "Weekly TC", "Weekly Pivot", "Weekly BC" };
+            levels = new double[]{ wl.s1, wl.pl, wl.tc, wl.pivot, wl.bc, wl.s2, wl.s3, wl.s4 };
+            names  = new String[]{ "Weekly S1", "Weekly PWL", "Weekly TC", "Weekly Pivot", "Weekly BC",
+                                    "Weekly S2", "Weekly S3", "Weekly S4" };
         }
 
         // Behind = nearest level we've already passed in trade direction.
@@ -1663,7 +1695,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         return new HurdleStatus(aheadName, "HTF", state, headroomPts);
     }
 
-    /** 5-min daily-zone candidate — nearest CPR / R1+PDH / S1+PDL zone in trade direction. */
+    /** 5-min daily-level candidate — nearest CPR / R1+PDH / S1+PDL zone OR R2/R3/R4 / S2/S3/S4
+     *  single line in trade direction. Extended levels treated as zero-width zones (lo == hi). */
     private HurdleStatus compute5mCandidate(boolean isBuy, double niftyLtp, double niftyAtr, Double niftyClose) {
         if (!riskSettings.isEnableNifty5mHurdleFilter()) return null;
         if (bhavcopyService == null) return null;
@@ -1673,9 +1706,19 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double[][] zoneEdges = {
             { Math.min(cpr.getTc(), cpr.getBc()), Math.max(cpr.getTc(), cpr.getBc()) },
             { Math.min(cpr.getR1(), cpr.getPh()), Math.max(cpr.getR1(), cpr.getPh()) },
-            { Math.min(cpr.getS1(), cpr.getPl()), Math.max(cpr.getS1(), cpr.getPl()) }
+            { Math.min(cpr.getS1(), cpr.getPl()), Math.max(cpr.getS1(), cpr.getPl()) },
+            { cpr.getR2(), cpr.getR2() },
+            { cpr.getR3(), cpr.getR3() },
+            { cpr.getR4(), cpr.getR4() },
+            { cpr.getS2(), cpr.getS2() },
+            { cpr.getS3(), cpr.getS3() },
+            { cpr.getS4(), cpr.getS4() }
         };
-        String[] zoneNames = { "Daily CPR", "Daily R1+PDH", "Daily S1+PDL" };
+        String[] zoneNames = {
+            "Daily CPR", "Daily R1+PDH", "Daily S1+PDL",
+            "Daily R2", "Daily R3", "Daily R4",
+            "Daily S2", "Daily S3", "Daily S4"
+        };
 
         // Behind zone — for buy: zone whose LO ≤ LTP (LTP entered from below) with the
         // highest HI; for sell: zone whose HI ≥ LTP with the lowest LO.
@@ -1896,12 +1939,22 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double r1High  = Math.max(cpr.getR1(), cpr.getPh());
         double s1Low   = Math.min(cpr.getS1(), cpr.getPl());
         double s1High  = Math.max(cpr.getS1(), cpr.getPl());
+        // Extended levels (R2/R3/R4, S2/S3/S4) treated as zero-width zones (lo == hi).
+        // The zone iteration below handles single-line "zones" naturally — inside-zone check
+        // is vacuous (close == line only at exact tick), cleared/headroom checks degenerate
+        // to plain "close past the line" / "distance from line" as expected.
         double[][] zoneEdges = {
             { cprLow, cprHigh },
             { r1Low,  r1High  },
-            { s1Low,  s1High  }
+            { s1Low,  s1High  },
+            { cpr.getR2(), cpr.getR2() },
+            { cpr.getR3(), cpr.getR3() },
+            { cpr.getR4(), cpr.getR4() },
+            { cpr.getS2(), cpr.getS2() },
+            { cpr.getS3(), cpr.getS3() },
+            { cpr.getS4(), cpr.getS4() }
         };
-        String[] zoneNames = { "CPR", "R1+PDH", "S1+PDL" };
+        String[] zoneNames = { "CPR", "R1+PDH", "S1+PDL", "R2", "R3", "R4", "S2", "S3", "S4" };
 
         // "Behind" zone — for buys, the highest zone whose lower edge is at/below LTP (we've at
         // least entered it from below); for sells, the lowest zone whose upper edge is at/above
@@ -2119,8 +2172,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double minPrice = riskSettings.getScanMinPrice();
         if (minPrice > 0 && cpr.getClose() < minPrice) return false;
 
-        // NIFTY 50 gate — when on, only NIFTY 50 stocks are eligible.
-        if (riskSettings.isScanOnlyNifty50() && !bhavcopyService.isInNifty50(ticker)) return false;
+        // Universe gate — DB-backed Stock Universe (Settings → Stock Universe) controls eligibility.
+        if (!bhavcopyService.isInScanUniverse(ticker)) return false;
 
         double wpct = cpr.getCprWidthPct();
         boolean isNarrow = wpct >= riskSettings.getNarrowCprMinWidth() && wpct < riskSettings.getNarrowCprMaxWidth();
