@@ -356,10 +356,14 @@ function renderChart(d, isFirst) {
         return;
     }
 
-    // Live updates
+    // Live updates — incrementally update only the last point of each series. Calling
+    // setData() on every tick was resetting zoom/pan because Lightweight Charts auto-
+    // scrolls to follow the latest data when shiftVisibleRangeOnNewBar is on (default).
     var lastBar = bars[bars.length - 1];
     if (lastBar) chartState.series.update(lastBar);
-    if (chartState.ema20Series) chartState.ema20Series.setData(ema20Line);
+    if (chartState.ema20Series && ema20Line.length > 0) {
+        chartState.ema20Series.update(ema20Line[ema20Line.length - 1]);
+    }
     applyChartLines(d);
     applyTradeMarkers(d);
 }
