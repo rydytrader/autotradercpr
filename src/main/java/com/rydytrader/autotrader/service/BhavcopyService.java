@@ -490,12 +490,17 @@ public class BhavcopyService {
         if (ticker == null) return false;
         if (stockRepository != null) {
             try {
-                var row = stockRepository.findByTicker(ticker);
-                if (row.isPresent()) return row.get().isEnabled();
+                // Once the DB stocks table has any rows it is authoritative — a missing
+                // ticker means "not in universe", not "fall back to NIFTY 100". The
+                // legacy cap-flag fallback below only applies when the table is fully
+                // empty (e.g. very first boot before the seeder has run).
+                if (stockRepository.count() > 0) {
+                    return stockRepository.findByTicker(ticker)
+                        .map(com.rydytrader.autotrader.entity.StockEntity::isEnabled)
+                        .orElse(false);
+                }
             } catch (Exception ignored) { /* fall through to legacy NIFTY 100 flag */ }
         }
-        // DB not initialized yet — broad-default to NIFTY 100 (the broader of the two
-        // legacy cap flags) until the seeder runs and rows appear.
         return isInNifty100(ticker);
     }
 

@@ -1100,20 +1100,24 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
      * Returns Fyers symbols (e.g., "NSE:RELIANCE-EQ").
      */
     private List<String> buildWatchlist() {
-        // BhavcopyService now filters to NIFTY 50 at the parse stage (cpr cache only contains
-        // NIFTY 50 stocks when the list is available; full FNO as a fallback). No extra filter
-        // needed here — width / price / volume / cap / NS-NL toggles still apply.
+        // Universe gate: DB-backed Settings → Stock Universe is the source of truth. Stocks
+        // not in the stocks table (or with enabled=false) are excluded even if they pass the
+        // CPR-width and price filters. The bhavcopy fetcher now pulls NIFTY 100 (broader cap
+        // than NIFTY 50) so the CPR cache contains stocks outside the DB — without this gate
+        // those would leak into the watchlist + WS subscription set.
         Set<String> symbols = new LinkedHashSet<>();
         double narrowMax = riskSettings.getNarrowCprMaxWidth();
         double insideMax = riskSettings.getInsideCprMaxWidth();
 
         for (var cpr : bhavcopyService.getAllCprLevels().values()) {
             if (bhavcopyService.isIndex(cpr.getSymbol())) continue; // NIFTY50 etc. are not tradable stocks
+            if (!bhavcopyService.isInScanUniverse(cpr.getSymbol())) continue;
             if (cpr.getCprWidthPct() < narrowMax && passesWatchlistFilters(cpr)) {
                 symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
             }
         }
         for (var cpr : bhavcopyService.getInsideCprStocks()) {
+            if (!bhavcopyService.isInScanUniverse(cpr.getSymbol())) continue;
             if ((insideMax <= 0 || cpr.getCprWidthPct() < insideMax) && passesWatchlistFilters(cpr)) {
                 symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
             }

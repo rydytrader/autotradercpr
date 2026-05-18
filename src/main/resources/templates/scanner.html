@@ -23,8 +23,8 @@
         /* ── SCANNER CARDS GRID ───────────────────── */
         .scanner-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-            gap: 16px;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 14px;
             padding: 0;
         }
         .scan-card {
@@ -100,6 +100,9 @@
         }
         .scan-data-grid.scan-data-grid-3 {
             grid-template-columns: 1fr 1fr 1fr;
+        }
+        .scan-data-grid.scan-data-grid-2 {
+            grid-template-columns: 1fr 1fr;
         }
         .scan-data-item {
             text-align: center;
@@ -482,19 +485,14 @@
             <div class="nifty-cpr-width" id="niftyCprWidth" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY daily CPR width vs scanner thresholds (Narrow / Normal / Wide)">—</div>
             <div class="nifty-cpr" id="niftyCprBias" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY index 5-min close vs daily CPR (above CPR top / below CPR bottom). Refreshes only on NIFTY 5-min candle close.">—</div>
             <div id="niftyEma20" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY 5-min close vs 5-min EMA 20 — green when above, red when below. Refreshes only on NIFTY 5-min candle close.">—</div>
-            <div id="niftyHurdle" style="font-family:var(--font-mono); font-weight:700; font-size:0.72rem; margin-left:14px; padding:2px 8px; border-radius:4px; display:none;" title=""></div>
             <div class="nifty-state" id="niftyState" style="margin-left:auto;">—</div>
+            <div id="niftyHurdle" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px; display:none;" title=""></div>
             <div class="nifty-right" id="niftyMetrics"></div>
         </div>
     </div>
 
     <!-- Filter Bar -->
     <div class="filter-bar">
-        <span class="universe-filter-group">
-            <button class="filter-btn active" onclick="setUniverseFilter('ALL', this)">All</button>
-            <button class="filter-btn" onclick="setUniverseFilter('N50', this)">N 50</button>
-        </span>
-        <div class="filter-sep"></div>
         <span class="cpr-filter-group">
             <button class="filter-btn active" onclick="setFilter('all', this)">All</button>
 
@@ -558,18 +556,8 @@
     var momentumFilter = 'all';  // 'all' | 'BULL' | 'BEAR'
     var symbolFilter = '';
     var sectorFilter = '';
-    var universeFilter = 'ALL'; // 'ALL' (NIFTY 100) or 'N50' (NIFTY 50 only)
 
     // ── Filter controls ─────────────────────────────
-    window.setUniverseFilter = function(type, btn) {
-        universeFilter = type; // 'ALL' or 'N50'
-        document.querySelectorAll('.universe-filter-group .filter-btn').forEach(function(b) {
-            b.classList.remove('active');
-        });
-        btn.classList.add('active');
-        renderCards();
-    };
-
     window.setFilter = function(type, btn) {
         cprFilter = type;
         document.querySelectorAll('.cpr-filter-group .filter-btn').forEach(function(b) {
@@ -659,7 +647,6 @@
         var grid = document.getElementById('scannerGrid');
         var filtered = allData.filter(function(d) {
             if (symbolFilter && d.shortName !== symbolFilter) return false;
-            if (universeFilter === 'N50' && !d.inNifty50) return false;
             if (cprFilter !== 'all') {
                 var types = d.cprTypes || [d.cprType];
                 if (cprFilter === 'CPR') {
@@ -892,13 +879,8 @@
             +     '<span class="scan-data-value">' + (d.dayOpen > 0 ? fmt(d.dayOpen) : '--') + '</span>'
             + '  </span>'
             + '</div>'
-            + '<div class="scan-data-grid scan-data-grid-3">'
+            + '<div class="scan-data-grid scan-data-grid-2">'
             + '  <div class="scan-data-item" style="text-align:left;"><div class="scan-data-label">ATR</div><div class="scan-data-value">' + fmt(d.atr) + '</div></div>'
-            + (function() {
-                var atpTrend = emaTrendObj(d.ltp, d.atp);
-                var color = atpTrend.cls === 'bullish' ? 'var(--accent-green)' : atpTrend.cls === 'bearish' ? 'var(--accent-red)' : 'var(--text-secondary)';
-                return '  <div class="scan-data-item"><div class="scan-data-label">ATP (VWAP)</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + (d.atp > 0 ? fmt(d.atp) + ' ' + atpTrend.arrow : '--') + '</div></div>';
-            })()
             + (function() {
                 var color = em5.cls === 'bullish' ? 'var(--accent-green)' : em5.cls === 'bearish' ? 'var(--accent-red)' : 'var(--text-secondary)';
                 return '  <div class="scan-data-item" style="text-align:right;"><div class="scan-data-label">EMA 20</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + (d.ema20 > 0 ? fmt(d.ema20) + ' ' + em5.arrow : '--') + '</div></div>';
@@ -911,17 +893,6 @@
             + '    <span class="toggle-arrow" style="margin-left:auto;">&#9654;</span>'
             + '  </div>'
             + '  <div class="scan-levels-body">' + levelsHtml + '</div>'
-            + '</div>'
-            + '<div style="border-top:1px solid var(--border);"></div>'
-            + '<div class="scan-levels' + (isExpanded(d.symbol, 'signal') ? ' expanded' : '') + '">'
-            + '  <div class="scan-levels-title" onclick="toggleLevelSection(this, \'' + d.symbol + '\', \'signal\')">'
-            + (d.lastSignal
-                ? 'Latest Signal &#9654; <span class="sig-setup" style="margin-left:4px;">' + prettySetup(d.lastSignal.setup) + '</span>'
-                  + '<span class="sig-time" style="margin-left:4px;">@ ' + d.lastSignal.time + '</span>'
-                  + '<span class="scan-signal-status ' + d.lastSignal.status.toLowerCase() + '" style="margin-left:auto;cursor:help;"' + (d.lastSignal.detail ? ' title="' + d.lastSignal.detail.replace(/"/g, '&quot;') + '"' : '') + '>' + d.lastSignal.status + '</span>'
-                : 'Latest Signal &#9654; <span style="color:var(--text-muted); margin-left:4px;">No breakout yet</span>')
-            + '</div>'
-            + '  <div class="scan-levels-body"><div class="scan-signal-row">' + sigHtml + '</div></div>'
             + '</div>'
             + '</div>';
     }
@@ -1197,20 +1168,18 @@
                 if (!h || !h.level) {
                     hurdleEl.style.display = 'none';
                 } else {
-                    var bg, color, border, tipState;
+                    var color, tipState;
                     if (h.state === 'WAITING') {
-                        bg = 'rgba(248,113,113,0.18)'; color = 'var(--accent-red)'; border = 'rgba(248,113,113,0.5)';
+                        color = 'var(--accent-red)';
                         tipState = 'active — waiting for close past level (entries blocked)';
                     } else if (h.state === 'AHEAD_BLOCKED') {
-                        bg = 'rgba(251,191,36,0.18)'; color = 'var(--accent-yellow)'; border = 'rgba(251,191,36,0.5)';
+                        color = 'var(--accent-yellow)';
                         tipState = 'upcoming, inside headroom threshold (entries blocked)';
                     } else { // AHEAD_CLEAR
-                        bg = 'rgba(255,255,255,0.08)'; color = 'var(--text-primary)'; border = 'rgba(255,255,255,0.35)';
+                        color = 'var(--text-primary)';
                         tipState = 'upcoming, beyond headroom threshold (not blocking — peek-ahead)';
                     }
-                    hurdleEl.style.background = bg;
                     hurdleEl.style.color = color;
-                    hurdleEl.style.border = '1px solid ' + border;
                     hurdleEl.title = (h.category || '') + ' hurdle — ' + tipState;
                     hurdleEl.textContent = 'Hurdle: ' + h.level;
                     hurdleEl.style.display = 'inline-block';
