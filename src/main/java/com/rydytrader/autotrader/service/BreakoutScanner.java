@@ -909,9 +909,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                                     double open, double high, double low, double close,
                                     double atr, Set<String> broken, String armed, String fyersSymbol) {
         if (broken.contains(setupName)) return null;
-        double pinReject = riskSettings.getPinBarRejectionWickBodyMult();
-        double pinOpp    = riskSettings.getPinBarOppositeWickBodyMult();
-        double pinSmallBody  = riskSettings.getPinBarSmallBodyMaxRangeRatio();
         double pinDomWickRng = riskSettings.getPinBarDominantWickMinRangeRatio();
         double pinOppWickRng = riskSettings.getPinBarOppositeWickMaxRangeRatio();
         // Retest-only model — multi-bar pattern retest at the single armed buy level.
@@ -958,7 +955,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // Hammer (1 bar) — specific pin-bar reversal shape. No body-size band (small body
         // is the signature — pin-bar wick math already constrains it).
         if (CandlePatternDetector.isBullishHammer(open, high, low, close,
-                    pinReject, pinOpp, pinSmallBody, pinDomWickRng, pinOppWickRng)
+                    pinDomWickRng, pinOppWickRng)
                 && low <= touchLvl) {
             lastTriggerRoute.put(fyersSymbol, "HAMMER_RETEST");
             return setupName;
@@ -1024,9 +1021,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                                      double open, double high, double low, double close,
                                      double atr, Set<String> broken, String armed, String fyersSymbol) {
         if (broken.contains(setupName)) return null;
-        double pinReject = riskSettings.getPinBarRejectionWickBodyMult();
-        double pinOpp    = riskSettings.getPinBarOppositeWickBodyMult();
-        double pinSmallBody  = riskSettings.getPinBarSmallBodyMaxRangeRatio();
         double pinDomWickRng = riskSettings.getPinBarDominantWickMinRangeRatio();
         double pinOppWickRng = riskSettings.getPinBarOppositeWickMaxRangeRatio();
         // Retest-only model — multi-bar pattern retest at the single armed sell level.
@@ -1066,7 +1060,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // GOOD_SIZE_CANDLE_RETEST below.)
         // Shooting star (1 bar) — pin-bar reversal; small-body by definition.
         if (CandlePatternDetector.isShootingStar(open, high, low, close,
-                    pinReject, pinOpp, pinSmallBody, pinDomWickRng, pinOppWickRng)
+                    pinDomWickRng, pinOppWickRng)
                 && high >= touchLvl) {
             lastTriggerRoute.put(fyersSymbol, "HAMMER_RETEST");
             return setupName;

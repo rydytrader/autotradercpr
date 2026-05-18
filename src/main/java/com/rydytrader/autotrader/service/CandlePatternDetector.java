@@ -40,49 +40,32 @@ final class CandlePatternDetector {
 
     // ── Pin bar (hammer / shooting star) ─────────────────────────────────────
 
-    // Pin bar test — two-path so very small bodies (where the body-relative multiplicative
-    // test loses meaning) get evaluated geometrically against the bar's total range instead.
-    //   • Normal-body path: original wick:body ratio test.
-    //   • Small-body fallback: when body ≤ smallBodyMaxRangeRatio × range, require the
-    //     rejection wick to dominate the range and the opposite wick to stay capped.
-    //   • smallBodyMaxRangeRatio = 0 disables the fallback (and body=0 still returns false).
+    // Pin bar test — single range-relative path. Body size is implicitly capped by the
+    // wick ratios: when rejection ≥ 0.60 × range and opposite ≤ 0.30 × range, body can
+    // be at most 0.40 × range (and is typically much smaller). The body-relative ratio
+    // test was retired because it loses meaning as body → 0 (any wick passes the
+    // rejection check, no wick passes the opposite cap).
 
     public static boolean isBullishHammer(double open, double high, double low, double close,
-                                          double rejectionWickBodyMult, double oppositeWickBodyMult,
-                                          double smallBodyMaxRangeRatio,
                                           double dominantWickMinRangeRatio,
                                           double oppositeWickMaxRangeRatio) {
         double range = high - low;
         if (range <= 0) return false;
-        double body = Math.abs(close - open);
         double upperWick = high - Math.max(open, close);
         double lowerWick = Math.min(open, close) - low;
-        if (smallBodyMaxRangeRatio > 0 && body <= smallBodyMaxRangeRatio * range) {
-            return lowerWick >= dominantWickMinRangeRatio * range
-                && upperWick <= oppositeWickMaxRangeRatio * range;
-        }
-        if (body <= 0) return false;
-        return lowerWick >= rejectionWickBodyMult * body
-            && upperWick <= oppositeWickBodyMult * body;
+        return lowerWick >= dominantWickMinRangeRatio * range
+            && upperWick <= oppositeWickMaxRangeRatio * range;
     }
 
     public static boolean isShootingStar(double open, double high, double low, double close,
-                                         double rejectionWickBodyMult, double oppositeWickBodyMult,
-                                         double smallBodyMaxRangeRatio,
                                          double dominantWickMinRangeRatio,
                                          double oppositeWickMaxRangeRatio) {
         double range = high - low;
         if (range <= 0) return false;
-        double body = Math.abs(close - open);
         double upperWick = high - Math.max(open, close);
         double lowerWick = Math.min(open, close) - low;
-        if (smallBodyMaxRangeRatio > 0 && body <= smallBodyMaxRangeRatio * range) {
-            return upperWick >= dominantWickMinRangeRatio * range
-                && lowerWick <= oppositeWickMaxRangeRatio * range;
-        }
-        if (body <= 0) return false;
-        return upperWick >= rejectionWickBodyMult * body
-            && lowerWick <= oppositeWickBodyMult * body;
+        return upperWick >= dominantWickMinRangeRatio * range
+            && lowerWick <= oppositeWickMaxRangeRatio * range;
     }
 
     // ── Outside Reversal (Engulfing) ────────────────────────────────────────

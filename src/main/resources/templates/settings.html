@@ -566,13 +566,13 @@
                 <label class="form-label">Pin Bar (hammer / shooting star)</label>
                 <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Rejection wick ≥</span>
-                    <input type="number" id="pinBarRejectionWickBodyMult" class="form-control" step="0.1" min="1.0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× body</span>
+                    <input type="number" id="pinBarDominantWickMinRangeRatio" class="form-control" step="0.05" min="0.5" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× range</span>
                     <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono); margin-left:14px;">Opposite wick ≤</span>
-                    <input type="number" id="pinBarOppositeWickBodyMult" class="form-control" step="0.05" min="0.0" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× body</span>
+                    <input type="number" id="pinBarOppositeWickMaxRangeRatio" class="form-control" step="0.05" min="0.0" max="0.5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">× range</span>
                 </div>
-                <div class="form-hint">Hammer (buy) needs a long lower wick + small upper wick. Shooting star (sell) is the mirror. Defaults: 2.0 × body rejection wick, 0.30 × body opposite wick.</div>
+                <div class="form-hint">Single range-relative test. Rejection wick dominates the bar's total range, opposite wick stays capped. Body size is implicitly capped at (1 − rejection − opposite) × range. Defaults: 0.50 (50% rejection), 0.30 (30% opposite cap) → body ≤ 20% of range when both wicks at limits, up to 50% otherwise. Tighter: 0.60 / 0.30 for classical pin bars, or 0.67 / 0.33 for strict Pivot Boss.</div>
             </div>
 
             <!-- Good-Size Candle group (catch-all) -->
@@ -1333,8 +1333,8 @@
             document.getElementById('goodSizeCandleBodyAtrMult').value         = d.goodSizeCandleBodyAtrMult         != null ? d.goodSizeCandleBodyAtrMult         : 0.6;
             document.getElementById('goodSizeCandleMaxBodyAtrMult').value      = d.goodSizeCandleMaxBodyAtrMult      != null ? d.goodSizeCandleMaxBodyAtrMult      : 2.0;
             document.getElementById('confirmationMaxOppositeWickRatio').value = d.confirmationMaxOppositeWickRatio != null ? d.confirmationMaxOppositeWickRatio : 0.5;
-            document.getElementById('pinBarRejectionWickBodyMult').value  = d.pinBarRejectionWickBodyMult  != null ? d.pinBarRejectionWickBodyMult  : 2.0;
-            document.getElementById('pinBarOppositeWickBodyMult').value   = d.pinBarOppositeWickBodyMult   != null ? d.pinBarOppositeWickBodyMult   : 0.30;
+            document.getElementById('pinBarDominantWickMinRangeRatio').value = d.pinBarDominantWickMinRangeRatio != null ? d.pinBarDominantWickMinRangeRatio : 0.50;
+            document.getElementById('pinBarOppositeWickMaxRangeRatio').value = d.pinBarOppositeWickMaxRangeRatio != null ? d.pinBarOppositeWickMaxRangeRatio : 0.30;
             document.getElementById('outsideReversalMinBodyAtrMult').value = d.outsideReversalMinBodyAtrMult != null ? d.outsideReversalMinBodyAtrMult : 0.5;
             document.getElementById('outsideReversalMaxBodyAtrMult').value = d.outsideReversalMaxBodyAtrMult != null ? d.outsideReversalMaxBodyAtrMult : 2.0;
             document.getElementById('outsideReversalPenetrationPct').value = d.outsideReversalPenetrationPct != null ? d.outsideReversalPenetrationPct : 1.0;
@@ -1491,8 +1491,8 @@
                 goodSizeCandleBodyAtrMult:    (function() { var v = parseFloat(document.getElementById('goodSizeCandleBodyAtrMult').value); return isNaN(v) ? 0.6 : v; })(),
                 goodSizeCandleMaxBodyAtrMult: (function() { var v = parseFloat(document.getElementById('goodSizeCandleMaxBodyAtrMult').value); return isNaN(v) ? 2.0 : v; })(),
                 confirmationMaxOppositeWickRatio: (function() { var v = parseFloat(document.getElementById('confirmationMaxOppositeWickRatio').value); return isNaN(v) ? 0.5 : v; })(),
-                pinBarRejectionWickBodyMult:  parseFloat(document.getElementById('pinBarRejectionWickBodyMult').value)  || 2.0,
-                pinBarOppositeWickBodyMult:   parseFloat(document.getElementById('pinBarOppositeWickBodyMult').value)   || 0.30,
+                pinBarDominantWickMinRangeRatio: parseFloat(document.getElementById('pinBarDominantWickMinRangeRatio').value) || 0.50,
+                pinBarOppositeWickMaxRangeRatio: parseFloat(document.getElementById('pinBarOppositeWickMaxRangeRatio').value) || 0.30,
                 outsideReversalMinBodyAtrMult: (function() { var v = parseFloat(document.getElementById('outsideReversalMinBodyAtrMult').value); return isNaN(v) ? 0.5 : v; })(),
                 outsideReversalMaxBodyAtrMult: (function() { var v = parseFloat(document.getElementById('outsideReversalMaxBodyAtrMult').value); return isNaN(v) ? 2.0 : v; })(),
                 outsideReversalPenetrationPct: (function() { var v = parseFloat(document.getElementById('outsideReversalPenetrationPct').value); return isNaN(v) ? 1.0 : v; })(),

@@ -83,9 +83,6 @@ public class SettingsController {
         result.put("goodSizeCandleBodyAtrMult",          riskSettings.getGoodSizeCandleBodyAtrMult());
         result.put("goodSizeCandleMaxBodyAtrMult",       riskSettings.getGoodSizeCandleMaxBodyAtrMult());
         result.put("confirmationMaxOppositeWickRatio",   riskSettings.getConfirmationMaxOppositeWickRatio());
-        result.put("pinBarRejectionWickBodyMult",  riskSettings.getPinBarRejectionWickBodyMult());
-        result.put("pinBarOppositeWickBodyMult",   riskSettings.getPinBarOppositeWickBodyMult());
-        result.put("pinBarSmallBodyMaxRangeRatio",    riskSettings.getPinBarSmallBodyMaxRangeRatio());
         result.put("pinBarDominantWickMinRangeRatio", riskSettings.getPinBarDominantWickMinRangeRatio());
         result.put("pinBarOppositeWickMaxRangeRatio", riskSettings.getPinBarOppositeWickMaxRangeRatio());
         result.put("outsideReversalMinBodyAtrMult", riskSettings.getOutsideReversalMinBodyAtrMult());
@@ -193,9 +190,6 @@ public class SettingsController {
             if (body.containsKey("goodSizeCandleBodyAtrMult"))   riskSettings.setGoodSizeCandleBodyAtrMult(Double.parseDouble(body.get("goodSizeCandleBodyAtrMult").toString()));
             if (body.containsKey("goodSizeCandleMaxBodyAtrMult")) riskSettings.setGoodSizeCandleMaxBodyAtrMult(Double.parseDouble(body.get("goodSizeCandleMaxBodyAtrMult").toString()));
             if (body.containsKey("confirmationMaxOppositeWickRatio")) riskSettings.setConfirmationMaxOppositeWickRatio(Double.parseDouble(body.get("confirmationMaxOppositeWickRatio").toString()));
-            if (body.containsKey("pinBarRejectionWickBodyMult")) riskSettings.setPinBarRejectionWickBodyMult(Double.parseDouble(body.get("pinBarRejectionWickBodyMult").toString()));
-            if (body.containsKey("pinBarOppositeWickBodyMult"))  riskSettings.setPinBarOppositeWickBodyMult(Double.parseDouble(body.get("pinBarOppositeWickBodyMult").toString()));
-            if (body.containsKey("pinBarSmallBodyMaxRangeRatio"))    riskSettings.setPinBarSmallBodyMaxRangeRatio(Double.parseDouble(body.get("pinBarSmallBodyMaxRangeRatio").toString()));
             if (body.containsKey("pinBarDominantWickMinRangeRatio")) riskSettings.setPinBarDominantWickMinRangeRatio(Double.parseDouble(body.get("pinBarDominantWickMinRangeRatio").toString()));
             if (body.containsKey("pinBarOppositeWickMaxRangeRatio")) riskSettings.setPinBarOppositeWickMaxRangeRatio(Double.parseDouble(body.get("pinBarOppositeWickMaxRangeRatio").toString()));
             if (body.containsKey("outsideReversalMinBodyAtrMult")) riskSettings.setOutsideReversalMinBodyAtrMult(Double.parseDouble(body.get("outsideReversalMinBodyAtrMult").toString()));

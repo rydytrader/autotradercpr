@@ -56,16 +56,13 @@ public class RiskSettingsStore {
         // patterns this caps the upper wick; for bearish, the lower wick. 0.5 = wick can be
         // at most half the body. 0 disables the check.
         volatile double confirmationMaxOppositeWickRatio    = 0.5;
-        // Pin bar (hammer / shooting star): rejection wick ≥ N × body, opposite wick ≤ N × body.
-        volatile double pinBarRejectionWickBodyMult = 2.0;
-        volatile double pinBarOppositeWickBodyMult  = 0.30;
-        // Pin bar small-body fallback — when body ≤ smallBodyMaxRangeRatio × range, the
-        // body-relative test loses meaning (a tiny body makes the wick multiplicative cap
-        // collapse). Fall back to a range-relative geometric test: rejection wick must dominate
-        // the bar's total range, and the opposite wick must stay capped relative to range.
-        // Set smallBodyMaxRangeRatio = 0 to disable the fallback entirely.
-        volatile double pinBarSmallBodyMaxRangeRatio    = 0.25;
-        volatile double pinBarDominantWickMinRangeRatio = 0.60;
+        // Pin bar (hammer / shooting star) — single range-relative test. Rejection wick must
+        // be ≥ dominantWickMinRangeRatio × range, opposite wick ≤ oppositeWickMaxRangeRatio
+        // × range. Body size is implicitly capped at (1 − dom − opp) × range.
+        // 0.50 admits hammer-like bars with a meaningful body (up to 50% of range); raise
+        // to 0.60 for the classical "wick dominates" pin bar definition or 0.67 for strict
+        // Pivot Boss (upper/lower third).
+        volatile double pinBarDominantWickMinRangeRatio = 0.50;
         volatile double pinBarOppositeWickMaxRangeRatio = 0.30;
         // Outside Reversal (Engulfing) — classical 2-bar bullish/bearish engulfing.
         // Strict color flip on both bars + shared body band + bar 2 closes past bar 1's
@@ -332,9 +329,6 @@ public class RiskSettingsStore {
     public double getGoodSizeCandleBodyAtrMult()          { return cfg().goodSizeCandleBodyAtrMult; }
     public double getGoodSizeCandleMaxBodyAtrMult()       { return cfg().goodSizeCandleMaxBodyAtrMult; }
     public double getConfirmationMaxOppositeWickRatio()   { return cfg().confirmationMaxOppositeWickRatio; }
-    public double getPinBarRejectionWickBodyMult() { return cfg().pinBarRejectionWickBodyMult; }
-    public double getPinBarOppositeWickBodyMult()  { return cfg().pinBarOppositeWickBodyMult; }
-    public double getPinBarSmallBodyMaxRangeRatio()    { return cfg().pinBarSmallBodyMaxRangeRatio; }
     public double getPinBarDominantWickMinRangeRatio() { return cfg().pinBarDominantWickMinRangeRatio; }
     public double getPinBarOppositeWickMaxRangeRatio() { return cfg().pinBarOppositeWickMaxRangeRatio; }
     public double getOutsideReversalMinBodyAtrMult() { return cfg().outsideReversalMinBodyAtrMult; }
@@ -451,9 +445,6 @@ public class RiskSettingsStore {
     public void setGoodSizeCandleBodyAtrMult(double v)          { cfg().goodSizeCandleBodyAtrMult = v; }
     public void setGoodSizeCandleMaxBodyAtrMult(double v)       { cfg().goodSizeCandleMaxBodyAtrMult = v; }
     public void setConfirmationMaxOppositeWickRatio(double v)   { cfg().confirmationMaxOppositeWickRatio = v; }
-    public void setPinBarRejectionWickBodyMult(double v) { cfg().pinBarRejectionWickBodyMult = v; }
-    public void setPinBarOppositeWickBodyMult(double v)  { cfg().pinBarOppositeWickBodyMult = v; }
-    public void setPinBarSmallBodyMaxRangeRatio(double v)    { cfg().pinBarSmallBodyMaxRangeRatio = Math.max(0, v); }
     public void setPinBarDominantWickMinRangeRatio(double v) { cfg().pinBarDominantWickMinRangeRatio = v; }
     public void setPinBarOppositeWickMaxRangeRatio(double v) { cfg().pinBarOppositeWickMaxRangeRatio = v; }
     public void setOutsideReversalMinBodyAtrMult(double v) { cfg().outsideReversalMinBodyAtrMult = v; }
@@ -592,9 +583,6 @@ public class RiskSettingsStore {
             upsert("goodSizeCandleBodyAtrMult",    String.valueOf(c.goodSizeCandleBodyAtrMult));
             upsert("goodSizeCandleMaxBodyAtrMult", String.valueOf(c.goodSizeCandleMaxBodyAtrMult));
             upsert("confirmationMaxOppositeWickRatio", String.valueOf(c.confirmationMaxOppositeWickRatio));
-            upsert("pinBarRejectionWickBodyMult", String.valueOf(c.pinBarRejectionWickBodyMult));
-            upsert("pinBarOppositeWickBodyMult", String.valueOf(c.pinBarOppositeWickBodyMult));
-            upsert("pinBarSmallBodyMaxRangeRatio", String.valueOf(c.pinBarSmallBodyMaxRangeRatio));
             upsert("pinBarDominantWickMinRangeRatio", String.valueOf(c.pinBarDominantWickMinRangeRatio));
             upsert("pinBarOppositeWickMaxRangeRatio", String.valueOf(c.pinBarOppositeWickMaxRangeRatio));
             upsert("outsideReversalMinBodyAtrMult", String.valueOf(c.outsideReversalMinBodyAtrMult));
@@ -757,9 +745,10 @@ public class RiskSettingsStore {
                     // key so existing risk-settings.json files keep loading without losing the value.
                     case "confirmationMaxOppositeWickRatio",
                          "goodSizeCandleMaxOppositeWickRatio" -> c.confirmationMaxOppositeWickRatio = Double.parseDouble(v);
-                    case "pinBarRejectionWickBodyMult" -> c.pinBarRejectionWickBodyMult = Double.parseDouble(v);
-                    case "pinBarOppositeWickBodyMult"  -> c.pinBarOppositeWickBodyMult = Double.parseDouble(v);
-                    case "pinBarSmallBodyMaxRangeRatio"    -> c.pinBarSmallBodyMaxRangeRatio = Math.max(0, Double.parseDouble(v));
+                    // Legacy pin bar settings — retired in favor of the single range-relative path.
+                    case "pinBarRejectionWickBodyMult",
+                         "pinBarOppositeWickBodyMult",
+                         "pinBarSmallBodyMaxRangeRatio" -> { /* ignored — field removed */ }
                     case "pinBarDominantWickMinRangeRatio" -> c.pinBarDominantWickMinRangeRatio = Double.parseDouble(v);
                     case "pinBarOppositeWickMaxRangeRatio" -> c.pinBarOppositeWickMaxRangeRatio = Double.parseDouble(v);
                     case "engulfingMinBodyMultiple"    -> { /* legacy — redundant with bar 2 penetration check */ }
