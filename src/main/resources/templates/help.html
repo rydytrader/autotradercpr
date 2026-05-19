@@ -741,7 +741,6 @@
                 <li><b>Volume filter</b> (<code>enableVolumeFilter</code>) — candle volume ≥ <code>volumeMultiple</code> × N-candle average.</li>
                 <li><b>NIFTY index alignment</b> (<code>enableIndexAlignment</code>) — buys allowed when NIFTY = BULLISH or BULLISH_REVERSAL; sells allowed when NIFTY = BEARISH or BEARISH_REVERSAL; SIDEWAYS / NEUTRAL / opposite skip.</li>
                 <li><b>NIFTY HTF Hurdle</b> (<code>enableNiftyHtfHurdleFilter</code>, opt-in) — same rule as the per-stock HTF Hurdle, applied to NIFTY's own data. NIFTY's prior 1h close must have decisively cleared NIFTY's nearest weekly hurdle in trade direction (R1/PWH/weekly TC/Pivot/BC for buys; S1/PWL/... for sells). While NIFTY's current 1h candle is in progress and the prior close is on the wrong side, all stock signals skip.</li>
-                <li><b>HTF Candle Direction</b> (<code>enableHtfCandleFilter</code>, opt-in) — per-stock candle-direction confluence on the <b>in-progress</b> 60-min HTF bar. Buy requires 1h close &gt; 1h open (green); sell requires 1h close &lt; 1h open (red). Doji (open == close) passes both. Fail-open if no 1h bar formed yet for the symbol.</li>
             </ol>
             <p style="margin-top:12px;"><b>SignalProcessor-side (after probability assignment)</b></p>
             <ol>
@@ -812,7 +811,6 @@
                 <tr><td><code>LOW_VOLUME</code></td><td>Volume filter: candle volume below the configured multiple of average.</td></tr>
                 <tr><td><code>NIFTY_OPPOSED</code></td><td>NIFTY trend not aligned: buys need NIFTY = BULLISH or BULLISH_REVERSAL; sells need BEARISH or BEARISH_REVERSAL; everything else (SIDEWAYS / NEUTRAL / opposite) hits this bucket.</td></tr>
                 <tr><td><code>NIFTY_HURDLE</code></td><td>NIFTY HTF Hurdle filter on. NIFTY's prior 1h close hasn't cleared NIFTY's nearest weekly hurdle in trade direction. Detail names the hurdle (R1/PWH/weekly TC/Pivot/BC for buys; mirror for sells), NIFTY's current price, prior 1h close, and the level. Wait for the next 1h close to commit.</td></tr>
-                <tr><td><code>HTF_CANDLE_OPPOSED</code></td><td>HTF Candle Direction filter on. The currently-forming 60-min bar is moving against the trade: buy with 1h red (close &lt; open) or sell with 1h green (close &gt; open). Detail carries the in-progress 1h open and close. Doji 1h passes; missing 1h bar fails-open.</td></tr>
                 <tr><td><code>MEAN_REVERSION_DISABLED</code></td><td>Master toggle <code>enableMeanReversionTrades</code> is off. Setup was one of the 10 counter-trend types: <code>BUY_ABOVE_S1_PDL/S2/S3/S4/DH</code> or <code>SELL_BELOW_R1_PDH/R2/R3/R4/DL</code>. Direction-aligned weekly-level breakouts continue to fire normally.</td></tr>
             </table>
 
@@ -1119,7 +1117,6 @@
                 <tr><td>enableHtfHurdleFilter</td><td>true</td><td>Reject when prior 1h close hasn't cleared nearest weekly R1/PWH/TC/Pivot/BC (buy) or S1/PWL/TC/Pivot/BC (sell)</td></tr>
                 <tr><td>skipR3S3IvOvDays / skipR3S3EvDays</td><td>true / true</td><td>Skip R3/S3 + DH above R3 / DL below S3, split by day type</td></tr>
                 <tr><td>skipR4S4IvOvDays / skipR4S4EvDays</td><td>true / true</td><td>Skip R4/S4 + DH above R4 / DL below S4, split by day type</td></tr>
-                <tr><td>skipHtfR3S3NormalDays / skipHtfR4S4NormalDays</td><td>true / true</td><td>Skip when entry close is past weekly R3/R4 (buys) or S3/S4 (sells)</td></tr>
                 <tr><td>enableVolumeFilter / volumeMultiple / volumeLookback</td><td>false / 2.0 / 20</td><td>Reject if candle volume &lt; multiple × N-candle average</td></tr>
                 <tr><td>enableHpt / enableMpt</td><td>true / true</td><td>Allow HPT / MPT trades. LPT tier removed; historical rows still display.</td></tr>
             </table>

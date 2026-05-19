@@ -472,27 +472,59 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             boolean isTracked = !"NONE".equals(currentPos);
 
             if (netQty != 0 && !isTracked) {
-                // Skip if recently handled by entry fill (bot-placed order)
-                Long entryHandledAt = recentlyHandled.get(symbol);
-                if (entryHandledAt != null && (System.currentTimeMillis() - entryHandledAt) < 30_000) {
-                    log.info("[OrderEventSvc] Position event for {} skipped — recently handled by entry fill", symbol);
-                    return;
+                // Defer the manual-position decision so a bot-placed order whose REST response
+                // hasn't returned yet (Fyers WS push beat the POST /orders response) has time to
+                // register via trackEntryOrder. Without this, the position event fires
+                // handleNewManualPosition and saves blank setup + 0/0 SL/target, which gets
+                // (mostly) corrected when the entry fill is later replayed — but leaves
+                // observable artifacts in the UI between the two saves.
+                if (scheduler != null && !scheduler.isShutdown()) {
+                    scheduler.schedule(() -> evaluateUntrackedPosition(symbol, netQty, netAvg),
+                        1500, TimeUnit.MILLISECONDS);
+                } else {
+                    evaluateUntrackedPosition(symbol, netQty, netAvg);
                 }
-                // Skip if entry order is currently being tracked (fill event hasn't arrived yet)
-                boolean hasTrackedEntry = trackedEntries.values().stream()
-                    .anyMatch(ctx -> symbol.equals(ctx.symbol) && !ctx.handled);
-                if (hasTrackedEntry) {
-                    log.info("[OrderEventSvc] Position event for {} skipped — entry order still tracked", symbol);
-                    return;
-                }
-                // ── New position detected (manual trade on Fyers) ──
-                handleNewManualPosition(symbol, netQty, netAvg);
             } else if (netQty == 0 && isTracked) {
                 // ── Position closed externally ──
                 handleExternalClose(symbol, currentPos);
             }
         } catch (Exception e) {
             log.error("[OrderEventSvc] Error handling position event", e);
+        }
+    }
+
+    /**
+     * Re-evaluate an untracked-position event after a short defer. By the time this fires, the
+     * REST POST /orders response should have returned and trackEntryOrder been called — so a
+     * bot-placed entry will now show up in trackedEntries (or recentlyHandled, if the buffered
+     * fill replay already ran). Only treat as manual when neither signal is present.
+     */
+    private void evaluateUntrackedPosition(String symbol, int netQty, double netAvg) {
+        try {
+            // Position may already have been closed in the interim (rare, but possible)
+            if ("NONE".equals(PositionManager.getPosition(symbol)) && netQty == 0) return;
+
+            // If the entry was tracked while we waited, the entry-fill path owns this position
+            // — drop the manual handling entirely.
+            Long entryHandledAt = recentlyHandled.get(symbol);
+            if (entryHandledAt != null && (System.currentTimeMillis() - entryHandledAt) < 30_000) {
+                log.info("[OrderEventSvc] Deferred position event for {} skipped — entry fill handled during defer", symbol);
+                return;
+            }
+            boolean hasTrackedEntry = trackedEntries.values().stream()
+                .anyMatch(ctx -> symbol.equals(ctx.symbol) && !ctx.handled);
+            if (hasTrackedEntry) {
+                log.info("[OrderEventSvc] Deferred position event for {} skipped — entry order tracked during defer", symbol);
+                return;
+            }
+            // If PositionManager flipped to tracked (bot path took over), drop.
+            if (!"NONE".equals(PositionManager.getPosition(symbol))) {
+                log.info("[OrderEventSvc] Deferred position event for {} skipped — position now bot-tracked", symbol);
+                return;
+            }
+            handleNewManualPosition(symbol, netQty, netAvg);
+        } catch (Exception e) {
+            log.error("[OrderEventSvc] Error in deferred position evaluation for {}", symbol, e);
         }
     }
 

@@ -121,6 +121,15 @@ public class RiskSettingsStore {
         // check entirely — the chosen daily level becomes the final target as-is.
         volatile boolean enableWeeklyLevelTargetShift = true;
         volatile boolean enableHtfHurdleFilter = true; // HPT→LPT when 5-min close lands inside R1/PWH (buy) or S1/PWL (sell) zone
+        // Headroom check for the per-stock HTF Hurdle filter — mirror of niftyHurdleMinHeadroomAtr
+        // but applied to the per-stock weekly candidate set. When > 0, trades are also rejected
+        // when the nearest hurdle in the OPPOSITE direction (above stock LTP for buys / below
+        // for sells) is closer than this many stock ATRs. 0 = headroom check off.
+        volatile double htfHurdleMinHeadroomAtr = 1.0;
+        // Clearance buffer for the per-stock HTF Hurdle. The 15-min close must clear the
+        // chosen weekly level by at least this many stock ATRs — guards against paper-thin
+        // "close at level + 0.01" passes. 0 = no buffer (any positive clearance accepted).
+        volatile double htfHurdleClearanceAtr = 0.0;
         // NIFTY-level macro hurdle. When on, skip ALL stock trades while NIFTY's prior 1h close
         // hasn't decisively cleared the nearest weekly hurdle in the trade direction (R1/PWH/
         // weekly TC/Pivot/BC for buys; S1/PWL/... for sells). Mirrors per-stock HTF Hurdle
@@ -131,6 +140,9 @@ public class RiskSettingsStore {
         // sells) is closer than this many NIFTY ATRs. Guards against firing when an upcoming
         // weekly level is right above NIFTY (likely to cap the move). 0 = headroom check off.
         volatile double niftyHurdleMinHeadroomAtr = 1.0;
+        // Clearance buffer for the NIFTY HTF Hurdle. NIFTY's 15-min close must clear the
+        // chosen weekly level by at least this many NIFTY ATRs. 0 = no buffer.
+        volatile double niftyHurdleClearanceAtr = 0.0;
         // 5-min variant of the NIFTY HTF Hurdle filter, against NIFTY's *daily* CPR levels.
         // When on, every stock breakout requires NIFTY's prior 5-min close to have cleared
         // its nearest daily-CPR hurdle in trade direction (R1/R2/R3/R4 + daily TC/Pivot/BC for
@@ -141,10 +153,9 @@ public class RiskSettingsStore {
         // when the nearest hurdle in the OPPOSITE direction (above NIFTY LTP for buys / below
         // for sells) is closer than this many NIFTY ATRs. 0 = headroom check off.
         volatile double nifty5mHurdleMinHeadroomAtr = 1.0;
-        // In-progress 1h candle direction must agree with the 5-min breakout direction. Buy
-        // requires the currently-forming 1h bar to be green (close > open); sell requires red
-        // (close < open). Doji passes both. Fail-open if no in-progress bar yet. Default off.
-        volatile boolean enableHtfCandleFilter = false;
+        // Clearance buffer for the NIFTY 5m Hurdle. NIFTY's 5-min close must clear the far edge
+        // of the behind zone by at least this many NIFTY ATRs. 0 = no buffer.
+        volatile double nifty5mHurdleClearanceAtr = 0.0;
         // Structural SL — opt-in, anchors SL to the S/R level the trade is testing (per setup family)
         // When on, we compute both structural and default SL and pick the TIGHTER one.
         volatile boolean enableStructuralSl = false;   // when false, always use close ± atrMultiplier × ATR
@@ -192,6 +203,11 @@ public class RiskSettingsStore {
         // the zone edge. Default off — opt-in.
         volatile boolean enableVirginCprHurdleFilter = false;
         volatile double  virginCprHurdleHeadroomAtr  = 1.0;
+        // Clearance buffer for the Virgin CPR filter. When NIFTY's 5m close has crossed the
+        // far edge of the virgin CPR zone (above zoneTop for buys, below zoneBot for sells),
+        // require the close to be at least this many NIFTY ATRs past the far edge. Guards
+        // against paper-thin "close at zoneTop + 0.01" passes. 0 = no buffer.
+        volatile double  virginCprHurdleClearanceAtr = 0.0;
         // Breakeven SL — single-stage move. When the peak (long) / trough (short) reaches
         // {@code breakevenTriggerPct}% of the range from entry to target, the SL is moved to
         // {@code entry ± breakevenSlAtrMult × ATR}. Once moved, it stays put (never widens).
@@ -208,11 +224,6 @@ public class RiskSettingsStore {
         volatile boolean skipR3S3EvDays   = true;
         volatile boolean skipR4S4IvOvDays = true;
         volatile boolean skipR4S4EvDays   = true;
-        // HTF (weekly) extended-level skips — independent of the daily extended-level skips
-        // above. When on, breakout close past weekly R3/R4 (buys) or S3/S4 (sells) is skipped
-        // regardless of the daily setup. Default true (matches daily skip stance).
-        volatile boolean skipHtfR3S3NormalDays = true;
-        volatile boolean skipHtfR4S4NormalDays = true;
         // Counter-trend setups split into two independent families. Each has its own
         // enable toggle and qty factor.
         //   • Magnets        — BUY_ABOVE_S1_PDL, SELL_BELOW_R1_PDH (first structural pair).
@@ -314,11 +325,14 @@ public class RiskSettingsStore {
     public boolean isEnableGapCheck() { return cfg().enableGapCheck; }
     public boolean isEnableWeeklyLevelTargetShift() { return cfg().enableWeeklyLevelTargetShift; }
     public boolean isEnableHtfHurdleFilter()    { return cfg().enableHtfHurdleFilter; }
+    public double  getHtfHurdleMinHeadroomAtr() { return cfg().htfHurdleMinHeadroomAtr; }
+    public double  getHtfHurdleClearanceAtr()   { return cfg().htfHurdleClearanceAtr; }
+    public double  getNiftyHurdleClearanceAtr()   { return cfg().niftyHurdleClearanceAtr; }
+    public double  getNifty5mHurdleClearanceAtr() { return cfg().nifty5mHurdleClearanceAtr; }
     public boolean isEnableNiftyHtfHurdleFilter() { return cfg().enableNiftyHtfHurdleFilter; }
     public double  getNiftyHurdleMinHeadroomAtr() { return cfg().niftyHurdleMinHeadroomAtr; }
     public boolean isEnableNifty5mHurdleFilter()  { return cfg().enableNifty5mHurdleFilter; }
     public double  getNifty5mHurdleMinHeadroomAtr() { return cfg().nifty5mHurdleMinHeadroomAtr; }
-    public boolean isEnableHtfCandleFilter()      { return cfg().enableHtfCandleFilter; }
     public boolean isEnableStructuralSl()    { return cfg().enableStructuralSl; }
     public double  getStructuralSlBufferAtr(){ return cfg().structuralSlBufferAtr; }
     public double  getSingleLevelSlBufferAtr(){ return cfg().singleLevelSlBufferAtr; }
@@ -357,14 +371,13 @@ public class RiskSettingsStore {
     public int getVirginCprExpiryDays() { return cfg().virginCprExpiryDays; }
     public boolean isEnableVirginCprHurdleFilter() { return cfg().enableVirginCprHurdleFilter; }
     public double  getVirginCprHurdleHeadroomAtr() { return cfg().virginCprHurdleHeadroomAtr; }
+    public double  getVirginCprHurdleClearanceAtr() { return cfg().virginCprHurdleClearanceAtr; }
     public double getBreakevenTriggerPct() { return cfg().breakevenTriggerPct; }
     public double getBreakevenSlAtrMult()  { return cfg().breakevenSlAtrMult; }
     public boolean isSkipR3S3IvOvDays() { return cfg().skipR3S3IvOvDays; }
     public boolean isSkipR3S3EvDays()   { return cfg().skipR3S3EvDays; }
     public boolean isSkipR4S4IvOvDays() { return cfg().skipR4S4IvOvDays; }
     public boolean isSkipR4S4EvDays()   { return cfg().skipR4S4EvDays; }
-    public boolean isSkipHtfR3S3NormalDays() { return cfg().skipHtfR3S3NormalDays; }
-    public boolean isSkipHtfR4S4NormalDays() { return cfg().skipHtfR4S4NormalDays; }
     public boolean isEnableMeanReversionTrades() { return cfg().enableMeanReversionTrades; }
     public boolean isEnableMagnetTrades()        { return cfg().enableMagnetTrades; }
     public double  getMagnetTradesQtyFactor()    { return cfg().magnetTradesQtyFactor; }
@@ -431,11 +444,14 @@ public class RiskSettingsStore {
     public void setEnableGapCheck(boolean v) { cfg().enableGapCheck = v; }
     public void setEnableWeeklyLevelTargetShift(boolean v) { cfg().enableWeeklyLevelTargetShift = v; }
     public void setEnableHtfHurdleFilter(boolean v)    { cfg().enableHtfHurdleFilter = v; }
+    public void setHtfHurdleMinHeadroomAtr(double v)   { cfg().htfHurdleMinHeadroomAtr = Math.max(0, v); }
+    public void setHtfHurdleClearanceAtr(double v)     { cfg().htfHurdleClearanceAtr = Math.max(0, v); }
+    public void setNiftyHurdleClearanceAtr(double v)   { cfg().niftyHurdleClearanceAtr = Math.max(0, v); }
+    public void setNifty5mHurdleClearanceAtr(double v) { cfg().nifty5mHurdleClearanceAtr = Math.max(0, v); }
     public void setEnableNiftyHtfHurdleFilter(boolean v) { cfg().enableNiftyHtfHurdleFilter = v; }
     public void setNiftyHurdleMinHeadroomAtr(double v)   { cfg().niftyHurdleMinHeadroomAtr = Math.max(0, v); }
     public void setEnableNifty5mHurdleFilter(boolean v)  { cfg().enableNifty5mHurdleFilter = v; }
     public void setNifty5mHurdleMinHeadroomAtr(double v) { cfg().nifty5mHurdleMinHeadroomAtr = Math.max(0, v); }
-    public void setEnableHtfCandleFilter(boolean v)      { cfg().enableHtfCandleFilter = v; }
     public void setEnableStructuralSl(boolean v)    { cfg().enableStructuralSl = v; }
     public void setStructuralSlBufferAtr(double v)  { cfg().structuralSlBufferAtr = v; }
     public void setSingleLevelSlBufferAtr(double v) { cfg().singleLevelSlBufferAtr = v; }
@@ -474,14 +490,13 @@ public class RiskSettingsStore {
     public void setVirginCprExpiryDays(int v) { cfg().virginCprExpiryDays = Math.max(0, v); }
     public void setEnableVirginCprHurdleFilter(boolean v) { cfg().enableVirginCprHurdleFilter = v; }
     public void setVirginCprHurdleHeadroomAtr(double v)   { cfg().virginCprHurdleHeadroomAtr = Math.max(0, v); }
+    public void setVirginCprHurdleClearanceAtr(double v)  { cfg().virginCprHurdleClearanceAtr = Math.max(0, v); }
     public void setBreakevenTriggerPct(double v) { cfg().breakevenTriggerPct = v; }
     public void setBreakevenSlAtrMult(double v)  { cfg().breakevenSlAtrMult = v; }
     public void setSkipR3S3IvOvDays(boolean v) { cfg().skipR3S3IvOvDays = v; }
     public void setSkipR3S3EvDays(boolean v)   { cfg().skipR3S3EvDays = v; }
     public void setSkipR4S4IvOvDays(boolean v) { cfg().skipR4S4IvOvDays = v; }
     public void setSkipR4S4EvDays(boolean v)   { cfg().skipR4S4EvDays = v; }
-    public void setSkipHtfR3S3NormalDays(boolean v) { cfg().skipHtfR3S3NormalDays = v; }
-    public void setSkipHtfR4S4NormalDays(boolean v) { cfg().skipHtfR4S4NormalDays = v; }
     public void setEnableMeanReversionTrades(boolean v) {
         cfg().enableMeanReversionTrades = v;
         // Mean-reversion setups classify as MPT downstream — turning on the master toggle
@@ -570,11 +585,14 @@ public class RiskSettingsStore {
             upsert("enableGapCheck", String.valueOf(c.enableGapCheck));
             upsert("enableWeeklyLevelTargetShift", String.valueOf(c.enableWeeklyLevelTargetShift));
             upsert("enableHtfHurdleFilter", String.valueOf(c.enableHtfHurdleFilter));
+            upsert("htfHurdleMinHeadroomAtr", String.valueOf(c.htfHurdleMinHeadroomAtr));
+            upsert("htfHurdleClearanceAtr", String.valueOf(c.htfHurdleClearanceAtr));
+            upsert("niftyHurdleClearanceAtr", String.valueOf(c.niftyHurdleClearanceAtr));
+            upsert("nifty5mHurdleClearanceAtr", String.valueOf(c.nifty5mHurdleClearanceAtr));
             upsert("enableNiftyHtfHurdleFilter", String.valueOf(c.enableNiftyHtfHurdleFilter));
             upsert("niftyHurdleMinHeadroomAtr", String.valueOf(c.niftyHurdleMinHeadroomAtr));
             upsert("enableNifty5mHurdleFilter", String.valueOf(c.enableNifty5mHurdleFilter));
             upsert("nifty5mHurdleMinHeadroomAtr", String.valueOf(c.nifty5mHurdleMinHeadroomAtr));
-            upsert("enableHtfCandleFilter", String.valueOf(c.enableHtfCandleFilter));
             upsert("enableStructuralSl", String.valueOf(c.enableStructuralSl));
             upsert("structuralSlBufferAtr", String.valueOf(c.structuralSlBufferAtr));
             upsert("singleLevelSlBufferAtr", String.valueOf(c.singleLevelSlBufferAtr));
@@ -613,14 +631,13 @@ public class RiskSettingsStore {
             upsert("virginCprExpiryDays", String.valueOf(c.virginCprExpiryDays));
             upsert("enableVirginCprHurdleFilter", String.valueOf(c.enableVirginCprHurdleFilter));
             upsert("virginCprHurdleHeadroomAtr",  String.valueOf(c.virginCprHurdleHeadroomAtr));
+            upsert("virginCprHurdleClearanceAtr", String.valueOf(c.virginCprHurdleClearanceAtr));
             upsert("breakevenTriggerPct", String.valueOf(c.breakevenTriggerPct));
             upsert("breakevenSlAtrMult",  String.valueOf(c.breakevenSlAtrMult));
             upsert("skipR3S3IvOvDays", String.valueOf(c.skipR3S3IvOvDays));
             upsert("skipR3S3EvDays",   String.valueOf(c.skipR3S3EvDays));
             upsert("skipR4S4IvOvDays", String.valueOf(c.skipR4S4IvOvDays));
             upsert("skipR4S4EvDays",   String.valueOf(c.skipR4S4EvDays));
-            upsert("skipHtfR3S3NormalDays", String.valueOf(c.skipHtfR3S3NormalDays));
-            upsert("skipHtfR4S4NormalDays", String.valueOf(c.skipHtfR4S4NormalDays));
             upsert("enableMeanReversionTrades", String.valueOf(c.enableMeanReversionTrades));
             upsert("enableMagnetTrades",        String.valueOf(c.enableMagnetTrades));
             upsert("magnetTradesQtyFactor",     String.valueOf(c.magnetTradesQtyFactor));
@@ -696,11 +713,14 @@ public class RiskSettingsStore {
                     // dayHighLowShiftMinDistAtr, enableSplitTarget, t1DistancePct,
                     // splitMinDistanceAtr. Old JSON files round-trip without errors.
                     case "enableHtfHurdleFilter" -> c.enableHtfHurdleFilter = Boolean.parseBoolean(v);
+                    case "htfHurdleMinHeadroomAtr" -> c.htfHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
+                    case "htfHurdleClearanceAtr"   -> c.htfHurdleClearanceAtr = Math.max(0, Double.parseDouble(v));
+                    case "niftyHurdleClearanceAtr" -> c.niftyHurdleClearanceAtr = Math.max(0, Double.parseDouble(v));
+                    case "nifty5mHurdleClearanceAtr" -> c.nifty5mHurdleClearanceAtr = Math.max(0, Double.parseDouble(v));
                     case "enableNiftyHtfHurdleFilter" -> c.enableNiftyHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "niftyHurdleMinHeadroomAtr" -> c.niftyHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
                     case "enableNifty5mHurdleFilter" -> c.enableNifty5mHurdleFilter = Boolean.parseBoolean(v);
                     case "nifty5mHurdleMinHeadroomAtr" -> c.nifty5mHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
-                    case "enableHtfCandleFilter" -> c.enableHtfCandleFilter = Boolean.parseBoolean(v);
                     case "enableStructuralSl"    -> c.enableStructuralSl = Boolean.parseBoolean(v);
                     case "structuralSlBufferAtr" -> c.structuralSlBufferAtr = Double.parseDouble(v);
                     case "singleLevelSlBufferAtr" -> c.singleLevelSlBufferAtr = Double.parseDouble(v);
@@ -819,6 +839,7 @@ public class RiskSettingsStore {
                     case "virginCprExpiryDays" -> c.virginCprExpiryDays = Math.max(0, Integer.parseInt(v));
                     case "enableVirginCprHurdleFilter" -> c.enableVirginCprHurdleFilter = Boolean.parseBoolean(v);
                     case "virginCprHurdleHeadroomAtr" -> c.virginCprHurdleHeadroomAtr = Math.max(0, Double.parseDouble(v));
+                    case "virginCprHurdleClearanceAtr" -> c.virginCprHurdleClearanceAtr = Math.max(0, Double.parseDouble(v));
                     case "breakevenTriggerPct" -> c.breakevenTriggerPct = Double.parseDouble(v);
                     case "breakevenSlAtrMult"  -> c.breakevenSlAtrMult  = Double.parseDouble(v);
                     // Legacy fib-stage keys — fold old stage-1 values into the new breakeven
@@ -843,8 +864,6 @@ public class RiskSettingsStore {
                     case "skipR3S3EvDays"   -> c.skipR3S3EvDays   = Boolean.parseBoolean(v);
                     case "skipR4S4IvOvDays" -> c.skipR4S4IvOvDays = Boolean.parseBoolean(v);
                     case "skipR4S4EvDays"   -> c.skipR4S4EvDays   = Boolean.parseBoolean(v);
-                    case "skipHtfR3S3NormalDays" -> c.skipHtfR3S3NormalDays = Boolean.parseBoolean(v);
-                    case "skipHtfR4S4NormalDays" -> c.skipHtfR4S4NormalDays = Boolean.parseBoolean(v);
                     case "enableMeanReversionTrades" -> c.enableMeanReversionTrades = Boolean.parseBoolean(v);
                     case "enableMagnetTrades"        -> c.enableMagnetTrades        = Boolean.parseBoolean(v);
                     case "magnetTradesQtyFactor"     -> c.magnetTradesQtyFactor     = Double.parseDouble(v);

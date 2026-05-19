@@ -279,14 +279,17 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         trend.setNiftyClose(dispNiftyClose);
         trend.setState(dispState);
 
-        // CPR width category — NARROW if below the scanner's narrowCprMaxWidth (the upper end
-        // of the "narrow" band; narrowCprMinWidth is the lower bound but is typically 0), WIDE
-        // if at or above narrowCprMaxWidth. Display-only on the NIFTY card.
+        // CPR width category — NARROW iff width is INSIDE the configured band
+        // [narrowCprMinWidth, narrowCprMaxWidth). Mirrors the exact band the stock
+        // scanner uses (BreakoutScanner.passesScanFilters) and the NIFTY 5m hurdle
+        // filter uses (BreakoutScanner.compute5mCandidate) — so the NIFTY card's
+        // NARROW/WIDE label always matches the hurdle filter's behaviour.
         var niftyCpr = bhavcopyService.getCprLevels("NIFTY50");
         if (niftyCpr != null && niftyCpr.getCprWidthPct() > 0 && riskSettings != null) {
-            double widthPct = niftyCpr.getCprWidthPct();
+            double widthPct  = niftyCpr.getCprWidthPct();
+            double narrowMin = riskSettings.getNarrowCprMinWidth();
             double narrowMax = riskSettings.getNarrowCprMaxWidth();
-            String category = widthPct < narrowMax ? "NARROW" : "WIDE";
+            String category  = (widthPct >= narrowMin && widthPct < narrowMax) ? "NARROW" : "WIDE";
             trend.setCprWidthPct(Math.round(widthPct * 1000.0) / 1000.0);
             trend.setCprWidthCategory(category);
         }

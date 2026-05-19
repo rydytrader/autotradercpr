@@ -583,14 +583,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     recordRejection(fyersSymbol, buySetup, close, "VIRGIN_CPR_HURDLE", virginCprHurdleReject);
                     return;
                 }
-                // In-progress 1h candle direction — buy needs the currently-forming 1h bar to be green.
-                // This is the STOCK's 1h candle, always applied.
-                String htfCandleReject = checkHtfCandleColor(true, fyersSymbol);
-                if (htfCandleReject != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + htfCandleReject);
-                    recordRejection(fyersSymbol, buySetup, close, "HTF_CANDLE_OPPOSED", htfCandleReject);
-                    return;
-                }
                 fireSignal(fyersSymbol, buySetup, open, high, low, close, candle.volume, atr, levels, prob,
                     lastTriggerRoute.remove(fyersSymbol));
                 return;
@@ -697,14 +689,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (virginCprHurdleReject != null) {
                     eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + virginCprHurdleReject);
                     recordRejection(fyersSymbol, sellSetup, close, "VIRGIN_CPR_HURDLE", virginCprHurdleReject);
-                    return;
-                }
-                // In-progress 1h candle direction — sell needs the currently-forming 1h bar to be red.
-                // This is the STOCK's 1h candle, always applied.
-                String htfCandleReject = checkHtfCandleColor(false, fyersSymbol);
-                if (htfCandleReject != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + htfCandleReject);
-                    recordRejection(fyersSymbol, sellSetup, close, "HTF_CANDLE_OPPOSED", htfCandleReject);
                     return;
                 }
                 fireSignal(fyersSymbol, sellSetup, open, high, low, close, candle.volume, atr, levels, prob,
@@ -1234,7 +1218,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (bar.epochSec > newLast) newLast = bar.epochSec;
             }
         }
-        if (newLast > lastApplied) lastZoneAppliedEpoch.put(fyersSymbol, newLast);
+        if (newLast > lastApplied) {
+            lastZoneAppliedEpoch.put(fyersSymbol, newLast);
+            // Persist immediately — a restart between this advance and the next signal-driven
+            // saveState would otherwise lose the up/down flips and force a full rebuild from
+            // re-fetched candle history (which is the silent-loss pathway we're closing here).
+            saveState();
+        }
     }
 
     /**
@@ -1551,12 +1541,21 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 ? candleAggregator.getLast15MinClose(niftySym) : null;
             if (htfClose == null || htfClose <= 0) return null;
 
-            boolean cleared = isBuy ? htfClose > chosenLevel : htfClose < chosenLevel;
+            // Clearance buffer — require NIFTY's 15-min close to clear by at least
+            // clearanceAtr × NIFTY ATR. Guards against paper-thin "close at level + 0.01"
+            // passes that the headroom check can't catch when there's no near hurdle ahead.
+            double clearanceAtr = riskSettings.getNiftyHurdleClearanceAtr();
+            double niftyAtrForClear = atrService != null ? atrService.getAtr(niftySym) : 0;
+            double clearBuf = (clearanceAtr > 0 && niftyAtrForClear > 0) ? clearanceAtr * niftyAtrForClear : 0;
+            double buyBar  = chosenLevel + clearBuf;   // htfClose must be > buyBar  to pass
+            double sellBar = chosenLevel - clearBuf;   // htfClose must be < sellBar to pass
+            boolean cleared = isBuy ? htfClose > buyBar : htfClose < sellBar;
             if (!cleared) {
                 return "NIFTY HTF hurdle at " + chosenName
                     + ": NIFTY " + String.format("%.2f", niftyPrice)
                     + ", 15-min close=" + String.format("%.2f", htfClose)
-                    + ", level " + String.format("%.2f", chosenLevel);
+                    + ", level " + String.format("%.2f", chosenLevel)
+                    + (clearBuf > 0 ? " (needs +" + String.format("%.2f", clearBuf) + " buffer)" : "");
             }
 
             // Headroom check — reject if the nearest hurdle in the OPPOSITE direction (above
@@ -1749,26 +1748,67 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         var cpr = bhavcopyService.getCprLevels("NIFTY50");
         if (cpr == null) return null;
 
-        double[][] zoneEdges = {
-            { Math.min(cpr.getTc(), cpr.getBc()), Math.max(cpr.getTc(), cpr.getBc()) },
-            { Math.min(cpr.getR1(), cpr.getPh()), Math.max(cpr.getR1(), cpr.getPh()) },
-            { Math.min(cpr.getS1(), cpr.getPl()), Math.max(cpr.getS1(), cpr.getPl()) },
-            { cpr.getR2(), cpr.getR2() },
-            { cpr.getR3(), cpr.getR3() },
-            { cpr.getR4(), cpr.getR4() },
-            { cpr.getS2(), cpr.getS2() },
-            { cpr.getS3(), cpr.getS3() },
-            { cpr.getS4(), cpr.getS4() },
-            // PDC (previous day close) — single-line level. Often acts as an intraday
-            // pivot; included alongside CPR/R/S levels for completeness.
-            { cpr.getClose(), cpr.getClose() }
-        };
-        String[] zoneNames = {
-            "Daily CPR", "Daily R1+PDH", "Daily S1+PDL",
-            "Daily R2", "Daily R3", "Daily R4",
-            "Daily S2", "Daily S3", "Daily S4",
-            "Daily PDC"
-        };
+        // NIFTY CPR width drives whether R1+PDH and S1+PDL are treated as zones or as
+        // four separate single-line levels. Uses the SAME band [narrowCprMinWidth,
+        // narrowCprMaxWidth) the stock scanner uses for narrow-CPR watchlist filtering,
+        // so behaviour matches what the NIFTY card displays as NARROW vs WIDE.
+        //   • Inside band → narrow → R1+PDH and S1+PDL collapse to 2-edge zones.
+        //   • Outside band (either above max or below min) → wide → R1, PDH, S1, PDL
+        //     become independent single-line levels.
+        //   • CPR itself stays a zone in both cases.
+        double widthPct  = cpr.getCprWidthPct();
+        double narrowMin = riskSettings.getNarrowCprMinWidth();
+        double narrowMax = riskSettings.getNarrowCprMaxWidth();
+        boolean niftyCprNarrow = widthPct >= narrowMin && widthPct < narrowMax;
+
+        double[][] zoneEdges;
+        String[]   zoneNames;
+        if (niftyCprNarrow) {
+            zoneEdges = new double[][] {
+                { Math.min(cpr.getTc(), cpr.getBc()), Math.max(cpr.getTc(), cpr.getBc()) },
+                { Math.min(cpr.getR1(), cpr.getPh()), Math.max(cpr.getR1(), cpr.getPh()) },
+                { Math.min(cpr.getS1(), cpr.getPl()), Math.max(cpr.getS1(), cpr.getPl()) },
+                { cpr.getR2(), cpr.getR2() },
+                { cpr.getR3(), cpr.getR3() },
+                { cpr.getR4(), cpr.getR4() },
+                { cpr.getS2(), cpr.getS2() },
+                { cpr.getS3(), cpr.getS3() },
+                { cpr.getS4(), cpr.getS4() },
+                // PDC (previous day close) — single-line level. Often acts as an intraday
+                // pivot; included alongside CPR/R/S levels for completeness.
+                { cpr.getClose(), cpr.getClose() }
+            };
+            zoneNames = new String[] {
+                "Daily CPR", "Daily R1+PDH", "Daily S1+PDL",
+                "Daily R2", "Daily R3", "Daily R4",
+                "Daily S2", "Daily S3", "Daily S4",
+                "Daily PDC"
+            };
+        } else {
+            // Wide CPR — split the R1+PDH and S1+PDL zones into four independent levels.
+            zoneEdges = new double[][] {
+                { Math.min(cpr.getTc(), cpr.getBc()), Math.max(cpr.getTc(), cpr.getBc()) },   // CPR stays a zone
+                { cpr.getR1(), cpr.getR1() },
+                { cpr.getPh(), cpr.getPh() },
+                { cpr.getS1(), cpr.getS1() },
+                { cpr.getPl(), cpr.getPl() },
+                { cpr.getR2(), cpr.getR2() },
+                { cpr.getR3(), cpr.getR3() },
+                { cpr.getR4(), cpr.getR4() },
+                { cpr.getS2(), cpr.getS2() },
+                { cpr.getS3(), cpr.getS3() },
+                { cpr.getS4(), cpr.getS4() },
+                { cpr.getClose(), cpr.getClose() }
+            };
+            zoneNames = new String[] {
+                "Daily CPR",
+                "Daily R1", "Daily PDH",
+                "Daily S1", "Daily PDL",
+                "Daily R2", "Daily R3", "Daily R4",
+                "Daily S2", "Daily S3", "Daily S4",
+                "Daily PDC"
+            };
+        }
 
         // Behind zone — for buy: zone whose LO ≤ LTP (LTP entered from below) with the
         // highest HI; for sell: zone whose HI ≥ LTP with the lowest LO.
@@ -1917,33 +1957,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     }
 
     /**
-     * In-progress 1h HTF candle direction filter. When enabled, requires the currently-forming
-     * 60-min bar's body to agree with the trade direction. Buys reject when the 1h bar is
-     * strictly red (close &lt; open); sells reject when it's strictly green (close &gt; open).
-     * Doji (close == open) passes both — only a clearly opposite-direction bar blocks the trade.
-     *
-     * <p>Fail-open when no in-progress bar exists yet (e.g. very first ticks of a new 1h
-     * bucket, or low-volume stocks between boundaries) — consistent with other "data missing"
-     * branches in the scanner. Returns null on pass, a short rejection-reason String otherwise.
-     */
-    private String checkHtfCandleColor(boolean isBuy, String fyersSymbol) {
-        if (!riskSettings.isEnableHtfCandleFilter()) return null;
-        if (marketDataService == null) return null;
-        CandleAggregator.CandleBar bar = marketDataService.getInProgressHtfCandle(fyersSymbol);
-        if (bar == null || bar.open <= 0 || bar.close <= 0) return null; // fail-open
-
-        if (isBuy && bar.close < bar.open) {
-            return "HTF 1h candle red — buy requires green: 1h open="
-                + String.format("%.2f", bar.open) + ", close=" + String.format("%.2f", bar.close);
-        }
-        if (!isBuy && bar.close > bar.open) {
-            return "HTF 1h candle green — sell requires red: 1h open="
-                + String.format("%.2f", bar.open) + ", close=" + String.format("%.2f", bar.close);
-        }
-        return null;
-    }
-
-    /**
      * 5-min variant of {@link #checkNiftyHurdle}, against NIFTY's <i>daily</i> CPR levels (not
      * weekly). When a stock's 5-min breakout fires, NIFTY's prior 5-min close must already have
      * cleared its nearest daily-CPR hurdle in the trade direction. Guards against firing while
@@ -2052,7 +2065,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (currentBar == null) return null; // NIFTY same-bucket bar not yet completed — fail-open
 
         double niftyClose = currentBar.close;
-        boolean cleared = isBuy ? niftyClose > zHi : niftyClose < zLo;
+        // Clearance buffer — require NIFTY's 5m close to clear the far edge by at least
+        // clearanceAtr × NIFTY ATR. Guards against paper-thin "close at level + 0.01"
+        // passes that the headroom check can't catch when there's no near zone ahead.
+        double clearanceAtr5m = riskSettings.getNifty5mHurdleClearanceAtr();
+        double niftyAtrForClear5m = atrService != null ? atrService.getAtr(niftySym) : 0;
+        double clearBuf5m = (clearanceAtr5m > 0 && niftyAtrForClear5m > 0) ? clearanceAtr5m * niftyAtrForClear5m : 0;
+        double buyBar5m  = zHi + clearBuf5m;   // niftyClose must be > buyBar5m  to pass
+        double sellBar5m = zLo - clearBuf5m;   // niftyClose must be < sellBar5m to pass
+        boolean cleared = isBuy ? niftyClose > buyBar5m : niftyClose < sellBar5m;
         if (!cleared) {
             String where = (niftyClose >= zLo && niftyClose <= zHi)
                 ? "inside " + chosenName + " zone"
@@ -2060,7 +2081,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             return "NIFTY 5m " + where
                 + " [" + String.format("%.2f", zLo) + ", " + String.format("%.2f", zHi) + "]"
                 + ": 5m close " + String.format("%.2f", niftyClose)
-                + ", NIFTY LTP " + String.format("%.2f", niftyLtp);
+                + ", NIFTY LTP " + String.format("%.2f", niftyLtp)
+                + (clearBuf5m > 0 ? " (needs +" + String.format("%.2f", clearBuf5m) + " buffer past far edge)" : "");
         }
 
         // Headroom check — reject if the next zone ahead (lower edge above LTP for buys, upper
@@ -2150,6 +2172,33 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             return "NIFTY (" + String.format("%.2f", niftyClose)
                 + ") inside virgin CPR zone (" + String.format("%.2f", zoneBot)
                 + "—" + String.format("%.2f", zoneTop) + ")";
+        }
+
+        // 1b) Clearance buffer past the far edge. When NIFTY has crossed the zone in the
+        //     trade direction (above zoneTop for buys, below zoneBot for sells), require
+        //     the close to be at least clearance × NIFTY ATR past the far edge. Guards
+        //     against paper-thin "close at zoneTop + 0.01" passes that would otherwise
+        //     count as fully cleared.
+        double clearanceAtr = riskSettings.getVirginCprHurdleClearanceAtr();
+        if (clearanceAtr > 0 && atrService != null) {
+            double atrForClear = atrService.getAtr(niftySym);
+            if (atrForClear > 0) {
+                double clearBuf = clearanceAtr * atrForClear;
+                if (isBuy && niftyClose > zoneTop && niftyClose <= zoneTop + clearBuf) {
+                    return "NIFTY (" + String.format("%.2f", niftyClose)
+                        + ") only " + String.format("%.2f", niftyClose - zoneTop)
+                        + " pts past virgin CPR zone top (" + String.format("%.2f", zoneTop)
+                        + ", need +" + String.format("%.2f", clearBuf)
+                        + " buffer, " + clearanceAtr + " × NIFTY ATR " + String.format("%.2f", atrForClear) + ")";
+                }
+                if (!isBuy && niftyClose < zoneBot && niftyClose >= zoneBot - clearBuf) {
+                    return "NIFTY (" + String.format("%.2f", niftyClose)
+                        + ") only " + String.format("%.2f", zoneBot - niftyClose)
+                        + " pts past virgin CPR zone bot (" + String.format("%.2f", zoneBot)
+                        + ", need +" + String.format("%.2f", clearBuf)
+                        + " buffer, " + clearanceAtr + " × NIFTY ATR " + String.format("%.2f", atrForClear) + ")";
+                }
+            }
         }
 
         // 2) Headroom check — directional, only when zone is in trade direction.
@@ -2575,7 +2624,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
     // ── Persistence ──────────────────────────────────────────────────────────
 
-    public void saveState() {
+    public synchronized void saveState() {
         try {
             Map<String, Object> state = new LinkedHashMap<>();
             state.put("date", ZonedDateTime.now(IST).toLocalDate().toString());
@@ -2620,6 +2669,32 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 history.put(entry.getKey(), list);
             }
             state.put("signalHistory", history);
+
+            // Save per-level broken state (up/down per CPR level per symbol). Without this,
+            // a restart erases the in-memory level-state and the retest-arming flags collapse
+            // to false until advanceZoneState walks today's bars again — which can silently
+            // miss signals if AtrService hasn't finished re-seeding history yet.
+            Map<String, Map<String, Map<String, Boolean>>> levelState = new LinkedHashMap<>();
+            for (var symEntry : levelStateBySymbol.entrySet()) {
+                Map<String, Map<String, Boolean>> perLevel = new LinkedHashMap<>();
+                for (var levelEntry : symEntry.getValue().entrySet()) {
+                    Map<String, Boolean> flags = new LinkedHashMap<>();
+                    flags.put("up", levelEntry.getValue().up);
+                    flags.put("down", levelEntry.getValue().down);
+                    perLevel.put(levelEntry.getKey(), flags);
+                }
+                levelState.put(symEntry.getKey(), perLevel);
+            }
+            state.put("levelState", levelState);
+
+            // Save watermark so advanceZoneState only re-applies bars closed during downtime.
+            state.put("lastZoneAppliedEpoch", new LinkedHashMap<>(lastZoneAppliedEpoch));
+
+            // Save current armed buy/sell setup per symbol. These get recomputed on the next
+            // candle close, but persisting them keeps the chip / UI accurate immediately on
+            // restart and matches behaviour with the level state.
+            state.put("armedBuyLevel", new LinkedHashMap<>(armedBuyLevel));
+            state.put("armedSellLevel", new LinkedHashMap<>(armedSellLevel));
 
             Files.writeString(Paths.get(SCANNER_STATE_FILE),
                 mapper.writerWithDefaultPrettyPrinter().writeValueAsString(state));
@@ -2692,8 +2767,38 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             if (root.has("tradedCountToday")) tradedCountToday = root.get("tradedCountToday").asInt();
             if (root.has("filteredCountToday")) filteredCountToday = root.get("filteredCountToday").asInt();
 
-            log.info("[Scanner] Restored state: {} signals, {} broken levels, {} traded, {} filtered, {} signal histories",
-                lastSignal.size(), brokenLevels.size(), tradedCountToday, filteredCountToday, signalHistory.size());
+            // Load per-level broken state (up/down per CPR level per symbol).
+            JsonNode levelStateNode = root.get("levelState");
+            if (levelStateNode != null) {
+                levelStateNode.fields().forEachRemaining(symEntry -> {
+                    ConcurrentHashMap<String, LevelBrokenState> perLevel = new ConcurrentHashMap<>();
+                    symEntry.getValue().fields().forEachRemaining(levelEntry -> {
+                        LevelBrokenState s = new LevelBrokenState();
+                        JsonNode flags = levelEntry.getValue();
+                        s.up   = flags.has("up")   && flags.get("up").asBoolean();
+                        s.down = flags.has("down") && flags.get("down").asBoolean();
+                        perLevel.put(levelEntry.getKey(), s);
+                    });
+                    levelStateBySymbol.put(symEntry.getKey(), perLevel);
+                });
+            }
+
+            // Load watermark — advanceZoneState will only apply bars closed after this.
+            JsonNode watermarkNode = root.get("lastZoneAppliedEpoch");
+            if (watermarkNode != null) {
+                watermarkNode.fields().forEachRemaining(e ->
+                    lastZoneAppliedEpoch.put(e.getKey(), e.getValue().asLong()));
+            }
+
+            // Load armed buy/sell levels.
+            JsonNode armedBuy = root.get("armedBuyLevel");
+            if (armedBuy != null) armedBuy.fields().forEachRemaining(e -> armedBuyLevel.put(e.getKey(), e.getValue().asText()));
+            JsonNode armedSell = root.get("armedSellLevel");
+            if (armedSell != null) armedSell.fields().forEachRemaining(e -> armedSellLevel.put(e.getKey(), e.getValue().asText()));
+
+            log.info("[Scanner] Restored state: {} signals, {} broken levels, {} traded, {} filtered, {} signal histories, {} level-state symbols, {} armed buy, {} armed sell",
+                lastSignal.size(), brokenLevels.size(), tradedCountToday, filteredCountToday, signalHistory.size(),
+                levelStateBySymbol.size(), armedBuyLevel.size(), armedSellLevel.size());
         } catch (Exception e) {
             log.error("[Scanner] Failed to load state: {}", e.getMessage());
         }

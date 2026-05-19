@@ -123,35 +123,8 @@ public class SignalProcessor {
                 "R4/S4 breakout skipped (" + dayType + " day)");
         }
 
-        // ── HTF Extended-level skip gate (weekly) ───────────────────────────
-        // Independent of the daily checks above. Skip when the breakout candle close is
-        // beyond the weekly R3/R4 (buys) or weekly S3/S4 (sells) in the trade direction.
-        // Even an R1 setup is "HTF-extended" if the entry sits past weekly R3 — same
-        // exhaustion concern as a daily-R3 trade. Each toggle is independent so users
-        // can enable e.g. daily R3/S3 only, or weekly R3/S3 only, or both.
+        // Weekly levels lookup — used by the HTF Hurdle filter and computeTargets below.
         WeeklyCprService.WeeklyLevels weeklyLv = weeklyCprService.getWeeklyLevels(symbol);
-        if (riskSettings.isSkipHtfR3S3NormalDays() && weeklyLv != null) {
-            boolean aboveWeeklyR3 = isBuy  && weeklyLv.r3 > 0 && close > weeklyLv.r3;
-            boolean belowWeeklyS3 = !isBuy && weeklyLv.s3 > 0 && close < weeklyLv.s3;
-            if (aboveWeeklyR3 || belowWeeklyS3) {
-                String levelName = aboveWeeklyR3 ? "weekly R3=" + fmt(weeklyLv.r3)
-                                                 : "weekly S3=" + fmt(weeklyLv.s3);
-                return ProcessedSignal.rejected(setup, symbol,
-                    setup + " entry close=" + fmt(close) + " beyond " + levelName
-                    + " (HTF extended-level skip enabled)");
-            }
-        }
-        if (riskSettings.isSkipHtfR4S4NormalDays() && weeklyLv != null) {
-            boolean aboveWeeklyR4 = isBuy  && weeklyLv.r4 > 0 && close > weeklyLv.r4;
-            boolean belowWeeklyS4 = !isBuy && weeklyLv.s4 > 0 && close < weeklyLv.s4;
-            if (aboveWeeklyR4 || belowWeeklyS4) {
-                String levelName = aboveWeeklyR4 ? "weekly R4=" + fmt(weeklyLv.r4)
-                                                 : "weekly S4=" + fmt(weeklyLv.s4);
-                return ProcessedSignal.rejected(setup, symbol,
-                    setup + " entry close=" + fmt(close) + " beyond " + levelName
-                    + " (HTF extended-level skip enabled)");
-            }
-        }
 
         // ── 4c. Compute breakout level ──────────────────────────────────────────
         double breakoutLevel = computeBreakoutLevel(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
@@ -196,16 +169,16 @@ public class SignalProcessor {
         // per-pattern body cap inside CandlePatternDetector. Hammer relies on its
         // structural pin-bar signature instead.
 
-        // ── 4e2b. HTF Hurdle: prior 15-min close must have cleared the nearest weekly level ──
-        // When a 5-min breakout closes above (for buys) the nearest weekly hurdle, the previous
-        // 15-min HTF bar must have closed above that level too — otherwise the HTF hasn't
-        // confirmed the move and the trade is rejected. Mirror for sells.
+        // ── 4e2b. HTF Hurdle: 15-min close must have cleared the nearest weekly level ──
+        // Mirrors the NIFTY HTF Hurdle (BreakoutScanner.checkNiftyHurdle): the nearest weekly
+        // hurdle is picked relative to the stock's *current* price (live LTP), and then we
+        // check whether the most-recently-completed 15-min bar's close has cleared that
+        // level. At a 15-min boundary stock bar (9:30 / 9:45 / 10:00 / …) the latest 15-min
+        // close IS the just-closed bar — same-candle semantics, no artificial lag. Between
+        // boundaries it's the previous one. Pre-9:30 → null → silent fail-open.
         // Hurdle candidates: R1, PWH, weekly TC, weekly Pivot, weekly BC for buys; S1, PWL,
-        // weekly TC, weekly Pivot, weekly BC for sells. Including weekly CPR levels (TC/Pivot/BC)
-        // catches breakouts that fired just above (or below) weekly CPR while the prior 1h
-        // hadn't yet committed past that boundary — e.g. a buy at R1 in a stock that's BULLISH
-        // by the state machine but currently still inside weekly CPR. R2+/S2+ are excluded —
-        // far-out projections, not walls the HTF needs to clear first.
+        // weekly TC, weekly Pivot, weekly BC for sells. R2+/S2+ excluded — far-out projections,
+        // not walls the HTF needs to clear first.
         if (riskSettings.isEnableHtfHurdleFilter()
                 && ("HPT".equals(probability) || "MPT".equals(probability))) {
             WeeklyCprService.WeeklyLevels wl = weeklyLv; // reuse cached from line 141
@@ -219,38 +192,84 @@ public class SignalProcessor {
                     candidates = new double[]{ wl.s1, wl.pl, wl.tc, wl.pivot, wl.bc };
                     names      = new String[]{ "S1", "PWL", "weekly TC", "weekly Pivot", "weekly BC" };
                 }
-                // Find the nearest weekly level in the relevant direction from the 5-min close.
-                // Buy: max level strictly below close. Sell: min level strictly above close.
+                // Stock's current LTP — falls back to the 5-min close if live LTP is missing.
+                double stockPrice = marketDataService != null ? marketDataService.getLtp(symbol) : 0;
+                if (stockPrice <= 0) stockPrice = close;
+                // Nearest weekly hurdle in trade direction relative to current price.
+                // Buy: max level strictly below price. Sell: min level strictly above.
                 double chosenLevel = 0;
                 String chosenName = null;
                 for (int i = 0; i < candidates.length; i++) {
                     double lv = candidates[i];
                     if (lv <= 0) continue;
                     if (isBuy) {
-                        if (lv < close && lv > chosenLevel) { chosenLevel = lv; chosenName = names[i]; }
+                        if (lv < stockPrice && lv > chosenLevel) { chosenLevel = lv; chosenName = names[i]; }
                     } else {
-                        if (lv > close && (chosenName == null || lv < chosenLevel)) { chosenLevel = lv; chosenName = names[i]; }
+                        if (lv > stockPrice && (chosenName == null || lv < chosenLevel)) { chosenLevel = lv; chosenName = names[i]; }
                     }
                 }
                 if (chosenName != null) {
-                    // Per-stock HTF Hurdle now uses 15-min boundaries (mirrors the NIFTY HTF
-                    // Hurdle). Pre-9:30 IST no 15-min close exists yet → silent fail-open.
-                    // Trades only fire from 9:30 onwards anyway, so by the time this gate runs
-                    // the 9:25-9:30 5-min bar HAS finalized and IS the day's first 15-min close.
-                    Double priorHtfClose = candleAggregator != null
+                    Double htfClose = candleAggregator != null
                         ? candleAggregator.getLast15MinClose(symbol) : null;
-                    if (priorHtfClose == null || priorHtfClose <= 0) {
+                    // Clearance buffer — require the 15-min close to clear the level by at
+                    // least clearanceAtr × stock ATR. Guards against paper-thin "close at
+                    // level + 0.01" passes that the headroom check can't catch when there's
+                    // no near hurdle ahead.
+                    double clearanceBuf = riskSettings.getHtfHurdleClearanceAtr() * atr;
+                    double buyBar = chosenLevel + clearanceBuf;   // close must be > buyBar to pass
+                    double sellBar = chosenLevel - clearanceBuf;  // close must be < sellBar to pass
+                    if (htfClose == null || htfClose <= 0) {
                         // Silent fail-open — no rejection log pre-9:30.
-                    } else if (isBuy ? priorHtfClose <= chosenLevel : priorHtfClose >= chosenLevel) {
+                    } else if (isBuy ? htfClose <= buyBar : htfClose >= sellBar) {
                         return ProcessedSignal.rejected(setup, symbol,
                             "HTF hurdle at weekly " + chosenName
-                            + ": close=" + fmt(close)
-                            + ", prior 15-min close=" + fmt(priorHtfClose)
-                            + ", level=" + fmt(chosenLevel));
+                            + ": price=" + fmt(stockPrice)
+                            + ", 15-min close=" + fmt(htfClose)
+                            + ", level=" + fmt(chosenLevel)
+                            + (clearanceBuf > 0 ? " (needs +" + fmt(clearanceBuf) + " buffer)" : ""));
                     }
-                    // else: prior 15-min close has cleared the level → trade allowed
+                    // else: 15-min close has cleared the level (with buffer) → trade allowed
                 }
-                // else: no weekly level in the relevant direction → filter no-op (e.g. close below all buy candidates)
+                // else: no weekly level in the relevant direction → filter no-op
+
+                // Headroom check — reject if the nearest weekly hurdle in the OPPOSITE
+                // direction (above stock LTP for buys, below for sells) is closer than
+                // minHeadroomAtr × stock ATR. Guards against firing when an upcoming weekly
+                // level is right above/below the stock (likely to cap the move). Mirrors the
+                // NIFTY HTF Hurdle headroom check. Uses the SAME candidate set as the cleared
+                // check above so the gating is symmetric.
+                double minHeadroomAtr = riskSettings.getHtfHurdleMinHeadroomAtr();
+                if (minHeadroomAtr > 0 && atr > 0) {
+                    double minHeadroomPts = minHeadroomAtr * atr;
+                    double upcomingLevel = 0;
+                    String upcomingName = null;
+                    for (int i = 0; i < candidates.length; i++) {
+                        double lv = candidates[i];
+                        if (lv <= 0) continue;
+                        if (isBuy) {
+                            // Buys: upcoming = lowest level above stock price
+                            if (lv > stockPrice && (upcomingName == null || lv < upcomingLevel)) {
+                                upcomingLevel = lv; upcomingName = names[i];
+                            }
+                        } else {
+                            // Sells: upcoming = highest level below stock price
+                            if (lv < stockPrice && lv > upcomingLevel) {
+                                upcomingLevel = lv; upcomingName = names[i];
+                            }
+                        }
+                    }
+                    if (upcomingName != null) {
+                        double headroomPts = isBuy ? upcomingLevel - stockPrice : stockPrice - upcomingLevel;
+                        if (headroomPts < minHeadroomPts) {
+                            return ProcessedSignal.rejected(setup, symbol,
+                                "HTF hurdle ahead at weekly " + upcomingName
+                                + " (" + fmt(upcomingLevel) + "): only "
+                                + fmt(headroomPts) + " pts headroom, need "
+                                + fmt(minHeadroomPts)
+                                + " (" + minHeadroomAtr + " × ATR " + fmt(atr) + ")");
+                        }
+                    }
+                }
             }
         }
 
