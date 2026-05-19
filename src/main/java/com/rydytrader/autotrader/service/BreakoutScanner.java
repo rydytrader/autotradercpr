@@ -583,6 +583,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     recordRejection(fyersSymbol, buySetup, close, "VIRGIN_CPR_HURDLE", virginCprHurdleReject);
                     return;
                 }
+                // Per-stock HTF Hurdle — stock's 15-min close must have cleared nearest weekly level.
+                String perStockHtfReject = checkPerStockHtfHurdle(true, fyersSymbol, close, atr);
+                if (perStockHtfReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + perStockHtfReject);
+                    recordRejection(fyersSymbol, buySetup, close, "HTF_HURDLE", perStockHtfReject);
+                    return;
+                }
                 fireSignal(fyersSymbol, buySetup, open, high, low, close, candle.volume, atr, levels, prob,
                     lastTriggerRoute.remove(fyersSymbol));
                 return;
@@ -689,6 +696,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (virginCprHurdleReject != null) {
                     eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + virginCprHurdleReject);
                     recordRejection(fyersSymbol, sellSetup, close, "VIRGIN_CPR_HURDLE", virginCprHurdleReject);
+                    return;
+                }
+                // Per-stock HTF Hurdle — stock's 15-min close must have cleared nearest weekly level.
+                String perStockHtfReject = checkPerStockHtfHurdle(false, fyersSymbol, close, atr);
+                if (perStockHtfReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + perStockHtfReject);
+                    recordRejection(fyersSymbol, sellSetup, close, "HTF_HURDLE", perStockHtfReject);
                     return;
                 }
                 fireSignal(fyersSymbol, sellSetup, open, high, low, close, candle.volume, atr, levels, prob,
@@ -1984,6 +1998,102 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      * prior 5m available — first bar of session, fail-open). Returns a non-null reason string
      * to reject.
      */
+    /**
+     * Per-stock HTF Hurdle filter. Mirrors {@link #checkNiftyHurdle} but on the stock's own
+     * data: picks the nearest weekly level relative to the stock's current LTP, then checks
+     * whether the stock's most-recently-completed 15-min bar's close has cleared that level
+     * (with clearance buffer), and finally a headroom check against the nearest weekly hurdle
+     * in the opposite direction.
+     *
+     * <p>Hurdle candidates: R1, PWH, weekly TC, weekly Pivot, weekly BC for buys; S1, PWL,
+     * weekly TC, weekly Pivot, weekly BC for sells. R2+/S2+ excluded.
+     *
+     * <p>Fail-open when: filter disabled, weekly levels not loaded, LTP missing (falls back
+     * to the breakout 5m close), no 15-min close yet today (pre-9:30 IST).
+     */
+    private String checkPerStockHtfHurdle(boolean isBuy, String fyersSymbol, double close, double atr) {
+        if (!riskSettings.isEnableHtfHurdleFilter()) return null;
+        if (weeklyCprService == null || candleAggregator == null) return null;
+
+        WeeklyCprService.WeeklyLevels wl = weeklyCprService.getWeeklyLevels(fyersSymbol);
+        if (wl == null) return null;
+
+        double[] candidates;
+        String[] names;
+        if (isBuy) {
+            candidates = new double[]{ wl.r1, wl.ph, wl.tc, wl.pivot, wl.bc };
+            names      = new String[]{ "R1", "PWH", "weekly TC", "weekly Pivot", "weekly BC" };
+        } else {
+            candidates = new double[]{ wl.s1, wl.pl, wl.tc, wl.pivot, wl.bc };
+            names      = new String[]{ "S1", "PWL", "weekly TC", "weekly Pivot", "weekly BC" };
+        }
+
+        // Stock's current LTP — falls back to the breakout 5-min close if live LTP missing.
+        double stockPrice = marketDataService != null ? marketDataService.getLtp(fyersSymbol) : 0;
+        if (stockPrice <= 0) stockPrice = close;
+
+        // Nearest weekly hurdle in trade direction relative to current price.
+        double chosenLevel = 0;
+        String chosenName = null;
+        for (int i = 0; i < candidates.length; i++) {
+            double lv = candidates[i];
+            if (lv <= 0) continue;
+            if (isBuy) {
+                if (lv < stockPrice && lv > chosenLevel) { chosenLevel = lv; chosenName = names[i]; }
+            } else {
+                if (lv > stockPrice && (chosenName == null || lv < chosenLevel)) { chosenLevel = lv; chosenName = names[i]; }
+            }
+        }
+        if (chosenName != null) {
+            Double htfClose = candleAggregator.getLast15MinClose(fyersSymbol);
+            double clearanceBuf = riskSettings.getHtfHurdleClearanceAtr() * atr;
+            double buyBar = chosenLevel + clearanceBuf;
+            double sellBar = chosenLevel - clearanceBuf;
+            if (htfClose == null || htfClose <= 0) {
+                // Silent fail-open — no rejection log pre-9:30.
+            } else if (isBuy ? htfClose <= buyBar : htfClose >= sellBar) {
+                return "HTF hurdle at weekly " + chosenName
+                    + ": price=" + String.format("%.2f", stockPrice)
+                    + ", 15-min close=" + String.format("%.2f", htfClose)
+                    + ", level=" + String.format("%.2f", chosenLevel)
+                    + (clearanceBuf > 0 ? " (needs +" + String.format("%.2f", clearanceBuf) + " buffer)" : "");
+            }
+        }
+
+        // Headroom check — nearest weekly hurdle in OPPOSITE direction must be ≥ minHeadroomAtr × ATR away.
+        double minHeadroomAtr = riskSettings.getHtfHurdleMinHeadroomAtr();
+        if (minHeadroomAtr > 0 && atr > 0) {
+            double minHeadroomPts = minHeadroomAtr * atr;
+            double upcomingLevel = 0;
+            String upcomingName = null;
+            for (int i = 0; i < candidates.length; i++) {
+                double lv = candidates[i];
+                if (lv <= 0) continue;
+                if (isBuy) {
+                    if (lv > stockPrice && (upcomingName == null || lv < upcomingLevel)) {
+                        upcomingLevel = lv; upcomingName = names[i];
+                    }
+                } else {
+                    if (lv < stockPrice && lv > upcomingLevel) {
+                        upcomingLevel = lv; upcomingName = names[i];
+                    }
+                }
+            }
+            if (upcomingName != null) {
+                double headroomPts = isBuy ? upcomingLevel - stockPrice : stockPrice - upcomingLevel;
+                if (headroomPts < minHeadroomPts) {
+                    return "HTF hurdle ahead at weekly " + upcomingName
+                        + " (" + String.format("%.2f", upcomingLevel) + "): only "
+                        + String.format("%.2f", headroomPts) + " pts headroom, need "
+                        + String.format("%.2f", minHeadroomPts)
+                        + " (" + minHeadroomAtr + " × ATR " + String.format("%.2f", atr) + ")";
+                }
+            }
+        }
+
+        return null;
+    }
+
     private String checkNifty5mHurdle(boolean isBuy, long stockBucketStartMinute) {
         if (!riskSettings.isEnableNifty5mHurdleFilter()) return null;
         if (candleAggregator == null || marketDataService == null || bhavcopyService == null) return null;
