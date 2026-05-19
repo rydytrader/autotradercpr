@@ -682,8 +682,8 @@
                         <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× NIFTY ATR (0 = off)</span>
                     </div>
                     <div class="form-hint">Macro-level mirror of the per-stock HTF Hurdle, applied to NIFTY's own data. Identifies NIFTY's nearest weekly-levels hurdle in trade direction and rejects every stock signal while NIFTY's most-recently-completed <b>1-hour</b> close hasn't decisively cleared it. 1-hour buckets are session-aligned: 9:15-10:15, 10:15-11:15, &hellip;, 14:15-15:15. Pre-10:15 IST today (Tue-Fri), falls back to <b>NIFTY's previous trading day session close (3:30 PM close)</b> within the current ISO week and checks if THAT cleared the level. <b>On Monday pre-10:15 there's no current-week fallback &rarr; trades with a hurdle in trade direction are REJECTED until the 10:15 close confirms.</b>
-                        <br>&nbsp;&nbsp;&bull; <b>Buys</b> &mdash; nearest of {weekly R1, PWH, weekly TC, weekly Pivot, weekly BC} below NIFTY LTP
-                        <br>&nbsp;&nbsp;&bull; <b>Sells</b> &mdash; nearest of {weekly S1, PWL, weekly TC, weekly Pivot, weekly BC} above NIFTY LTP
+                        <br>&nbsp;&nbsp;&bull; <b>Buys</b> &mdash; nearest of {weekly R4, R3, R2, R1, PWH, weekly TC, weekly Pivot, weekly BC} below NIFTY LTP
+                        <br>&nbsp;&nbsp;&bull; <b>Sells</b> &mdash; nearest of {weekly TC, weekly Pivot, weekly BC, S1, PWL, S2, S3, S4} above NIFTY LTP
                         <br><br><b>Headroom check.</b> Even after the past hurdle is cleared, the filter also checks the nearest hurdle in the <i>opposite</i> direction (above NIFTY LTP for buys / below for sells). If that upcoming hurdle is closer than <code>min headroom &times; NIFTY ATR</code>, the trade is rejected. Default <b>1.0</b> &times; ATR (scanner-timeframe ATR, so headroom reads against the bar size the bot actually trades on). Set to 0 to disable just the headroom check. Signal Trail bucket: <code>NIFTY_HURDLE</code>.
                         </div>
                 </div>
@@ -691,7 +691,7 @@
                     <label class="form-label">Per-Stock HTF Hurdle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject when stock's latest 1-hour close hasn't cleared nearest weekly R1/PWH/TC/Pivot/BC (buy) or S1/PWL/TC/Pivot/BC (sell)</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject when stock's 1-hour close hasn't cleared its nearest weekly-levels hurdle</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min headroom to next hurdle:</span>
@@ -699,8 +699,8 @@
                         <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× stock ATR (0 = off)</span>
                     </div>
                     <div class="form-hint">Same logic as the NIFTY HTF Hurdle above, but applied to each stock's own data. For a 5-min breakout, find the nearest weekly hurdle in the trade direction relative to the stock's <b>current LTP</b>:
-                        <b>buys</b> &rarr; the highest of {R1, PWH, weekly TC, weekly Pivot, weekly BC, R2, R3, R4} strictly below LTP;
-                        <b>sells</b> &rarr; the lowest of {S1, PWL, weekly TC, weekly Pivot, weekly BC, S2, S3, S4} strictly above LTP.
+                        <b>buys</b> &rarr; the highest of {weekly R4, R3, R2, R1, PWH, weekly TC, weekly Pivot, weekly BC} strictly below LTP;
+                        <b>sells</b> &rarr; the lowest of {weekly TC, weekly Pivot, weekly BC, S1, PWL, S2, S3, S4} strictly above LTP.
                         Then check the stock's most-recently-completed <b>1-hour</b> close (session-aligned 9:15-10:15, 10:15-11:15, &hellip;):
                         <b>cleared</b> &rarr; trade fires; <b>didn't clear</b> &rarr; reject.
                         <b>Pre-10:15 today (Tue-Fri)</b> &rarr; falls back to the <b>stock's previous trading day session close (3:30 PM close)</b> within the current ISO week and checks if THAT cleared the level. <b>On Monday pre-10:15 there's no current-week fallback &rarr; trades with a hurdle in trade direction are REJECTED until the 10:15 close confirms.</b>
