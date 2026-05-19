@@ -51,8 +51,6 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
     private com.rydytrader.autotrader.store.RiskSettingsStore riskSettings;
     @org.springframework.beans.factory.annotation.Autowired
     private EmaService emaService;
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private NiftyOptionOiService niftyOptionOiService;
 
     // Sticky cached factors + supporting values — refreshed only on NIFTY 5-min candle close.
     // null on a Boolean = not yet computed or insufficient data.
@@ -292,16 +290,6 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
             String category  = (widthPct >= narrowMin && widthPct < narrowMax) ? "NARROW" : "WIDE";
             trend.setCprWidthPct(Math.round(widthPct * 1000.0) / 1000.0);
             trend.setCprWidthCategory(category);
-        }
-
-        // NIFTY option-chain Max OI strikes — kept on the DTO for the NIFTY HTF Hurdle filter
-        // that consumes them. The scanner card no longer renders them.
-        if (niftyOptionOiService != null) {
-            trend.setMaxCallOiStrike(niftyOptionOiService.getMaxCallOiStrike());
-            trend.setMaxCallOi(niftyOptionOiService.getMaxCallOi());
-            trend.setMaxPutOiStrike(niftyOptionOiService.getMaxPutOiStrike());
-            trend.setMaxPutOi(niftyOptionOiService.getMaxPutOi());
-            trend.setOiLastUpdated(niftyOptionOiService.getLastUpdatedFormatted());
         }
 
         // dataAvailable gates the whole card render in the UI. True if we have any LTP

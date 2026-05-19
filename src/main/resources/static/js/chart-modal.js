@@ -541,10 +541,6 @@ function applyChartLines(d) {
         addLine(cpr.pdl, '#ffa726', 'PDL');
     }
 
-    if (d.oi) {
-        if (+d.oi.maxCallStrike > 0) addLine(+d.oi.maxCallStrike, '#e91e63', 'Max Call OI');
-        if (+d.oi.maxPutStrike  > 0) addLine(+d.oi.maxPutStrike,  '#9c27b0', 'Max Put OI');
-    }
 }
 
 // ESC key closes chart modal

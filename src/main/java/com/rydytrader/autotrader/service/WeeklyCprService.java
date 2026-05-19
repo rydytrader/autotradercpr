@@ -126,7 +126,7 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
      * watchlist between restarts won't be covered by this schedule — they're picked up by the
      * next scanner init (on login or restart).
      */
-    @Scheduled(cron = "0 0 8 * * MON-FRI", zone = "Asia/Kolkata")
+    @Scheduled(cron = "0 0 2 * * MON-FRI", zone = "Asia/Kolkata")
     public void scheduledRefresh() {
         if (weeklyLevels.isEmpty()) {
             log.info("[WeeklyCpr] Scheduled refresh skipped — no cached symbols yet");

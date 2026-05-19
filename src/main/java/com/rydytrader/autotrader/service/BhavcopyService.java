@@ -264,6 +264,27 @@ public class BhavcopyService {
     @org.springframework.context.annotation.Lazy
     private com.rydytrader.autotrader.repository.SectorRepository sectorRepository;
 
+    // Lazy-wired to avoid the BhavcopyService → MarketDataService → BhavcopyService cycle.
+    // Used post-fetch to push the refreshed CPR set into the live watchlist without a restart.
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private MarketDataService marketDataService;
+
+    // Lazy-wired to clear yesterday's per-day scanner state on the 2 AM cron — broken
+    // levels, armed buy/sell, level-state up/down etc. are stale at day-rollover. UI
+    // doesn't display these chips so we reset them eagerly rather than waiting for the
+    // 9:15 AM first-tick lazy reset.
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private BreakoutScanner breakoutScanner;
+
+    // Lazy-wired so the 2 AM cron can recompute NIFTY's trend state against the freshly
+    // refreshed CPR levels. Without this the NIFTY card chip shows yesterday's BULLISH/
+    // BEARISH state until NIFTY's first 5-min candle close at 9:20 AM.
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private IndexTrendService indexTrendService;
+
     public BhavcopyService(EventService eventService) {
         this.eventService = eventService;
         new File("../store").mkdirs();
@@ -391,7 +412,12 @@ public class BhavcopyService {
         }
     }
 
-    @Scheduled(cron = "0 0 8 * * MON-FRI")
+    // 2 AM IST cron — calendar date has just flipped to the new trading day so
+    // getLastTradingDay() returns yesterday (the day whose bhavcopy publishes overnight),
+    // matching exactly what we want. Running at 2 AM also triggers the event-log lazy
+    // reset on the cron's own first log line, so the new day's log is fresh for the
+    // 9:15 IST market open.
+    @Scheduled(cron = "0 0 2 * * MON-FRI", zone = "Asia/Kolkata")
     public void scheduledFetch() {
         String expectedDate = getLastTradingDay().toString();
         boolean wasStale = !expectedDate.equals(cachedDate);
@@ -400,11 +426,43 @@ public class BhavcopyService {
             int prev = cache.size();
             cache.clear();
             cachedDate = "";
-            log.error("[BhavcopyService] 8 AM cron fetch failed with stale cache — cleared {} entries, scanner will show empty watchlist", prev);
-            eventService.log("[ERROR] 8 AM CPR fetch failed — stale cache cleared. Manual rebuild required.");
+            log.error("[BhavcopyService] 2 AM cron fetch failed with stale cache — cleared {} entries, scanner will show empty watchlist", prev);
+            eventService.log("[ERROR] 2 AM CPR fetch failed — stale cache cleared. Manual rebuild required.");
             scheduleRetry();
         } else if (ok) {
             cancelRetry();
+            // Push the refreshed CPR into the live scanner watchlist so morning trading
+            // sees the new narrow/inside-CPR list without a server restart.
+            if (marketDataService != null) {
+                try {
+                    int n = marketDataService.rebuildWatchlist();
+                    log.info("[BhavcopyService] Watchlist rebuilt post-fetch: {} symbols", n);
+                } catch (Exception e) {
+                    log.warn("[BhavcopyService] Watchlist rebuild after fetch failed: {}", e.getMessage());
+                }
+            }
+            // Eager reset of yesterday's per-day scanner state. Brings the in-memory chip
+            // state (broken levels, armed buy/sell, level-state up/down) in line with the
+            // refreshed CPR cache so there's no Monday-state-vs-Tuesday-levels mismatch
+            // between 2 AM and the 9:15 AM first-tick lazy reset.
+            if (breakoutScanner != null) {
+                try {
+                    breakoutScanner.onDailyReset();
+                } catch (Exception e) {
+                    log.warn("[BhavcopyService] Scanner daily reset after fetch failed: {}", e.getMessage());
+                }
+            }
+            // Recompute NIFTY's sticky trend state against the new CPR. Uses the most
+            // recent NIFTY close (yesterday's session close) vs the new TC/BC/EMA20 —
+            // i.e. an "opening implication" state for the NIFTY card. Live updates take
+            // over at the first 5-min close of the new session.
+            if (indexTrendService != null) {
+                try {
+                    indexTrendService.recomputeStates();
+                } catch (Exception e) {
+                    log.warn("[BhavcopyService] NIFTY trend recompute after fetch failed: {}", e.getMessage());
+                }
+            }
         }
     }
 

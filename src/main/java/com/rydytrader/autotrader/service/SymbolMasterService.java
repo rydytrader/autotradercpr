@@ -65,8 +65,8 @@ public class SymbolMasterService {
         saveCache();
     }
 
-    /** Reload every trading day at 9:00 AM to pick up new contract expirations. */
-    @Scheduled(cron = "0 0 9 * * MON-FRI")
+    /** Reload every trading day at 2:00 AM IST to pick up new contract expirations. */
+    @Scheduled(cron = "0 0 2 * * MON-FRI", zone = "Asia/Kolkata")
     public void reloadAtMarketOpen() {
         loadAll();
         saveCache();

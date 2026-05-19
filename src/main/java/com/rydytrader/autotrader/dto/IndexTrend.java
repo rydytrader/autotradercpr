@@ -36,14 +36,6 @@ public class IndexTrend {
     // as a tooltip on the NIFTY card's LTP element so the user can see the current volatility
     // scale without opening another page.
     private double atr;
-    // NIFTY option-chain Max OI strikes refreshed every 15 minutes during market hours.
-    // Max Call OI = intraday resistance hurdle; Max Put OI = intraday support hurdle.
-    // Zero = not yet loaded.
-    private double maxCallOiStrike;
-    private long   maxCallOi;
-    private double maxPutOiStrike;
-    private long   maxPutOi;
-    private String oiLastUpdated;
     // Nearest NIFTY hurdle in trade direction (BULLISH/BULLISH_REVERSAL → buy-side levels
     // above LTP; BEARISH/BEARISH_REVERSAL → sell-side levels below). Drives the scanner
     // page's "Hurdle: …" chip on the NIFTY card. Null when state is SIDEWAYS / NEUTRAL or
@@ -101,16 +93,6 @@ public class IndexTrend {
     public void setEma20(double v) { this.ema20 = v; }
     public double getAtr() { return atr; }
     public void setAtr(double v) { this.atr = v; }
-    public double getMaxCallOiStrike() { return maxCallOiStrike; }
-    public void setMaxCallOiStrike(double v) { this.maxCallOiStrike = v; }
-    public long getMaxCallOi() { return maxCallOi; }
-    public void setMaxCallOi(long v) { this.maxCallOi = v; }
-    public double getMaxPutOiStrike() { return maxPutOiStrike; }
-    public void setMaxPutOiStrike(double v) { this.maxPutOiStrike = v; }
-    public long getMaxPutOi() { return maxPutOi; }
-    public void setMaxPutOi(long v) { this.maxPutOi = v; }
-    public String getOiLastUpdated() { return oiLastUpdated; }
-    public void setOiLastUpdated(String v) { this.oiLastUpdated = v; }
     public HurdleInfo getHurdle() { return hurdle; }
     public void setHurdle(HurdleInfo v) { this.hurdle = v; }
 }

@@ -44,7 +44,7 @@ public class MarginDataService {
         load();
     }
 
-    @Scheduled(cron = "0 0 9 * * MON-FRI")
+    @Scheduled(cron = "0 0 2 * * MON-FRI", zone = "Asia/Kolkata")
     public void reloadAtMarketOpen() {
         load();
         // Log readiness only if logged in (otherwise startup flow will log it)
