@@ -674,19 +674,14 @@
                     <label class="form-label">NIFTY HTF Hurdle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableNiftyHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY's 15-min close hasn't cleared its nearest weekly-levels hurdle</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY's 1-hour close hasn't cleared its nearest weekly-levels hurdle</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min headroom to next hurdle:</span>
                         <input type="number" id="niftyHurdleMinHeadroomAtr" class="form-control" step="0.1" min="0" max="5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× NIFTY ATR (0 = off)</span>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min clearance past level:</span>
-                        <input type="number" id="niftyHurdleClearanceAtr" class="form-control" step="0.05" min="0" max="2" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× NIFTY ATR (0 = any clearance)</span>
-                    </div>
-                    <div class="form-hint">Macro-level mirror of the per-stock HTF Hurdle, applied to NIFTY's own data. Identifies NIFTY's nearest weekly-levels hurdle in trade direction and rejects every stock signal while NIFTY's most-recently-completed <b>15-min</b> close hasn't decisively cleared it. The 15-min boundary aligns to wall-clock quarters (9:30, 9:45, 10:00&hellip;); at a 15-min boundary stock bar this IS the just-closed 15-min bar (same-candle, no artificial lag), and between boundaries it's the latest 15-min that has closed. Pre-9:30 IST no 15-min close exists yet so the filter silently fail-opens until the first one finalizes at 9:30.
+                    <div class="form-hint">Macro-level mirror of the per-stock HTF Hurdle, applied to NIFTY's own data. Identifies NIFTY's nearest weekly-levels hurdle in trade direction and rejects every stock signal while NIFTY's most-recently-completed <b>1-hour</b> close hasn't decisively cleared it. 1-hour buckets are session-aligned: 9:15-10:15, 10:15-11:15, &hellip;, 14:15-15:15. Pre-10:15 IST today (Tue-Fri), falls back to <b>NIFTY's previous trading day session close (3:30 PM close)</b> within the current ISO week and checks if THAT cleared the level. <b>On Monday pre-10:15 there's no current-week fallback &rarr; trades with a hurdle in trade direction are REJECTED until the 10:15 close confirms.</b>
                         <br>&nbsp;&nbsp;&bull; <b>Buys</b> &mdash; nearest of {weekly R1, PWH, weekly TC, weekly Pivot, weekly BC} below NIFTY LTP
                         <br>&nbsp;&nbsp;&bull; <b>Sells</b> &mdash; nearest of {weekly S1, PWL, weekly TC, weekly Pivot, weekly BC} above NIFTY LTP
                         <br><br><b>Headroom check.</b> Even after the past hurdle is cleared, the filter also checks the nearest hurdle in the <i>opposite</i> direction (above NIFTY LTP for buys / below for sells). If that upcoming hurdle is closer than <code>min headroom &times; NIFTY ATR</code>, the trade is rejected. Default <b>1.0</b> &times; ATR (scanner-timeframe ATR, so headroom reads against the bar size the bot actually trades on). Set to 0 to disable just the headroom check. Signal Trail bucket: <code>NIFTY_HURDLE</code>.
@@ -696,25 +691,19 @@
                     <label class="form-label">Per-Stock HTF Hurdle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject when stock's latest 15-min close hasn't cleared nearest weekly R1/PWH/TC/Pivot/BC (buy) or S1/PWL/TC/Pivot/BC (sell)</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject when stock's latest 1-hour close hasn't cleared nearest weekly R1/PWH/TC/Pivot/BC (buy) or S1/PWL/TC/Pivot/BC (sell)</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min headroom to next hurdle:</span>
                         <input type="number" id="htfHurdleMinHeadroomAtr" class="form-control" step="0.1" min="0" max="5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× stock ATR (0 = off)</span>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min clearance past level:</span>
-                        <input type="number" id="htfHurdleClearanceAtr" class="form-control" step="0.05" min="0" max="2" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× stock ATR (0 = any clearance)</span>
-                    </div>
                     <div class="form-hint">Same logic as the NIFTY HTF Hurdle above, but applied to each stock's own data. For a 5-min breakout, find the nearest weekly hurdle in the trade direction relative to the stock's <b>current LTP</b>:
-                        <b>buys</b> &rarr; the highest of {R1, PWH, weekly TC, weekly Pivot, weekly BC} strictly below LTP;
-                        <b>sells</b> &rarr; the lowest of {S1, PWL, weekly TC, weekly Pivot, weekly BC} strictly above LTP.
-                        Then check the stock's most-recently-completed <b>15-min</b> close:
-                        <b>cleared</b> &rarr; trade fires; <b>didn't clear</b> &rarr; reject. At a 15-min boundary the just-closed 15-min bar IS the latest &mdash; same-candle semantics, no artificial lag.
-                        <b>No 15-min close yet today</b> (pre-9:30 IST) &rarr; silent fail-open.
-                        Weekly CPR (TC/Pivot/BC) is included so breakouts that fired just past the weekly CPR boundary are gated by the 15-min close too. R2+/S2+ excluded &mdash; far-out projections, not walls the HTF needs to clear first.
+                        <b>buys</b> &rarr; the highest of {R1, PWH, weekly TC, weekly Pivot, weekly BC, R2, R3, R4} strictly below LTP;
+                        <b>sells</b> &rarr; the lowest of {S1, PWL, weekly TC, weekly Pivot, weekly BC, S2, S3, S4} strictly above LTP.
+                        Then check the stock's most-recently-completed <b>1-hour</b> close (session-aligned 9:15-10:15, 10:15-11:15, &hellip;):
+                        <b>cleared</b> &rarr; trade fires; <b>didn't clear</b> &rarr; reject.
+                        <b>Pre-10:15 today (Tue-Fri)</b> &rarr; falls back to the <b>stock's previous trading day session close (3:30 PM close)</b> within the current ISO week and checks if THAT cleared the level. <b>On Monday pre-10:15 there's no current-week fallback &rarr; trades with a hurdle in trade direction are REJECTED until the 10:15 close confirms.</b>
                         Applies to all HPT and MPT breakouts. Fail-open when any level is warming up.
                         <br><br><b>Headroom check.</b> Even after the past hurdle is cleared, the filter also checks the nearest hurdle in the <i>opposite</i> direction (above LTP for buys / below for sells). If that upcoming hurdle is closer than <code>min headroom &times; stock ATR</code>, the trade is rejected. Default <b>1.0</b> &times; ATR. Set to 0 to disable just the headroom check.</div>
                 </div>
@@ -729,11 +718,6 @@
                         <input type="number" id="nifty5mHurdleMinHeadroomAtr" class="form-control" step="0.1" min="0" max="5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× NIFTY ATR (0 = off)</span>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min clearance past far edge:</span>
-                        <input type="number" id="nifty5mHurdleClearanceAtr" class="form-control" step="0.05" min="0" max="2" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× NIFTY ATR (0 = any clearance)</span>
-                    </div>
                     <div class="form-hint">5-min variant of the NIFTY HTF Hurdle, against NIFTY's daily levels treated as <b>zones</b>: <b>CPR</b> [min(TC,BC), max(TC,BC)], <b>R1+PDH</b> [min(R1,PH), max(R1,PH)] and <b>S1+PDL</b> [min(S1,PL), max(S1,PL)]. <b>CPR is included</b> — redundant with Index Alignment for non-reversal aligned trades, but load-bearing for reversal states (BULLISH_REVERSAL with NIFTY below CPR, BEARISH_REVERSAL with NIFTY above CPR) where CPR sits ahead of LTP in the trade direction. Extended levels (R2/R3/R4, S2/S3/S4) excluded. Picks the <b>behind</b> zone in trade direction (highest zone whose lower edge is at/below NIFTY LTP for buys; lowest zone whose upper edge is at/above LTP for sells) and rejects if NIFTY's <i>current</i> same-bucket 5m close is inside that zone or short of its far edge &mdash; <b>clearing only the inner line of a zone isn't enough; the close must clear the far edge</b>. Fail-open if NIFTY's same-bucket bar isn't yet completed.
                         <br><br><b>Headroom check.</b> Even after the behind zone is fully cleared, the filter rejects if the next zone ahead (lower edge above LTP for buys / upper edge below LTP for sells) is closer than <code>min headroom &times; NIFTY ATR</code>. Default <b>1.5</b> &times; ATR. Set to 0 to disable just the headroom check. Signal Trail bucket: <code>NIFTY_5M_HURDLE</code>.</div>
                 </div>
@@ -747,11 +731,6 @@
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min headroom to zone edge:</span>
                         <input type="number" id="virginCprHurdleHeadroomAtr" class="form-control" step="0.1" min="0" max="5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× NIFTY ATR (0 = off)</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min clearance past far edge:</span>
-                        <input type="number" id="virginCprHurdleClearanceAtr" class="form-control" step="0.05" min="0" max="2" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× NIFTY ATR (0 = any clearance)</span>
                     </div>
                     <div class="form-hint">Treats the active virgin CPR as a zone (BC..TC), not individual levels. Uses NIFTY's <i>current</i> same-bucket 5m close (the bar that just fired the stock signal) &mdash; no one-bar lag.
                         <br>&nbsp;&nbsp;&bull; <b>Inside zone</b> &mdash; NIFTY's 5m close lands within [BC, TC]: every stock signal rejected, both directions.
@@ -1320,7 +1299,6 @@
             document.getElementById('enableWeeklyLevelTargetShift').checked = d.enableWeeklyLevelTargetShift !== false;
             document.getElementById('enableHtfHurdleFilter').checked = d.enableHtfHurdleFilter !== false;
             document.getElementById('htfHurdleMinHeadroomAtr').value = (d.htfHurdleMinHeadroomAtr != null ? d.htfHurdleMinHeadroomAtr : 1.0);
-            document.getElementById('htfHurdleClearanceAtr').value = (d.htfHurdleClearanceAtr != null ? d.htfHurdleClearanceAtr : 0);
             document.getElementById('enableStructuralSl').checked = d.enableStructuralSl === true;
             document.getElementById('structuralSlBufferAtr').value = d.structuralSlBufferAtr != null ? d.structuralSlBufferAtr : 1.0;
             document.getElementById('singleLevelSlBufferAtr').value = d.singleLevelSlBufferAtr != null ? d.singleLevelSlBufferAtr : 0.5;
@@ -1360,14 +1338,11 @@
             document.getElementById('enableSectorAlignment').checked = d.enableSectorAlignment === true;
             document.getElementById('enableNiftyHtfHurdleFilter').checked = d.enableNiftyHtfHurdleFilter === true;
             document.getElementById('niftyHurdleMinHeadroomAtr').value = (d.niftyHurdleMinHeadroomAtr != null ? d.niftyHurdleMinHeadroomAtr : 1.0);
-            document.getElementById('niftyHurdleClearanceAtr').value = (d.niftyHurdleClearanceAtr != null ? d.niftyHurdleClearanceAtr : 0);
             document.getElementById('enableNifty5mHurdleFilter').checked = d.enableNifty5mHurdleFilter === true;
             document.getElementById('virginCprExpiryDays').value = d.virginCprExpiryDays != null ? d.virginCprExpiryDays : 10;
             document.getElementById('enableVirginCprHurdleFilter').checked = d.enableVirginCprHurdleFilter === true;
             document.getElementById('virginCprHurdleHeadroomAtr').value = (d.virginCprHurdleHeadroomAtr != null ? d.virginCprHurdleHeadroomAtr : 1.0);
-            document.getElementById('virginCprHurdleClearanceAtr').value = (d.virginCprHurdleClearanceAtr != null ? d.virginCprHurdleClearanceAtr : 0);
             document.getElementById('nifty5mHurdleMinHeadroomAtr').value = (d.nifty5mHurdleMinHeadroomAtr != null ? d.nifty5mHurdleMinHeadroomAtr : 1.0);
-            document.getElementById('nifty5mHurdleClearanceAtr').value = (d.nifty5mHurdleClearanceAtr != null ? d.nifty5mHurdleClearanceAtr : 0);
             document.getElementById('enableTrailingSl').checked = d.enableTrailingSl != null ? d.enableTrailingSl : true;
             document.getElementById('enablePriceEmaExit').checked = d.enablePriceEmaExit === true;
             document.getElementById('breakevenTriggerPct').value = d.breakevenTriggerPct != null ? d.breakevenTriggerPct : 61.8;
@@ -1481,7 +1456,6 @@
                 enableWeeklyLevelTargetShift: document.getElementById('enableWeeklyLevelTargetShift').checked,
                 enableHtfHurdleFilter: document.getElementById('enableHtfHurdleFilter').checked,
                 htfHurdleMinHeadroomAtr: parseFloat(document.getElementById('htfHurdleMinHeadroomAtr').value) || 0,
-                htfHurdleClearanceAtr: parseFloat(document.getElementById('htfHurdleClearanceAtr').value) || 0,
                 enableStructuralSl: document.getElementById('enableStructuralSl').checked,
                 structuralSlBufferAtr: parseFloat(document.getElementById('structuralSlBufferAtr').value) || 1.0,
                 singleLevelSlBufferAtr: parseFloat(document.getElementById('singleLevelSlBufferAtr').value) || 0,
@@ -1521,14 +1495,11 @@
                 enableSectorAlignment:   document.getElementById('enableSectorAlignment').checked,
                 enableNiftyHtfHurdleFilter: document.getElementById('enableNiftyHtfHurdleFilter').checked,
                 niftyHurdleMinHeadroomAtr: parseFloat(document.getElementById('niftyHurdleMinHeadroomAtr').value) || 0,
-                niftyHurdleClearanceAtr: parseFloat(document.getElementById('niftyHurdleClearanceAtr').value) || 0,
                 enableNifty5mHurdleFilter: document.getElementById('enableNifty5mHurdleFilter').checked,
                 virginCprExpiryDays: parseInt(document.getElementById('virginCprExpiryDays').value) || 0,
                 enableVirginCprHurdleFilter: document.getElementById('enableVirginCprHurdleFilter').checked,
                 virginCprHurdleHeadroomAtr: parseFloat(document.getElementById('virginCprHurdleHeadroomAtr').value) || 0,
-                virginCprHurdleClearanceAtr: parseFloat(document.getElementById('virginCprHurdleClearanceAtr').value) || 0,
                 nifty5mHurdleMinHeadroomAtr: parseFloat(document.getElementById('nifty5mHurdleMinHeadroomAtr').value) || 0,
-                nifty5mHurdleClearanceAtr: parseFloat(document.getElementById('nifty5mHurdleClearanceAtr').value) || 0,
                 enableTrailingSl: document.getElementById('enableTrailingSl').checked,
                 enablePriceEmaExit: document.getElementById('enablePriceEmaExit').checked,
                 breakevenTriggerPct: parseFloat(document.getElementById('breakevenTriggerPct').value) || 61.8,

@@ -583,7 +583,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     recordRejection(fyersSymbol, buySetup, close, "VIRGIN_CPR_HURDLE", virginCprHurdleReject);
                     return;
                 }
-                // Per-stock HTF Hurdle — stock's 15-min close must have cleared nearest weekly level.
+                // Per-stock HTF Hurdle — stock's 1-hour close must have cleared nearest weekly level.
                 String perStockHtfReject = checkPerStockHtfHurdle(true, fyersSymbol, close, atr);
                 if (perStockHtfReject != null) {
                     eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + perStockHtfReject);
@@ -698,7 +698,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     recordRejection(fyersSymbol, sellSetup, close, "VIRGIN_CPR_HURDLE", virginCprHurdleReject);
                     return;
                 }
-                // Per-stock HTF Hurdle — stock's 15-min close must have cleared nearest weekly level.
+                // Per-stock HTF Hurdle — stock's 1-hour close must have cleared nearest weekly level.
                 String perStockHtfReject = checkPerStockHtfHurdle(false, fyersSymbol, close, atr);
                 if (perStockHtfReject != null) {
                     eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + perStockHtfReject);
@@ -1546,30 +1546,24 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
             if (chosenName == null) return null; // no hurdle in trade direction → clear path
 
-            // Most-recently-completed 15-min close on NIFTY. At a 15-min boundary stock bar
-            // (9:30 / 9:45 / 10:00 / …) this IS the just-closed 15-min bar — same-candle
-            // semantics, no artificial lag. Between 15-min boundaries (5- or 10-min into a
-            // 15-min bucket) it's the latest available 15-min close. Pre-9:30 IST (no 15-min
-            // boundary yet today) → null → silently fail-open.
+            // Most-recently-completed 1-hour close on NIFTY (session-aligned: 10:15, 11:15, …,
+            // 15:15). Pre-10:15 IST today, falls back to the previous trading day's last 1-hour
+            // close within the current ISO week. On Monday pre-10:15 there's no current-week
+            // fallback → null → REJECT (a hurdle exists but the 1-hour hasn't yet committed
+            // either way, so the safer call is to wait until the 10:15 close confirms).
             Double htfClose = candleAggregator != null
-                ? candleAggregator.getLast15MinClose(niftySym) : null;
-            if (htfClose == null || htfClose <= 0) return null;
+                ? candleAggregator.getLast1HourClose(niftySym) : null;
+            if (htfClose == null || htfClose <= 0) {
+                return "NIFTY HTF hurdle at " + chosenName
+                    + " (" + String.format("%.2f", chosenLevel) + ") — waiting for first 1-hour close (10:15 IST)";
+            }
 
-            // Clearance buffer — require NIFTY's 15-min close to clear by at least
-            // clearanceAtr × NIFTY ATR. Guards against paper-thin "close at level + 0.01"
-            // passes that the headroom check can't catch when there's no near hurdle ahead.
-            double clearanceAtr = riskSettings.getNiftyHurdleClearanceAtr();
-            double niftyAtrForClear = atrService != null ? atrService.getAtr(niftySym) : 0;
-            double clearBuf = (clearanceAtr > 0 && niftyAtrForClear > 0) ? clearanceAtr * niftyAtrForClear : 0;
-            double buyBar  = chosenLevel + clearBuf;   // htfClose must be > buyBar  to pass
-            double sellBar = chosenLevel - clearBuf;   // htfClose must be < sellBar to pass
-            boolean cleared = isBuy ? htfClose > buyBar : htfClose < sellBar;
+            boolean cleared = isBuy ? htfClose > chosenLevel : htfClose < chosenLevel;
             if (!cleared) {
                 return "NIFTY HTF hurdle at " + chosenName
                     + ": NIFTY " + String.format("%.2f", niftyPrice)
-                    + ", 15-min close=" + String.format("%.2f", htfClose)
-                    + ", level " + String.format("%.2f", chosenLevel)
-                    + (clearBuf > 0 ? " (needs +" + String.format("%.2f", clearBuf) + " buffer)" : "");
+                    + ", 1-hour close=" + String.format("%.2f", htfClose)
+                    + ", level " + String.format("%.2f", chosenLevel);
             }
 
             // Headroom check — reject if the nearest hurdle in the OPPOSITE direction (above
@@ -2001,15 +1995,16 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     /**
      * Per-stock HTF Hurdle filter. Mirrors {@link #checkNiftyHurdle} but on the stock's own
      * data: picks the nearest weekly level relative to the stock's current LTP, then checks
-     * whether the stock's most-recently-completed 15-min bar's close has cleared that level
-     * (with clearance buffer), and finally a headroom check against the nearest weekly hurdle
-     * in the opposite direction.
+     * whether the stock's most-recently-completed 1-hour close has cleared that level, and
+     * finally a headroom check against the nearest weekly hurdle in the opposite direction.
      *
-     * <p>Hurdle candidates: R1, PWH, weekly TC, weekly Pivot, weekly BC for buys; S1, PWL,
-     * weekly TC, weekly Pivot, weekly BC for sells. R2+/S2+ excluded.
+     * <p>Hurdle candidates (match NIFTY HTF Hurdle for consistency): R1, PWH, weekly TC,
+     * weekly Pivot, weekly BC, R2, R3, R4 for buys; S1, PWL, weekly TC, weekly Pivot,
+     * weekly BC, S2, S3, S4 for sells.
      *
-     * <p>Fail-open when: filter disabled, weekly levels not loaded, LTP missing (falls back
-     * to the breakout 5m close), no 15-min close yet today (pre-9:30 IST).
+     * <p>Fail-open when: filter disabled, weekly levels not loaded, no hurdle in trade direction.
+     * <b>Rejects</b> when a hurdle exists but no 1-hour close is available in the current ISO
+     * week (Monday pre-10:15) — waits until 10:15 to confirm.
      */
     private String checkPerStockHtfHurdle(boolean isBuy, String fyersSymbol, double close, double atr) {
         if (!riskSettings.isEnableHtfHurdleFilter()) return null;
@@ -2021,11 +2016,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double[] candidates;
         String[] names;
         if (isBuy) {
-            candidates = new double[]{ wl.r1, wl.ph, wl.tc, wl.pivot, wl.bc };
-            names      = new String[]{ "R1", "PWH", "weekly TC", "weekly Pivot", "weekly BC" };
+            candidates = new double[]{ wl.r1, wl.ph, wl.tc, wl.pivot, wl.bc, wl.r2, wl.r3, wl.r4 };
+            names      = new String[]{ "R1", "PWH", "weekly TC", "weekly Pivot", "weekly BC", "weekly R2", "weekly R3", "weekly R4" };
         } else {
-            candidates = new double[]{ wl.s1, wl.pl, wl.tc, wl.pivot, wl.bc };
-            names      = new String[]{ "S1", "PWL", "weekly TC", "weekly Pivot", "weekly BC" };
+            candidates = new double[]{ wl.s1, wl.pl, wl.tc, wl.pivot, wl.bc, wl.s2, wl.s3, wl.s4 };
+            names      = new String[]{ "S1", "PWL", "weekly TC", "weekly Pivot", "weekly BC", "weekly S2", "weekly S3", "weekly S4" };
         }
 
         // Stock's current LTP — falls back to the breakout 5-min close if live LTP missing.
@@ -2045,18 +2040,18 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
         }
         if (chosenName != null) {
-            Double htfClose = candleAggregator.getLast15MinClose(fyersSymbol);
-            double clearanceBuf = riskSettings.getHtfHurdleClearanceAtr() * atr;
-            double buyBar = chosenLevel + clearanceBuf;
-            double sellBar = chosenLevel - clearanceBuf;
+            Double htfClose = candleAggregator.getLast1HourClose(fyersSymbol);
             if (htfClose == null || htfClose <= 0) {
-                // Silent fail-open — no rejection log pre-9:30.
-            } else if (isBuy ? htfClose <= buyBar : htfClose >= sellBar) {
+                // No 1-hour close in current ISO week (Monday pre-10:15). Hurdle exists but
+                // the 1-hour hasn't yet committed either way — reject and wait for the 10:15
+                // close. Mirrors the NIFTY HTF Hurdle behaviour.
+                return "HTF hurdle at weekly " + chosenName
+                    + " (" + String.format("%.2f", chosenLevel) + ") — waiting for first 1-hour close (10:15 IST)";
+            } else if (isBuy ? htfClose <= chosenLevel : htfClose >= chosenLevel) {
                 return "HTF hurdle at weekly " + chosenName
                     + ": price=" + String.format("%.2f", stockPrice)
-                    + ", 15-min close=" + String.format("%.2f", htfClose)
-                    + ", level=" + String.format("%.2f", chosenLevel)
-                    + (clearanceBuf > 0 ? " (needs +" + String.format("%.2f", clearanceBuf) + " buffer)" : "");
+                    + ", 1-hour close=" + String.format("%.2f", htfClose)
+                    + ", level=" + String.format("%.2f", chosenLevel);
             }
         }
 
@@ -2175,15 +2170,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (currentBar == null) return null; // NIFTY same-bucket bar not yet completed — fail-open
 
         double niftyClose = currentBar.close;
-        // Clearance buffer — require NIFTY's 5m close to clear the far edge by at least
-        // clearanceAtr × NIFTY ATR. Guards against paper-thin "close at level + 0.01"
-        // passes that the headroom check can't catch when there's no near zone ahead.
-        double clearanceAtr5m = riskSettings.getNifty5mHurdleClearanceAtr();
-        double niftyAtrForClear5m = atrService != null ? atrService.getAtr(niftySym) : 0;
-        double clearBuf5m = (clearanceAtr5m > 0 && niftyAtrForClear5m > 0) ? clearanceAtr5m * niftyAtrForClear5m : 0;
-        double buyBar5m  = zHi + clearBuf5m;   // niftyClose must be > buyBar5m  to pass
-        double sellBar5m = zLo - clearBuf5m;   // niftyClose must be < sellBar5m to pass
-        boolean cleared = isBuy ? niftyClose > buyBar5m : niftyClose < sellBar5m;
+        boolean cleared = isBuy ? niftyClose > zHi : niftyClose < zLo;
         if (!cleared) {
             String where = (niftyClose >= zLo && niftyClose <= zHi)
                 ? "inside " + chosenName + " zone"
@@ -2191,8 +2178,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             return "NIFTY 5m " + where
                 + " [" + String.format("%.2f", zLo) + ", " + String.format("%.2f", zHi) + "]"
                 + ": 5m close " + String.format("%.2f", niftyClose)
-                + ", NIFTY LTP " + String.format("%.2f", niftyLtp)
-                + (clearBuf5m > 0 ? " (needs +" + String.format("%.2f", clearBuf5m) + " buffer past far edge)" : "");
+                + ", NIFTY LTP " + String.format("%.2f", niftyLtp);
         }
 
         // Headroom check — reject if the next zone ahead (lower edge above LTP for buys, upper
@@ -2282,33 +2268,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             return "NIFTY (" + String.format("%.2f", niftyClose)
                 + ") inside virgin CPR zone (" + String.format("%.2f", zoneBot)
                 + "—" + String.format("%.2f", zoneTop) + ")";
-        }
-
-        // 1b) Clearance buffer past the far edge. When NIFTY has crossed the zone in the
-        //     trade direction (above zoneTop for buys, below zoneBot for sells), require
-        //     the close to be at least clearance × NIFTY ATR past the far edge. Guards
-        //     against paper-thin "close at zoneTop + 0.01" passes that would otherwise
-        //     count as fully cleared.
-        double clearanceAtr = riskSettings.getVirginCprHurdleClearanceAtr();
-        if (clearanceAtr > 0 && atrService != null) {
-            double atrForClear = atrService.getAtr(niftySym);
-            if (atrForClear > 0) {
-                double clearBuf = clearanceAtr * atrForClear;
-                if (isBuy && niftyClose > zoneTop && niftyClose <= zoneTop + clearBuf) {
-                    return "NIFTY (" + String.format("%.2f", niftyClose)
-                        + ") only " + String.format("%.2f", niftyClose - zoneTop)
-                        + " pts past virgin CPR zone top (" + String.format("%.2f", zoneTop)
-                        + ", need +" + String.format("%.2f", clearBuf)
-                        + " buffer, " + clearanceAtr + " × NIFTY ATR " + String.format("%.2f", atrForClear) + ")";
-                }
-                if (!isBuy && niftyClose < zoneBot && niftyClose >= zoneBot - clearBuf) {
-                    return "NIFTY (" + String.format("%.2f", niftyClose)
-                        + ") only " + String.format("%.2f", zoneBot - niftyClose)
-                        + " pts past virgin CPR zone bot (" + String.format("%.2f", zoneBot)
-                        + ", need +" + String.format("%.2f", clearBuf)
-                        + " buffer, " + clearanceAtr + " × NIFTY ATR " + String.format("%.2f", atrForClear) + ")";
-                }
-            }
         }
 
         // 2) Headroom check — directional, only when zone is in trade direction.

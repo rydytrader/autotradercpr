@@ -59,9 +59,6 @@ public class SettingsController {
         result.put("enableWeeklyLevelTargetShift", riskSettings.isEnableWeeklyLevelTargetShift());
         result.put("enableHtfHurdleFilter", riskSettings.isEnableHtfHurdleFilter());
         result.put("htfHurdleMinHeadroomAtr", riskSettings.getHtfHurdleMinHeadroomAtr());
-        result.put("htfHurdleClearanceAtr", riskSettings.getHtfHurdleClearanceAtr());
-        result.put("niftyHurdleClearanceAtr", riskSettings.getNiftyHurdleClearanceAtr());
-        result.put("nifty5mHurdleClearanceAtr", riskSettings.getNifty5mHurdleClearanceAtr());
         result.put("enableNiftyHtfHurdleFilter", riskSettings.isEnableNiftyHtfHurdleFilter());
         result.put("niftyHurdleMinHeadroomAtr", riskSettings.getNiftyHurdleMinHeadroomAtr());
         result.put("enableNifty5mHurdleFilter", riskSettings.isEnableNifty5mHurdleFilter());
@@ -108,7 +105,6 @@ public class SettingsController {
         result.put("virginCprExpiryDays", riskSettings.getVirginCprExpiryDays());
         result.put("enableVirginCprHurdleFilter", riskSettings.isEnableVirginCprHurdleFilter());
         result.put("virginCprHurdleHeadroomAtr", riskSettings.getVirginCprHurdleHeadroomAtr());
-        result.put("virginCprHurdleClearanceAtr", riskSettings.getVirginCprHurdleClearanceAtr());
         result.put("breakevenTriggerPct", riskSettings.getBreakevenTriggerPct());
         result.put("breakevenSlAtrMult",  riskSettings.getBreakevenSlAtrMult());
         result.put("skipR3S3IvOvDays", riskSettings.isSkipR3S3IvOvDays());
@@ -169,9 +165,6 @@ public class SettingsController {
             if (body.containsKey("enableWeeklyLevelTargetShift")) riskSettings.setEnableWeeklyLevelTargetShift(Boolean.parseBoolean(body.get("enableWeeklyLevelTargetShift").toString()));
             if (body.containsKey("enableHtfHurdleFilter")) riskSettings.setEnableHtfHurdleFilter(Boolean.parseBoolean(body.get("enableHtfHurdleFilter").toString()));
             if (body.containsKey("htfHurdleMinHeadroomAtr")) riskSettings.setHtfHurdleMinHeadroomAtr(Double.parseDouble(body.get("htfHurdleMinHeadroomAtr").toString()));
-            if (body.containsKey("htfHurdleClearanceAtr")) riskSettings.setHtfHurdleClearanceAtr(Double.parseDouble(body.get("htfHurdleClearanceAtr").toString()));
-            if (body.containsKey("niftyHurdleClearanceAtr")) riskSettings.setNiftyHurdleClearanceAtr(Double.parseDouble(body.get("niftyHurdleClearanceAtr").toString()));
-            if (body.containsKey("nifty5mHurdleClearanceAtr")) riskSettings.setNifty5mHurdleClearanceAtr(Double.parseDouble(body.get("nifty5mHurdleClearanceAtr").toString()));
             if (body.containsKey("enableNiftyHtfHurdleFilter")) riskSettings.setEnableNiftyHtfHurdleFilter(Boolean.parseBoolean(body.get("enableNiftyHtfHurdleFilter").toString()));
             if (body.containsKey("niftyHurdleMinHeadroomAtr")) riskSettings.setNiftyHurdleMinHeadroomAtr(Double.parseDouble(body.get("niftyHurdleMinHeadroomAtr").toString()));
             if (body.containsKey("enableNifty5mHurdleFilter")) riskSettings.setEnableNifty5mHurdleFilter(Boolean.parseBoolean(body.get("enableNifty5mHurdleFilter").toString()));
@@ -223,7 +216,6 @@ public class SettingsController {
             }
             if (body.containsKey("enableVirginCprHurdleFilter")) riskSettings.setEnableVirginCprHurdleFilter(Boolean.parseBoolean(body.get("enableVirginCprHurdleFilter").toString()));
             if (body.containsKey("virginCprHurdleHeadroomAtr")) riskSettings.setVirginCprHurdleHeadroomAtr(Double.parseDouble(body.get("virginCprHurdleHeadroomAtr").toString()));
-            if (body.containsKey("virginCprHurdleClearanceAtr")) riskSettings.setVirginCprHurdleClearanceAtr(Double.parseDouble(body.get("virginCprHurdleClearanceAtr").toString()));
             if (body.containsKey("breakevenTriggerPct")) riskSettings.setBreakevenTriggerPct(Double.parseDouble(body.get("breakevenTriggerPct").toString()));
             if (body.containsKey("breakevenSlAtrMult"))  riskSettings.setBreakevenSlAtrMult(Double.parseDouble(body.get("breakevenSlAtrMult").toString()));
             if (body.containsKey("skipR3S3IvOvDays")) riskSettings.setSkipR3S3IvOvDays(Boolean.parseBoolean(body.get("skipR3S3IvOvDays").toString()));

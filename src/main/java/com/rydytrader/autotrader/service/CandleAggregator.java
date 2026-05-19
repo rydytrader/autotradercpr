@@ -811,6 +811,60 @@ public class CandleAggregator {
     }
 
     /**
+     * Latest 1-hour close derivable from the 5-min grid, with previous-day fallback.
+     * NSE 1-hour buckets are session-aligned starting at 9:15 IST: 9:15-10:15, 10:15-11:15,
+     * …, 14:15-15:15. A 5-min bar's end aligns with a 1-hour boundary when
+     * {@code (startMinute + 5) % 60 == 15}.
+     *
+     * <p>Resolution order (descending through completed bars):
+     * <ul>
+     *   <li><b>Today, post-10:15</b> → today's most recent 1-hour-aligned close.</li>
+     *   <li><b>Today, pre-10:15 (Tue-Fri)</b> → the previous trading day's <i>session close</i>
+     *       (15:25-15:30 bar = the day's 3:30 PM close), provided it's in the current ISO week.
+     *       This is the day's actual closing price — not the 14:15-15:15 1-hour bar's close.</li>
+     *   <li><b>Today, pre-10:15 Monday</b> → null. No current-week fallback. Caller rejects.</li>
+     * </ul>
+     *
+     * <p>Returns null when no in-week comparator exists or when the symbol has no completed
+     * bars.
+     */
+    public Double getLast1HourClose(String symbol) {
+        Deque<CandleBar> history = completedCandles.get(symbol);
+        if (history == null || history.isEmpty()) return null;
+
+        // Monday 00:00 IST of the current ISO week — anything before this is "previous week"
+        // and not a valid intra-week fallback per the filter spec.
+        long weekStartEpoch = ZonedDateTime.now(IST)
+            .with(java.time.DayOfWeek.MONDAY)
+            .toLocalDate()
+            .atStartOfDay(IST)
+            .toEpochSecond();
+        long todayStartEpoch = ZonedDateTime.now(IST)
+            .toLocalDate()
+            .atStartOfDay(IST)
+            .toEpochSecond();
+
+        Iterator<CandleBar> it = history.descendingIterator();
+        while (it.hasNext()) {
+            CandleBar bar = it.next();
+            if (bar.close <= 0) continue;
+            if (bar.epochSec > 0 && bar.epochSec < weekStartEpoch) break; // dropped out of current week
+
+            if (bar.epochSec >= todayStartEpoch) {
+                // Today's bar — only return at a 1-hour-aligned boundary.
+                long endMinute = bar.startMinute + 5;
+                if (endMinute % 60 == 15) return bar.close;
+            } else {
+                // First pre-today bar we encounter is the latest bar of the previous trading
+                // day (descending iteration). Its close is the day's actual session close
+                // (typically the 15:25-15:30 = 3:30 PM bar). Return it as the fallback.
+                return bar.close;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Synthesize the most recent <b>completed</b> 15-min candle from the 5-min grid: three
      * consecutive 5-min bars whose combined window ends on a 15-min boundary (the last bar
      * has {@code (startMinute + 5) % 15 == 0}). Open = first bar's open, close = last bar's
