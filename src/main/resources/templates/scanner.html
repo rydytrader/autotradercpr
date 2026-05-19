@@ -500,10 +500,12 @@
             <button class="filter-btn" onclick="setFilter('INSIDE', this)">Inside</button>
         </span>
         <div class="filter-sep"></div>
-        <span class="momentum-filter-group">
-            <button class="filter-btn active" onclick="setMomentumFilter('all', this)">All</button>
-            <button class="filter-btn" onclick="setMomentumFilter('BULL', this)">Bullish Momentum</button>
-            <button class="filter-btn" onclick="setMomentumFilter('BEAR', this)">Bearish Momentum</button>
+        <span class="trend-filter-group">
+            <button class="filter-btn active" onclick="setTrendFilter('all', this)">All Trend</button>
+            <button class="filter-btn" onclick="setTrendFilter('BULLISH', this)">Bullish</button>
+            <button class="filter-btn" onclick="setTrendFilter('BULLISH_REVERSAL', this)">Bull Rev</button>
+            <button class="filter-btn" onclick="setTrendFilter('BEARISH', this)">Bearish</button>
+            <button class="filter-btn" onclick="setTrendFilter('BEARISH_REVERSAL', this)">Bear Rev</button>
         </span>
         <div class="filter-sep"></div>
         <button class="filter-btn" onclick="toggleSignalFilter(this)">Has Signal</button>
@@ -553,7 +555,7 @@
     var cprFilter = 'all';
     var signalFilter = false;
     var filteredFilter = false;
-    var momentumFilter = 'all';  // 'all' | 'BULL' | 'BEAR'
+    var trendFilter = 'all';  // 'all' | 'BULLISH' | 'BULLISH_REVERSAL' | 'BEARISH' | 'BEARISH_REVERSAL'
     var symbolFilter = '';
     var sectorFilter = '';
 
@@ -584,9 +586,9 @@
         renderCards();
     };
 
-    window.setMomentumFilter = function(type, btn) {
-        momentumFilter = type; // 'all' | 'BULL' | 'BEAR'
-        document.querySelectorAll('.momentum-filter-group .filter-btn').forEach(function(b) {
+    window.setTrendFilter = function(type, btn) {
+        trendFilter = type; // 'all' | 'BULLISH' | 'BULLISH_REVERSAL' | 'BEARISH' | 'BEARISH_REVERSAL'
+        document.querySelectorAll('.trend-filter-group .filter-btn').forEach(function(b) {
             b.classList.remove('active');
         });
         btn.classList.add('active');
@@ -658,15 +660,7 @@
             if (sectorFilter && d.sectorIndexTicker !== sectorFilter) return false;
             if (signalFilter && (!d.lastSignal || d.lastSignal.status !== 'TRADED')) return false;
             if (filteredFilter && (!d.lastSignal || d.lastSignal.status !== 'FILTERED')) return false;
-            if (momentumFilter !== 'all') {
-                var wl = d.weeklyLevels;
-                if (!wl || !d.ltp) return false;
-                var mR1 = +wl.r1 || 0, mS1 = +wl.s1 || 0, mPh = +wl.ph || 0, mPl = +wl.pl || 0;
-                var isBull = (mR1 > 0 && mPh > 0 && d.ltp > mR1 && d.ltp > mPh);
-                var isBear = (mS1 > 0 && mPl > 0 && d.ltp < mS1 && d.ltp < mPl);
-                if (momentumFilter === 'BULL' && !isBull) return false;
-                if (momentumFilter === 'BEAR' && !isBear) return false;
-            }
+            if (trendFilter !== 'all' && (d.trendState || 'NEUTRAL') !== trendFilter) return false;
             return true;
         });
 
@@ -875,15 +869,39 @@
             + '  <span class="scan-ltp">' + fmt(d.ltp) + '</span>'
             + '  <span class="scan-change ' + chClass + '">' + chArrow + ' ' + d.changePercent.toFixed(2) + '%</span>'
             + '  <span style="margin-left:auto; display:inline-flex; align-items:baseline; gap:6px;">'
-            +     '<span class="scan-data-label">DO</span>'
-            +     '<span class="scan-data-value">' + (d.dayOpen > 0 ? fmt(d.dayOpen) : '--') + '</span>'
+            +     '<span class="scan-data-label">ATR</span>'
+            +     '<span class="scan-data-value">' + fmt(d.atr) + '</span>'
             + '  </span>'
             + '</div>'
-            + '<div class="scan-data-grid scan-data-grid-2">'
-            + '  <div class="scan-data-item" style="text-align:left;"><div class="scan-data-label">ATR</div><div class="scan-data-value">' + fmt(d.atr) + '</div></div>'
+            + '<div class="scan-data-grid scan-data-grid-3">'
+            + (function() {
+                // CPR bias chip — BULLISH (above max TC/BC), BEARISH (below min TC/BC), or INSIDE.
+                // Sourced from the last 5-min candle close so it only flips at bar close.
+                var bias = d.cprBias || 'INSIDE';
+                var color = bias === 'BULLISH' ? 'var(--accent-green)'
+                    : bias === 'BEARISH' ? 'var(--accent-red)'
+                    : 'var(--accent-yellow)';
+                return '  <div class="scan-data-item" style="text-align:left;"><div class="scan-data-label">CPR</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;" title="Last 5-min candle close vs CPR zone">' + bias + '</div></div>';
+            })()
             + (function() {
                 var color = em5.cls === 'bullish' ? 'var(--accent-green)' : em5.cls === 'bearish' ? 'var(--accent-red)' : 'var(--text-secondary)';
-                return '  <div class="scan-data-item" style="text-align:right;"><div class="scan-data-label">EMA 20</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + (d.ema20 > 0 ? fmt(d.ema20) + ' ' + em5.arrow : '--') + '</div></div>';
+                return '  <div class="scan-data-item" style="text-align:center;"><div class="scan-data-label">EMA 20</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + (d.ema20 > 0 ? fmt(d.ema20) + ' ' + em5.arrow : '--') + '</div></div>';
+            })()
+            + (function() {
+                // 2-factor trend state: mirrors NIFTY card (CPR + EMA20). BULLISH /
+                // BEARISH / BULLISH_REVERSAL / BEARISH_REVERSAL / INSIDE / SIDEWAYS / NEUTRAL.
+                var st = d.trendState || 'NEUTRAL';
+                var color, label;
+                switch (st) {
+                    case 'BULLISH':          color = 'var(--accent-green)';   label = 'BULLISH';   break;
+                    case 'BEARISH':          color = 'var(--accent-red)';     label = 'BEARISH';   break;
+                    case 'BULLISH_REVERSAL': color = 'var(--accent-green)';   label = 'BULL REV';  break;
+                    case 'BEARISH_REVERSAL': color = 'var(--accent-red)';     label = 'BEAR REV';  break;
+                    case 'INSIDE':           color = 'var(--accent-yellow)';  label = 'INSIDE';    break;
+                    case 'SIDEWAYS':         color = 'var(--text-muted)';     label = 'SIDEWAYS';  break;
+                    default:                 color = 'var(--text-muted)';     label = 'NEUTRAL';   break;
+                }
+                return '  <div class="scan-data-item" style="text-align:right;"><div class="scan-data-label">TREND</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;" title="2-factor state machine — CPR bias + EMA20 (matches NIFTY card)">' + label + '</div></div>';
             })()
             + '</div>'
             + '<div style="border-top:1px solid var(--border);"></div>'

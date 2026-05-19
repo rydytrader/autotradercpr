@@ -446,6 +446,49 @@ public class ScannerController {
         lvls.put("s4", r(levels.getS4()));
         card.put("levels", lvls);
 
+        // CPR bias + 2-factor trend state — mirrors NIFTY card's deriveState logic.
+        //   CPR bullish (close > max(TC,BC)) AND EMA bullish (close > EMA20)  → BULLISH
+        //   CPR bearish (close < min(TC,BC)) AND EMA bearish (close < EMA20)  → BEARISH
+        //   CPR bearish AND EMA bullish                                       → BULLISH_REVERSAL
+        //   CPR bullish AND EMA bearish                                       → BEARISH_REVERSAL
+        //   close inside CPR zone                                             → INSIDE
+        //   no close data                                                     → NEUTRAL
+        // Computed off the last completed 5-min candle close (or previous trading-day
+        // close as fallback when no candle is cached), so the chip only flips at 5-min
+        // boundaries — not on every tick.
+        String cprBias = "INSIDE";
+        String trendState = "NEUTRAL";
+        double cprTop = Math.max(levels.getTc(), levels.getBc());
+        double cprBotBias = Math.min(levels.getTc(), levels.getBc());
+        CandleAggregator.CandleBar lastBar = candleAggregator.getLastCompletedCandle(fyersSymbol);
+        double biasClose = lastBar != null ? lastBar.close : levels.getClose();
+        double ema20Val = emaService.getEma(fyersSymbol);
+        if (biasClose > 0 && cprTop > 0 && cprBotBias > 0) {
+            Boolean cprBullish = null;
+            if (biasClose > cprTop)        { cprBias = "BULLISH"; cprBullish = Boolean.TRUE; }
+            else if (biasClose < cprBotBias) { cprBias = "BEARISH"; cprBullish = Boolean.FALSE; }
+            Boolean emaBullish = null;
+            if (ema20Val > 0) {
+                if (biasClose > ema20Val)      emaBullish = Boolean.TRUE;
+                else if (biasClose < ema20Val) emaBullish = Boolean.FALSE;
+            }
+            if (cprBullish == null) {
+                trendState = "INSIDE";
+            } else if (Boolean.TRUE.equals(cprBullish)  && !Boolean.FALSE.equals(emaBullish)) {
+                trendState = "BULLISH";
+            } else if (Boolean.FALSE.equals(cprBullish) && !Boolean.TRUE.equals(emaBullish)) {
+                trendState = "BEARISH";
+            } else if (Boolean.FALSE.equals(cprBullish) && Boolean.TRUE.equals(emaBullish)) {
+                trendState = "BULLISH_REVERSAL";
+            } else if (Boolean.TRUE.equals(cprBullish)  && Boolean.FALSE.equals(emaBullish)) {
+                trendState = "BEARISH_REVERSAL";
+            } else {
+                trendState = "SIDEWAYS";
+            }
+        }
+        card.put("cprBias", cprBias);
+        card.put("trendState", trendState);
+
         // Broken levels
         Set<String> broken = breakoutScanner.getBrokenLevels(fyersSymbol);
         card.put("brokenLevels", broken != null ? new ArrayList<>(broken) : Collections.emptyList());
