@@ -463,11 +463,14 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // / pattern filters were dropped — they required multiple EMAs.
         double ema20Now = emaService.getEma(fyersSymbol);
         if (riskSettings.isEnableEmaTrendCheck() && ema20Now > 0) {
-            // Doji bars (body = 0) qualify as either direction — the hammer/shooting-star
-            // detectors are color-agnostic. So the "blocked by EMA trend" pre-check fires
-            // when the bar is NOT strictly the opposing color: a non-red bar can hold a
-            // potential buy, a non-green bar can hold a potential sell.
-            if (!redCandle && close <= ema20Now) {
+            // Pattern detectors are color-agnostic (a red-bodied hammer is still a valid
+            // bullish pin bar; a green-bodied shooting star is a valid bearish pin bar).
+            // So the EMA-trend pre-check log is also color-agnostic: if a pattern WOULD
+            // have matched in the trade direction and EMA20 is on the wrong side, log it
+            // regardless of body color. detectBuyBreakout / detectSellBreakout with
+            // skipTrendFilters=true returns the matched setup only if a pattern fires,
+            // so the log fires only when there was something real to block.
+            if (close <= ema20Now) {
                 String potentialSetup = detectBuyBreakout(open, high, low, close, levels, atp, broken, fyersSymbol, true);
                 if (potentialSetup != null) {
                     String detail = "close (" + String.format("%.2f", close) + ") not above EMA20 ("
@@ -475,7 +478,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     eventService.log("[SCANNER] " + fyersSymbol + " " + potentialSetup + routeFor(fyersSymbol) + " blocked by 5-min EMA trend — " + detail);
                     recordRejection(fyersSymbol, potentialSetup, close, "EMA_TREND", detail);
                 }
-            } else if (!greenCandle && close >= ema20Now) {
+            }
+            if (close >= ema20Now) {
                 String potentialSetup = detectSellBreakout(open, high, low, close, levels, atp, broken, fyersSymbol, true);
                 if (potentialSetup != null) {
                     String detail = "close (" + String.format("%.2f", close) + ") not below EMA20 ("
