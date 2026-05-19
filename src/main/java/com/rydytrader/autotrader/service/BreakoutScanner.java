@@ -463,7 +463,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // / pattern filters were dropped — they required multiple EMAs.
         double ema20Now = emaService.getEma(fyersSymbol);
         if (riskSettings.isEnableEmaTrendCheck() && ema20Now > 0) {
-            if (greenCandle && close <= ema20Now) {
+            // Doji bars (body = 0) qualify as either direction — the hammer/shooting-star
+            // detectors are color-agnostic. So the "blocked by EMA trend" pre-check fires
+            // when the bar is NOT strictly the opposing color: a non-red bar can hold a
+            // potential buy, a non-green bar can hold a potential sell.
+            if (!redCandle && close <= ema20Now) {
                 String potentialSetup = detectBuyBreakout(open, high, low, close, levels, atp, broken, fyersSymbol, true);
                 if (potentialSetup != null) {
                     String detail = "close (" + String.format("%.2f", close) + ") not above EMA20 ("
@@ -471,7 +475,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     eventService.log("[SCANNER] " + fyersSymbol + " " + potentialSetup + routeFor(fyersSymbol) + " blocked by 5-min EMA trend — " + detail);
                     recordRejection(fyersSymbol, potentialSetup, close, "EMA_TREND", detail);
                 }
-            } else if (redCandle && close >= ema20Now) {
+            } else if (!greenCandle && close >= ema20Now) {
                 String potentialSetup = detectSellBreakout(open, high, low, close, levels, atp, broken, fyersSymbol, true);
                 if (potentialSetup != null) {
                     String detail = "close (" + String.format("%.2f", close) + ") not below EMA20 ("
@@ -482,8 +486,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
         }
 
-        // Check BUY signals — requires green candle (close > open)
-        if (greenCandle) {
+        // Check BUY signals — color-agnostic. Pin bar hammers can be red-bodied (the long
+        // lower wick is the rejection, not the body color). The other buy patterns
+        // (engulfing/doji/star/three-inside-up/good-size) all require a green close
+        // internally, so they self-reject on red bars and only the hammer benefits.
+        {
             // ATP check for buys: close must be above ATP
             if (riskSettings.isEnableAtpCheck() && atp > 0 && close < atp) {
                 // Only log if a breakout would have been detected without ATP check
@@ -600,8 +607,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
         }
 
-        // Check SELL signals — requires red candle (close < open)
-        if (redCandle) {
+        // Check SELL signals — color-agnostic. Pin bar shooting stars can be green-bodied
+        // (the long upper wick is the rejection, not the body color). The other sell
+        // patterns all require a red close internally, so they self-reject on green bars
+        // and only the shooting star benefits.
+        {
             // ATP check for sells: close must be below ATP
             if (riskSettings.isEnableAtpCheck() && atp > 0 && close > atp) {
                 String wouldMatch = detectSellBreakout(open, high, low, close, levels, 0, broken, fyersSymbol);
@@ -938,6 +948,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double touchTol  = Math.max(0, riskSettings.getLevelTouchToleranceAtr()) * atr;
         double touchLvl  = level + touchTol;
 
+        // Entry-proximity gate — close (entry) must be within (entryProximityAtrMult × ATR)
+        // of the near edge of the retested level. `level` is already the near edge (upper
+        // edge for buy zones, single-line value for R/S levels). Applied AFTER pattern
+        // detection so the log can identify which pattern was blocked. See acceptOrReject.
+        double proximityAtr = riskSettings.getEntryProximityAtrMult();
+
         // Retest-only — fresh-break path (MARUBOZU_BREAKOUT / GOOD_SIZE_CANDLE_BREAKOUT)
         // was removed. The level-broken state machine still flips on the closing bar via
         // applyCandleToLevelState; the bot then waits for one of the 9 retest patterns
@@ -957,29 +973,25 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (CandlePatternDetector.isBullishHammer(open, high, low, close,
                     pinDomWickRng, pinOppWickRng)
                 && low <= touchLvl) {
-            lastTriggerRoute.put(fyersSymbol, "HAMMER_RETEST");
-            return setupName;
+            return acceptOrRejectProximity(fyersSymbol, setupName, "HAMMER_RETEST", close, level, atr, proximityAtr, true);
         }
         // Outside Reversal (Engulfing, 2 bars) — strict color flip, shared body band,
         // bar 2 closes past bar 1's open (classical engulfing) at the default penetration.
         if (prev != null && CandlePatternDetector.isBullishOutsideReversal(prev, curr, atr, outsideMin, outsideMax, outsidePen, confirmWickMax)
                 && Math.min(prev.low, curr.low) <= touchLvl) {
-            lastTriggerRoute.put(fyersSymbol, "OUTSIDE_REVERSAL_RETEST");
-            return setupName;
+            return acceptOrRejectProximity(fyersSymbol, setupName, "OUTSIDE_REVERSAL_RETEST", close, level, atr, proximityAtr, true);
         }
         // Bullish doji reversal (2 bars) — doji at level, then strong green confirmation.
         if (prev != null && CandlePatternDetector.isBullishDojiReversal(prev, curr, atr, dojiBody, dojiConfirm, dojiConfirmMax, confirmWickMax)
                 && Math.min(prev.low, curr.low) <= touchLvl) {
-            lastTriggerRoute.put(fyersSymbol, "DOJI_RETEST");
-            return setupName;
+            return acceptOrRejectProximity(fyersSymbol, setupName, "DOJI_RETEST", close, level, atr, proximityAtr, true);
         }
         // Morning star (3 bars) — 3-bar classical reversal.
         CandleAggregator.CandleBar bar1 = thirdMostRecentCandle(fyersSymbol);
         if (bar1 != null && prev != null
                 && CandlePatternDetector.isMorningStar(bar1, prev, curr, atr, starOuter, starOuterMax, starMid, starBar3Pen, confirmWickMax)
                 && Math.min(Math.min(bar1.low, prev.low), curr.low) <= touchLvl) {
-            lastTriggerRoute.put(fyersSymbol, "STAR_RETEST");
-            return setupName;
+            return acceptOrRejectProximity(fyersSymbol, setupName, "STAR_RETEST", close, level, atr, proximityAtr, true);
         }
         // Three Inside Up (3-bar harami + confirmation). Bar 3 body must sit in
         // [haramiConfirm, haramiConfirmMax] × ATR — symmetric with Morning/Evening Star.
@@ -987,23 +999,27 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 && CandlePatternDetector.isThreeInsideUp(bar1, prev, curr, atr,
                         haramiBody, haramiBodyMax, haramiBar3Pen, confirmWickMax)
                 && Math.min(Math.min(bar1.low, prev.low), curr.low) <= touchLvl) {
-            lastTriggerRoute.put(fyersSymbol, "HARAMI_RETEST");
-            return setupName;
+            return acceptOrRejectProximity(fyersSymbol, setupName, "HARAMI_RETEST", close, level, atr, proximityAtr, true);
         }
         // Good-Size Candle (1 bar) — catch-all loosest check. Green body in [floor, ceiling]
         // × ATR; the shared confirmWickMax caps the upper wick so shooting-star shapes don't
         // qualify. Fires only when no stricter named pattern matched above.
+        //
+        // Directional extent (close − low) is used for the floor/ceiling — it represents
+        // the FULL bullish travel of the bar (body + lower rejection wick), not just the
+        // open→close span. This captures bars where price dipped, got bought aggressively,
+        // and closed strong — the body alone understates the actual buying pressure.
         double goodSizeBody    = riskSettings.getGoodSizeCandleBodyAtrMult();
         double goodSizeMaxBody = riskSettings.getGoodSizeCandleMaxBodyAtrMult();
         double bodyAbs         = close - open;
         double upperWick       = high - Math.max(open, close);
-        boolean bodyOk    = goodSizeBody    <= 0 || (atr > 0 && bodyAbs >= goodSizeBody * atr);
-        boolean bodyCapOk = goodSizeMaxBody <= 0 || atr <= 0 || bodyAbs <= goodSizeMaxBody * atr;
+        double dirExtent       = close - low;                       // bullish travel = body + lower wick
+        boolean bodyOk    = goodSizeBody    <= 0 || (atr > 0 && dirExtent >= goodSizeBody * atr);
+        boolean bodyCapOk = goodSizeMaxBody <= 0 || atr <= 0 || dirExtent <= goodSizeMaxBody * atr;
         boolean wickOk    = confirmWickMax  <= 0 || bodyAbs <= 0 || upperWick <= confirmWickMax * bodyAbs;
         if (close > open && close > level && bodyOk && bodyCapOk && wickOk
                 && low <= touchLvl) {
-            lastTriggerRoute.put(fyersSymbol, "GOOD_SIZE_CANDLE_RETEST");
-            return setupName;
+            return acceptOrRejectProximity(fyersSymbol, setupName, "GOOD_SIZE_CANDLE_RETEST", close, level, atr, proximityAtr, true);
         }
         return null;
     }
@@ -1049,6 +1065,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double touchTol  = Math.max(0, riskSettings.getLevelTouchToleranceAtr()) * atr;
         double touchLvl  = level - touchTol;
 
+        // Entry-proximity gate — close (entry) must be within (entryProximityAtrMult × ATR)
+        // of the near edge of the retested level. `level` is already the near edge (lower
+        // edge for sell zones, single-line value for R/S levels). Applied AFTER pattern
+        // detection so the log identifies which pattern was blocked. See acceptOrReject.
+        double proximityAtr = riskSettings.getEntryProximityAtrMult();
+
+
         // Retest-only (mirror of buy logic). Fresh-break path (MARUBOZU_BREAKOUT /
         // GOOD_SIZE_CANDLE_BREAKOUT) was removed; the level-broken state machine flips
         // on the closing bar and the bot waits for one of the 9 retest patterns.
@@ -1062,51 +1085,51 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (CandlePatternDetector.isShootingStar(open, high, low, close,
                     pinDomWickRng, pinOppWickRng)
                 && high >= touchLvl) {
-            lastTriggerRoute.put(fyersSymbol, "HAMMER_RETEST");
-            return setupName;
+            return acceptOrRejectProximity(fyersSymbol, setupName, "HAMMER_RETEST", close, level, atr, proximityAtr, false);
         }
         // Outside Reversal (2 bars) — unified pattern (mirror of buy side).
         if (prev != null && CandlePatternDetector.isBearishOutsideReversal(prev, curr, atr, outsideMin, outsideMax, outsidePen, confirmWickMax)
                 && Math.max(prev.high, curr.high) >= touchLvl) {
-            lastTriggerRoute.put(fyersSymbol, "OUTSIDE_REVERSAL_RETEST");
-            return setupName;
+            return acceptOrRejectProximity(fyersSymbol, setupName, "OUTSIDE_REVERSAL_RETEST", close, level, atr, proximityAtr, false);
         }
         // Bearish doji reversal (2 bars) — doji at level, then strong red confirmation.
         if (prev != null && CandlePatternDetector.isBearishDojiReversal(prev, curr, atr, dojiBody, dojiConfirm, dojiConfirmMax, confirmWickMax)
                 && Math.max(prev.high, curr.high) >= touchLvl) {
-            lastTriggerRoute.put(fyersSymbol, "DOJI_RETEST");
-            return setupName;
+            return acceptOrRejectProximity(fyersSymbol, setupName, "DOJI_RETEST", close, level, atr, proximityAtr, false);
         }
         // Evening star (3 bars) — 3-bar classical reversal.
         CandleAggregator.CandleBar bar1 = thirdMostRecentCandle(fyersSymbol);
         if (bar1 != null && prev != null
                 && CandlePatternDetector.isEveningStar(bar1, prev, curr, atr, starOuter, starOuterMax, starMid, starBar3Pen, confirmWickMax)
                 && Math.max(Math.max(bar1.high, prev.high), curr.high) >= touchLvl) {
-            lastTriggerRoute.put(fyersSymbol, "STAR_RETEST");
-            return setupName;
+            return acceptOrRejectProximity(fyersSymbol, setupName, "STAR_RETEST", close, level, atr, proximityAtr, false);
         }
         // Three Inside Down (3-bar harami + confirmation). Bar 3 body band same as buy side.
         if (bar1 != null && prev != null
                 && CandlePatternDetector.isThreeInsideDown(bar1, prev, curr, atr,
                         haramiBody, haramiBodyMax, haramiBar3Pen, confirmWickMax)
                 && Math.max(Math.max(bar1.high, prev.high), curr.high) >= touchLvl) {
-            lastTriggerRoute.put(fyersSymbol, "HARAMI_RETEST");
-            return setupName;
+            return acceptOrRejectProximity(fyersSymbol, setupName, "HARAMI_RETEST", close, level, atr, proximityAtr, false);
         }
         // Good-Size Candle (1 bar) — catch-all loosest check. Red body in [floor, ceiling]
         // × ATR; the shared confirmWickMax caps the lower wick so hammer-shaped bars don't
         // qualify. Fires only when no stricter named pattern matched above.
+        //
+        // Directional extent (high − close) is used for the floor/ceiling — it represents
+        // the FULL bearish travel of the bar (upper rejection wick + body), not just the
+        // open→close span. Captures bars where price spiked up, got sold aggressively,
+        // and closed weak — the body alone understates the actual selling pressure.
         double goodSizeBody    = riskSettings.getGoodSizeCandleBodyAtrMult();
         double goodSizeMaxBody = riskSettings.getGoodSizeCandleMaxBodyAtrMult();
         double bodyAbs         = open - close;
         double lowerWick       = Math.min(open, close) - low;
-        boolean bodyOk    = goodSizeBody    <= 0 || (atr > 0 && bodyAbs >= goodSizeBody * atr);
-        boolean bodyCapOk = goodSizeMaxBody <= 0 || atr <= 0 || bodyAbs <= goodSizeMaxBody * atr;
+        double dirExtent       = high - close;                      // bearish travel = upper wick + body
+        boolean bodyOk    = goodSizeBody    <= 0 || (atr > 0 && dirExtent >= goodSizeBody * atr);
+        boolean bodyCapOk = goodSizeMaxBody <= 0 || atr <= 0 || dirExtent <= goodSizeMaxBody * atr;
         boolean wickOk    = confirmWickMax  <= 0 || bodyAbs <= 0 || lowerWick <= confirmWickMax * bodyAbs;
         if (close < open && close < level && bodyOk && bodyCapOk && wickOk
                 && high >= touchLvl) {
-            lastTriggerRoute.put(fyersSymbol, "GOOD_SIZE_CANDLE_RETEST");
-            return setupName;
+            return acceptOrRejectProximity(fyersSymbol, setupName, "GOOD_SIZE_CANDLE_RETEST", close, level, atr, proximityAtr, false);
         }
         return null;
     }
@@ -1123,6 +1146,31 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     private String routeFor(String fyersSymbol) {
         String r = lastTriggerRoute.get(fyersSymbol);
         return r != null && !r.isEmpty() ? " [" + r + "]" : "";
+    }
+
+    /**
+     * Finalize a matched pattern: apply the entry-proximity gate, log + reject if the
+     * confirmation close drifted too far from the retested level. Otherwise stamp the
+     * route tag and return the setup name. Called from every pattern-match block in
+     * checkBuyAtLevel / checkSellAtLevel to centralize the proximity check.
+     */
+    private String acceptOrRejectProximity(String fyersSymbol, String setupName, String routeTag,
+                                           double close, double level, double atr,
+                                           double proximityAtr, boolean isBuy) {
+        if (proximityAtr > 0 && atr > 0) {
+            double distance = isBuy ? (close - level) : (level - close);
+            if (distance > proximityAtr * atr) {
+                String detail = String.format(
+                    "close (%.2f) is %.2f pts %s level (%.2f), threshold %.2f × ATR (%.2f)",
+                    close, distance, isBuy ? "above" : "below", level, proximityAtr, proximityAtr * atr);
+                eventService.log("[SCANNER] " + fyersSymbol + " " + setupName
+                    + " [" + routeTag + "] blocked by entry proximity — " + detail);
+                recordRejection(fyersSymbol, setupName, close, "ENTRY_PROXIMITY", detail);
+                return null;
+            }
+        }
+        lastTriggerRoute.put(fyersSymbol, routeTag);
+        return setupName;
     }
 
     /**
@@ -1368,7 +1416,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 requiredStates = isBuy ? "BULLISH or BULLISH_REVERSAL" : "BEARISH or BEARISH_REVERSAL";
             }
             if (aligned) return NiftyAlignStatus.OK;
-            eventService.log("[SCANNER] " + fyersSymbol + " " + setup
+            eventService.log("[SCANNER] " + fyersSymbol + " " + setup + routeFor(fyersSymbol)
                 + " NIFTY MISALIGNED — NIFTY " + state + ", trade direction needs " + requiredStates);
             return NiftyAlignStatus.SKIP;
         } catch (Exception e) {
@@ -1411,7 +1459,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 requiredStates = isBuy ? "BULLISH or BULLISH_REVERSAL" : "BEARISH or BEARISH_REVERSAL";
             }
             if (aligned) return NiftyAlignStatus.OK;
-            eventService.log("[SCANNER] " + fyersSymbol + " " + setup
+            eventService.log("[SCANNER] " + fyersSymbol + " " + setup + routeFor(fyersSymbol)
                 + " SECTOR MISALIGNED — sector " + state + ", trade direction needs " + requiredStates);
             return NiftyAlignStatus.SKIP;
         } catch (Exception e) {
@@ -1706,12 +1754,16 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             { cpr.getR4(), cpr.getR4() },
             { cpr.getS2(), cpr.getS2() },
             { cpr.getS3(), cpr.getS3() },
-            { cpr.getS4(), cpr.getS4() }
+            { cpr.getS4(), cpr.getS4() },
+            // PDC (previous day close) — single-line level. Often acts as an intraday
+            // pivot; included alongside CPR/R/S levels for completeness.
+            { cpr.getClose(), cpr.getClose() }
         };
         String[] zoneNames = {
             "Daily CPR", "Daily R1+PDH", "Daily S1+PDL",
             "Daily R2", "Daily R3", "Daily R4",
-            "Daily S2", "Daily S3", "Daily S4"
+            "Daily S2", "Daily S3", "Daily S4",
+            "Daily PDC"
         };
 
         // Behind zone — for buy: zone whose LO ≤ LTP (LTP entered from below) with the
@@ -1733,9 +1785,14 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         }
 
         // WAITING: same-bucket 5m close hasn't cleared the behind zone's far edge.
-        if (behindIdx >= 0 && niftyClose != null) {
+        // Pre-close fallback (first bar of the day, or any time no completed candle is
+        // available yet): use LTP. If LTP is currently inside the behind zone, the zone
+        // is still active regardless — don't fall through and incorrectly report an ahead
+        // level (e.g. R2) as the hurdle.
+        if (behindIdx >= 0) {
             double zLo = zoneEdges[behindIdx][0], zHi = zoneEdges[behindIdx][1];
-            boolean cleared = isBuy ? niftyClose > zHi : niftyClose < zLo;
+            double refClose = niftyClose != null ? niftyClose : niftyLtp;
+            boolean cleared = isBuy ? refClose > zHi : refClose < zLo;
             if (!cleared) {
                 double farEdge = isBuy ? zHi : zLo;
                 return new HurdleStatus(zoneNames[behindIdx], "5m", "WAITING", Math.abs(farEdge - niftyLtp));
@@ -2268,7 +2325,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             String detail = "EMA(" + String.format("%.2f", ema) + ") is "
                 + count + " zone(s) away from broken " + String.format("%.2f", broken)
                 + " [zones between: " + between + "]";
-            eventService.log("[SCANNER] " + fyersSymbol + " " + setup + " — skipped, " + detail);
+            eventService.log("[SCANNER] " + fyersSymbol + " " + setup + routeFor(fyersSymbol) + " — skipped, " + detail);
             recordRejection(fyersSymbol, setup, close, "EMA_20_DISTANCE", detail);
             return 2;
         }
@@ -2326,7 +2383,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                         + " = range " + String.format("%.2f", range)
                         + "; dist " + String.format("%.2f", actualDist)
                         + " = " + actualPct + "% > " + (100 - minRangePct) + "%)";
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + setup + " — skipped, " + detail);
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + setup + routeFor(fyersSymbol) + " — skipped, " + detail);
                     recordRejection(fyersSymbol, setup, close, "LEVEL_PROXIMITY", detail);
                     return 2;
                 }

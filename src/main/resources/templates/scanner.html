@@ -1191,7 +1191,7 @@
                         color = 'var(--accent-red)';
                         tipState = 'active — waiting for close past level (entries blocked)';
                     } else if (h.state === 'AHEAD_BLOCKED') {
-                        color = 'var(--accent-yellow)';
+                        color = 'var(--accent-red)';
                         tipState = 'upcoming, inside headroom threshold (entries blocked)';
                     } else { // AHEAD_CLEAR
                         color = 'var(--text-primary)';
@@ -1222,6 +1222,12 @@
             return new Date(d.getTime() + (d.getTimezoneOffset() + 330) * 60000);
         }
 
+        // Track the previous `elapsed` so we can detect the 5-min boundary (wrap from
+        // ~299 back to small values). When the bar rolls over, trigger an extra fetchData
+        // after a short delay so the freshly-closed candle has time to land in the backend
+        // — the trend/CPR chips update at the boundary instead of waiting on the 15s poll.
+        var prevElapsed = -1;
+
         function tick() {
             var ist = nowIST();
             var totalSec = ist.getHours() * 3600 + ist.getMinutes() * 60 + ist.getSeconds();
@@ -1235,6 +1241,7 @@
                 txtEl.textContent = '--:--';
                 fillEl.style.width = '0%';
                 chipEl.style.opacity = '0.5';
+                prevElapsed = -1;
                 return;
             }
             chipEl.style.opacity = '1';
@@ -1244,6 +1251,15 @@
             var s = remaining % 60;
             txtEl.textContent = m + ':' + (s < 10 ? '0' : '') + s;
             fillEl.style.width = (elapsed / 300 * 100) + '%';
+
+            // 5-min boundary just crossed (elapsed wrapped from high → low). Refresh card
+            // data twice — once at +2s (backend usually finalizes by then) and once at +5s
+            // (covers slow finalizations under tick load).
+            if (prevElapsed > 250 && elapsed < 5) {
+                setTimeout(fetchData, 2000);
+                setTimeout(fetchData, 5000);
+            }
+            prevElapsed = elapsed;
         }
 
         tick();

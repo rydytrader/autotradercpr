@@ -291,6 +291,14 @@ public class CandleAggregator {
         long candleStart = getCandleStartMinute(tickTime);
 
         currentCandles.compute(symbol, (k, existing) -> {
+            // Late-tick guard: ignore ticks whose bucket is OLDER than the in-progress
+            // bucket. Stale exchange timestamps (e.g., a tick with t=12:17 arriving at
+            // 12:20:04, after the 12:15-12:20 bucket has already finalized) would
+            // otherwise prematurely close the current bucket and create a phantom
+            // past-bucket bar — leading to alternating duplicate listener fires.
+            if (existing != null && candleStart < existing.startMinute) {
+                return existing;
+            }
             if (existing == null || existing.startMinute != candleStart) {
                 // Finalize the old candle before replacing (prevents race with boundary checker)
                 if (existing != null && existing.open > 0) {

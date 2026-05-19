@@ -105,6 +105,12 @@ public class RiskSettingsStore {
         // Retest touch rule slack — bar's extreme can fall short of the level by up to
         // (toleranceAtr × ATR) and still count as a touch. Absorbs tick-level whisker misses.
         volatile double levelTouchToleranceAtr      = 0.2;
+        // Entry-proximity cap — the confirmation bar's close must be within
+        // (entryProximityAtrMult × ATR) of the near edge of the retested level (upper edge
+        // for buy zones, lower edge for sell zones, the level itself for single-line levels).
+        // Bounds SL distance and prevents patterns that touched the level via tolerance but
+        // then ran far away from it. Set to 0 to disable.
+        volatile double entryProximityAtrMult        = 1.0;
         volatile boolean enableTargetShift = true; // shift target to next level if default target < threshold ATR. If false, skip the entry.
         volatile boolean enableGapCheck = true;     // halve qty if day open or first candle beyond R2/S2
         // Weekly CPR intercept inside the walk-and-shift target picker. When ON: after the
@@ -345,6 +351,7 @@ public class RiskSettingsStore {
     public double getStarMiddleBodyMaxMultOfOuter() { return cfg().starMiddleBodyMaxMultOfOuter; }
     public double getStarBar3PenetrationPct()       { return cfg().starBar3PenetrationPct; }
     public double getLevelTouchToleranceAtr()      { return cfg().levelTouchToleranceAtr; }
+    public double getEntryProximityAtrMult()       { return cfg().entryProximityAtrMult; }
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
     public boolean isEnablePriceEmaExit() { return cfg().enablePriceEmaExit; }
     public int getVirginCprExpiryDays() { return cfg().virginCprExpiryDays; }
@@ -461,6 +468,7 @@ public class RiskSettingsStore {
     public void setStarMiddleBodyMaxMultOfOuter(double v) { cfg().starMiddleBodyMaxMultOfOuter = v; }
     public void setStarBar3PenetrationPct(double v)       { cfg().starBar3PenetrationPct = v; }
     public void setLevelTouchToleranceAtr(double v)      { cfg().levelTouchToleranceAtr = Math.max(0, v); }
+    public void setEntryProximityAtrMult(double v)       { cfg().entryProximityAtrMult = Math.max(0, v); }
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
     public void setEnablePriceEmaExit(boolean v) { cfg().enablePriceEmaExit = v; }
     public void setVirginCprExpiryDays(int v) { cfg().virginCprExpiryDays = Math.max(0, v); }
@@ -599,6 +607,7 @@ public class RiskSettingsStore {
             upsert("starMiddleBodyMaxMultOfOuter", String.valueOf(c.starMiddleBodyMaxMultOfOuter));
             upsert("starBar3PenetrationPct",       String.valueOf(c.starBar3PenetrationPct));
             upsert("levelTouchToleranceAtr", String.valueOf(c.levelTouchToleranceAtr));
+            upsert("entryProximityAtrMult", String.valueOf(c.entryProximityAtrMult));
             upsert("enableTrailingSl", String.valueOf(c.enableTrailingSl));
             upsert("enablePriceEmaExit", String.valueOf(c.enablePriceEmaExit));
             upsert("virginCprExpiryDays", String.valueOf(c.virginCprExpiryDays));
@@ -785,6 +794,7 @@ public class RiskSettingsStore {
                     case "starMiddleBodyMaxMultOfOuter" -> c.starMiddleBodyMaxMultOfOuter = Double.parseDouble(v);
                     case "starBar3PenetrationPct"       -> c.starBar3PenetrationPct = Double.parseDouble(v);
                     case "levelTouchToleranceAtr"      -> c.levelTouchToleranceAtr = Math.max(0, Double.parseDouble(v));
+                    case "entryProximityAtrMult"       -> c.entryProximityAtrMult = Math.max(0, Double.parseDouble(v));
                     // Legacy small-candle / volume filter keys — features removed.
                     case "enableSmallCandleFilter",
                          "smallCandleAtrThreshold",

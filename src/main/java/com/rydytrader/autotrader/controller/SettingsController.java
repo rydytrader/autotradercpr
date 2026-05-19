@@ -99,6 +99,7 @@ public class SettingsController {
         result.put("starMiddleBodyMaxMultOfOuter", riskSettings.getStarMiddleBodyMaxMultOfOuter());
         result.put("starBar3PenetrationPct",       riskSettings.getStarBar3PenetrationPct());
         result.put("levelTouchToleranceAtr",       riskSettings.getLevelTouchToleranceAtr());
+        result.put("entryProximityAtrMult",        riskSettings.getEntryProximityAtrMult());
         result.put("enableTrailingSl", riskSettings.isEnableTrailingSl(effectiveMode));
         result.put("enablePriceEmaExit", riskSettings.isEnablePriceEmaExit());
         result.put("virginCprExpiryDays", riskSettings.getVirginCprExpiryDays());
@@ -207,6 +208,7 @@ public class SettingsController {
             if (body.containsKey("starMiddleBodyMaxMultOfOuter")) riskSettings.setStarMiddleBodyMaxMultOfOuter(Double.parseDouble(body.get("starMiddleBodyMaxMultOfOuter").toString()));
             if (body.containsKey("starBar3PenetrationPct"))       riskSettings.setStarBar3PenetrationPct(Double.parseDouble(body.get("starBar3PenetrationPct").toString()));
             if (body.containsKey("levelTouchToleranceAtr"))      riskSettings.setLevelTouchToleranceAtr(Double.parseDouble(body.get("levelTouchToleranceAtr").toString()));
+            if (body.containsKey("entryProximityAtrMult"))       riskSettings.setEntryProximityAtrMult(Double.parseDouble(body.get("entryProximityAtrMult").toString()));
             if (body.containsKey("enableTrailingSl")) riskSettings.setEnableTrailingSl(effectiveMode, Boolean.parseBoolean(body.get("enableTrailingSl").toString()));
             if (body.containsKey("enablePriceEmaExit")) riskSettings.setEnablePriceEmaExit(Boolean.parseBoolean(body.get("enablePriceEmaExit").toString()));
             if (body.containsKey("virginCprExpiryDays")) {

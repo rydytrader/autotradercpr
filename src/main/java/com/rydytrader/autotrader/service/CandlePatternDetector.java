@@ -83,14 +83,12 @@ final class CandlePatternDetector {
         if (!(curr.close > curr.open)) return false;                // bar 2 green (color flip)
         double prevBody = prev.open - prev.close;
         double currBody = curr.close - curr.open;
-        if (minBodyAtrMult > 0) {
-            if (prevBody < minBodyAtrMult * atr) return false;
-            if (currBody < minBodyAtrMult * atr) return false;
-        }
-        if (maxBodyAtrMult > 0) {
-            if (prevBody > maxBodyAtrMult * atr) return false;
-            if (currBody > maxBodyAtrMult * atr) return false;
-        }
+        // Body-size band applies only to the CONFIRMATION bar (curr). Bar 1 just needs
+        // to be the opposite color — the engulfing geometry (penetration check) already
+        // implies bar 1's body is smaller than bar 2's, so re-floor-ing it on ATR is
+        // redundant and rejects valid reversals after small bar-1 consolidations.
+        if (minBodyAtrMult > 0 && currBody < minBodyAtrMult * atr) return false;
+        if (maxBodyAtrMult > 0 && currBody > maxBodyAtrMult * atr) return false;
         if (!(curr.open <= prev.close)) return false;               // bar 2 opens at/below bar 1's close
         // Opposing wick on the confirmation bar (curr) — upper wick must not dwarf the body.
         if (oppositeWickMaxRatio > 0 && currBody > 0) {
@@ -111,14 +109,9 @@ final class CandlePatternDetector {
         if (!(curr.close < curr.open)) return false;                // bar 2 red (color flip)
         double prevBody = prev.close - prev.open;
         double currBody = curr.open - curr.close;
-        if (minBodyAtrMult > 0) {
-            if (prevBody < minBodyAtrMult * atr) return false;
-            if (currBody < minBodyAtrMult * atr) return false;
-        }
-        if (maxBodyAtrMult > 0) {
-            if (prevBody > maxBodyAtrMult * atr) return false;
-            if (currBody > maxBodyAtrMult * atr) return false;
-        }
+        // Body-size band applies only to the CONFIRMATION bar (curr) — see bullish variant.
+        if (minBodyAtrMult > 0 && currBody < minBodyAtrMult * atr) return false;
+        if (maxBodyAtrMult > 0 && currBody > maxBodyAtrMult * atr) return false;
         if (!(curr.open >= prev.close)) return false;               // bar 2 opens at/above bar 1's close
         // Opposing wick on the confirmation bar (curr) — lower wick must not dwarf the body.
         if (oppositeWickMaxRatio > 0 && currBody > 0) {

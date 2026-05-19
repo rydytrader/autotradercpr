@@ -530,7 +530,7 @@
             <div class="form-group">
                 <label class="form-label">Outside Reversal (Engulfing)</label>
                 <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
-                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Bar 1 and Bar 2 body in [</span>
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Bar 2 body in [</span>
                     <input type="number" id="outsideReversalMinBodyAtrMult" class="form-control" step="0.1" min="0.0" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">,</span>
                     <input type="number" id="outsideReversalMaxBodyAtrMult" class="form-control" step="0.1" min="0.0" max="6.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
@@ -541,7 +541,7 @@
                     <input type="number" id="outsideReversalPenetrationPct" class="form-control" step="0.05" min="0.00" max="1.00" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                     <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">into bar 1 body (1.0 = classical engulfing — bar 2 closes past bar 1's open)</span>
                 </div>
-                <div class="form-hint">Classical 2-bar bullish/bearish engulfing. Strict color flip required (red→green for bullish, green→red for bearish). <b>Bars 1 and 2 share the same [floor, ceiling] × ATR band</b>. <b>Bar 2 penetration</b>: 1.0 = past bar 1's open (classical strict engulfing, default); 0.5 = past midpoint (accepts shallower reversals); 0.0 = past bar 1's close (any directional recovery). Defaults: 0.5–2.0 × ATR shared band, 1.0 penetration. Trade-log tag: <code>OUTSIDE_REVERSAL_RETEST</code>.</div>
+                <div class="form-hint">Classical 2-bar bullish/bearish engulfing. Strict color flip required (red→green for bullish, green→red for bearish). <b>Body band applies only to the confirmation bar (bar 2)</b> — bar 1 just needs to be the opposite color and be engulfed by the penetration check (bar 1's body size is unconstrained, since the pattern's geometry already requires bar 2 &gt; bar 1). <b>Bar 2 penetration</b>: 1.0 = past bar 1's open (classical strict engulfing, default); 0.5 = past midpoint (accepts shallower reversals); 0.0 = past bar 1's close (any directional recovery). Defaults: 0.5–2.0 × ATR bar-2 band, 1.0 penetration. Trade-log tag: <code>OUTSIDE_REVERSAL_RETEST</code>.</div>
             </div>
 
             <!-- Doji Reversal group -->
@@ -597,6 +597,17 @@
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× ATR</span>
                 </div>
                 <div class="form-hint">A retest pattern's bar can fall short of the level by up to this much ATR and still count as a touch. Absorbs tick-level whisker misses. Applies to all 6 retest patterns (hammer, outside-reversal, doji, star, harami, good-size). Set to 0 to require strict equality. Default: 0.2 × ATR.</div>
+            </div>
+
+            <!-- Entry Proximity -->
+            <div class="form-group">
+                <label class="form-label">Entry Proximity (confirmation close vs level)</label>
+                <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">|close − level| ≤</span>
+                    <input type="number" id="entryProximityAtrMult" class="form-control" step="0.1" min="0.0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× ATR</span>
+                </div>
+                <div class="form-hint">Caps how far the confirmation bar's close (the trade entry) can be from the near edge of the retested level (upper edge for buy zones, lower edge for sell zones, the line itself for single-line R/S levels). Filters out patterns where bars touched the level via whisker-tolerance but the entry then ran far away, leaving a wide SL. Set to 0 to disable. Default: 1.0 × ATR.</div>
             </div>
 
             <!-- Shared: Confirmation Max Opposing Wick -->
@@ -1349,6 +1360,7 @@
             document.getElementById('starMiddleBodyMaxMultOfOuter').value = d.starMiddleBodyMaxMultOfOuter != null ? d.starMiddleBodyMaxMultOfOuter : 0.3;
             document.getElementById('starBar3PenetrationPct').value       = d.starBar3PenetrationPct       != null ? d.starBar3PenetrationPct       : 0.5;
             document.getElementById('levelTouchToleranceAtr').value       = d.levelTouchToleranceAtr       != null ? d.levelTouchToleranceAtr       : 0.2;
+            document.getElementById('entryProximityAtrMult').value        = d.entryProximityAtrMult        != null ? d.entryProximityAtrMult        : 1.0;
             document.getElementById('minRiskRewardRatio').value = d.minRiskRewardRatio != null ? d.minRiskRewardRatio : 1.0;
             document.getElementById('enableEmaTrendCheck').checked = d.enableEmaTrendCheck !== false;
             document.getElementById('enableEmaVsAtpCheck').checked = d.enableEmaVsAtpCheck !== false;
@@ -1507,6 +1519,7 @@
                 starMiddleBodyMaxMultOfOuter: parseFloat(document.getElementById('starMiddleBodyMaxMultOfOuter').value) || 0.3,
                 starBar3PenetrationPct:       (function() { var v = parseFloat(document.getElementById('starBar3PenetrationPct').value); return isNaN(v) ? 0.5 : v; })(),
                 levelTouchToleranceAtr:       parseFloat(document.getElementById('levelTouchToleranceAtr').value)       || 0.2,
+                entryProximityAtrMult:        (function() { var v = parseFloat(document.getElementById('entryProximityAtrMult').value); return isNaN(v) ? 1.0 : v; })(),
                 minRiskRewardRatio: parseFloat(document.getElementById('minRiskRewardRatio').value) || 1.0,
                 enableEmaTrendCheck: document.getElementById('enableEmaTrendCheck').checked,
                 enableEmaVsAtpCheck: document.getElementById('enableEmaVsAtpCheck').checked,
