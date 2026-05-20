@@ -829,9 +829,6 @@ public class CandleAggregator {
      * bars.
      */
     public Double getLast1HourClose(String symbol) {
-        Deque<CandleBar> history = completedCandles.get(symbol);
-        if (history == null || history.isEmpty()) return null;
-
         // Monday 00:00 IST of the current ISO week — anything before this is "previous week"
         // and not a valid intra-week fallback per the filter spec.
         long weekStartEpoch = ZonedDateTime.now(IST)
@@ -839,25 +836,31 @@ public class CandleAggregator {
             .toLocalDate()
             .atStartOfDay(IST)
             .toEpochSecond();
-        long todayStartEpoch = ZonedDateTime.now(IST)
-            .toLocalDate()
-            .atStartOfDay(IST)
-            .toEpochSecond();
 
-        Iterator<CandleBar> it = history.descendingIterator();
-        while (it.hasNext()) {
-            CandleBar bar = it.next();
-            if (bar.close <= 0) continue;
-            if (bar.epochSec > 0 && bar.epochSec < weekStartEpoch) break; // dropped out of current week
-
-            if (bar.epochSec >= todayStartEpoch) {
-                // Today's bar — only return at a 1-hour-aligned boundary.
+        // 1) Today's 1-hour-aligned close, if we've crossed at least one 10:15 boundary.
+        Deque<CandleBar> history = completedCandles.get(symbol);
+        if (history != null) {
+            Iterator<CandleBar> it = history.descendingIterator();
+            while (it.hasNext()) {
+                CandleBar bar = it.next();
+                if (bar.close <= 0) continue;
                 long endMinute = bar.startMinute + 5;
                 if (endMinute % 60 == 15) return bar.close;
-            } else {
-                // First pre-today bar we encounter is the latest bar of the previous trading
-                // day (descending iteration). Its close is the day's actual session close
-                // (typically the 15:25-15:30 = 3:30 PM bar). Return it as the fallback.
+            }
+        }
+
+        // 2) Pre-10:15 fallback — previous trading day's session close (the latest bar in
+        //    priorDayCandles, which is the 15:25–15:30 IST = 3:30 PM closing 5-min bar).
+        //    The 2 AM daily reset moves yesterday's bars from completedCandles into
+        //    priorDayCandles, so without checking priorDayCandles the fallback always misses.
+        //    Only honour the fallback if the previous-day bar is in the current ISO week —
+        //    Monday pre-10:15 has no in-week prior day → null → caller rejects.
+        List<CandleBar> priors = priorDayCandles.get(symbol);
+        if (priors != null && !priors.isEmpty()) {
+            for (int i = priors.size() - 1; i >= 0; i--) {
+                CandleBar bar = priors.get(i);
+                if (bar.close <= 0) continue;
+                if (bar.epochSec > 0 && bar.epochSec < weekStartEpoch) break; // dropped out of current week
                 return bar.close;
             }
         }

@@ -116,13 +116,12 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
     }
 
     /**
-     * Reads the just-closed 5-min NIFTY index candle and computes the two factors
-     * (CPR + EMA20). Called only from {@link #onCandleClose} at NIFTY's 5-min boundary,
-     * so the "last completed candle" IS the bar that just fired this listener.
-     * Mirrors the per-sector state machine in {@link #getSectorTrendForTicker(String)}.
+     * Reads the just-closed 5-min NIFTY index candle and derives the trend state from CPR
+     * position alone — close above CPR top → BULLISH, below CPR bot → BEARISH, inside CPR
+     * zone → INSIDE, no data → NEUTRAL. Called from {@link #onCandleClose} at NIFTY's 5-min
+     * boundary. EMA20 is no longer a trend factor (kept on the card as a separate chip).
      */
     private TrendSnapshot computeSnapshot() {
-        // Factor 1: NIFTY index 5-min close vs daily CPR
         Boolean cprBullish = null;
         boolean insideCpr = false;
         double niftyClose = 0;
@@ -135,31 +134,60 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
                 double bot = Math.min(cpr.getTc(), cpr.getBc());
                 if (niftyClose > top)      cprBullish = Boolean.TRUE;
                 else if (niftyClose < bot) cprBullish = Boolean.FALSE;
-                else                       insideCpr = true; // close is inside the CPR band — distinct from no-data
+                else                       insideCpr = true;
             }
         }
-
-        // Factor 2: NIFTY index 5-min close vs 5-min EMA20. Always-on, no user toggle.
-        double ema20 = emaService != null ? emaService.getEma(NIFTY_SYMBOL) : 0;
+        // emaBullish kept on the snapshot as null — the field still exists for downstream
+        // consumers (NIFTY card EMA chip) that read it via getStickyEmaBullish, but it no
+        // longer participates in the state derivation.
         Boolean emaBullish = null;
+        double ema20 = emaService != null ? emaService.getEma(NIFTY_SYMBOL) : 0;
         if (niftyClose > 0 && ema20 > 0) {
             if (niftyClose > ema20)      emaBullish = Boolean.TRUE;
             else if (niftyClose < ema20) emaBullish = Boolean.FALSE;
         }
-
-        String state = deriveState(cprBullish, emaBullish, insideCpr);
+        String state = deriveCprOnlyState(cprBullish, insideCpr);
         return new TrendSnapshot(cprBullish, emaBullish, niftyClose, state);
     }
 
     /**
-     * 2-factor state machine. When cprBullish is null:
-     *   • insideCpr == true  → INSIDE  (close is between TC and BC — sideways, downstream
-     *                                    alignment treats this as a hard block, matching
-     *                                    the sector alignment behaviour)
-     *   • insideCpr == false → NEUTRAL (no CPR data / no close yet — fail-open at downstream
-     *                                    filters)
+     * CPR-only state machine. Replaces the prior 2-factor (CPR + EMA20) derivation for the
+     * <i>index</i> trend (NIFTY 50 + sector indices). Produces four states only:
+     *   • cprBullish == TRUE  → BULLISH
+     *   • cprBullish == FALSE → BEARISH
+     *   • cprBullish == null, insideCpr == true  → INSIDE  (hard reject in alignment)
+     *   • cprBullish == null, insideCpr == false → NEUTRAL (fail-open — no data yet)
      */
-    private static String deriveState(Boolean cprBullish, Boolean emaBullish, boolean insideCpr) {
+    private static String deriveCprOnlyState(Boolean cprBullish, boolean insideCpr) {
+        if (cprBullish == null) return insideCpr ? "INSIDE" : "NEUTRAL";
+        return Boolean.TRUE.equals(cprBullish) ? "BULLISH" : "BEARISH";
+    }
+
+    /**
+     * Public 2-factor state helper retained for <b>per-stock HTF alignment</b> paths only —
+     * the stock's 1-hour close vs weekly CPR + 1-hour EMA20 still uses the full six-state
+     * machine (BULLISH / BEARISH / BULLISH_REVERSAL / BEARISH_REVERSAL / INSIDE / SIDEWAYS /
+     * NEUTRAL). Note: the <i>index</i> trend is now CPR-only — do not use this for index
+     * paths; use {@link #deriveCprOnlyState} instead.
+     *
+     * <p>Returns NEUTRAL when close ≤ 0 or CPR data is missing so the caller can fail-open.
+     */
+    public static String deriveTrendState(double close, double cprTop, double cprBot, double ema20) {
+        if (close <= 0) return "NEUTRAL";
+        Boolean cprBullish = null;
+        boolean insideCpr = false;
+        if (cprTop > 0 && cprBot > 0) {
+            double top = Math.max(cprTop, cprBot);
+            double bot = Math.min(cprTop, cprBot);
+            if (close > top)      cprBullish = Boolean.TRUE;
+            else if (close < bot) cprBullish = Boolean.FALSE;
+            else                  insideCpr = true;
+        }
+        Boolean emaBullish = null;
+        if (ema20 > 0) {
+            if (close > ema20)      emaBullish = Boolean.TRUE;
+            else if (close < ema20) emaBullish = Boolean.FALSE;
+        }
         if (cprBullish == null) return insideCpr ? "INSIDE" : "NEUTRAL";
         if (Boolean.TRUE.equals(cprBullish)  && !Boolean.FALSE.equals(emaBullish)) return "BULLISH";
         if (Boolean.FALSE.equals(cprBullish) && !Boolean.TRUE.equals(emaBullish))  return "BEARISH";
@@ -243,7 +271,6 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
 
         // Trend factors + supporting values — STICKY (set at last NIFTY 5-min close).
         Boolean dispCpr        = cachedCprBullish;
-        Boolean dispEma        = cachedEmaBullish;
         double  dispNiftyClose = cachedNiftyClose;
         String  dispState      = cachedState;
 
@@ -264,13 +291,7 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
                 else                     dispInsideCpr = true;
                 dispNiftyClose = niftyLtp;
             }
-            // Re-derive EMA factor against the live close we just took, when possible.
-            double ema20Live = emaService != null ? emaService.getEma(NIFTY_SYMBOL) : 0;
-            if (dispNiftyClose > 0 && ema20Live > 0) {
-                if (dispNiftyClose > ema20Live)      dispEma = Boolean.TRUE;
-                else if (dispNiftyClose < ema20Live) dispEma = Boolean.FALSE;
-            }
-            dispState = deriveState(dispCpr, dispEma, dispInsideCpr);
+            dispState = deriveCprOnlyState(dispCpr, dispInsideCpr);
         }
 
         trend.setCprBullish(dispCpr);
@@ -326,26 +347,14 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         double refLtp = ltp > 0 ? ltp : prevClose;
         if (refLtp <= 0) return "NEUTRAL";
 
-        double top = (cpr.getTc() > 0 && cpr.getBc() > 0) ? Math.max(cpr.getTc(), cpr.getBc()) : 0;
-        double bot = (cpr.getTc() > 0 && cpr.getBc() > 0) ? Math.min(cpr.getTc(), cpr.getBc()) : 0;
-        double ema20 = emaService != null ? emaService.getEma(fyersSym) : 0;
-
-        Boolean cprBullish = null;
-        if (top > 0 && bot > 0) {
-            if (refLtp > top)      cprBullish = Boolean.TRUE;
-            else if (refLtp < bot) cprBullish = Boolean.FALSE;
-        }
-        Boolean emaBullish = null;
-        if (ema20 > 0) {
-            if (refLtp > ema20)      emaBullish = Boolean.TRUE;
-            else if (refLtp < ema20) emaBullish = Boolean.FALSE;
-        }
-        if (cprBullish == null) return "INSIDE";
-        if (Boolean.TRUE.equals(cprBullish)  && !Boolean.FALSE.equals(emaBullish)) return "BULLISH";
-        if (Boolean.FALSE.equals(cprBullish) && !Boolean.TRUE.equals(emaBullish))  return "BEARISH";
-        if (Boolean.FALSE.equals(cprBullish) && Boolean.TRUE.equals(emaBullish))   return "BULLISH_REVERSAL";
-        if (Boolean.TRUE.equals(cprBullish)  && Boolean.FALSE.equals(emaBullish))  return "BEARISH_REVERSAL";
-        return "SIDEWAYS";
+        // CPR-only state: above CPR top → BULLISH, below CPR bot → BEARISH, inside → INSIDE.
+        // Matches the NIFTY 50 sticky-state computation (EMA20 is no longer a trend factor).
+        if (cpr.getTc() <= 0 || cpr.getBc() <= 0) return "NEUTRAL";
+        double top = Math.max(cpr.getTc(), cpr.getBc());
+        double bot = Math.min(cpr.getTc(), cpr.getBc());
+        if (refLtp > top) return "BULLISH";
+        if (refLtp < bot) return "BEARISH";
+        return "INSIDE";
     }
 
     /**

@@ -652,6 +652,18 @@
                         <br>&nbsp;&nbsp;&bull; <b>NEUTRAL</b> (no data yet) &rarr; <b>fail-open</b> (no skip).</div>
                 </div>
                 <div class="form-group">
+                    <label class="form-label">Stock HTF Trend Alignment</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableStockHtfAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject when the stock's own 1-hour HTF trend opposes the trade direction</span>
+                    </div>
+                    <div class="form-hint">Confirms the stock's slower (1-hour) timeframe agrees with the 5-min setup direction. Two-factor state machine on the stock: <b>1-hour close vs weekly CPR (TC/BC)</b> + <b>1-hour close vs 1-hour EMA 20</b>. Same six states as Index Trend Alignment.
+                        <br>&nbsp;&nbsp;&bull; <b>Buy</b> needs <b>BULLISH</b> or <b>BULLISH REVERSAL</b>.
+                        <br>&nbsp;&nbsp;&bull; <b>Sell</b> needs <b>BEARISH</b> or <b>BEARISH REVERSAL</b>.
+                        <br>&nbsp;&nbsp;&bull; <b>INSIDE</b> / <b>SIDEWAYS</b> / opposite-direction &rarr; <b>hard-reject</b> as <code>STOCK_HTF_OPPOSED</code>.
+                        <br>&nbsp;&nbsp;&bull; <b>NEUTRAL</b> (weekly levels or 1-hour close missing) &rarr; <b>fail-open</b>.</div>
+                </div>
+                <div class="form-group">
                     <label class="form-label">Index HTF Hurdle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableIndexHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
@@ -1312,6 +1324,7 @@
             document.getElementById('enableTargetTolerance').checked = d.enableTargetTolerance !== false;
             document.getElementById('targetToleranceAtr').value = (d.targetToleranceAtr != null ? d.targetToleranceAtr : 0.10);
             document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
+            document.getElementById('enableStockHtfAlignment').checked = d.enableStockHtfAlignment === true;
             document.getElementById('enableIndexHtfHurdleFilter').checked = d.enableIndexHtfHurdleFilter === true;
             document.getElementById('indexHtfHurdleMinHeadroomAtr').value = (d.indexHtfHurdleMinHeadroomAtr != null ? d.indexHtfHurdleMinHeadroomAtr : 1.0);
             document.getElementById('enableIndex5mHurdleFilter').checked = d.enableIndex5mHurdleFilter === true;
@@ -1468,6 +1481,7 @@
                 enableTargetTolerance: document.getElementById('enableTargetTolerance').checked,
                 targetToleranceAtr: parseFloat(document.getElementById('targetToleranceAtr').value) || 0,
                 enableIndexAlignment:    document.getElementById('enableIndexAlignment').checked,
+                enableStockHtfAlignment: document.getElementById('enableStockHtfAlignment').checked,
                 enableIndexHtfHurdleFilter: document.getElementById('enableIndexHtfHurdleFilter').checked,
                 indexHtfHurdleMinHeadroomAtr: parseFloat(document.getElementById('indexHtfHurdleMinHeadroomAtr').value) || 0,
                 enableIndex5mHurdleFilter: document.getElementById('enableIndex5mHurdleFilter').checked,

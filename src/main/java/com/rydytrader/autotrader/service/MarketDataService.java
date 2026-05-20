@@ -52,6 +52,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
     private final CandleAggregator    candleAggregator;
     private final AtrService          atrService;
     private final EmaService          emaService;
+    private final HtfEmaService       htfEmaService;
     private final WeeklyCprService    weeklyCprService;
     private final BreakoutScanner     breakoutScanner;
     private final BhavcopyService     bhavcopyService;
@@ -189,6 +190,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                               BreakoutScanner breakoutScanner,
                               BhavcopyService bhavcopyService,
                               EmaService emaService,
+                              HtfEmaService htfEmaService,
                               TelegramService telegramService,
                               EmaCrossExitService emaCrossExitService) {
         this.tokenStore = tokenStore;
@@ -204,6 +206,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         this.breakoutScanner = breakoutScanner;
         this.bhavcopyService = bhavcopyService;
         this.emaService = emaService;
+        this.htfEmaService = htfEmaService;
         this.telegramService = telegramService;
         this.emaCrossExitService = emaCrossExitService;
         candleAggregator.addListener(this);
@@ -247,8 +250,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         htfAggregator.setTimeframe(riskSettings.getHigherTimeframe());
         htfAggregator.addListener((symbol, candle) ->
             weeklyCprService.onHigherTimeframeCandleClose(symbol, candle.open, candle.high, candle.low, candle.close));
+        // 1-hour EMA20 listener — feeds the Stock HTF Trend Alignment filter. Same htfAggregator,
+        // so it sees identical 1-hour boundary closes as WeeklyCpr's HTF state machine.
+        htfAggregator.addListener(htfEmaService);
         htfAggregator.start();
-        log.info("[MarketData] Higher timeframe aggregator started: {}min (listener: WeeklyCpr)", riskSettings.getHigherTimeframe());
+        log.info("[MarketData] Higher timeframe aggregator started: {}min (listeners: WeeklyCpr, HtfEma)",
+            riskSettings.getHigherTimeframe());
 
         // Schedule scanner pre-market data fetch
         scheduleScannerInit();

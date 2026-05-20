@@ -103,10 +103,14 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
         Map<String, CprLevels> all = bhavcopyService.getAllCprLevels();
         if (all == null || all.isEmpty()) return symbols;
 
-        // Known index tickers (match what BhavcopyService.SUPPORTED_INDICES puts in the cache)
-        Set<String> indexTickers = Set.of("NIFTY50", "NIFTYBANK", "FINNIFTY");
+        // Delegate to BhavcopyService.isIndex so ALL ~18 indices (NIFTY 50 + all sector
+        // indices in SUPPORTED_INDICES) are wrapped as -INDEX. Previously hard-coded to
+        // {NIFTY50, NIFTYBANK, FINNIFTY}, which meant sector indices like NIFTYIT were
+        // wrapped as -EQ and stored under the wrong key — getWeeklyLevels("NSE:NIFTYIT-INDEX")
+        // would return null in this startup pass (subsequent MarketDataService seeding
+        // overwrote with correct keys, but the startup window was broken).
         for (String ticker : all.keySet()) {
-            if (indexTickers.contains(ticker)) {
+            if (bhavcopyService.isIndex(ticker)) {
                 symbols.add("NSE:" + ticker + "-INDEX");
             } else {
                 symbols.add("NSE:" + ticker + "-EQ");
@@ -545,6 +549,24 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
     }
 
     // ── Public accessors ────────────────────────────────────────────────────
+
+    /**
+     * Derive a per-stock 1-hour HTF trend state for the Stock HTF Trend Alignment filter.
+     * Reuses the 2-factor state machine in {@link IndexTrendService#deriveTrendState}: the
+     * stock's most-recent 1-hour close vs its weekly CPR (TC/BC) and vs the 1-hour EMA20
+     * passed in by the caller.
+     *
+     * <p>Returns {@code NEUTRAL} when weekly levels haven't been computed yet or the 1-hour
+     * close isn't available — caller fail-opens on NEUTRAL.
+     */
+    public String getStockHtfTrendState(String fyersSymbol, double htfEma20) {
+        if (fyersSymbol == null) return "NEUTRAL";
+        WeeklyLevels wl = weeklyLevels.get(fyersSymbol);
+        if (wl == null || wl.top <= 0 || wl.bot <= 0) return "NEUTRAL";
+        Double htfClose = lastHigherTfClose.get(fyersSymbol);
+        if (htfClose == null || htfClose <= 0) return "NEUTRAL";
+        return IndexTrendService.deriveTrendState(htfClose, wl.top, wl.bot, htfEma20);
+    }
 
     public int getLoadedCount() { return weeklyLevels.size(); }
 

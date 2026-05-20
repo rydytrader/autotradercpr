@@ -325,12 +325,12 @@ public class TradingController {
             }
             m.put("leverage", marginDataService.getLeverage(p.getSymbol()));
             m.put("slTrailed", marketDataService.isTrailed(p.getSymbol()));
-            // NIFTY-at-a-crucial-level marker for the positions table. Yellow stripe shows
-            // when any of the 3 NIFTY hurdle conditions (HTF / 5m / virgin CPR) is currently
+            // Index-hurdle marker for the positions table. Yellow stripe shows when any of
+            // the 3 hurdle conditions (Index HTF / Index 5m / NIFTY Virgin CPR) is currently
             // active in this position's trade direction — purely informational, not blocking.
-            String niftyHurdleAlert = breakoutScanner.getNiftyHurdleAlert("LONG".equals(p.getSide()), p.getSymbol());
-            m.put("niftyHurdleActive", niftyHurdleAlert != null);
-            m.put("niftyHurdleReason", niftyHurdleAlert != null ? niftyHurdleAlert : "");
+            String indexHurdleAlert = breakoutScanner.getIndexHurdleAlert("LONG".equals(p.getSide()), p.getSymbol());
+            m.put("niftyHurdleActive", indexHurdleAlert != null);
+            m.put("niftyHurdleReason", indexHurdleAlert != null ? indexHurdleAlert : "");
 
             // NIFTY-trend-flipped marker. Red stripe shows when the current NIFTY sticky trend
             // differs from what it was at entry (and neither end is SIDEWAYS / NEUTRAL).

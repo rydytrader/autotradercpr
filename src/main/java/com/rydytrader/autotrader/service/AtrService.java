@@ -42,6 +42,9 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
     @org.springframework.context.annotation.Lazy
     private EmaService emaService;
     @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private HtfEmaService htfEmaService;
+    @org.springframework.beans.factory.annotation.Autowired
     private EventService eventService;
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -90,7 +93,12 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
             List<String> fullFetch = new ArrayList<>();
             List<String> catchUp   = new ArrayList<>();
             for (String s : fyersSymbols) {
-                if (emaService.hasCachedSymbol(s) && atrBySymbol.getOrDefault(s, 0.0) > 0) catchUp.add(s);
+                boolean emaOk = emaService.hasCachedSymbol(s) && atrBySymbol.getOrDefault(s, 0.0) > 0;
+                // HtfEmaService has no incremental catch-up (1-hour bars come from htfAggregator,
+                // not the 5-min stream). When its cache is missing a symbol, route through the
+                // full-fetch path so the 14-day Fyers fetch can seed the 1-hour EMA from scratch.
+                boolean htfEmaOk = htfEmaService == null || htfEmaService.hasCachedSymbol(s);
+                if (emaOk && htfEmaOk) catchUp.add(s);
                 else fullFetch.add(s);
             }
             log.info("[CACHE] ATR/EMA: catch-up for {} cached symbols, full fetch for {} new symbols{}",
@@ -128,8 +136,13 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
 
                 List<CandleAggregator.CandleBar> candles;
                 boolean fyersFetched = false;
-                // Disk alone covers EMA200 + ATR(14) requirement → skip Fyers fetch entirely.
-                if (diskBars.size() >= 200) {
+                // Disk alone covers EMA200 + ATR(14) requirement → skip Fyers fetch entirely
+                // for the 5-min EMA/ATR path. EXCEPTION: when HtfEmaService isn't cached for
+                // the symbol, the 1-hour EMA needs at least 20 1-hour-boundary bars (~3.3
+                // trading days of 5-min bars). 200 disk bars often falls short of that, so
+                // force a 14-day Fyers fetch when HTF seeding is pending.
+                boolean htfNeedsSeed = htfEmaService != null && !htfEmaService.hasCachedSymbol(symbol);
+                if (diskBars.size() >= 200 && !htfNeedsSeed) {
                     candles = diskBars;
                 } else {
                     // Fetch from Fyers for the missing older window. Merge: keep disk bars as
@@ -151,6 +164,7 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
                     // CandleAggregator's loaded disk state already represents the truth.
                     if (fyersFetched) candleAggregator.seedCandles(symbol, candles);
                     if (emaService != null) emaService.seedFromCandles(symbol, candles);
+                    if (htfEmaService != null) htfEmaService.seedFromCandles(symbol, candles);
                     success++;
                     if (!fyersFetched) diskOnly++;
                 } else {
@@ -176,6 +190,7 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
                         atrBySymbol.put(symbol, atr);
                         candleAggregator.seedCandles(symbol, candles);
                         if (emaService != null) emaService.seedFromCandles(symbol, candles);
+                    if (htfEmaService != null) htfEmaService.seedFromCandles(symbol, candles);
                         success++;
                         log.info("[AtrService] Retry succeeded for {}", symbol);
                     }
@@ -193,6 +208,7 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
         // Persist the fresh seed so the next restart (even before the first candle close)
         // can reload from disk instead of re-fetching 14 days of history.
         if (emaService != null) emaService.flushCache();
+        if (htfEmaService != null) htfEmaService.flushCache();
     }
 
     /**

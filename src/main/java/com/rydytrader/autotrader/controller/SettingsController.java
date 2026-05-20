@@ -79,6 +79,7 @@ public class SettingsController {
         result.put("enableTargetTolerance", riskSettings.isEnableTargetTolerance());
         result.put("targetToleranceAtr", riskSettings.getTargetToleranceAtr());
         result.put("enableIndexAlignment", riskSettings.isEnableIndexAlignment());
+        result.put("enableStockHtfAlignment", riskSettings.isEnableStockHtfAlignment());
         result.put("goodSizeCandleBodyAtrMult",          riskSettings.getGoodSizeCandleBodyAtrMult());
         result.put("goodSizeCandleMaxBodyAtrMult",       riskSettings.getGoodSizeCandleMaxBodyAtrMult());
         result.put("confirmationMaxOppositeWickRatio",   riskSettings.getConfirmationMaxOppositeWickRatio());
@@ -184,6 +185,7 @@ public class SettingsController {
             if (body.containsKey("enableTargetTolerance")) riskSettings.setEnableTargetTolerance(Boolean.parseBoolean(body.get("enableTargetTolerance").toString()));
             if (body.containsKey("targetToleranceAtr")) riskSettings.setTargetToleranceAtr(Double.parseDouble(body.get("targetToleranceAtr").toString()));
             if (body.containsKey("enableIndexAlignment"))   riskSettings.setEnableIndexAlignment(Boolean.parseBoolean(body.get("enableIndexAlignment").toString()));
+            if (body.containsKey("enableStockHtfAlignment")) riskSettings.setEnableStockHtfAlignment(Boolean.parseBoolean(body.get("enableStockHtfAlignment").toString()));
             if (body.containsKey("goodSizeCandleBodyAtrMult"))   riskSettings.setGoodSizeCandleBodyAtrMult(Double.parseDouble(body.get("goodSizeCandleBodyAtrMult").toString()));
             if (body.containsKey("goodSizeCandleMaxBodyAtrMult")) riskSettings.setGoodSizeCandleMaxBodyAtrMult(Double.parseDouble(body.get("goodSizeCandleMaxBodyAtrMult").toString()));
             if (body.containsKey("confirmationMaxOppositeWickRatio")) riskSettings.setConfirmationMaxOppositeWickRatio(Double.parseDouble(body.get("confirmationMaxOppositeWickRatio").toString()));

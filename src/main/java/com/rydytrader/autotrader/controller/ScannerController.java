@@ -38,6 +38,9 @@ public class ScannerController {
     private final MarketHolidayService marketHolidayService;
     @org.springframework.beans.factory.annotation.Autowired
     private SymbolMasterService symbolMasterService;
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private HtfEmaService htfEmaService;
 
     public ScannerController(MarketDataService marketDataService,
                              BhavcopyService bhavcopyService,
@@ -308,35 +311,20 @@ public class ScannerController {
                     }
                 }
 
-                // CPR zone + EMA factors.
+                // CPR zone (used for the bias) + EMA20 (kept for the chip tooltip's EMA row).
                 sectorTop   = (idx.getTc() > 0 && idx.getBc() > 0) ? Math.max(idx.getTc(), idx.getBc()) : 0;
                 sectorBot   = (idx.getTc() > 0 && idx.getBc() > 0) ? Math.min(idx.getTc(), idx.getBc()) : 0;
                 sectorEma20 = emaService != null ? emaService.getEma(sectorFyersSym) : 0;
 
-                if (refPrice > 0) {
-                    Boolean cprBullish = null;
-                    if (sectorTop > 0 && sectorBot > 0) {
-                        if (refPrice > sectorTop)      cprBullish = Boolean.TRUE;
-                        else if (refPrice < sectorBot) cprBullish = Boolean.FALSE;
-                    }
-                    Boolean emaBullish = null;
-                    if (sectorEma20 > 0) {
-                        if (refPrice > sectorEma20)      emaBullish = Boolean.TRUE;
-                        else if (refPrice < sectorEma20) emaBullish = Boolean.FALSE;
-                    }
-                    if (cprBullish == null) {
-                        sectorState = (sectorTop > 0 && sectorBot > 0) ? "INSIDE" : "NEUTRAL";
-                    } else if (Boolean.TRUE.equals(cprBullish)  && !Boolean.FALSE.equals(emaBullish)) {
-                        sectorState = "BULLISH";
-                    } else if (Boolean.FALSE.equals(cprBullish) && !Boolean.TRUE.equals(emaBullish)) {
-                        sectorState = "BEARISH";
-                    } else if (Boolean.FALSE.equals(cprBullish) && Boolean.TRUE.equals(emaBullish)) {
-                        sectorState = "BULLISH_REVERSAL";
-                    } else if (Boolean.TRUE.equals(cprBullish)  && Boolean.FALSE.equals(emaBullish)) {
-                        sectorState = "BEARISH_REVERSAL";
-                    } else {
-                        sectorState = "SIDEWAYS";
-                    }
+                // CPR-only state: above CPR top → BULLISH, below CPR bot → BEARISH, inside → INSIDE.
+                // Matches the NIFTY card + sector trends modal (EMA20 is no longer a trend factor
+                // for indices — kept on the tooltip as a separate data point only).
+                if (refPrice > 0 && sectorTop > 0 && sectorBot > 0) {
+                    if (refPrice > sectorTop)      sectorState = "BULLISH";
+                    else if (refPrice < sectorBot) sectorState = "BEARISH";
+                    else                           sectorState = "INSIDE";
+                } else if (refPrice > 0) {
+                    sectorState = "NEUTRAL";
                 }
             }
         }
@@ -415,19 +403,6 @@ public class ScannerController {
         card.put("dailyTrend", weeklyCprService.getDailyTrend(fyersSymbol));
         card.put("probability", computeCardProbability(fyersSymbol, ltp));
 
-        // Weekly levels for the client-side BM (bullish/bearish momentum) pill on each
-        // card: LTP above weekly R1 AND PWH -> bullish; below weekly S1 AND PWL -> bearish.
-        // Only the four consumed levels are exposed.
-        WeeklyCprService.WeeklyLevels wl = weeklyCprService.getWeeklyLevels(fyersSymbol);
-        if (wl != null) {
-            Map<String, Object> wlMap = new LinkedHashMap<>();
-            wlMap.put("r1", r(wl.r1));
-            wlMap.put("s1", r(wl.s1));
-            wlMap.put("ph", r(wl.ph));
-            wlMap.put("pl", r(wl.pl));
-            card.put("weeklyLevels", wlMap);
-        }
-
         // CPR levels
         Map<String, Object> lvls = new LinkedHashMap<>();
         lvls.put("r4", r(levels.getR4())); lvls.put("r3", r(levels.getR3()));
@@ -482,22 +457,69 @@ public class ScannerController {
         card.put("cprBias", cprBias);
         card.put("trendState", trendState);
 
-        // Per-stock HTF hurdle chip — single nearest weekly hurdle in trade direction.
-        // Direction follows trendState: bullish flavours → buy-side levels above LTP,
-        // bearish flavours → sell-side levels below. SIDEWAYS / INSIDE / NEUTRAL leave
-        // hurdle = null. Mirrors the NIFTY card's hurdle chip pattern.
-        Boolean stockIsBuy = null;
-        if ("BULLISH".equals(trendState) || "BULLISH_REVERSAL".equals(trendState)) stockIsBuy = true;
-        else if ("BEARISH".equals(trendState) || "BEARISH_REVERSAL".equals(trendState)) stockIsBuy = false;
-        if (stockIsBuy != null) {
-            BreakoutScanner.HurdleStatus h = breakoutScanner.getStockNearestHurdle(fyersSymbol, stockIsBuy);
-            if (h != null) {
-                Map<String, Object> hurdle = new LinkedHashMap<>();
-                hurdle.put("level", h.level());
-                hurdle.put("category", h.category());
-                hurdle.put("state", h.state());
-                card.put("hurdle", hurdle);
-            }
+        // HTF (1-hour) versions of the same three fields — driven by the stock's 1-hour close
+        // vs weekly CPR (TC/BC) + 1-hour EMA20. Feeds the second CPR/EMA/TREND row on the
+        // scanner card and matches the inputs of the Stock HTF Trend Alignment filter.
+        String htfCprBias = "INSIDE";
+        String htfTrendState = "NEUTRAL";
+        double htfEma20Val = htfEmaService != null ? htfEmaService.getEma(fyersSymbol) : 0;
+        WeeklyCprService.WeeklyLevels wl = weeklyCprService.getWeeklyLevels(fyersSymbol);
+        Double htfCloseVal = candleAggregator.getLast1HourClose(fyersSymbol);
+        if (htfCloseVal != null && htfCloseVal > 0 && wl != null && wl.top > 0 && wl.bot > 0) {
+            if (htfCloseVal > wl.top)      htfCprBias = "BULLISH";
+            else if (htfCloseVal < wl.bot) htfCprBias = "BEARISH";
+            htfTrendState = IndexTrendService.deriveTrendState(htfCloseVal, wl.top, wl.bot, htfEma20Val);
+        }
+        card.put("htfCprBias", htfCprBias);
+        card.put("htfTrendState", htfTrendState);
+        card.put("htfEma20", r(htfEma20Val));
+        card.put("htfClose", htfCloseVal != null ? r(htfCloseVal) : 0);
+
+        // Weekly CPR levels for the CPR Levels panel's "Weekly" sub-section. Exposes the same
+        // shape as the daily levels map so the template can iterate using a shared renderer.
+        if (wl != null) {
+            Map<String, Object> wlMap = new LinkedHashMap<>();
+            wlMap.put("r4",    r(wl.r4));
+            wlMap.put("r3",    r(wl.r3));
+            wlMap.put("r2",    r(wl.r2));
+            wlMap.put("r1",    r(wl.r1));
+            wlMap.put("ph",    r(wl.ph));
+            wlMap.put("tc",    r(wl.tc));
+            wlMap.put("pivot", r(wl.pivot));
+            wlMap.put("bc",    r(wl.bc));
+            wlMap.put("pl",    r(wl.pl));
+            wlMap.put("s1",    r(wl.s1));
+            wlMap.put("s2",    r(wl.s2));
+            wlMap.put("s3",    r(wl.s3));
+            wlMap.put("s4",    r(wl.s4));
+            card.put("weeklyLevels", wlMap);
+        }
+
+        // Per-stock hurdle chip — single nearest hurdle from the three sources
+        // (stock HTF, primary-index HTF, primary-index 5m).
+        //   • Bullish flavours → buy-side levels above LTP.
+        //   • Bearish flavours → sell-side levels below LTP.
+        //   • INSIDE → no clear direction; compute both buy and sell candidates and surface
+        //     the geographically nearer one (whichever side the stock is closer to).
+        //   • SIDEWAYS / NEUTRAL → leave hurdle = null (no informative side to show).
+        BreakoutScanner.HurdleStatus hurdleStatus = null;
+        if ("BULLISH".equals(trendState) || "BULLISH_REVERSAL".equals(trendState)) {
+            hurdleStatus = breakoutScanner.getStockNearestHurdle(fyersSymbol, true);
+        } else if ("BEARISH".equals(trendState) || "BEARISH_REVERSAL".equals(trendState)) {
+            hurdleStatus = breakoutScanner.getStockNearestHurdle(fyersSymbol, false);
+        } else if ("INSIDE".equals(trendState)) {
+            BreakoutScanner.HurdleStatus buy  = breakoutScanner.getStockNearestHurdle(fyersSymbol, true);
+            BreakoutScanner.HurdleStatus sell = breakoutScanner.getStockNearestHurdle(fyersSymbol, false);
+            if (buy == null) hurdleStatus = sell;
+            else if (sell == null) hurdleStatus = buy;
+            else hurdleStatus = (buy.distance() <= sell.distance()) ? buy : sell;
+        }
+        if (hurdleStatus != null) {
+            Map<String, Object> hurdle = new LinkedHashMap<>();
+            hurdle.put("level", hurdleStatus.level());
+            hurdle.put("category", hurdleStatus.category());
+            hurdle.put("state", hurdleStatus.state());
+            card.put("hurdle", hurdle);
         }
 
         // Broken levels

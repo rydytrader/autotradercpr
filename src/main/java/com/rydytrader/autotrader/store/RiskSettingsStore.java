@@ -260,6 +260,10 @@ public class RiskSettingsStore {
         // BEARISH (or BEARISH_REVERSAL for HPT); SIDEWAYS / NEUTRAL / opposite-direction
         // skip the trade outright. Replaces the old separate NIFTY + sector alignment checks.
         volatile boolean enableIndexAlignment = false;        // master toggle, opt-in
+        // Stock HTF Trend Alignment — confirms the stock's own 1-hour HTF trend agrees
+        // with the trade direction (BULLISH/BULLISH_REVERSAL for buy, BEARISH/BEARISH_REVERSAL
+        // for sell). Computed from 1-hour close vs weekly CPR + 1-hour EMA20. Opt-in.
+        volatile boolean enableStockHtfAlignment = false;
     }
 
     private final Cfg live = new Cfg();
@@ -374,6 +378,7 @@ public class RiskSettingsStore {
     public boolean isEnableTargetTolerance()   { return cfg().enableTargetTolerance; }
     public double getTargetToleranceAtr()      { return cfg().targetToleranceAtr; }
     public boolean isEnableIndexAlignment()    { return cfg().enableIndexAlignment; }
+    public boolean isEnableStockHtfAlignment() { return cfg().enableStockHtfAlignment; }
     public void setSignalSource(String v)      { cfg().signalSource = v; }
     public void setScannerTimeframe(int v)     { cfg().scannerTimeframe = v; }
     public void setHigherTimeframe(int v)      { cfg().higherTimeframe = v; }
@@ -393,6 +398,7 @@ public class RiskSettingsStore {
     public void setEnableTargetTolerance(boolean v) { cfg().enableTargetTolerance = v; }
     public void setTargetToleranceAtr(double v) { cfg().targetToleranceAtr = v; }
     public void setEnableIndexAlignment(boolean v)        { cfg().enableIndexAlignment = v; }
+    public void setEnableStockHtfAlignment(boolean v)     { cfg().enableStockHtfAlignment = v; }
     public void setTradingStartTime(String v)  { cfg().tradingStartTime = v; }
     public void setTradingEndTime(String v)    { cfg().tradingEndTime = v; }
     public void setTotalCapital(double v)       { cfg().totalCapital = v; }
@@ -624,6 +630,7 @@ public class RiskSettingsStore {
             upsert("enableTargetTolerance", String.valueOf(c.enableTargetTolerance));
             upsert("targetToleranceAtr", String.valueOf(c.targetToleranceAtr));
             upsert("enableIndexAlignment",   String.valueOf(c.enableIndexAlignment));
+            upsert("enableStockHtfAlignment", String.valueOf(c.enableStockHtfAlignment));
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to save {}: {}", mode, e.getMessage());
         }
@@ -863,6 +870,7 @@ public class RiskSettingsStore {
                     case "enableTargetTolerance" -> c.enableTargetTolerance = Boolean.parseBoolean(v);
                     case "targetToleranceAtr" -> c.targetToleranceAtr = Double.parseDouble(v);
                     case "enableIndexAlignment"   -> c.enableIndexAlignment = Boolean.parseBoolean(v);
+                    case "enableStockHtfAlignment" -> c.enableStockHtfAlignment = Boolean.parseBoolean(v);
                     // Legacy NIFTY trend-factor toggles — features removed (EMA20 is now
                     // always-on; FUT VWAP factor dropped entirely). Old risk-settings.json
                     // files keep loading without errors; values are silently ignored.
