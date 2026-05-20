@@ -298,20 +298,22 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         trend.setNiftyClose(dispNiftyClose);
         trend.setState(dispState);
 
-        // CPR width category — NARROW iff width is INSIDE the configured band
-        // [narrowCprMinWidth, narrowCprMaxWidth). Mirrors the exact band the stock
-        // scanner uses (BreakoutScanner.passesScanFilters) and the NIFTY 5m hurdle
-        // filter uses (BreakoutScanner.compute5mCandidate) — so the NIFTY card's
-        // NARROW/WIDE label always matches the hurdle filter's behaviour.
+        // CPR state — sourced from the adaptive classifier (3-state model based on the
+        // 14-day SMA baselines for CPR width and True Range). Replaces the legacy static
+        // NARROW/WIDE band. The card surfaces the state name (SQUEEZE/STANDARD/EXHAUSTION/WARMUP)
+        // via setCprWidthCategory, and the raw widthPct via setCprWidthPct.
         var niftyCpr = bhavcopyService.getCprLevels("NIFTY50");
-        if (niftyCpr != null && niftyCpr.getCprWidthPct() > 0 && riskSettings != null) {
-            double widthPct  = niftyCpr.getCprWidthPct();
-            double narrowMin = riskSettings.getNarrowCprMinWidth();
-            double narrowMax = riskSettings.getNarrowCprMaxWidth();
-            String category  = (widthPct >= narrowMin && widthPct < narrowMax) ? "NARROW" : "WIDE";
-            trend.setCprWidthPct(Math.round(widthPct * 1000.0) / 1000.0);
-            trend.setCprWidthCategory(category);
+        if (niftyCpr != null && niftyCpr.getCprWidthPct() > 0) {
+            trend.setCprWidthPct(Math.round(niftyCpr.getCprWidthPct() * 1000.0) / 1000.0);
         }
+        BhavcopyService.AdaptiveCprResult adaptive = bhavcopyService.getAdaptiveCpr("NIFTY50");
+        String category = switch (adaptive.state()) {
+            case DYNAMIC_SQUEEZE       -> "NARROW";
+            case STANDARD_EXPANSION    -> "STANDARD";
+            case VOLATILITY_EXHAUSTION -> "EXHAUSTION";
+            case INSUFFICIENT_DATA     -> "WARMUP";
+        };
+        trend.setCprWidthCategory(category);
 
         // dataAvailable gates the whole card render in the UI. True if we have any LTP
         // (live tick OR bhavcopy fallback for weekends / pre-market) — the trend chips

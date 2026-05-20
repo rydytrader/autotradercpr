@@ -120,8 +120,11 @@ public class SettingsController {
         result.put("scannerTimeframe", riskSettings.getScannerTimeframe());
         result.put("higherTimeframe", riskSettings.getHigherTimeframe());
         result.put("enableAtpCheck", riskSettings.isEnableAtpCheck());
-        result.put("narrowCprMaxWidth", riskSettings.getNarrowCprMaxWidth());
-        result.put("narrowCprMinWidth", riskSettings.getNarrowCprMinWidth());
+        result.put("cprWidthSqueezeMult",  riskSettings.getCprWidthSqueezeMult());
+        result.put("trueRangeSqueezeMult", riskSettings.getTrueRangeSqueezeMult());
+        result.put("enableCprStateA",      riskSettings.isEnableCprStateA());
+        result.put("enableCprStateB",      riskSettings.isEnableCprStateB());
+        result.put("enableCprStateC",      riskSettings.isEnableCprStateC());
         result.put("insideCprMaxWidth", riskSettings.getInsideCprMaxWidth());
         result.put("narrowCprZoneCollapseWidthPct", riskSettings.getNarrowCprZoneCollapseWidthPct());
         result.put("scanMinPrice", riskSettings.getScanMinPrice());
@@ -231,8 +234,11 @@ public class SettingsController {
             if (body.containsKey("scannerTimeframe")) riskSettings.setScannerTimeframe(Integer.parseInt(body.get("scannerTimeframe").toString()));
             if (body.containsKey("higherTimeframe")) riskSettings.setHigherTimeframe(Integer.parseInt(body.get("higherTimeframe").toString()));
             if (body.containsKey("enableAtpCheck")) riskSettings.setEnableAtpCheck(Boolean.parseBoolean(body.get("enableAtpCheck").toString()));
-            if (body.containsKey("narrowCprMaxWidth")) riskSettings.setNarrowCprMaxWidth(Double.parseDouble(body.get("narrowCprMaxWidth").toString()));
-            if (body.containsKey("narrowCprMinWidth")) riskSettings.setNarrowCprMinWidth(Double.parseDouble(body.get("narrowCprMinWidth").toString()));
+            if (body.containsKey("cprWidthSqueezeMult"))  riskSettings.setCprWidthSqueezeMult(Double.parseDouble(body.get("cprWidthSqueezeMult").toString()));
+            if (body.containsKey("trueRangeSqueezeMult")) riskSettings.setTrueRangeSqueezeMult(Double.parseDouble(body.get("trueRangeSqueezeMult").toString()));
+            if (body.containsKey("enableCprStateA"))      riskSettings.setEnableCprStateA(Boolean.parseBoolean(body.get("enableCprStateA").toString()));
+            if (body.containsKey("enableCprStateB"))      riskSettings.setEnableCprStateB(Boolean.parseBoolean(body.get("enableCprStateB").toString()));
+            if (body.containsKey("enableCprStateC"))      riskSettings.setEnableCprStateC(Boolean.parseBoolean(body.get("enableCprStateC").toString()));
             if (body.containsKey("insideCprMaxWidth")) riskSettings.setInsideCprMaxWidth(Double.parseDouble(body.get("insideCprMaxWidth").toString()));
             if (body.containsKey("narrowCprZoneCollapseWidthPct")) riskSettings.setNarrowCprZoneCollapseWidthPct(Double.parseDouble(body.get("narrowCprZoneCollapseWidthPct").toString()));
             if (body.containsKey("scanMinPrice")) riskSettings.setScanMinPrice(Double.parseDouble(body.get("scanMinPrice").toString()));
@@ -250,14 +256,26 @@ public class SettingsController {
         }
     }
 
-    // ── NARROW CPR STOCKS ─────────────────────────────────────────────────────
+    /**
+     * Backfill missing index rows into existing historical snapshots. Walks
+     * {@code dailyHistory} and, for each day that's missing any of the SUPPORTED_INDICES
+     * (e.g. NIFTYIT, NIFTYAUTO added after the original cache was built), fetches that
+     * day's index bhavcopy and merges in only the missing rows. Existing data is never
+     * overwritten. Days that already have every index are skipped — idempotent + safe to
+     * re-run.
+     */
+    @org.springframework.web.bind.annotation.RequestMapping(
+        value = "/api/bhavcopy/backfill-indices",
+        method = { org.springframework.web.bind.annotation.RequestMethod.GET,
+                   org.springframework.web.bind.annotation.RequestMethod.POST })
+    public Map<String, Object> backfillIndices() {
+        return bhavcopyService.backfillMissingIndices();
+    }
+
+    // ── NARROW CPR STOCKS (State A — DYNAMIC_SQUEEZE) ─────────────────────────
     @GetMapping("/api/narrow-cpr")
     public Map<String, Object> getNarrowCprStocks() {
-        double maxWidth = riskSettings.getNarrowCprMaxWidth();
-        double minWidth = riskSettings.getNarrowCprMinWidth();
-        List<CprLevels> narrow = bhavcopyService.getAllCprLevels().values().stream()
-            .filter(c -> !bhavcopyService.isIndex(c.getSymbol()))
-            .filter(c -> c.getCprWidthPct() >= minWidth && c.getCprWidthPct() < maxWidth)
+        List<CprLevels> narrow = bhavcopyService.getNarrowCprStocks().stream()
             .sorted(java.util.Comparator.comparing(CprLevels::getSymbol))
             .collect(Collectors.toList());
         List<Map<String, Object>> list = narrow.stream().map(c -> buildStockRow(c)).collect(Collectors.toList());

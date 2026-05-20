@@ -871,22 +871,51 @@
         <div class="section-body">
             <div class="form-grid">
                 <div class="form-group">
-                    <label class="form-label">CPR Width Thresholds (%)</label>
+                    <label class="form-label">Adaptive CPR State Classifier</label>
                     <div style="display:flex; flex-direction:column; gap:8px; margin-top:4px;">
                         <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
-                            Narrow CPR:
-                            <input type="number" id="narrowCprMinWidth" class="form-control" step="0.01" min="0" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                            % &le; width &lt;
-                            <input type="number" id="narrowCprMaxWidth" class="form-control" step="0.05" min="0.01" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                            % <span style="color:var(--text-muted);">(min = 0 for no lower bound)</span>
+                            CPR Width squeeze multiplier:
+                            <input type="number" id="cprWidthSqueezeMult" class="form-control" step="0.05" min="0.05" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                            <span style="color:var(--text-muted);">(today's width &le; this &times; 14d SMA &rarr; squeeze, default 0.50)</span>
                         </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
+                            True Range squeeze multiplier:
+                            <input type="number" id="trueRangeSqueezeMult" class="form-control" step="0.05" min="0.05" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                            <span style="color:var(--text-muted);">(yesterday's TR &le; this &times; 14d SMA &rarr; calm, default 0.75)</span>
+                        </label>
+                        <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:center; margin-top:4px;">
+                            <label style="display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
+                                <input type="checkbox" id="enableCprStateA" style="width:16px;height:16px;accent-color:var(--accent-green);">
+                                <span><b style="color:var(--accent-green);">A.</b> Narrow</span>
+                            </label>
+                            <label style="display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
+                                <input type="checkbox" id="enableCprStateB" style="width:16px;height:16px;accent-color:var(--accent-blue);">
+                                <span><b style="color:var(--accent-blue);">B.</b> Standard Expansion</span>
+                            </label>
+                            <label style="display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
+                                <input type="checkbox" id="enableCprStateC" style="width:16px;height:16px;accent-color:var(--accent-red);">
+                                <span><b style="color:var(--accent-red);">C.</b> Volatility Exhaustion</span>
+                            </label>
+                        </div>
                         <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
                             Inside CPR &lt;
                             <input type="number" id="insideCprMaxWidth" class="form-control" step="0.1" min="0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                             % (0 = no filter)
                         </label>
+                        <div style="display:flex;align-items:center;gap:10px;margin-top:6px;">
+                            <button type="button" onclick="backfillIndicesAction(this)" style="background:rgba(99,179,237,0.10); border:1px solid rgba(99,179,237,0.35); color:var(--accent-blue); padding:6px 12px; border-radius:6px; font-family:var(--font-mono); font-size:0.78rem; font-weight:600; cursor:pointer; transition:background 0.2s;" title="Walk the 25-day history and add any missing sector indices into older snapshots. Idempotent — safe to re-run.">Backfill Missing Indices</button>
+                            <span id="backfillIndicesResult" style="font-family:var(--font-mono); font-size:0.76rem; color:var(--text-muted);"></span>
+                        </div>
                     </div>
-                    <div class="form-hint">Width as % of close price. Stocks with CPR wider than threshold are excluded. You can tighten mid-day (fewer stocks from the existing set), but widening requires a restart (new stocks need WebSocket subscription + ATR/EMA seed).</div>
+                    <div class="form-hint">
+                        Each stock is classified by its own 14-day baselines (CPR width % and True Range %) rather than a fixed band. State decides the recommended strategy:
+                        <br>&nbsp;&nbsp;&bull; <b style="color:var(--accent-green);">A. Narrow</b> &mdash; CPR width &le; 0.5&times; AND TR &lt; 0.75&times; the 14d SMA &rarr; true volatility squeeze, breakout candidate.
+                        <br>&nbsp;&nbsp;&bull; <b style="color:var(--accent-blue);">B. Standard Expansion</b> &mdash; CPR width 0.5&times;&ndash;1.30&times; AND TR 0.75&times;&ndash;1.20&times; &rarr; orderly grind, pullback setups at CPR / EMA.
+                        <br>&nbsp;&nbsp;&bull; <b style="color:var(--accent-red);">C. Volatility Exhaustion</b> (two sub-cases):
+                        <br>&nbsp;&nbsp;&nbsp;&nbsp;&ndash; <i>Trend fatigue:</i> CPR width &gt; 1.30&times; AND TR 0.75&times;&ndash;1.20&times; &rarr; wide CPR exhausted, mean-reversion fade.
+                        <br>&nbsp;&nbsp;&nbsp;&nbsp;&ndash; <i>Doji trap:</i> CPR width &le; 0.5&times; AND TR &gt; 1.50&times; &rarr; deceptively narrow with explosive intraday range.
+                        <br>Other combinations fold into <b>Standard Expansion</b>. Toggles control which states appear on the scanner watchlist. INSUFFICIENT_DATA (&lt;14 days history) is always excluded.
+                    </div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Stock Price Range (₹)</label>
@@ -1198,6 +1227,36 @@
 
     // ── INIT SETTINGS ────────────────────────────────────────────────────────
 
+    // ── BACKFILL MISSING INDICES ─────────────────────────────────────────────
+    function backfillIndicesAction(btn) {
+        var resultEl = document.getElementById('backfillIndicesResult');
+        var prevLabel = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Backfilling…';
+        if (resultEl) { resultEl.textContent = ''; resultEl.style.color = 'var(--text-muted)'; }
+        fetch('/api/bhavcopy/backfill-indices', { method: 'POST', headers: csrfHeaders() })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (!d || d.success === false) {
+                    resultEl.textContent = d && d.message ? d.message : 'Backfill failed';
+                    resultEl.style.color = 'var(--accent-red)';
+                } else {
+                    var u = d.daysUpdated || 0, c = d.daysComplete || 0, f = d.daysFailed || 0, s = d.daysScanned || 0;
+                    resultEl.textContent = 'Scanned ' + s + ': updated ' + u + ', already complete ' + c
+                        + (f > 0 ? ', failed ' + f : '');
+                    resultEl.style.color = u > 0 ? 'var(--accent-green)' : 'var(--text-muted)';
+                }
+            })
+            .catch(function(err) {
+                resultEl.textContent = 'Error: ' + (err && err.message ? err.message : err);
+                resultEl.style.color = 'var(--accent-red)';
+            })
+            .finally(function() {
+                btn.disabled = false;
+                btn.textContent = prevLabel;
+            });
+    }
+
     // ── CONNECTION STATUS ─────────────────────────────────────────────────────
     function updateConnectionStatus() {
         var ctrl = new AbortController(); var tid = setTimeout(function(){ ctrl.abort(); }, 3000);
@@ -1344,8 +1403,11 @@
             document.getElementById('enableOpeningRefresh').checked = d.enableOpeningRefresh !== false;
             document.getElementById('openingRefreshTime').value = d.openingRefreshTime || '09:25';
             document.getElementById('enableAtpCheck').checked = d.enableAtpCheck !== false;
-            document.getElementById('narrowCprMaxWidth').value = d.narrowCprMaxWidth != null ? d.narrowCprMaxWidth : 0.1;
-            document.getElementById('narrowCprMinWidth').value = d.narrowCprMinWidth != null ? d.narrowCprMinWidth : 0;
+            document.getElementById('cprWidthSqueezeMult').value  = d.cprWidthSqueezeMult  != null ? d.cprWidthSqueezeMult  : 0.50;
+            document.getElementById('trueRangeSqueezeMult').value = d.trueRangeSqueezeMult != null ? d.trueRangeSqueezeMult : 0.75;
+            document.getElementById('enableCprStateA').checked    = d.enableCprStateA !== false;
+            document.getElementById('enableCprStateB').checked    = d.enableCprStateB !== false;
+            document.getElementById('enableCprStateC').checked    = d.enableCprStateC !== false;
             document.getElementById('insideCprMaxWidth').value = d.insideCprMaxWidth != null ? d.insideCprMaxWidth : 0.5;
             document.getElementById('scanMinPrice').value = d.scanMinPrice != null ? d.scanMinPrice : 300;
             document.getElementById('scanMaxPrice').value = d.scanMaxPrice != null ? d.scanMaxPrice : 0;
@@ -1499,8 +1561,11 @@
                 enableOpeningRefresh: document.getElementById('enableOpeningRefresh').checked,
                 openingRefreshTime: document.getElementById('openingRefreshTime').value || '09:25',
                 enableAtpCheck: document.getElementById('enableAtpCheck').checked,
-                narrowCprMaxWidth: parseFloat(document.getElementById('narrowCprMaxWidth').value) || 0.1,
-                narrowCprMinWidth: parseFloat(document.getElementById('narrowCprMinWidth').value) || 0,
+                cprWidthSqueezeMult:  parseFloat(document.getElementById('cprWidthSqueezeMult').value)  || 0.50,
+                trueRangeSqueezeMult: parseFloat(document.getElementById('trueRangeSqueezeMult').value) || 0.75,
+                enableCprStateA: document.getElementById('enableCprStateA').checked,
+                enableCprStateB: document.getElementById('enableCprStateB').checked,
+                enableCprStateC: document.getElementById('enableCprStateC').checked,
                 insideCprMaxWidth: parseFloat(document.getElementById('insideCprMaxWidth').value) || 0,
                 scanMinPrice: parseFloat(document.getElementById('scanMinPrice').value) || 0,
                 scanMaxPrice: parseFloat(document.getElementById('scanMaxPrice').value) || 0,

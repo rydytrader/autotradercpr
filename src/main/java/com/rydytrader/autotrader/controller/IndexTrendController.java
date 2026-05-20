@@ -87,8 +87,6 @@ public class IndexTrendController {
     public List<Map<String, Object>> getKeyIndices() {
         List<Map<String, Object>> out = new ArrayList<>();
         boolean tradingDay = marketHolidayService == null || marketHolidayService.isTradingDay();
-        double narrowMin = riskSettings.getNarrowCprMinWidth();
-        double narrowMax = riskSettings.getNarrowCprMaxWidth();
 
         for (String ticker : KEY_INDEX_TICKERS) {
             CprLevels idx = bhavcopyService.getCprLevels(ticker);
@@ -113,7 +111,14 @@ public class IndexTrendController {
             }
             String state = indexTrendService.getTrendStateForTicker(ticker);
             double widthPct = idx.getCprWidthPct();
-            String widthCategory = (widthPct >= narrowMin && widthPct < narrowMax) ? "NARROW" : "WIDE";
+            // Adaptive CPR state — replaces the legacy static NARROW/WIDE band.
+            BhavcopyService.AdaptiveCprResult adaptive = bhavcopyService.getAdaptiveCpr(ticker);
+            String widthCategory = switch (adaptive.state()) {
+                case DYNAMIC_SQUEEZE       -> "NARROW";
+                case STANDARD_EXPANSION    -> "STANDARD";
+                case VOLATILITY_EXHAUSTION -> "EXHAUSTION";
+                case INSUFFICIENT_DATA     -> "WARMUP";
+            };
 
             String displayName = bhavcopyService.getIndexDisplayName(ticker);
             Map<String, Object> m = new LinkedHashMap<>();

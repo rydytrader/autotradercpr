@@ -1074,10 +1074,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         }
 
         double minPrice = riskSettings.getScanMinPrice();
-        double narrowMax = riskSettings.getNarrowCprMaxWidth();
+        double m1 = riskSettings.getCprWidthSqueezeMult();
+        double m2 = riskSettings.getTrueRangeSqueezeMult();
         double insideMax = riskSettings.getInsideCprMaxWidth();
         eventService.log("[INFO] Scanner initialized: " + watchlist.size() + " symbols"
-            + " (filters: narrow<" + narrowMax + "%, inside<" + insideMax + "%, price≥₹" + (int)minPrice + ")");
+            + " (filters: adaptive CPR squeeze " + m1 + "× / TR squeeze " + m2 + "×, inside<" + insideMax + "%, price≥₹" + (int)minPrice + ")");
 
         int narrowCount = (int) bhavcopyService.getNarrowCprStocks().size();
         int insideCount = (int) bhavcopyService.getInsideCprStocks().size();
@@ -1113,13 +1114,21 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         // than NIFTY 50) so the CPR cache contains stocks outside the DB — without this gate
         // those would leak into the watchlist + WS subscription set.
         Set<String> symbols = new LinkedHashSet<>();
-        double narrowMax = riskSettings.getNarrowCprMaxWidth();
         double insideMax = riskSettings.getInsideCprMaxWidth();
 
         for (var cpr : bhavcopyService.getAllCprLevels().values()) {
             if (bhavcopyService.isIndex(cpr.getSymbol())) continue; // NIFTY50 etc. are not tradable stocks
             if (!bhavcopyService.isInScanUniverse(cpr.getSymbol())) continue;
-            if (cpr.getCprWidthPct() < narrowMax && passesWatchlistFilters(cpr)) {
+            // Adaptive state toggles control which states make the WebSocket subscription.
+            // INSUFFICIENT_DATA always excluded (warmup). Mirrors ScannerController.getWatchlist.
+            BhavcopyService.AdaptiveCprResult adaptive = bhavcopyService.getAdaptiveCpr(cpr.getSymbol());
+            boolean stateOk = switch (adaptive.state()) {
+                case DYNAMIC_SQUEEZE       -> riskSettings.isEnableCprStateA();
+                case STANDARD_EXPANSION    -> riskSettings.isEnableCprStateB();
+                case VOLATILITY_EXHAUSTION -> riskSettings.isEnableCprStateC();
+                case INSUFFICIENT_DATA     -> false;
+            };
+            if (stateOk && passesWatchlistFilters(cpr)) {
                 symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
             }
         }

@@ -1840,18 +1840,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         var cpr = bhavcopyService.getCprLevels(indexTicker);
         if (cpr == null) return null;
 
-        // Index CPR width drives whether R1+PDH and S1+PDL are treated as zones or as
-        // four separate single-line levels. Uses the SAME band [narrowCprMinWidth,
-        // narrowCprMaxWidth) the stock scanner uses for narrow-CPR watchlist filtering,
-        // so behaviour matches what the index card displays as NARROW vs WIDE.
-        //   • Inside band → narrow → R1+PDH and S1+PDL collapse to 2-edge zones.
-        //   • Outside band (either above max or below min) → wide → R1, PDH, S1, PDL
-        //     become independent single-line levels.
-        //   • CPR itself stays a zone in both cases.
-        double widthPct  = cpr.getCprWidthPct();
-        double narrowMin = riskSettings.getNarrowCprMinWidth();
-        double narrowMax = riskSettings.getNarrowCprMaxWidth();
-        boolean indexCprNarrow = widthPct >= narrowMin && widthPct < narrowMax;
+        // Index CPR squeeze decides whether R1+PDH and S1+PDL collapse into one zone or split
+        // into two single-line levels. Layer 1 only (CPR width vs 14d SMA) — the zone-split
+        // is a geometric question; TR doesn't enter it. Matches the chip helper.
+        boolean indexCprNarrow = bhavcopyService.getAdaptiveCpr(indexTicker).cprNarrow();
 
         // Direction-restricted zone set (matches the HTF chip / gate pattern):
         //   • Buy considers CPR + R-side + PDC. S-side levels are skipped — for a buy, the
@@ -2198,14 +2190,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // mirrors the HTF gate's direction-restricted candidate set, matching the chip helper.
         double cprLow  = Math.min(cpr.getTc(), cpr.getBc());
         double cprHigh = Math.max(cpr.getTc(), cpr.getBc());
-        // Index CPR width drives whether R1+PDH and S1+PDL collapse into one zone each or
-        // split into independent single-line levels. Uses the SAME band
-        // [narrowCprMinWidth, narrowCprMaxWidth) as stock-level narrow-CPR filtering and
-        // matches the chip helper {@link #compute5mCandidate}.
-        double widthPct  = cpr.getCprWidthPct();
-        double narrowMin = riskSettings.getNarrowCprMinWidth();
-        double narrowMax = riskSettings.getNarrowCprMaxWidth();
-        boolean indexCprNarrow = widthPct >= narrowMin && widthPct < narrowMax;
+        // Index CPR squeeze (Layer 1 of the adaptive classifier — CPR width vs 14d SMA)
+        // decides whether R1+PDH and S1+PDL collapse into one zone or split into single
+        // lines. Same call as the chip helper {@link #compute5mCandidate}.
+        boolean indexCprNarrow = bhavcopyService.getAdaptiveCpr(primaryIndex).cprNarrow();
 
         // Extended levels (R2/R3/R4, S2/S3/S4) treated as zero-width zones (lo == hi).
         double[][] zoneEdges;
@@ -2471,9 +2459,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // Universe gate — DB-backed Stock Universe (Settings → Stock Universe) controls eligibility.
         if (!bhavcopyService.isInScanUniverse(ticker)) return false;
 
-        double wpct = cpr.getCprWidthPct();
-        boolean isNarrow = wpct >= riskSettings.getNarrowCprMinWidth() && wpct < riskSettings.getNarrowCprMaxWidth();
-        if (isNarrow) return true;
+        // Adaptive state must be enabled in Settings (matches the scanner watchlist gate).
+        BhavcopyService.CprState state = bhavcopyService.getAdaptiveCpr(ticker).state();
+        boolean stateOk = switch (state) {
+            case DYNAMIC_SQUEEZE       -> riskSettings.isEnableCprStateA();
+            case STANDARD_EXPANSION    -> riskSettings.isEnableCprStateB();
+            case VOLATILITY_EXHAUSTION -> riskSettings.isEnableCprStateC();
+            case INSUFFICIENT_DATA     -> false;
+        };
+        if (stateOk) return true;
 
         // Inside-only CPR — width filter still applies via insideCprMaxWidth.
         boolean isInside = bhavcopyService.getInsideCprStocks().stream()

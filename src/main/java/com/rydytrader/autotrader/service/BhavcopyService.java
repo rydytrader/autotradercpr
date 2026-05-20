@@ -308,15 +308,11 @@ public class BhavcopyService {
             }
             // Beta / cap category / volume-turnover averages no longer computed —
             // stock-eligibility filters using those fields have been removed.
-            double narrowMaxWidth = riskSettings != null ? riskSettings.getNarrowCprMaxWidth() : 0.1;
-            double narrowMinWidth = riskSettings != null ? riskSettings.getNarrowCprMinWidth() : 0.0;
-            long narrowCount = cache.values().stream()
-                .filter(c -> !isIndex(c.getSymbol()) && c.getCprWidthPct() >= narrowMinWidth && c.getCprWidthPct() < narrowMaxWidth)
-                .count();
             long insideCount = getInsideCprStocks().size();
-            log.info("[BhavcopyService] Loaded {} NFO stocks from cache for {} ({} narrow @{}%, {} inside CPR, {} history days)", cache.size(), cachedDate, narrowCount, narrowMaxWidth, insideCount, dailyHistory.size());
+            log.info("[BhavcopyService] Loaded {} NFO stocks from cache for {} ({} inside CPR, {} history days)",
+                cache.size(), cachedDate, insideCount, dailyHistory.size());
             eventService.log("[BhavcopyService] Loaded CPR for " + cache.size() + " NFO stocks for " + cachedDate
-                + " (" + narrowCount + " narrow @" + narrowMaxWidth + "%, " + insideCount + " inside CPR)");
+                + " (" + insideCount + " inside CPR)");
         }
     }
 
@@ -494,12 +490,12 @@ public class BhavcopyService {
         return (int) cache.values().stream().filter(CprLevels::isInNifty100).count();
     }
 
+    /** Stocks classified as DYNAMIC_SQUEEZE (State A) by the adaptive classifier. Sorted by
+     *  widthRatio ascending so the tightest squeezes surface first. */
     public List<CprLevels> getNarrowCprStocks() {
-        double narrowMaxWidth = riskSettings != null ? riskSettings.getNarrowCprMaxWidth() : 0.1;
-        double narrowMinWidth = riskSettings != null ? riskSettings.getNarrowCprMinWidth() : 0.0;
         return cache.values().stream()
             .filter(c -> !isIndex(c.getSymbol()))
-            .filter(c -> c.getCprWidthPct() >= narrowMinWidth && c.getCprWidthPct() < narrowMaxWidth)
+            .filter(c -> getAdaptiveCpr(c.getSymbol()).state() == CprState.DYNAMIC_SQUEEZE)
             .sorted(Comparator.comparingDouble(CprLevels::getCprWidthPct))
             .collect(Collectors.toList());
     }
@@ -570,6 +566,191 @@ public class BhavcopyService {
     public CprLevels getPreviousCpr(String symbol) {
         Map<String, CprLevels> prev = getPreviousDaySymbols();
         return prev.get(extractTicker(symbol));
+    }
+
+    // ── Adaptive CPR State Classifier ──────────────────────────────────────
+    //
+    // Replaces the legacy static narrow/wide threshold with a 3-state classifier driven
+    // by 14-day rolling baselines on the stock's own price history:
+    //
+    //   • Layer 1 (CPR width squeeze):     todayWidthPct / 14d avg widthPct ≤ cprWidthSqueezeMult (default 0.50)
+    //   • Layer 2 (True range squeeze):    yesterdayTrPct / 14d avg trPct ≤ trueRangeSqueezeMult (default 0.75)
+    //
+    // State mapping:
+    //   A. DYNAMIC_SQUEEZE       — Layer 1 ≤ m1 AND Layer 2 ≤ m2          (true squeeze → breakout setups)
+    //   C. VOLATILITY_EXHAUSTION — Layer 1 ≤ m1 AND Layer 2 > 1.50         (Doji trap → mean-reversion fade)
+    //   B. STANDARD_EXPANSION    — everything else                          (orderly grind → pullback setups)
+    //   INSUFFICIENT_DATA        — fewer than ADAPTIVE_LOOKBACK_DAYS valid samples (warmup)
+
+    private static final int ADAPTIVE_LOOKBACK_DAYS = 14;
+
+    public enum CprState { DYNAMIC_SQUEEZE, STANDARD_EXPANSION, VOLATILITY_EXHAUSTION, INSUFFICIENT_DATA }
+
+    public record AdaptiveCprResult(
+        double todayWidthPct,    // today's CPR width % (= (tc-bc)/close * 100)
+        double avgWidthPct,      // 14-day SMA of CPR width %
+        double widthRatio,       // todayWidthPct / avgWidthPct (Layer 1 score)
+        double yesterdayTrPct,   // yesterday's true range % = (h-l)/c * 100 from today's snapshot
+        double avgTrPct,         // 14-day SMA of TR %
+        double trRatio,          // yesterdayTrPct / avgTrPct (Layer 2 score)
+        boolean cprNarrow,       // Layer 1 verdict: widthRatio ≤ cprWidthSqueezeMult
+        CprState state,
+        int samplesUsed) {}
+
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private com.rydytrader.autotrader.store.RiskSettingsStore riskSettingsForAdaptive;
+
+    /**
+     * Classify a ticker into one of the three CPR states using its 14-day rolling
+     * history. Returns INSUFFICIENT_DATA when fewer than 14 prior-day samples are
+     * available — caller treats that as "exclude from watchlist".
+     *
+     * Reads two multipliers from {@code RiskSettingsStore}:
+     *   • cprWidthSqueezeMult (default 0.50) — Layer 1 threshold
+     *   • trueRangeSqueezeMult (default 0.75) — Layer 2 calm threshold
+     */
+    /**
+     * One-shot admin operation — walk every entry in {@code dailyHistory} and, for any day
+     * that's missing one or more of {@link #SUPPORTED_INDICES}, fetch that day's index
+     * bhavcopy and merge the missing rows into the snapshot. Days that already have all
+     * indices are skipped. Used after {@code SUPPORTED_INDICES} is expanded to backfill the
+     * persisted history without deleting the whole cache.
+     *
+     * <p>Returns a small summary map suitable for serving directly from a controller.
+     */
+    public synchronized java.util.Map<String, Object> backfillMissingIndices() {
+        java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
+        java.util.List<String> updated = new java.util.ArrayList<>();
+        java.util.List<String> alreadyComplete = new java.util.ArrayList<>();
+        java.util.List<String> failed = new java.util.ArrayList<>();
+
+        String cookies;
+        try {
+            cookies = getNseCookies();
+        } catch (Exception e) {
+            log.error("[BhavcopyService] backfillMissingIndices failed to fetch NSE cookies: {}", e.getMessage());
+            result.put("success", false);
+            result.put("message", "Failed to fetch NSE cookies: " + e.getMessage());
+            return result;
+        }
+
+        java.util.Set<String> expectedTickers = new java.util.HashSet<>(SUPPORTED_INDICES.values());
+
+        for (DaySnapshot snap : dailyHistory) {
+            if (snap == null || snap.symbols == null || snap.date == null || snap.date.isEmpty()) continue;
+            // Which expected indices are missing from this snapshot?
+            java.util.List<String> missing = new java.util.ArrayList<>();
+            for (String t : expectedTickers) {
+                if (!snap.symbols.containsKey(t)) missing.add(t);
+            }
+            if (missing.isEmpty()) {
+                alreadyComplete.add(snap.date);
+                continue;
+            }
+            try {
+                java.time.LocalDate date = java.time.LocalDate.parse(snap.date);
+                java.util.Map<String, CprLevels> idxLevels = fetchIndexLevels(date, cookies);
+                int merged = 0;
+                for (java.util.Map.Entry<String, CprLevels> e : idxLevels.entrySet()) {
+                    if (snap.symbols.containsKey(e.getKey())) continue; // never overwrite existing
+                    snap.symbols.put(e.getKey(), e.getValue());
+                    merged++;
+                }
+                if (merged > 0) {
+                    updated.add(snap.date + " (+" + merged + ")");
+                    log.info("[BhavcopyService] Index backfill {} — added {} missing indices", snap.date, merged);
+                } else {
+                    failed.add(snap.date + " (no index rows returned by NSE)");
+                }
+            } catch (Exception e) {
+                log.warn("[BhavcopyService] Index backfill failed for {}: {}", snap.date, e.getMessage());
+                failed.add(snap.date + " (" + e.getMessage() + ")");
+            }
+        }
+
+        if (!updated.isEmpty()) {
+            saveToFile();
+            eventService.log("[INFO] Index backfill: " + updated.size() + " days updated, "
+                + alreadyComplete.size() + " already complete, " + failed.size() + " failed");
+        }
+        result.put("success", true);
+        result.put("daysScanned",     dailyHistory.size());
+        result.put("daysUpdated",     updated.size());
+        result.put("daysComplete",    alreadyComplete.size());
+        result.put("daysFailed",      failed.size());
+        result.put("updated",         updated);
+        result.put("failed",          failed);
+        result.put("message", updated.isEmpty()
+            ? "No days needed backfill — all " + dailyHistory.size() + " historical snapshots already have every index."
+            : "Backfilled " + updated.size() + " day(s). Restart not required.");
+        return result;
+    }
+
+    public AdaptiveCprResult getAdaptiveCpr(String ticker) {
+        if (ticker == null || ticker.isEmpty()) {
+            return new AdaptiveCprResult(0, 0, 0, 0, 0, 0, false, CprState.INSUFFICIENT_DATA, 0);
+        }
+        CprLevels today = cache.get(extractTicker(ticker));
+        if (today == null || today.getClose() <= 0) {
+            return new AdaptiveCprResult(0, 0, 0, 0, 0, 0, false, CprState.INSUFFICIENT_DATA, 0);
+        }
+        // Layer inputs from today's snapshot — semantically these are yesterday's HLC +
+        // today's active CPR derived from them.
+        double todayWidthPct  = today.getCprWidthPct();
+        double yesterdayTrPct = (today.getClose() > 0)
+            ? ((today.getHigh() - today.getLow()) / today.getClose()) * 100.0
+            : 0;
+
+        // Walk the most recent ADAPTIVE_LOOKBACK_DAYS history entries (newest first).
+        double sumWidth = 0, sumTr = 0;
+        int samples = 0;
+        for (DaySnapshot snap : dailyHistory) {
+            if (samples >= ADAPTIVE_LOOKBACK_DAYS) break;
+            if (snap == null || snap.symbols == null) continue;
+            CprLevels day = snap.symbols.get(extractTicker(ticker));
+            if (day == null || day.getClose() <= 0) continue;
+            double w  = day.getCprWidthPct();
+            double tr = ((day.getHigh() - day.getLow()) / day.getClose()) * 100.0;
+            if (w <= 0 && tr <= 0) continue;
+            sumWidth += w;
+            sumTr    += tr;
+            samples++;
+        }
+        if (samples < ADAPTIVE_LOOKBACK_DAYS) {
+            return new AdaptiveCprResult(todayWidthPct, 0, 0, yesterdayTrPct, 0, 0, false,
+                CprState.INSUFFICIENT_DATA, samples);
+        }
+        double avgWidthPct = sumWidth / samples;
+        double avgTrPct    = sumTr    / samples;
+        double widthRatio  = (avgWidthPct > 0) ? (todayWidthPct  / avgWidthPct) : 0;
+        double trRatio     = (avgTrPct    > 0) ? (yesterdayTrPct / avgTrPct)    : 0;
+
+        double m1 = riskSettingsForAdaptive != null ? riskSettingsForAdaptive.getCprWidthSqueezeMult() : 0.50;
+        double m2 = riskSettingsForAdaptive != null ? riskSettingsForAdaptive.getTrueRangeSqueezeMult() : 0.75;
+
+        // Threshold constants — spec values (hard-coded; not user-tunable).
+        final double CPR_WIDE_THRESHOLD   = 1.30;  // CPR > 130% of 14d avg → wide / exhausted
+        final double TR_NORMAL_UPPER      = 1.20;  // TR ≤ 120% = "normal range" ceiling
+        final double TR_EXTREME_THRESHOLD = 1.50;  // TR > 150% → "extreme expansion"
+
+        boolean cprNarrow   = widthRatio > 0 && widthRatio <= m1;                      // ≤ 50%
+        boolean cprModerate = widthRatio > m1 && widthRatio <= CPR_WIDE_THRESHOLD;     // 50% – 130%
+        boolean cprWide     = widthRatio > CPR_WIDE_THRESHOLD;                          // > 130%
+        boolean trCalm      = trRatio > 0 && trRatio <  m2;                             // < 75%
+        boolean trNormal    = trRatio >= m2 && trRatio <= TR_NORMAL_UPPER;              // 75% – 120%
+        boolean trExtreme   = trRatio >  TR_EXTREME_THRESHOLD;                          // > 150%
+
+        // Row-paired state machine — every gap (e.g. wide CPR + calm TR, narrow CPR + normal TR)
+        // folds into STANDARD_EXPANSION per the user's spec.
+        CprState state;
+        if      (cprNarrow   && trCalm)    state = CprState.DYNAMIC_SQUEEZE;        // Bucket 1
+        else if (cprModerate && trNormal)  state = CprState.STANDARD_EXPANSION;     // Bucket 2 (canonical)
+        else if (cprWide     && trNormal)  state = CprState.VOLATILITY_EXHAUSTION;  // Bucket 3a — trend fatigue
+        else if (cprNarrow   && trExtreme) state = CprState.VOLATILITY_EXHAUSTION;  // Bucket 3b — Doji trap
+        else                               state = CprState.STANDARD_EXPANSION;     // gap fallback → B
+        return new AdaptiveCprResult(todayWidthPct, avgWidthPct, widthRatio,
+            yesterdayTrPct, avgTrPct, trRatio, cprNarrow, state, samples);
     }
 
     /**
@@ -722,15 +903,9 @@ public class BhavcopyService {
 
                 saveToFile();
 
-                double narrowMaxWidth = riskSettings != null ? riskSettings.getNarrowCprMaxWidth() : 0.1;
-                double narrowMinWidth = riskSettings != null ? riskSettings.getNarrowCprMinWidth() : 0.0;
-                long narrowCount = cache.values().stream()
-                    .filter(c -> !isIndex(c.getSymbol()) && c.getCprWidthPct() >= narrowMinWidth && c.getCprWidthPct() < narrowMaxWidth)
-                    .count();
                 long insideCount = getInsideCprStocks().size();
                 String msg = "[BhavcopyService] Loaded CPR for " + cache.size()
-                    + " NFO stocks for " + cachedDate + " (" + narrowCount + " narrow @" + narrowMaxWidth
-                    + "%, " + insideCount + " inside CPR)";
+                    + " NFO stocks for " + cachedDate + " (" + insideCount + " inside CPR)";
                 log.info(msg);
                 eventService.log(msg);
                 return true;

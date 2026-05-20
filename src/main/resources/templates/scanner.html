@@ -64,8 +64,11 @@
             border-radius: 4px;
             letter-spacing: 0.05em;
         }
-        .scan-badge.narrow { background: rgba(99,179,237,0.12); color: var(--accent-blue); }
-        .scan-badge.inside { background: rgba(251,191,36,0.12); color: var(--accent-yellow); }
+        /* Adaptive CPR state badges */
+        .scan-badge.narrow     { background: rgba(52,211,153,0.15); color: var(--accent-green); }
+        .scan-badge.standard   { background: rgba(99,179,237,0.10); color: var(--accent-blue);  }
+        .scan-badge.exhaustion { background: rgba(248,113,113,0.15); color: var(--accent-red);   }
+        .scan-badge.inside     { background: rgba(251,191,36,0.12);  color: var(--accent-yellow); }
 
         .scan-price-row {
             display: flex; align-items: baseline; gap: 10px;
@@ -493,6 +496,8 @@
             <button class="filter-btn active" onclick="setFilter('all', this)">All</button>
 
             <button class="filter-btn" onclick="setFilter('NARROW', this)">Narrow</button>
+            <button class="filter-btn" onclick="setFilter('STANDARD', this)">Standard</button>
+            <button class="filter-btn" onclick="setFilter('EXHAUSTION', this)">Exhaustion</button>
             <button class="filter-btn" onclick="setFilter('INSIDE', this)">Inside</button>
         </span>
         <div class="filter-sep"></div>
@@ -646,11 +651,7 @@
             if (symbolFilter && d.shortName !== symbolFilter) return false;
             if (cprFilter !== 'all') {
                 var types = d.cprTypes || [d.cprType];
-                if (cprFilter === 'CPR') {
-                    if (!types.includes('NARROW') && !types.includes('INSIDE')) return false;
-                } else {
-                    if (types.indexOf(cprFilter) === -1) return false;
-                }
+                if (types.indexOf(cprFilter) === -1) return false;
             }
             if (sectorFilter && d.primaryIndexTicker !== sectorFilter) return false;
             if (signalFilter && (!d.lastSignal || d.lastSignal.status !== 'TRADED')) return false;
@@ -835,12 +836,25 @@
             + '    <button class="chart-icon-btn" onclick="openChartModal(\'' + d.symbol + '\', \'' + d.shortName + '\')" title="View 5-min chart" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:3px 6px;cursor:pointer;color:var(--text-secondary);line-height:0;display:inline-flex;align-items:center;">'
             + '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 6-6"/></svg>'
             + '</button>'
-            + ((d.cprTypes || [d.cprType]).filter(function(t){ return ['NARROW','INSIDE'].includes(t); }).map(function(t) {
-                if (t === 'NARROW') {
-                    return '<span class="scan-badge narrow" title="Narrow CPR">N</span>';
-                }
-                return '<span class="scan-badge inside" title="Inside CPR">I</span>';
-            }).join(''))
+            + (function() {
+                // State badges + INSIDE — built from the cprTypes list. Adaptive state
+                // tooltip surfaces the underlying CPR / TR ratios from the `adaptive` payload.
+                var a = d.adaptive || {};
+                var stateTip = 'Width: today ' + (a.widthPct || 0).toFixed(2) + '% / 14d avg '
+                    + (a.avgWidthPct || 0).toFixed(2) + '% (ratio ' + (a.widthRatio || 0).toFixed(2) + ')'
+                    + '\nTR: yesterday ' + (a.trPct || 0).toFixed(2) + '% / 14d avg '
+                    + (a.avgTrPct || 0).toFixed(2) + '% (ratio ' + (a.trRatio || 0).toFixed(2) + ')'
+                    + '\nSamples: ' + (a.samplesUsed || 0);
+                return (d.cprTypes || [d.cprType]).map(function(t) {
+                    switch (t) {
+                        case 'NARROW':     return '<span class="scan-badge narrow"     title="A. Narrow — true volatility squeeze\n' + stateTip + '">N</span>';
+                        case 'STANDARD':   return '<span class="scan-badge standard"   title="B. Standard Expansion — orderly grind\n' + stateTip + '">S</span>';
+                        case 'EXHAUSTION': return '<span class="scan-badge exhaustion" title="C. Volatility Exhaustion — Doji trap\n' + stateTip + '">E</span>';
+                        case 'INSIDE':     return '<span class="scan-badge inside"     title="Inside CPR (today\'s CPR sits inside yesterday\'s)">I</span>';
+                        default: return '';
+                    }
+                }).join('');
+            })()
             + sectorChip
             + '  </span>'
             + '</div>'
@@ -1163,10 +1177,16 @@
                 var changeArrow = changePct >= 0 ? '▲' : '▼';
                 var w = +d.cprWidthPct || 0;
                 var widthCat = d.cprWidthCategory || '';
-                var widthColor = widthCat === 'NARROW' ? 'var(--accent-green)'
-                              : widthCat === 'WIDE'   ? 'var(--accent-red)'
-                                                       : 'var(--text-muted)';
-                var widthText = widthCat ? widthCat + ' (' + w.toFixed(2) + '%)' : '—';
+                var widthColor, widthLabel;
+                switch (widthCat) {
+                    case 'NARROW':     widthColor = 'var(--accent-green)';  widthLabel = 'NARROW';     break;
+                    case 'STANDARD':   widthColor = 'var(--accent-blue)';   widthLabel = 'STANDARD';   break;
+                    case 'EXHAUSTION': widthColor = 'var(--accent-red)';    widthLabel = 'EXHAUSTION'; break;
+                    case 'WARMUP':     widthColor = 'var(--text-muted)';    widthLabel = 'WARMUP';     break;
+                    case 'WIDE':       widthColor = 'var(--accent-red)';    widthLabel = 'WIDE';       break;  // legacy fallback
+                    default:           widthColor = 'var(--text-muted)';    widthLabel = '';           break;
+                }
+                var widthText = widthLabel ? widthLabel + ' (' + w.toFixed(2) + '%)' : '—';
                 var nameDisplay = formatIndexTickerScanner(d.ticker || '');
                 var chartBtn = '';
                 if (d.symbol) {

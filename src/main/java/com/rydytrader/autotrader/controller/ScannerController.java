@@ -81,8 +81,6 @@ public class ScannerController {
      */
     private Map<String, Integer> watchlistSectorIndexCounts() {
         Map<String, Set<String>> symbolsByTicker = new LinkedHashMap<>();
-        double narrowMaxWidth = riskSettings.getNarrowCprMaxWidth();
-        double narrowMinWidth = riskSettings.getNarrowCprMinWidth();
         double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
 
         java.util.function.Consumer<CprLevels> recordSector = (cpr) -> {
@@ -95,11 +93,11 @@ public class ScannerController {
             symbolsByTicker.computeIfAbsent(ticker, k -> new HashSet<>()).add(cpr.getSymbol());
         };
 
-        // Narrow CPR pass — same gates as getWatchlist.
+        // Adaptive state pass — same gates as getWatchlist.
         for (CprLevels cpr : bhavcopyService.getAllCprLevels().values()) {
             if (bhavcopyService.isIndex(cpr.getSymbol())) continue;
             if (!bhavcopyService.isInScanUniverse(cpr.getSymbol())) continue;
-            if (cpr.getCprWidthPct() < narrowMinWidth || cpr.getCprWidthPct() >= narrowMaxWidth) continue;
+            if (!isAdaptiveStateEnabled(bhavcopyService.getAdaptiveCpr(cpr.getSymbol()).state())) continue;
             if (!marketDataService.passesWatchlistFilters(cpr)) continue;
             recordSector.accept(cpr);
         }
@@ -115,6 +113,29 @@ public class ScannerController {
             counts.put(e.getKey(), e.getValue().size());
         }
         return counts;
+    }
+
+    /** True when the user has the corresponding state toggle enabled in Settings.
+     *  INSUFFICIENT_DATA is always excluded. */
+    private boolean isAdaptiveStateEnabled(BhavcopyService.CprState state) {
+        if (state == null) return false;
+        return switch (state) {
+            case DYNAMIC_SQUEEZE       -> riskSettings.isEnableCprStateA();
+            case STANDARD_EXPANSION    -> riskSettings.isEnableCprStateB();
+            case VOLATILITY_EXHAUSTION -> riskSettings.isEnableCprStateC();
+            case INSUFFICIENT_DATA     -> false;
+        };
+    }
+
+    /** Short uppercase tag for the {@code cprTypes} list / card badge. */
+    private static String adaptiveStateTag(BhavcopyService.CprState state) {
+        if (state == null) return "UNKNOWN";
+        return switch (state) {
+            case DYNAMIC_SQUEEZE       -> "NARROW";
+            case STANDARD_EXPANSION    -> "STANDARD";
+            case VOLATILITY_EXHAUSTION -> "EXHAUSTION";
+            case INSUFFICIENT_DATA     -> "WARMUP";
+        };
     }
 
     @GetMapping("/api/scanner/sectors")
@@ -223,27 +244,42 @@ public class ScannerController {
         // single source of truth. isInScanUniverse() returns true for stocks with
         // enabled=true in the stocks table, false otherwise.
 
-        // Collect narrow CPR stocks — use configurable width range + price/turnover/etc. filters.
-        double narrowMaxWidth = riskSettings.getNarrowCprMaxWidth();
-        double narrowMinWidth = riskSettings.getNarrowCprMinWidth();
+        // Collect stocks by adaptive CPR state — toggle-gated per state (A / B / C).
+        // INSUFFICIENT_DATA is silently excluded (fewer than 14 days of history).
         Set<String> seen = new HashSet<>();
         for (CprLevels cpr : bhavcopyService.getAllCprLevels().values()) {
             if (bhavcopyService.isIndex(cpr.getSymbol())) continue; // NIFTY50/NIFTYBANK etc.
             if (!bhavcopyService.isInScanUniverse(cpr.getSymbol())) continue;
-            if (cpr.getCprWidthPct() < narrowMinWidth || cpr.getCprWidthPct() >= narrowMaxWidth) continue;
+            BhavcopyService.AdaptiveCprResult adaptive = bhavcopyService.getAdaptiveCpr(cpr.getSymbol());
+            if (!isAdaptiveStateEnabled(adaptive.state())) continue;
             if (!marketDataService.passesWatchlistFilters(cpr)) continue;
 
             String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
             List<String> types = new ArrayList<>();
-            types.add("NARROW");
+            types.add(adaptiveStateTag(adaptive.state()));
             if (insideSymbols.contains(cpr.getSymbol())) types.add("INSIDE");
-            Map<String, Object> card = buildCard(fyers, cpr, "NARROW", positionSymbols);
+            Map<String, Object> card = buildCard(fyers, cpr, adaptiveStateTag(adaptive.state()), positionSymbols);
             card.put("cprTypes", types);
+            // Surface the adaptive numbers so the chip tooltip can display the underlying ratios.
+            Map<String, Object> adaptivePayload = new LinkedHashMap<>();
+            adaptivePayload.put("state",         adaptive.state().name());
+            adaptivePayload.put("stateTag",      adaptiveStateTag(adaptive.state()));
+            adaptivePayload.put("widthPct",      Math.round(adaptive.todayWidthPct()  * 1000.0) / 1000.0);
+            adaptivePayload.put("avgWidthPct",   Math.round(adaptive.avgWidthPct()    * 1000.0) / 1000.0);
+            adaptivePayload.put("widthRatio",    Math.round(adaptive.widthRatio()     * 1000.0) / 1000.0);
+            adaptivePayload.put("trPct",         Math.round(adaptive.yesterdayTrPct() * 1000.0) / 1000.0);
+            adaptivePayload.put("avgTrPct",      Math.round(adaptive.avgTrPct()       * 1000.0) / 1000.0);
+            adaptivePayload.put("trRatio",       Math.round(adaptive.trRatio()        * 1000.0) / 1000.0);
+            adaptivePayload.put("cprNarrow",     adaptive.cprNarrow());
+            adaptivePayload.put("samplesUsed",   adaptive.samplesUsed());
+            card.put("adaptive", adaptivePayload);
             result.add(card);
             seen.add(fyers);
         }
 
-        // Collect inside-only CPR stocks — width filter + price/turnover/etc. filters.
+        // Collect inside-only CPR stocks (geometric INSIDE — today's CPR within yesterday's).
+        // These stack independently of the adaptive state toggles since INSIDE is a
+        // separate concept. Width filter + price filters still apply.
         double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
         for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
             String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
@@ -252,10 +288,28 @@ public class ScannerController {
             if (insideMaxWidth > 0 && cpr.getCprWidthPct() > insideMaxWidth) continue;
             if (!marketDataService.passesWatchlistFilters(cpr)) continue;
 
+            BhavcopyService.AdaptiveCprResult adaptive = bhavcopyService.getAdaptiveCpr(cpr.getSymbol());
             List<String> types = new ArrayList<>();
             types.add("INSIDE");
+            // Tag the adaptive state alongside INSIDE if it isn't WARMUP — gives the user
+            // both classifications on one card.
+            if (adaptive.state() != BhavcopyService.CprState.INSUFFICIENT_DATA) {
+                types.add(adaptiveStateTag(adaptive.state()));
+            }
             Map<String, Object> card = buildCard(fyers, cpr, "INSIDE", positionSymbols);
             card.put("cprTypes", types);
+            Map<String, Object> adaptivePayload = new LinkedHashMap<>();
+            adaptivePayload.put("state",         adaptive.state().name());
+            adaptivePayload.put("stateTag",      adaptiveStateTag(adaptive.state()));
+            adaptivePayload.put("widthPct",      Math.round(adaptive.todayWidthPct()  * 1000.0) / 1000.0);
+            adaptivePayload.put("avgWidthPct",   Math.round(adaptive.avgWidthPct()    * 1000.0) / 1000.0);
+            adaptivePayload.put("widthRatio",    Math.round(adaptive.widthRatio()     * 1000.0) / 1000.0);
+            adaptivePayload.put("trPct",         Math.round(adaptive.yesterdayTrPct() * 1000.0) / 1000.0);
+            adaptivePayload.put("avgTrPct",      Math.round(adaptive.avgTrPct()       * 1000.0) / 1000.0);
+            adaptivePayload.put("trRatio",       Math.round(adaptive.trRatio()        * 1000.0) / 1000.0);
+            adaptivePayload.put("cprNarrow",     adaptive.cprNarrow());
+            adaptivePayload.put("samplesUsed",   adaptive.samplesUsed());
+            card.put("adaptive", adaptivePayload);
             result.add(card);
             seen.add(fyers);
         }
@@ -854,9 +908,9 @@ public class ScannerController {
         status.put("enableEmaTrend", riskSettings.isEnableEmaTrendCheck());
         status.put("minPrice", riskSettings.getScanMinPrice());
         status.put("maxPrice", riskSettings.getScanMaxPrice());
-        status.put("narrowMaxWidth", riskSettings.getNarrowCprMaxWidth());
-        status.put("narrowMinWidth", riskSettings.getNarrowCprMinWidth());
-        status.put("insideMaxWidth", riskSettings.getInsideCprMaxWidth());
+        status.put("cprWidthSqueezeMult",  riskSettings.getCprWidthSqueezeMult());
+        status.put("trueRangeSqueezeMult", riskSettings.getTrueRangeSqueezeMult());
+        status.put("insideMaxWidth",       riskSettings.getInsideCprMaxWidth());
         return status;
     }
 
