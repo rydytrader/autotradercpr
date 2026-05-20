@@ -328,7 +328,7 @@ public class TradingController {
             // NIFTY-at-a-crucial-level marker for the positions table. Yellow stripe shows
             // when any of the 3 NIFTY hurdle conditions (HTF / 5m / virgin CPR) is currently
             // active in this position's trade direction — purely informational, not blocking.
-            String niftyHurdleAlert = breakoutScanner.getNiftyHurdleAlert("LONG".equals(p.getSide()));
+            String niftyHurdleAlert = breakoutScanner.getNiftyHurdleAlert("LONG".equals(p.getSide()), p.getSymbol());
             m.put("niftyHurdleActive", niftyHurdleAlert != null);
             m.put("niftyHurdleReason", niftyHurdleAlert != null ? niftyHurdleAlert : "");
 

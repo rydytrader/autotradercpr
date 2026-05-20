@@ -126,26 +126,20 @@ public class RiskSettingsStore {
         // when the nearest hurdle in the OPPOSITE direction (above stock LTP for buys / below
         // for sells) is closer than this many stock ATRs. 0 = headroom check off.
         volatile double htfHurdleMinHeadroomAtr = 1.0;
-        // NIFTY-level macro hurdle. When on, skip ALL stock trades while NIFTY's prior 1h close
-        // hasn't decisively cleared the nearest weekly hurdle in the trade direction (R1/PWH/
-        // weekly TC/Pivot/BC for buys; S1/PWL/... for sells). Mirrors per-stock HTF Hurdle
-        // applied to NIFTY's own data. Default off — opt-in.
-        volatile boolean enableNiftyHtfHurdleFilter = false;
-        // Headroom check for the NIFTY HTF Hurdle filter. When > 0, trades are also rejected if
-        // the nearest hurdle in the OPPOSITE direction (above NIFTY LTP for buys / below for
-        // sells) is closer than this many NIFTY ATRs. Guards against firing when an upcoming
-        // weekly level is right above NIFTY (likely to cap the move). 0 = headroom check off.
-        volatile double niftyHurdleMinHeadroomAtr = 1.0;
-        // 5-min variant of the NIFTY HTF Hurdle filter, against NIFTY's *daily* CPR levels.
-        // When on, every stock breakout requires NIFTY's prior 5-min close to have cleared
-        // its nearest daily-CPR hurdle in trade direction (R1/R2/R3/R4 + daily TC/Pivot/BC for
-        // buys; S1/S2/S3/S4 + TC/Pivot/BC for sells). Default off.
-        volatile boolean enableNifty5mHurdleFilter = false;
-        // Headroom check for the NIFTY 5m Hurdle filter — mirror of niftyHurdleMinHeadroomAtr
-        // but applied to the 5m filter's daily-CPR candidate set. Trades are also rejected
-        // when the nearest hurdle in the OPPOSITE direction (above NIFTY LTP for buys / below
-        // for sells) is closer than this many NIFTY ATRs. 0 = headroom check off.
-        volatile double nifty5mHurdleMinHeadroomAtr = 1.0;
+        // Index HTF Hurdle filter. When on, every stock signal is gated against its primary
+        // index's 1-hour close vs that index's nearest weekly hurdle in trade direction. Default
+        // off — opt-in. Replaces the old NIFTY-only macro filter; now runs per primary index.
+        volatile boolean enableIndexHtfHurdleFilter = false;
+        // Headroom check for the Index HTF Hurdle filter. When > 0, trades are also rejected
+        // when the nearest hurdle in the OPPOSITE direction is closer than this many ATRs of
+        // the primary index. 0 = headroom check off.
+        volatile double indexHtfHurdleMinHeadroomAtr = 1.0;
+        // 5-min variant of the Index HTF Hurdle filter, against the primary index's daily CPR
+        // levels. When on, every stock breakout requires the primary index's same-bucket 5-min
+        // close to have cleared its nearest daily-CPR hurdle in trade direction. Default off.
+        volatile boolean enableIndex5mHurdleFilter = false;
+        // Headroom check for the Index 5m Hurdle filter. 0 = headroom check off.
+        volatile double index5mHurdleMinHeadroomAtr = 1.0;
         // Structural SL — opt-in, anchors SL to the S/R level the trade is testing (per setup family)
         // When on, we compute both structural and default SL and pick the TIGHTER one.
         volatile boolean enableStructuralSl = false;   // when false, always use close ± atrMultiplier × ATR
@@ -260,16 +254,12 @@ public class RiskSettingsStore {
         // Target Tolerance — discount structural target by ATR fraction so near-miss reversals fill
         volatile boolean enableTargetTolerance = true;
         volatile double targetToleranceAtr = 0.10; // discount structural target by this fraction of ATR
-        // NIFTY Index Alignment Filter — when on, buys require NIFTY state == BULLISH and
-        // sells require BEARISH; every other state (SIDEWAYS / NEUTRAL / opposite-direction)
-        // skips the trade outright. No soft mode / qty reduction.
+        // Index Trend Alignment — when on, every stock signal is gated against the stock's
+        // primary index trend state (NIFTY 50 OR the sector index it maps to via the Stock
+        // Universe table). Buys require BULLISH (or BULLISH_REVERSAL for HPT); sells require
+        // BEARISH (or BEARISH_REVERSAL for HPT); SIDEWAYS / NEUTRAL / opposite-direction
+        // skip the trade outright. Replaces the old separate NIFTY + sector alignment checks.
         volatile boolean enableIndexAlignment = false;        // master toggle, opt-in
-        // Sector Alignment — secondary filter that mirrors Index Alignment but operates on
-        // the stock's sector index (NIFTYBANK / NIFTYIT / etc.) instead of NIFTY 50. Same
-        // strict/reversal logic: counter-trend setups require strict BULLISH/BEARISH; HPT
-        // setups also accept the matching reversal state. NEUTRAL / unknown sector =
-        // fail-open (no skip). Composes with enableIndexAlignment — both must pass.
-        volatile boolean enableSectorAlignment = false;
     }
 
     private final Cfg live = new Cfg();
@@ -311,10 +301,10 @@ public class RiskSettingsStore {
     public boolean isEnableWeeklyLevelTargetShift() { return cfg().enableWeeklyLevelTargetShift; }
     public boolean isEnableHtfHurdleFilter()    { return cfg().enableHtfHurdleFilter; }
     public double  getHtfHurdleMinHeadroomAtr() { return cfg().htfHurdleMinHeadroomAtr; }
-    public boolean isEnableNiftyHtfHurdleFilter() { return cfg().enableNiftyHtfHurdleFilter; }
-    public double  getNiftyHurdleMinHeadroomAtr() { return cfg().niftyHurdleMinHeadroomAtr; }
-    public boolean isEnableNifty5mHurdleFilter()  { return cfg().enableNifty5mHurdleFilter; }
-    public double  getNifty5mHurdleMinHeadroomAtr() { return cfg().nifty5mHurdleMinHeadroomAtr; }
+    public boolean isEnableIndexHtfHurdleFilter() { return cfg().enableIndexHtfHurdleFilter; }
+    public double  getIndexHtfHurdleMinHeadroomAtr() { return cfg().indexHtfHurdleMinHeadroomAtr; }
+    public boolean isEnableIndex5mHurdleFilter()  { return cfg().enableIndex5mHurdleFilter; }
+    public double  getIndex5mHurdleMinHeadroomAtr() { return cfg().index5mHurdleMinHeadroomAtr; }
     public boolean isEnableStructuralSl()    { return cfg().enableStructuralSl; }
     public double  getStructuralSlBufferAtr(){ return cfg().structuralSlBufferAtr; }
     public double  getSingleLevelSlBufferAtr(){ return cfg().singleLevelSlBufferAtr; }
@@ -384,7 +374,6 @@ public class RiskSettingsStore {
     public boolean isEnableTargetTolerance()   { return cfg().enableTargetTolerance; }
     public double getTargetToleranceAtr()      { return cfg().targetToleranceAtr; }
     public boolean isEnableIndexAlignment()    { return cfg().enableIndexAlignment; }
-    public boolean isEnableSectorAlignment()   { return cfg().enableSectorAlignment; }
     public void setSignalSource(String v)      { cfg().signalSource = v; }
     public void setScannerTimeframe(int v)     { cfg().scannerTimeframe = v; }
     public void setHigherTimeframe(int v)      { cfg().higherTimeframe = v; }
@@ -404,7 +393,6 @@ public class RiskSettingsStore {
     public void setEnableTargetTolerance(boolean v) { cfg().enableTargetTolerance = v; }
     public void setTargetToleranceAtr(double v) { cfg().targetToleranceAtr = v; }
     public void setEnableIndexAlignment(boolean v)        { cfg().enableIndexAlignment = v; }
-    public void setEnableSectorAlignment(boolean v)       { cfg().enableSectorAlignment = v; }
     public void setTradingStartTime(String v)  { cfg().tradingStartTime = v; }
     public void setTradingEndTime(String v)    { cfg().tradingEndTime = v; }
     public void setTotalCapital(double v)       { cfg().totalCapital = v; }
@@ -426,10 +414,10 @@ public class RiskSettingsStore {
     public void setEnableWeeklyLevelTargetShift(boolean v) { cfg().enableWeeklyLevelTargetShift = v; }
     public void setEnableHtfHurdleFilter(boolean v)    { cfg().enableHtfHurdleFilter = v; }
     public void setHtfHurdleMinHeadroomAtr(double v)   { cfg().htfHurdleMinHeadroomAtr = Math.max(0, v); }
-    public void setEnableNiftyHtfHurdleFilter(boolean v) { cfg().enableNiftyHtfHurdleFilter = v; }
-    public void setNiftyHurdleMinHeadroomAtr(double v)   { cfg().niftyHurdleMinHeadroomAtr = Math.max(0, v); }
-    public void setEnableNifty5mHurdleFilter(boolean v)  { cfg().enableNifty5mHurdleFilter = v; }
-    public void setNifty5mHurdleMinHeadroomAtr(double v) { cfg().nifty5mHurdleMinHeadroomAtr = Math.max(0, v); }
+    public void setEnableIndexHtfHurdleFilter(boolean v) { cfg().enableIndexHtfHurdleFilter = v; }
+    public void setIndexHtfHurdleMinHeadroomAtr(double v) { cfg().indexHtfHurdleMinHeadroomAtr = Math.max(0, v); }
+    public void setEnableIndex5mHurdleFilter(boolean v)  { cfg().enableIndex5mHurdleFilter = v; }
+    public void setIndex5mHurdleMinHeadroomAtr(double v) { cfg().index5mHurdleMinHeadroomAtr = Math.max(0, v); }
     public void setEnableStructuralSl(boolean v)    { cfg().enableStructuralSl = v; }
     public void setStructuralSlBufferAtr(double v)  { cfg().structuralSlBufferAtr = v; }
     public void setSingleLevelSlBufferAtr(double v) { cfg().singleLevelSlBufferAtr = v; }
@@ -563,10 +551,10 @@ public class RiskSettingsStore {
             upsert("enableWeeklyLevelTargetShift", String.valueOf(c.enableWeeklyLevelTargetShift));
             upsert("enableHtfHurdleFilter", String.valueOf(c.enableHtfHurdleFilter));
             upsert("htfHurdleMinHeadroomAtr", String.valueOf(c.htfHurdleMinHeadroomAtr));
-            upsert("enableNiftyHtfHurdleFilter", String.valueOf(c.enableNiftyHtfHurdleFilter));
-            upsert("niftyHurdleMinHeadroomAtr", String.valueOf(c.niftyHurdleMinHeadroomAtr));
-            upsert("enableNifty5mHurdleFilter", String.valueOf(c.enableNifty5mHurdleFilter));
-            upsert("nifty5mHurdleMinHeadroomAtr", String.valueOf(c.nifty5mHurdleMinHeadroomAtr));
+            upsert("enableIndexHtfHurdleFilter", String.valueOf(c.enableIndexHtfHurdleFilter));
+            upsert("indexHtfHurdleMinHeadroomAtr", String.valueOf(c.indexHtfHurdleMinHeadroomAtr));
+            upsert("enableIndex5mHurdleFilter", String.valueOf(c.enableIndex5mHurdleFilter));
+            upsert("index5mHurdleMinHeadroomAtr", String.valueOf(c.index5mHurdleMinHeadroomAtr));
             upsert("enableStructuralSl", String.valueOf(c.enableStructuralSl));
             upsert("structuralSlBufferAtr", String.valueOf(c.structuralSlBufferAtr));
             upsert("singleLevelSlBufferAtr", String.valueOf(c.singleLevelSlBufferAtr));
@@ -636,7 +624,6 @@ public class RiskSettingsStore {
             upsert("enableTargetTolerance", String.valueOf(c.enableTargetTolerance));
             upsert("targetToleranceAtr", String.valueOf(c.targetToleranceAtr));
             upsert("enableIndexAlignment",   String.valueOf(c.enableIndexAlignment));
-            upsert("enableSectorAlignment",  String.valueOf(c.enableSectorAlignment));
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to save {}: {}", mode, e.getMessage());
         }
@@ -687,10 +674,10 @@ public class RiskSettingsStore {
                     // splitMinDistanceAtr. Old JSON files round-trip without errors.
                     case "enableHtfHurdleFilter" -> c.enableHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "htfHurdleMinHeadroomAtr" -> c.htfHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
-                    case "enableNiftyHtfHurdleFilter" -> c.enableNiftyHtfHurdleFilter = Boolean.parseBoolean(v);
-                    case "niftyHurdleMinHeadroomAtr" -> c.niftyHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
-                    case "enableNifty5mHurdleFilter" -> c.enableNifty5mHurdleFilter = Boolean.parseBoolean(v);
-                    case "nifty5mHurdleMinHeadroomAtr" -> c.nifty5mHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
+                    case "enableIndexHtfHurdleFilter" -> c.enableIndexHtfHurdleFilter = Boolean.parseBoolean(v);
+                    case "indexHtfHurdleMinHeadroomAtr" -> c.indexHtfHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
+                    case "enableIndex5mHurdleFilter" -> c.enableIndex5mHurdleFilter = Boolean.parseBoolean(v);
+                    case "index5mHurdleMinHeadroomAtr" -> c.index5mHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
                     case "enableStructuralSl"    -> c.enableStructuralSl = Boolean.parseBoolean(v);
                     case "structuralSlBufferAtr" -> c.structuralSlBufferAtr = Double.parseDouble(v);
                     case "singleLevelSlBufferAtr" -> c.singleLevelSlBufferAtr = Double.parseDouble(v);
@@ -876,7 +863,6 @@ public class RiskSettingsStore {
                     case "enableTargetTolerance" -> c.enableTargetTolerance = Boolean.parseBoolean(v);
                     case "targetToleranceAtr" -> c.targetToleranceAtr = Double.parseDouble(v);
                     case "enableIndexAlignment"   -> c.enableIndexAlignment = Boolean.parseBoolean(v);
-                    case "enableSectorAlignment"  -> c.enableSectorAlignment = Boolean.parseBoolean(v);
                     // Legacy NIFTY trend-factor toggles — features removed (EMA20 is now
                     // always-on; FUT VWAP factor dropped entirely). Old risk-settings.json
                     // files keep loading without errors; values are silently ignored.

@@ -361,10 +361,20 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         int colon = ticker.indexOf(':');
         if (colon >= 0) ticker = ticker.substring(colon + 1);
         ticker = ticker.replaceAll("-(EQ|INDEX|MF|BE|BL|SM)$", "");
-        String sector = bhavcopyService.getSector(ticker);
-        if (sector == null || sector.isEmpty()) return "NEUTRAL";
-        String sectorTicker = bhavcopyService.getSectorIndexTicker(sector);
-        if (sectorTicker == null) return "NEUTRAL";
-        return getSectorTrendForTicker(sectorTicker);
+        String primaryIndex = bhavcopyService.getPrimaryIndexTicker(ticker);
+        if (primaryIndex == null || primaryIndex.isEmpty()) return "NEUTRAL";
+        return getTrendStateForTicker(primaryIndex);
+    }
+
+    /**
+     * Canonical accessor for the trend state of any index ticker. Returns the sticky
+     * cached state for NIFTY 50 (updated only on its 5-min candle close) and on-demand
+     * computed state for any sector index ticker. Consumed by the primary-index
+     * alignment filter so the call site doesn't have to branch on NIFTY vs sector.
+     */
+    public String getTrendStateForTicker(String ticker) {
+        if (ticker == null) return "NEUTRAL";
+        if ("NIFTY50".equals(ticker)) return getStickyState();
+        return getSectorTrendForTicker(ticker);
     }
 }

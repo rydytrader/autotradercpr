@@ -621,14 +621,13 @@
         if (!sel) return;
         var current = sel.value;
         while (sel.options.length > 1) sel.remove(1);
-        // Build unique non-empty index ticker list (e.g. NIFTYINFRA, NIFTYBANK), sorted
-        // alphabetically by the part after "NIFTY". Several sectors share an index
-        // (Power/Cement/Construction/Infrastructure → NIFTYINFRA) so deduping yields
-        // ~14 entries instead of 18 sector names.
+        // Build unique non-empty primary-index ticker list (e.g. NIFTYINFRA, NIFTYBANK,
+        // NIFTY50), sorted alphabetically by the part after "NIFTY". Each stock maps to
+        // exactly one primary index — dedup yields ~15 entries.
         var seen = {};
         var tickers = [];
         for (var i = 0; i < allData.length; i++) {
-            var t = allData[i].sectorIndexTicker;
+            var t = allData[i].primaryIndexTicker;
             if (t && !seen[t]) { seen[t] = true; tickers.push(t); }
         }
         function sortKey(t) {
@@ -657,7 +656,7 @@
                     if (types.indexOf(cprFilter) === -1) return false;
                 }
             }
-            if (sectorFilter && d.sectorIndexTicker !== sectorFilter) return false;
+            if (sectorFilter && d.primaryIndexTicker !== sectorFilter) return false;
             if (signalFilter && (!d.lastSignal || d.lastSignal.status !== 'TRADED')) return false;
             if (filteredFilter && (!d.lastSignal || d.lastSignal.status !== 'FILTERED')) return false;
             if (trendFilter !== 'all' && (d.trendState || 'NEUTRAL') !== trendFilter) return false;
@@ -800,13 +799,13 @@
         //   BEARISH / BEARISH_REVERSAL  → red
         //   INSIDE                       → yellow
         //   SIDEWAYS / NEUTRAL / unknown → muted
-        // Tooltip shows the underlying CPR top/bot and EMA20 values of the sector index.
-        // Clickable when mapped — opens the sector index chart modal.
+        // Tooltip shows the underlying CPR top/bot and EMA20 values of the primary index.
+        // Clickable when mapped — opens the primary-index chart modal.
         var sectorChip = '';
-        if (d.sector && d.sector.length > 0) {
+        if (d.primaryIndexTicker && d.primaryIndexTicker.length > 0) {
             var sCol = 'var(--text-muted)';
             var sBorder = 'var(--border)';
-            var stateLabel = d.sectorState || '';
+            var stateLabel = d.primaryIndexState || '';
             if (stateLabel === 'BULLISH' || stateLabel === 'BULLISH_REVERSAL') {
                 sCol = 'var(--accent-green)'; sBorder = 'var(--accent-green)';
             } else if (stateLabel === 'BEARISH' || stateLabel === 'BEARISH_REVERSAL') {
@@ -814,13 +813,13 @@
             } else if (stateLabel === 'INSIDE') {
                 sCol = 'var(--accent-yellow)'; sBorder = 'var(--accent-yellow)';
             }
-            // Build a multi-line tooltip — sector name, state, change%, CPR levels, EMA20.
-            var chPct = (typeof d.sectorChangePct === 'number') ? d.sectorChangePct : null;
-            var top   = (typeof d.sectorCprTop === 'number') ? d.sectorCprTop : 0;
-            var bot   = (typeof d.sectorCprBot === 'number') ? d.sectorCprBot : 0;
-            var ema   = (typeof d.sectorEma20  === 'number') ? d.sectorEma20  : 0;
-            var idxLabel = d.sectorIndexTicker ? formatIndexTickerScanner(d.sectorIndexTicker) : d.sector;
-            var sTipLines = ['Index: ' + idxLabel];
+            // Build a multi-line tooltip — index name, state, change%, CPR levels, EMA20.
+            var chPct = (typeof d.primaryIndexChangePct === 'number') ? d.primaryIndexChangePct : null;
+            var top   = (typeof d.primaryIndexCprTop === 'number') ? d.primaryIndexCprTop : 0;
+            var bot   = (typeof d.primaryIndexCprBot === 'number') ? d.primaryIndexCprBot : 0;
+            var ema   = (typeof d.primaryIndexEma20  === 'number') ? d.primaryIndexEma20  : 0;
+            var idxLabel = formatIndexTickerScanner(d.primaryIndexTicker);
+            var sTipLines = ['Index: ' + (d.primaryIndexName || idxLabel)];
             if (stateLabel) {
                 sTipLines.push('State: ' + stateLabel.replace('_', ' '));
             }
@@ -835,16 +834,15 @@
             }
             var clickAttr = '';
             var cursorStyle = '';
-            if (d.sectorIndexSymbol) {
-                var chartLabel = (d.sectorIndexTicker ? formatIndexTickerScanner(d.sectorIndexTicker) : d.sector).replace(/'/g, "\\'");
-                clickAttr = ' onclick="openChartModal(\'' + d.sectorIndexSymbol + '\', \'' + chartLabel + '\')"';
+            if (d.primaryIndexSymbol) {
+                var chartLabel = idxLabel.replace(/'/g, "\\'");
+                clickAttr = ' onclick="openChartModal(\'' + d.primaryIndexSymbol + '\', \'' + chartLabel + '\')"';
                 cursorStyle = 'cursor:pointer; ';
                 sTipLines.push('Click to view ' + chartLabel + ' chart');
             }
             var sTip = sTipLines.join('\n').replace(/"/g, '&quot;');
-            // Chip text shows the raw index ticker (NIFTY BANK / NIFTY INFRA / …) — falls
-            // back to the sector display name when no index mapping exists.
-            var chipText = d.sectorIndexTicker ? formatIndexTickerScanner(d.sectorIndexTicker) : d.sector;
+            // Chip text shows the formatted primary-index ticker (NIFTY BANK / NIFTY INFRA / …).
+            var chipText = idxLabel;
             sectorChip = '<span' + clickAttr + ' style="' + cursorStyle + 'font-family:var(--font-mono); font-size:0.65rem; font-weight:600; color:' + sCol + '; padding:1px 5px; border:1px solid ' + sBorder + '; border-radius:3px; text-transform:uppercase; letter-spacing:0.3px;" title="' + sTip + '">' + chipText + '</span>';
         }
 
@@ -912,6 +910,32 @@
             + '  </div>'
             + '  <div class="scan-levels-body">' + levelsHtml + '</div>'
             + '</div>'
+            + (function() {
+                // Per-stock HTF hurdle — its own row, styled like the "CPR Levels" label
+                // (small uppercase mono) but right-aligned. Color reflects state: WAITING /
+                // AHEAD_BLOCKED red, AHEAD_CLEAR muted gray. Hidden when stock state isn't
+                // trade-directional or no hurdle exists.
+                var h = d.hurdle;
+                if (!h || !h.level) return '';
+                var color, tip;
+                var isHtf = (h.category || '').indexOf('HTF') >= 0;
+                if (h.state === 'WAITING') {
+                    color = 'var(--accent-red)';
+                    tip = 'active — waiting for ' + (isHtf ? '1-hour' : '5-min') + ' close past level (entries blocked)';
+                } else if (h.state === 'AHEAD_BLOCKED') {
+                    color = 'var(--accent-red)';
+                    tip = 'upcoming, inside headroom threshold (entries blocked)';
+                } else {
+                    color = 'var(--text-primary)';
+                    tip = 'upcoming, beyond headroom threshold (not blocking)';
+                }
+                return '<div style="border-top:1px solid var(--border);"></div>'
+                    + '<div class="scan-levels">'
+                    + '  <div class="scan-levels-title" style="justify-content:flex-end; cursor:default; color:' + color + ';" title="' + (h.category || 'Hurdle') + ' — ' + tip + '">'
+                    + '    Hurdle: ' + h.level
+                    + '  </div>'
+                    + '</div>';
+            })()
             + '</div>';
     }
 

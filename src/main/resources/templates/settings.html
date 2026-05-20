@@ -214,7 +214,7 @@
         <button class="settings-tab" onclick="switchTab('charges', this)">Charges</button>
         <button class="settings-tab" onclick="switchTab('users', this)">Users</button>
         <button class="settings-tab" onclick="switchTab('universe', this); loadStockUniverse();">Stock Universe</button>
-        <button class="settings-tab" onclick="switchTab('sectors', this); loadSectorsTab();">Sectors</button>
+        <button class="settings-tab" onclick="switchTab('indices', this); loadIndicesTab();">Indices</button>
     </div>
 
     <!-- TAB: MONEY -->
@@ -639,52 +639,33 @@
         <div class="section-body">
             <div class="form-grid">
                 <div class="form-group">
-                    <label class="form-label">NIFTY Index Alignment Filter</label>
+                    <label class="form-label">Index Trend Alignment</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableIndexAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable NIFTY trend alignment filter</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject when the stock's primary-index trend opposes the trade direction</span>
                     </div>
-                    <div class="form-hint">Two-factor trend on the NIFTY 50 index: <b>CPR + EMA 20</b> (same state machine as the Sector Alignment filter below). Both factors are sticky &mdash; refreshed only at NIFTY's 5-min candle close, read from the just-closed candle (never live LTP), so trend decisions don't oscillate tick-to-tick within a bar.
-                        <br>&nbsp;&nbsp;&bull; <b>CPR</b>: NIFTY index's last-completed 5-min close above (bullish) or below (bearish) daily CPR. Inside CPR leaves this factor null.
-                        <br>&nbsp;&nbsp;&bull; <b>EMA 20</b>: NIFTY's last-completed 5-min close vs its 20-period 5-min EMA. Always-on, no separate toggle.
-                        <br>States:
-                        <br>&nbsp;&nbsp;&bull; <b>BULLISH</b> &mdash; CPR bullish + EMA not bearish
-                        <br>&nbsp;&nbsp;&bull; <b>BEARISH</b> &mdash; CPR bearish + EMA not bullish
-                        <br>&nbsp;&nbsp;&bull; <b>BULLISH REVERSAL</b> &mdash; CPR bearish but EMA flipped bullish (downtrend rolling over)
-                        <br>&nbsp;&nbsp;&bull; <b>BEARISH REVERSAL</b> &mdash; CPR bullish but EMA flipped bearish (uptrend rolling over)
-                        <br>&nbsp;&nbsp;&bull; <b>SIDEWAYS</b> &mdash; factors disagree / partial data &mdash; no actionable bias
-                        <br>&nbsp;&nbsp;&bull; <b>NEUTRAL</b> &mdash; inside CPR or no completed 5-min bar yet
-                        <br>When this filter is on: buys require <b>BULLISH</b> or <b>BULLISH REVERSAL</b>; sells require <b>BEARISH</b> or <b>BEARISH REVERSAL</b>. SIDEWAYS / NEUTRAL / opposite-direction states <b>hard-reject</b> the signal as <code>NIFTY_OPPOSED</code>. Independent of the other NIFTY filters below; all can be enabled together.</div>
+                    <div class="form-hint">Each stock maps to one <b>primary index</b> (NIFTY 50 OR a sector index) via the Stock Universe master table. This filter gates every signal against the trend state of THAT index — replaces the prior separate NIFTY + sector alignment checks.
+                        <br>Two-factor state machine on the primary index: <b>CPR + EMA 20</b> (same logic the bot uses everywhere). States: <b>BULLISH</b>, <b>BEARISH</b>, <b>BULLISH REVERSAL</b>, <b>BEARISH REVERSAL</b>, <b>INSIDE</b>, <b>SIDEWAYS</b>, <b>NEUTRAL</b>.
+                        <br>&nbsp;&nbsp;&bull; <b>Trend-following setups (HPT)</b>: buys accept <b>BULLISH</b> or <b>BULLISH REVERSAL</b>; sells accept <b>BEARISH</b> or <b>BEARISH REVERSAL</b>.
+                        <br>&nbsp;&nbsp;&bull; <b>Counter-trend setups</b> (magnet, mean-reversion): require strict <b>BULLISH</b> (buys) / <b>BEARISH</b> (sells). Reversal states not enough.
+                        <br>&nbsp;&nbsp;&bull; <b>INSIDE</b> / <b>SIDEWAYS</b> / opposite-direction &rarr; <b>hard-reject</b> as <code>INDEX_OPPOSED</code>.
+                        <br>&nbsp;&nbsp;&bull; <b>NEUTRAL</b> (no data yet) &rarr; <b>fail-open</b> (no skip).</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Sector Alignment Filter</label>
+                    <label class="form-label">Index HTF Hurdle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableSectorAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable sector trend alignment filter</span>
-                    </div>
-                    <div class="form-hint">Mirrors the NIFTY Index Alignment rules on the stock's <b>sector index</b> (e.g. NIFTYBANK for HDFCBANK, NIFTYIT for INFY). Two-factor trend on each sector index: <b>CPR + EMA 20</b> (same state machine as the Sector Trends modal). Composes with the NIFTY filter above &mdash; both must pass when both are on.
-                        <br>States: <b>BULLISH</b>, <b>BEARISH</b>, <b>BULLISH REVERSAL</b>, <b>BEARISH REVERSAL</b>, <b>INSIDE</b> (LTP inside sector CPR), <b>NEUTRAL</b> (no data).
-                        <br>Strict / reversal rules match NIFTY:
-                        <br>&nbsp;&nbsp;&bull; <b>Counter-trend setups</b> (magnet, mean-reversion): buys require strict <b>BULLISH</b>; sells require strict <b>BEARISH</b>. Reversal states <b>not</b> enough.
-                        <br>&nbsp;&nbsp;&bull; <b>Trend-following setups</b> (HPT): buys also accept <b>BULLISH REVERSAL</b>; sells also accept <b>BEARISH REVERSAL</b>.
-                        <br>&nbsp;&nbsp;&bull; <b>INSIDE</b> / <b>NEUTRAL</b> / unknown sector &rarr; <b>fail-open</b> (no skip). Sectors without a mapped index, sectors whose CPR hasn't loaded, or stocks with no sector classification all pass through unfiltered.
-                        <br>Rejections logged as <code>SECTOR_OPPOSED</code>.</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">NIFTY HTF Hurdle Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableNiftyHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY's 1-hour close hasn't cleared its nearest weekly-levels hurdle</span>
+                        <input type="checkbox" id="enableIndexHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject when the stock's primary-index 1-hour close hasn't cleared its nearest weekly-levels hurdle</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min headroom to next hurdle:</span>
-                        <input type="number" id="niftyHurdleMinHeadroomAtr" class="form-control" step="0.1" min="0" max="5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× NIFTY ATR (0 = off)</span>
+                        <input type="number" id="indexHtfHurdleMinHeadroomAtr" class="form-control" step="0.1" min="0" max="5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× index ATR (0 = off)</span>
                     </div>
-                    <div class="form-hint">Macro-level mirror of the per-stock HTF Hurdle, applied to NIFTY's own data. Identifies NIFTY's nearest weekly-levels hurdle in trade direction and rejects every stock signal while NIFTY's most-recently-completed <b>1-hour</b> close hasn't decisively cleared it. 1-hour buckets are session-aligned: 9:15-10:15, 10:15-11:15, &hellip;, 14:15-15:15. Pre-10:15 IST today (Tue-Fri), falls back to <b>NIFTY's previous trading day session close (3:30 PM close)</b> within the current ISO week and checks if THAT cleared the level. <b>On Monday pre-10:15 there's no current-week fallback &rarr; trades with a hurdle in trade direction are REJECTED until the 10:15 close confirms.</b>
-                        <br>&nbsp;&nbsp;&bull; <b>Buys</b> &mdash; nearest of {weekly R4, R3, R2, R1, PWH, weekly TC, weekly Pivot, weekly BC} below NIFTY LTP
-                        <br>&nbsp;&nbsp;&bull; <b>Sells</b> &mdash; nearest of {weekly TC, weekly Pivot, weekly BC, S1, PWL, S2, S3, S4} above NIFTY LTP
-                        <br><br><b>Headroom check.</b> Even after the past hurdle is cleared, the filter also checks the nearest hurdle in the <i>opposite</i> direction (above NIFTY LTP for buys / below for sells). If that upcoming hurdle is closer than <code>min headroom &times; NIFTY ATR</code>, the trade is rejected. Default <b>1.0</b> &times; ATR (scanner-timeframe ATR, so headroom reads against the bar size the bot actually trades on). Set to 0 to disable just the headroom check. Signal Trail bucket: <code>NIFTY_HURDLE</code>.
+                    <div class="form-hint">Identifies the primary index's nearest weekly hurdle in trade direction and rejects the signal while the index's most-recently-completed <b>1-hour</b> close hasn't decisively cleared it. 1-hour buckets are session-aligned: 9:15-10:15, 10:15-11:15, &hellip;, 14:15-15:15. Pre-10:15 IST today (Tue-Fri), falls back to <b>the index's previous trading day session close (3:30 PM close)</b> within the current ISO week. <b>On Monday pre-10:15 trades with a hurdle in trade direction are REJECTED until the 10:15 close confirms.</b>
+                        <br>&nbsp;&nbsp;&bull; <b>Buys</b> &mdash; nearest of {weekly R4, R3, R2, R1, PWH, weekly TC, weekly Pivot, weekly BC} below index LTP
+                        <br>&nbsp;&nbsp;&bull; <b>Sells</b> &mdash; nearest of {weekly TC, weekly Pivot, weekly BC, S1, PWL, S2, S3, S4} above index LTP
+                        <br><br><b>Headroom check.</b> Even after the past hurdle is cleared, the filter also checks the nearest hurdle in the <i>opposite</i> direction. If that upcoming hurdle is closer than <code>min headroom &times; index ATR</code>, the trade is rejected. Default <b>1.0</b> &times; ATR. Set to 0 to disable just the headroom check. Signal Trail bucket: <code>INDEX_HTF_HURDLE</code>.
                         </div>
                 </div>
                 <div class="form-group">
@@ -708,18 +689,18 @@
                         <br><br><b>Headroom check.</b> Even after the past hurdle is cleared, the filter also checks the nearest hurdle in the <i>opposite</i> direction (above LTP for buys / below for sells). If that upcoming hurdle is closer than <code>min headroom &times; stock ATR</code>, the trade is rejected. Default <b>1.0</b> &times; ATR. Set to 0 to disable just the headroom check.</div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">NIFTY 5m Hurdle Filter</label>
+                    <label class="form-label">Index 5-min Hurdle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableNifty5mHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject ALL stock trades when NIFTY's 5m close is inside / hasn't fully cleared its nearest CPR / R1+PDH / S1+PDL zone</span>
+                        <input type="checkbox" id="enableIndex5mHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject when the stock's primary-index 5-min close is inside / hasn't fully cleared its nearest CPR / R1+PDH / S1+PDL zone</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min headroom to next hurdle:</span>
-                        <input type="number" id="nifty5mHurdleMinHeadroomAtr" class="form-control" step="0.1" min="0" max="5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× NIFTY ATR (0 = off)</span>
+                        <input type="number" id="index5mHurdleMinHeadroomAtr" class="form-control" step="0.1" min="0" max="5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× index ATR (0 = off)</span>
                     </div>
-                    <div class="form-hint">5-min variant of the NIFTY HTF Hurdle, against NIFTY's daily levels treated as <b>zones</b>: <b>CPR</b> [min(TC,BC), max(TC,BC)], <b>R1+PDH</b> [min(R1,PH), max(R1,PH)] and <b>S1+PDL</b> [min(S1,PL), max(S1,PL)]. <b>CPR is included</b> — redundant with Index Alignment for non-reversal aligned trades, but load-bearing for reversal states (BULLISH_REVERSAL with NIFTY below CPR, BEARISH_REVERSAL with NIFTY above CPR) where CPR sits ahead of LTP in the trade direction. Extended levels (R2/R3/R4, S2/S3/S4) excluded. Picks the <b>behind</b> zone in trade direction (highest zone whose lower edge is at/below NIFTY LTP for buys; lowest zone whose upper edge is at/above LTP for sells) and rejects if NIFTY's <i>current</i> same-bucket 5m close is inside that zone or short of its far edge &mdash; <b>clearing only the inner line of a zone isn't enough; the close must clear the far edge</b>. Fail-open if NIFTY's same-bucket bar isn't yet completed.
-                        <br><br><b>Headroom check.</b> Even after the behind zone is fully cleared, the filter rejects if the next zone ahead (lower edge above LTP for buys / upper edge below LTP for sells) is closer than <code>min headroom &times; NIFTY ATR</code>. Default <b>1.5</b> &times; ATR. Set to 0 to disable just the headroom check. Signal Trail bucket: <code>NIFTY_5M_HURDLE</code>.</div>
+                    <div class="form-hint">5-min variant of the Index HTF Hurdle, against the primary index's daily levels treated as <b>zones</b>: <b>CPR</b> [min(TC,BC), max(TC,BC)], <b>R1+PDH</b> and <b>S1+PDL</b> plus R2/R3/R4 and S2/S3/S4 as single-line zones. Picks the <b>behind</b> zone in trade direction and rejects if the index's same-bucket 5-min close is inside that zone or short of its far edge — <b>clearing only the near edge isn't enough; the close must clear the far edge</b>. Fail-open if the index's same-bucket bar isn't yet completed.
+                        <br><br><b>Headroom check.</b> Even after the behind zone is fully cleared, the filter rejects if the next zone ahead is closer than <code>min headroom &times; index ATR</code>. Default <b>1.0</b> &times; ATR. Set to 0 to disable just the headroom check. Signal Trail bucket: <code>INDEX_5M_HURDLE</code>.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Virgin CPR Hurdle Filter</label>
@@ -1031,12 +1012,8 @@
                     cursor:pointer;transition:all 0.2s;">+ Add Stock</button>
             </div>
             <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
-                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Filter Sector:</label>
-                <select id="stockUniverseSectorFilter" onchange="loadStockUniverse()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.74rem;outline:none;min-width:200px;">
-                    <option value="">All sectors</option>
-                </select>
-                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-left:10px;">Filter Index:</label>
-                <select id="stockUniverseIndexFilter" onchange="loadStockUniverse()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.74rem;outline:none;min-width:180px;">
+                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Filter Primary Index:</label>
+                <select id="stockUniverseIndexFilter" onchange="loadStockUniverse()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.74rem;outline:none;min-width:200px;">
                     <option value="">All indices</option>
                 </select>
                 <span id="stockUniverseCount" style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);margin-left:auto;"></span>
@@ -1048,7 +1025,7 @@
                             <th style="width:50px;" class="text-center">#</th>
                             <th>Ticker</th>
                             <th>Name</th>
-                            <th>Sector</th>
+                            <th>Primary Index</th>
                             <th class="text-center">Enabled</th>
                             <th class="text-center">Actions</th>
                         </tr>
@@ -1061,59 +1038,59 @@
         </div>
     </div><!-- /tab-universe -->
 
-    <!-- SECTORS TAB ─────────────────────────────────────────────────────── -->
-    <div class="tab-content" id="tab-sectors">
+    <!-- INDICES TAB ─────────────────────────────────────────────────────── -->
+    <div class="tab-content" id="tab-indices">
         <div class="section-card fade-in" style="margin-top:20px;">
             <div class="section-header">
                 <div class="section-title">
                     <div class="section-title-dot" style="background: var(--accent-purple, #a78bfa);"></div>
-                    Sectors
+                    Indices
                     <span style="font-family:var(--font-mono);font-size:0.68rem;color:var(--text-muted);font-weight:400;margin-left:10px;">
-                        Sector name + NSE index ticker. Index ticker drives chip color on scanner cards.
+                        NIFTY 50 + sector indices. Each stock maps to one primary index that drives its alignment and hurdle filters.
                     </span>
                 </div>
-                <button onclick="showAddSectorModal()" style="
+                <button onclick="showAddIndexModal()" style="
                     background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.2);
                     color:var(--accent-green);padding:6px 16px;border-radius:6px;
                     font-family:var(--font-mono);font-size:0.72rem;font-weight:700;
-                    cursor:pointer;transition:all 0.2s;">+ Add Sector</button>
+                    cursor:pointer;transition:all 0.2s;">+ Add Index</button>
             </div>
             <div class="table-wrap">
                 <table class="data-table">
                     <thead>
                         <tr>
                             <th style="width:50px;" class="text-center">#</th>
-                            <th>Sector Name</th>
-                            <th>Index Ticker</th>
+                            <th>Index Name</th>
+                            <th>Ticker</th>
                             <th class="text-center" style="width:160px;">Actions</th>
                         </tr>
                     </thead>
-                    <tbody id="sectorsTabBody">
+                    <tbody id="indicesTabBody">
                         <tr><td colspan="4"><div class="empty-state" style="padding:20px"><div class="empty-icon" style="font-size:1.2rem">◎</div>Loading...</div></td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
-    </div><!-- /tab-sectors -->
+    </div><!-- /tab-indices -->
 
-    <!-- ADD/EDIT SECTOR MODAL -->
-    <div id="sectorEditModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:999;
+    <!-- ADD/EDIT INDEX MODAL -->
+    <div id="indexEditModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:999;
         align-items:center;justify-content:center;">
         <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;
             padding:28px;width:440px;max-width:90vw;box-shadow:0 16px 48px rgba(0,0,0,0.3);">
-            <div style="font-family:var(--font-mono);font-size:0.82rem;font-weight:700;color:var(--text-primary);margin-bottom:20px;" id="sectorEditModalTitle">Add Sector</div>
-            <input type="hidden" id="sectorEditModalId">
+            <div style="font-family:var(--font-mono);font-size:0.82rem;font-weight:700;color:var(--text-primary);margin-bottom:20px;" id="indexEditModalTitle">Add Index</div>
+            <input type="hidden" id="indexEditModalId">
             <div style="margin-bottom:12px;">
-                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Sector Name</label>
-                <input type="text" id="sectorEditModalName" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;" placeholder="e.g. Nifty Bank">
+                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Index Name</label>
+                <input type="text" id="indexEditModalName" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;" placeholder="e.g. Nifty Bank">
             </div>
             <div style="margin-bottom:18px;">
-                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Index Ticker</label>
-                <input type="text" id="sectorEditModalTicker" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;" placeholder="e.g. NIFTYBANK (no spaces)">
+                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Ticker</label>
+                <input type="text" id="indexEditModalTicker" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;" placeholder="e.g. NIFTYBANK (no spaces)">
             </div>
             <div style="display:flex;justify-content:flex-end;gap:10px;">
-                <button onclick="closeSectorEditModal()" style="background:transparent;border:1px solid var(--border);color:var(--text-secondary);padding:8px 18px;border-radius:6px;font-family:var(--font-mono);font-size:0.74rem;cursor:pointer;">Cancel</button>
-                <button onclick="saveSectorEditModal()" style="background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.4);color:var(--accent-green);padding:8px 18px;border-radius:6px;font-family:var(--font-mono);font-size:0.74rem;font-weight:700;cursor:pointer;">Save</button>
+                <button onclick="closeIndexEditModal()" style="background:transparent;border:1px solid var(--border);color:var(--text-secondary);padding:8px 18px;border-radius:6px;font-family:var(--font-mono);font-size:0.74rem;cursor:pointer;">Cancel</button>
+                <button onclick="saveIndexEditModal()" style="background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.4);color:var(--accent-green);padding:8px 18px;border-radius:6px;font-family:var(--font-mono);font-size:0.74rem;font-weight:700;cursor:pointer;">Save</button>
             </div>
         </div>
     </div>
@@ -1134,8 +1111,8 @@
                 <input type="text" id="stockModalName" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;" placeholder="Display name">
             </div>
             <div style="margin-bottom:12px;">
-                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Sector</label>
-                <select id="stockModalSector" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;"></select>
+                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Primary Index</label>
+                <select id="stockModalIndex" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;"></select>
             </div>
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:18px;">
                 <input type="checkbox" id="stockModalEnabled" checked>
@@ -1335,14 +1312,13 @@
             document.getElementById('enableTargetTolerance').checked = d.enableTargetTolerance !== false;
             document.getElementById('targetToleranceAtr').value = (d.targetToleranceAtr != null ? d.targetToleranceAtr : 0.10);
             document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
-            document.getElementById('enableSectorAlignment').checked = d.enableSectorAlignment === true;
-            document.getElementById('enableNiftyHtfHurdleFilter').checked = d.enableNiftyHtfHurdleFilter === true;
-            document.getElementById('niftyHurdleMinHeadroomAtr').value = (d.niftyHurdleMinHeadroomAtr != null ? d.niftyHurdleMinHeadroomAtr : 1.0);
-            document.getElementById('enableNifty5mHurdleFilter').checked = d.enableNifty5mHurdleFilter === true;
+            document.getElementById('enableIndexHtfHurdleFilter').checked = d.enableIndexHtfHurdleFilter === true;
+            document.getElementById('indexHtfHurdleMinHeadroomAtr').value = (d.indexHtfHurdleMinHeadroomAtr != null ? d.indexHtfHurdleMinHeadroomAtr : 1.0);
+            document.getElementById('enableIndex5mHurdleFilter').checked = d.enableIndex5mHurdleFilter === true;
             document.getElementById('virginCprExpiryDays').value = d.virginCprExpiryDays != null ? d.virginCprExpiryDays : 10;
             document.getElementById('enableVirginCprHurdleFilter').checked = d.enableVirginCprHurdleFilter === true;
             document.getElementById('virginCprHurdleHeadroomAtr').value = (d.virginCprHurdleHeadroomAtr != null ? d.virginCprHurdleHeadroomAtr : 1.0);
-            document.getElementById('nifty5mHurdleMinHeadroomAtr').value = (d.nifty5mHurdleMinHeadroomAtr != null ? d.nifty5mHurdleMinHeadroomAtr : 1.0);
+            document.getElementById('index5mHurdleMinHeadroomAtr').value = (d.index5mHurdleMinHeadroomAtr != null ? d.index5mHurdleMinHeadroomAtr : 1.0);
             document.getElementById('enableTrailingSl').checked = d.enableTrailingSl != null ? d.enableTrailingSl : true;
             document.getElementById('enablePriceEmaExit').checked = d.enablePriceEmaExit === true;
             document.getElementById('breakevenTriggerPct').value = d.breakevenTriggerPct != null ? d.breakevenTriggerPct : 61.8;
@@ -1492,14 +1468,13 @@
                 enableTargetTolerance: document.getElementById('enableTargetTolerance').checked,
                 targetToleranceAtr: parseFloat(document.getElementById('targetToleranceAtr').value) || 0,
                 enableIndexAlignment:    document.getElementById('enableIndexAlignment').checked,
-                enableSectorAlignment:   document.getElementById('enableSectorAlignment').checked,
-                enableNiftyHtfHurdleFilter: document.getElementById('enableNiftyHtfHurdleFilter').checked,
-                niftyHurdleMinHeadroomAtr: parseFloat(document.getElementById('niftyHurdleMinHeadroomAtr').value) || 0,
-                enableNifty5mHurdleFilter: document.getElementById('enableNifty5mHurdleFilter').checked,
+                enableIndexHtfHurdleFilter: document.getElementById('enableIndexHtfHurdleFilter').checked,
+                indexHtfHurdleMinHeadroomAtr: parseFloat(document.getElementById('indexHtfHurdleMinHeadroomAtr').value) || 0,
+                enableIndex5mHurdleFilter: document.getElementById('enableIndex5mHurdleFilter').checked,
                 virginCprExpiryDays: parseInt(document.getElementById('virginCprExpiryDays').value) || 0,
                 enableVirginCprHurdleFilter: document.getElementById('enableVirginCprHurdleFilter').checked,
                 virginCprHurdleHeadroomAtr: parseFloat(document.getElementById('virginCprHurdleHeadroomAtr').value) || 0,
-                nifty5mHurdleMinHeadroomAtr: parseFloat(document.getElementById('nifty5mHurdleMinHeadroomAtr').value) || 0,
+                index5mHurdleMinHeadroomAtr: parseFloat(document.getElementById('index5mHurdleMinHeadroomAtr').value) || 0,
                 enableTrailingSl: document.getElementById('enableTrailingSl').checked,
                 enablePriceEmaExit: document.getElementById('enablePriceEmaExit').checked,
                 breakevenTriggerPct: parseFloat(document.getElementById('breakevenTriggerPct').value) || 61.8,
@@ -1644,59 +1619,33 @@
     // the stocks table. The "enabled" toggle controls whether a stock is included in
     // the default scanner universe — disabling here removes it from BhavcopyService's
     // isInScanUniverse() check on the next refresh.
-    var stockUniverseSectors = [];   // cached sectors list for dropdown population
+    var stockUniverseIndices = [];   // cached indices list for dropdown population
 
     function loadStockUniverse() {
         var tbody = document.getElementById('stockUniverseBody');
-        var filterSel = document.getElementById('stockUniverseSectorFilter');
         var indexSel = document.getElementById('stockUniverseIndexFilter');
-        var filterValue = filterSel ? filterSel.value : '';
         var indexValue = indexSel ? indexSel.value : '';
         Promise.all([
-            fetch('/api/sectors').then(r => r.json()),
+            fetch('/api/indices').then(r => r.json()),
             fetch('/api/stocks').then(r => r.json())
         ]).then(function(arr) {
-            stockUniverseSectors = arr[0] || [];
+            stockUniverseIndices = arr[0] || [];
             var stocks = arr[1] || [];
 
-            // Repopulate sector filter dropdown (preserve current selection across reloads).
-            if (filterSel) {
-                var opts = '<option value="">All sectors</option>';
-                stockUniverseSectors.forEach(function(s) {
-                    var sel = (String(s.id) === String(filterValue)) ? ' selected' : '';
-                    opts += '<option value="' + s.id + '"' + sel + '>' + sectorLabel(s) + '</option>';
-                });
-                filterSel.innerHTML = opts;
-            }
-
-            // Repopulate index filter — distinct index tickers across all sectors. Several
-            // sectors can share an index (e.g. Cement / Construction / Power → NIFTYINFRA),
-            // so filtering by index pulls stocks from all of those sectors together.
+            // Repopulate primary-index filter dropdown (preserve current selection across reloads).
             if (indexSel) {
-                var seen = {};
-                var distinctIndices = [];
-                stockUniverseSectors.forEach(function(s) {
-                    if (s.indexTicker && !seen[s.indexTicker]) {
-                        seen[s.indexTicker] = true;
-                        distinctIndices.push(s.indexTicker);
-                    }
+                var opts = '<option value="">All indices</option>';
+                stockUniverseIndices.forEach(function(i) {
+                    var sel = (String(i.id) === String(indexValue)) ? ' selected' : '';
+                    opts += '<option value="' + i.id + '"' + sel + '>' + indexLabel(i) + '</option>';
                 });
-                distinctIndices.sort();
-                var idxOpts = '<option value="">All indices</option>';
-                distinctIndices.forEach(function(t) {
-                    var sel = (t === indexValue) ? ' selected' : '';
-                    idxOpts += '<option value="' + escapeHtml(t) + '"' + sel + '>' + escapeHtml(formatIndexTicker(t)) + '</option>';
-                });
-                indexSel.innerHTML = idxOpts;
+                indexSel.innerHTML = opts;
             }
 
-            // Apply both filters (AND). Sector filter wins specificity if both set.
+            // Apply primary-index filter.
             var filtered = stocks;
-            if (filterValue) {
-                filtered = filtered.filter(function(s) { return String(s.sectorId || '') === String(filterValue); });
-            }
             if (indexValue) {
-                filtered = filtered.filter(function(s) { return (s.sectorIndexTicker || '') === indexValue; });
+                filtered = filtered.filter(function(s) { return String(s.primaryIndexId || '') === String(indexValue); });
             }
 
             var countEl = document.getElementById('stockUniverseCount');
@@ -1705,19 +1654,17 @@
             if (filtered.length === 0) {
                 var emptyMsg = stocks.length === 0
                     ? 'No stocks yet — click + Add Stock to begin.'
-                    : 'No stocks match the selected sector.';
+                    : 'No stocks match the selected index.';
                 tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state" style="padding:20px"><div class="empty-icon" style="font-size:1.2rem">◎</div>' + emptyMsg + '</div></td></tr>';
                 return;
             }
             var rows = filtered.map(function(s, idx) {
-                // Display the formatted index ticker (NIFTY INFRA, NIFTY BANK, …) instead
-                // of the sector display name — so e.g. Power / Cement / Construction stocks
-                // all surface as NIFTY INFRA on this row. Sector name is still shown in the
-                // tooltip for disambiguation.
-                var sectorDisplay = s.sectorIndexTicker
-                    ? escapeHtml(formatIndexTicker(s.sectorIndexTicker))
-                    : (s.sectorName ? escapeHtml(s.sectorName) : '—');
-                var sectorTitle = s.sectorName ? ' title="' + escapeHtml(s.sectorName) + '"' : '';
+                // Display the primary index name with the formatted ticker shown in the
+                // tooltip for quick reference.
+                var indexDisplay = s.primaryIndexName
+                    ? escapeHtml(s.primaryIndexName)
+                    : (s.primaryIndexTicker ? escapeHtml(formatIndexTicker(s.primaryIndexTicker)) : '—');
+                var indexTitle = s.primaryIndexTicker ? ' title="' + escapeHtml(s.primaryIndexTicker) + '"' : '';
                 var enabledBadge = s.enabled
                     ? '<span style="color:var(--accent-green);font-weight:700;">ON</span>'
                     : '<span style="color:var(--text-muted);">OFF</span>';
@@ -1725,7 +1672,7 @@
                     + '<td class="text-center" style="color:var(--text-muted);">' + (idx + 1) + '</td>'
                     + '<td style="font-weight:700;">' + escapeHtml(s.ticker) + '</td>'
                     + '<td>' + escapeHtml(s.name || '') + '</td>'
-                    + '<td' + sectorTitle + '>' + sectorDisplay + '</td>'
+                    + '<td' + indexTitle + '>' + indexDisplay + '</td>'
                     + '<td class="text-center">' + enabledBadge + '</td>'
                     + '<td class="text-center">'
                     +   '<button onclick="editStock(' + s.id + ')" style="background:transparent;border:1px solid var(--border);color:var(--text-secondary);padding:4px 10px;border-radius:4px;font-family:var(--font-mono);font-size:0.68rem;cursor:pointer;margin-right:4px;">Edit</button>'
@@ -1756,18 +1703,18 @@
         return t.startsWith('NIFTY') && t.length > 5 ? 'NIFTY ' + t.substring(5) : t;
     }
 
-    function sectorLabel(s) {
-        // "Sector Name (NIFTY INDEX)" — index ticker omitted if blank.
-        var n = escapeHtml(s.name || '');
-        return s.indexTicker ? n + ' (' + escapeHtml(formatIndexTicker(s.indexTicker)) + ')' : n;
+    function indexLabel(i) {
+        // "Index Name (NIFTY TICKER)" — ticker omitted if blank.
+        var n = escapeHtml(i.name || '');
+        return i.ticker ? n + ' (' + escapeHtml(formatIndexTicker(i.ticker)) + ')' : n;
     }
 
-    function populateSectorDropdown(selectedSectorId) {
-        var dropdown = document.getElementById('stockModalSector');
+    function populateIndexDropdown(selectedIndexId) {
+        var dropdown = document.getElementById('stockModalIndex');
         var html = '<option value="">— none —</option>';
-        stockUniverseSectors.forEach(function(s) {
-            var selAttr = (selectedSectorId != null && Number(selectedSectorId) === Number(s.id)) ? ' selected' : '';
-            html += '<option value="' + s.id + '"' + selAttr + '>' + sectorLabel(s) + '</option>';
+        stockUniverseIndices.forEach(function(i) {
+            var selAttr = (selectedIndexId != null && Number(selectedIndexId) === Number(i.id)) ? ' selected' : '';
+            html += '<option value="' + i.id + '"' + selAttr + '>' + indexLabel(i) + '</option>';
         });
         dropdown.innerHTML = html;
     }
@@ -1775,8 +1722,8 @@
     function showAddStockModal() {
         // Ensure sectors are loaded (in case the tab hasn't been opened yet).
         if (stockUniverseSectors.length === 0) {
-            fetch('/api/sectors').then(r => r.json()).then(function(rows) {
-                stockUniverseSectors = rows || [];
+            fetch('/api/indices').then(r => r.json()).then(function(rows) {
+                stockUniverseIndices = rows || [];
                 openStockModal(null);
             });
         } else {
@@ -1791,7 +1738,7 @@
         document.getElementById('stockModalTicker').disabled = !!stock; // ticker is the natural key — don't allow rename
         document.getElementById('stockModalName').value = stock ? (stock.name || '') : '';
         document.getElementById('stockModalEnabled').checked = stock ? !!stock.enabled : true;
-        populateSectorDropdown(stock ? stock.sectorId : null);
+        populateIndexDropdown(stock ? stock.primaryIndexId : null);
         document.getElementById('stockModal').style.display = 'flex';
     }
 
@@ -1810,12 +1757,12 @@
         var id = document.getElementById('stockModalId').value;
         var ticker = document.getElementById('stockModalTicker').value.trim().toUpperCase();
         var name = document.getElementById('stockModalName').value.trim();
-        var sectorId = document.getElementById('stockModalSector').value;
+        var primaryIndexId = document.getElementById('stockModalIndex').value;
         var enabled = document.getElementById('stockModalEnabled').checked;
 
         if (!ticker) { showToast('Ticker is required', 'error'); return; }
 
-        var body = { name: name, sectorId: sectorId ? Number(sectorId) : null, enabled: enabled };
+        var body = { name: name, primaryIndexId: primaryIndexId ? Number(primaryIndexId) : null, enabled: enabled };
         var url, method;
         if (id) {
             url = '/api/stocks/' + id;
@@ -1848,83 +1795,83 @@
             }).catch(function() { showToast('Delete failed', 'error'); });
     }
 
-    // ── SECTORS TAB (full CRUD) ───────────────────────────────────────────
-    function loadSectorsTab() {
-        var tbody = document.getElementById('sectorsTabBody');
-        fetch('/api/sectors').then(r => r.json()).then(function(rows) {
-            stockUniverseSectors = rows || [];
+    // ── INDICES TAB (full CRUD) ───────────────────────────────────────────
+    function loadIndicesTab() {
+        var tbody = document.getElementById('indicesTabBody');
+        fetch('/api/indices').then(r => r.json()).then(function(rows) {
+            stockUniverseIndices = rows || [];
             if (!rows || rows.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state" style="padding:20px"><div class="empty-icon" style="font-size:1.2rem">◎</div>No sectors yet — click + Add Sector.</div></td></tr>';
+                tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state" style="padding:20px"><div class="empty-icon" style="font-size:1.2rem">◎</div>No indices yet — click + Add Index.</div></td></tr>';
                 return;
             }
-            tbody.innerHTML = rows.map(function(s, idx) {
+            tbody.innerHTML = rows.map(function(i, idx) {
                 return '<tr>'
                     + '<td class="text-center" style="color:var(--text-muted);">' + (idx + 1) + '</td>'
-                    + '<td style="font-weight:700;">' + escapeHtml(s.name) + '</td>'
-                    + '<td style="font-family:var(--font-mono);">' + escapeHtml(formatIndexTicker(s.indexTicker || '')) + '</td>'
+                    + '<td style="font-weight:700;">' + escapeHtml(i.name) + '</td>'
+                    + '<td style="font-family:var(--font-mono);">' + escapeHtml(formatIndexTicker(i.ticker || '')) + '</td>'
                     + '<td class="text-center">'
-                    +   '<button onclick="editSector(' + s.id + ')" style="background:transparent;border:1px solid var(--border);color:var(--text-secondary);padding:4px 10px;border-radius:4px;font-family:var(--font-mono);font-size:0.68rem;cursor:pointer;margin-right:4px;">Edit</button>'
-                    +   '<button onclick="deleteSectorById(' + s.id + ',\'' + escapeJs(s.name) + '\')" style="background:transparent;border:1px solid rgba(248,113,113,0.4);color:var(--accent-red);padding:4px 10px;border-radius:4px;font-family:var(--font-mono);font-size:0.68rem;cursor:pointer;">Delete</button>'
+                    +   '<button onclick="editIndex(' + i.id + ')" style="background:transparent;border:1px solid var(--border);color:var(--text-secondary);padding:4px 10px;border-radius:4px;font-family:var(--font-mono);font-size:0.68rem;cursor:pointer;margin-right:4px;">Edit</button>'
+                    +   '<button onclick="deleteIndexById(' + i.id + ',\'' + escapeJs(i.name) + '\')" style="background:transparent;border:1px solid rgba(248,113,113,0.4);color:var(--accent-red);padding:4px 10px;border-radius:4px;font-family:var(--font-mono);font-size:0.68rem;cursor:pointer;">Delete</button>'
                     + '</td>'
                     + '</tr>';
             }).join('');
         }).catch(function() {
-            tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state" style="padding:20px;color:var(--accent-red);">Failed to load sectors.</div></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state" style="padding:20px;color:var(--accent-red);">Failed to load indices.</div></td></tr>';
         });
     }
 
-    function showAddSectorModal() {
-        document.getElementById('sectorEditModalTitle').textContent = 'Add Sector';
-        document.getElementById('sectorEditModalId').value = '';
-        document.getElementById('sectorEditModalName').value = '';
-        document.getElementById('sectorEditModalTicker').value = '';
-        document.getElementById('sectorEditModal').style.display = 'flex';
+    function showAddIndexModal() {
+        document.getElementById('indexEditModalTitle').textContent = 'Add Index';
+        document.getElementById('indexEditModalId').value = '';
+        document.getElementById('indexEditModalName').value = '';
+        document.getElementById('indexEditModalTicker').value = '';
+        document.getElementById('indexEditModal').style.display = 'flex';
     }
 
-    function editSector(id) {
-        var s = (stockUniverseSectors || []).find(function(x) { return x.id === id; });
-        if (!s) return;
-        document.getElementById('sectorEditModalTitle').textContent = 'Edit Sector';
-        document.getElementById('sectorEditModalId').value = s.id;
-        document.getElementById('sectorEditModalName').value = s.name || '';
-        document.getElementById('sectorEditModalTicker').value = s.indexTicker || '';
-        document.getElementById('sectorEditModal').style.display = 'flex';
+    function editIndex(id) {
+        var i = (stockUniverseIndices || []).find(function(x) { return x.id === id; });
+        if (!i) return;
+        document.getElementById('indexEditModalTitle').textContent = 'Edit Index';
+        document.getElementById('indexEditModalId').value = i.id;
+        document.getElementById('indexEditModalName').value = i.name || '';
+        document.getElementById('indexEditModalTicker').value = i.ticker || '';
+        document.getElementById('indexEditModal').style.display = 'flex';
     }
 
-    function closeSectorEditModal() {
-        document.getElementById('sectorEditModal').style.display = 'none';
+    function closeIndexEditModal() {
+        document.getElementById('indexEditModal').style.display = 'none';
     }
 
-    function saveSectorEditModal() {
-        var id = document.getElementById('sectorEditModalId').value;
-        var name = document.getElementById('sectorEditModalName').value.trim();
-        var indexTicker = document.getElementById('sectorEditModalTicker').value.trim().toUpperCase();
-        if (!name) { showToast('Sector name is required', 'error'); return; }
-        var url = id ? ('/api/sectors/' + id) : '/api/sectors';
+    function saveIndexEditModal() {
+        var id = document.getElementById('indexEditModalId').value;
+        var name = document.getElementById('indexEditModalName').value.trim();
+        var ticker = document.getElementById('indexEditModalTicker').value.trim().toUpperCase();
+        if (!name) { showToast('Index name is required', 'error'); return; }
+        if (!ticker) { showToast('Ticker is required', 'error'); return; }
+        var url = id ? ('/api/indices/' + id) : '/api/indices';
         var method = id ? 'PUT' : 'POST';
         fetch(url, {
             method: method,
             headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders()),
-            body: JSON.stringify({ name: name, indexTicker: indexTicker })
+            body: JSON.stringify({ name: name, ticker: ticker })
         }).then(r => r.json()).then(function(d) {
             if (d && d.error) { showToast(d.error, 'error'); return; }
-            closeSectorEditModal();
-            loadSectorsTab();
-            // Stock universe references sectorName, so refresh that too if it was loaded.
-            stockUniverseSectors = [];
-            showToast(id ? 'Sector updated' : 'Sector added', 'success');
+            closeIndexEditModal();
+            loadIndicesTab();
+            stockUniverseIndices = [];
+            showToast(id ? 'Index updated' : 'Index added', 'success');
         }).catch(function() { showToast('Save failed', 'error'); });
     }
 
-    function deleteSectorById(id, name) {
-        if (!confirm('Delete sector "' + name + '"?\n\n(Will fail if any stock still references it.)')) return;
-        fetch('/api/sectors/' + id, { method: 'DELETE', headers: csrfHeaders() })
+    function deleteIndexById(id, name) {
+        if (!confirm('Delete index "' + name + '"?\n\n(Will fail if any stock still references it.)')) return;
+        fetch('/api/indices/' + id, { method: 'DELETE', headers: csrfHeaders() })
             .then(r => r.json())
             .then(function(d) {
                 if (d && d.error) { showToast(d.error, 'error'); return; }
-                loadSectorsTab();
-                stockUniverseSectors = [];
-                showToast('Sector deleted', 'success');
+                loadIndicesTab();
+                stockUniverseIndices = [];
+                showToast('Index deleted', 'success');
             }).catch(function() { showToast('Delete failed', 'error'); });
     }
 

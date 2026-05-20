@@ -83,14 +83,12 @@ public class ScannerController {
         double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
 
         java.util.function.Consumer<CprLevels> recordSector = (cpr) -> {
-            // Sourced from the Settings → Stock Universe master table (DB-backed) — falls
-            // back to the NSE-CSV industry mapping only for tickers not in the DB.
-            String sector = bhavcopyService.getSector(cpr.getSymbol());
-            if (sector == null || sector.isEmpty()) return;
-            String ticker = bhavcopyService.getSectorIndexTicker(sector);
-            if (ticker == null) return;
+            // Each stock maps to its primary index (NIFTY 50 OR a sector index) via the
+            // Stock Universe master table. Count stocks per index for the Indices panel.
+            String ticker = bhavcopyService.getPrimaryIndexTicker(cpr.getSymbol());
+            if (ticker == null || ticker.isEmpty()) return;
             // Dedupe by stock symbol — a stock that hits both narrow and inside passes
-            // mustn't be double-counted toward its sector.
+            // mustn't be double-counted toward its index.
             symbolsByTicker.computeIfAbsent(ticker, k -> new HashSet<>()).add(cpr.getSymbol());
         };
 
@@ -272,17 +270,20 @@ public class ScannerController {
         // Universe membership flags drive the scanner-page client-side N50 vs All filter.
         card.put("inNifty50", levels.isInNifty50());
         card.put("inNifty100", levels.isInNifty100());
-        // Sector — sourced from the Settings → Stock Universe master table (DB-backed).
-        // BhavcopyService.getSector() consults the DB stocks table first and only falls
-        // back to the NSE NIFTY 100 CSV Industry column for tickers not in the DB.
-        String sector = bhavcopyService.getSector(levels.getSymbol());
-        card.put("sector", sector != null ? sector : "");
+        // Primary index — sourced from the Settings → Stock Universe master table. Each
+        // stock maps to one index (NIFTY 50 OR a sector index) that drives all three
+        // alignment / hurdle filters. Card JSON exposes primary-index fields directly
+        // (legacy "sector"-prefixed fields removed — frontend uses primaryIndex* now).
+        String primaryIndexName = bhavcopyService.getPrimaryIndexName(levels.getSymbol());
+        String primaryIndexTicker = bhavcopyService.getPrimaryIndexTicker(levels.getSymbol());
+        card.put("primaryIndexName", primaryIndexName != null ? primaryIndexName : "");
+        card.put("primaryIndexTicker", primaryIndexTicker != null ? primaryIndexTicker : "");
 
-        // Sector-index trend state — 2-factor classification matching the Sector Trends
+        // Primary-index trend state — 2-factor classification matching the Sector Trends
         // modal (LTP vs daily CPR + LTP vs 5-min EMA20). Yields BULLISH / BEARISH /
         // BULLISH_REVERSAL / BEARISH_REVERSAL / INSIDE / SIDEWAYS / NEUTRAL — same state the
-        // sector alignment filter uses. Falls back to bhavcopy snapshot close on weekends.
-        String sectorIndexTicker = sector != null ? bhavcopyService.getSectorIndexTicker(sector) : null;
+        // alignment filter uses. Falls back to bhavcopy snapshot close on weekends.
+        String sectorIndexTicker = primaryIndexTicker;
         String sectorState = "";
         double sectorChangePct = 0;
         double sectorTop = 0, sectorBot = 0, sectorEma20 = 0;
@@ -339,21 +340,15 @@ public class ScannerController {
                 }
             }
         }
-        card.put("sectorState", sectorState);
-        card.put("sectorChangePct", Math.round(sectorChangePct * 100.0) / 100.0);
-        card.put("sectorCprTop",   Math.round(sectorTop   * 100.0) / 100.0);
-        card.put("sectorCprBot",   Math.round(sectorBot   * 100.0) / 100.0);
-        card.put("sectorEma20",    Math.round(sectorEma20 * 100.0) / 100.0);
-        // Sector index Fyers symbol + display name — used to make the sector chip clickable
-        // (opens the chart modal for the sector index, parallel to the chart button on each
-        // card). Null/empty when the stock has no sector index mapping.
+        card.put("primaryIndexState",     sectorState);
+        card.put("primaryIndexChangePct", Math.round(sectorChangePct * 100.0) / 100.0);
+        card.put("primaryIndexCprTop",    Math.round(sectorTop   * 100.0) / 100.0);
+        card.put("primaryIndexCprBot",    Math.round(sectorBot   * 100.0) / 100.0);
+        card.put("primaryIndexEma20",     Math.round(sectorEma20 * 100.0) / 100.0);
+        // Primary-index Fyers symbol — used to make the chip clickable (opens the chart
+        // modal for the index, parallel to the chart button on each card).
         if (sectorIndexTicker != null) {
-            card.put("sectorIndexSymbol", "NSE:" + sectorIndexTicker + "-INDEX");
-            String idxDisplay = bhavcopyService.getIndexDisplayName(sectorIndexTicker);
-            card.put("sectorIndexName", idxDisplay != null ? idxDisplay : sectorIndexTicker);
-            // Raw index ticker (e.g. NIFTYBANK, NIFTYINFRA) — used by the chip text on
-            // the scanner card so the chip shows the index, not the sector display name.
-            card.put("sectorIndexTicker", sectorIndexTicker);
+            card.put("primaryIndexSymbol", "NSE:" + sectorIndexTicker + "-INDEX");
         }
 
         // LTP separated into two values:
@@ -486,6 +481,24 @@ public class ScannerController {
         }
         card.put("cprBias", cprBias);
         card.put("trendState", trendState);
+
+        // Per-stock HTF hurdle chip — single nearest weekly hurdle in trade direction.
+        // Direction follows trendState: bullish flavours → buy-side levels above LTP,
+        // bearish flavours → sell-side levels below. SIDEWAYS / INSIDE / NEUTRAL leave
+        // hurdle = null. Mirrors the NIFTY card's hurdle chip pattern.
+        Boolean stockIsBuy = null;
+        if ("BULLISH".equals(trendState) || "BULLISH_REVERSAL".equals(trendState)) stockIsBuy = true;
+        else if ("BEARISH".equals(trendState) || "BEARISH_REVERSAL".equals(trendState)) stockIsBuy = false;
+        if (stockIsBuy != null) {
+            BreakoutScanner.HurdleStatus h = breakoutScanner.getStockNearestHurdle(fyersSymbol, stockIsBuy);
+            if (h != null) {
+                Map<String, Object> hurdle = new LinkedHashMap<>();
+                hurdle.put("level", h.level());
+                hurdle.put("category", h.category());
+                hurdle.put("state", h.state());
+                card.put("hurdle", hurdle);
+            }
+        }
 
         // Broken levels
         Set<String> broken = breakoutScanner.getBrokenLevels(fyersSymbol);
@@ -963,15 +976,53 @@ public class ScannerController {
 
     @GetMapping("/api/scanner/tv-watchlist")
     public ResponseEntity<String> getTvWatchlist() {
-        // Export exactly what's shown on the Watchlist page (same filters applied)
-        StringBuilder csv = new StringBuilder();
+        // Group the watchlist by each stock's primary index. Output uses TradingView's
+        // ###Section header syntax — one section per index, with the index ticker itself
+        // listed first followed by its member stocks. Section order: NIFTY 50 always
+        // first, then remaining indices descending by stock count. Indices with no
+        // member stocks are skipped except NIFTY 50, which is always emitted.
+        Map<String, String> indexNameByTicker = new LinkedHashMap<>();
+        Map<String, List<String>> stocksByIndex = new LinkedHashMap<>();
+
         for (Map<String, Object> card : getWatchlist()) {
             Object sym = card.get("symbol");
-            if (sym != null) {
-                String s = sym.toString().replaceAll("-EQ$", "").replace("-", "_");
-                csv.append(s).append(",");
-            }
+            if (sym == null) continue;
+            String stockSym = sym.toString().replaceAll("-EQ$", "").replace("-", "_");
+
+            Object pTicker = card.get("primaryIndexTicker");
+            Object pName   = card.get("primaryIndexName");
+            String idxTicker = (pTicker != null && !pTicker.toString().isEmpty()) ? pTicker.toString() : "NIFTY50";
+            String idxName   = (pName   != null && !pName.toString().isEmpty())   ? pName.toString()   : "NIFTY 50";
+
+            indexNameByTicker.put(idxTicker, idxName);
+            stocksByIndex.computeIfAbsent(idxTicker, k -> new ArrayList<>()).add(stockSym);
         }
+
+        // Sort: NIFTY 50 first, then by stock count descending. Tie-break alphabetically.
+        List<String> ordered = new ArrayList<>(stocksByIndex.keySet());
+        ordered.sort((a, b) -> {
+            if ("NIFTY50".equals(a) && !"NIFTY50".equals(b)) return -1;
+            if ("NIFTY50".equals(b) && !"NIFTY50".equals(a)) return 1;
+            int cmp = Integer.compare(stocksByIndex.get(b).size(), stocksByIndex.get(a).size());
+            return cmp != 0 ? cmp : a.compareTo(b);
+        });
+
+        // NIFTY 50 is always present in the export even if no stocks map to it.
+        if (!ordered.contains("NIFTY50")) {
+            ordered.add(0, "NIFTY50");
+            indexNameByTicker.putIfAbsent("NIFTY50", "NIFTY 50");
+        }
+
+        StringBuilder csv = new StringBuilder();
+        for (String idxTicker : ordered) {
+            List<String> stocks = stocksByIndex.getOrDefault(idxTicker, Collections.emptyList());
+            if (stocks.isEmpty() && !"NIFTY50".equals(idxTicker)) continue;
+            String sectionName = indexNameByTicker.getOrDefault(idxTicker, idxTicker);
+            csv.append("###").append(sectionName).append(",");
+            csv.append(idxTicker).append(",");
+            for (String s : stocks) csv.append(s).append(",");
+        }
+
         String filename = "watchlist-" + java.time.LocalDate.now() + ".txt";
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")

@@ -15,19 +15,22 @@ public class StockEntity {
 
     private String name;
 
+    /** The stock's primary index — drives the bot's alignment / HTF hurdle / 5m hurdle
+     *  filters. Replaces the legacy {@code sector} field; each stock now points directly
+     *  to the index it should be aligned to (NIFTY 50 or a sector index). */
     @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "sector_id")
-    private SectorEntity sector;
+    @JoinColumn(name = "primary_index_id")
+    private IndexEntity primaryIndex;
 
     @Column(nullable = false)
     private boolean enabled = true;
 
     public StockEntity() {}
 
-    public StockEntity(String ticker, String name, SectorEntity sector, boolean enabled) {
+    public StockEntity(String ticker, String name, IndexEntity primaryIndex, boolean enabled) {
         this.ticker = ticker;
         this.name = name;
-        this.sector = sector;
+        this.primaryIndex = primaryIndex;
         this.enabled = enabled;
     }
 
@@ -40,8 +43,8 @@ public class StockEntity {
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
 
-    public SectorEntity getSector() { return sector; }
-    public void setSector(SectorEntity sector) { this.sector = sector; }
+    public IndexEntity getPrimaryIndex() { return primaryIndex; }
+    public void setPrimaryIndex(IndexEntity primaryIndex) { this.primaryIndex = primaryIndex; }
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
