@@ -539,18 +539,10 @@ public class ScannerController {
             card.put("lastSignal", null);
         }
 
-        // Signal history
-        List<BreakoutScanner.SignalInfo> history = breakoutScanner.getSignalHistory(fyersSymbol);
-        List<Map<String, String>> histList = new ArrayList<>();
-        for (BreakoutScanner.SignalInfo h : history) {
-            Map<String, String> hm = new LinkedHashMap<>();
-            hm.put("setup", h.setup);
-            hm.put("time", h.time);
-            hm.put("status", h.status);
-            hm.put("detail", h.detail != null ? h.detail : "");
-            histList.add(hm);
-        }
-        card.put("signalHistory", histList);
+        // signalHistory dropped from the card payload — was bloating /api/scanner/watchlist
+        // to multi-MB late in the day. The full audit trail is still available via
+        // /api/signal-trail (used by the Signal Trail page) and lastSignal above carries
+        // the most recent entry for the card title.
 
         card.put("hasPosition", positionSymbols.contains(fyersSymbol));
         card.put("cprWidthPct", Math.round(levels.getCprWidthPct() * 1000.0) / 1000.0);

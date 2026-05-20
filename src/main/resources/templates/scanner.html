@@ -761,23 +761,6 @@
                 + '</div>';
         }
 
-        // Signal history (exclude latest since it's shown in the title)
-        var sigHtml = '';
-        var sigs = d.signalHistory || [];
-        if (sigs.length > 1) {
-            sigHtml = sigs.slice(0, -1).map(function(s) {
-                var stClass = s.status.toLowerCase();
-                var detailTip = s.detail ? ' title="' + s.detail.replace(/"/g, '&quot;') + '"' : '';
-                return '<div style="display:flex;align-items:center;gap:6px;padding:1px 0;">'
-                    + '<span class="sig-setup">' + prettySetup(s.setup) + '</span>'
-                    + '<span class="sig-time"><span class="sig-at">@ </span>' + s.time + '</span>'
-                    + '<span class="scan-signal-status ' + stClass + '" style="margin-left:auto;cursor:help;"' + detailTip + '>' + s.status + '</span>'
-                    + '</div>';
-            }).join('');
-        } else {
-            sigHtml = '<span class="sig-none">No history</span>';
-        }
-
         // Color the sector chip based on the same 2-factor trend used by the Sector Trends
         // modal and the sector alignment filter:
         //   BULLISH / BULLISH_REVERSAL  → green
