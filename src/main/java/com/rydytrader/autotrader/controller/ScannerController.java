@@ -1019,7 +1019,7 @@ public class ScannerController {
             if (stocks.isEmpty() && !"NIFTY50".equals(idxTicker)) continue;
             String sectionName = indexNameByTicker.getOrDefault(idxTicker, idxTicker);
             csv.append("###").append(sectionName).append(",");
-            csv.append(idxTicker).append(",");
+            csv.append("NSE:").append(toTradingViewIndexSymbol(idxTicker)).append(",");
             for (String s : stocks) csv.append(s).append(",");
         }
 
@@ -1028,6 +1028,36 @@ public class ScannerController {
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
             .contentType(MediaType.TEXT_PLAIN)
             .body(csv.toString());
+    }
+
+    /**
+     * Map our Fyers-style index ticker (NIFTY50, NIFTYBANK, FINNIFTY, …) to the symbol
+     * TradingView actually understands when imported into an NSE watchlist. Falls back
+     * to the input ticker if no mapping exists. Used only by the TV-watchlist export.
+     */
+    private static final Map<String, String> FYERS_TO_TV_INDEX = Map.ofEntries(
+        Map.entry("NIFTY50",          "NIFTY"),
+        Map.entry("NIFTYBANK",        "BANKNIFTY"),
+        Map.entry("NIFTYAUTO",        "CNXAUTO"),
+        Map.entry("NIFTYIT",          "CNXIT"),
+        Map.entry("NIFTYPHARMA",      "CNXPHARMA"),
+        Map.entry("NIFTYFMCG",        "CNXFMCG"),
+        Map.entry("NIFTYMETAL",       "CNXMETAL"),
+        Map.entry("NIFTYENERGY",      "CNXENERGY"),
+        Map.entry("NIFTYOILANDGAS",   "NIFTY_OIL_AND_GAS"),
+        Map.entry("NIFTYHEALTHCARE",  "NIFTY_HEALTHCARE"),
+        Map.entry("FINNIFTY",         "CNXFINANCE"),
+        Map.entry("NIFTYREALTY",      "CNXREALTY"),
+        Map.entry("NIFTYMEDIA",       "CNXMEDIA"),
+        Map.entry("NIFTYCOMMODITIES", "CNXCOMMODITIES"),
+        Map.entry("NIFTYINFRA",       "CNXINFRA"),
+        Map.entry("NIFTYSERVSECTOR",  "CNXSERVICE"),
+        Map.entry("NIFTYCONSRDURBL",  "NIFTY_CONSR_DURBL"),
+        Map.entry("NIFTYCONSUMPTION", "CNXCONSUMPTION")
+    );
+
+    private static String toTradingViewIndexSymbol(String fyersTicker) {
+        return FYERS_TO_TV_INDEX.getOrDefault(fyersTicker, fyersTicker);
     }
 
     @GetMapping("/api/scanner/fyers-watchlist")
