@@ -483,26 +483,9 @@
         </div>
     </div>
 
-    <!-- NIFTY 50 Index Card — color-coded by composite trend state -->
-    <div id="niftyCard" class="nifty-card nifty-card-neutral">
-        <div class="nifty-row">
-            <div class="nifty-name">NIFTY 50</div>
-            <button class="chart-icon-btn" onclick="openChartModal('NSE:NIFTY50-INDEX', 'NIFTY 50')" title="View NIFTY 5-min chart" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:3px 6px;margin-left:8px;cursor:pointer;color:var(--text-secondary);line-height:0;display:inline-flex;align-items:center;">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 6-6"/></svg>
-            </button>
-            <button id="virginCprIconBtn" onclick="openVirginCprModal()" title="Active Virgin CPR — click for details" style="display:none;background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.4);border-radius:4px;padding:3px 6px;margin-left:6px;cursor:pointer;color:#fbbf24;line-height:0;align-items:center;">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            </button>
-            <div class="nifty-ltp" id="niftyLtp" style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; margin-left:12px; color:var(--text-primary);" title="NIFTY 50 live LTP">—</div>
-            <div id="niftyChange" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:8px; color:var(--text-muted);" title="NIFTY 50 change vs previous close (points)">—</div>
-            <div id="niftyChangePct" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:4px; color:var(--text-muted);" title="NIFTY 50 % change vs previous close">—</div>
-            <div class="nifty-cpr-width" id="niftyCprWidth" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY daily CPR width vs scanner thresholds (Narrow / Normal / Wide)">—</div>
-            <div class="nifty-cpr" id="niftyCprBias" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px;" title="NIFTY index 5-min close vs daily CPR (above CPR top / below CPR bottom). Refreshes only on NIFTY 5-min candle close.">—</div>
-            <div class="nifty-state" id="niftyState" style="margin-left:auto;">—</div>
-            <div id="niftyHurdle" style="font-family:var(--font-mono); font-weight:700; font-size:0.78rem; margin-left:14px; display:none;" title=""></div>
-            <div class="nifty-right" id="niftyMetrics"></div>
-        </div>
-    </div>
+    <!-- Key Index Strip — 5 mini-cards (NIFTY 50, NIFTY BANK, NIFTY IT, NIFTY PHARMA, NIFTY AUTO).
+         Each shows LTP, change, change%, CPR width, and CPR-only trend state. -->
+    <div id="keyIndexStrip" style="display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; margin-bottom:10px;"></div>
 
     <!-- Filter Bar -->
     <div class="filter-bar">
@@ -815,11 +798,11 @@
             } else if (stateLabel === 'INSIDE') {
                 sCol = 'var(--accent-yellow)'; sBorder = 'var(--accent-yellow)';
             }
-            // Build a multi-line tooltip — index name, state, change%, CPR levels, EMA20.
+            // Build a multi-line tooltip — index name, state, change%, CPR levels.
+            // (EMA 20 dropped — index trend is CPR-only.)
             var chPct = (typeof d.primaryIndexChangePct === 'number') ? d.primaryIndexChangePct : null;
             var top   = (typeof d.primaryIndexCprTop === 'number') ? d.primaryIndexCprTop : 0;
             var bot   = (typeof d.primaryIndexCprBot === 'number') ? d.primaryIndexCprBot : 0;
-            var ema   = (typeof d.primaryIndexEma20  === 'number') ? d.primaryIndexEma20  : 0;
             var idxLabel = formatIndexTickerScanner(d.primaryIndexTicker);
             var sTipLines = ['Index: ' + (d.primaryIndexName || idxLabel)];
             if (stateLabel) {
@@ -830,9 +813,6 @@
             }
             if (top > 0 && bot > 0) {
                 sTipLines.push('CPR: ' + top.toFixed(2) + ' / ' + bot.toFixed(2));
-            }
-            if (ema > 0) {
-                sTipLines.push('EMA 20: ' + ema.toFixed(2));
             }
             var clickAttr = '';
             var cursorStyle = '';
@@ -1115,156 +1095,107 @@
                 } catch (err) {}
             });
 
-            // Real-time NIFTY 50 LTP / change / change% — the watchlist SSE event carries
-            // NIFTY's ltp + change + changePercent on every tick.
+            // Real-time LTP / change update for every card in the key index strip. The
+            // watchlist SSE event carries ltp + change + changePercent for every subscribed
+            // symbol, including all 5 key indices. We update only LTP and change in-place
+            // on each tick; the full re-render (CPR width, trend state) still runs on the
+            // 5s poll since those fields only flip at 5-min candle closes.
             window.__tickerSSE.addEventListener('watchlist', function(e) {
                 try {
                     var data = JSON.parse(e.data);
-                    var n = data['NSE:NIFTY50-INDEX'];
-                    if (n && typeof n.ltp === 'number') {
-                        applyNiftyLtpUpdate(
-                            n.ltp,
-                            typeof n.changePercent === 'number' ? n.changePercent : null,
-                            typeof n.change === 'number' ? n.change : null,
-                            typeof n.ema === 'number' ? n.ema : null
-                        );
+                    var cards = document.querySelectorAll('#keyIndexStrip .key-index-card');
+                    for (var i = 0; i < cards.length; i++) {
+                        var card = cards[i];
+                        var sym  = card.getAttribute('data-symbol');
+                        if (!sym) continue;
+                        var n = data[sym];
+                        if (!n || typeof n.ltp !== 'number') continue;
+                        var ltpEl = card.querySelector('.ki-ltp');
+                        if (ltpEl) ltpEl.textContent = n.ltp > 0 ? n.ltp.toFixed(2) : '—';
+                        var chEl = card.querySelector('.ki-change');
+                        if (chEl) {
+                            var chPct  = typeof n.changePercent === 'number' ? n.changePercent : 0;
+                            var chPts  = typeof n.change === 'number'
+                                ? n.change
+                                : (n.ltp * chPct / (100 + chPct));
+                            var sign   = chPct >= 0 ? '+' : '';
+                            var arrow  = chPct >= 0 ? '▲' : '▼';
+                            chEl.className = 'scan-change ki-change ' + (chPct >= 0 ? 'up' : 'down');
+                            chEl.textContent = arrow + ' ' + Math.abs(chPts).toFixed(2) + ' (' + sign + chPct.toFixed(2) + '%)';
+                        }
                     }
                 } catch (err) {}
             });
         }
     }
 
-    // ── NIFTY LTP/Change/EMA render helper (used by both poll + SSE) ─────
-    // change is the absolute pts move (ltp - prev close). When the SSE payload doesn't
-    // carry it (older messages or REST-poll path), fall back to deriving it from
-    // ltp + changePct so the field still updates. ema20 is optional — only updates the
-    // chip when present in the payload.
-    function applyNiftyLtpUpdate(ltp, changePct, change, ema20, atr) {
-        var lpEl = document.getElementById('niftyLtp');
-        if (lpEl) {
-            lpEl.textContent = ltp > 0 ? ltp.toFixed(2) : '—';
-            // Only update the title when atr is supplied (REST-poll path); SSE-tick path
-            // passes no atr, so we preserve the tooltip set by the previous REST poll
-            // rather than blanking it on every tick.
-            if (atr != null && isFinite(atr) && atr > 0) {
-                lpEl.title = 'NIFTY 50 live LTP\nATR (14, 5-min): ' + atr.toFixed(2);
-            }
-        }
-        if (changePct == null || !isFinite(changePct) || ltp <= 0) return;
-        if (change == null || !isFinite(change)) {
-            change = ltp * changePct / (100 + changePct);
-        }
-        var cgEl = document.getElementById('niftyChange');
-        var cpEl = document.getElementById('niftyChangePct');
-        var sign = changePct >= 0 ? '+' : '';
-        var color = changePct > 0 ? 'var(--accent-green)' : (changePct < 0 ? 'var(--accent-red)' : 'var(--text-secondary)');
-        if (cgEl) { cgEl.textContent = sign + change.toFixed(2); cgEl.style.color = color; }
-        if (cpEl) { cpEl.textContent = '(' + sign + changePct.toFixed(2) + '%)'; cpEl.style.color = color; }
-    }
-
-    // ── NIFTY card poller ───────────────────────────
-    function refreshNiftyCard() {
-        fetch('/api/index/nifty').then(function(r) { return r.json(); }).then(function(d) {
-            if (!d || !d.dataAvailable) {
-                var lp0 = document.getElementById('niftyLtp');      if (lp0) lp0.textContent = '—';
-                var cg0 = document.getElementById('niftyChange');   if (cg0) { cg0.textContent = '—'; cg0.style.color = 'var(--text-muted)'; }
-                var cp0 = document.getElementById('niftyChangePct');if (cp0) { cp0.textContent = '—'; cp0.style.color = 'var(--text-muted)'; }
-                var cw0 = document.getElementById('niftyCprWidth'); if (cw0) { cw0.textContent = '—'; cw0.style.color = 'var(--text-muted)'; }
-                var cb0 = document.getElementById('niftyCprBias'); if (cb0) { cb0.textContent = '—'; cb0.style.color = 'var(--text-muted)'; }
-                var hd0 = document.getElementById('niftyHurdle'); if (hd0) hd0.style.display = 'none';
-                document.getElementById('niftyState').textContent = 'WAITING';
-                document.getElementById('niftyMetrics').innerHTML = '';
-                document.getElementById('niftyCard').className = 'nifty-card nifty-card-neutral';
-                return;
-            }
-            // Apply card color class FIRST — done early so any later error in the
-            // metrics-rendering block (which is in a .catch swallow) doesn't strand the card
-            // on its previous className.
-            var rawState = (d.state || 'NEUTRAL');
-            var stateLowerEarly = rawState.toLowerCase();
-            document.getElementById('niftyCard').className = 'nifty-card nifty-card-' + stateLowerEarly;
-
-            document.getElementById('niftyState').textContent = (d.state || 'NEUTRAL').replace('_', ' ');
-
-            // NIFTY LTP + change + % change (live during session, bhavcopy prev close pre-market).
-            // ema20 is sent on every poll so the chip stays visible after market close even
-            // when the SSE tick stream goes silent. EMA20 is always-on as a NIFTY trend factor —
-            // no toggle to gate visibility.
-            applyNiftyLtpUpdate(
-                +d.ltp || 0,
-                typeof d.changePct === 'number' ? d.changePct : null,
-                null,
-                typeof d.ema20 === 'number' ? d.ema20 : null,
-                typeof d.atr === 'number' ? d.atr : null
-            );
-
-            // CPR width category — NARROW (below narrowCprMaxWidth) or WIDE (at/above).
-            var cwEl = document.getElementById('niftyCprWidth');
-            if (cwEl) {
-                var cat = d.cprWidthCategory;
+    // ── Key Index Strip (NIFTY 50 / NIFTY BANK / NIFTY IT / NIFTY PHARMA) ──
+    // Renders one mini-card per index showing LTP, change%, change pts, CPR width, and
+    // CPR-only TREND state. Card background tinted by state (BULLISH green, BEARISH red,
+    // INSIDE yellow, NEUTRAL muted).
+    function refreshKeyIndices() {
+        fetch('/api/index/key-indices').then(function(r) { return r.json(); }).then(function(arr) {
+            var strip = document.getElementById('keyIndexStrip');
+            if (!strip || !Array.isArray(arr)) return;
+            var html = '';
+            for (var i = 0; i < arr.length; i++) {
+                var d = arr[i];
+                var state = d.state || 'NEUTRAL';
+                var stateColor, stateBorder;
+                switch (state) {
+                    case 'BULLISH':
+                        stateColor = 'var(--accent-green)';
+                        stateBorder = 'rgba(52,211,153,0.55)'; break;
+                    case 'BEARISH':
+                        stateColor = 'var(--accent-red)';
+                        stateBorder = 'rgba(248,113,113,0.55)'; break;
+                    case 'INSIDE':
+                        stateColor = 'var(--accent-yellow)';
+                        stateBorder = 'rgba(251,191,36,0.55)'; break;
+                    default:
+                        stateColor = 'var(--text-muted)';
+                        stateBorder = 'var(--border)'; break;
+                }
+                var changePct = +d.changePct || 0;
+                var change    = +d.change || 0;
+                var changeSign = changePct >= 0 ? '+' : '';
+                var changeCls = changePct >= 0 ? 'up' : 'down';
+                var changeArrow = changePct >= 0 ? '▲' : '▼';
                 var w = +d.cprWidthPct || 0;
-                if (cat === 'NARROW') {
-                    cwEl.textContent = 'NARROW (' + w.toFixed(2) + '%)';
-                    cwEl.style.color = 'var(--accent-green)';
-                } else if (cat === 'WIDE') {
-                    cwEl.textContent = 'WIDE (' + w.toFixed(2) + '%)';
-                    cwEl.style.color = 'var(--accent-red)';
-                } else {
-                    cwEl.textContent = '—';
-                    cwEl.style.color = 'var(--text-muted)';
+                var widthCat = d.cprWidthCategory || '';
+                var widthColor = widthCat === 'NARROW' ? 'var(--accent-green)'
+                              : widthCat === 'WIDE'   ? 'var(--accent-red)'
+                                                       : 'var(--text-muted)';
+                var widthText = widthCat ? widthCat + ' (' + w.toFixed(2) + '%)' : '—';
+                var nameDisplay = formatIndexTickerScanner(d.ticker || '');
+                var chartBtn = '';
+                if (d.symbol) {
+                    var safeName = nameDisplay.replace(/'/g, "\\'");
+                    chartBtn = '<button class="chart-icon-btn" onclick="openChartModal(\'' + d.symbol + '\', \'' + safeName + '\')" title="View ' + nameDisplay + ' 5-min chart"'
+                        + ' style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:3px 6px;margin-left:auto;cursor:pointer;color:var(--text-secondary);line-height:0;display:inline-flex;align-items:center;">'
+                        + '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 6-6"/></svg>'
+                        + '</button>';
                 }
+                html += '<div class="scan-card key-index-card" data-symbol="' + (d.symbol || '') + '" style="border-color:' + stateBorder + ';">'
+                    // Header — index name + chart icon button (mirrors scan-card-header layout).
+                    +   '<div class="scan-card-header">'
+                    +     '<span class="scan-symbol">' + nameDisplay + '</span>'
+                    +     chartBtn
+                    +   '</div>'
+                    // Price row — LTP + change pts/% (mirrors scan-price-row).
+                    +   '<div class="scan-price-row">'
+                    +     '<span class="scan-ltp ki-ltp">' + (d.ltp > 0 ? d.ltp.toFixed(2) : '—') + '</span>'
+                    +     '<span class="scan-change ki-change ' + changeCls + '">' + changeArrow + ' ' + Math.abs(change).toFixed(2) + ' (' + changeSign + changePct.toFixed(2) + '%)</span>'
+                    +   '</div>'
+                    // Data row — CPR width + Trend (trend cell tooltip shows TC / BC).
+                    +   '<div class="scan-data-grid scan-data-grid-2" style="padding:6px 16px 12px;">'
+                    +     '<div class="scan-data-item" style="text-align:left;"><div class="scan-data-label">CPR WIDTH</div><div class="scan-data-value" style="color:' + widthColor + ';font-weight:600;">' + widthText + '</div></div>'
+                    +     '<div class="scan-data-item" style="text-align:right;" title="TC: ' + ((+d.tc) > 0 ? (+d.tc).toFixed(2) : '—') + ' | BC: ' + ((+d.bc) > 0 ? (+d.bc).toFixed(2) : '—') + '"><div class="scan-data-label">TREND</div><div class="scan-data-value" style="color:' + stateColor + ';font-weight:600;">' + state.replace('_', ' ') + '</div></div>'
+                    +   '</div>'
+                    + '</div>';
             }
-
-            // Factor 1: NIFTY index 5-min close vs daily CPR (sticky — refreshes only at NIFTY 5-min close).
-            var cbEl = document.getElementById('niftyCprBias');
-            if (cbEl) {
-                if (d.cprBullish === true) {
-                    cbEl.textContent = 'CPR - BULLISH';
-                    cbEl.style.color = 'var(--accent-green)';
-                } else if (d.cprBullish === false) {
-                    cbEl.textContent = 'CPR - BEARISH';
-                    cbEl.style.color = 'var(--accent-red)';
-                } else {
-                    cbEl.textContent = 'CPR - NEUTRAL';
-                    cbEl.style.color = 'var(--accent-yellow)';
-                }
-                var nClose = +d.niftyClose || 0;
-                cbEl.title = nClose > 0
-                    ? ('NIFTY 5-min close ' + nClose.toFixed(2) + ' vs daily CPR. Refreshes only on NIFTY 5-min candle close.')
-                    : 'NIFTY 5-min close vs daily CPR (no data yet).';
-            }
-            // Nearest hurdle chip — single chip showing the geographically nearest NIFTY hurdle
-            // in trade direction. Three states (colour-coded): WAITING (red, active blocker),
-            // AHEAD_BLOCKED (yellow, within headroom → blocks via headroom check), AHEAD_CLEAR
-            // (white, informational peek-ahead). Hidden when NIFTY is SIDEWAYS/NEUTRAL or no
-            // hurdle exists in trade direction across all three filters.
-            var hurdleEl = document.getElementById('niftyHurdle');
-            if (hurdleEl) {
-                var h = d.hurdle;
-                if (!h || !h.level) {
-                    hurdleEl.style.display = 'none';
-                } else {
-                    var color, tipState;
-                    if (h.state === 'WAITING') {
-                        color = 'var(--accent-red)';
-                        tipState = 'active — waiting for close past level (entries blocked)';
-                    } else if (h.state === 'AHEAD_BLOCKED') {
-                        color = 'var(--accent-red)';
-                        tipState = 'upcoming, inside headroom threshold (entries blocked)';
-                    } else { // AHEAD_CLEAR
-                        color = 'var(--text-primary)';
-                        tipState = 'upcoming, beyond headroom threshold (not blocking — peek-ahead)';
-                    }
-                    hurdleEl.style.color = color;
-                    hurdleEl.title = (h.category || '') + ' hurdle — ' + tipState;
-                    hurdleEl.textContent = 'Hurdle: ' + h.level;
-                    hurdleEl.style.display = 'inline-block';
-                }
-            }
-
-            // No extra metrics on the right side. Card now shows: CPR width → CPR chip → EMA20 chip → state.
-            document.getElementById('niftyMetrics').innerHTML = '';
-        }).catch(function(err) { console.warn('refreshNiftyCard failed:', err); });
+            strip.innerHTML = html;
+        }).catch(function(err) { console.warn('refreshKeyIndices failed:', err); });
     }
 
     // ── 5-min candle countdown (TradingView-style bar timer, anchored to NSE 9:15 IST) ─
@@ -1398,13 +1329,13 @@
     // ── Init ────────────────────────────────────────
     fetchData();
     checkStatus();
-    refreshNiftyCard();
+    refreshKeyIndices();
     refreshVirginCpr();
     refreshNetPnl();
     setTimeout(initWatchlistSse, 1000); // wait for ticker.js to establish SSE
     setInterval(fetchData, 15000); // full refresh every 15s (trends, signals, levels)
     setInterval(checkStatus, 5000);
-    setInterval(refreshNiftyCard, 5000);
+    setInterval(refreshKeyIndices, 5000);
     setInterval(refreshVirginCpr, 30000); // 30s — virgin CPR state changes only at 15:30 daily
     setInterval(refreshNetPnl, 5000); // Net P&L follows positions poll cadence
 
