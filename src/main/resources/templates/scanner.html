@@ -923,6 +923,31 @@
             })()
             + '</div>'
             + '<div style="border-top:1px solid var(--border);"></div>'
+            + '<div class="scan-data-grid scan-data-grid-3">'
+            + (function() {
+                // Open Range high — open-bar high of the first {orMinutes} after 9:15 IST.
+                var orH = +d.orHigh || 0;
+                return '  <div class="scan-data-item" style="text-align:left;"><div class="scan-data-label">OR HIGH</div><div class="scan-data-value" style="color:var(--text-secondary);">' + (orH > 0 ? orH.toFixed(2) : '--') + '</div></div>';
+            })()
+            + (function() {
+                var orL = +d.orLow || 0;
+                return '  <div class="scan-data-item" style="text-align:center;"><div class="scan-data-label">OR LOW</div><div class="scan-data-value" style="color:var(--text-secondary);">' + (orL > 0 ? orL.toFixed(2) : '--') + '</div></div>';
+            })()
+            + (function() {
+                // OR trend chip — FORMING (yellow) / BULLISH (green) / BEARISH (red) / INSIDE (yellow).
+                var t = d.orTrend || 'FORMING';
+                var color = 'var(--accent-yellow)';
+                if      (t === 'BULLISH') color = 'var(--accent-green)';
+                else if (t === 'BEARISH') color = 'var(--accent-red)';
+                var tip = "Open Range (" + (d.orMinutes || 15) + "m) — high/low of bars in the first window after 9:15 IST.\n"
+                    + "FORMING: OR window still in progress.\n"
+                    + "BULLISH: last 5-min close above OR high.\n"
+                    + "BEARISH: last 5-min close below OR low.\n"
+                    + "INSIDE: last close between OR low and OR high.";
+                return '  <div class="scan-data-item" style="text-align:right;cursor:help;" title="' + tip.replace(/"/g, '&quot;') + '"><div class="scan-data-label">OR TREND</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + t + '</div></div>';
+            })()
+            + '</div>'
+            + '<div style="border-top:1px solid var(--border);"></div>'
             + '<div class="scan-levels' + (isExpanded(d.symbol, 'cpr') ? ' expanded' : '') + '">'
             + '  <div class="scan-levels-title" onclick="toggleLevelSection(this, \'' + d.symbol + '\', \'cpr\')">'
             + '    <span>CPR Levels</span>'
@@ -1203,10 +1228,29 @@
                     +     '<span class="scan-ltp ki-ltp" style="cursor:help;" title="ATR: ' + ((+d.atr) > 0 ? (+d.atr).toFixed(2) : '—') + '">' + (d.ltp > 0 ? d.ltp.toFixed(2) : '—') + '</span>'
                     +     '<span class="scan-change ki-change ' + changeCls + '">' + changeArrow + ' ' + Math.abs(change).toFixed(2) + ' (' + changeSign + changePct.toFixed(2) + '%)</span>'
                     +   '</div>'
-                    // Data row — CPR width + Trend (trend cell tooltip shows TC / BC).
-                    +   '<div class="scan-data-grid scan-data-grid-2" style="padding:6px 16px 12px;">'
+                    // Data row — CPR width + CPR Trend + OR Trend.
+                    +   '<div class="scan-data-grid scan-data-grid-3" style="padding:6px 16px 12px;">'
                     +     '<div class="scan-data-item" style="text-align:left;cursor:help;" title="' + widthChipTip.replace(/"/g, '&quot;') + '"><div class="scan-data-label">CPR WIDTH</div><div class="scan-data-value" style="color:' + widthColor + ';font-weight:600;">' + widthText + '</div></div>'
-                    +     '<div class="scan-data-item" style="text-align:right;" title="TC: ' + ((+d.tc) > 0 ? (+d.tc).toFixed(2) : '—') + ' | BC: ' + ((+d.bc) > 0 ? (+d.bc).toFixed(2) : '—') + '"><div class="scan-data-label">TREND</div><div class="scan-data-value" style="color:' + stateColor + ';font-weight:600;">' + state.replace('_', ' ') + '</div></div>'
+                    +     '<div class="scan-data-item" style="text-align:center;" title="TC: ' + ((+d.tc) > 0 ? (+d.tc).toFixed(2) : '—') + ' | BC: ' + ((+d.bc) > 0 ? (+d.bc).toFixed(2) : '—') + '"><div class="scan-data-label">CPR TREND</div><div class="scan-data-value" style="color:' + stateColor + ';font-weight:600;">' + state.replace('_', ' ') + '</div></div>'
+                    +     (function() {
+                            // Open Range trend chip — FORMING (yellow) / BULLISH (green) /
+                            // BEARISH (red) / INSIDE (yellow). Mirrors the stock card's OR
+                            // Trend; identical semantics for the index.
+                            var ot = d.orTrend || 'FORMING';
+                            var oColor = 'var(--accent-yellow)';
+                            if      (ot === 'BULLISH') oColor = 'var(--accent-green)';
+                            else if (ot === 'BEARISH') oColor = 'var(--accent-red)';
+                            var oH = +d.orHigh || 0;
+                            var oL = +d.orLow  || 0;
+                            var oTip = 'Open Range (' + (d.orMinutes || 15) + 'm) — index high/low of the first window after 9:15 IST.\n'
+                                + 'OR HIGH: ' + (oH > 0 ? oH.toFixed(2) : '—') + '\n'
+                                + 'OR LOW: '  + (oL > 0 ? oL.toFixed(2) : '—') + '\n'
+                                + 'FORMING: OR window still in progress.\n'
+                                + 'BULLISH: latest close above OR high.\n'
+                                + 'BEARISH: latest close below OR low.\n'
+                                + 'INSIDE: latest close inside the OR.';
+                            return '<div class="scan-data-item" style="text-align:right;cursor:help;" title="' + oTip.replace(/"/g, '&quot;') + '"><div class="scan-data-label">OR TREND</div><div class="scan-data-value" style="color:' + oColor + ';font-weight:600;">' + ot + '</div></div>';
+                        })()
                     +   '</div>'
                     + '</div>';
             }

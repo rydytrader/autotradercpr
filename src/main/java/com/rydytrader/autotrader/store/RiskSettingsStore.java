@@ -131,6 +131,15 @@ public class RiskSettingsStore {
         // Opt-in. Threshold = 0 disables the check inline even when the toggle is on.
         volatile boolean enableDailyAtrExhaustionFilter = false;
         volatile double  dailyAtrExhaustionMult         = 0.85;
+        // Open Range filter (strict ORB) — during the first {@code openRangeMinutes} after
+        // market open the OR is "forming" and all signals are rejected. Post-formation,
+        // buys require close > OR high and sells require close < OR low.
+        volatile boolean enableOpenRangeFilter = false;
+        volatile int     openRangeMinutes      = 15;
+        // Primary-Index Open Range filter — same ORB rules applied to the stock's primary
+        // index (NIFTY 50 OR the mapped sector index). Shares {@link #openRangeMinutes}
+        // so both stock-side and index-side ORs use the same window.
+        volatile boolean enableIndexOpenRangeFilter = false;
         // Index HTF Hurdle filter. When on, every stock signal is gated against its primary
         // index's 1-hour close vs that index's nearest weekly hurdle in trade direction. Default
         // off — opt-in. Replaces the old NIFTY-only macro filter; now runs per primary index.
@@ -311,6 +320,9 @@ public class RiskSettingsStore {
     public double  getHtfHurdleMinHeadroomAtr() { return cfg().htfHurdleMinHeadroomAtr; }
     public boolean isEnableDailyAtrExhaustionFilter() { return cfg().enableDailyAtrExhaustionFilter; }
     public double  getDailyAtrExhaustionMult()        { return cfg().dailyAtrExhaustionMult; }
+    public boolean isEnableOpenRangeFilter() { return cfg().enableOpenRangeFilter; }
+    public int     getOpenRangeMinutes()     { return cfg().openRangeMinutes; }
+    public boolean isEnableIndexOpenRangeFilter() { return cfg().enableIndexOpenRangeFilter; }
     public boolean isEnableIndexHtfHurdleFilter() { return cfg().enableIndexHtfHurdleFilter; }
     public double  getIndexHtfHurdleMinHeadroomAtr() { return cfg().indexHtfHurdleMinHeadroomAtr; }
     public boolean isEnableIndex5mHurdleFilter()  { return cfg().enableIndex5mHurdleFilter; }
@@ -427,6 +439,9 @@ public class RiskSettingsStore {
     public void setHtfHurdleMinHeadroomAtr(double v)   { cfg().htfHurdleMinHeadroomAtr = Math.max(0, v); }
     public void setEnableDailyAtrExhaustionFilter(boolean v) { cfg().enableDailyAtrExhaustionFilter = v; }
     public void setDailyAtrExhaustionMult(double v)          { cfg().dailyAtrExhaustionMult = Math.max(0, v); }
+    public void setEnableOpenRangeFilter(boolean v) { cfg().enableOpenRangeFilter = v; }
+    public void setOpenRangeMinutes(int v)          { cfg().openRangeMinutes = Math.max(5, Math.min(240, v)); }
+    public void setEnableIndexOpenRangeFilter(boolean v) { cfg().enableIndexOpenRangeFilter = v; }
     public void setEnableIndexHtfHurdleFilter(boolean v) { cfg().enableIndexHtfHurdleFilter = v; }
     public void setIndexHtfHurdleMinHeadroomAtr(double v) { cfg().indexHtfHurdleMinHeadroomAtr = Math.max(0, v); }
     public void setEnableIndex5mHurdleFilter(boolean v)  { cfg().enableIndex5mHurdleFilter = v; }
@@ -561,6 +576,9 @@ public class RiskSettingsStore {
             upsert("htfHurdleMinHeadroomAtr", String.valueOf(c.htfHurdleMinHeadroomAtr));
             upsert("enableDailyAtrExhaustionFilter", String.valueOf(c.enableDailyAtrExhaustionFilter));
             upsert("dailyAtrExhaustionMult",         String.valueOf(c.dailyAtrExhaustionMult));
+            upsert("enableOpenRangeFilter", String.valueOf(c.enableOpenRangeFilter));
+            upsert("openRangeMinutes",      String.valueOf(c.openRangeMinutes));
+            upsert("enableIndexOpenRangeFilter", String.valueOf(c.enableIndexOpenRangeFilter));
             upsert("enableIndexHtfHurdleFilter", String.valueOf(c.enableIndexHtfHurdleFilter));
             upsert("indexHtfHurdleMinHeadroomAtr", String.valueOf(c.indexHtfHurdleMinHeadroomAtr));
             upsert("enableIndex5mHurdleFilter", String.valueOf(c.enableIndex5mHurdleFilter));
@@ -684,6 +702,9 @@ public class RiskSettingsStore {
                     case "htfHurdleMinHeadroomAtr" -> c.htfHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
                     case "enableDailyAtrExhaustionFilter" -> c.enableDailyAtrExhaustionFilter = Boolean.parseBoolean(v);
                     case "dailyAtrExhaustionMult"        -> c.dailyAtrExhaustionMult         = Math.max(0, Double.parseDouble(v));
+                    case "enableOpenRangeFilter" -> c.enableOpenRangeFilter = Boolean.parseBoolean(v);
+                    case "openRangeMinutes"      -> c.openRangeMinutes      = Math.max(5, Math.min(240, Integer.parseInt(v)));
+                    case "enableIndexOpenRangeFilter" -> c.enableIndexOpenRangeFilter = Boolean.parseBoolean(v);
                     case "enableIndexHtfHurdleFilter" -> c.enableIndexHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "indexHtfHurdleMinHeadroomAtr" -> c.indexHtfHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
                     case "enableIndex5mHurdleFilter" -> c.enableIndex5mHurdleFilter = Boolean.parseBoolean(v);

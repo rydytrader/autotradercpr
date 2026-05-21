@@ -12,7 +12,8 @@ var chartPrefs = (function() {
     var defaults = {
         cprBand: true, r1pdhBand: true, s1pdlBand: true,
         cprLines: true, rLines: true, sLines: true, pdhPdl: true, pivot: true,
-        ema20: true, trades: true
+        ema20: true, trades: true,
+        openRange: true
     };
     try {
         var stored = JSON.parse(localStorage.getItem('chartPrefs') || '{}');
@@ -65,7 +66,8 @@ function renderChartSettings() {
         { label: 'Resistance / Support', items: [
             { key: 'rLines', label: 'R1 / R2 / R3 / R4', color: '#26a69a' },
             { key: 'sLines', label: 'S1 / S2 / S3 / S4', color: '#ef5350' },
-            { key: 'pdhPdl', label: 'PDH / PDL', color: '#ffa726' }
+            { key: 'pdhPdl', label: 'PDH / PDL', color: '#ffa726' },
+            { key: 'openRange', label: 'Open Range (OR-H / OR-L)', color: '#f5d76e' }
         ]},
         { label: 'Indicators', items: [
             { key: 'ema20', label: 'EMA 20', color: '#66bb6a' }
@@ -539,6 +541,14 @@ function applyChartLines(d) {
     if (chartPrefs.pdhPdl) {
         addLine(cpr.pdh, '#ffa726', 'PDH');
         addLine(cpr.pdl, '#ffa726', 'PDL');
+    }
+    if (chartPrefs.openRange) {
+        // Open Range high/low — present only on the live trading day (server returns 0
+        // otherwise; addLine no-ops on 0). Use a distinct yellow so the lines don't blend
+        // with R/S (green/red) or PDH/PDL (orange).
+        var orMins = cpr.orMinutes || 15;
+        addLine(cpr.orHigh, '#f5d76e', 'OR-H (' + orMins + 'm)');
+        addLine(cpr.orLow,  '#f5d76e', 'OR-L (' + orMins + 'm)');
     }
 
 }

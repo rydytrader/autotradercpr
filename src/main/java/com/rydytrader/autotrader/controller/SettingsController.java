@@ -59,6 +59,9 @@ public class SettingsController {
         result.put("htfHurdleMinHeadroomAtr", riskSettings.getHtfHurdleMinHeadroomAtr());
         result.put("enableDailyAtrExhaustionFilter", riskSettings.isEnableDailyAtrExhaustionFilter());
         result.put("dailyAtrExhaustionMult",         riskSettings.getDailyAtrExhaustionMult());
+        result.put("enableOpenRangeFilter", riskSettings.isEnableOpenRangeFilter());
+        result.put("openRangeMinutes",      riskSettings.getOpenRangeMinutes());
+        result.put("enableIndexOpenRangeFilter", riskSettings.isEnableIndexOpenRangeFilter());
         result.put("enableIndexHtfHurdleFilter", riskSettings.isEnableIndexHtfHurdleFilter());
         result.put("indexHtfHurdleMinHeadroomAtr", riskSettings.getIndexHtfHurdleMinHeadroomAtr());
         result.put("enableIndex5mHurdleFilter", riskSettings.isEnableIndex5mHurdleFilter());
@@ -164,6 +167,9 @@ public class SettingsController {
             if (body.containsKey("htfHurdleMinHeadroomAtr")) riskSettings.setHtfHurdleMinHeadroomAtr(Double.parseDouble(body.get("htfHurdleMinHeadroomAtr").toString()));
             if (body.containsKey("enableDailyAtrExhaustionFilter")) riskSettings.setEnableDailyAtrExhaustionFilter(Boolean.parseBoolean(body.get("enableDailyAtrExhaustionFilter").toString()));
             if (body.containsKey("dailyAtrExhaustionMult"))         riskSettings.setDailyAtrExhaustionMult(Double.parseDouble(body.get("dailyAtrExhaustionMult").toString()));
+            if (body.containsKey("enableOpenRangeFilter")) riskSettings.setEnableOpenRangeFilter(Boolean.parseBoolean(body.get("enableOpenRangeFilter").toString()));
+            if (body.containsKey("openRangeMinutes"))      riskSettings.setOpenRangeMinutes(Integer.parseInt(body.get("openRangeMinutes").toString()));
+            if (body.containsKey("enableIndexOpenRangeFilter")) riskSettings.setEnableIndexOpenRangeFilter(Boolean.parseBoolean(body.get("enableIndexOpenRangeFilter").toString()));
             if (body.containsKey("enableIndexHtfHurdleFilter")) riskSettings.setEnableIndexHtfHurdleFilter(Boolean.parseBoolean(body.get("enableIndexHtfHurdleFilter").toString()));
             if (body.containsKey("indexHtfHurdleMinHeadroomAtr")) riskSettings.setIndexHtfHurdleMinHeadroomAtr(Double.parseDouble(body.get("indexHtfHurdleMinHeadroomAtr").toString()));
             if (body.containsKey("enableIndex5mHurdleFilter")) riskSettings.setEnableIndex5mHurdleFilter(Boolean.parseBoolean(body.get("enableIndex5mHurdleFilter").toString()));

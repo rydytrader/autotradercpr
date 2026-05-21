@@ -425,6 +425,28 @@ public class ScannerController {
         }
         card.put("todayTr",  Math.round(todayTr * 100.0) / 100.0);
         card.put("dailyAtr", Math.round(bhavcopyService.getDailyAtr(levels.getSymbol()) * 100.0) / 100.0);
+        // Open Range — high/low of bars in the first {@code openRangeMinutes} after 9:15 IST.
+        // Card surfaces these even when the filter toggle is off (informational chip).
+        int orMins = riskSettings.getOpenRangeMinutes();
+        double orHigh = candleAggregator.getOpenRangeHigh(fyersSymbol, orMins);
+        double orLow  = candleAggregator.getOpenRangeLow(fyersSymbol, orMins);
+        long orEndMinute = MarketHolidayService.MARKET_OPEN_MINUTE + orMins;
+        CandleAggregator.CandleBar orRefBar = candleAggregator.getLastCompletedCandle(fyersSymbol);
+        // OR is finalized once a bar has CLOSED at or past orEndMinute (the last OR bar
+        // closes exactly at orEndMinute). Use the latest bar's close minute, not its start.
+        long latestCloseMinute = orRefBar != null
+            ? orRefBar.startMinute + riskSettings.getScannerTimeframe()
+            : 0;
+        double orRefClose = orRefBar != null ? orRefBar.close : 0;
+        String orTrend;
+        if (orHigh <= 0 || orLow <= 0 || latestCloseMinute < orEndMinute) orTrend = "FORMING";
+        else if (orRefClose > orHigh)                                     orTrend = "BULLISH";
+        else if (orRefClose < orLow)                                      orTrend = "BEARISH";
+        else                                                               orTrend = "INSIDE";
+        card.put("orHigh", r(orHigh));
+        card.put("orLow",  r(orLow));
+        card.put("orTrend", orTrend);
+        card.put("orMinutes", orMins);
         // EMAs rounded to 2 decimals only — TV does not snap EMA values to tick size, so
         // tick-rounding here would cause a small visible mismatch on stocks with non-0.01 ticks.
         card.put("ema20",  Math.round(emaService.getEma(fyersSymbol)    * 100.0) / 100.0);
@@ -996,6 +1018,15 @@ public class ScannerController {
             cpr.put("s4", r(lv.getS4()));
             cpr.put("pdh", r(lv.getPh()));
             cpr.put("pdl", r(lv.getPl()));
+            // Opening Range high/low — first {openRangeMinutes} of today's session. Only
+            // meaningful on the live trading day; on historical / weekend views the helpers
+            // return 0 (no completed bars today). The chart layer hides 0-value lines.
+            if (tradingDay) {
+                int orMins = riskSettings.getOpenRangeMinutes();
+                cpr.put("orHigh", r(candleAggregator.getOpenRangeHigh(symbol, orMins)));
+                cpr.put("orLow",  r(candleAggregator.getOpenRangeLow(symbol, orMins)));
+                cpr.put("orMinutes", orMins);
+            }
             result.put("cpr", cpr);
         }
 

@@ -5,6 +5,7 @@ import com.rydytrader.autotrader.dto.IndexTrend;
 import com.rydytrader.autotrader.service.AtrService;
 import com.rydytrader.autotrader.service.BhavcopyService;
 import com.rydytrader.autotrader.service.BreakoutScanner;
+import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.service.IndexTrendService;
 import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.MarketHolidayService;
@@ -38,6 +39,7 @@ public class IndexTrendController {
     private final BhavcopyService   bhavcopyService;
     private final MarketDataService marketDataService;
     private final RiskSettingsStore riskSettings;
+    private final CandleAggregator  candleAggregator;
     @org.springframework.beans.factory.annotation.Autowired
     private MarketHolidayService marketHolidayService;
 
@@ -46,13 +48,15 @@ public class IndexTrendController {
                                  AtrService atrService,
                                  BhavcopyService bhavcopyService,
                                  MarketDataService marketDataService,
-                                 RiskSettingsStore riskSettings) {
+                                 RiskSettingsStore riskSettings,
+                                 CandleAggregator candleAggregator) {
         this.indexTrendService = indexTrendService;
         this.breakoutScanner   = breakoutScanner;
         this.atrService        = atrService;
         this.bhavcopyService   = bhavcopyService;
         this.marketDataService = marketDataService;
         this.riskSettings      = riskSettings;
+        this.candleAggregator  = candleAggregator;
     }
 
     @GetMapping("/nifty")
@@ -144,6 +148,27 @@ public class IndexTrendController {
             m.put("tc",               Math.round(idx.getTc() * 100.0) / 100.0);
             m.put("bc",               Math.round(idx.getBc() * 100.0) / 100.0);
             m.put("state",            state);
+            // Open Range — high/low of the index's bars in the first {openRangeMinutes}
+            // after 9:15 IST. Used by the Primary-Index Open Range Filter; also rendered
+            // as the index mini-card's OR Trend chip. Only meaningful on the live trading
+            // day (helpers return 0 otherwise).
+            int orMins = riskSettings.getOpenRangeMinutes();
+            double orHigh = tradingDay ? candleAggregator.getOpenRangeHigh(fyersSym, orMins) : 0;
+            double orLow  = tradingDay ? candleAggregator.getOpenRangeLow(fyersSym, orMins)  : 0;
+            long orEndMinute = MarketHolidayService.MARKET_OPEN_MINUTE + orMins;
+            CandleAggregator.CandleBar orRefBar = candleAggregator.getLastCompletedCandle(fyersSym);
+            long latestCloseMinute = orRefBar != null
+                ? orRefBar.startMinute + riskSettings.getScannerTimeframe() : 0;
+            double orRefClose = orRefBar != null ? orRefBar.close : 0;
+            String orTrend;
+            if (orHigh <= 0 || orLow <= 0 || latestCloseMinute < orEndMinute) orTrend = "FORMING";
+            else if (orRefClose > orHigh)                                     orTrend = "BULLISH";
+            else if (orRefClose < orLow)                                      orTrend = "BEARISH";
+            else                                                               orTrend = "INSIDE";
+            m.put("orHigh", Math.round(orHigh * 100.0) / 100.0);
+            m.put("orLow",  Math.round(orLow  * 100.0) / 100.0);
+            m.put("orTrend", orTrend);
+            m.put("orMinutes", orMins);
             out.add(m);
         }
         return out;

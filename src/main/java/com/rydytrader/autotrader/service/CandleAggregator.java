@@ -506,6 +506,36 @@ public class CandleAggregator {
         return min == Double.MAX_VALUE ? 0 : min;
     }
 
+    /** Highest high across today's bars whose start minute falls inside the OR window
+     *  [MARKET_OPEN_MINUTE, MARKET_OPEN_MINUTE + windowMinutes). Returns 0 when no bars
+     *  in window. Used by the Open Range Filter and the scanner card OR row. */
+    public double getOpenRangeHigh(String symbol, int windowMinutes) {
+        java.util.Deque<CandleBar> hist = completedCandles.get(symbol);
+        if (hist == null || hist.isEmpty() || windowMinutes <= 0) return 0;
+        long start = MarketHolidayService.MARKET_OPEN_MINUTE;
+        long end   = start + windowMinutes;
+        double max = 0;
+        for (CandleBar b : hist) {
+            if (b.startMinute < start || b.startMinute >= end) continue;
+            if (b.high > max) max = b.high;
+        }
+        return max;
+    }
+
+    /** Mirror of {@link #getOpenRangeHigh(String, int)}. */
+    public double getOpenRangeLow(String symbol, int windowMinutes) {
+        java.util.Deque<CandleBar> hist = completedCandles.get(symbol);
+        if (hist == null || hist.isEmpty() || windowMinutes <= 0) return 0;
+        long start = MarketHolidayService.MARKET_OPEN_MINUTE;
+        long end   = start + windowMinutes;
+        double min = Double.MAX_VALUE;
+        for (CandleBar b : hist) {
+            if (b.startMinute < start || b.startMinute >= end) continue;
+            if (b.low > 0 && b.low < min) min = b.low;
+        }
+        return min == Double.MAX_VALUE ? 0 : min;
+    }
+
     /** Day high excluding the most recent completed candle (for target shift after a breakout). */
     public double getDayHighBeforeLast(String symbol) {
         java.util.Deque<CandleBar> candles = completedCandles.get(symbol);

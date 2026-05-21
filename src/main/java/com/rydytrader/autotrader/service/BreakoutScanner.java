@@ -549,6 +549,64 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                         }
                     }
                 }
+                // Open Range Filter — strict ORB. The OR window is [9:15, 9:15+orMins).
+                // The bar that *closes* at orEndMinute is the LAST bar of the OR — when the
+                // scanner fires on its close, the OR is FINALIZED (mirror of how the 5-min
+                // EMA is stepped before BreakoutScanner sees it). So "still forming" means
+                // the bar's CLOSE minute is strictly before orEndMinute.
+                if (riskSettings.isEnableOpenRangeFilter()) {
+                    int orMins = riskSettings.getOpenRangeMinutes();
+                    long orEndMinute = MarketHolidayService.MARKET_OPEN_MINUTE + orMins;
+                    long closeMinute = candle.startMinute + riskSettings.getScannerTimeframe();
+                    if (closeMinute < orEndMinute) {
+                        String detail = "OR not yet formed (first " + orMins + " minutes)";
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + detail);
+                        recordRejection(fyersSymbol, buySetup, close, "OPEN_RANGE_FORMING", detail);
+                        return;
+                    }
+                    double orHigh = candleAggregator.getOpenRangeHigh(fyersSymbol, orMins);
+                    double orLow  = candleAggregator.getOpenRangeLow(fyersSymbol, orMins);
+                    if (orHigh > 0 && orLow > 0 && close <= orHigh) {
+                        String detail = close < orLow
+                            ? String.format("close %.2f below OR low %.2f — buy direction opposed", close, orLow)
+                            : String.format("close %.2f inside OR [%.2f, %.2f]", close, orLow, orHigh);
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + detail);
+                        recordRejection(fyersSymbol, buySetup, close, "OPEN_RANGE", detail);
+                        return;
+                    }
+                }
+                // Primary-Index Open Range Filter — same ORB rules applied to the stock's
+                // primary index (NIFTY 50 OR the mapped sector index). Uses the index's own
+                // OR + its latest 5-min close — if the index is inside / below its OR, no
+                // buys on stocks mapped to that index.
+                if (riskSettings.isEnableIndexOpenRangeFilter()) {
+                    int orMins = riskSettings.getOpenRangeMinutes();
+                    long orEndMinute = MarketHolidayService.MARKET_OPEN_MINUTE + orMins;
+                    long closeMinute = candle.startMinute + riskSettings.getScannerTimeframe();
+                    String stockTicker = extractTicker(fyersSymbol);
+                    String primaryIndex = bhavcopyService.getPrimaryIndexTicker(stockTicker);
+                    if (primaryIndex != null && !primaryIndex.isEmpty()) {
+                        String indexSym = "NSE:" + primaryIndex + "-INDEX";
+                        if (closeMinute < orEndMinute) {
+                            String detail = "index " + primaryIndex + " OR not yet formed (first " + orMins + " minutes)";
+                            eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + detail);
+                            recordRejection(fyersSymbol, buySetup, close, "INDEX_OPEN_RANGE_FORMING", detail);
+                            return;
+                        }
+                        double idxOrHigh = candleAggregator.getOpenRangeHigh(indexSym, orMins);
+                        double idxOrLow  = candleAggregator.getOpenRangeLow(indexSym, orMins);
+                        CandleAggregator.CandleBar idxBar = candleAggregator.getLastCompletedCandle(indexSym);
+                        double idxClose = idxBar != null ? idxBar.close : 0;
+                        if (idxOrHigh > 0 && idxOrLow > 0 && idxClose > 0 && idxClose <= idxOrHigh) {
+                            String detail = idxClose < idxOrLow
+                                ? String.format("index %s close %.2f below OR low %.2f — buy direction opposed", primaryIndex, idxClose, idxOrLow)
+                                : String.format("index %s close %.2f inside OR [%.2f, %.2f]", primaryIndex, idxClose, idxOrLow, idxOrHigh);
+                            eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + detail);
+                            recordRejection(fyersSymbol, buySetup, close, "INDEX_OPEN_RANGE", detail);
+                            return;
+                        }
+                    }
+                }
                 // EMA level-count filter: skip if any CPR zone sits between EMA and broken level
                 if (evaluateEmaFilter(fyersSymbol, buySetup, close, levels, atr) == 2) return;
                 // NIFTY index alignment filter — misaligned trades are hard-rejected. The
@@ -672,6 +730,59 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                                 recordRejection(fyersSymbol, sellSetup, close, "DAILY_ATR_EXHAUSTED", detail);
                                 return;
                             }
+                        }
+                    }
+                }
+                // Open Range Filter — strict ORB mirror of the buy gate. OR is forming until
+                // the bar's CLOSE minute reaches orEndMinute (the last OR bar closes exactly
+                // at orEndMinute and finalizes the OR).
+                if (riskSettings.isEnableOpenRangeFilter()) {
+                    int orMins = riskSettings.getOpenRangeMinutes();
+                    long orEndMinute = MarketHolidayService.MARKET_OPEN_MINUTE + orMins;
+                    long closeMinute = candle.startMinute + riskSettings.getScannerTimeframe();
+                    if (closeMinute < orEndMinute) {
+                        String detail = "OR not yet formed (first " + orMins + " minutes)";
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + detail);
+                        recordRejection(fyersSymbol, sellSetup, close, "OPEN_RANGE_FORMING", detail);
+                        return;
+                    }
+                    double orHigh = candleAggregator.getOpenRangeHigh(fyersSymbol, orMins);
+                    double orLow  = candleAggregator.getOpenRangeLow(fyersSymbol, orMins);
+                    if (orHigh > 0 && orLow > 0 && close >= orLow) {
+                        String detail = close > orHigh
+                            ? String.format("close %.2f above OR high %.2f — sell direction opposed", close, orHigh)
+                            : String.format("close %.2f inside OR [%.2f, %.2f]", close, orLow, orHigh);
+                        eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + detail);
+                        recordRejection(fyersSymbol, sellSetup, close, "OPEN_RANGE", detail);
+                        return;
+                    }
+                }
+                // Primary-Index Open Range Filter — sell mirror.
+                if (riskSettings.isEnableIndexOpenRangeFilter()) {
+                    int orMins = riskSettings.getOpenRangeMinutes();
+                    long orEndMinute = MarketHolidayService.MARKET_OPEN_MINUTE + orMins;
+                    long closeMinute = candle.startMinute + riskSettings.getScannerTimeframe();
+                    String stockTicker = extractTicker(fyersSymbol);
+                    String primaryIndex = bhavcopyService.getPrimaryIndexTicker(stockTicker);
+                    if (primaryIndex != null && !primaryIndex.isEmpty()) {
+                        String indexSym = "NSE:" + primaryIndex + "-INDEX";
+                        if (closeMinute < orEndMinute) {
+                            String detail = "index " + primaryIndex + " OR not yet formed (first " + orMins + " minutes)";
+                            eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + detail);
+                            recordRejection(fyersSymbol, sellSetup, close, "INDEX_OPEN_RANGE_FORMING", detail);
+                            return;
+                        }
+                        double idxOrHigh = candleAggregator.getOpenRangeHigh(indexSym, orMins);
+                        double idxOrLow  = candleAggregator.getOpenRangeLow(indexSym, orMins);
+                        CandleAggregator.CandleBar idxBar = candleAggregator.getLastCompletedCandle(indexSym);
+                        double idxClose = idxBar != null ? idxBar.close : 0;
+                        if (idxOrHigh > 0 && idxOrLow > 0 && idxClose > 0 && idxClose >= idxOrLow) {
+                            String detail = idxClose > idxOrHigh
+                                ? String.format("index %s close %.2f above OR high %.2f — sell direction opposed", primaryIndex, idxClose, idxOrHigh)
+                                : String.format("index %s close %.2f inside OR [%.2f, %.2f]", primaryIndex, idxClose, idxOrLow, idxOrHigh);
+                            eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + detail);
+                            recordRejection(fyersSymbol, sellSetup, close, "INDEX_OPEN_RANGE", detail);
+                            return;
                         }
                     }
                 }

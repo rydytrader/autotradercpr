@@ -390,6 +390,24 @@
                     </div>
                 </div>
                 <div class="form-group">
+                    <label class="form-label">Open Range Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableOpenRangeFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Strict ORB &mdash; buys allowed only above the first-X-minutes range high; sells only below the range low</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Open Range window:</span>
+                        <input type="number" id="openRangeMinutes" class="form-control" step="5" min="5" max="120" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">minutes from market open (default 15)</span>
+                    </div>
+                    <div class="form-hint">
+                        Computes today's Opening Range = high/low of bars in the first <code>X</code> minutes after 9:15 IST.
+                        <br>&bull; <b>During formation</b> (current bar startMinute &lt; 9:15 + X): all signals rejected &mdash; <code>OPEN_RANGE_FORMING</code>.
+                        <br>&bull; <b>After formation</b>: buys require <b>close &gt; OR high</b>; sells require <b>close &lt; OR low</b>. Inside or wrong-side closes rejected &mdash; <code>OPEN_RANGE</code>.
+                        <br>The scanner card shows <b>OR HIGH / OR LOW / OR TREND</b> (FORMING / BULLISH / BEARISH / INSIDE) for live visibility &mdash; the row appears regardless of this toggle; only trade blocking is gated by the toggle.
+                    </div>
+                </div>
+                <div class="form-group">
                     <label class="form-label">Extended Level Signals (R3/S3, R4/S4)</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="skipR3S3" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
@@ -652,6 +670,21 @@
                     </div>
                     <div class="form-hint">5-min variant of the Index HTF Hurdle, against the primary index's daily levels treated as <b>zones</b>: <b>CPR</b> [min(TC,BC), max(TC,BC)], <b>R1+PDH</b> and <b>S1+PDL</b> plus R2/R3/R4 and S2/S3/S4 as single-line zones. Picks the <b>behind</b> zone in trade direction and rejects if the index's same-bucket 5-min close is inside that zone or short of its far edge — <b>clearing only the near edge isn't enough; the close must clear the far edge</b>. Fail-open if the index's same-bucket bar isn't yet completed.
                         <br><br><b>Headroom check.</b> Even after the behind zone is fully cleared, the filter rejects if the next zone ahead is closer than <code>min headroom &times; index ATR</code>. Default <b>1.0</b> &times; ATR. Set to 0 to disable just the headroom check. Signal Trail bucket: <code>INDEX_5M_HURDLE</code>.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Primary-Index Open Range Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableIndexOpenRangeFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Strict ORB on the primary index &mdash; buys allowed only when the index closes above its OR high; sells only below the OR low</span>
+                    </div>
+                    <div class="form-hint">
+                        Applies the same Opening Range Breakout rule as the stock-side filter, but to each stock's <b>primary index</b> (NIFTY 50 OR the mapped sector index).
+                        Uses the index's own first-X-minutes high/low (X comes from the <b>Open Range Filter</b> setting on the Filters tab &mdash; shared window).
+                        <br>&bull; <b>During index OR formation</b>: every signal on stocks mapped to that index is rejected (<code>INDEX_OPEN_RANGE_FORMING</code>).
+                        <br>&bull; <b>After formation</b>: buys allowed only when the index's latest close is above the index OR high; sells only below the index OR low.
+                        Inside / wrong-side closes are rejected (<code>INDEX_OPEN_RANGE</code>).
+                        <br>The OR Trend chip on each index mini-card (top of scanner page) shows the current state (FORMING / BULLISH / BEARISH / INSIDE).
+                    </div>
                 </div>
             </div>
         </div>
@@ -1330,6 +1363,9 @@
             document.getElementById('htfHurdleMinHeadroomAtr').value = (d.htfHurdleMinHeadroomAtr != null ? d.htfHurdleMinHeadroomAtr : 1.0);
             document.getElementById('enableDailyAtrExhaustionFilter').checked = d.enableDailyAtrExhaustionFilter === true;
             document.getElementById('dailyAtrExhaustionMult').value = (d.dailyAtrExhaustionMult != null ? d.dailyAtrExhaustionMult : 0.85);
+            document.getElementById('enableOpenRangeFilter').checked = d.enableOpenRangeFilter === true;
+            document.getElementById('openRangeMinutes').value = (d.openRangeMinutes != null ? d.openRangeMinutes : 15);
+            document.getElementById('enableIndexOpenRangeFilter').checked = d.enableIndexOpenRangeFilter === true;
             document.getElementById('enableStructuralSl').checked = d.enableStructuralSl === true;
             document.getElementById('structuralSlBufferAtr').value = d.structuralSlBufferAtr != null ? d.structuralSlBufferAtr : 1.0;
             document.getElementById('singleLevelSlBufferAtr').value = d.singleLevelSlBufferAtr != null ? d.singleLevelSlBufferAtr : 0.5;
@@ -1486,6 +1522,9 @@
                 htfHurdleMinHeadroomAtr: parseFloat(document.getElementById('htfHurdleMinHeadroomAtr').value) || 0,
                 enableDailyAtrExhaustionFilter: document.getElementById('enableDailyAtrExhaustionFilter').checked,
                 dailyAtrExhaustionMult: parseFloat(document.getElementById('dailyAtrExhaustionMult').value) || 0,
+                enableOpenRangeFilter: document.getElementById('enableOpenRangeFilter').checked,
+                openRangeMinutes: parseInt(document.getElementById('openRangeMinutes').value) || 15,
+                enableIndexOpenRangeFilter: document.getElementById('enableIndexOpenRangeFilter').checked,
                 enableStructuralSl: document.getElementById('enableStructuralSl').checked,
                 structuralSlBufferAtr: parseFloat(document.getElementById('structuralSlBufferAtr').value) || 1.0,
                 singleLevelSlBufferAtr: parseFloat(document.getElementById('singleLevelSlBufferAtr').value) || 0,

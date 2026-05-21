@@ -128,7 +128,7 @@ public class SignalProcessor {
                 // ATR buffer to push the SL further from the anchor. Zone setups also receive
                 // the same extra cushion when CPR width is below narrowCprZoneCollapseWidthPct
                 // — their zone is too tight to absorb a normal pullback.
-                double extra = appliesSingleLevelSlBuffer(setup, tc, bc) ? riskSettings.getSingleLevelSlBufferAtr() : 0;
+                double extra = appliesSingleLevelSlBuffer(setup, tc, bc, ph, pl) ? riskSettings.getSingleLevelSlBufferAtr() : 0;
                 double totalBufferAtr = buffer + extra;
                 double structSl = isBuy ? (anchor - atr * totalBufferAtr) : (anchor + atr * totalBufferAtr);
                 sl = structSl;
@@ -273,7 +273,7 @@ public class SignalProcessor {
         if (useStructuralSl) {
             double anchor = computeStructuralAnchor(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
             double base = riskSettings.getStructuralSlBufferAtr();
-            double extra = appliesSingleLevelSlBuffer(setup, tc, bc) ? riskSettings.getSingleLevelSlBufferAtr() : 0;
+            double extra = appliesSingleLevelSlBuffer(setup, tc, bc, ph, pl) ? riskSettings.getSingleLevelSlBufferAtr() : 0;
             desc.append(" (structural anchor ").append(fmt(anchor))
                 .append(" ").append(isBuy ? "−" : "+").append(" ").append(base + extra)
                 .append(" × ATR ").append(fmt(atr));
@@ -521,23 +521,24 @@ public class SignalProcessor {
         };
     }
 
-    /** CPR width % from TC/BC. Uses the zone midpoint as the reference price (matches
-     *  CprLevels.cprWidthPct semantics). Returns 0 if either edge is missing. */
-    private static double cprWidthPct(double tc, double bc) {
+    /** CPR width % using previous day's close as the denominator (matches
+     *  CprLevels.cprWidthPct semantics). PDC is recovered from CPR fields: since
+     *  pivot = (TC+BC)/2 = (PH+PL+PDC)/3, PDC = 1.5(TC+BC) − PH − PL. */
+    private static double cprWidthPct(double tc, double bc, double ph, double pl) {
         if (tc <= 0 || bc <= 0) return 0;
-        double mid = (tc + bc) / 2.0;
-        if (mid <= 0) return 0;
-        return Math.abs(tc - bc) / mid * 100.0;
+        double prevClose = 1.5 * (tc + bc) - ph - pl;
+        if (prevClose <= 0) return 0;
+        return Math.abs(tc - bc) / prevClose * 100.0;
     }
 
     /** True when the setup needs the extra single-level SL buffer — either it's a pure
      *  single-level setup OR it's a zone setup with CPR width below the collapse threshold. */
-    private boolean appliesSingleLevelSlBuffer(String setup, double tc, double bc) {
+    private boolean appliesSingleLevelSlBuffer(String setup, double tc, double bc, double ph, double pl) {
         if (isSingleLevelSetup(setup)) return true;
         if (!isZoneSetup(setup)) return false;
         double threshold = riskSettings.getNarrowCprZoneCollapseWidthPct();
         if (threshold <= 0) return false;
-        return cprWidthPct(tc, bc) < threshold;
+        return cprWidthPct(tc, bc, ph, pl) < threshold;
     }
 
     private static double computeStructuralAnchor(String setup,
