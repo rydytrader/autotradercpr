@@ -864,7 +864,20 @@
             })()
             + (function() {
                 var color = em5.cls === 'bullish' ? 'var(--accent-green)' : em5.cls === 'bearish' ? 'var(--accent-red)' : 'var(--text-secondary)';
-                return '  <div class="scan-data-item" style="text-align:center;"><div class="scan-data-label">EMA 20 (5 M)</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + (d.ema20 > 0 ? fmt(d.ema20) + ' ' + em5.arrow : '--') + '</div></div>';
+                // Volume tooltip: last completed 5-min candle vs 20-bar average.
+                var vol  = +d.lastCandleVolume || 0;
+                var avg  = +d.avgVolume20     || 0;
+                function fmtVol(v) {
+                    if (v <= 0) return '--';
+                    if (v >= 10000000) return (v / 10000000).toFixed(2) + 'Cr';
+                    if (v >= 100000)   return (v / 100000).toFixed(2)   + 'L';
+                    if (v >= 1000)     return (v / 1000).toFixed(1)     + 'K';
+                    return String(v);
+                }
+                var tip = 'Last completed 5-min candle volume: ' + fmtVol(vol)
+                        + '\n20-bar average: ' + fmtVol(avg);
+                if (vol > 0 && avg > 0) tip += '\nMultiple: ' + (vol / avg).toFixed(2) + 'x';
+                return '  <div class="scan-data-item" style="text-align:center;cursor:help;" title="' + tip + '"><div class="scan-data-label">EMA 20 (5 M)</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + (d.ema20 > 0 ? fmt(d.ema20) + ' ' + em5.arrow : '--') + '</div></div>';
             })()
             + (function() {
                 // 2-factor trend state: mirrors NIFTY card (CPR + EMA20). BULLISH /

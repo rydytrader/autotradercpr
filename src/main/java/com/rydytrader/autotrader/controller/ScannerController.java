@@ -481,6 +481,12 @@ public class ScannerController {
         card.put("openClass", openClass);
 
         card.put("candleVolume", candleAggregator.getCurrentCandleVolume(fyersSymbol));
+        // Last completed 5-min candle volume + its 20-bar rolling average — surfaced on
+        // the EMA 20 (5 M) chip's mouse-over so the trader can eyeball whether the most
+        // recent closed bar carried real participation.
+        CandleAggregator.CandleBar lastClosed5m = candleAggregator.getLastCompletedCandle(fyersSymbol);
+        card.put("lastCandleVolume", lastClosed5m != null ? lastClosed5m.volume : 0L);
+        card.put("avgVolume20",      Math.round(candleAggregator.getAvgVolume(fyersSymbol, 20)));
         card.put("weeklyTrend", weeklyCprService.getWeeklyTrend(fyersSymbol));
         card.put("dailyTrend", weeklyCprService.getDailyTrend(fyersSymbol));
         card.put("probability", computeCardProbability(fyersSymbol, ltp));

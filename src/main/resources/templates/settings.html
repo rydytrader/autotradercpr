@@ -609,6 +609,29 @@
                 <div class="form-hint">Applied to the confirmation bar of every pattern — bar 2 of Outside Reversal / Doji Reversal, bar 3 of Morning/Evening Star and Three Inside Up/Down, and the single-bar Good Size catch-all. For bullish patterns this caps the <b>upper</b> wick; for bearish, the <b>lower</b> wick. Default <b>0.5</b> (wick can be at most half the body). Set to 0 to disable entirely. Rejects bars whose body says "buyer/seller commitment" but whose wick says "got rejected at the extreme."</div>
             </div>
 
+            <!-- Marubozu Breakout (fresh-break, single-bar) -->
+            <div class="form-group">
+                <label class="form-label">Marubozu Breakout (fresh-break conviction bar)</label>
+                <div style="display:flex; align-items:center; gap:10px; margin-top:6px;">
+                    <input type="checkbox" id="enableMarubozuBreakout" style="width:18px; height:18px; accent-color:var(--accent-cyan); flex-shrink:0;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Enable Marubozu fresh-break entry (volume-confirmed)</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px; margin-top:8px; flex-wrap:wrap;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Body in [</span>
+                    <input type="number" id="marubozuBreakoutBodyAtrMult" class="form-control" step="0.05" min="0.0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">,</span>
+                    <input type="number" id="marubozuBreakoutMaxBodyAtrMult" class="form-control" step="0.1" min="0.0" max="10.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">] × ATR</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px; margin-top:8px; flex-wrap:wrap;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Opposite wick ≤</span>
+                    <input type="number" id="marubozuBreakoutMaxOppositeWickPctOfBody" class="form-control" step="0.01" min="0" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× body</span>
+                    <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">(0.10 = 10%)</span>
+                </div>
+                <div class="form-hint">Fresh-break path on a single conviction bar. Fires when (a) this bar's close crosses a CPR/R/S level the prior bar's close didn't, (b) the bar is a Marubozu (green for buys / red for sells; body in the band above; upper wick for buys / lower wick for sells ≤ the opposite-wick cap — the wick on the trade side is ignored), and (c) the bar's volume exceeds its 20-bar average. Route tag: <code>MARUBOZU_BREAKOUT</code> (always emits with the <code>+ VOLUME CONFIRMATION</code> suffix since volume is mandatory). Defaults: 0.5–1.0 × ATR body, 0.10 opposite-wick cap. Skipped when the toggle is off.</div>
+            </div>
+
             </div><!-- /form-grid -->
         </div>
     </div>
@@ -1434,6 +1457,10 @@
             document.getElementById('enableMagnetTrades').checked        = d.enableMagnetTrades !== false;
             document.getElementById('magnetTradesQtyFactor').value       = d.magnetTradesQtyFactor != null ? d.magnetTradesQtyFactor : 0.75;
             document.getElementById('meanReversionQtyFactor').value      = d.meanReversionQtyFactor != null ? d.meanReversionQtyFactor : 0.5;
+            document.getElementById('enableMarubozuBreakout').checked                  = d.enableMarubozuBreakout === true;
+            document.getElementById('marubozuBreakoutBodyAtrMult').value               = d.marubozuBreakoutBodyAtrMult              != null ? d.marubozuBreakoutBodyAtrMult              : 0.5;
+            document.getElementById('marubozuBreakoutMaxBodyAtrMult').value            = d.marubozuBreakoutMaxBodyAtrMult           != null ? d.marubozuBreakoutMaxBodyAtrMult           : 1.0;
+            document.getElementById('marubozuBreakoutMaxOppositeWickPctOfBody').value  = d.marubozuBreakoutMaxOppositeWickPctOfBody != null ? d.marubozuBreakoutMaxOppositeWickPctOfBody : 0.10;
 
             const pnl    = d.todayPnl    || 0;
             const trades = d.todayTrades || 0;
@@ -1590,6 +1617,10 @@
                 enableMagnetTrades:        document.getElementById('enableMagnetTrades').checked,
                 magnetTradesQtyFactor:     parseFloat(document.getElementById('magnetTradesQtyFactor').value) || 0.75,
                 meanReversionQtyFactor:    parseFloat(document.getElementById('meanReversionQtyFactor').value) || 0.5,
+                enableMarubozuBreakout:                  document.getElementById('enableMarubozuBreakout').checked,
+                marubozuBreakoutBodyAtrMult:             parseFloat(document.getElementById('marubozuBreakoutBodyAtrMult').value)              || 0.5,
+                marubozuBreakoutMaxBodyAtrMult:          parseFloat(document.getElementById('marubozuBreakoutMaxBodyAtrMult').value)           || 1.0,
+                marubozuBreakoutMaxOppositeWickPctOfBody: parseFloat(document.getElementById('marubozuBreakoutMaxOppositeWickPctOfBody').value) || 0.10,
             };
             const r = await fetch('/api/settings/risk', {
                 method: 'POST',

@@ -377,6 +377,11 @@ public class CandleAggregator {
                         newCandle.high = ltp;
                         newCandle.low = ltp;
                         newCandle.close = ltp;
+                        // Seed volAtStart from the last known cumulative volume so the next tick
+                        // computes a proper delta. Without this, volAtStart stays 0 and every
+                        // tick assigns volume = cumVol (the day cumulative), inflating the bar
+                        // volume ~50× by midday.
+                        newCandle.volAtStart = lastCumulativeVol.getOrDefault(symbol, 0L);
                         currentCandles.put(symbol, newCandle);
                     }
                 }

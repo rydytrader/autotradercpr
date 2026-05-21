@@ -1035,14 +1035,40 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                                     double open, double high, double low, double close,
                                     double atr, Set<String> broken, String armed, String fyersSymbol) {
         if (broken.contains(setupName)) return null;
+        // curr/prev fetched here so the Marubozu fresh-break path below can use them —
+        // runs BEFORE the armed-level gate because Marubozu doesn't need a prior retest.
+        CandleAggregator.CandleBar curr = candleAggregator.getLastCompletedCandle(fyersSymbol);
+        if (curr == null) return null;
+        CandleAggregator.CandleBar prev = candleAggregator.getPreviousCandle(fyersSymbol);
+        if (prev == null) return null;
+        // Entry-proximity threshold — applied by acceptOrRejectProximity for both the
+        // Marubozu Breakout path and every retest pattern below.
+        double proximityAtr = riskSettings.getEntryProximityAtrMult();
+
+        // ── Marubozu Breakout (fresh-break, single-bar) ──────────────────────────
+        // Fires when (a) THIS bar's close crosses {@code level} the prior bar's close
+        // didn't, (b) bar is a Marubozu (body in [floor, ceiling] × ATR; upper wick ≤
+        // X% of body), and (c) volume > 20-bar average. Independent of the retest
+        // path — runs even when this setup isn't the armed level.
+        if (riskSettings.isEnableMarubozuBreakout()
+                && prev.close <= level && close > level
+                && CandlePatternDetector.isBullishMarubozu(open, high, low, close, atr,
+                        riskSettings.getMarubozuBreakoutBodyAtrMult(),
+                        riskSettings.getMarubozuBreakoutMaxBodyAtrMult(),
+                        riskSettings.getMarubozuBreakoutMaxOppositeWickPctOfBody())) {
+            long confirmVol = curr.volume;
+            double avgVol = candleAggregator.getAvgVolume(fyersSymbol, 20);
+            if (confirmVol > 0 && avgVol > 0 && confirmVol > avgVol) {
+                return acceptOrRejectProximity(fyersSymbol, setupName, "MARUBOZU_BREAKOUT",
+                        close, level, atr, proximityAtr, true);
+            }
+        }
+
         double pinDomWickRng = riskSettings.getPinBarDominantWickMinRangeRatio();
         double pinOppWickRng = riskSettings.getPinBarOppositeWickMaxRangeRatio();
         // Retest-only model — multi-bar pattern retest at the single armed buy level.
         // Pattern's lowest point must reach the level.
         if (!setupName.equals(armed)) return null;
-        CandleAggregator.CandleBar curr = candleAggregator.getLastCompletedCandle(fyersSymbol);
-        if (curr == null) return null;
-        CandleAggregator.CandleBar prev = candleAggregator.getPreviousCandle(fyersSymbol);
         double outsideMin = riskSettings.getOutsideReversalMinBodyAtrMult();
         double outsideMax = riskSettings.getOutsideReversalMaxBodyAtrMult();
         double outsidePen = riskSettings.getOutsideReversalPenetrationPct();
@@ -1064,19 +1090,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double touchTol  = Math.max(0, riskSettings.getLevelTouchToleranceAtr()) * atr;
         double touchLvl  = level + touchTol;
 
-        // Entry-proximity gate — close (entry) must be within (entryProximityAtrMult × ATR)
-        // of the near edge of the retested level. `level` is already the near edge (upper
-        // edge for buy zones, single-line value for R/S levels). Applied AFTER pattern
-        // detection so the log can identify which pattern was blocked. See acceptOrReject.
-        double proximityAtr = riskSettings.getEntryProximityAtrMult();
-
-        // Retest-only — fresh-break path (MARUBOZU_BREAKOUT / GOOD_SIZE_CANDLE_BREAKOUT)
-        // was removed. The level-broken state machine still flips on the closing bar via
-        // applyCandleToLevelState; the bot then waits for one of the 9 retest patterns
+        // Retest-only — the level-broken state machine flips on the closing bar via
+        // applyCandleToLevelState; the bot then waits for one of the 6 retest patterns
         // on a subsequent bar. Two-line zones: close past the breakout edge sets the
         // broken-up flag, close past the opposite edge invalidates, closes inside the
         // band preserve prior state so deeper retests stay valid.
-        if (prev == null) return null;
         if (!isRetestArmed(fyersSymbol, setupName)) return null;
 
         // Pattern matchers — retest path. Order is specificity-first: strictest shape
@@ -1153,14 +1171,33 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                                      double open, double high, double low, double close,
                                      double atr, Set<String> broken, String armed, String fyersSymbol) {
         if (broken.contains(setupName)) return null;
+        // curr/prev fetched up-front so the Marubozu fresh-break path below can use them.
+        CandleAggregator.CandleBar curr = candleAggregator.getLastCompletedCandle(fyersSymbol);
+        if (curr == null) return null;
+        CandleAggregator.CandleBar prev = candleAggregator.getPreviousCandle(fyersSymbol);
+        if (prev == null) return null;
+        double proximityAtr = riskSettings.getEntryProximityAtrMult();
+
+        // ── Marubozu Breakdown (fresh-break, single-bar, sell mirror) ────────────
+        if (riskSettings.isEnableMarubozuBreakout()
+                && prev.close >= level && close < level
+                && CandlePatternDetector.isBearishMarubozu(open, high, low, close, atr,
+                        riskSettings.getMarubozuBreakoutBodyAtrMult(),
+                        riskSettings.getMarubozuBreakoutMaxBodyAtrMult(),
+                        riskSettings.getMarubozuBreakoutMaxOppositeWickPctOfBody())) {
+            long confirmVol = curr.volume;
+            double avgVol = candleAggregator.getAvgVolume(fyersSymbol, 20);
+            if (confirmVol > 0 && avgVol > 0 && confirmVol > avgVol) {
+                return acceptOrRejectProximity(fyersSymbol, setupName, "MARUBOZU_BREAKOUT",
+                        close, level, atr, proximityAtr, false);
+            }
+        }
+
         double pinDomWickRng = riskSettings.getPinBarDominantWickMinRangeRatio();
         double pinOppWickRng = riskSettings.getPinBarOppositeWickMaxRangeRatio();
         // Retest-only model — multi-bar pattern retest at the single armed sell level.
         // Pattern's highest point must reach the level.
         if (!setupName.equals(armed)) return null;
-        CandleAggregator.CandleBar curr = candleAggregator.getLastCompletedCandle(fyersSymbol);
-        if (curr == null) return null;
-        CandleAggregator.CandleBar prev = candleAggregator.getPreviousCandle(fyersSymbol);
         double outsideMin = riskSettings.getOutsideReversalMinBodyAtrMult();
         double outsideMax = riskSettings.getOutsideReversalMaxBodyAtrMult();
         double outsidePen = riskSettings.getOutsideReversalPenetrationPct();
@@ -1181,17 +1218,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double touchTol  = Math.max(0, riskSettings.getLevelTouchToleranceAtr()) * atr;
         double touchLvl  = level - touchTol;
 
-        // Entry-proximity gate — close (entry) must be within (entryProximityAtrMult × ATR)
-        // of the near edge of the retested level. `level` is already the near edge (lower
-        // edge for sell zones, single-line value for R/S levels). Applied AFTER pattern
-        // detection so the log identifies which pattern was blocked. See acceptOrReject.
-        double proximityAtr = riskSettings.getEntryProximityAtrMult();
-
-
-        // Retest-only (mirror of buy logic). Fresh-break path (MARUBOZU_BREAKOUT /
-        // GOOD_SIZE_CANDLE_BREAKOUT) was removed; the level-broken state machine flips
-        // on the closing bar and the bot waits for one of the 9 retest patterns.
-        if (prev == null) return null;
+        // Retest-only (mirror of buy logic). The level-broken state machine flips on
+        // the closing bar and the bot waits for one of the 6 retest patterns.
         if (!isRetestArmed(fyersSymbol, setupName)) return null;
 
         // Pattern matchers — retest path. Order is specificity-first; mirror of the buy chain.
@@ -1284,6 +1312,16 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 recordRejection(fyersSymbol, setupName, close, "ENTRY_PROXIMITY", detail);
                 return null;
             }
+        }
+        // Append a VOLUME CONFIRMATION suffix when the confirmation candle's volume exceeds
+        // its 20-period rolling average. The suffix flows through routeFor() into every
+        // downstream skip/reject log line and into fireSignal's payload, so the Signal Trail
+        // and the SignalProcessor [SUCCESS] log both surface it.
+        CandleAggregator.CandleBar confirmBar = candleAggregator.getLastCompletedCandle(fyersSymbol);
+        long confirmVol = confirmBar != null ? confirmBar.volume : 0;
+        double avgVol = candleAggregator.getAvgVolume(fyersSymbol, 20);
+        if (confirmVol > 0 && avgVol > 0 && confirmVol > avgVol) {
+            routeTag = routeTag + " + VOLUME CONFIRMATION";
         }
         lastTriggerRoute.put(fyersSymbol, routeTag);
         return setupName;

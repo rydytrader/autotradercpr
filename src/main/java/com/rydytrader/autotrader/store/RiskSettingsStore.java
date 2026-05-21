@@ -140,6 +140,17 @@ public class RiskSettingsStore {
         // index (NIFTY 50 OR the mapped sector index). Shares {@link #openRangeMinutes}
         // so both stock-side and index-side ORs use the same window.
         volatile boolean enableIndexOpenRangeFilter = false;
+        // Marubozu Breakout — strict fresh-break entry on a conviction bar. Fires when
+        // (a) this bar's close crosses a CPR/R/S level the prior bar's close didn't,
+        // (b) the bar is a Marubozu (body in [floor, ceiling] × ATR; opposite-direction
+        //     wick ≤ maxOppositeWickPctOfBody × body), and
+        // (c) the bar's volume exceeds its 20-bar average (mandatory — no exceptions).
+        // Coexists with the 6 retest patterns; level-broken state machine + brokenLevels
+        // gate continue to apply.
+        volatile boolean enableMarubozuBreakout                = false;
+        volatile double  marubozuBreakoutBodyAtrMult           = 0.5;
+        volatile double  marubozuBreakoutMaxBodyAtrMult        = 1.0;
+        volatile double  marubozuBreakoutMaxOppositeWickPctOfBody = 0.10;
         // Index HTF Hurdle filter. When on, every stock signal is gated against its primary
         // index's 1-hour close vs that index's nearest weekly hurdle in trade direction. Default
         // off — opt-in. Replaces the old NIFTY-only macro filter; now runs per primary index.
@@ -323,6 +334,10 @@ public class RiskSettingsStore {
     public boolean isEnableOpenRangeFilter() { return cfg().enableOpenRangeFilter; }
     public int     getOpenRangeMinutes()     { return cfg().openRangeMinutes; }
     public boolean isEnableIndexOpenRangeFilter() { return cfg().enableIndexOpenRangeFilter; }
+    public boolean isEnableMarubozuBreakout()                  { return cfg().enableMarubozuBreakout; }
+    public double  getMarubozuBreakoutBodyAtrMult()            { return cfg().marubozuBreakoutBodyAtrMult; }
+    public double  getMarubozuBreakoutMaxBodyAtrMult()         { return cfg().marubozuBreakoutMaxBodyAtrMult; }
+    public double  getMarubozuBreakoutMaxOppositeWickPctOfBody() { return cfg().marubozuBreakoutMaxOppositeWickPctOfBody; }
     public boolean isEnableIndexHtfHurdleFilter() { return cfg().enableIndexHtfHurdleFilter; }
     public double  getIndexHtfHurdleMinHeadroomAtr() { return cfg().indexHtfHurdleMinHeadroomAtr; }
     public boolean isEnableIndex5mHurdleFilter()  { return cfg().enableIndex5mHurdleFilter; }
@@ -442,6 +457,10 @@ public class RiskSettingsStore {
     public void setEnableOpenRangeFilter(boolean v) { cfg().enableOpenRangeFilter = v; }
     public void setOpenRangeMinutes(int v)          { cfg().openRangeMinutes = Math.max(5, Math.min(240, v)); }
     public void setEnableIndexOpenRangeFilter(boolean v) { cfg().enableIndexOpenRangeFilter = v; }
+    public void setEnableMarubozuBreakout(boolean v)                  { cfg().enableMarubozuBreakout = v; }
+    public void setMarubozuBreakoutBodyAtrMult(double v)              { cfg().marubozuBreakoutBodyAtrMult = Math.max(0, v); }
+    public void setMarubozuBreakoutMaxBodyAtrMult(double v)           { cfg().marubozuBreakoutMaxBodyAtrMult = Math.max(0, v); }
+    public void setMarubozuBreakoutMaxOppositeWickPctOfBody(double v) { cfg().marubozuBreakoutMaxOppositeWickPctOfBody = Math.max(0, v); }
     public void setEnableIndexHtfHurdleFilter(boolean v) { cfg().enableIndexHtfHurdleFilter = v; }
     public void setIndexHtfHurdleMinHeadroomAtr(double v) { cfg().indexHtfHurdleMinHeadroomAtr = Math.max(0, v); }
     public void setEnableIndex5mHurdleFilter(boolean v)  { cfg().enableIndex5mHurdleFilter = v; }
@@ -579,6 +598,10 @@ public class RiskSettingsStore {
             upsert("enableOpenRangeFilter", String.valueOf(c.enableOpenRangeFilter));
             upsert("openRangeMinutes",      String.valueOf(c.openRangeMinutes));
             upsert("enableIndexOpenRangeFilter", String.valueOf(c.enableIndexOpenRangeFilter));
+            upsert("enableMarubozuBreakout",                  String.valueOf(c.enableMarubozuBreakout));
+            upsert("marubozuBreakoutBodyAtrMult",             String.valueOf(c.marubozuBreakoutBodyAtrMult));
+            upsert("marubozuBreakoutMaxBodyAtrMult",          String.valueOf(c.marubozuBreakoutMaxBodyAtrMult));
+            upsert("marubozuBreakoutMaxOppositeWickPctOfBody", String.valueOf(c.marubozuBreakoutMaxOppositeWickPctOfBody));
             upsert("enableIndexHtfHurdleFilter", String.valueOf(c.enableIndexHtfHurdleFilter));
             upsert("indexHtfHurdleMinHeadroomAtr", String.valueOf(c.indexHtfHurdleMinHeadroomAtr));
             upsert("enableIndex5mHurdleFilter", String.valueOf(c.enableIndex5mHurdleFilter));
@@ -705,6 +728,10 @@ public class RiskSettingsStore {
                     case "enableOpenRangeFilter" -> c.enableOpenRangeFilter = Boolean.parseBoolean(v);
                     case "openRangeMinutes"      -> c.openRangeMinutes      = Math.max(5, Math.min(240, Integer.parseInt(v)));
                     case "enableIndexOpenRangeFilter" -> c.enableIndexOpenRangeFilter = Boolean.parseBoolean(v);
+                    case "enableMarubozuBreakout"                  -> c.enableMarubozuBreakout                = Boolean.parseBoolean(v);
+                    case "marubozuBreakoutBodyAtrMult"             -> c.marubozuBreakoutBodyAtrMult           = Math.max(0, Double.parseDouble(v));
+                    case "marubozuBreakoutMaxBodyAtrMult"          -> c.marubozuBreakoutMaxBodyAtrMult        = Math.max(0, Double.parseDouble(v));
+                    case "marubozuBreakoutMaxOppositeWickPctOfBody" -> c.marubozuBreakoutMaxOppositeWickPctOfBody = Math.max(0, Double.parseDouble(v));
                     case "enableIndexHtfHurdleFilter" -> c.enableIndexHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "indexHtfHurdleMinHeadroomAtr" -> c.indexHtfHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
                     case "enableIndex5mHurdleFilter" -> c.enableIndex5mHurdleFilter = Boolean.parseBoolean(v);

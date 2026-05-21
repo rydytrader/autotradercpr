@@ -38,6 +38,40 @@ final class CandlePatternDetector {
 
     private CandlePatternDetector() {}
 
+    // ── Marubozu (fresh-break conviction bar) ────────────────────────────────
+    // Asymmetric wick rule: cap only the wick on the OPPOSITE side of the trade
+    // direction. For a bullish marubozu (BUY), the close is at/near the high —
+    // we cap the UPPER wick to ensure no rejection at the top. The lower wick
+    // is ignored because a deep lower wick that closed back near the high is
+    // still a strong bullish bar (rejection of lower prices, conviction close).
+    // Mirror logic for bearish marubozu.
+
+    public static boolean isBullishMarubozu(double open, double high, double low, double close,
+                                            double atr,
+                                            double bodyAtrMultMin,
+                                            double bodyAtrMultMax,
+                                            double maxOppositeWickPctOfBody) {
+        if (atr <= 0 || close <= open) return false;          // must be green
+        double body = close - open;
+        if (bodyAtrMultMin > 0 && body < bodyAtrMultMin * atr) return false;
+        if (bodyAtrMultMax > 0 && body > bodyAtrMultMax * atr) return false;
+        double upperWick = high - close;                       // opposite wick for buy
+        return maxOppositeWickPctOfBody <= 0 || upperWick <= maxOppositeWickPctOfBody * body;
+    }
+
+    public static boolean isBearishMarubozu(double open, double high, double low, double close,
+                                            double atr,
+                                            double bodyAtrMultMin,
+                                            double bodyAtrMultMax,
+                                            double maxOppositeWickPctOfBody) {
+        if (atr <= 0 || close >= open) return false;          // must be red
+        double body = open - close;
+        if (bodyAtrMultMin > 0 && body < bodyAtrMultMin * atr) return false;
+        if (bodyAtrMultMax > 0 && body > bodyAtrMultMax * atr) return false;
+        double lowerWick = close - low;                        // opposite wick for sell
+        return maxOppositeWickPctOfBody <= 0 || lowerWick <= maxOppositeWickPctOfBody * body;
+    }
+
     // ── Pin bar (hammer / shooting star) ─────────────────────────────────────
 
     // Pin bar test — single range-relative path. Body size is implicitly capped by the

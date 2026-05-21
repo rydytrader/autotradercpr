@@ -62,6 +62,10 @@ public class SettingsController {
         result.put("enableOpenRangeFilter", riskSettings.isEnableOpenRangeFilter());
         result.put("openRangeMinutes",      riskSettings.getOpenRangeMinutes());
         result.put("enableIndexOpenRangeFilter", riskSettings.isEnableIndexOpenRangeFilter());
+        result.put("enableMarubozuBreakout",                  riskSettings.isEnableMarubozuBreakout());
+        result.put("marubozuBreakoutBodyAtrMult",             riskSettings.getMarubozuBreakoutBodyAtrMult());
+        result.put("marubozuBreakoutMaxBodyAtrMult",          riskSettings.getMarubozuBreakoutMaxBodyAtrMult());
+        result.put("marubozuBreakoutMaxOppositeWickPctOfBody", riskSettings.getMarubozuBreakoutMaxOppositeWickPctOfBody());
         result.put("enableIndexHtfHurdleFilter", riskSettings.isEnableIndexHtfHurdleFilter());
         result.put("indexHtfHurdleMinHeadroomAtr", riskSettings.getIndexHtfHurdleMinHeadroomAtr());
         result.put("enableIndex5mHurdleFilter", riskSettings.isEnableIndex5mHurdleFilter());
@@ -170,6 +174,10 @@ public class SettingsController {
             if (body.containsKey("enableOpenRangeFilter")) riskSettings.setEnableOpenRangeFilter(Boolean.parseBoolean(body.get("enableOpenRangeFilter").toString()));
             if (body.containsKey("openRangeMinutes"))      riskSettings.setOpenRangeMinutes(Integer.parseInt(body.get("openRangeMinutes").toString()));
             if (body.containsKey("enableIndexOpenRangeFilter")) riskSettings.setEnableIndexOpenRangeFilter(Boolean.parseBoolean(body.get("enableIndexOpenRangeFilter").toString()));
+            if (body.containsKey("enableMarubozuBreakout"))                  riskSettings.setEnableMarubozuBreakout(Boolean.parseBoolean(body.get("enableMarubozuBreakout").toString()));
+            if (body.containsKey("marubozuBreakoutBodyAtrMult"))             riskSettings.setMarubozuBreakoutBodyAtrMult(Double.parseDouble(body.get("marubozuBreakoutBodyAtrMult").toString()));
+            if (body.containsKey("marubozuBreakoutMaxBodyAtrMult"))          riskSettings.setMarubozuBreakoutMaxBodyAtrMult(Double.parseDouble(body.get("marubozuBreakoutMaxBodyAtrMult").toString()));
+            if (body.containsKey("marubozuBreakoutMaxOppositeWickPctOfBody")) riskSettings.setMarubozuBreakoutMaxOppositeWickPctOfBody(Double.parseDouble(body.get("marubozuBreakoutMaxOppositeWickPctOfBody").toString()));
             if (body.containsKey("enableIndexHtfHurdleFilter")) riskSettings.setEnableIndexHtfHurdleFilter(Boolean.parseBoolean(body.get("enableIndexHtfHurdleFilter").toString()));
             if (body.containsKey("indexHtfHurdleMinHeadroomAtr")) riskSettings.setIndexHtfHurdleMinHeadroomAtr(Double.parseDouble(body.get("indexHtfHurdleMinHeadroomAtr").toString()));
             if (body.containsKey("enableIndex5mHurdleFilter")) riskSettings.setEnableIndex5mHurdleFilter(Boolean.parseBoolean(body.get("enableIndex5mHurdleFilter").toString()));
