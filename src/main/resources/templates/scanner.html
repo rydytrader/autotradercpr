@@ -66,8 +66,8 @@
         }
         /* Adaptive CPR state badges */
         .scan-badge.narrow     { background: rgba(52,211,153,0.15); color: var(--accent-green); }
-        .scan-badge.standard   { background: rgba(99,179,237,0.10); color: var(--accent-blue);  }
-        .scan-badge.exhaustion { background: rgba(248,113,113,0.15); color: var(--accent-red);   }
+        .scan-badge.average { background: rgba(99,179,237,0.10); color: var(--accent-blue); }
+        .scan-badge.wide    { background: rgba(248,113,113,0.15); color: var(--accent-red); }
         .scan-badge.inside     { background: rgba(251,191,36,0.12);  color: var(--accent-yellow); }
 
         .scan-price-row {
@@ -496,8 +496,8 @@
             <button class="filter-btn active" onclick="setFilter('all', this)">All</button>
 
             <button class="filter-btn" onclick="setFilter('NARROW', this)">Narrow</button>
-            <button class="filter-btn" onclick="setFilter('STANDARD', this)">Standard</button>
-            <button class="filter-btn" onclick="setFilter('EXHAUSTION', this)">Exhaustion</button>
+            <button class="filter-btn" onclick="setFilter('AVERAGE', this)">Average</button>
+            <button class="filter-btn" onclick="setFilter('WIDE', this)">Wide</button>
             <button class="filter-btn" onclick="setFilter('INSIDE', this)">Inside</button>
         </span>
         <div class="filter-sep"></div>
@@ -840,16 +840,14 @@
                 // State badges + INSIDE — built from the cprTypes list. Adaptive state
                 // tooltip surfaces the underlying CPR / TR ratios from the `adaptive` payload.
                 var a = d.adaptive || {};
-                var stateTip = 'Width: today ' + (a.widthPct || 0).toFixed(2) + '% / 14d avg '
+                var stateTip = 'Width: today ' + (a.widthPct || 0).toFixed(2) + '% / 20d avg '
                     + (a.avgWidthPct || 0).toFixed(2) + '% (ratio ' + (a.widthRatio || 0).toFixed(2) + ')'
-                    + '\nTR: yesterday ' + (a.trPct || 0).toFixed(2) + '% / 14d avg '
-                    + (a.avgTrPct || 0).toFixed(2) + '% (ratio ' + (a.trRatio || 0).toFixed(2) + ')'
                     + '\nSamples: ' + (a.samplesUsed || 0);
                 return (d.cprTypes || [d.cprType]).map(function(t) {
                     switch (t) {
-                        case 'NARROW':     return '<span class="scan-badge narrow"     title="A. Narrow — true volatility squeeze\n' + stateTip + '">N</span>';
-                        case 'STANDARD':   return '<span class="scan-badge standard"   title="B. Standard Expansion — orderly grind\n' + stateTip + '">S</span>';
-                        case 'EXHAUSTION': return '<span class="scan-badge exhaustion" title="C. Volatility Exhaustion — Doji trap\n' + stateTip + '">E</span>';
+                        case 'NARROW':  return '<span class="scan-badge narrow"  title="A. Narrow — widthRatio at or below narrow threshold\n' + stateTip + '">N</span>';
+                        case 'AVERAGE': return '<span class="scan-badge average" title="B. Average — widthRatio between narrow and wide thresholds\n' + stateTip + '">A</span>';
+                        case 'WIDE':    return '<span class="scan-badge wide"    title="C. Wide — widthRatio above wide threshold\n' + stateTip + '">W</span>';
                         case 'INSIDE':     return '<span class="scan-badge inside"     title="Inside CPR (today\'s CPR sits inside yesterday\'s)">I</span>';
                         default: return '';
                     }
@@ -1079,16 +1077,19 @@
                         if (update.candleOpen) d.candleOpen = update.candleOpen;
                         if (update.candleHigh) d.candleHigh = update.candleHigh;
                         if (update.candleLow) d.candleLow = update.candleLow;
-                        // Live EMA values pushed from server every tick
+                        // Live EMA values pushed from server every tick — 5-min EMA20 fields
+                        // are named ema/ema20 on the card; 1-hour EMA20 is htfEma20.
                         if (update.ema)       d.ema       = update.ema;
+                        if (update.ema)       d.ema20     = update.ema;
+                        if (update.htfEma20)  d.htfEma20  = update.htfEma20;
 
                         // Update DOM in-place
                         var card = document.querySelector('[data-symbol="' + d.symbol + '"]');
                         if (!card) continue;
-                        // If EMA values changed, the cheapest way to refresh the EMA grid
-                        // (5-min row includes arrows/scores derived from LTP vs EMA) is
-                        // to re-render the whole card. ~50 cards × small HTML = fast enough.
-                        var emaChanged = update.ema;
+                        // If any EMA value changed, the cheapest way to refresh the EMA grid
+                        // (rows include arrows/colors derived from close vs EMA) is to re-render
+                        // the whole card. ~50 cards × small HTML = fast enough.
+                        var emaChanged = update.ema || update.htfEma20;
                         if (emaChanged) {
                             card.outerHTML = buildCard(d);
                             continue;
@@ -1175,18 +1176,23 @@
                 var changeSign = changePct >= 0 ? '+' : '';
                 var changeCls = changePct >= 0 ? 'up' : 'down';
                 var changeArrow = changePct >= 0 ? '▲' : '▼';
-                var w = +d.cprWidthPct || 0;
                 var widthCat = d.cprWidthCategory || '';
                 var widthColor, widthLabel;
                 switch (widthCat) {
-                    case 'NARROW':     widthColor = 'var(--accent-green)';  widthLabel = 'NARROW';     break;
-                    case 'STANDARD':   widthColor = 'var(--accent-blue)';   widthLabel = 'STANDARD';   break;
-                    case 'EXHAUSTION': widthColor = 'var(--accent-red)';    widthLabel = 'EXHAUSTION'; break;
-                    case 'WARMUP':     widthColor = 'var(--text-muted)';    widthLabel = 'WARMUP';     break;
-                    case 'WIDE':       widthColor = 'var(--accent-red)';    widthLabel = 'WIDE';       break;  // legacy fallback
-                    default:           widthColor = 'var(--text-muted)';    widthLabel = '';           break;
+                    case 'NARROW':  widthColor = 'var(--accent-green)'; widthLabel = 'NARROW';  break;
+                    case 'AVERAGE': widthColor = 'var(--accent-blue)';  widthLabel = 'AVERAGE'; break;
+                    case 'WIDE':    widthColor = 'var(--accent-red)';   widthLabel = 'WIDE';    break;
+                    case 'WARMUP':  widthColor = 'var(--text-muted)';   widthLabel = 'WARMUP';  break;
+                    default:        widthColor = 'var(--text-muted)';   widthLabel = '';        break;
                 }
-                var widthText = widthLabel ? widthLabel + ' (' + w.toFixed(2) + '%)' : '—';
+                var widthText = widthLabel || '—';
+                // Tooltip mirrors the stock card chip — surfaces the underlying width / 20d
+                // avg / widthRatio / samples so the user can see *why* the chip is colored
+                // a given way. Sourced from the adaptive payload on the key-indices endpoint.
+                var ka = d.adaptive || {};
+                var widthChipTip = 'Width: today ' + (ka.widthPct || 0).toFixed(2) + '% / 20d avg '
+                    + (ka.avgWidthPct || 0).toFixed(2) + '% (ratio ' + (ka.widthRatio || 0).toFixed(2) + ')'
+                    + '\nSamples: ' + (ka.samplesUsed || 0);
                 var nameDisplay = formatIndexTickerScanner(d.ticker || '');
                 var chartBtn = '';
                 if (d.symbol) {
@@ -1204,12 +1210,12 @@
                     +   '</div>'
                     // Price row — LTP + change pts/% (mirrors scan-price-row).
                     +   '<div class="scan-price-row">'
-                    +     '<span class="scan-ltp ki-ltp">' + (d.ltp > 0 ? d.ltp.toFixed(2) : '—') + '</span>'
+                    +     '<span class="scan-ltp ki-ltp" style="cursor:help;" title="ATR: ' + ((+d.atr) > 0 ? (+d.atr).toFixed(2) : '—') + '">' + (d.ltp > 0 ? d.ltp.toFixed(2) : '—') + '</span>'
                     +     '<span class="scan-change ki-change ' + changeCls + '">' + changeArrow + ' ' + Math.abs(change).toFixed(2) + ' (' + changeSign + changePct.toFixed(2) + '%)</span>'
                     +   '</div>'
                     // Data row — CPR width + Trend (trend cell tooltip shows TC / BC).
                     +   '<div class="scan-data-grid scan-data-grid-2" style="padding:6px 16px 12px;">'
-                    +     '<div class="scan-data-item" style="text-align:left;"><div class="scan-data-label">CPR WIDTH</div><div class="scan-data-value" style="color:' + widthColor + ';font-weight:600;">' + widthText + '</div></div>'
+                    +     '<div class="scan-data-item" style="text-align:left;cursor:help;" title="' + widthChipTip.replace(/"/g, '&quot;') + '"><div class="scan-data-label">CPR WIDTH</div><div class="scan-data-value" style="color:' + widthColor + ';font-weight:600;">' + widthText + '</div></div>'
                     +     '<div class="scan-data-item" style="text-align:right;" title="TC: ' + ((+d.tc) > 0 ? (+d.tc).toFixed(2) : '—') + ' | BC: ' + ((+d.bc) > 0 ? (+d.bc).toFixed(2) : '—') + '"><div class="scan-data-label">TREND</div><div class="scan-data-value" style="color:' + stateColor + ';font-weight:600;">' + state.replace('_', ' ') + '</div></div>'
                     +   '</div>'
                     + '</div>';

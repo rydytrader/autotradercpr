@@ -238,11 +238,12 @@ public class RiskSettingsStore {
         // narrowRangeRatioThreshold removed — z-score of PDH-PDL/CPR ratio is self-calibrating
         volatile double insideCprMaxWidth = 0.5;  // max CPR width % for inside CPR stocks (0 = no filter)
         // Adaptive CPR State Classifier — replaces the legacy narrowCprMin/MaxWidth band.
-        // Two multipliers anchor today's CPR + TR vs the stock's own 14-day SMA baseline.
-        volatile double cprWidthSqueezeMult  = 0.50;  // Layer 1: today width / 14d avg ≤ this → CPR squeeze
-        volatile double trueRangeSqueezeMult = 0.75;  // Layer 2: yesterday TR / 14d avg ≤ this → TR calm
+        // Two multipliers anchor today's CPR width vs the stock's own 20-day SMA: narrow
+        // upper bound and wide lower bound. Stocks in between fall into AVERAGE.
+        volatile double cprWidthSqueezeMult = 0.70;  // today width / 20d avg ≤ this → NARROW
+        volatile double cprWidthWideMult    = 1.00;  // today width / 20d avg > this  → WIDE
         // Watchlist inclusion toggles per state (Dynamic Squeeze / Standard Expansion /
-        // Volatility Exhaustion). Default all on — every stock with ≥ 14d history appears.
+        // Volatility Exhaustion). Default all on — every stock with ≥ 20d history appears.
         volatile boolean enableCprStateA = true;   // Dynamic Squeeze (true breakout candidate)
         volatile boolean enableCprStateB = true;   // Standard Expansion (orderly grind / pullback)
         volatile boolean enableCprStateC = true;   // Volatility Exhaustion (Doji trap / mean-reversion fade)
@@ -375,7 +376,7 @@ public class RiskSettingsStore {
     public double getMinAbsoluteProfit() { return cfg().minAbsoluteProfit; }
     public double getInsideCprMaxWidth()    { return cfg().insideCprMaxWidth; }
     public double getCprWidthSqueezeMult()  { return cfg().cprWidthSqueezeMult; }
-    public double getTrueRangeSqueezeMult() { return cfg().trueRangeSqueezeMult; }
+    public double getCprWidthWideMult()     { return cfg().cprWidthWideMult; }
     public boolean isEnableCprStateA()      { return cfg().enableCprStateA; }
     public boolean isEnableCprStateB()      { return cfg().enableCprStateB; }
     public boolean isEnableCprStateC()      { return cfg().enableCprStateC; }
@@ -397,7 +398,7 @@ public class RiskSettingsStore {
     public void setMptQtyFactor(double v)      { cfg().mptQtyFactor = v; }
     public void setMinAbsoluteProfit(double v) { cfg().minAbsoluteProfit = v; }
     public void setCprWidthSqueezeMult(double v)  { cfg().cprWidthSqueezeMult  = Math.max(0, v); }
-    public void setTrueRangeSqueezeMult(double v) { cfg().trueRangeSqueezeMult = Math.max(0, v); }
+    public void setCprWidthWideMult(double v)     { cfg().cprWidthWideMult     = Math.max(0, v); }
     public void setEnableCprStateA(boolean v) { cfg().enableCprStateA = v; }
     public void setEnableCprStateB(boolean v) { cfg().enableCprStateB = v; }
     public void setEnableCprStateC(boolean v) { cfg().enableCprStateC = v; }
@@ -631,7 +632,7 @@ public class RiskSettingsStore {
             upsert("mptQtyFactor", String.valueOf(c.mptQtyFactor));
             upsert("minAbsoluteProfit", String.valueOf(c.minAbsoluteProfit));
             upsert("cprWidthSqueezeMult",  String.valueOf(c.cprWidthSqueezeMult));
-            upsert("trueRangeSqueezeMult", String.valueOf(c.trueRangeSqueezeMult));
+            upsert("cprWidthWideMult",     String.valueOf(c.cprWidthWideMult));
             upsert("enableCprStateA",      String.valueOf(c.enableCprStateA));
             upsert("enableCprStateB",      String.valueOf(c.enableCprStateB));
             upsert("enableCprStateC",      String.valueOf(c.enableCprStateC));
@@ -865,10 +866,11 @@ public class RiskSettingsStore {
                     }
                     case "enableCprDayRelationFilter" -> { /* removed — 2D-CPR feature deleted */ }
                     case "minAbsoluteProfit" -> c.minAbsoluteProfit = Double.parseDouble(v);
-                    // Legacy band — silently ignored on load (adaptive classifier replaces it).
-                    case "narrowCprMaxWidth", "narrowCprMinWidth" -> { /* drop */ }
+                    // Legacy keys — silently ignored on load (current adaptive classifier
+                    // is width-only with a 20-day baseline; legacy band + TR multiplier dropped).
+                    case "narrowCprMaxWidth", "narrowCprMinWidth", "trueRangeSqueezeMult" -> { /* drop */ }
                     case "cprWidthSqueezeMult"  -> c.cprWidthSqueezeMult  = Math.max(0, Double.parseDouble(v));
-                    case "trueRangeSqueezeMult" -> c.trueRangeSqueezeMult = Math.max(0, Double.parseDouble(v));
+                    case "cprWidthWideMult"     -> c.cprWidthWideMult     = Math.max(0, Double.parseDouble(v));
                     case "enableCprStateA"      -> c.enableCprStateA = Boolean.parseBoolean(v);
                     case "enableCprStateB"      -> c.enableCprStateB = Boolean.parseBoolean(v);
                     case "enableCprStateC"      -> c.enableCprStateC = Boolean.parseBoolean(v);

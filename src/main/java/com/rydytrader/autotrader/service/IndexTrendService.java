@@ -308,10 +308,10 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         }
         BhavcopyService.AdaptiveCprResult adaptive = bhavcopyService.getAdaptiveCpr("NIFTY50");
         String category = switch (adaptive.state()) {
-            case DYNAMIC_SQUEEZE       -> "NARROW";
-            case STANDARD_EXPANSION    -> "STANDARD";
-            case VOLATILITY_EXHAUSTION -> "EXHAUSTION";
-            case INSUFFICIENT_DATA     -> "WARMUP";
+            case NARROW            -> "NARROW";
+            case AVERAGE           -> "AVERAGE";
+            case WIDE              -> "WIDE";
+            case INSUFFICIENT_DATA -> "WARMUP";
         };
         trend.setCprWidthCategory(category);
 

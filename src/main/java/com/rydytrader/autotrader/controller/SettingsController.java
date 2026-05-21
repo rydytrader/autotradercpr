@@ -121,7 +121,7 @@ public class SettingsController {
         result.put("higherTimeframe", riskSettings.getHigherTimeframe());
         result.put("enableAtpCheck", riskSettings.isEnableAtpCheck());
         result.put("cprWidthSqueezeMult",  riskSettings.getCprWidthSqueezeMult());
-        result.put("trueRangeSqueezeMult", riskSettings.getTrueRangeSqueezeMult());
+        result.put("cprWidthWideMult",     riskSettings.getCprWidthWideMult());
         result.put("enableCprStateA",      riskSettings.isEnableCprStateA());
         result.put("enableCprStateB",      riskSettings.isEnableCprStateB());
         result.put("enableCprStateC",      riskSettings.isEnableCprStateC());
@@ -235,7 +235,7 @@ public class SettingsController {
             if (body.containsKey("higherTimeframe")) riskSettings.setHigherTimeframe(Integer.parseInt(body.get("higherTimeframe").toString()));
             if (body.containsKey("enableAtpCheck")) riskSettings.setEnableAtpCheck(Boolean.parseBoolean(body.get("enableAtpCheck").toString()));
             if (body.containsKey("cprWidthSqueezeMult"))  riskSettings.setCprWidthSqueezeMult(Double.parseDouble(body.get("cprWidthSqueezeMult").toString()));
-            if (body.containsKey("trueRangeSqueezeMult")) riskSettings.setTrueRangeSqueezeMult(Double.parseDouble(body.get("trueRangeSqueezeMult").toString()));
+            if (body.containsKey("cprWidthWideMult"))     riskSettings.setCprWidthWideMult(Double.parseDouble(body.get("cprWidthWideMult").toString()));
             if (body.containsKey("enableCprStateA"))      riskSettings.setEnableCprStateA(Boolean.parseBoolean(body.get("enableCprStateA").toString()));
             if (body.containsKey("enableCprStateB"))      riskSettings.setEnableCprStateB(Boolean.parseBoolean(body.get("enableCprStateB").toString()));
             if (body.containsKey("enableCprStateC"))      riskSettings.setEnableCprStateC(Boolean.parseBoolean(body.get("enableCprStateC").toString()));
@@ -272,7 +272,7 @@ public class SettingsController {
         return bhavcopyService.backfillMissingIndices();
     }
 
-    // ── NARROW CPR STOCKS (State A — DYNAMIC_SQUEEZE) ─────────────────────────
+    // ── NARROW CPR STOCKS (State A — NARROW) ──────────────────────────────────
     @GetMapping("/api/narrow-cpr")
     public Map<String, Object> getNarrowCprStocks() {
         List<CprLevels> narrow = bhavcopyService.getNarrowCprStocks().stream()

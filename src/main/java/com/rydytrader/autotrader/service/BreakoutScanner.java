@@ -2462,10 +2462,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // Adaptive state must be enabled in Settings (matches the scanner watchlist gate).
         BhavcopyService.CprState state = bhavcopyService.getAdaptiveCpr(ticker).state();
         boolean stateOk = switch (state) {
-            case DYNAMIC_SQUEEZE       -> riskSettings.isEnableCprStateA();
-            case STANDARD_EXPANSION    -> riskSettings.isEnableCprStateB();
-            case VOLATILITY_EXHAUSTION -> riskSettings.isEnableCprStateC();
-            case INSUFFICIENT_DATA     -> false;
+            case NARROW            -> riskSettings.isEnableCprStateA();
+            case AVERAGE           -> riskSettings.isEnableCprStateB();
+            case WIDE              -> riskSettings.isEnableCprStateC();
+            case INSUFFICIENT_DATA -> false;
         };
         if (stateOk) return true;
 

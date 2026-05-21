@@ -24,10 +24,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * on 1-hour candle closes, used by BreakoutScanner's Stock HTF Trend Alignment filter to
  * derive whether the stock's 1-hour close sits above / below its 1-hour EMA20.
  *
- * <p>Listener target: the {@code htfAggregator} created in {@link MarketDataService} at
- * the configured {@code higherTimeframe} (60 min by default). On every 1-hour candle close
- * the EMA is stepped via the recurrence {@code ema = α·close + (1-α)·prev} with
- * {@code α = 2/21}.
+ * <p>Listener target: the 5-min {@code candleAggregator} (NOT {@code htfAggregator}). This
+ * deliberately runs on the same thread as {@link EmaService} so that at every 1-hour
+ * boundary close, the 1-hour EMA is stepped BEFORE {@link BreakoutScanner} evaluates
+ * breakouts — no race with a separately-threaded 1-hour aggregator. The 5-min callback is
+ * gated to actually step only when the bar's close aligns with a 1-hour boundary
+ * ({@code (startMinute + 5) % 60 == 15}, i.e., NSE 10:15 / 11:15 / … / 15:15 closes).
+ * On every 1-hour boundary close the EMA is stepped via the recurrence
+ * {@code ema = α·close + (1-α)·prev} with {@code α = 2/21}.
  *
  * <p>Seeding: {@link #seedFromCandles(String, List)} accepts the same 5-min historical
  * candles {@link AtrService} already fetches at startup, filters to bars that end on a
@@ -152,6 +156,12 @@ public class HtfEmaService implements CandleAggregator.CandleCloseListener {
     @Override
     public void onCandleClose(String fyersSymbol, CandleAggregator.CandleBar completedCandle) {
         if (completedCandle == null || completedCandle.close <= 0) return;
+        // Listener is registered on the 5-min aggregator (not the 1-hour htfAggregator).
+        // This deliberately fires us on the same thread, immediately after EmaService, so
+        // BreakoutScanner sees a fully-stepped 1-hour EMA at every 1-hour boundary close.
+        // The gate filters non-1h-boundary 5-min bars: NSE 1-hour bars end at 10:15 / 11:15
+        // / 12:15 / 13:15 / 14:15 / 15:15, i.e., the closing 5-min bar starts at minute 10.
+        if ((completedCandle.startMinute + 5) % 60 != 15) return;
         double close = completedCandle.close;
         Double prev  = emaBySymbol.get(fyersSymbol);
         double ema   = prev == null ? close : ALPHA * close + (1 - ALPHA) * prev;

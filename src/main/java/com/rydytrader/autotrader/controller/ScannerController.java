@@ -120,10 +120,10 @@ public class ScannerController {
     private boolean isAdaptiveStateEnabled(BhavcopyService.CprState state) {
         if (state == null) return false;
         return switch (state) {
-            case DYNAMIC_SQUEEZE       -> riskSettings.isEnableCprStateA();
-            case STANDARD_EXPANSION    -> riskSettings.isEnableCprStateB();
-            case VOLATILITY_EXHAUSTION -> riskSettings.isEnableCprStateC();
-            case INSUFFICIENT_DATA     -> false;
+            case NARROW            -> riskSettings.isEnableCprStateA();
+            case AVERAGE           -> riskSettings.isEnableCprStateB();
+            case WIDE              -> riskSettings.isEnableCprStateC();
+            case INSUFFICIENT_DATA -> false;
         };
     }
 
@@ -131,10 +131,10 @@ public class ScannerController {
     private static String adaptiveStateTag(BhavcopyService.CprState state) {
         if (state == null) return "UNKNOWN";
         return switch (state) {
-            case DYNAMIC_SQUEEZE       -> "NARROW";
-            case STANDARD_EXPANSION    -> "STANDARD";
-            case VOLATILITY_EXHAUSTION -> "EXHAUSTION";
-            case INSUFFICIENT_DATA     -> "WARMUP";
+            case NARROW            -> "NARROW";
+            case AVERAGE           -> "AVERAGE";
+            case WIDE              -> "WIDE";
+            case INSUFFICIENT_DATA -> "WARMUP";
         };
     }
 
@@ -267,9 +267,6 @@ public class ScannerController {
             adaptivePayload.put("widthPct",      Math.round(adaptive.todayWidthPct()  * 1000.0) / 1000.0);
             adaptivePayload.put("avgWidthPct",   Math.round(adaptive.avgWidthPct()    * 1000.0) / 1000.0);
             adaptivePayload.put("widthRatio",    Math.round(adaptive.widthRatio()     * 1000.0) / 1000.0);
-            adaptivePayload.put("trPct",         Math.round(adaptive.yesterdayTrPct() * 1000.0) / 1000.0);
-            adaptivePayload.put("avgTrPct",      Math.round(adaptive.avgTrPct()       * 1000.0) / 1000.0);
-            adaptivePayload.put("trRatio",       Math.round(adaptive.trRatio()        * 1000.0) / 1000.0);
             adaptivePayload.put("cprNarrow",     adaptive.cprNarrow());
             adaptivePayload.put("samplesUsed",   adaptive.samplesUsed());
             card.put("adaptive", adaptivePayload);
@@ -304,9 +301,6 @@ public class ScannerController {
             adaptivePayload.put("widthPct",      Math.round(adaptive.todayWidthPct()  * 1000.0) / 1000.0);
             adaptivePayload.put("avgWidthPct",   Math.round(adaptive.avgWidthPct()    * 1000.0) / 1000.0);
             adaptivePayload.put("widthRatio",    Math.round(adaptive.widthRatio()     * 1000.0) / 1000.0);
-            adaptivePayload.put("trPct",         Math.round(adaptive.yesterdayTrPct() * 1000.0) / 1000.0);
-            adaptivePayload.put("avgTrPct",      Math.round(adaptive.avgTrPct()       * 1000.0) / 1000.0);
-            adaptivePayload.put("trRatio",       Math.round(adaptive.trRatio()        * 1000.0) / 1000.0);
             adaptivePayload.put("cprNarrow",     adaptive.cprNarrow());
             adaptivePayload.put("samplesUsed",   adaptive.samplesUsed());
             card.put("adaptive", adaptivePayload);
@@ -909,7 +903,7 @@ public class ScannerController {
         status.put("minPrice", riskSettings.getScanMinPrice());
         status.put("maxPrice", riskSettings.getScanMaxPrice());
         status.put("cprWidthSqueezeMult",  riskSettings.getCprWidthSqueezeMult());
-        status.put("trueRangeSqueezeMult", riskSettings.getTrueRangeSqueezeMult());
+        status.put("cprWidthWideMult",     riskSettings.getCprWidthWideMult());
         status.put("insideMaxWidth",       riskSettings.getInsideCprMaxWidth());
         return status;
     }

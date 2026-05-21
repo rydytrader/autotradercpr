@@ -114,10 +114,10 @@ public class IndexTrendController {
             // Adaptive CPR state — replaces the legacy static NARROW/WIDE band.
             BhavcopyService.AdaptiveCprResult adaptive = bhavcopyService.getAdaptiveCpr(ticker);
             String widthCategory = switch (adaptive.state()) {
-                case DYNAMIC_SQUEEZE       -> "NARROW";
-                case STANDARD_EXPANSION    -> "STANDARD";
-                case VOLATILITY_EXHAUSTION -> "EXHAUSTION";
-                case INSUFFICIENT_DATA     -> "WARMUP";
+                case NARROW            -> "NARROW";
+                case AVERAGE           -> "AVERAGE";
+                case WIDE              -> "WIDE";
+                case INSUFFICIENT_DATA -> "WARMUP";
             };
 
             String displayName = bhavcopyService.getIndexDisplayName(ticker);
@@ -128,8 +128,19 @@ public class IndexTrendController {
             m.put("ltp",              Math.round((ltp > 0 ? ltp : prevClose) * 100.0) / 100.0);
             m.put("change",           Math.round(changePts * 100.0) / 100.0);
             m.put("changePct",        Math.round(changePct * 100.0) / 100.0);
+            m.put("atr",              Math.round(atrService.getAtr(fyersSym) * 100.0) / 100.0);
             m.put("cprWidthPct",      Math.round(widthPct * 1000.0) / 1000.0);
             m.put("cprWidthCategory", widthCategory);
+            // Adaptive payload mirrors the stock-card schema so the chip hover tooltip can
+            // surface the same width / avg / ratio / samples breakdown.
+            Map<String, Object> adaptivePayload = new LinkedHashMap<>();
+            adaptivePayload.put("state",       adaptive.state().name());
+            adaptivePayload.put("stateTag",    widthCategory);
+            adaptivePayload.put("widthPct",    Math.round(adaptive.todayWidthPct() * 1000.0) / 1000.0);
+            adaptivePayload.put("avgWidthPct", Math.round(adaptive.avgWidthPct()   * 1000.0) / 1000.0);
+            adaptivePayload.put("widthRatio",  Math.round(adaptive.widthRatio()    * 1000.0) / 1000.0);
+            adaptivePayload.put("samplesUsed", adaptive.samplesUsed());
+            m.put("adaptive", adaptivePayload);
             m.put("tc",               Math.round(idx.getTc() * 100.0) / 100.0);
             m.put("bc",               Math.round(idx.getBc() * 100.0) / 100.0);
             m.put("state",            state);
