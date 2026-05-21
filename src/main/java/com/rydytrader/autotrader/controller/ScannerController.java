@@ -411,7 +411,6 @@ public class ScannerController {
             card.put("candleLow", r(currentCandle.low));
         }
 
-        card.put("atp", Math.round(candleAggregator.getAtp(fyersSymbol) * 100.0) / 100.0);
         card.put("atr", Math.round(atrService.getAtr(fyersSymbol) * 100.0) / 100.0);
         // Today's True Range (gap-inclusive) + 14-day daily ATR — drive the "Today's TR"
         // chip on the card. Color is computed client-side against the live exhaustion
@@ -864,7 +863,6 @@ public class ScannerController {
         if (s.contains("blocked by 5-min ema trend") || s.contains("blocked by 5-min sma trend")) return "EMA_TREND";
         if (s.contains("close not above all emas") || s.contains("close not below all emas")
                 || s.contains("close not above all smas") || s.contains("close not below all smas")) return "EMA_TREND";
-        if (s.contains("below atp") || s.contains("above atp"))    return "ATP";
         if (s.contains("nifty") && s.contains("opposes"))          return "NIFTY_OPPOSED";
 
         // Pre-scanner gates that early-return before any setup detection
@@ -904,7 +902,6 @@ public class ScannerController {
         status.put("higherTimeframe", riskSettings.getHigherTimeframe());
         status.put("enableHpt", riskSettings.isEnableHpt());
         status.put("enableMpt", riskSettings.isEnableMpt());
-        status.put("enableAtp", riskSettings.isEnableAtpCheck());
         status.put("enableEmaTrend", riskSettings.isEnableEmaTrendCheck());
         status.put("minPrice", riskSettings.getScanMinPrice());
         status.put("maxPrice", riskSettings.getScanMaxPrice());

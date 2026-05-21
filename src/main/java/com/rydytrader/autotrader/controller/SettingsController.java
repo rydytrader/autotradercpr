@@ -70,7 +70,6 @@ public class SettingsController {
         result.put("enableRiskRewardFilter", riskSettings.isEnableRiskRewardFilter());
         result.put("minRiskRewardRatio", riskSettings.getMinRiskRewardRatio());
         result.put("enableEmaTrendCheck", riskSettings.isEnableEmaTrendCheck());
-        result.put("enableEmaVsAtpCheck", riskSettings.isEnableEmaVsAtpCheck());
         result.put("enableEmaLevelCountFilter", riskSettings.isEnableEmaLevelCountFilter());
         result.put("emaLevelMinRangePct", riskSettings.getEmaLevelMinRangePct());
         result.put("emaLevelFilterMorningSkip", riskSettings.isEmaLevelFilterMorningSkip());
@@ -117,7 +116,6 @@ public class SettingsController {
         result.put("signalSource", riskSettings.getSignalSource());
         result.put("scannerTimeframe", riskSettings.getScannerTimeframe());
         result.put("higherTimeframe", riskSettings.getHigherTimeframe());
-        result.put("enableAtpCheck", riskSettings.isEnableAtpCheck());
         result.put("cprWidthSqueezeMult",  riskSettings.getCprWidthSqueezeMult());
         result.put("cprWidthWideMult",     riskSettings.getCprWidthWideMult());
         result.put("enableCprStateA",      riskSettings.isEnableCprStateA());
@@ -179,7 +177,6 @@ public class SettingsController {
             if (body.containsKey("enableRiskRewardFilter")) riskSettings.setEnableRiskRewardFilter(Boolean.parseBoolean(body.get("enableRiskRewardFilter").toString()));
             if (body.containsKey("minRiskRewardRatio")) riskSettings.setMinRiskRewardRatio(Double.parseDouble(body.get("minRiskRewardRatio").toString()));
             if (body.containsKey("enableEmaTrendCheck")) riskSettings.setEnableEmaTrendCheck(Boolean.parseBoolean(body.get("enableEmaTrendCheck").toString()));
-            if (body.containsKey("enableEmaVsAtpCheck")) riskSettings.setEnableEmaVsAtpCheck(Boolean.parseBoolean(body.get("enableEmaVsAtpCheck").toString()));
             if (body.containsKey("enableEmaLevelCountFilter")) riskSettings.setEnableEmaLevelCountFilter(Boolean.parseBoolean(body.get("enableEmaLevelCountFilter").toString()));
             if (body.containsKey("emaLevelMinRangePct")) riskSettings.setEmaLevelMinRangePct(Integer.parseInt(body.get("emaLevelMinRangePct").toString()));
             if (body.containsKey("emaLevelFilterMorningSkip")) riskSettings.setEmaLevelFilterMorningSkip(Boolean.parseBoolean(body.get("emaLevelFilterMorningSkip").toString()));
@@ -231,7 +228,6 @@ public class SettingsController {
             if (body.containsKey("signalSource")) riskSettings.setSignalSource(body.get("signalSource").toString());
             if (body.containsKey("scannerTimeframe")) riskSettings.setScannerTimeframe(Integer.parseInt(body.get("scannerTimeframe").toString()));
             if (body.containsKey("higherTimeframe")) riskSettings.setHigherTimeframe(Integer.parseInt(body.get("higherTimeframe").toString()));
-            if (body.containsKey("enableAtpCheck")) riskSettings.setEnableAtpCheck(Boolean.parseBoolean(body.get("enableAtpCheck").toString()));
             if (body.containsKey("cprWidthSqueezeMult"))  riskSettings.setCprWidthSqueezeMult(Double.parseDouble(body.get("cprWidthSqueezeMult").toString()));
             if (body.containsKey("cprWidthWideMult"))     riskSettings.setCprWidthWideMult(Double.parseDouble(body.get("cprWidthWideMult").toString()));
             if (body.containsKey("enableCprStateA"))      riskSettings.setEnableCprStateA(Boolean.parseBoolean(body.get("enableCprStateA").toString()));

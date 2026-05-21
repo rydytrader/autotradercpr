@@ -168,7 +168,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
     /**
      * One-shot recovery for today's pre-recordRejection-shipment rejections. Pre-fireSignal
-     * filters (EMA trend, ATP, level-count, level-proximity, NIFTY hard-skip, position-open,
+     * filters (EMA trend, level-count, level-proximity, NIFTY hard-skip, position-open,
      * level-broken) only logged to event-log.txt before the structured capture sites shipped.
      * This parser scans today's event log for [SCANNER] / [INFO] rejection lines, classifies
      * them by reason, and injects SignalInfo entries into signalHistory so the EOD-Analysis
@@ -257,9 +257,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                         detail = stripSkippedPrefix(rest);
                     } else if (restLower.contains("too far from broken zone")) {
                         filterName = "LEVEL_PROXIMITY";
-                        detail = stripSkippedPrefix(rest);
-                    } else if (restLower.contains("below atp") || restLower.contains("above atp")) {
-                        filterName = "ATP";
                         detail = stripSkippedPrefix(rest);
                     } else if (restLower.contains("hpt not enabled") || restLower.contains("lpt not enabled") || restLower.contains("mpt not enabled")) {
                         filterName = "PROB_DISABLED";
@@ -439,9 +436,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // the "prev" on the NEXT scan and gets folded in at that point.
         advanceZoneState(fyersSymbol, levels);
 
-        // ATP check
-        double atp = candleAggregator.getAtp(fyersSymbol);
-
         // Already in position for this symbol?
         String pos = PositionManager.getPosition(fyersSymbol);
         if (!"NONE".equals(pos)) {
@@ -472,7 +466,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             // skipTrendFilters=true returns the matched setup only if a pattern fires,
             // so the log fires only when there was something real to block.
             if (close <= ema20Now) {
-                String potentialSetup = detectBuyBreakout(open, high, low, close, levels, atp, broken, fyersSymbol, true);
+                String potentialSetup = detectBuyBreakout(open, high, low, close, levels, broken, fyersSymbol, true);
                 if (potentialSetup != null) {
                     String detail = "close (" + String.format("%.2f", close) + ") not above EMA20 ("
                         + String.format("%.2f", ema20Now) + ")";
@@ -481,7 +475,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 }
             }
             if (close >= ema20Now) {
-                String potentialSetup = detectSellBreakout(open, high, low, close, levels, atp, broken, fyersSymbol, true);
+                String potentialSetup = detectSellBreakout(open, high, low, close, levels, broken, fyersSymbol, true);
                 if (potentialSetup != null) {
                     String detail = "close (" + String.format("%.2f", close) + ") not below EMA20 ("
                         + String.format("%.2f", ema20Now) + ")";
@@ -496,18 +490,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // (engulfing/doji/star/three-inside-up/good-size) all require a green close
         // internally, so they self-reject on red bars and only the hammer benefits.
         {
-            // ATP check for buys: close must be above ATP
-            if (riskSettings.isEnableAtpCheck() && atp > 0 && close < atp) {
-                // Only log if a breakout would have been detected without ATP check
-                String wouldMatch = detectBuyBreakout(open, high, low, close, levels, 0, broken, fyersSymbol);
-                if (wouldMatch != null) {
-                    String detail = "close (" + String.format("%.2f", close) + ") below ATP (" + String.format("%.2f", atp) + ")";
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + wouldMatch + routeFor(fyersSymbol) + " — skipped, " + detail);
-                    recordRejection(fyersSymbol, wouldMatch, close, "ATP", detail);
-                }
-                return;
-            }
-            String buySetup = detectBuyBreakout(open, high, low, close, levels, atp, broken, fyersSymbol);
+            String buySetup = detectBuyBreakout(open, high, low, close, levels, broken, fyersSymbol);
             if (buySetup != null) {
                 // Magnet gate — BUY_ABOVE_S1_PDL only.
                 if (isMagnet(buySetup) && !riskSettings.isEnableMagnetTrades()) {
@@ -619,7 +602,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 return;
             } else {
                 if (!broken.isEmpty()) {
-                    String wouldMatch = detectBuyBreakout(open, high, low, close, levels, atp, Collections.emptySet(), fyersSymbol);
+                    String wouldMatch = detectBuyBreakout(open, high, low, close, levels, Collections.emptySet(), fyersSymbol);
                     if (wouldMatch != null && broken.contains(wouldMatch)) {
                         String detail = "level " + wouldMatch + " already traded today";
                         eventService.log("[INFO] " + fyersSymbol + " " + wouldMatch + " — skipped, level already traded");
@@ -637,17 +620,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // patterns all require a red close internally, so they self-reject on green bars
         // and only the shooting star benefits.
         {
-            // ATP check for sells: close must be below ATP
-            if (riskSettings.isEnableAtpCheck() && atp > 0 && close > atp) {
-                String wouldMatch = detectSellBreakout(open, high, low, close, levels, 0, broken, fyersSymbol);
-                if (wouldMatch != null) {
-                    String detail = "close (" + String.format("%.2f", close) + ") above ATP (" + String.format("%.2f", atp) + ")";
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + wouldMatch + routeFor(fyersSymbol) + " — skipped, " + detail);
-                    recordRejection(fyersSymbol, wouldMatch, close, "ATP", detail);
-                }
-                return;
-            }
-            String sellSetup = detectSellBreakout(open, high, low, close, levels, atp, broken, fyersSymbol);
+            String sellSetup = detectSellBreakout(open, high, low, close, levels, broken, fyersSymbol);
             if (sellSetup != null) {
                 // Magnet gate — SELL_BELOW_R1_PDH only.
                 if (isMagnet(sellSetup) && !riskSettings.isEnableMagnetTrades()) {
@@ -751,7 +724,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             } else {
                 // No sell breakout detected — log if close is below a key level for debugging
                 if (!broken.isEmpty()) {
-                    String wouldMatch = detectSellBreakout(open, high, low, close, levels, atp, Collections.emptySet(), fyersSymbol);
+                    String wouldMatch = detectSellBreakout(open, high, low, close, levels, Collections.emptySet(), fyersSymbol);
                     if (wouldMatch != null && broken.contains(wouldMatch)) {
                         String detail = "level " + wouldMatch + " already traded today";
                         eventService.log("[INFO] " + fyersSymbol + " " + wouldMatch + " — skipped, level already traded");
@@ -773,21 +746,18 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      *   Path 2 (wick rejection):    open above level, low dips below level, close above — buyers defended
      */
     private String detectBuyBreakout(double open, double high, double low, double close,
-                                      CprLevels levels, double atp, Set<String> broken, String fyersSymbol) {
-        return detectBuyBreakout(open, high, low, close, levels, atp, broken, fyersSymbol, false);
+                                      CprLevels levels, Set<String> broken, String fyersSymbol) {
+        return detectBuyBreakout(open, high, low, close, levels, broken, fyersSymbol, false);
     }
 
     /**
-     * @param skipTrendFilters when true, bypasses ATP / EMA-trend / EMA-vs-ATP / pattern
-     *                         filter gates and only checks the structural candle-vs-level
-     *                         patterns. Used by the caller to pre-detect "would there be a
-     *                         setup if filters were off?" before logging filter rejections.
+     * @param skipTrendFilters when true, bypasses the EMA-trend gate so the caller can
+     *                         pre-detect "would a pattern have matched if the EMA filter
+     *                         were off?" before logging the EMA-trend rejection.
      */
     private String detectBuyBreakout(double open, double high, double low, double close,
-                                      CprLevels levels, double atp, Set<String> broken, String fyersSymbol,
+                                      CprLevels levels, Set<String> broken, String fyersSymbol,
                                       boolean skipTrendFilters) {
-        // ATP check for buys: close must be above ATP
-        if (!skipTrendFilters && riskSettings.isEnableAtpCheck() && atp > 0 && close < atp) return null;
         // 5-min EMA trend check — primary log fires at the caller level (scanForBreakoutInner);
         // this guard re-applies it silently on the actual detect path.
         double ema = emaService.getEma(fyersSymbol);
@@ -795,8 +765,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 && ema > 0 && close <= ema) {
             return null;
         }
-        // 20 EMA vs ATP/VWAP check for buys: 20 EMA must be above ATP
-        if (!skipTrendFilters && riskSettings.isEnableEmaVsAtpCheck() && ema > 0 && atp > 0 && ema < atp) return null;
 
         double r4 = levels.getR4(), r3 = levels.getR3(), r2 = levels.getR2();
         double r1 = levels.getR1(), ph = levels.getPh();
@@ -867,15 +835,13 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      *   Path 2 (wick rejection):     open below level, high pokes above level, close below — sellers defended
      */
     private String detectSellBreakout(double open, double high, double low, double close,
-                                       CprLevels levels, double atp, Set<String> broken, String fyersSymbol) {
-        return detectSellBreakout(open, high, low, close, levels, atp, broken, fyersSymbol, false);
+                                       CprLevels levels, Set<String> broken, String fyersSymbol) {
+        return detectSellBreakout(open, high, low, close, levels, broken, fyersSymbol, false);
     }
 
     private String detectSellBreakout(double open, double high, double low, double close,
-                                       CprLevels levels, double atp, Set<String> broken, String fyersSymbol,
+                                       CprLevels levels, Set<String> broken, String fyersSymbol,
                                        boolean skipTrendFilters) {
-        // ATP check for sells: close must be below ATP
-        if (!skipTrendFilters && riskSettings.isEnableAtpCheck() && atp > 0 && close > atp) return null;
         // 5-min EMA trend check — primary log fires at the caller level (scanForBreakoutInner);
         // this guard re-applies it silently on the actual detect path.
         double ema = emaService.getEma(fyersSymbol);
@@ -883,8 +849,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 && ema > 0 && close >= ema) {
             return null;
         }
-        // 20 EMA vs ATP/VWAP check for sells: 20 EMA must be below ATP
-        if (!skipTrendFilters && riskSettings.isEnableEmaVsAtpCheck() && ema > 0 && atp > 0 && ema > atp) return null;
 
         double s4 = levels.getS4(), s3 = levels.getS3(), s2 = levels.getS2();
         double s1 = levels.getS1(), pl = levels.getPl();
@@ -2639,10 +2603,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double r1phLo = Math.min(r1, ph);    // lower edge (used for sell retest)
         double s1pl   = Math.max(s1, pl);    // upper edge of S1+PDL zone (used for buy retest)
         double s1plLo = Math.min(s1, pl);    // lower edge (used for sell retest)
-        double vwap   = candleAggregator.getAtp(fyersSymbol);
 
         // Buy-side: pick the candidate with the HIGHEST level value strictly BELOW close.
-        // VWAP is just another peer level in the candidate set.
         String buy = null;
         double bestBuyLevel = -Double.MAX_VALUE;
         if (r4    > 0 && close > r4    && r4    > bestBuyLevel) { bestBuyLevel = r4;    buy = "BUY_ABOVE_R4"; }

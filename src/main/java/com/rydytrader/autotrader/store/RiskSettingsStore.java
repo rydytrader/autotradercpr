@@ -161,7 +161,6 @@ public class RiskSettingsStore {
         // 5-min EMA trend gate: buy requires close above EMA 20, sell requires close below EMA 20.
         // Matches the BULL/BEAR chip on scanner cards. Fail-open if EMA not loaded.
         volatile boolean enableEmaTrendCheck = true;
-        volatile boolean enableEmaVsAtpCheck = true; // buy requires 20 EMA > ATP (VWAP), sell requires 20 EMA < ATP
         // EMA level-count filter — counts CPR zones strictly between EMA and the broken level.
         // Allow only when count == 0 (EMA is in the zone immediately adjacent to the broken level).
         volatile boolean enableEmaLevelCountFilter = true;
@@ -219,7 +218,6 @@ public class RiskSettingsStore {
         volatile String signalSource    = "TRADINGVIEW"; // TRADINGVIEW or INTERNAL
         volatile int    scannerTimeframe = 15;  // candle timeframe in minutes
         volatile int    higherTimeframe  = 60;  // higher TF for weekly trend (minutes) — Fyers native resolution
-        volatile boolean enableAtpCheck = true; // require ATP confirmation for scanner signals
         volatile boolean enableHpt      = true;  // High Probable Trade signals (weekly+daily aligned)
         // Medium Probable Trade — produced by static counter-trend setups (S1+PDL/S2-S4 buys,
         // R1+PDH/R2-R4 sells). Trades at reduced qty via mptQtyFactor.
@@ -324,7 +322,6 @@ public class RiskSettingsStore {
     public boolean isEnableRiskRewardFilter()      { return cfg().enableRiskRewardFilter; }
     public double  getMinRiskRewardRatio()         { return cfg().minRiskRewardRatio; }
     public boolean isEnableEmaTrendCheck()          { return cfg().enableEmaTrendCheck; }
-    public boolean isEnableEmaVsAtpCheck()          { return cfg().enableEmaVsAtpCheck; }
     public boolean isEnableEmaLevelCountFilter()   { return cfg().enableEmaLevelCountFilter; }
     public int getEmaLevelMinRangePct()            { return cfg().emaLevelMinRangePct; }
     public boolean isEmaLevelFilterMorningSkip()       { return cfg().emaLevelFilterMorningSkip; }
@@ -368,7 +365,6 @@ public class RiskSettingsStore {
     public String  getSignalSource()      { return cfg().signalSource; }
     public int     getScannerTimeframe()  { return cfg().scannerTimeframe; }
     public int     getHigherTimeframe()   { return cfg().higherTimeframe; }
-    public boolean isEnableAtpCheck()    { return cfg().enableAtpCheck; }
     public boolean isEnableHpt()          { return cfg().enableHpt; }
     public boolean isEnableMpt()          { return cfg().enableMpt; }
     public double getMptQtyFactor()       { return cfg().mptQtyFactor; }
@@ -391,7 +387,6 @@ public class RiskSettingsStore {
     public void setSignalSource(String v)      { cfg().signalSource = v; }
     public void setScannerTimeframe(int v)     { cfg().scannerTimeframe = v; }
     public void setHigherTimeframe(int v)      { cfg().higherTimeframe = v; }
-    public void setEnableAtpCheck(boolean v)  { cfg().enableAtpCheck = v; }
     public void setEnableHpt(boolean v)        { cfg().enableHpt = v; }
     public void setEnableMpt(boolean v)        { cfg().enableMpt = v; }
     public void setMptQtyFactor(double v)      { cfg().mptQtyFactor = v; }
@@ -445,7 +440,6 @@ public class RiskSettingsStore {
     public void setEnableRiskRewardFilter(boolean v)       { cfg().enableRiskRewardFilter = v; }
     public void setMinRiskRewardRatio(double v)            { cfg().minRiskRewardRatio = v; }
     public void setEnableEmaTrendCheck(boolean v)         { cfg().enableEmaTrendCheck = v; }
-    public void setEnableEmaVsAtpCheck(boolean v)         { cfg().enableEmaVsAtpCheck = v; }
     public void setEnableEmaLevelCountFilter(boolean v)    { cfg().enableEmaLevelCountFilter = v; }
     public void setEmaLevelMinRangePct(int v)               { cfg().emaLevelMinRangePct = Math.max(0, Math.min(100, v)); }
     public void setEmaLevelFilterMorningSkip(boolean v)     { cfg().emaLevelFilterMorningSkip = v; }
@@ -582,7 +576,6 @@ public class RiskSettingsStore {
             upsert("enableRiskRewardFilter", String.valueOf(c.enableRiskRewardFilter));
             upsert("minRiskRewardRatio", String.valueOf(c.minRiskRewardRatio));
             upsert("enableEmaTrendCheck", String.valueOf(c.enableEmaTrendCheck));
-            upsert("enableEmaVsAtpCheck", String.valueOf(c.enableEmaVsAtpCheck));
             upsert("enableEmaLevelCountFilter", String.valueOf(c.enableEmaLevelCountFilter));
             upsert("emaLevelMinRangePct", String.valueOf(c.emaLevelMinRangePct));
             upsert("emaLevelFilterMorningSkip", String.valueOf(c.emaLevelFilterMorningSkip));
@@ -625,7 +618,6 @@ public class RiskSettingsStore {
             upsert("signalSource", c.signalSource);
             upsert("scannerTimeframe", String.valueOf(c.scannerTimeframe));
             upsert("higherTimeframe", String.valueOf(c.higherTimeframe));
-            upsert("enableAtpCheck", String.valueOf(c.enableAtpCheck));
             upsert("enableHpt", String.valueOf(c.enableHpt));
             upsert("enableMpt", String.valueOf(c.enableMpt));
             upsert("mptQtyFactor", String.valueOf(c.mptQtyFactor));
@@ -723,10 +715,8 @@ public class RiskSettingsStore {
                          "requireRtpPattern", "buyRequiresRrtp", "sellRequiresFrtp",
                          "skipTradesInZigZag", "allowTradesInZigZag",
                          "emaCloseDistanceAtr", "smaCloseDistanceAtr" -> { /* legacy — SMA50/200/pattern removed */ }
-                    case "enableEmaVsAtpCheck", "enableSmaVsAtpCheck" -> {
-                        c.enableEmaVsAtpCheck = Boolean.parseBoolean(v);
-                        if ("enableSmaVsAtpCheck".equals(k)) logLegacyOnce("enableSmaVsAtpCheck");
-                    }
+                    // VWAP confirmation (ATP) filter removed — drop legacy keys silently.
+                    case "enableEmaVsAtpCheck", "enableSmaVsAtpCheck" -> { /* drop */ }
                     case "enableEmaLevelCountFilter", "enableSmaLevelCountFilter" -> {
                         c.enableEmaLevelCountFilter = Boolean.parseBoolean(v);
                         if ("enableSmaLevelCountFilter".equals(k)) logLegacyOnce("enableSmaLevelCountFilter");
@@ -852,7 +842,8 @@ public class RiskSettingsStore {
                     case "signalSource"      -> c.signalSource = v;
                     case "scannerTimeframe"  -> c.scannerTimeframe = Integer.parseInt(v);
                     case "higherTimeframe"   -> c.higherTimeframe = Integer.parseInt(v);
-                    case "enableAtpCheck"   -> c.enableAtpCheck = Boolean.parseBoolean(v);
+                    // VWAP confirmation (ATP) filter removed — drop legacy key silently.
+                    case "enableAtpCheck"    -> { /* drop */ }
                     case "enableHpt"         -> c.enableHpt = Boolean.parseBoolean(v);
                     case "enableLpt", "lptQtyFactor" -> { /* legacy — LPT tier removed */ }
                     case "enableMpt"         -> c.enableMpt = Boolean.parseBoolean(v);
