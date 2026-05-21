@@ -59,7 +59,13 @@ public class SecurityConfig {
             String xrw    = req.getHeader("X-Requested-With");
             if ("XMLHttpRequest".equalsIgnoreCase(xrw)) return false;
             if (accept != null && accept.contains("application/json") && !accept.contains("text/html")) return false;
-            if (req.getRequestURI() != null && req.getRequestURI().startsWith("/api/")) return false;
+            String uri = req.getRequestURI();
+            if (uri != null && uri.startsWith("/api/")) return false;
+            // Background pollers (fetch() default Accept: */*) targeting non-HTML endpoints
+            // shouldn't be replayed as the post-login landing page. Without this exclusion a
+            // /status poll captured mid-logout can land the user on raw JSON
+            // (e.g. /status?continue → {"status":"DISCONNECTED"}).
+            if ("/status".equals(uri) || "/healthcheck".equals(uri)) return false;
             return true;
         });
 

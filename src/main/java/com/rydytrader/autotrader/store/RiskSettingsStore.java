@@ -126,6 +126,11 @@ public class RiskSettingsStore {
         // when the nearest hurdle in the OPPOSITE direction (above stock LTP for buys / below
         // for sells) is closer than this many stock ATRs. 0 = headroom check off.
         volatile double htfHurdleMinHeadroomAtr = 1.0;
+        // Daily ATR exhaustion filter — rejects new entries (both buy and sell) when today's
+        // True Range (gap-inclusive) has consumed too much of the stock's 14-day daily ATR.
+        // Opt-in. Threshold = 0 disables the check inline even when the toggle is on.
+        volatile boolean enableDailyAtrExhaustionFilter = false;
+        volatile double  dailyAtrExhaustionMult         = 0.85;
         // Index HTF Hurdle filter. When on, every stock signal is gated against its primary
         // index's 1-hour close vs that index's nearest weekly hurdle in trade direction. Default
         // off — opt-in. Replaces the old NIFTY-only macro filter; now runs per primary index.
@@ -181,12 +186,6 @@ public class RiskSettingsStore {
         // become available to the dedicated Virgin CPR Hurdle filter for the next N trading
         // days. A new virgin CPR replaces any existing active one. 0 = feature disabled.
         volatile int virginCprExpiryDays = 10;
-        // Virgin CPR Hurdle filter — treats the active virgin CPR as a zone (BC..TC). Rejects
-        // all stock signals when NIFTY's prior 5m close is inside the zone, and rejects in the
-        // trade direction when the close is within virginCprHurdleHeadroomAtr × NIFTY ATR of
-        // the zone edge. Default off — opt-in.
-        volatile boolean enableVirginCprHurdleFilter = false;
-        volatile double  virginCprHurdleHeadroomAtr  = 1.0;
         // Breakeven SL — single-stage move. When the peak (long) / trough (short) reaches
         // {@code breakevenTriggerPct}% of the range from entry to target, the SL is moved to
         // {@code entry ± breakevenSlAtrMult × ATR}. Once moved, it stays put (never widens).
@@ -227,8 +226,6 @@ public class RiskSettingsStore {
         volatile boolean enableMpt      = true;
         volatile double mptQtyFactor    = 0.75;
         volatile double minAbsoluteProfit = 500; // skip if qty × target_distance < this amount (₹)
-        // CPR Width scanner group toggles
-        volatile double narrowCprMaxWidth = 0.1;  // CPR width % upper threshold for narrow CPR stocks
         // Narrow-CPR single-level SL buffer threshold. When CPR width % is below this
         // value, the three zone setups (CPR, R1+PDH, S1+PDL) get the same extra
         // singleLevelSlBufferAtr cushion that pure single-level setups (R2/R3/R4, S2/S3/S4)
@@ -237,9 +234,18 @@ public class RiskSettingsStore {
         // Breakout detection and zone-broken state tracking are NOT affected — only the SL.
         // 0 = feature disabled. Default 0.1% matches typical "very tight" CPR.
         volatile double narrowCprZoneCollapseWidthPct = 0.1;
-        volatile double narrowCprMinWidth = 0.0;  // CPR width % lower threshold — narrow = [min, max). 0 = no min.
         // narrowRangeRatioThreshold removed — z-score of PDH-PDL/CPR ratio is self-calibrating
         volatile double insideCprMaxWidth = 0.5;  // max CPR width % for inside CPR stocks (0 = no filter)
+        // Adaptive CPR State Classifier — replaces the legacy narrowCprMin/MaxWidth band.
+        // Two multipliers anchor today's CPR width vs the stock's own 20-day SMA: narrow
+        // upper bound and wide lower bound. Stocks in between fall into AVERAGE.
+        volatile double cprWidthSqueezeMult = 0.70;  // today width / 20d avg ≤ this → NARROW
+        volatile double cprWidthWideMult    = 1.00;  // today width / 20d avg > this  → WIDE
+        // Watchlist inclusion toggles per state (Dynamic Squeeze / Standard Expansion /
+        // Volatility Exhaustion). Default all on — every stock with ≥ 20d history appears.
+        volatile boolean enableCprStateA = true;   // Dynamic Squeeze (true breakout candidate)
+        volatile boolean enableCprStateB = true;   // Standard Expansion (orderly grind / pullback)
+        volatile boolean enableCprStateC = true;   // Volatility Exhaustion (Doji trap / mean-reversion fade)
         // Watchlist universe is fully driven by the DB Stock Universe (Settings → Stock
         // Universe). Legacy fields (`scanUniverse`, `scanOnlyNifty50`) have been removed —
         // the bhavcopy fetcher hardcodes NIFTY 100 cap-flag seeding.
@@ -305,6 +311,8 @@ public class RiskSettingsStore {
     public boolean isEnableWeeklyLevelTargetShift() { return cfg().enableWeeklyLevelTargetShift; }
     public boolean isEnableHtfHurdleFilter()    { return cfg().enableHtfHurdleFilter; }
     public double  getHtfHurdleMinHeadroomAtr() { return cfg().htfHurdleMinHeadroomAtr; }
+    public boolean isEnableDailyAtrExhaustionFilter() { return cfg().enableDailyAtrExhaustionFilter; }
+    public double  getDailyAtrExhaustionMult()        { return cfg().dailyAtrExhaustionMult; }
     public boolean isEnableIndexHtfHurdleFilter() { return cfg().enableIndexHtfHurdleFilter; }
     public double  getIndexHtfHurdleMinHeadroomAtr() { return cfg().indexHtfHurdleMinHeadroomAtr; }
     public boolean isEnableIndex5mHurdleFilter()  { return cfg().enableIndex5mHurdleFilter; }
@@ -345,8 +353,6 @@ public class RiskSettingsStore {
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
     public boolean isEnablePriceEmaExit() { return cfg().enablePriceEmaExit; }
     public int getVirginCprExpiryDays() { return cfg().virginCprExpiryDays; }
-    public boolean isEnableVirginCprHurdleFilter() { return cfg().enableVirginCprHurdleFilter; }
-    public double  getVirginCprHurdleHeadroomAtr() { return cfg().virginCprHurdleHeadroomAtr; }
     public double getBreakevenTriggerPct() { return cfg().breakevenTriggerPct; }
     public double getBreakevenSlAtrMult()  { return cfg().breakevenSlAtrMult; }
     public boolean isSkipR3S3IvOvDays() { return cfg().skipR3S3IvOvDays; }
@@ -367,9 +373,12 @@ public class RiskSettingsStore {
     public boolean isEnableMpt()          { return cfg().enableMpt; }
     public double getMptQtyFactor()       { return cfg().mptQtyFactor; }
     public double getMinAbsoluteProfit() { return cfg().minAbsoluteProfit; }
-    public double getNarrowCprMaxWidth() { return cfg().narrowCprMaxWidth; }
-    public double getNarrowCprMinWidth() { return cfg().narrowCprMinWidth; }
-    public double getInsideCprMaxWidth() { return cfg().insideCprMaxWidth; }
+    public double getInsideCprMaxWidth()    { return cfg().insideCprMaxWidth; }
+    public double getCprWidthSqueezeMult()  { return cfg().cprWidthSqueezeMult; }
+    public double getCprWidthWideMult()     { return cfg().cprWidthWideMult; }
+    public boolean isEnableCprStateA()      { return cfg().enableCprStateA; }
+    public boolean isEnableCprStateB()      { return cfg().enableCprStateB; }
+    public boolean isEnableCprStateC()      { return cfg().enableCprStateC; }
     public double getNarrowCprZoneCollapseWidthPct() { return cfg().narrowCprZoneCollapseWidthPct; }
     public double getScanMinPrice() { return cfg().scanMinPrice; }
     public double getScanMaxPrice() { return cfg().scanMaxPrice; }
@@ -387,8 +396,11 @@ public class RiskSettingsStore {
     public void setEnableMpt(boolean v)        { cfg().enableMpt = v; }
     public void setMptQtyFactor(double v)      { cfg().mptQtyFactor = v; }
     public void setMinAbsoluteProfit(double v) { cfg().minAbsoluteProfit = v; }
-    public void setNarrowCprMaxWidth(double v) { cfg().narrowCprMaxWidth = v; }
-    public void setNarrowCprMinWidth(double v) { cfg().narrowCprMinWidth = Math.max(0, v); }
+    public void setCprWidthSqueezeMult(double v)  { cfg().cprWidthSqueezeMult  = Math.max(0, v); }
+    public void setCprWidthWideMult(double v)     { cfg().cprWidthWideMult     = Math.max(0, v); }
+    public void setEnableCprStateA(boolean v) { cfg().enableCprStateA = v; }
+    public void setEnableCprStateB(boolean v) { cfg().enableCprStateB = v; }
+    public void setEnableCprStateC(boolean v) { cfg().enableCprStateC = v; }
     public void setInsideCprMaxWidth(double v) { cfg().insideCprMaxWidth = v; }
     public void setNarrowCprZoneCollapseWidthPct(double v) { cfg().narrowCprZoneCollapseWidthPct = v; }
     public void setScanMinPrice(double v) { cfg().scanMinPrice = v; }
@@ -420,6 +432,8 @@ public class RiskSettingsStore {
     public void setEnableWeeklyLevelTargetShift(boolean v) { cfg().enableWeeklyLevelTargetShift = v; }
     public void setEnableHtfHurdleFilter(boolean v)    { cfg().enableHtfHurdleFilter = v; }
     public void setHtfHurdleMinHeadroomAtr(double v)   { cfg().htfHurdleMinHeadroomAtr = Math.max(0, v); }
+    public void setEnableDailyAtrExhaustionFilter(boolean v) { cfg().enableDailyAtrExhaustionFilter = v; }
+    public void setDailyAtrExhaustionMult(double v)          { cfg().dailyAtrExhaustionMult = Math.max(0, v); }
     public void setEnableIndexHtfHurdleFilter(boolean v) { cfg().enableIndexHtfHurdleFilter = v; }
     public void setIndexHtfHurdleMinHeadroomAtr(double v) { cfg().indexHtfHurdleMinHeadroomAtr = Math.max(0, v); }
     public void setEnableIndex5mHurdleFilter(boolean v)  { cfg().enableIndex5mHurdleFilter = v; }
@@ -460,8 +474,6 @@ public class RiskSettingsStore {
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
     public void setEnablePriceEmaExit(boolean v) { cfg().enablePriceEmaExit = v; }
     public void setVirginCprExpiryDays(int v) { cfg().virginCprExpiryDays = Math.max(0, v); }
-    public void setEnableVirginCprHurdleFilter(boolean v) { cfg().enableVirginCprHurdleFilter = v; }
-    public void setVirginCprHurdleHeadroomAtr(double v)   { cfg().virginCprHurdleHeadroomAtr = Math.max(0, v); }
     public void setBreakevenTriggerPct(double v) { cfg().breakevenTriggerPct = v; }
     public void setBreakevenSlAtrMult(double v)  { cfg().breakevenSlAtrMult = v; }
     public void setSkipR3S3IvOvDays(boolean v) { cfg().skipR3S3IvOvDays = v; }
@@ -557,6 +569,8 @@ public class RiskSettingsStore {
             upsert("enableWeeklyLevelTargetShift", String.valueOf(c.enableWeeklyLevelTargetShift));
             upsert("enableHtfHurdleFilter", String.valueOf(c.enableHtfHurdleFilter));
             upsert("htfHurdleMinHeadroomAtr", String.valueOf(c.htfHurdleMinHeadroomAtr));
+            upsert("enableDailyAtrExhaustionFilter", String.valueOf(c.enableDailyAtrExhaustionFilter));
+            upsert("dailyAtrExhaustionMult",         String.valueOf(c.dailyAtrExhaustionMult));
             upsert("enableIndexHtfHurdleFilter", String.valueOf(c.enableIndexHtfHurdleFilter));
             upsert("indexHtfHurdleMinHeadroomAtr", String.valueOf(c.indexHtfHurdleMinHeadroomAtr));
             upsert("enableIndex5mHurdleFilter", String.valueOf(c.enableIndex5mHurdleFilter));
@@ -597,8 +611,6 @@ public class RiskSettingsStore {
             upsert("enableTrailingSl", String.valueOf(c.enableTrailingSl));
             upsert("enablePriceEmaExit", String.valueOf(c.enablePriceEmaExit));
             upsert("virginCprExpiryDays", String.valueOf(c.virginCprExpiryDays));
-            upsert("enableVirginCprHurdleFilter", String.valueOf(c.enableVirginCprHurdleFilter));
-            upsert("virginCprHurdleHeadroomAtr",  String.valueOf(c.virginCprHurdleHeadroomAtr));
             upsert("breakevenTriggerPct", String.valueOf(c.breakevenTriggerPct));
             upsert("breakevenSlAtrMult",  String.valueOf(c.breakevenSlAtrMult));
             upsert("skipR3S3IvOvDays", String.valueOf(c.skipR3S3IvOvDays));
@@ -618,8 +630,11 @@ public class RiskSettingsStore {
             upsert("enableMpt", String.valueOf(c.enableMpt));
             upsert("mptQtyFactor", String.valueOf(c.mptQtyFactor));
             upsert("minAbsoluteProfit", String.valueOf(c.minAbsoluteProfit));
-            upsert("narrowCprMaxWidth", String.valueOf(c.narrowCprMaxWidth));
-            upsert("narrowCprMinWidth", String.valueOf(c.narrowCprMinWidth));
+            upsert("cprWidthSqueezeMult",  String.valueOf(c.cprWidthSqueezeMult));
+            upsert("cprWidthWideMult",     String.valueOf(c.cprWidthWideMult));
+            upsert("enableCprStateA",      String.valueOf(c.enableCprStateA));
+            upsert("enableCprStateB",      String.valueOf(c.enableCprStateB));
+            upsert("enableCprStateC",      String.valueOf(c.enableCprStateC));
             // narrowRangeRatioThreshold removed — z-score is self-calibrating
             upsert("insideCprMaxWidth", String.valueOf(c.insideCprMaxWidth));
             upsert("narrowCprZoneCollapseWidthPct", String.valueOf(c.narrowCprZoneCollapseWidthPct));
@@ -681,6 +696,8 @@ public class RiskSettingsStore {
                     // splitMinDistanceAtr. Old JSON files round-trip without errors.
                     case "enableHtfHurdleFilter" -> c.enableHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "htfHurdleMinHeadroomAtr" -> c.htfHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
+                    case "enableDailyAtrExhaustionFilter" -> c.enableDailyAtrExhaustionFilter = Boolean.parseBoolean(v);
+                    case "dailyAtrExhaustionMult"        -> c.dailyAtrExhaustionMult         = Math.max(0, Double.parseDouble(v));
                     case "enableIndexHtfHurdleFilter" -> c.enableIndexHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "indexHtfHurdleMinHeadroomAtr" -> c.indexHtfHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
                     case "enableIndex5mHurdleFilter" -> c.enableIndex5mHurdleFilter = Boolean.parseBoolean(v);
@@ -801,8 +818,8 @@ public class RiskSettingsStore {
                          "perSymbolDailyTradeLimit",
                          "lptMaxTradesPerStockPerDay" -> { /* legacy — removed */ }
                     case "virginCprExpiryDays" -> c.virginCprExpiryDays = Math.max(0, Integer.parseInt(v));
-                    case "enableVirginCprHurdleFilter" -> c.enableVirginCprHurdleFilter = Boolean.parseBoolean(v);
-                    case "virginCprHurdleHeadroomAtr" -> c.virginCprHurdleHeadroomAtr = Math.max(0, Double.parseDouble(v));
+                    // Virgin CPR Hurdle Filter removed — drop legacy keys silently.
+                    case "enableVirginCprHurdleFilter", "virginCprHurdleHeadroomAtr" -> { /* drop */ }
                     case "breakevenTriggerPct" -> c.breakevenTriggerPct = Double.parseDouble(v);
                     case "breakevenSlAtrMult"  -> c.breakevenSlAtrMult  = Double.parseDouble(v);
                     // Legacy fib-stage keys — fold old stage-1 values into the new breakeven
@@ -850,8 +867,14 @@ public class RiskSettingsStore {
                     }
                     case "enableCprDayRelationFilter" -> { /* removed — 2D-CPR feature deleted */ }
                     case "minAbsoluteProfit" -> c.minAbsoluteProfit = Double.parseDouble(v);
-                    case "narrowCprMaxWidth" -> c.narrowCprMaxWidth = Double.parseDouble(v);
-                    case "narrowCprMinWidth" -> c.narrowCprMinWidth = Math.max(0, Double.parseDouble(v));
+                    // Legacy keys — silently ignored on load (current adaptive classifier
+                    // is width-only with a 20-day baseline; legacy band + TR multiplier dropped).
+                    case "narrowCprMaxWidth", "narrowCprMinWidth", "trueRangeSqueezeMult" -> { /* drop */ }
+                    case "cprWidthSqueezeMult"  -> c.cprWidthSqueezeMult  = Math.max(0, Double.parseDouble(v));
+                    case "cprWidthWideMult"     -> c.cprWidthWideMult     = Math.max(0, Double.parseDouble(v));
+                    case "enableCprStateA"      -> c.enableCprStateA = Boolean.parseBoolean(v);
+                    case "enableCprStateB"      -> c.enableCprStateB = Boolean.parseBoolean(v);
+                    case "enableCprStateC"      -> c.enableCprStateC = Boolean.parseBoolean(v);
                     // narrowRangeRatioThreshold — legacy key, silently ignored
                     case "insideCprMaxWidth" -> c.insideCprMaxWidth = Double.parseDouble(v);
                     case "narrowCprZoneCollapseWidthPct" -> c.narrowCprZoneCollapseWidthPct = Double.parseDouble(v);

@@ -234,10 +234,17 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         scheduler.scheduleAtFixedRate(this::checkOpeningRefresh, 30, 30, TimeUnit.SECONDS);
 
 
-        // Register candle close listeners
+        // Register candle close listeners — order matters. Indicators (ATR / EMA / HtfEMA /
+        // WeeklyCpr) must step BEFORE BreakoutScanner so the scanner sees fully-finalized
+        // values on every candle close (including 1-hour boundary closes where HtfEMA steps).
         candleAggregator.setTimeframe(riskSettings.getScannerTimeframe());
         candleAggregator.addListener(atrService);
         candleAggregator.addListener(emaService);
+        // HtfEmaService listens on the 5-min aggregator (not htfAggregator). Its onCandleClose
+        // self-gates: it only steps the 1-hour EMA when the 5-min close aligns with a 1-hour
+        // boundary (10:15 / 11:15 / … / 15:15). Running on the same thread as EmaService +
+        // BreakoutScanner guarantees the scanner never sees a stale 1-hour EMA at boundaries.
+        candleAggregator.addListener(htfEmaService);
         candleAggregator.addListener(weeklyCprService);
         candleAggregator.addListener(breakoutScanner);
         // Defensive exits — must register AFTER emaService so candle.ema20 is populated.
@@ -245,16 +252,15 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         candleAggregator.addListener(emaCrossExitService);
         candleAggregator.start();
 
-        // Higher timeframe aggregator for weekly trend (e.g. 75-min candles)
+        // Higher timeframe aggregator for weekly trend (e.g. 75-min candles). Still serves
+        // WeeklyCprService's HTF state machine; HtfEmaService has been moved to the 5-min
+        // aggregator above to keep its step ordered relative to BreakoutScanner.
         htfAggregator = new CandleAggregator(riskSettings);
         htfAggregator.setTimeframe(riskSettings.getHigherTimeframe());
         htfAggregator.addListener((symbol, candle) ->
             weeklyCprService.onHigherTimeframeCandleClose(symbol, candle.open, candle.high, candle.low, candle.close));
-        // 1-hour EMA20 listener — feeds the Stock HTF Trend Alignment filter. Same htfAggregator,
-        // so it sees identical 1-hour boundary closes as WeeklyCpr's HTF state machine.
-        htfAggregator.addListener(htfEmaService);
         htfAggregator.start();
-        log.info("[MarketData] Higher timeframe aggregator started: {}min (listeners: WeeklyCpr, HtfEma)",
+        log.info("[MarketData] Higher timeframe aggregator started: {}min (listener: WeeklyCpr)",
             riskSettings.getHigherTimeframe());
 
         // Schedule scanner pre-market data fetch
@@ -701,11 +707,16 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         // 3. Watchlist event (lightweight LTP + change% + volume for scanner page)
         String watchlistJson = null;
         List<String> wl = getWatchlist();
-        // Add NIFTY 50 index to the SSE payload so the scanner's NIFTY card can update
-        // ltp/change/ema in real time. buildWatchlist() excludes indices because they're not
-        // tradable, but the dashboard still needs NIFTY's tick data.
+        // Add all 5 key indices to the SSE payload so the scanner's index mini-cards update
+        // ltp/change in real time. buildWatchlist() excludes indices because they're not
+        // tradable, but the dashboard still needs their tick data. Order matches the strip
+        // shown on the scanner page (NIFTY 50 / BANK / IT / PHARMA / AUTO).
         List<String> ssePayloadSymbols = new ArrayList<>(wl);
-        ssePayloadSymbols.add(IndexTrendService.NIFTY_SYMBOL);
+        ssePayloadSymbols.add("NSE:NIFTY50-INDEX");
+        ssePayloadSymbols.add("NSE:NIFTYBANK-INDEX");
+        ssePayloadSymbols.add("NSE:NIFTYIT-INDEX");
+        ssePayloadSymbols.add("NSE:NIFTYPHARMA-INDEX");
+        ssePayloadSymbols.add("NSE:NIFTYAUTO-INDEX");
         if (!ssePayloadSymbols.isEmpty()) {
             try {
                 Map<String, Map<String, Object>> wlPayload = new LinkedHashMap<>();
@@ -737,6 +748,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                     // raw value rounded to ₹0.01 lets the bot's display match TV exactly).
                     double s20  = emaService.getEma(sym);
                     if (s20  > 0) d.put("ema",      Math.round(s20  * 100.0) / 100.0);
+                    // 1-hour EMA20 — same LTP-blend pattern as the 5-min EMA; flows to the
+                    // stock card so the value refreshes inside the hour instead of stalling
+                    // between 1-hour candle closes (or the 15s scanner poll).
+                    double h20 = htfEmaService != null ? htfEmaService.getEma(sym) : 0;
+                    if (h20 > 0) d.put("htfEma20",  Math.round(h20 * 100.0) / 100.0);
                     wlPayload.put(sym, d);
                 }
                 if (!wlPayload.isEmpty()) {
@@ -1074,10 +1090,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         }
 
         double minPrice = riskSettings.getScanMinPrice();
-        double narrowMax = riskSettings.getNarrowCprMaxWidth();
+        double m1 = riskSettings.getCprWidthSqueezeMult();
+        double m2 = riskSettings.getCprWidthWideMult();
         double insideMax = riskSettings.getInsideCprMaxWidth();
         eventService.log("[INFO] Scanner initialized: " + watchlist.size() + " symbols"
-            + " (filters: narrow<" + narrowMax + "%, inside<" + insideMax + "%, price≥₹" + (int)minPrice + ")");
+            + " (filters: adaptive CPR narrow≤" + m1 + "× / wide>" + m2 + "× of 20d avg, inside<" + insideMax + "%, price≥₹" + (int)minPrice + ")");
 
         int narrowCount = (int) bhavcopyService.getNarrowCprStocks().size();
         int insideCount = (int) bhavcopyService.getInsideCprStocks().size();
@@ -1113,13 +1130,21 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         // than NIFTY 50) so the CPR cache contains stocks outside the DB — without this gate
         // those would leak into the watchlist + WS subscription set.
         Set<String> symbols = new LinkedHashSet<>();
-        double narrowMax = riskSettings.getNarrowCprMaxWidth();
         double insideMax = riskSettings.getInsideCprMaxWidth();
 
         for (var cpr : bhavcopyService.getAllCprLevels().values()) {
             if (bhavcopyService.isIndex(cpr.getSymbol())) continue; // NIFTY50 etc. are not tradable stocks
             if (!bhavcopyService.isInScanUniverse(cpr.getSymbol())) continue;
-            if (cpr.getCprWidthPct() < narrowMax && passesWatchlistFilters(cpr)) {
+            // Adaptive state toggles control which states make the WebSocket subscription.
+            // INSUFFICIENT_DATA always excluded (warmup). Mirrors ScannerController.getWatchlist.
+            BhavcopyService.AdaptiveCprResult adaptive = bhavcopyService.getAdaptiveCpr(cpr.getSymbol());
+            boolean stateOk = switch (adaptive.state()) {
+                case NARROW            -> riskSettings.isEnableCprStateA();
+                case AVERAGE           -> riskSettings.isEnableCprStateB();
+                case WIDE              -> riskSettings.isEnableCprStateC();
+                case INSUFFICIENT_DATA -> false;
+            };
+            if (stateOk && passesWatchlistFilters(cpr)) {
                 symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
             }
         }

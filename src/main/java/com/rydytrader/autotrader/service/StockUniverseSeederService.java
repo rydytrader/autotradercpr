@@ -42,7 +42,10 @@ public class StockUniverseSeederService {
      */
     private static final List<String> REMOVED_FROM_NIFTY50 = List.of(
         "DIVISLAB",   // removed by NSE in March 2023 (replaced by ADANIENT)
-        "BPCL"        // removed by NSE in March 2025 rebalancing (replaced by BEL)
+        "BPCL",       // removed by NSE in March 2025 rebalancing (replaced by BEL)
+        "HEROMOTOCO", // removed by NSE in 2025 (replaced by ETERNAL — Zomato's rebrand)
+        "TATAMOTORS"  // demerged in October 2025 into TMPV (passenger) and TMCV (commercial);
+                      // TMPV took the NIFTY 50 slot. The legacy symbol no longer trades.
     );
 
     @PostConstruct
@@ -128,7 +131,7 @@ public class StockUniverseSeederService {
         stocks.put("HCLTECH",     new String[] { "HCL Technologies",       "NIFTYIT" });
         stocks.put("HDFCBANK",    new String[] { "HDFC Bank",              "NIFTYBANK" });
         stocks.put("HDFCLIFE",    new String[] { "HDFC Life",              "FINNIFTY" });
-        stocks.put("HEROMOTOCO",  new String[] { "Hero MotoCorp",          "NIFTYAUTO" });
+        stocks.put("ETERNAL",     new String[] { "Eternal (Zomato)",       "NIFTYSERVSECTOR" });
         stocks.put("HINDALCO",    new String[] { "Hindalco",               "NIFTYMETAL" });
         stocks.put("HINDUNILVR",  new String[] { "Hindustan Unilever",     "NIFTYFMCG" });
         stocks.put("ICICIBANK",   new String[] { "ICICI Bank",             "NIFTYBANK" });
@@ -153,7 +156,7 @@ public class StockUniverseSeederService {
         stocks.put("SUNPHARMA",   new String[] { "Sun Pharma",             "NIFTYHEALTHCARE" });
         stocks.put("TCS",         new String[] { "TCS",                    "NIFTYIT" });
         stocks.put("TATACONSUM",  new String[] { "Tata Consumer",          "NIFTYFMCG" });
-        stocks.put("TATAMOTORS",  new String[] { "Tata Motors",            "NIFTYAUTO" });
+        stocks.put("TMPV",        new String[] { "Tata Motors Passenger Vehicles", "NIFTYAUTO" });
         stocks.put("TATASTEEL",   new String[] { "Tata Steel",             "NIFTYMETAL" });
         stocks.put("TECHM",       new String[] { "Tech Mahindra",          "NIFTYIT" });
         stocks.put("TITAN",       new String[] { "Titan Company",          "NIFTYCONSRDURBL" });

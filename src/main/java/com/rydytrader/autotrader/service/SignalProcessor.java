@@ -169,8 +169,8 @@ public class SignalProcessor {
         // per-pattern body cap inside CandlePatternDetector. Hammer relies on its
         // structural pin-bar signature instead.
 
-        // HTF Hurdle filter moved to BreakoutScanner.checkPerStockHtfHurdle so all four
-        // hurdle filters (NIFTY HTF, NIFTY 5m, Virgin CPR, Per-Stock HTF) live in one place.
+        // HTF Hurdle filter moved to BreakoutScanner.checkStockHtfHurdle so all four
+        // hurdle filters (Index HTF, Index 5m, Virgin CPR, Stock HTF) live in one place.
 
         // ── 4f. Compute target ──────────────────────────────────────────────────
         double[] targets = computeTargets(setup, close, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc, atr);

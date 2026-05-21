@@ -357,9 +357,11 @@ public class PollingService {
                         if (!pendingProb.isEmpty()) {
                             positionStateStore.saveProbability(symbol, pendingProb);
                         }
-                        // Snapshot the current NIFTY sticky trend so the positions UI can flag
-                        // a red stripe later if the trend flips while the position is open.
-                        positionStateStore.saveNiftyTrendAtEntry(symbol, breakoutScanner.getCurrentNiftyTrend());
+                        // Snapshot the stock's primary-index trend at entry so the positions UI
+                        // can flag a red stripe later if that index's trend flips while the
+                        // position is open. Field name is legacy (niftyTrendAtEntry) but the
+                        // value is now primary-index-aware.
+                        positionStateStore.saveNiftyTrendAtEntry(symbol, breakoutScanner.getCurrentPrimaryIndexTrend(symbol));
                         // Save description from signal processing
                         if (description != null && !description.isEmpty()) {
                             positionStateStore.appendDescription(symbol, description);

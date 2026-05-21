@@ -485,6 +485,27 @@ public class CandleAggregator {
         return min == Double.MAX_VALUE ? 0 : min;
     }
 
+    /** Highest high across every completed today bar (no exclusion). The just-closed bar
+     *  is included when callers run during {@code onCandleClose}. Used by the Daily ATR
+     *  Exhaustion filter + the scanner card's "Today's TR" chip. */
+    public double getDayHigh(String symbol) {
+        java.util.Deque<CandleBar> hist = completedCandles.get(symbol);
+        if (hist == null || hist.isEmpty()) return 0;
+        double max = 0;
+        for (CandleBar b : hist) if (b.high > max) max = b.high;
+        return max;
+    }
+
+    /** Lowest low across every completed today bar (no exclusion). Mirror of
+     *  {@link #getDayHigh(String)}. */
+    public double getDayLow(String symbol) {
+        java.util.Deque<CandleBar> hist = completedCandles.get(symbol);
+        if (hist == null || hist.isEmpty()) return 0;
+        double min = Double.MAX_VALUE;
+        for (CandleBar b : hist) if (b.low > 0 && b.low < min) min = b.low;
+        return min == Double.MAX_VALUE ? 0 : min;
+    }
+
     /** Day high excluding the most recent completed candle (for target shift after a breakout). */
     public double getDayHighBeforeLast(String symbol) {
         java.util.Deque<CandleBar> candles = completedCandles.get(symbol);

@@ -771,10 +771,11 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         if (pendingProb != null && !pendingProb.isEmpty()) {
             positionStateStore.saveProbability(symbol, pendingProb);
         }
-        // Snapshot the current NIFTY sticky trend so the positions UI can flag a red
-        // stripe later if the trend flips while the position is open.
+        // Snapshot the stock's primary-index trend at entry so the positions UI can flag a
+        // red stripe later if that specific index's trend flips while the position is open.
+        // Field name is legacy (niftyTrendAtEntry) but the value is now primary-index-aware.
         if (breakoutScanner != null) {
-            positionStateStore.saveNiftyTrendAtEntry(symbol, breakoutScanner.getCurrentNiftyTrend());
+            positionStateStore.saveNiftyTrendAtEntry(symbol, breakoutScanner.getCurrentPrimaryIndexTrend(symbol));
         }
 
         eventService.log("[SUCCESS] [WS] " + (ctx.position.equals("LONG") ? "BUY" : "SELL")

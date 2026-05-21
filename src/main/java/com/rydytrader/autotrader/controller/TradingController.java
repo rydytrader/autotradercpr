@@ -325,21 +325,22 @@ public class TradingController {
             }
             m.put("leverage", marginDataService.getLeverage(p.getSymbol()));
             m.put("slTrailed", marketDataService.isTrailed(p.getSymbol()));
-            // Index-hurdle marker for the positions table. Yellow stripe shows when any of
-            // the 3 hurdle conditions (Index HTF / Index 5m / NIFTY Virgin CPR) is currently
-            // active in this position's trade direction — purely informational, not blocking.
-            String indexHurdleAlert = breakoutScanner.getIndexHurdleAlert("LONG".equals(p.getSide()), p.getSymbol());
+            // Yellow stripe — primary-index hurdle alert. Mirrors the hurdle the scanner
+            // card surfaces (3 sources: Stock HTF / Index HTF / Index 5m, nearest only).
+            // Legacy field name keeps the UI template intact.
+            String indexHurdleAlert = breakoutScanner.getStockHurdleAlert("LONG".equals(p.getSide()), p.getSymbol());
             m.put("niftyHurdleActive", indexHurdleAlert != null);
             m.put("niftyHurdleReason", indexHurdleAlert != null ? indexHurdleAlert : "");
 
-            // NIFTY-trend-flipped marker. Red stripe shows when the current NIFTY sticky trend
-            // differs from what it was at entry (and neither end is SIDEWAYS / NEUTRAL).
+            // Red stripe — primary-index trend flipped since entry. The entry-time snapshot
+            // and the "now" lookup both run against the stock's own primary index, not NIFTY.
+            // Field names are legacy but the values are now primary-index-aware.
             String entryTrend = state != null && state.get("niftyTrendAtEntry") != null
                 ? state.get("niftyTrendAtEntry").toString() : "";
-            boolean trendFlipped = breakoutScanner.isNiftyTrendFlipped(entryTrend);
+            boolean trendFlipped = breakoutScanner.isPrimaryIndexTrendFlipped(entryTrend, p.getSymbol());
             m.put("niftyTrendFlipped", trendFlipped);
             m.put("niftyTrendAtEntry", entryTrend);
-            m.put("niftyTrendNow", breakoutScanner.getCurrentNiftyTrend());
+            m.put("niftyTrendNow", breakoutScanner.getCurrentPrimaryIndexTrend(p.getSymbol()));
             return m;
         }).collect(java.util.stream.Collectors.toList());
         double realizedPnl   = tradeHistoryService.getTrades().stream()
