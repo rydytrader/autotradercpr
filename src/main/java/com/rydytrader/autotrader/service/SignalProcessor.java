@@ -92,35 +92,18 @@ public class SignalProcessor {
         boolean isBuy = setup.startsWith("BUY_");
         String signal = isBuy ? "BUY" : "SELL";
 
-        // ── Extended-level skip gate (daily) ─────────────────────────────────
-        // Daily R3/S3 and R4/S4 breakouts skipped per day type. The toggle splits into two:
-        //   *IvOvDays — skip on IV (open inside CPR) or OV (open between CPR and R2/S2) days
-        //   *EvDays   — skip on EV (open above R2 or below S2 — extreme-value gap) days
+        // ── Extended-level skip gate ─────────────────────────────────────────
+        // R3/S3 and R4/S4 breakouts (and their retest variants — setup name covers both)
+        // are far from the daily CPR and historically unreliable. Gated by a single toggle
+        // per level pair; no day-type classification.
         boolean isR3S3Setup = "BUY_ABOVE_R3".equals(setup) || "SELL_BELOW_S3".equals(setup);
         boolean isR4S4Setup = "BUY_ABOVE_R4".equals(setup) || "SELL_BELOW_S4".equals(setup);
 
-        // Classify today's day type from the open print (close of first 5-min candle).
-        double openPrint = candleAggregator.getFirstCandleClose(symbol);
-        String dayType = classifyDayType(openPrint, tc, bc, r2, s2);
-        boolean isEvDay   = "EV".equals(dayType);
-        // Pre-9:20 IST or missing CPR → UNKNOWN treated as IV/OV (conservative: applies the
-        // IV/OV toggle so trades aren't silently let through before the open print confirms).
-        boolean isIvOvDay = "IV".equals(dayType) || "OV".equals(dayType) || "UNKNOWN".equals(dayType);
-
-        boolean shouldSkipR3S3 =
-               (isEvDay   && riskSettings.isSkipR3S3EvDays())
-            || (isIvOvDay && riskSettings.isSkipR3S3IvOvDays());
-        boolean shouldSkipR4S4 =
-               (isEvDay   && riskSettings.isSkipR4S4EvDays())
-            || (isIvOvDay && riskSettings.isSkipR4S4IvOvDays());
-
-        if (shouldSkipR3S3 && isR3S3Setup) {
-            return ProcessedSignal.rejected(setup, symbol,
-                "R3/S3 breakout skipped (" + dayType + " day)");
+        if (isR3S3Setup && riskSettings.isSkipR3S3()) {
+            return ProcessedSignal.rejected(setup, symbol, "R3/S3 breakout/retest skipped (toggle off)");
         }
-        if (shouldSkipR4S4 && isR4S4Setup) {
-            return ProcessedSignal.rejected(setup, symbol,
-                "R4/S4 breakout skipped (" + dayType + " day)");
+        if (isR4S4Setup && riskSettings.isSkipR4S4()) {
+            return ProcessedSignal.rejected(setup, symbol, "R4/S4 breakout/retest skipped (toggle off)");
         }
 
         // Weekly levels lookup — used by the HTF Hurdle filter and computeTargets below.
@@ -659,30 +642,6 @@ public class SignalProcessor {
             case "BUY_ABOVE_S4"      -> "S4";
             default -> setup;
         };
-    }
-
-    /**
-     * Classify today's day type from the open print (first 5-min candle close) vs daily CPR.
-     * Used by the daily extended-level skip toggles to decide which day-type-specific toggle
-     * applies.
-     * <ul>
-     *   <li>{@code IV}  — open print inside CPR (between BC and TC)</li>
-     *   <li>{@code OV}  — open print between CPR and R2/S2</li>
-     *   <li>{@code EV}  — open print outside R2/S2 (extreme-value gap)</li>
-     *   <li>{@code UNKNOWN} — open print not yet established (pre-9:20 IST) or CPR missing</li>
-     * </ul>
-     */
-    static String classifyDayType(double openPrint, double tc, double bc, double r2, double s2) {
-        if (openPrint <= 0) return "UNKNOWN";
-        if (tc <= 0 || bc <= 0) return "UNKNOWN";
-        double cprTop = Math.max(tc, bc);
-        double cprBot = Math.min(tc, bc);
-        if (openPrint > cprBot && openPrint < cprTop) return "IV";
-        // Inclusive of the boundary itself (open == TC or BC) → still IV.
-        if (openPrint == cprTop || openPrint == cprBot) return "IV";
-        if (r2 > 0 && openPrint > r2) return "EV";
-        if (s2 > 0 && openPrint < s2) return "EV";
-        return "OV";
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────

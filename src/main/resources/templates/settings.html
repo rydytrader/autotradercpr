@@ -206,6 +206,7 @@
         <button class="settings-tab" onclick="switchTab('risk', this)">Risk</button>
         <button class="settings-tab" onclick="switchTab('signals', this)">Signals</button>
         <button class="settings-tab" onclick="switchTab('scanner', this)">Scanner</button>
+        <button class="settings-tab" onclick="switchTab('setups', this)">Setups</button>
         <button class="settings-tab" onclick="switchTab('filters', this)">Filters</button>
         <button class="settings-tab" onclick="switchTab('candle', this)">Candle</button>
         <button class="settings-tab" onclick="switchTab('index', this)">Index Alignment</button>
@@ -369,75 +370,6 @@
                     </div>
                     <div class="form-hint">Gates entries by price position relative to the 5-min EMA 20. Buys require close &gt; EMA 20; sells require close &lt; EMA 20. Failing the gate rejects the trade. Fail-open when EMA 20 is still warming up.</div>
                 </div>
-<div class="form-group">
-                    <label class="form-label">20 EMA Level Count Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
-                        <input type="checkbox" id="enableEmaLevelCountFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip if any CPR zone sits between EMA and the broken level</span>
-                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono); margin-left:12px;">EMA must sit within</span>
-                        <input type="number" id="emaLevelMinRangePct" class="form-control" step="5" min="0" max="100" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">% (away from boundary = close to broken level)</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; padding-left: 28px;">
-                        <input type="checkbox" id="emaLevelFilterMorningSkip" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Bypass this filter until</span>
-                        <input type="time" id="emaLevelFilterMorningSkipUntil" class="form-control" style="width:100px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">(IST — momentum often outruns EMA in the first hour)</span>
-                    </div>
-                    <div class="form-hint"><b>Zone count check.</b> Counts CPR zones (S4, S3, S2, S1/PDL, CPR, R1/PDH, R2, R3, R4) strictly between the 20 EMA and the breakout level. Pair zones (CPR, R1/PDH, S1/PDL) count as one. The breakout zone itself is excluded. If 0 zones in between, the trade fires; if 1 or more, the setup is stale and skipped.
-                    <br/><br/><b>Proximity check (default 50%).</b> The setting reads as "EMA must sit within <i>N%</i> away from the boundary edge" — equivalently, within the closest <i>(100−N)%</i> of the range from the broken level. The 100% range is measured from the broken level to the next-zone edge. <b>Higher N = stricter</b> (EMA must be closer to broken).<br/>
-                    Example: <i>BUY_ABOVE_R1_PDH</i> with broken=R1+PDH=100, next zone above (R2)=105. Range = 5. At N=75, EMA must sit within (100−75)% = 25% of range from broken → EMA ≥ 98.75 (close to broken). EMA at 96 = 80% of range away from broken → skipped (too far). Set to <b>0</b> to disable proximity check (use zone-count only).</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Extended Level Signals (R3/S3, R4/S4)</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="skipR3S3IvOvDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R3/S3 breakouts (and DH above R3 / DL below S3) &mdash; <b>IV / OV days</b></span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="skipR3S3EvDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R3/S3 breakouts (and DH above R3 / DL below S3) &mdash; <b>EV days</b></span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="skipR4S4IvOvDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R4/S4 breakouts (and DH above R4 / DL below S4) &mdash; <b>IV / OV days</b></span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <input type="checkbox" id="skipR4S4EvDays" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R4/S4 breakouts (and DH above R4 / DL below S4) &mdash; <b>EV days</b></span>
-                    </div>
-                    <div class="form-hint">Day type is set by the open print (first 5-min close) vs daily CPR + R2/S2:
-                        <br>&bull; <b>IV</b> &mdash; open inside CPR (between BC and TC)
-                        <br>&bull; <b>OV</b> &mdash; open between CPR and R2/S2
-                        <br>&bull; <b>EV</b> &mdash; open outside R2/S2 (extreme-value gap)
-                        <br>Extended-level breakouts (R3/S3, R4/S4) are far from the daily CPR and historically unreliable on regular days. EV days are different &mdash; an R3 break following an open above R2 is fresh gap momentum, not exhaustion. Toggle the IV/OV and EV gates independently to match your strategy. R2/S2 always fires regardless. No per-level qty reduction.</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Magnet Trades</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableMagnetTrades" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable magnet setups (first structural level pair)</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Magnet Qty &times;</span>
-                        <input type="number" id="magnetTradesQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-muted); font-size: 0.78rem; font-family: var(--font-mono);">(0.75 = three-quarter size)</span>
-                    </div>
-                    <div class="form-hint">Setups: <code>BUY_ABOVE_S1_PDL</code>, <code>SELL_BELOW_R1_PDH</code> — bounce off / rejection at the first structural level pair, target back to CPR. Classify as <b>MPT</b> and bypass the LTF gate. Signal Trail bucket when disabled: <code>MAGNET_DISABLED</code>.</div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Mean-Reversion Trades</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableMeanReversionTrades" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable deep mean-reversion fades from far support/resistance</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Mean-Rev Qty &times;</span>
-                        <input type="number" id="meanReversionQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-muted); font-size: 0.78rem; font-family: var(--font-mono);">(0.5 = half size)</span>
-                    </div>
-                    <div class="form-hint">Setups: <code>BUY_ABOVE_S2/S3/S4</code>, <code>SELL_BELOW_R2/R3/R4</code> — fades from deep support/resistance, target one level back toward value. Classify as <b>MPT</b> and bypass the LTF gate. Signal Trail bucket when disabled: <code>MEAN_REVERSION_DISABLED</code>.</div>
-                </div>
                 <div class="form-group">
                     <label class="form-label">Daily ATR Exhaustion Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
@@ -456,6 +388,37 @@
                         Default <b>0.85</b> = reject when 85% of the daily ATR is already consumed.
                         The scanner card's <b>ATR</b> chip uses the same threshold for its green/red colour. Signal Trail bucket: <code>DAILY_ATR_EXHAUSTED</code>.
                     </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Extended Level Signals (R3/S3, R4/S4)</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="skipR3S3" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R3/S3 breakout and retest signals</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <input type="checkbox" id="skipR4S4" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R4/S4 breakout and retest signals</span>
+                    </div>
+                    <div class="form-hint">R3/S3 and R4/S4 setups (both fresh breakouts and pattern retests at those levels) are far from the daily CPR and historically unreliable. Toggle on to reject the corresponding pair entirely. R2/S2 always fires regardless. Signal Trail rejection: <code>R3/S3 breakout/retest skipped (toggle off)</code>.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">20 EMA Level Count Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap;">
+                        <input type="checkbox" id="enableEmaLevelCountFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip if any CPR zone sits between EMA and the broken level</span>
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono); margin-left:12px;">EMA must sit within</span>
+                        <input type="number" id="emaLevelMinRangePct" class="form-control" step="5" min="0" max="100" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">% (away from boundary = close to broken level)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; padding-left: 28px;">
+                        <input type="checkbox" id="emaLevelFilterMorningSkip" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Bypass this filter until</span>
+                        <input type="time" id="emaLevelFilterMorningSkipUntil" class="form-control" style="width:100px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">(IST — momentum often outruns EMA in the first hour)</span>
+                    </div>
+                    <div class="form-hint"><b>Zone count check.</b> Counts CPR zones (S4, S3, S2, S1/PDL, CPR, R1/PDH, R2, R3, R4) strictly between the 20 EMA and the breakout level. Pair zones (CPR, R1/PDH, S1/PDL) count as one. The breakout zone itself is excluded. If 0 zones in between, the trade fires; if 1 or more, the setup is stale and skipped.
+                    <br/><br/><b>Proximity check (default 50%).</b> The setting reads as "EMA must sit within <i>N%</i> away from the boundary edge" — equivalently, within the closest <i>(100−N)%</i> of the range from the broken level. The 100% range is measured from the broken level to the next-zone edge. <b>Higher N = stricter</b> (EMA must be closer to broken).<br/>
+                    Example: <i>BUY_ABOVE_R1_PDH</i> with broken=R1+PDH=100, next zone above (R2)=105. Range = 5. At N=75, EMA must sit within (100−75)% = 25% of range from broken → EMA ≥ 98.75 (close to broken). EMA at 96 = 80% of range away from broken → skipped (too far). Set to <b>0</b> to disable proximity check (use zone-count only).</div>
                 </div>
             </div>
         </div>
@@ -947,6 +910,50 @@
         <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
     </div><!-- /tab-scanner -->
 
+    <!-- TAB: SETUPS -->
+    <div class="tab-content" id="tab-setups">
+    <div class="section-card fade-in">
+        <div class="section-header">
+            <div class="section-title">
+                <div class="section-title-dot" style="background: var(--accent-cyan);"></div>
+                Setup Toggles
+            </div>
+        </div>
+        <div class="section-body">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label">Magnet Trades</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableMagnetTrades" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable magnet setups (first structural level pair)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Magnet Qty &times;</span>
+                        <input type="number" id="magnetTradesQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.78rem; font-family: var(--font-mono);">(0.75 = three-quarter size)</span>
+                    </div>
+                    <div class="form-hint">Setups: <code>BUY_ABOVE_S1_PDL</code>, <code>SELL_BELOW_R1_PDH</code> &mdash; bounce off / rejection at the first structural level pair, target back to CPR. Classify as <b>MPT</b> and bypass the LTF gate. Signal Trail bucket when disabled: <code>MAGNET_DISABLED</code>.</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Mean-Reversion Trades</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableMeanReversionTrades" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Enable deep mean-reversion fades from far support/resistance</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Mean-Rev Qty &times;</span>
+                        <input type="number" id="meanReversionQtyFactor" class="form-control" step="0.05" min="0.1" max="1.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.78rem; font-family: var(--font-mono);">(0.5 = half size)</span>
+                    </div>
+                    <div class="form-hint">Setups: <code>BUY_ABOVE_S2/S3/S4</code>, <code>SELL_BELOW_R2/R3/R4</code> &mdash; fades from deep support/resistance, target one level back toward value. Classify as <b>MPT</b> and bypass the LTF gate. Signal Trail bucket when disabled: <code>MEAN_REVERSION_DISABLED</code>.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+        <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="save-btn" onclick="saveSettings()">✓ Save Settings</button></div>
+    </div><!-- /tab-setups -->
+
     <!-- TAB: CHARGES -->
     <div class="tab-content" id="tab-charges">
 
@@ -1385,10 +1392,8 @@
             document.getElementById('scanMaxPrice').value = d.scanMaxPrice != null ? d.scanMaxPrice : 0;
             // Watchlist universe radio retired — Settings → Stock Universe is the source.
             document.getElementById('minAbsoluteProfit').value = d.minAbsoluteProfit != null ? d.minAbsoluteProfit : 500;
-            document.getElementById('skipR3S3IvOvDays').checked = d.skipR3S3IvOvDays !== false;
-            document.getElementById('skipR3S3EvDays').checked   = d.skipR3S3EvDays   !== false;
-            document.getElementById('skipR4S4IvOvDays').checked = d.skipR4S4IvOvDays !== false;
-            document.getElementById('skipR4S4EvDays').checked   = d.skipR4S4EvDays   !== false;
+            document.getElementById('skipR3S3').checked = d.skipR3S3 !== false;
+            document.getElementById('skipR4S4').checked = d.skipR4S4 !== false;
             document.getElementById('enableMeanReversionTrades').checked = d.enableMeanReversionTrades !== false;
             document.getElementById('enableMagnetTrades').checked        = d.enableMagnetTrades !== false;
             document.getElementById('magnetTradesQtyFactor').value       = d.magnetTradesQtyFactor != null ? d.magnetTradesQtyFactor : 0.75;
@@ -1540,10 +1545,8 @@
                 scanMinPrice: parseFloat(document.getElementById('scanMinPrice').value) || 0,
                 scanMaxPrice: parseFloat(document.getElementById('scanMaxPrice').value) || 0,
                 minAbsoluteProfit: (function() { var v = parseFloat(document.getElementById('minAbsoluteProfit').value); return isNaN(v) ? 500 : v; })(),
-                skipR3S3IvOvDays: document.getElementById('skipR3S3IvOvDays').checked,
-                skipR3S3EvDays:   document.getElementById('skipR3S3EvDays').checked,
-                skipR4S4IvOvDays: document.getElementById('skipR4S4IvOvDays').checked,
-                skipR4S4EvDays:   document.getElementById('skipR4S4EvDays').checked,
+                skipR3S3: document.getElementById('skipR3S3').checked,
+                skipR4S4: document.getElementById('skipR4S4').checked,
                 enableMeanReversionTrades: document.getElementById('enableMeanReversionTrades').checked,
                 enableMagnetTrades:        document.getElementById('enableMagnetTrades').checked,
                 magnetTradesQtyFactor:     parseFloat(document.getElementById('magnetTradesQtyFactor').value) || 0.75,

@@ -104,10 +104,8 @@ public class SettingsController {
         result.put("virginCprExpiryDays", riskSettings.getVirginCprExpiryDays());
         result.put("breakevenTriggerPct", riskSettings.getBreakevenTriggerPct());
         result.put("breakevenSlAtrMult",  riskSettings.getBreakevenSlAtrMult());
-        result.put("skipR3S3IvOvDays", riskSettings.isSkipR3S3IvOvDays());
-        result.put("skipR3S3EvDays",   riskSettings.isSkipR3S3EvDays());
-        result.put("skipR4S4IvOvDays", riskSettings.isSkipR4S4IvOvDays());
-        result.put("skipR4S4EvDays",   riskSettings.isSkipR4S4EvDays());
+        result.put("skipR3S3", riskSettings.isSkipR3S3());
+        result.put("skipR4S4", riskSettings.isSkipR4S4());
         result.put("enableMeanReversionTrades", riskSettings.isEnableMeanReversionTrades());
         result.put("enableMagnetTrades",        riskSettings.isEnableMagnetTrades());
         result.put("magnetTradesQtyFactor",     riskSettings.getMagnetTradesQtyFactor());
@@ -216,10 +214,8 @@ public class SettingsController {
             }
             if (body.containsKey("breakevenTriggerPct")) riskSettings.setBreakevenTriggerPct(Double.parseDouble(body.get("breakevenTriggerPct").toString()));
             if (body.containsKey("breakevenSlAtrMult"))  riskSettings.setBreakevenSlAtrMult(Double.parseDouble(body.get("breakevenSlAtrMult").toString()));
-            if (body.containsKey("skipR3S3IvOvDays")) riskSettings.setSkipR3S3IvOvDays(Boolean.parseBoolean(body.get("skipR3S3IvOvDays").toString()));
-            if (body.containsKey("skipR3S3EvDays"))   riskSettings.setSkipR3S3EvDays(Boolean.parseBoolean(body.get("skipR3S3EvDays").toString()));
-            if (body.containsKey("skipR4S4IvOvDays")) riskSettings.setSkipR4S4IvOvDays(Boolean.parseBoolean(body.get("skipR4S4IvOvDays").toString()));
-            if (body.containsKey("skipR4S4EvDays"))   riskSettings.setSkipR4S4EvDays(Boolean.parseBoolean(body.get("skipR4S4EvDays").toString()));
+            if (body.containsKey("skipR3S3")) riskSettings.setSkipR3S3(Boolean.parseBoolean(body.get("skipR3S3").toString()));
+            if (body.containsKey("skipR4S4")) riskSettings.setSkipR4S4(Boolean.parseBoolean(body.get("skipR4S4").toString()));
             if (body.containsKey("enableMeanReversionTrades")) riskSettings.setEnableMeanReversionTrades(Boolean.parseBoolean(body.get("enableMeanReversionTrades").toString()));
             if (body.containsKey("enableMagnetTrades"))        riskSettings.setEnableMagnetTrades(Boolean.parseBoolean(body.get("enableMagnetTrades").toString()));
             if (body.containsKey("magnetTradesQtyFactor"))     riskSettings.setMagnetTradesQtyFactor(Double.parseDouble(body.get("magnetTradesQtyFactor").toString()));

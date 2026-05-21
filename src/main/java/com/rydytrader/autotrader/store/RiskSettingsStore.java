@@ -194,13 +194,13 @@ public class RiskSettingsStore {
         // on EV (gap up/down) days regardless. Toggles default ON (skip on normal days).
         // Daily extended-level skip — split by day type. IV/OV = open print inside CPR or
         // between CPR and R2/S2; EV = open print outside R2/S2 (gap). Defaults preserve the
-        // previous "skip on all days" behavior. The legacy keys skipR3S3NormalDays /
-        // skipR4S4NormalDays are still read by load() for backward compat (seed both new
-        // fields with the same value), then dropped from the rewritten JSON on next save.
-        volatile boolean skipR3S3IvOvDays = true;
-        volatile boolean skipR3S3EvDays   = true;
-        volatile boolean skipR4S4IvOvDays = true;
-        volatile boolean skipR4S4EvDays   = true;
+        // Skip R3/S3 and R4/S4 breakouts + retest signals (the setup name covers both fresh
+        // breakouts and retest variants). Single toggle per level pair — no day-type split.
+        // Legacy keys (skipR3S3IvOvDays / skipR3S3EvDays / skipR4S4IvOvDays / skipR4S4EvDays
+        // / skipR3S3NormalDays / skipR4S4NormalDays) silently fold into the new toggle on
+        // load: any legacy-true value flips the new toggle to true.
+        volatile boolean skipR3S3 = true;
+        volatile boolean skipR4S4 = true;
         // Counter-trend setups split into two independent families. Each has its own
         // enable toggle and qty factor.
         //   • Magnets        — BUY_ABOVE_S1_PDL, SELL_BELOW_R1_PDH (first structural pair).
@@ -352,10 +352,8 @@ public class RiskSettingsStore {
     public int getVirginCprExpiryDays() { return cfg().virginCprExpiryDays; }
     public double getBreakevenTriggerPct() { return cfg().breakevenTriggerPct; }
     public double getBreakevenSlAtrMult()  { return cfg().breakevenSlAtrMult; }
-    public boolean isSkipR3S3IvOvDays() { return cfg().skipR3S3IvOvDays; }
-    public boolean isSkipR3S3EvDays()   { return cfg().skipR3S3EvDays; }
-    public boolean isSkipR4S4IvOvDays() { return cfg().skipR4S4IvOvDays; }
-    public boolean isSkipR4S4EvDays()   { return cfg().skipR4S4EvDays; }
+    public boolean isSkipR3S3() { return cfg().skipR3S3; }
+    public boolean isSkipR4S4() { return cfg().skipR4S4; }
     public boolean isEnableMeanReversionTrades() { return cfg().enableMeanReversionTrades; }
     public boolean isEnableMagnetTrades()        { return cfg().enableMagnetTrades; }
     public double  getMagnetTradesQtyFactor()    { return cfg().magnetTradesQtyFactor; }
@@ -470,10 +468,8 @@ public class RiskSettingsStore {
     public void setVirginCprExpiryDays(int v) { cfg().virginCprExpiryDays = Math.max(0, v); }
     public void setBreakevenTriggerPct(double v) { cfg().breakevenTriggerPct = v; }
     public void setBreakevenSlAtrMult(double v)  { cfg().breakevenSlAtrMult = v; }
-    public void setSkipR3S3IvOvDays(boolean v) { cfg().skipR3S3IvOvDays = v; }
-    public void setSkipR3S3EvDays(boolean v)   { cfg().skipR3S3EvDays = v; }
-    public void setSkipR4S4IvOvDays(boolean v) { cfg().skipR4S4IvOvDays = v; }
-    public void setSkipR4S4EvDays(boolean v)   { cfg().skipR4S4EvDays = v; }
+    public void setSkipR3S3(boolean v) { cfg().skipR3S3 = v; }
+    public void setSkipR4S4(boolean v) { cfg().skipR4S4 = v; }
     public void setEnableMeanReversionTrades(boolean v) {
         cfg().enableMeanReversionTrades = v;
         // Mean-reversion setups classify as MPT downstream — turning on the master toggle
@@ -606,10 +602,8 @@ public class RiskSettingsStore {
             upsert("virginCprExpiryDays", String.valueOf(c.virginCprExpiryDays));
             upsert("breakevenTriggerPct", String.valueOf(c.breakevenTriggerPct));
             upsert("breakevenSlAtrMult",  String.valueOf(c.breakevenSlAtrMult));
-            upsert("skipR3S3IvOvDays", String.valueOf(c.skipR3S3IvOvDays));
-            upsert("skipR3S3EvDays",   String.valueOf(c.skipR3S3EvDays));
-            upsert("skipR4S4IvOvDays", String.valueOf(c.skipR4S4IvOvDays));
-            upsert("skipR4S4EvDays",   String.valueOf(c.skipR4S4EvDays));
+            upsert("skipR3S3", String.valueOf(c.skipR3S3));
+            upsert("skipR4S4", String.valueOf(c.skipR4S4));
             upsert("enableMeanReversionTrades", String.valueOf(c.enableMeanReversionTrades));
             upsert("enableMagnetTrades",        String.valueOf(c.enableMagnetTrades));
             upsert("magnetTradesQtyFactor",     String.valueOf(c.magnetTradesQtyFactor));
@@ -817,23 +811,19 @@ public class RiskSettingsStore {
                     case "fibStage1TriggerPct" -> c.breakevenTriggerPct = Double.parseDouble(v);
                     case "fibStage1SlAtrMult"  -> c.breakevenSlAtrMult  = Double.parseDouble(v);
                     case "fibStage2TriggerPct", "fibStage2SlPct" -> { /* legacy — stage 2 removed */ }
-                    // Legacy NormalDays keys: split into the new IvOv + Ev pair, both seeded
-                    // with the legacy value so the user's prior intent is preserved on first
-                    // load after upgrade. Once any save happens, the new keys overwrite.
-                    case "skipR3S3NormalDays" -> {
-                        boolean lv = Boolean.parseBoolean(v);
-                        c.skipR3S3IvOvDays = lv;
-                        c.skipR3S3EvDays   = lv;
+                    // Legacy day-type-split keys (NormalDays / IvOvDays / EvDays) silently
+                    // fold into the new single-toggle pair: any legacy-true value flips the
+                    // new toggle to true on load (preserving the user's prior intent — if
+                    // they had ANY of the splits set to skip, the consolidated toggle stays
+                    // on). Rewritten on next save as just skipR3S3 / skipR4S4.
+                    case "skipR3S3NormalDays", "skipR3S3IvOvDays", "skipR3S3EvDays" -> {
+                        if (Boolean.parseBoolean(v)) c.skipR3S3 = true;
                     }
-                    case "skipR4S4NormalDays" -> {
-                        boolean lv = Boolean.parseBoolean(v);
-                        c.skipR4S4IvOvDays = lv;
-                        c.skipR4S4EvDays   = lv;
+                    case "skipR4S4NormalDays", "skipR4S4IvOvDays", "skipR4S4EvDays" -> {
+                        if (Boolean.parseBoolean(v)) c.skipR4S4 = true;
                     }
-                    case "skipR3S3IvOvDays" -> c.skipR3S3IvOvDays = Boolean.parseBoolean(v);
-                    case "skipR3S3EvDays"   -> c.skipR3S3EvDays   = Boolean.parseBoolean(v);
-                    case "skipR4S4IvOvDays" -> c.skipR4S4IvOvDays = Boolean.parseBoolean(v);
-                    case "skipR4S4EvDays"   -> c.skipR4S4EvDays   = Boolean.parseBoolean(v);
+                    case "skipR3S3" -> c.skipR3S3 = Boolean.parseBoolean(v);
+                    case "skipR4S4" -> c.skipR4S4 = Boolean.parseBoolean(v);
                     case "enableMeanReversionTrades" -> c.enableMeanReversionTrades = Boolean.parseBoolean(v);
                     case "enableMagnetTrades"        -> c.enableMagnetTrades        = Boolean.parseBoolean(v);
                     case "magnetTradesQtyFactor"     -> c.magnetTradesQtyFactor     = Double.parseDouble(v);
@@ -893,7 +883,7 @@ public class RiskSettingsStore {
                     case "indexAlignmentHardSkip", "indexOpposedQtyFactor" -> { /* removed — soft mode deleted */ }
                 }
             }
-            log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} brokerage={} fixedQty={} capitalPerTrade={} trailingSl={} skipR3S3(IvOv/Ev)={}/{} skipR4S4(IvOv/Ev)={}/{}", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.enableTrailingSl, c.skipR3S3IvOvDays, c.skipR3S3EvDays, c.skipR4S4IvOvDays, c.skipR4S4EvDays);
+            log.info("[RiskSettingsStore] Loaded {}: start={} end={} totalCapital={} maxRiskPerDayPct={}% riskPerTrade={} autoSquareOff={} atrMult={} brokerage={} fixedQty={} capitalPerTrade={} trailingSl={} skipR3S3={} skipR4S4={}", mode, c.tradingStartTime, c.tradingEndTime, c.totalCapital, c.maxRiskPerDayPct, c.riskPerTrade, c.autoSquareOffTime, c.atrMultiplier, c.brokeragePerOrder, c.fixedQuantity, c.capitalPerTrade, c.enableTrailingSl, c.skipR3S3, c.skipR4S4);
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to load {}: {}", mode, e.getMessage());
         }
