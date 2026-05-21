@@ -731,6 +731,44 @@ public class BhavcopyService {
         return new AdaptiveCprResult(todayWidthPct, avgWidthPct, widthRatio, cprNarrow, state, samples);
     }
 
+    // ── Daily ATR (14-day average True Range) ──────────────────────────────
+    //
+    // Used by the Daily ATR Exhaustion filter in BreakoutScanner and the "Today's TR" chip
+    // on the scanner card. Computed on-demand from dailyHistory — no incremental state, no
+    // new API calls (dailyHistory already keeps 25 days of OHLC per stock from bhavcopy).
+
+    private static final int DAILY_ATR_LOOKBACK = 14;
+
+    /** 14-day daily ATR for the stock, computed on-demand from {@link #dailyHistory}.
+     *  Returns 0 when fewer than {@code DAILY_ATR_LOOKBACK} valid prior-day TR samples are
+     *  available. A TR sample needs the bar's H/L + the prior bar's close, so we need
+     *  {@code LOOKBACK + 1} consecutive valid days. */
+    public double getDailyAtr(String ticker) {
+        if (ticker == null || ticker.isEmpty()) return 0;
+        String key = extractTicker(ticker);
+        java.util.List<double[]> rows = new java.util.ArrayList<>(DAILY_ATR_LOOKBACK + 1);
+        // dailyHistory is newest-first. Collect at most LOOKBACK+1 valid rows so we can
+        // compute LOOKBACK true ranges (each needs the prior day's close).
+        for (DaySnapshot snap : dailyHistory) {
+            if (snap == null || snap.symbols == null) continue;
+            CprLevels d = snap.symbols.get(key);
+            if (d == null || d.getClose() <= 0 || d.getHigh() <= 0 || d.getLow() <= 0) continue;
+            rows.add(new double[]{ d.getHigh(), d.getLow(), d.getClose() });
+            if (rows.size() >= DAILY_ATR_LOOKBACK + 1) break;
+        }
+        if (rows.size() < 2) return 0;
+        double sumTr = 0;
+        int samples = 0;
+        for (int i = 0; i < rows.size() - 1 && samples < DAILY_ATR_LOOKBACK; i++) {
+            double h = rows.get(i)[0], l = rows.get(i)[1];
+            double pc = rows.get(i + 1)[2]; // prior day's close
+            double tr = Math.max(h - l, Math.max(Math.abs(h - pc), Math.abs(l - pc)));
+            sumTr += tr;
+            samples++;
+        }
+        return samples >= DAILY_ATR_LOOKBACK ? sumTr / samples : 0;
+    }
+
     /**
      * Average Daily Range (ADR) = average of (high - low) over the last N trading days.
      * Uses snapshots in dailyHistory (excludes today's in-progress day).

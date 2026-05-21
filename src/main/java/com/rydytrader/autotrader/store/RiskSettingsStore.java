@@ -126,6 +126,11 @@ public class RiskSettingsStore {
         // when the nearest hurdle in the OPPOSITE direction (above stock LTP for buys / below
         // for sells) is closer than this many stock ATRs. 0 = headroom check off.
         volatile double htfHurdleMinHeadroomAtr = 1.0;
+        // Daily ATR exhaustion filter — rejects new entries (both buy and sell) when today's
+        // True Range (gap-inclusive) has consumed too much of the stock's 14-day daily ATR.
+        // Opt-in. Threshold = 0 disables the check inline even when the toggle is on.
+        volatile boolean enableDailyAtrExhaustionFilter = false;
+        volatile double  dailyAtrExhaustionMult         = 0.85;
         // Index HTF Hurdle filter. When on, every stock signal is gated against its primary
         // index's 1-hour close vs that index's nearest weekly hurdle in trade direction. Default
         // off — opt-in. Replaces the old NIFTY-only macro filter; now runs per primary index.
@@ -181,12 +186,6 @@ public class RiskSettingsStore {
         // become available to the dedicated Virgin CPR Hurdle filter for the next N trading
         // days. A new virgin CPR replaces any existing active one. 0 = feature disabled.
         volatile int virginCprExpiryDays = 10;
-        // Virgin CPR Hurdle filter — treats the active virgin CPR as a zone (BC..TC). Rejects
-        // all stock signals when NIFTY's prior 5m close is inside the zone, and rejects in the
-        // trade direction when the close is within virginCprHurdleHeadroomAtr × NIFTY ATR of
-        // the zone edge. Default off — opt-in.
-        volatile boolean enableVirginCprHurdleFilter = false;
-        volatile double  virginCprHurdleHeadroomAtr  = 1.0;
         // Breakeven SL — single-stage move. When the peak (long) / trough (short) reaches
         // {@code breakevenTriggerPct}% of the range from entry to target, the SL is moved to
         // {@code entry ± breakevenSlAtrMult × ATR}. Once moved, it stays put (never widens).
@@ -312,6 +311,8 @@ public class RiskSettingsStore {
     public boolean isEnableWeeklyLevelTargetShift() { return cfg().enableWeeklyLevelTargetShift; }
     public boolean isEnableHtfHurdleFilter()    { return cfg().enableHtfHurdleFilter; }
     public double  getHtfHurdleMinHeadroomAtr() { return cfg().htfHurdleMinHeadroomAtr; }
+    public boolean isEnableDailyAtrExhaustionFilter() { return cfg().enableDailyAtrExhaustionFilter; }
+    public double  getDailyAtrExhaustionMult()        { return cfg().dailyAtrExhaustionMult; }
     public boolean isEnableIndexHtfHurdleFilter() { return cfg().enableIndexHtfHurdleFilter; }
     public double  getIndexHtfHurdleMinHeadroomAtr() { return cfg().indexHtfHurdleMinHeadroomAtr; }
     public boolean isEnableIndex5mHurdleFilter()  { return cfg().enableIndex5mHurdleFilter; }
@@ -352,8 +353,6 @@ public class RiskSettingsStore {
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
     public boolean isEnablePriceEmaExit() { return cfg().enablePriceEmaExit; }
     public int getVirginCprExpiryDays() { return cfg().virginCprExpiryDays; }
-    public boolean isEnableVirginCprHurdleFilter() { return cfg().enableVirginCprHurdleFilter; }
-    public double  getVirginCprHurdleHeadroomAtr() { return cfg().virginCprHurdleHeadroomAtr; }
     public double getBreakevenTriggerPct() { return cfg().breakevenTriggerPct; }
     public double getBreakevenSlAtrMult()  { return cfg().breakevenSlAtrMult; }
     public boolean isSkipR3S3IvOvDays() { return cfg().skipR3S3IvOvDays; }
@@ -433,6 +432,8 @@ public class RiskSettingsStore {
     public void setEnableWeeklyLevelTargetShift(boolean v) { cfg().enableWeeklyLevelTargetShift = v; }
     public void setEnableHtfHurdleFilter(boolean v)    { cfg().enableHtfHurdleFilter = v; }
     public void setHtfHurdleMinHeadroomAtr(double v)   { cfg().htfHurdleMinHeadroomAtr = Math.max(0, v); }
+    public void setEnableDailyAtrExhaustionFilter(boolean v) { cfg().enableDailyAtrExhaustionFilter = v; }
+    public void setDailyAtrExhaustionMult(double v)          { cfg().dailyAtrExhaustionMult = Math.max(0, v); }
     public void setEnableIndexHtfHurdleFilter(boolean v) { cfg().enableIndexHtfHurdleFilter = v; }
     public void setIndexHtfHurdleMinHeadroomAtr(double v) { cfg().indexHtfHurdleMinHeadroomAtr = Math.max(0, v); }
     public void setEnableIndex5mHurdleFilter(boolean v)  { cfg().enableIndex5mHurdleFilter = v; }
@@ -473,8 +474,6 @@ public class RiskSettingsStore {
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
     public void setEnablePriceEmaExit(boolean v) { cfg().enablePriceEmaExit = v; }
     public void setVirginCprExpiryDays(int v) { cfg().virginCprExpiryDays = Math.max(0, v); }
-    public void setEnableVirginCprHurdleFilter(boolean v) { cfg().enableVirginCprHurdleFilter = v; }
-    public void setVirginCprHurdleHeadroomAtr(double v)   { cfg().virginCprHurdleHeadroomAtr = Math.max(0, v); }
     public void setBreakevenTriggerPct(double v) { cfg().breakevenTriggerPct = v; }
     public void setBreakevenSlAtrMult(double v)  { cfg().breakevenSlAtrMult = v; }
     public void setSkipR3S3IvOvDays(boolean v) { cfg().skipR3S3IvOvDays = v; }
@@ -570,6 +569,8 @@ public class RiskSettingsStore {
             upsert("enableWeeklyLevelTargetShift", String.valueOf(c.enableWeeklyLevelTargetShift));
             upsert("enableHtfHurdleFilter", String.valueOf(c.enableHtfHurdleFilter));
             upsert("htfHurdleMinHeadroomAtr", String.valueOf(c.htfHurdleMinHeadroomAtr));
+            upsert("enableDailyAtrExhaustionFilter", String.valueOf(c.enableDailyAtrExhaustionFilter));
+            upsert("dailyAtrExhaustionMult",         String.valueOf(c.dailyAtrExhaustionMult));
             upsert("enableIndexHtfHurdleFilter", String.valueOf(c.enableIndexHtfHurdleFilter));
             upsert("indexHtfHurdleMinHeadroomAtr", String.valueOf(c.indexHtfHurdleMinHeadroomAtr));
             upsert("enableIndex5mHurdleFilter", String.valueOf(c.enableIndex5mHurdleFilter));
@@ -610,8 +611,6 @@ public class RiskSettingsStore {
             upsert("enableTrailingSl", String.valueOf(c.enableTrailingSl));
             upsert("enablePriceEmaExit", String.valueOf(c.enablePriceEmaExit));
             upsert("virginCprExpiryDays", String.valueOf(c.virginCprExpiryDays));
-            upsert("enableVirginCprHurdleFilter", String.valueOf(c.enableVirginCprHurdleFilter));
-            upsert("virginCprHurdleHeadroomAtr",  String.valueOf(c.virginCprHurdleHeadroomAtr));
             upsert("breakevenTriggerPct", String.valueOf(c.breakevenTriggerPct));
             upsert("breakevenSlAtrMult",  String.valueOf(c.breakevenSlAtrMult));
             upsert("skipR3S3IvOvDays", String.valueOf(c.skipR3S3IvOvDays));
@@ -697,6 +696,8 @@ public class RiskSettingsStore {
                     // splitMinDistanceAtr. Old JSON files round-trip without errors.
                     case "enableHtfHurdleFilter" -> c.enableHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "htfHurdleMinHeadroomAtr" -> c.htfHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
+                    case "enableDailyAtrExhaustionFilter" -> c.enableDailyAtrExhaustionFilter = Boolean.parseBoolean(v);
+                    case "dailyAtrExhaustionMult"        -> c.dailyAtrExhaustionMult         = Math.max(0, Double.parseDouble(v));
                     case "enableIndexHtfHurdleFilter" -> c.enableIndexHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "indexHtfHurdleMinHeadroomAtr" -> c.indexHtfHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
                     case "enableIndex5mHurdleFilter" -> c.enableIndex5mHurdleFilter = Boolean.parseBoolean(v);
@@ -817,8 +818,8 @@ public class RiskSettingsStore {
                          "perSymbolDailyTradeLimit",
                          "lptMaxTradesPerStockPerDay" -> { /* legacy — removed */ }
                     case "virginCprExpiryDays" -> c.virginCprExpiryDays = Math.max(0, Integer.parseInt(v));
-                    case "enableVirginCprHurdleFilter" -> c.enableVirginCprHurdleFilter = Boolean.parseBoolean(v);
-                    case "virginCprHurdleHeadroomAtr" -> c.virginCprHurdleHeadroomAtr = Math.max(0, Double.parseDouble(v));
+                    // Virgin CPR Hurdle Filter removed — drop legacy keys silently.
+                    case "enableVirginCprHurdleFilter", "virginCprHurdleHeadroomAtr" -> { /* drop */ }
                     case "breakevenTriggerPct" -> c.breakevenTriggerPct = Double.parseDouble(v);
                     case "breakevenSlAtrMult"  -> c.breakevenSlAtrMult  = Double.parseDouble(v);
                     // Legacy fib-stage keys — fold old stage-1 values into the new breakeven

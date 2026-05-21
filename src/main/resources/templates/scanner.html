@@ -414,22 +414,6 @@
             <div class="page-subtitle">CPR Breakout Scanner</div>
         </div>
         <div style="display:flex; gap:8px;">
-            <button onclick="showNarrowCpr()" style="
-                background: rgba(99,179,237,0.1); border: 1px solid rgba(99,179,237,0.3);
-                color: var(--accent-blue); padding: 6px 14px; border-radius: 8px;
-                font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
-                cursor: pointer; transition: all 0.2s;
-            " onmouseover="this.style.background='rgba(99,179,237,0.18)'" onmouseout="this.style.background='rgba(99,179,237,0.1)'">
-                All Narrow CPR Stocks
-            </button>
-            <button onclick="showInsideCpr()" style="
-                background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3);
-                color: var(--accent-yellow); padding: 6px 14px; border-radius: 8px;
-                font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
-                cursor: pointer; transition: all 0.2s;
-            " onmouseover="this.style.background='rgba(251,191,36,0.18)'" onmouseout="this.style.background='rgba(251,191,36,0.1)'">
-                All Inside CPR Stocks
-            </button>
             <a href="/api/scanner/tv-watchlist" style="
                 background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.3);
                 color: var(--accent-green); padding: 6px 14px; border-radius: 8px;
@@ -859,10 +843,30 @@
             + '<div class="scan-price-row">'
             + '  <span class="scan-ltp">' + fmt(d.ltp) + '</span>'
             + '  <span class="scan-change ' + chClass + '">' + chArrow + ' ' + d.changePercent.toFixed(2) + '%</span>'
-            + '  <span style="margin-left:auto; display:inline-flex; align-items:baseline; gap:6px;">'
-            +     '<span class="scan-data-label">ATR</span>'
-            +     '<span class="scan-data-value">' + fmt(d.atr) + '</span>'
-            + '  </span>'
+            + (function() {
+                // Today's TR chip — gap-inclusive intraday move. Color flips on the same
+                // threshold the Daily ATR Exhaustion filter uses (read from window.__scannerStatus,
+                // refreshed every 5s by checkStatus()). Green = budget remains; Red = exhausted
+                // (this stock would be filter-blocked when the toggle is on).
+                var todayTr = +d.todayTr || 0;
+                var dailyAtr = +d.dailyAtr || 0;
+                var fiveMinAtr = +d.atr || 0;
+                var threshold = (window.__scannerStatus && +window.__scannerStatus.dailyAtrExhaustionMult) || 0.85;
+                var ratio = (dailyAtr > 0 && todayTr > 0) ? todayTr / dailyAtr : 0;
+                var color;
+                if (todayTr <= 0 || dailyAtr <= 0) color = 'var(--text-muted)';
+                else if (ratio >= threshold)        color = 'var(--accent-red)';
+                else                                color = 'var(--accent-green)';
+                var pct = dailyAtr > 0 ? (ratio * 100).toFixed(0) + '%' : '--';
+                var tip = "Today's TR: " + (todayTr > 0 ? todayTr.toFixed(2) : '—') + ' (' + pct + ' of daily ATR)'
+                    + '\n5-min ATR(14): ' + (fiveMinAtr > 0 ? fiveMinAtr.toFixed(2) : '—')
+                    + '\nDaily ATR(14d): ' + (dailyAtr > 0 ? dailyAtr.toFixed(2) : '—')
+                    + '\nExhaustion threshold: ' + (threshold * 100).toFixed(0) + '%';
+                return '  <span style="margin-left:auto; display:inline-flex; align-items:baseline; gap:6px; cursor:help;" title="' + tip.replace(/"/g, '&quot;') + '">'
+                    +    '<span class="scan-data-label">ATR</span>'
+                    +    '<span class="scan-data-value" style="color:' + color + ';font-weight:600;">' + (todayTr > 0 ? todayTr.toFixed(2) : '--') + '</span>'
+                    + '  </span>';
+            })()
             + '</div>'
             + '<div style="border-top:1px solid var(--border);"></div>'
             + '<div class="scan-data-grid scan-data-grid-3">'
@@ -1013,6 +1017,9 @@
 
         fetch('/api/scanner/status').then(function(r) { return r.json(); }).then(function(s) {
             window.__isTradingDay = s.tradingDay !== false; // default true if undefined
+            // Cache the live status payload so card-level chips (Today's TR exhaustion)
+            // can read the latest threshold without an extra fetch on every render.
+            window.__scannerStatus = s;
             document.getElementById('ssWatchlist').textContent = s.watchlistCount;
 
             // Price range
@@ -1380,143 +1387,6 @@
 })();
 </script>
 
-<!-- Narrow CPR Modal -->
-<div id="narrowCprModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px);" onclick="if(event.target===this)this.style.display='none'">
-    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:560px; max-height:85vh; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border); background:var(--bg-section-header);">
-            <div>
-                <div style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:var(--text-primary);">ALL NARROW CPR STOCKS</div>
-                <div id="narrowCprSubtitle" style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); margin-top:2px;"></div>
-            </div>
-            <button onclick="document.getElementById('narrowCprModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
-        </div>
-        <!-- Filter bar -->
-        <div id="narrowFilters" style="padding:14px 16px; border-bottom:1px solid var(--border); display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center; font-family:var(--font-mono); font-size:0.72rem; color:var(--text-secondary); flex-shrink:0;">
-            <span>Price:</span>
-            <input type="number" id="nfMinPrice" placeholder="Min" style="width:65px; padding:4px 6px; font-size:0.72rem; background:var(--bg-base); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); text-align:center;" oninput="filterModalRows('narrow')">
-            <span>–</span>
-            <input type="number" id="nfMaxPrice" placeholder="Max" style="width:65px; padding:4px 6px; font-size:0.72rem; background:var(--bg-base); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); text-align:center;" oninput="filterModalRows('narrow')">
-            <span id="narrowFilterCount" style="margin-left:auto; color:var(--text-muted);"></span>
-        </div>
-        <div style="overflow-y:auto; flex:1; min-height:0; padding:0; scrollbar-width:thin; scrollbar-color:var(--border) transparent;">
-            <table style="width:100%; border-collapse:collapse; font-family:var(--font-mono); font-size:0.78rem;">
-                <thead>
-                    <tr style="background:var(--bg-surface); position:sticky; top:0; z-index:1;">
-                        <th style="padding:10px 14px; text-align:left; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">#</th>
-                        <th style="padding:10px 14px; text-align:left; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Symbol</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Close</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">CPR %</th>
-                    </tr>
-                </thead>
-                <tbody id="narrowCprBody"></tbody>
-            </table>
-            <div id="narrowCprEmpty" style="display:none; padding:40px; text-align:center; color:var(--text-muted); font-family:var(--font-mono); font-size:0.85rem;">No narrow CPR stocks found</div>
-        </div>
-    </div>
-</div>
-
-<!-- Inside CPR Modal -->
-<div id="insideCprModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px);" onclick="if(event.target===this)this.style.display='none'">
-    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:560px; max-height:85vh; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border); background:var(--bg-section-header);">
-            <div>
-                <div style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:var(--text-primary);">ALL INSIDE CPR STOCKS</div>
-                <div id="insideCprSubtitle" style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); margin-top:2px;"></div>
-            </div>
-            <button onclick="document.getElementById('insideCprModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer; padding:4px 8px; line-height:1;">&times;</button>
-        </div>
-        <!-- Filter bar -->
-        <div id="insideFilters" style="padding:14px 16px; border-bottom:1px solid var(--border); display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center; font-family:var(--font-mono); font-size:0.72rem; color:var(--text-secondary); flex-shrink:0;">
-            <span>Price:</span>
-            <input type="number" id="ifMinPrice" placeholder="Min" style="width:65px; padding:4px 6px; font-size:0.72rem; background:var(--bg-base); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); text-align:center;" oninput="filterModalRows('inside')">
-            <span>–</span>
-            <input type="number" id="ifMaxPrice" placeholder="Max" style="width:65px; padding:4px 6px; font-size:0.72rem; background:var(--bg-base); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); text-align:center;" oninput="filterModalRows('inside')">
-            <span id="insideFilterCount" style="margin-left:auto; color:var(--text-muted);"></span>
-        </div>
-        <div style="overflow-y:auto; flex:1; min-height:0; padding:0; scrollbar-width:thin; scrollbar-color:var(--border) transparent;">
-            <table style="width:100%; border-collapse:collapse; font-family:var(--font-mono); font-size:0.78rem;">
-                <thead>
-                    <tr style="background:var(--bg-surface); position:sticky; top:0; z-index:1;">
-                        <th style="padding:10px 14px; text-align:left; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">#</th>
-                        <th style="padding:10px 14px; text-align:left; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Symbol</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">Close</th>
-                        <th style="padding:10px 14px; text-align:right; color:var(--text-secondary); font-weight:600; border-bottom:1px solid var(--border);">CPR %</th>
-                    </tr>
-                </thead>
-                <tbody id="insideCprBody"></tbody>
-            </table>
-            <div id="insideCprEmpty" style="display:none; padding:40px; text-align:center; color:var(--text-muted); font-family:var(--font-mono); font-size:0.85rem;">No inside CPR stocks found</div>
-        </div>
-    </div>
-</div>
-
-<script>
-function buildModalRow(s, i) {
-    return '<tr class="modal-stock-row" data-close="' + s.close + '" style="border-bottom:1px solid var(--border);">'
-        + '<td style="padding:8px 14px; color:var(--text-muted);">' + (i+1) + '</td>'
-        + '<td style="padding:8px 14px; color:var(--accent-cyan); font-weight:600;">' + s.symbol + '</td>'
-        + '<td style="padding:8px 14px; text-align:right; color:var(--text-primary);">' + s.close.toFixed(2) + '</td>'
-        + '<td style="padding:8px 14px; text-align:right; color:var(--accent-yellow); font-weight:600;">' + s.cprWidthPct.toFixed(3) + '%</td>'
-        + '</tr>';
-}
-
-function filterModalRows(type) {
-    var prefix = type === 'narrow' ? 'nf' : 'if';
-    var minP = parseFloat(document.getElementById(prefix + 'MinPrice').value) || 0;
-    var maxP = parseFloat(document.getElementById(prefix + 'MaxPrice').value) || 0;
-    var bodyId = type === 'narrow' ? 'narrowCprBody' : 'insideCprBody';
-    var countId = type + 'FilterCount';
-    var rows = document.getElementById(bodyId).querySelectorAll('.modal-stock-row');
-    var shown = 0, total = rows.length;
-    rows.forEach(function(row) {
-        var c = parseFloat(row.dataset.close);
-        var vis = true;
-        if (minP > 0 && c < minP) vis = false;
-        if (maxP > 0 && c > maxP) vis = false;
-        row.style.display = vis ? '' : 'none';
-        if (vis) shown++;
-    });
-    document.getElementById(countId).textContent = 'Showing ' + shown + ' of ' + total;
-}
-
-function showNarrowCpr() {
-    document.getElementById('narrowCprModal').style.display = 'block';
-    document.getElementById('narrowCprBody').innerHTML = '<tr><td colspan="4" style="padding:30px; text-align:center; color:var(--text-muted);">Loading...</td></tr>';
-    document.getElementById('narrowCprEmpty').style.display = 'none';
-    document.getElementById('narrowCprSubtitle').textContent = '';
-    fetch('/api/narrow-cpr')
-        .then(r => r.json())
-        .then(data => {
-            document.getElementById('narrowCprSubtitle').textContent = 'Date: ' + (data.date || '\u2014') + ' | NFO: ' + (data.totalNfoStocks || 0) + ' | Narrow: ' + (data.narrowCount || 0);
-            var stocks = data.stocks || [];
-            if (stocks.length === 0) { document.getElementById('narrowCprBody').innerHTML = ''; document.getElementById('narrowCprEmpty').style.display = 'block'; return; }
-            document.getElementById('narrowCprEmpty').style.display = 'none';
-            document.getElementById('narrowCprBody').innerHTML = stocks.map((s, i) => buildModalRow(s, i)).join('');
-            document.getElementById('narrowFilterCount').textContent = 'Showing ' + stocks.length + ' of ' + stocks.length;
-        })
-        .catch(err => { document.getElementById('narrowCprBody').innerHTML = '<tr><td colspan="4" style="padding:30px; text-align:center; color:var(--accent-red);">Failed: ' + err.message + '</td></tr>'; });
-}
-
-function showInsideCpr() {
-    document.getElementById('insideCprModal').style.display = 'block';
-    document.getElementById('insideCprBody').innerHTML = '<tr><td colspan="4" style="padding:30px; text-align:center; color:var(--text-muted);">Loading...</td></tr>';
-    document.getElementById('insideCprEmpty').style.display = 'none';
-    document.getElementById('insideCprSubtitle').textContent = '';
-    fetch('/api/inside-cpr')
-        .then(r => r.json())
-        .then(data => {
-            document.getElementById('insideCprSubtitle').textContent = 'Date: ' + (data.date || '\u2014') + ' | Prev: ' + (data.previousDate || '\u2014') + ' | NFO: ' + (data.totalNfoStocks || 0) + ' | Inside: ' + (data.insideCount || 0);
-            var stocks = data.stocks || [];
-            if (stocks.length === 0) { document.getElementById('insideCprBody').innerHTML = ''; document.getElementById('insideCprEmpty').style.display = 'block'; return; }
-            document.getElementById('insideCprEmpty').style.display = 'none';
-            document.getElementById('insideCprBody').innerHTML = stocks.map((s, i) => buildModalRow(s, i)).join('');
-            document.getElementById('insideFilterCount').textContent = 'Showing ' + stocks.length + ' of ' + stocks.length;
-        })
-        .catch(err => { document.getElementById('insideCprBody').innerHTML = '<tr><td colspan="4" style="padding:30px; text-align:center; color:var(--accent-red);">Failed: ' + err.message + '</td></tr>'; });
-}
-
-</script>
-
 <!-- Simulate Qty Modal -->
 
 <!-- Classification Legend Modal -->
@@ -1672,13 +1542,14 @@ function showInsideCpr() {
                         <th style="padding:9px 12px; text-align:left; color:var(--text-muted); font-size:0.64rem; text-transform:uppercase; letter-spacing:0.06em; border-bottom:1px solid var(--border); width:80px;">Time</th>
                         <th style="padding:9px 12px; text-align:left; color:var(--text-muted); font-size:0.64rem; text-transform:uppercase; letter-spacing:0.06em; border-bottom:1px solid var(--border); width:110px;">Symbol</th>
                         <th style="padding:9px 12px; text-align:left; color:var(--text-muted); font-size:0.64rem; text-transform:uppercase; letter-spacing:0.06em; border-bottom:1px solid var(--border); width:160px;">Setup</th>
+                        <th style="padding:9px 12px; text-align:left; color:var(--text-muted); font-size:0.64rem; text-transform:uppercase; letter-spacing:0.06em; border-bottom:1px solid var(--border); width:170px;">Pattern</th>
                         <th style="padding:9px 12px; text-align:left; color:var(--text-muted); font-size:0.64rem; text-transform:uppercase; letter-spacing:0.06em; border-bottom:1px solid var(--border); width:100px;">Status</th>
                         <th style="padding:9px 12px; text-align:left; color:var(--text-muted); font-size:0.64rem; text-transform:uppercase; letter-spacing:0.06em; border-bottom:1px solid var(--border); width:150px;">Filter</th>
                         <th style="padding:9px 12px; text-align:left; color:var(--text-muted); font-size:0.64rem; text-transform:uppercase; letter-spacing:0.06em; border-bottom:1px solid var(--border);">Reason</th>
                     </tr>
                 </thead>
                 <tbody id="stRowsBody">
-                    <tr><td colspan="7" style="padding:40px; text-align:center; color:var(--text-muted);">Loading…</td></tr>
+                    <tr><td colspan="8" style="padding:40px; text-align:center; color:var(--text-muted);">Loading…</td></tr>
                 </tbody>
             </table>
         </div>
@@ -1741,7 +1612,7 @@ function stRerenderRows() {
     });
     document.getElementById('stRowCount').textContent = visible.length + ' signal' + (visible.length === 1 ? '' : 's');
     if (!visible.length) {
-        body.innerHTML = '<tr><td colspan="7" style="padding:40px; text-align:center; color:var(--text-muted);">No signals match the selected filters.</td></tr>';
+        body.innerHTML = '<tr><td colspan="8" style="padding:40px; text-align:center; color:var(--text-muted);">No signals match the selected filters.</td></tr>';
         return;
     }
     var html = '';
@@ -1751,6 +1622,7 @@ function stRerenderRows() {
             + '<td style="padding:9px 12px; color:var(--text-secondary);">' + (r.time || '--') + '</td>'
             + '<td style="padding:9px 12px;"><strong>' + stShortSymbol(r.symbol) + '</strong></td>'
             + '<td style="padding:9px 12px; color:var(--text-secondary);">' + (r.setup ? window.prettySetup(r.setup) : '--') + '</td>'
+            + '<td style="padding:9px 12px; color:var(--text-secondary); font-size:0.7rem;">' + (r.pattern ? r.pattern : '--') + '</td>'
             + '<td style="padding:9px 12px;">' + stStatusBadge(r.status) + '</td>'
             + '<td style="padding:9px 12px;">' + stFilterBadge(r.filterName) + '</td>'
             + '<td style="padding:9px 12px; color:var(--text-secondary); font-size:0.7rem; line-height:1.5; word-break:break-word;">' + (r.detail || '--') + '</td>'

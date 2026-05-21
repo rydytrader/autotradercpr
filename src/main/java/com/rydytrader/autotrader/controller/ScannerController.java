@@ -413,6 +413,19 @@ public class ScannerController {
 
         card.put("atp", Math.round(candleAggregator.getAtp(fyersSymbol) * 100.0) / 100.0);
         card.put("atr", Math.round(atrService.getAtr(fyersSymbol) * 100.0) / 100.0);
+        // Today's True Range (gap-inclusive) + 14-day daily ATR — drive the "Today's TR"
+        // chip on the card. Color is computed client-side against the live exhaustion
+        // threshold from /api/scanner/status.
+        double dayHigh = candleAggregator.getDayHigh(fyersSymbol);
+        double dayLow  = candleAggregator.getDayLow(fyersSymbol);
+        double prevCloseToday = levels.getClose();
+        double todayTr = 0;
+        if (dayHigh > 0 && dayLow > 0 && prevCloseToday > 0) {
+            todayTr = Math.max(dayHigh - dayLow,
+                Math.max(Math.abs(dayHigh - prevCloseToday), Math.abs(dayLow - prevCloseToday)));
+        }
+        card.put("todayTr",  Math.round(todayTr * 100.0) / 100.0);
+        card.put("dailyAtr", Math.round(bhavcopyService.getDailyAtr(levels.getSymbol()) * 100.0) / 100.0);
         // EMAs rounded to 2 decimals only — TV does not snap EMA values to tick size, so
         // tick-rounding here would cause a small visible mismatch on stocks with non-0.01 ticks.
         card.put("ema20",  Math.round(emaService.getEma(fyersSymbol)    * 100.0) / 100.0);
@@ -876,6 +889,7 @@ public class ScannerController {
         row.put("setup", si.setup != null ? si.setup : "");
         row.put("status", si.status != null ? si.status : "");
         row.put("filterName", si.filterName != null ? si.filterName : "");
+        row.put("pattern", si.pattern != null ? si.pattern : "");
         row.put("price", Math.round(si.price * 100.0) / 100.0);
         row.put("detail", si.detail != null ? si.detail : "");
         return row;
@@ -905,6 +919,10 @@ public class ScannerController {
         status.put("cprWidthSqueezeMult",  riskSettings.getCprWidthSqueezeMult());
         status.put("cprWidthWideMult",     riskSettings.getCprWidthWideMult());
         status.put("insideMaxWidth",       riskSettings.getInsideCprMaxWidth());
+        // Live threshold the scanner cards use to color the "Today's TR" chip — so the
+        // color flips immediately when the user tunes the setting (no page reload needed).
+        status.put("enableDailyAtrExhaustionFilter", riskSettings.isEnableDailyAtrExhaustionFilter());
+        status.put("dailyAtrExhaustionMult",         riskSettings.getDailyAtrExhaustionMult());
         return status;
     }
 

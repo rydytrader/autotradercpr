@@ -1,6 +1,5 @@
 package com.rydytrader.autotrader.controller;
 
-import com.rydytrader.autotrader.dto.CprLevels;
 import com.rydytrader.autotrader.service.BhavcopyService;
 import com.rydytrader.autotrader.service.TradeHistoryService;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
@@ -8,7 +7,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 @RestController
 public class SettingsController {
@@ -59,6 +57,8 @@ public class SettingsController {
         result.put("enableWeeklyLevelTargetShift", riskSettings.isEnableWeeklyLevelTargetShift());
         result.put("enableHtfHurdleFilter", riskSettings.isEnableHtfHurdleFilter());
         result.put("htfHurdleMinHeadroomAtr", riskSettings.getHtfHurdleMinHeadroomAtr());
+        result.put("enableDailyAtrExhaustionFilter", riskSettings.isEnableDailyAtrExhaustionFilter());
+        result.put("dailyAtrExhaustionMult",         riskSettings.getDailyAtrExhaustionMult());
         result.put("enableIndexHtfHurdleFilter", riskSettings.isEnableIndexHtfHurdleFilter());
         result.put("indexHtfHurdleMinHeadroomAtr", riskSettings.getIndexHtfHurdleMinHeadroomAtr());
         result.put("enableIndex5mHurdleFilter", riskSettings.isEnableIndex5mHurdleFilter());
@@ -103,8 +103,6 @@ public class SettingsController {
         result.put("enableTrailingSl", riskSettings.isEnableTrailingSl(effectiveMode));
         result.put("enablePriceEmaExit", riskSettings.isEnablePriceEmaExit());
         result.put("virginCprExpiryDays", riskSettings.getVirginCprExpiryDays());
-        result.put("enableVirginCprHurdleFilter", riskSettings.isEnableVirginCprHurdleFilter());
-        result.put("virginCprHurdleHeadroomAtr", riskSettings.getVirginCprHurdleHeadroomAtr());
         result.put("breakevenTriggerPct", riskSettings.getBreakevenTriggerPct());
         result.put("breakevenSlAtrMult",  riskSettings.getBreakevenSlAtrMult());
         result.put("skipR3S3IvOvDays", riskSettings.isSkipR3S3IvOvDays());
@@ -168,6 +166,8 @@ public class SettingsController {
             if (body.containsKey("enableWeeklyLevelTargetShift")) riskSettings.setEnableWeeklyLevelTargetShift(Boolean.parseBoolean(body.get("enableWeeklyLevelTargetShift").toString()));
             if (body.containsKey("enableHtfHurdleFilter")) riskSettings.setEnableHtfHurdleFilter(Boolean.parseBoolean(body.get("enableHtfHurdleFilter").toString()));
             if (body.containsKey("htfHurdleMinHeadroomAtr")) riskSettings.setHtfHurdleMinHeadroomAtr(Double.parseDouble(body.get("htfHurdleMinHeadroomAtr").toString()));
+            if (body.containsKey("enableDailyAtrExhaustionFilter")) riskSettings.setEnableDailyAtrExhaustionFilter(Boolean.parseBoolean(body.get("enableDailyAtrExhaustionFilter").toString()));
+            if (body.containsKey("dailyAtrExhaustionMult"))         riskSettings.setDailyAtrExhaustionMult(Double.parseDouble(body.get("dailyAtrExhaustionMult").toString()));
             if (body.containsKey("enableIndexHtfHurdleFilter")) riskSettings.setEnableIndexHtfHurdleFilter(Boolean.parseBoolean(body.get("enableIndexHtfHurdleFilter").toString()));
             if (body.containsKey("indexHtfHurdleMinHeadroomAtr")) riskSettings.setIndexHtfHurdleMinHeadroomAtr(Double.parseDouble(body.get("indexHtfHurdleMinHeadroomAtr").toString()));
             if (body.containsKey("enableIndex5mHurdleFilter")) riskSettings.setEnableIndex5mHurdleFilter(Boolean.parseBoolean(body.get("enableIndex5mHurdleFilter").toString()));
@@ -217,8 +217,6 @@ public class SettingsController {
                     riskSettings.setVirginCprExpiryDays(Integer.parseInt(body.get("virginCprExpiryDays").toString()));
                 } catch (NumberFormatException ignored) { /* leave at current value */ }
             }
-            if (body.containsKey("enableVirginCprHurdleFilter")) riskSettings.setEnableVirginCprHurdleFilter(Boolean.parseBoolean(body.get("enableVirginCprHurdleFilter").toString()));
-            if (body.containsKey("virginCprHurdleHeadroomAtr")) riskSettings.setVirginCprHurdleHeadroomAtr(Double.parseDouble(body.get("virginCprHurdleHeadroomAtr").toString()));
             if (body.containsKey("breakevenTriggerPct")) riskSettings.setBreakevenTriggerPct(Double.parseDouble(body.get("breakevenTriggerPct").toString()));
             if (body.containsKey("breakevenSlAtrMult"))  riskSettings.setBreakevenSlAtrMult(Double.parseDouble(body.get("breakevenSlAtrMult").toString()));
             if (body.containsKey("skipR3S3IvOvDays")) riskSettings.setSkipR3S3IvOvDays(Boolean.parseBoolean(body.get("skipR3S3IvOvDays").toString()));
@@ -270,58 +268,6 @@ public class SettingsController {
                    org.springframework.web.bind.annotation.RequestMethod.POST })
     public Map<String, Object> backfillIndices() {
         return bhavcopyService.backfillMissingIndices();
-    }
-
-    // ── NARROW CPR STOCKS (State A — NARROW) ──────────────────────────────────
-    @GetMapping("/api/narrow-cpr")
-    public Map<String, Object> getNarrowCprStocks() {
-        List<CprLevels> narrow = bhavcopyService.getNarrowCprStocks().stream()
-            .sorted(java.util.Comparator.comparing(CprLevels::getSymbol))
-            .collect(Collectors.toList());
-        List<Map<String, Object>> list = narrow.stream().map(c -> buildStockRow(c)).collect(Collectors.toList());
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("date", bhavcopyService.getCachedDate());
-        result.put("totalNfoStocks", bhavcopyService.getLoadedCount());
-        result.put("narrowCount", narrow.size());
-        result.put("stocks", list);
-        return result;
-    }
-
-    // ── INSIDE CPR STOCKS ─────────────────────────────────────────────────────
-    @GetMapping("/api/inside-cpr")
-    public Map<String, Object> getInsideCprStocks() {
-        double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
-        List<CprLevels> inside = bhavcopyService.getInsideCprStocks().stream()
-            .filter(c -> !bhavcopyService.isIndex(c.getSymbol()))
-            .filter(c -> insideMaxWidth <= 0 || c.getCprWidthPct() < insideMaxWidth)
-            .sorted(java.util.Comparator.comparing(CprLevels::getSymbol))
-            .collect(Collectors.toList());
-        List<Map<String, Object>> list = inside.stream().map(c -> buildStockRow(c)).collect(Collectors.toList());
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("date", bhavcopyService.getCachedDate());
-        result.put("previousDate", bhavcopyService.getPreviousDate());
-        result.put("totalNfoStocks", bhavcopyService.getLoadedCount());
-        result.put("insideCount", inside.size());
-        result.put("stocks", list);
-        return result;
-    }
-
-    private Map<String, Object> buildStockRow(CprLevels c) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("symbol", c.getSymbol());
-        m.put("close", Math.round(c.getClose() * 100.0) / 100.0);
-        m.put("cprWidthPct", Math.round(c.getCprWidthPct() * 1000.0) / 1000.0);
-        m.put("volume", c.getVolume());
-        m.put("avgVolume20", c.getAvgVolume20());
-        m.put("volumeMultiple", c.getVolumeMultiple());
-        m.put("turnover", Math.round(c.getTurnover() / 100000.0) / 100.0); // ₹ Cr
-        m.put("avgTurnover20", Math.round(c.getAvgTurnover20() / 100000.0) / 100.0); // ₹ Cr
-        m.put("turnoverMultiple", c.getTurnoverMultiple());
-        m.put("beta", c.getBeta());
-        m.put("capCategory", c.getCapCategory() != null ? c.getCapCategory() : "SMALL");
-        return m;
     }
 
     private String resolveMode(String mode) {

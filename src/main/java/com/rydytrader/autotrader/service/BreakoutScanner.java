@@ -543,6 +543,29 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     recordRejection(fyersSymbol, buySetup, close, "PROB_DISABLED", detail);
                     return;
                 }
+                // Daily ATR exhaustion — reject when today's TR (gap-inclusive) has consumed
+                // ≥ mult × the stock's 14-day daily ATR. Symmetric: both buys and sells gated.
+                if (riskSettings.isEnableDailyAtrExhaustionFilter()) {
+                    double dailyAtr = bhavcopyService.getDailyAtr(extractTicker(fyersSymbol));
+                    double mult = riskSettings.getDailyAtrExhaustionMult();
+                    if (dailyAtr > 0 && mult > 0) {
+                        double dayHigh = candleAggregator.getDayHigh(fyersSymbol);
+                        double dayLow  = candleAggregator.getDayLow(fyersSymbol);
+                        double prevClose = levels.getClose();
+                        if (dayHigh > 0 && dayLow > 0 && prevClose > 0) {
+                            double todayTr = Math.max(dayHigh - dayLow,
+                                Math.max(Math.abs(dayHigh - prevClose), Math.abs(dayLow - prevClose)));
+                            if (todayTr >= mult * dailyAtr) {
+                                String detail = String.format(
+                                    "Today TR %.2f (gap-inclusive) >= %.2f × daily ATR %.2f — move exhausted",
+                                    todayTr, mult, dailyAtr);
+                                eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + detail);
+                                recordRejection(fyersSymbol, buySetup, close, "DAILY_ATR_EXHAUSTED", detail);
+                                return;
+                            }
+                        }
+                    }
+                }
                 // EMA level-count filter: skip if any CPR zone sits between EMA and broken level
                 if (evaluateEmaFilter(fyersSymbol, buySetup, close, levels, atr) == 2) return;
                 // NIFTY index alignment filter — misaligned trades are hard-rejected. The
@@ -554,8 +577,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (checkIndexAlignment(fyersSymbol, buySetup, true) == NiftyAlignStatus.SKIP) {
                     String primary = bhavcopyService != null ? bhavcopyService.getPrimaryIndexTicker(extractTicker(fyersSymbol)) : "?";
                     String state = indexTrendService != null ? indexTrendService.getTrendStateForTicker(primary) : "?";
-                    recordRejection(fyersSymbol, buySetup, close, "INDEX_OPPOSED",
-                        "Primary index " + primary + " " + state + " — buy direction opposes index trend");
+                    String detail = "Primary index " + primary + " " + state + " — buy direction opposes index trend";
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + detail);
+                    recordRejection(fyersSymbol, buySetup, close, "INDEX_OPPOSED", detail);
                     return;
                 }
                 // Stock HTF Trend Alignment — confirms the stock's own 1-hour HTF trend (weekly
@@ -564,8 +588,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     double htfEma = htfEmaService != null ? htfEmaService.getEma(fyersSymbol) : 0;
                     String stockHtfState = weeklyCprService != null
                         ? weeklyCprService.getStockHtfTrendState(fyersSymbol, htfEma) : "?";
-                    recordRejection(fyersSymbol, buySetup, close, "STOCK_HTF_OPPOSED",
-                        "Stock 1h " + stockHtfState + " — buy direction opposes stock HTF trend");
+                    String detail = "Stock 1h " + stockHtfState + " — buy direction opposes stock HTF trend";
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + detail);
+                    recordRejection(fyersSymbol, buySetup, close, "STOCK_HTF_OPPOSED", detail);
                     return;
                 }
                 // Index HTF Hurdle — stock's primary-index 1-hour close must clear its nearest weekly hurdle.
@@ -582,19 +607,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     recordRejection(fyersSymbol, buySetup, close, "INDEX_5M_HURDLE", index5mReject);
                     return;
                 }
-                // Virgin CPR Hurdle — zone-based, runs against the stock's primary index
-                // (NIFTY 50 or sector). Inside zone or within headroom × ATR rejects.
-                String virginCprHurdleReject = checkPrimaryIndexVirginCprHurdle(true, candle.startMinute, fyersSymbol);
-                if (virginCprHurdleReject != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + virginCprHurdleReject);
-                    recordRejection(fyersSymbol, buySetup, close, "VIRGIN_CPR_HURDLE", virginCprHurdleReject);
-                    return;
-                }
                 // Per-stock HTF Hurdle — stock's 1-hour close must have cleared nearest weekly level.
-                String perStockHtfReject = checkPerStockHtfHurdle(true, fyersSymbol, close, atr);
-                if (perStockHtfReject != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + perStockHtfReject);
-                    recordRejection(fyersSymbol, buySetup, close, "HTF_HURDLE", perStockHtfReject);
+                String stockHtfReject = checkStockHtfHurdle(true, fyersSymbol, close, atr);
+                if (stockHtfReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + stockHtfReject);
+                    recordRejection(fyersSymbol, buySetup, close, "HTF_HURDLE", stockHtfReject);
                     return;
                 }
                 fireSignal(fyersSymbol, buySetup, open, high, low, close, candle.volume, atr, levels, prob,
@@ -609,11 +626,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                         recordRejection(fyersSymbol, wouldMatch, close, "LEVEL_BROKEN", detail);
                     }
                 }
-                // Debug: detect without ATP to see if ATP blocked it
-                String noAtpMatch = detectBuyBreakout(open, high, low, close, levels, 0, broken, fyersSymbol);
-                if (noAtpMatch != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + noAtpMatch + " — no breakout detected (O=" + String.format("%.2f", open) + " H=" + String.format("%.2f", high) + " L=" + String.format("%.2f", low) + " C=" + String.format("%.2f", close) + " ATP=" + String.format("%.2f", atp) + ")");
-                }
+                // (Removed redundant atp=0 re-detect — ATP gate already verified passing at the
+                // top of this block, so the re-detect produced no new information and just
+                // double-fired the proximity-rejection log.)
             }
         }
 
@@ -665,6 +680,28 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     recordRejection(fyersSymbol, sellSetup, close, "PROB_DISABLED", detail);
                     return;
                 }
+                // Daily ATR exhaustion — mirror of the buy-side gate.
+                if (riskSettings.isEnableDailyAtrExhaustionFilter()) {
+                    double dailyAtr = bhavcopyService.getDailyAtr(extractTicker(fyersSymbol));
+                    double mult = riskSettings.getDailyAtrExhaustionMult();
+                    if (dailyAtr > 0 && mult > 0) {
+                        double dayHigh = candleAggregator.getDayHigh(fyersSymbol);
+                        double dayLow  = candleAggregator.getDayLow(fyersSymbol);
+                        double prevClose = levels.getClose();
+                        if (dayHigh > 0 && dayLow > 0 && prevClose > 0) {
+                            double todayTr = Math.max(dayHigh - dayLow,
+                                Math.max(Math.abs(dayHigh - prevClose), Math.abs(dayLow - prevClose)));
+                            if (todayTr >= mult * dailyAtr) {
+                                String detail = String.format(
+                                    "Today TR %.2f (gap-inclusive) >= %.2f × daily ATR %.2f — move exhausted",
+                                    todayTr, mult, dailyAtr);
+                                eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + detail);
+                                recordRejection(fyersSymbol, sellSetup, close, "DAILY_ATR_EXHAUSTED", detail);
+                                return;
+                            }
+                        }
+                    }
+                }
                 // EMA level-count filter: skip if any CPR zone sits between EMA and broken level
                 if (evaluateEmaFilter(fyersSymbol, sellSetup, close, levels, atr) == 2) return;
                 // NIFTY index alignment filter — misaligned trades are hard-rejected. The
@@ -672,8 +709,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 if (checkIndexAlignment(fyersSymbol, sellSetup, false) == NiftyAlignStatus.SKIP) {
                     String primary = bhavcopyService != null ? bhavcopyService.getPrimaryIndexTicker(extractTicker(fyersSymbol)) : "?";
                     String state = indexTrendService != null ? indexTrendService.getTrendStateForTicker(primary) : "?";
-                    recordRejection(fyersSymbol, sellSetup, close, "INDEX_OPPOSED",
-                        "Primary index " + primary + " " + state + " — sell direction opposes index trend");
+                    String detail = "Primary index " + primary + " " + state + " — sell direction opposes index trend";
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + detail);
+                    recordRejection(fyersSymbol, sellSetup, close, "INDEX_OPPOSED", detail);
                     return;
                 }
                 // Stock HTF Trend Alignment — confirms the stock's own 1-hour HTF trend (weekly
@@ -682,8 +720,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     double htfEma = htfEmaService != null ? htfEmaService.getEma(fyersSymbol) : 0;
                     String stockHtfState = weeklyCprService != null
                         ? weeklyCprService.getStockHtfTrendState(fyersSymbol, htfEma) : "?";
-                    recordRejection(fyersSymbol, sellSetup, close, "STOCK_HTF_OPPOSED",
-                        "Stock 1h " + stockHtfState + " — sell direction opposes stock HTF trend");
+                    String detail = "Stock 1h " + stockHtfState + " — sell direction opposes stock HTF trend";
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + detail);
+                    recordRejection(fyersSymbol, sellSetup, close, "STOCK_HTF_OPPOSED", detail);
                     return;
                 }
                 // Index HTF Hurdle — stock's primary-index 1-hour close must clear its nearest weekly hurdle.
@@ -700,19 +739,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     recordRejection(fyersSymbol, sellSetup, close, "INDEX_5M_HURDLE", index5mReject);
                     return;
                 }
-                // Virgin CPR Hurdle — zone-based, runs against the stock's primary index
-                // (NIFTY 50 or sector). Inside zone or within headroom × ATR rejects.
-                String virginCprHurdleReject = checkPrimaryIndexVirginCprHurdle(false, candle.startMinute, fyersSymbol);
-                if (virginCprHurdleReject != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + virginCprHurdleReject);
-                    recordRejection(fyersSymbol, sellSetup, close, "VIRGIN_CPR_HURDLE", virginCprHurdleReject);
-                    return;
-                }
                 // Per-stock HTF Hurdle — stock's 1-hour close must have cleared nearest weekly level.
-                String perStockHtfReject = checkPerStockHtfHurdle(false, fyersSymbol, close, atr);
-                if (perStockHtfReject != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + perStockHtfReject);
-                    recordRejection(fyersSymbol, sellSetup, close, "HTF_HURDLE", perStockHtfReject);
+                String stockHtfReject = checkStockHtfHurdle(false, fyersSymbol, close, atr);
+                if (stockHtfReject != null) {
+                    eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + stockHtfReject);
+                    recordRejection(fyersSymbol, sellSetup, close, "HTF_HURDLE", stockHtfReject);
                     return;
                 }
                 fireSignal(fyersSymbol, sellSetup, open, high, low, close, candle.volume, atr, levels, prob,
@@ -727,11 +758,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                         recordRejection(fyersSymbol, wouldMatch, close, "LEVEL_BROKEN", detail);
                     }
                 }
-                // Debug: detect without ATP to see if ATP blocked it
-                String noAtpMatch = detectSellBreakout(open, high, low, close, levels, 0, broken, fyersSymbol);
-                if (noAtpMatch != null) {
-                    eventService.log("[SCANNER] " + fyersSymbol + " " + noAtpMatch + " — no breakout detected (O=" + String.format("%.2f", open) + " H=" + String.format("%.2f", high) + " L=" + String.format("%.2f", low) + " C=" + String.format("%.2f", close) + " ATP=" + String.format("%.2f", atp) + ")");
-                }
+                // (Removed redundant atp=0 re-detect — ATP gate already verified passing at the
+                // top of this block, so the re-detect produced no new information and just
+                // double-fired the proximity-rejection log.)
             }
         }
     }
@@ -1364,6 +1393,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             boolean filtered = status.contains("failed") || status.contains("filtered") || status.contains("ignored");
             info.status = filtered ? "FILTERED" : "TRADED";
             info.filterName = classifyDownstreamRejection(status, filtered);
+            info.pattern = scannerNote != null ? scannerNote : "";  // route/pattern tag consumed from lastTriggerRoute by caller
             if (filtered) filteredCountToday++; else tradedCountToday++;
             info.detail = status;
             lastSignal.put(fyersSymbol, info);
@@ -1662,7 +1692,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (riskSettings.isEnableIndex5mHurdleFilter()
                 && (c = compute5mCandidate(isBuy, "NIFTY50", niftyLtp, niftyAtr, niftyClose,
                         riskSettings.getIndex5mHurdleMinHeadroomAtr(), "5m")) != null) candidates.add(c);
-        if ((c = computeVirginCandidate(isBuy, niftyLtp, niftyAtr, niftyClose)) != null) candidates.add(c);
         if (candidates.isEmpty()) return null;
 
         candidates.sort((a, b) -> {
@@ -1675,10 +1704,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
     private static int hurdleCategoryRank(String cat) {
         return switch (cat) {
-            case "HTF"    -> 0;
-            case "5m"     -> 1;
-            case "Virgin" -> 2;
-            default       -> 99;
+            case "HTF" -> 0;
+            case "5m"  -> 1;
+            default    -> 99;
         };
     }
 
@@ -1951,56 +1979,17 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         return new HurdleStatus(zoneNames[aheadIdx], category, state, headroomPts);
     }
 
-    /** Virgin CPR candidate — the single active virgin CPR zone, if any. */
-    private HurdleStatus computeVirginCandidate(boolean isBuy, double niftyLtp, double niftyAtr, Double niftyClose) {
-        if (!riskSettings.isEnableVirginCprHurdleFilter()) return null;
-        if (virginCprService == null) return null;
-        var vc = virginCprService.getActiveVirginCpr();
-        if (vc == null || vc.tc <= 0 || vc.bc <= 0) return null;
-        double zoneTop = Math.max(vc.tc, vc.bc);
-        double zoneBot = Math.min(vc.tc, vc.bc);
-
-        // WAITING: NIFTY 5m close is inside the zone (both directions blocked).
-        if (niftyClose != null && niftyClose >= zoneBot && niftyClose <= zoneTop) {
-            double farEdge = isBuy ? zoneTop : zoneBot;
-            return new HurdleStatus("Virgin CPR", "Virgin", "WAITING", Math.abs(farEdge - niftyLtp));
-        }
-
-        // Directional ahead check.
-        double minHeadroom = riskSettings.getVirginCprHurdleHeadroomAtr() * niftyAtr;
-        if (isBuy && niftyLtp < zoneBot) {
-            double dist = zoneBot - niftyLtp;
-            String state = (minHeadroom > 0 && dist < minHeadroom) ? "AHEAD_BLOCKED" : "AHEAD_CLEAR";
-            return new HurdleStatus("Virgin CPR", "Virgin", state, dist);
-        }
-        if (!isBuy && niftyLtp > zoneTop) {
-            double dist = niftyLtp - zoneTop;
-            String state = (minHeadroom > 0 && dist < minHeadroom) ? "AHEAD_BLOCKED" : "AHEAD_CLEAR";
-            return new HurdleStatus("Virgin CPR", "Virgin", state, dist);
-        }
-        return null; // zone is behind in non-trade direction → no candidate
-    }
-
-    /** Composite hurdle alert for the open-positions UI — runs Index HTF, Index 5m, and
-     *  NIFTY Virgin CPR (the NIFTY-only macro guard) on the given direction and pipe-joins
-     *  the rejection reasons. Returns null when all three pass. */
-    public String getIndexHurdleAlert(boolean isBuy, String fyersSymbol) {
-        long stockBucket = 0L;
-        if (candleAggregator != null) {
-            CandleAggregator.CandleBar lastNifty =
-                candleAggregator.getLastCompletedCandle(IndexTrendService.NIFTY_SYMBOL);
-            if (lastNifty != null) {
-                stockBucket = lastNifty.startMinute;
-            }
-        }
-        String htf    = checkPrimaryIndexHtfHurdle(isBuy, fyersSymbol);
-        String fiveM  = checkPrimaryIndex5mHurdle(isBuy, stockBucket, fyersSymbol);
-        String virgin = checkPrimaryIndexVirginCprHurdle(isBuy, stockBucket, fyersSymbol);
-        java.util.List<String> parts = new java.util.ArrayList<>(3);
-        if (htf    != null) parts.add(htf);
-        if (fiveM  != null) parts.add(fiveM);
-        if (virgin != null) parts.add(virgin);
-        return parts.isEmpty() ? null : String.join(" | ", parts);
+    /** Hurdle alert for the open-positions table — uses the same {@link #getStockNearestHurdle}
+     *  pick the scanner card surfaces (3 sources: Stock HTF / Index HTF / Index 5m). Returns
+     *  a formatted "{category} {level} {state}" string for WAITING / AHEAD_BLOCKED hurdles,
+     *  null otherwise (no hurdle or AHEAD_CLEAR). Keeps the positions stripe aligned with
+     *  whatever the card chip shows for the same symbol. */
+    public String getStockHurdleAlert(boolean isBuy, String fyersSymbol) {
+        HurdleStatus h = getStockNearestHurdle(fyersSymbol, isBuy);
+        if (h == null) return null;
+        String state = h.state();
+        if ("AHEAD_CLEAR".equals(state)) return null;
+        return h.category() + " " + h.level() + " — " + state;
     }
 
     /**
@@ -2012,6 +2001,18 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     public String getCurrentNiftyTrend() {
         if (indexTrendService == null) return "NEUTRAL";
         String state = indexTrendService.getStickyState();
+        return state != null ? state : "NEUTRAL";
+    }
+
+    /**
+     * Current trend state of the stock's primary index (sector index for sector-mapped
+     * stocks, NIFTY 50 for the NIFTY-mapped ones). Used by the positions UI for the
+     * stripe + trend-flip check so each position reads its own index instead of always
+     * NIFTY. Falls back to NEUTRAL when the index has no LTP / CPR data yet.
+     */
+    public String getCurrentPrimaryIndexTrend(String fyersSymbol) {
+        if (indexTrendService == null) return "NEUTRAL";
+        String state = indexTrendService.getSectorTrendForStock(fyersSymbol);
         return state != null ? state : "NEUTRAL";
     }
 
@@ -2032,8 +2033,17 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      * count as a flip.
      */
     public boolean isNiftyTrendFlipped(String entryTrend) {
+        return isTrendFlipped(entryTrend, getCurrentNiftyTrend());
+    }
+
+    /** Primary-index flavour of {@link #isNiftyTrendFlipped} — compares the entry-time
+     *  primary-index trend to the current primary-index trend for the same stock. */
+    public boolean isPrimaryIndexTrendFlipped(String entryTrend, String fyersSymbol) {
+        return isTrendFlipped(entryTrend, getCurrentPrimaryIndexTrend(fyersSymbol));
+    }
+
+    private static boolean isTrendFlipped(String entryTrend, String current) {
         if (entryTrend == null || entryTrend.isEmpty()) return false;
-        String current = getCurrentNiftyTrend();
         if (current == null) return false;
         boolean entryBullish = "BULLISH".equals(entryTrend)  || "BULLISH_REVERSAL".equals(entryTrend);
         boolean entryBearish = "BEARISH".equals(entryTrend)  || "BEARISH_REVERSAL".equals(entryTrend);
@@ -2085,7 +2095,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
      * <b>Rejects</b> when a hurdle exists but no 1-hour close is available in the current ISO
      * week (Monday pre-10:15) — waits until 10:15 to confirm.
      */
-    private String checkPerStockHtfHurdle(boolean isBuy, String fyersSymbol, double close, double atr) {
+    private String checkStockHtfHurdle(boolean isBuy, String fyersSymbol, double close, double atr) {
         if (!riskSettings.isEnableHtfHurdleFilter()) return null;
         if (weeklyCprService == null || candleAggregator == null) return null;
 
@@ -2325,89 +2335,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 }
             }
         }
-        return null;
-    }
-
-    /**
-     * Primary-Index Virgin CPR Hurdle filter — treats the active virgin CPR of the stock's
-     * <i>primary index</i> (NIFTY 50 or sector) as a zone (BC..TC) and gates the trade against
-     * that index's current same-bucket 5m close.
-     * <ul>
-     *   <li><b>Inside zone</b> — primary index's 5m close lands within [BC, TC]: reject the
-     *       signal regardless of direction. Price is consolidating in the zone.</li>
-     *   <li><b>Headroom check</b> — close outside the zone but within
-     *       {@code virginCprHurdleHeadroomAtr × index ATR} of the zone edge in trade direction:
-     *       reject. Mirrors the 5m hurdle's headroom logic.</li>
-     * </ul>
-     *
-     * <p>Returns null on pass (filter off, no active virgin CPR for the primary index, same-bucket
-     * index bar not yet completed, or index far enough from the zone). Bucket: {@code VIRGIN_CPR_HURDLE}.
-     */
-    private String checkPrimaryIndexVirginCprHurdle(boolean isBuy, long stockBucketStartMinute, String fyersSymbol) {
-        if (!riskSettings.isEnableVirginCprHurdleFilter()) return null;
-        if (virginCprService == null || candleAggregator == null || bhavcopyService == null) return null;
-
-        // Resolve the stock's primary index — virgin CPR snapshot, LTP, ATR and 5m close all
-        // come from that index, not always NIFTY.
-        String stockTicker = fyersSymbol != null ? extractTicker(fyersSymbol) : null;
-        String primaryIndex = bhavcopyService.getPrimaryIndexTicker(stockTicker);
-        if (primaryIndex == null || primaryIndex.isEmpty()) primaryIndex = "NIFTY50";
-        String indexSym = "NSE:" + primaryIndex + "-INDEX";
-
-        VirginCprService.Snapshot vc = virginCprService.getActiveVirginCpr(primaryIndex);
-        if (vc == null || vc.tc <= 0 || vc.bc <= 0) return null;
-
-        // Resolve the index's current same-bucket 5m close.
-        CandleAggregator.CandleBar currentBar = null;
-        CandleAggregator.CandleBar last = candleAggregator.getLastCompletedCandle(indexSym);
-        if (last != null && last.startMinute == stockBucketStartMinute && last.close > 0) {
-            currentBar = last;
-        } else {
-            CandleAggregator.CandleBar prev = candleAggregator.getPreviousCandle(indexSym);
-            if (prev != null && prev.startMinute == stockBucketStartMinute && prev.close > 0) {
-                currentBar = prev;
-            }
-        }
-        if (currentBar == null) return null; // index same-bucket bar not yet completed — fail-open
-
-        double indexClose = currentBar.close;
-        double zoneTop = Math.max(vc.tc, vc.bc);
-        double zoneBot = Math.min(vc.tc, vc.bc);
-
-        // 1) Inside-zone rejection — both directions blocked.
-        if (indexClose >= zoneBot && indexClose <= zoneTop) {
-            return primaryIndex + " (" + String.format("%.2f", indexClose)
-                + ") inside virgin CPR zone (" + String.format("%.2f", zoneBot)
-                + "—" + String.format("%.2f", zoneTop) + ")";
-        }
-
-        // 2) Headroom check — directional, only when zone is in trade direction.
-        double headroomAtr = riskSettings.getVirginCprHurdleHeadroomAtr();
-        if (headroomAtr <= 0 || atrService == null) return null;
-        double atr = atrService.getAtr(indexSym);
-        if (atr <= 0) return null;
-        double minHeadroomPts = headroomAtr * atr;
-
-        if (isBuy && indexClose < zoneBot) {
-            double dist = zoneBot - indexClose;
-            if (dist < minHeadroomPts) {
-                return "Virgin CPR zone (" + String.format("%.2f", zoneBot)
-                    + "—" + String.format("%.2f", zoneTop) + ") only "
-                    + String.format("%.2f", dist) + " pts above " + primaryIndex + " (need "
-                    + String.format("%.2f", minHeadroomPts)
-                    + ", " + headroomAtr + " × " + primaryIndex + " ATR " + String.format("%.2f", atr) + ")";
-            }
-        } else if (!isBuy && indexClose > zoneTop) {
-            double dist = indexClose - zoneTop;
-            if (dist < minHeadroomPts) {
-                return "Virgin CPR zone (" + String.format("%.2f", zoneBot)
-                    + "—" + String.format("%.2f", zoneTop) + ") only "
-                    + String.format("%.2f", dist) + " pts below " + primaryIndex + " (need "
-                    + String.format("%.2f", minHeadroomPts)
-                    + ", " + headroomAtr + " × " + primaryIndex + " ATR " + String.format("%.2f", atr) + ")";
-            }
-        }
-
         return null;
     }
 
@@ -2825,6 +2752,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 sig.put("detail", entry.getValue().detail);
                 sig.put("price", entry.getValue().price);
                 sig.put("filterName", entry.getValue().filterName != null ? entry.getValue().filterName : "");
+                sig.put("pattern", entry.getValue().pattern != null ? entry.getValue().pattern : "");
                 signals.put(entry.getKey(), sig);
             }
             state.put("signals", signals);
@@ -2850,6 +2778,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     sig.put("detail", si.detail);
                     sig.put("price", si.price);
                     sig.put("filterName", si.filterName != null ? si.filterName : "");
+                    sig.put("pattern", si.pattern != null ? si.pattern : "");
                     list.add(sig);
                 }
                 history.put(entry.getKey(), list);
@@ -2916,6 +2845,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     info.detail = v.has("detail") ? v.get("detail").asText() : "";
                     info.price = v.has("price") ? v.get("price").asDouble() : 0;
                     info.filterName = v.has("filterName") ? v.get("filterName").asText() : "";
+                    info.pattern = v.has("pattern") ? v.get("pattern").asText() : "";
                     lastSignal.put(entry.getKey(), info);
                 });
             }
@@ -2943,6 +2873,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                         si.detail = node.has("detail") ? node.get("detail").asText() : "";
                         si.price = node.has("price") ? node.get("price").asDouble() : 0;
                         si.filterName = node.has("filterName") ? node.get("filterName").asText() : "";
+                        si.pattern = node.has("pattern") ? node.get("pattern").asText() : "";
                         list.add(si);
                     });
                     signalHistory.put(entry.getKey(), list);
@@ -3012,6 +2943,12 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         info.filterName = filterName;
         info.detail = detail;
         info.price = price;
+        // Candle pattern stamped by acceptOrRejectProximity when a pattern matched on this
+        // scan. Empty for early-gate rejections (ATP / EMA-trend / position-open / etc.)
+        // that fire before pattern detection. Stays valid for downstream-filter rejections
+        // (HTF opposed, hurdle, etc.) because lastTriggerRoute is only cleared by fireSignal.
+        String route = lastTriggerRoute.get(fyersSymbol);
+        info.pattern = route != null ? route : "";
         lastSignal.put(fyersSymbol, info);
         signalHistory.computeIfAbsent(fyersSymbol, k -> Collections.synchronizedList(new ArrayList<>())).add(info);
         filteredCountToday++;
@@ -3083,5 +3020,6 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         public String detail;
         public double price;  // candle close at signal time
         public String filterName; // "" for TRADED; stable enum for FILTERED (drives EOD-Analysis grouping)
+        public String pattern;    // candle pattern (HAMMER_RETEST / OUTSIDE_REVERSAL_RETEST / DOJI_RETEST / STAR_RETEST / HARAMI_RETEST / GOOD_SIZE_CANDLE_RETEST), or "" when no pattern matched (early gate rejections)
     }
 }
