@@ -2,6 +2,7 @@ package com.rydytrader.autotrader.controller;
 
 import com.rydytrader.autotrader.dto.CprLevels;
 import com.rydytrader.autotrader.service.BhavcopyService;
+import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.TradeHistoryService;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.http.ResponseEntity;
@@ -16,13 +17,16 @@ public class SettingsController {
     private final RiskSettingsStore   riskSettings;
     private final TradeHistoryService tradeHistoryService;
     private final BhavcopyService     bhavcopyService;
+    private final MarketDataService   marketDataService;
 
     public SettingsController(RiskSettingsStore riskSettings,
                                TradeHistoryService tradeHistoryService,
-                               BhavcopyService bhavcopyService) {
+                               BhavcopyService bhavcopyService,
+                               MarketDataService marketDataService) {
         this.riskSettings        = riskSettings;
         this.tradeHistoryService = tradeHistoryService;
         this.bhavcopyService     = bhavcopyService;
+        this.marketDataService   = marketDataService;
     }
 
     // ── GET SETTINGS + TODAY'S STATUS ─────────────────────────────────────────
@@ -251,13 +255,17 @@ public class SettingsController {
     }
 
     // ── NARROW CPR STOCKS ─────────────────────────────────────────────────────
+    // Mirrors the filter chain in ScannerController.getWatchlist so this modal shows
+    // exactly the stocks the scanner trades (not the wider F&O bhavcopy universe).
     @GetMapping("/api/narrow-cpr")
     public Map<String, Object> getNarrowCprStocks() {
         double maxWidth = riskSettings.getNarrowCprMaxWidth();
         double minWidth = riskSettings.getNarrowCprMinWidth();
         List<CprLevels> narrow = bhavcopyService.getAllCprLevels().values().stream()
             .filter(c -> !bhavcopyService.isIndex(c.getSymbol()))
+            .filter(c -> bhavcopyService.isInScanUniverse(c.getSymbol()))
             .filter(c -> c.getCprWidthPct() >= minWidth && c.getCprWidthPct() < maxWidth)
+            .filter(c -> marketDataService.passesWatchlistFilters(c))
             .sorted(java.util.Comparator.comparing(CprLevels::getSymbol))
             .collect(Collectors.toList());
         List<Map<String, Object>> list = narrow.stream().map(c -> buildStockRow(c)).collect(Collectors.toList());
@@ -271,12 +279,16 @@ public class SettingsController {
     }
 
     // ── INSIDE CPR STOCKS ─────────────────────────────────────────────────────
+    // Mirrors the filter chain in ScannerController.getWatchlist so this modal shows
+    // exactly the stocks the scanner trades (not the wider F&O bhavcopy universe).
     @GetMapping("/api/inside-cpr")
     public Map<String, Object> getInsideCprStocks() {
         double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
         List<CprLevels> inside = bhavcopyService.getInsideCprStocks().stream()
             .filter(c -> !bhavcopyService.isIndex(c.getSymbol()))
-            .filter(c -> insideMaxWidth <= 0 || c.getCprWidthPct() < insideMaxWidth)
+            .filter(c -> bhavcopyService.isInScanUniverse(c.getSymbol()))
+            .filter(c -> insideMaxWidth <= 0 || c.getCprWidthPct() <= insideMaxWidth)
+            .filter(c -> marketDataService.passesWatchlistFilters(c))
             .sorted(java.util.Comparator.comparing(CprLevels::getSymbol))
             .collect(Collectors.toList());
         List<Map<String, Object>> list = inside.stream().map(c -> buildStockRow(c)).collect(Collectors.toList());
