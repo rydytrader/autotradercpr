@@ -44,6 +44,13 @@
         .scan-card.has-position { border-color: var(--accent-green); border-width: 2px; }
         .scan-card.signal-filtered { border-color: var(--accent-yellow); border-width: 2px; }
         .scan-card.signal-traded { border-color: var(--accent-green); border-width: 2px; }
+        /* Index mini-cards get a distinct background tint so they're visually
+           separate from the stock card grid below. Stronger alpha than before so
+           the contrast is actually noticeable on dark and light themes. */
+        .scan-card.key-index-card {
+            background: var(--bg-card-alt, rgba(99,179,237,0.10));
+            border-color: rgba(99,179,237,0.25);
+        }
 
         .scan-card-header {
             display: flex; align-items: center; justify-content: space-between;
@@ -104,6 +111,9 @@
         }
         .scan-data-grid.scan-data-grid-2 {
             grid-template-columns: 1fr 1fr;
+        }
+        .scan-data-grid.scan-data-grid-1 {
+            grid-template-columns: 1fr;
         }
         .scan-data-item {
             text-align: center;
@@ -683,10 +693,29 @@
         else delete expandedSections[key];
     };
 
+    // Card border-color reflects consensus across the SELECTED trends only:
+    //   • Daily is always selected (it has no filter toggle).
+    //   • OR  counts only when its respective filter is enabled.
+    //   • HTF counts only when its respective filter is enabled.
+    // Green when all selected trends are BULLISH; red when all BEARISH; otherwise
+    // the default border (mixed or any non-directional state like FORMING / INSIDE).
+    function trendConsensusBorder(daily, or, htf, orEnabled, htfEnabled) {
+        var trends = [daily];
+        if (orEnabled)  trends.push(or);
+        if (htfEnabled) trends.push(htf);
+        var allBull = trends.every(function(t) { return t === 'BULLISH'; });
+        var allBear = trends.every(function(t) { return t === 'BEARISH'; });
+        if (allBull) return 'rgba(52,211,153,0.55)';
+        if (allBear) return 'rgba(248,113,113,0.55)';
+        return null;
+    }
+
     function buildCard(d) {
         var cardClass = 'scan-card';
+        // Position takes precedence (open trade gets its own green border). The
+        // signal-traded class is no longer applied — trade-fire status is surfaced
+        // via the signal trail and event log instead.
         if (d.hasPosition) cardClass += ' has-position';
-        else if (d.lastSignal && d.lastSignal.status === 'TRADED') cardClass += ' signal-traded';
 
         var chClass = d.changePercent >= 0 ? 'up' : 'down';
         var chArrow = d.changePercent >= 0 ? '&#9650;' : '&#9660;';
@@ -804,7 +833,18 @@
             sectorChip = '<span' + clickAttr + ' style="' + cursorStyle + 'font-family:var(--font-mono); font-size:0.65rem; font-weight:600; color:' + sCol + '; padding:1px 5px; border:1px solid ' + sBorder + '; border-radius:3px; text-transform:uppercase; letter-spacing:0.3px;" title="' + sTip + '">' + chipText + '</span>';
         }
 
-        return '<div class="' + cardClass + '" data-symbol="' + d.symbol + '">'
+        // Trend-consensus border — only applied to default cards. Position cards
+        // keep their own green border (open trade marker).
+        var trendBorder = (cardClass === 'scan-card')
+            ? trendConsensusBorder(
+                d.trendState,
+                d.orTrend,
+                d.htfTrendState,
+                window.__scannerStatus && window.__scannerStatus.enableOpenRangeFilter   === true,
+                window.__scannerStatus && window.__scannerStatus.enableStockHtfAlignment === true)
+            : null;
+        var rootStyle = trendBorder ? ' style="border-color:' + trendBorder + ';"' : '';
+        return '<div class="' + cardClass + '" data-symbol="' + d.symbol + '"' + rootStyle + '>'
             + '<div class="scan-card-header">'
             + '  <span class="scan-symbol">' + d.shortName + '</span>'
             + '  <span style="display:flex; gap:4px; align-items:center;">'
@@ -883,10 +923,21 @@
                         +  '<div class="scan-data-label">' + label + '</div>'
                         +  '<div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + text + '</div></div>';
                 }
+                // Fixed 3-column layout always: Daily = col 1 (left), OR = col 2 (center),
+                // HTF = col 3 (right). Disabled chips render as an empty placeholder so
+                // the remaining chips stay in their assigned slot regardless of which
+                // filters are on.
+                var orEnabled  = window.__scannerStatus && window.__scannerStatus.enableOpenRangeFilter   === true;
+                var htfEnabled = window.__scannerStatus && window.__scannerStatus.enableStockHtfAlignment === true;
+                var placeholder = '<div class="scan-data-item"></div>';
                 return '<div class="scan-data-grid scan-data-grid-3">'
-                    + trendChip(d.trendState,    'DAILY',      'D-CPR + 5-min EMA20 (2-factor state machine)',                   'left')
-                    + trendChip(d.htfTrendState, 'HTF',        'Weekly CPR + 1-hour EMA20 (Stock HTF Trend Alignment filter)',   'center')
-                    + trendChip(d.orTrend,       'OR',         'Open Range last-close position (BULLISH / BEARISH / INSIDE / FORMING)', 'right')
+                    + trendChip(d.trendState, 'DAILY', 'D-CPR + 5-min EMA20 (2-factor state machine)', 'left')
+                    + (orEnabled
+                        ? trendChip(d.orTrend, 'OR', 'Open Range last-close position (BULLISH / BEARISH / INSIDE / FORMING)', 'center')
+                        : placeholder)
+                    + (htfEnabled
+                        ? trendChip(d.htfTrendState, 'HTF', 'Weekly CPR + 1-hour EMA20 (Stock HTF Trend Alignment filter)', 'right')
+                        : placeholder)
                     + '</div>';
             })()
             + '<div style="border-top:1px solid var(--border);"></div>'
@@ -940,70 +991,65 @@
                 return '  <div class="scan-data-item" style="text-align:right;"><div class="scan-data-label">Daily</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;" title="2-factor state machine — daily CPR bias + 5-min EMA20 (matches NIFTY card)">' + label + '</div></div>';
             })()
             + '</div>'
-            + '<div style="border-top:1px solid var(--border);"></div>'
-            + '<div class="scan-data-grid scan-data-grid-3">'
             + (function() {
-                // HTF Weekly CPR bias chip — 1-hour close vs weekly TC/BC.
-                var bias = d.htfCprBias || 'INSIDE';
-                var color = bias === 'BULLISH' ? 'var(--accent-green)'
-                    : bias === 'BEARISH' ? 'var(--accent-red)'
-                    : 'var(--accent-yellow)';
-                return '  <div class="scan-data-item" style="text-align:left;"><div class="scan-data-label">W-CPR</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;" title="Last 1-hour close vs weekly CPR zone">' + bias + '</div></div>';
-            })()
-            + (function() {
-                // 1-hour EMA20 value + direction arrow vs 1-hour close.
-                var ema = +d.htfEma20 || 0;
-                var htfClose = +d.htfClose || 0;
-                var color = 'var(--text-secondary)';
-                var arrow = '';
-                if (ema > 0 && htfClose > 0) {
-                    if (htfClose > ema) { color = 'var(--accent-green)'; arrow = '▲'; }
-                    else if (htfClose < ema) { color = 'var(--accent-red)'; arrow = '▼'; }
-                }
-                return '  <div class="scan-data-item" style="text-align:center;"><div class="scan-data-label">EMA 20 (1 H)</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;" title="1-hour EMA20 vs latest 1-hour close">' + (ema > 0 ? fmt(ema) + (arrow ? ' ' + arrow : '') : '--') + '</div></div>';
-            })()
-            + (function() {
-                // Stock HTF trend state — 2-factor (weekly CPR + 1-hour EMA20). Drives the
-                // Stock HTF Trend Alignment filter.
-                var st = d.htfTrendState || 'NEUTRAL';
-                var color, label;
-                switch (st) {
-                    case 'BULLISH':          color = 'var(--accent-green)';   label = 'BULLISH';   break;
-                    case 'BEARISH':          color = 'var(--accent-red)';     label = 'BEARISH';   break;
-                    case 'BULLISH_REVERSAL': color = 'var(--accent-green)';   label = 'BULL REV';  break;
-                    case 'BEARISH_REVERSAL': color = 'var(--accent-red)';     label = 'BEAR REV';  break;
-                    case 'INSIDE':           color = 'var(--accent-yellow)';  label = 'INSIDE';    break;
-                    case 'SIDEWAYS':         color = 'var(--text-muted)';     label = 'SIDEWAYS';  break;
-                    default:                 color = 'var(--text-muted)';     label = 'NEUTRAL';   break;
-                }
-                return '  <div class="scan-data-item" style="text-align:right;"><div class="scan-data-label">HTF</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;" title="2-factor HTF state — weekly CPR + 1-hour EMA20 (Stock HTF Trend Alignment filter source)">' + label + '</div></div>';
-            })()
-            + '</div>'
-            + '<div style="border-top:1px solid var(--border);"></div>'
-            + '<div class="scan-data-grid scan-data-grid-3">'
-            + (function() {
-                // Open Range high — open-bar high of the first {orMinutes} after 9:15 IST.
+                // OR detail row — gated by Open Range filter. Self-contained with leading
+                // border-top so removing the row also removes its separator.
+                var orEnabled = window.__scannerStatus
+                    && window.__scannerStatus.enableOpenRangeFilter === true;
+                if (!orEnabled) return '';
                 var orH = +d.orHigh || 0;
-                return '  <div class="scan-data-item" style="text-align:left;"><div class="scan-data-label">OR HIGH</div><div class="scan-data-value" style="color:var(--text-secondary);">' + (orH > 0 ? orH.toFixed(2) : '--') + '</div></div>';
-            })()
-            + (function() {
-                var orL = +d.orLow || 0;
-                return '  <div class="scan-data-item" style="text-align:center;"><div class="scan-data-label">OR LOW</div><div class="scan-data-value" style="color:var(--text-secondary);">' + (orL > 0 ? orL.toFixed(2) : '--') + '</div></div>';
-            })()
-            + (function() {
-                // OR trend chip — FORMING (yellow) / BULLISH (green) / BEARISH (red) / INSIDE (yellow).
+                var orL = +d.orLow  || 0;
                 var t = d.orTrend || 'FORMING';
-                var color = 'var(--accent-yellow)';
-                if      (t === 'BULLISH') color = 'var(--accent-green)';
-                else if (t === 'BEARISH') color = 'var(--accent-red)';
+                var orColor = 'var(--accent-yellow)';
+                if      (t === 'BULLISH') orColor = 'var(--accent-green)';
+                else if (t === 'BEARISH') orColor = 'var(--accent-red)';
                 var tip = "Open Range (" + (d.orMinutes || 15) + "m) — high/low of bars in the first window after 9:15 IST.\n"
                     + "FORMING: OR window still in progress.\n"
                     + "BULLISH: last 5-min close above OR high.\n"
                     + "BEARISH: last 5-min close below OR low.\n"
                     + "INSIDE: last close between OR low and OR high.";
-                return '  <div class="scan-data-item" style="text-align:right;cursor:help;" title="' + tip.replace(/"/g, '&quot;') + '"><div class="scan-data-label">OR</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + t + '</div></div>';
+                return '<div style="border-top:1px solid var(--border);"></div>'
+                    + '<div class="scan-data-grid scan-data-grid-3">'
+                    + '  <div class="scan-data-item" style="text-align:left;"><div class="scan-data-label">OR HIGH</div><div class="scan-data-value" style="color:var(--text-secondary);">' + (orH > 0 ? orH.toFixed(2) : '--') + '</div></div>'
+                    + '  <div class="scan-data-item" style="text-align:center;"><div class="scan-data-label">OR LOW</div><div class="scan-data-value" style="color:var(--text-secondary);">' + (orL > 0 ? orL.toFixed(2) : '--') + '</div></div>'
+                    + '  <div class="scan-data-item" style="text-align:right;cursor:help;" title="' + tip.replace(/"/g, '&quot;') + '"><div class="scan-data-label">OR</div><div class="scan-data-value" style="color:' + orColor + ';font-weight:600;">' + t + '</div></div>'
+                    + '</div>';
             })()
-            + '</div>'
+            + (function() {
+                // W-CPR detail row — gated by Stock HTF Trend Alignment. Self-contained
+                // with leading border-top.
+                var htfEnabled = window.__scannerStatus
+                    && window.__scannerStatus.enableStockHtfAlignment === true;
+                if (!htfEnabled) return '';
+                var bias = d.htfCprBias || 'INSIDE';
+                var biasColor = bias === 'BULLISH' ? 'var(--accent-green)'
+                    : bias === 'BEARISH' ? 'var(--accent-red)' : 'var(--accent-yellow)';
+                var ema = +d.htfEma20 || 0;
+                var htfCl = +d.htfClose || 0;
+                var emaColor = 'var(--text-secondary)';
+                var arrow = '';
+                if (ema > 0 && htfCl > 0) {
+                    if      (htfCl > ema) { emaColor = 'var(--accent-green)'; arrow = '▲'; }
+                    else if (htfCl < ema) { emaColor = 'var(--accent-red)';   arrow = '▼'; }
+                }
+                var st = d.htfTrendState || 'NEUTRAL';
+                var stColor, stLabel;
+                switch (st) {
+                    case 'BULLISH':          stColor = 'var(--accent-green)';   stLabel = 'BULLISH';   break;
+                    case 'BEARISH':          stColor = 'var(--accent-red)';     stLabel = 'BEARISH';   break;
+                    case 'BULLISH_REVERSAL': stColor = 'var(--accent-green)';   stLabel = 'BULL REV';  break;
+                    case 'BEARISH_REVERSAL': stColor = 'var(--accent-red)';     stLabel = 'BEAR REV';  break;
+                    case 'INSIDE':           stColor = 'var(--accent-yellow)';  stLabel = 'INSIDE';    break;
+                    case 'SIDEWAYS':         stColor = 'var(--text-muted)';     stLabel = 'SIDEWAYS';  break;
+                    default:                 stColor = 'var(--text-muted)';     stLabel = 'NEUTRAL';   break;
+                }
+                return '<div style="border-top:1px solid var(--border);"></div>'
+                    + '<div class="scan-data-grid scan-data-grid-3">'
+                    + '  <div class="scan-data-item" style="text-align:left;"><div class="scan-data-label">W-CPR</div><div class="scan-data-value" style="color:' + biasColor + ';font-weight:600;" title="Last 1-hour close vs weekly CPR zone">' + bias + '</div></div>'
+                    + '  <div class="scan-data-item" style="text-align:center;"><div class="scan-data-label">EMA 20 (1 H)</div><div class="scan-data-value" style="color:' + emaColor + ';font-weight:600;" title="1-hour EMA20 vs latest 1-hour close">' + (ema > 0 ? fmt(ema) + (arrow ? ' ' + arrow : '') : '--') + '</div></div>'
+                    + '  <div class="scan-data-item" style="text-align:right;"><div class="scan-data-label">HTF</div><div class="scan-data-value" style="color:' + stColor + ';font-weight:600;" title="2-factor HTF state — weekly CPR + 1-hour EMA20 (Stock HTF Trend Alignment filter source)">' + stLabel + '</div></div>'
+                    + '</div>';
+            })()
             + '  </div>'                                                  // /scan-levels-body (Trend Details)
             + '</div>'                                                    // /scan-levels (Trend Details block)
             + '<div style="border-top:1px solid var(--border);"></div>'
@@ -1075,17 +1121,33 @@
 
     // ── Data fetch ──────────────────────────────────
     function fetchData() {
-        fetch('/api/scanner/watchlist').then(function(r) { return r.json(); }).then(function(data) {
+        // Status + watchlist fired in parallel, but we defer renderCards until BOTH
+        // resolve. The card markup gates several rows/chips on window.__scannerStatus
+        // (Stock HTF Alignment, Open Range Filter, Index HTF Alignment, Index OR Filter);
+        // rendering before the status fetch returns left the grid drawn at the wrong
+        // column count and flickered to the correct layout a moment later.
+        var statusP = fetch('/api/scanner/status').then(function(r) { return r.json(); })
+            .then(function(s) { applyStatus(s); return s; })
+            .catch(function() { return null; });
+        var watchP  = fetch('/api/scanner/watchlist').then(function(r) { return r.json(); })
+            .catch(function() { return null; });
+        Promise.all([statusP, watchP]).then(function(results) {
+            var data = results[1];
+            if (!data) return;
             allData = data;
             populateSymbolDropdown();
             populateSectorDropdown();
             renderCards();
-        }).catch(function() {});
+        });
+    }
 
-        fetch('/api/scanner/status').then(function(r) { return r.json(); }).then(function(s) {
-            window.__isTradingDay = s.tradingDay !== false; // default true if undefined
-            // Cache the live status payload so card-level chips (Today's TR exhaustion)
-            // can read the latest threshold without an extra fetch on every render.
+    // applyStatus splits the status side-effects out so fetchData's Promise.all can
+    // populate window.__scannerStatus BEFORE renderCards runs (instead of the prior
+    // fire-and-forget pattern that left card render racing the status fetch).
+    function applyStatus(s) {
+        if (!s) return;
+        try {
+            window.__isTradingDay = s.tradingDay !== false;
             window.__scannerStatus = s;
             document.getElementById('ssWatchlist').textContent = s.watchlistCount;
 
@@ -1106,8 +1168,7 @@
                     ? tiers.map(function(t) { return '<span class="scan-badge ' + t.cls + '" style="margin-left:2px;">' + t.label + '</span>'; }).join(' ')
                     : '<span style="color:var(--text-muted);">None</span>';
             }
-
-        }).catch(function() {});
+        } catch (e) { /* swallow — DOM might not be ready on very early call */ }
     }
 
     // ── Connection status ───────────────────────────
@@ -1230,28 +1291,43 @@
     // CPR-only TREND state. Card background tinted by state (BULLISH green, BEARISH red,
     // INSIDE yellow, NEUTRAL muted).
     function refreshKeyIndices() {
-        fetch('/api/index/key-indices').then(function(r) { return r.json(); }).then(function(arr) {
+        // Index card markup gates the HTF / OR chips on window.__scannerStatus. On a
+        // fresh page load this poller can race the initial status fetch, so we also
+        // wait for status to be populated before rendering (parallel fetch if status
+        // isn't cached yet — no-op on subsequent ticks once it is).
+        // Returns the underlying promise so the page-load init can chain stock-card
+        // rendering to fire only after the index strip has painted, giving the index
+        // row visual priority on first load.
+        var indicesP = fetch('/api/index/key-indices').then(function(r) { return r.json(); });
+        var statusP  = window.__scannerStatus
+            ? Promise.resolve()
+            : fetch('/api/scanner/status').then(function(r) { return r.json(); })
+                .then(function(s) { applyStatus(s); }).catch(function() {});
+        return Promise.all([indicesP, statusP]).then(function(results) {
+            var arr = results[0];
             var strip = document.getElementById('keyIndexStrip');
             if (!strip || !Array.isArray(arr)) return;
             var html = '';
             for (var i = 0; i < arr.length; i++) {
                 var d = arr[i];
                 var state = d.state || 'NEUTRAL';
-                var stateColor, stateBorder;
+                var stateColor;
                 switch (state) {
-                    case 'BULLISH':
-                        stateColor = 'var(--accent-green)';
-                        stateBorder = 'rgba(52,211,153,0.55)'; break;
-                    case 'BEARISH':
-                        stateColor = 'var(--accent-red)';
-                        stateBorder = 'rgba(248,113,113,0.55)'; break;
-                    case 'INSIDE':
-                        stateColor = 'var(--accent-yellow)';
-                        stateBorder = 'rgba(251,191,36,0.55)'; break;
-                    default:
-                        stateColor = 'var(--text-muted)';
-                        stateBorder = 'var(--border)'; break;
+                    case 'BULLISH': stateColor = 'var(--accent-green)';  break;
+                    case 'BEARISH': stateColor = 'var(--accent-red)';    break;
+                    case 'INSIDE':  stateColor = 'var(--accent-yellow)'; break;
+                    default:        stateColor = 'var(--text-muted)';    break;
                 }
+                // Index card border — consensus across enabled trends (Daily always counts;
+                // OR only if Primary-Index OR Filter is on; HTF only if Index HTF Alignment
+                // is on). Same helper the stock card uses.
+                var consensusBorder = trendConsensusBorder(
+                    state,
+                    d.orTrend,
+                    d.htfState,
+                    window.__scannerStatus && window.__scannerStatus.enableIndexOpenRangeFilter === true,
+                    window.__scannerStatus && window.__scannerStatus.enableIndexHtfAlignment === true);
+                var stateBorder = consensusBorder || 'rgba(99,179,237,0.45)';
                 var changePct = +d.changePct || 0;
                 var change    = +d.change || 0;
                 var changeSign = changePct >= 0 ? '+' : '';
@@ -1311,7 +1387,9 @@
                     +     '<span class="scan-ltp ki-ltp" style="cursor:help;" title="ATR: ' + ((+d.atr) > 0 ? (+d.atr).toFixed(2) : '—') + '">' + (d.ltp > 0 ? d.ltp.toFixed(2) : '—') + '</span>'
                     +     '<span class="scan-change ki-change ' + changeCls + '">' + changeArrow + ' ' + Math.abs(change).toFixed(2) + ' (' + changeSign + changePct.toFixed(2) + '%)</span>'
                     +   '</div>'
-                    // Top trend row — 3 chips (Daily / HTF / OR) mirroring the stock card.
+                    // Top trend row — Daily is always shown; HTF chip is gated by Index
+                    // HTF Trend Alignment; OR chip is gated by Primary-Index Open Range
+                    // Filter. Grid columns collapse to match the visible chip count.
                     + (function() {
                         function chipColor(st) {
                             if (st === 'BULLISH') return 'var(--accent-green)';
@@ -1320,17 +1398,34 @@
                             if (st === 'FORMING') return 'var(--accent-yellow)';
                             return 'var(--text-muted)';
                         }
-                        var htfSt = d.htfState || 'NEUTRAL';
-                        var ot = d.orTrend || 'FORMING';
-                        var oH = +d.orHigh || 0;
-                        var oL = +d.orLow  || 0;
-                        var oTip = 'Open Range (' + (d.orMinutes || 15) + 'm) — index high/low of the first window after 9:15 IST.\n'
-                            + 'OR HIGH: ' + (oH > 0 ? oH.toFixed(2) : '—') + '\n'
-                            + 'OR LOW: '  + (oL > 0 ? oL.toFixed(2) : '—');
+                        // Fixed 3-column layout always: Daily = col 1, OR = col 2, HTF = col 3.
+                        // Disabled chips render as an empty placeholder so the rest stay in
+                        // their assigned slot.
+                        var htfEnabled = window.__scannerStatus
+                            && window.__scannerStatus.enableIndexHtfAlignment === true;
+                        var orEnabled  = window.__scannerStatus
+                            && window.__scannerStatus.enableIndexOpenRangeFilter === true;
+                        var placeholder = '<div class="scan-data-item"></div>';
+                        var dailyCell = '<div class="scan-data-item" style="text-align:left;" title="Daily CPR + 5m EMA20 (strict 2-factor)"><div class="scan-data-label">Daily</div><div class="scan-data-value" style="color:' + stateColor + ';font-weight:600;">' + state.replace('_', ' ') + '</div></div>';
+                        var orCell = placeholder;
+                        if (orEnabled) {
+                            var ot = d.orTrend || 'FORMING';
+                            var oH = +d.orHigh || 0;
+                            var oL = +d.orLow  || 0;
+                            var oTip = 'Open Range (' + (d.orMinutes || 15) + 'm) — index high/low of the first window after 9:15 IST.\n'
+                                + 'OR HIGH: ' + (oH > 0 ? oH.toFixed(2) : '—') + '\n'
+                                + 'OR LOW: '  + (oL > 0 ? oL.toFixed(2) : '—');
+                            orCell = '<div class="scan-data-item" style="text-align:center;cursor:help;" title="' + oTip.replace(/"/g, '&quot;') + '"><div class="scan-data-label">OR</div><div class="scan-data-value" style="color:' + chipColor(ot) + ';font-weight:600;">' + ot + '</div></div>';
+                        }
+                        var htfCell = placeholder;
+                        if (htfEnabled) {
+                            var htfSt = d.htfState || 'NEUTRAL';
+                            htfCell = '<div class="scan-data-item" style="text-align:right;" title="Weekly CPR + 1h EMA20 (Index HTF Trend Alignment source)"><div class="scan-data-label">HTF</div><div class="scan-data-value" style="color:' + chipColor(htfSt) + ';font-weight:600;">' + htfSt.replace('_', ' ') + '</div></div>';
+                        }
                         return '<div class="scan-data-grid scan-data-grid-3" style="padding:6px 16px 12px;">'
-                            +   '<div class="scan-data-item" style="text-align:left;" title="Daily CPR + 5m EMA20 (strict 2-factor)"><div class="scan-data-label">Daily</div><div class="scan-data-value" style="color:' + stateColor + ';font-weight:600;">' + state.replace('_', ' ') + '</div></div>'
-                            +   '<div class="scan-data-item" style="text-align:center;" title="Weekly CPR + 1h EMA20 (Index HTF Trend Alignment source)"><div class="scan-data-label">HTF</div><div class="scan-data-value" style="color:' + chipColor(htfSt) + ';font-weight:600;">' + htfSt.replace('_', ' ') + '</div></div>'
-                            +   '<div class="scan-data-item" style="text-align:right;cursor:help;" title="' + oTip.replace(/"/g, '&quot;') + '"><div class="scan-data-label">OR</div><div class="scan-data-value" style="color:' + chipColor(ot) + ';font-weight:600;">' + ot + '</div></div>'
+                            + dailyCell
+                            + orCell
+                            + htfCell
                             + '</div>';
                     })()
                     // Trend Details collapsible — 2 rows: CPR (TC/BC/Daily chip) + OR (high/low/OR chip).
@@ -1361,10 +1456,31 @@
                             +   '<div class="scan-data-item" style="text-align:right;"><div class="scan-data-label">Daily</div><div class="scan-data-value" style="color:' + stateColor + ';font-weight:600;">' + state.replace('_', ' ') + '</div></div>'
                             + '</div>';
                     })()
-                    + '<div style="border-top:1px solid var(--border);"></div>'
                     + (function() {
-                        // W-CPR detail row (NEW) — mirrors stock card's W-CPR row:
-                        //   W-CPR bias chip | EMA 20 (1H) value+arrow | HTF trend chip
+                        // OR detail row — gated by Primary-Index Open Range Filter. Leading
+                        // border-top bundled so it disappears with the row.
+                        var orEnabled = window.__scannerStatus
+                            && window.__scannerStatus.enableIndexOpenRangeFilter === true;
+                        if (!orEnabled) return '';
+                        var ot = d.orTrend || 'FORMING';
+                        var oColor = 'var(--accent-yellow)';
+                        if      (ot === 'BULLISH') oColor = 'var(--accent-green)';
+                        else if (ot === 'BEARISH') oColor = 'var(--accent-red)';
+                        var oH = +d.orHigh || 0;
+                        var oL = +d.orLow  || 0;
+                        return '<div style="border-top:1px solid var(--border);"></div>'
+                            + '<div class="scan-data-grid scan-data-grid-3">'
+                            +   '<div class="scan-data-item" style="text-align:left;"><div class="scan-data-label">OR HIGH</div><div class="scan-data-value" style="color:var(--text-secondary);">' + (oH > 0 ? oH.toFixed(2) : '—') + '</div></div>'
+                            +   '<div class="scan-data-item" style="text-align:center;"><div class="scan-data-label">OR LOW</div><div class="scan-data-value" style="color:var(--text-secondary);">' + (oL > 0 ? oL.toFixed(2) : '—') + '</div></div>'
+                            +   '<div class="scan-data-item" style="text-align:right;"><div class="scan-data-label">OR</div><div class="scan-data-value" style="color:' + oColor + ';font-weight:600;">' + ot + '</div></div>'
+                            + '</div>';
+                    })()
+                    + (function() {
+                        // W-CPR detail row — gated by Index HTF Trend Alignment. Self-contained
+                        // with leading border-top.
+                        var htfEnabled = window.__scannerStatus
+                            && window.__scannerStatus.enableIndexHtfAlignment === true;
+                        if (!htfEnabled) return '';
                         var hBias = d.htfCprBias || 'INSIDE';
                         var hBiasColor = hBias === 'BULLISH' ? 'var(--accent-green)'
                             : hBias === 'BEARISH' ? 'var(--accent-red)' : 'var(--accent-yellow)';
@@ -1380,24 +1496,11 @@
                         var hStColor = hSt === 'BULLISH' ? 'var(--accent-green)'
                             : hSt === 'BEARISH' ? 'var(--accent-red)'
                             : hSt === 'INSIDE'  ? 'var(--accent-yellow)' : 'var(--text-muted)';
-                        return '<div class="scan-data-grid scan-data-grid-3">'
+                        return '<div style="border-top:1px solid var(--border);"></div>'
+                            + '<div class="scan-data-grid scan-data-grid-3">'
                             +   '<div class="scan-data-item" style="text-align:left;" title="Last 1-hour close vs weekly CPR zone"><div class="scan-data-label">W-CPR</div><div class="scan-data-value" style="color:' + hBiasColor + ';font-weight:600;">' + hBias + '</div></div>'
                             +   '<div class="scan-data-item" style="text-align:center;" title="1-hour EMA20 (stepped) vs last 1-hour close"><div class="scan-data-label">EMA 20 (1 H)</div><div class="scan-data-value" style="color:' + hEmaColor + ';font-weight:600;">' + (hEma > 0 ? hEma.toFixed(2) + (hEmaArrow ? ' ' + hEmaArrow : '') : '—') + '</div></div>'
                             +   '<div class="scan-data-item" style="text-align:right;" title="Index HTF state — weekly CPR + 1h EMA20 (Index HTF Trend Alignment source)"><div class="scan-data-label">HTF</div><div class="scan-data-value" style="color:' + hStColor + ';font-weight:600;">' + hSt.replace('_', ' ') + '</div></div>'
-                            + '</div>';
-                    })()
-                    + '<div style="border-top:1px solid var(--border);"></div>'
-                    + (function() {
-                        var ot = d.orTrend || 'FORMING';
-                        var oColor = 'var(--accent-yellow)';
-                        if      (ot === 'BULLISH') oColor = 'var(--accent-green)';
-                        else if (ot === 'BEARISH') oColor = 'var(--accent-red)';
-                        var oH = +d.orHigh || 0;
-                        var oL = +d.orLow  || 0;
-                        return '<div class="scan-data-grid scan-data-grid-3">'
-                            +   '<div class="scan-data-item" style="text-align:left;"><div class="scan-data-label">OR HIGH</div><div class="scan-data-value" style="color:var(--text-secondary);">' + (oH > 0 ? oH.toFixed(2) : '—') + '</div></div>'
-                            +   '<div class="scan-data-item" style="text-align:center;"><div class="scan-data-label">OR LOW</div><div class="scan-data-value" style="color:var(--text-secondary);">' + (oL > 0 ? oL.toFixed(2) : '—') + '</div></div>'
-                            +   '<div class="scan-data-item" style="text-align:right;"><div class="scan-data-label">OR</div><div class="scan-data-value" style="color:' + oColor + ';font-weight:600;">' + ot + '</div></div>'
                             + '</div>';
                     })()
                     + '  </div>'
@@ -1537,9 +1640,11 @@
     attachPnlSse();
 
     // ── Init ────────────────────────────────────────
-    fetchData();
+    // Index strip first, then stock cards — gives the index row visual priority on
+    // first paint. Subsequent setInterval polls run independently so neither blocks
+    // the other after the initial load.
+    refreshKeyIndices().then(fetchData, fetchData);
     checkStatus();
-    refreshKeyIndices();
     refreshVirginCpr();
     refreshNetPnl();
     setTimeout(initWatchlistSse, 1000); // wait for ticker.js to establish SSE

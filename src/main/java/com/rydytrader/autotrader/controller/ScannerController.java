@@ -922,6 +922,13 @@ public class ScannerController {
         status.put("enableHpt", riskSettings.isEnableHpt());
         status.put("enableMpt", riskSettings.isEnableMpt());
         // enableEmaTrend removed — EMA factor is hard-baked into strict trend state.
+        // Used by scanner.html to conditionally render trend-related slots on the cards
+        // so the chip + detail rows match which filters are actually gating. Disabling a
+        // filter hides its dedicated chip/row.
+        status.put("enableIndexHtfAlignment",   riskSettings.isEnableIndexHtfAlignment());
+        status.put("enableStockHtfAlignment",   riskSettings.isEnableStockHtfAlignment());
+        status.put("enableOpenRangeFilter",     riskSettings.isEnableOpenRangeFilter());
+        status.put("enableIndexOpenRangeFilter", riskSettings.isEnableIndexOpenRangeFilter());
         status.put("minPrice", riskSettings.getScanMinPrice());
         status.put("maxPrice", riskSettings.getScanMaxPrice());
         status.put("cprWidthSqueezeMult",  riskSettings.getCprWidthSqueezeMult());
