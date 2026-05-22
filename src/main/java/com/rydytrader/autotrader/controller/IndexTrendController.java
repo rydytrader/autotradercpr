@@ -6,8 +6,11 @@ import com.rydytrader.autotrader.service.AtrService;
 import com.rydytrader.autotrader.service.BhavcopyService;
 import com.rydytrader.autotrader.service.BreakoutScanner;
 import com.rydytrader.autotrader.service.CandleAggregator;
+import com.rydytrader.autotrader.service.EmaService;
+import com.rydytrader.autotrader.service.HtfEmaService;
 import com.rydytrader.autotrader.service.IndexTrendService;
 import com.rydytrader.autotrader.service.MarketDataService;
+import com.rydytrader.autotrader.service.WeeklyCprService;
 import com.rydytrader.autotrader.service.MarketHolidayService;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -40,6 +43,9 @@ public class IndexTrendController {
     private final MarketDataService marketDataService;
     private final RiskSettingsStore riskSettings;
     private final CandleAggregator  candleAggregator;
+    private final EmaService        emaService;
+    private final HtfEmaService     htfEmaService;
+    private final WeeklyCprService  weeklyCprService;
     @org.springframework.beans.factory.annotation.Autowired
     private MarketHolidayService marketHolidayService;
 
@@ -49,7 +55,10 @@ public class IndexTrendController {
                                  BhavcopyService bhavcopyService,
                                  MarketDataService marketDataService,
                                  RiskSettingsStore riskSettings,
-                                 CandleAggregator candleAggregator) {
+                                 CandleAggregator candleAggregator,
+                                 EmaService emaService,
+                                 HtfEmaService htfEmaService,
+                                 WeeklyCprService weeklyCprService) {
         this.indexTrendService = indexTrendService;
         this.breakoutScanner   = breakoutScanner;
         this.atrService        = atrService;
@@ -57,6 +66,9 @@ public class IndexTrendController {
         this.marketDataService = marketDataService;
         this.riskSettings      = riskSettings;
         this.candleAggregator  = candleAggregator;
+        this.emaService        = emaService;
+        this.htfEmaService     = htfEmaService;
+        this.weeklyCprService  = weeklyCprService;
     }
 
     @GetMapping("/nifty")
@@ -148,6 +160,40 @@ public class IndexTrendController {
             m.put("tc",               Math.round(idx.getTc() * 100.0) / 100.0);
             m.put("bc",               Math.round(idx.getBc() * 100.0) / 100.0);
             m.put("state",            state);
+            // Last completed 5-min close vs daily CPR → D-CPR bias, mirrors the stock card.
+            // 5-min EMA20 surfaced for the same EMA chip the stock card uses.
+            CandleAggregator.CandleBar idxLastBar = candleAggregator.getLastCompletedCandle(fyersSym);
+            double idxLastClose = idxLastBar != null ? idxLastBar.close : 0;
+            String cprBias = "INSIDE";
+            if (idxLastClose > 0 && idx.getTc() > 0 && idx.getBc() > 0) {
+                double cprTopV = Math.max(idx.getTc(), idx.getBc());
+                double cprBotV = Math.min(idx.getTc(), idx.getBc());
+                if      (idxLastClose > cprTopV) cprBias = "BULLISH";
+                else if (idxLastClose < cprBotV) cprBias = "BEARISH";
+            }
+            m.put("cprBias", cprBias);
+            double idxEma20 = emaService != null ? emaService.getEma(fyersSym) : 0;
+            m.put("ema20",  Math.round(idxEma20 * 100.0) / 100.0);
+            m.put("lastClose", Math.round(idxLastClose * 100.0) / 100.0);
+            // HTF (1-hour) state + factors so the index mini-card can mirror the stock card's
+            // W-CPR row (weekly CPR bias + 1h EMA + HTF chip). Same strict 2-factor rule.
+            m.put("htfState", indexTrendService.getHtfTrendStateForTicker(ticker));
+            Double idxHtfClose = candleAggregator.getLast1HourClose(fyersSym);
+            double idxHtfCloseVal = idxHtfClose != null ? idxHtfClose : 0;
+            m.put("htfClose", Math.round(idxHtfCloseVal * 100.0) / 100.0);
+            WeeklyCprService.WeeklyLevels weeklyLv = weeklyCprService.getWeeklyLevels(fyersSym);
+            double weeklyTop = weeklyLv != null ? weeklyLv.top : 0;
+            double weeklyBot = weeklyLv != null ? weeklyLv.bot : 0;
+            m.put("weeklyCprTop", Math.round(weeklyTop * 100.0) / 100.0);
+            m.put("weeklyCprBot", Math.round(weeklyBot * 100.0) / 100.0);
+            String htfCprBias = "INSIDE";
+            if (idxHtfCloseVal > 0 && weeklyTop > 0 && weeklyBot > 0) {
+                if      (idxHtfCloseVal > weeklyTop) htfCprBias = "BULLISH";
+                else if (idxHtfCloseVal < weeklyBot) htfCprBias = "BEARISH";
+            }
+            m.put("htfCprBias", htfCprBias);
+            double idxHtfEma20 = htfEmaService != null ? htfEmaService.getEma(fyersSym) : 0;
+            m.put("htfEma20", Math.round(idxHtfEma20 * 100.0) / 100.0);
             // Open Range — high/low of the index's bars in the first {openRangeMinutes}
             // after 9:15 IST. Used by the Primary-Index Open Range Filter; also rendered
             // as the index mini-card's OR Trend chip. Only meaningful on the live trading

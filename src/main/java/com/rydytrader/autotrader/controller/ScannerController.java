@@ -520,35 +520,19 @@ public class ScannerController {
         // close as fallback when no candle is cached), so the chip only flips at 5-min
         // boundaries — not on every tick.
         String cprBias = "INSIDE";
-        String trendState = "NEUTRAL";
         double cprTop = Math.max(levels.getTc(), levels.getBc());
         double cprBotBias = Math.min(levels.getTc(), levels.getBc());
         CandleAggregator.CandleBar lastBar = candleAggregator.getLastCompletedCandle(fyersSymbol);
         double biasClose = lastBar != null ? lastBar.close : levels.getClose();
         double ema20Val = emaService.getEma(fyersSymbol);
         if (biasClose > 0 && cprTop > 0 && cprBotBias > 0) {
-            Boolean cprBullish = null;
-            if (biasClose > cprTop)        { cprBias = "BULLISH"; cprBullish = Boolean.TRUE; }
-            else if (biasClose < cprBotBias) { cprBias = "BEARISH"; cprBullish = Boolean.FALSE; }
-            Boolean emaBullish = null;
-            if (ema20Val > 0) {
-                if (biasClose > ema20Val)      emaBullish = Boolean.TRUE;
-                else if (biasClose < ema20Val) emaBullish = Boolean.FALSE;
-            }
-            if (cprBullish == null) {
-                trendState = "INSIDE";
-            } else if (Boolean.TRUE.equals(cprBullish)  && !Boolean.FALSE.equals(emaBullish)) {
-                trendState = "BULLISH";
-            } else if (Boolean.FALSE.equals(cprBullish) && !Boolean.TRUE.equals(emaBullish)) {
-                trendState = "BEARISH";
-            } else if (Boolean.FALSE.equals(cprBullish) && Boolean.TRUE.equals(emaBullish)) {
-                trendState = "BULLISH_REVERSAL";
-            } else if (Boolean.TRUE.equals(cprBullish)  && Boolean.FALSE.equals(emaBullish)) {
-                trendState = "BEARISH_REVERSAL";
-            } else {
-                trendState = "SIDEWAYS";
-            }
+            if (biasClose > cprTop)          cprBias = "BULLISH";
+            else if (biasClose < cprBotBias) cprBias = "BEARISH";
         }
+        // Trend state — centralized 2-factor strict logic in IndexTrendService.deriveTrendState
+        // (BULLISH iff close > CPR top AND close > EMA20; BEARISH iff both below; mismatched
+        // factors → SIDEWAYS). No REVERSAL states.
+        String trendState = IndexTrendService.deriveTrendState(biasClose, cprTop, cprBotBias, ema20Val);
         card.put("cprBias", cprBias);
         card.put("trendState", trendState);
 
@@ -937,7 +921,7 @@ public class ScannerController {
         status.put("higherTimeframe", riskSettings.getHigherTimeframe());
         status.put("enableHpt", riskSettings.isEnableHpt());
         status.put("enableMpt", riskSettings.isEnableMpt());
-        status.put("enableEmaTrend", riskSettings.isEnableEmaTrendCheck());
+        // enableEmaTrend removed — EMA factor is hard-baked into strict trend state.
         status.put("minPrice", riskSettings.getScanMinPrice());
         status.put("maxPrice", riskSettings.getScanMaxPrice());
         status.put("cprWidthSqueezeMult",  riskSettings.getCprWidthSqueezeMult());

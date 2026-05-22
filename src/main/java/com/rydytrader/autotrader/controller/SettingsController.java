@@ -67,6 +67,7 @@ public class SettingsController {
         result.put("marubozuBreakoutMaxBodyAtrMult",          riskSettings.getMarubozuBreakoutMaxBodyAtrMult());
         result.put("marubozuBreakoutMaxOppositeWickPctOfBody", riskSettings.getMarubozuBreakoutMaxOppositeWickPctOfBody());
         result.put("enableIndexHtfHurdleFilter", riskSettings.isEnableIndexHtfHurdleFilter());
+        result.put("enableIndexHtfAlignment",    riskSettings.isEnableIndexHtfAlignment());
         result.put("indexHtfHurdleMinHeadroomAtr", riskSettings.getIndexHtfHurdleMinHeadroomAtr());
         result.put("enableIndex5mHurdleFilter", riskSettings.isEnableIndex5mHurdleFilter());
         result.put("index5mHurdleMinHeadroomAtr", riskSettings.getIndex5mHurdleMinHeadroomAtr());
@@ -76,7 +77,6 @@ public class SettingsController {
         result.put("dayHighLowMinAtr", riskSettings.getDayHighLowMinAtr());
         result.put("enableRiskRewardFilter", riskSettings.isEnableRiskRewardFilter());
         result.put("minRiskRewardRatio", riskSettings.getMinRiskRewardRatio());
-        result.put("enableEmaTrendCheck", riskSettings.isEnableEmaTrendCheck());
         result.put("enableEmaLevelCountFilter", riskSettings.isEnableEmaLevelCountFilter());
         result.put("emaLevelMinRangePct", riskSettings.getEmaLevelMinRangePct());
         result.put("emaLevelFilterMorningSkip", riskSettings.isEmaLevelFilterMorningSkip());
@@ -179,6 +179,7 @@ public class SettingsController {
             if (body.containsKey("marubozuBreakoutMaxBodyAtrMult"))          riskSettings.setMarubozuBreakoutMaxBodyAtrMult(Double.parseDouble(body.get("marubozuBreakoutMaxBodyAtrMult").toString()));
             if (body.containsKey("marubozuBreakoutMaxOppositeWickPctOfBody")) riskSettings.setMarubozuBreakoutMaxOppositeWickPctOfBody(Double.parseDouble(body.get("marubozuBreakoutMaxOppositeWickPctOfBody").toString()));
             if (body.containsKey("enableIndexHtfHurdleFilter")) riskSettings.setEnableIndexHtfHurdleFilter(Boolean.parseBoolean(body.get("enableIndexHtfHurdleFilter").toString()));
+            if (body.containsKey("enableIndexHtfAlignment"))    riskSettings.setEnableIndexHtfAlignment(Boolean.parseBoolean(body.get("enableIndexHtfAlignment").toString()));
             if (body.containsKey("indexHtfHurdleMinHeadroomAtr")) riskSettings.setIndexHtfHurdleMinHeadroomAtr(Double.parseDouble(body.get("indexHtfHurdleMinHeadroomAtr").toString()));
             if (body.containsKey("enableIndex5mHurdleFilter")) riskSettings.setEnableIndex5mHurdleFilter(Boolean.parseBoolean(body.get("enableIndex5mHurdleFilter").toString()));
             if (body.containsKey("index5mHurdleMinHeadroomAtr")) riskSettings.setIndex5mHurdleMinHeadroomAtr(Double.parseDouble(body.get("index5mHurdleMinHeadroomAtr").toString()));
@@ -188,7 +189,6 @@ public class SettingsController {
             if (body.containsKey("dayHighLowMinAtr")) riskSettings.setDayHighLowMinAtr(Double.parseDouble(body.get("dayHighLowMinAtr").toString()));
             if (body.containsKey("enableRiskRewardFilter")) riskSettings.setEnableRiskRewardFilter(Boolean.parseBoolean(body.get("enableRiskRewardFilter").toString()));
             if (body.containsKey("minRiskRewardRatio")) riskSettings.setMinRiskRewardRatio(Double.parseDouble(body.get("minRiskRewardRatio").toString()));
-            if (body.containsKey("enableEmaTrendCheck")) riskSettings.setEnableEmaTrendCheck(Boolean.parseBoolean(body.get("enableEmaTrendCheck").toString()));
             if (body.containsKey("enableEmaLevelCountFilter")) riskSettings.setEnableEmaLevelCountFilter(Boolean.parseBoolean(body.get("enableEmaLevelCountFilter").toString()));
             if (body.containsKey("emaLevelMinRangePct")) riskSettings.setEmaLevelMinRangePct(Integer.parseInt(body.get("emaLevelMinRangePct").toString()));
             if (body.containsKey("emaLevelFilterMorningSkip")) riskSettings.setEmaLevelFilterMorningSkip(Boolean.parseBoolean(body.get("emaLevelFilterMorningSkip").toString()));

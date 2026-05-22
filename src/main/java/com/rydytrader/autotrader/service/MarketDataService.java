@@ -1193,9 +1193,24 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         }
         for (var cpr : bhavcopyService.getInsideCprStocks()) {
             if (!bhavcopyService.isInScanUniverse(cpr.getSymbol())) continue;
-            if ((insideMax <= 0 || cpr.getCprWidthPct() < insideMax) && passesWatchlistFilters(cpr)) {
-                symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
+            if (insideMax > 0 && cpr.getCprWidthPct() >= insideMax) continue;
+            if (!passesWatchlistFilters(cpr)) continue;
+            // Apply the adaptive-state toggle gate — same logic ScannerController's INSIDE
+            // loop uses. Without this, an INSIDE-AND-WIDE stock would slip into the trade
+            // scanner's watchlist even when the WIDE toggle is off (cards exclude it but
+            // BreakoutScanner still fires signals for it). INSUFFICIENT_DATA (warmup)
+            // stocks pass through since the toggle doesn't reach them.
+            BhavcopyService.AdaptiveCprResult adaptive = bhavcopyService.getAdaptiveCpr(cpr.getSymbol());
+            if (adaptive.state() != BhavcopyService.CprState.INSUFFICIENT_DATA) {
+                boolean stateOk = switch (adaptive.state()) {
+                    case NARROW            -> riskSettings.isEnableCprStateA();
+                    case AVERAGE           -> riskSettings.isEnableCprStateB();
+                    case WIDE              -> riskSettings.isEnableCprStateC();
+                    case INSUFFICIENT_DATA -> false;
+                };
+                if (!stateOk) continue;
             }
+            symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
         }
         return new ArrayList<>(symbols);
     }

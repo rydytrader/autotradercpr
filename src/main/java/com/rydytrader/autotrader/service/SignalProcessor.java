@@ -20,12 +20,14 @@ public class SignalProcessor {
     private final WeeklyCprService weeklyCprService;
     private final EmaService       emaService;
     private final MarketHolidayService marketHolidayService;
+    private final BhavcopyService  bhavcopyService;
 
     public SignalProcessor(RiskSettingsStore riskSettings, EventService eventService,
                            QuantityService quantityService, MarketDataService marketDataService,
                            CandleAggregator candleAggregator, WeeklyCprService weeklyCprService,
                            EmaService emaService,
-                           MarketHolidayService marketHolidayService) {
+                           MarketHolidayService marketHolidayService,
+                           BhavcopyService bhavcopyService) {
         this.riskSettings = riskSettings;
         this.eventService = eventService;
         this.quantityService = quantityService;
@@ -34,6 +36,7 @@ public class SignalProcessor {
         this.emaService = emaService;
         this.weeklyCprService = weeklyCprService;
         this.marketHolidayService = marketHolidayService;
+        this.bhavcopyService = bhavcopyService;
     }
 
     public ProcessedSignal process(Map<String, Object> alert) {
@@ -118,9 +121,27 @@ public class SignalProcessor {
         double atrMultiplier = riskSettings.getAtrMultiplier();
         double defaultSl = isBuy ? (close - atr * atrMultiplier) : (close + atr * atrMultiplier);
         double sl = defaultSl;
+        // Adaptive-CPR midpoint anchor: when the stock is classified AVERAGE (B band —
+        // widthRatio between narrow and wide thresholds), the zone is wide enough that
+        // anchoring on the entry-side outer edge places the SL too far from price. Switch
+        // to the zone midpoint ((TC+BC)/2, (R1+PH)/2, (S1+PL)/2) so the SL is tighter and
+        // more proportionate. NARROW and WIDE states keep the outer-edge anchor.
+        boolean useMidpointAnchor = false;
+        String adaptiveStateLabel = "UNKNOWN";
+        if (bhavcopyService != null) {
+            String stockTicker = symbol.replaceFirst("^NSE:", "").replaceAll("-(EQ|INDEX)$", "");
+            BhavcopyService.AdaptiveCprResult adaptive = bhavcopyService.getAdaptiveCpr(stockTicker);
+            if (adaptive != null) {
+                adaptiveStateLabel = adaptive.state().name();
+                useMidpointAnchor = adaptive.state() == BhavcopyService.CprState.AVERAGE;
+            }
+        }
         boolean useStructuralSl = false;
+        // Mode label captured here so both the event log AND the trade description can show
+        // exactly which SL-calculation path fired. Reset per signal.
+        String slModeLabel = "Default ATR-based SL (structural SL disabled)";
         if (riskSettings.isEnableStructuralSl()) {
-            double anchor = computeStructuralAnchor(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
+            double anchor = computeStructuralAnchor(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc, useMidpointAnchor);
             if (anchor > 0) {
                 double buffer = riskSettings.getStructuralSlBufferAtr();
                 // Single-level setups (R2/R3/R4, S2/S3/S4) lack the zone-width cushion that
@@ -128,18 +149,36 @@ public class SignalProcessor {
                 // ATR buffer to push the SL further from the anchor. Zone setups also receive
                 // the same extra cushion when CPR width is below narrowCprZoneCollapseWidthPct
                 // — their zone is too tight to absorb a normal pullback.
-                double extra = appliesSingleLevelSlBuffer(setup, tc, bc, ph, pl) ? riskSettings.getSingleLevelSlBufferAtr() : 0;
+                boolean isSingleLvl   = isSingleLevelSetup(setup);
+                boolean appliesExtra  = appliesSingleLevelSlBuffer(setup, tc, bc, ph, pl);
+                double extra = appliesExtra ? riskSettings.getSingleLevelSlBufferAtr() : 0;
                 double totalBufferAtr = buffer + extra;
                 double structSl = isBuy ? (anchor - atr * totalBufferAtr) : (anchor + atr * totalBufferAtr);
                 sl = structSl;
                 useStructuralSl = true;
+
+                // ── SL-mode label — human-readable narrative of which structural path fired ──
+                if (isSingleLvl) {
+                    slModeLabel = "Single-level setup (" + setup.replaceFirst("^(BUY_ABOVE_|SELL_BELOW_)", "") + ") + buffer";
+                } else if (useMidpointAnchor && appliesExtra) {
+                    // Rare: AVERAGE state AND zone width below collapse threshold.
+                    slModeLabel = "Zone midpoint anchor (AVERAGE CPR) + narrow-zone buffer (CPR width < threshold)";
+                } else if (useMidpointAnchor) {
+                    slModeLabel = "Zone midpoint anchor (AVERAGE CPR)";
+                } else if (appliesExtra) {
+                    slModeLabel = "Zone edge anchor + narrow-zone buffer (CPR width < " + riskSettings.getNarrowCprZoneCollapseWidthPct() + "%)";
+                } else {
+                    slModeLabel = "Zone edge anchor (" + adaptiveStateLabel + " CPR)";
+                }
+
                 double defaultDist = Math.abs(close - defaultSl);
                 double structDist = Math.abs(close - structSl);
                 String bufferLabel = extra > 0
                     ? (totalBufferAtr + "×ATR = " + buffer + " base + " + extra + " single-level")
                     : (buffer + "×ATR");
-                eventService.log("[INFO] " + symbol + " " + setup + " using structural SL " + fmt(structSl)
-                    + " (dist " + fmt(structDist) + ", level " + fmt(anchor) + " ± " + bufferLabel + ")"
+                eventService.log("[INFO] " + symbol + " " + setup + " SL mode: " + slModeLabel
+                    + " — SL " + fmt(structSl) + " (dist " + fmt(structDist)
+                    + ", anchor " + fmt(anchor) + " ± " + bufferLabel + ")"
                     + " — default would be " + fmt(defaultSl) + " (dist " + fmt(defaultDist) + ")");
             }
         }
@@ -268,13 +307,21 @@ public class SignalProcessor {
             .append(" broke ").append(levelName)
             .append(" (").append(fmt(breakoutLevel)).append(").");
 
+        // [SL_MODE] line — surfaces which calculation path fired (structural variant or default
+        // ATR). Lets the trader verify the SL was sized by the intended rule for the stock's
+        // CPR state (NARROW/AVERAGE/WIDE), setup type (zone vs single-level), and any
+        // narrow-zone buffer add-on.
+        desc.append("\n").append(ts).append(" [SL_MODE] ").append(slModeLabel);
+
         // [SL] line
         desc.append("\n").append(ts).append(" [SL] ").append(fmt(sl));
         if (useStructuralSl) {
-            double anchor = computeStructuralAnchor(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc);
+            double anchor = computeStructuralAnchor(setup, r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc, useMidpointAnchor);
             double base = riskSettings.getStructuralSlBufferAtr();
             double extra = appliesSingleLevelSlBuffer(setup, tc, bc, ph, pl) ? riskSettings.getSingleLevelSlBufferAtr() : 0;
-            desc.append(" (structural anchor ").append(fmt(anchor))
+            desc.append(" (anchor ")
+                .append(useMidpointAnchor ? "(midpoint) " : "")
+                .append(fmt(anchor))
                 .append(" ").append(isBuy ? "−" : "+").append(" ").append(base + extra)
                 .append(" × ATR ").append(fmt(atr));
             if (extra > 0) desc.append(" [").append(base).append(" base + ").append(extra).append(" single-level]");
@@ -541,17 +588,21 @@ public class SignalProcessor {
         return cprWidthPct(tc, bc, ph, pl) < threshold;
     }
 
+    /** When {@code useMidpoint} is true (stock is adaptive-classified AVERAGE), the 6
+     *  zone setups anchor on the zone's midpoint instead of the entry-side outer edge.
+     *  Single-level setups (R2/R3/R4, S2/S3/S4) are unaffected — no midpoint concept. */
     private static double computeStructuralAnchor(String setup,
             double r1, double r2, double r3, double r4,
             double s1, double s2, double s3, double s4,
-            double ph, double pl, double tc, double bc) {
+            double ph, double pl, double tc, double bc,
+            boolean useMidpoint) {
         return switch (setup) {
-            case "BUY_ABOVE_CPR"     -> Math.min(tc, bc);
-            case "SELL_BELOW_CPR"    -> Math.max(tc, bc);
-            case "BUY_ABOVE_R1_PDH"  -> Math.min(r1, ph);
-            case "SELL_BELOW_S1_PDL" -> Math.max(s1, pl);
-            case "BUY_ABOVE_S1_PDL"  -> Math.min(s1, pl); // magnet bounce — outer edge of support zone
-            case "SELL_BELOW_R1_PDH" -> Math.max(r1, ph); // magnet rejection — outer edge of resistance zone
+            case "BUY_ABOVE_CPR"     -> useMidpoint ? (tc + bc) / 2.0 : Math.min(tc, bc);
+            case "SELL_BELOW_CPR"    -> useMidpoint ? (tc + bc) / 2.0 : Math.max(tc, bc);
+            case "BUY_ABOVE_R1_PDH"  -> useMidpoint ? (r1 + ph) / 2.0 : Math.min(r1, ph);
+            case "SELL_BELOW_S1_PDL" -> useMidpoint ? (s1 + pl) / 2.0 : Math.max(s1, pl);
+            case "BUY_ABOVE_S1_PDL"  -> useMidpoint ? (s1 + pl) / 2.0 : Math.min(s1, pl); // magnet bounce
+            case "SELL_BELOW_R1_PDH" -> useMidpoint ? (r1 + ph) / 2.0 : Math.max(r1, ph); // magnet rejection
             case "BUY_ABOVE_R2", "SELL_BELOW_R2" -> r2;
             case "BUY_ABOVE_R3", "SELL_BELOW_R3" -> r3;
             case "BUY_ABOVE_R4", "SELL_BELOW_R4" -> r4;

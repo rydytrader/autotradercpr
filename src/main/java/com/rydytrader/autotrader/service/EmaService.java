@@ -88,6 +88,14 @@ public class EmaService implements CandleAggregator.CandleCloseListener {
         return ALPHA * ltp + (1 - ALPHA) * prev;
     }
 
+    /** Completed-bars-only EMA — value as of the last 5-min candle close, no live LTP
+     *  blend. Use for filter logic / state derivation that needs to be stable between
+     *  5-min boundaries (e.g. Primary-Index Trend Alignment). The live-blended
+     *  {@link #getEma} is appropriate for display values where mid-bar drift is fine. */
+    public double getSteppedEma(String symbol) {
+        return getEmaCompleted(symbol);
+    }
+
     /** Completed-bars-only EMA — value as of the last candle close. */
     private double getEmaCompleted(String symbol) {
         Integer bars = barCountBySymbol.get(symbol);

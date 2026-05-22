@@ -171,6 +171,15 @@
         .scan-levels.expanded .scan-levels-title .toggle-arrow { transform: rotate(90deg); }
         .scan-levels-body { display: none; }
         .scan-levels.expanded .scan-levels-body { display: block; }
+        /* Trend Details rows use .scan-data-grid which carries its own 16px horizontal
+           padding. The outer .scan-levels also has 16px — double padding leaves a wide
+           gutter before the first column and after the third. Strip the inner padding
+           when nested. */
+        .scan-levels-body .scan-data-grid { padding-left: 0; padding-right: 0; }
+        /* Slightly smaller chip font inside the expanded Trend Details — the rows are
+           informational sub-detail, so size down vs the always-visible top summary row. */
+        .scan-levels-body .scan-data-label { font-size: 0.55rem; }
+        .scan-levels-body .scan-data-value { font-size: 0.72rem; }
         .scan-level-row {
             display: grid;
             grid-template-columns: 1fr 1fr 1fr;
@@ -488,9 +497,8 @@
         <span class="trend-filter-group">
             <button class="filter-btn active" onclick="setTrendFilter('all', this)">All Trend</button>
             <button class="filter-btn" onclick="setTrendFilter('BULLISH', this)">Bullish</button>
-            <button class="filter-btn" onclick="setTrendFilter('BULLISH_REVERSAL', this)">Bull Rev</button>
             <button class="filter-btn" onclick="setTrendFilter('BEARISH', this)">Bearish</button>
-            <button class="filter-btn" onclick="setTrendFilter('BEARISH_REVERSAL', this)">Bear Rev</button>
+            <button class="filter-btn" onclick="setTrendFilter('SIDEWAYS', this)">Sideways</button>
         </span>
         <div class="filter-sep"></div>
         <button class="filter-btn" onclick="toggleSignalFilter(this)">Has Signal</button>
@@ -852,6 +860,42 @@
             })()
             + '</div>'
             + '<div style="border-top:1px solid var(--border);"></div>'
+            // ── Trend summary row (always visible) — three chips: Daily / HTF / OR.
+            //    Each chip mirrors the rightmost cell of the detail row below (DAILY
+            //    TREND from D-CPR row, HTF TREND from W-CPR row, OR TREND from OR row).
+            //    The three detail rows are collapsed below under a "Trend Details"
+            //    expander (default closed), same pattern as CPR Levels.
+            + (function() {
+                function trendChip(rawState, label, tipTitle, align) {
+                    var st = rawState || 'NEUTRAL';
+                    var color, text;
+                    switch (st) {
+                        case 'BULLISH':          color = 'var(--accent-green)';   text = 'BULLISH';   break;
+                        case 'BEARISH':          color = 'var(--accent-red)';     text = 'BEARISH';   break;
+                        case 'BULLISH_REVERSAL': color = 'var(--accent-green)';   text = 'BULL REV';  break;
+                        case 'BEARISH_REVERSAL': color = 'var(--accent-red)';     text = 'BEAR REV';  break;
+                        case 'INSIDE':           color = 'var(--accent-yellow)';  text = 'INSIDE';    break;
+                        case 'FORMING':          color = 'var(--accent-yellow)';  text = 'FORMING';   break;
+                        case 'SIDEWAYS':         color = 'var(--text-muted)';     text = 'SIDEWAYS';  break;
+                        default:                 color = 'var(--text-muted)';     text = 'NEUTRAL';   break;
+                    }
+                    return '  <div class="scan-data-item" style="text-align:' + align + ';" title="' + tipTitle + '">'
+                        +  '<div class="scan-data-label">' + label + '</div>'
+                        +  '<div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + text + '</div></div>';
+                }
+                return '<div class="scan-data-grid scan-data-grid-3">'
+                    + trendChip(d.trendState,    'DAILY',      'D-CPR + 5-min EMA20 (2-factor state machine)',                   'left')
+                    + trendChip(d.htfTrendState, 'HTF',        'Weekly CPR + 1-hour EMA20 (Stock HTF Trend Alignment filter)',   'center')
+                    + trendChip(d.orTrend,       'OR',         'Open Range last-close position (BULLISH / BEARISH / INSIDE / FORMING)', 'right')
+                    + '</div>';
+            })()
+            + '<div style="border-top:1px solid var(--border);"></div>'
+            + '<div class="scan-levels' + (isExpanded(d.symbol, 'trends') ? ' expanded' : '') + '">'
+            + '  <div class="scan-levels-title" onclick="toggleLevelSection(this, \'' + d.symbol + '\', \'trends\')">'
+            + '    <span>Trend Details</span>'
+            + '    <span class="toggle-arrow" style="margin-left:auto;">&#9654;</span>'
+            + '  </div>'
+            + '  <div class="scan-levels-body">'
             + '<div class="scan-data-grid scan-data-grid-3">'
             + (function() {
                 // CPR bias chip — BULLISH (above max TC/BC), BEARISH (below min TC/BC), or INSIDE.
@@ -893,7 +937,7 @@
                     case 'SIDEWAYS':         color = 'var(--text-muted)';     label = 'SIDEWAYS';  break;
                     default:                 color = 'var(--text-muted)';     label = 'NEUTRAL';   break;
                 }
-                return '  <div class="scan-data-item" style="text-align:right;"><div class="scan-data-label">DAILY TREND</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;" title="2-factor state machine — daily CPR bias + 5-min EMA20 (matches NIFTY card)">' + label + '</div></div>';
+                return '  <div class="scan-data-item" style="text-align:right;"><div class="scan-data-label">Daily</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;" title="2-factor state machine — daily CPR bias + 5-min EMA20 (matches NIFTY card)">' + label + '</div></div>';
             })()
             + '</div>'
             + '<div style="border-top:1px solid var(--border);"></div>'
@@ -932,7 +976,7 @@
                     case 'SIDEWAYS':         color = 'var(--text-muted)';     label = 'SIDEWAYS';  break;
                     default:                 color = 'var(--text-muted)';     label = 'NEUTRAL';   break;
                 }
-                return '  <div class="scan-data-item" style="text-align:right;"><div class="scan-data-label">HTF TREND</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;" title="2-factor HTF state — weekly CPR + 1-hour EMA20 (Stock HTF Trend Alignment filter source)">' + label + '</div></div>';
+                return '  <div class="scan-data-item" style="text-align:right;"><div class="scan-data-label">HTF</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;" title="2-factor HTF state — weekly CPR + 1-hour EMA20 (Stock HTF Trend Alignment filter source)">' + label + '</div></div>';
             })()
             + '</div>'
             + '<div style="border-top:1px solid var(--border);"></div>'
@@ -957,9 +1001,11 @@
                     + "BULLISH: last 5-min close above OR high.\n"
                     + "BEARISH: last 5-min close below OR low.\n"
                     + "INSIDE: last close between OR low and OR high.";
-                return '  <div class="scan-data-item" style="text-align:right;cursor:help;" title="' + tip.replace(/"/g, '&quot;') + '"><div class="scan-data-label">OR TREND</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + t + '</div></div>';
+                return '  <div class="scan-data-item" style="text-align:right;cursor:help;" title="' + tip.replace(/"/g, '&quot;') + '"><div class="scan-data-label">OR</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;">' + t + '</div></div>';
             })()
             + '</div>'
+            + '  </div>'                                                  // /scan-levels-body (Trend Details)
+            + '</div>'                                                    // /scan-levels (Trend Details block)
             + '<div style="border-top:1px solid var(--border);"></div>'
             + '<div class="scan-levels' + (isExpanded(d.symbol, 'cpr') ? ' expanded' : '') + '">'
             + '  <div class="scan-levels-title" onclick="toggleLevelSection(this, \'' + d.symbol + '\', \'cpr\')">'
@@ -1229,49 +1275,133 @@
                     + (ka.avgWidthPct || 0).toFixed(2) + '% (ratio ' + (ka.widthRatio || 0).toFixed(2) + ')'
                     + '\nSamples: ' + (ka.samplesUsed || 0);
                 var nameDisplay = formatIndexTickerScanner(d.ticker || '');
+                // Width-letter chip (N/A/W) — mirrors the stock card's adaptive state badge.
+                var widthLetter = widthCat === 'NARROW' ? 'N'
+                    : widthCat === 'AVERAGE' ? 'A'
+                    : widthCat === 'WIDE' ? 'W'
+                    : widthCat === 'WARMUP' ? '?' : '';
+                var widthBadgeClass = widthCat === 'NARROW' ? 'narrow'
+                    : widthCat === 'AVERAGE' ? 'average'
+                    : widthCat === 'WIDE' ? 'wide' : '';
+                var widthBadge = widthLetter
+                    ? '<span class="scan-badge ' + widthBadgeClass + '" title="' + widthChipTip.replace(/"/g, '&quot;') + '" style="cursor:help;">' + widthLetter + '</span>'
+                    : '';
                 var chartBtn = '';
                 if (d.symbol) {
                     var safeName = nameDisplay.replace(/'/g, "\\'");
                     chartBtn = '<button class="chart-icon-btn" onclick="openChartModal(\'' + d.symbol + '\', \'' + safeName + '\')" title="View ' + nameDisplay + ' 5-min chart"'
-                        + ' style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:3px 6px;margin-left:auto;cursor:pointer;color:var(--text-secondary);line-height:0;display:inline-flex;align-items:center;">'
+                        + ' style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:3px 6px;cursor:pointer;color:var(--text-secondary);line-height:0;display:inline-flex;align-items:center;">'
                         + '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 6-6"/></svg>'
                         + '</button>';
                 }
                 html += '<div class="scan-card key-index-card" data-symbol="' + (d.symbol || '') + '" style="border-color:' + stateBorder + ';">'
-                    // Header — index name + chart icon button (mirrors scan-card-header layout).
+                    // Header — index name on left, right-side cluster (width chip + chart
+                    // icon) on right. .scan-card-header uses justify-content:space-between
+                    // so wrapping the right items in a single flex container keeps them
+                    // tight together at the right edge.
                     +   '<div class="scan-card-header">'
                     +     '<span class="scan-symbol">' + nameDisplay + '</span>'
-                    +     chartBtn
+                    +     '<div style="display:flex;align-items:center;gap:6px;">'
+                    +       widthBadge
+                    +       chartBtn
+                    +     '</div>'
                     +   '</div>'
                     // Price row — LTP + change pts/% (mirrors scan-price-row).
                     +   '<div class="scan-price-row">'
                     +     '<span class="scan-ltp ki-ltp" style="cursor:help;" title="ATR: ' + ((+d.atr) > 0 ? (+d.atr).toFixed(2) : '—') + '">' + (d.ltp > 0 ? d.ltp.toFixed(2) : '—') + '</span>'
                     +     '<span class="scan-change ki-change ' + changeCls + '">' + changeArrow + ' ' + Math.abs(change).toFixed(2) + ' (' + changeSign + changePct.toFixed(2) + '%)</span>'
                     +   '</div>'
-                    // Data row — CPR width + CPR Trend + OR Trend.
-                    +   '<div class="scan-data-grid scan-data-grid-3" style="padding:6px 16px 12px;">'
-                    +     '<div class="scan-data-item" style="text-align:left;cursor:help;" title="' + widthChipTip.replace(/"/g, '&quot;') + '"><div class="scan-data-label">CPR WIDTH</div><div class="scan-data-value" style="color:' + widthColor + ';font-weight:600;">' + widthText + '</div></div>'
-                    +     '<div class="scan-data-item" style="text-align:center;" title="TC: ' + ((+d.tc) > 0 ? (+d.tc).toFixed(2) : '—') + ' | BC: ' + ((+d.bc) > 0 ? (+d.bc).toFixed(2) : '—') + '"><div class="scan-data-label">CPR TREND</div><div class="scan-data-value" style="color:' + stateColor + ';font-weight:600;">' + state.replace('_', ' ') + '</div></div>'
-                    +     (function() {
-                            // Open Range trend chip — FORMING (yellow) / BULLISH (green) /
-                            // BEARISH (red) / INSIDE (yellow). Mirrors the stock card's OR
-                            // Trend; identical semantics for the index.
-                            var ot = d.orTrend || 'FORMING';
-                            var oColor = 'var(--accent-yellow)';
-                            if      (ot === 'BULLISH') oColor = 'var(--accent-green)';
-                            else if (ot === 'BEARISH') oColor = 'var(--accent-red)';
-                            var oH = +d.orHigh || 0;
-                            var oL = +d.orLow  || 0;
-                            var oTip = 'Open Range (' + (d.orMinutes || 15) + 'm) — index high/low of the first window after 9:15 IST.\n'
-                                + 'OR HIGH: ' + (oH > 0 ? oH.toFixed(2) : '—') + '\n'
-                                + 'OR LOW: '  + (oL > 0 ? oL.toFixed(2) : '—') + '\n'
-                                + 'FORMING: OR window still in progress.\n'
-                                + 'BULLISH: latest close above OR high.\n'
-                                + 'BEARISH: latest close below OR low.\n'
-                                + 'INSIDE: latest close inside the OR.';
-                            return '<div class="scan-data-item" style="text-align:right;cursor:help;" title="' + oTip.replace(/"/g, '&quot;') + '"><div class="scan-data-label">OR TREND</div><div class="scan-data-value" style="color:' + oColor + ';font-weight:600;">' + ot + '</div></div>';
-                        })()
-                    +   '</div>'
+                    // Top trend row — 3 chips (Daily / HTF / OR) mirroring the stock card.
+                    + (function() {
+                        function chipColor(st) {
+                            if (st === 'BULLISH') return 'var(--accent-green)';
+                            if (st === 'BEARISH') return 'var(--accent-red)';
+                            if (st === 'INSIDE')  return 'var(--accent-yellow)';
+                            if (st === 'FORMING') return 'var(--accent-yellow)';
+                            return 'var(--text-muted)';
+                        }
+                        var htfSt = d.htfState || 'NEUTRAL';
+                        var ot = d.orTrend || 'FORMING';
+                        var oH = +d.orHigh || 0;
+                        var oL = +d.orLow  || 0;
+                        var oTip = 'Open Range (' + (d.orMinutes || 15) + 'm) — index high/low of the first window after 9:15 IST.\n'
+                            + 'OR HIGH: ' + (oH > 0 ? oH.toFixed(2) : '—') + '\n'
+                            + 'OR LOW: '  + (oL > 0 ? oL.toFixed(2) : '—');
+                        return '<div class="scan-data-grid scan-data-grid-3" style="padding:6px 16px 12px;">'
+                            +   '<div class="scan-data-item" style="text-align:left;" title="Daily CPR + 5m EMA20 (strict 2-factor)"><div class="scan-data-label">Daily</div><div class="scan-data-value" style="color:' + stateColor + ';font-weight:600;">' + state.replace('_', ' ') + '</div></div>'
+                            +   '<div class="scan-data-item" style="text-align:center;" title="Weekly CPR + 1h EMA20 (Index HTF Trend Alignment source)"><div class="scan-data-label">HTF</div><div class="scan-data-value" style="color:' + chipColor(htfSt) + ';font-weight:600;">' + htfSt.replace('_', ' ') + '</div></div>'
+                            +   '<div class="scan-data-item" style="text-align:right;cursor:help;" title="' + oTip.replace(/"/g, '&quot;') + '"><div class="scan-data-label">OR</div><div class="scan-data-value" style="color:' + chipColor(ot) + ';font-weight:600;">' + ot + '</div></div>'
+                            + '</div>';
+                    })()
+                    // Trend Details collapsible — 2 rows: CPR (TC/BC/Daily chip) + OR (high/low/OR chip).
+                    + '<div style="border-top:1px solid var(--border);"></div>'
+                    + '<div class="scan-levels' + (isExpanded(d.symbol, 'trends') ? ' expanded' : '') + '">'
+                    + '  <div class="scan-levels-title" onclick="toggleLevelSection(this, \'' + d.symbol + '\', \'trends\')">'
+                    + '    <span>Trend Details</span>'
+                    + '    <span class="toggle-arrow" style="margin-left:auto;">&#9654;</span>'
+                    + '  </div>'
+                    + '  <div class="scan-levels-body">'
+                    + (function() {
+                        // CPR detail row — mirrors stock card's D-CPR row:
+                        //   D-CPR bias chip | EMA 20 (5M) value+arrow | Daily trend chip
+                        var bias = d.cprBias || 'INSIDE';
+                        var biasColor = bias === 'BULLISH' ? 'var(--accent-green)'
+                            : bias === 'BEARISH' ? 'var(--accent-red)' : 'var(--accent-yellow)';
+                        var emaVal  = +d.ema20 || 0;
+                        var lastCl  = +d.lastClose || 0;
+                        var emaColor = 'var(--text-secondary)';
+                        var emaArrow = '';
+                        if (emaVal > 0 && lastCl > 0) {
+                            if      (lastCl > emaVal) { emaColor = 'var(--accent-green)'; emaArrow = '▲'; }
+                            else if (lastCl < emaVal) { emaColor = 'var(--accent-red)';   emaArrow = '▼'; }
+                        }
+                        return '<div class="scan-data-grid scan-data-grid-3">'
+                            +   '<div class="scan-data-item" style="text-align:left;" title="Last 5-min close vs daily CPR zone"><div class="scan-data-label">D-CPR</div><div class="scan-data-value" style="color:' + biasColor + ';font-weight:600;">' + bias + '</div></div>'
+                            +   '<div class="scan-data-item" style="text-align:center;" title="5-min EMA20 (live-blended) vs last 5-min close"><div class="scan-data-label">EMA 20 (5 M)</div><div class="scan-data-value" style="color:' + emaColor + ';font-weight:600;">' + (emaVal > 0 ? emaVal.toFixed(2) + (emaArrow ? ' ' + emaArrow : '') : '—') + '</div></div>'
+                            +   '<div class="scan-data-item" style="text-align:right;"><div class="scan-data-label">Daily</div><div class="scan-data-value" style="color:' + stateColor + ';font-weight:600;">' + state.replace('_', ' ') + '</div></div>'
+                            + '</div>';
+                    })()
+                    + '<div style="border-top:1px solid var(--border);"></div>'
+                    + (function() {
+                        // W-CPR detail row (NEW) — mirrors stock card's W-CPR row:
+                        //   W-CPR bias chip | EMA 20 (1H) value+arrow | HTF trend chip
+                        var hBias = d.htfCprBias || 'INSIDE';
+                        var hBiasColor = hBias === 'BULLISH' ? 'var(--accent-green)'
+                            : hBias === 'BEARISH' ? 'var(--accent-red)' : 'var(--accent-yellow)';
+                        var hEma = +d.htfEma20 || 0;
+                        var hCl  = +d.htfClose || 0;
+                        var hEmaColor = 'var(--text-secondary)';
+                        var hEmaArrow = '';
+                        if (hEma > 0 && hCl > 0) {
+                            if      (hCl > hEma) { hEmaColor = 'var(--accent-green)'; hEmaArrow = '▲'; }
+                            else if (hCl < hEma) { hEmaColor = 'var(--accent-red)';   hEmaArrow = '▼'; }
+                        }
+                        var hSt = d.htfState || 'NEUTRAL';
+                        var hStColor = hSt === 'BULLISH' ? 'var(--accent-green)'
+                            : hSt === 'BEARISH' ? 'var(--accent-red)'
+                            : hSt === 'INSIDE'  ? 'var(--accent-yellow)' : 'var(--text-muted)';
+                        return '<div class="scan-data-grid scan-data-grid-3">'
+                            +   '<div class="scan-data-item" style="text-align:left;" title="Last 1-hour close vs weekly CPR zone"><div class="scan-data-label">W-CPR</div><div class="scan-data-value" style="color:' + hBiasColor + ';font-weight:600;">' + hBias + '</div></div>'
+                            +   '<div class="scan-data-item" style="text-align:center;" title="1-hour EMA20 (stepped) vs last 1-hour close"><div class="scan-data-label">EMA 20 (1 H)</div><div class="scan-data-value" style="color:' + hEmaColor + ';font-weight:600;">' + (hEma > 0 ? hEma.toFixed(2) + (hEmaArrow ? ' ' + hEmaArrow : '') : '—') + '</div></div>'
+                            +   '<div class="scan-data-item" style="text-align:right;" title="Index HTF state — weekly CPR + 1h EMA20 (Index HTF Trend Alignment source)"><div class="scan-data-label">HTF</div><div class="scan-data-value" style="color:' + hStColor + ';font-weight:600;">' + hSt.replace('_', ' ') + '</div></div>'
+                            + '</div>';
+                    })()
+                    + '<div style="border-top:1px solid var(--border);"></div>'
+                    + (function() {
+                        var ot = d.orTrend || 'FORMING';
+                        var oColor = 'var(--accent-yellow)';
+                        if      (ot === 'BULLISH') oColor = 'var(--accent-green)';
+                        else if (ot === 'BEARISH') oColor = 'var(--accent-red)';
+                        var oH = +d.orHigh || 0;
+                        var oL = +d.orLow  || 0;
+                        return '<div class="scan-data-grid scan-data-grid-3">'
+                            +   '<div class="scan-data-item" style="text-align:left;"><div class="scan-data-label">OR HIGH</div><div class="scan-data-value" style="color:var(--text-secondary);">' + (oH > 0 ? oH.toFixed(2) : '—') + '</div></div>'
+                            +   '<div class="scan-data-item" style="text-align:center;"><div class="scan-data-label">OR LOW</div><div class="scan-data-value" style="color:var(--text-secondary);">' + (oL > 0 ? oL.toFixed(2) : '—') + '</div></div>'
+                            +   '<div class="scan-data-item" style="text-align:right;"><div class="scan-data-label">OR</div><div class="scan-data-value" style="color:' + oColor + ';font-weight:600;">' + ot + '</div></div>'
+                            + '</div>';
+                    })()
+                    + '  </div>'
+                    + '</div>'
                     + '</div>';
             }
             strip.innerHTML = html;

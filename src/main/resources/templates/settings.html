@@ -363,14 +363,6 @@
         <div class="section-body">
             <div class="form-grid">
                 <div class="form-group">
-                    <label class="form-label">EMA Price Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableEmaTrendCheck" style="width: 18px; height: 18px; accent-color: var(--accent-cyan);">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);"><b>Price</b>: 5-min EMA trend — close above EMA 20 for buys, close below EMA 20 for sells</span>
-                    </div>
-                    <div class="form-hint">Gates entries by price position relative to the 5-min EMA 20. Buys require close &gt; EMA 20; sells require close &lt; EMA 20. Failing the gate rejects the trade. Fail-open when EMA 20 is still warming up.</div>
-                </div>
-                <div class="form-group">
                     <label class="form-label">Daily ATR Exhaustion Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableDailyAtrExhaustionFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
@@ -662,6 +654,14 @@
                         <br>&nbsp;&nbsp;&bull; <b>Counter-trend setups</b> (magnet, mean-reversion): require strict <b>BULLISH</b> (buys) / <b>BEARISH</b> (sells). Reversal states not enough.
                         <br>&nbsp;&nbsp;&bull; <b>INSIDE</b> / <b>SIDEWAYS</b> / opposite-direction &rarr; <b>hard-reject</b> as <code>INDEX_OPPOSED</code>.
                         <br>&nbsp;&nbsp;&bull; <b>NEUTRAL</b> (no data yet) &rarr; <b>fail-open</b> (no skip).</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Index HTF Trend Alignment</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableIndexHtfAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Require primary index's 1-hour state to agree with the trade direction</span>
+                    </div>
+                    <div class="form-hint">Strict 2-factor on the index's 1-hour timeframe: index 1h close vs index weekly CPR top/bot AND index 1h close vs index 1h EMA20. Buys require state = <b>BULLISH</b> (both factors up); sells require <b>BEARISH</b> (both down). <b>SIDEWAYS</b> / <b>INSIDE</b> &rarr; hard-reject as <code>INDEX_HTF_OPPOSED</code>. <b>NEUTRAL</b> (missing weekly CPR or 1h close, e.g. early Monday) &rarr; fail-open.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Index HTF Hurdle Filter</label>
@@ -1416,7 +1416,6 @@
             document.getElementById('levelTouchToleranceAtr').value       = d.levelTouchToleranceAtr       != null ? d.levelTouchToleranceAtr       : 0.2;
             document.getElementById('entryProximityAtrMult').value        = d.entryProximityAtrMult        != null ? d.entryProximityAtrMult        : 1.0;
             document.getElementById('minRiskRewardRatio').value = d.minRiskRewardRatio != null ? d.minRiskRewardRatio : 1.0;
-            document.getElementById('enableEmaTrendCheck').checked = d.enableEmaTrendCheck !== false;
             document.getElementById('enableEmaLevelCountFilter').checked = d.enableEmaLevelCountFilter !== false;
             document.getElementById('emaLevelMinRangePct').value = d.emaLevelMinRangePct != null ? d.emaLevelMinRangePct : 50;
             document.getElementById('emaLevelFilterMorningSkip').checked = d.emaLevelFilterMorningSkip === true;
@@ -1426,6 +1425,7 @@
             document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
             document.getElementById('enableStockHtfAlignment').checked = d.enableStockHtfAlignment === true;
             document.getElementById('enableIndexHtfHurdleFilter').checked = d.enableIndexHtfHurdleFilter === true;
+            document.getElementById('enableIndexHtfAlignment').checked    = d.enableIndexHtfAlignment === true;
             document.getElementById('indexHtfHurdleMinHeadroomAtr').value = (d.indexHtfHurdleMinHeadroomAtr != null ? d.indexHtfHurdleMinHeadroomAtr : 1.0);
             document.getElementById('enableIndex5mHurdleFilter').checked = d.enableIndex5mHurdleFilter === true;
             document.getElementById('virginCprExpiryDays').value = d.virginCprExpiryDays != null ? d.virginCprExpiryDays : 10;
@@ -1579,7 +1579,6 @@
                 levelTouchToleranceAtr:       parseFloat(document.getElementById('levelTouchToleranceAtr').value)       || 0.2,
                 entryProximityAtrMult:        (function() { var v = parseFloat(document.getElementById('entryProximityAtrMult').value); return isNaN(v) ? 1.0 : v; })(),
                 minRiskRewardRatio: parseFloat(document.getElementById('minRiskRewardRatio').value) || 1.0,
-                enableEmaTrendCheck: document.getElementById('enableEmaTrendCheck').checked,
                 enableEmaLevelCountFilter: document.getElementById('enableEmaLevelCountFilter').checked,
                 emaLevelMinRangePct: parseInt(document.getElementById('emaLevelMinRangePct').value) || 0,
                 emaLevelFilterMorningSkip: document.getElementById('emaLevelFilterMorningSkip').checked,
@@ -1589,6 +1588,7 @@
                 enableIndexAlignment:    document.getElementById('enableIndexAlignment').checked,
                 enableStockHtfAlignment: document.getElementById('enableStockHtfAlignment').checked,
                 enableIndexHtfHurdleFilter: document.getElementById('enableIndexHtfHurdleFilter').checked,
+                enableIndexHtfAlignment:    document.getElementById('enableIndexHtfAlignment').checked,
                 indexHtfHurdleMinHeadroomAtr: parseFloat(document.getElementById('indexHtfHurdleMinHeadroomAtr').value) || 0,
                 enableIndex5mHurdleFilter: document.getElementById('enableIndex5mHurdleFilter').checked,
                 virginCprExpiryDays: parseInt(document.getElementById('virginCprExpiryDays').value) || 0,

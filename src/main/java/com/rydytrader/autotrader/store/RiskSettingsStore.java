@@ -155,6 +155,11 @@ public class RiskSettingsStore {
         // index's 1-hour close vs that index's nearest weekly hurdle in trade direction. Default
         // off — opt-in. Replaces the old NIFTY-only macro filter; now runs per primary index.
         volatile boolean enableIndexHtfHurdleFilter = false;
+        // Index HTF Trend Alignment filter — strict 2-factor on the stock's primary index
+        // 1-hour timeframe: index 1h close vs index weekly CPR + index 1h EMA20. Buys need
+        // index HTF state = BULLISH; sells need BEARISH. Mirrors checkStockHtfAlignment but
+        // on the index. Default off — opt-in.
+        volatile boolean enableIndexHtfAlignment = false;
         // Headroom check for the Index HTF Hurdle filter. When > 0, trades are also rejected
         // when the nearest hurdle in the OPPOSITE direction is closer than this many ATRs of
         // the primary index. 0 = headroom check off.
@@ -179,8 +184,9 @@ public class RiskSettingsStore {
         volatile double  minRiskRewardRatio     = 1.0;
         // EMA filters
         // 5-min EMA trend gate: buy requires close above EMA 20, sell requires close below EMA 20.
-        // Matches the BULL/BEAR chip on scanner cards. Fail-open if EMA not loaded.
-        volatile boolean enableEmaTrendCheck = true;
+        // (enableEmaTrendCheck removed — 5-min EMA factor is now hard-baked into the
+        // strict trend state machine in BreakoutScanner. The top-level direction gate
+        // checks state per setup category; the standalone EMA Price Filter no longer exists.)
         // EMA level-count filter — counts CPR zones strictly between EMA and the broken level.
         // Allow only when count == 0 (EMA is in the zone immediately adjacent to the broken level).
         volatile boolean enableEmaLevelCountFilter = true;
@@ -339,6 +345,7 @@ public class RiskSettingsStore {
     public double  getMarubozuBreakoutMaxBodyAtrMult()         { return cfg().marubozuBreakoutMaxBodyAtrMult; }
     public double  getMarubozuBreakoutMaxOppositeWickPctOfBody() { return cfg().marubozuBreakoutMaxOppositeWickPctOfBody; }
     public boolean isEnableIndexHtfHurdleFilter() { return cfg().enableIndexHtfHurdleFilter; }
+    public boolean isEnableIndexHtfAlignment()    { return cfg().enableIndexHtfAlignment; }
     public double  getIndexHtfHurdleMinHeadroomAtr() { return cfg().indexHtfHurdleMinHeadroomAtr; }
     public boolean isEnableIndex5mHurdleFilter()  { return cfg().enableIndex5mHurdleFilter; }
     public double  getIndex5mHurdleMinHeadroomAtr() { return cfg().index5mHurdleMinHeadroomAtr; }
@@ -348,7 +355,6 @@ public class RiskSettingsStore {
     public double getDayHighLowMinAtr()            { return cfg().dayHighLowMinAtr; }
     public boolean isEnableRiskRewardFilter()      { return cfg().enableRiskRewardFilter; }
     public double  getMinRiskRewardRatio()         { return cfg().minRiskRewardRatio; }
-    public boolean isEnableEmaTrendCheck()          { return cfg().enableEmaTrendCheck; }
     public boolean isEnableEmaLevelCountFilter()   { return cfg().enableEmaLevelCountFilter; }
     public int getEmaLevelMinRangePct()            { return cfg().emaLevelMinRangePct; }
     public boolean isEmaLevelFilterMorningSkip()       { return cfg().emaLevelFilterMorningSkip; }
@@ -462,6 +468,7 @@ public class RiskSettingsStore {
     public void setMarubozuBreakoutMaxBodyAtrMult(double v)           { cfg().marubozuBreakoutMaxBodyAtrMult = Math.max(0, v); }
     public void setMarubozuBreakoutMaxOppositeWickPctOfBody(double v) { cfg().marubozuBreakoutMaxOppositeWickPctOfBody = Math.max(0, v); }
     public void setEnableIndexHtfHurdleFilter(boolean v) { cfg().enableIndexHtfHurdleFilter = v; }
+    public void setEnableIndexHtfAlignment(boolean v)    { cfg().enableIndexHtfAlignment = v; }
     public void setIndexHtfHurdleMinHeadroomAtr(double v) { cfg().indexHtfHurdleMinHeadroomAtr = Math.max(0, v); }
     public void setEnableIndex5mHurdleFilter(boolean v)  { cfg().enableIndex5mHurdleFilter = v; }
     public void setIndex5mHurdleMinHeadroomAtr(double v) { cfg().index5mHurdleMinHeadroomAtr = Math.max(0, v); }
@@ -471,7 +478,6 @@ public class RiskSettingsStore {
     public void setDayHighLowMinAtr(double v)              { cfg().dayHighLowMinAtr = v; }
     public void setEnableRiskRewardFilter(boolean v)       { cfg().enableRiskRewardFilter = v; }
     public void setMinRiskRewardRatio(double v)            { cfg().minRiskRewardRatio = v; }
-    public void setEnableEmaTrendCheck(boolean v)         { cfg().enableEmaTrendCheck = v; }
     public void setEnableEmaLevelCountFilter(boolean v)    { cfg().enableEmaLevelCountFilter = v; }
     public void setEmaLevelMinRangePct(int v)               { cfg().emaLevelMinRangePct = Math.max(0, Math.min(100, v)); }
     public void setEmaLevelFilterMorningSkip(boolean v)     { cfg().emaLevelFilterMorningSkip = v; }
@@ -603,6 +609,7 @@ public class RiskSettingsStore {
             upsert("marubozuBreakoutMaxBodyAtrMult",          String.valueOf(c.marubozuBreakoutMaxBodyAtrMult));
             upsert("marubozuBreakoutMaxOppositeWickPctOfBody", String.valueOf(c.marubozuBreakoutMaxOppositeWickPctOfBody));
             upsert("enableIndexHtfHurdleFilter", String.valueOf(c.enableIndexHtfHurdleFilter));
+            upsert("enableIndexHtfAlignment",    String.valueOf(c.enableIndexHtfAlignment));
             upsert("indexHtfHurdleMinHeadroomAtr", String.valueOf(c.indexHtfHurdleMinHeadroomAtr));
             upsert("enableIndex5mHurdleFilter", String.valueOf(c.enableIndex5mHurdleFilter));
             upsert("index5mHurdleMinHeadroomAtr", String.valueOf(c.index5mHurdleMinHeadroomAtr));
@@ -612,7 +619,6 @@ public class RiskSettingsStore {
             upsert("dayHighLowMinAtr", String.valueOf(c.dayHighLowMinAtr));
             upsert("enableRiskRewardFilter", String.valueOf(c.enableRiskRewardFilter));
             upsert("minRiskRewardRatio", String.valueOf(c.minRiskRewardRatio));
-            upsert("enableEmaTrendCheck", String.valueOf(c.enableEmaTrendCheck));
             upsert("enableEmaLevelCountFilter", String.valueOf(c.enableEmaLevelCountFilter));
             upsert("emaLevelMinRangePct", String.valueOf(c.emaLevelMinRangePct));
             upsert("emaLevelFilterMorningSkip", String.valueOf(c.emaLevelFilterMorningSkip));
@@ -733,6 +739,7 @@ public class RiskSettingsStore {
                     case "marubozuBreakoutMaxBodyAtrMult"          -> c.marubozuBreakoutMaxBodyAtrMult        = Math.max(0, Double.parseDouble(v));
                     case "marubozuBreakoutMaxOppositeWickPctOfBody" -> c.marubozuBreakoutMaxOppositeWickPctOfBody = Math.max(0, Double.parseDouble(v));
                     case "enableIndexHtfHurdleFilter" -> c.enableIndexHtfHurdleFilter = Boolean.parseBoolean(v);
+                    case "enableIndexHtfAlignment"    -> c.enableIndexHtfAlignment    = Boolean.parseBoolean(v);
                     case "indexHtfHurdleMinHeadroomAtr" -> c.indexHtfHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
                     case "enableIndex5mHurdleFilter" -> c.enableIndex5mHurdleFilter = Boolean.parseBoolean(v);
                     case "index5mHurdleMinHeadroomAtr" -> c.index5mHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
@@ -742,12 +749,11 @@ public class RiskSettingsStore {
                     case "dayHighLowMinAtr" -> c.dayHighLowMinAtr = Double.parseDouble(v);
                     case "enableRiskRewardFilter" -> c.enableRiskRewardFilter = Boolean.parseBoolean(v);
                     case "minRiskRewardRatio" -> c.minRiskRewardRatio = Double.parseDouble(v);
-                    case "enableEmaTrendCheck", "enableSmaTrendCheck" -> {
-                        c.enableEmaTrendCheck = Boolean.parseBoolean(v);
-                        if ("enableSmaTrendCheck".equals(k)) logLegacyOnce("enableSmaTrendCheck");
-                    }
-                    // Legacy keys — silently ignored.
-                    case "enableSmaTrendCheckLenient",
+                    // enableEmaTrendCheck removed — 5-min EMA factor is hard-baked into the
+                    // strict trend state machine in BreakoutScanner. Legacy keys silently ignored.
+                    case "enableEmaTrendCheck",
+                         "enableSmaTrendCheck",
+                         "enableSmaTrendCheckLenient",
                          "enableSmaAlignmentCheck",
                          "enableSmaAlignmentCheckLenient",
                          "enableEmaDirectionCheck", "enableEma200DirectionCheck", "enableEmaCrossoverCheck",
