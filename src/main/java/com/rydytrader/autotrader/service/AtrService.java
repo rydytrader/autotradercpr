@@ -274,6 +274,11 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
                     this.onCandleClose(symbol, c);
                     appliedFromDisk++;
                 }
+                // Defensive: ensure today's bars are present in completedCandles even if the
+                // pre-load missed any (the disk-bar list above came FROM completedCandles +
+                // priorDayCandles, so this is a no-op in the typical case but enforces the
+                // invariant that getLast1HourClose/day-high-low see today's bars).
+                candleAggregator.appendMissingBars(symbol, diskBars);
                 candleCountFromDisk += appliedFromDisk;
 
                 long newLastEpoch = emaService != null ? emaService.getLastCandleEpoch(symbol) : 0;
@@ -286,8 +291,29 @@ public class AtrService implements CandleAggregator.CandleCloseListener {
                     continue;
                 }
 
-                List<CandleAggregator.CandleBar> bars = fetchHistoricalCandles(symbol, timeframe, authHeader, 5);
+                // Adaptive lookback: compute days back from the actual gap between the latest
+                // bar we already have (newLastEpoch, which reflects disk-bar replay above) and
+                // now. Adds a 2-day safety buffer for weekends/holidays and clamps to
+                // [5, 60] so a fresh symbol never triggers an enormous fetch and a 1-day gap
+                // never under-fetches. Without adaptive sizing, gaps longer than 5 days left
+                // older bars missing — affecting symbols that came back into watchlist after
+                // being out for multiple days during a bot-offline window.
+                int daysBack;
+                if (newLastEpoch <= 0) {
+                    daysBack = 14;                                                       // fresh / no cache
+                } else {
+                    long gapSeconds = Math.max(0L, Instant.now().getEpochSecond() - newLastEpoch);
+                    long gapDays    = (gapSeconds + 86399L) / 86400L;                    // ceil
+                    daysBack = (int) Math.min(60L, Math.max(5L, gapDays + 2L));
+                }
+                List<CandleAggregator.CandleBar> bars = fetchHistoricalCandles(symbol, timeframe, authHeader, daysBack);
                 if (forceFetch) candleAggregator.seedCandles(symbol, bars);
+                // Non-destructive merge: today's REST-fetched bars land in completedCandles
+                // and older bars land in priorDayCandles so getLast1HourClose/day-high-low/
+                // Open-Range/prior-day comparators all see them. Without this the EMA
+                // catches up but the deques those readings walk stay stuck on the last
+                // disk-saved data (root cause of the BAJAJ-AUTO stale-chip incident).
+                else candleAggregator.appendMissingBars(symbol, bars);
                 int applied = 0;
                 for (CandleAggregator.CandleBar c : bars) {
                     if (c.epochSec <= newLastEpoch) continue;  // already covered by disk + prior epoch

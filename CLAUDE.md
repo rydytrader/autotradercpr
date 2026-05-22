@@ -79,6 +79,14 @@ WebSocket Ticks → CandleAggregator (15-min candles) → BreakoutScanner
 - `WeeklyCprService` — weekly/daily CPR trends using LTP vs levels (fetches daily candles, aggregates weekly OHLC)
 - `BreakoutScanner` — breakout detection, feeds signals into trading pipeline
 
+### Universe vs Watchlist scope
+All 50 NIFTY stocks AND all 18 sector indices receive full indicator computation
+(5-min + 1-hour candles, EMA20, HTF EMA20, ATR, daily/weekly CPR) regardless of
+watchlist membership. The watchlist filter ONLY decides which stocks
+`BreakoutScanner` evaluates for trade signals. Anything that would prune,
+clear, or skip indicator state for a non-watchlist symbol is a regression —
+`pruneTo()` calls take the seedUniverse, not the filtered watchlist.
+
 ### Key Design Patterns
 - **FyersClient interface** → LiveFyersClient (single implementation)
 - **FyersClientRouter** → delegates to LiveFyersClient

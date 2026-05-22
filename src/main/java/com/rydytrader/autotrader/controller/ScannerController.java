@@ -275,8 +275,11 @@ public class ScannerController {
         }
 
         // Collect inside-only CPR stocks (geometric INSIDE — today's CPR within yesterday's).
-        // These stack independently of the adaptive state toggles since INSIDE is a
-        // separate concept. Width filter + price filters still apply.
+        // The adaptive state toggle (NARROW/AVERAGE/WIDE) still gates these: if the user
+        // disables WIDE and a stock is INSIDE-AND-WIDE, the card is excluded — disabled
+        // means disabled, regardless of the orthogonal INSIDE classifier. Width filter +
+        // price filters still apply. INSUFFICIENT_DATA (warmup) stocks pass through since
+        // the toggle doesn't reach them — they show as INSIDE-only.
         double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
         for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
             String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
@@ -286,6 +289,10 @@ public class ScannerController {
             if (!marketDataService.passesWatchlistFilters(cpr)) continue;
 
             BhavcopyService.AdaptiveCprResult adaptive = bhavcopyService.getAdaptiveCpr(cpr.getSymbol());
+            // Apply the adaptive-state toggle gate. Warmup stocks (no classified state)
+            // are allowed through — they show as INSIDE-only and aren't reached by the toggle.
+            if (adaptive.state() != BhavcopyService.CprState.INSUFFICIENT_DATA
+                    && !isAdaptiveStateEnabled(adaptive.state())) continue;
             List<String> types = new ArrayList<>();
             types.add("INSIDE");
             // Tag the adaptive state alongside INSIDE if it isn't WARMUP — gives the user

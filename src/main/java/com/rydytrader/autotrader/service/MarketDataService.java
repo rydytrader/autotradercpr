@@ -753,6 +753,20 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                     // between 1-hour candle closes (or the 15s scanner poll).
                     double h20 = htfEmaService != null ? htfEmaService.getEma(sym) : 0;
                     if (h20 > 0) d.put("htfEma20",  Math.round(h20 * 100.0) / 100.0);
+                    // Push htfClose + htfTrendState so the scanner card's EMA 20 (1H) chip
+                    // and HTF TREND state stay in sync as new 1-hour bars finalize during
+                    // the session. Without this, `d.htfClose` freezes at whatever was the
+                    // last 1H close at page-load time and the chip never reflects later
+                    // boundary closes (10:15 / 11:15 / ... / 15:15 / 15:30).
+                    Double htfCloseVal = candleAggregator.getLast1HourClose(sym);
+                    if (htfCloseVal != null && htfCloseVal > 0) {
+                        d.put("htfClose", Math.round(htfCloseVal * 100.0) / 100.0);
+                        WeeklyCprService.WeeklyLevels weeklyLv = weeklyCprService.getWeeklyLevels(sym);
+                        if (weeklyLv != null && weeklyLv.top > 0 && weeklyLv.bot > 0 && h20 > 0) {
+                            String state = IndexTrendService.deriveTrendState(htfCloseVal, weeklyLv.top, weeklyLv.bot, h20);
+                            if (state != null) d.put("htfTrendState", state);
+                        }
+                    }
                     wlPayload.put(sym, d);
                 }
                 if (!wlPayload.isEmpty()) {
@@ -1096,22 +1110,51 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         eventService.log("[INFO] Scanner initialized: " + watchlist.size() + " symbols"
             + " (filters: adaptive CPR narrow≤" + m1 + "× / wide>" + m2 + "× of 20d avg, inside<" + insideMax + "%, price≥₹" + (int)minPrice + ")");
 
-        int narrowCount = (int) bhavcopyService.getNarrowCprStocks().size();
-        int insideCount = (int) bhavcopyService.getInsideCprStocks().size();
+        // Boot-log adaptive CPR state counts — mirror the scanner card's filter chain
+        // (isInScanUniverse + passesWatchlistFilters) so the counts shown here match what
+        // the user sees on /scanner. Otherwise a stock that's enabled in the DB-managed
+        // scan universe but isn't an NIFTY 50 member would show up on the card grid yet
+        // be invisible to this log line, causing confusing off-by-one mismatches.
+        // INSUFFICIENT_DATA (warmup) is excluded.
+        int narrowCount = 0, averageCount = 0, wideCount = 0;
+        int insideCount = 0;
+        for (var cpr : bhavcopyService.getAllCprLevels().values()) {
+            if (bhavcopyService.isIndex(cpr.getSymbol())) continue;
+            if (!bhavcopyService.isInScanUniverse(cpr.getSymbol())) continue;
+            if (!passesWatchlistFilters(cpr)) continue;
+            var adaptive = bhavcopyService.getAdaptiveCpr(cpr.getSymbol());
+            switch (adaptive.state()) {
+                case NARROW            -> narrowCount++;
+                case AVERAGE           -> averageCount++;
+                case WIDE              -> wideCount++;
+                case INSUFFICIENT_DATA -> { /* warmup — exclude */ }
+            }
+        }
+        for (var cpr : bhavcopyService.getInsideCprStocks()) {
+            if (bhavcopyService.isIndex(cpr.getSymbol())) continue;
+            if (!bhavcopyService.isInScanUniverse(cpr.getSymbol())) continue;
+            if (!passesWatchlistFilters(cpr)) continue;
+            insideCount++;
+        }
         // Watchlist-scoped counts — avoid misleading totals that include stale or non-watched symbols.
         int atrLoaded = atrService.getLoadedCountFor(watchlist);
         int weeklyCount = weeklyCprService.getLoadedCountFor(watchlist);
         int cprCount = bhavcopyService.getLoadedCountFor(watchlist);
         int e20 = emaService.getLoadedCountFor(watchlist);
+        int htfE20 = htfEmaService != null ? htfEmaService.getLoadedCountFor(watchlist) : 0;
         int total = watchlist.size();
         int htfMins = riskSettings.getHigherTimeframe();
 
         eventService.log("[INFO] All prerequisites loaded"
             + " (watchlist=" + total
-            + ", narrow=" + narrowCount + "/inside=" + insideCount
+            + ", narrow=" + narrowCount
+            + "/average=" + averageCount
+            + "/wide=" + wideCount
+            + "/inside=" + insideCount
             + ", CPR=" + cprCount + ", ATR=" + atrLoaded
             + ", weekly-trend=" + weeklyCount
-            + ", 5m EMA 20=" + e20 + ")");
+            + ", 5m EMA 20=" + e20
+            + ", 1h EMA 20=" + htfE20 + ")");
         eventService.log("[SUCCESS] System ready for trading");
 
         telegramService.notifyBotReady(total, narrowCount, insideCount,

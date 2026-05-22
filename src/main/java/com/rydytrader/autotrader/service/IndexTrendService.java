@@ -216,8 +216,24 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
     }
 
     /** Sticky NIFTY trend state — only updates at NIFTY 5-min candle close. Used by filters
-     *  (NIFTY Index Alignment) so trade decisions don't oscillate tick-to-tick within a bar. */
-    public String getStickyState() { return cachedState != null ? cachedState : "NEUTRAL"; }
+     *  (NIFTY Index Alignment) so trade decisions don't oscillate tick-to-tick within a bar.
+     *
+     *  <p>Lazy bootstrap: when the cache is empty (server just restarted pre-market and no
+     *  NIFTY 5-min boundary has fired yet), recompute once from the last available bar so
+     *  callers like the /api/index/key-indices endpoint see the same on-demand-derived state
+     *  that sector indices show — instead of NEUTRAL until the next NIFTY close. Sector
+     *  indices already work pre-market via getSectorTrendForTicker; this brings NIFTY 50
+     *  to parity. */
+    public String getStickyState() {
+        // cachedState is initialized to "NEUTRAL" (string, not null) — so the sentinel
+        // for "bootstrap needed" is "NEUTRAL" plus all factor caches unset. Same check
+        // pattern getNiftyTrend uses.
+        if ("NEUTRAL".equals(cachedState) && cachedCprBullish == null
+                && cachedEmaBullish == null && cachedNiftyClose == 0) {
+            recomputeStates();
+        }
+        return cachedState != null ? cachedState : "NEUTRAL";
+    }
 
     public IndexTrend getNiftyTrend() {
         // Lazy bootstrap — if the cache is empty (server restarted on a weekend / pre-market,

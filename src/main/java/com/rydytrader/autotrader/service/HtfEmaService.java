@@ -82,21 +82,19 @@ public class HtfEmaService implements CandleAggregator.CandleCloseListener {
     public void    flushCache()                    { saveCache(); }
 
     /**
-     * 1-hour EMA(20) for the symbol. Returns 0 until 20 1-hour bars have been fed. During
-     * market hours blends the live LTP into the in-progress 1-hour bar's partial close —
-     * same approach {@link EmaService#getEma(String)} uses on the 5-min timeframe.
+     * 1-hour EMA(20) for the symbol. Returns 0 until 20 1-hour bars have been fed.
+     * Returns the stepped value (no live LTP blend) — the EMA only updates at NSE 1-hour
+     * boundary closes (10:15, 11:15, 12:15, 13:15, 14:15, 15:15) and the day-close at 15:30,
+     * matching the design where the 1-hour trend "flips only at the hourly boundary". The
+     * earlier live-blended variant caused the scanner card's EMA 20 (1H) chip to flip
+     * mid-bar purely from LTP-drift in the EMA, even when the actual last 1-hour close was
+     * still above/below the boundary-stepped EMA.
      */
     public double getEma(String symbol) {
         Integer bars = barCountBySymbol.get(symbol);
         if (bars == null || bars < EMA_PERIOD) return 0;
         Double prev = emaBySymbol.get(symbol);
-        if (prev == null) return 0;
-        if (marketHolidayService != null && !marketHolidayService.isMarketOpen()) {
-            return prev;
-        }
-        double ltp = candleAggregator.getLtp(symbol);
-        if (ltp <= 0) return prev;
-        return ALPHA * ltp + (1 - ALPHA) * prev;
+        return prev != null ? prev : 0;
     }
 
     /**
@@ -113,7 +111,10 @@ public class HtfEmaService implements CandleAggregator.CandleCloseListener {
         long lastEpoch = 0;
         for (CandleAggregator.CandleBar c : candles) {
             if (c == null || c.close <= 0) continue;
-            if ((c.startMinute + 5) % 60 != 15) continue;   // not a 1-hour close bar
+            long endMin = c.startMinute + 5;
+            // Accept standard NSE 1-hour boundary closes (10:15..15:15) AND the day's
+            // 15:15→15:30 partial 1-hour close (carried by the 15:25 5-min bar).
+            if (endMin % 60 != 15 && endMin != MarketHolidayService.MARKET_CLOSE_MINUTE) continue;
             if (ema == null) ema = c.close;
             else             ema = ALPHA * c.close + (1 - ALPHA) * ema;
             bars++;
@@ -133,6 +134,18 @@ public class HtfEmaService implements CandleAggregator.CandleCloseListener {
     public int getLoadedCount() {
         int n = 0;
         for (Integer bars : barCountBySymbol.values()) {
+            if (bars != null && bars >= EMA_PERIOD) n++;
+        }
+        return n;
+    }
+
+    /** Universe-scoped loaded counts for dashboard stats — mirrors
+     *  {@link EmaService#getLoadedCountFor}. Returns the number of supplied symbols
+     *  whose 1-hour EMA has at least {@link #EMA_PERIOD} bars accumulated. */
+    public int getLoadedCountFor(java.util.Collection<String> symbols) {
+        int n = 0;
+        for (String s : symbols) {
+            Integer bars = barCountBySymbol.get(s);
             if (bars != null && bars >= EMA_PERIOD) n++;
         }
         return n;
@@ -160,8 +173,11 @@ public class HtfEmaService implements CandleAggregator.CandleCloseListener {
         // This deliberately fires us on the same thread, immediately after EmaService, so
         // BreakoutScanner sees a fully-stepped 1-hour EMA at every 1-hour boundary close.
         // The gate filters non-1h-boundary 5-min bars: NSE 1-hour bars end at 10:15 / 11:15
-        // / 12:15 / 13:15 / 14:15 / 15:15, i.e., the closing 5-min bar starts at minute 10.
-        if ((completedCandle.startMinute + 5) % 60 != 15) return;
+        // / 12:15 / 13:15 / 14:15 / 15:15, AND the day's last partial 1-hour bar 15:15→15:30
+        // closes at 15:30 (carried by the 15:25 5-min bar). Including the latter lets the
+        // 1-hour EMA + htfClose carry the actual day-close price for the rest of the session.
+        long endMinute = completedCandle.startMinute + 5;
+        if (endMinute % 60 != 15 && endMinute != MarketHolidayService.MARKET_CLOSE_MINUTE) return;
         double close = completedCandle.close;
         Double prev  = emaBySymbol.get(fyersSymbol);
         double ema   = prev == null ? close : ALPHA * close + (1 - ALPHA) * prev;

@@ -1107,9 +1107,16 @@
                         if (update.candleLow) d.candleLow = update.candleLow;
                         // Live EMA values pushed from server every tick — 5-min EMA20 fields
                         // are named ema/ema20 on the card; 1-hour EMA20 is htfEma20.
-                        if (update.ema)       d.ema       = update.ema;
-                        if (update.ema)       d.ema20     = update.ema;
-                        if (update.htfEma20)  d.htfEma20  = update.htfEma20;
+                        if (update.ema)             d.ema           = update.ema;
+                        if (update.ema)             d.ema20         = update.ema;
+                        if (update.htfEma20)        d.htfEma20      = update.htfEma20;
+                        // htfClose + htfTrendState are pushed alongside htfEma20 so the
+                        // EMA 20 (1H) chip + HTF TREND state stay in sync as new 1-hour
+                        // bars finalize (10:15 / 11:15 / ... / 15:15 / 15:30). Without
+                        // these, d.htfClose froze at the page-load value and the chip
+                        // could not reflect later boundary closes.
+                        if (update.htfClose)        d.htfClose      = update.htfClose;
+                        if (update.htfTrendState)   d.htfTrendState = update.htfTrendState;
 
                         // Update DOM in-place
                         var card = document.querySelector('[data-symbol="' + d.symbol + '"]');
@@ -1117,7 +1124,7 @@
                         // If any EMA value changed, the cheapest way to refresh the EMA grid
                         // (rows include arrows/colors derived from close vs EMA) is to re-render
                         // the whole card. ~50 cards × small HTML = fast enough.
-                        var emaChanged = update.ema || update.htfEma20;
+                        var emaChanged = update.ema || update.htfEma20 || update.htfClose || update.htfTrendState;
                         if (emaChanged) {
                             card.outerHTML = buildCard(d);
                             continue;

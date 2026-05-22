@@ -774,29 +774,48 @@ public class CandleAggregator {
                     }
                 }
             }
-            // Today's completed candles — load ONLY if cache was from today. If it's from
-            // last trading day, today's bars are stale (market already rolled over).
+            // Today's completed candles —
+            //   - if cacheDate == today: bars belong in completedCandles (live restore).
+            //   - if cacheDate == lastTradingDay (typical morning startup): bars are
+            //     yesterday's session and become today's priorDayCandles via the natural
+            //     daily rollover. Previously these were dropped — that left newly-in-
+            //     watchlist stocks with no recent priors, so getLast1HourClose returned
+            //     bars from 2+ days back (root cause of the BAJAJ-AUTO 1H trend incident).
             int todayCount = 0;
-            if (cacheDate.equals(today)) {
-                JsonNode todayNode = root.get("today");
-                if (todayNode != null && todayNode.isObject()) {
-                    Iterator<Map.Entry<String, JsonNode>> it = todayNode.fields();
-                    while (it.hasNext()) {
-                        Map.Entry<String, JsonNode> e = it.next();
-                        JsonNode arr = e.getValue();
-                        if (arr == null || !arr.isArray()) continue;
-                        List<CandleBar> bars = deserializeBars(arr);
-                        if (!bars.isEmpty()) {
-                            Deque<CandleBar> deque = completedCandles.computeIfAbsent(e.getKey(), k -> new ArrayDeque<>());
-                            synchronized (deque) { deque.clear(); for (CandleBar b : bars) deque.addLast(b); }
-                            todayCount++;
+            int rolloverCount = 0;
+            JsonNode todayNode = root.get("today");
+            if (todayNode != null && todayNode.isObject()) {
+                Iterator<Map.Entry<String, JsonNode>> it = todayNode.fields();
+                while (it.hasNext()) {
+                    Map.Entry<String, JsonNode> e = it.next();
+                    JsonNode arr = e.getValue();
+                    if (arr == null || !arr.isArray()) continue;
+                    List<CandleBar> bars = deserializeBars(arr);
+                    if (bars.isEmpty()) continue;
+                    if (cacheDate.equals(today)) {
+                        Deque<CandleBar> deque = completedCandles.computeIfAbsent(e.getKey(), k -> new ArrayDeque<>());
+                        synchronized (deque) { deque.clear(); for (CandleBar b : bars) deque.addLast(b); }
+                        todayCount++;
+                    } else {
+                        // Yesterday's session → fold into priorDayCandles, dedup + cap-trim.
+                        List<CandleBar> existing = priorDayCandles.getOrDefault(e.getKey(), new ArrayList<>());
+                        long latestPrior = 0;
+                        for (CandleBar c : existing) if (c.epochSec > latestPrior) latestPrior = c.epochSec;
+                        List<CandleBar> merged = new ArrayList<>(existing);
+                        for (CandleBar b : bars) {
+                            if (b == null || b.close <= 0 || b.epochSec <= latestPrior) continue;
+                            merged.add(b);
                         }
+                        int keepPriors = 250;
+                        if (merged.size() > keepPriors) merged = merged.subList(merged.size() - keepPriors, merged.size());
+                        priorDayCandles.put(e.getKey(), merged);
+                        rolloverCount++;
                     }
                 }
             }
-            if (priorsCount > 0 || todayCount > 0) {
-                log.info("[CACHE] Candle state restored from cache (savedAt={}, priors={}, todayCandles={})",
-                    savedAtStr, priorsCount, todayCount);
+            if (priorsCount > 0 || todayCount > 0 || rolloverCount > 0) {
+                log.info("[CACHE] Candle state restored from cache (savedAt={}, priors={}, todayCandles={}, rolledOverToPriors={})",
+                    savedAtStr, priorsCount, todayCount, rolloverCount);
             }
         } catch (Exception e) {
             log.error("[CandleAggregator] Failed to load priors cache: {}", e.getMessage());
@@ -894,6 +913,10 @@ public class CandleAggregator {
             .toEpochSecond();
 
         // 1) Today's 1-hour-aligned close, if we've crossed at least one 10:15 boundary.
+        //    Standard NSE 1-hour bar ends: 10:15, 11:15, 12:15, 13:15, 14:15, 15:15.
+        //    Plus the 15:15→15:30 partial 1-hour close (carried by the 15:25 5-min bar) so
+        //    htfClose reflects the actual day-close price for the rest of the session — kept
+        //    in sync with the matching EMA-step in HtfEmaService.onCandleClose.
         Deque<CandleBar> history = completedCandles.get(symbol);
         if (history != null) {
             Iterator<CandleBar> it = history.descendingIterator();
@@ -901,7 +924,7 @@ public class CandleAggregator {
                 CandleBar bar = it.next();
                 if (bar.close <= 0) continue;
                 long endMinute = bar.startMinute + 5;
-                if (endMinute % 60 == 15) return bar.close;
+                if (endMinute % 60 == 15 || endMinute == MarketHolidayService.MARKET_CLOSE_MINUTE) return bar.close;
             }
         }
 
@@ -986,6 +1009,66 @@ public class CandleAggregator {
         List<CandleBar> priors = priorDayCandles.get(symbol);
         if (priors == null) return Collections.emptyList();
         return new ArrayList<>(priors);
+    }
+
+    /**
+     * Non-destructive variant of {@link #seedCandles}: append bars to today's
+     * {@code completedCandles} deque AND priorDayCandles, without clearing existing
+     * live-aggregated bars, and idempotently skip any bar whose {@code epochSec} is
+     * already covered.
+     *
+     * <p>Handles both today's bars (epochSec ≥ todayStartEpoch → completedCandles) and
+     * older bars (epochSec &lt; todayStartEpoch → priorDayCandles, append-only with the
+     * 250-bar cap). This matters when a NIFTY 50 stock has been out of the watchlist
+     * for multiple days and its disk-cached priors lag what Fyers REST returns —
+     * the prior-day branch fills in the missing daily history alongside today's bars.
+     *
+     * <p>Used by the AtrService warm-restart catch-up path so REST-fetched bars land in
+     * the deques that {@link #getLast1HourClose}, day-high/low, Open Range, and prior-day
+     * comparators walk — without this, those readings stall at whatever state was on disk
+     * when the bot last ran live for the symbol.
+     *
+     * <p>Bars with {@code epochSec <= 0} are dropped as malformed.
+     */
+    public void appendMissingBars(String symbol, List<CandleBar> bars) {
+        if (bars == null || bars.isEmpty()) return;
+        Deque<CandleBar> history = completedCandles.computeIfAbsent(symbol, k -> new ConcurrentLinkedDeque<>());
+
+        long todayStartEpoch = ZonedDateTime.now(IST).toLocalDate().atStartOfDay(IST).toEpochSecond();
+        long latestExisting = 0;
+        for (CandleBar c : history) {
+            if (c.epochSec > latestExisting) latestExisting = c.epochSec;
+        }
+        long currentStart = getCandleStartMinute(ZonedDateTime.now(IST).toLocalTime());
+
+        List<CandleBar> toAppend = new ArrayList<>();
+        List<CandleBar> priorBars = null;
+        for (CandleBar c : bars) {
+            if (c == null || c.epochSec <= 0) continue;
+            if (c.epochSec < todayStartEpoch) {
+                if (priorBars == null) priorBars = new ArrayList<>();
+                priorBars.add(c);
+                continue;
+            }
+            if (c.epochSec <= latestExisting) continue;       // dedup
+            if (c.startMinute == currentStart) continue;      // currently forming — don't finalize here
+            toAppend.add(c);
+        }
+        toAppend.sort((a, b) -> Long.compare(a.epochSec, b.epochSec));
+        for (CandleBar c : toAppend) history.addLast(c);
+
+        if (priorBars != null && !priorBars.isEmpty()) {
+            List<CandleBar> existing = priorDayCandles.getOrDefault(symbol, new ArrayList<>());
+            long latestPrior = 0;
+            for (CandleBar c : existing) if (c.epochSec > latestPrior) latestPrior = c.epochSec;
+            List<CandleBar> merged = new ArrayList<>(existing);
+            for (CandleBar c : priorBars) {
+                if (c.epochSec > latestPrior) merged.add(c);
+            }
+            int keepPriors = 250;
+            if (merged.size() > keepPriors) merged = merged.subList(merged.size() - keepPriors, merged.size());
+            priorDayCandles.put(symbol, merged);
+        }
     }
 
     /**
