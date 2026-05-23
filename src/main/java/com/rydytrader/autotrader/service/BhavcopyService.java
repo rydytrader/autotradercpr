@@ -807,17 +807,33 @@ public class BhavcopyService {
                     return false;
                 }
 
-                // Universe selection. The scanner watchlist is now DB-driven (Settings →
-                // Stock Universe), so the bhavcopy fetch always pulls the broader NIFTY 100
-                // set — this guarantees CPR + ATR + EMA data is cached for any stock a user
-                // might enable in the DB. NIFTY 50 ⊂ NIFTY 100 ⊂ FNO, so NIFTY 100 covers all
-                // NIFTY 50 names plus 50 extras.
+                // Universe selection — DB-driven. The Stock Universe table (Settings →
+                // Stock Universe) is the source of truth. Bhavcopy pulls CPR for every
+                // enabled stock there, so adding a new ticker via the DB automatically
+                // gets it indicators on the next refresh. Fallbacks in order:
+                //   1. DB enabled stocks (primary)
+                //   2. NIFTY 100 (DB unavailable / empty — fresh install)
+                //   3. NIFTY 50 (NIFTY 100 list failed)
+                //   4. Full FO bhavcopy (all NIFTY 100 / 50 fetches failed)
                 Set<String> nifty50  = fetchOrLoadNifty50List(cookies);
                 Set<String> nifty100 = fetchOrLoadNifty100List(cookies);
+                Set<String> dbEnabled = new HashSet<>();
+                if (stockRepository != null) {
+                    try {
+                        for (var s : stockRepository.findByEnabledTrue()) {
+                            if (s.getTicker() != null && !s.getTicker().isEmpty()) dbEnabled.add(s.getTicker());
+                        }
+                    } catch (Exception e) {
+                        log.warn("[BhavcopyService] DB stock-universe lookup failed: {}", e.getMessage());
+                    }
+                }
                 Set<String> nfoSymbols;
-                if (!nifty100.isEmpty()) {
+                if (!dbEnabled.isEmpty()) {
+                    nfoSymbols = dbEnabled;
+                    log.info("[BhavcopyService] DB stock universe — fetching CPR for {} enabled tickers", nfoSymbols.size());
+                } else if (!nifty100.isEmpty()) {
                     nfoSymbols = new HashSet<>(nifty100);
-                    log.info("[BhavcopyService] NIFTY 100 universe — skipping FO bhavcopy fetch ({} symbols)",
+                    log.info("[BhavcopyService] NIFTY 100 fallback (DB empty) — {} symbols",
                         nfoSymbols.size());
                 } else if (!nifty50.isEmpty()) {
                     // NIFTY 100 list failed; fall back to NIFTY 50.

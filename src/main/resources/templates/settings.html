@@ -161,6 +161,16 @@
     <!-- STATUS HERO CARDS -->
     <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:20px;" class="fade-in">
 
+        <!-- Stock Universe -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div style="padding:20px 22px; text-align:center;">
+                <div class="stat-label" style="margin-bottom:8px;">Stock Universe</div>
+                <div class="stat-value" id="statUniverseTotal" style="font-size:2rem; color:var(--accent-cyan);">—</div>
+                <div class="stat-sub" id="statUniverseSplit" style="margin-top:8px;">Loading...</div>
+                <div class="stat-sub" id="statUniverseEnabled" style="margin-top:4px;">&nbsp;</div>
+            </div>
+        </div>
+
         <!-- Default SL -->
         <div class="section-card" style="margin-bottom:0;">
             <div style="padding:20px 22px; text-align:center;">
@@ -177,15 +187,6 @@
                 <div class="stat-label" style="margin-bottom:8px;">Risk Budget</div>
                 <div class="stat-value" id="statLossLimit" style="font-size:2rem; color:#f6ad55;">—</div>
                 <div class="stat-sub" id="statLossLimitSub" style="margin-top:8px;">Loading...</div>
-            </div>
-        </div>
-
-        <!-- Signal Source -->
-        <div class="section-card" style="margin-bottom:0;">
-            <div style="padding:20px 22px; text-align:center;">
-                <div class="stat-label" style="margin-bottom:8px;">Signal Source</div>
-                <div class="stat-value" id="statSignalSource" style="font-size:2rem; color:var(--accent-cyan);">—</div>
-                <div class="stat-sub" id="statSignalSourceSub" style="margin-top:8px;">Probabilities</div>
             </div>
         </div>
 
@@ -1120,9 +1121,22 @@
                     cursor:pointer;transition:all 0.2s;">+ Add Stock</button>
             </div>
             <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
-                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Filter Primary Index:</label>
-                <select id="stockUniverseIndexFilter" onchange="loadStockUniverse()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.74rem;outline:none;min-width:200px;">
+                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Primary Index:</label>
+                <select id="stockUniverseIndexFilter" onchange="loadStockUniverse()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.74rem;outline:none;min-width:180px;">
                     <option value="">All indices</option>
+                </select>
+                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Membership:</label>
+                <select id="stockUniverseMembershipFilter" onchange="loadStockUniverse()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.74rem;outline:none;min-width:150px;">
+                    <option value="">All memberships</option>
+                    <option value="NIFTY_50">NIFTY 50</option>
+                    <option value="NIFTY_NEXT_50">NIFTY Next 50</option>
+                    <option value="OTHERS">Others</option>
+                </select>
+                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Status:</label>
+                <select id="stockUniverseEnabledFilter" onchange="loadStockUniverse()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.74rem;outline:none;min-width:120px;">
+                    <option value="">All</option>
+                    <option value="enabled">Enabled</option>
+                    <option value="disabled">Disabled</option>
                 </select>
                 <span id="stockUniverseCount" style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);margin-left:auto;"></span>
             </div>
@@ -1134,12 +1148,13 @@
                             <th>Ticker</th>
                             <th>Name</th>
                             <th>Primary Index</th>
+                            <th>Membership</th>
                             <th class="text-center">Enabled</th>
                             <th class="text-center">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="stockUniverseBody">
-                        <tr><td colspan="6"><div class="empty-state" style="padding:20px"><div class="empty-icon" style="font-size:1.2rem">◎</div>Loading...</div></td></tr>
+                        <tr><td colspan="7"><div class="empty-state" style="padding:20px"><div class="empty-icon" style="font-size:1.2rem">◎</div>Loading...</div></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1221,6 +1236,14 @@
             <div style="margin-bottom:12px;">
                 <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Primary Index</label>
                 <select id="stockModalIndex" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;"></select>
+            </div>
+            <div style="margin-bottom:12px;">
+                <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Membership</label>
+                <select id="stockModalMembership" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;">
+                    <option value="NIFTY_50">NIFTY 50</option>
+                    <option value="NIFTY_NEXT_50">NIFTY Next 50</option>
+                    <option value="OTHERS" selected>Others</option>
+                </select>
             </div>
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:18px;">
                 <input type="checkbox" id="stockModalEnabled" checked>
@@ -1490,13 +1513,10 @@
                 ? 'Risk/Trade: ₹' + riskPerTrade.toLocaleString('en-IN')
                 : 'Risk per trade not set';
 
-            // Signal Source stat
-            const srcEl = document.getElementById('statSignalSource');
-            const srcSubEl = document.getElementById('statSignalSourceSub');
-            if (srcEl) {
-                srcEl.textContent = d.signalSource || 'INTERNAL';
-                if (srcSubEl) srcSubEl.textContent = '';
-            }
+            // Stock Universe stat — total count + N50/NN50/OTHERS split.
+            // Reuses /api/stocks (no extra endpoint). Updated alongside settings so
+            // every settings page load reflects current DB state.
+            loadUniverseStats();
 
             // Risk : Reward stat
             const rrEl    = document.getElementById('statRiskReward');
@@ -1743,10 +1763,47 @@
     // isInScanUniverse() check on the next refresh.
     var stockUniverseIndices = [];   // cached indices list for dropdown population
 
+    function loadUniverseStats() {
+        // Populates the Stock Universe hero card — total stock count with N50/NN50/OTHERS
+        // split as subtext and enabled-count as a second line. Silent failures are OK
+        // (card stays on "Loading...") since this is informational only.
+        var totalEl = document.getElementById('statUniverseTotal');
+        var splitEl = document.getElementById('statUniverseSplit');
+        var enabledEl = document.getElementById('statUniverseEnabled');
+        if (!totalEl) return;
+        fetch('/api/stocks').then(r => r.json()).then(function(stocks) {
+            stocks = stocks || [];
+            var n50 = 0, nn50 = 0, others = 0, enabled = 0;
+            stocks.forEach(function(s) {
+                var m = s.membership || 'OTHERS';
+                if (m === 'NIFTY_50') n50++;
+                else if (m === 'NIFTY_NEXT_50') nn50++;
+                else others++;
+                if (s.enabled) enabled++;
+            });
+            totalEl.textContent = stocks.length;
+            if (splitEl) {
+                splitEl.innerHTML =
+                    '<span style="color:var(--accent-green);font-weight:700;">NIFTY 50: ' + n50 + '</span>'
+                    + '  ·  '
+                    + '<span style="color:var(--accent-cyan);font-weight:700;">Next 50: ' + nn50 + '</span>'
+                    + '  ·  '
+                    + '<span style="color:var(--text-muted);">Others: ' + others + '</span>';
+            }
+            if (enabledEl) enabledEl.textContent = enabled + ' enabled · ' + (stocks.length - enabled) + ' disabled';
+        }).catch(function() {
+            if (splitEl) splitEl.textContent = 'Failed to load';
+        });
+    }
+
     function loadStockUniverse() {
         var tbody = document.getElementById('stockUniverseBody');
         var indexSel = document.getElementById('stockUniverseIndexFilter');
+        var memSel = document.getElementById('stockUniverseMembershipFilter');
+        var enabledSel = document.getElementById('stockUniverseEnabledFilter');
         var indexValue = indexSel ? indexSel.value : '';
+        var memValue = memSel ? memSel.value : '';
+        var enabledValue = enabledSel ? enabledSel.value : '';
         Promise.all([
             fetch('/api/indices').then(r => r.json()),
             fetch('/api/stocks').then(r => r.json())
@@ -1764,10 +1821,18 @@
                 indexSel.innerHTML = opts;
             }
 
-            // Apply primary-index filter.
+            // Apply filters.
             var filtered = stocks;
             if (indexValue) {
                 filtered = filtered.filter(function(s) { return String(s.primaryIndexId || '') === String(indexValue); });
+            }
+            if (memValue) {
+                filtered = filtered.filter(function(s) { return (s.membership || 'OTHERS') === memValue; });
+            }
+            if (enabledValue === 'enabled') {
+                filtered = filtered.filter(function(s) { return !!s.enabled; });
+            } else if (enabledValue === 'disabled') {
+                filtered = filtered.filter(function(s) { return !s.enabled; });
             }
 
             var countEl = document.getElementById('stockUniverseCount');
@@ -1776,8 +1841,8 @@
             if (filtered.length === 0) {
                 var emptyMsg = stocks.length === 0
                     ? 'No stocks yet — click + Add Stock to begin.'
-                    : 'No stocks match the selected index.';
-                tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state" style="padding:20px"><div class="empty-icon" style="font-size:1.2rem">◎</div>' + emptyMsg + '</div></td></tr>';
+                    : 'No stocks match the current filters.';
+                tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state" style="padding:20px"><div class="empty-icon" style="font-size:1.2rem">◎</div>' + emptyMsg + '</div></td></tr>';
                 return;
             }
             var rows = filtered.map(function(s, idx) {
@@ -1795,6 +1860,7 @@
                     + '<td style="font-weight:700;">' + escapeHtml(s.ticker) + '</td>'
                     + '<td>' + escapeHtml(s.name || '') + '</td>'
                     + '<td' + indexTitle + '>' + indexDisplay + '</td>'
+                    + '<td>' + membershipBadge(s.membership) + '</td>'
                     + '<td class="text-center">' + enabledBadge + '</td>'
                     + '<td class="text-center">'
                     +   '<button onclick="editStock(' + s.id + ')" style="background:transparent;border:1px solid var(--border);color:var(--text-secondary);padding:4px 10px;border-radius:4px;font-family:var(--font-mono);font-size:0.68rem;cursor:pointer;margin-right:4px;">Edit</button>'
@@ -1804,8 +1870,28 @@
             }).join('');
             tbody.innerHTML = rows;
         }).catch(function(e) {
-            tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state" style="padding:20px;color:var(--accent-red);">Failed to load: ' + (e && e.message ? e.message : 'error') + '</div></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state" style="padding:20px;color:var(--accent-red);">Failed to load: ' + (e && e.message ? e.message : 'error') + '</div></td></tr>';
         });
+    }
+
+    function membershipBadge(m) {
+        var base = 'display:inline-block;padding:2px 9px;border-radius:999px;'
+            + 'font-family:var(--font-mono);font-size:0.66rem;font-weight:700;'
+            + 'letter-spacing:0.04em;text-transform:uppercase;line-height:1.4;'
+            + 'border:1px solid;';
+        if (m === 'NIFTY_50') {
+            return '<span style="' + base
+                + 'color:var(--accent-green);background:rgba(52,211,153,0.12);'
+                + 'border-color:rgba(52,211,153,0.35);">NIFTY 50</span>';
+        }
+        if (m === 'NIFTY_NEXT_50') {
+            return '<span style="' + base
+                + 'color:var(--accent-cyan);background:rgba(99,179,237,0.12);'
+                + 'border-color:rgba(99,179,237,0.35);">NIFTY NEXT 50</span>';
+        }
+        return '<span style="' + base
+            + 'color:var(--text-muted);background:rgba(148,163,184,0.08);'
+            + 'border-color:rgba(148,163,184,0.25);">OTHERS</span>';
     }
 
     function escapeHtml(s) {
@@ -1842,11 +1928,14 @@
     }
 
     function showAddStockModal() {
-        // Ensure sectors are loaded (in case the tab hasn't been opened yet).
-        if (stockUniverseSectors.length === 0) {
+        // Ensure the indices list is loaded (the modal's primary-index dropdown
+        // depends on it; the tab may not have been opened yet on a fresh page load).
+        if (!stockUniverseIndices || stockUniverseIndices.length === 0) {
             fetch('/api/indices').then(r => r.json()).then(function(rows) {
                 stockUniverseIndices = rows || [];
                 openStockModal(null);
+            }).catch(function() {
+                showToast('Failed to load indices', 'error');
             });
         } else {
             openStockModal(null);
@@ -1860,6 +1949,7 @@
         document.getElementById('stockModalTicker').disabled = !!stock; // ticker is the natural key — don't allow rename
         document.getElementById('stockModalName').value = stock ? (stock.name || '') : '';
         document.getElementById('stockModalEnabled').checked = stock ? !!stock.enabled : true;
+        document.getElementById('stockModalMembership').value = (stock && stock.membership) ? stock.membership : 'OTHERS';
         populateIndexDropdown(stock ? stock.primaryIndexId : null);
         document.getElementById('stockModal').style.display = 'flex';
     }
@@ -1881,10 +1971,11 @@
         var name = document.getElementById('stockModalName').value.trim();
         var primaryIndexId = document.getElementById('stockModalIndex').value;
         var enabled = document.getElementById('stockModalEnabled').checked;
+        var membership = document.getElementById('stockModalMembership').value || 'OTHERS';
 
         if (!ticker) { showToast('Ticker is required', 'error'); return; }
 
-        var body = { name: name, primaryIndexId: primaryIndexId ? Number(primaryIndexId) : null, enabled: enabled };
+        var body = { name: name, primaryIndexId: primaryIndexId ? Number(primaryIndexId) : null, enabled: enabled, membership: membership };
         var url, method;
         if (id) {
             url = '/api/stocks/' + id;

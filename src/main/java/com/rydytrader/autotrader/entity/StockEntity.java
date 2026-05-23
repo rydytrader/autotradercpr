@@ -25,13 +25,24 @@ public class StockEntity {
     @Column(nullable = false)
     private boolean enabled = true;
 
+    public enum Membership { NIFTY_50, NIFTY_NEXT_50, OTHERS }
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private Membership membership = Membership.OTHERS;
+
     public StockEntity() {}
 
     public StockEntity(String ticker, String name, IndexEntity primaryIndex, boolean enabled) {
+        this(ticker, name, primaryIndex, enabled, Membership.OTHERS);
+    }
+
+    public StockEntity(String ticker, String name, IndexEntity primaryIndex, boolean enabled, Membership membership) {
         this.ticker = ticker;
         this.name = name;
         this.primaryIndex = primaryIndex;
         this.enabled = enabled;
+        this.membership = membership != null ? membership : Membership.OTHERS;
     }
 
     public Long getId() { return id; }
@@ -48,4 +59,7 @@ public class StockEntity {
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+    public Membership getMembership() { return membership; }
+    public void setMembership(Membership membership) { this.membership = membership != null ? membership : Membership.OTHERS; }
 }

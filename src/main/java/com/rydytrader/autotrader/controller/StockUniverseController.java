@@ -114,7 +114,7 @@ public class StockUniverseController {
         return out;
     }
 
-    /** Create a new stock. Body: { ticker, name, primaryIndexId, enabled }. */
+    /** Create a new stock. Body: { ticker, name, primaryIndexId, enabled, membership }. */
     @PostMapping("/stocks")
     @Transactional
     public ResponseEntity<?> createStock(@RequestBody Map<String, Object> body) {
@@ -122,6 +122,7 @@ public class StockUniverseController {
         String name = stringOrNull(body.get("name"));
         Long primaryIndexId = longOrNull(body.get("primaryIndexId"));
         boolean enabled = body.get("enabled") == null || Boolean.parseBoolean(body.get("enabled").toString());
+        StockEntity.Membership membership = parseMembership(body.get("membership"));
 
         if (ticker == null || ticker.isBlank()) return ResponseEntity.badRequest().body(Map.of("error", "ticker required"));
         ticker = ticker.trim().toUpperCase();
@@ -130,11 +131,11 @@ public class StockUniverseController {
         IndexEntity primaryIndex = null;
         if (primaryIndexId != null) primaryIndex = indexRepo.findById(primaryIndexId).orElse(null);
 
-        StockEntity created = stockRepo.save(new StockEntity(ticker, name, primaryIndex, enabled));
+        StockEntity created = stockRepo.save(new StockEntity(ticker, name, primaryIndex, enabled, membership));
         return ResponseEntity.ok(toStockDto(created));
     }
 
-    /** Update a stock. Body fields are optional: { name, primaryIndexId, enabled }. */
+    /** Update a stock. Body fields are optional: { name, primaryIndexId, enabled, membership }. */
     @PutMapping("/stocks/{id}")
     @Transactional
     public ResponseEntity<?> updateStock(@PathVariable Long id, @RequestBody Map<String, Object> body) {
@@ -147,8 +148,19 @@ public class StockUniverseController {
             s.setPrimaryIndex(primaryIndexId == null ? null : indexRepo.findById(primaryIndexId).orElse(null));
         }
         if (body.containsKey("enabled")) s.setEnabled(Boolean.parseBoolean(body.get("enabled").toString()));
+        if (body.containsKey("membership")) s.setMembership(parseMembership(body.get("membership")));
 
         return ResponseEntity.ok(toStockDto(stockRepo.save(s)));
+    }
+
+    private static StockEntity.Membership parseMembership(Object o) {
+        if (o == null) return StockEntity.Membership.OTHERS;
+        String v = o.toString().trim().toUpperCase().replace(' ', '_').replace('-', '_');
+        try {
+            return StockEntity.Membership.valueOf(v);
+        } catch (IllegalArgumentException e) {
+            return StockEntity.Membership.OTHERS;
+        }
     }
 
     /** Delete a stock by id. */
@@ -166,6 +178,7 @@ public class StockUniverseController {
         m.put("ticker", s.getTicker());
         m.put("name", s.getName());
         m.put("enabled", s.isEnabled());
+        m.put("membership", s.getMembership() != null ? s.getMembership().name() : StockEntity.Membership.OTHERS.name());
         if (s.getPrimaryIndex() != null) {
             m.put("primaryIndexId", s.getPrimaryIndex().getId());
             m.put("primaryIndexName", s.getPrimaryIndex().getName());
