@@ -658,7 +658,24 @@
             if (sectorFilter && d.primaryIndexTicker !== sectorFilter) return false;
             if (signalFilter && (!d.lastSignal || d.lastSignal.status !== 'TRADED')) return false;
             if (filteredFilter && (!d.lastSignal || d.lastSignal.status !== 'FILTERED')) return false;
-            if (trendFilter !== 'all' && (d.trendState || 'NEUTRAL') !== trendFilter) return false;
+            if (trendFilter !== 'all') {
+                // Consensus across SELECTED trends (Daily always; OR + HTF only when
+                // their respective filters are enabled). Matches the card-border logic
+                // in trendConsensusBorder so the filter buttons follow the same rule:
+                //   BULLISH  → every selected trend is BULLISH
+                //   BEARISH  → every selected trend is BEARISH
+                //   SIDEWAYS → mixed / neither-all-bull-nor-all-bear
+                var orOn  = window.__scannerStatus && window.__scannerStatus.enableOpenRangeFilter   === true;
+                var htfOn = window.__scannerStatus && window.__scannerStatus.enableStockHtfAlignment === true;
+                var ts = [d.trendState || 'NEUTRAL'];
+                if (orOn)  ts.push(d.orTrend || 'NEUTRAL');
+                if (htfOn) ts.push(d.htfTrendState || 'NEUTRAL');
+                var allBull = ts.every(function(t) { return t === 'BULLISH'; });
+                var allBear = ts.every(function(t) { return t === 'BEARISH'; });
+                if (trendFilter === 'BULLISH'  && !allBull) return false;
+                if (trendFilter === 'BEARISH'  && !allBear) return false;
+                if (trendFilter === 'SIDEWAYS' && (allBull || allBear)) return false;
+            }
             return true;
         });
 
