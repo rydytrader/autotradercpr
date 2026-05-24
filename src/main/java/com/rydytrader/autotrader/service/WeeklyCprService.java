@@ -560,12 +560,32 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
      * close isn't available — caller fail-opens on NEUTRAL.
      */
     public String getStockHtfTrendState(String fyersSymbol, double htfEma20) {
+        return getStockHtfTrendState(fyersSymbol, htfEma20, true);
+    }
+
+    /**
+     * Stock HTF state with an optional 2nd factor. {@code useEma=true} runs the strict
+     * 2-factor state machine (delegates to {@link IndexTrendService#deriveTrendState}).
+     * {@code useEma=false} skips the EMA factor entirely — state is decided purely on
+     * where the 1-hour close sits relative to the weekly CPR zone: above → BULLISH,
+     * below → BEARISH, inside → SIDEWAYS (still hard-rejects in the alignment filter).
+     * Returns NEUTRAL when weekly levels haven't been computed or the 1h close is missing
+     * so the caller can fail-open.
+     */
+    public String getStockHtfTrendState(String fyersSymbol, double htfEma20, boolean useEma) {
         if (fyersSymbol == null) return "NEUTRAL";
         WeeklyLevels wl = weeklyLevels.get(fyersSymbol);
         if (wl == null || wl.top <= 0 || wl.bot <= 0) return "NEUTRAL";
         Double htfClose = lastHigherTfClose.get(fyersSymbol);
         if (htfClose == null || htfClose <= 0) return "NEUTRAL";
-        return IndexTrendService.deriveTrendState(htfClose, wl.top, wl.bot, htfEma20);
+        if (useEma) {
+            return IndexTrendService.deriveTrendState(htfClose, wl.top, wl.bot, htfEma20);
+        }
+        double top = Math.max(wl.top, wl.bot);
+        double bot = Math.min(wl.top, wl.bot);
+        if (htfClose > top) return "BULLISH";
+        if (htfClose < bot) return "BEARISH";
+        return "SIDEWAYS";
     }
 
     public int getLoadedCount() { return weeklyLevels.size(); }

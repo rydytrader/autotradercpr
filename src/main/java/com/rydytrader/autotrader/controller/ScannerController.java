@@ -1017,6 +1017,7 @@ public class ScannerController {
         status.put("enableIndexAlignment",      riskSettings.isEnableIndexAlignment());
         status.put("enableIndexHtfAlignment",   riskSettings.isEnableIndexHtfAlignment());
         status.put("enableStockHtfAlignment",   riskSettings.isEnableStockHtfAlignment());
+        status.put("enableStockHtf1hEma20Check", riskSettings.isEnableStockHtf1hEma20Check());
         status.put("enableOpenRangeFilter",     riskSettings.isEnableOpenRangeFilter());
         status.put("enableIndexOpenRangeFilter", riskSettings.isEnableIndexOpenRangeFilter());
         status.put("minPrice", riskSettings.getScanMinPrice());

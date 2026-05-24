@@ -401,8 +401,12 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Extended Level Signals (R3/S3, R4/S4)</label>
+                    <label class="form-label">Extended Level Signals (R2/S2, R3/S3, R4/S4)</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="skipR2S2" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R2/S2 breakout and retest signals</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="skipR3S3" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R3/S3 breakout and retest signals</span>
                     </div>
@@ -410,7 +414,7 @@
                         <input type="checkbox" id="skipR4S4" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R4/S4 breakout and retest signals</span>
                     </div>
-                    <div class="form-hint">R3/S3 and R4/S4 setups (both fresh breakouts and pattern retests at those levels) are far from the daily CPR and historically unreliable. Toggle on to reject the corresponding pair entirely. R2/S2 always fires regardless. Signal Trail rejection: <code>R3/S3 breakout/retest skipped (toggle off)</code>.</div>
+                    <div class="form-hint">Setups (both fresh breakouts and pattern retests) at extended levels sit progressively further from the daily CPR. Each pair has its own toggle. R2/S2 defaults <b>OFF</b> (allowed); R3/S3 and R4/S4 default <b>ON</b> (skipped) since they're historically the least reliable. Signal Trail rejection: <code>R2/S2 breakout/retest skipped (toggle off)</code>.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">20 EMA Level Count Filter</label>
@@ -644,17 +648,31 @@
         <div class="section-body">
             <div class="form-grid">
                 <div class="form-group">
-                    <label class="form-label">Index Trend Alignment</label>
+                    <label class="form-label">Index 5-min Trend Alignment</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableIndexAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject when the stock's primary-index trend opposes the trade direction</span>
                     </div>
                     <div class="form-hint">Each stock maps to one <b>primary index</b> (NIFTY 50 OR a sector index) via the Stock Universe master table. This filter gates every signal against the trend state of THAT index — replaces the prior separate NIFTY + sector alignment checks.
-                        <br>Two-factor state machine on the primary index: <b>CPR + EMA 20</b> (same logic the bot uses everywhere). States: <b>BULLISH</b>, <b>BEARISH</b>, <b>BULLISH REVERSAL</b>, <b>BEARISH REVERSAL</b>, <b>INSIDE</b>, <b>SIDEWAYS</b>, <b>NEUTRAL</b>.
-                        <br>&nbsp;&nbsp;&bull; <b>Trend-following setups (HPT)</b>: buys accept <b>BULLISH</b> or <b>BULLISH REVERSAL</b>; sells accept <b>BEARISH</b> or <b>BEARISH REVERSAL</b>.
-                        <br>&nbsp;&nbsp;&bull; <b>Counter-trend setups</b> (magnet, mean-reversion): require strict <b>BULLISH</b> (buys) / <b>BEARISH</b> (sells). Reversal states not enough.
-                        <br>&nbsp;&nbsp;&bull; <b>INSIDE</b> / <b>SIDEWAYS</b> / opposite-direction &rarr; <b>hard-reject</b> as <code>INDEX_OPPOSED</code>.
+                        <br>Strict 2-factor state machine on the primary index's 5-min timeframe: <b>index 5m close vs daily CPR top/bot AND index 5m close vs 5m EMA20</b>. States: <b>BULLISH</b> (both factors up), <b>BEARISH</b> (both down), <b>SIDEWAYS</b> (factors disagree), <b>NEUTRAL</b> (data not ready).
+                        <br>&nbsp;&nbsp;&bull; <b>Trend-following setups</b>: buys require <b>BULLISH</b>; sells require <b>BEARISH</b>.
+                        <br>&nbsp;&nbsp;&bull; <b>Counter-trend setups</b> (magnet, mean-reversion): same — index must align with the trade direction.
+                        <br>&nbsp;&nbsp;&bull; <b>SIDEWAYS</b> / opposite-direction &rarr; <b>hard-reject</b> as <code>INDEX_OPPOSED</code>.
                         <br>&nbsp;&nbsp;&bull; <b>NEUTRAL</b> (no data yet) &rarr; <b>fail-open</b> (no skip).</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Index 5-min Hurdle Filter</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableIndex5mHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject when the stock's primary-index 5-min close is inside / hasn't fully cleared its nearest CPR / R1+PDH / S1+PDL zone</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min headroom to next hurdle:</span>
+                        <input type="number" id="index5mHurdleMinHeadroomAtr" class="form-control" step="0.1" min="0" max="5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
+                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× index ATR (0 = off)</span>
+                    </div>
+                    <div class="form-hint">5-min variant of the Index HTF Hurdle, against the primary index's daily levels treated as <b>zones</b>: <b>CPR</b> [min(TC,BC), max(TC,BC)], <b>R1+PDH</b> and <b>S1+PDL</b> plus R2/R3/R4 and S2/S3/S4 as single-line zones. Picks the <b>behind</b> zone in trade direction and rejects if the index's same-bucket 5-min close is inside that zone or short of its far edge — <b>clearing only the near edge isn't enough; the close must clear the far edge</b>. Fail-open if the index's same-bucket bar isn't yet completed.
+                        <br><br><b>Headroom check.</b> Even after the behind zone is fully cleared, the filter rejects if the next zone ahead is closer than <code>min headroom &times; index ATR</code>. Default <b>1.0</b> &times; ATR. Set to 0 to disable just the headroom check. Signal Trail bucket: <code>INDEX_5M_HURDLE</code>.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Index HTF Trend Alignment</label>
@@ -680,20 +698,6 @@
                         <br>&nbsp;&nbsp;&bull; <b>Sells</b> &mdash; nearest of {weekly TC, weekly Pivot, weekly BC, S1, PWL, S2, S3, S4} above index LTP
                         <br><br><b>Headroom check.</b> Even after the past hurdle is cleared, the filter also checks the nearest hurdle in the <i>opposite</i> direction. If that upcoming hurdle is closer than <code>min headroom &times; index ATR</code>, the trade is rejected. Default <b>1.0</b> &times; ATR. Set to 0 to disable just the headroom check. Signal Trail bucket: <code>INDEX_HTF_HURDLE</code>.
                         </div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Index 5-min Hurdle Filter</label>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
-                        <input type="checkbox" id="enableIndex5mHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject when the stock's primary-index 5-min close is inside / hasn't fully cleared its nearest CPR / R1+PDH / S1+PDL zone</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min headroom to next hurdle:</span>
-                        <input type="number" id="index5mHurdleMinHeadroomAtr" class="form-control" step="0.1" min="0" max="5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                        <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× index ATR (0 = off)</span>
-                    </div>
-                    <div class="form-hint">5-min variant of the Index HTF Hurdle, against the primary index's daily levels treated as <b>zones</b>: <b>CPR</b> [min(TC,BC), max(TC,BC)], <b>R1+PDH</b> and <b>S1+PDL</b> plus R2/R3/R4 and S2/S3/S4 as single-line zones. Picks the <b>behind</b> zone in trade direction and rejects if the index's same-bucket 5-min close is inside that zone or short of its far edge — <b>clearing only the near edge isn't enough; the close must clear the far edge</b>. Fail-open if the index's same-bucket bar isn't yet completed.
-                        <br><br><b>Headroom check.</b> Even after the behind zone is fully cleared, the filter rejects if the next zone ahead is closer than <code>min headroom &times; index ATR</code>. Default <b>1.0</b> &times; ATR. Set to 0 to disable just the headroom check. Signal Trail bucket: <code>INDEX_5M_HURDLE</code>.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Primary-Index Open Range Filter</label>
@@ -734,10 +738,15 @@
                         <input type="checkbox" id="enableStockHtfAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject when the stock's own 1-hour HTF trend opposes the trade direction</span>
                     </div>
-                    <div class="form-hint">Confirms the stock's slower (1-hour) timeframe agrees with the 5-min setup direction. Two-factor state machine on the stock: <b>1-hour close vs weekly CPR (TC/BC)</b> + <b>1-hour close vs 1-hour EMA 20</b>. Same six states as Index Trend Alignment.
-                        <br>&nbsp;&nbsp;&bull; <b>Buy</b> needs <b>BULLISH</b> or <b>BULLISH REVERSAL</b>.
-                        <br>&nbsp;&nbsp;&bull; <b>Sell</b> needs <b>BEARISH</b> or <b>BEARISH REVERSAL</b>.
-                        <br>&nbsp;&nbsp;&bull; <b>INSIDE</b> / <b>SIDEWAYS</b> / opposite-direction &rarr; <b>hard-reject</b> as <code>STOCK_HTF_OPPOSED</code>.
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px; margin-left: 28px;">
+                        <input type="checkbox" id="enableStockHtf1hEma20Check" style="width: 16px; height: 16px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.78rem; font-family: var(--font-mono);">Also require 1-hour EMA 20 agreement (strict 2-factor)</span>
+                    </div>
+                    <div class="form-hint">Confirms the stock's slower (1-hour) timeframe agrees with the 5-min setup direction.
+                        <br><b>Sub-toggle ON (default — strict 2-factor):</b> 1-hour close vs weekly CPR top/bot <b>AND</b> 1-hour close vs 1-hour EMA 20. States: <b>BULLISH</b> (both factors up), <b>BEARISH</b> (both down), <b>SIDEWAYS</b> (factors disagree), <b>NEUTRAL</b> (data not ready).
+                        <br><b>Sub-toggle OFF (CPR-only):</b> EMA factor skipped. <b>BULLISH</b> = 1h close above weekly CPR top; <b>BEARISH</b> = below CPR bot; inside-CPR &rarr; <b>SIDEWAYS</b>.
+                        <br>&nbsp;&nbsp;&bull; <b>Buy</b> requires <b>BULLISH</b>; <b>Sell</b> requires <b>BEARISH</b>.
+                        <br>&nbsp;&nbsp;&bull; <b>SIDEWAYS</b> / opposite-direction &rarr; <b>hard-reject</b> as <code>STOCK_HTF_OPPOSED</code>.
                         <br>&nbsp;&nbsp;&bull; <b>NEUTRAL</b> (weekly levels or 1-hour close missing) &rarr; <b>fail-open</b>.</div>
                 </div>
                 <div class="form-group">
@@ -1447,6 +1456,7 @@
             document.getElementById('targetToleranceAtr').value = (d.targetToleranceAtr != null ? d.targetToleranceAtr : 0.10);
             document.getElementById('enableIndexAlignment').checked = d.enableIndexAlignment === true;
             document.getElementById('enableStockHtfAlignment').checked = d.enableStockHtfAlignment === true;
+            document.getElementById('enableStockHtf1hEma20Check').checked = d.enableStockHtf1hEma20Check !== false;
             document.getElementById('enableIndexHtfHurdleFilter').checked = d.enableIndexHtfHurdleFilter === true;
             document.getElementById('enableIndexHtfAlignment').checked    = d.enableIndexHtfAlignment === true;
             document.getElementById('indexHtfHurdleMinHeadroomAtr').value = (d.indexHtfHurdleMinHeadroomAtr != null ? d.indexHtfHurdleMinHeadroomAtr : 1.0);
@@ -1474,6 +1484,7 @@
             document.getElementById('scanMaxPrice').value = d.scanMaxPrice != null ? d.scanMaxPrice : 0;
             // Watchlist universe radio retired — Settings → Stock Universe is the source.
             document.getElementById('minAbsoluteProfit').value = d.minAbsoluteProfit != null ? d.minAbsoluteProfit : 500;
+            document.getElementById('skipR2S2').checked = d.skipR2S2 === true;
             document.getElementById('skipR3S3').checked = d.skipR3S3 !== false;
             document.getElementById('skipR4S4').checked = d.skipR4S4 !== false;
             document.getElementById('enableMeanReversionTrades').checked = d.enableMeanReversionTrades !== false;
@@ -1607,6 +1618,7 @@
                 targetToleranceAtr: parseFloat(document.getElementById('targetToleranceAtr').value) || 0,
                 enableIndexAlignment:    document.getElementById('enableIndexAlignment').checked,
                 enableStockHtfAlignment: document.getElementById('enableStockHtfAlignment').checked,
+                enableStockHtf1hEma20Check: document.getElementById('enableStockHtf1hEma20Check').checked,
                 enableIndexHtfHurdleFilter: document.getElementById('enableIndexHtfHurdleFilter').checked,
                 enableIndexHtfAlignment:    document.getElementById('enableIndexHtfAlignment').checked,
                 indexHtfHurdleMinHeadroomAtr: parseFloat(document.getElementById('indexHtfHurdleMinHeadroomAtr').value) || 0,
@@ -1631,6 +1643,7 @@
                 scanMinPrice: parseFloat(document.getElementById('scanMinPrice').value) || 0,
                 scanMaxPrice: parseFloat(document.getElementById('scanMaxPrice').value) || 0,
                 minAbsoluteProfit: (function() { var v = parseFloat(document.getElementById('minAbsoluteProfit').value); return isNaN(v) ? 500 : v; })(),
+                skipR2S2: document.getElementById('skipR2S2').checked,
                 skipR3S3: document.getElementById('skipR3S3').checked,
                 skipR4S4: document.getElementById('skipR4S4').checked,
                 enableMeanReversionTrades: document.getElementById('enableMeanReversionTrades').checked,

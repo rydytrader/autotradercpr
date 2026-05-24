@@ -96,12 +96,17 @@ public class SignalProcessor {
         String signal = isBuy ? "BUY" : "SELL";
 
         // ── Extended-level skip gate ─────────────────────────────────────────
-        // R3/S3 and R4/S4 breakouts (and their retest variants — setup name covers both)
-        // are far from the daily CPR and historically unreliable. Gated by a single toggle
-        // per level pair; no day-type classification.
+        // R2/S2, R3/S3 and R4/S4 breakouts (and their retest variants — setup name covers
+        // both) sit progressively further from the daily CPR. Each level pair has its own
+        // toggle; no day-type classification. R2/S2 defaults to OFF (allowed); R3/S3 and
+        // R4/S4 default to ON (skipped) since they're least reliable.
+        boolean isR2S2Setup = "BUY_ABOVE_R2".equals(setup) || "SELL_BELOW_S2".equals(setup);
         boolean isR3S3Setup = "BUY_ABOVE_R3".equals(setup) || "SELL_BELOW_S3".equals(setup);
         boolean isR4S4Setup = "BUY_ABOVE_R4".equals(setup) || "SELL_BELOW_S4".equals(setup);
 
+        if (isR2S2Setup && riskSettings.isSkipR2S2()) {
+            return ProcessedSignal.rejected(setup, symbol, "R2/S2 breakout/retest skipped (toggle off)");
+        }
         if (isR3S3Setup && riskSettings.isSkipR3S3()) {
             return ProcessedSignal.rejected(setup, symbol, "R3/S3 breakout/retest skipped (toggle off)");
         }

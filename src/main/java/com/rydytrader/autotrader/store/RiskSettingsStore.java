@@ -225,6 +225,7 @@ public class RiskSettingsStore {
         // Legacy keys (skipR3S3IvOvDays / skipR3S3EvDays / skipR4S4IvOvDays / skipR4S4EvDays
         // / skipR3S3NormalDays / skipR4S4NormalDays) silently fold into the new toggle on
         // load: any legacy-true value flips the new toggle to true.
+        volatile boolean skipR2S2 = false;
         volatile boolean skipR3S3 = true;
         volatile boolean skipR4S4 = true;
         // Counter-trend setups split into two independent families. Each has its own
@@ -294,6 +295,11 @@ public class RiskSettingsStore {
         // with the trade direction (BULLISH/BULLISH_REVERSAL for buy, BEARISH/BEARISH_REVERSAL
         // for sell). Computed from 1-hour close vs weekly CPR + 1-hour EMA20. Opt-in.
         volatile boolean enableStockHtfAlignment = false;
+        // Optional 2nd factor for Stock HTF Alignment. When TRUE (default) the filter
+        // runs the strict 2-factor state machine (1h close vs weekly CPR AND 1h close vs
+        // 1h EMA20). When FALSE the EMA factor is skipped — state is determined purely
+        // by where the 1h close sits relative to the weekly CPR zone.
+        volatile boolean enableStockHtf1hEma20Check = true;
     }
 
     private final Cfg live = new Cfg();
@@ -385,6 +391,7 @@ public class RiskSettingsStore {
     public int getVirginCprExpiryDays() { return cfg().virginCprExpiryDays; }
     public double getBreakevenTriggerPct() { return cfg().breakevenTriggerPct; }
     public double getBreakevenSlAtrMult()  { return cfg().breakevenSlAtrMult; }
+    public boolean isSkipR2S2() { return cfg().skipR2S2; }
     public boolean isSkipR3S3() { return cfg().skipR3S3; }
     public boolean isSkipR4S4() { return cfg().skipR4S4; }
     public boolean isEnableMeanReversionTrades() { return cfg().enableMeanReversionTrades; }
@@ -415,6 +422,7 @@ public class RiskSettingsStore {
     public double getTargetToleranceAtr()      { return cfg().targetToleranceAtr; }
     public boolean isEnableIndexAlignment()    { return cfg().enableIndexAlignment; }
     public boolean isEnableStockHtfAlignment() { return cfg().enableStockHtfAlignment; }
+    public boolean isEnableStockHtf1hEma20Check() { return cfg().enableStockHtf1hEma20Check; }
     public void setSignalSource(String v)      { cfg().signalSource = v; }
     public void setScannerTimeframe(int v)     { cfg().scannerTimeframe = v; }
     public void setHigherTimeframe(int v)      { cfg().higherTimeframe = v; }
@@ -437,6 +445,7 @@ public class RiskSettingsStore {
     public void setTargetToleranceAtr(double v) { cfg().targetToleranceAtr = v; }
     public void setEnableIndexAlignment(boolean v)        { cfg().enableIndexAlignment = v; }
     public void setEnableStockHtfAlignment(boolean v)     { cfg().enableStockHtfAlignment = v; }
+    public void setEnableStockHtf1hEma20Check(boolean v)  { cfg().enableStockHtf1hEma20Check = v; }
     public void setTradingStartTime(String v)  { cfg().tradingStartTime = v; }
     public void setTradingEndTime(String v)    { cfg().tradingEndTime = v; }
     public void setTotalCapital(double v)       { cfg().totalCapital = v; }
@@ -508,6 +517,7 @@ public class RiskSettingsStore {
     public void setVirginCprExpiryDays(int v) { cfg().virginCprExpiryDays = Math.max(0, v); }
     public void setBreakevenTriggerPct(double v) { cfg().breakevenTriggerPct = v; }
     public void setBreakevenSlAtrMult(double v)  { cfg().breakevenSlAtrMult = v; }
+    public void setSkipR2S2(boolean v) { cfg().skipR2S2 = v; }
     public void setSkipR3S3(boolean v) { cfg().skipR3S3 = v; }
     public void setSkipR4S4(boolean v) { cfg().skipR4S4 = v; }
     public void setEnableMeanReversionTrades(boolean v) {
@@ -649,6 +659,7 @@ public class RiskSettingsStore {
             upsert("virginCprExpiryDays", String.valueOf(c.virginCprExpiryDays));
             upsert("breakevenTriggerPct", String.valueOf(c.breakevenTriggerPct));
             upsert("breakevenSlAtrMult",  String.valueOf(c.breakevenSlAtrMult));
+            upsert("skipR2S2", String.valueOf(c.skipR2S2));
             upsert("skipR3S3", String.valueOf(c.skipR3S3));
             upsert("skipR4S4", String.valueOf(c.skipR4S4));
             upsert("enableMeanReversionTrades", String.valueOf(c.enableMeanReversionTrades));
@@ -679,6 +690,7 @@ public class RiskSettingsStore {
             upsert("targetToleranceAtr", String.valueOf(c.targetToleranceAtr));
             upsert("enableIndexAlignment",   String.valueOf(c.enableIndexAlignment));
             upsert("enableStockHtfAlignment", String.valueOf(c.enableStockHtfAlignment));
+            upsert("enableStockHtf1hEma20Check", String.valueOf(c.enableStockHtf1hEma20Check));
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to save {}: {}", mode, e.getMessage());
         }
@@ -876,6 +888,7 @@ public class RiskSettingsStore {
                     case "skipR4S4NormalDays", "skipR4S4IvOvDays", "skipR4S4EvDays" -> {
                         if (Boolean.parseBoolean(v)) c.skipR4S4 = true;
                     }
+                    case "skipR2S2" -> c.skipR2S2 = Boolean.parseBoolean(v);
                     case "skipR3S3" -> c.skipR3S3 = Boolean.parseBoolean(v);
                     case "skipR4S4" -> c.skipR4S4 = Boolean.parseBoolean(v);
                     case "enableMeanReversionTrades" -> c.enableMeanReversionTrades = Boolean.parseBoolean(v);
@@ -929,6 +942,7 @@ public class RiskSettingsStore {
                     case "targetToleranceAtr" -> c.targetToleranceAtr = Double.parseDouble(v);
                     case "enableIndexAlignment"   -> c.enableIndexAlignment = Boolean.parseBoolean(v);
                     case "enableStockHtfAlignment" -> c.enableStockHtfAlignment = Boolean.parseBoolean(v);
+                    case "enableStockHtf1hEma20Check" -> c.enableStockHtf1hEma20Check = Boolean.parseBoolean(v);
                     // Legacy NIFTY trend-factor toggles — features removed (EMA20 is now
                     // always-on; FUT VWAP factor dropped entirely). Old risk-settings.json
                     // files keep loading without errors; values are silently ignored.

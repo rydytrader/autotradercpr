@@ -86,6 +86,7 @@ public class SettingsController {
         result.put("targetToleranceAtr", riskSettings.getTargetToleranceAtr());
         result.put("enableIndexAlignment", riskSettings.isEnableIndexAlignment());
         result.put("enableStockHtfAlignment", riskSettings.isEnableStockHtfAlignment());
+        result.put("enableStockHtf1hEma20Check", riskSettings.isEnableStockHtf1hEma20Check());
         result.put("goodSizeCandleBodyAtrMult",          riskSettings.getGoodSizeCandleBodyAtrMult());
         result.put("goodSizeCandleMaxBodyAtrMult",       riskSettings.getGoodSizeCandleMaxBodyAtrMult());
         result.put("confirmationMaxOppositeWickRatio",   riskSettings.getConfirmationMaxOppositeWickRatio());
@@ -111,6 +112,7 @@ public class SettingsController {
         result.put("virginCprExpiryDays", riskSettings.getVirginCprExpiryDays());
         result.put("breakevenTriggerPct", riskSettings.getBreakevenTriggerPct());
         result.put("breakevenSlAtrMult",  riskSettings.getBreakevenSlAtrMult());
+        result.put("skipR2S2", riskSettings.isSkipR2S2());
         result.put("skipR3S3", riskSettings.isSkipR3S3());
         result.put("skipR4S4", riskSettings.isSkipR4S4());
         result.put("enableMeanReversionTrades", riskSettings.isEnableMeanReversionTrades());
@@ -198,6 +200,7 @@ public class SettingsController {
             if (body.containsKey("targetToleranceAtr")) riskSettings.setTargetToleranceAtr(Double.parseDouble(body.get("targetToleranceAtr").toString()));
             if (body.containsKey("enableIndexAlignment"))   riskSettings.setEnableIndexAlignment(Boolean.parseBoolean(body.get("enableIndexAlignment").toString()));
             if (body.containsKey("enableStockHtfAlignment")) riskSettings.setEnableStockHtfAlignment(Boolean.parseBoolean(body.get("enableStockHtfAlignment").toString()));
+            if (body.containsKey("enableStockHtf1hEma20Check")) riskSettings.setEnableStockHtf1hEma20Check(Boolean.parseBoolean(body.get("enableStockHtf1hEma20Check").toString()));
             if (body.containsKey("goodSizeCandleBodyAtrMult"))   riskSettings.setGoodSizeCandleBodyAtrMult(Double.parseDouble(body.get("goodSizeCandleBodyAtrMult").toString()));
             if (body.containsKey("goodSizeCandleMaxBodyAtrMult")) riskSettings.setGoodSizeCandleMaxBodyAtrMult(Double.parseDouble(body.get("goodSizeCandleMaxBodyAtrMult").toString()));
             if (body.containsKey("confirmationMaxOppositeWickRatio")) riskSettings.setConfirmationMaxOppositeWickRatio(Double.parseDouble(body.get("confirmationMaxOppositeWickRatio").toString()));
@@ -228,6 +231,7 @@ public class SettingsController {
             }
             if (body.containsKey("breakevenTriggerPct")) riskSettings.setBreakevenTriggerPct(Double.parseDouble(body.get("breakevenTriggerPct").toString()));
             if (body.containsKey("breakevenSlAtrMult"))  riskSettings.setBreakevenSlAtrMult(Double.parseDouble(body.get("breakevenSlAtrMult").toString()));
+            if (body.containsKey("skipR2S2")) riskSettings.setSkipR2S2(Boolean.parseBoolean(body.get("skipR2S2").toString()));
             if (body.containsKey("skipR3S3")) riskSettings.setSkipR3S3(Boolean.parseBoolean(body.get("skipR3S3").toString()));
             if (body.containsKey("skipR4S4")) riskSettings.setSkipR4S4(Boolean.parseBoolean(body.get("skipR4S4").toString()));
             if (body.containsKey("enableMeanReversionTrades")) riskSettings.setEnableMeanReversionTrades(Boolean.parseBoolean(body.get("enableMeanReversionTrades").toString()));

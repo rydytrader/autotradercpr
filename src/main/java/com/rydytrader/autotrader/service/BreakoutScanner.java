@@ -1654,18 +1654,21 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (!riskSettings.isEnableStockHtfAlignment()) return NiftyAlignStatus.OK;
         if (weeklyCprService == null || htfEmaService == null) return NiftyAlignStatus.OK;
         try {
+            boolean useEma = riskSettings.isEnableStockHtf1hEma20Check();
             double htfEma = htfEmaService.getEma(fyersSymbol);
-            String state = weeklyCprService.getStockHtfTrendState(fyersSymbol, htfEma);
+            String state = weeklyCprService.getStockHtfTrendState(fyersSymbol, htfEma, useEma);
             if ("NEUTRAL".equals(state)) return NiftyAlignStatus.OK;     // fail-open on missing data
 
-            // Strict 2-factor — REVERSAL states dropped. Buys need BULLISH (1h close >
-            // weekly CPR top AND > 1h EMA20); sells need BEARISH (both below).
+            // useEma=true  → strict 2-factor (1h close > weekly CPR top AND > 1h EMA20).
+            // useEma=false → CPR-only (1h close > weekly CPR top is enough). Either way,
+            //                buys need BULLISH; sells need BEARISH.
             boolean aligned = isBuy ? "BULLISH".equals(state) : "BEARISH".equals(state);
             if (aligned) return NiftyAlignStatus.OK;
 
             String requiredStates = isBuy ? "BULLISH" : "BEARISH";
+            String mode = useEma ? "CPR+EMA" : "CPR-only";
             eventService.log("[SCANNER] " + fyersSymbol + " " + setup + routeFor(fyersSymbol)
-                + " STOCK HTF MISALIGNED — stock 1h " + state + ", trade direction needs " + requiredStates);
+                + " STOCK HTF MISALIGNED (" + mode + ") — stock 1h " + state + ", trade direction needs " + requiredStates);
             return NiftyAlignStatus.SKIP;
         } catch (Exception e) {
             log.warn("[BreakoutScanner] Stock HTF alignment check failed for {}: {}", fyersSymbol, e.getMessage());

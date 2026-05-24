@@ -1104,11 +1104,20 @@
                     case 'SIDEWAYS':         stColor = 'var(--text-muted)';     stLabel = 'SIDEWAYS';  break;
                     default:                 stColor = 'var(--text-muted)';     stLabel = 'NEUTRAL';   break;
                 }
+                // The 1-hour EMA 20 cell only renders when the user has the matching
+                // sub-toggle on. With it off, the alignment filter ignores EMA, so the
+                // chip on the card would be visual noise. Cell is replaced with an
+                // empty placeholder so the 3-col grid stays aligned.
+                var showHtfEma = window.__scannerStatus
+                    && window.__scannerStatus.enableStockHtf1hEma20Check === true;
+                var emaCell = showHtfEma
+                    ? '  <div class="scan-data-item" style="text-align:center;"><div class="scan-data-label">EMA 20 (1 HR)</div><div class="scan-data-value" style="color:' + emaColor + ';font-weight:600;" title="1-hour EMA20 vs latest 1-hour close">' + (ema > 0 ? fmt(ema) + (arrow ? ' ' + arrow : '') : '--') + '</div></div>'
+                    : '  <div class="scan-data-item"></div>';
                 return '<div style="border-top:1px solid var(--border);"></div>'
                     + '<div class="scan-data-grid scan-data-grid-3">'
                     + '  <div class="scan-data-item" style="text-align:left;"><div class="scan-data-label">W-CPR</div><div class="scan-data-value" style="color:' + biasColor + ';font-weight:600;" title="Last 1-hour close vs weekly CPR zone">' + bias + '</div></div>'
-                    + '  <div class="scan-data-item" style="text-align:center;"><div class="scan-data-label">EMA 20 (1 H)</div><div class="scan-data-value" style="color:' + emaColor + ';font-weight:600;" title="1-hour EMA20 vs latest 1-hour close">' + (ema > 0 ? fmt(ema) + (arrow ? ' ' + arrow : '') : '--') + '</div></div>'
-                    + '  <div class="scan-data-item" style="text-align:right;"><div class="scan-data-label">HTF</div><div class="scan-data-value" style="color:' + stColor + ';font-weight:600;" title="2-factor HTF state — weekly CPR + 1-hour EMA20 (Stock HTF Trend Alignment filter source)">' + stLabel + '</div></div>'
+                    + emaCell
+                    + '  <div class="scan-data-item" style="text-align:right;"><div class="scan-data-label">HTF</div><div class="scan-data-value" style="color:' + stColor + ';font-weight:600;" title="HTF state — weekly CPR ' + (showHtfEma ? '+ 1-hour EMA20 (2-factor)' : 'only (1-factor)') + ' — Stock HTF Trend Alignment filter source">' + stLabel + '</div></div>'
                     + '</div>';
             })()
             + '  </div>'                                                  // /scan-levels-body (Trend Details)
@@ -1570,7 +1579,7 @@
                         return '<div style="border-top:1px solid var(--border);"></div>'
                             + '<div class="scan-data-grid scan-data-grid-3">'
                             +   '<div class="scan-data-item" style="text-align:left;" title="Last 1-hour close vs weekly CPR zone"><div class="scan-data-label">W-CPR</div><div class="scan-data-value" style="color:' + hBiasColor + ';font-weight:600;">' + hBias + '</div></div>'
-                            +   '<div class="scan-data-item" style="text-align:center;" title="1-hour EMA20 (stepped) vs last 1-hour close"><div class="scan-data-label">EMA 20 (1 H)</div><div class="scan-data-value" style="color:' + hEmaColor + ';font-weight:600;">' + (hEma > 0 ? hEma.toFixed(2) + (hEmaArrow ? ' ' + hEmaArrow : '') : '—') + '</div></div>'
+                            +   '<div class="scan-data-item" style="text-align:center;" title="1-hour EMA20 (stepped) vs last 1-hour close"><div class="scan-data-label">EMA 20 (1 HR)</div><div class="scan-data-value" style="color:' + hEmaColor + ';font-weight:600;">' + (hEma > 0 ? hEma.toFixed(2) + (hEmaArrow ? ' ' + hEmaArrow : '') : '—') + '</div></div>'
                             +   '<div class="scan-data-item" style="text-align:right;" title="Index HTF state — weekly CPR + 1h EMA20 (Index HTF Trend Alignment source)"><div class="scan-data-label">HTF</div><div class="scan-data-value" style="color:' + hStColor + ';font-weight:600;">' + hSt.replace('_', ' ') + '</div></div>'
                             + '</div>';
                     })()
