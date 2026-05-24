@@ -638,6 +638,95 @@ public class ScannerController {
         return Math.round(value / tick) * tick;
     }
 
+    /**
+     * Resolve the current trading week as a Mon→Fri pair. On weekends this rolls
+     * back to the most recent completed trading week so the chart still has data
+     * to draw. Holidays inside Mon-Fri are simply absent from the bar stream —
+     * we still anchor the visible window at Mon-Fri so the user sees the full
+     * week layout with gaps where holidays fell.
+     */
+    private java.time.LocalDate[] currentTradingWeek(java.time.ZoneId ist) {
+        java.time.LocalDate today = java.time.LocalDate.now(ist);
+        java.time.DayOfWeek dow = today.getDayOfWeek();
+        java.time.LocalDate monday;
+        if (dow == java.time.DayOfWeek.SATURDAY) {
+            monday = today.minusDays(5);
+        } else if (dow == java.time.DayOfWeek.SUNDAY) {
+            monday = today.minusDays(6);
+        } else {
+            monday = today.minusDays(dow.getValue() - 1);  // dow=1 (Mon) → minus 0
+        }
+        return new java.time.LocalDate[] { monday, monday.plusDays(4) };
+    }
+
+    /**
+     * Keep only bars whose IST date falls in [from, to] inclusive. Used to clip
+     * the multi-day historical fetch down to the current trading week before
+     * aggregation. Bars are returned in original order (sorting is the caller's
+     * concern — the fetcher already returns chronological order).
+     */
+    private List<CandleAggregator.CandleBar> filterToWeek(List<CandleAggregator.CandleBar> bars,
+                                                          java.time.LocalDate from,
+                                                          java.time.LocalDate to,
+                                                          java.time.ZoneId ist) {
+        List<CandleAggregator.CandleBar> out = new ArrayList<>(bars.size());
+        for (CandleAggregator.CandleBar c : bars) {
+            java.time.LocalDate d = java.time.Instant.ofEpochSecond(c.epochSec).atZone(ist).toLocalDate();
+            if (!d.isBefore(from) && !d.isAfter(to)) out.add(c);
+        }
+        return out;
+    }
+
+    /**
+     * Aggregates 5-min bars into 1-hour bars. NSE hours run 9:15 → 15:30 IST so the
+     * natural hourly buckets start at minute :15 (9:15, 10:15, ..., 14:15) and the
+     * day-close partial bar (15:15 → 15:30) becomes its own short bar. Within each
+     * bucket: open = first bar open, high = max high, low = min low, close = last
+     * bar close, volume = sum. Bars are assumed already chronologically sorted.
+     */
+    private List<CandleAggregator.CandleBar> aggregateToHourly(List<CandleAggregator.CandleBar> bars) {
+        List<CandleAggregator.CandleBar> out = new ArrayList<>();
+        if (bars == null || bars.isEmpty()) return out;
+        java.time.ZoneId ist = java.time.ZoneId.of("Asia/Kolkata");
+        CandleAggregator.CandleBar bucket = null;
+        long bucketKey = -1;
+        for (CandleAggregator.CandleBar c : bars) {
+            java.time.ZonedDateTime zdt = java.time.Instant.ofEpochSecond(c.epochSec).atZone(ist);
+            // Hourly bucket key: yyyymmdd * 100 + hour-of-bar-start. Bars whose start
+            // minute is < :15 fold into the previous hour's bucket (e.g., 09:00 → 8h
+            // theoretically — but NSE starts at 09:15 so this branch never runs in
+            // practice). Use the "hour the bar's start belongs to" treating :15 as the
+            // start-of-hour boundary.
+            int year = zdt.getYear();
+            int dayOfYear = zdt.getDayOfYear();
+            int hour = zdt.getHour();
+            int minute = zdt.getMinute();
+            if (minute < 15) hour -= 1;
+            long key = ((long) year * 1000L + dayOfYear) * 100L + hour;
+            if (bucket == null || key != bucketKey) {
+                if (bucket != null) out.add(bucket);
+                bucket = new CandleAggregator.CandleBar();
+                // Bucket start: minute :15 of `hour`.
+                java.time.ZonedDateTime bucketStart = zdt.withMinute(15).withSecond(0).withNano(0).withHour(Math.max(0, hour));
+                bucket.epochSec = bucketStart.toEpochSecond();
+                bucket.startMinute = hour * 60L + 15;
+                bucket.open = c.open;
+                bucket.high = c.high;
+                bucket.low = c.low;
+                bucket.close = c.close;
+                bucket.volume = c.volume;
+                bucketKey = key;
+            } else {
+                if (c.high > bucket.high) bucket.high = c.high;
+                if (c.low  < bucket.low)  bucket.low  = c.low;
+                bucket.close = c.close;
+                bucket.volume += c.volume;
+            }
+        }
+        if (bucket != null) out.add(bucket);
+        return out;
+    }
+
     private Map<String, Object> barToMap(CandleAggregator.CandleBar c, boolean forming) {
         Map<String, Object> bar = new LinkedHashMap<>();
         bar.put("t", c.epochSec * 1000L);
@@ -925,6 +1014,7 @@ public class ScannerController {
         // Used by scanner.html to conditionally render trend-related slots on the cards
         // so the chip + detail rows match which filters are actually gating. Disabling a
         // filter hides its dedicated chip/row.
+        status.put("enableIndexAlignment",      riskSettings.isEnableIndexAlignment());
         status.put("enableIndexHtfAlignment",   riskSettings.isEnableIndexHtfAlignment());
         status.put("enableStockHtfAlignment",   riskSettings.isEnableStockHtfAlignment());
         status.put("enableOpenRangeFilter",     riskSettings.isEnableOpenRangeFilter());
@@ -942,16 +1032,48 @@ public class ScannerController {
     }
 
     @GetMapping("/api/scanner/chart")
-    public Map<String, Object> getChartData(@RequestParam String symbol) {
+    public Map<String, Object> getChartData(@RequestParam String symbol,
+                                             @RequestParam(required = false, defaultValue = "5") int interval) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("symbol", symbol);
+        result.put("interval", interval);
 
         boolean tradingDay = marketHolidayService.isTradingDay();
         List<Map<String, Object>> candleList = new ArrayList<>();
         List<Map<String, Object>> vwapSeries = new ArrayList<>();
         List<Map<String, Object>> ema20Series = new ArrayList<>();
 
-        if (tradingDay) {
+        // 1-hour panes always show the current trading week (Mon→Fri) with hourly
+        // bars instead of just today's session, so the user can see weekly structure
+        // and how price is interacting with weekly CPR. This means we MUST hit the
+        // historical fetch even on a live trading day — the in-memory CandleAggregator
+        // only holds today + yesterday's session.
+        if (interval == 60) {
+            try {
+                java.time.ZoneId ist = java.time.ZoneId.of("Asia/Kolkata");
+                java.time.LocalDate[] week = currentTradingWeek(ist);  // [monday, friday]
+                // Explicit Mon 9:15 → Fri 15:30 window. Surfaced to the frontend so the
+                // timeline anchors at the full week even on Mon/Tue when later days
+                // have no bars yet — the chart still LOOKS like a Mon-Fri view with the
+                // remaining days as empty space on the right.
+                long weekStartSec = week[0].atTime(9, 15).atZone(ist).toEpochSecond();
+                long weekEndSec   = week[1].atTime(15, 30).atZone(ist).toEpochSecond();
+                result.put("weekStart", weekStartSec * 1000L);
+                result.put("weekEnd",   weekEndSec   * 1000L);
+                List<CandleAggregator.CandleBar> hist = atrService.fetchTodayCandles(symbol);
+                if (hist != null && !hist.isEmpty()) {
+                    List<CandleAggregator.CandleBar> weekBars = filterToWeek(hist, week[0], week[1], ist);
+                    List<CandleAggregator.CandleBar> hourly = aggregateToHourly(weekBars);
+                    java.time.LocalDate displayDate = week[1]; // anchor at week-end for the EMA seeding date logic
+                    computeIndicatorsAndBuild(hourly, displayDate, ist, candleList, vwapSeries, ema20Series);
+                    result.put("dataDate", week[0].toString() + "..." + week[1].toString());
+                }
+                result.put("dataSource", tradingDay ? "live-weekly" : "historical-weekly");
+            } catch (Exception e) {
+                result.put("dataSource", "error");
+                result.put("error", e.getMessage());
+            }
+        } else if (tradingDay) {
             // Live path: compute indicators progressively over prior-day warmup + today so
             // every today's bar has a fully-warmed-up EMA (bar 1 included).
             java.time.ZoneId ist = java.time.ZoneId.of("Asia/Kolkata");
@@ -1003,36 +1125,60 @@ public class ScannerController {
         result.put("tradingDay", tradingDay);
 
         // CPR levels:
-        //   Live (trading day): use cache — it's the CPR active for today (computed from yesterday's OHLC)
-        //   Historical: use getPreviousCpr — cache is "next day's CPR", we want the CPR that was active
-        //   on the historical trading day we're displaying.
-        CprLevels lv = tradingDay ? bhavcopyService.getCprLevels(symbol) : bhavcopyService.getPreviousCpr(symbol);
-        if (lv != null) {
-            Map<String, Object> cpr = new LinkedHashMap<>();
-            cpr.put("top", r(Math.max(lv.getTc(), lv.getBc())));
-            cpr.put("pivot", r(lv.getPivot()));
-            cpr.put("bottom", r(Math.min(lv.getTc(), lv.getBc())));
-            cpr.put("r1", r(lv.getR1()));
-            cpr.put("r2", r(lv.getR2()));
-            cpr.put("r3", r(lv.getR3()));
-            cpr.put("r4", r(lv.getR4()));
-            cpr.put("s1", r(lv.getS1()));
-            cpr.put("s2", r(lv.getS2()));
-            cpr.put("s3", r(lv.getS3()));
-            cpr.put("s4", r(lv.getS4()));
-            cpr.put("pdh", r(lv.getPh()));
-            cpr.put("pdl", r(lv.getPl()));
-            // Opening Range high/low — first {openRangeMinutes} of today's session. Only
-            // meaningful on the live trading day; on historical / weekend views the helpers
-            // return 0 (no completed bars today). The chart layer hides 0-value lines.
-            if (tradingDay) {
-                int orMins = riskSettings.getOpenRangeMinutes();
-                cpr.put("orHigh", r(candleAggregator.getOpenRangeHigh(symbol, orMins)));
-                cpr.put("orLow",  r(candleAggregator.getOpenRangeLow(symbol, orMins)));
-                cpr.put("orMinutes", orMins);
+        //   interval=60       → weekly CPR (the chart spans Mon→Fri so weekly bands are the
+        //                       structurally-correct overlay).
+        //   interval=5 live   → daily CPR cached for today (computed from yesterday's OHLC).
+        //   interval=5 hist   → previous-day CPR (the one that was active on the displayed day).
+        Map<String, Object> cpr = null;
+        if (interval == 60) {
+            WeeklyCprService.WeeklyLevels wl = weeklyCprService.getWeeklyLevels(symbol);
+            if (wl != null && wl.pivot > 0) {
+                cpr = new LinkedHashMap<>();
+                cpr.put("top", r(Math.max(wl.tc, wl.bc)));
+                cpr.put("pivot", r(wl.pivot));
+                cpr.put("bottom", r(Math.min(wl.tc, wl.bc)));
+                cpr.put("r1", r(wl.r1));
+                cpr.put("r2", r(wl.r2));
+                cpr.put("r3", r(wl.r3));
+                cpr.put("r4", r(wl.r4));
+                cpr.put("s1", r(wl.s1));
+                cpr.put("s2", r(wl.s2));
+                cpr.put("s3", r(wl.s3));
+                cpr.put("s4", r(wl.s4));
+                cpr.put("pdh", r(wl.ph));   // previous week high
+                cpr.put("pdl", r(wl.pl));   // previous week low
+                cpr.put("scope", "weekly");
             }
-            result.put("cpr", cpr);
+        } else {
+            CprLevels lv = tradingDay ? bhavcopyService.getCprLevels(symbol) : bhavcopyService.getPreviousCpr(symbol);
+            if (lv != null) {
+                cpr = new LinkedHashMap<>();
+                cpr.put("top", r(Math.max(lv.getTc(), lv.getBc())));
+                cpr.put("pivot", r(lv.getPivot()));
+                cpr.put("bottom", r(Math.min(lv.getTc(), lv.getBc())));
+                cpr.put("r1", r(lv.getR1()));
+                cpr.put("r2", r(lv.getR2()));
+                cpr.put("r3", r(lv.getR3()));
+                cpr.put("r4", r(lv.getR4()));
+                cpr.put("s1", r(lv.getS1()));
+                cpr.put("s2", r(lv.getS2()));
+                cpr.put("s3", r(lv.getS3()));
+                cpr.put("s4", r(lv.getS4()));
+                cpr.put("pdh", r(lv.getPh()));
+                cpr.put("pdl", r(lv.getPl()));
+                cpr.put("scope", "daily");
+                // Opening Range high/low — first {openRangeMinutes} of today's session. Only
+                // meaningful on the live trading day; on historical / weekend views the helpers
+                // return 0 (no completed bars today). The chart layer hides 0-value lines.
+                if (tradingDay) {
+                    int orMins = riskSettings.getOpenRangeMinutes();
+                    cpr.put("orHigh", r(candleAggregator.getOpenRangeHigh(symbol, orMins)));
+                    cpr.put("orLow",  r(candleAggregator.getOpenRangeLow(symbol, orMins)));
+                    cpr.put("orMinutes", orMins);
+                }
+            }
         }
+        if (cpr != null) result.put("cpr", cpr);
 
         // Indicators (current values)
         result.put("ltp", r(candleAggregator.getLtp(symbol)));

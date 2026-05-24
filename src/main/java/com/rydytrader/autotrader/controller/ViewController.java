@@ -215,4 +215,8 @@ public class ViewController {
 
     @GetMapping("/help")
     public String help() { return "help"; }
+
+    /** Multi-pane chart popup — 2x2 grid showing stock 5m, stock 1h, index 5m, index 1h. */
+    @GetMapping("/chart-window")
+    public String chartWindow() { return "chart-window"; }
 }

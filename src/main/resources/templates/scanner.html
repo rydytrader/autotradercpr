@@ -702,6 +702,50 @@
         return !!expandedSections[symbol + '|' + section];
     }
     // Exposed on window so inline onclick="..." handlers can reach it (whole script is IIFE-wrapped).
+    // Opens the multi-pane chart popup. Sized large enough for 4 panes to be
+    // readable; chromeless (no toolbar/location/menus) so it feels like a
+    // dedicated app window. Re-clicking on the same stock focuses the existing
+    // window rather than spawning a duplicate.
+    // Opens the index-only chart window — 2 panes side by side (Index 5m + 1h),
+    // sharing the same code path as the stock chart window via the mode=index
+    // query param. Reuses the popup window name per-index so re-clicking the same
+    // index focuses the existing window rather than spawning duplicates.
+    window.openIndexChartWindow = function(indexSym, label) {
+        if (!indexSym) return;
+        var w = screen.availWidth;
+        var h = screen.availHeight;
+        var qs = '?mode=index&index=' + encodeURIComponent(indexSym)
+               + (label ? '&name=' + encodeURIComponent(label) : '');
+        var features = 'popup=yes,width=' + w + ',height=' + h
+                     + ',left=0,top=0,scrollbars=no,toolbar=no,location=no,menubar=no,status=no,resizable=yes';
+        var winName = 'idxchartwin_' + indexSym.replace(/[^A-Za-z0-9]/g, '_');
+        var w2 = window.open('/chart-window' + qs, winName, features);
+        if (w2 && w2.focus) w2.focus();
+    };
+
+    window.openChartWindow = function(stockSym, indexSym, shortName) {
+        if (!stockSym) return;
+        // Open at the full usable screen area (taskbar excluded). screen.availWidth/
+        // availHeight is the largest the OS lets a window be without going truly
+        // fullscreen — gives the user a maximised-feeling popup without needing them
+        // to drag the window to size each time.
+        var w = screen.availWidth;
+        var h = screen.availHeight;
+        var left = 0;
+        var top  = 0;
+        var qs = '?symbol=' + encodeURIComponent(stockSym)
+               + (indexSym  ? '&index=' + encodeURIComponent(indexSym) : '')
+               + (shortName ? '&name='  + encodeURIComponent(shortName) : '');
+        var features = 'popup=yes,width=' + w + ',height=' + h
+                     + ',left=' + left + ',top=' + top
+                     + ',scrollbars=no,toolbar=no,location=no,menubar=no,status=no,resizable=yes';
+        // window.open targeted by short name so re-clicks on the same stock reuse
+        // the window. Different stocks open separate windows.
+        var winName = 'chartwin_' + (shortName || stockSym).replace(/[^A-Za-z0-9]/g, '_');
+        var w2 = window.open('/chart-window' + qs, winName, features);
+        if (w2 && w2.focus) w2.focus();
+    };
+
     window.toggleLevelSection = function(titleEl, symbol, section) {
         var parent = titleEl.parentElement;
         var nowOpen = parent.classList.toggle('expanded');
@@ -840,7 +884,7 @@
             var cursorStyle = '';
             if (d.primaryIndexSymbol) {
                 var chartLabel = idxLabel.replace(/'/g, "\\'");
-                clickAttr = ' onclick="openChartModal(\'' + d.primaryIndexSymbol + '\', \'' + chartLabel + '\')"';
+                clickAttr = ' onclick="openIndexChartWindow(\'' + d.primaryIndexSymbol + '\', \'' + chartLabel + '\')"';
                 cursorStyle = 'cursor:pointer; ';
                 sTipLines.push('Click to view ' + chartLabel + ' chart');
             }
@@ -865,7 +909,7 @@
             + '<div class="scan-card-header">'
             + '  <span class="scan-symbol">' + d.shortName + '</span>'
             + '  <span style="display:flex; gap:4px; align-items:center;">'
-            + '    <button class="chart-icon-btn" onclick="openChartModal(\'' + d.symbol + '\', \'' + d.shortName + '\')" title="View 5-min chart" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:3px 6px;cursor:pointer;color:var(--text-secondary);line-height:0;display:inline-flex;align-items:center;">'
+            + '    <button class="chart-icon-btn" onclick="openChartWindow(\'' + d.symbol + '\', \'' + (d.primaryIndexSymbol || '') + '\', \'' + d.shortName + '\')" title="Open multi-pane chart window (Stock 5m/1h + Index 5m/1h)" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:3px 6px;cursor:pointer;color:var(--text-secondary);line-height:0;display:inline-flex;align-items:center;">'
             + '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 6-6"/></svg>'
             + '</button>'
             + (function() {
@@ -1382,7 +1426,7 @@
                 var chartBtn = '';
                 if (d.symbol) {
                     var safeName = nameDisplay.replace(/'/g, "\\'");
-                    chartBtn = '<button class="chart-icon-btn" onclick="openChartModal(\'' + d.symbol + '\', \'' + safeName + '\')" title="View ' + nameDisplay + ' 5-min chart"'
+                    chartBtn = '<button class="chart-icon-btn" onclick="openIndexChartWindow(\'' + d.symbol + '\', \'' + safeName + '\')" title="Open ' + nameDisplay + ' chart window (5-min + 1-hour)"'
                         + ' style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:3px 6px;cursor:pointer;color:var(--text-secondary);line-height:0;display:inline-flex;align-items:center;">'
                         + '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 6-6"/></svg>'
                         + '</button>';
@@ -1395,8 +1439,8 @@
                     +   '<div class="scan-card-header">'
                     +     '<span class="scan-symbol">' + nameDisplay + '</span>'
                     +     '<div style="display:flex;align-items:center;gap:6px;">'
-                    +       widthBadge
                     +       chartBtn
+                    +       widthBadge
                     +     '</div>'
                     +   '</div>'
                     // Price row — LTP + change pts/% (mirrors scan-price-row).
@@ -1418,12 +1462,17 @@
                         // Fixed 3-column layout always: Daily = col 1, OR = col 2, HTF = col 3.
                         // Disabled chips render as an empty placeholder so the rest stay in
                         // their assigned slot.
+                        var indexAlignEnabled = window.__scannerStatus
+                            && window.__scannerStatus.enableIndexAlignment === true;
                         var htfEnabled = window.__scannerStatus
                             && window.__scannerStatus.enableIndexHtfAlignment === true;
                         var orEnabled  = window.__scannerStatus
                             && window.__scannerStatus.enableIndexOpenRangeFilter === true;
                         var placeholder = '<div class="scan-data-item"></div>';
-                        var dailyCell = '<div class="scan-data-item" style="text-align:left;" title="Daily CPR + 5m EMA20 (strict 2-factor)"><div class="scan-data-label">Daily</div><div class="scan-data-value" style="color:' + stateColor + ';font-weight:600;">' + state.replace('_', ' ') + '</div></div>';
+                        var dailyCell = placeholder;
+                        if (indexAlignEnabled) {
+                            dailyCell = '<div class="scan-data-item" style="text-align:left;" title="Daily CPR + 5m EMA20 (strict 2-factor)"><div class="scan-data-label">Daily</div><div class="scan-data-value" style="color:' + stateColor + ';font-weight:600;">' + state.replace('_', ' ') + '</div></div>';
+                        }
                         var orCell = placeholder;
                         if (orEnabled) {
                             var ot = d.orTrend || 'FORMING';
@@ -1456,6 +1505,11 @@
                     + (function() {
                         // CPR detail row — mirrors stock card's D-CPR row:
                         //   D-CPR bias chip | EMA 20 (5M) value+arrow | Daily trend chip
+                        // Gated by Index Alignment so the index card matches the stock-card
+                        // convention (no chip / row for a filter that isn't active).
+                        var indexAlignEnabled = window.__scannerStatus
+                            && window.__scannerStatus.enableIndexAlignment === true;
+                        if (!indexAlignEnabled) return '';
                         var bias = d.cprBias || 'INSIDE';
                         var biasColor = bias === 'BULLISH' ? 'var(--accent-green)'
                             : bias === 'BEARISH' ? 'var(--accent-red)' : 'var(--accent-yellow)';
