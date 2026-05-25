@@ -1102,7 +1102,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // wick ≤ X% of body). Always on — independent of the retest path, runs even
         // when this setup isn't the armed level. Volume confirmation was dropped: NSE
         // 5-min volume signal is too noisy at intraday boundaries to filter reliably.
+        // Body-above-level guard: ≥ 50% of the body must sit above the breakout level
+        // (midpoint > level). Prevents stretchy bars that open well below the level
+        // and close just barely above from counting as a decisive breakout.
         if (prev.close <= level && close > level
+                && (open + close) / 2.0 > level
                 && CandlePatternDetector.isBullishMarubozu(open, high, low, close, atr,
                         riskSettings.getMarubozuBreakoutBodyAtrMult(),
                         riskSettings.getMarubozuBreakoutMaxBodyAtrMult(),
@@ -1118,7 +1122,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // that don't strictly satisfy the Marubozu opposite-wick rule but still close
         // decisively above the level. Always on; runs after Marubozu so a true Marubozu
         // tag still wins for the same bar.
-        if (prev.close <= level && close > level && close > open) {
+        // Same 50%-body-above-level guard as Marubozu Breakout.
+        if (prev.close <= level && close > level && close > open
+                && (open + close) / 2.0 > level) {
             double gsBody      = riskSettings.getGoodSizeCandleBodyAtrMult();
             double gsMaxBody   = riskSettings.getGoodSizeCandleMaxBodyAtrMult();
             double gsWickMax   = riskSettings.getConfirmationMaxOppositeWickRatio();
@@ -1250,7 +1256,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
         // ── Marubozu Breakdown (fresh-break, single-bar, sell mirror) ────────────
         // Always on; volume gate dropped — same rationale as the bullish variant.
+        // Body-below-level guard (mirror of the buy 50% rule).
         if (prev.close >= level && close < level
+                && (open + close) / 2.0 < level
                 && CandlePatternDetector.isBearishMarubozu(open, high, low, close, atr,
                         riskSettings.getMarubozuBreakoutBodyAtrMult(),
                         riskSettings.getMarubozuBreakoutMaxBodyAtrMult(),
@@ -1264,7 +1272,9 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         // bearish travel (high − close) sits in the good-size band and whose lower
         // wick is bounded by the shared confirmation-wick cap. Always on; runs after
         // Marubozu so a true Marubozu tag still wins.
-        if (prev.close >= level && close < level && close < open) {
+        // Same 50%-body-below-level guard as Marubozu Breakdown.
+        if (prev.close >= level && close < level && close < open
+                && (open + close) / 2.0 < level) {
             double gsBodyS     = riskSettings.getGoodSizeCandleBodyAtrMult();
             double gsMaxBodyS  = riskSettings.getGoodSizeCandleMaxBodyAtrMult();
             double gsWickMaxS  = riskSettings.getConfirmationMaxOppositeWickRatio();
