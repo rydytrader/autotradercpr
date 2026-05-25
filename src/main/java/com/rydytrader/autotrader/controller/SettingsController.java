@@ -111,6 +111,7 @@ public class SettingsController {
         result.put("levelTouchToleranceAtr",       riskSettings.getLevelTouchToleranceAtr());
         result.put("entryProximityAtrMult",        riskSettings.getEntryProximityAtrMult());
         result.put("enableTrailingSl", riskSettings.isEnableTrailingSl(effectiveMode));
+        result.put("enableLevelWalkTrailingSl", riskSettings.isEnableLevelWalkTrailingSl());
         result.put("enablePriceEmaExit", riskSettings.isEnablePriceEmaExit());
         result.put("virginCprExpiryDays", riskSettings.getVirginCprExpiryDays());
         result.put("breakevenTriggerPct", riskSettings.getBreakevenTriggerPct());
@@ -230,6 +231,7 @@ public class SettingsController {
             if (body.containsKey("levelTouchToleranceAtr"))      riskSettings.setLevelTouchToleranceAtr(Double.parseDouble(body.get("levelTouchToleranceAtr").toString()));
             if (body.containsKey("entryProximityAtrMult"))       riskSettings.setEntryProximityAtrMult(Double.parseDouble(body.get("entryProximityAtrMult").toString()));
             if (body.containsKey("enableTrailingSl")) riskSettings.setEnableTrailingSl(effectiveMode, Boolean.parseBoolean(body.get("enableTrailingSl").toString()));
+            if (body.containsKey("enableLevelWalkTrailingSl")) riskSettings.setEnableLevelWalkTrailingSl(Boolean.parseBoolean(body.get("enableLevelWalkTrailingSl").toString()));
             if (body.containsKey("enablePriceEmaExit")) riskSettings.setEnablePriceEmaExit(Boolean.parseBoolean(body.get("enablePriceEmaExit").toString()));
             if (body.containsKey("virginCprExpiryDays")) {
                 try {

@@ -151,6 +151,10 @@ public class RiskSettingsStore {
         volatile double  marubozuBreakoutBodyAtrMult           = 0.5;
         volatile double  marubozuBreakoutMaxBodyAtrMult        = 1.0;
         volatile double  marubozuBreakoutMaxOppositeWickPctOfBody = 0.10;
+        // Good Size Candle Breakout fires alongside MARUBOZU_BREAKOUT on every fresh-break
+        // bar that matches the looser good-size shape — always on, no toggle. Reuses
+        // goodSizeCandleBodyAtrMult / goodSizeCandleMaxBodyAtrMult /
+        // confirmationMaxOppositeWickRatio for the shape check.
         // Index HTF Hurdle filter. When on, every stock signal is gated against its primary
         // index's 1-hour close vs that index's nearest weekly hurdle in trade direction. Default
         // off — opt-in. Replaces the old NIFTY-only macro filter; now runs per primary index.
@@ -205,6 +209,12 @@ public class RiskSettingsStore {
         volatile boolean emaLevelFilterMorningSkip = false;
         volatile String  emaLevelFilterMorningSkipUntil = "10:15"; // HH:mm IST
         volatile boolean enableTrailingSl = true; // enable breakeven SL — moves SL to entry ± buffer once price reaches breakevenTriggerPct of (entry→target) range
+        // Level-walk trailing SL: as price closes through each successive CPR level
+        // (R1+PDH → R2 → R3 → R4 for buys; S1+PDL → S2 → S3 → S4 for sells), the SL
+        // ratchets to that level's structural anchor (entry-side edge ± buffer × ATR).
+        // Independent of the breakeven trigger above; when both fire we keep the
+        // tighter SL. Default off.
+        volatile boolean enableLevelWalkTrailingSl = false;
         // Defensive Price-vs-EMA exit. At every 5-min candle close, if the just-closed bar's
         // close is against the trade direction relative to the 5-min EMA 20 (LONG: close < EMA 20;
         // SHORT: close > EMA 20), squareoff the position before SL hits. Default off — material
@@ -404,6 +414,7 @@ public class RiskSettingsStore {
     public double getLevelTouchToleranceAtr()      { return cfg().levelTouchToleranceAtr; }
     public double getEntryProximityAtrMult()       { return cfg().entryProximityAtrMult; }
     public boolean isEnableTrailingSl() { return cfg().enableTrailingSl; }
+    public boolean isEnableLevelWalkTrailingSl() { return cfg().enableLevelWalkTrailingSl; }
     public boolean isEnablePriceEmaExit() { return cfg().enablePriceEmaExit; }
     public int getVirginCprExpiryDays() { return cfg().virginCprExpiryDays; }
     public double getBreakevenTriggerPct() { return cfg().breakevenTriggerPct; }
@@ -537,6 +548,7 @@ public class RiskSettingsStore {
     public void setLevelTouchToleranceAtr(double v)      { cfg().levelTouchToleranceAtr = Math.max(0, v); }
     public void setEntryProximityAtrMult(double v)       { cfg().entryProximityAtrMult = Math.max(0, v); }
     public void setEnableTrailingSl(boolean v) { cfg().enableTrailingSl = v; }
+    public void setEnableLevelWalkTrailingSl(boolean v) { cfg().enableLevelWalkTrailingSl = v; }
     public void setEnablePriceEmaExit(boolean v) { cfg().enablePriceEmaExit = v; }
     public void setVirginCprExpiryDays(int v) { cfg().virginCprExpiryDays = Math.max(0, v); }
     public void setBreakevenTriggerPct(double v) { cfg().breakevenTriggerPct = v; }
@@ -680,6 +692,7 @@ public class RiskSettingsStore {
             upsert("levelTouchToleranceAtr", String.valueOf(c.levelTouchToleranceAtr));
             upsert("entryProximityAtrMult", String.valueOf(c.entryProximityAtrMult));
             upsert("enableTrailingSl", String.valueOf(c.enableTrailingSl));
+            upsert("enableLevelWalkTrailingSl", String.valueOf(c.enableLevelWalkTrailingSl));
             upsert("enablePriceEmaExit", String.valueOf(c.enablePriceEmaExit));
             upsert("virginCprExpiryDays", String.valueOf(c.virginCprExpiryDays));
             upsert("breakevenTriggerPct", String.valueOf(c.breakevenTriggerPct));
@@ -779,6 +792,7 @@ public class RiskSettingsStore {
                     case "marubozuBreakoutBodyAtrMult"             -> c.marubozuBreakoutBodyAtrMult           = Math.max(0, Double.parseDouble(v));
                     case "marubozuBreakoutMaxBodyAtrMult"          -> c.marubozuBreakoutMaxBodyAtrMult        = Math.max(0, Double.parseDouble(v));
                     case "marubozuBreakoutMaxOppositeWickPctOfBody" -> c.marubozuBreakoutMaxOppositeWickPctOfBody = Math.max(0, Double.parseDouble(v));
+                    // enableGoodSizeCandleBreakout legacy key — silently ignored; GSC is now always on.
                     case "enableIndexHtfHurdleFilter" -> c.enableIndexHtfHurdleFilter = Boolean.parseBoolean(v);
                     case "enableIndexHtfAlignment"    -> c.enableIndexHtfAlignment    = Boolean.parseBoolean(v);
                     case "indexHtfHurdleMinHeadroomAtr" -> c.indexHtfHurdleMinHeadroomAtr = Math.max(0, Double.parseDouble(v));
@@ -886,6 +900,7 @@ public class RiskSettingsStore {
                          "volumeMultiple",
                          "volumeLookback" -> { /* legacy — removed */ }
                     case "enableTrailingSl"   -> c.enableTrailingSl = Boolean.parseBoolean(v);
+                    case "enableLevelWalkTrailingSl" -> c.enableLevelWalkTrailingSl = Boolean.parseBoolean(v);
                     case "enableSmaCrossExit" -> { /* legacy — SMA cross exit removed */ }
                     case "enablePriceEmaExit", "enablePriceSmaExit" -> {
                         c.enablePriceEmaExit = Boolean.parseBoolean(v);

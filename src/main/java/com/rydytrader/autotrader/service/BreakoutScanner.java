@@ -1111,6 +1111,29 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     close, level, atr, proximityAtr, true);
         }
 
+        // ── Good Size Candle Breakout (fresh-break, single-bar) ──────────────────
+        // Looser sibling of MARUBOZU_BREAKOUT — fires on a green fresh-break bar whose
+        // bullish travel (close − low) sits in the good-size band and whose upper wick
+        // is bounded by the shared confirmation-wick cap. Catches conviction breakouts
+        // that don't strictly satisfy the Marubozu opposite-wick rule but still close
+        // decisively above the level. Always on; runs after Marubozu so a true Marubozu
+        // tag still wins for the same bar.
+        if (prev.close <= level && close > level && close > open) {
+            double gsBody      = riskSettings.getGoodSizeCandleBodyAtrMult();
+            double gsMaxBody   = riskSettings.getGoodSizeCandleMaxBodyAtrMult();
+            double gsWickMax   = riskSettings.getConfirmationMaxOppositeWickRatio();
+            double bodyAbsB    = close - open;
+            double upperWickB  = high - Math.max(open, close);
+            double dirExtentB  = close - low;
+            boolean bodyOkB    = gsBody    <= 0 || (atr > 0 && dirExtentB >= gsBody    * atr);
+            boolean bodyCapOkB = gsMaxBody <= 0 || atr <= 0 || dirExtentB <= gsMaxBody * atr;
+            boolean wickOkB    = gsWickMax <= 0 || bodyAbsB <= 0 || upperWickB <= gsWickMax * bodyAbsB;
+            if (bodyOkB && bodyCapOkB && wickOkB) {
+                return acceptOrRejectProximity(fyersSymbol, setupName, "GOOD_SIZE_CANDLE_BREAKOUT",
+                        close, level, atr, proximityAtr, true);
+            }
+        }
+
         double pinDomWickRng = riskSettings.getPinBarDominantWickMinRangeRatio();
         double pinOppWickRng = riskSettings.getPinBarOppositeWickMaxRangeRatio();
         // Retest-only model — multi-bar pattern retest at the single armed buy level.
@@ -1234,6 +1257,27 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                         riskSettings.getMarubozuBreakoutMaxOppositeWickPctOfBody())) {
             return acceptOrRejectProximity(fyersSymbol, setupName, "MARUBOZU_BREAKOUT",
                     close, level, atr, proximityAtr, false);
+        }
+
+        // ── Good Size Candle Breakdown (fresh-break, single-bar, sell mirror) ────
+        // Looser sibling of MARUBOZU_BREAKOUT — fires on a red fresh-break bar whose
+        // bearish travel (high − close) sits in the good-size band and whose lower
+        // wick is bounded by the shared confirmation-wick cap. Always on; runs after
+        // Marubozu so a true Marubozu tag still wins.
+        if (prev.close >= level && close < level && close < open) {
+            double gsBodyS     = riskSettings.getGoodSizeCandleBodyAtrMult();
+            double gsMaxBodyS  = riskSettings.getGoodSizeCandleMaxBodyAtrMult();
+            double gsWickMaxS  = riskSettings.getConfirmationMaxOppositeWickRatio();
+            double bodyAbsS    = open - close;
+            double lowerWickS  = Math.min(open, close) - low;
+            double dirExtentS  = high - close;                       // bearish travel = body + upper wick
+            boolean bodyOkS    = gsBodyS    <= 0 || (atr > 0 && dirExtentS >= gsBodyS    * atr);
+            boolean bodyCapOkS = gsMaxBodyS <= 0 || atr <= 0 || dirExtentS <= gsMaxBodyS * atr;
+            boolean wickOkS    = gsWickMaxS <= 0 || bodyAbsS <= 0 || lowerWickS <= gsWickMaxS * bodyAbsS;
+            if (bodyOkS && bodyCapOkS && wickOkS) {
+                return acceptOrRejectProximity(fyersSymbol, setupName, "GOOD_SIZE_CANDLE_BREAKOUT",
+                        close, level, atr, proximityAtr, false);
+            }
         }
 
         double pinDomWickRng = riskSettings.getPinBarDominantWickMinRangeRatio();

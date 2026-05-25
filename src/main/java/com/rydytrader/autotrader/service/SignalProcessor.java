@@ -565,7 +565,7 @@ public class SignalProcessor {
     }
 
     /** Single-level breakouts that lack a zone-width cushion — get the extra SL buffer. */
-    private static boolean isSingleLevelSetup(String setup) {
+    static boolean isSingleLevelSetup(String setup) {
         return switch (setup) {
             case "BUY_ABOVE_R2", "BUY_ABOVE_R3", "BUY_ABOVE_R4",
                  "BUY_ABOVE_S2", "BUY_ABOVE_S3", "BUY_ABOVE_S4",
@@ -599,7 +599,7 @@ public class SignalProcessor {
 
     /** True when the setup needs the extra single-level SL buffer — either it's a pure
      *  single-level setup OR it's a zone setup with CPR width below the collapse threshold. */
-    private boolean appliesSingleLevelSlBuffer(String setup, double tc, double bc, double ph, double pl) {
+    boolean appliesSingleLevelSlBuffer(String setup, double tc, double bc, double ph, double pl) {
         if (isSingleLevelSetup(setup)) return true;
         if (!isZoneSetup(setup)) return false;
         double threshold = riskSettings.getNarrowCprZoneCollapseWidthPct();
@@ -610,7 +610,9 @@ public class SignalProcessor {
     /** When {@code useMidpoint} is true (stock is adaptive-classified AVERAGE), the 6
      *  zone setups anchor on the zone's midpoint instead of the entry-side outer edge.
      *  Single-level setups (R2/R3/R4, S2/S3/S4) are unaffected — no midpoint concept. */
-    private static double computeStructuralAnchor(String setup,
+    /** Reused by {@link LevelWalkTrailingService} so trailing SL anchors match
+     *  exactly what an entry on that level would have computed. */
+    static double computeStructuralAnchor(String setup,
             double r1, double r2, double r3, double r4,
             double s1, double s2, double s3, double s4,
             double ph, double pl, double tc, double bc,
@@ -633,6 +635,8 @@ public class SignalProcessor {
     }
 
     // ── Breakout level per setup ────────────────────────────────────────────────
+    /** Used by {@link LevelWalkTrailingService} to detect when a bar close has
+     *  cleared the next CPR level in the trade direction. */
     public static double computeBreakoutLevel(String setup,
             double r1, double r2, double r3, double r4,
             double s1, double s2, double s3, double s4,

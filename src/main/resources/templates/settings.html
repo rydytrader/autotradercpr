@@ -332,7 +332,20 @@
                         <input type="number" id="breakevenSlAtrMult" class="form-control" step="0.1" min="0" max="5" style="width:60px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">× ATR</span>
                     </div>
-                    <div class="form-hint">Range = entry (0%) → target (100%). When peak/trough reaches the trigger %, SL moves to entry ± buffer × ATR (locks in a small profit, never widens). For split-target trades, breakeven is suppressed until T1 fills, then activates on the remaining qty. Defaults: 61.8 / 1.</div>
+                    <div class="form-hint">Range = entry (0%) → target (100%). When peak/trough reaches the trigger %, SL moves to entry ± buffer × ATR (locks in a small profit, never widens). For split-target trades, breakeven is suppressed until T1 fills, then activates on the remaining qty. Defaults: 61.8 / 1. <b>Disabled in Open Target Mode</b> (no target → no range to compute %).</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Level-Walk Trailing SL</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableLevelWalkTrailingSl" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Ratchet SL to each cleared CPR level's structural anchor</span>
+                    </div>
+                    <div class="form-hint">As each successive CPR level closes through in the trade direction, the SL moves to that level's <b>structural anchor</b> &mdash; the same SL formula an entry on that level would have computed (<code>anchor &plusmn; structuralSlBufferAtr × ATR</code>, plus the single-level / squeeze buffer where applicable).
+                        <br>&bull; <b>Buys</b> climb the ladder: <code>R1+PDH → R2 → R3 → R4</code>. SL anchors on the entry-side edge of each level (e.g., for R1+PDH it's <code>min(R1, PDH)</code>; midpoint when adaptive state is AVERAGE).
+                        <br>&bull; <b>Sells</b> walk down: <code>S1+PDL → S2 → S3 → S4</code>.
+                        <br>&bull; Never widens the SL &mdash; only ratchets in the favourable direction. Bar-close driven (fires on each 5-min candle close), so an intra-bar spike past a level doesn't trail.
+                        <br><b>Pairs especially well with Open Target Mode</b> &mdash; the position rides structurally-locked SL all the way until either the SL hits or auto-squareoff. Coexists with Breakeven SL: whichever sets a tighter SL first wins. Off by default.
+                    </div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">EMA-based Defensive Exits</label>
@@ -576,9 +589,9 @@
                 <div class="form-hint">Single range-relative test. Rejection wick dominates the bar's total range, opposite wick stays capped. Body size is implicitly capped at (1 − rejection − opposite) × range. Defaults: 0.50 (50% rejection), 0.30 (30% opposite cap) → body ≤ 20% of range when both wicks at limits, up to 50% otherwise. Tighter: 0.60 / 0.30 for classical pin bars, or 0.67 / 0.33 for strict Pivot Boss.</div>
             </div>
 
-            <!-- Good-Size Candle group (catch-all) -->
+            <!-- Good-Size Candle group (shared by retest + fresh-break) -->
             <div class="form-group">
-                <label class="form-label">Good-Size Candle (catch-all continuation bar)</label>
+                <label class="form-label">Good-Size Candle (body band)</label>
                 <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Body in [</span>
                     <input type="number" id="goodSizeCandleBodyAtrMult" class="form-control" step="0.05" min="0.0" max="2.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
@@ -586,7 +599,10 @@
                     <input type="number" id="goodSizeCandleMaxBodyAtrMult" class="form-control" step="0.1" min="0.0" max="6.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">] × ATR</span>
                 </div>
-                <div class="form-hint">Last in the matcher chain — fires only when no stricter named pattern matched. Body must sit inside the [floor, ceiling] × ATR band — floor keeps weak bars out, ceiling kills oversized exhaustion / blow-off bars. The opposing-wick cap is controlled by the shared <b>Confirmation Max Opposing Wick</b> setting at the top of this section. Defaults: 0.6–2.0 &times; ATR body.</div>
+                <div class="form-hint">Body floor + ceiling shared by <b>two</b> Good-Size paths (both always on, no enable toggle):
+                    <br>&nbsp;&nbsp;&bull; <code>GOOD_SIZE_CANDLE_RETEST</code> &mdash; catch-all retest at the armed level. Fires only when no stricter named pattern (Hammer / Outside Reversal / Doji / Star / Harami) matched.
+                    <br>&nbsp;&nbsp;&bull; <code>GOOD_SIZE_CANDLE_BREAKOUT</code> &mdash; fresh-break sibling of Marubozu Breakout. Fires when this bar's close crosses a CPR/R/S level the prior bar's close didn't AND the bar matches the good-size shape (green for buys / red for sells).
+                    <br>Body must sit inside <code>[floor, ceiling] &times; ATR</code> &mdash; floor keeps weak bars out, ceiling kills oversized exhaustion / blow-off bars. Opposing-wick cap is the shared <b>Confirmation Max Opposing Wick</b> at the top of this section. Defaults: 0.6&ndash;2.0 &times; ATR body.</div>
             </div>
 
             <!-- Level Touch Tolerance -->
@@ -1499,6 +1515,7 @@
             document.getElementById('virginCprExpiryDays').value = d.virginCprExpiryDays != null ? d.virginCprExpiryDays : 10;
             document.getElementById('index5mHurdleMinHeadroomAtr').value = (d.index5mHurdleMinHeadroomAtr != null ? d.index5mHurdleMinHeadroomAtr : 1.0);
             document.getElementById('enableTrailingSl').checked = d.enableTrailingSl != null ? d.enableTrailingSl : true;
+            document.getElementById('enableLevelWalkTrailingSl').checked = d.enableLevelWalkTrailingSl === true;
             document.getElementById('enablePriceEmaExit').checked = d.enablePriceEmaExit === true;
             document.getElementById('breakevenTriggerPct').value = d.breakevenTriggerPct != null ? d.breakevenTriggerPct : 61.8;
             document.getElementById('breakevenSlAtrMult').value  = d.breakevenSlAtrMult  != null ? d.breakevenSlAtrMult  : 1.0;
@@ -1665,6 +1682,7 @@
                 virginCprExpiryDays: parseInt(document.getElementById('virginCprExpiryDays').value) || 0,
                 index5mHurdleMinHeadroomAtr: parseFloat(document.getElementById('index5mHurdleMinHeadroomAtr').value) || 0,
                 enableTrailingSl: document.getElementById('enableTrailingSl').checked,
+                enableLevelWalkTrailingSl: document.getElementById('enableLevelWalkTrailingSl').checked,
                 enablePriceEmaExit: document.getElementById('enablePriceEmaExit').checked,
                 breakevenTriggerPct: parseFloat(document.getElementById('breakevenTriggerPct').value) || 61.8,
                 breakevenSlAtrMult:  parseFloat(document.getElementById('breakevenSlAtrMult').value)  || 1.0,
