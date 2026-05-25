@@ -146,8 +146,8 @@ public class RiskSettingsStore {
         //     wick ≤ maxOppositeWickPctOfBody × body), and
         // (c) the bar's volume exceeds its 20-bar average (mandatory — no exceptions).
         // Coexists with the 6 retest patterns; level-broken state machine + brokenLevels
-        // gate continue to apply.
-        volatile boolean enableMarubozuBreakout                = false;
+        // gate continue to apply. Marubozu Breakout is always on (no enable toggle) —
+        // only the shape parameters below tune its detection.
         volatile double  marubozuBreakoutBodyAtrMult           = 0.5;
         volatile double  marubozuBreakoutMaxBodyAtrMult        = 1.0;
         volatile double  marubozuBreakoutMaxOppositeWickPctOfBody = 0.10;
@@ -225,6 +225,7 @@ public class RiskSettingsStore {
         // Legacy keys (skipR3S3IvOvDays / skipR3S3EvDays / skipR4S4IvOvDays / skipR4S4EvDays
         // / skipR3S3NormalDays / skipR4S4NormalDays) silently fold into the new toggle on
         // load: any legacy-true value flips the new toggle to true.
+        volatile boolean skipR1PdhS1Pdl = false;
         volatile boolean skipR2S2 = false;
         volatile boolean skipR3S3 = true;
         volatile boolean skipR4S4 = true;
@@ -346,7 +347,6 @@ public class RiskSettingsStore {
     public boolean isEnableOpenRangeFilter() { return cfg().enableOpenRangeFilter; }
     public int     getOpenRangeMinutes()     { return cfg().openRangeMinutes; }
     public boolean isEnableIndexOpenRangeFilter() { return cfg().enableIndexOpenRangeFilter; }
-    public boolean isEnableMarubozuBreakout()                  { return cfg().enableMarubozuBreakout; }
     public double  getMarubozuBreakoutBodyAtrMult()            { return cfg().marubozuBreakoutBodyAtrMult; }
     public double  getMarubozuBreakoutMaxBodyAtrMult()         { return cfg().marubozuBreakoutMaxBodyAtrMult; }
     public double  getMarubozuBreakoutMaxOppositeWickPctOfBody() { return cfg().marubozuBreakoutMaxOppositeWickPctOfBody; }
@@ -391,6 +391,7 @@ public class RiskSettingsStore {
     public int getVirginCprExpiryDays() { return cfg().virginCprExpiryDays; }
     public double getBreakevenTriggerPct() { return cfg().breakevenTriggerPct; }
     public double getBreakevenSlAtrMult()  { return cfg().breakevenSlAtrMult; }
+    public boolean isSkipR1PdhS1Pdl() { return cfg().skipR1PdhS1Pdl; }
     public boolean isSkipR2S2() { return cfg().skipR2S2; }
     public boolean isSkipR3S3() { return cfg().skipR3S3; }
     public boolean isSkipR4S4() { return cfg().skipR4S4; }
@@ -472,7 +473,6 @@ public class RiskSettingsStore {
     public void setEnableOpenRangeFilter(boolean v) { cfg().enableOpenRangeFilter = v; }
     public void setOpenRangeMinutes(int v)          { cfg().openRangeMinutes = Math.max(5, Math.min(240, v)); }
     public void setEnableIndexOpenRangeFilter(boolean v) { cfg().enableIndexOpenRangeFilter = v; }
-    public void setEnableMarubozuBreakout(boolean v)                  { cfg().enableMarubozuBreakout = v; }
     public void setMarubozuBreakoutBodyAtrMult(double v)              { cfg().marubozuBreakoutBodyAtrMult = Math.max(0, v); }
     public void setMarubozuBreakoutMaxBodyAtrMult(double v)           { cfg().marubozuBreakoutMaxBodyAtrMult = Math.max(0, v); }
     public void setMarubozuBreakoutMaxOppositeWickPctOfBody(double v) { cfg().marubozuBreakoutMaxOppositeWickPctOfBody = Math.max(0, v); }
@@ -517,6 +517,7 @@ public class RiskSettingsStore {
     public void setVirginCprExpiryDays(int v) { cfg().virginCprExpiryDays = Math.max(0, v); }
     public void setBreakevenTriggerPct(double v) { cfg().breakevenTriggerPct = v; }
     public void setBreakevenSlAtrMult(double v)  { cfg().breakevenSlAtrMult = v; }
+    public void setSkipR1PdhS1Pdl(boolean v) { cfg().skipR1PdhS1Pdl = v; }
     public void setSkipR2S2(boolean v) { cfg().skipR2S2 = v; }
     public void setSkipR3S3(boolean v) { cfg().skipR3S3 = v; }
     public void setSkipR4S4(boolean v) { cfg().skipR4S4 = v; }
@@ -614,7 +615,6 @@ public class RiskSettingsStore {
             upsert("enableOpenRangeFilter", String.valueOf(c.enableOpenRangeFilter));
             upsert("openRangeMinutes",      String.valueOf(c.openRangeMinutes));
             upsert("enableIndexOpenRangeFilter", String.valueOf(c.enableIndexOpenRangeFilter));
-            upsert("enableMarubozuBreakout",                  String.valueOf(c.enableMarubozuBreakout));
             upsert("marubozuBreakoutBodyAtrMult",             String.valueOf(c.marubozuBreakoutBodyAtrMult));
             upsert("marubozuBreakoutMaxBodyAtrMult",          String.valueOf(c.marubozuBreakoutMaxBodyAtrMult));
             upsert("marubozuBreakoutMaxOppositeWickPctOfBody", String.valueOf(c.marubozuBreakoutMaxOppositeWickPctOfBody));
@@ -659,6 +659,7 @@ public class RiskSettingsStore {
             upsert("virginCprExpiryDays", String.valueOf(c.virginCprExpiryDays));
             upsert("breakevenTriggerPct", String.valueOf(c.breakevenTriggerPct));
             upsert("breakevenSlAtrMult",  String.valueOf(c.breakevenSlAtrMult));
+            upsert("skipR1PdhS1Pdl", String.valueOf(c.skipR1PdhS1Pdl));
             upsert("skipR2S2", String.valueOf(c.skipR2S2));
             upsert("skipR3S3", String.valueOf(c.skipR3S3));
             upsert("skipR4S4", String.valueOf(c.skipR4S4));
@@ -746,7 +747,7 @@ public class RiskSettingsStore {
                     case "enableOpenRangeFilter" -> c.enableOpenRangeFilter = Boolean.parseBoolean(v);
                     case "openRangeMinutes"      -> c.openRangeMinutes      = Math.max(5, Math.min(240, Integer.parseInt(v)));
                     case "enableIndexOpenRangeFilter" -> c.enableIndexOpenRangeFilter = Boolean.parseBoolean(v);
-                    case "enableMarubozuBreakout"                  -> c.enableMarubozuBreakout                = Boolean.parseBoolean(v);
+                    // enableMarubozuBreakout legacy key — silently ignored; Marubozu is now always on.
                     case "marubozuBreakoutBodyAtrMult"             -> c.marubozuBreakoutBodyAtrMult           = Math.max(0, Double.parseDouble(v));
                     case "marubozuBreakoutMaxBodyAtrMult"          -> c.marubozuBreakoutMaxBodyAtrMult        = Math.max(0, Double.parseDouble(v));
                     case "marubozuBreakoutMaxOppositeWickPctOfBody" -> c.marubozuBreakoutMaxOppositeWickPctOfBody = Math.max(0, Double.parseDouble(v));
@@ -888,6 +889,7 @@ public class RiskSettingsStore {
                     case "skipR4S4NormalDays", "skipR4S4IvOvDays", "skipR4S4EvDays" -> {
                         if (Boolean.parseBoolean(v)) c.skipR4S4 = true;
                     }
+                    case "skipR1PdhS1Pdl" -> c.skipR1PdhS1Pdl = Boolean.parseBoolean(v);
                     case "skipR2S2" -> c.skipR2S2 = Boolean.parseBoolean(v);
                     case "skipR3S3" -> c.skipR3S3 = Boolean.parseBoolean(v);
                     case "skipR4S4" -> c.skipR4S4 = Boolean.parseBoolean(v);

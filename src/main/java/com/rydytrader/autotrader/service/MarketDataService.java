@@ -761,11 +761,13 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                     Double htfCloseVal = candleAggregator.getLast1HourClose(sym);
                     if (htfCloseVal != null && htfCloseVal > 0) {
                         d.put("htfClose", Math.round(htfCloseVal * 100.0) / 100.0);
-                        WeeklyCprService.WeeklyLevels weeklyLv = weeklyCprService.getWeeklyLevels(sym);
-                        if (weeklyLv != null && weeklyLv.top > 0 && weeklyLv.bot > 0 && h20 > 0) {
-                            String state = IndexTrendService.deriveTrendState(htfCloseVal, weeklyLv.top, weeklyLv.bot, h20);
-                            if (state != null) d.put("htfTrendState", state);
-                        }
+                        // Respect the EMA sub-toggle so the SSE-pushed state matches both
+                        // the alignment filter and the static scanner-card render. The
+                        // CPR-only branch in WeeklyCprService.getStockHtfTrendState fires
+                        // when h20 isn't ready or the toggle is off.
+                        String state = weeklyCprService.getStockHtfTrendState(sym, h20,
+                            riskSettings.isEnableStockHtf1hEma20Check());
+                        if (state != null) d.put("htfTrendState", state);
                     }
                     wlPayload.put(sym, d);
                 }

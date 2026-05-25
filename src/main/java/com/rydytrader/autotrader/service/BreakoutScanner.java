@@ -663,7 +663,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     recordRejection(fyersSymbol, buySetup, close, "INDEX_HTF_OPPOSED", detail);
                     return;
                 }
-                // Index HTF Hurdle — stock's primary-index 1-hour close must clear its nearest weekly hurdle.
+                // Index HTF Hurdle — stock's primary-index most-recent 5-min close must clear its nearest weekly hurdle.
                 String indexHtfReject = checkPrimaryIndexHtfHurdle(true, fyersSymbol);
                 if (indexHtfReject != null) {
                     eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + indexHtfReject);
@@ -677,7 +677,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     recordRejection(fyersSymbol, buySetup, close, "INDEX_5M_HURDLE", index5mReject);
                     return;
                 }
-                // Per-stock HTF Hurdle — stock's 1-hour close must have cleared nearest weekly level.
+                // Per-stock HTF Hurdle — stock's most-recent 5-min close must have cleared nearest weekly level.
                 String stockHtfReject = checkStockHtfHurdle(true, fyersSymbol, close, atr);
                 if (stockHtfReject != null) {
                     eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + stockHtfReject);
@@ -869,7 +869,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     recordRejection(fyersSymbol, sellSetup, close, "INDEX_HTF_OPPOSED", detail);
                     return;
                 }
-                // Index HTF Hurdle — stock's primary-index 1-hour close must clear its nearest weekly hurdle.
+                // Index HTF Hurdle — stock's primary-index most-recent 5-min close must clear its nearest weekly hurdle.
                 String indexHtfReject = checkPrimaryIndexHtfHurdle(false, fyersSymbol);
                 if (indexHtfReject != null) {
                     eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + indexHtfReject);
@@ -883,7 +883,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                     recordRejection(fyersSymbol, sellSetup, close, "INDEX_5M_HURDLE", index5mReject);
                     return;
                 }
-                // Per-stock HTF Hurdle — stock's 1-hour close must have cleared nearest weekly level.
+                // Per-stock HTF Hurdle — stock's most-recent 5-min close must have cleared nearest weekly level.
                 String stockHtfReject = checkStockHtfHurdle(false, fyersSymbol, close, atr);
                 if (stockHtfReject != null) {
                     eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + stockHtfReject);
@@ -1081,21 +1081,17 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
 
         // ── Marubozu Breakout (fresh-break, single-bar) ──────────────────────────
         // Fires when (a) THIS bar's close crosses {@code level} the prior bar's close
-        // didn't, (b) bar is a Marubozu (body in [floor, ceiling] × ATR; upper wick ≤
-        // X% of body), and (c) volume > 20-bar average. Independent of the retest
-        // path — runs even when this setup isn't the armed level.
-        if (riskSettings.isEnableMarubozuBreakout()
-                && prev.close <= level && close > level
+        // didn't, and (b) the bar is a Marubozu (body in [floor, ceiling] × ATR; upper
+        // wick ≤ X% of body). Always on — independent of the retest path, runs even
+        // when this setup isn't the armed level. Volume confirmation was dropped: NSE
+        // 5-min volume signal is too noisy at intraday boundaries to filter reliably.
+        if (prev.close <= level && close > level
                 && CandlePatternDetector.isBullishMarubozu(open, high, low, close, atr,
                         riskSettings.getMarubozuBreakoutBodyAtrMult(),
                         riskSettings.getMarubozuBreakoutMaxBodyAtrMult(),
                         riskSettings.getMarubozuBreakoutMaxOppositeWickPctOfBody())) {
-            long confirmVol = curr.volume;
-            double avgVol = candleAggregator.getAvgVolume(fyersSymbol, 20);
-            if (confirmVol > 0 && avgVol > 0 && confirmVol > avgVol) {
-                return acceptOrRejectProximity(fyersSymbol, setupName, "MARUBOZU_BREAKOUT",
-                        close, level, atr, proximityAtr, true);
-            }
+            return acceptOrRejectProximity(fyersSymbol, setupName, "MARUBOZU_BREAKOUT",
+                    close, level, atr, proximityAtr, true);
         }
 
         double pinDomWickRng = riskSettings.getPinBarDominantWickMinRangeRatio();
@@ -1213,18 +1209,14 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double proximityAtr = riskSettings.getEntryProximityAtrMult();
 
         // ── Marubozu Breakdown (fresh-break, single-bar, sell mirror) ────────────
-        if (riskSettings.isEnableMarubozuBreakout()
-                && prev.close >= level && close < level
+        // Always on; volume gate dropped — same rationale as the bullish variant.
+        if (prev.close >= level && close < level
                 && CandlePatternDetector.isBearishMarubozu(open, high, low, close, atr,
                         riskSettings.getMarubozuBreakoutBodyAtrMult(),
                         riskSettings.getMarubozuBreakoutMaxBodyAtrMult(),
                         riskSettings.getMarubozuBreakoutMaxOppositeWickPctOfBody())) {
-            long confirmVol = curr.volume;
-            double avgVol = candleAggregator.getAvgVolume(fyersSymbol, 20);
-            if (confirmVol > 0 && avgVol > 0 && confirmVol > avgVol) {
-                return acceptOrRejectProximity(fyersSymbol, setupName, "MARUBOZU_BREAKOUT",
-                        close, level, atr, proximityAtr, false);
-            }
+            return acceptOrRejectProximity(fyersSymbol, setupName, "MARUBOZU_BREAKOUT",
+                    close, level, atr, proximityAtr, false);
         }
 
         double pinDomWickRng = riskSettings.getPinBarDominantWickMinRangeRatio();
@@ -1634,7 +1626,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             if (aligned) return NiftyAlignStatus.OK;
             String requiredStates = isBuy ? "BULLISH" : "BEARISH";
             eventService.log("[SCANNER] " + fyersSymbol + " " + setup + routeFor(fyersSymbol)
-                + " INDEX HTF MISALIGNED — " + primaryIndex + " 1h " + state + ", trade direction needs " + requiredStates);
+                + " INDEX HTF MISALIGNED — " + primaryIndex + " HTF state " + state + ", trade direction needs " + requiredStates);
             return NiftyAlignStatus.SKIP;
         } catch (Exception e) {
             log.warn("[BreakoutScanner] Index HTF alignment check failed for {}: {}", fyersSymbol, e.getMessage());
@@ -1668,7 +1660,7 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             String requiredStates = isBuy ? "BULLISH" : "BEARISH";
             String mode = useEma ? "CPR+EMA" : "CPR-only";
             eventService.log("[SCANNER] " + fyersSymbol + " " + setup + routeFor(fyersSymbol)
-                + " STOCK HTF MISALIGNED (" + mode + ") — stock 1h " + state + ", trade direction needs " + requiredStates);
+                + " STOCK HTF MISALIGNED (" + mode + ") — stock HTF state " + state + ", trade direction needs " + requiredStates);
             return NiftyAlignStatus.SKIP;
         } catch (Exception e) {
             log.warn("[BreakoutScanner] Stock HTF alignment check failed for {}: {}", fyersSymbol, e.getMessage());
@@ -1677,9 +1669,14 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     }
 
     /**
-     * Index HTF Hurdle filter. When the stock's primary index's most-recent 1-hour close
-     * hasn't cleared its nearest weekly hurdle in trade direction, trades in that direction
-     * are skipped until the next 1-hour close commits.
+     * Index HTF Hurdle filter. When the stock's primary index's most-recent 5-min close
+     * hasn't cleared its nearest weekly hurdle in trade direction, trades are skipped.
+     * Comparator widened from 1-hour close to 5-min close so the gate reacts at every
+     * 5m boundary rather than waiting up to an hour for the next 1-hour close.
+     *
+     * <p>R1+PWH (buys) / S1+PWL (sells) and weekly TC+BC are collapsed into single
+     * zone candidates valued at the FAR edge — both legs must be cleared for the
+     * hurdle to count as cleared.
      *
      * <p>The primary index is resolved per stock via the {@code stocks.primary_index_id}
      * mapping (NIFTY 50 or a sector index). Returns a non-null reason string when the
@@ -1707,24 +1704,47 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             WeeklyCprService.WeeklyLevels wl = weeklyCprService.getWeeklyLevels(indexSym);
             if (wl == null) return null; // weekly levels not loaded — fail-open
 
-            // Weekly hurdle candidates in trade direction.
+            // Weekly hurdle candidates in trade direction. R1+PWH (buys) / S1+PWL (sells)
+            // and weekly TC+BC collapse to single zone entries valued at the FAR edge of
+            // the zone, so the hurdle is only "cleared" once the 5m close passes BOTH legs.
+            //   • R1+PWH zone = max(R1, PWH) for buys / S1+PWL zone = min(S1, PWL) for sells
+            //   • weekly CPR zone = max(TC, BC) for buys / min(TC, BC) for sells
+            double cprZone = (wl.tc > 0 && wl.bc > 0)
+                ? (isBuy ? Math.max(wl.tc, wl.bc) : Math.min(wl.tc, wl.bc))
+                : (wl.tc > 0 ? wl.tc : wl.bc);
+            String cprZoneName = (wl.tc > 0 && wl.bc > 0) ? "weekly CPR zone" : (wl.tc > 0 ? "weekly TC" : "weekly BC");
+
             java.util.List<Double> candidateLevels = new java.util.ArrayList<>(6);
             java.util.List<String> candidateNames  = new java.util.ArrayList<>(6);
             if (isBuy) {
-                candidateLevels.add(wl.r1);    candidateNames.add("weekly R1");
-                candidateLevels.add(wl.ph);    candidateNames.add("weekly PWH");
-                candidateLevels.add(wl.tc);    candidateNames.add("weekly TC");
+                double r1pwh; String r1pwhName;
+                if (wl.r1 > 0 && wl.ph > 0) {
+                    r1pwh = Math.max(wl.r1, wl.ph);
+                    r1pwhName = "weekly R1+PWH zone";
+                } else if (wl.r1 > 0) {
+                    r1pwh = wl.r1; r1pwhName = "weekly R1";
+                } else {
+                    r1pwh = wl.ph; r1pwhName = "weekly PWH";
+                }
+                candidateLevels.add(r1pwh);    candidateNames.add(r1pwhName);
+                candidateLevels.add(cprZone);  candidateNames.add(cprZoneName);
                 candidateLevels.add(wl.pivot); candidateNames.add("weekly Pivot");
-                candidateLevels.add(wl.bc);    candidateNames.add("weekly BC");
                 candidateLevels.add(wl.r2);    candidateNames.add("weekly R2");
                 candidateLevels.add(wl.r3);    candidateNames.add("weekly R3");
                 candidateLevels.add(wl.r4);    candidateNames.add("weekly R4");
             } else {
-                candidateLevels.add(wl.s1);    candidateNames.add("weekly S1");
-                candidateLevels.add(wl.pl);    candidateNames.add("weekly PWL");
-                candidateLevels.add(wl.tc);    candidateNames.add("weekly TC");
+                double s1pwl; String s1pwlName;
+                if (wl.s1 > 0 && wl.pl > 0) {
+                    s1pwl = Math.min(wl.s1, wl.pl);
+                    s1pwlName = "weekly S1+PWL zone";
+                } else if (wl.s1 > 0) {
+                    s1pwl = wl.s1; s1pwlName = "weekly S1";
+                } else {
+                    s1pwl = wl.pl; s1pwlName = "weekly PWL";
+                }
+                candidateLevels.add(s1pwl);    candidateNames.add(s1pwlName);
+                candidateLevels.add(cprZone);  candidateNames.add(cprZoneName);
                 candidateLevels.add(wl.pivot); candidateNames.add("weekly Pivot");
-                candidateLevels.add(wl.bc);    candidateNames.add("weekly BC");
                 candidateLevels.add(wl.s2);    candidateNames.add("weekly S2");
                 candidateLevels.add(wl.s3);    candidateNames.add("weekly S3");
                 candidateLevels.add(wl.s4);    candidateNames.add("weekly S4");
@@ -1748,23 +1768,23 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             }
             if (chosenName == null) return null; // no hurdle in trade direction → clear path
 
-            // Most-recently-completed 1-hour close on the primary index (session-aligned:
-            // 10:15, 11:15, …, 15:15). Pre-10:15 IST today, falls back to the previous trading
-            // day's last 1-hour close within the current ISO week. On Monday pre-10:15 there's
-            // no current-week fallback → null → REJECT (hurdle exists but the 1-hour hasn't
-            // yet committed either way).
+            // Most-recently-completed 5-min close on the primary index. The filter is named
+            // "HTF Hurdle" because the LEVELS are weekly, but the comparator was widened to
+            // 5-min close so the gate reacts on every 5m boundary instead of waiting an hour.
+            // Pre-9:20 / cold-boot: falls back to NSE PDC from bhavcopy → priorDayCandles
+            // 15:30 close → null only when none of those exist.
             Double htfClose = candleAggregator != null
                 ? candleAggregator.getLast1HourClose(indexSym) : null;
             if (htfClose == null || htfClose <= 0) {
                 return primaryIndex + " HTF hurdle at " + chosenName
-                    + " (" + String.format("%.2f", chosenLevel) + ") — waiting for first 1-hour close (10:15 IST)";
+                    + " (" + String.format("%.2f", chosenLevel) + ") — waiting for first 5m close";
             }
 
             boolean cleared = isBuy ? htfClose > chosenLevel : htfClose < chosenLevel;
             if (!cleared) {
                 return primaryIndex + " HTF hurdle at " + chosenName
                     + ": LTP " + String.format("%.2f", indexLtp)
-                    + ", 1-hour close=" + String.format("%.2f", htfClose)
+                    + ", recent 5m close=" + String.format("%.2f", htfClose)
                     + ", level " + String.format("%.2f", chosenLevel);
             }
 
@@ -2257,17 +2277,16 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
     /**
      * Per-stock HTF Hurdle filter. Mirrors {@link #checkPrimaryIndexHtfHurdle} but on the
      * stock's own data: picks the nearest weekly level relative to the stock's current LTP,
-     * then checks whether the stock's most-recently-completed 1-hour close has cleared that
+     * then checks whether the stock's most-recently-completed 5-min close has cleared that
      * level, and finally a headroom check against the nearest weekly hurdle in the opposite
      * direction.
      *
-     * <p>Hurdle candidates (match Index HTF Hurdle for consistency): R1, PWH, weekly TC,
-     * weekly Pivot, weekly BC, R2, R3, R4 for buys; S1, PWL, weekly TC, weekly Pivot,
-     * weekly BC, S2, S3, S4 for sells.
+     * <p>Hurdle candidates (match Index HTF Hurdle for consistency): R1+PWH zone, weekly
+     * CPR zone, weekly Pivot, R2, R3, R4 for buys; S1+PWL zone, weekly CPR zone, weekly
+     * Pivot, S2, S3, S4 for sells. R1+PWH / S1+PWL / TC+BC collapse to single zone
+     * candidates at the FAR edge — both legs must be cleared by the 5-min close.
      *
      * <p>Fail-open when: filter disabled, weekly levels not loaded, no hurdle in trade direction.
-     * <b>Rejects</b> when a hurdle exists but no 1-hour close is available in the current ISO
-     * week (Monday pre-10:15) — waits until 10:15 to confirm.
      */
     private String checkStockHtfHurdle(boolean isBuy, String fyersSymbol, double close, double atr) {
         if (!riskSettings.isEnableHtfHurdleFilter()) return null;
@@ -2276,14 +2295,43 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         WeeklyCprService.WeeklyLevels wl = weeklyCprService.getWeeklyLevels(fyersSymbol);
         if (wl == null) return null;
 
+        // Weekly zones — both edges must be cleared for the hurdle to count as cleared.
+        // Collapse each pair into a single candidate at the FAR edge of the zone (max
+        // for buys, min for sells). The existing nearest-hurdle / headroom logic then
+        // enforces "5-min close must exceed the zone's far edge" for clearance.
+        //   • R1+PWH (buys) / S1+PWL (sells) — structural breakout zone
+        //   • weekly TC+BC — central CPR zone
+        // Weekly Pivot remains a single mid-line between TC and BC.
+        double cprZoneBuy = (wl.tc > 0 && wl.bc > 0) ? Math.max(wl.tc, wl.bc) : (wl.tc > 0 ? wl.tc : wl.bc);
+        double cprZoneSell = (wl.tc > 0 && wl.bc > 0) ? Math.min(wl.tc, wl.bc) : (wl.tc > 0 ? wl.tc : wl.bc);
+        String cprZoneName = (wl.tc > 0 && wl.bc > 0) ? "weekly CPR zone" : (wl.tc > 0 ? "weekly TC" : "weekly BC");
+
         double[] candidates;
         String[] names;
         if (isBuy) {
-            candidates = new double[]{ wl.r1, wl.ph, wl.tc, wl.pivot, wl.bc, wl.r2, wl.r3, wl.r4 };
-            names      = new String[]{ "R1", "PWH", "weekly TC", "weekly Pivot", "weekly BC", "weekly R2", "weekly R3", "weekly R4" };
+            double r1pwh; String r1pwhName;
+            if (wl.r1 > 0 && wl.ph > 0) {
+                r1pwh = Math.max(wl.r1, wl.ph);
+                r1pwhName = "R1+PWH zone";
+            } else if (wl.r1 > 0) {
+                r1pwh = wl.r1; r1pwhName = "R1";
+            } else {
+                r1pwh = wl.ph; r1pwhName = "PWH";
+            }
+            candidates = new double[]{ r1pwh, cprZoneBuy, wl.pivot, wl.r2, wl.r3, wl.r4 };
+            names      = new String[]{ r1pwhName, cprZoneName, "weekly Pivot", "weekly R2", "weekly R3", "weekly R4" };
         } else {
-            candidates = new double[]{ wl.s1, wl.pl, wl.tc, wl.pivot, wl.bc, wl.s2, wl.s3, wl.s4 };
-            names      = new String[]{ "S1", "PWL", "weekly TC", "weekly Pivot", "weekly BC", "weekly S2", "weekly S3", "weekly S4" };
+            double s1pwl; String s1pwlName;
+            if (wl.s1 > 0 && wl.pl > 0) {
+                s1pwl = Math.min(wl.s1, wl.pl);
+                s1pwlName = "S1+PWL zone";
+            } else if (wl.s1 > 0) {
+                s1pwl = wl.s1; s1pwlName = "S1";
+            } else {
+                s1pwl = wl.pl; s1pwlName = "PWL";
+            }
+            candidates = new double[]{ s1pwl, cprZoneSell, wl.pivot, wl.s2, wl.s3, wl.s4 };
+            names      = new String[]{ s1pwlName, cprZoneName, "weekly Pivot", "weekly S2", "weekly S3", "weekly S4" };
         }
 
         // Stock's current LTP — falls back to the breakout 5-min close if live LTP missing.
@@ -2305,15 +2353,15 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         if (chosenName != null) {
             Double htfClose = candleAggregator.getLast1HourClose(fyersSymbol);
             if (htfClose == null || htfClose <= 0) {
-                // No 1-hour close in current ISO week (Monday pre-10:15). Hurdle exists but
-                // the 1-hour hasn't yet committed either way — reject and wait for the 10:15
-                // close. Mirrors the NIFTY HTF Hurdle behaviour.
+                // Comparator falls back to today's most recent 5m close → previous-day
+                // close from bhavcopy → priorDayCandles. Null only when none of those
+                // exist (cold-boot brand-new symbol pre-bhavcopy).
                 return "HTF hurdle at weekly " + chosenName
-                    + " (" + String.format("%.2f", chosenLevel) + ") — waiting for first 1-hour close (10:15 IST)";
+                    + " (" + String.format("%.2f", chosenLevel) + ") — waiting for first 5m close";
             } else if (isBuy ? htfClose <= chosenLevel : htfClose >= chosenLevel) {
                 return "HTF hurdle at weekly " + chosenName
                     + ": price=" + String.format("%.2f", stockPrice)
-                    + ", 1-hour close=" + String.format("%.2f", htfClose)
+                    + ", recent 5m close=" + String.format("%.2f", htfClose)
                     + ", level=" + String.format("%.2f", chosenLevel);
             }
         }

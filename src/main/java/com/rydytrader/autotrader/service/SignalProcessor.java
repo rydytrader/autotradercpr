@@ -96,14 +96,18 @@ public class SignalProcessor {
         String signal = isBuy ? "BUY" : "SELL";
 
         // ── Extended-level skip gate ─────────────────────────────────────────
-        // R2/S2, R3/S3 and R4/S4 breakouts (and their retest variants — setup name covers
-        // both) sit progressively further from the daily CPR. Each level pair has its own
-        // toggle; no day-type classification. R2/S2 defaults to OFF (allowed); R3/S3 and
-        // R4/S4 default to ON (skipped) since they're least reliable.
+        // Setups at each successive level pair have their own opt-out toggle. R1+PDH /
+        // S1+PDL are zone setups (first structural breakout); R2/S2, R3/S3, R4/S4 sit
+        // progressively further from the daily CPR. R1+PDH/S1+PDL and R2/S2 default OFF
+        // (allowed); R3/S3 and R4/S4 default ON (skipped) since they're least reliable.
+        boolean isR1PdhS1PdlSetup = "BUY_ABOVE_R1_PDH".equals(setup) || "SELL_BELOW_S1_PDL".equals(setup);
         boolean isR2S2Setup = "BUY_ABOVE_R2".equals(setup) || "SELL_BELOW_S2".equals(setup);
         boolean isR3S3Setup = "BUY_ABOVE_R3".equals(setup) || "SELL_BELOW_S3".equals(setup);
         boolean isR4S4Setup = "BUY_ABOVE_R4".equals(setup) || "SELL_BELOW_S4".equals(setup);
 
+        if (isR1PdhS1PdlSetup && riskSettings.isSkipR1PdhS1Pdl()) {
+            return ProcessedSignal.rejected(setup, symbol, "R1+PDH/S1+PDL breakout/retest skipped (toggle off)");
+        }
         if (isR2S2Setup && riskSettings.isSkipR2S2()) {
             return ProcessedSignal.rejected(setup, symbol, "R2/S2 breakout/retest skipped (toggle off)");
         }

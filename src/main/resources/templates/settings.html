@@ -401,8 +401,12 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Extended Level Signals (R2/S2, R3/S3, R4/S4)</label>
+                    <label class="form-label">Extended Level Signals (R1+PDH/S1+PDL, R2/S2, R3/S3, R4/S4)</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="skipR1PdhS1Pdl" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R1+PDH / S1+PDL breakout and retest signals</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <input type="checkbox" id="skipR2S2" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R2/S2 breakout and retest signals</span>
                     </div>
@@ -414,7 +418,7 @@
                         <input type="checkbox" id="skipR4S4" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Skip R4/S4 breakout and retest signals</span>
                     </div>
-                    <div class="form-hint">Setups (both fresh breakouts and pattern retests) at extended levels sit progressively further from the daily CPR. Each pair has its own toggle. R2/S2 defaults <b>OFF</b> (allowed); R3/S3 and R4/S4 default <b>ON</b> (skipped) since they're historically the least reliable. Signal Trail rejection: <code>R2/S2 breakout/retest skipped (toggle off)</code>.</div>
+                    <div class="form-hint">Setups (both fresh breakouts and pattern retests) at each level pair have an independent opt-out. R1+PDH / S1+PDL are zone setups (first structural breakout above / below CPR); R2/S2, R3/S3, R4/S4 sit progressively further from the daily CPR. R1+PDH/S1+PDL and R2/S2 default <b>OFF</b> (allowed); R3/S3 and R4/S4 default <b>ON</b> (skipped) since they're historically the least reliable. Signal Trail rejection: <code>R1+PDH/S1+PDL breakout/retest skipped (toggle off)</code>.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">20 EMA Level Count Filter</label>
@@ -606,13 +610,9 @@
                 <div class="form-hint">Applied to the confirmation bar of every pattern — bar 2 of Outside Reversal / Doji Reversal, bar 3 of Morning/Evening Star and Three Inside Up/Down, and the single-bar Good Size catch-all. For bullish patterns this caps the <b>upper</b> wick; for bearish, the <b>lower</b> wick. Default <b>0.5</b> (wick can be at most half the body). Set to 0 to disable entirely. Rejects bars whose body says "buyer/seller commitment" but whose wick says "got rejected at the extreme."</div>
             </div>
 
-            <!-- Marubozu Breakout (fresh-break, single-bar) -->
+            <!-- Marubozu Breakout (fresh-break, single-bar) — always on -->
             <div class="form-group">
-                <label class="form-label">Marubozu Breakout (fresh-break conviction bar)</label>
-                <div style="display:flex; align-items:center; gap:10px; margin-top:6px;">
-                    <input type="checkbox" id="enableMarubozuBreakout" style="width:18px; height:18px; accent-color:var(--accent-cyan); flex-shrink:0;">
-                    <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Enable Marubozu fresh-break entry (volume-confirmed)</span>
-                </div>
+                <label class="form-label">Marubozu Breakout (always on)</label>
                 <div style="display:flex; align-items:center; gap:10px; margin-top:8px; flex-wrap:wrap;">
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">Body in [</span>
                     <input type="number" id="marubozuBreakoutBodyAtrMult" class="form-control" step="0.05" min="0.0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
@@ -626,7 +626,7 @@
                     <span style="color:var(--text-secondary); font-size:0.82rem; font-family:var(--font-mono);">× body</span>
                     <span style="color:var(--text-muted); font-size:0.75rem; font-family:var(--font-mono);">(0.10 = 10%)</span>
                 </div>
-                <div class="form-hint">Fresh-break path on a single conviction bar. Fires when (a) this bar's close crosses a CPR/R/S level the prior bar's close didn't, (b) the bar is a Marubozu (green for buys / red for sells; body in the band above; upper wick for buys / lower wick for sells ≤ the opposite-wick cap — the wick on the trade side is ignored), and (c) the bar's volume exceeds its 20-bar average. Route tag: <code>MARUBOZU_BREAKOUT</code> (always emits with the <code>+ VOLUME CONFIRMATION</code> suffix since volume is mandatory). Defaults: 0.5–1.0 × ATR body, 0.10 opposite-wick cap. Skipped when the toggle is off.</div>
+                <div class="form-hint">Fresh-break path on a single conviction bar. Fires when (a) this bar's close crosses a CPR/R/S level the prior bar's close didn't, and (b) the bar is a Marubozu (green for buys / red for sells; body in the band above; upper wick for buys / lower wick for sells ≤ the opposite-wick cap — the wick on the trade side is ignored). Route tag: <code>MARUBOZU_BREAKOUT</code>. Defaults: 0.5–1.0 × ATR body, 0.10 opposite-wick cap. Always on — no enable toggle. Volume confirmation dropped (NSE 5-min volume too noisy to filter on).</div>
             </div>
 
             </div><!-- /form-grid -->
@@ -686,16 +686,18 @@
                     <label class="form-label">Index HTF Hurdle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableIndexHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject when the stock's primary-index 1-hour close hasn't cleared its nearest weekly-levels hurdle</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject when the stock's primary-index most-recent 5-min close hasn't cleared its nearest weekly-levels hurdle</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min headroom to next hurdle:</span>
                         <input type="number" id="indexHtfHurdleMinHeadroomAtr" class="form-control" step="0.1" min="0" max="5" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× index ATR (0 = off)</span>
                     </div>
-                    <div class="form-hint">Identifies the primary index's nearest weekly hurdle in trade direction and rejects the signal while the index's most-recently-completed <b>1-hour</b> close hasn't decisively cleared it. 1-hour buckets are session-aligned: 9:15-10:15, 10:15-11:15, &hellip;, 14:15-15:15. Pre-10:15 IST today (Tue-Fri), falls back to <b>the index's previous trading day session close (3:30 PM close)</b> within the current ISO week. <b>On Monday pre-10:15 trades with a hurdle in trade direction are REJECTED until the 10:15 close confirms.</b>
-                        <br>&nbsp;&nbsp;&bull; <b>Buys</b> &mdash; nearest of {weekly R4, R3, R2, R1, PWH, weekly TC, weekly Pivot, weekly BC} below index LTP
-                        <br>&nbsp;&nbsp;&bull; <b>Sells</b> &mdash; nearest of {weekly TC, weekly Pivot, weekly BC, S1, PWL, S2, S3, S4} above index LTP
+                    <div class="form-hint">Identifies the primary index's nearest weekly hurdle in trade direction and rejects the signal while the index's most-recently-completed <b>5-min</b> close hasn't decisively cleared it. The filter is named "HTF Hurdle" because the LEVELS are weekly, but the comparator is the 5-min close so the gate reacts at every 5m boundary instead of waiting for a 1-hour close.
+                        <br>&nbsp;&nbsp;&bull; <b>Buys</b> &mdash; nearest of {weekly R4, R3, R2, R1+PWH zone, weekly CPR zone, weekly Pivot} below index LTP
+                        <br>&nbsp;&nbsp;&bull; <b>Sells</b> &mdash; nearest of {weekly CPR zone, weekly Pivot, S1+PWL zone, S2, S3, S4} above index LTP
+                        <br>&nbsp;&nbsp;&bull; <b>R1+PWH</b> (buys), <b>S1+PWL</b> (sells) and <b>weekly TC+BC</b> are treated as <b>zones</b> — both edges must be cleared by the 5-min close (compared against the FAR edge of the zone).
+                        <br>&nbsp;&nbsp;&bull; <b>Pre-9:20 fallback</b> &rarr; uses NSE PDC from bhavcopy (previous trading day's official close) for the first 5 minutes of any trading day, including Monday.
                         <br><br><b>Headroom check.</b> Even after the past hurdle is cleared, the filter also checks the nearest hurdle in the <i>opposite</i> direction. If that upcoming hurdle is closer than <code>min headroom &times; index ATR</code>, the trade is rejected. Default <b>1.0</b> &times; ATR. Set to 0 to disable just the headroom check. Signal Trail bucket: <code>INDEX_HTF_HURDLE</code>.
                         </div>
                 </div>
@@ -753,7 +755,7 @@
                     <label class="form-label">Stock HTF Hurdle Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
                         <input type="checkbox" id="enableHtfHurdleFilter" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
-                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject when stock's 1-hour close hasn't cleared its nearest weekly-levels hurdle</span>
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject when stock's most-recent 5-min close hasn't cleared its nearest weekly-levels hurdle</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Min headroom to next hurdle:</span>
@@ -761,12 +763,12 @@
                         <span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">× stock ATR (0 = off)</span>
                     </div>
                     <div class="form-hint">Same logic as the Index HTF Hurdle, but applied to each stock's own data. For a 5-min breakout, find the nearest weekly hurdle in the trade direction relative to the stock's <b>current LTP</b>:
-                        <b>buys</b> &rarr; the highest of {weekly R4, R3, R2, R1, PWH, weekly TC, weekly Pivot, weekly BC} strictly below LTP;
-                        <b>sells</b> &rarr; the lowest of {weekly TC, weekly Pivot, weekly BC, S1, PWL, S2, S3, S4} strictly above LTP.
-                        Then check the stock's most-recently-completed <b>1-hour</b> close (session-aligned 9:15-10:15, 10:15-11:15, &hellip;):
-                        <b>cleared</b> &rarr; trade fires; <b>didn't clear</b> &rarr; reject.
-                        <b>Pre-10:15 today (Tue-Fri)</b> &rarr; falls back to the <b>stock's previous trading day session close (3:30 PM close)</b> within the current ISO week and checks if THAT cleared the level. <b>On Monday pre-10:15 there's no current-week fallback &rarr; trades with a hurdle in trade direction are REJECTED until the 10:15 close confirms.</b>
-                        Applies to all HPT and MPT breakouts. Fail-open when any level is warming up.
+                        <b>buys</b> &rarr; nearest of {weekly R4, R3, R2, R1+PWH zone, weekly CPR zone, weekly Pivot} strictly below LTP;
+                        <b>sells</b> &rarr; nearest of {weekly CPR zone, weekly Pivot, S1+PWL zone, S2, S3, S4} strictly above LTP.
+                        Then check the stock's most-recently-completed <b>5-min</b> close: <b>cleared</b> &rarr; trade fires; <b>didn't clear</b> &rarr; reject.
+                        <br>&bull; <b>R1+PWH</b> (buys), <b>S1+PWL</b> (sells) and <b>weekly TC+BC</b> are treated as <b>zones</b> — both edges must be cleared by the 5-min close (compared against the FAR edge of the zone).
+                        <br>&bull; <b>Pre-9:20 fallback</b> &rarr; uses the stock's previous trading day session close (NSE PDC from bhavcopy) and checks if THAT cleared the level. Active for the first 5 minutes of any trading day, including Monday.
+                        <br>Applies to all enabled probabilities. Fail-open when any level is warming up.
                         <br><br><b>Headroom check.</b> Even after the past hurdle is cleared, the filter also checks the nearest hurdle in the <i>opposite</i> direction (above LTP for buys / below for sells). If that upcoming hurdle is closer than <code>min headroom &times; stock ATR</code>, the trade is rejected. Default <b>1.0</b> &times; ATR. Set to 0 to disable just the headroom check.</div>
                 </div>
             </div>
@@ -1484,6 +1486,7 @@
             document.getElementById('scanMaxPrice').value = d.scanMaxPrice != null ? d.scanMaxPrice : 0;
             // Watchlist universe radio retired — Settings → Stock Universe is the source.
             document.getElementById('minAbsoluteProfit').value = d.minAbsoluteProfit != null ? d.minAbsoluteProfit : 500;
+            document.getElementById('skipR1PdhS1Pdl').checked = d.skipR1PdhS1Pdl === true;
             document.getElementById('skipR2S2').checked = d.skipR2S2 === true;
             document.getElementById('skipR3S3').checked = d.skipR3S3 !== false;
             document.getElementById('skipR4S4').checked = d.skipR4S4 !== false;
@@ -1491,7 +1494,6 @@
             document.getElementById('enableMagnetTrades').checked        = d.enableMagnetTrades !== false;
             document.getElementById('magnetTradesQtyFactor').value       = d.magnetTradesQtyFactor != null ? d.magnetTradesQtyFactor : 0.75;
             document.getElementById('meanReversionQtyFactor').value      = d.meanReversionQtyFactor != null ? d.meanReversionQtyFactor : 0.5;
-            document.getElementById('enableMarubozuBreakout').checked                  = d.enableMarubozuBreakout === true;
             document.getElementById('marubozuBreakoutBodyAtrMult').value               = d.marubozuBreakoutBodyAtrMult              != null ? d.marubozuBreakoutBodyAtrMult              : 0.5;
             document.getElementById('marubozuBreakoutMaxBodyAtrMult').value            = d.marubozuBreakoutMaxBodyAtrMult           != null ? d.marubozuBreakoutMaxBodyAtrMult           : 1.0;
             document.getElementById('marubozuBreakoutMaxOppositeWickPctOfBody').value  = d.marubozuBreakoutMaxOppositeWickPctOfBody != null ? d.marubozuBreakoutMaxOppositeWickPctOfBody : 0.10;
@@ -1643,6 +1645,7 @@
                 scanMinPrice: parseFloat(document.getElementById('scanMinPrice').value) || 0,
                 scanMaxPrice: parseFloat(document.getElementById('scanMaxPrice').value) || 0,
                 minAbsoluteProfit: (function() { var v = parseFloat(document.getElementById('minAbsoluteProfit').value); return isNaN(v) ? 500 : v; })(),
+                skipR1PdhS1Pdl: document.getElementById('skipR1PdhS1Pdl').checked,
                 skipR2S2: document.getElementById('skipR2S2').checked,
                 skipR3S3: document.getElementById('skipR3S3').checked,
                 skipR4S4: document.getElementById('skipR4S4').checked,
@@ -1650,7 +1653,6 @@
                 enableMagnetTrades:        document.getElementById('enableMagnetTrades').checked,
                 magnetTradesQtyFactor:     parseFloat(document.getElementById('magnetTradesQtyFactor').value) || 0.75,
                 meanReversionQtyFactor:    parseFloat(document.getElementById('meanReversionQtyFactor').value) || 0.5,
-                enableMarubozuBreakout:                  document.getElementById('enableMarubozuBreakout').checked,
                 marubozuBreakoutBodyAtrMult:             parseFloat(document.getElementById('marubozuBreakoutBodyAtrMult').value)              || 0.5,
                 marubozuBreakoutMaxBodyAtrMult:          parseFloat(document.getElementById('marubozuBreakoutMaxBodyAtrMult').value)           || 1.0,
                 marubozuBreakoutMaxOppositeWickPctOfBody: parseFloat(document.getElementById('marubozuBreakoutMaxOppositeWickPctOfBody').value) || 0.10,

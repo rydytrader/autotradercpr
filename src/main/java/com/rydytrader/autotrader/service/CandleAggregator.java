@@ -73,6 +73,12 @@ public class CandleAggregator {
     private final ConcurrentHashMap<String, String> lastTickDate = new ConcurrentHashMap<>();
 
     private final RiskSettingsStore riskSettings;
+    // Lazy-injected to avoid a hard construction-order dependency. CandleAggregator boots
+    // before BhavcopyService is ready in the Spring context. Used only by getLast1HourClose
+    // for the pre-first-bar fallback (NSE official previous-day close from bhavcopy).
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private BhavcopyService bhavcopyService;
 
     // Candle close listeners
     private final List<CandleCloseListener> listeners = new CopyOnWriteArrayList<>();
@@ -893,53 +899,50 @@ public class CandleAggregator {
      *
      * <p>Resolution order (descending through completed bars):
      * <ul>
-     *   <li><b>Today, post-10:15</b> → today's most recent 1-hour-aligned close.</li>
-     *   <li><b>Today, pre-10:15 (Tue-Fri)</b> → the previous trading day's <i>session close</i>
-     *       (15:25-15:30 bar = the day's 3:30 PM close), provided it's in the current ISO week.
-     *       This is the day's actual closing price — not the 14:15-15:15 1-hour bar's close.</li>
-     *   <li><b>Today, pre-10:15 Monday</b> → null. No current-week fallback. Caller rejects.</li>
+     *   <li>Today's <b>most recent completed 5-min close</b> when any 5-min bar has closed
+     *       today. The HTF state therefore reacts to every 5-min boundary instead of only
+     *       updating on full 1-hour boundaries — a gap-up / gap-down through weekly CPR
+     *       flips the trend at the next 5-min close, not at 10:15.</li>
+     *   <li>Previous trading day's session close (the last bar in priorDayCandles =
+     *       15:25-15:30 = 3:30 PM close) when today has no completed bars yet (pre-9:20
+     *       on a fresh trading day, including Monday → Friday's 15:30 close).</li>
      * </ul>
      *
-     * <p>Returns null when no in-week comparator exists or when the symbol has no completed
-     * bars.
+     * <p>Returns null only when priorDayCandles is also empty (cold-boot / brand-new symbol).
      */
     public Double getLast1HourClose(String symbol) {
-        // Monday 00:00 IST of the current ISO week — anything before this is "previous week"
-        // and not a valid intra-week fallback per the filter spec.
-        long weekStartEpoch = ZonedDateTime.now(IST)
-            .with(java.time.DayOfWeek.MONDAY)
-            .toLocalDate()
-            .atStartOfDay(IST)
-            .toEpochSecond();
-
-        // 1) Today's 1-hour-aligned close, if we've crossed at least one 10:15 boundary.
-        //    Standard NSE 1-hour bar ends: 10:15, 11:15, 12:15, 13:15, 14:15, 15:15.
-        //    Plus the 15:15→15:30 partial 1-hour close (carried by the 15:25 5-min bar) so
-        //    htfClose reflects the actual day-close price for the rest of the session — kept
-        //    in sync with the matching EMA-step in HtfEmaService.onCandleClose.
+        // 1) Today's most recent completed 5-min close. Used as the HTF comparator so the
+        //    1-hour trend state can flip every 5 minutes instead of every 60 — the goal is
+        //    a more reactive HTF gate, not a strictly-aligned 1-hour reading. Once 10:15
+        //    arrives this branch still returns the 5-min close (currently the 10:10-10:15
+        //    bar close), which is identical to the 9:15-10:15 1-hour close since both bars
+        //    end at the same timestamp.
         Deque<CandleBar> history = completedCandles.get(symbol);
         if (history != null) {
             Iterator<CandleBar> it = history.descendingIterator();
             while (it.hasNext()) {
                 CandleBar bar = it.next();
-                if (bar.close <= 0) continue;
-                long endMinute = bar.startMinute + 5;
-                if (endMinute % 60 == 15 || endMinute == MarketHolidayService.MARKET_CLOSE_MINUTE) return bar.close;
+                if (bar.close > 0) return bar.close;
             }
         }
 
-        // 2) Pre-10:15 fallback — previous trading day's session close (the latest bar in
-        //    priorDayCandles, which is the 15:25–15:30 IST = 3:30 PM closing 5-min bar).
-        //    The 2 AM daily reset moves yesterday's bars from completedCandles into
-        //    priorDayCandles, so without checking priorDayCandles the fallback always misses.
-        //    Only honour the fallback if the previous-day bar is in the current ISO week —
-        //    Monday pre-10:15 has no in-week prior day → null → caller rejects.
+        // 2) Pre-session fallback — NSE's official previous-day close (PDC) from the
+        //    morning bhavcopy fetch. This is the closing-call auction price that the
+        //    exchange publishes after 15:40, which is more authoritative than the
+        //    intraday 15:25-15:30 5-min bar close in priorDayCandles. Covers the
+        //    9:15-9:20 sliver and Monday-morning pre-open. Falls back to the in-memory
+        //    15:30 bar if bhavcopy isn't ready yet (cold-boot before the daily fetch).
+        if (bhavcopyService != null) {
+            try {
+                com.rydytrader.autotrader.dto.CprLevels lv = bhavcopyService.getCprLevels(symbol);
+                if (lv != null && lv.getClose() > 0) return lv.getClose();
+            } catch (Exception ignored) {}
+        }
         List<CandleBar> priors = priorDayCandles.get(symbol);
         if (priors != null && !priors.isEmpty()) {
             for (int i = priors.size() - 1; i >= 0; i--) {
                 CandleBar bar = priors.get(i);
                 if (bar.close <= 0) continue;
-                if (bar.epochSec > 0 && bar.epochSec < weekStartEpoch) break; // dropped out of current week
                 return bar.close;
             }
         }

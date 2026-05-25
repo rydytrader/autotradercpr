@@ -547,7 +547,11 @@ public class ScannerController {
         if (htfCloseVal != null && htfCloseVal > 0 && wl != null && wl.top > 0 && wl.bot > 0) {
             if (htfCloseVal > wl.top)      htfCprBias = "BULLISH";
             else if (htfCloseVal < wl.bot) htfCprBias = "BEARISH";
-            htfTrendState = IndexTrendService.deriveTrendState(htfCloseVal, wl.top, wl.bot, htfEma20Val);
+            // Match the alignment filter: respect the EMA sub-toggle. Without this the
+            // chip on the card always ran strict 2-factor and showed SIDEWAYS even when
+            // the filter was actually passing in CPR-only mode.
+            htfTrendState = weeklyCprService.getStockHtfTrendState(fyersSymbol, htfEma20Val,
+                riskSettings.isEnableStockHtf1hEma20Check());
         }
         card.put("htfCprBias", htfCprBias);
         card.put("htfTrendState", htfTrendState);
@@ -1053,17 +1057,27 @@ public class ScannerController {
             try {
                 java.time.ZoneId ist = java.time.ZoneId.of("Asia/Kolkata");
                 java.time.LocalDate[] week = currentTradingWeek(ist);  // [monday, friday]
-                // Explicit Mon 9:15 → Fri 15:30 window. Surfaced to the frontend so the
-                // timeline anchors at the full week even on Mon/Tue when later days
-                // have no bars yet — the chart still LOOKS like a Mon-Fri view with the
-                // remaining days as empty space on the right.
+                List<CandleAggregator.CandleBar> hist = atrService.fetchTodayCandles(symbol);
+                List<CandleAggregator.CandleBar> weekBars = (hist == null || hist.isEmpty())
+                    ? java.util.Collections.<CandleAggregator.CandleBar>emptyList()
+                    : filterToWeek(hist, week[0], week[1], ist);
+                // Monday pre-9:20 fallback. The current week has no completed 5-min bars
+                // yet, so the hourly aggregator produces nothing → frontend reads "No data".
+                // Roll the visible window back to the previous Mon-Fri (last completed week)
+                // until today's first 5-min bar lands, then we switch back automatically.
+                if (weekBars.isEmpty() && hist != null && !hist.isEmpty()) {
+                    week = new java.time.LocalDate[]{ week[0].minusDays(7), week[1].minusDays(7) };
+                    weekBars = filterToWeek(hist, week[0], week[1], ist);
+                }
+                // Explicit Mon 9:15 → Fri 15:30 window for the visible week being plotted.
+                // Surfaced to the frontend so the timeline anchors at the full week even on
+                // Mon/Tue when later days have no bars yet — the chart still LOOKS like a
+                // Mon-Fri view with the remaining days as empty space on the right.
                 long weekStartSec = week[0].atTime(9, 15).atZone(ist).toEpochSecond();
                 long weekEndSec   = week[1].atTime(15, 30).atZone(ist).toEpochSecond();
                 result.put("weekStart", weekStartSec * 1000L);
                 result.put("weekEnd",   weekEndSec   * 1000L);
-                List<CandleAggregator.CandleBar> hist = atrService.fetchTodayCandles(symbol);
-                if (hist != null && !hist.isEmpty()) {
-                    List<CandleAggregator.CandleBar> weekBars = filterToWeek(hist, week[0], week[1], ist);
+                if (!weekBars.isEmpty()) {
                     List<CandleAggregator.CandleBar> hourly = aggregateToHourly(weekBars);
                     java.time.LocalDate displayDate = week[1]; // anchor at week-end for the EMA seeding date logic
                     computeIndicatorsAndBuild(hourly, displayDate, ist, candleList, vwapSeries, ema20Series);

@@ -576,7 +576,11 @@ public class WeeklyCprService implements CandleAggregator.CandleCloseListener,
         if (fyersSymbol == null) return "NEUTRAL";
         WeeklyLevels wl = weeklyLevels.get(fyersSymbol);
         if (wl == null || wl.top <= 0 || wl.bot <= 0) return "NEUTRAL";
-        Double htfClose = lastHigherTfClose.get(fyersSymbol);
+        // Use the shared CandleAggregator helper so this filter inherits the same
+        // pre-10:15 fallback the Index HTF Hurdle uses (most-recent priorDayCandles
+        // bar = previous trading day's 15:25-15:30 close). Notably this means Monday
+        // pre-10:15 falls back to Friday's 15:30 close instead of returning NEUTRAL.
+        Double htfClose = candleAggregator.getLast1HourClose(fyersSymbol);
         if (htfClose == null || htfClose <= 0) return "NEUTRAL";
         if (useEma) {
             return IndexTrendService.deriveTrendState(htfClose, wl.top, wl.bot, htfEma20);

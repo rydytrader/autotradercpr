@@ -62,7 +62,6 @@ public class SettingsController {
         result.put("enableOpenRangeFilter", riskSettings.isEnableOpenRangeFilter());
         result.put("openRangeMinutes",      riskSettings.getOpenRangeMinutes());
         result.put("enableIndexOpenRangeFilter", riskSettings.isEnableIndexOpenRangeFilter());
-        result.put("enableMarubozuBreakout",                  riskSettings.isEnableMarubozuBreakout());
         result.put("marubozuBreakoutBodyAtrMult",             riskSettings.getMarubozuBreakoutBodyAtrMult());
         result.put("marubozuBreakoutMaxBodyAtrMult",          riskSettings.getMarubozuBreakoutMaxBodyAtrMult());
         result.put("marubozuBreakoutMaxOppositeWickPctOfBody", riskSettings.getMarubozuBreakoutMaxOppositeWickPctOfBody());
@@ -112,6 +111,7 @@ public class SettingsController {
         result.put("virginCprExpiryDays", riskSettings.getVirginCprExpiryDays());
         result.put("breakevenTriggerPct", riskSettings.getBreakevenTriggerPct());
         result.put("breakevenSlAtrMult",  riskSettings.getBreakevenSlAtrMult());
+        result.put("skipR1PdhS1Pdl", riskSettings.isSkipR1PdhS1Pdl());
         result.put("skipR2S2", riskSettings.isSkipR2S2());
         result.put("skipR3S3", riskSettings.isSkipR3S3());
         result.put("skipR4S4", riskSettings.isSkipR4S4());
@@ -176,7 +176,6 @@ public class SettingsController {
             if (body.containsKey("enableOpenRangeFilter")) riskSettings.setEnableOpenRangeFilter(Boolean.parseBoolean(body.get("enableOpenRangeFilter").toString()));
             if (body.containsKey("openRangeMinutes"))      riskSettings.setOpenRangeMinutes(Integer.parseInt(body.get("openRangeMinutes").toString()));
             if (body.containsKey("enableIndexOpenRangeFilter")) riskSettings.setEnableIndexOpenRangeFilter(Boolean.parseBoolean(body.get("enableIndexOpenRangeFilter").toString()));
-            if (body.containsKey("enableMarubozuBreakout"))                  riskSettings.setEnableMarubozuBreakout(Boolean.parseBoolean(body.get("enableMarubozuBreakout").toString()));
             if (body.containsKey("marubozuBreakoutBodyAtrMult"))             riskSettings.setMarubozuBreakoutBodyAtrMult(Double.parseDouble(body.get("marubozuBreakoutBodyAtrMult").toString()));
             if (body.containsKey("marubozuBreakoutMaxBodyAtrMult"))          riskSettings.setMarubozuBreakoutMaxBodyAtrMult(Double.parseDouble(body.get("marubozuBreakoutMaxBodyAtrMult").toString()));
             if (body.containsKey("marubozuBreakoutMaxOppositeWickPctOfBody")) riskSettings.setMarubozuBreakoutMaxOppositeWickPctOfBody(Double.parseDouble(body.get("marubozuBreakoutMaxOppositeWickPctOfBody").toString()));
@@ -231,6 +230,7 @@ public class SettingsController {
             }
             if (body.containsKey("breakevenTriggerPct")) riskSettings.setBreakevenTriggerPct(Double.parseDouble(body.get("breakevenTriggerPct").toString()));
             if (body.containsKey("breakevenSlAtrMult"))  riskSettings.setBreakevenSlAtrMult(Double.parseDouble(body.get("breakevenSlAtrMult").toString()));
+            if (body.containsKey("skipR1PdhS1Pdl")) riskSettings.setSkipR1PdhS1Pdl(Boolean.parseBoolean(body.get("skipR1PdhS1Pdl").toString()));
             if (body.containsKey("skipR2S2")) riskSettings.setSkipR2S2(Boolean.parseBoolean(body.get("skipR2S2").toString()));
             if (body.containsKey("skipR3S3")) riskSettings.setSkipR3S3(Boolean.parseBoolean(body.get("skipR3S3").toString()));
             if (body.containsKey("skipR4S4")) riskSettings.setSkipR4S4(Boolean.parseBoolean(body.get("skipR4S4").toString()));
