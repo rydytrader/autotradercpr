@@ -68,7 +68,7 @@ public class StockUniverseSeederService {
         "BOSCHLTD", "BPCL", "CHOLAFIN", "COLPAL", "CUMMINSIND",
         "DABUR", "DIVISLAB", "DLF", "GAIL", "GODREJCP",
         "HAL", "HAVELLS", "HDFCAMC", "HEROMOTOCO", "HINDZINC",
-        "HPCL", "ICICIGI", "ICICIPRULI", "INDIGO", "INDUSTOWER",
+        "HINDPETRO", "ICICIGI", "ICICIPRULI", "INDIGO", "INDUSTOWER",
         "IOC", "JINDALSTEL", "JSWENERGY", "LODHA", "LTIM",
         "MANKIND", "MARICO", "MAXHEALTH", "MOTHERSON", "NHPC",
         "PFC", "PIDILITIND", "PNB", "POLYCAB", "RECLTD",
@@ -91,8 +91,13 @@ public class StockUniverseSeederService {
         "DIVISLAB",   // removed by NSE in March 2023 (replaced by ADANIENT)
         "BPCL",       // removed by NSE in March 2025 rebalancing (replaced by BEL)
         "HEROMOTOCO", // removed by NSE in 2025 (replaced by ETERNAL — Zomato's rebrand)
-        "TATAMOTORS"  // demerged in October 2025 into TMPV (passenger) and TMCV (commercial);
+        "TATAMOTORS", // demerged in October 2025 into TMPV (passenger) and TMCV (commercial);
                       // TMPV took the NIFTY 50 slot. The legacy symbol no longer trades.
+        "HPCL"        // NOT removed from NIFTY 50 — corrected ticker rename. The NSE
+                      // bhavcopy / Fyers symbol master use "HINDPETRO" for Hindustan
+                      // Petroleum, not "HPCL". The legacy HPCL row never matched the
+                      // bhavcopy parser. Prunes the orphan row so the new HINDPETRO
+                      // entry below can install cleanly.
     );
 
     @PostConstruct
@@ -283,7 +288,7 @@ public class StockUniverseSeederService {
         stocks.put("BPCL",        new String[] { "Bharat Petroleum",       "NIFTYOILANDGAS" });
         stocks.put("IOC",         new String[] { "Indian Oil",             "NIFTYOILANDGAS" });
         stocks.put("GAIL",        new String[] { "GAIL India",             "NIFTYOILANDGAS" });
-        stocks.put("HPCL",        new String[] { "Hindustan Petroleum",    "NIFTYOILANDGAS" });
+        stocks.put("HINDPETRO",   new String[] { "Hindustan Petroleum",    "NIFTYOILANDGAS" });
         stocks.put("PETRONET",    new String[] { "Petronet LNG",           "NIFTYOILANDGAS" });
         stocks.put("OIL",         new String[] { "Oil India",              "NIFTYOILANDGAS" });
         stocks.put("IGL",         new String[] { "Indraprastha Gas",       "NIFTYOILANDGAS" });
@@ -343,6 +348,96 @@ public class StockUniverseSeederService {
         stocks.put("JUBLFOOD",    new String[] { "Jubilant FoodWorks",     "NIFTYCONSUMPTION" });
         // Telecom Infrastructure (NIFTYSERVSECTOR — joins BHARTIARTL)
         stocks.put("INDUSTOWER",  new String[] { "Indus Towers",           "NIFTYSERVSECTOR" });
+
+        // ── Additional F&O eligible stocks (May 2026 expansion) ─────────────────
+        // Diffed against the live Fyers symbol master's stock-futures list. All names
+        // here are NSE F&O eligible and have daily OHLC rows in the CM bhavcopy under
+        // the ticker shown (no rename gotchas).
+
+        // Banks — PSU + private (NIFTYBANK)
+        stocks.put("BANDHANBNK",  new String[] { "Bandhan Bank",            "NIFTYBANK" });
+        stocks.put("BANKINDIA",   new String[] { "Bank of India",           "NIFTYBANK" });
+        stocks.put("INDIANB",     new String[] { "Indian Bank",             "NIFTYBANK" });
+        stocks.put("RBLBANK",     new String[] { "RBL Bank",                "NIFTYBANK" });
+        stocks.put("UNIONBANK",   new String[] { "Union Bank of India",     "NIFTYBANK" });
+        stocks.put("YESBANK",     new String[] { "Yes Bank",                "NIFTYBANK" });
+
+        // Financials / NBFC / Insurance / Capital Markets (FINNIFTY)
+        stocks.put("360ONE",      new String[] { "360 ONE WAM",             "FINNIFTY" });
+        stocks.put("ABCAPITAL",   new String[] { "Aditya Birla Capital",    "FINNIFTY" });
+        stocks.put("BAJAJHLDNG",  new String[] { "Bajaj Holdings",          "FINNIFTY" });
+        stocks.put("CAMS",        new String[] { "CAMS",                    "FINNIFTY" });
+        stocks.put("IEX",         new String[] { "Indian Energy Exchange",  "FINNIFTY" });
+        stocks.put("IRFC",        new String[] { "IRFC",                    "FINNIFTY" });
+        stocks.put("KFINTECH",    new String[] { "KFin Technologies",       "FINNIFTY" });
+        stocks.put("LICI",        new String[] { "Life Insurance Corp",     "FINNIFTY" });
+        stocks.put("LTF",         new String[] { "L&T Finance",             "FINNIFTY" });
+        stocks.put("MANAPPURAM",  new String[] { "Manappuram Finance",      "FINNIFTY" });
+        stocks.put("MFSL",        new String[] { "Max Financial Services",  "FINNIFTY" });
+        stocks.put("MOTILALOFS",  new String[] { "Motilal Oswal Financial", "FINNIFTY" });
+        stocks.put("NUVAMA",      new String[] { "Nuvama Wealth",           "FINNIFTY" });
+        stocks.put("PAYTM",       new String[] { "One 97 Communications",   "FINNIFTY" });
+        stocks.put("PNBHOUSING",  new String[] { "PNB Housing Finance",     "FINNIFTY" });
+        stocks.put("POLICYBZR",   new String[] { "PB Fintech",              "FINNIFTY" });
+        stocks.put("SAMMAANCAP",  new String[] { "Sammaan Capital",         "FINNIFTY" });
+
+        // Auto / Auto Ancillary (NIFTYAUTO)
+        stocks.put("EXIDEIND",    new String[] { "Exide Industries",        "NIFTYAUTO" });
+        stocks.put("FORCEMOT",    new String[] { "Force Motors",            "NIFTYAUTO" });
+        stocks.put("HYUNDAI",     new String[] { "Hyundai Motor India",     "NIFTYAUTO" });
+        stocks.put("SONACOMS",    new String[] { "Sona BLW Precision Forgings", "NIFTYAUTO" });
+        stocks.put("UNOMINDA",    new String[] { "UNO Minda",               "NIFTYAUTO" });
+
+        // IT (NIFTYIT)
+        stocks.put("KPITTECH",    new String[] { "KPIT Technologies",       "NIFTYIT" });
+        stocks.put("NAUKRI",      new String[] { "InfoEdge India",          "NIFTYIT" });
+        stocks.put("OFSS",        new String[] { "Oracle Financial Services","NIFTYIT" });
+        stocks.put("TATAELXSI",   new String[] { "Tata Elxsi",              "NIFTYIT" });
+
+        // Energy / Power / Renewables (NIFTYENERGY)
+        stocks.put("ADANIENSOL",  new String[] { "Adani Energy Solutions",  "NIFTYENERGY" });
+        stocks.put("ADANIPOWER",  new String[] { "Adani Power",             "NIFTYENERGY" });
+        stocks.put("INOXWIND",    new String[] { "Inox Wind",               "NIFTYENERGY" });
+        stocks.put("IREDA",       new String[] { "Indian Renewable Energy", "NIFTYENERGY" });
+        stocks.put("POWERINDIA",  new String[] { "Hitachi Energy India",    "NIFTYENERGY" });
+        stocks.put("PREMIERENE",  new String[] { "Premier Energies",        "NIFTYENERGY" });
+        stocks.put("SOLARINDS",   new String[] { "Solar Industries India",  "NIFTYENERGY" });
+        stocks.put("SUZLON",      new String[] { "Suzlon Energy",           "NIFTYENERGY" });
+        stocks.put("WAAREEENER",  new String[] { "Waaree Energies",         "NIFTYENERGY" });
+
+        // Capital Goods / Defence / Infra (NIFTYINFRA)
+        stocks.put("ASTRAL",      new String[] { "Astral Limited",          "NIFTYINFRA" });
+        stocks.put("CGPOWER",     new String[] { "CG Power & Industrial",   "NIFTYINFRA" });
+        stocks.put("COCHINSHIP",  new String[] { "Cochin Shipyard",         "NIFTYINFRA" });
+        stocks.put("GMRAIRPORT",  new String[] { "GMR Airports Infra",      "NIFTYINFRA" });
+        stocks.put("KEI",         new String[] { "KEI Industries",          "NIFTYINFRA" });
+        stocks.put("NBCC",        new String[] { "NBCC India",              "NIFTYINFRA" });
+        stocks.put("RVNL",        new String[] { "Rail Vikas Nigam",        "NIFTYINFRA" });
+        stocks.put("SUPREMEIND",  new String[] { "Supreme Industries",      "NIFTYINFRA" });
+
+        // Consumer Durables (NIFTYCONSRDURBL)
+        stocks.put("BLUESTARCO",  new String[] { "Blue Star",               "NIFTYCONSRDURBL" });
+        stocks.put("KAYNES",      new String[] { "Kaynes Technology",       "NIFTYCONSRDURBL" });
+        stocks.put("PGEL",        new String[] { "PG Electroplast",         "NIFTYCONSRDURBL" });
+
+        // Services / Telecom / Logistics (NIFTYSERVSECTOR)
+        stocks.put("CONCOR",      new String[] { "Container Corp of India", "NIFTYSERVSECTOR" });
+        stocks.put("DELHIVERY",   new String[] { "Delhivery",               "NIFTYSERVSECTOR" });
+        stocks.put("IDEA",        new String[] { "Vodafone Idea",           "NIFTYSERVSECTOR" });
+
+        // Retail / Consumption (NIFTYCONSUMPTION)
+        stocks.put("DMART",       new String[] { "Avenue Supermarts",       "NIFTYCONSUMPTION" });
+        stocks.put("GODFRYPHLP",  new String[] { "Godfrey Phillips",        "NIFTYCONSUMPTION" });
+        stocks.put("INDHOTEL",    new String[] { "Indian Hotels",           "NIFTYCONSUMPTION" });
+        stocks.put("KALYANKJIL",  new String[] { "Kalyan Jewellers",        "NIFTYCONSUMPTION" });
+        stocks.put("PAGEIND",     new String[] { "Page Industries",         "NIFTYCONSUMPTION" });
+        stocks.put("PATANJALI",   new String[] { "Patanjali Foods",         "NIFTYCONSUMPTION" });
+        stocks.put("SWIGGY",      new String[] { "Bundl Technologies (Swiggy)", "NIFTYCONSUMPTION" });
+        stocks.put("UNITDSPR",    new String[] { "United Spirits",          "NIFTYCONSUMPTION" });
+        stocks.put("VMM",         new String[] { "Vishal Mega Mart",        "NIFTYCONSUMPTION" });
+
+        // Chemicals (NIFTYCOMMODITIES)
+        stocks.put("PIIND",       new String[] { "PI Industries",           "NIFTYCOMMODITIES" });
 
         int added = 0, migrated = 0, membershipBackfilled = 0, skippedNoIndex = 0;
         for (Map.Entry<String, String[]> e : stocks.entrySet()) {
