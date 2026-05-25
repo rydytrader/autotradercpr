@@ -800,8 +800,10 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         String symbol = ctx.symbol;
         int retries = 0;
         final int MAX_RETRIES = 3;
-        // Breakeven SL always requires a target to compute the (entry→target) range — no-target mode removed.
-        boolean skipTarget = false;
+        // Open Target mode (Settings → Money) skips the target leg entirely — the
+        // position closes on SL hit or auto-squareoff. Breakeven / trailing SL are also
+        // bypassed elsewhere because both depend on a defined target.
+        boolean skipTarget = riskSettings.isEnableOpenTargetMode();
 
         // Single target only — splits are no longer placed for new trades.
         // Existing split-tracking paths (handleT1Fill, handleT2Fill, handleSplitSlFill,
@@ -834,7 +836,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
 
                 eventService.log("[SUCCESS] [WS] SL placed for " + symbol + " at " + roundedSl + " [ID: " + slOrder.getId() + "]");
                 if (skipTarget) {
-                    eventService.log("[INFO] [WS] No fixed target for " + symbol + " — trailing SL will close the trade");
+                    eventService.log("[INFO] [WS] No target for " + symbol + " — Open Target mode; closes on SL hit or auto-squareoff");
                 } else {
                     if (Math.abs(placedTargetPrice - ctx.targetPrice) > 0.001) {
                         eventService.log("[SUCCESS] [WS] Target placed for " + symbol + " at " + String.format("%.2f", placedTargetPrice)

@@ -1019,6 +1019,13 @@
                 return '  <div class="scan-data-item" style="text-align:left;"><div class="scan-data-label">D-CPR</div><div class="scan-data-value" style="color:' + color + ';font-weight:600;" title="Last 5-min candle close vs daily CPR zone">' + bias + '</div></div>';
             })()
             + (function() {
+                // The 5-min EMA 20 cell only renders when the user has the matching
+                // Stock 5m EMA20 Check toggle on. With it off, the direction gate ignores
+                // EMA20, so the chip on the card would be visual noise. Cell is replaced
+                // with an empty placeholder so the 3-col grid stays aligned.
+                var showEma = window.__scannerStatus
+                    && window.__scannerStatus.enableStock5mEma20Check === true;
+                if (!showEma) return '  <div class="scan-data-item"></div>';
                 var color = em5.cls === 'bullish' ? 'var(--accent-green)' : em5.cls === 'bearish' ? 'var(--accent-red)' : 'var(--text-secondary)';
                 // Volume tooltip: last completed 5-min candle vs 20-bar average.
                 var vol  = +d.lastCandleVolume || 0;
@@ -1530,9 +1537,16 @@
                             if      (lastCl > emaVal) { emaColor = 'var(--accent-green)'; emaArrow = '▲'; }
                             else if (lastCl < emaVal) { emaColor = 'var(--accent-red)';   emaArrow = '▼'; }
                         }
+                        // EMA cell only renders when the Index 5m EMA20 Check toggle is on.
+                        // Placeholder keeps the 3-col grid aligned.
+                        var showEma5 = window.__scannerStatus
+                            && window.__scannerStatus.enableIndex5mEma20Check === true;
+                        var emaCell5 = showEma5
+                            ? '<div class="scan-data-item" style="text-align:center;" title="5-min EMA20 (live-blended) vs last 5-min close"><div class="scan-data-label">EMA 20 (5 M)</div><div class="scan-data-value" style="color:' + emaColor + ';font-weight:600;">' + (emaVal > 0 ? emaVal.toFixed(2) + (emaArrow ? ' ' + emaArrow : '') : '—') + '</div></div>'
+                            : '<div class="scan-data-item"></div>';
                         return '<div class="scan-data-grid scan-data-grid-3">'
                             +   '<div class="scan-data-item" style="text-align:left;" title="Last 5-min close vs daily CPR zone"><div class="scan-data-label">D-CPR</div><div class="scan-data-value" style="color:' + biasColor + ';font-weight:600;">' + bias + '</div></div>'
-                            +   '<div class="scan-data-item" style="text-align:center;" title="5-min EMA20 (live-blended) vs last 5-min close"><div class="scan-data-label">EMA 20 (5 M)</div><div class="scan-data-value" style="color:' + emaColor + ';font-weight:600;">' + (emaVal > 0 ? emaVal.toFixed(2) + (emaArrow ? ' ' + emaArrow : '') : '—') + '</div></div>'
+                            +   emaCell5
                             +   '<div class="scan-data-item" style="text-align:right;"><div class="scan-data-label">Daily</div><div class="scan-data-value" style="color:' + stateColor + ';font-weight:600;">' + state.replace('_', ' ') + '</div></div>'
                             + '</div>';
                     })()
@@ -1576,11 +1590,19 @@
                         var hStColor = hSt === 'BULLISH' ? 'var(--accent-green)'
                             : hSt === 'BEARISH' ? 'var(--accent-red)'
                             : hSt === 'INSIDE'  ? 'var(--accent-yellow)' : 'var(--text-muted)';
+                        // 1h EMA cell only renders when the Index HTF 1h EMA20 Check toggle
+                        // is on — matches the alignment filter's mode. Placeholder keeps
+                        // the 3-col grid aligned.
+                        var showHtfEma = window.__scannerStatus
+                            && window.__scannerStatus.enableIndexHtf1hEma20Check === true;
+                        var htfEmaCell = showHtfEma
+                            ? '<div class="scan-data-item" style="text-align:center;" title="1-hour EMA20 (stepped) vs last 1-hour close"><div class="scan-data-label">EMA 20 (1 HR)</div><div class="scan-data-value" style="color:' + hEmaColor + ';font-weight:600;">' + (hEma > 0 ? hEma.toFixed(2) + (hEmaArrow ? ' ' + hEmaArrow : '') : '—') + '</div></div>'
+                            : '<div class="scan-data-item"></div>';
                         return '<div style="border-top:1px solid var(--border);"></div>'
                             + '<div class="scan-data-grid scan-data-grid-3">'
                             +   '<div class="scan-data-item" style="text-align:left;" title="Last 1-hour close vs weekly CPR zone"><div class="scan-data-label">W-CPR</div><div class="scan-data-value" style="color:' + hBiasColor + ';font-weight:600;">' + hBias + '</div></div>'
-                            +   '<div class="scan-data-item" style="text-align:center;" title="1-hour EMA20 (stepped) vs last 1-hour close"><div class="scan-data-label">EMA 20 (1 HR)</div><div class="scan-data-value" style="color:' + hEmaColor + ';font-weight:600;">' + (hEma > 0 ? hEma.toFixed(2) + (hEmaArrow ? ' ' + hEmaArrow : '') : '—') + '</div></div>'
-                            +   '<div class="scan-data-item" style="text-align:right;" title="Index HTF state — weekly CPR + 1h EMA20 (Index HTF Trend Alignment source)"><div class="scan-data-label">HTF</div><div class="scan-data-value" style="color:' + hStColor + ';font-weight:600;">' + hSt.replace('_', ' ') + '</div></div>'
+                            +   htfEmaCell
+                            +   '<div class="scan-data-item" style="text-align:right;" title="Index HTF state — weekly CPR ' + (showHtfEma ? '+ 1h EMA20 (2-factor)' : 'only (1-factor)') + ' (Index HTF Trend Alignment source)"><div class="scan-data-label">HTF</div><div class="scan-data-value" style="color:' + hStColor + ';font-weight:600;">' + hSt.replace('_', ' ') + '</div></div>'
                             + '</div>';
                     })()
                     + '  </div>'

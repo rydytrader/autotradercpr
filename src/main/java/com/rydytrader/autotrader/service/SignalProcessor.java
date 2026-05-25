@@ -208,48 +208,58 @@ public class SignalProcessor {
         double defaultTarget = targets[0];
         double target = defaultTarget;
 
-        // ── 4g1. Defensive wrong-side target check ──
-        // Target must sit on the correct side of entry (above for BUY, below for SELL).
-        // Guards against degenerate target projection (e.g. projected R5 below current close
-        // when price has run far past R4).
-        if ((isBuy && target <= close) || (!isBuy && target >= close)) {
-            return ProcessedSignal.rejected(setup, symbol,
-                "Target " + fmt(target) + " on wrong side of entry " + fmt(close)
-                + " (" + (isBuy ? "BUY target must be above" : "SELL target must be below") + ")");
-        }
-
-        // ── 4g2. Walk-and-shift target picker ──────────────────────────────────
-        // Single target only — no splits. Algorithm per user spec:
-        //   1. Walk daily R/S levels (closest to entry first, beyond entry in trade direction)
-        //   2. Find first daily level whose R/R clears minRR
-        //   3. Check if any weekly CPR level lies strictly between entry and that daily level
-        //   4. If a weekly intervenes, shift target to the weekly closest to entry
-        //   5. Re-check R/R after the shift — reject if shifted R/R falls below minRR
-        //   6. If no daily level satisfies minRR → reject
+        // Open Target mode — trade fires with SL only. No target leg is placed on
+        // Fyers; the position closes via SL hit or auto-squareoff. Both the wrong-side
+        // check and the walk-and-shift R/R filter are silently bypassed because there
+        // is no target to grade.
         boolean rescueShifted = false;
-        if (riskSettings.isEnableRiskRewardFilter()) {
-            double minRR = riskSettings.getMinRiskRewardRatio();
-            double risk  = Math.abs(close - sl);
-            TargetPick pick = pickTarget(isBuy, close, risk, minRR,
-                r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc, weeklyLv);
-            if (pick == null) {
+        if (riskSettings.isEnableOpenTargetMode()) {
+            target = 0.0;
+            eventService.log("[INFO] " + symbol + " " + setup
+                + " target: OPEN — closes only on SL hit or auto-squareoff");
+        } else {
+            // ── 4g1. Defensive wrong-side target check ──
+            // Target must sit on the correct side of entry (above for BUY, below for SELL).
+            // Guards against degenerate target projection (e.g. projected R5 below current close
+            // when price has run far past R4).
+            if ((isBuy && target <= close) || (!isBuy && target >= close)) {
                 return ProcessedSignal.rejected(setup, symbol,
-                    "No daily CPR level satisfies R/R " + minRR + ":1 (walk-and-shift) — "
-                    + "entry=" + fmt(close) + " SL=" + fmt(sl) + " risk=" + fmt(risk));
+                    "Target " + fmt(target) + " on wrong side of entry " + fmt(close)
+                    + " (" + (isBuy ? "BUY target must be above" : "SELL target must be below") + ")");
             }
-            double finalRR = Math.abs(pick.target - close) / risk;
-            if (pick.shifted) {
-                eventService.log("[INFO] " + symbol + " " + setup
-                    + " target: daily " + pick.dailyName + " = " + fmt(pick.dailyValue)
-                    + " shifted to weekly " + pick.weeklyName + " = " + fmt(pick.target)
-                    + " (between entry and daily) | R/R " + fmt(finalRR) + ":1");
-                rescueShifted = true;
-            } else {
-                eventService.log("[INFO] " + symbol + " " + setup
-                    + " target: daily " + pick.dailyName + " = " + fmt(pick.target)
-                    + " | R/R " + fmt(finalRR) + ":1");
+
+            // ── 4g2. Walk-and-shift target picker ──────────────────────────────────
+            // Single target only — no splits. Algorithm per user spec:
+            //   1. Walk daily R/S levels (closest to entry first, beyond entry in trade direction)
+            //   2. Find first daily level whose R/R clears minRR
+            //   3. Check if any weekly CPR level lies strictly between entry and that daily level
+            //   4. If a weekly intervenes, shift target to the weekly closest to entry
+            //   5. Re-check R/R after the shift — reject if shifted R/R falls below minRR
+            //   6. If no daily level satisfies minRR → reject
+            if (riskSettings.isEnableRiskRewardFilter()) {
+                double minRR = riskSettings.getMinRiskRewardRatio();
+                double risk  = Math.abs(close - sl);
+                TargetPick pick = pickTarget(isBuy, close, risk, minRR,
+                    r1, r2, r3, r4, s1, s2, s3, s4, ph, pl, tc, bc, weeklyLv);
+                if (pick == null) {
+                    return ProcessedSignal.rejected(setup, symbol,
+                        "No daily CPR level satisfies R/R " + minRR + ":1 (walk-and-shift) — "
+                        + "entry=" + fmt(close) + " SL=" + fmt(sl) + " risk=" + fmt(risk));
+                }
+                double finalRR = Math.abs(pick.target - close) / risk;
+                if (pick.shifted) {
+                    eventService.log("[INFO] " + symbol + " " + setup
+                        + " target: daily " + pick.dailyName + " = " + fmt(pick.dailyValue)
+                        + " shifted to weekly " + pick.weeklyName + " = " + fmt(pick.target)
+                        + " (between entry and daily) | R/R " + fmt(finalRR) + ":1");
+                    rescueShifted = true;
+                } else {
+                    eventService.log("[INFO] " + symbol + " " + setup
+                        + " target: daily " + pick.dailyName + " = " + fmt(pick.target)
+                        + " | R/R " + fmt(finalRR) + ":1");
+                }
+                target = pick.target;
             }
-            target = pick.target;
         }
 
         // ── 4i. Quantity ────────────────────────────────────────────────────────

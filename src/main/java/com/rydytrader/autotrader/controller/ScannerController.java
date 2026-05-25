@@ -529,10 +529,22 @@ public class ScannerController {
             if (biasClose > cprTop)          cprBias = "BULLISH";
             else if (biasClose < cprBotBias) cprBias = "BEARISH";
         }
-        // Trend state — centralized 2-factor strict logic in IndexTrendService.deriveTrendState
-        // (BULLISH iff close > CPR top AND close > EMA20; BEARISH iff both below; mismatched
-        // factors → SIDEWAYS). No REVERSAL states.
-        String trendState = IndexTrendService.deriveTrendState(biasClose, cprTop, cprBotBias, ema20Val);
+        // Trend state — respects the Stock 5m EMA20 Check toggle so the chip on the
+        // card matches what the direction gate actually evaluates.
+        //   ON  → strict 2-factor (CPR + EMA20)
+        //   OFF → CPR-only: BULLISH if close > top, BEARISH if < bot, SIDEWAYS inside
+        String trendState;
+        if (riskSettings.isEnableStock5mEma20Check()) {
+            trendState = IndexTrendService.deriveTrendState(biasClose, cprTop, cprBotBias, ema20Val);
+        } else if (biasClose <= 0 || cprTop <= 0 || cprBotBias <= 0) {
+            trendState = "NEUTRAL";
+        } else if (biasClose > cprTop) {
+            trendState = "BULLISH";
+        } else if (biasClose < cprBotBias) {
+            trendState = "BEARISH";
+        } else {
+            trendState = "SIDEWAYS";
+        }
         card.put("cprBias", cprBias);
         card.put("trendState", trendState);
 
@@ -1022,6 +1034,9 @@ public class ScannerController {
         status.put("enableIndexHtfAlignment",   riskSettings.isEnableIndexHtfAlignment());
         status.put("enableStockHtfAlignment",   riskSettings.isEnableStockHtfAlignment());
         status.put("enableStockHtf1hEma20Check", riskSettings.isEnableStockHtf1hEma20Check());
+        status.put("enableStock5mEma20Check",   riskSettings.isEnableStock5mEma20Check());
+        status.put("enableIndex5mEma20Check",   riskSettings.isEnableIndex5mEma20Check());
+        status.put("enableIndexHtf1hEma20Check", riskSettings.isEnableIndexHtf1hEma20Check());
         status.put("enableOpenRangeFilter",     riskSettings.isEnableOpenRangeFilter());
         status.put("enableIndexOpenRangeFilter", riskSettings.isEnableIndexOpenRangeFilter());
         status.put("minPrice", riskSettings.getScanMinPrice());

@@ -361,6 +361,16 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
      * trend, parallel to the existing NIFTY Index Alignment filter.
      */
     public String getSectorTrendForTicker(String sectorIndexTicker) {
+        return getSectorTrendForTicker(sectorIndexTicker, true);
+    }
+
+    /**
+     * Sector / NIFTY 50 5-min trend state with an optional 2nd factor.
+     *   useEma=true  → strict 2-factor (5m close vs daily CPR AND vs 5m EMA20)
+     *   useEma=false → CPR-only: BULLISH if close > top, BEARISH if < bot, SIDEWAYS inside
+     * Toggled by {@code enableIndex5mEma20Check}.
+     */
+    public String getSectorTrendForTicker(String sectorIndexTicker, boolean useEma) {
         if (sectorIndexTicker == null || sectorIndexTicker.isEmpty()) return "NEUTRAL";
         var cpr = bhavcopyService.getCprLevels(sectorIndexTicker);
         if (cpr == null) return "NEUTRAL";
@@ -382,8 +392,14 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
 
         double top = Math.max(cpr.getTc(), cpr.getBc());
         double bot = Math.min(cpr.getTc(), cpr.getBc());
-        double ema20 = emaService != null ? emaService.getSteppedEma(fyersSym) : 0;
-        return deriveTrendState(refClose, top, bot, ema20);
+        if (useEma) {
+            double ema20 = emaService != null ? emaService.getSteppedEma(fyersSym) : 0;
+            return deriveTrendState(refClose, top, bot, ema20);
+        }
+        // CPR-only mode — EMA factor ignored.
+        if (refClose > top) return "BULLISH";
+        if (refClose < bot) return "BEARISH";
+        return "SIDEWAYS";
     }
 
     /**
@@ -411,9 +427,19 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
      * alignment filter so the call site doesn't have to branch on NIFTY vs sector.
      */
     public String getTrendStateForTicker(String ticker) {
+        return getTrendStateForTicker(ticker, true);
+    }
+
+    /**
+     * Trend state accessor with optional EMA factor.
+     * useEma=true (default) keeps NIFTY 50 on the sticky cache (boundary-updated) for
+     * speed. useEma=false bypasses the sticky cache and runs the CPR-only derivation
+     * live on every call, since the cached value reflects the 2-factor state.
+     */
+    public String getTrendStateForTicker(String ticker, boolean useEma) {
         if (ticker == null) return "NEUTRAL";
-        if ("NIFTY50".equals(ticker)) return getStickyState();
-        return getSectorTrendForTicker(ticker);
+        if (useEma && "NIFTY50".equals(ticker)) return getStickyState();
+        return getSectorTrendForTicker(ticker, useEma);
     }
 
     /**
@@ -424,6 +450,15 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
      * the index mini-card HTF chip.
      */
     public String getHtfTrendStateForTicker(String ticker) {
+        return getHtfTrendStateForTicker(ticker, true);
+    }
+
+    /**
+     * Index HTF (1-hour) state with optional 2nd factor.
+     *   useEma=true  → strict 2-factor (1h close vs weekly CPR AND vs 1h EMA20)
+     *   useEma=false → CPR-only mode. Toggled by {@code enableIndexHtf1hEma20Check}.
+     */
+    public String getHtfTrendStateForTicker(String ticker, boolean useEma) {
         if (ticker == null || ticker.isEmpty()) return "NEUTRAL";
         if (weeklyCprService == null || htfEmaService == null || candleAggregator == null) return "NEUTRAL";
         String fyersSym = "NSE:" + ticker + "-INDEX";
@@ -431,7 +466,14 @@ public class IndexTrendService implements CandleAggregator.CandleCloseListener,
         if (wl == null || wl.top <= 0 || wl.bot <= 0) return "NEUTRAL";
         Double htfClose = candleAggregator.getLast1HourClose(fyersSym);
         if (htfClose == null || htfClose <= 0) return "NEUTRAL";
-        double htfEma = htfEmaService.getEma(fyersSym);
-        return deriveTrendState(htfClose, wl.top, wl.bot, htfEma);
+        if (useEma) {
+            double htfEma = htfEmaService.getEma(fyersSym);
+            return deriveTrendState(htfClose, wl.top, wl.bot, htfEma);
+        }
+        double top = Math.max(wl.top, wl.bot);
+        double bot = Math.min(wl.top, wl.bot);
+        if (htfClose > top) return "BULLISH";
+        if (htfClose < bot) return "BEARISH";
+        return "SIDEWAYS";
     }
 }

@@ -450,19 +450,26 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         double low = candle.low;
         double high = candle.high;
 
-        // ── Stock 5m direction gate (top-level, hard-baked) ────────────────────
+        // ── Stock 5m direction gate (top-level) ────────────────────────────────
         // Replaces the old EMA Price Filter. Pattern detection only proceeds in the
         // directions the gate allows; per-setup verification happens after detection
         // since the gate distinguishes trend-following vs counter-trend.
         //
-        //   • Trend-following BUY  → stock 5m state == BULLISH  (close > CPR top AND > EMA20)
-        //   • Counter-trend  BUY   → shallow dip                (close < CPR bot AND > EMA20)
-        //   • Trend-following SELL → stock 5m state == BEARISH  (close < CPR bot AND < EMA20)
-        //   • Counter-trend  SELL  → shallow rally              (close > CPR top AND < EMA20)
+        // EMA factor toggled by Settings → Filters → "Stock 5m EMA20 Check".
+        //   ON  (default — strict 2-factor):
+        //     • TF BUY  → close > CPR top AND > EMA20    (strict BULLISH)
+        //     • CT BUY  → close < CPR bot AND > EMA20    (shallow dip)
+        //     • TF SELL → close < CPR bot AND < EMA20    (strict BEARISH)
+        //     • CT SELL → close > CPR top AND < EMA20    (shallow rally)
+        //   OFF (CPR-only):
+        //     • TF BUY  → close > CPR top
+        //     • TF SELL → close < CPR bot
+        //     • CT setups (magnet, mean-reversion) implicitly disabled — their
+        //       shallow-dip / shallow-rally definitions require the EMA layer.
         //
-        // If neither TF nor CT path qualifies in a direction, we skip detection in that
-        // direction entirely — no noisy "blocked by EMA" log on candles that were never
-        // going to trade.
+        // If neither TF nor CT path qualifies in a direction, detection is skipped in
+        // that direction entirely.
+        boolean emaCheckOn = riskSettings.isEnableStock5mEma20Check();
         double ema20Now = emaService.getEma(fyersSymbol);
         double gateCprTop = Math.max(levels.getTc(), levels.getBc());
         double gateCprBot = Math.min(levels.getTc(), levels.getBc());
@@ -470,10 +477,10 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         boolean gateBelowCpr = close < gateCprBot;
         boolean gateAboveEma = ema20Now > 0 && close > ema20Now;
         boolean gateBelowEma = ema20Now > 0 && close < ema20Now;
-        boolean canFireTfBuy   = gateAboveCpr && gateAboveEma;   // strict BULLISH
-        boolean canFireCtBuy   = gateBelowCpr && gateAboveEma;   // shallow dip
-        boolean canFireTfSell  = gateBelowCpr && gateBelowEma;   // strict BEARISH
-        boolean canFireCtSell  = gateAboveCpr && gateBelowEma;   // shallow rally
+        boolean canFireTfBuy   = emaCheckOn ? (gateAboveCpr && gateAboveEma) : gateAboveCpr;
+        boolean canFireCtBuy   = emaCheckOn && gateBelowCpr && gateAboveEma;   // shallow dip — needs EMA
+        boolean canFireTfSell  = emaCheckOn ? (gateBelowCpr && gateBelowEma) : gateBelowCpr;
+        boolean canFireCtSell  = emaCheckOn && gateAboveCpr && gateBelowEma;   // shallow rally — needs EMA
         boolean canFireAnyBuy  = canFireTfBuy  || canFireCtBuy;
         boolean canFireAnySell = canFireTfSell || canFireCtSell;
 
@@ -489,17 +496,22 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 // setups need shallow-dip (close < CPR bot AND close > EMA20).
                 boolean isTfBuy = isTrendFollowingBuy(buySetup);
                 if (isTfBuy && !canFireTfBuy) {
-                    String detail = "trend-following buy needs strict BULLISH (close > CPR top "
-                        + String.format("%.2f", gateCprTop) + " AND > EMA20 "
-                        + String.format("%.2f", ema20Now) + "); close=" + String.format("%.2f", close);
+                    String detail = emaCheckOn
+                        ? "trend-following buy needs strict BULLISH (close > CPR top "
+                            + String.format("%.2f", gateCprTop) + " AND > EMA20 "
+                            + String.format("%.2f", ema20Now) + "); close=" + String.format("%.2f", close)
+                        : "trend-following buy needs close > CPR top "
+                            + String.format("%.2f", gateCprTop) + "; close=" + String.format("%.2f", close);
                     eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + detail);
                     recordRejection(fyersSymbol, buySetup, close, "STOCK_5M_TREND", detail);
                     return;
                 }
                 if (!isTfBuy && !canFireCtBuy) {
-                    String detail = "counter-trend buy needs shallow dip (close < CPR bot "
-                        + String.format("%.2f", gateCprBot) + " AND > EMA20 "
-                        + String.format("%.2f", ema20Now) + "); close=" + String.format("%.2f", close);
+                    String detail = emaCheckOn
+                        ? "counter-trend buy needs shallow dip (close < CPR bot "
+                            + String.format("%.2f", gateCprBot) + " AND > EMA20 "
+                            + String.format("%.2f", ema20Now) + "); close=" + String.format("%.2f", close)
+                        : "counter-trend buys require the Stock 5m EMA20 Check to be enabled";
                     eventService.log("[SCANNER] " + fyersSymbol + " " + buySetup + routeFor(fyersSymbol) + " SKIPPED — " + detail);
                     recordRejection(fyersSymbol, buySetup, close, "STOCK_5M_TREND", detail);
                     return;
@@ -713,17 +725,22 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
                 // shallow rally (close > CPR top AND close < EMA20).
                 boolean isTfSell = isTrendFollowingSell(sellSetup);
                 if (isTfSell && !canFireTfSell) {
-                    String detail = "trend-following sell needs strict BEARISH (close < CPR bot "
-                        + String.format("%.2f", gateCprBot) + " AND < EMA20 "
-                        + String.format("%.2f", ema20Now) + "); close=" + String.format("%.2f", close);
+                    String detail = emaCheckOn
+                        ? "trend-following sell needs strict BEARISH (close < CPR bot "
+                            + String.format("%.2f", gateCprBot) + " AND < EMA20 "
+                            + String.format("%.2f", ema20Now) + "); close=" + String.format("%.2f", close)
+                        : "trend-following sell needs close < CPR bot "
+                            + String.format("%.2f", gateCprBot) + "; close=" + String.format("%.2f", close);
                     eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + detail);
                     recordRejection(fyersSymbol, sellSetup, close, "STOCK_5M_TREND", detail);
                     return;
                 }
                 if (!isTfSell && !canFireCtSell) {
-                    String detail = "counter-trend sell needs shallow rally (close > CPR top "
-                        + String.format("%.2f", gateCprTop) + " AND < EMA20 "
-                        + String.format("%.2f", ema20Now) + "); close=" + String.format("%.2f", close);
+                    String detail = emaCheckOn
+                        ? "counter-trend sell needs shallow rally (close > CPR top "
+                            + String.format("%.2f", gateCprTop) + " AND < EMA20 "
+                            + String.format("%.2f", ema20Now) + "); close=" + String.format("%.2f", close)
+                        : "counter-trend sells require the Stock 5m EMA20 Check to be enabled";
                     eventService.log("[SCANNER] " + fyersSymbol + " " + sellSetup + routeFor(fyersSymbol) + " SKIPPED — " + detail);
                     recordRejection(fyersSymbol, sellSetup, close, "STOCK_5M_TREND", detail);
                     return;
@@ -1587,19 +1604,19 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             String stockTicker = extractTicker(fyersSymbol);
             String primaryIndex = bhavcopyService.getPrimaryIndexTicker(stockTicker);
             if (primaryIndex == null || primaryIndex.isEmpty()) primaryIndex = "NIFTY50";
-            String state = indexTrendService.getTrendStateForTicker(primaryIndex);
-            // Index trend is strict 2-factor (daily CPR + 5-min EMA20): BULLISH / BEARISH /
-            // INSIDE / SIDEWAYS / NEUTRAL. No REVERSAL states.
-            //   • NEUTRAL → fail-open (no data yet, pre-market or CPR not loaded).
-            //   • INSIDE / SIDEWAYS → hard reject (no clean directional bias).
-            //   • Buys require state = BULLISH (close > CPR top AND > 5m EMA20).
-            //   • Sells require state = BEARISH (close < CPR bot AND < 5m EMA20).
+            boolean useEma = riskSettings.isEnableIndex5mEma20Check();
+            String state = indexTrendService.getTrendStateForTicker(primaryIndex, useEma);
+            // useEma=true  → strict 2-factor (daily CPR + 5-min EMA20)
+            // useEma=false → CPR-only (5m close vs CPR top/bot)
+            // Either way: NEUTRAL → fail-open, BULLISH/BEARISH must match trade direction,
+            // SIDEWAYS → hard reject.
             if ("NEUTRAL".equals(state)) return NiftyAlignStatus.OK;
             boolean aligned = isBuy ? "BULLISH".equals(state) : "BEARISH".equals(state);
             String requiredStates = isBuy ? "BULLISH" : "BEARISH";
             if (aligned) return NiftyAlignStatus.OK;
+            String mode = useEma ? "CPR+EMA" : "CPR-only";
             eventService.log("[SCANNER] " + fyersSymbol + " " + setup + routeFor(fyersSymbol)
-                + " INDEX MISALIGNED — " + primaryIndex + " " + state + ", trade direction needs " + requiredStates);
+                + " INDEX MISALIGNED (" + mode + ") — " + primaryIndex + " " + state + ", trade direction needs " + requiredStates);
             return NiftyAlignStatus.SKIP;
         } catch (Exception e) {
             log.warn("[BreakoutScanner] Index alignment check failed for {}: {}", fyersSymbol, e.getMessage());
@@ -1620,7 +1637,8 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
             String stockTicker = extractTicker(fyersSymbol);
             String primaryIndex = bhavcopyService.getPrimaryIndexTicker(stockTicker);
             if (primaryIndex == null || primaryIndex.isEmpty()) primaryIndex = "NIFTY50";
-            String state = indexTrendService.getHtfTrendStateForTicker(primaryIndex);
+            boolean useEma = riskSettings.isEnableIndexHtf1hEma20Check();
+            String state = indexTrendService.getHtfTrendStateForTicker(primaryIndex, useEma);
             if ("NEUTRAL".equals(state)) return NiftyAlignStatus.OK;     // fail-open on missing data
             boolean aligned = isBuy ? "BULLISH".equals(state) : "BEARISH".equals(state);
             if (aligned) return NiftyAlignStatus.OK;

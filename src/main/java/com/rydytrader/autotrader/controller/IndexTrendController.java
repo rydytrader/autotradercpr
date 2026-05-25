@@ -125,7 +125,7 @@ public class IndexTrendController {
                     }
                 }
             }
-            String state = indexTrendService.getTrendStateForTicker(ticker);
+            String state = indexTrendService.getTrendStateForTicker(ticker, riskSettings.isEnableIndex5mEma20Check());
             double widthPct = idx.getCprWidthPct();
             // Adaptive CPR state — replaces the legacy static NARROW/WIDE band.
             BhavcopyService.AdaptiveCprResult adaptive = bhavcopyService.getAdaptiveCpr(ticker);
@@ -177,7 +177,7 @@ public class IndexTrendController {
             m.put("lastClose", Math.round(idxLastClose * 100.0) / 100.0);
             // HTF (1-hour) state + factors so the index mini-card can mirror the stock card's
             // W-CPR row (weekly CPR bias + 1h EMA + HTF chip). Same strict 2-factor rule.
-            m.put("htfState", indexTrendService.getHtfTrendStateForTicker(ticker));
+            m.put("htfState", indexTrendService.getHtfTrendStateForTicker(ticker, riskSettings.isEnableIndexHtf1hEma20Check()));
             Double idxHtfClose = candleAggregator.getLast1HourClose(fyersSym);
             double idxHtfCloseVal = idxHtfClose != null ? idxHtfClose : 0;
             m.put("htfClose", Math.round(idxHtfCloseVal * 100.0) / 100.0);

@@ -182,6 +182,10 @@ public class RiskSettingsStore {
         // Risk/Reward filter — skip trade if |target−entry| / |entry−SL| < minRiskRewardRatio
         volatile boolean enableRiskRewardFilter = true;
         volatile double  minRiskRewardRatio     = 1.0;
+        // Open Target mode — when TRUE, trades fire with SL only (no target order placed
+        // on Fyers). Position closes on SL hit or auto-squareoff. R/R filter and trailing
+        // SL are silently bypassed because both depend on a defined target.
+        volatile boolean enableOpenTargetMode   = false;
         // EMA filters
         // 5-min EMA trend gate: buy requires close above EMA 20, sell requires close below EMA 20.
         // (enableEmaTrendCheck removed — 5-min EMA factor is now hard-baked into the
@@ -296,11 +300,23 @@ public class RiskSettingsStore {
         // with the trade direction (BULLISH/BULLISH_REVERSAL for buy, BEARISH/BEARISH_REVERSAL
         // for sell). Computed from 1-hour close vs weekly CPR + 1-hour EMA20. Opt-in.
         volatile boolean enableStockHtfAlignment = false;
+        // Optional 2nd factor for the stock 5-min direction gate. When TRUE (default)
+        // the gate runs the strict 2-factor classifier (5m close vs daily CPR AND
+        // 5m close vs 5m EMA20). When FALSE the EMA factor is skipped — TF trades fire
+        // on CPR direction alone, and counter-trend (magnet / mean-reversion) setups
+        // are implicitly disabled because their definition relies on the EMA layer to
+        // distinguish them from regular trades.
+        volatile boolean enableStock5mEma20Check = true;
         // Optional 2nd factor for Stock HTF Alignment. When TRUE (default) the filter
         // runs the strict 2-factor state machine (1h close vs weekly CPR AND 1h close vs
         // 1h EMA20). When FALSE the EMA factor is skipped — state is determined purely
         // by where the 1h close sits relative to the weekly CPR zone.
         volatile boolean enableStockHtf1hEma20Check = true;
+        // Same toggles for the index alignment filters. ON (default) keeps the existing
+        // strict 2-factor state machine; OFF runs the index trend / index HTF state in
+        // CPR-only mode (close vs CPR zone only — EMA factor ignored).
+        volatile boolean enableIndex5mEma20Check    = true;
+        volatile boolean enableIndexHtf1hEma20Check = true;
     }
 
     private final Cfg live = new Cfg();
@@ -361,6 +377,7 @@ public class RiskSettingsStore {
     public double getDayHighLowMinAtr()            { return cfg().dayHighLowMinAtr; }
     public boolean isEnableRiskRewardFilter()      { return cfg().enableRiskRewardFilter; }
     public double  getMinRiskRewardRatio()         { return cfg().minRiskRewardRatio; }
+    public boolean isEnableOpenTargetMode()        { return cfg().enableOpenTargetMode; }
     public boolean isEnableEmaLevelCountFilter()   { return cfg().enableEmaLevelCountFilter; }
     public int getEmaLevelMinRangePct()            { return cfg().emaLevelMinRangePct; }
     public boolean isEmaLevelFilterMorningSkip()       { return cfg().emaLevelFilterMorningSkip; }
@@ -424,6 +441,9 @@ public class RiskSettingsStore {
     public boolean isEnableIndexAlignment()    { return cfg().enableIndexAlignment; }
     public boolean isEnableStockHtfAlignment() { return cfg().enableStockHtfAlignment; }
     public boolean isEnableStockHtf1hEma20Check() { return cfg().enableStockHtf1hEma20Check; }
+    public boolean isEnableStock5mEma20Check() { return cfg().enableStock5mEma20Check; }
+    public boolean isEnableIndex5mEma20Check()    { return cfg().enableIndex5mEma20Check; }
+    public boolean isEnableIndexHtf1hEma20Check() { return cfg().enableIndexHtf1hEma20Check; }
     public void setSignalSource(String v)      { cfg().signalSource = v; }
     public void setScannerTimeframe(int v)     { cfg().scannerTimeframe = v; }
     public void setHigherTimeframe(int v)      { cfg().higherTimeframe = v; }
@@ -447,6 +467,9 @@ public class RiskSettingsStore {
     public void setEnableIndexAlignment(boolean v)        { cfg().enableIndexAlignment = v; }
     public void setEnableStockHtfAlignment(boolean v)     { cfg().enableStockHtfAlignment = v; }
     public void setEnableStockHtf1hEma20Check(boolean v)  { cfg().enableStockHtf1hEma20Check = v; }
+    public void setEnableStock5mEma20Check(boolean v)     { cfg().enableStock5mEma20Check = v; }
+    public void setEnableIndex5mEma20Check(boolean v)     { cfg().enableIndex5mEma20Check = v; }
+    public void setEnableIndexHtf1hEma20Check(boolean v)  { cfg().enableIndexHtf1hEma20Check = v; }
     public void setTradingStartTime(String v)  { cfg().tradingStartTime = v; }
     public void setTradingEndTime(String v)    { cfg().tradingEndTime = v; }
     public void setTotalCapital(double v)       { cfg().totalCapital = v; }
@@ -487,6 +510,7 @@ public class RiskSettingsStore {
     public void setDayHighLowMinAtr(double v)              { cfg().dayHighLowMinAtr = v; }
     public void setEnableRiskRewardFilter(boolean v)       { cfg().enableRiskRewardFilter = v; }
     public void setMinRiskRewardRatio(double v)            { cfg().minRiskRewardRatio = v; }
+    public void setEnableOpenTargetMode(boolean v)         { cfg().enableOpenTargetMode = v; }
     public void setEnableEmaLevelCountFilter(boolean v)    { cfg().enableEmaLevelCountFilter = v; }
     public void setEmaLevelMinRangePct(int v)               { cfg().emaLevelMinRangePct = Math.max(0, Math.min(100, v)); }
     public void setEmaLevelFilterMorningSkip(boolean v)     { cfg().emaLevelFilterMorningSkip = v; }
@@ -628,6 +652,7 @@ public class RiskSettingsStore {
             upsert("singleLevelSlBufferAtr", String.valueOf(c.singleLevelSlBufferAtr));
             upsert("dayHighLowMinAtr", String.valueOf(c.dayHighLowMinAtr));
             upsert("enableRiskRewardFilter", String.valueOf(c.enableRiskRewardFilter));
+            upsert("enableOpenTargetMode", String.valueOf(c.enableOpenTargetMode));
             upsert("minRiskRewardRatio", String.valueOf(c.minRiskRewardRatio));
             upsert("enableEmaLevelCountFilter", String.valueOf(c.enableEmaLevelCountFilter));
             upsert("emaLevelMinRangePct", String.valueOf(c.emaLevelMinRangePct));
@@ -692,6 +717,9 @@ public class RiskSettingsStore {
             upsert("enableIndexAlignment",   String.valueOf(c.enableIndexAlignment));
             upsert("enableStockHtfAlignment", String.valueOf(c.enableStockHtfAlignment));
             upsert("enableStockHtf1hEma20Check", String.valueOf(c.enableStockHtf1hEma20Check));
+            upsert("enableStock5mEma20Check", String.valueOf(c.enableStock5mEma20Check));
+            upsert("enableIndex5mEma20Check", String.valueOf(c.enableIndex5mEma20Check));
+            upsert("enableIndexHtf1hEma20Check", String.valueOf(c.enableIndexHtf1hEma20Check));
         } catch (Exception e) {
             log.error("[RiskSettingsStore] Failed to save {}: {}", mode, e.getMessage());
         }
@@ -761,6 +789,7 @@ public class RiskSettingsStore {
                     case "singleLevelSlBufferAtr" -> c.singleLevelSlBufferAtr = Double.parseDouble(v);
                     case "dayHighLowMinAtr" -> c.dayHighLowMinAtr = Double.parseDouble(v);
                     case "enableRiskRewardFilter" -> c.enableRiskRewardFilter = Boolean.parseBoolean(v);
+                    case "enableOpenTargetMode" -> c.enableOpenTargetMode = Boolean.parseBoolean(v);
                     case "minRiskRewardRatio" -> c.minRiskRewardRatio = Double.parseDouble(v);
                     // enableEmaTrendCheck removed — 5-min EMA factor is hard-baked into the
                     // strict trend state machine in BreakoutScanner. Legacy keys silently ignored.
@@ -945,6 +974,9 @@ public class RiskSettingsStore {
                     case "enableIndexAlignment"   -> c.enableIndexAlignment = Boolean.parseBoolean(v);
                     case "enableStockHtfAlignment" -> c.enableStockHtfAlignment = Boolean.parseBoolean(v);
                     case "enableStockHtf1hEma20Check" -> c.enableStockHtf1hEma20Check = Boolean.parseBoolean(v);
+                    case "enableStock5mEma20Check" -> c.enableStock5mEma20Check = Boolean.parseBoolean(v);
+                    case "enableIndex5mEma20Check" -> c.enableIndex5mEma20Check = Boolean.parseBoolean(v);
+                    case "enableIndexHtf1hEma20Check" -> c.enableIndexHtf1hEma20Check = Boolean.parseBoolean(v);
                     // Legacy NIFTY trend-factor toggles — features removed (EMA20 is now
                     // always-on; FUT VWAP factor dropped entirely). Old risk-settings.json
                     // files keep loading without errors; values are silently ignored.

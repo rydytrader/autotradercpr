@@ -76,6 +76,7 @@ public class SettingsController {
         result.put("dayHighLowMinAtr", riskSettings.getDayHighLowMinAtr());
         result.put("enableRiskRewardFilter", riskSettings.isEnableRiskRewardFilter());
         result.put("minRiskRewardRatio", riskSettings.getMinRiskRewardRatio());
+        result.put("enableOpenTargetMode", riskSettings.isEnableOpenTargetMode());
         result.put("enableEmaLevelCountFilter", riskSettings.isEnableEmaLevelCountFilter());
         result.put("emaLevelMinRangePct", riskSettings.getEmaLevelMinRangePct());
         result.put("emaLevelFilterMorningSkip", riskSettings.isEmaLevelFilterMorningSkip());
@@ -86,6 +87,9 @@ public class SettingsController {
         result.put("enableIndexAlignment", riskSettings.isEnableIndexAlignment());
         result.put("enableStockHtfAlignment", riskSettings.isEnableStockHtfAlignment());
         result.put("enableStockHtf1hEma20Check", riskSettings.isEnableStockHtf1hEma20Check());
+        result.put("enableStock5mEma20Check", riskSettings.isEnableStock5mEma20Check());
+        result.put("enableIndex5mEma20Check", riskSettings.isEnableIndex5mEma20Check());
+        result.put("enableIndexHtf1hEma20Check", riskSettings.isEnableIndexHtf1hEma20Check());
         result.put("goodSizeCandleBodyAtrMult",          riskSettings.getGoodSizeCandleBodyAtrMult());
         result.put("goodSizeCandleMaxBodyAtrMult",       riskSettings.getGoodSizeCandleMaxBodyAtrMult());
         result.put("confirmationMaxOppositeWickRatio",   riskSettings.getConfirmationMaxOppositeWickRatio());
@@ -190,6 +194,7 @@ public class SettingsController {
             if (body.containsKey("dayHighLowMinAtr")) riskSettings.setDayHighLowMinAtr(Double.parseDouble(body.get("dayHighLowMinAtr").toString()));
             if (body.containsKey("enableRiskRewardFilter")) riskSettings.setEnableRiskRewardFilter(Boolean.parseBoolean(body.get("enableRiskRewardFilter").toString()));
             if (body.containsKey("minRiskRewardRatio")) riskSettings.setMinRiskRewardRatio(Double.parseDouble(body.get("minRiskRewardRatio").toString()));
+            if (body.containsKey("enableOpenTargetMode")) riskSettings.setEnableOpenTargetMode(Boolean.parseBoolean(body.get("enableOpenTargetMode").toString()));
             if (body.containsKey("enableEmaLevelCountFilter")) riskSettings.setEnableEmaLevelCountFilter(Boolean.parseBoolean(body.get("enableEmaLevelCountFilter").toString()));
             if (body.containsKey("emaLevelMinRangePct")) riskSettings.setEmaLevelMinRangePct(Integer.parseInt(body.get("emaLevelMinRangePct").toString()));
             if (body.containsKey("emaLevelFilterMorningSkip")) riskSettings.setEmaLevelFilterMorningSkip(Boolean.parseBoolean(body.get("emaLevelFilterMorningSkip").toString()));
@@ -200,6 +205,9 @@ public class SettingsController {
             if (body.containsKey("enableIndexAlignment"))   riskSettings.setEnableIndexAlignment(Boolean.parseBoolean(body.get("enableIndexAlignment").toString()));
             if (body.containsKey("enableStockHtfAlignment")) riskSettings.setEnableStockHtfAlignment(Boolean.parseBoolean(body.get("enableStockHtfAlignment").toString()));
             if (body.containsKey("enableStockHtf1hEma20Check")) riskSettings.setEnableStockHtf1hEma20Check(Boolean.parseBoolean(body.get("enableStockHtf1hEma20Check").toString()));
+            if (body.containsKey("enableStock5mEma20Check")) riskSettings.setEnableStock5mEma20Check(Boolean.parseBoolean(body.get("enableStock5mEma20Check").toString()));
+            if (body.containsKey("enableIndex5mEma20Check")) riskSettings.setEnableIndex5mEma20Check(Boolean.parseBoolean(body.get("enableIndex5mEma20Check").toString()));
+            if (body.containsKey("enableIndexHtf1hEma20Check")) riskSettings.setEnableIndexHtf1hEma20Check(Boolean.parseBoolean(body.get("enableIndexHtf1hEma20Check").toString()));
             if (body.containsKey("goodSizeCandleBodyAtrMult"))   riskSettings.setGoodSizeCandleBodyAtrMult(Double.parseDouble(body.get("goodSizeCandleBodyAtrMult").toString()));
             if (body.containsKey("goodSizeCandleMaxBodyAtrMult")) riskSettings.setGoodSizeCandleMaxBodyAtrMult(Double.parseDouble(body.get("goodSizeCandleMaxBodyAtrMult").toString()));
             if (body.containsKey("confirmationMaxOppositeWickRatio")) riskSettings.setConfirmationMaxOppositeWickRatio(Double.parseDouble(body.get("confirmationMaxOppositeWickRatio").toString()));

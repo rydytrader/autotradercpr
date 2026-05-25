@@ -376,8 +376,10 @@ public class PollingService {
                     }
 
                     holder.ocoRetries++;
-                    // Breakeven SL always requires a target to compute the (entry→target) range — no-target mode removed.
-                    boolean skipTarget = false;
+                    // Open Target mode (Settings → Money) skips the target leg entirely —
+                    // the position closes on SL hit or auto-squareoff. Breakeven / trailing
+                    // SL are also bypassed because both depend on a defined target.
+                    boolean skipTarget = riskSettings.isEnableOpenTargetMode();
 
                     // Single target placement — splits are no longer created for new trades.
                     // The existing split-tracking machinery (handleT1Fill, handleT2Fill,
@@ -400,7 +402,7 @@ public class PollingService {
                         double tgtPrice = skipTarget ? 0 : placedTargetPrice;
                         eventService.log("[SUCCESS] SL order placed for " + symbol + " at " + rSl + " [ID: " + slOrder.getId() + "]");
                         if (skipTarget) {
-                            eventService.log("[INFO] No fixed target for " + symbol + " — trailing SL will close the trade");
+                            eventService.log("[INFO] No target for " + symbol + " — Open Target mode; closes on SL hit or auto-squareoff");
                         } else {
                             if (Math.abs(placedTargetPrice - targetPrice) > 0.001) {
                                 eventService.log("[SUCCESS] Target order placed for " + symbol + " at " + String.format("%.2f", placedTargetPrice)

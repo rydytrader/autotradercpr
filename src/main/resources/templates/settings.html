@@ -317,7 +317,7 @@
                         <input type="number" id="minRiskRewardRatio" class="form-control" step="0.1" min="0.5" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">:1</span>
                     </div>
-                    <div class="form-hint">Computed after SL and final target are determined. R/R = |target − entry| / |entry − SL|. Uses the final target (T2 for split trades) and the final SL (structural or default, whichever was picked). Default 1.0 means reject any trade where reward is less than risk.</div>
+                    <div class="form-hint">Computed after SL and final target are determined. R/R = |target − entry| / |entry − SL|. Uses the final target (T2 for split trades) and the final SL (structural or default, whichever was picked). Default 1.0 means reject any trade where reward is less than risk. <b>Bypassed when Open Target Mode is on</b> (no target to grade).</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Breakeven SL</label>
@@ -363,6 +363,18 @@
         </div>
         <div class="section-body">
             <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label">Stock 5m EMA20 Check</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableStock5mEma20Check" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Require 5-min close vs 5-min EMA20 agreement in the top-level direction gate</span>
+                    </div>
+                    <div class="form-hint">
+                        Top-level direction gate on every breakout. <b>ON (default — strict 2-factor):</b> trend-following BUY needs <code>close &gt; CPR top AND &gt; EMA20</code>; SELL needs <code>close &lt; CPR bot AND &lt; EMA20</code>. Counter-trend (magnet, mean-reversion) needs the shallow-dip / shallow-rally pattern (close on one side of CPR, opposite side of EMA20).
+                        <br><b>OFF (CPR-only):</b> TF buys fire on <code>close &gt; CPR top</code> alone; TF sells on <code>close &lt; CPR bot</code> alone. Counter-trend setups (magnet, mean-reversion) are implicitly disabled because their definitions rely on the EMA20 layer to distinguish trade direction.
+                        <br>Signal Trail bucket: <code>STOCK_5M_TREND</code>.
+                    </div>
+                </div>
                 <div class="form-group">
                     <label class="form-label">Daily ATR Exhaustion Filter</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
@@ -653,6 +665,10 @@
                         <input type="checkbox" id="enableIndexAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Reject when the stock's primary-index trend opposes the trade direction</span>
                     </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px; margin-left: 28px;">
+                        <input type="checkbox" id="enableIndex5mEma20Check" style="width: 16px; height: 16px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.78rem; font-family: var(--font-mono);">Also require 5-min EMA 20 agreement (strict 2-factor)</span>
+                    </div>
                     <div class="form-hint">Each stock maps to one <b>primary index</b> (NIFTY 50 OR a sector index) via the Stock Universe master table. This filter gates every signal against the trend state of THAT index — replaces the prior separate NIFTY + sector alignment checks.
                         <br>Strict 2-factor state machine on the primary index's 5-min timeframe: <b>index 5m close vs daily CPR top/bot AND index 5m close vs 5m EMA20</b>. States: <b>BULLISH</b> (both factors up), <b>BEARISH</b> (both down), <b>SIDEWAYS</b> (factors disagree), <b>NEUTRAL</b> (data not ready).
                         <br>&nbsp;&nbsp;&bull; <b>Trend-following setups</b>: buys require <b>BULLISH</b>; sells require <b>BEARISH</b>.
@@ -680,7 +696,12 @@
                         <input type="checkbox" id="enableIndexHtfAlignment" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
                         <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Require primary index's 1-hour state to agree with the trade direction</span>
                     </div>
-                    <div class="form-hint">Strict 2-factor on the index's 1-hour timeframe: index 1h close vs index weekly CPR top/bot AND index 1h close vs index 1h EMA20. Buys require state = <b>BULLISH</b> (both factors up); sells require <b>BEARISH</b> (both down). <b>SIDEWAYS</b> / <b>INSIDE</b> &rarr; hard-reject as <code>INDEX_HTF_OPPOSED</code>. <b>NEUTRAL</b> (missing weekly CPR or 1h close, e.g. early Monday) &rarr; fail-open.</div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px; margin-left: 28px;">
+                        <input type="checkbox" id="enableIndexHtf1hEma20Check" style="width: 16px; height: 16px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.78rem; font-family: var(--font-mono);">Also require 1-hour EMA 20 agreement (strict 2-factor)</span>
+                    </div>
+                    <div class="form-hint"><b>Sub-toggle ON (default — strict 2-factor):</b> index 1h close vs index weekly CPR top/bot AND index 1h close vs index 1h EMA20. <b>Sub-toggle OFF (CPR-only):</b> EMA factor skipped — BULLISH if close > weekly CPR top, BEARISH if < bot, SIDEWAYS inside.
+                        <br>Buys require <b>BULLISH</b>, sells require <b>BEARISH</b>. <b>SIDEWAYS</b> &rarr; hard-reject as <code>INDEX_HTF_OPPOSED</code>. <b>NEUTRAL</b> (missing weekly CPR or 1h close) &rarr; fail-open.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Index HTF Hurdle Filter</label>
@@ -784,6 +805,14 @@
         <div class="section-header"><div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Target Settings</div></div>
         <div class="section-body">
             <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label">Open Target Mode</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                        <input type="checkbox" id="enableOpenTargetMode" style="width: 18px; height: 18px; accent-color: var(--accent-cyan); flex-shrink: 0;">
+                        <span style="color: var(--text-secondary); font-size: 0.82rem; font-family: var(--font-mono);">Run all trades with SL only &mdash; no target order placed on Fyers</span>
+                    </div>
+                    <div class="form-hint">When enabled, positions close on <b>SL hit</b> or at <b>auto-squareoff</b> only. No target leg is sent to Fyers, so every other setting on this tab (Weekly CPR Intercept, Target Tolerance, Min Absolute Profit) plus the <b>Risk:Reward filter</b> and <b>Breakeven / trailing SL</b> are silently bypassed (all require a defined target). Useful for runners — let winners keep running until the close-of-day flatten or get stopped out. Applies globally to every signal regardless of probability tier. Signal Trail log: <code>target: OPEN &mdash; closes only on SL hit or auto-squareoff</code>.</div>
+                </div>
                 <div class="form-group">
                     <label class="form-label">Weekly CPR Intercept</label>
                     <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
@@ -1418,6 +1447,9 @@
             document.getElementById('enableWeeklyLevelTargetShift').checked = d.enableWeeklyLevelTargetShift !== false;
             document.getElementById('enableHtfHurdleFilter').checked = d.enableHtfHurdleFilter !== false;
             document.getElementById('htfHurdleMinHeadroomAtr').value = (d.htfHurdleMinHeadroomAtr != null ? d.htfHurdleMinHeadroomAtr : 1.0);
+            document.getElementById('enableStock5mEma20Check').checked = d.enableStock5mEma20Check !== false;
+            document.getElementById('enableIndex5mEma20Check').checked = d.enableIndex5mEma20Check !== false;
+            document.getElementById('enableIndexHtf1hEma20Check').checked = d.enableIndexHtf1hEma20Check !== false;
             document.getElementById('enableDailyAtrExhaustionFilter').checked = d.enableDailyAtrExhaustionFilter === true;
             document.getElementById('dailyAtrExhaustionMult').value = (d.dailyAtrExhaustionMult != null ? d.dailyAtrExhaustionMult : 0.85);
             document.getElementById('enableOpenRangeFilter').checked = d.enableOpenRangeFilter === true;
@@ -1428,6 +1460,7 @@
             document.getElementById('singleLevelSlBufferAtr').value = d.singleLevelSlBufferAtr != null ? d.singleLevelSlBufferAtr : 0.5;
             document.getElementById('narrowCprZoneCollapseWidthPct').value = d.narrowCprZoneCollapseWidthPct != null ? d.narrowCprZoneCollapseWidthPct : 0.1;
             // dayHighLowMinAtr removed — single min target distance check handles both
+            document.getElementById('enableOpenTargetMode').checked = d.enableOpenTargetMode === true;
             document.getElementById('enableRiskRewardFilter').checked = d.enableRiskRewardFilter !== false;
             document.getElementById('goodSizeCandleBodyAtrMult').value         = d.goodSizeCandleBodyAtrMult         != null ? d.goodSizeCandleBodyAtrMult         : 0.6;
             document.getElementById('goodSizeCandleMaxBodyAtrMult').value      = d.goodSizeCandleMaxBodyAtrMult      != null ? d.goodSizeCandleMaxBodyAtrMult      : 2.0;
@@ -1580,6 +1613,9 @@
                 enableWeeklyLevelTargetShift: document.getElementById('enableWeeklyLevelTargetShift').checked,
                 enableHtfHurdleFilter: document.getElementById('enableHtfHurdleFilter').checked,
                 htfHurdleMinHeadroomAtr: parseFloat(document.getElementById('htfHurdleMinHeadroomAtr').value) || 0,
+                enableStock5mEma20Check: document.getElementById('enableStock5mEma20Check').checked,
+                enableIndex5mEma20Check: document.getElementById('enableIndex5mEma20Check').checked,
+                enableIndexHtf1hEma20Check: document.getElementById('enableIndexHtf1hEma20Check').checked,
                 enableDailyAtrExhaustionFilter: document.getElementById('enableDailyAtrExhaustionFilter').checked,
                 dailyAtrExhaustionMult: parseFloat(document.getElementById('dailyAtrExhaustionMult').value) || 0,
                 enableOpenRangeFilter: document.getElementById('enableOpenRangeFilter').checked,
@@ -1590,6 +1626,7 @@
                 singleLevelSlBufferAtr: parseFloat(document.getElementById('singleLevelSlBufferAtr').value) || 0,
                 narrowCprZoneCollapseWidthPct: (function() { var v = parseFloat(document.getElementById('narrowCprZoneCollapseWidthPct').value); return isNaN(v) ? 0 : v; })(),
                 // dayHighLowMinAtr removed
+                enableOpenTargetMode: document.getElementById('enableOpenTargetMode').checked,
                 enableRiskRewardFilter: document.getElementById('enableRiskRewardFilter').checked,
                 goodSizeCandleBodyAtrMult:    (function() { var v = parseFloat(document.getElementById('goodSizeCandleBodyAtrMult').value); return isNaN(v) ? 0.6 : v; })(),
                 goodSizeCandleMaxBodyAtrMult: (function() { var v = parseFloat(document.getElementById('goodSizeCandleMaxBodyAtrMult').value); return isNaN(v) ? 2.0 : v; })(),
