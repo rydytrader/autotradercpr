@@ -87,6 +87,18 @@ public class TradingController {
         return Map.of("status", pollingService.getConnectionStatus());
     }
 
+    // ── EVENT LOG ─────────────────────────────────────────────────────────────
+    @GetMapping("/api/events")
+    public Map<String, Object> getEvents(
+            @org.springframework.web.bind.annotation.RequestParam(name = "limit", defaultValue = "200") int limit) {
+        List<String> all = eventService.getTradeLogs();
+        int from = Math.max(0, all.size() - Math.max(1, limit));
+        // Return most-recent first
+        List<String> tail = new java.util.ArrayList<>(all.subList(from, all.size()));
+        java.util.Collections.reverse(tail);
+        return Map.of("events", tail, "total", all.size());
+    }
+
     // Suppress unused warnings — orderService + eventService kept as dependencies in case
     // future straddle endpoints want direct access.
     @SuppressWarnings("unused")

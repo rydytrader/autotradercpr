@@ -256,14 +256,6 @@
                     <span class="stat-label" style="margin:0;">Last Event</span>
                     <span class="stat-value" id="paneLastEvent" style="font-size:0.85rem;">—</span>
                 </div>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;" title="Brokerage + STT + Exchange + GST + SEBI + Stamp">Charges</span>
-                    <span class="stat-value" id="paneCharges" style="font-size:1rem; color:var(--accent-red);">—</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Net P&amp;L</span>
-                    <span class="stat-value" id="paneNetPnl" style="font-size:1rem;">—</span>
-                </div>
             </div>
         </div>
     </div>
@@ -297,6 +289,46 @@
         </div>
         <div style="padding:20px 28px; height:280px;">
             <canvas id="equityChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Event Log -->
+    <div class="section-card fade-in" style="margin-top:24px; margin-bottom:20px;">
+        <div class="section-header" style="display:flex; align-items:center; justify-content:space-between;">
+            <div class="section-title">
+                <div class="section-title-dot" style="background: var(--accent-yellow);"></div>
+                Event Log
+                <span class="section-badge" id="eventLogCount" style="font-size:0.6rem;">0 entries</span>
+            </div>
+            <div style="display:flex; gap:6px; align-items:center;">
+                <input id="eventLogFilter" type="text" placeholder="Filter…"
+                       style="background:var(--bg-card); border:1px solid var(--border); color:var(--text-primary); padding:4px 10px; border-radius:6px; font-family:var(--font-mono); font-size:0.72rem; width:160px; outline:none;">
+                <select id="eventLogSeverity"
+                        style="background:var(--bg-card); border:1px solid var(--border); color:var(--text-primary); padding:4px 8px; border-radius:6px; font-family:var(--font-mono); font-size:0.72rem; outline:none; appearance:none; -webkit-appearance:none; padding-right:22px; background-image:linear-gradient(45deg, transparent 50%, var(--text-muted) 50%), linear-gradient(135deg, var(--text-muted) 50%, transparent 50%); background-position:calc(100% - 10px) 50%, calc(100% - 5px) 50%; background-size:5px 5px, 5px 5px; background-repeat:no-repeat;">
+                    <option value="">All</option>
+                    <option value="ERROR">Errors</option>
+                    <option value="WARN">Warnings</option>
+                    <option value="SUCCESS">Success</option>
+                    <option value="INFO">Info</option>
+                </select>
+            </div>
+        </div>
+        <div id="eventLogScroll"
+             style="max-height:320px; overflow-y:auto;">
+        <table class="data-table" id="eventLogTable"
+               style="width:100%; font-family:var(--font-mono); font-size:0.74rem; border-collapse:collapse; table-layout:fixed;">
+            <thead style="position:sticky; top:0; background:var(--bg-card); z-index:1;">
+                <tr>
+                    <th style="text-align:left; padding:8px 18px 8px 14px; color:var(--text-muted); font-weight:600; font-size:0.66rem; letter-spacing:0.06em; text-transform:uppercase; border-bottom:1px solid var(--border); width:80px;">Time</th>
+                    <th style="text-align:left; padding:8px 16px 8px 18px; color:var(--text-muted); font-weight:600; font-size:0.66rem; letter-spacing:0.06em; text-transform:uppercase; border-bottom:1px solid var(--border); width:96px;">Severity</th>
+                    <th style="text-align:left; padding:8px 10px 8px 16px; color:var(--text-muted); font-weight:600; font-size:0.66rem; letter-spacing:0.06em; text-transform:uppercase; border-bottom:1px solid var(--border); width:200px;">Source</th>
+                    <th style="text-align:left; padding:8px 14px; color:var(--text-muted); font-weight:600; font-size:0.66rem; letter-spacing:0.06em; text-transform:uppercase; border-bottom:1px solid var(--border);">Message</th>
+                </tr>
+            </thead>
+            <tbody id="eventLogBody">
+                <tr><td colspan="4" style="color:var(--text-muted); padding:14px; text-align:center;">Loading…</td></tr>
+            </tbody>
+        </table>
         </div>
     </div>
 
@@ -399,12 +431,28 @@
         fetch('/api/straddle/dashboard').then(r => r.json()).then(d => {
             if (!d) return;
             lastDashboardData = d;
-            // Hero
+            // Hero — true net = realised + open MTM − charges
+            var ch = d.charges || {};
+            var chTotal = Number(ch.total || 0);
+            var trueNet = Number(d.totalPnlToday || 0) - chTotal;
             var net = document.getElementById('netDayPnl');
-            net.textContent = fmtRs(d.totalPnlToday || 0);
+            net.textContent = fmtRs(trueNet);
             net.className = 'stat-value';
-            if ((d.totalPnlToday || 0) > 0.5) net.classList.add('pnl-positive');
-            else if ((d.totalPnlToday || 0) < -0.5) net.classList.add('pnl-negative');
+            if (trueNet > 0.5) net.classList.add('pnl-positive');
+            else if (trueNet < -0.5) net.classList.add('pnl-negative');
+            var netSub = document.getElementById('netDayPnlSub');
+            if (netSub) {
+                netSub.textContent = 'Realised ' + fmtRs(d.realisedPnlToday || 0)
+                    + ' + MTM ' + fmtRs(d.combinedMtm || 0)
+                    + ' − Charges ' + fmtRs(chTotal);
+                netSub.title = 'Brokerage ' + fmtRs(ch.brokerage || 0)
+                    + ' • STT ' + fmtRs(ch.stt || 0)
+                    + ' • Exchange ' + fmtRs(ch.exchange || 0)
+                    + ' • GST ' + fmtRs(ch.gst || 0)
+                    + ' • SEBI ' + fmtRs(ch.sebi || 0)
+                    + ' • Stamp ' + fmtRs(ch.stamp || 0);
+                netSub.style.cursor = 'help';
+            }
 
             var realised = document.getElementById('heroRealised');
             realised.textContent = fmtRs(d.realisedPnlToday || 0);
@@ -461,26 +509,6 @@
             document.getElementById('paneEventCount').textContent = rolls.length;
             document.getElementById('paneLastEvent').textContent = rolls.length > 0
                 ? (rolls[0].event + ' @ ' + rolls[0].time) : '—';
-            var ch = d.charges || {};
-            var chTotal = Number(ch.total || 0);
-            var chEl = document.getElementById('paneCharges');
-            if (chEl) {
-                chEl.textContent = fmtRs(chTotal);
-                chEl.title = 'Brokerage ' + fmtRs(ch.brokerage || 0)
-                    + ' • STT ' + fmtRs(ch.stt || 0)
-                    + ' • Exchange ' + fmtRs(ch.exchange || 0)
-                    + ' • GST ' + fmtRs(ch.gst || 0)
-                    + ' • SEBI ' + fmtRs(ch.sebi || 0)
-                    + ' • Stamp ' + fmtRs(ch.stamp || 0);
-            }
-            var netEl = document.getElementById('paneNetPnl');
-            if (netEl) {
-                var netVal = Number(d.netPnlToday || 0);
-                netEl.textContent = fmtRs(netVal);
-                netEl.className = 'stat-value';
-                if (netVal > 0.5) netEl.classList.add('pnl-positive');
-                else if (netVal < -0.5) netEl.classList.add('pnl-negative');
-            }
 
 
             // Recent rolls table
@@ -504,6 +532,103 @@
     }
     loadDashboard();
     setInterval(loadDashboard, 5000);
+
+    // ── Event Log ────────────────────────────────────────────────────────────
+    var __evCache = [];
+    (function injectScrollbarStyle() {
+        if (document.getElementById('eventLogScrollStyle')) return;
+        var s = document.createElement('style');
+        s.id = 'eventLogScrollStyle';
+        s.textContent =
+            '#eventLogScroll::-webkit-scrollbar { width: 4px; }' +
+            '#eventLogScroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }' +
+            '#eventLogScroll::-webkit-scrollbar-track { background: transparent; }' +
+            '#eventLogScroll { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }';
+        document.head.appendChild(s);
+    })();
+    var KNOWN_SEVERITIES = { INFO:1, WARN:1, WARNING:1, ERROR:1, SUCCESS:1 };
+    function parseEventLine(line) {
+        // Supported shapes after the timestamp:
+        //   "[SEV] [SOURCE] message"     ← severity + source
+        //   "[SEV] message"              ← severity only
+        //   "[WS] [CLASS] message"       ← WS is a channel tag, becomes Source = WS, severity INFO
+        //   "[SOURCE] message"           ← legacy pipeline tag (no severity) — keep source, blank sev
+        //   "message"                    ← no tags at all
+        var m = line.match(/^(\d{2}:\d{2}:\d{2})\s*-\s*(.*)$/);
+        if (!m) return { time: '', sev: 'INFO', source: '', msg: line };
+        var time = m[1];
+        var rest = m[2];
+        var tag1 = rest.match(/^\[([A-Z0-9\-]+)\]\s*(.*)$/);
+        if (!tag1) return { time: time, sev: 'INFO', source: '', msg: rest };
+        var first = tag1[1];
+        var afterFirst = tag1[2];
+        if (first === 'WS') {
+            // [WS] [CLASS] message  → Source=WS, drop class, severity=INFO
+            var tag2 = afterFirst.match(/^\[([A-Z0-9\-]+)\]\s*(.*)$/);
+            return { time: time, sev: 'INFO', source: 'WS', msg: tag2 ? tag2[2] : afterFirst };
+        }
+        if (KNOWN_SEVERITIES[first]) {
+            // First tag is severity; check for an optional second [SOURCE] tag.
+            var tag2 = afterFirst.match(/^\[([A-Z0-9\-]+)\]\s*(.*)$/);
+            if (tag2) return { time: time, sev: first === 'WARNING' ? 'WARN' : first, source: tag2[1], msg: tag2[2] };
+            return { time: time, sev: first === 'WARNING' ? 'WARN' : first, source: '', msg: afterFirst };
+        }
+        // First tag is NOT a severity → it's a source/pipeline tag. Default severity to INFO.
+        return { time: time, sev: 'INFO', source: first, msg: afterFirst };
+    }
+    function severityColorFor(sev) {
+        if (sev === 'ERROR')   return 'var(--accent-red)';
+        if (sev === 'WARN' || sev === 'WARNING') return 'var(--accent-yellow)';
+        if (sev === 'SUCCESS') return 'var(--accent-green)';
+        if (sev === 'INFO')    return 'var(--text-primary)';
+        return 'var(--text-secondary)';
+    }
+    function renderEventLog() {
+        var body = document.getElementById('eventLogBody');
+        if (!body) return;
+        var qEl = document.getElementById('eventLogFilter');
+        var sEl = document.getElementById('eventLogSeverity');
+        var q = (qEl && qEl.value || '').trim().toLowerCase();
+        var sevFilter = sEl && sEl.value || '';
+        var rows = __evCache.map(parseEventLine);
+        if (q) rows = rows.filter(function(r) {
+            return (r.msg + ' ' + r.source).toLowerCase().indexOf(q) >= 0;
+        });
+        if (sevFilter) rows = rows.filter(function(r) {
+            if (sevFilter === 'WARN') return r.sev === 'WARN' || r.sev === 'WARNING';
+            return r.sev === sevFilter;
+        });
+        if (rows.length === 0) {
+            body.innerHTML = '<tr><td colspan="4" style="color:var(--text-muted); padding:14px; text-align:center;">No matching events.</td></tr>';
+        } else {
+            body.innerHTML = rows.map(function(r) {
+                var color = severityColorFor(r.sev);
+                var esc = function(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
+                return '<tr style="border-bottom:1px solid var(--border);">' +
+                    '<td style="padding:6px 18px 6px 14px; color:var(--text-muted); white-space:nowrap;">' + esc(r.time) + '</td>' +
+                    '<td style="padding:6px 16px 6px 18px; color:' + color + '; font-weight:600; word-break:break-word; overflow-wrap:anywhere;">' + esc(r.sev) + '</td>' +
+                    '<td style="padding:6px 10px 6px 16px; color:var(--text-secondary); font-size:0.7rem; word-break:break-word; overflow-wrap:anywhere;">' + esc(r.source) + '</td>' +
+                    '<td style="padding:6px 14px; color:var(--text-secondary); word-break:break-word; overflow-wrap:anywhere; white-space:normal;">' + esc(r.msg) + '</td>' +
+                    '</tr>';
+            }).join('');
+        }
+        var cnt = document.getElementById('eventLogCount');
+        if (cnt) cnt.textContent = __evCache.length + ' entries';
+    }
+    function loadEventLog() {
+        fetch('/api/events?limit=300').then(function(r) { return r.json(); }).then(function(d) {
+            __evCache = d.events || [];
+            renderEventLog();
+        }).catch(function() {});
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+        var qEl = document.getElementById('eventLogFilter');
+        var sEl = document.getElementById('eventLogSeverity');
+        if (qEl) qEl.addEventListener('input', renderEventLog);
+        if (sEl) sEl.addEventListener('change', renderEventLog);
+    });
+    loadEventLog();
+    setInterval(loadEventLog, 5000);
 
     // ── Equity Curve (cumulative net P&L across past straddle sessions) ──────
     var equityChart = null;
