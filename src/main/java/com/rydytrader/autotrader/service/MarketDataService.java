@@ -1612,6 +1612,24 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
             token = token.split(":")[1];
         }
 
+        // Fyers symbol-token API truncates the response when too many symbols are sent
+        // in a single request — we observed it dropping entries past ~90 on a 200-symbol
+        // payload, which silently left widely-used names (INDUSINDBK, ASHOKLEY, etc.)
+        // unresolved alongside the new additions. Chunk into batches well under the
+        // observed cap so every symbol gets a response.
+        final int BATCH_SIZE = 50;
+        int totalResolved = 0;
+        for (int i = 0; i < fyersSymbols.size(); i += BATCH_SIZE) {
+            List<String> batch = fyersSymbols.subList(i, Math.min(i + BATCH_SIZE, fyersSymbols.size()));
+            totalResolved += resolveSymbolTokensBatch(batch, token);
+        }
+        log.info("[MarketData] Resolved {} symbol tokens across {} batches (universe size {})",
+            totalResolved, (fyersSymbols.size() + BATCH_SIZE - 1) / BATCH_SIZE, fyersSymbols.size());
+    }
+
+    /** One batch of {@link #resolveSymbolTokens}. Returns the count newly populated into
+     *  {@code fyersToHsmToken} so the caller can log the cumulative total. */
+    private int resolveSymbolTokensBatch(List<String> fyersSymbols, String token) throws Exception {
         String jsonBody = mapper.writeValueAsString(Map.of("symbols", fyersSymbols));
 
         URL url = new URL("https://api-t1.fyers.in/data/symbol-token");
@@ -1632,6 +1650,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         while ((line = br.readLine()) != null) sb.append(line);
         br.close();
 
+        int batchResolved = 0;
         JsonNode resp = mapper.readTree(sb.toString());
         if (resp.has("s") && "ok".equals(resp.get("s").asText()) && resp.has("validSymbol")) {
             JsonNode valid = resp.get("validSymbol");
@@ -1645,11 +1664,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                 if (hsmToken != null) {
                     fyersToHsmToken.put(fyersSymbol, hsmToken);
                     hsmToFyersSymbol.put(hsmToken, fyersSymbol);
+                    batchResolved++;
                 }
             }
         }
-
-        log.info("[MarketData] Resolved {} symbol tokens", fyersToHsmToken.size());
+        return batchResolved;
     }
 
     /**
