@@ -5,7 +5,6 @@ import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.dto.PositionsDTO;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
 import com.rydytrader.autotrader.manager.PositionManager;
-import com.rydytrader.autotrader.store.PositionStateStore;
 import com.rydytrader.autotrader.store.TokenStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,7 +20,7 @@ import java.util.concurrent.*;
  * <p>Two jobs:
  * <ol>
  *   <li><b>Position sync</b> — every 10s, fetch the broker positions list and reconcile with
- *       the in-memory cache + {@link PositionStateStore}.</li>
+ *       the in-memory cache.</li>
  *   <li><b>Manual squareoff</b> — close a position at market on user request.</li>
  * </ol>
  *
@@ -39,7 +38,6 @@ public class PollingService {
     private final FyersClientRouter fyersClient;
     private final OrderService     orderService;
     private final EventService     eventService;
-    private final PositionStateStore positionStateStore;
     private final MarketDataService  marketDataService;
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -57,14 +55,12 @@ public class PollingService {
                            FyersClientRouter fyersClient,
                            OrderService orderService,
                            EventService eventService,
-                           PositionStateStore positionStateStore,
                            MarketDataService marketDataService) {
         this.tokenStore        = tokenStore;
         this.fyersProperties   = fyersProperties;
         this.fyersClient       = fyersClient;
         this.orderService      = orderService;
         this.eventService      = eventService;
-        this.positionStateStore = positionStateStore;
         this.marketDataService = marketDataService;
     }
 
@@ -112,11 +108,7 @@ public class PollingService {
                     double ltp   = p.path("ltp").asDouble(0);
                     double pnl   = p.path("pl").asDouble(0);
                     int qty      = Math.abs(netQty);
-                    // Persisted setup + entryTime
-                    Map<String, Object> state = positionStateStore.load(symbol);
-                    String setup = state != null && state.get("setup") != null ? state.get("setup").toString() : "";
-                    String entryTime = state != null && state.get("entryTime") != null ? state.get("entryTime").toString() : "";
-                    PositionsDTO dto = new PositionsDTO(symbol, qty, side, avg, ltp, pnl, setup, entryTime);
+                    PositionsDTO dto = new PositionsDTO(symbol, qty, side, avg, ltp, pnl, "", "");
                     fresh.put(symbol, dto);
                     openSymbols.add(symbol);
                     PositionManager.setPosition(symbol, side);

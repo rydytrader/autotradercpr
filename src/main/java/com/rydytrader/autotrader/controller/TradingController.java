@@ -14,7 +14,6 @@ import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.OrderEventService;
 import com.rydytrader.autotrader.service.OrderService;
 import com.rydytrader.autotrader.service.PollingService;
-import com.rydytrader.autotrader.store.PositionStateStore;
 
 /**
  * Generic trading endpoints that operate on any symbol (equity-or-options agnostic).
@@ -27,20 +26,17 @@ public class TradingController {
     private final PollingService     pollingService;
     private final OrderService       orderService;
     private final EventService       eventService;
-    private final PositionStateStore positionStateStore;
     private final MarketDataService  marketDataService;
     private final OrderEventService  orderEventService;
 
     public TradingController(PollingService pollingService,
                               OrderService orderService,
                               EventService eventService,
-                              PositionStateStore positionStateStore,
                               MarketDataService marketDataService,
                               OrderEventService orderEventService) {
         this.pollingService     = pollingService;
         this.orderService       = orderService;
         this.eventService       = eventService;
-        this.positionStateStore = positionStateStore;
         this.marketDataService  = marketDataService;
         this.orderEventService  = orderEventService;
     }
@@ -59,41 +55,19 @@ public class TradingController {
     public Map<String, Object> getPositions() {
         List<Map<String, Object>> positions = pollingService.fetchPositions().stream().map(p -> {
             Map<String, Object> m = new java.util.LinkedHashMap<>();
-            Map<String, Object> state = positionStateStore.load(p.getSymbol());
-
-            int displayQty = p.getQty();
-            double avgForPnl = p.getAvgPrice();
-            if (state != null) {
-                try {
-                    int remaining = Integer.parseInt(state.getOrDefault("remainingQty", "0").toString());
-                    if (remaining > 0) displayQty = remaining;
-                } catch (NumberFormatException ignored) {}
-                try {
-                    double stateAvg = Double.parseDouble(state.getOrDefault("avgPrice", "0").toString());
-                    if (stateAvg > 0) avgForPnl = stateAvg;
-                } catch (NumberFormatException ignored) {}
-            }
             double liveLtp = marketDataService.getLtp(p.getSymbol());
             double ltp = liveLtp > 0 ? liveLtp : p.getLtp();
             double pnl = "LONG".equals(p.getSide())
-                ? (ltp - avgForPnl) * displayQty
-                : (avgForPnl - ltp) * displayQty;
+                ? (ltp - p.getAvgPrice()) * p.getQty()
+                : (p.getAvgPrice() - ltp) * p.getQty();
             m.put("symbol",    p.getSymbol());
-            m.put("qty",       displayQty);
+            m.put("qty",       p.getQty());
             m.put("side",      p.getSide());
-            m.put("avgPrice",  avgForPnl);
+            m.put("avgPrice",  p.getAvgPrice());
             m.put("ltp",       ltp);
             m.put("pnl",       pnl);
             m.put("setup",     p.getSetup());
             m.put("entryTime", p.getEntryTime());
-            m.put("description", state != null ? state.getOrDefault("description", "") : "");
-            if (state != null) {
-                try { m.put("slPrice", Double.parseDouble(state.getOrDefault("slPrice", "0").toString())); } catch (NumberFormatException e) { m.put("slPrice", 0.0); }
-                try { m.put("targetPrice", Double.parseDouble(state.getOrDefault("targetPrice", "0").toString())); } catch (NumberFormatException e) { m.put("targetPrice", 0.0); }
-            } else {
-                m.put("slPrice", 0.0);
-                m.put("targetPrice", 0.0);
-            }
             return m;
         }).collect(java.util.stream.Collectors.toList());
 
