@@ -317,7 +317,7 @@ public class OrderService {
             + "\"qty\":" + qty + ","
             + "\"type\":" + type + ","
             + "\"side\":" + side + ","
-            + "\"productType\":\"INTRADAY\","
+            + "\"productType\":\"MARGIN\","
             + "\"limitPrice\":" + limitPrice + ","
             + "\"stopPrice\":" + stopPrice + ","
             + "\"validity\":\"DAY\","
