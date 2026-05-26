@@ -133,7 +133,7 @@ public class SettingsController {
         result.put("enableCprStateA",      riskSettings.isEnableCprStateA());
         result.put("enableCprStateB",      riskSettings.isEnableCprStateB());
         result.put("enableCprStateC",      riskSettings.isEnableCprStateC());
-        result.put("insideCprMaxWidth", riskSettings.getInsideCprMaxWidth());
+        result.put("enableInsideCpr",      riskSettings.isEnableInsideCpr());
         result.put("narrowCprZoneCollapseWidthPct", riskSettings.getNarrowCprZoneCollapseWidthPct());
         result.put("scanMinPrice", riskSettings.getScanMinPrice());
         result.put("scanMaxPrice", riskSettings.getScanMaxPrice());
@@ -257,7 +257,8 @@ public class SettingsController {
             if (body.containsKey("enableCprStateA"))      riskSettings.setEnableCprStateA(Boolean.parseBoolean(body.get("enableCprStateA").toString()));
             if (body.containsKey("enableCprStateB"))      riskSettings.setEnableCprStateB(Boolean.parseBoolean(body.get("enableCprStateB").toString()));
             if (body.containsKey("enableCprStateC"))      riskSettings.setEnableCprStateC(Boolean.parseBoolean(body.get("enableCprStateC").toString()));
-            if (body.containsKey("insideCprMaxWidth")) riskSettings.setInsideCprMaxWidth(Double.parseDouble(body.get("insideCprMaxWidth").toString()));
+            if (body.containsKey("enableInsideCpr"))      riskSettings.setEnableInsideCpr(Boolean.parseBoolean(body.get("enableInsideCpr").toString()));
+            // insideCprMaxWidth removed — INSIDE is purely geometric containment
             if (body.containsKey("narrowCprZoneCollapseWidthPct")) riskSettings.setNarrowCprZoneCollapseWidthPct(Double.parseDouble(body.get("narrowCprZoneCollapseWidthPct").toString()));
             if (body.containsKey("scanMinPrice")) riskSettings.setScanMinPrice(Double.parseDouble(body.get("scanMinPrice").toString()));
             if (body.containsKey("scanMaxPrice")) riskSettings.setScanMaxPrice(Double.parseDouble(body.get("scanMaxPrice").toString()));
@@ -288,6 +289,58 @@ public class SettingsController {
                    org.springframework.web.bind.annotation.RequestMethod.POST })
     public Map<String, Object> backfillIndices() {
         return bhavcopyService.backfillMissingIndices();
+    }
+
+    /**
+     * Admin: backfill historical daily snapshots for newly-added tickers so the adaptive CPR
+     * classifier and weekly CPR work immediately, instead of waiting ~20 trading days for the
+     * rolling history to fill naturally. When no body / empty body is provided, auto-detects
+     * every enabled DB stock currently missing samples. Optional body: { "tickers": ["HINDPETRO", ...] }
+     * to target a specific set.
+     */
+    @org.springframework.web.bind.annotation.RequestMapping(
+        value = "/api/bhavcopy/backfill-new-tickers",
+        method = { org.springframework.web.bind.annotation.RequestMethod.GET,
+                   org.springframework.web.bind.annotation.RequestMethod.POST })
+    public Map<String, Object> backfillNewTickers(
+            @org.springframework.web.bind.annotation.RequestBody(required = false) Map<String, Object> body) {
+        java.util.Set<String> tickers = null;
+        if (body != null && body.get("tickers") instanceof java.util.List<?> list) {
+            tickers = new java.util.HashSet<>();
+            for (Object o : list) {
+                if (o instanceof String s && !s.isEmpty()) tickers.add(s);
+            }
+        }
+        return bhavcopyService.backfillNewTickers(tickers);
+    }
+
+    /**
+     * Return the latest F&O universe audit. GET returns the cached result from the most recent
+     * bhavcopy fetch (refreshed daily at 2 AM). POST re-runs the audit on demand. Body contains
+     * {date, addedToFno, removedFromFno, fnoUniverseSize, dbUniverseSize}.
+     */
+    @org.springframework.web.bind.annotation.GetMapping("/api/bhavcopy/fno-audit")
+    public Object getFnoAudit() {
+        var audit = bhavcopyService.getLastFnoAudit();
+        if (audit == null) {
+            Map<String, Object> empty = new java.util.LinkedHashMap<>();
+            empty.put("available", false);
+            empty.put("message", "No audit run yet — runs automatically with each bhavcopy fetch (2 AM daily) or trigger via POST.");
+            return empty;
+        }
+        return audit;
+    }
+
+    @org.springframework.web.bind.annotation.PostMapping("/api/bhavcopy/fno-audit")
+    public Object runFnoAudit() {
+        var audit = bhavcopyService.runFnoAudit();
+        if (audit == null) {
+            Map<String, Object> err = new java.util.LinkedHashMap<>();
+            err.put("available", false);
+            err.put("message", "Audit failed — see server logs (NSE cookies or FO bhavcopy unavailable).");
+            return err;
+        }
+        return audit;
     }
 
     private String resolveMode(String mode) {

@@ -2713,11 +2713,11 @@ public class BreakoutScanner implements CandleAggregator.CandleCloseListener, Ca
         };
         if (stateOk) return true;
 
-        // Inside-only CPR — width filter still applies via insideCprMaxWidth.
+        // Inside-only CPR — purely geometric (today's CPR contained inside yesterday's).
+        // Gated by enableInsideCpr toggle; width is irrelevant.
         boolean isInside = bhavcopyService.getInsideCprStocks().stream()
                 .anyMatch(c -> c.getSymbol().equals(ticker));
-        double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
-        if (isInside && (insideMaxWidth <= 0 || cpr.getCprWidthPct() <= insideMaxWidth)) {
+        if (isInside && riskSettings.isEnableInsideCpr()) {
             return true;
         }
 

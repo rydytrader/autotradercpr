@@ -982,18 +982,18 @@
                                 <input type="checkbox" id="enableCprStateC" style="width:16px;height:16px;accent-color:var(--accent-red);">
                                 <span><b style="color:var(--accent-red);">C.</b> Wide</span>
                             </label>
+                            <label style="display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
+                                <input type="checkbox" id="enableInsideCpr" style="width:16px;height:16px;accent-color:var(--accent-cyan);">
+                                <span><b style="color:var(--accent-cyan);">D.</b> Inside</span>
+                            </label>
                         </div>
-                        <label style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-secondary);">
-                            Inside CPR &lt;
-                            <input type="number" id="insideCprMaxWidth" class="form-control" step="0.1" min="0" max="5.0" style="width:70px; padding:5px 8px; font-size:0.82rem; text-align:center;">
-                            % (0 = no filter)
-                        </label>
                     </div>
                     <div class="form-hint">
                         Each stock is classified against its own 20-day SMA of CPR width % — same percentage means different things for a low- vs high-volatility name. State decides the recommended strategy:
                         <br>&nbsp;&nbsp;&bull; <b style="color:var(--accent-green);">A. Narrow</b> &mdash; widthRatio &le; narrow threshold &rarr; volatility squeeze, breakout candidate.
                         <br>&nbsp;&nbsp;&bull; <b style="color:var(--accent-blue);">B. Average</b> &mdash; narrow &lt; widthRatio &le; wide threshold &rarr; orderly range, pullback setups at CPR / EMA.
                         <br>&nbsp;&nbsp;&bull; <b style="color:var(--accent-red);">C. Wide</b> &mdash; widthRatio &gt; wide threshold &rarr; wide CPR exhausted, mean-reversion fade.
+                        <br>&nbsp;&nbsp;&bull; <b style="color:var(--accent-cyan);">D. Inside</b> &mdash; today's CPR fully contained inside yesterday's. <b>Purely geometric containment</b> &mdash; CPR width is irrelevant. Bypasses the A/B/C width threshold entirely and surfaces on its own regardless of which adaptive bands are on.
                         <br>Both thresholds are tunable above. Toggles control which states appear on the scanner watchlist. INSUFFICIENT_DATA (&lt;20 days history) is always excluded.
                     </div>
                 </div>
@@ -1170,12 +1170,25 @@
                         Enabled stocks form the default scanner universe.
                     </span>
                 </div>
-                <button onclick="showAddStockModal()" style="
-                    background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.2);
-                    color:var(--accent-green);padding:6px 16px;border-radius:6px;
-                    font-family:var(--font-mono);font-size:0.72rem;font-weight:700;
-                    cursor:pointer;transition:all 0.2s;">+ Add Stock</button>
+                <div style="display:flex;gap:8px;">
+                    <button onclick="showFnoAuditModal()" id="fnoAuditBtn" title="Compare our DB stock universe against the latest NSE F&O bhavcopy. Shows F&O stocks missing from our universe (NSE additions) and stocks we still track that NSE has dropped from F&O." style="
+                        background:rgba(250,204,21,0.08);border:1px solid rgba(250,204,21,0.2);
+                        color:var(--accent-amber, #fbbf24);padding:6px 16px;border-radius:6px;
+                        font-family:var(--font-mono);font-size:0.72rem;font-weight:700;
+                        cursor:pointer;transition:all 0.2s;">⚠ F&amp;O Audit</button>
+                    <button onclick="backfillNewTickers()" id="backfillTickersBtn" title="Pulls past ~20 days of NSE bhavcopy for new tickers so adaptive CPR + weekly CPR work immediately without waiting for the rolling history to fill naturally." style="
+                        background:rgba(125,211,252,0.08);border:1px solid rgba(125,211,252,0.2);
+                        color:var(--accent-cyan);padding:6px 16px;border-radius:6px;
+                        font-family:var(--font-mono);font-size:0.72rem;font-weight:700;
+                        cursor:pointer;transition:all 0.2s;">↻ Backfill History</button>
+                    <button onclick="showAddStockModal()" style="
+                        background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.2);
+                        color:var(--accent-green);padding:6px 16px;border-radius:6px;
+                        font-family:var(--font-mono);font-size:0.72rem;font-weight:700;
+                        cursor:pointer;transition:all 0.2s;">+ Add Stock</button>
+                </div>
             </div>
+            <div id="backfillTickersStatus" style="display:none;padding:10px 16px;border-bottom:1px solid var(--border);font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);"></div>
             <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
                 <label style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Primary Index:</label>
                 <select id="stockUniverseIndexFilter" onchange="loadStockUniverse()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.74rem;outline:none;min-width:180px;">
@@ -1270,6 +1283,60 @@
             <div style="display:flex;justify-content:flex-end;gap:10px;">
                 <button onclick="closeIndexEditModal()" style="background:transparent;border:1px solid var(--border);color:var(--text-secondary);padding:8px 18px;border-radius:6px;font-family:var(--font-mono);font-size:0.74rem;cursor:pointer;">Cancel</button>
                 <button onclick="saveIndexEditModal()" style="background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.4);color:var(--accent-green);padding:8px 18px;border-radius:6px;font-family:var(--font-mono);font-size:0.74rem;font-weight:700;cursor:pointer;">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- F&O AUDIT MODAL -->
+    <div id="fnoAuditModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:999;
+        align-items:center;justify-content:center;">
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;
+            padding:28px;width:680px;max-width:92vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,0.3);">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+                <div style="font-family:var(--font-mono);font-size:0.86rem;font-weight:700;color:var(--text-primary);">F&amp;O Universe Audit</div>
+                <button onclick="closeFnoAuditModal()" style="background:transparent;border:none;color:var(--text-muted);font-size:1.4rem;cursor:pointer;line-height:1;padding:0 4px;">&times;</button>
+            </div>
+            <div id="fnoAuditMeta" style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);margin-bottom:14px;line-height:1.5;">
+                Loading…
+            </div>
+            <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:14px;">
+                <div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:10px;">
+                        <div style="font-family:var(--font-mono);font-size:0.74rem;font-weight:700;color:var(--accent-amber, #fbbf24);text-transform:uppercase;letter-spacing:0.05em;">Newly added by NSE — missing from our universe</div>
+                        <div style="display:flex;align-items:center;gap:10px;">
+                            <span id="fnoAuditAddedCount" style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);"></span>
+                            <button onclick="addNewFnoStocks()" id="fnoAddBtn" disabled title="Adds all tickers listed below to your DB universe (enabled=true, primaryIndex=NIFTY50 as a placeholder). Use the per-row Edit action to re-point each stock to the correct sector index." style="
+                                background:rgba(250,204,21,0.1);border:1px solid rgba(250,204,21,0.3);
+                                color:var(--accent-amber, #fbbf24);padding:4px 12px;border-radius:6px;
+                                font-family:var(--font-mono);font-size:0.68rem;font-weight:700;
+                                cursor:pointer;opacity:0.5;transition:all 0.2s;">Add all</button>
+                        </div>
+                    </div>
+                    <div id="fnoAuditAdded" style="font-family:var(--font-mono);font-size:0.74rem;color:var(--text-primary);background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;padding:10px 12px;min-height:40px;max-height:200px;overflow-y:auto;line-height:1.7;"></div>
+                </div>
+                <div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:10px;">
+                        <div style="font-family:var(--font-mono);font-size:0.74rem;font-weight:700;color:var(--accent-red, #f87171);text-transform:uppercase;letter-spacing:0.05em;">Removed from F&amp;O by NSE — still in our universe</div>
+                        <div style="display:flex;align-items:center;gap:10px;">
+                            <span id="fnoAuditRemovedCount" style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);"></span>
+                            <button onclick="disableRemovedFnoStocks()" id="fnoDisableBtn" disabled title="Disables all stocks listed below in your DB universe (sets enabled=false). The rows are kept so you can re-enable if NSE re-adds them later." style="
+                                background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);
+                                color:var(--accent-red, #f87171);padding:4px 12px;border-radius:6px;
+                                font-family:var(--font-mono);font-size:0.68rem;font-weight:700;
+                                cursor:pointer;opacity:0.5;transition:all 0.2s;">Disable all</button>
+                        </div>
+                    </div>
+                    <div id="fnoAuditRemoved" style="font-family:var(--font-mono);font-size:0.74rem;color:var(--text-primary);background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;padding:10px 12px;min-height:40px;max-height:200px;overflow-y:auto;line-height:1.7;"></div>
+                </div>
+            </div>
+            <div style="display:flex;justify-content:space-between;gap:10px;margin-top:18px;align-items:center;">
+                <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--text-muted);">
+                    Runs automatically on every daily bhavcopy refresh (2 AM IST).
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <button onclick="runFnoAudit()" id="fnoAuditRefreshBtn" style="background:rgba(125,211,252,0.08);border:1px solid rgba(125,211,252,0.3);color:var(--accent-cyan);padding:8px 18px;border-radius:6px;font-family:var(--font-mono);font-size:0.74rem;cursor:pointer;">↻ Re-run</button>
+                    <button onclick="closeFnoAuditModal()" style="background:transparent;border:1px solid var(--border);color:var(--text-secondary);padding:8px 18px;border-radius:6px;font-family:var(--font-mono);font-size:0.74rem;cursor:pointer;">Close</button>
+                </div>
             </div>
         </div>
     </div>
@@ -1531,7 +1598,7 @@
             document.getElementById('enableCprStateA').checked    = d.enableCprStateA !== false;
             document.getElementById('enableCprStateB').checked    = d.enableCprStateB !== false;
             document.getElementById('enableCprStateC').checked    = d.enableCprStateC !== false;
-            document.getElementById('insideCprMaxWidth').value = d.insideCprMaxWidth != null ? d.insideCprMaxWidth : 0.5;
+            document.getElementById('enableInsideCpr').checked    = d.enableInsideCpr !== false;
             document.getElementById('scanMinPrice').value = d.scanMinPrice != null ? d.scanMinPrice : 300;
             document.getElementById('scanMaxPrice').value = d.scanMaxPrice != null ? d.scanMaxPrice : 0;
             // Watchlist universe radio retired — Settings → Stock Universe is the source.
@@ -1696,7 +1763,7 @@
                 enableCprStateA: document.getElementById('enableCprStateA').checked,
                 enableCprStateB: document.getElementById('enableCprStateB').checked,
                 enableCprStateC: document.getElementById('enableCprStateC').checked,
-                insideCprMaxWidth: parseFloat(document.getElementById('insideCprMaxWidth').value) || 0,
+                enableInsideCpr: document.getElementById('enableInsideCpr').checked,
                 scanMinPrice: parseFloat(document.getElementById('scanMinPrice').value) || 0,
                 scanMaxPrice: parseFloat(document.getElementById('scanMaxPrice').value) || 0,
                 minAbsoluteProfit: (function() { var v = parseFloat(document.getElementById('minAbsoluteProfit').value); return isNaN(v) ? 500 : v; })(),
@@ -1864,6 +1931,182 @@
         }).catch(function() {
             if (splitEl) splitEl.textContent = 'Failed to load';
         });
+    }
+
+    function backfillNewTickers() {
+        var btn = document.getElementById('backfillTickersBtn');
+        var status = document.getElementById('backfillTickersStatus');
+        if (!btn || !status) return;
+        var ok = confirm('Pull past ~20 days of NSE bhavcopy for newly-added tickers?\n\n'
+            + 'This auto-detects every enabled stock currently missing history and downloads the past 20 trading days of CM bhavcopy archives. Runs ~20 NSE downloads (one per day), so it may take 30-60 seconds. Existing data is never overwritten.');
+        if (!ok) return;
+        btn.disabled = true;
+        btn.textContent = '↻ Backfilling…';
+        status.style.display = 'block';
+        status.innerHTML = '<span style="color:var(--accent-cyan)">Downloading bhavcopy archives from NSE… this may take 30-60 seconds.</span>';
+        fetch('/api/bhavcopy/backfill-new-tickers', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders()),
+            body: '{}'
+        })
+            .then(r => r.json())
+            .then(function(d) {
+                if (d.success === false) {
+                    status.innerHTML = '<span style="color:var(--accent-red, #f87171)">FAILED — ' + (d.message || 'unknown error') + '</span>';
+                } else if ((d.tickersBackfilled || 0) === 0) {
+                    status.innerHTML = '<span style="color:var(--accent-green)">' + (d.message || 'Nothing to backfill.') + '</span>';
+                } else {
+                    status.innerHTML = '<span style="color:var(--accent-green)">DONE — '
+                        + d.tickersBackfilled + ' tickers, '
+                        + (d.rowsMerged || 0) + ' rows merged across '
+                        + (d.daysUpdated || 0) + ' days. '
+                        + 'Weekly CPR refreshed for ' + (d.weeklyCprRefreshed || 0) + ' symbols. '
+                        + (d.daysFailed ? ('<span style="color:var(--accent-amber, #fbbf24)">' + d.daysFailed + ' days failed.</span>') : '')
+                        + '</span>';
+                }
+                btn.disabled = false;
+                btn.textContent = '↻ Backfill History';
+            })
+            .catch(function(err) {
+                status.innerHTML = '<span style="color:var(--accent-red, #f87171)">FAILED — ' + err.message + '</span>';
+                btn.disabled = false;
+                btn.textContent = '↻ Backfill History';
+            });
+    }
+
+    function showFnoAuditModal() {
+        document.getElementById('fnoAuditModal').style.display = 'flex';
+        renderFnoAudit({ loading: true });
+        fetch('/api/bhavcopy/fno-audit').then(r => r.json()).then(renderFnoAudit).catch(function(err) {
+            renderFnoAudit({ error: err.message || 'fetch failed' });
+        });
+    }
+
+    function closeFnoAuditModal() {
+        document.getElementById('fnoAuditModal').style.display = 'none';
+    }
+
+    function runFnoAudit() {
+        var btn = document.getElementById('fnoAuditRefreshBtn');
+        if (btn) { btn.disabled = true; btn.textContent = '↻ Running…'; }
+        renderFnoAudit({ loading: true });
+        fetch('/api/bhavcopy/fno-audit', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders()),
+            body: '{}'
+        })
+            .then(r => r.json())
+            .then(function(d) { renderFnoAudit(d); })
+            .catch(function(err) { renderFnoAudit({ error: err.message || 'fetch failed' }); })
+            .finally(function() { if (btn) { btn.disabled = false; btn.textContent = '↻ Re-run'; } });
+    }
+
+    // Stashed lists from the last audit response — used by the bulk add/disable actions.
+    var fnoAuditLastAdded = [];
+    var fnoAuditLastRemoved = [];
+
+    function renderFnoAudit(d) {
+        var meta = document.getElementById('fnoAuditMeta');
+        var addedEl = document.getElementById('fnoAuditAdded');
+        var removedEl = document.getElementById('fnoAuditRemoved');
+        var addedCnt = document.getElementById('fnoAuditAddedCount');
+        var removedCnt = document.getElementById('fnoAuditRemovedCount');
+        var addBtn = document.getElementById('fnoAddBtn');
+        var disableBtn = document.getElementById('fnoDisableBtn');
+        var setBtnState = function(btn, enabled) {
+            if (!btn) return;
+            btn.disabled = !enabled;
+            btn.style.opacity = enabled ? '1' : '0.5';
+            btn.style.cursor = enabled ? 'pointer' : 'not-allowed';
+        };
+        if (d && d.loading) {
+            meta.textContent = 'Loading…';
+            addedEl.textContent = ''; removedEl.textContent = '';
+            addedCnt.textContent = ''; removedCnt.textContent = '';
+            setBtnState(addBtn, false); setBtnState(disableBtn, false);
+            return;
+        }
+        if (d && d.error) {
+            meta.innerHTML = '<span style="color:var(--accent-red, #f87171)">Error: ' + d.error + '</span>';
+            setBtnState(addBtn, false); setBtnState(disableBtn, false);
+            return;
+        }
+        if (!d || d.available === false) {
+            meta.innerHTML = '<span style="color:var(--text-muted)">' + ((d && d.message) || 'No audit data available.') + '</span>';
+            addedEl.textContent = ''; removedEl.textContent = '';
+            addedCnt.textContent = ''; removedCnt.textContent = '';
+            setBtnState(addBtn, false); setBtnState(disableBtn, false);
+            return;
+        }
+        meta.innerHTML = 'FO bhavcopy: <b style="color:var(--text-primary)">' + (d.date || '?') + '</b> &nbsp; · &nbsp; '
+            + 'NSE F&amp;O universe: <b style="color:var(--text-primary)">' + (d.fnoUniverseSize || 0) + '</b> stocks &nbsp; · &nbsp; '
+            + 'Our DB universe: <b style="color:var(--text-primary)">' + (d.dbUniverseSize || 0) + '</b> stocks';
+        var added = d.addedToFno || [];
+        var removed = d.removedFromFno || [];
+        fnoAuditLastAdded = added;
+        fnoAuditLastRemoved = removed;
+        addedCnt.textContent = added.length + ' ticker' + (added.length === 1 ? '' : 's');
+        removedCnt.textContent = removed.length + ' ticker' + (removed.length === 1 ? '' : 's');
+        addedEl.innerHTML = added.length === 0
+            ? '<span style="color:var(--text-muted);font-style:italic;">None — our universe contains every current F&amp;O stock.</span>'
+            : added.map(function(t) { return '<span style="display:inline-block;padding:2px 8px;margin:2px 4px 2px 0;background:rgba(250,204,21,0.1);border:1px solid rgba(250,204,21,0.25);border-radius:4px;color:var(--accent-amber, #fbbf24);">' + t + '</span>'; }).join('');
+        removedEl.innerHTML = removed.length === 0
+            ? '<span style="color:var(--text-muted);font-style:italic;">None — every tracked stock is still F&amp;O eligible.</span>'
+            : removed.map(function(t) { return '<span style="display:inline-block;padding:2px 8px;margin:2px 4px 2px 0;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.25);border-radius:4px;color:var(--accent-red, #f87171);">' + t + '</span>'; }).join('');
+        setBtnState(addBtn, added.length > 0);
+        setBtnState(disableBtn, removed.length > 0);
+    }
+
+    function disableRemovedFnoStocks() {
+        if (!fnoAuditLastRemoved || fnoAuditLastRemoved.length === 0) return;
+        var n = fnoAuditLastRemoved.length;
+        if (!confirm('Disable ' + n + ' stock' + (n === 1 ? '' : 's') + ' that NSE has removed from F&O?\n\n'
+            + fnoAuditLastRemoved.join(', ')
+            + '\n\nThe DB rows are kept (enabled=false), so you can re-enable later if NSE re-adds them.')) return;
+        var btn = document.getElementById('fnoDisableBtn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Disabling…'; }
+        fetch('/api/stocks/bulk-disable', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders()),
+            body: JSON.stringify({ tickers: fnoAuditLastRemoved })
+        })
+            .then(r => r.json())
+            .then(function(d) {
+                alert('Disabled ' + (d.disabled || 0) + ' / ' + (d.requested || 0) + ' tickers.'
+                    + (d.alreadyDisabled ? '\n' + d.alreadyDisabled + ' were already disabled.' : '')
+                    + (d.notFound ? '\n' + d.notFound + ' not found in DB.' : ''));
+                if (typeof loadStockUniverse === 'function') loadStockUniverse();
+                runFnoAudit();
+            })
+            .catch(function(err) { alert('Failed: ' + (err.message || err)); })
+            .finally(function() { if (btn) { btn.disabled = false; btn.textContent = 'Disable all'; } });
+    }
+
+    function addNewFnoStocks() {
+        if (!fnoAuditLastAdded || fnoAuditLastAdded.length === 0) return;
+        var n = fnoAuditLastAdded.length;
+        if (!confirm('Add ' + n + ' new F&O stock' + (n === 1 ? '' : 's') + ' to our DB universe?\n\n'
+            + fnoAuditLastAdded.join(', ')
+            + '\n\nEach is created with enabled=true and primary index = NIFTY50 (placeholder). '
+            + 'Use the per-row Edit action in the Stock Universe table to re-point each to the correct sector index.')) return;
+        var btn = document.getElementById('fnoAddBtn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
+        fetch('/api/stocks/bulk-add', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders()),
+            body: JSON.stringify({ tickers: fnoAuditLastAdded })
+        })
+            .then(r => r.json())
+            .then(function(d) {
+                alert('Added ' + (d.added || 0) + ' / ' + (d.requested || 0) + ' tickers.'
+                    + (d.alreadyExists ? '\n' + d.alreadyExists + ' already existed.' : '')
+                    + '\nDefault primary index: ' + (d.defaultIndex || 'none')
+                    + '\n\nReassign the primary index for each via the Stock Universe table.');
+                if (typeof loadStockUniverse === 'function') loadStockUniverse();
+                runFnoAudit();
+            })
+            .catch(function(err) { alert('Failed: ' + (err.message || err)); })
+            .finally(function() { if (btn) { btn.disabled = false; btn.textContent = 'Add all'; } });
     }
 
     function loadStockUniverse() {

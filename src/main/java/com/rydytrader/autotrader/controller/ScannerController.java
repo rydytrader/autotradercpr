@@ -81,7 +81,6 @@ public class ScannerController {
      */
     private Map<String, Integer> watchlistSectorIndexCounts() {
         Map<String, Set<String>> symbolsByTicker = new LinkedHashMap<>();
-        double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
 
         java.util.function.Consumer<CprLevels> recordSector = (cpr) -> {
             // Each stock maps to its primary index (NIFTY 50 OR a sector index) via the
@@ -101,10 +100,10 @@ public class ScannerController {
             if (!marketDataService.passesWatchlistFilters(cpr)) continue;
             recordSector.accept(cpr);
         }
-        // Inside CPR pass — same gates as getWatchlist (no narrow-width upper cap).
-        for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
+        // Inside CPR pass — gated by enableInsideCpr toggle (mirror of getWatchlist).
+        // INSIDE is purely geometric containment; no width filter.
+        if (riskSettings.isEnableInsideCpr()) for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
             if (!bhavcopyService.isInScanUniverse(cpr.getSymbol())) continue;
-            if (insideMaxWidth > 0 && cpr.getCprWidthPct() > insideMaxWidth) continue;
             if (!marketDataService.passesWatchlistFilters(cpr)) continue;
             recordSector.accept(cpr);
         }
@@ -275,24 +274,18 @@ public class ScannerController {
         }
 
         // Collect inside-only CPR stocks (geometric INSIDE — today's CPR within yesterday's).
-        // The adaptive state toggle (NARROW/AVERAGE/WIDE) still gates these: if the user
-        // disables WIDE and a stock is INSIDE-AND-WIDE, the card is excluded — disabled
-        // means disabled, regardless of the orthogonal INSIDE classifier. Width filter +
-        // price filters still apply. INSUFFICIENT_DATA (warmup) stocks pass through since
-        // the toggle doesn't reach them — they show as INSIDE-only.
-        double insideMaxWidth = riskSettings.getInsideCprMaxWidth();
-        for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
+        // INSIDE is a standalone setup, independent of the NARROW/AVERAGE/WIDE width
+        // classifier. An INSIDE-AND-WIDE stock surfaces even when the WIDE toggle is off —
+        // the user explicitly wants INSIDE stocks regardless of adaptive band. Gated only
+        // by its own enableInsideCpr toggle. The adaptive tag is still attached to the card
+        // for context, but no longer gates inclusion. Purely geometric — no width filter.
+        if (riskSettings.isEnableInsideCpr()) for (CprLevels cpr : bhavcopyService.getInsideCprStocks()) {
             String fyers = "NSE:" + cpr.getSymbol() + "-EQ";
             if (seen.contains(fyers)) continue;
             if (!bhavcopyService.isInScanUniverse(cpr.getSymbol())) continue;
-            if (insideMaxWidth > 0 && cpr.getCprWidthPct() > insideMaxWidth) continue;
             if (!marketDataService.passesWatchlistFilters(cpr)) continue;
 
             BhavcopyService.AdaptiveCprResult adaptive = bhavcopyService.getAdaptiveCpr(cpr.getSymbol());
-            // Apply the adaptive-state toggle gate. Warmup stocks (no classified state)
-            // are allowed through — they show as INSIDE-only and aren't reached by the toggle.
-            if (adaptive.state() != BhavcopyService.CprState.INSUFFICIENT_DATA
-                    && !isAdaptiveStateEnabled(adaptive.state())) continue;
             List<String> types = new ArrayList<>();
             types.add("INSIDE");
             // Tag the adaptive state alongside INSIDE if it isn't WARMUP — gives the user
@@ -1043,7 +1036,6 @@ public class ScannerController {
         status.put("maxPrice", riskSettings.getScanMaxPrice());
         status.put("cprWidthSqueezeMult",  riskSettings.getCprWidthSqueezeMult());
         status.put("cprWidthWideMult",     riskSettings.getCprWidthWideMult());
-        status.put("insideMaxWidth",       riskSettings.getInsideCprMaxWidth());
         // Live threshold the scanner cards use to color the "Today's TR" chip — so the
         // color flips immediately when the user tunes the setting (no page reload needed).
         status.put("enableDailyAtrExhaustionFilter", riskSettings.isEnableDailyAtrExhaustionFilter());

@@ -172,6 +172,74 @@ public class StockUniverseController {
         return ResponseEntity.ok(Map.of("deleted", id));
     }
 
+    /** Bulk add stocks by ticker. Body: { tickers: ["BANDHANBNK","LICI",...] }. Used by the
+     *  F&O Audit modal to seed new F&O stocks NSE has added. Creates each missing ticker with
+     *  name=ticker (placeholder), primaryIndex=NIFTY50 (broad-market default — user re-points
+     *  via the per-row edit), enabled=true, membership=OTHERS. Skips tickers that already
+     *  exist. Returns counts. */
+    @PostMapping("/stocks/bulk-add")
+    @Transactional
+    public Map<String, Object> bulkAdd(@RequestBody Map<String, Object> body) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        List<String> tickers = new ArrayList<>();
+        if (body != null && body.get("tickers") instanceof List<?> list) {
+            for (Object o : list) {
+                if (o instanceof String s && !s.isBlank()) tickers.add(s.trim().toUpperCase());
+            }
+        }
+        // Default primary index for new bulk-adds = NIFTY50 (broad market). User can re-point
+        // via the per-row Edit action once the rows are inserted.
+        IndexEntity defaultIndex = indexRepo.findByTicker("NIFTY50").orElse(null);
+        List<String> added = new ArrayList<>();
+        List<String> alreadyExists = new ArrayList<>();
+        for (String t : tickers) {
+            if (stockRepo.existsByTicker(t)) { alreadyExists.add(t); continue; }
+            StockEntity s = new StockEntity(t, t, defaultIndex, true, StockEntity.Membership.OTHERS);
+            stockRepo.save(s);
+            added.add(t);
+        }
+        result.put("requested",      tickers.size());
+        result.put("added",          added.size());
+        result.put("alreadyExists",  alreadyExists.size());
+        result.put("addedTickers",   added);
+        result.put("defaultIndex",   defaultIndex != null ? defaultIndex.getTicker() : null);
+        return result;
+    }
+
+    /** Bulk disable stocks by ticker. Body: { tickers: ["SUNTV","ZEEL",...] }. Used by the
+     *  F&O Audit modal to disable stocks NSE has dropped from F&O. Returns counts of
+     *  matched/disabled/skipped (already-disabled or not-found) tickers. */
+    @PostMapping("/stocks/bulk-disable")
+    @Transactional
+    public Map<String, Object> bulkDisable(@RequestBody Map<String, Object> body) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        List<String> tickers = new ArrayList<>();
+        if (body != null && body.get("tickers") instanceof List<?> list) {
+            for (Object o : list) {
+                if (o instanceof String s && !s.isBlank()) tickers.add(s.trim().toUpperCase());
+            }
+        }
+        List<String> disabled = new ArrayList<>();
+        List<String> alreadyDisabled = new ArrayList<>();
+        List<String> notFound = new ArrayList<>();
+        for (String t : tickers) {
+            var opt = stockRepo.findByTicker(t);
+            if (opt.isEmpty()) { notFound.add(t); continue; }
+            StockEntity s = opt.get();
+            if (!s.isEnabled()) { alreadyDisabled.add(t); continue; }
+            s.setEnabled(false);
+            stockRepo.save(s);
+            disabled.add(t);
+        }
+        result.put("requested",        tickers.size());
+        result.put("disabled",         disabled.size());
+        result.put("alreadyDisabled",  alreadyDisabled.size());
+        result.put("notFound",         notFound.size());
+        result.put("disabledTickers",  disabled);
+        result.put("notFoundTickers",  notFound);
+        return result;
+    }
+
     private static Map<String, Object> toStockDto(StockEntity s) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", s.getId());

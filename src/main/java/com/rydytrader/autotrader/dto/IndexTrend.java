@@ -24,7 +24,7 @@ public class IndexTrend {
     // NIFTY index 5-min close used for the CPR comparison (sticky — captured at last 5-min close).
     private double niftyClose;
     // NIFTY's daily CPR width as a % of price + a NARROW / NORMAL / WIDE label derived from
-    // the user's narrowCprMaxWidth and insideCprMaxWidth scanner thresholds. Display-only.
+    // the adaptive CPR squeeze/wide multiplier thresholds. Display-only.
     private double cprWidthPct;
     private String cprWidthCategory;
     // NIFTY 5-min EMA 20 — drives the NIFTY card's "EMA 20: X" chip color (green when LTP

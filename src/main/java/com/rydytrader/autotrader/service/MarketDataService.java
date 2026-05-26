@@ -1108,9 +1108,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         double minPrice = riskSettings.getScanMinPrice();
         double m1 = riskSettings.getCprWidthSqueezeMult();
         double m2 = riskSettings.getCprWidthWideMult();
-        double insideMax = riskSettings.getInsideCprMaxWidth();
         eventService.log("[INFO] Scanner initialized: " + watchlist.size() + " symbols"
-            + " (filters: adaptive CPR narrow≤" + m1 + "× / wide>" + m2 + "× of 20d avg, inside<" + insideMax + "%, price≥₹" + (int)minPrice + ")");
+            + " (filters: adaptive CPR narrow≤" + m1 + "× / wide>" + m2 + "× of 20d avg, inside=geometric, price≥₹" + (int)minPrice + ")");
 
         // Boot-log adaptive CPR state counts — mirror the scanner card's filter chain
         // (isInScanUniverse + passesWatchlistFilters) so the counts shown here match what
@@ -1175,7 +1174,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
         // than NIFTY 50) so the CPR cache contains stocks outside the DB — without this gate
         // those would leak into the watchlist + WS subscription set.
         Set<String> symbols = new LinkedHashSet<>();
-        double insideMax = riskSettings.getInsideCprMaxWidth();
 
         for (var cpr : bhavcopyService.getAllCprLevels().values()) {
             if (bhavcopyService.isIndex(cpr.getSymbol())) continue; // NIFTY50 etc. are not tradable stocks
@@ -1193,26 +1191,18 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback, Candl
                 symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
             }
         }
-        for (var cpr : bhavcopyService.getInsideCprStocks()) {
-            if (!bhavcopyService.isInScanUniverse(cpr.getSymbol())) continue;
-            if (insideMax > 0 && cpr.getCprWidthPct() >= insideMax) continue;
-            if (!passesWatchlistFilters(cpr)) continue;
-            // Apply the adaptive-state toggle gate — same logic ScannerController's INSIDE
-            // loop uses. Without this, an INSIDE-AND-WIDE stock would slip into the trade
-            // scanner's watchlist even when the WIDE toggle is off (cards exclude it but
-            // BreakoutScanner still fires signals for it). INSUFFICIENT_DATA (warmup)
-            // stocks pass through since the toggle doesn't reach them.
-            BhavcopyService.AdaptiveCprResult adaptive = bhavcopyService.getAdaptiveCpr(cpr.getSymbol());
-            if (adaptive.state() != BhavcopyService.CprState.INSUFFICIENT_DATA) {
-                boolean stateOk = switch (adaptive.state()) {
-                    case NARROW            -> riskSettings.isEnableCprStateA();
-                    case AVERAGE           -> riskSettings.isEnableCprStateB();
-                    case WIDE              -> riskSettings.isEnableCprStateC();
-                    case INSUFFICIENT_DATA -> false;
-                };
-                if (!stateOk) continue;
+        // INSIDE CPR pass — geometric INSIDE (today's CPR fully contained inside yesterday's)
+        // is independent of the adaptive width classifier. An INSIDE stock is a setup in its
+        // own right, so it bypasses the NARROW/AVERAGE/WIDE toggles entirely — even if every
+        // adaptive band is off, INSIDE stocks still surface (and trade). Purely geometric
+        // containment — CPR width is irrelevant. Gated only by enableInsideCpr toggle, the
+        // universe gate, and standard watchlist filters.
+        if (riskSettings.isEnableInsideCpr()) {
+            for (var cpr : bhavcopyService.getInsideCprStocks()) {
+                if (!bhavcopyService.isInScanUniverse(cpr.getSymbol())) continue;
+                if (!passesWatchlistFilters(cpr)) continue;
+                symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
             }
-            symbols.add("NSE:" + cpr.getSymbol() + "-EQ");
         }
         return new ArrayList<>(symbols);
     }

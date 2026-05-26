@@ -179,6 +179,18 @@ public class BhavcopyService {
     private volatile Set<String> nifty50Symbols  = Collections.emptySet();
     private volatile Set<String> nifty100Symbols = Collections.emptySet();
 
+    // Latest F&O universe audit — populated each time fetchAndCompute() runs the FO bhavcopy
+    // diff against the DB-enabled stock universe. Surfaced via GET /api/bhavcopy/fno-audit
+    // so the UI can show added/removed tickers without re-running the diff.
+    public static record FnoAudit(
+        String date,                       // FO bhavcopy date used for the comparison
+        java.util.List<String> addedToFno,     // in FO bhavcopy but NOT in our DB universe
+        java.util.List<String> removedFromFno, // in our DB universe but NOT in FO bhavcopy
+        int fnoUniverseSize,
+        int dbUniverseSize) {}
+    private volatile FnoAudit lastFnoAudit = null;
+    public FnoAudit getLastFnoAudit() { return lastFnoAudit; }
+
     // Rolling 5-day history (most recent first) for weekly CPR and inside-CPR detection
     private final LinkedList<DaySnapshot> dailyHistory = new LinkedList<>();
     private static final int MAX_HISTORY_DAYS = 25;
@@ -238,6 +250,12 @@ public class BhavcopyService {
     @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.context.annotation.Lazy
     private IndexTrendService indexTrendService;
+
+    // Lazy-wired so backfillNewTickers can refresh weekly CPR for the new symbols
+    // after their daily history is restored from past bhavcopy archives.
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private WeeklyCprService weeklyCprService;
 
     public BhavcopyService(EventService eventService) {
         this.eventService = eventService;
@@ -688,6 +706,226 @@ public class BhavcopyService {
         return result;
     }
 
+    /**
+     * One-shot admin operation — for each ticker that has fewer than {@link #ADAPTIVE_LOOKBACK_DAYS}
+     * samples in {@link #dailyHistory}, walk every existing day snapshot and re-parse that day's
+     * CM bhavcopy zip with the "new" tickers added to the filter set. Merges parsed rows into the
+     * snapshot's {@code symbols} map (never overwrites existing entries). Also refreshes today's
+     * {@link #cache} for any new tickers missing from it.
+     *
+     * <p>Use case: when new stocks are added to the DB universe (e.g. expanding the F&O list),
+     * the adaptive CPR classifier returns INSUFFICIENT_DATA for ~20 days because the new tickers
+     * are absent from every historical snapshot (they were filtered out by {@code parseCmOhlc}'s
+     * {@code nfoSymbols.contains(sym)} check at the time those days were originally fetched).
+     * This method pulls the missing rows from NSE archives so the classifier works immediately.
+     *
+     * <p>When {@code requestedTickers} is null or empty, the method auto-detects new tickers as
+     * any enabled DB stock with fewer than ADAPTIVE_LOOKBACK_DAYS samples currently in history.
+     *
+     * <p>Returns a summary map suitable for serving directly from a controller.
+     */
+    public synchronized java.util.Map<String, Object> backfillNewTickers(java.util.Set<String> requestedTickers) {
+        java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
+
+        // Auto-detect tickers needing backfill when none specified
+        java.util.Set<String> tickersToBackfill;
+        if (requestedTickers != null && !requestedTickers.isEmpty()) {
+            tickersToBackfill = new java.util.HashSet<>(requestedTickers);
+        } else {
+            tickersToBackfill = findTickersNeedingBackfill();
+        }
+
+        if (tickersToBackfill.isEmpty()) {
+            result.put("success", true);
+            result.put("tickersBackfilled", 0);
+            result.put("daysScanned", 0);
+            result.put("message", "No tickers need backfill — every enabled stock already has "
+                + ADAPTIVE_LOOKBACK_DAYS + "+ days of history.");
+            return result;
+        }
+
+        String cookies;
+        try {
+            cookies = getNseCookies();
+            if (cookies == null || cookies.isEmpty()) {
+                result.put("success", false);
+                result.put("message", "Failed to obtain NSE session cookies.");
+                return result;
+            }
+        } catch (Exception e) {
+            log.error("[BhavcopyService] backfillNewTickers cookie fetch failed: {}", e.getMessage());
+            result.put("success", false);
+            result.put("message", "Failed to fetch NSE cookies: " + e.getMessage());
+            return result;
+        }
+
+        log.info("[BhavcopyService] Backfilling {} new tickers across {} history snapshots + today",
+            tickersToBackfill.size(), dailyHistory.size());
+
+        int daysUpdated = 0;
+        int daysFailed = 0;
+        int rowsMerged = 0;
+
+        // 1. Today's cache — fill any new tickers missing from it
+        java.util.Set<String> missingFromToday = new java.util.HashSet<>();
+        for (String t : tickersToBackfill) {
+            if (!cache.containsKey(t)) missingFromToday.add(t);
+        }
+        if (!missingFromToday.isEmpty() && cachedDate != null && !cachedDate.isEmpty()) {
+            try {
+                java.time.LocalDate date = java.time.LocalDate.parse(cachedDate);
+                int merged = mergeBhavcopyRowsForTickers(date, cookies, missingFromToday, cache, true);
+                if (merged > 0) {
+                    rowsMerged += merged;
+                    daysUpdated++;
+                    log.info("[BhavcopyService] Today ({}) — merged {} new ticker rows into cache",
+                        cachedDate, merged);
+                }
+            } catch (Exception e) {
+                log.warn("[BhavcopyService] Today backfill failed: {}", e.getMessage());
+                daysFailed++;
+            }
+        }
+
+        // 2. Each existing historical snapshot — fill any new tickers missing from it
+        for (DaySnapshot snap : dailyHistory) {
+            if (snap == null || snap.date == null || snap.date.isEmpty()) continue;
+            java.util.Set<String> missingForDay = new java.util.HashSet<>();
+            for (String t : tickersToBackfill) {
+                if (!snap.symbols.containsKey(t)) missingForDay.add(t);
+            }
+            if (missingForDay.isEmpty()) continue;
+            try {
+                java.time.LocalDate date = java.time.LocalDate.parse(snap.date);
+                int merged = mergeBhavcopyRowsForTickers(date, cookies, missingForDay, snap.symbols, false);
+                if (merged > 0) {
+                    rowsMerged += merged;
+                    daysUpdated++;
+                }
+            } catch (Exception e) {
+                log.warn("[BhavcopyService] Snapshot {} backfill failed: {}", snap.date, e.getMessage());
+                daysFailed++;
+            }
+        }
+
+        if (rowsMerged > 0) {
+            saveToFile();
+        }
+
+        // 3. Refresh weekly CPR for the backfilled tickers — now that they have historical
+        //    daily snapshots, weekly aggregation can produce valid TC/BC/Pivot for them.
+        int weeklyRefreshed = 0;
+        if (rowsMerged > 0 && weeklyCprService != null) {
+            try {
+                java.util.List<String> fyersSymbols = new java.util.ArrayList<>();
+                for (String t : tickersToBackfill) {
+                    fyersSymbols.add(isIndex(t) ? ("NSE:" + t + "-INDEX") : ("NSE:" + t + "-EQ"));
+                }
+                weeklyCprService.fetchWeeklyTrends(fyersSymbols);
+                weeklyRefreshed = fyersSymbols.size();
+                log.info("[BhavcopyService] Weekly CPR refreshed for {} backfilled tickers", weeklyRefreshed);
+            } catch (Exception e) {
+                log.warn("[BhavcopyService] Weekly CPR refresh after backfill failed: {}", e.getMessage());
+            }
+        }
+
+        // 4. Rebuild scanner watchlist so the newly-classifiable tickers show up immediately
+        if (rowsMerged > 0 && marketDataService != null) {
+            try {
+                marketDataService.rebuildWatchlist();
+            } catch (Exception e) {
+                log.warn("[BhavcopyService] Watchlist rebuild after backfill failed: {}", e.getMessage());
+            }
+        }
+
+        if (rowsMerged > 0) {
+            eventService.log("[INFO] Ticker backfill: " + tickersToBackfill.size() + " tickers across "
+                + daysUpdated + " days, " + rowsMerged + " rows merged");
+        }
+
+        result.put("success", true);
+        result.put("tickersBackfilled", tickersToBackfill.size());
+        result.put("daysScanned", dailyHistory.size() + 1);
+        result.put("daysUpdated", daysUpdated);
+        result.put("daysFailed", daysFailed);
+        result.put("rowsMerged", rowsMerged);
+        result.put("weeklyCprRefreshed", weeklyRefreshed);
+        result.put("tickers", new java.util.ArrayList<>(tickersToBackfill));
+        result.put("message", rowsMerged == 0
+            ? "No bhavcopy rows found for the requested tickers across " + dailyHistory.size() + " days."
+            : "Merged " + rowsMerged + " rows across " + daysUpdated + " days for "
+              + tickersToBackfill.size() + " tickers. Adaptive CPR + weekly CPR now active for these symbols.");
+        return result;
+    }
+
+    /** Find enabled DB stocks with fewer than {@link #ADAPTIVE_LOOKBACK_DAYS} samples in
+     *  {@link #dailyHistory}. These are the tickers that would currently return
+     *  INSUFFICIENT_DATA from {@link #getAdaptiveCpr(String)}. */
+    private java.util.Set<String> findTickersNeedingBackfill() {
+        java.util.Set<String> need = new java.util.LinkedHashSet<>();
+        if (stockRepository == null) return need;
+        java.util.List<com.rydytrader.autotrader.entity.StockEntity> stocks;
+        try {
+            stocks = stockRepository.findByEnabledTrue();
+        } catch (Exception e) {
+            log.warn("[BhavcopyService] DB lookup for backfill candidates failed: {}", e.getMessage());
+            return need;
+        }
+        for (var s : stocks) {
+            String t = s.getTicker();
+            if (t == null || t.isEmpty()) continue;
+            int samples = 0;
+            for (DaySnapshot snap : dailyHistory) {
+                if (snap == null || snap.symbols == null) continue;
+                CprLevels day = snap.symbols.get(t);
+                if (day != null && day.getClose() > 0) samples++;
+            }
+            if (samples < ADAPTIVE_LOOKBACK_DAYS) need.add(t);
+        }
+        return need;
+    }
+
+    /** Helper for {@link #backfillNewTickers} — downloads CM bhavcopy for {@code date}, parses
+     *  rows for the given tickers only, merges them into the supplied {@code target} map (never
+     *  overwrites existing entries). When {@code computeCpr} is true (today's cache), the merged
+     *  CprLevels include H/L/C — the CprLevels constructor computes pivot/TC/BC/R1..R4/S1..S4
+     *  from those automatically. Returns the count of rows merged. */
+    private int mergeBhavcopyRowsForTickers(java.time.LocalDate date, String cookies,
+                                            java.util.Set<String> tickers,
+                                            java.util.Map<String, CprLevels> target,
+                                            boolean computeCpr) {
+        String dateStr = DATE_FMT.format(date);
+        String cmUrl = String.format(CM_URL_TEMPLATE, dateStr);
+        byte[] cmZip = downloadZip(cmUrl, cookies);
+        if (cmZip == null) {
+            log.warn("[BhavcopyService] CM bhavcopy unavailable for {}", date);
+            return 0;
+        }
+        java.util.Map<String, double[]> ohlcMap = parseCmOhlc(cmZip, tickers);
+        int merged = 0;
+        for (java.util.Map.Entry<String, double[]> entry : ohlcMap.entrySet()) {
+            String sym = entry.getKey();
+            if (target.containsKey(sym)) continue; // never overwrite existing
+            double[] hlc = entry.getValue();
+            CprLevels lvl = new CprLevels(sym, hlc[0], hlc[1], hlc[2]);
+            if (hlc.length > 3) lvl.setVolume((long) hlc[3]);
+            if (hlc.length > 4) lvl.setFiftyTwoWeekHigh(hlc[4]);
+            if (hlc.length > 5) lvl.setFiftyTwoWeekLow(hlc[5]);
+            if (hlc.length > 6) lvl.setTurnover(hlc[6]);
+            if (computeCpr) {
+                if (nifty50Symbols.contains(sym))  lvl.setInNifty50(true);
+                if (nifty100Symbols.contains(sym)) lvl.setInNifty100(true);
+            }
+            if (symbolMasterService != null) {
+                double tick = symbolMasterService.getTickSize("NSE:" + sym + "-EQ");
+                lvl.roundToTick(tick);
+            }
+            target.put(sym, lvl);
+            merged++;
+        }
+        return merged;
+    }
+
     public AdaptiveCprResult getAdaptiveCpr(String ticker) {
         if (ticker == null || ticker.isEmpty()) {
             return new AdaptiveCprResult(0, 0, 0, false, CprState.INSUFFICIENT_DATA, 0);
@@ -934,6 +1172,16 @@ public class BhavcopyService {
                 }
 
                 saveToFile();
+
+                // F&O universe audit — compare our DB-enabled set against NSE's current FO
+                // bhavcopy. Added = in FO bhavcopy but missing from our seeder/DB (candidates
+                // to add). Removed = in our DB but no longer F&O eligible (e.g. SUNTV, ZEEL,
+                // PVRINOX after recent NSE reviews). Both lists logged via event log + console.
+                try {
+                    auditFnoUniverse(dbEnabled, cookies, targetDate);
+                } catch (Exception e) {
+                    log.warn("[BhavcopyService] F&O audit failed: {}", e.getMessage());
+                }
 
                 long insideCount = getInsideCprStocks().size();
                 String msg = "[BhavcopyService] Loaded CPR for " + cache.size()
@@ -1345,6 +1593,96 @@ public class BhavcopyService {
             log.error("[BhavcopyService] Error parsing FO Bhavcopy: {}", e.getMessage());
         }
         return symbols;
+    }
+
+    /**
+     * Audit our DB-enabled stock universe against NSE's current F&O bhavcopy. Logs additions
+     * (live F&O stocks missing from our universe — candidates to seed) and removals (stocks
+     * we still track but NSE has dropped from F&O). Result is also stored in {@link #lastFnoAudit}
+     * for retrieval via the API.
+     *
+     * <p>Indices are excluded from "removed" since they aren't expected in the stock-futures
+     * list. Downloads ~1MB FO zip once per call; called from fetchAndCompute so it runs at
+     * 2 AM daily and on manual rebuilds.
+     */
+    private void auditFnoUniverse(java.util.Set<String> ourUniverse, String cookies, java.time.LocalDate date) {
+        if (ourUniverse == null || ourUniverse.isEmpty()) {
+            log.info("[BhavcopyService] F&O audit skipped — DB universe is empty");
+            return;
+        }
+        String foUrl = String.format(FO_URL_TEMPLATE, DATE_FMT.format(date));
+        byte[] foZip = downloadZip(foUrl, cookies);
+        if (foZip == null) {
+            log.warn("[BhavcopyService] F&O audit skipped — FO bhavcopy unavailable for {}", date);
+            return;
+        }
+        java.util.Set<String> fnoUniverse = extractNfoSymbols(foZip);
+        if (fnoUniverse.isEmpty()) {
+            log.warn("[BhavcopyService] F&O audit skipped — FO bhavcopy parsed 0 symbols");
+            return;
+        }
+        // Added = in FO bhavcopy but not in our DB universe
+        java.util.List<String> added = new java.util.ArrayList<>();
+        for (String s : fnoUniverse) {
+            if (!ourUniverse.contains(s)) added.add(s);
+        }
+        java.util.Collections.sort(added);
+        // Removed = in our DB universe but not in current FO bhavcopy. Skip indices —
+        // they aren't stock futures and would always show as "removed".
+        java.util.List<String> removed = new java.util.ArrayList<>();
+        for (String s : ourUniverse) {
+            if (isIndex(s)) continue;
+            if (!fnoUniverse.contains(s)) removed.add(s);
+        }
+        java.util.Collections.sort(removed);
+
+        lastFnoAudit = new FnoAudit(date.toString(), added, removed, fnoUniverse.size(), ourUniverse.size());
+
+        if (added.isEmpty() && removed.isEmpty()) {
+            String msg = "[F&O Audit] In sync with NSE FO bhavcopy " + date + " — "
+                + ourUniverse.size() + " tracked, " + fnoUniverse.size() + " F&O eligible";
+            log.info(msg);
+            eventService.log(msg);
+            return;
+        }
+        if (!added.isEmpty()) {
+            String preview = added.size() <= 20 ? added.toString()
+                : added.subList(0, 20) + " ... (+" + (added.size() - 20) + " more)";
+            String msg = "[F&O Audit] " + added.size() + " new F&O stocks NOT in our universe (added by NSE since last seeder update): " + preview;
+            log.warn(msg);
+            eventService.log("[WARNING] " + msg);
+        }
+        if (!removed.isEmpty()) {
+            String preview = removed.size() <= 20 ? removed.toString()
+                : removed.subList(0, 20) + " ... (+" + (removed.size() - 20) + " more)";
+            String msg = "[F&O Audit] " + removed.size() + " tracked stocks NO LONGER in NSE F&O (consider disabling): " + preview;
+            log.warn(msg);
+            eventService.log("[WARNING] " + msg);
+        }
+    }
+
+    /** Manual trigger for the F&O audit — downloads NSE cookies + FO bhavcopy and re-runs
+     *  the diff against the current DB-enabled set. Returns the updated audit result. */
+    public synchronized FnoAudit runFnoAudit() {
+        java.util.Set<String> dbEnabled = new java.util.HashSet<>();
+        if (stockRepository != null) {
+            try {
+                for (var s : stockRepository.findByEnabledTrue()) {
+                    if (s.getTicker() != null && !s.getTicker().isEmpty()) dbEnabled.add(s.getTicker());
+                }
+            } catch (Exception ignored) {}
+        }
+        try {
+            String cookies = getNseCookies();
+            if (cookies == null || cookies.isEmpty()) {
+                log.warn("[BhavcopyService] runFnoAudit — could not obtain NSE cookies");
+                return lastFnoAudit;
+            }
+            auditFnoUniverse(dbEnabled, cookies, getLastTradingDay());
+        } catch (Exception e) {
+            log.warn("[BhavcopyService] runFnoAudit failed: {}", e.getMessage());
+        }
+        return lastFnoAudit;
     }
 
     /**

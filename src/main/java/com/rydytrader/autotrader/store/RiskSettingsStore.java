@@ -275,7 +275,7 @@ public class RiskSettingsStore {
         // 0 = feature disabled. Default 0.1% matches typical "very tight" CPR.
         volatile double narrowCprZoneCollapseWidthPct = 0.1;
         // narrowRangeRatioThreshold removed — z-score of PDH-PDL/CPR ratio is self-calibrating
-        volatile double insideCprMaxWidth = 0.5;  // max CPR width % for inside CPR stocks (0 = no filter)
+        // insideCprMaxWidth removed — INSIDE is purely geometric containment; width irrelevant.
         // Adaptive CPR State Classifier — replaces the legacy narrowCprMin/MaxWidth band.
         // Two multipliers anchor today's CPR width vs the stock's own 20-day SMA: narrow
         // upper bound and wide lower bound. Stocks in between fall into AVERAGE.
@@ -286,6 +286,9 @@ public class RiskSettingsStore {
         volatile boolean enableCprStateA = true;   // Dynamic Squeeze (true breakout candidate)
         volatile boolean enableCprStateB = true;   // Standard Expansion (orderly grind / pullback)
         volatile boolean enableCprStateC = true;   // Volatility Exhaustion (Doji trap / mean-reversion fade)
+        // Geometric INSIDE CPR — today's CPR fully contained inside yesterday's. Independent
+        // of the adaptive width classifier; bypasses the A/B/C width gate entirely.
+        volatile boolean enableInsideCpr = true;
         // Watchlist universe is fully driven by the DB Stock Universe (Settings → Stock
         // Universe). Legacy fields (`scanUniverse`, `scanOnlyNifty50`) have been removed —
         // the bhavcopy fetcher hardcodes NIFTY 100 cap-flag seeding.
@@ -436,12 +439,12 @@ public class RiskSettingsStore {
     public boolean isEnableMpt()          { return cfg().enableMpt; }
     public double getMptQtyFactor()       { return cfg().mptQtyFactor; }
     public double getMinAbsoluteProfit() { return cfg().minAbsoluteProfit; }
-    public double getInsideCprMaxWidth()    { return cfg().insideCprMaxWidth; }
     public double getCprWidthSqueezeMult()  { return cfg().cprWidthSqueezeMult; }
     public double getCprWidthWideMult()     { return cfg().cprWidthWideMult; }
     public boolean isEnableCprStateA()      { return cfg().enableCprStateA; }
     public boolean isEnableCprStateB()      { return cfg().enableCprStateB; }
     public boolean isEnableCprStateC()      { return cfg().enableCprStateC; }
+    public boolean isEnableInsideCpr()      { return cfg().enableInsideCpr; }
     public double getNarrowCprZoneCollapseWidthPct() { return cfg().narrowCprZoneCollapseWidthPct; }
     public double getScanMinPrice() { return cfg().scanMinPrice; }
     public double getScanMaxPrice() { return cfg().scanMaxPrice; }
@@ -467,7 +470,7 @@ public class RiskSettingsStore {
     public void setEnableCprStateA(boolean v) { cfg().enableCprStateA = v; }
     public void setEnableCprStateB(boolean v) { cfg().enableCprStateB = v; }
     public void setEnableCprStateC(boolean v) { cfg().enableCprStateC = v; }
-    public void setInsideCprMaxWidth(double v) { cfg().insideCprMaxWidth = v; }
+    public void setEnableInsideCpr(boolean v) { cfg().enableInsideCpr = v; }
     public void setNarrowCprZoneCollapseWidthPct(double v) { cfg().narrowCprZoneCollapseWidthPct = v; }
     public void setScanMinPrice(double v) { cfg().scanMinPrice = v; }
     public void setScanMaxPrice(double v) { cfg().scanMaxPrice = v; }
@@ -718,8 +721,8 @@ public class RiskSettingsStore {
             upsert("enableCprStateA",      String.valueOf(c.enableCprStateA));
             upsert("enableCprStateB",      String.valueOf(c.enableCprStateB));
             upsert("enableCprStateC",      String.valueOf(c.enableCprStateC));
-            // narrowRangeRatioThreshold removed — z-score is self-calibrating
-            upsert("insideCprMaxWidth", String.valueOf(c.insideCprMaxWidth));
+            upsert("enableInsideCpr",      String.valueOf(c.enableInsideCpr));
+            // narrowRangeRatioThreshold + insideCprMaxWidth removed — INSIDE is purely geometric
             upsert("narrowCprZoneCollapseWidthPct", String.valueOf(c.narrowCprZoneCollapseWidthPct));
             upsert("scanMinPrice", String.valueOf(c.scanMinPrice));
             upsert("scanMaxPrice", String.valueOf(c.scanMaxPrice));
@@ -969,8 +972,9 @@ public class RiskSettingsStore {
                     case "enableCprStateA"      -> c.enableCprStateA = Boolean.parseBoolean(v);
                     case "enableCprStateB"      -> c.enableCprStateB = Boolean.parseBoolean(v);
                     case "enableCprStateC"      -> c.enableCprStateC = Boolean.parseBoolean(v);
-                    // narrowRangeRatioThreshold — legacy key, silently ignored
-                    case "insideCprMaxWidth" -> c.insideCprMaxWidth = Double.parseDouble(v);
+                    case "enableInsideCpr"      -> c.enableInsideCpr = Boolean.parseBoolean(v);
+                    // narrowRangeRatioThreshold + insideCprMaxWidth — legacy keys, silently ignored
+                    case "insideCprMaxWidth" -> { /* ignored — field removed; INSIDE is geometric */ }
                     case "narrowCprZoneCollapseWidthPct" -> c.narrowCprZoneCollapseWidthPct = Double.parseDouble(v);
                     // Legacy watchlist gate — removed. DB Stock Universe is the source of truth.
                     case "scanUniverse" -> { /* ignored — field removed */ }
