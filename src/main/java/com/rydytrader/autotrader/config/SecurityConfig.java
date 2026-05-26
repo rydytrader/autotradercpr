@@ -93,8 +93,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.PUT, "/api/**").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.DELETE, "/api/**").hasRole("ADMIN")
 
-                // Settings and Fyers — ADMIN only
-                .requestMatchers("/settings", "/fyers/login", "/fyers/callback").hasRole("ADMIN")
+                // Fyers broker auth — ADMIN only
+                .requestMatchers("/fyers/login", "/fyers/callback").hasRole("ADMIN")
 
                 // H2 console — ADMIN only
                 .requestMatchers("/h2-console/**").hasRole("ADMIN")

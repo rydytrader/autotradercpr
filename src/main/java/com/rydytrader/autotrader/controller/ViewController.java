@@ -192,31 +192,6 @@ public class ViewController {
     @GetMapping("/home")
     public String dashboard() { return "home"; }
 
-    @GetMapping("/positions")
-    public String positions() { return "positions"; }
-
-    @GetMapping("/trades")
-    public String trades() { return "trades"; }
-
-    @GetMapping("/journal")
-    public String journal() { return "journal"; }
-
-    @GetMapping("/scanner")
-    public String scanner() { return "scanner"; }
-
-    @GetMapping("/console")
-    public String console() { return "console"; }
-
-    @GetMapping("/monitoring")
-    public String monitoring() { return "monitoring"; }
-
-    @GetMapping("/settings")
-    public String settings() { return "settings"; }
-
-    @GetMapping("/help")
-    public String help() { return "help"; }
-
-    /** Multi-pane chart popup — 2x2 grid showing stock 5m, stock 1h, index 5m, index 1h. */
-    @GetMapping("/chart-window")
-    public String chartWindow() { return "chart-window"; }
+    @GetMapping("/calendar")
+    public String calendar() { return "calendar"; }
 }

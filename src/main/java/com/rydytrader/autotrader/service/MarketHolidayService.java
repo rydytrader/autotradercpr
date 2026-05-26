@@ -36,11 +36,7 @@ public class MarketHolidayService {
     private final Map<LocalDate, String> holidays = new java.util.concurrent.ConcurrentHashMap<>();
     private volatile String cachedYear = "";
 
-    // Reuse BhavcopyService's hardened cookie flow (two-step warmup, retries, rich headers)
-    // instead of duplicating a fragile single-shot fetch here.
-    @org.springframework.beans.factory.annotation.Autowired
-    @org.springframework.context.annotation.Lazy
-    private BhavcopyService bhavcopyService;
+    // NSE cookies for the calendar fetch — fetched inline (BhavcopyService removed).
 
     @PostConstruct
     public void init() {
@@ -258,8 +254,105 @@ public class MarketHolidayService {
         }
     }
 
+    /**
+     * Two-step browser-like warmup against NSE: hit the homepage and then a secondary page
+     * to collect the {@code bm_sz} + {@code bm_sv} Akamai bot-manager cookies the holiday
+     * endpoint requires. Returns null on persistent failure (then {@code fetchFromNse} bails
+     * gracefully and we fall back to the disk cache).
+     */
     private String getNseCookies() {
-        return bhavcopyService != null ? bhavcopyService.getNseCookies() : null;
+        long[] backoffMs = { 0L, 2_000L, 5_000L };
+        String lastErr = null;
+        for (int attempt = 0; attempt < backoffMs.length; attempt++) {
+            if (backoffMs[attempt] > 0) {
+                try { Thread.sleep(backoffMs[attempt]); } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return null;
+                }
+            }
+            try {
+                java.util.Map<String, String> jar = new java.util.LinkedHashMap<>();
+                String step1 = hitAndCollectCookies(NSE_BASE_URL, null, jar);
+                if (step1.startsWith("ERR")) {
+                    lastErr = "homepage: " + step1;
+                    continue;
+                }
+                String step2 = hitAndCollectCookies(NSE_BASE_URL + "option-chain", NSE_BASE_URL, jar);
+                if (step2.startsWith("ERR") && jar.isEmpty()) {
+                    lastErr = "option-chain: " + step2;
+                    continue;
+                }
+                if (jar.isEmpty()) {
+                    lastErr = "HTTP " + step1 + "/" + step2 + " with no Set-Cookie headers";
+                    continue;
+                }
+                StringBuilder cookies = new StringBuilder();
+                for (java.util.Map.Entry<String, String> e : jar.entrySet()) {
+                    if (cookies.length() > 0) cookies.append("; ");
+                    cookies.append(e.getKey()).append("=").append(e.getValue());
+                }
+                return cookies.toString();
+            } catch (Exception e) {
+                lastErr = e.getMessage();
+            }
+        }
+        log.error("[MarketHoliday] Failed to obtain NSE cookies after {} attempts: {}",
+            backoffMs.length, lastErr);
+        return null;
+    }
+
+    /** GET {@code url} with full browser-like headers, parse Set-Cookie into the shared jar,
+     *  return the HTTP status as a string (e.g. "200") or "ERR:&lt;msg&gt;" on exception. */
+    private String hitAndCollectCookies(String url, String referer, java.util.Map<String, String> jar) {
+        try {
+            HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            conn.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8");
+            conn.setRequestProperty("Accept-Language", "en-US,en;q=0.9");
+            conn.setRequestProperty("Accept-Encoding", "gzip, deflate");
+            conn.setRequestProperty("Connection", "keep-alive");
+            conn.setRequestProperty("Upgrade-Insecure-Requests", "1");
+            conn.setRequestProperty("Sec-Fetch-Dest", "document");
+            conn.setRequestProperty("Sec-Fetch-Mode", "navigate");
+            conn.setRequestProperty("Sec-Fetch-Site", referer == null ? "none" : "same-origin");
+            conn.setRequestProperty("Sec-Fetch-User", "?1");
+            if (referer != null) conn.setRequestProperty("Referer", referer);
+            if (!jar.isEmpty()) {
+                StringBuilder cookieHeader = new StringBuilder();
+                for (java.util.Map.Entry<String, String> e : jar.entrySet()) {
+                    if (cookieHeader.length() > 0) cookieHeader.append("; ");
+                    cookieHeader.append(e.getKey()).append("=").append(e.getValue());
+                }
+                conn.setRequestProperty("Cookie", cookieHeader.toString());
+            }
+            conn.setConnectTimeout(10_000);
+            conn.setReadTimeout(10_000);
+            int status = conn.getResponseCode();
+            // Parse Set-Cookie headers into the jar
+            java.util.Map<String, java.util.List<String>> headers = conn.getHeaderFields();
+            if (headers != null) {
+                java.util.List<String> setCookies = headers.get("Set-Cookie");
+                if (setCookies == null) setCookies = headers.get("set-cookie");
+                if (setCookies != null) {
+                    for (String sc : setCookies) {
+                        int semi = sc.indexOf(';');
+                        String pair = semi >= 0 ? sc.substring(0, semi) : sc;
+                        int eq = pair.indexOf('=');
+                        if (eq > 0) {
+                            jar.put(pair.substring(0, eq).trim(), pair.substring(eq + 1).trim());
+                        }
+                    }
+                }
+            }
+            // Drain the body so the connection can be reused
+            try (java.io.InputStream is = (status < 400 ? conn.getInputStream() : conn.getErrorStream())) {
+                if (is != null) { byte[] buf = new byte[4096]; while (is.read(buf) > 0) {} }
+            }
+            return String.valueOf(status);
+        } catch (Exception e) {
+            return "ERR:" + e.getMessage();
+        }
     }
 
     private void saveToFile() {

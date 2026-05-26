@@ -1,150 +1,60 @@
 package com.rydytrader.autotrader.controller;
 
-import com.rydytrader.autotrader.service.BhavcopyService;
-import com.rydytrader.autotrader.service.TradeHistoryService;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
 
+/**
+ * Settings GET/POST for the options-selling bot. Slim — only fields that survive
+ * the strip-to-options refactor are exposed here. The Money / Risk / Hours / Charges /
+ * Users / Rolling Straddle tabs are the only consumers.
+ */
 @RestController
 public class SettingsController {
 
-    private final RiskSettingsStore   riskSettings;
-    private final TradeHistoryService tradeHistoryService;
-    private final BhavcopyService     bhavcopyService;
+    private final RiskSettingsStore riskSettings;
 
-    public SettingsController(RiskSettingsStore riskSettings,
-                               TradeHistoryService tradeHistoryService,
-                               BhavcopyService bhavcopyService) {
-        this.riskSettings        = riskSettings;
-        this.tradeHistoryService = tradeHistoryService;
-        this.bhavcopyService     = bhavcopyService;
+    public SettingsController(RiskSettingsStore riskSettings) {
+        this.riskSettings = riskSettings;
     }
 
-    // ── GET SETTINGS + TODAY'S STATUS ─────────────────────────────────────────
+    // ── GET SETTINGS ──────────────────────────────────────────────────────────
     @GetMapping("/api/settings/risk")
-    public Map<String, Object> getSettings(
-            @RequestParam(defaultValue = "") String mode) {
-
+    public Map<String, Object> getSettings(@RequestParam(defaultValue = "") String mode) {
         String effectiveMode = resolveMode(mode);
-        double todayPnl    = tradeHistoryService.getTrades().stream().mapToDouble(t -> t.getNetPnl()).sum();
-        int    todayTrades = tradeHistoryService.getTrades().size();
-
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("mode",             effectiveMode);
-        result.put("activeMode",       "live");
-        result.put("tradingStartTime",  riskSettings.getTradingStartTime(effectiveMode));
-        result.put("tradingEndTime",   riskSettings.getTradingEndTime(effectiveMode));
-        result.put("totalCapital",     riskSettings.getTotalCapital(effectiveMode));
-        result.put("maxRiskPerDayPct", riskSettings.getMaxRiskPerDayPct(effectiveMode));
-        result.put("riskPerTrade",     riskSettings.getRiskPerTrade(effectiveMode));
-        result.put("maxDailyLoss",     riskSettings.getMaxDailyLoss(effectiveMode));
-        result.put("autoSquareOffTime", riskSettings.getAutoSquareOffTime(effectiveMode));
-        result.put("atrMultiplier",    riskSettings.getAtrMultiplier(effectiveMode));
-        result.put("brokeragePerOrder", riskSettings.getBrokeragePerOrder(effectiveMode));
-        result.put("sttRate",         riskSettings.getSttRate(effectiveMode));
-        result.put("exchangeRate",    riskSettings.getExchangeRate(effectiveMode));
-        result.put("gstRate",         riskSettings.getGstRate(effectiveMode));
-        result.put("sebiRate",        riskSettings.getSebiRate(effectiveMode));
-        result.put("stampDutyRate",   riskSettings.getStampDutyRate(effectiveMode));
-        result.put("brokeragePct",    riskSettings.getBrokeragePct(effectiveMode));
-        result.put("fixedQuantity",   riskSettings.getFixedQuantity(effectiveMode));
-        result.put("capitalPerTrade", riskSettings.getCapitalPerTrade(effectiveMode));
+        result.put("mode",                effectiveMode);
+        result.put("activeMode",          "live");
+        // Hours
+        result.put("tradingStartTime",    riskSettings.getTradingStartTime(effectiveMode));
+        result.put("tradingEndTime",      riskSettings.getTradingEndTime(effectiveMode));
+        result.put("autoSquareOffTime",   riskSettings.getAutoSquareOffTime(effectiveMode));
+        // Money / Risk
+        result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
+        result.put("maxRiskPerDayPct",    riskSettings.getMaxRiskPerDayPct(effectiveMode));
+        result.put("riskPerTrade",        riskSettings.getRiskPerTrade(effectiveMode));
+        result.put("maxDailyLoss",        riskSettings.getMaxDailyLoss(effectiveMode));
+        result.put("capitalPerTrade",     riskSettings.getCapitalPerTrade(effectiveMode));
+        result.put("fixedQuantity",       riskSettings.getFixedQuantity(effectiveMode));
+        // Charges
+        result.put("brokeragePerOrder",   riskSettings.getBrokeragePerOrder(effectiveMode));
+        result.put("sttRate",             riskSettings.getSttRate(effectiveMode));
+        result.put("exchangeRate",        riskSettings.getExchangeRate(effectiveMode));
+        result.put("gstRate",             riskSettings.getGstRate(effectiveMode));
+        result.put("sebiRate",            riskSettings.getSebiRate(effectiveMode));
+        result.put("stampDutyRate",       riskSettings.getStampDutyRate(effectiveMode));
+        result.put("brokeragePct",        riskSettings.getBrokeragePct(effectiveMode));
+        // Notifications
         result.put("telegramAlertFrequency", riskSettings.getTelegramAlertFrequency(effectiveMode));
-        result.put("enableGapCheck", riskSettings.isEnableGapCheck());
-        result.put("enableWeeklyLevelTargetShift", riskSettings.isEnableWeeklyLevelTargetShift());
-        result.put("enableHtfHurdleFilter", riskSettings.isEnableHtfHurdleFilter());
-        result.put("htfHurdleMinHeadroomAtr", riskSettings.getHtfHurdleMinHeadroomAtr());
-        result.put("enableDailyAtrExhaustionFilter", riskSettings.isEnableDailyAtrExhaustionFilter());
-        result.put("dailyAtrExhaustionMult",         riskSettings.getDailyAtrExhaustionMult());
-        result.put("enableOpenRangeFilter", riskSettings.isEnableOpenRangeFilter());
-        result.put("openRangeMinutes",      riskSettings.getOpenRangeMinutes());
-        result.put("enableIndexOpenRangeFilter", riskSettings.isEnableIndexOpenRangeFilter());
-        result.put("marubozuBreakoutBodyAtrMult",             riskSettings.getMarubozuBreakoutBodyAtrMult());
-        result.put("marubozuBreakoutMaxBodyAtrMult",          riskSettings.getMarubozuBreakoutMaxBodyAtrMult());
-        result.put("marubozuBreakoutMaxOppositeWickPctOfBody", riskSettings.getMarubozuBreakoutMaxOppositeWickPctOfBody());
-        result.put("enableIndexHtfHurdleFilter", riskSettings.isEnableIndexHtfHurdleFilter());
-        result.put("enableIndexHtfAlignment",    riskSettings.isEnableIndexHtfAlignment());
-        result.put("indexHtfHurdleMinHeadroomAtr", riskSettings.getIndexHtfHurdleMinHeadroomAtr());
-        result.put("enableIndex5mHurdleFilter", riskSettings.isEnableIndex5mHurdleFilter());
-        result.put("index5mHurdleMinHeadroomAtr", riskSettings.getIndex5mHurdleMinHeadroomAtr());
-        result.put("enableStructuralSl",    riskSettings.isEnableStructuralSl());
-        result.put("structuralSlBufferAtr", riskSettings.getStructuralSlBufferAtr());
-        result.put("singleLevelSlBufferAtr", riskSettings.getSingleLevelSlBufferAtr());
-        result.put("dayHighLowMinAtr", riskSettings.getDayHighLowMinAtr());
-        result.put("enableRiskRewardFilter", riskSettings.isEnableRiskRewardFilter());
-        result.put("minRiskRewardRatio", riskSettings.getMinRiskRewardRatio());
-        result.put("enableOpenTargetMode", riskSettings.isEnableOpenTargetMode());
-        result.put("enableEmaLevelCountFilter", riskSettings.isEnableEmaLevelCountFilter());
-        result.put("emaLevelMinRangePct", riskSettings.getEmaLevelMinRangePct());
-        result.put("emaLevelFilterMorningSkip", riskSettings.isEmaLevelFilterMorningSkip());
-        result.put("emaLevelFilterMorningSkipUntil", riskSettings.getEmaLevelFilterMorningSkipUntil());
-        result.put("enableTargetShift", riskSettings.isEnableTargetShift(effectiveMode));
-        result.put("enableTargetTolerance", riskSettings.isEnableTargetTolerance());
-        result.put("targetToleranceAtr", riskSettings.getTargetToleranceAtr());
-        result.put("enableIndexAlignment", riskSettings.isEnableIndexAlignment());
-        result.put("enableStockHtfAlignment", riskSettings.isEnableStockHtfAlignment());
-        result.put("enableStockHtf1hEma20Check", riskSettings.isEnableStockHtf1hEma20Check());
-        result.put("enableStock5mEma20Check", riskSettings.isEnableStock5mEma20Check());
-        result.put("enableIndex5mEma20Check", riskSettings.isEnableIndex5mEma20Check());
-        result.put("enableIndexHtf1hEma20Check", riskSettings.isEnableIndexHtf1hEma20Check());
-        result.put("goodSizeCandleBodyAtrMult",          riskSettings.getGoodSizeCandleBodyAtrMult());
-        result.put("goodSizeCandleMaxBodyAtrMult",       riskSettings.getGoodSizeCandleMaxBodyAtrMult());
-        result.put("confirmationMaxOppositeWickRatio",   riskSettings.getConfirmationMaxOppositeWickRatio());
-        result.put("pinBarDominantWickMinRangeRatio", riskSettings.getPinBarDominantWickMinRangeRatio());
-        result.put("pinBarOppositeWickMaxRangeRatio", riskSettings.getPinBarOppositeWickMaxRangeRatio());
-        result.put("outsideReversalMinBodyAtrMult", riskSettings.getOutsideReversalMinBodyAtrMult());
-        result.put("outsideReversalMaxBodyAtrMult", riskSettings.getOutsideReversalMaxBodyAtrMult());
-        result.put("outsideReversalPenetrationPct", riskSettings.getOutsideReversalPenetrationPct());
-        result.put("haramiBodyAtrMult",            riskSettings.getHaramiBodyAtrMult());
-        result.put("haramiBodyMaxAtrMult",         riskSettings.getHaramiBodyMaxAtrMult());
-        result.put("haramiBar3PenetrationPct",     riskSettings.getHaramiBar3PenetrationPct());
-        result.put("dojiBodyMaxRangeRatio",        riskSettings.getDojiBodyMaxRangeRatio());
-        result.put("dojiConfirmBodyAtrMult",       riskSettings.getDojiConfirmBodyAtrMult());
-        result.put("dojiConfirmMaxBodyAtrMult",    riskSettings.getDojiConfirmMaxBodyAtrMult());
-        result.put("starOuterBodyAtrMult",         riskSettings.getStarOuterBodyAtrMult());
-        result.put("starOuterMaxBodyAtrMult",      riskSettings.getStarOuterMaxBodyAtrMult());
-        result.put("starMiddleBodyMaxMultOfOuter", riskSettings.getStarMiddleBodyMaxMultOfOuter());
-        result.put("starBar3PenetrationPct",       riskSettings.getStarBar3PenetrationPct());
-        result.put("levelTouchToleranceAtr",       riskSettings.getLevelTouchToleranceAtr());
-        result.put("entryProximityAtrMult",        riskSettings.getEntryProximityAtrMult());
-        result.put("enableTrailingSl", riskSettings.isEnableTrailingSl(effectiveMode));
-        result.put("enableLevelWalkTrailingSl", riskSettings.isEnableLevelWalkTrailingSl());
-        result.put("enablePriceEmaExit", riskSettings.isEnablePriceEmaExit());
-        result.put("virginCprExpiryDays", riskSettings.getVirginCprExpiryDays());
-        result.put("breakevenTriggerPct", riskSettings.getBreakevenTriggerPct());
-        result.put("breakevenSlAtrMult",  riskSettings.getBreakevenSlAtrMult());
-        result.put("skipR1PdhS1Pdl", riskSettings.isSkipR1PdhS1Pdl());
-        result.put("skipR2S2", riskSettings.isSkipR2S2());
-        result.put("skipR3S3", riskSettings.isSkipR3S3());
-        result.put("skipR4S4", riskSettings.isSkipR4S4());
-        result.put("enableMeanReversionTrades", riskSettings.isEnableMeanReversionTrades());
-        result.put("enableMagnetTrades",        riskSettings.isEnableMagnetTrades());
-        result.put("magnetTradesQtyFactor",     riskSettings.getMagnetTradesQtyFactor());
-        result.put("meanReversionQtyFactor",    riskSettings.getMeanReversionQtyFactor());
-        result.put("atrPeriod", riskSettings.getAtrPeriod());
-        result.put("signalSource", riskSettings.getSignalSource());
-        result.put("scannerTimeframe", riskSettings.getScannerTimeframe());
-        result.put("higherTimeframe", riskSettings.getHigherTimeframe());
-        result.put("cprWidthSqueezeMult",  riskSettings.getCprWidthSqueezeMult());
-        result.put("cprWidthWideMult",     riskSettings.getCprWidthWideMult());
-        result.put("enableCprStateA",      riskSettings.isEnableCprStateA());
-        result.put("enableCprStateB",      riskSettings.isEnableCprStateB());
-        result.put("enableCprStateC",      riskSettings.isEnableCprStateC());
-        result.put("enableInsideCpr",      riskSettings.isEnableInsideCpr());
-        result.put("narrowCprZoneCollapseWidthPct", riskSettings.getNarrowCprZoneCollapseWidthPct());
-        result.put("scanMinPrice", riskSettings.getScanMinPrice());
-        result.put("scanMaxPrice", riskSettings.getScanMaxPrice());
-        result.put("enableOpeningRefresh", riskSettings.isEnableOpeningRefresh());
-        result.put("openingRefreshTime", riskSettings.getOpeningRefreshTime());
-        result.put("enableHpt", riskSettings.isEnableHpt());
-        result.put("enableMpt", riskSettings.isEnableMpt());
-        result.put("mptQtyFactor", riskSettings.getMptQtyFactor());
-        result.put("minAbsoluteProfit", riskSettings.getMinAbsoluteProfit());
-        result.put("todayPnl",         Math.round(todayPnl * 100.0) / 100.0);
-        result.put("todayTrades",      todayTrades);
+        // Rolling Straddle
+        result.put("enableRollingStraddle",  riskSettings.isEnableRollingStraddle());
+        result.put("straddleEntryTime",      riskSettings.getStraddleEntryTime());
+        result.put("straddleSquareOffTime",  riskSettings.getStraddleSquareOffTime());
+        result.put("straddleMovePctTrigger", riskSettings.getStraddleMovePctTrigger());
+        result.put("straddleMaxRolls",       riskSettings.getStraddleMaxRolls());
+        result.put("straddleLotsPerLeg",     riskSettings.getStraddleLotsPerLeg());
         return result;
     }
 
@@ -155,192 +65,38 @@ public class SettingsController {
             @RequestBody Map<String, Object> body) {
         try {
             String effectiveMode = resolveMode(mode);
+            // Hours
             if (body.containsKey("tradingStartTime"))  riskSettings.setTradingStartTime(effectiveMode, body.get("tradingStartTime").toString());
             if (body.containsKey("tradingEndTime"))    riskSettings.setTradingEndTime(effectiveMode, body.get("tradingEndTime").toString());
-            if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
-            if (body.containsKey("maxRiskPerDayPct")) riskSettings.setMaxRiskPerDayPct(effectiveMode, Double.parseDouble(body.get("maxRiskPerDayPct").toString()));
-            if (body.containsKey("riskPerTrade"))     riskSettings.setRiskPerTrade(effectiveMode, Double.parseDouble(body.get("riskPerTrade").toString()));
             if (body.containsKey("autoSquareOffTime")) riskSettings.setAutoSquareOffTime(effectiveMode, body.get("autoSquareOffTime").toString());
-            if (body.containsKey("atrMultiplier"))    riskSettings.setAtrMultiplier(effectiveMode, Double.parseDouble(body.get("atrMultiplier").toString()));
+            // Money / Risk
+            if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
+            if (body.containsKey("maxRiskPerDayPct"))  riskSettings.setMaxRiskPerDayPct(effectiveMode, Double.parseDouble(body.get("maxRiskPerDayPct").toString()));
+            if (body.containsKey("riskPerTrade"))      riskSettings.setRiskPerTrade(effectiveMode, Double.parseDouble(body.get("riskPerTrade").toString()));
+            if (body.containsKey("capitalPerTrade"))   riskSettings.setCapitalPerTrade(effectiveMode, Double.parseDouble(body.get("capitalPerTrade").toString()));
+            if (body.containsKey("fixedQuantity"))     riskSettings.setFixedQuantity(effectiveMode, Integer.parseInt(body.get("fixedQuantity").toString()));
+            // Charges
             if (body.containsKey("brokeragePerOrder")) riskSettings.setBrokeragePerOrder(effectiveMode, Double.parseDouble(body.get("brokeragePerOrder").toString()));
-            if (body.containsKey("sttRate"))         riskSettings.setSttRate(effectiveMode, Double.parseDouble(body.get("sttRate").toString()));
-            if (body.containsKey("exchangeRate"))    riskSettings.setExchangeRate(effectiveMode, Double.parseDouble(body.get("exchangeRate").toString()));
-            if (body.containsKey("gstRate"))         riskSettings.setGstRate(effectiveMode, Double.parseDouble(body.get("gstRate").toString()));
-            if (body.containsKey("sebiRate"))        riskSettings.setSebiRate(effectiveMode, Double.parseDouble(body.get("sebiRate").toString()));
-            if (body.containsKey("stampDutyRate"))   riskSettings.setStampDutyRate(effectiveMode, Double.parseDouble(body.get("stampDutyRate").toString()));
-            if (body.containsKey("brokeragePct"))    riskSettings.setBrokeragePct(effectiveMode, Double.parseDouble(body.get("brokeragePct").toString()));
-            if (body.containsKey("fixedQuantity"))   riskSettings.setFixedQuantity(effectiveMode, Integer.parseInt(body.get("fixedQuantity").toString()));
-            if (body.containsKey("capitalPerTrade")) riskSettings.setCapitalPerTrade(effectiveMode, Double.parseDouble(body.get("capitalPerTrade").toString()));
+            if (body.containsKey("sttRate"))           riskSettings.setSttRate(effectiveMode, Double.parseDouble(body.get("sttRate").toString()));
+            if (body.containsKey("exchangeRate"))      riskSettings.setExchangeRate(effectiveMode, Double.parseDouble(body.get("exchangeRate").toString()));
+            if (body.containsKey("gstRate"))           riskSettings.setGstRate(effectiveMode, Double.parseDouble(body.get("gstRate").toString()));
+            if (body.containsKey("sebiRate"))          riskSettings.setSebiRate(effectiveMode, Double.parseDouble(body.get("sebiRate").toString()));
+            if (body.containsKey("stampDutyRate"))     riskSettings.setStampDutyRate(effectiveMode, Double.parseDouble(body.get("stampDutyRate").toString()));
+            if (body.containsKey("brokeragePct"))      riskSettings.setBrokeragePct(effectiveMode, Double.parseDouble(body.get("brokeragePct").toString()));
+            // Notifications
             if (body.containsKey("telegramAlertFrequency")) riskSettings.setTelegramAlertFrequency(effectiveMode, Integer.parseInt(body.get("telegramAlertFrequency").toString()));
-            if (body.containsKey("enableGapCheck")) riskSettings.setEnableGapCheck(Boolean.parseBoolean(body.get("enableGapCheck").toString()));
-            if (body.containsKey("enableWeeklyLevelTargetShift")) riskSettings.setEnableWeeklyLevelTargetShift(Boolean.parseBoolean(body.get("enableWeeklyLevelTargetShift").toString()));
-            if (body.containsKey("enableHtfHurdleFilter")) riskSettings.setEnableHtfHurdleFilter(Boolean.parseBoolean(body.get("enableHtfHurdleFilter").toString()));
-            if (body.containsKey("htfHurdleMinHeadroomAtr")) riskSettings.setHtfHurdleMinHeadroomAtr(Double.parseDouble(body.get("htfHurdleMinHeadroomAtr").toString()));
-            if (body.containsKey("enableDailyAtrExhaustionFilter")) riskSettings.setEnableDailyAtrExhaustionFilter(Boolean.parseBoolean(body.get("enableDailyAtrExhaustionFilter").toString()));
-            if (body.containsKey("dailyAtrExhaustionMult"))         riskSettings.setDailyAtrExhaustionMult(Double.parseDouble(body.get("dailyAtrExhaustionMult").toString()));
-            if (body.containsKey("enableOpenRangeFilter")) riskSettings.setEnableOpenRangeFilter(Boolean.parseBoolean(body.get("enableOpenRangeFilter").toString()));
-            if (body.containsKey("openRangeMinutes"))      riskSettings.setOpenRangeMinutes(Integer.parseInt(body.get("openRangeMinutes").toString()));
-            if (body.containsKey("enableIndexOpenRangeFilter")) riskSettings.setEnableIndexOpenRangeFilter(Boolean.parseBoolean(body.get("enableIndexOpenRangeFilter").toString()));
-            if (body.containsKey("marubozuBreakoutBodyAtrMult"))             riskSettings.setMarubozuBreakoutBodyAtrMult(Double.parseDouble(body.get("marubozuBreakoutBodyAtrMult").toString()));
-            if (body.containsKey("marubozuBreakoutMaxBodyAtrMult"))          riskSettings.setMarubozuBreakoutMaxBodyAtrMult(Double.parseDouble(body.get("marubozuBreakoutMaxBodyAtrMult").toString()));
-            if (body.containsKey("marubozuBreakoutMaxOppositeWickPctOfBody")) riskSettings.setMarubozuBreakoutMaxOppositeWickPctOfBody(Double.parseDouble(body.get("marubozuBreakoutMaxOppositeWickPctOfBody").toString()));
-            if (body.containsKey("enableIndexHtfHurdleFilter")) riskSettings.setEnableIndexHtfHurdleFilter(Boolean.parseBoolean(body.get("enableIndexHtfHurdleFilter").toString()));
-            if (body.containsKey("enableIndexHtfAlignment"))    riskSettings.setEnableIndexHtfAlignment(Boolean.parseBoolean(body.get("enableIndexHtfAlignment").toString()));
-            if (body.containsKey("indexHtfHurdleMinHeadroomAtr")) riskSettings.setIndexHtfHurdleMinHeadroomAtr(Double.parseDouble(body.get("indexHtfHurdleMinHeadroomAtr").toString()));
-            if (body.containsKey("enableIndex5mHurdleFilter")) riskSettings.setEnableIndex5mHurdleFilter(Boolean.parseBoolean(body.get("enableIndex5mHurdleFilter").toString()));
-            if (body.containsKey("index5mHurdleMinHeadroomAtr")) riskSettings.setIndex5mHurdleMinHeadroomAtr(Double.parseDouble(body.get("index5mHurdleMinHeadroomAtr").toString()));
-            if (body.containsKey("enableStructuralSl")) riskSettings.setEnableStructuralSl(Boolean.parseBoolean(body.get("enableStructuralSl").toString()));
-            if (body.containsKey("structuralSlBufferAtr")) riskSettings.setStructuralSlBufferAtr(Double.parseDouble(body.get("structuralSlBufferAtr").toString()));
-            if (body.containsKey("singleLevelSlBufferAtr")) riskSettings.setSingleLevelSlBufferAtr(Double.parseDouble(body.get("singleLevelSlBufferAtr").toString()));
-            if (body.containsKey("dayHighLowMinAtr")) riskSettings.setDayHighLowMinAtr(Double.parseDouble(body.get("dayHighLowMinAtr").toString()));
-            if (body.containsKey("enableRiskRewardFilter")) riskSettings.setEnableRiskRewardFilter(Boolean.parseBoolean(body.get("enableRiskRewardFilter").toString()));
-            if (body.containsKey("minRiskRewardRatio")) riskSettings.setMinRiskRewardRatio(Double.parseDouble(body.get("minRiskRewardRatio").toString()));
-            if (body.containsKey("enableOpenTargetMode")) riskSettings.setEnableOpenTargetMode(Boolean.parseBoolean(body.get("enableOpenTargetMode").toString()));
-            if (body.containsKey("enableEmaLevelCountFilter")) riskSettings.setEnableEmaLevelCountFilter(Boolean.parseBoolean(body.get("enableEmaLevelCountFilter").toString()));
-            if (body.containsKey("emaLevelMinRangePct")) riskSettings.setEmaLevelMinRangePct(Integer.parseInt(body.get("emaLevelMinRangePct").toString()));
-            if (body.containsKey("emaLevelFilterMorningSkip")) riskSettings.setEmaLevelFilterMorningSkip(Boolean.parseBoolean(body.get("emaLevelFilterMorningSkip").toString()));
-            if (body.containsKey("emaLevelFilterMorningSkipUntil")) riskSettings.setEmaLevelFilterMorningSkipUntil(body.get("emaLevelFilterMorningSkipUntil").toString());
-            if (body.containsKey("enableTargetShift")) riskSettings.setEnableTargetShift(effectiveMode, Boolean.parseBoolean(body.get("enableTargetShift").toString()));
-            if (body.containsKey("enableTargetTolerance")) riskSettings.setEnableTargetTolerance(Boolean.parseBoolean(body.get("enableTargetTolerance").toString()));
-            if (body.containsKey("targetToleranceAtr")) riskSettings.setTargetToleranceAtr(Double.parseDouble(body.get("targetToleranceAtr").toString()));
-            if (body.containsKey("enableIndexAlignment"))   riskSettings.setEnableIndexAlignment(Boolean.parseBoolean(body.get("enableIndexAlignment").toString()));
-            if (body.containsKey("enableStockHtfAlignment")) riskSettings.setEnableStockHtfAlignment(Boolean.parseBoolean(body.get("enableStockHtfAlignment").toString()));
-            if (body.containsKey("enableStockHtf1hEma20Check")) riskSettings.setEnableStockHtf1hEma20Check(Boolean.parseBoolean(body.get("enableStockHtf1hEma20Check").toString()));
-            if (body.containsKey("enableStock5mEma20Check")) riskSettings.setEnableStock5mEma20Check(Boolean.parseBoolean(body.get("enableStock5mEma20Check").toString()));
-            if (body.containsKey("enableIndex5mEma20Check")) riskSettings.setEnableIndex5mEma20Check(Boolean.parseBoolean(body.get("enableIndex5mEma20Check").toString()));
-            if (body.containsKey("enableIndexHtf1hEma20Check")) riskSettings.setEnableIndexHtf1hEma20Check(Boolean.parseBoolean(body.get("enableIndexHtf1hEma20Check").toString()));
-            if (body.containsKey("goodSizeCandleBodyAtrMult"))   riskSettings.setGoodSizeCandleBodyAtrMult(Double.parseDouble(body.get("goodSizeCandleBodyAtrMult").toString()));
-            if (body.containsKey("goodSizeCandleMaxBodyAtrMult")) riskSettings.setGoodSizeCandleMaxBodyAtrMult(Double.parseDouble(body.get("goodSizeCandleMaxBodyAtrMult").toString()));
-            if (body.containsKey("confirmationMaxOppositeWickRatio")) riskSettings.setConfirmationMaxOppositeWickRatio(Double.parseDouble(body.get("confirmationMaxOppositeWickRatio").toString()));
-            if (body.containsKey("pinBarDominantWickMinRangeRatio")) riskSettings.setPinBarDominantWickMinRangeRatio(Double.parseDouble(body.get("pinBarDominantWickMinRangeRatio").toString()));
-            if (body.containsKey("pinBarOppositeWickMaxRangeRatio")) riskSettings.setPinBarOppositeWickMaxRangeRatio(Double.parseDouble(body.get("pinBarOppositeWickMaxRangeRatio").toString()));
-            if (body.containsKey("outsideReversalMinBodyAtrMult")) riskSettings.setOutsideReversalMinBodyAtrMult(Double.parseDouble(body.get("outsideReversalMinBodyAtrMult").toString()));
-            if (body.containsKey("outsideReversalMaxBodyAtrMult")) riskSettings.setOutsideReversalMaxBodyAtrMult(Double.parseDouble(body.get("outsideReversalMaxBodyAtrMult").toString()));
-            if (body.containsKey("outsideReversalPenetrationPct")) riskSettings.setOutsideReversalPenetrationPct(Double.parseDouble(body.get("outsideReversalPenetrationPct").toString()));
-            if (body.containsKey("haramiBodyAtrMult"))           riskSettings.setHaramiBodyAtrMult(Double.parseDouble(body.get("haramiBodyAtrMult").toString()));
-            if (body.containsKey("haramiBodyMaxAtrMult"))        riskSettings.setHaramiBodyMaxAtrMult(Double.parseDouble(body.get("haramiBodyMaxAtrMult").toString()));
-            if (body.containsKey("haramiBar3PenetrationPct"))    riskSettings.setHaramiBar3PenetrationPct(Double.parseDouble(body.get("haramiBar3PenetrationPct").toString()));
-            if (body.containsKey("dojiBodyMaxRangeRatio"))       riskSettings.setDojiBodyMaxRangeRatio(Double.parseDouble(body.get("dojiBodyMaxRangeRatio").toString()));
-            if (body.containsKey("dojiConfirmBodyAtrMult"))      riskSettings.setDojiConfirmBodyAtrMult(Double.parseDouble(body.get("dojiConfirmBodyAtrMult").toString()));
-            else if (body.containsKey("dojiPrevBodyAtrMult"))    riskSettings.setDojiConfirmBodyAtrMult(Double.parseDouble(body.get("dojiPrevBodyAtrMult").toString())); // legacy key
-            if (body.containsKey("dojiConfirmMaxBodyAtrMult"))   riskSettings.setDojiConfirmMaxBodyAtrMult(Double.parseDouble(body.get("dojiConfirmMaxBodyAtrMult").toString()));
-            if (body.containsKey("starOuterBodyAtrMult"))        riskSettings.setStarOuterBodyAtrMult(Double.parseDouble(body.get("starOuterBodyAtrMult").toString()));
-            if (body.containsKey("starOuterMaxBodyAtrMult"))     riskSettings.setStarOuterMaxBodyAtrMult(Double.parseDouble(body.get("starOuterMaxBodyAtrMult").toString()));
-            if (body.containsKey("starMiddleBodyMaxMultOfOuter")) riskSettings.setStarMiddleBodyMaxMultOfOuter(Double.parseDouble(body.get("starMiddleBodyMaxMultOfOuter").toString()));
-            if (body.containsKey("starBar3PenetrationPct"))       riskSettings.setStarBar3PenetrationPct(Double.parseDouble(body.get("starBar3PenetrationPct").toString()));
-            if (body.containsKey("levelTouchToleranceAtr"))      riskSettings.setLevelTouchToleranceAtr(Double.parseDouble(body.get("levelTouchToleranceAtr").toString()));
-            if (body.containsKey("entryProximityAtrMult"))       riskSettings.setEntryProximityAtrMult(Double.parseDouble(body.get("entryProximityAtrMult").toString()));
-            if (body.containsKey("enableTrailingSl")) riskSettings.setEnableTrailingSl(effectiveMode, Boolean.parseBoolean(body.get("enableTrailingSl").toString()));
-            if (body.containsKey("enableLevelWalkTrailingSl")) riskSettings.setEnableLevelWalkTrailingSl(Boolean.parseBoolean(body.get("enableLevelWalkTrailingSl").toString()));
-            if (body.containsKey("enablePriceEmaExit")) riskSettings.setEnablePriceEmaExit(Boolean.parseBoolean(body.get("enablePriceEmaExit").toString()));
-            if (body.containsKey("virginCprExpiryDays")) {
-                try {
-                    riskSettings.setVirginCprExpiryDays(Integer.parseInt(body.get("virginCprExpiryDays").toString()));
-                } catch (NumberFormatException ignored) { /* leave at current value */ }
-            }
-            if (body.containsKey("breakevenTriggerPct")) riskSettings.setBreakevenTriggerPct(Double.parseDouble(body.get("breakevenTriggerPct").toString()));
-            if (body.containsKey("breakevenSlAtrMult"))  riskSettings.setBreakevenSlAtrMult(Double.parseDouble(body.get("breakevenSlAtrMult").toString()));
-            if (body.containsKey("skipR1PdhS1Pdl")) riskSettings.setSkipR1PdhS1Pdl(Boolean.parseBoolean(body.get("skipR1PdhS1Pdl").toString()));
-            if (body.containsKey("skipR2S2")) riskSettings.setSkipR2S2(Boolean.parseBoolean(body.get("skipR2S2").toString()));
-            if (body.containsKey("skipR3S3")) riskSettings.setSkipR3S3(Boolean.parseBoolean(body.get("skipR3S3").toString()));
-            if (body.containsKey("skipR4S4")) riskSettings.setSkipR4S4(Boolean.parseBoolean(body.get("skipR4S4").toString()));
-            if (body.containsKey("enableMeanReversionTrades")) riskSettings.setEnableMeanReversionTrades(Boolean.parseBoolean(body.get("enableMeanReversionTrades").toString()));
-            if (body.containsKey("enableMagnetTrades"))        riskSettings.setEnableMagnetTrades(Boolean.parseBoolean(body.get("enableMagnetTrades").toString()));
-            if (body.containsKey("magnetTradesQtyFactor"))     riskSettings.setMagnetTradesQtyFactor(Double.parseDouble(body.get("magnetTradesQtyFactor").toString()));
-            if (body.containsKey("meanReversionQtyFactor"))    riskSettings.setMeanReversionQtyFactor(Double.parseDouble(body.get("meanReversionQtyFactor").toString()));
-            if (body.containsKey("atrPeriod")) riskSettings.setAtrPeriod(Integer.parseInt(body.get("atrPeriod").toString()));
-            if (body.containsKey("signalSource")) riskSettings.setSignalSource(body.get("signalSource").toString());
-            if (body.containsKey("scannerTimeframe")) riskSettings.setScannerTimeframe(Integer.parseInt(body.get("scannerTimeframe").toString()));
-            if (body.containsKey("higherTimeframe")) riskSettings.setHigherTimeframe(Integer.parseInt(body.get("higherTimeframe").toString()));
-            if (body.containsKey("cprWidthSqueezeMult"))  riskSettings.setCprWidthSqueezeMult(Double.parseDouble(body.get("cprWidthSqueezeMult").toString()));
-            if (body.containsKey("cprWidthWideMult"))     riskSettings.setCprWidthWideMult(Double.parseDouble(body.get("cprWidthWideMult").toString()));
-            if (body.containsKey("enableCprStateA"))      riskSettings.setEnableCprStateA(Boolean.parseBoolean(body.get("enableCprStateA").toString()));
-            if (body.containsKey("enableCprStateB"))      riskSettings.setEnableCprStateB(Boolean.parseBoolean(body.get("enableCprStateB").toString()));
-            if (body.containsKey("enableCprStateC"))      riskSettings.setEnableCprStateC(Boolean.parseBoolean(body.get("enableCprStateC").toString()));
-            if (body.containsKey("enableInsideCpr"))      riskSettings.setEnableInsideCpr(Boolean.parseBoolean(body.get("enableInsideCpr").toString()));
-            // insideCprMaxWidth removed — INSIDE is purely geometric containment
-            if (body.containsKey("narrowCprZoneCollapseWidthPct")) riskSettings.setNarrowCprZoneCollapseWidthPct(Double.parseDouble(body.get("narrowCprZoneCollapseWidthPct").toString()));
-            if (body.containsKey("scanMinPrice")) riskSettings.setScanMinPrice(Double.parseDouble(body.get("scanMinPrice").toString()));
-            if (body.containsKey("scanMaxPrice")) riskSettings.setScanMaxPrice(Double.parseDouble(body.get("scanMaxPrice").toString()));
-            if (body.containsKey("enableOpeningRefresh")) riskSettings.setEnableOpeningRefresh(Boolean.parseBoolean(body.get("enableOpeningRefresh").toString()));
-            if (body.containsKey("openingRefreshTime")) riskSettings.setOpeningRefreshTime(body.get("openingRefreshTime").toString());
-            if (body.containsKey("enableHpt")) riskSettings.setEnableHpt(Boolean.parseBoolean(body.get("enableHpt").toString()));
-            if (body.containsKey("enableMpt")) riskSettings.setEnableMpt(Boolean.parseBoolean(body.get("enableMpt").toString()));
-            if (body.containsKey("mptQtyFactor")) riskSettings.setMptQtyFactor(Double.parseDouble(body.get("mptQtyFactor").toString()));
-            if (body.containsKey("minAbsoluteProfit")) riskSettings.setMinAbsoluteProfit(Double.parseDouble(body.get("minAbsoluteProfit").toString()));
+            // Rolling Straddle
+            if (body.containsKey("enableRollingStraddle"))  riskSettings.setEnableRollingStraddle(Boolean.parseBoolean(body.get("enableRollingStraddle").toString()));
+            if (body.containsKey("straddleEntryTime"))      riskSettings.setStraddleEntryTime(body.get("straddleEntryTime").toString());
+            if (body.containsKey("straddleSquareOffTime"))  riskSettings.setStraddleSquareOffTime(body.get("straddleSquareOffTime").toString());
+            if (body.containsKey("straddleMovePctTrigger")) riskSettings.setStraddleMovePctTrigger(Double.parseDouble(body.get("straddleMovePctTrigger").toString()));
+            if (body.containsKey("straddleMaxRolls"))       riskSettings.setStraddleMaxRolls(Integer.parseInt(body.get("straddleMaxRolls").toString()));
+            if (body.containsKey("straddleLotsPerLeg"))     riskSettings.setStraddleLotsPerLeg(Integer.parseInt(body.get("straddleLotsPerLeg").toString()));
             riskSettings.saveFor(effectiveMode);
             return ResponseEntity.ok(Map.of("ok", true, "message", "Settings saved"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("ok", false, "message", e.getMessage()));
         }
-    }
-
-    /**
-     * Backfill missing index rows into existing historical snapshots. Walks
-     * {@code dailyHistory} and, for each day that's missing any of the SUPPORTED_INDICES
-     * (e.g. NIFTYIT, NIFTYAUTO added after the original cache was built), fetches that
-     * day's index bhavcopy and merges in only the missing rows. Existing data is never
-     * overwritten. Days that already have every index are skipped — idempotent + safe to
-     * re-run.
-     */
-    @org.springframework.web.bind.annotation.RequestMapping(
-        value = "/api/bhavcopy/backfill-indices",
-        method = { org.springframework.web.bind.annotation.RequestMethod.GET,
-                   org.springframework.web.bind.annotation.RequestMethod.POST })
-    public Map<String, Object> backfillIndices() {
-        return bhavcopyService.backfillMissingIndices();
-    }
-
-    /**
-     * Admin: backfill historical daily snapshots for newly-added tickers so the adaptive CPR
-     * classifier and weekly CPR work immediately, instead of waiting ~20 trading days for the
-     * rolling history to fill naturally. When no body / empty body is provided, auto-detects
-     * every enabled DB stock currently missing samples. Optional body: { "tickers": ["HINDPETRO", ...] }
-     * to target a specific set.
-     */
-    @org.springframework.web.bind.annotation.RequestMapping(
-        value = "/api/bhavcopy/backfill-new-tickers",
-        method = { org.springframework.web.bind.annotation.RequestMethod.GET,
-                   org.springframework.web.bind.annotation.RequestMethod.POST })
-    public Map<String, Object> backfillNewTickers(
-            @org.springframework.web.bind.annotation.RequestBody(required = false) Map<String, Object> body) {
-        java.util.Set<String> tickers = null;
-        if (body != null && body.get("tickers") instanceof java.util.List<?> list) {
-            tickers = new java.util.HashSet<>();
-            for (Object o : list) {
-                if (o instanceof String s && !s.isEmpty()) tickers.add(s);
-            }
-        }
-        return bhavcopyService.backfillNewTickers(tickers);
-    }
-
-    /**
-     * Return the latest F&O universe audit. GET returns the cached result from the most recent
-     * bhavcopy fetch (refreshed daily at 2 AM). POST re-runs the audit on demand. Body contains
-     * {date, addedToFno, removedFromFno, fnoUniverseSize, dbUniverseSize}.
-     */
-    @org.springframework.web.bind.annotation.GetMapping("/api/bhavcopy/fno-audit")
-    public Object getFnoAudit() {
-        var audit = bhavcopyService.getLastFnoAudit();
-        if (audit == null) {
-            Map<String, Object> empty = new java.util.LinkedHashMap<>();
-            empty.put("available", false);
-            empty.put("message", "No audit run yet — runs automatically with each bhavcopy fetch (2 AM daily) or trigger via POST.");
-            return empty;
-        }
-        return audit;
-    }
-
-    @org.springframework.web.bind.annotation.PostMapping("/api/bhavcopy/fno-audit")
-    public Object runFnoAudit() {
-        var audit = bhavcopyService.runFnoAudit();
-        if (audit == null) {
-            Map<String, Object> err = new java.util.LinkedHashMap<>();
-            err.put("available", false);
-            err.put("message", "Audit failed — see server logs (NSE cookies or FO bhavcopy unavailable).");
-            return err;
-        }
-        return audit;
     }
 
     private String resolveMode(String mode) {

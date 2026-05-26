@@ -1,12 +1,11 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>TraderEdge - Calendar</title>
+    <title>TraderEdge — Calendar</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/shared.css?v=5">
     <script>
         (function() {
@@ -14,194 +13,77 @@
             document.documentElement.setAttribute('data-theme', t);
             document.addEventListener('DOMContentLoaded', function() {
                 const btn = document.getElementById('themeToggle');
-                if (btn) btn.textContent = t === 'light' ? '\u2600\uFE0F' : t === 'forest' ? '\uD83C\uDF32' : '\uD83C\uDF19';
+                if (btn) btn.textContent = t === 'light' ? '☀️' : t === 'forest' ? '🌲' : '🌙';
             });
         })();
     </script>
     <style>
-        /* Mirror journal page metric-value coloring so Overview card matches */
-        .metric-value{font-family:var(--font-mono);font-size:1.5rem;font-weight:700;color:var(--text-primary);line-height:1;}
-        .metric-value.positive{color:var(--accent-green);}
-        .metric-value.negative{color:var(--accent-red);}
-        .metric-value.neutral{color:var(--accent-blue);}
-        .cal-toolbar {
-            display: flex; align-items: center; justify-content: space-between;
-            gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
-        }
-        .cal-nav { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); }
-        .cal-nav-btn {
-            background: var(--bg-card); border: 1px solid var(--border);
-            color: var(--text-primary); width: 34px; height: 34px; border-radius: 8px;
-            cursor: pointer; font-size: 0.95rem; display: flex; align-items: center; justify-content: center;
-            transition: border-color 0.2s ease, background 0.2s ease;
-        }
-        .cal-nav-btn:hover { border-color: rgba(99,179,237,0.35); background: rgba(99,179,237,0.08); }
-        .cal-period {
-            font-family: var(--font-mono); font-size: 1.05rem; font-weight: 700;
-            color: var(--text-primary); min-width: 200px; text-align: center;
-            letter-spacing: 0.08em; text-transform: uppercase;
-        }
-        .cal-view-toggle { display: flex; gap: 6px; }
-        .cal-view-btn {
-            background: var(--bg-card); border: 1px solid var(--border);
-            color: var(--text-secondary); padding: 7px 18px; border-radius: 8px;
-            cursor: pointer; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600;
-            letter-spacing: 0.08em; text-transform: uppercase;
-            transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
-        }
-        .cal-view-btn:hover { border-color: rgba(99,179,237,0.35); }
-        .cal-view-btn.active {
-            background: rgba(99,179,237,0.12); border-color: rgba(99,179,237,0.35);
-            color: var(--accent-blue);
-        }
+        .cal-toolbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; gap:12px; }
+        .cal-nav { display:flex; align-items:center; gap:8px; font-family:var(--font-mono); }
+        .cal-nav-btn { background:var(--bg-primary); border:1px solid var(--border); color:var(--text-secondary); padding:6px 10px; border-radius:6px; cursor:pointer; font-family:var(--font-mono); font-size:0.78rem; min-width:36px; }
+        .cal-nav-btn:hover { border-color:rgba(99,179,237,0.35); background:rgba(99,179,237,0.08); }
+        .cal-period { font-family:var(--font-mono); font-size:0.95rem; font-weight:700; color:var(--text-primary); min-width:200px; text-align:center; }
+        .cal-view-toggle { display:flex; gap:6px; }
+        .cal-view-btn { background:var(--bg-primary); border:1px solid var(--border); color:var(--text-secondary); padding:6px 14px; border-radius:6px; cursor:pointer; font-family:var(--font-mono); font-size:0.72rem; font-weight:700; letter-spacing:0.06em; }
+        .cal-view-btn:hover { border-color:rgba(99,179,237,0.35); }
+        .cal-view-btn.active { background:rgba(99,179,237,0.12); border-color:var(--accent-blue); color:var(--accent-blue); }
 
-        /* 6-column stat grid for calendar hero — reuses .stat-card styling */
-        .cal-stat-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; margin-bottom: 20px; }
-        @media (max-width: 1200px) { .cal-stat-grid { grid-template-columns: repeat(3, 1fr); } }
-        @media (max-width: 600px)  { .cal-stat-grid { grid-template-columns: repeat(2, 1fr); } }
+        .cal-weekday-row { display:grid; grid-template-columns:repeat(7, 1fr); gap:10px; margin-bottom:10px; }
+        .cal-weekday { font-family:var(--font-mono); font-size:0.66rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.08em; text-align:center; padding:4px 0; }
 
-        /* ── MONTH VIEW: each day is its own card (scanner-style) ── */
-        .cal-weekday-row {
-            display: grid; grid-template-columns: repeat(7, 1fr); gap: 14px;
-            margin-bottom: 10px;
-        }
-        .cal-weekday {
-            font-family: var(--font-mono); font-size: 0.68rem; font-weight: 700;
-            color: var(--text-muted); letter-spacing: 0.12em; text-transform: uppercase;
-            text-align: center; padding: 4px 0;
-        }
-        .cal-day-grid {
-            display: grid; grid-template-columns: repeat(7, 1fr); gap: 14px;
-        }
-        .cal-day {
-            background: var(--bg-card); border: 1px solid var(--border);
-            border-radius: 12px; padding: 14px 16px;
-            display: flex; flex-direction: column; justify-content: space-between;
-            font-family: var(--font-mono); min-height: 110px;
-            box-shadow: var(--card-shadow);
-            transition: border-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease, background 0.3s ease;
-            overflow: hidden;
-        }
-        .cal-day:hover:not(.blank) {
-            border-color: var(--accent-blue);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-        }
-        .cal-day.blank {
-            background: transparent;
-            border: 1px dashed var(--border);
-            opacity: 0.25; box-shadow: none; pointer-events: none;
-        }
-        .cal-day.weekend, .cal-day.holiday { opacity: 0.55; }
-        .cal-day.holiday { background: rgba(251,191,36,0.04); }
-        .cal-holiday-tag {
-            font-size: 0.6rem; font-weight: 700; color: var(--accent-yellow);
-            letter-spacing: 0.04em; line-height: 1.2;
-            text-transform: uppercase; margin-top: 4px;
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        }
-        .cal-day.today {
-            border-color: var(--accent-blue); border-width: 2px;
-        }
-        .cal-day.profit {
-            border-color: var(--accent-green); border-width: 2px;
-        }
-        .cal-day.loss {
-            border-color: var(--accent-red); border-width: 2px;
-        }
-        .cal-day-num {
-            font-size: 0.85rem; color: var(--text-secondary); font-weight: 700;
-            margin-bottom: 6px;
-        }
-        .cal-day.profit .cal-day-num, .cal-day.loss .cal-day-num, .cal-day.today .cal-day-num {
-            color: var(--text-primary);
-        }
-        .cal-day-pnl {
-            font-size: 1.05rem; font-weight: 700; color: var(--text-primary); line-height: 1;
-        }
-        .cal-day.profit .cal-day-pnl { color: var(--accent-green); }
-        .cal-day.loss   .cal-day-pnl { color: var(--accent-red); }
-        .cal-day-trades {
-            font-size: 0.62rem; color: var(--text-muted); letter-spacing: 0.04em; margin-top: 4px;
-        }
+        .cal-day-grid { display:grid; grid-template-columns:repeat(7, 1fr); gap:10px; }
+        .cal-day { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; min-height:110px; padding:12px 14px; display:flex; flex-direction:column; justify-content:space-between; cursor:pointer; transition:border-color 0.2s ease, transform 0.15s ease; }
+        .cal-day:hover:not(.blank):not(.weekend):not(.holiday) { border-color:var(--accent-blue); transform:translateY(-1px); }
+        .cal-day.blank { background:transparent; border-color:transparent; cursor:default; }
+        .cal-day.weekend, .cal-day.holiday { opacity:0.55; cursor:default; }
+        .cal-day.holiday { background:rgba(251,191,36,0.04); }
+        .cal-day.today { border-color:var(--accent-blue); border-width:2px; }
+        .cal-day.profit { border-color:var(--accent-green); border-width:2px; }
+        .cal-day.loss   { border-color:var(--accent-red, #f87171); border-width:2px; }
+        .cal-day-num { font-family:var(--font-mono); font-size:0.78rem; color:var(--text-secondary); font-weight:700; }
+        .cal-day.profit .cal-day-num, .cal-day.loss .cal-day-num, .cal-day.today .cal-day-num { color:var(--text-primary); }
+        .cal-day-pnl { font-family:var(--font-mono); font-size:1rem; font-weight:700; line-height:1; }
+        .cal-day.profit .cal-day-pnl { color:var(--accent-green); }
+        .cal-day.loss   .cal-day-pnl { color:var(--accent-red, #f87171); }
+        .cal-day-meta { font-family:var(--font-mono); font-size:0.6rem; color:var(--text-muted); letter-spacing:0.04em; margin-top:3px; }
+        .cal-holiday-tag { font-family:var(--font-mono); font-size:0.58rem; font-weight:700; color:var(--accent-amber, #fbbf24); letter-spacing:0.04em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-        /* ── YEAR VIEW: each month is its own card (scanner-style) ── */
-        .cal-year-grid {
-            display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-            gap: 16px;
-        }
-        .cal-month-card {
-            background: var(--bg-card); border: 1px solid var(--border);
-            border-radius: 12px; padding: 16px 18px; cursor: pointer;
-            box-shadow: var(--card-shadow); overflow: hidden;
-            transition: border-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease, background 0.3s ease;
-        }
-        .cal-month-card:hover {
-            border-color: var(--accent-blue);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-        }
-        .cal-month-card.profit { border-color: var(--accent-green); border-width: 2px; }
-        .cal-month-card.loss   { border-color: var(--accent-red);   border-width: 2px; }
-        /* Empty months keep the same background as a regular trading-day card — no opacity fade */
-        .cal-month-name {
-            font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700;
-            color: var(--text-muted); letter-spacing: 0.12em; text-transform: uppercase;
-            margin-bottom: 12px;
-        }
-        .cal-month-pnl {
-            font-family: var(--font-mono); font-size: 1.5rem; font-weight: 700;
-            color: var(--text-primary); margin-bottom: 14px; line-height: 1;
-        }
-        .cal-month-pnl.profit { color: var(--accent-green); }
-        .cal-month-pnl.loss   { color: var(--accent-red); }
-        .cal-month-stats {
-            display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px;
-            font-family: var(--font-mono); font-size: 0.7rem;
-            padding-top: 12px; border-top: 1px solid var(--border);
-        }
-        .cal-month-stat-label { color: var(--text-muted); letter-spacing: 0.04em; }
-        .cal-month-stat-value { color: var(--text-primary); font-weight: 700; text-align: right; }
+        .cal-year-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:16px; }
+        .cal-month-card { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:16px 18px; cursor:pointer; transition:border-color 0.2s ease, transform 0.15s ease; }
+        .cal-month-card:hover { border-color:var(--accent-blue); transform:translateY(-2px); }
+        .cal-month-card.profit { border-color:var(--accent-green); border-width:2px; }
+        .cal-month-card.loss   { border-color:var(--accent-red, #f87171); border-width:2px; }
+        .cal-month-name { font-family:var(--font-mono); font-size:0.7rem; font-weight:700; color:var(--text-muted); letter-spacing:0.12em; text-transform:uppercase; margin-bottom:12px; }
+        .cal-month-pnl { font-family:var(--font-mono); font-size:1.4rem; font-weight:700; line-height:1; margin-bottom:14px; }
+        .cal-month-pnl.profit { color:var(--accent-green); }
+        .cal-month-pnl.loss   { color:var(--accent-red, #f87171); }
+        .cal-month-stats { display:grid; grid-template-columns:1fr 1fr; gap:6px 14px; font-family:var(--font-mono); font-size:0.7rem; padding-top:10px; border-top:1px solid var(--border); }
+        .cal-month-stat-label { color:var(--text-muted); }
+        .cal-month-stat-value { color:var(--text-primary); font-weight:700; text-align:right; }
     </style>
 </head>
-<body>
-<div class="app-layout">
-<aside class="sidebar">
-    <div class="sidebar-brand">
-        <div class="brand-icon">⚡</div>
-        <div class="sidebar-brand-text">
-            <div class="brand-name">TRADER<span>EDGE</span><div style="font-size:0.65rem;font-weight:500;letter-spacing:0.12em;color:var(--text-secondary);margin-top:4px;opacity:0.7;">AutoTrader BOT</div></div>
-        </div>
-    </div>
-    <nav class="sidebar-nav">
-        <div class="sidebar-nav-section" style="display:flex;align-items:center;justify-content:space-between;"><button class="sidebar-collapse-btn" onclick="toggleSidebar()" title="Toggle sidebar" style="margin:0;padding:2px 6px;border:none;">☰</button></div>
-        <a href="/home" data-tooltip="Home" class="sidebar-nav-item"><span class="sidebar-nav-icon" style="font-size:1.3rem;">⌂</span><span class="sidebar-nav-label">Home</span></a>
-        <a href="/scanner" data-tooltip="Scanner" class="sidebar-nav-item"><span class="sidebar-nav-icon">◎</span><span class="sidebar-nav-label">Scanner</span></a>
-        <a href="/positions" data-tooltip="Positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
-        <a href="/trades" data-tooltip="Trade Log" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
-        <a href="/journal" data-tooltip="Journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">☷</span><span class="sidebar-nav-label">Journal</span></a>
-        <a href="/calendar" data-tooltip="Calendar" class="sidebar-nav-item active"><span class="sidebar-nav-icon">▦</span><span class="sidebar-nav-label">Calendar</span></a>
-        <a href="/settings" data-tooltip="Settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
-        <div class="sidebar-nav-section">Operations</div>
-        <a href="/console" data-tooltip="Console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
-        <a href="/monitoring" data-tooltip="Monitoring" class="sidebar-nav-item"><span class="sidebar-nav-icon">◉</span><span class="sidebar-nav-label">Monitoring</span></a>
-        <a href="/help" data-tooltip="Help" class="sidebar-nav-item"><span class="sidebar-nav-icon">?</span><span class="sidebar-nav-label">Help</span></a>
-    </nav>
-    <div class="sidebar-footer">
-        <div class="status-pill">
-            <div class="status-dot" id="statusDot"></div>
-            <span id="connectionStatus" style="color: var(--text-secondary);">Checking...</span>
-        </div>
-    </div>
-</aside>
-
-<div class="app-main">
-<nav class="navbar">
+<body style="margin:0;">
+<div style="display:flex;min-height:100vh;">
+<aside style="width:56px;flex-shrink:0;background:var(--bg-card);border-right:1px solid var(--border);"></aside>
+<div class="app-main" style="margin-left:0;width:calc(100% - 56px);flex:1;">
+<nav class="navbar" style="padding:0 16px;">
     <div class="navbar-inner">
+        <a href="/home" style="display:flex;align-items:center;gap:10px;text-decoration:none;margin-right:18px;">
+            <span style="font-size:1.2rem;line-height:1;">⚡</span>
+            <div style="display:flex;flex-direction:column;line-height:1.1;">
+                <span style="font-family:var(--font-mono);font-weight:700;font-size:0.85rem;letter-spacing:0.06em;color:var(--text-primary);">TRADER<span style="color:var(--accent-cyan);">EDGE</span></span>
+                <span style="display:flex;align-items:center;gap:4px;margin-top:6px;">
+                    <span class="status-dot" id="statusDot" style="width:5px;height:5px;"></span>
+                    <span id="connectionStatus" style="color:var(--text-muted);font-size:0.52rem;letter-spacing:0.04em;">Checking…</span>
+                </span>
+            </div>
+        </a>
         <div class="ticker-wrap" id="tickerWrap">
             <div class="ticker-track" id="tickerTrack"></div>
         </div>
         <div class="nav-right">
+            <button class="theme-toggle" id="calBtn" title="Calendar" onclick="window.location.href='/calendar'" style="font-size:1rem;">▦</button>
+            <button class="theme-toggle" id="settingsBtn" title="Settings" onclick="SettingsModal.open()" style="font-size:1rem;">⚙</button>
             <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
             <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
         </div>
@@ -213,7 +95,7 @@
     <div class="page-header">
         <div>
             <div class="page-title">Calendar</div>
-            <div class="page-subtitle">P&L calendar and monthly analytics</div>
+            <div class="page-subtitle">Straddle P&L by day, month, and year</div>
         </div>
     </div>
 
@@ -223,7 +105,7 @@
             <button class="cal-nav-btn" onclick="navPrev()" title="Previous">◀</button>
             <div class="cal-period" id="calPeriodLabel">—</div>
             <button class="cal-nav-btn" onclick="navNext()" title="Next">▶</button>
-            <button class="cal-nav-btn" onclick="navToday()" title="Current period" style="margin-left:8px; width:auto; padding:0 12px; font-size:0.75rem;">TODAY</button>
+            <button class="cal-nav-btn" onclick="navToday()" title="Current period" style="margin-left:8px; width:auto; padding:0 12px; font-size:0.72rem;">TODAY</button>
         </div>
         <div class="cal-view-toggle">
             <button class="cal-view-btn active" id="btnMonthView" onclick="setView('month')">MONTH</button>
@@ -231,7 +113,7 @@
         </div>
     </div>
 
-    <!-- Summary card (mirrors Trading Journal Overview) -->
+    <!-- Summary card -->
     <div class="section-card fade-in" style="margin-bottom:20px;">
         <div class="section-header">
             <div class="section-title"><div class="section-title-dot"></div> Overview</div>
@@ -239,39 +121,35 @@
         <div style="padding:20px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px;">
             <div>
                 <div class="stat-label" style="margin-bottom:6px;">Net P&L</div>
-                <div class="metric-value" id="heroNetPnl" style="font-size:2.2rem;">—</div>
-                <div class="stat-sub">Realised profit / loss</div>
+                <div class="stat-value" id="heroNetPnl" style="font-size:2.2rem;">—</div>
+                <div class="stat-sub">Sum across selected period</div>
             </div>
             <div style="display:flex; gap:32px; flex-wrap:wrap;">
                 <div style="text-align:center;">
-                    <div class="stat-label">Total</div>
-                    <div class="metric-value neutral" id="heroTotalTrades" style="font-size:1.1rem; margin-top:4px;">—</div>
+                    <div class="stat-label">Sessions</div>
+                    <div class="stat-value" id="heroSessions" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center;">
                     <div class="stat-label">Wins</div>
-                    <div class="metric-value positive" id="heroWins" style="font-size:1.1rem; margin-top:4px;">—</div>
+                    <div class="stat-value pnl-positive" id="heroWins" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center;">
                     <div class="stat-label">Losses</div>
-                    <div class="metric-value negative" id="heroLosses" style="font-size:1.1rem; margin-top:4px;">—</div>
+                    <div class="stat-value pnl-negative" id="heroLosses" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center;">
                     <div class="stat-label">Win Rate</div>
-                    <div class="metric-value" id="heroWinRate" style="font-size:1.1rem; margin-top:4px;">—</div>
+                    <div class="stat-value" id="heroWinRate" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
-                    <div class="stat-label">Profit Factor</div>
-                    <div class="metric-value" id="heroProfitFactor" style="font-size:1.1rem; margin-top:4px;">—</div>
-                </div>
-                <div style="text-align:center;">
-                    <div class="stat-label">Expectancy</div>
-                    <div class="metric-value" id="heroExpectancy" style="font-size:1.1rem; margin-top:4px;">—</div>
+                    <div class="stat-label">Charges</div>
+                    <div class="stat-value" id="heroCharges" style="font-size:1.1rem; margin-top:4px; color:var(--text-muted);">—</div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Month view: 7-col calendar grid (each day is its own card, scanner-style) -->
+    <!-- Month view -->
     <div id="monthViewPanel" style="display:block;">
         <div class="cal-weekday-row">
             <div class="cal-weekday">Mon</div>
@@ -285,30 +163,55 @@
         <div class="cal-day-grid" id="calDayGrid"></div>
     </div>
 
-    <!-- Year view: 12 month cards (financial year: April → March) -->
+    <!-- Year view (Jan → Dec) -->
     <div id="yearViewPanel" style="display:none;">
         <div class="cal-year-grid" id="calYearGrid"></div>
     </div>
 
-</div><!-- /page-wrap -->
-</div><!-- /app-main -->
-</div><!-- /app-layout -->
+    <footer class="page-footer">
+        <div class="footer-copy">
+            &copy; <span id="footerYear"></span> TraderEdge. All rights reserved.
+        </div>
+        <div class="footer-author">
+            Built by <strong style="color: var(--text-secondary); margin: 0 4px;">Prabhu Arumugham</strong>
+            <span class="footer-tag">rydytrader</span>
+        </div>
+    </footer>
 
-<script src="/js/common.js?v=4"></script>
+</div><!-- /page-wrap -->
+
+</div><!-- /app-main -->
+</div><!-- /flex wrapper -->
+
+<!-- Day-detail modal -->
+<div id="calDayModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:999;align-items:center;justify-content:center;">
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;width:560px;max-width:92vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,0.3);">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:1px solid var(--border);">
+            <div style="font-family:var(--font-mono);font-size:0.92rem;font-weight:700;color:var(--text-primary);" id="calModalTitle">Session</div>
+            <button onclick="closeDayModal()" style="background:transparent;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;line-height:1;padding:0 4px;">&times;</button>
+        </div>
+        <div style="padding:20px 24px;font-family:var(--font-mono);font-size:0.82rem;" id="calModalBody">—</div>
+    </div>
+</div>
+
+<script src="/js/common.js?v=2"></script>
 <script src="/js/ticker.js?v=4"></script>
+<script src="/js/settings-modal.js?v=2"></script>
 <script>
 (function(){
     const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-    // Financial year month order: April → March
+    // Indian financial year order: April → March
     const FY_MONTH_ORDER = [4,5,6,7,8,9,10,11,12,1,2,3];
 
     let view = 'month';
-    let curYear = new Date().getFullYear();
+    let curYear  = new Date().getFullYear();
     let curMonth = new Date().getMonth() + 1;
-    // Current FY start year: if today's month >= April, FY starts this year; else previous year
+    // FY start year — if today's month >= April, FY starts this calendar year; else previous year
     let curFyStart = (new Date().getMonth() + 1) >= 4
         ? new Date().getFullYear()
         : new Date().getFullYear() - 1;
+    let allSessions = []; // [{date, entries, rolls, finalState, grossPnl, charges, netPnl}, ...]
+    let NSE_HOLIDAYS = {}; // {date: name}
 
     function fmtMoney(n) {
         if (n === 0 || n == null) return '₹0';
@@ -316,158 +219,171 @@
         const abs = Math.abs(n);
         return sign + '₹' + abs.toLocaleString('en-IN', { maximumFractionDigits: 0 });
     }
-    function pnlClass(v) { return v > 0 ? 'positive' : v < 0 ? 'negative' : ''; }
-
-    function setEl(id, value, baseClasses) {
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.textContent = value;
-        if (baseClasses != null) el.className = baseClasses;
+    function fmtMoneyFull(n) {
+        if (n == null || isNaN(n)) return '₹0.00';
+        const sign = n < 0 ? '-' : '';
+        const abs = Math.abs(n);
+        return sign + '₹' + abs.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
-    function renderHero(summary) {
-        const hasTrades = summary && summary.totalTrades > 0;
-        const noData = !hasTrades;
-        const net = hasTrades ? (summary.netPnl || 0) : 0;
-        const wr  = hasTrades ? (summary.winRate || 0) : 0;
-        const pf  = hasTrades ? (summary.profitFactor || 0) : 0;
-        const exp = hasTrades ? (summary.expectancy || 0) : 0;
+    function pad2(n) { return n < 10 ? '0' + n : String(n); }
 
-        setEl('heroNetPnl',
-            hasTrades ? fmtMoney(net) : '—',
-            'metric-value ' + (noData ? '' : net >= 0 ? 'positive' : 'negative'));
-        document.getElementById('heroNetPnl').style.fontSize = '2.2rem';
-
-        setEl('heroTotalTrades',  hasTrades ? (summary.totalTrades || 0) : '—', 'metric-value neutral');
-        setEl('heroWins',         hasTrades ? (summary.wins || 0) : '—',        'metric-value positive');
-        setEl('heroLosses',       hasTrades ? (summary.losses || 0) : '—',      'metric-value negative');
-
-        setEl('heroWinRate',
-            hasTrades ? (wr.toFixed(1) + '%') : '—',
-            'metric-value ' + (noData ? '' : wr >= 50 ? 'positive' : 'negative'));
-
-        setEl('heroProfitFactor',
-            hasTrades ? pf.toFixed(2) : '—',
-            'metric-value ' + (pf >= 1 ? 'positive' : pf > 0 ? 'negative' : ''));
-
-        setEl('heroExpectancy',
-            hasTrades ? fmtMoney(exp) : '—',
-            'metric-value ' + (noData ? '' : exp >= 0 ? 'positive' : 'negative'));
-
-        // Re-apply font-size after className reset (smaller for stat row vs hero)
-        ['heroTotalTrades','heroWins','heroLosses','heroWinRate','heroProfitFactor','heroExpectancy']
-            .forEach(id => { const el = document.getElementById(id); if (el) el.style.fontSize = '1.1rem'; });
+    function loadAll() {
+        return Promise.all([
+            fetch('/api/straddle/history').then(r => r.json()).catch(() => ({ sessions: [] })),
+            fetch('/api/market-holidays').then(r => r.json()).catch(() => [])
+        ]).then(arr => {
+            allSessions = (arr[0] && arr[0].sessions) || [];
+            (arr[1] || []).forEach(h => NSE_HOLIDAYS[h.date] = h.name || 'Holiday');
+            render();
+        });
     }
 
-    function renderMonth(data) {
+    function filterSessions(year, month /* 1-12 or null for whole year */) {
+        return allSessions.filter(s => {
+            if (!s.date) return false;
+            const y = parseInt(s.date.substring(0, 4), 10);
+            const m = parseInt(s.date.substring(5, 7), 10);
+            if (year != null && y !== year) return false;
+            if (month != null && m !== month) return false;
+            return true;
+        });
+    }
+
+    function aggregate(sessions) {
+        let net = 0, gross = 0, charges = 0, rolls = 0, wins = 0, losses = 0;
+        sessions.forEach(s => {
+            net     += s.netPnl   || 0;
+            gross   += s.grossPnl || 0;
+            charges += s.charges  || 0;
+            rolls   += s.rolls    || 0;
+            if ((s.netPnl || 0) > 0) wins++;
+            else if ((s.netPnl || 0) < 0) losses++;
+        });
+        return { netPnl: net, grossPnl: gross, charges, rolls, wins, losses, sessions: sessions.length };
+    }
+
+    function renderHero(agg) {
+        const has = agg.sessions > 0;
+        const net = agg.netPnl || 0;
+        const winRate = (agg.wins + agg.losses) > 0 ? (agg.wins * 100 / (agg.wins + agg.losses)) : 0;
+        const netEl = document.getElementById('heroNetPnl');
+        netEl.textContent = has ? fmtMoney(net) : '—';
+        netEl.className = 'stat-value' + (has ? (net > 0 ? ' pnl-positive' : (net < 0 ? ' pnl-negative' : '')) : '');
+        document.getElementById('heroSessions').textContent = has ? agg.sessions : '—';
+        document.getElementById('heroWins').textContent     = has ? agg.wins   : '—';
+        document.getElementById('heroLosses').textContent   = has ? agg.losses : '—';
+        document.getElementById('heroWinRate').textContent  = has ? (winRate.toFixed(1) + '%') : '—';
+        document.getElementById('heroCharges').textContent  = has ? fmtMoney(agg.charges) : '—';
+    }
+
+    function renderMonth() {
         document.getElementById('calPeriodLabel').textContent = MONTH_NAMES[curMonth - 1] + ' ' + curYear;
-        renderHero(data.summary);
+        const monthSessions = filterSessions(curYear, curMonth);
+        renderHero(aggregate(monthSessions));
 
-        const grid = document.getElementById('calDayGrid');
-        const firstDayOfWeek = data.firstDayOfWeek; // 1=Mon..7=Sun
-        const daysInMonth = data.daysInMonth;
-        const dailyPnl = data.dailyPnl || {};
-        const holidays = data.holidays || {};
+        // Map sessions by date
+        const sessionMap = {};
+        monthSessions.forEach(s => { sessionMap[s.date] = s; });
+
+        // Days in month
+        const daysInMonth = new Date(curYear, curMonth, 0).getDate();
+        // First day of month: 1=Mon..7=Sun (we want Mon-first)
+        let firstDow = new Date(curYear, curMonth - 1, 1).getDay(); // 0=Sun..6=Sat
+        firstDow = (firstDow + 6) % 7 + 1; // shift so Mon=1, Sun=7
+
         const todayStr = new Date().toISOString().substring(0, 10);
-
         let html = '';
-        // Blank cells before first day
-        for (let i = 1; i < firstDayOfWeek; i++) {
-            html += '<div class="cal-day blank"></div>';
-        }
-        // Day cells
+        for (let i = 1; i < firstDow; i++) html += '<div class="cal-day blank"></div>';
+
         for (let d = 1; d <= daysInMonth; d++) {
-            const dateStr = curYear + '-' + String(curMonth).padStart(2,'0') + '-' + String(d).padStart(2,'0');
-            const dayData = dailyPnl[dateStr];
-            const holidayName = holidays[dateStr];
-            const dow = ((firstDayOfWeek - 1 + d - 1) % 7) + 1;
+            const dateStr = curYear + '-' + pad2(curMonth) + '-' + pad2(d);
+            const session = sessionMap[dateStr];
+            const holiday = NSE_HOLIDAYS[dateStr];
+            const dow = ((firstDow - 1 + d - 1) % 7) + 1;
             const weekend = (dow === 6 || dow === 7);
-            const isHoliday = !!holidayName;
             const isToday = dateStr === todayStr;
-            const hasPnl = dayData && dayData.trades > 0;
+            const hasPnl = !!session;
+            const net = session ? (session.netPnl || 0) : 0;
+
             const cls = [
                 'cal-day',
                 weekend ? 'weekend' : '',
-                isHoliday ? 'holiday' : '',
+                holiday ? 'holiday' : '',
                 isToday ? 'today' : '',
-                hasPnl ? (dayData.netPnl >= 0 ? 'profit' : 'loss') : ''
+                hasPnl ? (net > 0 ? 'profit' : (net < 0 ? 'loss' : '')) : ''
             ].filter(Boolean).join(' ');
 
             let body;
             if (hasPnl) {
-                body = '<div><div class="cal-day-pnl">' + fmtMoney(dayData.netPnl) + '</div>' +
-                       '<div class="cal-day-trades">' + dayData.trades + ' trade' + (dayData.trades === 1 ? '' : 's') + '</div></div>';
-            } else if (isHoliday) {
-                body = '<div class="cal-holiday-tag" title="' + holidayName + '">' + holidayName + '</div>';
+                body = '<div><div class="cal-day-pnl">' + fmtMoney(net) + '</div></div>';
+            } else if (holiday) {
+                body = '<div class="cal-holiday-tag" title="' + holiday + '">' + holiday + '</div>';
             } else if (weekend) {
-                body = '<div class="cal-day-trades">' + (dow === 6 ? 'SAT' : 'SUN') + '</div>';
+                body = '<div class="cal-day-meta">' + (dow === 6 ? 'SAT' : 'SUN') + '</div>';
             } else {
-                body = '<div class="cal-day-trades">—</div>';
+                body = '<div class="cal-day-meta">—</div>';
             }
 
-            html += '<div class="' + cls + '">' +
-                '<div class="cal-day-num">' + d + '</div>' +
-                body +
+            const click = hasPnl ? 'onclick="openDayModal(\'' + dateStr + '\')"' : '';
+            html += '<div class="' + cls + '" ' + click + '>' +
+                '<div class="cal-day-num">' + d + '</div>' + body +
             '</div>';
         }
-        grid.innerHTML = html;
+        document.getElementById('calDayGrid').innerHTML = html;
     }
 
-    function renderYear(data) {
+    function fySessions() {
+        // Apr (curFyStart) → Mar (curFyStart + 1)
+        return allSessions.filter(s => {
+            if (!s.date) return false;
+            const y = parseInt(s.date.substring(0, 4), 10);
+            const m = parseInt(s.date.substring(5, 7), 10);
+            if (y === curFyStart && m >= 4) return true;
+            if (y === curFyStart + 1 && m <= 3) return true;
+            return false;
+        });
+    }
+
+    function renderYear() {
         const fyEnd = curFyStart + 1;
         document.getElementById('calPeriodLabel').textContent =
             'FY ' + curFyStart + '–' + String(fyEnd).slice(2) + '  (Apr–Mar)';
-        renderHero(data.fySummary);
+        renderHero(aggregate(fySessions()));
 
-        const grid = document.getElementById('calYearGrid');
-        const monthMap = {};
-        (data.months || []).forEach(m => { monthMap[m.month + '-' + m.year] = m; });
-
-        // Render in FY order: April(curFyStart) → March(curFyStart+1)
         let html = '';
-        FY_MONTH_ORDER.forEach(mNum => {
-            const y = mNum >= 4 ? curFyStart : curFyStart + 1;
-            const m = monthMap[mNum + '-' + y] || { month: mNum, year: y, summary: {} };
-            const s = m.summary || {};
-            const net = s.netPnl || 0;
-            const hasTrades = s.totalTrades > 0;
+        FY_MONTH_ORDER.forEach(m => {
+            const y = m >= 4 ? curFyStart : curFyStart + 1;
+            const monthSessions = filterSessions(y, m);
+            const agg = aggregate(monthSessions);
+            const has = agg.sessions > 0;
+            const net = agg.netPnl || 0;
+            const winRate = (agg.wins + agg.losses) > 0 ? (agg.wins * 100 / (agg.wins + agg.losses)) : 0;
             const clsBase = ['cal-month-card'];
-            if (!hasTrades) clsBase.push('empty');
-            else if (net > 0) clsBase.push('profit');
-            else if (net < 0) clsBase.push('loss');
-            const pnlClsArr = ['cal-month-pnl'];
-            if (hasTrades && net > 0) pnlClsArr.push('profit');
-            else if (hasTrades && net < 0) pnlClsArr.push('loss');
-
-            html += '<div class="' + clsBase.join(' ') + '" onclick="jumpToMonth(' + mNum + ',' + y + ')">' +
-                '<div class="cal-month-name">' + MONTH_NAMES[mNum - 1] + ' ' + y + '</div>' +
+            if (has && net > 0) clsBase.push('profit');
+            else if (has && net < 0) clsBase.push('loss');
+            const pnlCls = ['cal-month-pnl'];
+            if (has && net > 0) pnlCls.push('profit');
+            else if (has && net < 0) pnlCls.push('loss');
+            html += '<div class="' + clsBase.join(' ') + '" onclick="jumpToMonth(' + m + ',' + y + ')">' +
+                '<div class="cal-month-name">' + MONTH_NAMES[m - 1] + ' ' + y + '</div>' +
                 '<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:12px;">' +
-                  '<div class="' + pnlClsArr.join(' ') + '">' + (hasTrades ? fmtMoney(net) : '—') + '</div>' +
-                  '<div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted);">' + (hasTrades ? s.totalTrades + ' trade' + (s.totalTrades === 1 ? '' : 's') : '') + '</div>' +
+                    '<div class="' + pnlCls.join(' ') + '">' + (has ? fmtMoney(net) : '—') + '</div>' +
+                    '<div style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-muted);">' + (has ? agg.sessions + ' session' + (agg.sessions === 1 ? '' : 's') : '') + '</div>' +
                 '</div>' +
                 '<div class="cal-month-stats">' +
-                  '<div class="cal-month-stat-label">Win %</div><div class="cal-month-stat-value">' + (hasTrades ? (s.winRate || 0).toFixed(1) + '%' : '—') + '</div>' +
-                  '<div class="cal-month-stat-label">PF</div><div class="cal-month-stat-value">' + (hasTrades ? (s.profitFactor || 0).toFixed(2) : '—') + '</div>' +
-                  '<div class="cal-month-stat-label">Avg Win</div><div class="cal-month-stat-value">' + (hasTrades ? fmtMoney(s.avgWin || 0) : '—') + '</div>' +
-                  '<div class="cal-month-stat-label">Avg Loss</div><div class="cal-month-stat-value">' + (hasTrades ? fmtMoney(s.avgLoss || 0) : '—') + '</div>' +
+                    '<div class="cal-month-stat-label">Win %</div><div class="cal-month-stat-value">' + (has ? winRate.toFixed(1) + '%' : '—') + '</div>' +
+                    '<div class="cal-month-stat-label">Gross</div><div class="cal-month-stat-value">' + (has ? fmtMoney(agg.grossPnl) : '—') + '</div>' +
+                    '<div class="cal-month-stat-label">Charges</div><div class="cal-month-stat-value">' + (has ? fmtMoney(agg.charges) : '—') + '</div>' +
+                    '<div class="cal-month-stat-label">Sessions</div><div class="cal-month-stat-value">' + (has ? agg.sessions : '—') + '</div>' +
                 '</div>' +
             '</div>';
         });
-        grid.innerHTML = html;
+        document.getElementById('calYearGrid').innerHTML = html;
     }
 
-    async function loadMonth() {
-        const res = await fetch('/api/calendar/month?year=' + curYear + '&month=' + curMonth);
-        const data = await res.json();
-        renderMonth(data);
-    }
-    async function loadYear() {
-        const res = await fetch('/api/calendar/fy?fyStart=' + curFyStart);
-        const data = await res.json();
-        renderYear(data);
-    }
-    function reload() {
-        if (view === 'month') loadMonth();
-        else loadYear();
+    function render() {
+        if (view === 'month') renderMonth();
+        else renderYear();
     }
 
     window.setView = function(v) {
@@ -475,8 +391,8 @@
         document.getElementById('btnMonthView').classList.toggle('active', v === 'month');
         document.getElementById('btnYearView').classList.toggle('active', v === 'year');
         document.getElementById('monthViewPanel').style.display = v === 'month' ? 'block' : 'none';
-        document.getElementById('yearViewPanel').style.display = v === 'year' ? 'block' : 'none';
-        reload();
+        document.getElementById('yearViewPanel').style.display  = v === 'year'  ? 'block' : 'none';
+        render();
     };
     window.navPrev = function() {
         if (view === 'month') {
@@ -485,7 +401,7 @@
         } else {
             curFyStart--;
         }
-        reload();
+        render();
     };
     window.navNext = function() {
         if (view === 'month') {
@@ -494,25 +410,58 @@
         } else {
             curFyStart++;
         }
-        reload();
+        render();
     };
     window.navToday = function() {
         const now = new Date();
-        curYear = now.getFullYear();
+        curYear  = now.getFullYear();
         curMonth = now.getMonth() + 1;
         curFyStart = curMonth >= 4 ? curYear : curYear - 1;
-        reload();
+        render();
     };
     window.jumpToMonth = function(m, y) {
         curMonth = m;
-        curYear = y || curYear;
+        if (y != null) curYear = y;
         setView('month');
     };
 
-    document.addEventListener('DOMContentLoaded', reload);
+    window.openDayModal = function(dateStr) {
+        const session = allSessions.find(s => s.date === dateStr);
+        if (!session) return;
+        const net = session.netPnl || 0;
+        const netCls = net > 0 ? 'pnl-positive' : (net < 0 ? 'pnl-negative' : '');
+        const html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px 28px;">' +
+            '<div><div class="stat-label">Final State</div><div style="color:var(--text-primary);">' + (session.finalState || '—') + '</div></div>' +
+            '<div><div class="stat-label">Entries</div><div style="color:var(--text-primary);">' + (session.entries || 0) + '</div></div>' +
+            '<div><div class="stat-label">Gross P&L</div><div>' + fmtMoneyFull(session.grossPnl) + '</div></div>' +
+            '<div><div class="stat-label">Charges</div><div style="color:var(--text-muted);">' + fmtMoneyFull(session.charges) + '</div></div>' +
+            '<div style="grid-column:span 2;border-top:1px solid var(--border);padding-top:10px;">' +
+                '<div class="stat-label">Net P&L</div>' +
+                '<div class="' + netCls + '" style="font-family:var(--font-mono);font-size:1.4rem;font-weight:700;">' + fmtMoneyFull(net) + '</div>' +
+            '</div>' +
+        '</div>';
+        document.getElementById('calModalTitle').textContent = 'Session — ' + dateStr;
+        document.getElementById('calModalBody').innerHTML = html;
+        document.getElementById('calDayModal').style.display = 'flex';
+    };
+    window.closeDayModal = function() {
+        document.getElementById('calDayModal').style.display = 'none';
+    };
+    // Close modal on backdrop click
+    document.getElementById('calDayModal').addEventListener('click', function(e) {
+        if (e.target.id === 'calDayModal') closeDayModal();
+    });
+
+    document.addEventListener('DOMContentLoaded', loadAll);
 })();
 
-// ── Connection status (same as other pages) ──
+// ── Footer year ──
+(function() {
+    var el = document.getElementById('footerYear');
+    if (el) el.textContent = new Date().getFullYear();
+})();
+
+// ── Connection status ──
 function checkConnection() {
     var ctrl = new AbortController(); var tid = setTimeout(function(){ ctrl.abort(); }, 3000);
     fetch('/status', {signal:ctrl.signal}).then(r => { clearTimeout(tid); return r.json(); }).then(d => {
@@ -520,21 +469,13 @@ function checkConnection() {
         const label = document.getElementById('connectionStatus');
         var status = d.status || 'DISCONNECTED';
         if (status.includes('WS CONNECTED')) {
-            dot.className = 'status-dot connected';
-            label.textContent = status;
-            label.style.color = 'var(--accent-green)';
+            dot.className = 'status-dot connected'; label.textContent = status; label.style.color = 'var(--accent-green)';
         } else if (status.includes('CONNECTING') || status.includes('RECONNECTING')) {
-            dot.className = 'status-dot syncing';
-            label.textContent = status;
-            label.style.color = 'var(--accent-yellow)';
+            dot.className = 'status-dot syncing'; label.textContent = status; label.style.color = 'var(--accent-yellow)';
         } else if (status === 'POLLING' || status === 'SYNCING') {
-            dot.className = 'status-dot syncing';
-            label.textContent = status;
-            label.style.color = 'var(--accent-yellow)';
+            dot.className = 'status-dot syncing'; label.textContent = status; label.style.color = 'var(--accent-yellow)';
         } else {
-            dot.className = 'status-dot disconnected';
-            label.textContent = 'DISCONNECTED';
-            label.style.color = 'var(--accent-red)';
+            dot.className = 'status-dot disconnected'; label.textContent = 'DISCONNECTED'; label.style.color = 'var(--accent-red)';
         }
     }).catch(() => {
         document.getElementById('statusDot').className = 'status-dot disconnected';

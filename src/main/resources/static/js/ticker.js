@@ -58,21 +58,11 @@
             }
         });
 
-        // Position closed — notify with exit details
+        // Position closed — simple notification. Options-only bot has no /api/trades.
         knownSymbols.forEach(function(sym) {
             if (!currentSymbols.has(sym)) {
                 var name = sym.replace('NSE:', '').replace('-EQ', '');
-                fetch('/api/trades').then(function(r) { return r.json(); }).then(function(trades) {
-                    var trade = trades.find(function(t) { return t.symbol === sym; });
-                    if (trade) {
-                        var pnl = trade.netPnl || trade.pnl || 0;
-                        var pnlStr = (pnl >= 0 ? '+' : '') + pnl.toFixed(2);
-                        var reason = trade.exitReason || 'CLOSED';
-                        showTradeNotif(name + ' ' + reason, 'P&L: ' + pnlStr + ' | Exit @ ' + (trade.exitPrice || 0).toFixed(2));
-                    } else {
-                        showTradeNotif(name + ' CLOSED', 'Position closed');
-                    }
-                }).catch(function() { showTradeNotif(name + ' CLOSED', 'Position closed'); });
+                showTradeNotif(name + ' CLOSED', 'Position closed');
             }
         });
 

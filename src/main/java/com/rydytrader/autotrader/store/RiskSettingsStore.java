@@ -190,6 +190,20 @@ public class RiskSettingsStore {
         // on Fyers). Position closes on SL hit or auto-squareoff. R/R filter and trailing
         // SL are silently bypassed because both depend on a defined target.
         volatile boolean enableOpenTargetMode   = false;
+
+        // ── Rolling Short Straddle on NIFTY weekly options ─────────────────────
+        // Self-contained options-selling strategy that runs in parallel with the equity
+        // breakout pipeline. Each day at entry time: SELL ATM CE + ATM PE on current weekly
+        // expiry. If NIFTY moves ±movePct from last entry, close both legs and re-enter
+        // fresh ATM CE+PE (counts as one "roll"). After maxRolls is reached the open
+        // straddle is held to the timed squareoff for max theta. See
+        // memory/project_rolling_straddle.md for the full design.
+        volatile boolean enableRollingStraddle     = false;
+        volatile String  straddleEntryTime         = "09:20";
+        volatile String  straddleSquareOffTime     = "15:15";
+        volatile double  straddleMovePctTrigger    = 0.4;
+        volatile int     straddleMaxRolls          = 3;
+        volatile int     straddleLotsPerLeg        = 1;
         // EMA filters
         // 5-min EMA trend gate: buy requires close above EMA 20, sell requires close below EMA 20.
         // (enableEmaTrendCheck removed — 5-min EMA factor is now hard-baked into the
@@ -239,6 +253,10 @@ public class RiskSettingsStore {
         // Legacy keys (skipR3S3IvOvDays / skipR3S3EvDays / skipR4S4IvOvDays / skipR4S4EvDays
         // / skipR3S3NormalDays / skipR4S4NormalDays) silently fold into the new toggle on
         // load: any legacy-true value flips the new toggle to true.
+        // CPR TC/BC breakout + retest — the first structural setup (BUY_ABOVE_CPR / SELL_BELOW_CPR).
+        // Default OFF (allowed). Skipping disables both fresh breakouts and pattern retests
+        // at the CPR top/bottom — i.e. the bot won't trade CPR high/low breakouts at all.
+        volatile boolean skipCprTcBc = false;
         volatile boolean skipR1PdhS1Pdl = false;
         volatile boolean skipR2S2 = false;
         volatile boolean skipR3S3 = true;
@@ -391,6 +409,12 @@ public class RiskSettingsStore {
     public boolean isEnableRiskRewardFilter()      { return cfg().enableRiskRewardFilter; }
     public double  getMinRiskRewardRatio()         { return cfg().minRiskRewardRatio; }
     public boolean isEnableOpenTargetMode()        { return cfg().enableOpenTargetMode; }
+    public boolean isEnableRollingStraddle()       { return cfg().enableRollingStraddle; }
+    public String  getStraddleEntryTime()          { return cfg().straddleEntryTime; }
+    public String  getStraddleSquareOffTime()      { return cfg().straddleSquareOffTime; }
+    public double  getStraddleMovePctTrigger()     { return cfg().straddleMovePctTrigger; }
+    public int     getStraddleMaxRolls()           { return cfg().straddleMaxRolls; }
+    public int     getStraddleLotsPerLeg()         { return cfg().straddleLotsPerLeg; }
     public boolean isEnableEmaLevelCountFilter()   { return cfg().enableEmaLevelCountFilter; }
     public int getEmaLevelMinRangePct()            { return cfg().emaLevelMinRangePct; }
     public boolean isEmaLevelFilterMorningSkip()       { return cfg().emaLevelFilterMorningSkip; }
@@ -422,6 +446,7 @@ public class RiskSettingsStore {
     public int getVirginCprExpiryDays() { return cfg().virginCprExpiryDays; }
     public double getBreakevenTriggerPct() { return cfg().breakevenTriggerPct; }
     public double getBreakevenSlAtrMult()  { return cfg().breakevenSlAtrMult; }
+    public boolean isSkipCprTcBc() { return cfg().skipCprTcBc; }
     public boolean isSkipR1PdhS1Pdl() { return cfg().skipR1PdhS1Pdl; }
     public boolean isSkipR2S2() { return cfg().skipR2S2; }
     public boolean isSkipR3S3() { return cfg().skipR3S3; }
@@ -525,6 +550,12 @@ public class RiskSettingsStore {
     public void setEnableRiskRewardFilter(boolean v)       { cfg().enableRiskRewardFilter = v; }
     public void setMinRiskRewardRatio(double v)            { cfg().minRiskRewardRatio = v; }
     public void setEnableOpenTargetMode(boolean v)         { cfg().enableOpenTargetMode = v; }
+    public void setEnableRollingStraddle(boolean v)        { cfg().enableRollingStraddle = v; }
+    public void setStraddleEntryTime(String v)             { cfg().straddleEntryTime = (v == null || v.isBlank()) ? "09:20" : v.trim(); }
+    public void setStraddleSquareOffTime(String v)         { cfg().straddleSquareOffTime = (v == null || v.isBlank()) ? "15:15" : v.trim(); }
+    public void setStraddleMovePctTrigger(double v)        { cfg().straddleMovePctTrigger = Math.max(0.01, v); }
+    public void setStraddleMaxRolls(int v)                 { cfg().straddleMaxRolls = Math.max(0, v); }
+    public void setStraddleLotsPerLeg(int v)               { cfg().straddleLotsPerLeg = Math.max(1, v); }
     public void setEnableEmaLevelCountFilter(boolean v)    { cfg().enableEmaLevelCountFilter = v; }
     public void setEmaLevelMinRangePct(int v)               { cfg().emaLevelMinRangePct = Math.max(0, Math.min(100, v)); }
     public void setEmaLevelFilterMorningSkip(boolean v)     { cfg().emaLevelFilterMorningSkip = v; }
@@ -556,6 +587,7 @@ public class RiskSettingsStore {
     public void setVirginCprExpiryDays(int v) { cfg().virginCprExpiryDays = Math.max(0, v); }
     public void setBreakevenTriggerPct(double v) { cfg().breakevenTriggerPct = v; }
     public void setBreakevenSlAtrMult(double v)  { cfg().breakevenSlAtrMult = v; }
+    public void setSkipCprTcBc(boolean v) { cfg().skipCprTcBc = v; }
     public void setSkipR1PdhS1Pdl(boolean v) { cfg().skipR1PdhS1Pdl = v; }
     public void setSkipR2S2(boolean v) { cfg().skipR2S2 = v; }
     public void setSkipR3S3(boolean v) { cfg().skipR3S3 = v; }
@@ -668,6 +700,12 @@ public class RiskSettingsStore {
             upsert("dayHighLowMinAtr", String.valueOf(c.dayHighLowMinAtr));
             upsert("enableRiskRewardFilter", String.valueOf(c.enableRiskRewardFilter));
             upsert("enableOpenTargetMode", String.valueOf(c.enableOpenTargetMode));
+            upsert("enableRollingStraddle", String.valueOf(c.enableRollingStraddle));
+            upsert("straddleEntryTime", c.straddleEntryTime);
+            upsert("straddleSquareOffTime", c.straddleSquareOffTime);
+            upsert("straddleMovePctTrigger", String.valueOf(c.straddleMovePctTrigger));
+            upsert("straddleMaxRolls", String.valueOf(c.straddleMaxRolls));
+            upsert("straddleLotsPerLeg", String.valueOf(c.straddleLotsPerLeg));
             upsert("minRiskRewardRatio", String.valueOf(c.minRiskRewardRatio));
             upsert("enableEmaLevelCountFilter", String.valueOf(c.enableEmaLevelCountFilter));
             upsert("emaLevelMinRangePct", String.valueOf(c.emaLevelMinRangePct));
@@ -700,6 +738,7 @@ public class RiskSettingsStore {
             upsert("virginCprExpiryDays", String.valueOf(c.virginCprExpiryDays));
             upsert("breakevenTriggerPct", String.valueOf(c.breakevenTriggerPct));
             upsert("breakevenSlAtrMult",  String.valueOf(c.breakevenSlAtrMult));
+            upsert("skipCprTcBc", String.valueOf(c.skipCprTcBc));
             upsert("skipR1PdhS1Pdl", String.valueOf(c.skipR1PdhS1Pdl));
             upsert("skipR2S2", String.valueOf(c.skipR2S2));
             upsert("skipR3S3", String.valueOf(c.skipR3S3));
@@ -807,6 +846,12 @@ public class RiskSettingsStore {
                     case "dayHighLowMinAtr" -> c.dayHighLowMinAtr = Double.parseDouble(v);
                     case "enableRiskRewardFilter" -> c.enableRiskRewardFilter = Boolean.parseBoolean(v);
                     case "enableOpenTargetMode" -> c.enableOpenTargetMode = Boolean.parseBoolean(v);
+                    case "enableRollingStraddle" -> c.enableRollingStraddle = Boolean.parseBoolean(v);
+                    case "straddleEntryTime" -> c.straddleEntryTime = (v == null || v.isBlank()) ? "09:20" : v.trim();
+                    case "straddleSquareOffTime" -> c.straddleSquareOffTime = (v == null || v.isBlank()) ? "15:15" : v.trim();
+                    case "straddleMovePctTrigger" -> c.straddleMovePctTrigger = Math.max(0.01, Double.parseDouble(v));
+                    case "straddleMaxRolls" -> c.straddleMaxRolls = Math.max(0, Integer.parseInt(v));
+                    case "straddleLotsPerLeg" -> c.straddleLotsPerLeg = Math.max(1, Integer.parseInt(v));
                     case "minRiskRewardRatio" -> c.minRiskRewardRatio = Double.parseDouble(v);
                     // enableEmaTrendCheck removed — 5-min EMA factor is hard-baked into the
                     // strict trend state machine in BreakoutScanner. Legacy keys silently ignored.
@@ -936,6 +981,7 @@ public class RiskSettingsStore {
                     case "skipR4S4NormalDays", "skipR4S4IvOvDays", "skipR4S4EvDays" -> {
                         if (Boolean.parseBoolean(v)) c.skipR4S4 = true;
                     }
+                    case "skipCprTcBc" -> c.skipCprTcBc = Boolean.parseBoolean(v);
                     case "skipR1PdhS1Pdl" -> c.skipR1PdhS1Pdl = Boolean.parseBoolean(v);
                     case "skipR2S2" -> c.skipR2S2 = Boolean.parseBoolean(v);
                     case "skipR3S3" -> c.skipR3S3 = Boolean.parseBoolean(v);

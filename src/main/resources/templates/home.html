@@ -6,62 +6,64 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/shared.css?v=5">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script>
         (function() {
             const t = localStorage.getItem('traderedge-theme') || 'dark';
             document.documentElement.setAttribute('data-theme', t);
             document.addEventListener('DOMContentLoaded', function() {
                 const btn = document.getElementById('themeToggle');
-                if (btn) btn.textContent = t === 'light' ? '\u2600\uFE0F' : t === 'forest' ? '\uD83C\uDF32' : '\uD83C\uDF19';
+                if (btn) btn.textContent = t === 'light' ? '☀️' : t === 'forest' ? '🌲' : '🌙';
             });
         })();
     </script>
     <style>
-        /* no page-specific styles needed */
+        .stat-pill { display:inline-block; padding:4px 12px; border-radius:6px; font-family:var(--font-mono); font-size:0.78rem; font-weight:700; }
+        .pill-idle    { background:rgba(160,160,160,0.12); color:var(--text-muted); border:1px solid rgba(160,160,160,0.25); }
+        .pill-open    { background:rgba(52,211,153,0.12); color:var(--accent-green); border:1px solid rgba(52,211,153,0.3); }
+        .pill-hold    { background:rgba(250,204,21,0.12); color:var(--accent-amber, #fbbf24); border:1px solid rgba(250,204,21,0.3); }
+        .pill-done    { background:rgba(125,211,252,0.12); color:var(--accent-cyan); border:1px solid rgba(125,211,252,0.3); }
+        .leg-card     { background:var(--bg-primary); border:1px solid var(--border); border-radius:8px; padding:14px; font-family:var(--font-mono); font-size:0.82rem; }
+        .leg-title    { font-size:0.7rem; color:var(--text-muted); letter-spacing:0.08em; text-transform:uppercase; margin-bottom:6px; }
+        .big-number   { font-family:var(--font-mono); font-size:1.6rem; font-weight:700; }
+        .pos { color:var(--accent-green); } .neg { color:var(--accent-red, #f87171); } .neu { color:var(--text-primary); }
+        .grid-cards   { display:grid; gap:14px; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); }
+        .meta-row     { display:flex; align-items:center; gap:8px; font-family:var(--font-mono); font-size:0.78rem; color:var(--text-secondary); margin:6px 0; }
+        .meta-key     { color:var(--text-muted); min-width:120px; }
+        .trigger-band { display:flex; gap:18px; font-family:var(--font-mono); font-size:0.82rem; }
+        .trigger-up   { color:var(--accent-green); }
+        .trigger-dn   { color:var(--accent-red, #f87171); }
+        .roll-table   { width:100%; font-family:var(--font-mono); font-size:0.78rem; border-collapse:collapse; }
+        .roll-table th, .roll-table td { padding:8px 10px; border-bottom:1px solid var(--border); text-align:left; }
+        .roll-table th { color:var(--text-muted); font-weight:600; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.06em; }
+        .reset-btn    { background:rgba(248,113,113,0.08); border:1px solid rgba(248,113,113,0.25); color:var(--accent-red, #f87171); padding:6px 14px; border-radius:6px; font-family:var(--font-mono); font-size:0.72rem; font-weight:700; cursor:pointer; }
     </style>
 </head>
-<body>
-<div class="app-layout">
-<aside class="sidebar">
-    <div class="sidebar-brand">
-        <div class="brand-icon">⚡</div>
-        <div class="sidebar-brand-text">
-            <div class="brand-name">TRADER<span>EDGE</span><div style="font-size:0.65rem;font-weight:500;letter-spacing:0.12em;color:var(--text-secondary);margin-top:4px;opacity:0.7;">AutoTrader BOT</div></div>
-        </div>
-    </div>
-    <nav class="sidebar-nav">
-        <div class="sidebar-nav-section" style="display:flex;align-items:center;justify-content:space-between;"><button class="sidebar-collapse-btn" onclick="toggleSidebar()" title="Toggle sidebar" style="margin:0;padding:2px 6px;border:none;">☰</button></div>
-        <a href="/home" data-tooltip="Home" class="sidebar-nav-item active"><span class="sidebar-nav-icon" style="font-size:1.3rem;">⌂</span><span class="sidebar-nav-label">Home</span></a>
-        <a href="/scanner" data-tooltip="Scanner" class="sidebar-nav-item"><span class="sidebar-nav-icon">◎</span><span class="sidebar-nav-label">Scanner</span></a>
-        <a href="/positions" data-tooltip="Positions" class="sidebar-nav-item"><span class="sidebar-nav-icon">⬡</span><span class="sidebar-nav-label">Positions</span></a>
-        <a href="/trades" data-tooltip="Trade Log" class="sidebar-nav-item"><span class="sidebar-nav-icon">⊞</span><span class="sidebar-nav-label">Trade Log</span></a>
-        <a href="/journal" data-tooltip="Journal" class="sidebar-nav-item"><span class="sidebar-nav-icon">☷</span><span class="sidebar-nav-label">Journal</span></a>
-        <a href="/calendar" data-tooltip="Calendar" class="sidebar-nav-item"><span class="sidebar-nav-icon">▦</span><span class="sidebar-nav-label">Calendar</span></a>
-        <a href="/settings" data-tooltip="Settings" class="sidebar-nav-item"><span class="sidebar-nav-icon">⚙</span><span class="sidebar-nav-label">Settings</span></a>
-        <div class="sidebar-nav-section">Operations</div>
-        <a href="/console" data-tooltip="Console" class="sidebar-nav-item"><span class="sidebar-nav-icon">▤</span><span class="sidebar-nav-label">Console</span></a>
-        <a href="/monitoring" data-tooltip="Monitoring" class="sidebar-nav-item"><span class="sidebar-nav-icon">◉</span><span class="sidebar-nav-label">Monitoring</span></a>
-        <a href="/help" data-tooltip="Help" class="sidebar-nav-item"><span class="sidebar-nav-icon">?</span><span class="sidebar-nav-label">Help</span></a>
-    </nav>
-    <div class="sidebar-footer">
-        <div class="status-pill">
-            <div class="status-dot" id="statusDot"></div>
-            <span id="connectionStatus" style="color: var(--text-secondary);">Checking...</span>
-        </div>
-    </div>
-</aside>
-
-<div class="app-main">
-<nav class="navbar">
+<body style="margin:0;">
+<div style="display:flex;min-height:100vh;">
+<aside style="width:56px;flex-shrink:0;background:var(--bg-card);border-right:1px solid var(--border);"></aside>
+<div class="app-main" style="margin-left:0;width:calc(100% - 56px);flex:1;">
+<nav class="navbar" style="padding:0 16px;">
     <div class="navbar-inner">
+        <a href="/home" style="display:flex;align-items:center;gap:10px;text-decoration:none;margin-right:18px;">
+            <span style="font-size:1.2rem;line-height:1;">⚡</span>
+            <div style="display:flex;flex-direction:column;line-height:1.1;">
+                <span style="font-family:var(--font-mono);font-weight:700;font-size:0.85rem;letter-spacing:0.06em;color:var(--text-primary);">TRADER<span style="color:var(--accent-cyan);">EDGE</span></span>
+                <span style="display:flex;align-items:center;gap:4px;margin-top:6px;">
+                    <span class="status-dot" id="statusDot" style="width:5px;height:5px;"></span>
+                    <span id="connectionStatus" style="color:var(--text-muted);font-size:0.52rem;letter-spacing:0.04em;">Checking…</span>
+                </span>
+            </div>
+        </a>
         <div class="ticker-wrap" id="tickerWrap">
             <div class="ticker-track" id="tickerTrack"></div>
         </div>
         <div class="nav-right">
-<button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
+            <button class="theme-toggle" id="calBtn" title="Calendar" onclick="window.location.href='/calendar'" style="font-size:1rem;">▦</button>
+            <button class="theme-toggle" id="settingsBtn" title="Settings" onclick="SettingsModal.open()" style="font-size:1rem;">⚙</button>
+            <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
             <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
         </div>
     </div>
@@ -82,7 +84,7 @@
         </div>
     </div>
 
-    <!-- FYERS NOT CONNECTED (Trader only) -->
+    <!-- FYERS NOT CONNECTED — shown when /api/user/me reports fyersConnected=false -->
     <div id="fyersGate" style="display:none;">
         <div class="section-card fade-in" style="margin-bottom:20px;">
             <div style="padding:60px 28px; text-align:center;">
@@ -101,166 +103,200 @@
         </div>
     </div>
 
-    <!-- LOADING OVERLAY -->
-    <div id="loadingOverlay" style="display:none;">
-        <div class="section-card fade-in" style="margin-bottom:20px;">
-            <div style="padding:60px 28px; text-align:center;">
-                <div style="font-size:2rem; margin-bottom:16px; animation:spin 1.5s linear infinite;">&#9881;</div>
-                <div style="font-family:var(--font-mono); font-size:1rem; color:var(--text-primary); font-weight:600; margin-bottom:12px;">Initializing Scanner</div>
-                <div id="loadingMessage" style="font-family:var(--font-mono); font-size:0.82rem; color:var(--text-muted);">Connecting to broker...</div>
-                <div style="margin-top:20px; width:200px; height:4px; background:var(--border); border-radius:2px; display:inline-block; overflow:hidden;">
-                    <div id="loadingBar" style="width:10%; height:100%; background:var(--accent-cyan); border-radius:2px; transition:width 0.5s ease;"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-    <style>@keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }</style>
-
-    <!-- MAIN DASHBOARD CONTENT (shown by JS after user/fyers check) -->
+    <!-- DASHBOARD CONTENT (hidden when Fyers not connected) -->
     <div id="dashboardContent">
 
-    <!-- HERO CARD: Net Day P&L -->
-    <div class="section-card fade-in" style="margin-bottom:20px;">
+    <!-- TOP ROW: 4-column grid — Overview spans 3 columns, Market spans 1 (aligns with the 4-pane row below) -->
+    <div style="display:grid;grid-template-columns:repeat(4, 1fr);gap:16px;margin-bottom:20px;" class="fade-in">
+
+    <!-- HERO: Net Day P&L + side stats -->
+    <div class="section-card" style="margin-bottom:0;grid-column:span 3;">
         <div class="section-header">
             <div class="section-title"><div class="section-title-dot"></div> Overview</div>
-            <button onclick="document.getElementById('strategyModal').style.display='flex'" style="background:none;border:1px solid var(--border);border-radius:50%;width:26px;height:26px;color:var(--text-muted);cursor:pointer;font-size:0.8rem;font-weight:700;display:flex;align-items:center;justify-content:center;margin-left:auto;" title="Trading Strategy Guide">?</button>
+            <div style="margin-left:auto;display:flex;gap:8px;">
+                <button id="straddleCloseBtn" onclick="closeStraddle()" title="Square off both legs at market and end today's session." style="
+                    background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.25);
+                    color:var(--accent-red, #f87171);padding:6px 14px;border-radius:6px;
+                    font-family:var(--font-mono);font-size:0.72rem;font-weight:700;
+                    cursor:pointer;">✕ Squareoff Straddle</button>
+                <button id="straddleResetBtn" class="reset-btn" onclick="resetStraddle()" title="Force the in-memory state back to IDLE. Use after a rejection has been fixed and the bot needs to re-arm without a restart.">↻ Reset to IDLE</button>
+            </div>
         </div>
         <div style="padding:20px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px;">
             <div>
                 <div class="stat-label" style="margin-bottom:6px;">Net Day P&L</div>
                 <div class="stat-value" id="netDayPnl" style="font-size:2.2rem;">0.00</div>
-                <div class="stat-sub" id="netDayPnlSub" style="margin-top:6px;">Gross P&L − Charges</div>
+                <div class="stat-sub" id="netDayPnlSub" style="margin-top:6px;">Realised + Open MTM − Charges</div>
             </div>
             <div style="display:flex; gap:32px; flex-wrap:wrap;">
                 <div style="text-align:center;">
-                    <div class="stat-label">Gross P&L</div>
-                    <div class="stat-value" id="heroGrossPnl" style="font-size:1.1rem; margin-top:4px;">0.00</div>
+                    <div class="stat-label">Realised</div>
+                    <div class="stat-value" id="heroRealised" style="font-size:1.1rem; margin-top:4px;">0.00</div>
                 </div>
                 <div style="text-align:center;">
-                    <div class="stat-label">Charges</div>
-                    <div class="stat-value" id="heroCharges" style="font-size:1.1rem; margin-top:4px; color:var(--text-muted);">0.00</div>
+                    <div class="stat-label">Open MTM</div>
+                    <div class="stat-value" id="heroOpenMtm" style="font-size:1.1rem; margin-top:4px;">0.00</div>
                 </div>
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
-                    <div class="stat-label">Open</div>
-                    <div class="stat-value" id="openPositions" style="font-size:1.1rem; margin-top:4px;">0</div>
+                    <div class="stat-label">State</div>
+                    <div class="stat-value" id="heroStatePill" style="font-size:0.95rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center;">
-                    <div class="stat-label">Closed</div>
-                    <div class="stat-value" id="closedTrades" style="font-size:1.1rem; margin-top:4px;">0</div>
+                    <div class="stat-label">Rolls</div>
+                    <div class="stat-value" id="heroRolls" style="font-size:1.1rem; margin-top:4px;">0 / 3</div>
                 </div>
                 <div style="text-align:center;">
-                    <div class="stat-label">Win Rate</div>
-                    <div class="stat-value" id="winRate" style="font-size:1.1rem; margin-top:4px;">--</div>
+                    <div class="stat-label">NIFTY</div>
+                    <div class="stat-value" id="heroNiftyLtp" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center;">
-                    <div class="stat-label">R : R</div>
-                    <div class="stat-value" id="rrOverview" style="font-size:1.1rem; margin-top:4px;">--</div>
+                    <div class="stat-label">Last Entry</div>
+                    <div class="stat-value" id="heroLastEntry" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
             </div>
         </div>
     </div>
+
+    <!-- Market Clock — same compact format as the original Positions page -->
+    <div class="section-card" style="margin-bottom:0; display:flex; flex-direction:column;">
+        <div class="section-header">
+            <div class="section-title"><div class="section-title-dot"></div> Market Clock</div>
+        </div>
+        <div style="padding:20px 22px; text-align:center; flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+            <div class="stat-value" id="marketClock" style="font-size:2rem;">—</div>
+            <div class="stat-sub" id="marketClockSub" style="margin-top:8px;">Checking…</div>
+        </div>
+    </div>
+
+    </div><!-- /top row grid -->
 
     <!-- FOUR SECTION CARDS -->
     <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:20px;" class="fade-in">
 
-        <!-- Trade Summary -->
+        <!-- Trigger Band -->
         <div class="section-card" style="margin-bottom:0;">
             <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Trade Summary</div>
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Trigger Band</div>
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Net Profit</span>
-                    <span class="stat-value pnl-positive" id="summaryGrossProfit" style="font-size:1rem;">0.00</span>
+                    <span class="stat-label" style="margin:0;">Up Trigger</span>
+                    <span class="stat-value pnl-positive" id="paneUpTrigger" style="font-size:1rem;">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Net Loss</span>
-                    <span class="stat-value pnl-negative" id="summaryGrossLoss" style="font-size:1rem;">0.00</span>
+                    <span class="stat-label" style="margin:0;">Down Trigger</span>
+                    <span class="stat-value pnl-negative" id="paneDnTrigger" style="font-size:1rem;">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Profit Factor</span>
-                    <span class="stat-value" id="profitFactor" style="font-size:1rem;">--</span>
+                    <span class="stat-label" style="margin:0;">Move %</span>
+                    <span class="stat-value" id="paneMovePct" style="font-size:1rem;">—</span>
                 </div>
             </div>
         </div>
 
-        <!-- Trade Details -->
+        <!-- CE Leg -->
         <div class="section-card" style="margin-bottom:0;">
             <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Trade Details</div>
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> CE Leg</div>
+                <button id="closeCeBtn" onclick="closeLeg('CE')" title="Close just the CE leg at market. ⚠ Leaves the PE leg unhedged — use Squareoff Straddle if you want to close both." style="
+                    margin-left:auto;background:transparent;border:1px solid var(--border);
+                    color:var(--text-muted);padding:2px 8px;border-radius:4px;
+                    font-family:var(--font-mono);font-size:0.62rem;cursor:pointer;">✕ Close</button>
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
+                <div style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="paneCeSymbol">—</div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Wins / Losses</span>
-                    <span style="font-family:var(--font-mono); font-size:0.95rem; font-weight:700;">
-                        <span class="pnl-positive" id="profitCount">0</span>
-                        <span style="color:var(--text-muted);"> / </span>
-                        <span class="pnl-negative" id="lossCount">0</span>
-                    </span>
+                    <span class="stat-label" style="margin:0;">Entry / LTP</span>
+                    <span class="stat-value" id="paneCeEntryLtp" style="font-size:0.9rem;">— / —</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Avg Win / Loss</span>
-                    <span class="stat-value" id="avgWinLoss" style="font-size:0.85rem;">-- / --</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Best / Worst</span>
-                    <span class="stat-value" id="bestWorst" style="font-size:0.85rem;">-- / --</span>
+                    <span class="stat-label" style="margin:0;">MTM</span>
+                    <span class="stat-value" id="paneCeMtm" style="font-size:1rem;">0.00</span>
                 </div>
             </div>
         </div>
 
-        <!-- Risk Budget -->
+        <!-- PE Leg -->
         <div class="section-card" style="margin-bottom:0;">
             <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> Risk Budget</div>
-                <span class="section-badge" id="riskBudgetSub" style="font-size:0.6rem;"></span>
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-red, #f87171);"></div> PE Leg</div>
+                <button id="closePeBtn" onclick="closeLeg('PE')" title="Close just the PE leg at market. ⚠ Leaves the CE leg unhedged — use Squareoff Straddle if you want to close both." style="
+                    margin-left:auto;background:transparent;border:1px solid var(--border);
+                    color:var(--text-muted);padding:2px 8px;border-radius:4px;
+                    font-family:var(--font-mono);font-size:0.62rem;cursor:pointer;">✕ Close</button>
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
+                <div style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="panePeSymbol">—</div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Exposed Risk</span>
-                    <span class="stat-value" id="exposedRisk" style="font-size:1rem;">0.00</span>
+                    <span class="stat-label" style="margin:0;">Entry / LTP</span>
+                    <span class="stat-value" id="panePeEntryLtp" style="font-size:0.9rem;">— / —</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Consumed Risk</span>
-                    <span class="stat-value" id="consumedRisk" style="font-size:1rem;">0.00</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Budget Left</span>
-                    <span class="stat-value" id="riskBudget" style="font-size:1rem;">--</span>
+                    <span class="stat-label" style="margin:0;">MTM</span>
+                    <span class="stat-value" id="panePeMtm" style="font-size:1rem;">0.00</span>
                 </div>
             </div>
         </div>
 
-        <!-- P&L Breakdown -->
+        <!-- Today's Activity -->
         <div class="section-card" style="margin-bottom:0;">
             <div class="section-header">
-                <div class="section-title"><div class="section-title-dot"></div> P&L Breakdown</div>
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> Today</div>
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Total Trades</span>
-                    <span class="stat-value" id="summaryTotalTrades" style="font-size:1rem;">0</span>
+                    <span class="stat-label" style="margin:0;">Date</span>
+                    <span class="stat-value" id="paneDay" style="font-size:0.9rem;">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Realized</span>
-                    <span class="stat-value" id="breakdownRealized" style="font-size:1rem;">0.00</span>
+                    <span class="stat-label" style="margin:0;">Events</span>
+                    <span class="stat-value" id="paneEventCount" style="font-size:1rem;">0</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Unrealized</span>
-                    <span class="stat-value" id="breakdownUnrealized" style="font-size:1rem;">0.00</span>
+                    <span class="stat-label" style="margin:0;">Last Event</span>
+                    <span class="stat-value" id="paneLastEvent" style="font-size:0.85rem;">—</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;" title="Brokerage + STT + Exchange + GST + SEBI + Stamp">Charges</span>
+                    <span class="stat-value" id="paneCharges" style="font-size:1rem; color:var(--accent-red);">—</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Net P&amp;L</span>
+                    <span class="stat-value" id="paneNetPnl" style="font-size:1rem;">—</span>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Equity Curve Chart -->
+    <!-- Recent rolls -->
+    <div class="section-card fade-in" style="margin-bottom:20px;">
+        <div class="section-header">
+            <div class="section-title">
+                <div class="section-title-dot" style="background: var(--accent-cyan);"></div>
+                Today's Roll Events
+                <span class="section-badge" style="font-size:0.6rem;">most recent first</span>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table class="roll-table">
+                <thead>
+                    <tr><th>Time</th><th>Event</th><th>NIFTY</th><th>CE</th><th>PE</th><th class="text-end">P&amp;L</th></tr>
+                </thead>
+                <tbody id="rollEventsBody">
+                    <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">No events yet today.</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Equity Curve -->
     <div class="section-card fade-in" style="margin-bottom:0;">
         <div class="section-header">
             <div class="section-title"><div class="section-title-dot"></div> Equity Curve</div>
+            <span class="section-badge" id="equityCurveSub" style="font-size:0.6rem;">Cumulative Net P&amp;L across straddle sessions</span>
         </div>
-        <div style="padding:16px 22px; position:relative; height:280px;">
-            <canvas id="equityChart" style="max-height:250px;"></canvas>
-            <div id="equityEmpty" style="display:none; text-align:center; padding:40px 0; color:var(--text-muted); font-family:var(--font-mono); font-size:0.82rem;">No trades yet today</div>
+        <div style="padding:20px 28px; height:280px;">
+            <canvas id="equityChart"></canvas>
         </div>
     </div>
 
@@ -276,127 +312,207 @@
         </div>
     </footer>
 
-</div>
-<!-- Strategy Guide Modal -->
-<div id="strategyModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
-  <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:28px; max-width:750px; width:90%; max-height:85vh; overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--border) transparent;">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-      <h3 style="font-family:var(--font-mono); font-size:1rem; color:var(--text-primary); margin:0;">Trading Strategy Guide</h3>
-      <button onclick="document.getElementById('strategyModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;">&#x2715;</button>
-    </div>
-    <div style="font-family:var(--font-mono); font-size:0.75rem; line-height:1.9; color:var(--text-secondary);">
-
-      <div style="font-weight:700; color:var(--accent-cyan); margin-bottom:8px; font-size:0.85rem;">Open Classification</div>
-      <div style="margin-bottom:16px; padding-left:12px;">
-        <div><span style="color:var(--accent-green); font-weight:700;">IV</span> (Inside Value) — 1st candle close between S1/PDL and R1/PDH</div>
-        <div><span style="color:var(--accent-yellow); font-weight:700;">OV</span> (Outside Value) — 1st candle close above R1/PDH or below S1/PDL</div>
-        <div><span style="color:var(--accent-red); font-weight:700;">EV</span> (Extended Value) — 1st candle close above R2 or below S2</div>
-      </div>
-
-      <div style="font-weight:700; color:var(--accent-green); margin-bottom:8px; font-size:0.85rem;">Trend Following Setups</div>
-      <div style="margin-bottom:16px; padding-left:12px;">
-        <div style="margin-bottom:4px;">CPR level breakouts in the direction of the move:</div>
-        <div>BUY: CPR &rarr; R1/PDH &rarr; R2 &rarr; R3 &rarr; R4 (targets: next level up)</div>
-        <div>SELL: CPR &rarr; S1/PDL &rarr; S2 &rarr; S3 &rarr; S4 (targets: next level down)</div>
-        <div style="margin-top:6px; color:var(--text-muted);">IV/OV days: all breakouts active</div>
-        <div style="color:var(--text-muted);">EV days: only OR-aligned breakouts (continuation of gap)</div>
-      </div>
-
-      <div style="font-weight:700; color:var(--accent-blue); margin-bottom:8px; font-size:0.85rem;">Magnet Trades (IV/OV Days)</div>
-      <div style="margin-bottom:16px; padding-left:12px;">
-        <div>BUY above S1/PDL &rarr; target CPR (price pulled back to value)</div>
-        <div>SELL below R1/PDH &rarr; target CPR (price pulled back to value)</div>
-        <div style="margin-top:6px; color:var(--text-muted);">IV: full qty | OV: half qty (momentum may resist)</div>
-      </div>
-
-      <div style="font-weight:700; color:#fb923c; margin-bottom:8px; font-size:0.85rem;">Mean Reversion (EV Days)</div>
-      <div style="margin-bottom:16px; padding-left:12px;">
-        <div style="margin-bottom:4px;">When OR is counter to gap direction, trade back toward value:</div>
-        <div>Gap Up + OR Bearish (sell reversals):</div>
-        <div style="padding-left:12px;">R4 &rarr; target R3 | R3 &rarr; target R2 | R2 &rarr; target R1/PDH | R1/PDH &rarr; magnet (CPR)</div>
-        <div style="margin-top:4px;">Gap Down + OR Bullish (buy reversals):</div>
-        <div style="padding-left:12px;">S4 &rarr; target S3 | S3 &rarr; target S2 | S2 &rarr; target S1/PDL | S1/PDL &rarr; magnet (CPR)</div>
-        <div style="margin-top:6px; color:var(--text-muted);">All reversals: half qty (counter daily trend)</div>
-        <div style="color:var(--text-muted);">Inside OR range on EV day: trade skipped</div>
-      </div>
-
-      <div style="font-weight:700; color:#fbbf24; margin-bottom:8px; font-size:0.85rem;">Quantity Stacking</div>
-      <div style="padding-left:12px;">
-        <div>1. Base qty (risk-based or fixed)</div>
-        <div>2. Capital cap</div>
-        <div>3. Extreme level (R2+ ÷2)</div>
-        <div>4. Session move % (÷2 if exceeded)</div>
-        <div>5. Probability (HPT 1x | LPT 0.5x default)</div>
-        <div>6. Level factor (R3/S3 0.75x | R4/S4 0.5x)</div>
-        <div>7. Mean-reversion (÷2 for EV reversals + OV magnets)</div>
-        <div style="margin-top:4px; color:var(--text-muted);">Min qty = 2 (even). Each step multiplies running qty.</div>
-      </div>
-
-    </div>
-  </div>
-</div>
+</div><!-- /page-wrap -->
 
 </div><!-- /app-main -->
-</div><!-- /app-layout -->
+</div><!-- /flex wrapper -->
 
-<script src="/js/common.js?v=5"></script>
-<script src="/js/ticker.js?v=3"></script>
+<script src="/js/common.js?v=2"></script>
+<script src="/js/ticker.js?v=4"></script>
+<script src="/js/settings-modal.js?v=1"></script>
 
 <script>
+    // ── Footer year ──────────────────────────────────────────────────────────
+    (function() {
+        var el = document.getElementById('footerYear');
+        if (el) el.textContent = new Date().getFullYear();
+    })();
+
+    // ── Connection status ────────────────────────────────────────────────────
     function checkConnection() {
-        var ctrl = new AbortController(); var tid = setTimeout(function(){ ctrl.abort(); }, 3000);
-        fetch('/status', {signal:ctrl.signal}).then(r => { clearTimeout(tid); return r.json(); }).then(d => {
-            const dot = document.getElementById('statusDot');
-            const label = document.getElementById('connectionStatus');
-            var status = d.status || 'DISCONNECTED';
-            if (status.includes('WS CONNECTED')) {
-                dot.className = 'status-dot connected';
-                label.textContent = status;
-                label.style.color = 'var(--accent-green)';
-            } else if (status.includes('CONNECTING') || status.includes('RECONNECTING')) {
-                dot.className = 'status-dot syncing';
-                label.textContent = status;
-                label.style.color = 'var(--accent-yellow)';
-            } else if (status === 'POLLING' || status === 'SYNCING') {
-                dot.className = 'status-dot syncing';
-                label.textContent = status;
-                label.style.color = 'var(--accent-yellow)';
-            } else {
-                dot.className = 'status-dot disconnected';
-                label.textContent = 'DISCONNECTED';
-                label.style.color = 'var(--accent-red)';
-            }
-        }).catch(() => {
-            document.getElementById('statusDot').className = 'status-dot disconnected';
-            document.getElementById('connectionStatus').textContent = 'DISCONNECTED';
-            document.getElementById('connectionStatus').style.color = 'var(--accent-red)';
-        });
+        var ctrl = new AbortController();
+        var tid = setTimeout(function(){ ctrl.abort(); }, 3000);
+        fetch('/status', { signal: ctrl.signal })
+            .then(r => { clearTimeout(tid); return r.json(); })
+            .then(d => {
+                const dot = document.getElementById('statusDot');
+                const label = document.getElementById('connectionStatus');
+                var status = d.status || 'DISCONNECTED';
+                if (status.includes('WS CONNECTED')) {
+                    dot.className = 'status-dot connected';
+                    label.textContent = status;
+                    label.style.color = 'var(--accent-green)';
+                } else if (status.includes('CONNECTING') || status.includes('RECONNECTING')) {
+                    dot.className = 'status-dot syncing';
+                    label.textContent = status;
+                    label.style.color = 'var(--accent-yellow)';
+                } else if (status === 'POLLING' || status === 'SYNCING') {
+                    dot.className = 'status-dot syncing';
+                    label.textContent = status;
+                    label.style.color = 'var(--accent-yellow)';
+                } else {
+                    dot.className = 'status-dot disconnected';
+                    label.textContent = 'DISCONNECTED';
+                    label.style.color = 'var(--accent-red)';
+                }
+            }).catch(() => {
+                document.getElementById('statusDot').className = 'status-dot disconnected';
+                document.getElementById('connectionStatus').textContent = 'DISCONNECTED';
+                document.getElementById('connectionStatus').style.color = 'var(--accent-red)';
+            });
     }
     checkConnection();
     setInterval(checkConnection, 5000);
 
-    // logout() provided by common.js
+    // ── User + Fyers connection check ────────────────────────────────────────
+    var fyersConnected = false;
+    fetch('/api/user/me').then(r => r.json()).then(u => {
+        if (u && u.email) {
+            document.getElementById('userName').textContent = (u.firstName || u.email).trim();
+            document.getElementById('fyersIdLine').textContent = u.email;
+        }
+        fyersConnected = !!(u && u.fyersConnected);
+        document.getElementById('fyersGate').style.display       = fyersConnected ? 'none'  : 'block';
+        document.getElementById('dashboardContent').style.display = fyersConnected ? 'block' : 'none';
+    }).catch(() => {
+        // Show the Fyers gate on error too — better fallback than a blank page.
+        document.getElementById('fyersGate').style.display = 'block';
+        document.getElementById('dashboardContent').style.display = 'none';
+    });
 
-    // ── HELPERS ──────────────────────────────────
-    function fmt(v) {
-        if (v == null || isNaN(v)) return '0.00';
-        return Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-    function fmtInt(v) { return v != null ? v.toLocaleString('en-IN') : '0'; }
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    function fmt(v)   { if (v == null || isNaN(v)) return '0.00'; return Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+    function fmtRs(v) { return (v < 0 ? '-₹' : '₹') + fmt(Math.abs(v)); }
     function setPnlClass(el, val) {
-        el.classList.remove('positive', 'negative');
-        if (val > 0) el.classList.add('positive');
-        else if (val < 0) el.classList.add('negative');
+        el.classList.remove('pos', 'neg', 'neu');
+        if (val > 0.5) el.classList.add('pos');
+        else if (val < -0.5) el.classList.add('neg');
+        else el.classList.add('neu');
     }
 
-    // ── EQUITY CHART ────────────────────────────
-    let equityChart = null;
+    // Cached so squareoff buttons can read leg symbols/qty without re-fetching.
+    var lastDashboardData = null;
+
+    // ── Dashboard polling (hero + 4 sub-panes + recent rolls) ────────────────
+    function loadDashboard() {
+        if (!fyersConnected) return;
+        fetch('/api/straddle/dashboard').then(r => r.json()).then(d => {
+            if (!d) return;
+            lastDashboardData = d;
+            // Hero
+            var net = document.getElementById('netDayPnl');
+            net.textContent = fmtRs(d.totalPnlToday || 0);
+            net.className = 'stat-value';
+            if ((d.totalPnlToday || 0) > 0.5) net.classList.add('pnl-positive');
+            else if ((d.totalPnlToday || 0) < -0.5) net.classList.add('pnl-negative');
+
+            var realised = document.getElementById('heroRealised');
+            realised.textContent = fmtRs(d.realisedPnlToday || 0);
+            realised.className = 'stat-value';
+            if ((d.realisedPnlToday || 0) > 0.5) realised.classList.add('pnl-positive');
+            else if ((d.realisedPnlToday || 0) < -0.5) realised.classList.add('pnl-negative');
+
+            var openMtm = document.getElementById('heroOpenMtm');
+            openMtm.textContent = fmtRs(d.combinedMtm || 0);
+            openMtm.className = 'stat-value';
+            if ((d.combinedMtm || 0) > 0.5) openMtm.classList.add('pnl-positive');
+            else if ((d.combinedMtm || 0) < -0.5) openMtm.classList.add('pnl-negative');
+
+            var statePill = document.getElementById('heroStatePill');
+            statePill.textContent = d.state || '—';
+            statePill.style.color = (d.state === 'OPEN') ? 'var(--accent-green)'
+                : (d.state === 'MAX_ROLLS_HOLD') ? 'var(--accent-amber, #fbbf24)'
+                : (d.state === 'DONE_FOR_DAY') ? 'var(--accent-cyan)' : 'var(--text-muted)';
+
+            document.getElementById('heroRolls').textContent = (d.rollCount != null ? d.rollCount : '0') + ' / ' + (d.maxRolls != null ? d.maxRolls : '3');
+            document.getElementById('heroNiftyLtp').textContent = d.niftyLtp > 0 ? Number(d.niftyLtp).toFixed(2) : '—';
+            document.getElementById('heroLastEntry').textContent = d.lastEntryNifty > 0 ? Number(d.lastEntryNifty).toFixed(2) : '—';
+
+            // Pane 1: Trigger Band
+            document.getElementById('paneUpTrigger').textContent = d.upTrigger ? Number(d.upTrigger).toFixed(2) : '—';
+            document.getElementById('paneDnTrigger').textContent = d.downTrigger ? Number(d.downTrigger).toFixed(2) : '—';
+            document.getElementById('paneMovePct').textContent = d.movePctTrigger ? (Number(d.movePctTrigger).toFixed(2) + '%') : '—';
+
+            // Pane 2: CE Leg
+            document.getElementById('paneCeSymbol').textContent = d.ceSymbol || '—';
+            document.getElementById('paneCeEntryLtp').textContent =
+                (d.ceEntryPremium > 0 ? Number(d.ceEntryPremium).toFixed(2) : '—')
+                + ' / ' + (d.ceLtp > 0 ? Number(d.ceLtp).toFixed(2) : '—');
+            var ceMtm = document.getElementById('paneCeMtm');
+            ceMtm.textContent = fmtRs(d.ceMtm || 0);
+            ceMtm.className = 'stat-value';
+            if ((d.ceMtm || 0) > 0.5) ceMtm.classList.add('pnl-positive');
+            else if ((d.ceMtm || 0) < -0.5) ceMtm.classList.add('pnl-negative');
+
+            // Pane 3: PE Leg
+            document.getElementById('panePeSymbol').textContent = d.peSymbol || '—';
+            document.getElementById('panePeEntryLtp').textContent =
+                (d.peEntryPremium > 0 ? Number(d.peEntryPremium).toFixed(2) : '—')
+                + ' / ' + (d.peLtp > 0 ? Number(d.peLtp).toFixed(2) : '—');
+            var peMtm = document.getElementById('panePeMtm');
+            peMtm.textContent = fmtRs(d.peMtm || 0);
+            peMtm.className = 'stat-value';
+            if ((d.peMtm || 0) > 0.5) peMtm.classList.add('pnl-positive');
+            else if ((d.peMtm || 0) < -0.5) peMtm.classList.add('pnl-negative');
+
+            // Pane 4: Today
+            document.getElementById('paneDay').textContent = d.dayKey || '—';
+            var rolls = d.recentRolls || [];
+            document.getElementById('paneEventCount').textContent = rolls.length;
+            document.getElementById('paneLastEvent').textContent = rolls.length > 0
+                ? (rolls[0].event + ' @ ' + rolls[0].time) : '—';
+            var ch = d.charges || {};
+            var chTotal = Number(ch.total || 0);
+            var chEl = document.getElementById('paneCharges');
+            if (chEl) {
+                chEl.textContent = fmtRs(chTotal);
+                chEl.title = 'Brokerage ' + fmtRs(ch.brokerage || 0)
+                    + ' • STT ' + fmtRs(ch.stt || 0)
+                    + ' • Exchange ' + fmtRs(ch.exchange || 0)
+                    + ' • GST ' + fmtRs(ch.gst || 0)
+                    + ' • SEBI ' + fmtRs(ch.sebi || 0)
+                    + ' • Stamp ' + fmtRs(ch.stamp || 0);
+            }
+            var netEl = document.getElementById('paneNetPnl');
+            if (netEl) {
+                var netVal = Number(d.netPnlToday || 0);
+                netEl.textContent = fmtRs(netVal);
+                netEl.className = 'stat-value';
+                if (netVal > 0.5) netEl.classList.add('pnl-positive');
+                else if (netVal < -0.5) netEl.classList.add('pnl-negative');
+            }
+
+
+            // Recent rolls table
+            var body = document.getElementById('rollEventsBody');
+            if (rolls.length > 0) {
+                body.innerHTML = rolls.map(function(r) {
+                    var pnlClass = r.pnl > 0.5 ? 'pnl-positive' : (r.pnl < -0.5 ? 'pnl-negative' : '');
+                    return '<tr>'
+                        + '<td>' + r.time + '</td>'
+                        + '<td>' + r.event + '</td>'
+                        + '<td>' + (r.nifty > 0 ? Number(r.nifty).toFixed(2) : '—') + '</td>'
+                        + '<td style="font-size:0.72rem;color:var(--text-muted);">' + (r.ce || '—') + '</td>'
+                        + '<td style="font-size:0.72rem;color:var(--text-muted);">' + (r.pe || '—') + '</td>'
+                        + '<td class="text-end ' + pnlClass + '">' + fmtRs(r.pnl || 0) + '</td>'
+                        + '</tr>';
+                }).join('');
+            } else {
+                body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">No events yet today.</td></tr>';
+            }
+        }).catch(() => {});
+    }
+    loadDashboard();
+    setInterval(loadDashboard, 5000);
+
+    // ── Equity Curve (cumulative net P&L across past straddle sessions) ──────
+    var equityChart = null;
     function initEquityChart() {
-        const ctx = document.getElementById('equityChart').getContext('2d');
+        var ctx = document.getElementById('equityChart').getContext('2d');
         equityChart = new Chart(ctx, {
             type: 'line',
             data: { labels: [], datasets: [{
-                label: 'Cumulative P&L',
+                label: 'Cumulative Net P&L',
                 data: [],
                 borderColor: 'rgba(99,179,237,0.8)',
                 backgroundColor: 'rgba(99,179,237,0.08)',
@@ -411,11 +527,7 @@
                 maintainAspectRatio: false,
                 plugins: {
                     legend: { display: false },
-                    tooltip: {
-                        callbacks: {
-                            label: (ctx) => '₹' + ctx.parsed.y.toFixed(2)
-                        }
-                    }
+                    tooltip: { callbacks: { label: ctx => '₹' + ctx.parsed.y.toFixed(2) } }
                 },
                 scales: {
                     x: { ticks: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim(), font: { size: 10 } }, grid: { color: 'rgba(128,128,128,0.08)' } },
@@ -424,281 +536,181 @@
             }
         });
     }
-    initEquityChart();
-
-    // ── DATA LOADING ─────────────────────────────
-    function loadPositions() {
-        fetch('/api/positions').then(r => r.json()).then(d => {
-            const positions = d.positions || [];
-            document.getElementById('openPositions').textContent = positions.length;
-
-            const netPnl = d.netDayPnl || 0;
-            const netEl = document.getElementById('netDayPnl');
-            netEl.textContent = (netPnl >= 0 ? '+' : '') + fmt(netPnl);
-            setPnlClass(netEl, netPnl);
-
-            // P&L Breakdown: Realized and Unrealized
-            const realVal = d.realizedPnl || 0;
-            const unrVal = d.unrealizedPnl || 0;
-            const brkRealEl = document.getElementById('breakdownRealized');
-            brkRealEl.textContent = (realVal >= 0 ? '+' : '') + fmt(realVal);
-            setPnlClass(brkRealEl, realVal);
-            const brkUnrEl = document.getElementById('breakdownUnrealized');
-            brkUnrEl.textContent = (unrVal >= 0 ? '+' : '') + fmt(unrVal);
-            setPnlClass(brkUnrEl, unrVal);
-
-            document.getElementById('exposedRisk').textContent = fmt(d.openRisk);
-            document.getElementById('consumedRisk').textContent = fmt(d.consumedRisk);
-
-            const maxLoss = d.maxDailyLoss || 0;
-            const remaining = maxLoss - (d.openRisk || 0) - (d.consumedRisk || 0);
-            const budgetEl = document.getElementById('riskBudget');
-            if (maxLoss > 0) {
-                budgetEl.textContent = fmt(remaining);
-                setPnlClass(budgetEl, remaining);
-                document.getElementById('riskBudgetSub').textContent = 'of ' + fmt(maxLoss) + ' limit';
-            } else {
-                budgetEl.textContent = '--';
-                document.getElementById('riskBudgetSub').textContent = 'Not configured';
-            }
-
-        }).catch(() => {});
-    }
-
-    function loadTrades() {
-        fetch('/api/trades').then(r => r.json()).then(trades => {
-            if (!Array.isArray(trades)) trades = [];
-            document.getElementById('closedTrades').textContent = trades.length;
-
-            // Strict net-P&L classification matches server's getResult():
-            // PROFIT (>0), LOSS (<0), BREAKEVEN (==0). Breakeven excluded from PF / averages.
-            const wins = trades.filter(t => (t.netPnl || 0) > 0);
-            const losses = trades.filter(t => (t.netPnl || 0) < 0);
-            document.getElementById('profitCount').textContent = wins.length;
-            document.getElementById('lossCount').textContent = losses.length;
-
-            // Win rate
-            const wr = trades.length > 0 ? (wins.length / trades.length * 100) : 0;
-            document.getElementById('winRate').textContent = trades.length > 0 ? wr.toFixed(1) + '%' : '--';
-
-            // Gross P&L & charges (for hero card)
-            const grossPnl = trades.reduce((s, t) => s + (t.pnl || 0), 0);
-            const charges = trades.reduce((s, t) => s + (t.charges || 0), 0);
-
-            // Hero Gross P&L and Charges
-            const heroGrossEl = document.getElementById('heroGrossPnl');
-            heroGrossEl.textContent = (grossPnl >= 0 ? '+' : '') + fmt(grossPnl);
-            setPnlClass(heroGrossEl, grossPnl);
-            document.getElementById('heroCharges').textContent = fmt(charges);
-
-            // Trade Summary section — net P&L (after charges) for consistency with journal/calendar
-            const grossProfit = wins.reduce((s, t) => s + (t.netPnl || 0), 0);
-            const grossLoss = losses.reduce((s, t) => s + (t.netPnl || 0), 0);
-            document.getElementById('summaryTotalTrades').textContent = trades.length;
-            document.getElementById('summaryGrossProfit').textContent = '+' + fmt(grossProfit);
-            document.getElementById('summaryGrossLoss').textContent = fmt(grossLoss);
-
-            // Avg win / avg loss
-            const avgWin = wins.length > 0 ? wins.reduce((s, t) => s + t.netPnl, 0) / wins.length : 0;
-            const avgLoss = losses.length > 0 ? losses.reduce((s, t) => s + t.netPnl, 0) / losses.length : 0;
-            document.getElementById('avgWinLoss').textContent =
-                (wins.length > 0 ? '+' + fmt(avgWin) : '--') + ' / ' +
-                (losses.length > 0 ? fmt(avgLoss) : '--');
-
-            // Best / worst
-            const allPnls = trades.map(t => t.netPnl);
-            const best = allPnls.length > 0 ? Math.max(...allPnls) : 0;
-            const worst = allPnls.length > 0 ? Math.min(...allPnls) : 0;
-            document.getElementById('bestWorst').textContent =
-                (trades.length > 0 ? (best >= 0 ? '+' : '') + fmt(best) : '--') + ' / ' +
-                (trades.length > 0 ? fmt(worst) : '--');
-
-            // Risk / Reward
-            const rr = (avgLoss !== 0 && wins.length > 0 && losses.length > 0)
-                ? Math.abs(avgWin / avgLoss).toFixed(2) + ' : 1' : '--';
-            document.getElementById('rrOverview').textContent = rr;
-
-            // Profit factor (reuse grossProfit/grossLoss from Trade Summary above)
-            const grossLossAbs = Math.abs(grossLoss);
-            const pf = grossLossAbs > 0 ? (grossProfit / grossLossAbs) : (grossProfit > 0 ? '∞' : '--');
-            document.getElementById('profitFactor').textContent = typeof pf === 'number' ? pf.toFixed(2) : pf;
-
-            // Equity curve
-            if (trades.length === 0) {
-                document.getElementById('equityChart').style.display = 'none';
-                document.getElementById('equityEmpty').style.display = '';
-            } else {
-                document.getElementById('equityChart').style.display = '';
-                document.getElementById('equityEmpty').style.display = 'none';
-                // Sort trades by timestamp (oldest first) for correct chart order
-                const sorted = [...trades].sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
-                let cumulative = 0;
-                const labels = ['09:15'];
-                const data = [0];
-                for (const t of sorted) {
-                    cumulative += t.netPnl;
-                    labels.push(t.timestamp ? t.timestamp.substring(0, 5) : '');
-                    data.push(Math.round(cumulative * 100) / 100);
-                }
-                // Add end-of-day point at current P&L
-                labels.push('15:30');
-                data.push(Math.round(cumulative * 100) / 100);
-                equityChart.data.labels = labels;
-                equityChart.data.datasets[0].data = data;
-                // Color based on final cumulative
-                const lineColor = cumulative >= 0 ? 'rgba(52,211,153,0.8)' : 'rgba(248,113,113,0.8)';
-                const fillColor = cumulative >= 0 ? 'rgba(52,211,153,0.08)' : 'rgba(248,113,113,0.08)';
-                equityChart.data.datasets[0].borderColor = lineColor;
-                equityChart.data.datasets[0].backgroundColor = fillColor;
-                equityChart.data.datasets[0].pointBackgroundColor = lineColor;
-                equityChart.update();
-            }
-        }).catch(() => {});
-    }
-
-    // ── USER PROFILE ─────────────────────────────
-    fetch('/api/user/me').then(r => r.json()).then(d => {
-        if (d.lastName || d.firstName) {
-            var nameStr = (d.lastName || '') + ', ' + (d.firstName || '');
-            var typeColor = d.type === 'Trader' ? 'var(--accent-green)' : 'var(--accent-blue)';
-            document.getElementById('userName').innerHTML = nameStr
-                + ' <span style="font-size:0.7rem;font-weight:700;padding:2px 8px;border-radius:4px;margin-left:6px;'
-                + 'background:rgba(99,179,237,0.08);border:1px solid rgba(99,179,237,0.2);color:' + typeColor + ';">'
-                + (d.type || '') + '</span>';
-        }
-        var fyLine = document.getElementById('fyersIdLine');
-        var isTrader = d.type === 'Trader';
-
-        if (!isTrader) {
-            // Observer — show dashboard, hide Fyers ID
-            document.getElementById('fyersGate').style.display = 'none';
-            document.getElementById('dashboardContent').style.display = 'block';
-            fyLine.style.display = 'none';
-            initDashboard();
-        } else if (d.fyersConnected) {
-            // Trader + Fyers connected — check if scanner already initialized
-            document.getElementById('fyersGate').style.display = 'none';
-            fetch('/api/profile').then(r => r.json()).then(p => {
-                fyLine.innerHTML = 'Fyers ID: <span style="color:var(--accent-blue);font-weight:600;">' + (p.fyId || '—') + '</span>';
-            }).catch(() => { fyLine.innerHTML = 'Fyers: <span style="color:var(--accent-green)">Connected</span>'; });
-            // Check if scanner is already ready (returning visit, not first login)
-            fetch('/api/scanner/status').then(function(r) { return r.json(); }).then(function(s) {
-                if ((s.atrLoaded || 0) > 0 && (s.watchlistCount || 0) > 0) {
-                    // Already initialized — show dashboard directly
-                    document.getElementById('dashboardContent').style.display = 'block';
-                    initDashboard();
-                } else {
-                    // First time after login — show loading overlay
-                    document.getElementById('dashboardContent').style.display = 'none';
-                    document.getElementById('loadingOverlay').style.display = 'block';
-                    pollScannerReady();
-                }
-            }).catch(function() {
-                // Fallback — show dashboard
-                document.getElementById('dashboardContent').style.display = 'block';
-                initDashboard();
+    function loadEquityCurve() {
+        if (!fyersConnected) return;
+        fetch('/api/straddle/history').then(r => r.json()).then(d => {
+            if (!d || !d.sessions) return;
+            // History is sorted desc; reverse for chronological curve
+            var sessions = d.sessions.slice().reverse();
+            var labels = [], data = [], cum = 0;
+            sessions.forEach(function(s) {
+                cum += (s.netPnl || 0);
+                labels.push(s.date);
+                data.push(Math.round(cum * 100) / 100);
             });
+            if (!equityChart) initEquityChart();
+            equityChart.data.labels = labels;
+            equityChart.data.datasets[0].data = data;
+            equityChart.update();
+        }).catch(() => {});
+    }
+    setTimeout(loadEquityCurve, 500);
+    setInterval(loadEquityCurve, 60000); // refresh hourly; sessions land at day rollover
+
+    // ── Market Clock (same logic as the previous Positions page) ────────────
+    var NSE_HOLIDAYS = {}; // {date: name}
+    var holidaysLoaded = false;
+    fetch('/api/market-holidays').then(r => r.json()).then(data => {
+        if (Array.isArray(data)) data.forEach(h => { NSE_HOLIDAYS[h.date] = h.name || 'Holiday'; });
+        holidaysLoaded = true;
+        updateMarketClock();
+    }).catch(() => { holidaysLoaded = true; updateMarketClock(); });
+
+    function getHolidayName(date) {
+        var d = date.getFullYear() + '-' + String(date.getMonth()+1).padStart(2,'0') + '-' + String(date.getDate()).padStart(2,'0');
+        return NSE_HOLIDAYS[d] || null;
+    }
+    function isMarketWeekend(date) { return date.getDay() === 0 || date.getDay() === 6; }
+    function nextTradingDay(from) {
+        var d = new Date(from);
+        for (var i = 0; i < 10; i++) {
+            d.setDate(d.getDate() + 1);
+            if (!isMarketWeekend(d) && !getHolidayName(d)) {
+                return 'Next: ' + d.toLocaleDateString('en-IN', {weekday:'short', month:'short', day:'numeric'});
+            }
+        }
+        return '';
+    }
+    function updateMarketClock() {
+        var now = new Date();
+        var clockEl = document.getElementById('marketClock');
+        var subEl   = document.getElementById('marketClockSub');
+        if (!clockEl || !subEl) return;
+
+        if (isMarketWeekend(now)) {
+            clockEl.textContent = now.toLocaleTimeString('en-IN', {hour12:false});
+            var dayName = now.getDay() === 0 ? 'Sunday' : 'Saturday';
+            subEl.textContent = dayName + ' — ' + nextTradingDay(now);
+            subEl.style.color = 'var(--accent-red)';
+            return;
+        }
+        var holidayName = getHolidayName(now);
+        if (holidayName) {
+            clockEl.textContent = now.toLocaleTimeString('en-IN', {hour12:false});
+            subEl.textContent = 'Closed (' + holidayName + ') — ' + nextTradingDay(now);
+            subEl.style.color = 'var(--accent-red)';
+            return;
+        }
+
+        var mins = now.getHours() * 60 + now.getMinutes();
+        var preMarket   = 9 * 60;
+        var marketOpen  = 9 * 60 + 15;
+        var marketClose = 15 * 60 + 30;
+
+        if (mins < preMarket) {
+            clockEl.textContent = now.toLocaleTimeString('en-IN', {hour12:false});
+            var diff = preMarket - mins;
+            var dh = Math.floor(diff / 60), dm = diff % 60;
+            subEl.textContent = 'Pre-market in ' + (dh > 0 ? dh + 'h ' : '') + dm + 'm';
+            subEl.style.color = 'var(--accent-yellow)';
+        } else if (mins < marketOpen) {
+            clockEl.textContent = now.toLocaleTimeString('en-IN', {hour12:false});
+            subEl.textContent = 'Pre-Market (' + (marketOpen - mins) + 'm to open)';
+            subEl.style.color = 'var(--accent-yellow)';
+        } else if (mins < marketClose) {
+            var remaining = marketClose - mins;
+            var rh = Math.floor(remaining / 60), rm = remaining % 60;
+            clockEl.textContent = now.toLocaleTimeString('en-IN', {hour12:false});
+            subEl.textContent = 'Market Open (' + rh + 'h ' + rm + 'm left)';
+            subEl.style.color = 'var(--accent-green)';
         } else {
-            // Trader but Fyers not connected — show gate, hide dashboard
-            document.getElementById('fyersGate').style.display = 'block';
-            document.getElementById('dashboardContent').style.display = 'none';
-            fyLine.innerHTML = 'Fyers: <span style="color:var(--accent-red);font-weight:600;">Not logged in</span>';
+            clockEl.textContent = now.toLocaleTimeString('en-IN', {hour12:false});
+            subEl.textContent = 'Market Closed — ' + nextTradingDay(now);
+            subEl.style.color = 'var(--accent-red)';
         }
-    }).catch(() => {
-        // If user API fails, show dashboard anyway
-        document.getElementById('dashboardContent').style.display = 'block';
-        initDashboard();
-    });
+    }
+    setInterval(function() { if (holidaysLoaded) updateMarketClock(); }, 1000);
 
-    function pollScannerReady() {
-        var messages = [
-            { check: 'connecting', text: 'Connecting to broker...', pct: 10 },
-            { check: 'atr', text: 'Loading ATR data...', pct: 30 },
-            { check: 'trends', text: 'Calculating weekly trends...', pct: 50 },
-            { check: 'subscribing', text: 'Subscribing to market data...', pct: 70 },
-            { check: 'ready', text: 'Scanner ready!', pct: 100 }
-        ];
-        var msgIdx = 0;
-        var msgEl = document.getElementById('loadingMessage');
-        var barEl = document.getElementById('loadingBar');
+    // ── Squareoff Straddle (close both legs) ────────────────────────────────
+    function closeStraddle() {
+        if (!lastDashboardData || (lastDashboardData.state !== 'OPEN' && lastDashboardData.state !== 'MAX_ROLLS_HOLD')) {
+            if (window.showToast) showToast('No active straddle to squareoff', 'info');
+            return;
+        }
+        if (!confirm('Square off BOTH legs at market and end today\'s session?\n\n'
+            + 'CE: ' + (lastDashboardData.ceSymbol || '—') + '\n'
+            + 'PE: ' + (lastDashboardData.peSymbol || '—') + '\n\n'
+            + 'After this, state transitions to DONE_FOR_DAY and no more entries fire today. The combined open MTM (' + fmtRs(lastDashboardData.combinedMtm || 0) + ') becomes realised P&L.')) return;
+        var btn = document.getElementById('straddleCloseBtn');
+        if (btn) { btn.disabled = true; btn.textContent = '✕ Closing…'; }
+        fetch('/api/straddle/close', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders())
+        }).then(r => r.json()).then(d => {
+            if (window.showToast) showToast(d.message || 'Squareoff submitted', d.success ? 'success' : 'error');
+        }).catch(err => { if (window.showToast) showToast('Squareoff failed: ' + (err.message || err), 'error'); })
+          .finally(() => {
+            if (btn) { btn.disabled = false; btn.textContent = '✕ Squareoff Straddle'; }
+            loadDashboard();
+          });
+    }
 
-        // Cycle through messages while polling
-        var msgTimer = setInterval(function() {
-            if (msgIdx < messages.length - 1) {
-                msgIdx++;
-                msgEl.textContent = messages[msgIdx].text;
-                barEl.style.width = messages[msgIdx].pct + '%';
+    // ── Close a single leg (⚠ leaves the other unhedged) ────────────────────
+    function closeLeg(which) {
+        var d = lastDashboardData;
+        if (!d || (d.state !== 'OPEN' && d.state !== 'MAX_ROLLS_HOLD')) {
+            if (window.showToast) showToast('No active straddle leg to close', 'info');
+            return;
+        }
+        var symbol = which === 'CE' ? d.ceSymbol : d.peSymbol;
+        var qty    = which === 'CE' ? d.ceQty    : d.peQty;
+        var otherLabel = which === 'CE' ? 'PE' : 'CE';
+        if (!symbol || qty <= 0) {
+            if (window.showToast) showToast('No ' + which + ' leg to close', 'info');
+            return;
+        }
+        if (!confirm('⚠ CAUTION: Close only the ' + which + ' leg?\n\n'
+            + symbol + ' qty=' + qty + '\n\n'
+            + 'This leaves the ' + otherLabel + ' leg unhedged — an unprotected short option. The strategy state machine may also desync from broker reality.\n\n'
+            + 'Prefer "Squareoff Straddle" to close both legs cleanly. Continue with single-leg close?')) return;
+        var btnId = which === 'CE' ? 'closeCeBtn' : 'closePeBtn';
+        var btn = document.getElementById(btnId);
+        if (btn) { btn.disabled = true; btn.textContent = '✕ …'; }
+        fetch('/api/squareoff', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders()),
+            body: JSON.stringify({ symbol: symbol, quantity: qty })
+        }).then(r => r.json()).then(d => {
+            if (window.showToast) showToast(d.ok ? (which + ' leg close submitted') : (which + ' close failed'), d.ok ? 'success' : 'error');
+        }).catch(err => { if (window.showToast) showToast(which + ' close failed: ' + (err.message || err), 'error'); })
+          .finally(() => {
+            if (btn) { btn.disabled = false; btn.textContent = '✕ Close'; }
+            loadDashboard();
+          });
+    }
+
+    // ── Reset to IDLE ────────────────────────────────────────────────────────
+    function resetStraddle() {
+        if (!confirm('Force the Rolling Straddle state back to IDLE?\n\n'
+            + 'Clears any stale DONE_FOR_DAY from an earlier rejection. Next scheduler tick re-evaluates the entry time. Does NOT close existing legs at the broker — use Square Off on the Positions page for that.')) return;
+        var btn = document.getElementById('straddleResetBtn');
+        if (btn) { btn.disabled = true; btn.textContent = '↻ Resetting…'; }
+        fetch('/api/straddle/reset', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders())
+        }).then(r => r.json()).then(d => {
+            if (d && d.success) {
+                if (window.showToast) showToast(d.message || 'Reset to IDLE', 'success');
+            } else if (window.showToast) {
+                showToast('Reset failed', 'error');
             }
-        }, 3000);
-
-        // Poll scanner status every 2s until watchlist is loaded
-        var pollTimer = setInterval(function() {
-            fetch('/api/scanner/status').then(function(r) { return r.json(); }).then(function(s) {
-                var atrLoaded = s.atrLoaded || 0;
-                var watchlist = s.watchlistCount || 0;
-                if (atrLoaded > 0 && watchlist > 0) {
-                    clearInterval(pollTimer);
-                    clearInterval(msgTimer);
-                    msgEl.textContent = 'Scanner ready — ' + watchlist + ' stocks, ATR loaded';
-                    barEl.style.width = '100%';
-                    setTimeout(function() {
-                        document.getElementById('loadingOverlay').style.display = 'none';
-                        document.getElementById('dashboardContent').style.display = 'block';
-                        initDashboard();
-                    }, 500);
-                } else if (atrLoaded > 0) {
-                    msgEl.textContent = 'ATR loaded for ' + atrLoaded + ' stocks, subscribing...';
-                    barEl.style.width = '70%';
-                } else if (watchlist > 0) {
-                    msgEl.textContent = 'Watchlist: ' + watchlist + ' stocks, loading ATR...';
-                    barEl.style.width = '40%';
-                }
-            }).catch(function() {});
-        }, 2000);
-
-        // Fallback: show dashboard after 30s regardless
-        setTimeout(function() {
-            clearInterval(pollTimer);
-            clearInterval(msgTimer);
-            document.getElementById('loadingOverlay').style.display = 'none';
-            document.getElementById('dashboardContent').style.display = 'block';
-            initDashboard();
-        }, 30000);
+        }).catch(err => { if (window.showToast) showToast('Reset failed: ' + (err.message || err), 'error'); })
+          .finally(() => {
+            if (btn) { btn.disabled = false; btn.textContent = '↻ Reset to IDLE'; }
+            loadDashboard();
+          });
     }
-
-    function initDashboard() {
-        loadPositions();
-        loadTrades();
-        setInterval(loadPositions, 10000);
-        setInterval(loadTrades, 30000);
-    }
-
-    // ── SSE REAL-TIME P&L UPDATES (uses shared SSE from ticker.js) ──
-    (function() {
-        function attachPnlListener() {
-            var src = window.__tickerSSE;
-            if (!src) { setTimeout(attachPnlListener, 500); return; }
-            src.addEventListener('positions', function(event) {
-                try {
-                    var d = JSON.parse(event.data);
-                    if (d.netDayPnl !== undefined) {
-                        var netEl = document.getElementById('netDayPnl');
-                        if (netEl) { netEl.textContent = (d.netDayPnl >= 0 ? '+' : '') + fmt(d.netDayPnl); setPnlClass(netEl, d.netDayPnl); }
-                    }
-                    // Update P&L Breakdown realized/unrealized from SSE
-                    if (d.realizedPnl !== undefined) {
-                        var brkR = document.getElementById('breakdownRealized');
-                        if (brkR) { brkR.textContent = (d.realizedPnl >= 0 ? '+' : '') + fmt(d.realizedPnl); setPnlClass(brkR, d.realizedPnl); }
-                    }
-                    if (d.unrealizedPnl !== undefined) {
-                        var brkU = document.getElementById('breakdownUnrealized');
-                        if (brkU) { brkU.textContent = (d.unrealizedPnl >= 0 ? '+' : '') + fmt(d.unrealizedPnl); setPnlClass(brkU, d.unrealizedPnl); }
-                    }
-                } catch (e) {}
-            });
-        }
-        attachPnlListener();
-    })();
 </script>
+
 </body>
 </html>
