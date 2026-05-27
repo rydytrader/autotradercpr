@@ -869,22 +869,10 @@ public class RiskSettingsStore {
                          "emaCloseDistanceAtr", "smaCloseDistanceAtr" -> { /* legacy — SMA50/200/pattern removed */ }
                     // VWAP confirmation (ATP) filter removed — drop legacy keys silently.
                     case "enableEmaVsAtpCheck", "enableSmaVsAtpCheck" -> { /* drop */ }
-                    case "enableEmaLevelCountFilter", "enableSmaLevelCountFilter" -> {
-                        c.enableEmaLevelCountFilter = Boolean.parseBoolean(v);
-                        if ("enableSmaLevelCountFilter".equals(k)) logLegacyOnce("enableSmaLevelCountFilter");
-                    }
-                    case "emaLevelMinRangePct", "smaLevelMinRangePct" -> {
-                        c.emaLevelMinRangePct = Math.max(0, Math.min(100, Integer.parseInt(v)));
-                        if ("smaLevelMinRangePct".equals(k)) logLegacyOnce("smaLevelMinRangePct");
-                    }
-                    case "emaLevelFilterMorningSkip", "smaLevelFilterMorningSkip" -> {
-                        c.emaLevelFilterMorningSkip = Boolean.parseBoolean(v);
-                        if ("smaLevelFilterMorningSkip".equals(k)) logLegacyOnce("smaLevelFilterMorningSkip");
-                    }
-                    case "emaLevelFilterMorningSkipUntil", "smaLevelFilterMorningSkipUntil" -> {
-                        if (v != null && !v.isEmpty()) c.emaLevelFilterMorningSkipUntil = v;
-                        if ("smaLevelFilterMorningSkipUntil".equals(k)) logLegacyOnce("smaLevelFilterMorningSkipUntil");
-                    }
+                    case "enableEmaLevelCountFilter", "enableSmaLevelCountFilter",
+                         "emaLevelMinRangePct",        "smaLevelMinRangePct",
+                         "emaLevelFilterMorningSkip",  "smaLevelFilterMorningSkip",
+                         "emaLevelFilterMorningSkipUntil", "smaLevelFilterMorningSkipUntil" -> { /* legacy — EMA/SMA level filter removed */ }
                     case "enableTargetShift" -> c.enableTargetShift = Boolean.parseBoolean(v);
                     case "enableLargeCandleBodyFilter",
                          "largeCandleBodyAtrThreshold",
@@ -950,10 +938,7 @@ public class RiskSettingsStore {
                     case "enableTrailingSl"   -> c.enableTrailingSl = Boolean.parseBoolean(v);
                     case "enableLevelWalkTrailingSl" -> c.enableLevelWalkTrailingSl = Boolean.parseBoolean(v);
                     case "enableSmaCrossExit" -> { /* legacy — SMA cross exit removed */ }
-                    case "enablePriceEmaExit", "enablePriceSmaExit" -> {
-                        c.enablePriceEmaExit = Boolean.parseBoolean(v);
-                        if ("enablePriceSmaExit".equals(k)) logLegacyOnce("enablePriceSmaExit");
-                    }
+                    case "enablePriceEmaExit", "enablePriceSmaExit" -> { /* legacy — EMA cross exit removed */ }
                     // Legacy exit toggles + per-symbol trade limit — features removed.
                     case "enableNiftyReversalCprExit",
                          "enableNiftyHtfHurdleExit",
@@ -1056,13 +1041,4 @@ public class RiskSettingsStore {
         }
     }
 
-    // ── Legacy-key migration logging ──────────────────────────────────────────
-    // Tracks which legacy SMA-named keys we've already announced this process so the SMA→EMA
-    // rename migration logs each key exactly once instead of spamming the log per load() call.
-    private final java.util.Set<String> loggedLegacyKeys = java.util.concurrent.ConcurrentHashMap.newKeySet();
-    private void logLegacyOnce(String legacyKey) {
-        if (loggedLegacyKeys.add(legacyKey)) {
-            log.info("[RiskSettingsStore] Migrated legacy SMA setting key '{}' → new EMA-named field (will rewrite on next save)", legacyKey);
-        }
-    }
 }
