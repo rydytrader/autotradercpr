@@ -164,6 +164,7 @@ public class RollingStraddleService {
             }
             case OPEN -> checkMoveTriggerOrSquareoff(now, squareOffTime);
             case MAX_ROLLS_HOLD -> {
+                if (checkMaxLossKillSwitch()) return;
                 if (afterOrAt(now, squareOffTime)) {
                     closeBothLegs("TIMED_SQUAREOFF");
                     transitionTo(LifecycleState.DONE_FOR_DAY);
@@ -360,6 +361,31 @@ public class RollingStraddleService {
         while (recentRolls.size() > 20) recentRolls.removeLast();
     }
 
+    /** If today's net P&L (realised + open MTM − projected charges) is worse than the configured
+     *  daily max-loss, flatten both legs and park DONE_FOR_DAY. Returns true when triggered.
+     *  Same Net definition the Hero shows, so the kill point matches what the operator sees. */
+    private boolean checkMaxLossKillSwitch() {
+        double maxLoss = riskSettings.getStraddleMaxDailyLoss();
+        if (maxLoss <= 0) return false; // disabled
+        double ceLtp = ceSymbol != null && !ceSymbol.isEmpty() ? marketDataService.getLtp(ceSymbol) : 0;
+        double peLtp = peSymbol != null && !peSymbol.isEmpty() ? marketDataService.getLtp(peSymbol) : 0;
+        double ceMtm = (ceEntryPremium > 0 && ceLtp > 0 && ceQty > 0) ? (ceEntryPremium - ceLtp) * ceQty : 0;
+        double peMtm = (peEntryPremium > 0 && peLtp > 0 && peQty > 0) ? (peEntryPremium - peLtp) * peQty : 0;
+        double charges = computeChargesBreakdown().get("total");
+        double netPnl = realisedPnlToday + ceMtm + peMtm - charges;
+        if (netPnl < -maxLoss) {
+            String msg = String.format("Daily max-loss hit (net %.2f < -%.2f) — flattening and parking DONE_FOR_DAY",
+                netPnl, maxLoss);
+            log.warn("[Straddle] {}", msg);
+            eventService.log("[ERROR] " + msg);
+            notifyTelegram(msg);
+            closeBothLegs("MAX_LOSS_HIT");
+            transitionTo(LifecycleState.DONE_FOR_DAY);
+            return true;
+        }
+        return false;
+    }
+
     // ── Move trigger / squareoff while OPEN ────────────────────────────────────
     private void checkMoveTriggerOrSquareoff(LocalTime now, LocalTime squareOffTime) {
         if (afterOrAt(now, squareOffTime)) {
@@ -367,6 +393,10 @@ public class RollingStraddleService {
             transitionTo(LifecycleState.DONE_FOR_DAY);
             return;
         }
+        // Daily max-loss kill switch — checked before move-trigger so a runaway loss never
+        // gets a chance to roll into a fresh straddle.
+        if (checkMaxLossKillSwitch()) return;
+
         double niftyLtp = marketDataService.getLtp(NIFTY_SYMBOL);
         if (niftyLtp <= 0 || lastEntryNifty <= 0) return;
 

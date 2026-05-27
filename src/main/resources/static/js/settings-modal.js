@@ -40,6 +40,7 @@
                     '<div class="sm-field"><label>Move % Trigger</label><input type="number" id="sm-straddleMovePctTrigger" step="0.05" min="0.05" max="5.0"><div class="sm-hint">NIFTY move from last entry that fires a roll. Default 0.4%.</div></div>' +
                     '<div class="sm-field"><label>Max Rolls</label><input type="number" id="sm-straddleMaxRolls" step="1" min="0" max="20"><div class="sm-hint">Number of rolls before holding to squareoff. Default 3.</div></div>' +
                     '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-straddleLotsPerLeg" step="1" min="1" max="20"><div class="sm-hint">Qty = lots × NIFTY lot size (65). Default 1.</div></div>' +
+                    '<div class="sm-field"><label>Max Daily Loss (₹)</label><input type="number" id="sm-straddleMaxDailyLoss" step="500" min="0"><div class="sm-hint">Net P&L kill-switch. When today\'s loss (realised + open MTM − charges) exceeds this, both legs are flattened and bot parks DONE_FOR_DAY. 0 disables.</div></div>' +
                   '</div>' +
                   // Charges tab
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
@@ -147,6 +148,7 @@
             document.getElementById('sm-straddleMovePctTrigger').value   = d.straddleMovePctTrigger != null ? d.straddleMovePctTrigger : 0.4;
             document.getElementById('sm-straddleMaxRolls').value         = d.straddleMaxRolls != null ? d.straddleMaxRolls : 3;
             document.getElementById('sm-straddleLotsPerLeg').value       = d.straddleLotsPerLeg != null ? d.straddleLotsPerLeg : 1;
+            document.getElementById('sm-straddleMaxDailyLoss').value     = d.straddleMaxDailyLoss != null ? d.straddleMaxDailyLoss : 0;
             document.getElementById('sm-brokeragePerOrder').value        = d.brokeragePerOrder != null ? d.brokeragePerOrder : 0;
             document.getElementById('sm-sttRate').value                  = d.sttRate != null ? d.sttRate : 0;
             document.getElementById('sm-exchangeRate').value             = d.exchangeRate != null ? d.exchangeRate : 0;
@@ -163,6 +165,7 @@
             straddleMovePctTrigger: parseFloat(document.getElementById('sm-straddleMovePctTrigger').value) || 0.4,
             straddleMaxRolls:       parseInt(document.getElementById('sm-straddleMaxRolls').value, 10) || 3,
             straddleLotsPerLeg:     parseInt(document.getElementById('sm-straddleLotsPerLeg').value, 10) || 1,
+            straddleMaxDailyLoss:   parseFloat(document.getElementById('sm-straddleMaxDailyLoss').value) || 0,
             brokeragePerOrder:      parseFloat(document.getElementById('sm-brokeragePerOrder').value) || 0,
             sttRate:                parseFloat(document.getElementById('sm-sttRate').value) || 0,
             exchangeRate:           parseFloat(document.getElementById('sm-exchangeRate').value) || 0,

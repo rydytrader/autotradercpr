@@ -38,7 +38,8 @@
         .roll-table   { width:100%; font-family:var(--font-mono); font-size:0.78rem; border-collapse:collapse; }
         .roll-table th, .roll-table td { padding:8px 10px; border-bottom:1px solid var(--border); text-align:left; }
         .roll-table th { color:var(--text-muted); font-weight:600; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.06em; }
-        .reset-btn    { background:rgba(248,113,113,0.08); border:1px solid rgba(248,113,113,0.25); color:var(--accent-red, #f87171); padding:6px 14px; border-radius:6px; font-family:var(--font-mono); font-size:0.72rem; font-weight:700; cursor:pointer; }
+        .reset-btn    { background:rgba(251,191,36,0.10); border:1px solid rgba(251,191,36,0.30); color:var(--accent-amber, #fbbf24); padding:6px 14px; border-radius:6px; font-family:var(--font-mono); font-size:0.72rem; font-weight:700; cursor:pointer; }
+        .reset-btn:hover { background:rgba(251,191,36,0.18); border-color:rgba(251,191,36,0.45); }
     </style>
 </head>
 <body style="margin:0;">
@@ -48,9 +49,9 @@
 <nav class="navbar" style="padding:0 16px;">
     <div class="navbar-inner">
         <a href="/home" style="display:flex;align-items:center;gap:10px;text-decoration:none;margin-right:18px;">
-            <span style="font-size:1.2rem;line-height:1;">⚡</span>
+            <span style="font-size:1.45rem;line-height:1;">⚡</span>
             <div style="display:flex;flex-direction:column;line-height:1.1;">
-                <span style="font-family:var(--font-mono);font-weight:700;font-size:0.85rem;letter-spacing:0.06em;color:var(--text-primary);">TRADER<span style="color:var(--accent-cyan);">EDGE</span></span>
+                <span style="font-family:var(--font-mono);font-weight:700;font-size:1.05rem;letter-spacing:0.08em;color:var(--text-primary);">TRADER<span style="color:var(--accent-cyan);">EDGE</span></span>
                 <span style="display:flex;align-items:center;gap:4px;margin-top:6px;">
                     <span class="status-dot" id="statusDot" style="width:5px;height:5px;"></span>
                     <span id="connectionStatus" style="color:var(--text-muted);font-size:0.52rem;letter-spacing:0.04em;">Checking…</span>

@@ -204,6 +204,10 @@ public class RiskSettingsStore {
         volatile double  straddleMovePctTrigger    = 0.4;
         volatile int     straddleMaxRolls          = 3;
         volatile int     straddleLotsPerLeg        = 1;
+        /** Daily max-loss kill switch in rupees (absolute, positive). When today's net P&L
+         *  (realised + open MTM − charges) drops below {@code -straddleMaxDailyLoss}, the bot
+         *  closes both legs and parks DONE_FOR_DAY. 0 disables the check. */
+        volatile double  straddleMaxDailyLoss      = 0;
         // EMA filters
         // 5-min EMA trend gate: buy requires close above EMA 20, sell requires close below EMA 20.
         // (enableEmaTrendCheck removed — 5-min EMA factor is now hard-baked into the
@@ -415,6 +419,7 @@ public class RiskSettingsStore {
     public double  getStraddleMovePctTrigger()     { return cfg().straddleMovePctTrigger; }
     public int     getStraddleMaxRolls()           { return cfg().straddleMaxRolls; }
     public int     getStraddleLotsPerLeg()         { return cfg().straddleLotsPerLeg; }
+    public double  getStraddleMaxDailyLoss()       { return cfg().straddleMaxDailyLoss; }
     public boolean isEnableEmaLevelCountFilter()   { return cfg().enableEmaLevelCountFilter; }
     public int getEmaLevelMinRangePct()            { return cfg().emaLevelMinRangePct; }
     public boolean isEmaLevelFilterMorningSkip()       { return cfg().emaLevelFilterMorningSkip; }
@@ -556,6 +561,7 @@ public class RiskSettingsStore {
     public void setStraddleMovePctTrigger(double v)        { cfg().straddleMovePctTrigger = Math.max(0.01, v); }
     public void setStraddleMaxRolls(int v)                 { cfg().straddleMaxRolls = Math.max(0, v); }
     public void setStraddleLotsPerLeg(int v)               { cfg().straddleLotsPerLeg = Math.max(1, v); }
+    public void setStraddleMaxDailyLoss(double v)          { cfg().straddleMaxDailyLoss = Math.max(0, v); }
     public void setEnableEmaLevelCountFilter(boolean v)    { cfg().enableEmaLevelCountFilter = v; }
     public void setEmaLevelMinRangePct(int v)               { cfg().emaLevelMinRangePct = Math.max(0, Math.min(100, v)); }
     public void setEmaLevelFilterMorningSkip(boolean v)     { cfg().emaLevelFilterMorningSkip = v; }
@@ -706,6 +712,7 @@ public class RiskSettingsStore {
             upsert("straddleMovePctTrigger", String.valueOf(c.straddleMovePctTrigger));
             upsert("straddleMaxRolls", String.valueOf(c.straddleMaxRolls));
             upsert("straddleLotsPerLeg", String.valueOf(c.straddleLotsPerLeg));
+            upsert("straddleMaxDailyLoss", String.valueOf(c.straddleMaxDailyLoss));
             upsert("minRiskRewardRatio", String.valueOf(c.minRiskRewardRatio));
             upsert("enableEmaLevelCountFilter", String.valueOf(c.enableEmaLevelCountFilter));
             upsert("emaLevelMinRangePct", String.valueOf(c.emaLevelMinRangePct));
@@ -852,6 +859,7 @@ public class RiskSettingsStore {
                     case "straddleMovePctTrigger" -> c.straddleMovePctTrigger = Math.max(0.01, Double.parseDouble(v));
                     case "straddleMaxRolls" -> c.straddleMaxRolls = Math.max(0, Integer.parseInt(v));
                     case "straddleLotsPerLeg" -> c.straddleLotsPerLeg = Math.max(1, Integer.parseInt(v));
+                    case "straddleMaxDailyLoss" -> c.straddleMaxDailyLoss = Math.max(0, Double.parseDouble(v));
                     case "minRiskRewardRatio" -> c.minRiskRewardRatio = Double.parseDouble(v);
                     // enableEmaTrendCheck removed — 5-min EMA factor is hard-baked into the
                     // strict trend state machine in BreakoutScanner. Legacy keys silently ignored.

@@ -55,6 +55,7 @@ public class SettingsController {
         result.put("straddleMovePctTrigger", riskSettings.getStraddleMovePctTrigger());
         result.put("straddleMaxRolls",       riskSettings.getStraddleMaxRolls());
         result.put("straddleLotsPerLeg",     riskSettings.getStraddleLotsPerLeg());
+        result.put("straddleMaxDailyLoss",   riskSettings.getStraddleMaxDailyLoss());
         return result;
     }
 
@@ -92,6 +93,7 @@ public class SettingsController {
             if (body.containsKey("straddleMovePctTrigger")) riskSettings.setStraddleMovePctTrigger(Double.parseDouble(body.get("straddleMovePctTrigger").toString()));
             if (body.containsKey("straddleMaxRolls"))       riskSettings.setStraddleMaxRolls(Integer.parseInt(body.get("straddleMaxRolls").toString()));
             if (body.containsKey("straddleLotsPerLeg"))     riskSettings.setStraddleLotsPerLeg(Integer.parseInt(body.get("straddleLotsPerLeg").toString()));
+            if (body.containsKey("straddleMaxDailyLoss"))   riskSettings.setStraddleMaxDailyLoss(Double.parseDouble(body.get("straddleMaxDailyLoss").toString()));
             riskSettings.saveFor(effectiveMode);
             return ResponseEntity.ok(Map.of("ok", true, "message", "Settings saved"));
         } catch (Exception e) {
