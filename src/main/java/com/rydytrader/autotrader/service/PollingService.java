@@ -103,6 +103,11 @@ public class PollingService {
                     if (netQty == 0) continue; // closed position
                     String symbol = p.path("symbol").asText("");
                     if (symbol.isEmpty()) continue;
+                    // Options-only bot: silently ignore non-option positions the user holds at
+                    // the broker (manual equity / index / futures trades). They stay invisible
+                    // to PositionManager so the data WS doesn't subscribe to them and the bot's
+                    // squareoff / kill-switch logic doesn't get confused by their P&L.
+                    if (!isOptionSymbol(symbol)) continue;
                     String side  = netQty > 0 ? "LONG" : "SHORT";
                     double avg   = p.path("netAvg").asDouble(0);
                     double ltp   = p.path("ltp").asDouble(0);
@@ -206,5 +211,19 @@ public class PollingService {
         cachedPositions.put(symbol, new PositionsDTO(symbol, qty, side, avgPrice, 0, 0, setup, entryTime));
         PositionManager.setPosition(symbol, side);
         updateLastSyncTime();
+    }
+
+    /** True when the Fyers symbol is an option (CE/PE on any underlying), false for equity,
+     *  index, futures, mutual funds, etc. Done by exclusion of the well-known non-option
+     *  segment suffixes. Examples accepted: NSE:NIFTY25527C24350, NSE:BANKNIFTY...P50000.
+     *  Rejected: NSE:INFY-EQ, NSE:NIFTY50-INDEX, NSE:NIFTY25MAYFUT. */
+    private static boolean isOptionSymbol(String fyersSymbol) {
+        if (fyersSymbol == null || fyersSymbol.isEmpty()) return false;
+        String upper = fyersSymbol.toUpperCase();
+        if (upper.endsWith("-EQ") || upper.endsWith("-INDEX") || upper.endsWith("-MF")
+            || upper.endsWith("-BE") || upper.endsWith("-BL") || upper.endsWith("-SM")
+            || upper.endsWith("FUT")) return false;
+        // Must end in C<digits> or P<digits> (strike price following the option type letter)
+        return upper.matches(".*[CP]\\d+$");
     }
 }

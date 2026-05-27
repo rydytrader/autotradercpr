@@ -502,6 +502,22 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         return tick.getLtp();
     }
 
+    /** Display-only LTP: returns the last known LTP regardless of session date. Use for UI
+     *  fields where stale-but-visible beats blank (e.g. Hero NIFTY pre-market). Trading
+     *  logic must continue to use {@link #getLtp} which guards on today's session. */
+    public double getDisplayLtp(String fyersSymbol) {
+        TickData tick = currentTicks.get(fyersSymbol);
+        return tick == null ? 0 : tick.getLtp();
+    }
+    public double getDisplayChange(String fyersSymbol) {
+        TickData tick = currentTicks.get(fyersSymbol);
+        return tick == null ? 0 : tick.getChange();
+    }
+    public double getDisplayChangePct(String fyersSymbol) {
+        TickData tick = currentTicks.get(fyersSymbol);
+        return tick == null ? 0 : tick.getChangePercent();
+    }
+
     public double getChangePercent(String fyersSymbol) {
         TickData tick = currentTicks.get(fyersSymbol);
         if (tick == null) return 0;

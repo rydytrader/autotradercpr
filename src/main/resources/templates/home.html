@@ -114,13 +114,22 @@
     <div class="section-card" style="margin-bottom:0;grid-column:span 3;">
         <div class="section-header">
             <div class="section-title"><div class="section-title-dot"></div> Overview</div>
-            <div style="margin-left:auto;display:flex;gap:8px;">
-                <button id="straddleCloseBtn" onclick="closeStraddle()" title="Square off both legs at market and end today's session." style="
-                    background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.25);
-                    color:var(--accent-red, #f87171);padding:6px 14px;border-radius:6px;
-                    font-family:var(--font-mono);font-size:0.72rem;font-weight:700;
-                    cursor:pointer;">✕ Squareoff Straddle</button>
-                <button id="straddleResetBtn" class="reset-btn" onclick="resetStraddle()" title="Force the in-memory state back to IDLE. Use after a rejection has been fixed and the bot needs to re-arm without a restart.">↻ Reset to IDLE</button>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:18px;">
+                <div id="heroNiftySection"
+                     title="NIFTY 50 — last known LTP with change vs prev close"
+                     style="display:flex; align-items:baseline; gap:8px; padding-right:16px; border-right:1px solid var(--border);">
+                    <span style="font-family:var(--font-mono); font-size:0.82rem; font-weight:600; color:var(--text-secondary); letter-spacing:0.06em;">NIFTY 50 -</span>
+                    <span class="stat-value" id="heroNiftyLtp" style="font-size:1rem;">—</span>
+                    <span id="heroNiftyChange" style="font-family:var(--font-mono); font-size:0.7rem; color:var(--text-muted);"></span>
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <button id="straddleCloseBtn" onclick="closeStraddle()" title="Square off both legs at market and end today's session." style="
+                        background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.25);
+                        color:var(--accent-red, #f87171);padding:6px 14px;border-radius:6px;
+                        font-family:var(--font-mono);font-size:0.72rem;font-weight:700;
+                        cursor:pointer;">✕ Squareoff Straddle</button>
+                    <button id="straddleResetBtn" class="reset-btn" onclick="resetStraddle()" title="Force the in-memory state back to IDLE. Use after a rejection has been fixed and the bot needs to re-arm without a restart.">↻ Reset to IDLE</button>
+                </div>
             </div>
         </div>
         <div style="padding:20px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px;">
@@ -150,11 +159,7 @@
                     <div class="stat-label">Rolls</div>
                     <div class="stat-value" id="heroRolls" style="font-size:1.1rem; margin-top:4px;">0 / 3</div>
                 </div>
-                <div style="text-align:center;">
-                    <div class="stat-label">NIFTY</div>
-                    <div class="stat-value" id="heroNiftyLtp" style="font-size:1.1rem; margin-top:4px;">—</div>
-                </div>
-                <div style="text-align:center;">
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
                     <div class="stat-label">Last Entry</div>
                     <div class="stat-value" id="heroLastEntry" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
@@ -220,7 +225,10 @@
                     font-family:var(--font-mono);font-size:0.62rem;cursor:pointer;">✕ Close</button>
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
-                <div style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="paneCeSymbol">—</div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0; text-transform:uppercase; letter-spacing:0.06em;">STRIKE</span>
+                    <span class="stat-value" id="paneCeStrike" style="font-size:0.9rem;" title="">—</span>
+                </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;">Entry / LTP</span>
                     <span class="stat-value" id="paneCeEntryLtp" style="font-size:0.9rem;">— / —</span>
@@ -242,7 +250,10 @@
                     font-family:var(--font-mono);font-size:0.62rem;cursor:pointer;">✕ Close</button>
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
-                <div style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="panePeSymbol">—</div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0; text-transform:uppercase; letter-spacing:0.06em;">STRIKE</span>
+                    <span class="stat-value" id="panePeStrike" style="font-size:0.9rem;" title="">—</span>
+                </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;">Entry / LTP</span>
                     <span class="stat-value" id="panePeEntryLtp" style="font-size:0.9rem;">— / —</span>
@@ -512,7 +523,12 @@
                 : (d.state === 'DONE_FOR_DAY') ? 'var(--accent-cyan)' : 'var(--text-muted)';
 
             document.getElementById('heroRolls').textContent = (d.rollCount != null ? d.rollCount : '0') + ' / ' + (d.maxRolls != null ? d.maxRolls : '3');
-            document.getElementById('heroNiftyLtp').textContent = d.niftyLtp > 0 ? Number(d.niftyLtp).toFixed(2) : '—';
+            // Display LTP — uses the unguarded value so pre-market shows yesterday's close
+            // (same behaviour as the ticker bar). The strict niftyLtp is still used elsewhere
+            // for trigger calculations.
+            var displayLtp = (d.niftyDisplayLtp != null && d.niftyDisplayLtp > 0) ? d.niftyDisplayLtp : d.niftyLtp;
+            document.getElementById('heroNiftyLtp').textContent = (displayLtp > 0 ? Number(displayLtp).toFixed(2) : '—');
+            renderNiftyChange(d.niftyChange, d.niftyChangePct);
             document.getElementById('heroLastEntry').textContent = d.lastEntryNifty > 0 ? Number(d.lastEntryNifty).toFixed(2) : '—';
             var expiryEl = document.getElementById('weeklyExpiryPillText');
             if (expiryEl) {
@@ -546,11 +562,11 @@
             document.getElementById('paneMovePct').textContent = d.movePctTrigger ? (Number(d.movePctTrigger).toFixed(2) + '%') : '—';
 
             // Pane 2: CE Leg
-            var ceStrikeEl = document.getElementById('paneCeSymbol');
+            var ceStrikeEl = document.getElementById('paneCeStrike');
             var ceStrikeInfo = strikeForLeg(d.ceSymbol, d.niftyLtp);
-            ceStrikeEl.textContent = ceStrikeInfo.text;
+            ceStrikeEl.textContent = ceStrikeInfo.value;
             ceStrikeEl.title = d.ceSymbol || '';
-            ceStrikeEl.style.color = ceStrikeInfo.projected ? 'var(--text-muted)' : 'var(--text-secondary)';
+            ceStrikeEl.style.color = ceStrikeInfo.projected ? 'var(--text-muted)' : 'var(--text-primary)';
             document.getElementById('paneCeEntryLtp').textContent =
                 (d.ceEntryPremium > 0 ? Number(d.ceEntryPremium).toFixed(2) : '—')
                 + ' / ' + (d.ceLtp > 0 ? Number(d.ceLtp).toFixed(2) : '—');
@@ -561,11 +577,11 @@
             else if ((d.ceMtm || 0) < -0.5) ceMtm.classList.add('pnl-negative');
 
             // Pane 3: PE Leg
-            var peStrikeEl = document.getElementById('panePeSymbol');
+            var peStrikeEl = document.getElementById('panePeStrike');
             var peStrikeInfo = strikeForLeg(d.peSymbol, d.niftyLtp);
-            peStrikeEl.textContent = peStrikeInfo.text;
+            peStrikeEl.textContent = peStrikeInfo.value;
             peStrikeEl.title = d.peSymbol || '';
-            peStrikeEl.style.color = peStrikeInfo.projected ? 'var(--text-muted)' : 'var(--text-secondary)';
+            peStrikeEl.style.color = peStrikeInfo.projected ? 'var(--text-muted)' : 'var(--text-primary)';
             document.getElementById('panePeEntryLtp').textContent =
                 (d.peEntryPremium > 0 ? Number(d.peEntryPremium).toFixed(2) : '—')
                 + ' / ' + (d.peLtp > 0 ? Number(d.peLtp).toFixed(2) : '—');
@@ -628,17 +644,23 @@
                 if (!d) return;
                 var ceKey = stripPrefix(d.ceSymbol);
                 var peKey = stripPrefix(d.peSymbol);
-                var niftyLtp = null, ceLtp = null, peLtp = null;
+                var niftyLtp = null, niftyCh = null, niftyChp = null;
+                var ceLtp = null, peLtp = null;
                 for (var i = 0; i < arr.length; i++) {
                     var t = arr[i];
-                    if (t.symbol === 'NIFTY50' || t.symbol === 'NIFTY 50') niftyLtp = t.lp;
+                    if (t.symbol === 'NIFTY50' || t.symbol === 'NIFTY 50') {
+                        niftyLtp = t.lp; niftyCh = t.ch; niftyChp = t.chp;
+                    }
                     else if (ceKey && t.symbol === ceKey) ceLtp = t.lp;
                     else if (peKey && t.symbol === peKey) peLtp = t.lp;
                 }
                 // Hero NIFTY
                 if (niftyLtp != null) {
                     d.niftyLtp = niftyLtp;
+                    d.niftyChange = niftyCh;
+                    d.niftyChangePct = niftyChp;
                     document.getElementById('heroNiftyLtp').textContent = Number(niftyLtp).toFixed(2);
+                    renderNiftyChange(niftyCh, niftyChp);
                 }
                 // CE leg LTP + MTM
                 if (ceLtp != null) {
@@ -948,22 +970,38 @@
         }
         return '';
     }
-    /** Return the strike to show on a leg card.
-     *  - If the leg has a Fyers symbol, parse the trailing digits (the strike). Example:
-     *    "NSE:NIFTY25527C24350" → "Strike 24350".
-     *  - If no symbol (pre-entry) but NIFTY LTP is known, project the ATM strike (rounded to 50)
-     *    and prefix with "~" to signal "this is where the bot would enter right now".
-     *  - Otherwise return "—". */
+    /** Return the strike to show on a leg card. Returns the bare number (label lives in HTML).
+     *  - If the leg has a Fyers symbol, parse the trailing digits. e.g. "...C24350" → "24350"
+     *  - If no symbol (pre-entry) but NIFTY LTP known, return the projected ATM with a "~"
+     *    prefix so it's clearly the bot's would-be entry strike, not a confirmed one
+     *  - Otherwise "—" */
+    /** Render the NIFTY change badge below the LTP. ▲ green for up, ▼ red for down. */
+    function renderNiftyChange(ch, chp) {
+        var el = document.getElementById('heroNiftyChange');
+        if (!el) return;
+        if (ch == null || isNaN(ch)) { el.textContent = ''; return; }
+        var num = Number(ch);
+        var pct = chp != null ? Number(chp) : 0;
+        if (Math.abs(num) < 0.005 && Math.abs(pct) < 0.005) {
+            el.textContent = '—';
+            el.style.color = 'var(--text-muted)';
+            return;
+        }
+        var arrow = num >= 0 ? '▲' : '▼';
+        el.textContent = arrow + ' ' + Math.abs(num).toFixed(2) + ' (' + Math.abs(pct).toFixed(2) + '%)';
+        el.style.color = num >= 0 ? 'var(--accent-green)' : 'var(--accent-red, #f87171)';
+    }
+
     function strikeForLeg(fyersSymbol, niftyLtp) {
         if (fyersSymbol) {
             var m = fyersSymbol.match(/(\d+)$/);
-            if (m) return { text: 'Strike ' + m[1], projected: false };
+            if (m) return { value: m[1], projected: false };
         }
         if (niftyLtp && niftyLtp > 0) {
             var atm = Math.round(niftyLtp / 50) * 50;
-            return { text: '~Strike ' + atm, projected: true };
+            return { value: '~' + atm, projected: true };
         }
-        return { text: '—', projected: true };
+        return { value: '—', projected: true };
     }
 
     function parseHmsToSecs(hm) {

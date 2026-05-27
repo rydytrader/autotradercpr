@@ -746,6 +746,13 @@ public class RollingStraddleService {
         java.util.Map<String, Object> m = getStatus();
         m.put("weeklyExpiry", currentWeeklyExpiry);
         m.put("daysToExpiry", tradingDaysToExpiry(currentWeeklyExpiry));
+        // NIFTY change + change% for the Hero stat. Uses display getters so pre-market shows
+        // the last known value + prev-close-relative change (matches the ticker bar behaviour).
+        if (marketDataService != null) {
+            m.put("niftyDisplayLtp", Math.round(marketDataService.getDisplayLtp(NIFTY_SYMBOL) * 100.0) / 100.0);
+            m.put("niftyChange",     Math.round(marketDataService.getDisplayChange(NIFTY_SYMBOL) * 100.0) / 100.0);
+            m.put("niftyChangePct",  Math.round(marketDataService.getDisplayChangePct(NIFTY_SYMBOL) * 100.0) / 100.0);
+        }
         // Current NIFTY + trigger band
         double niftyLtp = marketDataService != null ? marketDataService.getLtp(NIFTY_SYMBOL) : 0;
         m.put("niftyLtp", niftyLtp);
