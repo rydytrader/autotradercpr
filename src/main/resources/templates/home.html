@@ -438,9 +438,17 @@
             document.getElementById('userName').textContent = (u.firstName || u.email).trim();
             document.getElementById('fyersIdLine').textContent = u.email;
         }
+        var wasConnected = fyersConnected;
         fyersConnected = !!(u && u.fyersConnected);
         document.getElementById('fyersGate').style.display       = fyersConnected ? 'none'  : 'block';
         document.getElementById('dashboardContent').style.display = fyersConnected ? 'block' : 'none';
+        // Kick off the data loaders immediately on first successful connection rather than
+        // waiting up to 5s for the setInterval to fire. Otherwise the dashboard sits with
+        // placeholder "—" values for ~5s after page load.
+        if (fyersConnected && !wasConnected) {
+            try { loadDashboard(); }    catch (e) {}
+            try { loadEquityCurve(); }  catch (e) {}
+        }
     }).catch(() => {
         // Show the Fyers gate on error too — better fallback than a blank page.
         document.getElementById('fyersGate').style.display = 'block';
