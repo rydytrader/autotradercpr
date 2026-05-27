@@ -153,9 +153,31 @@ public class RollingStraddleService {
                 marketDataService.subscribeAdditional(java.util.Arrays.asList(ceSymbol, peSymbol));
                 log.info("[Straddle] Re-subscribed open legs to data WS after restart: ce={} pe={}",
                     ceSymbol, peSymbol);
+                // Also seed LTP + prev close from REST quote so dashboard MTM and change badges
+                // populate immediately, without waiting for the first WS tick to arrive.
+                seedLegQuote(ceSymbol);
+                seedLegQuote(peSymbol);
             } catch (Exception e) {
                 log.warn("[Straddle] Re-subscribe failed: {}", e.getMessage());
             }
+        }
+    }
+
+    /** One-shot REST quote → seeds TickData for the given leg symbol. Used on restart and
+     *  whenever we want the dashboard to display fresh change/% without waiting for WS. */
+    private void seedLegQuote(String symbol) {
+        if (symbol == null || symbol.isEmpty()) return;
+        try {
+            String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
+            JsonNode root = fyersClient.getQuotes(symbol, auth);
+            if (root != null && root.has("d") && root.get("d").isArray() && root.get("d").size() > 0) {
+                JsonNode v = root.get("d").get(0).path("v");
+                double lp = v.path("lp").asDouble(0);
+                double prevClose = v.path("prev_close_price").asDouble(0);
+                if (lp > 0) marketDataService.seedTickData(symbol, lp, prevClose);
+            }
+        } catch (Exception e) {
+            log.warn("[Straddle] Seed leg quote failed for {}: {}", symbol, e.getMessage());
         }
     }
 
@@ -275,21 +297,25 @@ public class RollingStraddleService {
     /** Capture the entry premium of a freshly-placed leg. Tries the in-memory WS tick first
      *  (cheapest); if the leg hasn't received its first tick yet (subscribe + ack takes time),
      *  falls back to a synchronous Fyers /data/quotes REST call so we always have a non-zero
-     *  baseline for MTM. Returns 0 only as a last resort. */
+     *  baseline for MTM. Also seeds prev_close into the leg's TickData so the dashboard's
+     *  change/% display starts populating right away (the WS often skips prev_close in its
+     *  first ticks for newly-subscribed option symbols). Returns 0 only as a last resort. */
     private double readEntryPremium(OrderDTO resp, String symbol) {
         try {
             double ltp = marketDataService.getLtp(symbol);
             if (ltp > 0) return ltp;
         } catch (Exception ignored) {}
-        // WS hasn't pushed a tick for this leg yet — synchronous REST quote fallback.
         try {
             String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
             JsonNode root = fyersClient.getQuotes(symbol, auth);
             if (root != null && root.has("d") && root.get("d").isArray() && root.get("d").size() > 0) {
                 JsonNode v = root.get("d").get(0).path("v");
-                double lp = v.path("lp").asDouble(0);
+                double lp        = v.path("lp").asDouble(0);
+                double prevClose = v.path("prev_close_price").asDouble(0);
                 if (lp > 0) {
-                    log.info("[Straddle] Entry premium for {} captured via REST quote: {}", symbol, lp);
+                    marketDataService.seedTickData(symbol, lp, prevClose);
+                    log.info("[Straddle] Entry premium for {} captured via REST quote: lp={} prevClose={}",
+                        symbol, lp, prevClose);
                     return lp;
                 }
             }
