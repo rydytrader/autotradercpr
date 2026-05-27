@@ -307,10 +307,10 @@
         <div class="table-wrap">
             <table class="roll-table">
                 <thead>
-                    <tr><th>Time</th><th>Event</th><th>NIFTY</th><th>CE</th><th>PE</th><th class="text-end">P&amp;L</th></tr>
+                    <tr><th style="width:80px;">Sr No</th><th>Time</th><th>Event</th><th>NIFTY</th><th>CE</th><th>PE</th><th class="text-end">P&amp;L</th></tr>
                 </thead>
                 <tbody id="rollEventsBody">
-                    <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">No events yet today.</td></tr>
+                    <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:20px;">No events yet today.</td></tr>
                 </tbody>
             </table>
         </div>
@@ -626,9 +626,14 @@
             // Recent rolls table
             var body = document.getElementById('rollEventsBody');
             if (rolls.length > 0) {
-                body.innerHTML = rolls.map(function(r) {
+                // recentRolls is most-recent-first; Sr No should reflect chronological order so
+                // the oldest event is #1. Index from the END of the list.
+                var total = rolls.length;
+                body.innerHTML = rolls.map(function(r, idx) {
+                    var srNo = total - idx;
                     var pnlClass = r.pnl > 0.5 ? 'pnl-positive' : (r.pnl < -0.5 ? 'pnl-negative' : '');
                     return '<tr>'
+                        + '<td style="color:var(--text-muted);">' + srNo + '</td>'
                         + '<td>' + r.time + '</td>'
                         + '<td>' + r.event + '</td>'
                         + '<td>' + (r.nifty > 0 ? Number(r.nifty).toFixed(2) : '—') + '</td>'
@@ -638,7 +643,7 @@
                         + '</tr>';
                 }).join('');
             } else {
-                body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">No events yet today.</td></tr>';
+                body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:20px;">No events yet today.</td></tr>';
             }
         }).catch(() => {});
     }
