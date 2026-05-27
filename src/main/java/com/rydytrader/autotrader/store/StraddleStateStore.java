@@ -42,6 +42,15 @@ public class StraddleStateStore {
         public int     rollCount;
         public String  ceOrderId;       // most recent sell order ID for CE leg
         public String  peOrderId;       // most recent sell order ID for PE leg
+        // Fields below persist so a mid-day restart resumes MTM + day P&L + charges without
+        // resetting them to zero. Day rollover clears them via rolloverIfNewDay regardless.
+        public double  ceEntryPremium;
+        public double  peEntryPremium;
+        public double  realisedPnlToday;
+        public double  sellPremiumTurnoverToday;
+        public double  buyPremiumTurnoverToday;
+        public int     orderCountToday;
+        public String  currentWeeklyExpiry;
         public long    updatedAtMillis;
 
         public State() {}

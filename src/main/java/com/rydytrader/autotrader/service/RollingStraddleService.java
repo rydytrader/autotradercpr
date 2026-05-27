@@ -131,11 +131,32 @@ public class RollingStraddleService {
             this.rollCount      = persisted.rollCount;
             this.ceOrderId      = persisted.ceOrderId != null ? persisted.ceOrderId : "";
             this.peOrderId      = persisted.peOrderId != null ? persisted.peOrderId : "";
-            log.info("[Straddle] Resumed state={} dayKey={} rollCount={} lastEntryNifty={} ce={} pe={}",
-                state, dayKey, rollCount, lastEntryNifty, ceSymbol, peSymbol);
+            this.ceEntryPremium = persisted.ceEntryPremium;
+            this.peEntryPremium = persisted.peEntryPremium;
+            this.realisedPnlToday = persisted.realisedPnlToday;
+            this.sellPremiumTurnoverToday = persisted.sellPremiumTurnoverToday;
+            this.buyPremiumTurnoverToday = persisted.buyPremiumTurnoverToday;
+            this.orderCountToday = persisted.orderCountToday;
+            this.currentWeeklyExpiry = persisted.currentWeeklyExpiry != null ? persisted.currentWeeklyExpiry : "";
+            log.info("[Straddle] Resumed state={} dayKey={} rollCount={} lastEntryNifty={} ce={} pe={} ceEntry={} peEntry={} realised={}",
+                state, dayKey, rollCount, lastEntryNifty, ceSymbol, peSymbol,
+                ceEntryPremium, peEntryPremium, realisedPnlToday);
         }
         // Stale-day handling: any non-IDLE state from a prior trading day → reset.
         rolloverIfNewDay();
+        // Re-subscribe the data WS to any legs still considered open after rollover. Without
+        // this, getLtp would stay at 0 for the legs and MTM would never tick post-restart.
+        if ((state == LifecycleState.OPEN || state == LifecycleState.MAX_ROLLS_HOLD)
+                && ceSymbol != null && !ceSymbol.isEmpty()
+                && peSymbol != null && !peSymbol.isEmpty()) {
+            try {
+                marketDataService.subscribeAdditional(java.util.Arrays.asList(ceSymbol, peSymbol));
+                log.info("[Straddle] Re-subscribed open legs to data WS after restart: ce={} pe={}",
+                    ceSymbol, peSymbol);
+            } catch (Exception e) {
+                log.warn("[Straddle] Re-subscribe failed: {}", e.getMessage());
+            }
+        }
     }
 
     @Scheduled(fixedDelay = 5000)
@@ -691,6 +712,13 @@ public class RollingStraddleService {
         s.rollCount = this.rollCount;
         s.ceOrderId = this.ceOrderId;
         s.peOrderId = this.peOrderId;
+        s.ceEntryPremium = this.ceEntryPremium;
+        s.peEntryPremium = this.peEntryPremium;
+        s.realisedPnlToday = this.realisedPnlToday;
+        s.sellPremiumTurnoverToday = this.sellPremiumTurnoverToday;
+        s.buyPremiumTurnoverToday = this.buyPremiumTurnoverToday;
+        s.orderCountToday = this.orderCountToday;
+        s.currentWeeklyExpiry = this.currentWeeklyExpiry;
         stateStore.update(s);
     }
 
@@ -771,6 +799,15 @@ public class RollingStraddleService {
             m.put("niftyDisplayLtp", Math.round(marketDataService.getDisplayLtp(NIFTY_SYMBOL) * 100.0) / 100.0);
             m.put("niftyChange",     Math.round(marketDataService.getDisplayChange(NIFTY_SYMBOL) * 100.0) / 100.0);
             m.put("niftyChangePct",  Math.round(marketDataService.getDisplayChangePct(NIFTY_SYMBOL) * 100.0) / 100.0);
+            // Per-leg change + change% (vs prev close) for the leg cards
+            if (ceSymbol != null && !ceSymbol.isEmpty()) {
+                m.put("ceChange",     Math.round(marketDataService.getDisplayChange(ceSymbol) * 100.0) / 100.0);
+                m.put("ceChangePct",  Math.round(marketDataService.getDisplayChangePct(ceSymbol) * 100.0) / 100.0);
+            }
+            if (peSymbol != null && !peSymbol.isEmpty()) {
+                m.put("peChange",     Math.round(marketDataService.getDisplayChange(peSymbol) * 100.0) / 100.0);
+                m.put("peChangePct",  Math.round(marketDataService.getDisplayChangePct(peSymbol) * 100.0) / 100.0);
+            }
         }
         // Current NIFTY + trigger band
         double niftyLtp = marketDataService != null ? marketDataService.getLtp(NIFTY_SYMBOL) : 0;

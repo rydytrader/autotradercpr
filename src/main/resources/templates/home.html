@@ -231,7 +231,10 @@
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;">Entry / LTP</span>
-                    <span class="stat-value" id="paneCeEntryLtp" style="font-size:0.9rem;">— / —</span>
+                    <span style="display:flex; align-items:baseline; gap:8px;">
+                        <span class="stat-value" id="paneCeEntryLtp" style="font-size:0.9rem;">— / —</span>
+                        <span id="paneCeChange" style="font-family:var(--font-mono); font-size:0.66rem; color:var(--text-muted);"></span>
+                    </span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;">MTM</span>
@@ -256,7 +259,10 @@
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;">Entry / LTP</span>
-                    <span class="stat-value" id="panePeEntryLtp" style="font-size:0.9rem;">— / —</span>
+                    <span style="display:flex; align-items:baseline; gap:8px;">
+                        <span class="stat-value" id="panePeEntryLtp" style="font-size:0.9rem;">— / —</span>
+                        <span id="panePeChange" style="font-family:var(--font-mono); font-size:0.66rem; color:var(--text-muted);"></span>
+                    </span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;">MTM</span>
@@ -570,6 +576,7 @@
             document.getElementById('paneCeEntryLtp').textContent =
                 (d.ceEntryPremium > 0 ? Number(d.ceEntryPremium).toFixed(2) : '—')
                 + ' / ' + (d.ceLtp > 0 ? Number(d.ceLtp).toFixed(2) : '—');
+            renderChangeBadge('paneCeChange', d.ceChange, d.ceChangePct);
             var ceMtm = document.getElementById('paneCeMtm');
             ceMtm.textContent = fmtRs(d.ceMtm || 0);
             ceMtm.className = 'stat-value';
@@ -585,6 +592,7 @@
             document.getElementById('panePeEntryLtp').textContent =
                 (d.peEntryPremium > 0 ? Number(d.peEntryPremium).toFixed(2) : '—')
                 + ' / ' + (d.peLtp > 0 ? Number(d.peLtp).toFixed(2) : '—');
+            renderChangeBadge('panePeChange', d.peChange, d.peChangePct);
             var peMtm = document.getElementById('panePeMtm');
             peMtm.textContent = fmtRs(d.peMtm || 0);
             peMtm.className = 'stat-value';
@@ -645,14 +653,15 @@
                 var ceKey = stripPrefix(d.ceSymbol);
                 var peKey = stripPrefix(d.peSymbol);
                 var niftyLtp = null, niftyCh = null, niftyChp = null;
-                var ceLtp = null, peLtp = null;
+                var ceLtp = null, ceCh = null, ceChp = null;
+                var peLtp = null, peCh = null, peChp = null;
                 for (var i = 0; i < arr.length; i++) {
                     var t = arr[i];
                     if (t.symbol === 'NIFTY50' || t.symbol === 'NIFTY 50') {
                         niftyLtp = t.lp; niftyCh = t.ch; niftyChp = t.chp;
                     }
-                    else if (ceKey && t.symbol === ceKey) ceLtp = t.lp;
-                    else if (peKey && t.symbol === peKey) peLtp = t.lp;
+                    else if (ceKey && t.symbol === ceKey) { ceLtp = t.lp; ceCh = t.ch; ceChp = t.chp; }
+                    else if (peKey && t.symbol === peKey) { peLtp = t.lp; peCh = t.ch; peChp = t.chp; }
                 }
                 // Hero NIFTY
                 if (niftyLtp != null) {
@@ -662,12 +671,14 @@
                     document.getElementById('heroNiftyLtp').textContent = Number(niftyLtp).toFixed(2);
                     renderNiftyChange(niftyCh, niftyChp);
                 }
-                // CE leg LTP + MTM
+                // CE leg LTP + MTM + change badge
                 if (ceLtp != null) {
                     d.ceLtp = ceLtp;
+                    d.ceChange = ceCh; d.ceChangePct = ceChp;
                     document.getElementById('paneCeEntryLtp').textContent =
                         (d.ceEntryPremium > 0 ? Number(d.ceEntryPremium).toFixed(2) : '—')
                         + ' / ' + Number(ceLtp).toFixed(2);
+                    renderChangeBadge('paneCeChange', ceCh, ceChp);
                     var ceMtm = (d.ceEntryPremium > 0 && d.ceQty > 0) ? (d.ceEntryPremium - ceLtp) * d.ceQty : 0;
                     d.ceMtm = ceMtm;
                     var ceMtmEl = document.getElementById('paneCeMtm');
@@ -676,12 +687,14 @@
                     if      (ceMtm > 0.5)  ceMtmEl.classList.add('pnl-positive');
                     else if (ceMtm < -0.5) ceMtmEl.classList.add('pnl-negative');
                 }
-                // PE leg LTP + MTM
+                // PE leg LTP + MTM + change badge
                 if (peLtp != null) {
                     d.peLtp = peLtp;
+                    d.peChange = peCh; d.peChangePct = peChp;
                     document.getElementById('panePeEntryLtp').textContent =
                         (d.peEntryPremium > 0 ? Number(d.peEntryPremium).toFixed(2) : '—')
                         + ' / ' + Number(peLtp).toFixed(2);
+                    renderChangeBadge('panePeChange', peCh, peChp);
                     var peMtm = (d.peEntryPremium > 0 && d.peQty > 0) ? (d.peEntryPremium - peLtp) * d.peQty : 0;
                     d.peMtm = peMtm;
                     var peMtmEl = document.getElementById('panePeMtm');
@@ -975,9 +988,9 @@
      *  - If no symbol (pre-entry) but NIFTY LTP known, return the projected ATM with a "~"
      *    prefix so it's clearly the bot's would-be entry strike, not a confirmed one
      *  - Otherwise "—" */
-    /** Render the NIFTY change badge below the LTP. ▲ green for up, ▼ red for down. */
-    function renderNiftyChange(ch, chp) {
-        var el = document.getElementById('heroNiftyChange');
+    /** Render a change badge (▲/▼ value + pct) into the given element. Reused for NIFTY and legs. */
+    function renderChangeBadge(elId, ch, chp) {
+        var el = document.getElementById(elId);
         if (!el) return;
         if (ch == null || isNaN(ch)) { el.textContent = ''; return; }
         var num = Number(ch);
@@ -991,6 +1004,7 @@
         el.textContent = arrow + ' ' + Math.abs(num).toFixed(2) + ' (' + Math.abs(pct).toFixed(2) + '%)';
         el.style.color = num >= 0 ? 'var(--accent-green)' : 'var(--accent-red, #f87171)';
     }
+    function renderNiftyChange(ch, chp) { renderChangeBadge('heroNiftyChange', ch, chp); }
 
     function strikeForLeg(fyersSymbol, niftyLtp) {
         if (fyersSymbol) {
