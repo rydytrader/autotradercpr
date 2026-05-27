@@ -147,6 +147,20 @@ public class RollingStraddleService {
                 this.intradaySamples.clear();
                 this.intradaySamples.addAll(persisted.intradaySamples);
             }
+            if (persisted.recentRolls != null) {
+                this.recentRolls.clear();
+                // Persisted as List<Map>; rebuild RollEvent records. Order in JSON is most-recent-
+                // first (matches the ring); add directly so addFirst order matches existing pattern.
+                for (java.util.Map<String, Object> r : persisted.recentRolls) {
+                    String time  = String.valueOf(r.getOrDefault("time", ""));
+                    String event = String.valueOf(r.getOrDefault("event", ""));
+                    double nifty = ((Number) r.getOrDefault("nifty", 0)).doubleValue();
+                    String ce    = String.valueOf(r.getOrDefault("ce", ""));
+                    String pe    = String.valueOf(r.getOrDefault("pe", ""));
+                    double pnl   = ((Number) r.getOrDefault("pnl", 0)).doubleValue();
+                    this.recentRolls.addLast(new RollEvent(time, event, nifty, ce, pe, pnl));
+                }
+            }
             log.info("[Straddle] Resumed state={} dayKey={} rollCount={} lastEntryNifty={} ce={} pe={} ceEntry={} peEntry={} realised={}",
                 state, dayKey, rollCount, lastEntryNifty, ceSymbol, peSymbol,
                 ceEntryPremium, peEntryPremium, realisedPnlToday);
@@ -825,6 +839,19 @@ public class RollingStraddleService {
         synchronized (intradaySamples) {
             s.intradaySamples = new java.util.ArrayList<>(intradaySamples);
         }
+        // Snapshot today's roll events as maps for JSON persistence
+        java.util.List<java.util.Map<String, Object>> rolls = new java.util.ArrayList<>();
+        for (RollEvent r : recentRolls) {
+            java.util.Map<String, Object> m2 = new java.util.LinkedHashMap<>();
+            m2.put("time",  r.time());
+            m2.put("event", r.event());
+            m2.put("nifty", r.nifty());
+            m2.put("ce",    r.ce());
+            m2.put("pe",    r.pe());
+            m2.put("pnl",   r.pnl());
+            rolls.add(m2);
+        }
+        s.recentRolls = rolls;
         stateStore.update(s);
     }
 

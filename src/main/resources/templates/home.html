@@ -219,10 +219,11 @@
         <div class="section-card" style="margin-bottom:0;">
             <div class="section-header">
                 <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> CE Leg</div>
-                <button id="closeCeBtn" onclick="closeLeg('CE')" title="Close just the CE leg at market. ⚠ Leaves the PE leg unhedged — use Squareoff Straddle if you want to close both." style="
-                    margin-left:auto;background:transparent;border:1px solid var(--border);
-                    color:var(--text-muted);padding:2px 8px;border-radius:4px;
-                    font-family:var(--font-mono);font-size:0.62rem;cursor:pointer;">✕ Close</button>
+                <span id="paneCeQty"
+                      style="margin-left:auto; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
+                             color:var(--accent-green); letter-spacing:0.06em;
+                             background:rgba(52,211,153,0.10); border:1px solid rgba(52,211,153,0.25);
+                             padding:3px 10px; border-radius:999px;">QTY · —</span>
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -247,10 +248,11 @@
         <div class="section-card" style="margin-bottom:0;">
             <div class="section-header">
                 <div class="section-title"><div class="section-title-dot" style="background:var(--accent-red, #f87171);"></div> PE Leg</div>
-                <button id="closePeBtn" onclick="closeLeg('PE')" title="Close just the PE leg at market. ⚠ Leaves the CE leg unhedged — use Squareoff Straddle if you want to close both." style="
-                    margin-left:auto;background:transparent;border:1px solid var(--border);
-                    color:var(--text-muted);padding:2px 8px;border-radius:4px;
-                    font-family:var(--font-mono);font-size:0.62rem;cursor:pointer;">✕ Close</button>
+                <span id="panePeQty"
+                      style="margin-left:auto; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
+                             color:var(--accent-red, #f87171); letter-spacing:0.06em;
+                             background:rgba(248,113,113,0.10); border:1px solid rgba(248,113,113,0.25);
+                             padding:3px 10px; border-radius:999px;">QTY · —</span>
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -568,6 +570,8 @@
             document.getElementById('paneMovePct').textContent = d.movePctTrigger ? (Number(d.movePctTrigger).toFixed(2) + '%') : '—';
 
             // Pane 2: CE Leg
+            var ceQtyEl = document.getElementById('paneCeQty');
+            if (ceQtyEl) ceQtyEl.textContent = 'QTY · ' + (d.ceQty > 0 ? d.ceQty : '—');
             var ceStrikeEl = document.getElementById('paneCeStrike');
             var ceStrikeInfo = strikeForLeg(d.ceSymbol, d.niftyLtp);
             ceStrikeEl.textContent = ceStrikeInfo.value;
@@ -585,6 +589,8 @@
             else if ((d.ceMtm || 0) < -0.5) ceMtm.classList.add('pnl-negative');
 
             // Pane 3: PE Leg
+            var peQtyEl = document.getElementById('panePeQty');
+            if (peQtyEl) peQtyEl.textContent = 'QTY · ' + (d.peQty > 0 ? d.peQty : '—');
             var peStrikeEl = document.getElementById('panePeStrike');
             var peStrikeInfo = strikeForLeg(d.peSymbol, d.niftyLtp);
             peStrikeEl.textContent = peStrikeInfo.value;
@@ -1094,40 +1100,6 @@
         }).catch(err => { if (window.showToast) showToast('Squareoff failed: ' + (err.message || err), 'error'); })
           .finally(() => {
             if (btn) { btn.disabled = false; btn.textContent = '✕ Squareoff Straddle'; }
-            loadDashboard();
-          });
-    }
-
-    // ── Close a single leg (⚠ leaves the other unhedged) ────────────────────
-    function closeLeg(which) {
-        var d = lastDashboardData;
-        if (!d || (d.state !== 'OPEN' && d.state !== 'MAX_ROLLS_HOLD')) {
-            if (window.showToast) showToast('No active straddle leg to close', 'info');
-            return;
-        }
-        var symbol = which === 'CE' ? d.ceSymbol : d.peSymbol;
-        var qty    = which === 'CE' ? d.ceQty    : d.peQty;
-        var otherLabel = which === 'CE' ? 'PE' : 'CE';
-        if (!symbol || qty <= 0) {
-            if (window.showToast) showToast('No ' + which + ' leg to close', 'info');
-            return;
-        }
-        if (!confirm('⚠ CAUTION: Close only the ' + which + ' leg?\n\n'
-            + symbol + ' qty=' + qty + '\n\n'
-            + 'This leaves the ' + otherLabel + ' leg unhedged — an unprotected short option. The strategy state machine may also desync from broker reality.\n\n'
-            + 'Prefer "Squareoff Straddle" to close both legs cleanly. Continue with single-leg close?')) return;
-        var btnId = which === 'CE' ? 'closeCeBtn' : 'closePeBtn';
-        var btn = document.getElementById(btnId);
-        if (btn) { btn.disabled = true; btn.textContent = '✕ …'; }
-        fetch('/api/squareoff', {
-            method: 'POST',
-            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders()),
-            body: JSON.stringify({ symbol: symbol, quantity: qty })
-        }).then(r => r.json()).then(d => {
-            if (window.showToast) showToast(d.ok ? (which + ' leg close submitted') : (which + ' close failed'), d.ok ? 'success' : 'error');
-        }).catch(err => { if (window.showToast) showToast(which + ' close failed: ' + (err.message || err), 'error'); })
-          .finally(() => {
-            if (btn) { btn.disabled = false; btn.textContent = '✕ Close'; }
             loadDashboard();
           });
     }

@@ -18,14 +18,18 @@ public class PositionManager {
         return positions.getOrDefault(symbol, "NONE");
     }
 
-    /** Sets or clears the position for the given symbol. */
+    /** Sets or clears the position for the given symbol. Only logs when the side actually
+     *  changes — avoids "Position Updated" log spam from the 10s sync cycle. */
     public static void setPosition(String symbol, String side) {
+        String prev;
         if ("NONE".equals(side)) {
-            positions.remove(symbol);
+            prev = positions.remove(symbol);
         } else {
-            positions.put(symbol, side);
+            prev = positions.put(symbol, side);
         }
-        log.info("Position Updated [{}]: {}", symbol, side);
+        if (!java.util.Objects.equals(prev, side)) {
+            log.info("Position Updated [{}]: {}", symbol, side);
+        }
     }
 
     /** Returns true if any symbol has an open position. */
