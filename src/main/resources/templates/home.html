@@ -1027,14 +1027,11 @@
     }
     function renderNiftyChange(ch, chp) { renderChangeBadge('heroNiftyChange', ch, chp); }
 
-    /** Some option contracts (esp. freshly-listed strikes) don't have a meaningful prev_close
-     *  in the WS feed, so backend ceChange/ceChangePct can stay 0. Fall back to a change
-     *  relative to entry premium so the badge still shows the user something useful — the
-     *  per-share move since the bot sold the leg. */
+    /** For leg cards, the change badge represents the move from ENTRY price, not from the day's
+     *  prev close. This is what matters for the open short straddle — how far has each option
+     *  moved since the bot sold it? Returns the move and its percentage of the entry premium.
+     *  Falls back to whatever the backend supplied only if we don't have entry + LTP yet. */
     function legChangeOrEntryFallback(ch, chp, entryPremium, currentLtp) {
-        var hasBackend = (ch != null && Math.abs(Number(ch)) >= 0.005)
-                      || (chp != null && Math.abs(Number(chp)) >= 0.005);
-        if (hasBackend) return { ch: ch, chp: chp };
         if (entryPremium != null && entryPremium > 0 && currentLtp != null && currentLtp > 0) {
             var diff = currentLtp - entryPremium;
             var pct = (diff / entryPremium) * 100;
