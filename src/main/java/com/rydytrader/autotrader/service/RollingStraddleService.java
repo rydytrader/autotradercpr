@@ -302,13 +302,31 @@ public class RollingStraddleService {
 
     /** Compute the full charge breakdown using accumulated premium turnover. Each cycle (entry +
      *  close) produces 4 orders: 2 sell (entry) + 2 buy (close). Sell-side premium turnover feeds
-     *  STT + half the SEBI/exchange; buy-side feeds the other half + stamp duty. */
+     *  STT + half the SEBI/exchange; buy-side feeds the other half + stamp duty.
+     *
+     *  <p>When legs are currently OPEN, the close-side hasn't fired yet — so the realised buy-side
+     *  turnover is 0 and the realised order count omits the impending close orders. We PROJECT
+     *  those using each open leg's current LTP × qty and add a +1 order per open leg, so the
+     *  Hero's Net Day P&L reflects the true take-home if you flat-closed right now. */
     private java.util.Map<String, Double> computeChargesBreakdown() {
-        int orderCount = orderCountToday;
-        double brokerage = orderCount * riskSettings.getBrokeragePerOrder();
+        int projectedOrders = orderCountToday;
+        double projectedBuyT = buyPremiumTurnoverToday;
+        if (marketDataService != null) {
+            if (ceSymbol != null && !ceSymbol.isEmpty() && ceQty > 0) {
+                double ltp = marketDataService.getLtp(ceSymbol);
+                if (ltp > 0) projectedBuyT += ltp * ceQty;
+                projectedOrders++;
+            }
+            if (peSymbol != null && !peSymbol.isEmpty() && peQty > 0) {
+                double ltp = marketDataService.getLtp(peSymbol);
+                if (ltp > 0) projectedBuyT += ltp * peQty;
+                projectedOrders++;
+            }
+        }
+        double brokerage = projectedOrders * riskSettings.getBrokeragePerOrder();
 
         double sellT = sellPremiumTurnoverToday;
-        double buyT  = buyPremiumTurnoverToday;
+        double buyT  = projectedBuyT;
         double totalT = sellT + buyT;
 
         double stt        = sellT * STT_SELL_PCT;
