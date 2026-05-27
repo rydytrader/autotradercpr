@@ -160,36 +160,45 @@ public class RollingStraddleService {
             } catch (Exception e) {
                 log.warn("[Straddle] Re-subscribe failed: {}", e.getMessage());
             }
-            // Recover entry premium from the broker's tradebook when we don't have it cached
-            // (e.g., first restart after the persistence-field upgrade). The order IDs are
-            // persisted, so we can look up the exact fill price.
-            if (ceEntryPremium == 0 && ceOrderId != null && !ceOrderId.isEmpty()) {
-                try {
-                    double fill = orderService.getFilledPriceByOrderId(ceOrderId);
-                    if (fill > 0) {
-                        ceEntryPremium = fill;
-                        log.info("[Straddle] Recovered CE entry premium from tradebook: {} (orderId={})",
-                            fill, ceOrderId);
-                    }
-                } catch (Exception ignored) {}
-            }
-            if (peEntryPremium == 0 && peOrderId != null && !peOrderId.isEmpty()) {
-                try {
-                    double fill = orderService.getFilledPriceByOrderId(peOrderId);
-                    if (fill > 0) {
-                        peEntryPremium = fill;
-                        log.info("[Straddle] Recovered PE entry premium from tradebook: {} (orderId={})",
-                            fill, peOrderId);
-                    }
-                } catch (Exception ignored) {}
-            }
-            // Backfill turnover/order count if they got zeroed by an old JSON
+        }
+    }
+
+    /** Attempted on every tick while open legs are missing entry premium (typical on first
+     *  restart after an upgrade — Fyers token isn't available at @PostConstruct time, so we
+     *  defer until trading hours when it is). Idempotent: silently no-ops once recovered. */
+    private void tryRecoverEntryPremiumFromTradebook() {
+        if (state != LifecycleState.OPEN && state != LifecycleState.MAX_ROLLS_HOLD) return;
+        if (ceEntryPremium > 0 && peEntryPremium > 0) return; // already recovered
+        if (tokenStore.getAccessToken() == null || tokenStore.getAccessToken().isEmpty()) return;
+        boolean changed = false;
+        if (ceEntryPremium == 0 && ceOrderId != null && !ceOrderId.isEmpty()) {
+            try {
+                double fill = orderService.getFilledPriceByOrderId(ceOrderId);
+                if (fill > 0) {
+                    ceEntryPremium = fill;
+                    log.info("[Straddle] Recovered CE entry premium from tradebook: {} (orderId={})",
+                        fill, ceOrderId);
+                    changed = true;
+                }
+            } catch (Exception ignored) {}
+        }
+        if (peEntryPremium == 0 && peOrderId != null && !peOrderId.isEmpty()) {
+            try {
+                double fill = orderService.getFilledPriceByOrderId(peOrderId);
+                if (fill > 0) {
+                    peEntryPremium = fill;
+                    log.info("[Straddle] Recovered PE entry premium from tradebook: {} (orderId={})",
+                        fill, peOrderId);
+                    changed = true;
+                }
+            } catch (Exception ignored) {}
+        }
+        if (changed) {
             if (sellPremiumTurnoverToday == 0 && ceEntryPremium > 0 && peEntryPremium > 0
                     && ceQty > 0 && peQty > 0) {
                 sellPremiumTurnoverToday = (ceEntryPremium * ceQty) + (peEntryPremium * peQty);
             }
             if (orderCountToday == 0) orderCountToday = 2 * (rollCount + 1);
-            // Persist the recovered values so the next restart finds them cached
             persist();
         }
     }
@@ -220,6 +229,8 @@ public class RollingStraddleService {
         // still reset yesterday's P&L cleanly and persist the prior session row.
         rolloverIfNewDay();
         if (marketHolidayService != null && !marketHolidayService.isMarketOpen()) return;
+        // Late-recover entry premium from tradebook if init() couldn't (no token at boot).
+        tryRecoverEntryPremiumFromTradebook();
 
         LocalTime now = LocalTime.now(IST);
         LocalTime entryTime     = parseTime(riskSettings.getStraddleEntryTime(),     "09:20");

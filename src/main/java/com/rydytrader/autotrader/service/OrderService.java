@@ -241,8 +241,10 @@ public class OrderService {
     public double getFilledPriceByOrderId(String orderId) {
         try {
             JsonNode root = getCachedTradebook();
-            if (!"ok".equals(root.get("s").asText())) return 0;
-            for (JsonNode t : root.get("tradeBook")) {
+            if (root == null || !root.has("s") || !"ok".equals(root.get("s").asText())) return 0;
+            JsonNode tb = root.get("tradeBook");
+            if (tb == null || !tb.isArray()) return 0;
+            for (JsonNode t : tb) {
                 String tid = t.has("orderNumber") ? t.get("orderNumber").asText()
                            : t.has("orderId") ? t.get("orderId").asText() : "";
                 if (orderId.equals(tid)) {
