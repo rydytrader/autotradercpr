@@ -221,18 +221,18 @@ public class RollingStraddleService {
         this.ceOrderId      = ceResp.getId();
         this.peOrderId      = peResp.getId();
         this.lastEntryNifty = niftyLtp;
-        // Premium capture — use the order response price if Fyers returned one, else fall back
-        // to LTP on the leg symbol so MTM at minimum has a non-zero baseline.
+        // Subscribe BEFORE reading entry premium so the WS has a chance to push the first tick.
+        // Even with that head start the WS round-trip is ~500ms-2s, so readEntryPremium falls
+        // back to a one-shot REST quote when the in-memory LTP is still zero.
+        try {
+            marketDataService.subscribeAdditional(java.util.Arrays.asList(resolvedCe, resolvedPe));
+        } catch (Exception ignored) {}
         this.ceEntryPremium = readEntryPremium(ceResp, resolvedCe);
         this.peEntryPremium = readEntryPremium(peResp, resolvedPe);
         // Capture current weekly expiry from the resolved option symbol (cheaper than re-fetching).
         this.currentWeeklyExpiry = parseExpiryFromSymbol(resolvedCe);
         // Accumulate sell-side premium turnover for STT/exchange/SEBI charge calc.
         this.sellPremiumTurnoverToday += (ceEntryPremium * qty) + (peEntryPremium * qty);
-        // Subscribe both option legs to the data WS so the Home dashboard can show live LTP + MTM.
-        try {
-            marketDataService.subscribeAdditional(java.util.Arrays.asList(resolvedCe, resolvedPe));
-        } catch (Exception ignored) {}
         // rollCount is only reset by rolloverIfNewDay on initial-day entry. Subsequent rolls
         // increment it in checkMoveTriggerOrSquareoff before calling back into doInitialEntry.
         transitionTo(LifecycleState.OPEN);
@@ -251,11 +251,30 @@ public class RollingStraddleService {
     /** Best-effort entry premium read — Fyers `OrderDTO` doesn't carry the fill price, so we
      *  fall back to the leg's current LTP on the data WS (close to the actual fill for market
      *  orders). When neither is available, returns 0 — MTM will be 0 until the WS has a tick. */
+    /** Capture the entry premium of a freshly-placed leg. Tries the in-memory WS tick first
+     *  (cheapest); if the leg hasn't received its first tick yet (subscribe + ack takes time),
+     *  falls back to a synchronous Fyers /data/quotes REST call so we always have a non-zero
+     *  baseline for MTM. Returns 0 only as a last resort. */
     private double readEntryPremium(OrderDTO resp, String symbol) {
         try {
             double ltp = marketDataService.getLtp(symbol);
             if (ltp > 0) return ltp;
         } catch (Exception ignored) {}
+        // WS hasn't pushed a tick for this leg yet — synchronous REST quote fallback.
+        try {
+            String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
+            JsonNode root = fyersClient.getQuotes(symbol, auth);
+            if (root != null && root.has("d") && root.get("d").isArray() && root.get("d").size() > 0) {
+                JsonNode v = root.get("d").get(0).path("v");
+                double lp = v.path("lp").asDouble(0);
+                if (lp > 0) {
+                    log.info("[Straddle] Entry premium for {} captured via REST quote: {}", symbol, lp);
+                    return lp;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[Straddle] REST quote fallback failed for {}: {}", symbol, e.getMessage());
+        }
         return 0;
     }
 
