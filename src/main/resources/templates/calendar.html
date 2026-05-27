@@ -230,10 +230,34 @@
     function loadAll() {
         return Promise.all([
             fetch('/api/straddle/history').then(r => r.json()).catch(() => ({ sessions: [] })),
-            fetch('/api/market-holidays').then(r => r.json()).catch(() => [])
+            fetch('/api/market-holidays').then(r => r.json()).catch(() => []),
+            // Live dashboard so today's running P&L can be overlaid on today's cell
+            fetch('/api/straddle/dashboard').then(r => r.json()).catch(() => null)
         ]).then(arr => {
             allSessions = (arr[0] && arr[0].sessions) || [];
             (arr[1] || []).forEach(h => NSE_HOLIDAYS[h.date] = h.name || 'Holiday');
+            // Inject today's live session if not already in history (history only gets a row at
+            // day rollover the next morning, so today is blank otherwise). Match Hero P&L
+            // formula: realisedPnlToday + open MTM − charges.
+            const live = arr[2];
+            const today = new Date().toISOString().slice(0, 10);
+            const alreadyHas = allSessions.some(s => s.date === today);
+            if (!alreadyHas && live) {
+                const chargesTotal = (live.charges && live.charges.total) || 0;
+                const realised = Number(live.realisedPnlToday) || 0;
+                const mtm      = Number(live.combinedMtm)      || 0;
+                const liveNet  = realised + mtm - chargesTotal;
+                allSessions.unshift({
+                    date: today,
+                    entries: (live.state === 'OPEN' || live.state === 'MAX_ROLLS_HOLD' || live.state === 'DONE_FOR_DAY') ? 1 : 0,
+                    rolls: Number(live.rollCount) || 0,
+                    finalState: live.state || 'IDLE',
+                    grossPnl: realised + mtm,
+                    charges: chargesTotal,
+                    netPnl: liveNet,
+                    live: true
+                });
+            }
             render();
         });
     }
@@ -453,6 +477,8 @@
     });
 
     document.addEventListener('DOMContentLoaded', loadAll);
+    // Refresh every 30s so today's cell tracks the live Net P&L from the Home dashboard
+    setInterval(loadAll, 30000);
 })();
 
 // ── Footer year ──
