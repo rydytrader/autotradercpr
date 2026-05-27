@@ -153,13 +153,44 @@ public class RollingStraddleService {
                 marketDataService.subscribeAdditional(java.util.Arrays.asList(ceSymbol, peSymbol));
                 log.info("[Straddle] Re-subscribed open legs to data WS after restart: ce={} pe={}",
                     ceSymbol, peSymbol);
-                // Also seed LTP + prev close from REST quote so dashboard MTM and change badges
+                // Seed LTP + prev close from REST quote so dashboard MTM and change badges
                 // populate immediately, without waiting for the first WS tick to arrive.
                 seedLegQuote(ceSymbol);
                 seedLegQuote(peSymbol);
             } catch (Exception e) {
                 log.warn("[Straddle] Re-subscribe failed: {}", e.getMessage());
             }
+            // Recover entry premium from the broker's tradebook when we don't have it cached
+            // (e.g., first restart after the persistence-field upgrade). The order IDs are
+            // persisted, so we can look up the exact fill price.
+            if (ceEntryPremium == 0 && ceOrderId != null && !ceOrderId.isEmpty()) {
+                try {
+                    double fill = orderService.getFilledPriceByOrderId(ceOrderId);
+                    if (fill > 0) {
+                        ceEntryPremium = fill;
+                        log.info("[Straddle] Recovered CE entry premium from tradebook: {} (orderId={})",
+                            fill, ceOrderId);
+                    }
+                } catch (Exception ignored) {}
+            }
+            if (peEntryPremium == 0 && peOrderId != null && !peOrderId.isEmpty()) {
+                try {
+                    double fill = orderService.getFilledPriceByOrderId(peOrderId);
+                    if (fill > 0) {
+                        peEntryPremium = fill;
+                        log.info("[Straddle] Recovered PE entry premium from tradebook: {} (orderId={})",
+                            fill, peOrderId);
+                    }
+                } catch (Exception ignored) {}
+            }
+            // Backfill turnover/order count if they got zeroed by an old JSON
+            if (sellPremiumTurnoverToday == 0 && ceEntryPremium > 0 && peEntryPremium > 0
+                    && ceQty > 0 && peQty > 0) {
+                sellPremiumTurnoverToday = (ceEntryPremium * ceQty) + (peEntryPremium * peQty);
+            }
+            if (orderCountToday == 0) orderCountToday = 2 * (rollCount + 1);
+            // Persist the recovered values so the next restart finds them cached
+            persist();
         }
     }
 
