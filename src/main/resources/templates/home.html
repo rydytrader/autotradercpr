@@ -877,11 +877,28 @@
         });
     }
     /** Plot today's intraday Net P&L curve from the samples the backend captures every 5 min
-     *  between straddleEntryTime and straddleSquareOffTime. Persisted across restart. */
+     *  between straddleEntryTime and straddleSquareOffTime. Persisted across restart. Always
+     *  appends a "now" point from the current dashboard data so the chart shows a line even
+     *  between sample boundaries. */
     function renderEquityCurveFromSamples(samples) {
         if (!samples) samples = [];
         var labels = samples.map(function(s) { return s.t; });
         var data = samples.map(function(s) { return s.v; });
+        if (lastDashboardData) {
+            var dd = lastDashboardData;
+            var chTotal = (dd.charges && dd.charges.total) || 0;
+            var liveNet = (Number(dd.realisedPnlToday) || 0) + (Number(dd.combinedMtm) || 0) - chTotal;
+            var now = new Date();
+            var nowLabel = (now.getHours() < 10 ? '0' : '') + now.getHours()
+                         + ':' + (now.getMinutes() < 10 ? '0' : '') + now.getMinutes();
+            // Replace last sample if it has the same HH:mm timestamp; else append
+            if (labels.length > 0 && labels[labels.length - 1] === nowLabel) {
+                data[data.length - 1] = Math.round(liveNet * 100) / 100;
+            } else {
+                labels.push(nowLabel);
+                data.push(Math.round(liveNet * 100) / 100);
+            }
+        }
         if (!equityChart) initEquityChart();
         equityChart.data.labels = labels;
         equityChart.data.datasets[0].data = data;
@@ -898,9 +915,10 @@
         renderEquityCurveFromSamples(lastDashboardData.intradaySamples || []);
     }
     setTimeout(loadEquityCurve, 1500);
-    // Re-render every 30s — the 5s dashboard poll already refreshes lastDashboardData with the
-    // latest sample list; this just paints the chart from it.
-    setInterval(loadEquityCurve, 30000);
+    // Re-render every 5s alongside the dashboard poll. The persisted samples list only changes
+    // every 5 min (backend cron), but the synthetic "now" point updates continuously from
+    // lastDashboardData so the chart line moves between sample boundaries.
+    setInterval(loadEquityCurve, 5000);
 
     // ── Market Clock (same logic as the previous Positions page) ────────────
     var NSE_HOLIDAYS = {}; // {date: name}
