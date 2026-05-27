@@ -882,6 +882,18 @@
                 labels.push(s.date);
                 data.push(Math.round(cum * 100) / 100);
             });
+            // Append today's running net P&L as the latest point (refreshed every 5 min) so the
+            // curve shows today's build-up before day rollover persists the session row. If the
+            // history already has a row for today (rare — only after rollover), skip the append.
+            var today = new Date().toISOString().slice(0, 10);
+            var alreadyHasToday = labels.length > 0 && labels[labels.length - 1] === today;
+            if (!alreadyHasToday && lastDashboardData) {
+                var dd = lastDashboardData;
+                var chTotal = (dd.charges && dd.charges.total) || 0;
+                var todayNet = (Number(dd.totalPnlToday) || 0) - chTotal;
+                labels.push(today + ' (live)');
+                data.push(Math.round((cum + todayNet) * 100) / 100);
+            }
             if (!equityChart) initEquityChart();
             equityChart.data.labels = labels;
             equityChart.data.datasets[0].data = data;
@@ -889,7 +901,7 @@
         }).catch(() => {});
     }
     setTimeout(loadEquityCurve, 500);
-    setInterval(loadEquityCurve, 60000); // refresh hourly; sessions land at day rollover
+    setInterval(loadEquityCurve, 5 * 60 * 1000); // refresh every 5 min — picks up today's live net P&L
 
     // ── Market Clock (same logic as the previous Positions page) ────────────
     var NSE_HOLIDAYS = {}; // {date: name}
