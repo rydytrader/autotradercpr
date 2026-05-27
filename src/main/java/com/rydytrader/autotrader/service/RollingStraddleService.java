@@ -87,6 +87,10 @@ public class RollingStraddleService {
      *  close/roll-exit. Reset on day rollover alongside realisedPnlToday. */
     private volatile double  sellPremiumTurnoverToday = 0;
     private volatile double  buyPremiumTurnoverToday  = 0;
+    /** Cached current weekly expiry date (ISO yyyy-MM-dd). Set from {@code ceSymbol} on entry;
+     *  lazy-fetched from the Fyers option chain when IDLE so the dashboard can show it without
+     *  needing an open position. Reset on day rollover; re-resolved on next dashboard hit. */
+    private volatile String  currentWeeklyExpiry = "";
 
     public static record RollEvent(String time, String event, double nifty,
                                     String ce, String pe, double pnl) {}
@@ -135,9 +139,10 @@ public class RollingStraddleService {
     public void tick() {
         // Strategy is always on — no enable toggle. The lifecycle is governed entirely by
         // entry time, move triggers, max rolls, and the timed squareoff.
-        if (marketHolidayService != null && !marketHolidayService.isMarketOpen()) return;
-
+        // Day rollover runs BEFORE the market-open guard so weekend/holiday/pre-market ticks
+        // still reset yesterday's P&L cleanly and persist the prior session row.
         rolloverIfNewDay();
+        if (marketHolidayService != null && !marketHolidayService.isMarketOpen()) return;
 
         LocalTime now = LocalTime.now(IST);
         LocalTime entryTime     = parseTime(riskSettings.getStraddleEntryTime(),     "09:20");
@@ -214,6 +219,8 @@ public class RollingStraddleService {
         // to LTP on the leg symbol so MTM at minimum has a non-zero baseline.
         this.ceEntryPremium = readEntryPremium(ceResp, resolvedCe);
         this.peEntryPremium = readEntryPremium(peResp, resolvedPe);
+        // Capture current weekly expiry from the resolved option symbol (cheaper than re-fetching).
+        this.currentWeeklyExpiry = parseExpiryFromSymbol(resolvedCe);
         // Accumulate sell-side premium turnover for STT/exchange/SEBI charge calc.
         this.sellPremiumTurnoverToday += (ceEntryPremium * qty) + (peEntryPremium * qty);
         // Subscribe both option legs to the data WS so the Home dashboard can show live LTP + MTM.
@@ -474,6 +481,76 @@ public class RollingStraddleService {
         }
     }
 
+    /** Best-effort lazy resolution of the current weekly expiry when no straddle is open yet.
+     *  One option-chain call, grab the first symbol, parse expiry. Failures are silent — the
+     *  dashboard just shows "—" until entry succeeds (which sets it explicitly). */
+    private void tryResolveWeeklyExpiry() {
+        try {
+            String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
+            if (auth == null || auth.endsWith(":") || auth.endsWith(":null")) return;
+            JsonNode root = fyersClient.getOptionChain(NIFTY_SYMBOL, 4, auth);
+            if (root == null) return;
+            JsonNode data = root.has("data") ? root.get("data") : null;
+            JsonNode chain = data != null && data.has("optionsChain") ? data.get("optionsChain")
+                : (root.has("optionsChain") ? root.get("optionsChain") : null);
+            if (chain == null || !chain.isArray()) return;
+            for (JsonNode row : chain) {
+                String sym = row.has("symbol") ? row.get("symbol").asText() : "";
+                String exp = parseExpiryFromSymbol(sym);
+                if (!exp.isEmpty()) { this.currentWeeklyExpiry = exp; return; }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    /** Trading days remaining until expiry, excluding weekends and NSE holidays.
+     *  Today is counted as "0" if it's expiry day; "1" if expiry is the next trading session;
+     *  and so on. Returns -1 when the expiry string is empty or unparseable. */
+    private int tradingDaysToExpiry(String expiryIso) {
+        if (expiryIso == null || expiryIso.isEmpty()) return -1;
+        try {
+            java.time.LocalDate expiry = java.time.LocalDate.parse(expiryIso);
+            java.time.LocalDate today = java.time.LocalDate.now(IST);
+            if (expiry.isBefore(today)) return -1; // stale cache, won't happen after day rollover
+            int count = 0;
+            java.time.LocalDate cursor = today.plusDays(1); // exclusive of today
+            while (!cursor.isAfter(expiry)) {
+                if (marketHolidayService == null || marketHolidayService.isTradingDay(cursor)) {
+                    count++;
+                }
+                cursor = cursor.plusDays(1);
+            }
+            return count;
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    /** Parse the weekly expiry date from a Fyers option symbol.
+     *  Format: {@code NSE:NIFTY<YY><M><DD><C|P><STRIKE>}, where M is 1-9 for Jan-Sep,
+     *  O for Oct, N for Nov, D for Dec. Example: {@code NSE:NIFTY25527C24350} → 2025-05-27.
+     *  Returns empty string on any parse failure (caller treats it as "unknown"). */
+    static String parseExpiryFromSymbol(String fyersSymbol) {
+        if (fyersSymbol == null) return "";
+        try {
+            int hash = fyersSymbol.indexOf("NIFTY");
+            if (hash < 0) return "";
+            String tail = fyersSymbol.substring(hash + 5);
+            if (tail.length() < 5) return "";
+            int yr = Integer.parseInt(tail.substring(0, 2));
+            char monthCh = tail.charAt(2);
+            int month;
+            if (monthCh >= '1' && monthCh <= '9') month = monthCh - '0';
+            else if (monthCh == 'O') month = 10;
+            else if (monthCh == 'N') month = 11;
+            else if (monthCh == 'D') month = 12;
+            else return "";
+            int day = Integer.parseInt(tail.substring(3, 5));
+            return java.time.LocalDate.of(2000 + yr, month, day).toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     private static String fieldNames(JsonNode node) {
         if (node == null) return "<null>";
         StringBuilder sb = new StringBuilder("[");
@@ -517,6 +594,7 @@ public class RollingStraddleService {
         this.realisedPnlToday = 0;
         this.sellPremiumTurnoverToday = 0;
         this.buyPremiumTurnoverToday = 0;
+        this.currentWeeklyExpiry = "";
         this.recentRolls.clear();
         transitionTo(LifecycleState.IDLE);
     }
@@ -601,7 +679,17 @@ public class RollingStraddleService {
     /** Consolidated payload for the Home dashboard — state + leg legs + MTM + day stats +
      *  recent rolls + trigger band. Polled by the UI every 5 seconds. */
     public java.util.Map<String, Object> getDashboard() {
+        // Roll over the day if the scheduler hasn't done it yet (e.g. user opens the dashboard
+        // before the first tick of the trading day fires). Idempotent.
+        rolloverIfNewDay();
+        // Lazy-resolve current weekly expiry when we don't have it yet (IDLE state, no entry yet
+        // today). Cheap: same option-chain call we'd make on entry; cached for the rest of the day.
+        if (currentWeeklyExpiry == null || currentWeeklyExpiry.isEmpty()) {
+            tryResolveWeeklyExpiry();
+        }
         java.util.Map<String, Object> m = getStatus();
+        m.put("weeklyExpiry", currentWeeklyExpiry);
+        m.put("daysToExpiry", tradingDaysToExpiry(currentWeeklyExpiry));
         // Current NIFTY + trigger band
         double niftyLtp = marketDataService != null ? marketDataService.getLtp(NIFTY_SYMBOL) : 0;
         m.put("niftyLtp", niftyLtp);

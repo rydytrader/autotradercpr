@@ -159,8 +159,19 @@
 
     <!-- Market Clock — same compact format as the original Positions page -->
     <div class="section-card" style="margin-bottom:0; display:flex; flex-direction:column;">
-        <div class="section-header">
+        <div class="section-header" style="display:flex; align-items:center; justify-content:space-between;">
             <div class="section-title"><div class="section-title-dot"></div> Market Clock</div>
+            <span id="weeklyExpiryPill"
+                  title="Current NIFTY weekly options expiry • trading days remaining (excl. weekends + holidays)"
+                  style="display:inline-flex; align-items:center; gap:6px;
+                         background:rgba(125,211,252,0.10); border:1px solid rgba(125,211,252,0.25);
+                         color:var(--accent-cyan); font-family:var(--font-mono); font-weight:700;
+                         font-size:0.62rem; letter-spacing:0.04em; padding:3px 9px; border-radius:999px;">
+                <span style="opacity:0.7;">EXPIRY</span>
+                <span id="weeklyExpiryPillText">—</span>
+                <span id="weeklyExpiryDte"
+                      style="background:rgba(125,211,252,0.18); padding:1px 7px; border-radius:999px; font-size:0.58rem;"></span>
+            </span>
         </div>
         <div style="padding:20px 22px; text-align:center; flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;">
             <div class="stat-value" id="marketClock" style="font-size:2rem;">—</div>
@@ -475,6 +486,31 @@
             document.getElementById('heroRolls').textContent = (d.rollCount != null ? d.rollCount : '0') + ' / ' + (d.maxRolls != null ? d.maxRolls : '3');
             document.getElementById('heroNiftyLtp').textContent = d.niftyLtp > 0 ? Number(d.niftyLtp).toFixed(2) : '—';
             document.getElementById('heroLastEntry').textContent = d.lastEntryNifty > 0 ? Number(d.lastEntryNifty).toFixed(2) : '—';
+            var expiryEl = document.getElementById('weeklyExpiryPillText');
+            if (expiryEl) {
+                if (d.weeklyExpiry) {
+                    var p = d.weeklyExpiry.split('-'); // YYYY-MM-DD
+                    if (p.length === 3) {
+                        var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                        expiryEl.textContent = Number(p[2]) + ' ' + months[Number(p[1])-1] + ' ' + p[0];
+                    } else {
+                        expiryEl.textContent = d.weeklyExpiry;
+                    }
+                } else {
+                    expiryEl.textContent = '—';
+                }
+            }
+            var dteEl = document.getElementById('weeklyExpiryDte');
+            if (dteEl) {
+                var dte = (d.daysToExpiry == null || d.daysToExpiry < 0) ? null : Number(d.daysToExpiry);
+                if (dte == null) {
+                    dteEl.textContent = '';
+                    dteEl.style.display = 'none';
+                } else {
+                    dteEl.style.display = '';
+                    dteEl.textContent = dte === 0 ? '0d (expires today)' : (dte + 'd');
+                }
+            }
 
             // Pane 1: Trigger Band
             document.getElementById('paneUpTrigger').textContent = d.upTrigger ? Number(d.upTrigger).toFixed(2) : '—';
