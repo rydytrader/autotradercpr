@@ -87,6 +87,9 @@ public class RollingStraddleService {
      *  close/roll-exit. Reset on day rollover alongside realisedPnlToday. */
     private volatile double  sellPremiumTurnoverToday = 0;
     private volatile double  buyPremiumTurnoverToday  = 0;
+    /** Actual count of orders placed today. Drives the brokerage component of charges, so pre-
+     *  entry the dashboard shows ₹0 charges instead of the previous formula's assumed cycle. */
+    private volatile int     orderCountToday          = 0;
     /** Cached current weekly expiry date (ISO yyyy-MM-dd). Set from {@code ceSymbol} on entry;
      *  lazy-fetched from the Fyers option chain when IDLE so the dashboard can show it without
      *  needing an open position. Reset on day rollover; re-resolved on next dashboard hit. */
@@ -192,6 +195,7 @@ public class RollingStraddleService {
         int qty = Math.max(1, riskSettings.getStraddleLotsPerLeg()) * NIFTY_LOT_SIZE;
         // SELL = -1 in Fyers (we collect premium). No SL / no target.
         OrderDTO ceResp = orderService.placeOrder(resolvedCe, qty, -1, 0);
+        orderCountToday++;
         if (ceResp == null || ceResp.getId() == null || ceResp.getId().isEmpty() || !"ok".equals(ceResp.getStatus())) {
             log.error("[Straddle] CE leg rejected: {}", ceResp);
             eventService.log("[ERROR] Straddle CE leg rejected — aborting day");
@@ -199,11 +203,12 @@ public class RollingStraddleService {
             return;
         }
         OrderDTO peResp = orderService.placeOrder(resolvedPe, qty, -1, 0);
+        orderCountToday++;
         if (peResp == null || peResp.getId() == null || peResp.getId().isEmpty() || !"ok".equals(peResp.getStatus())) {
             log.error("[Straddle] PE leg rejected after CE filled — flattening CE: {}", peResp);
             eventService.log("[ERROR] Straddle PE leg rejected — buying back CE immediately to flatten");
             // BUY back the CE to flatten — never leave one leg unhedged.
-            try { orderService.placeOrder(resolvedCe, qty, 1, 0); } catch (Exception ignored) {}
+            try { orderService.placeOrder(resolvedCe, qty, 1, 0); orderCountToday++; } catch (Exception ignored) {}
             transitionTo(LifecycleState.DONE_FOR_DAY);
             return;
         }
@@ -299,7 +304,7 @@ public class RollingStraddleService {
      *  close) produces 4 orders: 2 sell (entry) + 2 buy (close). Sell-side premium turnover feeds
      *  STT + half the SEBI/exchange; buy-side feeds the other half + stamp duty. */
     private java.util.Map<String, Double> computeChargesBreakdown() {
-        int orderCount = Math.max(0, (rollCount + 1) * 4);
+        int orderCount = orderCountToday;
         double brokerage = orderCount * riskSettings.getBrokeragePerOrder();
 
         double sellT = sellPremiumTurnoverToday;
@@ -424,6 +429,7 @@ public class RollingStraddleService {
     private void placeCloseRetry(String symbol, int qty, String legTag, String reason) {
         try {
             OrderDTO resp = orderService.placeOrder(symbol, qty, 1, 0);
+            orderCountToday++;
             if (resp != null && resp.getId() != null && !resp.getId().isEmpty() && "ok".equals(resp.getStatus())) {
                 return;
             }
@@ -431,6 +437,7 @@ public class RollingStraddleService {
                 legTag, symbol, reason, resp);
             try { Thread.sleep(2000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
             OrderDTO retry = orderService.placeOrder(symbol, qty, 1, 0);
+            orderCountToday++;
             if (retry == null || retry.getId() == null || retry.getId().isEmpty() || !"ok".equals(retry.getStatus())) {
                 log.error("[Straddle] CLOSE FAILED for {} {} qty={} ({}): {}",
                     legTag, symbol, qty, reason, retry);
@@ -594,6 +601,7 @@ public class RollingStraddleService {
         this.realisedPnlToday = 0;
         this.sellPremiumTurnoverToday = 0;
         this.buyPremiumTurnoverToday = 0;
+        this.orderCountToday = 0;
         this.currentWeeklyExpiry = "";
         this.recentRolls.clear();
         transitionTo(LifecycleState.IDLE);
