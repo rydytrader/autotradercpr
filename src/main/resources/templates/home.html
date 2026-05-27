@@ -576,7 +576,8 @@
             document.getElementById('paneCeEntryLtp').textContent =
                 (d.ceEntryPremium > 0 ? Number(d.ceEntryPremium).toFixed(2) : '—')
                 + ' / ' + (d.ceLtp > 0 ? Number(d.ceLtp).toFixed(2) : '—');
-            renderChangeBadge('paneCeChange', d.ceChange, d.ceChangePct);
+            var ceCh2 = legChangeOrEntryFallback(d.ceChange, d.ceChangePct, d.ceEntryPremium, d.ceLtp);
+            renderChangeBadge('paneCeChange', ceCh2.ch, ceCh2.chp);
             var ceMtm = document.getElementById('paneCeMtm');
             ceMtm.textContent = fmtRs(d.ceMtm || 0);
             ceMtm.className = 'stat-value';
@@ -592,7 +593,8 @@
             document.getElementById('panePeEntryLtp').textContent =
                 (d.peEntryPremium > 0 ? Number(d.peEntryPremium).toFixed(2) : '—')
                 + ' / ' + (d.peLtp > 0 ? Number(d.peLtp).toFixed(2) : '—');
-            renderChangeBadge('panePeChange', d.peChange, d.peChangePct);
+            var peCh2 = legChangeOrEntryFallback(d.peChange, d.peChangePct, d.peEntryPremium, d.peLtp);
+            renderChangeBadge('panePeChange', peCh2.ch, peCh2.chp);
             var peMtm = document.getElementById('panePeMtm');
             peMtm.textContent = fmtRs(d.peMtm || 0);
             peMtm.className = 'stat-value';
@@ -678,7 +680,8 @@
                     document.getElementById('paneCeEntryLtp').textContent =
                         (d.ceEntryPremium > 0 ? Number(d.ceEntryPremium).toFixed(2) : '—')
                         + ' / ' + Number(ceLtp).toFixed(2);
-                    renderChangeBadge('paneCeChange', ceCh, ceChp);
+                    var ceCh2s = legChangeOrEntryFallback(ceCh, ceChp, d.ceEntryPremium, ceLtp);
+                    renderChangeBadge('paneCeChange', ceCh2s.ch, ceCh2s.chp);
                     var ceMtm = (d.ceEntryPremium > 0 && d.ceQty > 0) ? (d.ceEntryPremium - ceLtp) * d.ceQty : 0;
                     d.ceMtm = ceMtm;
                     var ceMtmEl = document.getElementById('paneCeMtm');
@@ -694,7 +697,8 @@
                     document.getElementById('panePeEntryLtp').textContent =
                         (d.peEntryPremium > 0 ? Number(d.peEntryPremium).toFixed(2) : '—')
                         + ' / ' + Number(peLtp).toFixed(2);
-                    renderChangeBadge('panePeChange', peCh, peChp);
+                    var peCh2s = legChangeOrEntryFallback(peCh, peChp, d.peEntryPremium, peLtp);
+                    renderChangeBadge('panePeChange', peCh2s.ch, peCh2s.chp);
                     var peMtm = (d.peEntryPremium > 0 && d.peQty > 0) ? (d.peEntryPremium - peLtp) * d.peQty : 0;
                     d.peMtm = peMtm;
                     var peMtmEl = document.getElementById('panePeMtm');
@@ -988,16 +992,28 @@
      *  - If no symbol (pre-entry) but NIFTY LTP known, return the projected ATM with a "~"
      *    prefix so it's clearly the bot's would-be entry strike, not a confirmed one
      *  - Otherwise "—" */
-    /** Render a change badge (▲/▼ value + pct) into the given element. Reused for NIFTY and legs. */
+    /** Render a change badge (▲/▼ value + pct) into the given element. Reused for NIFTY and legs.
+     *  Once an element has a real value, it's never cleared by a subsequent 0/null update —
+     *  keeps the badge stable while waiting for the next non-zero tick. The element's last
+     *  rendered value is treated as the floor; we only repaint if we have a new meaningful one. */
     function renderChangeBadge(elId, ch, chp) {
         var el = document.getElementById(elId);
         if (!el) return;
-        if (ch == null || isNaN(ch)) { el.textContent = ''; return; }
+        // No data at all → only clear if we have nothing rendered yet, else preserve last good
+        if (ch == null || isNaN(ch)) {
+            if (!el.textContent || el.textContent === '—') {
+                el.textContent = '';
+            }
+            return;
+        }
         var num = Number(ch);
         var pct = chp != null ? Number(chp) : 0;
+        // Effective zero → don't overwrite an existing populated badge; show "—" only if empty
         if (Math.abs(num) < 0.005 && Math.abs(pct) < 0.005) {
-            el.textContent = '—';
-            el.style.color = 'var(--text-muted)';
+            if (!el.textContent) {
+                el.textContent = '—';
+                el.style.color = 'var(--text-muted)';
+            }
             return;
         }
         var arrow = num >= 0 ? '▲' : '▼';
@@ -1005,6 +1021,22 @@
         el.style.color = num >= 0 ? 'var(--accent-green)' : 'var(--accent-red, #f87171)';
     }
     function renderNiftyChange(ch, chp) { renderChangeBadge('heroNiftyChange', ch, chp); }
+
+    /** Some option contracts (esp. freshly-listed strikes) don't have a meaningful prev_close
+     *  in the WS feed, so backend ceChange/ceChangePct can stay 0. Fall back to a change
+     *  relative to entry premium so the badge still shows the user something useful — the
+     *  per-share move since the bot sold the leg. */
+    function legChangeOrEntryFallback(ch, chp, entryPremium, currentLtp) {
+        var hasBackend = (ch != null && Math.abs(Number(ch)) >= 0.005)
+                      || (chp != null && Math.abs(Number(chp)) >= 0.005);
+        if (hasBackend) return { ch: ch, chp: chp };
+        if (entryPremium != null && entryPremium > 0 && currentLtp != null && currentLtp > 0) {
+            var diff = currentLtp - entryPremium;
+            var pct = (diff / entryPremium) * 100;
+            return { ch: diff, chp: pct };
+        }
+        return { ch: ch, chp: chp };
+    }
 
     function strikeForLeg(fyersSymbol, niftyLtp) {
         if (fyersSymbol) {
