@@ -318,7 +318,7 @@
     <div class="section-card fade-in" style="margin-bottom:0;">
         <div class="section-header">
             <div class="section-title"><div class="section-title-dot"></div> Equity Curve</div>
-            <span class="section-badge" id="equityCurveSub" style="font-size:0.6rem;">Cumulative Net P&amp;L across straddle sessions</span>
+            <span class="section-badge" id="equityCurveSub" style="font-size:0.6rem;">Today's Net P&amp;L • sampled every 5 minutes</span>
         </div>
         <div style="padding:20px 28px; height:280px;">
             <canvas id="equityChart"></canvas>
@@ -846,7 +846,7 @@
         equityChart = new Chart(ctx, {
             type: 'line',
             data: { labels: [], datasets: [{
-                label: 'Cumulative Net P&L',
+                label: 'Net P&L',
                 data: [],
                 borderColor: 'rgba(99,179,237,0.8)',
                 backgroundColor: 'rgba(99,179,237,0.08)',
@@ -870,38 +870,31 @@
             }
         });
     }
-    function loadEquityCurve() {
-        if (!fyersConnected) return;
-        fetch('/api/straddle/history').then(r => r.json()).then(d => {
-            if (!d || !d.sessions) return;
-            // History is sorted desc; reverse for chronological curve
-            var sessions = d.sessions.slice().reverse();
-            var labels = [], data = [], cum = 0;
-            sessions.forEach(function(s) {
-                cum += (s.netPnl || 0);
-                labels.push(s.date);
-                data.push(Math.round(cum * 100) / 100);
-            });
-            // Append today's running net P&L as the latest point (refreshed every 5 min) so the
-            // curve shows today's build-up before day rollover persists the session row. If the
-            // history already has a row for today (rare — only after rollover), skip the append.
-            var today = new Date().toISOString().slice(0, 10);
-            var alreadyHasToday = labels.length > 0 && labels[labels.length - 1] === today;
-            if (!alreadyHasToday && lastDashboardData) {
-                var dd = lastDashboardData;
-                var chTotal = (dd.charges && dd.charges.total) || 0;
-                var todayNet = (Number(dd.totalPnlToday) || 0) - chTotal;
-                labels.push(today + ' (live)');
-                data.push(Math.round((cum + todayNet) * 100) / 100);
-            }
-            if (!equityChart) initEquityChart();
-            equityChart.data.labels = labels;
-            equityChart.data.datasets[0].data = data;
-            equityChart.update();
-        }).catch(() => {});
+    /** Plot today's intraday Net P&L curve from the samples the backend captures every 5 min
+     *  between straddleEntryTime and straddleSquareOffTime. Persisted across restart. */
+    function renderEquityCurveFromSamples(samples) {
+        if (!samples) samples = [];
+        var labels = samples.map(function(s) { return s.t; });
+        var data = samples.map(function(s) { return s.v; });
+        if (!equityChart) initEquityChart();
+        equityChart.data.labels = labels;
+        equityChart.data.datasets[0].data = data;
+        equityChart.update();
     }
-    setTimeout(loadEquityCurve, 500);
-    setInterval(loadEquityCurve, 5 * 60 * 1000); // refresh every 5 min — picks up today's live net P&L
+    function loadEquityCurve() {
+        // Pull intraday samples from the dashboard payload (already cached in lastDashboardData
+        // — refreshed by the 5s poll). We don't poll separately to avoid duplicating work.
+        if (!lastDashboardData) {
+            // Wait until first dashboard poll has populated cache
+            setTimeout(loadEquityCurve, 1000);
+            return;
+        }
+        renderEquityCurveFromSamples(lastDashboardData.intradaySamples || []);
+    }
+    setTimeout(loadEquityCurve, 1500);
+    // Re-render every 30s — the 5s dashboard poll already refreshes lastDashboardData with the
+    // latest sample list; this just paints the chart from it.
+    setInterval(loadEquityCurve, 30000);
 
     // ── Market Clock (same logic as the previous Positions page) ────────────
     var NSE_HOLIDAYS = {}; // {date: name}

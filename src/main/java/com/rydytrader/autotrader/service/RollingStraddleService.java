@@ -94,6 +94,11 @@ public class RollingStraddleService {
      *  lazy-fetched from the Fyers option chain when IDLE so the dashboard can show it without
      *  needing an open position. Reset on day rollover; re-resolved on next dashboard hit. */
     private volatile String  currentWeeklyExpiry = "";
+    /** Intraday Net P&L samples for the dashboard's equity curve. List of {t: "HH:mm", v: net}.
+     *  Captured every 5 minutes between entryTime and squareOffTime. Cleared on day rollover,
+     *  persisted to disk so the chart survives restart. */
+    private final java.util.List<java.util.Map<String, Object>> intradaySamples =
+        java.util.Collections.synchronizedList(new java.util.ArrayList<>());
 
     public static record RollEvent(String time, String event, double nifty,
                                     String ce, String pe, double pnl) {}
@@ -138,6 +143,10 @@ public class RollingStraddleService {
             this.buyPremiumTurnoverToday = persisted.buyPremiumTurnoverToday;
             this.orderCountToday = persisted.orderCountToday;
             this.currentWeeklyExpiry = persisted.currentWeeklyExpiry != null ? persisted.currentWeeklyExpiry : "";
+            if (persisted.intradaySamples != null) {
+                this.intradaySamples.clear();
+                this.intradaySamples.addAll(persisted.intradaySamples);
+            }
             log.info("[Straddle] Resumed state={} dayKey={} rollCount={} lastEntryNifty={} ce={} pe={} ceEntry={} peEntry={} realised={}",
                 state, dayKey, rollCount, lastEntryNifty, ceSymbol, peSymbol,
                 ceEntryPremium, peEntryPremium, realisedPnlToday);
@@ -219,6 +228,31 @@ public class RollingStraddleService {
         } catch (Exception e) {
             log.warn("[Straddle] Seed leg quote failed for {}: {}", symbol, e.getMessage());
         }
+    }
+
+    /** Captures one Net P&L sample for today's equity curve every 5 minutes between
+     *  straddleEntryTime and straddleSquareOffTime. Persists each sample so the chart
+     *  survives restart. */
+    @Scheduled(cron = "0 */5 * * * MON-FRI", zone = "Asia/Kolkata")
+    public void sampleIntradayNetPnl() {
+        if (marketHolidayService != null && !marketHolidayService.isTradingDay()) return;
+        LocalTime now = LocalTime.now(IST);
+        LocalTime entryTime     = parseTime(riskSettings.getStraddleEntryTime(),     "09:20");
+        LocalTime squareOffTime = parseTime(riskSettings.getStraddleSquareOffTime(), "15:15");
+        // Sample window: from entryTime until 5 minutes after squareOffTime so we capture the
+        // final close P&L too.
+        if (now.isBefore(entryTime) || now.isAfter(squareOffTime.plusMinutes(5))) return;
+        double ceLtp = ceSymbol != null && !ceSymbol.isEmpty() ? marketDataService.getLtp(ceSymbol) : 0;
+        double peLtp = peSymbol != null && !peSymbol.isEmpty() ? marketDataService.getLtp(peSymbol) : 0;
+        double ceMtm = (ceEntryPremium > 0 && ceLtp > 0 && ceQty > 0) ? (ceEntryPremium - ceLtp) * ceQty : 0;
+        double peMtm = (peEntryPremium > 0 && peLtp > 0 && peQty > 0) ? (peEntryPremium - peLtp) * peQty : 0;
+        double charges = computeChargesBreakdown().get("total");
+        double netPnl = realisedPnlToday + ceMtm + peMtm - charges;
+        java.util.Map<String, Object> sample = new java.util.LinkedHashMap<>();
+        sample.put("t", now.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")));
+        sample.put("v", Math.round(netPnl * 100.0) / 100.0);
+        intradaySamples.add(sample);
+        persist();
     }
 
     @Scheduled(fixedDelay = 5000)
@@ -760,6 +794,7 @@ public class RollingStraddleService {
         this.orderCountToday = 0;
         this.currentWeeklyExpiry = "";
         this.recentRolls.clear();
+        this.intradaySamples.clear();
         transitionTo(LifecycleState.IDLE);
     }
 
@@ -787,6 +822,9 @@ public class RollingStraddleService {
         s.buyPremiumTurnoverToday = this.buyPremiumTurnoverToday;
         s.orderCountToday = this.orderCountToday;
         s.currentWeeklyExpiry = this.currentWeeklyExpiry;
+        synchronized (intradaySamples) {
+            s.intradaySamples = new java.util.ArrayList<>(intradaySamples);
+        }
         stateStore.update(s);
     }
 
@@ -861,6 +899,9 @@ public class RollingStraddleService {
         java.util.Map<String, Object> m = getStatus();
         m.put("weeklyExpiry", currentWeeklyExpiry);
         m.put("daysToExpiry", tradingDaysToExpiry(currentWeeklyExpiry));
+        synchronized (intradaySamples) {
+            m.put("intradaySamples", new java.util.ArrayList<>(intradaySamples));
+        }
         // NIFTY change + change% for the Hero stat. Uses display getters so pre-market shows
         // the last known value + prev-close-relative change (matches the ticker bar behaviour).
         if (marketDataService != null) {

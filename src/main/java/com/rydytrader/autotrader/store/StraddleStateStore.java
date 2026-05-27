@@ -51,6 +51,10 @@ public class StraddleStateStore {
         public double  buyPremiumTurnoverToday;
         public int     orderCountToday;
         public String  currentWeeklyExpiry;
+        /** Intraday Net P&L samples for today's equity curve. Each entry is {t: "HH:mm", v: net}.
+         *  Captured every 5 min between straddleEntryTime and straddleSquareOffTime. Cleared on
+         *  day rollover. Persisting it means the chart survives a mid-day restart. */
+        public java.util.List<java.util.Map<String, Object>> intradaySamples;
         public long    updatedAtMillis;
 
         public State() {}
