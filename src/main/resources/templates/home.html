@@ -1050,10 +1050,17 @@
         return { ch: ch, chp: chp };
     }
 
+    // Supports both Fyers option symbol formats:
+    //   A) ...YYMDD<strike>CE|PE  (e.g. NIFTY2660223850CE → strike 23850) — current format
+    //   B) ...YYMDD[CP]<strike>   (e.g. NIFTY25527C24350 → strike 24350) — older format
     function strikeForLeg(fyersSymbol, niftyLtp) {
         if (fyersSymbol) {
-            var m = fyersSymbol.match(/(\d+)$/);
-            if (m) return { value: m[1], projected: false };
+            // Format A — 5-char date code + strike + CE/PE
+            var mA = fyersSymbol.match(/[0-9OND]{5}(\d{4,6})(?:CE|PE)$/i);
+            if (mA) return { value: mA[1], projected: false };
+            // Format B — 5-char date code + C or P + strike (trailing)
+            var mB = fyersSymbol.match(/[0-9OND]{5}[CP](\d{4,6})$/i);
+            if (mB) return { value: mB[1], projected: false };
         }
         if (niftyLtp && niftyLtp > 0) {
             var atm = Math.round(niftyLtp / 50) * 50;

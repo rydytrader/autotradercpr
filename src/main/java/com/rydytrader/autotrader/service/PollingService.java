@@ -215,7 +215,9 @@ public class PollingService {
 
     /** True when the Fyers symbol is an option (CE/PE on any underlying), false for equity,
      *  index, futures, mutual funds, etc. Done by exclusion of the well-known non-option
-     *  segment suffixes. Examples accepted: NSE:NIFTY25527C24350, NSE:BANKNIFTY...P50000.
+     *  segment suffixes. Accepts both option-symbol formats Fyers has used:
+     *    A) NSE:NIFTY2660223850CE / PE          (current — CE/PE suffix)
+     *    B) NSE:NIFTY25527C24350 / P24350       (older — C/P letter followed by strike)
      *  Rejected: NSE:INFY-EQ, NSE:NIFTY50-INDEX, NSE:NIFTY25MAYFUT. */
     private static boolean isOptionSymbol(String fyersSymbol) {
         if (fyersSymbol == null || fyersSymbol.isEmpty()) return false;
@@ -223,7 +225,7 @@ public class PollingService {
         if (upper.endsWith("-EQ") || upper.endsWith("-INDEX") || upper.endsWith("-MF")
             || upper.endsWith("-BE") || upper.endsWith("-BL") || upper.endsWith("-SM")
             || upper.endsWith("FUT")) return false;
-        // Must end in C<digits> or P<digits> (strike price following the option type letter)
-        return upper.matches(".*[CP]\\d+$");
+        return upper.matches(".*[CP]\\d+$")        // format B: ends in C/P + digits
+            || upper.matches(".*\\d+(CE|PE)$");    // format A: ends in digits + CE/PE
     }
 }
