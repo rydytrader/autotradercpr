@@ -138,6 +138,10 @@
                     <div class="stat-label">Open MTM</div>
                     <div class="stat-value" id="heroOpenMtm" style="font-size:1.1rem; margin-top:4px;">0.00</div>
                 </div>
+                <div id="heroRiskCell" style="text-align:center; border-left:1px solid var(--border); padding-left:32px; padding-right:32px;">
+                    <div class="stat-label">Risk</div>
+                    <div class="stat-value" id="heroRisk" style="font-size:1.1rem; margin-top:4px;" title="Consumed daily loss vs configured Max Daily Loss">— / —</div>
+                </div>
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
                     <div class="stat-label">State</div>
                     <div class="stat-value" id="heroStatePill" style="font-size:0.95rem; margin-top:4px;">—</div>
@@ -478,6 +482,29 @@
             if ((d.combinedMtm || 0) > 0.5) openMtm.classList.add('pnl-positive');
             else if ((d.combinedMtm || 0) < -0.5) openMtm.classList.add('pnl-negative');
 
+            // Risk consumed vs max (Hero card after Open MTM, separator on the cell)
+            var riskCell = document.getElementById('heroRiskCell');
+            var riskEl   = document.getElementById('heroRisk');
+            var maxLoss  = Number(d.maxDailyLoss || 0);
+            if (riskCell && riskEl) {
+                if (maxLoss <= 0) {
+                    riskEl.textContent = 'Off';
+                    riskEl.className = 'stat-value';
+                    riskEl.style.color = 'var(--text-muted)';
+                    riskEl.title = 'Max Daily Loss is set to 0 — kill-switch disabled. Configure it in Settings → Risk.';
+                } else {
+                    // Consumed = how much of the loss budget we've used. Only counts when net is negative.
+                    var consumed = trueNet < 0 ? Math.min(-trueNet, maxLoss) : 0;
+                    var pct = (consumed / maxLoss) * 100;
+                    riskEl.textContent = fmtRs(consumed) + ' / ' + fmtRs(maxLoss);
+                    riskEl.className = 'stat-value';
+                    if      (pct >= 90) riskEl.style.color = 'var(--accent-red)';
+                    else if (pct >= 60) riskEl.style.color = 'var(--accent-amber, #fbbf24)';
+                    else                riskEl.style.color = 'var(--text-primary)';
+                    riskEl.title = 'Daily loss budget used: ' + pct.toFixed(1) + '%. Kill-switch fires at 100%.';
+                }
+            }
+
             var statePill = document.getElementById('heroStatePill');
             statePill.textContent = d.state || '—';
             statePill.style.color = (d.state === 'OPEN') ? 'var(--accent-green)'
@@ -519,7 +546,11 @@
             document.getElementById('paneMovePct').textContent = d.movePctTrigger ? (Number(d.movePctTrigger).toFixed(2) + '%') : '—';
 
             // Pane 2: CE Leg
-            document.getElementById('paneCeSymbol').textContent = d.ceSymbol || '—';
+            var ceStrikeEl = document.getElementById('paneCeSymbol');
+            var ceStrikeInfo = strikeForLeg(d.ceSymbol, d.niftyLtp);
+            ceStrikeEl.textContent = ceStrikeInfo.text;
+            ceStrikeEl.title = d.ceSymbol || '';
+            ceStrikeEl.style.color = ceStrikeInfo.projected ? 'var(--text-muted)' : 'var(--text-secondary)';
             document.getElementById('paneCeEntryLtp').textContent =
                 (d.ceEntryPremium > 0 ? Number(d.ceEntryPremium).toFixed(2) : '—')
                 + ' / ' + (d.ceLtp > 0 ? Number(d.ceLtp).toFixed(2) : '—');
@@ -530,7 +561,11 @@
             else if ((d.ceMtm || 0) < -0.5) ceMtm.classList.add('pnl-negative');
 
             // Pane 3: PE Leg
-            document.getElementById('panePeSymbol').textContent = d.peSymbol || '—';
+            var peStrikeEl = document.getElementById('panePeSymbol');
+            var peStrikeInfo = strikeForLeg(d.peSymbol, d.niftyLtp);
+            peStrikeEl.textContent = peStrikeInfo.text;
+            peStrikeEl.title = d.peSymbol || '';
+            peStrikeEl.style.color = peStrikeInfo.projected ? 'var(--text-muted)' : 'var(--text-secondary)';
             document.getElementById('panePeEntryLtp').textContent =
                 (d.peEntryPremium > 0 ? Number(d.peEntryPremium).toFixed(2) : '—')
                 + ' / ' + (d.peLtp > 0 ? Number(d.peLtp).toFixed(2) : '—');
@@ -569,6 +604,104 @@
     }
     loadDashboard();
     setInterval(loadDashboard, 5000);
+
+    // ── Real-time tick updates from the ticker SSE ───────────────────────────
+    // The 5s dashboard poll provides the slow-moving fields (state, charges, recentRolls,
+    // dayKey). For the fast-moving numbers (NIFTY, CE/PE LTP, MTM, combined MTM, Net P&L,
+    // Risk consumed) we listen to the same SSE stream the ticker bar already uses and
+    // patch the DOM in place between polls so the dashboard feels live.
+    //
+    // ticker.js connects window.__tickerSSE asynchronously, so we wait for it to come
+    // online before attaching. Single attachment for the page lifetime.
+    var __dashboardTickAttached = false;
+    function stripPrefix(sym) { return sym ? sym.replace(/^NSE:/, '') : ''; }
+    function attachDashboardTickStream() {
+        if (__dashboardTickAttached) return;
+        var sse = window.__tickerSSE;
+        if (!sse) { setTimeout(attachDashboardTickStream, 500); return; }
+        __dashboardTickAttached = true;
+        sse.addEventListener('ticker', function(event) {
+            try {
+                var arr = JSON.parse(event.data);
+                if (!arr || !arr.length) return;
+                var d = lastDashboardData;
+                if (!d) return;
+                var ceKey = stripPrefix(d.ceSymbol);
+                var peKey = stripPrefix(d.peSymbol);
+                var niftyLtp = null, ceLtp = null, peLtp = null;
+                for (var i = 0; i < arr.length; i++) {
+                    var t = arr[i];
+                    if (t.symbol === 'NIFTY50' || t.symbol === 'NIFTY 50') niftyLtp = t.lp;
+                    else if (ceKey && t.symbol === ceKey) ceLtp = t.lp;
+                    else if (peKey && t.symbol === peKey) peLtp = t.lp;
+                }
+                // Hero NIFTY
+                if (niftyLtp != null) {
+                    d.niftyLtp = niftyLtp;
+                    document.getElementById('heroNiftyLtp').textContent = Number(niftyLtp).toFixed(2);
+                }
+                // CE leg LTP + MTM
+                if (ceLtp != null) {
+                    d.ceLtp = ceLtp;
+                    document.getElementById('paneCeEntryLtp').textContent =
+                        (d.ceEntryPremium > 0 ? Number(d.ceEntryPremium).toFixed(2) : '—')
+                        + ' / ' + Number(ceLtp).toFixed(2);
+                    var ceMtm = (d.ceEntryPremium > 0 && d.ceQty > 0) ? (d.ceEntryPremium - ceLtp) * d.ceQty : 0;
+                    d.ceMtm = ceMtm;
+                    var ceMtmEl = document.getElementById('paneCeMtm');
+                    ceMtmEl.textContent = fmtRs(ceMtm);
+                    ceMtmEl.className = 'stat-value';
+                    if      (ceMtm > 0.5)  ceMtmEl.classList.add('pnl-positive');
+                    else if (ceMtm < -0.5) ceMtmEl.classList.add('pnl-negative');
+                }
+                // PE leg LTP + MTM
+                if (peLtp != null) {
+                    d.peLtp = peLtp;
+                    document.getElementById('panePeEntryLtp').textContent =
+                        (d.peEntryPremium > 0 ? Number(d.peEntryPremium).toFixed(2) : '—')
+                        + ' / ' + Number(peLtp).toFixed(2);
+                    var peMtm = (d.peEntryPremium > 0 && d.peQty > 0) ? (d.peEntryPremium - peLtp) * d.peQty : 0;
+                    d.peMtm = peMtm;
+                    var peMtmEl = document.getElementById('panePeMtm');
+                    peMtmEl.textContent = fmtRs(peMtm);
+                    peMtmEl.className = 'stat-value';
+                    if      (peMtm > 0.5)  peMtmEl.classList.add('pnl-positive');
+                    else if (peMtm < -0.5) peMtmEl.classList.add('pnl-negative');
+                }
+                // Combined MTM + Net P&L + Risk (only if any leg moved)
+                if (ceLtp != null || peLtp != null) {
+                    var combined = (d.ceMtm || 0) + (d.peMtm || 0);
+                    d.combinedMtm = combined;
+                    var openMtmEl = document.getElementById('heroOpenMtm');
+                    openMtmEl.textContent = fmtRs(combined);
+                    openMtmEl.className = 'stat-value';
+                    if      (combined > 0.5)  openMtmEl.classList.add('pnl-positive');
+                    else if (combined < -0.5) openMtmEl.classList.add('pnl-negative');
+                    // Net = realised + MTM - charges. Charges are recomputed on backend every 5s
+                    // (uses projected close-side); we keep the last known value between polls.
+                    var chTotal = (d.charges && d.charges.total) || 0;
+                    var trueNet = (d.realisedPnlToday || 0) + combined - chTotal;
+                    var netEl = document.getElementById('netDayPnl');
+                    netEl.textContent = fmtRs(trueNet);
+                    netEl.className = 'stat-value';
+                    if      (trueNet > 0.5)  netEl.classList.add('pnl-positive');
+                    else if (trueNet < -0.5) netEl.classList.add('pnl-negative');
+                    // Risk consumed
+                    var maxLoss = Number(d.maxDailyLoss || 0);
+                    var riskEl = document.getElementById('heroRisk');
+                    if (riskEl && maxLoss > 0) {
+                        var consumed = trueNet < 0 ? Math.min(-trueNet, maxLoss) : 0;
+                        var pct = (consumed / maxLoss) * 100;
+                        riskEl.textContent = fmtRs(consumed) + ' / ' + fmtRs(maxLoss);
+                        if      (pct >= 90) riskEl.style.color = 'var(--accent-red)';
+                        else if (pct >= 60) riskEl.style.color = 'var(--accent-amber, #fbbf24)';
+                        else                riskEl.style.color = 'var(--text-primary)';
+                    }
+                }
+            } catch (e) {}
+        });
+    }
+    attachDashboardTickStream();
 
     // ── Event Log ────────────────────────────────────────────────────────────
     var __evCache = [];
@@ -773,23 +906,78 @@
             clockEl.textContent = now.toLocaleTimeString('en-IN', {hour12:false});
             var diff = preMarket - mins;
             var dh = Math.floor(diff / 60), dm = diff % 60;
-            subEl.textContent = 'Pre-market in ' + (dh > 0 ? dh + 'h ' : '') + dm + 'm';
+            var base1 = 'Pre-market in ' + (dh > 0 ? dh + 'h ' : '') + dm + 'm';
+            var extra1 = straddleCountdownText(now);
+            subEl.textContent = extra1 ? base1 + ' · ' + extra1 : base1;
             subEl.style.color = 'var(--accent-yellow)';
         } else if (mins < marketOpen) {
             clockEl.textContent = now.toLocaleTimeString('en-IN', {hour12:false});
-            subEl.textContent = 'Pre-Market (' + (marketOpen - mins) + 'm to open)';
+            var base2 = 'Pre-Market (' + (marketOpen - mins) + 'm to open)';
+            var extra2 = straddleCountdownText(now);
+            subEl.textContent = extra2 ? base2 + ' · ' + extra2 : base2;
             subEl.style.color = 'var(--accent-yellow)';
         } else if (mins < marketClose) {
             var remaining = marketClose - mins;
             var rh = Math.floor(remaining / 60), rm = remaining % 60;
             clockEl.textContent = now.toLocaleTimeString('en-IN', {hour12:false});
-            subEl.textContent = 'Market Open (' + rh + 'h ' + rm + 'm left)';
+            var base = 'Market Open (' + rh + 'h ' + rm + 'm left)';
+            var extra = straddleCountdownText(now);
+            subEl.textContent = extra ? base + ' · ' + extra : base;
             subEl.style.color = 'var(--accent-green)';
         } else {
             clockEl.textContent = now.toLocaleTimeString('en-IN', {hour12:false});
             subEl.textContent = 'Market Closed — ' + nextTradingDay(now);
             subEl.style.color = 'var(--accent-red)';
         }
+    }
+
+    /** Compute the straddle countdown segment to append to the market-clock sub-line.
+     *  Before entryTime: "Entry in HH:MM:SS"
+     *  Open / Max-rolls-hold + before squareoff: "Squareoff in HH:MM:SS"
+     *  Otherwise: empty string (segment hidden). */
+    function straddleCountdownText(now) {
+        var d = lastDashboardData;
+        if (!d) return '';
+        var nowSecs = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+        var entrySecs = parseHmsToSecs(d.entryTime);
+        var sqOffSecs = parseHmsToSecs(d.squareOffTime);
+        if (entrySecs < 0 || sqOffSecs < 0) return '';
+        if (nowSecs < entrySecs) return 'Entry in ' + fmtHms(entrySecs - nowSecs);
+        if ((d.state === 'OPEN' || d.state === 'MAX_ROLLS_HOLD') && nowSecs < sqOffSecs) {
+            return 'Squareoff in ' + fmtHms(sqOffSecs - nowSecs);
+        }
+        return '';
+    }
+    /** Return the strike to show on a leg card.
+     *  - If the leg has a Fyers symbol, parse the trailing digits (the strike). Example:
+     *    "NSE:NIFTY25527C24350" → "Strike 24350".
+     *  - If no symbol (pre-entry) but NIFTY LTP is known, project the ATM strike (rounded to 50)
+     *    and prefix with "~" to signal "this is where the bot would enter right now".
+     *  - Otherwise return "—". */
+    function strikeForLeg(fyersSymbol, niftyLtp) {
+        if (fyersSymbol) {
+            var m = fyersSymbol.match(/(\d+)$/);
+            if (m) return { text: 'Strike ' + m[1], projected: false };
+        }
+        if (niftyLtp && niftyLtp > 0) {
+            var atm = Math.round(niftyLtp / 50) * 50;
+            return { text: '~Strike ' + atm, projected: true };
+        }
+        return { text: '—', projected: true };
+    }
+
+    function parseHmsToSecs(hm) {
+        if (!hm) return -1;
+        var p = hm.split(':');
+        if (p.length < 2) return -1;
+        return (parseInt(p[0], 10) * 3600) + (parseInt(p[1], 10) * 60) + (p.length >= 3 ? parseInt(p[2], 10) : 0);
+    }
+    function fmtHms(sec) {
+        if (sec < 0) sec = 0;
+        var h = Math.floor(sec / 3600);
+        var m = Math.floor((sec % 3600) / 60);
+        var s = sec % 60;
+        return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
     }
     setInterval(function() { if (holidaysLoaded) updateMarketClock(); }, 1000);
 

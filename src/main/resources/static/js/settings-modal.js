@@ -27,6 +27,7 @@
                 // Tab strip
                 '<div style="display:flex;border-bottom:1px solid var(--border);padding:0 24px;">' +
                   '<button class="sm-tab active" data-tab="straddle">ROLLING STRADDLE</button>' +
+                  '<button class="sm-tab" data-tab="risk">RISK</button>' +
                   '<button class="sm-tab" data-tab="charges">CHARGES</button>' +
                   '<button class="sm-tab" data-tab="users">USERS</button>' +
                 '</div>' +
@@ -40,6 +41,10 @@
                     '<div class="sm-field"><label>Move % Trigger</label><input type="number" id="sm-straddleMovePctTrigger" step="0.05" min="0.05" max="5.0"><div class="sm-hint">NIFTY move from last entry that fires a roll. Default 0.4%.</div></div>' +
                     '<div class="sm-field"><label>Max Rolls</label><input type="number" id="sm-straddleMaxRolls" step="1" min="0" max="20"><div class="sm-hint">Number of rolls before holding to squareoff. Default 3.</div></div>' +
                     '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-straddleLotsPerLeg" step="1" min="1" max="20"><div class="sm-hint">Qty = lots × NIFTY lot size (65). Default 1.</div></div>' +
+                  '</div>' +
+                  // Risk tab
+                  '<div class="sm-pane" data-pane="risk" style="display:none;">' +
+                    '<div class="sm-hint" style="margin-bottom:14px;font-style:italic;">Day-level safety limits. Triggered checks flatten open legs and park the bot DONE_FOR_DAY; manual ↻ Reset to IDLE required to re-arm.</div>' +
                     '<div class="sm-field"><label>Max Daily Loss (₹)</label><input type="number" id="sm-straddleMaxDailyLoss" step="500" min="0"><div class="sm-hint">Net P&L kill-switch. When today\'s loss (realised + open MTM − charges) exceeds this, both legs are flattened and bot parks DONE_FOR_DAY. 0 disables.</div></div>' +
                   '</div>' +
                   // Charges tab

@@ -807,6 +807,7 @@ public class RollingStraddleService {
         m.put("peQty",           peQty);
         m.put("rollCount",       rollCount);
         m.put("maxRolls",        riskSettings.getStraddleMaxRolls());
+        m.put("maxDailyLoss",    riskSettings.getStraddleMaxDailyLoss());
         m.put("ceOrderId",       ceOrderId);
         m.put("peOrderId",       peOrderId);
         m.put("entryTime",       riskSettings.getStraddleEntryTime());
