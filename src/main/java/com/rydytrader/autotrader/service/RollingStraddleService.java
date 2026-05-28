@@ -608,8 +608,26 @@ public class RollingStraddleService {
             return;
         }
 
+        // Pre-check: if the configured wait would push the re-entry past the roll cutoff,
+        // skip the wait entirely and park DONE_FOR_DAY immediately. The wait exists to avoid
+        // whipsaw re-entry; if we can't actually roll afterward, there's no benefit to sitting
+        // in WAITING_TO_ROLL doing nothing for N minutes.
+        int waitMin = riskSettings.getStraddleRollWaitMin();
+        LocalTime cutoff = parseTime(riskSettings.getStraddleRollCutoffTime(), "14:30");
+        LocalTime projectedReentry = now.plusMinutes(waitMin);
+        if (afterOrAt(projectedReentry, cutoff)) {
+            String parkMsg = String.format("Combined premium SL hit — entry %.2f, live %.2f (+%.2f%%, threshold %.2f%%). Wait of %d min would push re-entry past cutoff %s — parking DONE_FOR_DAY without wait.",
+                entryCombined, liveCombined, consumedPct, slPct, waitMin, cutoff);
+            log.info("[Straddle] {}", parkMsg);
+            eventService.log("[INFO] " + parkMsg);
+            notifyTelegram(parkMsg);
+            closeBothLegs("SL_HIT");
+            transitionTo(LifecycleState.DONE_FOR_DAY);
+            return;
+        }
+
         String slMsg = String.format("Combined premium SL hit — entry %.2f, live %.2f (+%.2f%%, threshold %.2f%%). Closing legs and waiting %d min before re-entry.",
-            entryCombined, liveCombined, consumedPct, slPct, riskSettings.getStraddleRollWaitMin());
+            entryCombined, liveCombined, consumedPct, slPct, waitMin);
         log.info("[Straddle] {}", slMsg);
         eventService.log("[INFO] " + slMsg);
         notifyTelegram(slMsg);
