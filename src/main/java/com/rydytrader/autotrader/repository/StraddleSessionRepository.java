@@ -9,4 +9,7 @@ import java.util.Optional;
 public interface StraddleSessionRepository extends JpaRepository<StraddleSessionEntity, Long> {
     Optional<StraddleSessionEntity> findBySessionDate(String sessionDate);
     List<StraddleSessionEntity> findAllByOrderBySessionDateDesc();
+    // Multi-strategy variants — filter by strategyId for per-strategy history pages
+    Optional<StraddleSessionEntity> findByStrategyIdAndSessionDate(String strategyId, String sessionDate);
+    List<StraddleSessionEntity> findByStrategyIdOrderBySessionDateDesc(String strategyId);
 }
