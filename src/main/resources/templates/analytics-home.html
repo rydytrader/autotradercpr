@@ -203,7 +203,16 @@
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Wins / Losses</span>
+                    <span class="stat-label" style="margin:0;" title="Number of trading days with any activity in scope.">Sessions</span>
+                    <span class="stat-value" id="ahSessions" style="font-size:1rem;">—</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;"
+                          title="Total individual short straddles traded — counts each entry plus each roll (combined-sl-roll can roll multiple times per session).">Straddles</span>
+                    <span class="stat-value" id="ahStraddles" style="font-size:1rem;">—</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;" title="By session day, not per individual straddle.">Wins / Losses</span>
                     <span style="font-family:var(--font-mono); font-size:0.95rem; font-weight:700;">
                         <span class="pnl-positive" id="ahWins">0</span>
                         <span style="color:var(--text-muted);"> / </span>
@@ -561,6 +570,8 @@
 
             // ── DETAIL CARDS — only metrics that aren't already in the hero ─
             // Trade Counts card
+            setVal('ahSessions',  String(perf.sessions  || 0));
+            setVal('ahStraddles', String(perf.straddles || 0));
             document.getElementById('ahWins').textContent   = String(perf.wins || 0);
             document.getElementById('ahLosses').textContent = String(perf.losses || 0);
             setVal('ahAvgWinLoss', fmtRs(ext.avgProfit) + ' / ' + fmtRs(ext.avgLoss));

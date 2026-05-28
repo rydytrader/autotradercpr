@@ -247,10 +247,12 @@ public class AnalyticsService {
         int wins = 0, losses = 0;
         double grossProfit = 0, grossLoss = 0;
         double sumWin = 0, sumLoss = 0;
+        int straddles = 0; // total individual short-straddle cycles = entries + rolls per session
         for (StraddleSessionEntity s : rows) {
             double pnl = s.getNetPnl();
             if (pnl > 0)      { wins++;   grossProfit += pnl; sumWin  += pnl; }
             else if (pnl < 0) { losses++; grossLoss   += pnl; sumLoss += pnl; }
+            straddles += s.getEntries() + s.getRolls();
         }
         int total = rows.size();
         double winRate      = total > 0 ? (wins / (double) total) * 100.0 : 0;
@@ -260,6 +262,7 @@ public class AnalyticsService {
         double riskReward   = avgLoss < 0 ? avgWin / Math.abs(avgLoss) : 0;
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("sessions",     total);
+        m.put("straddles",    straddles);
         m.put("wins",         wins);
         m.put("losses",       losses);
         m.put("winRate",      round2(winRate));
