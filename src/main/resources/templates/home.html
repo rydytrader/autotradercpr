@@ -176,8 +176,8 @@
                     <div class="stat-value" id="heroOpenMtm" style="font-size:1.1rem; margin-top:4px;">0.00</div>
                 </div>
                 <div id="heroRiskCell" style="text-align:center; border-left:1px solid var(--border); padding-left:32px; padding-right:32px;">
-                    <div class="stat-label">Risk</div>
-                    <div class="stat-value" id="heroRisk" style="font-size:1.1rem; margin-top:4px;" title="Combined-premium SL budget used (% of way to roll trigger)">—</div>
+                    <div class="stat-label" title="Worst-case loss for the currently running straddle if its SL fires exactly at threshold.">Max Loss / Straddle</div>
+                    <div class="stat-value" id="heroRisk" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
                     <div class="stat-label">State</div>
@@ -638,44 +638,33 @@
             if ((d.combinedMtm || 0) > 0.5) openMtm.classList.add('pnl-positive');
             else if ((d.combinedMtm || 0) < -0.5) openMtm.classList.add('pnl-negative');
 
-            // Risk consumed — combined-premium SL (combined-sl-roll) vs worst leg consumed (leg-sl)
+            // Hero "Risk" tile — shows the worst-case loss for the currently running straddle
+            // (entry × SL% × qty). Consumed-%/cushion goes in the tooltip. Stays "—" pre-entry.
             var riskCell = document.getElementById('heroRiskCell');
             var riskEl   = document.getElementById('heroRisk');
             if (riskCell && riskEl) {
-                var pct = 0, has = false, title = '', label = '';
-                if (SHAPE === 'leg-sl') {
-                    var slP = Number(d.legSlPct || 0);
-                    var ceC = Number(d.ceSlConsumedPct || 0);
-                    var peC = Number(d.peSlConsumedPct || 0);
-                    if (slP > 0 && (d.ceEntryPremium > 0 || d.peEntryPremium > 0)) {
-                        pct = Math.max(ceC, peC);
-                        has = true;
-                        title = 'Worst-leg SL budget used: CE ' + ceC.toFixed(1) + '%, PE ' + peC.toFixed(1)
-                            + '% of the ' + slP.toFixed(0) + '% per-leg threshold. SL fires at 100%.';
-                        label = 'CE ' + Math.max(0, ceC).toFixed(0) + '% · PE ' + Math.max(0, peC).toFixed(0) + '%';
+                var maxLoss = Number(d.maxLossPerStraddle || 0);
+                if (maxLoss > 0) {
+                    riskEl.textContent = '-' + fmtRs(maxLoss);
+                    riskEl.className = 'stat-value pnl-negative';
+                    var tooltip;
+                    if (SHAPE === 'leg-sl') {
+                        var ceC = Number(d.ceSlConsumedPct || 0);
+                        var peC = Number(d.peSlConsumedPct || 0);
+                        tooltip = 'Worst-case loss for this straddle if both per-leg SLs fire. '
+                            + 'Currently used: CE ' + ceC.toFixed(1) + '%, PE ' + peC.toFixed(1) + '% of the SL budget.';
+                    } else {
+                        var slPctCfg = Number(d.combinedSlPct || 0);
+                        var consumed = Math.max(0, Number(d.slConsumedPct || 0));
+                        tooltip = 'Worst-case loss for this straddle cycle if combined-premium SL fires. '
+                            + 'Currently used: ' + consumed.toFixed(1) + '% of the ' + slPctCfg.toFixed(0) + '% budget.';
                     }
-                } else {
-                    var slPctCfg = Number(d.combinedSlPct || 0);
-                    if (d.entryCombined && d.entryCombined > 0 && slPctCfg > 0) {
-                        pct = Math.max(0, Number(d.slConsumedPct || 0));
-                        has = true;
-                        title = 'Combined premium SL budget used: ' + pct.toFixed(1) + '% of the '
-                            + slPctCfg.toFixed(0) + '% loss threshold. Roll fires at 100%.';
-                        label = pct.toFixed(1) + '% / 100%';
-                    }
-                }
-                if (has) {
-                    riskEl.textContent = label;
-                    riskEl.className = 'stat-value';
-                    if      (pct >= 90) riskEl.style.color = 'var(--accent-red)';
-                    else if (pct >= 60) riskEl.style.color = 'var(--accent-amber, #fbbf24)';
-                    else                riskEl.style.color = 'var(--text-primary)';
-                    riskEl.title = title;
+                    riskEl.title = tooltip;
                 } else {
                     riskEl.textContent = '—';
                     riskEl.className = 'stat-value';
                     riskEl.style.color = 'var(--text-muted)';
-                    riskEl.title = 'No active position — SL budget tracking starts on entry.';
+                    riskEl.title = 'No active position — max-loss display starts on entry.';
                 }
             }
 

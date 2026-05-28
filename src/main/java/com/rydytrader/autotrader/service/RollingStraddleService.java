@@ -1230,6 +1230,13 @@ public class RollingStraddleService implements Strategy {
         m.put("entryCombined", round2(entryCombined));
         m.put("liveCombined",  round2(liveCombined));
         m.put("combinedSlPct", combinedSlPct);
+        // Worst-case loss for the currently-running straddle cycle, if the combined SL fires
+        // exactly at threshold. = entryCombined × slPct/100 × qty. 0 when no straddle is open.
+        double maxLossPerStraddle = 0;
+        if (entryCombined > 0 && combinedSlPct > 0 && ceQty > 0) {
+            maxLossPerStraddle = entryCombined * (combinedSlPct / 100.0) * ceQty;
+        }
+        m.put("maxLossPerStraddle", round2(maxLossPerStraddle));
         if (entryCombined > 0) {
             double slTrigger = entryCombined * (1.0 + combinedSlPct / 100.0);
             m.put("slTrigger", round2(slTrigger));

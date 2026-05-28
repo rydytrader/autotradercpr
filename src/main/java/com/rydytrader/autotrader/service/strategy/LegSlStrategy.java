@@ -634,6 +634,16 @@ public class LegSlStrategy implements Strategy {
         // Per-leg SL triggers + consumed % (replaces combined SL in the leg-sl dashboard).
         double legSlPct = riskSettings.getStrategyDouble(STRATEGY_ID, "legSlPct", 50);
         m.put("legSlPct", legSlPct);
+        // Worst-case loss for the currently-running straddle if both legs hit their SLs. Per-leg
+        // loss at SL = entryPremium × legSlPct/100 × qty. Total = sum of both legs (qty same for
+        // each leg). Skip closed legs — their loss is realised, not future.
+        double maxLossPerStraddle = 0;
+        int legQty = Math.max(ceQty, peQty);
+        if (legSlPct > 0 && legQty > 0) {
+            if (isCeOpen() && ceEntryPremium > 0) maxLossPerStraddle += ceEntryPremium * (legSlPct / 100.0) * legQty;
+            if (isPeOpen() && peEntryPremium > 0) maxLossPerStraddle += peEntryPremium * (legSlPct / 100.0) * legQty;
+        }
+        m.put("maxLossPerStraddle", round2(maxLossPerStraddle));
         if (ceEntryPremium > 0) {
             double ceTrigger = ceEntryPremium * (1.0 + legSlPct / 100.0);
             m.put("ceSlTrigger", round2(ceTrigger));
