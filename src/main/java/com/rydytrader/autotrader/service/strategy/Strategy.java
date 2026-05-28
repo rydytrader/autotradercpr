@@ -84,4 +84,9 @@ public interface Strategy {
     default java.util.List<java.util.Map<String, Object>> todayClosedTrades() {
         return java.util.List.of();
     }
+
+    /** Lightweight accessor for this strategy's running net day P&L (realised + open MTM −
+     *  charges). Used by the portfolio-wide kill switch which sums across all strategies on
+     *  every tick. Default 0 — strategies with positions override. */
+    default double liveNetPnlToday() { return 0; }
 }

@@ -38,8 +38,11 @@ public class SettingsController {
         result.put("maxDailyLoss",        riskSettings.getMaxDailyLoss(effectiveMode));
         result.put("capitalPerTrade",     riskSettings.getCapitalPerTrade(effectiveMode));
         result.put("fixedQuantity",       riskSettings.getFixedQuantity(effectiveMode));
+        // Portfolio Risk (global)
+        result.put("startingCapital",       riskSettings.getStartingCapital(effectiveMode));
+        result.put("portfolioMaxRiskPct",   riskSettings.getPortfolioMaxRiskPct(effectiveMode));
+        result.put("portfolioMaxDailyLoss", riskSettings.getPortfolioMaxDailyLoss()); // derived ₹ for display
         // Charges
-        result.put("startingCapital",     riskSettings.getStartingCapital(effectiveMode));
         result.put("brokeragePerOrder",   riskSettings.getBrokeragePerOrder(effectiveMode));
         result.put("sttRate",             riskSettings.getSttRate(effectiveMode));
         result.put("exchangeRate",        riskSettings.getExchangeRate(effectiveMode));
@@ -80,8 +83,10 @@ public class SettingsController {
             if (body.containsKey("riskPerTrade"))      riskSettings.setRiskPerTrade(effectiveMode, Double.parseDouble(body.get("riskPerTrade").toString()));
             if (body.containsKey("capitalPerTrade"))   riskSettings.setCapitalPerTrade(effectiveMode, Double.parseDouble(body.get("capitalPerTrade").toString()));
             if (body.containsKey("fixedQuantity"))     riskSettings.setFixedQuantity(effectiveMode, Integer.parseInt(body.get("fixedQuantity").toString()));
+            // Portfolio Risk (global)
+            if (body.containsKey("startingCapital"))     riskSettings.setStartingCapital(effectiveMode, Double.parseDouble(body.get("startingCapital").toString()));
+            if (body.containsKey("portfolioMaxRiskPct")) riskSettings.setPortfolioMaxRiskPct(effectiveMode, Double.parseDouble(body.get("portfolioMaxRiskPct").toString()));
             // Charges
-            if (body.containsKey("startingCapital"))   riskSettings.setStartingCapital(effectiveMode, Double.parseDouble(body.get("startingCapital").toString()));
             if (body.containsKey("brokeragePerOrder")) riskSettings.setBrokeragePerOrder(effectiveMode, Double.parseDouble(body.get("brokeragePerOrder").toString()));
             if (body.containsKey("sttRate"))           riskSettings.setSttRate(effectiveMode, Double.parseDouble(body.get("sttRate").toString()));
             if (body.containsKey("exchangeRate"))      riskSettings.setExchangeRate(effectiveMode, Double.parseDouble(body.get("exchangeRate").toString()));

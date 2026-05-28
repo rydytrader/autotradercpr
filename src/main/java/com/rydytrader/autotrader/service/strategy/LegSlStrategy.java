@@ -126,6 +126,18 @@ public class LegSlStrategy implements Strategy {
     @Override public boolean forceClose(String reason) { return forceCloseAll(reason); }
     @Override public String currentWeeklyExpiry() { return currentWeeklyExpiry; }
 
+    /** Live net day P&L (realised + open MTM − charges). Used by the portfolio kill switch. */
+    @Override
+    public double liveNetPnlToday() {
+        if (marketDataService == null) return realisedPnlToday;
+        double ceLtp = (isCeOpen() && !ceSymbol.isEmpty()) ? marketDataService.getLtp(ceSymbol) : 0;
+        double peLtp = (isPeOpen() && !peSymbol.isEmpty()) ? marketDataService.getLtp(peSymbol) : 0;
+        double ceMtm = (isCeOpen() && ceEntryPremium > 0 && ceLtp > 0 && ceQty > 0) ? (ceEntryPremium - ceLtp) * ceQty : 0;
+        double peMtm = (isPeOpen() && peEntryPremium > 0 && peLtp > 0 && peQty > 0) ? (peEntryPremium - peLtp) * peQty : 0;
+        double charges = computeChargesBreakdown().getOrDefault("total", 0.0);
+        return realisedPnlToday + ceMtm + peMtm - charges;
+    }
+
     @Override
     public java.util.List<java.util.Map<String, Object>> getSettingsSchema() {
         java.util.List<java.util.Map<String, Object>> s = new java.util.ArrayList<>();

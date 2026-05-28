@@ -30,8 +30,12 @@
                 // Body (each tab pane scrolls independently)
                 '<div class="sm-body" id="sm-body" style="flex:1;overflow-y:auto;padding:20px 24px;">' +
                   // Charges tab (static)
+                  // Portfolio Risk tab (static)
+                  '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
+                    '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline used by the Home analytics page (capital growth %, equity curve, return %). Default ₹10,00,000.</div></div>' +
+                    '<div class="sm-field"><label>Portfolio Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint" id="sm-portfolioMaxRiskHint">Global kill switch. When aggregate net day P&L across all strategies drops below this % of Initial Capital, every strategy is flattened. 0 disables.</div></div>' +
+                  '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
-                    '<div class="sm-field"><label>Starting Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline used by the Home analytics page (capital growth %, equity curve). Default ₹10,00,000.</div></div>' +
                     '<div class="sm-field"><label>Brokerage per Order (₹)</label><input type="number" id="sm-brokeragePerOrder" step="1" min="0"><div class="sm-hint">Flat per-order brokerage. Drives charge estimates on every dashboard + session row.</div></div>' +
                     '<div class="sm-field"><label>STT Rate (%)</label><input type="number" id="sm-sttRate" step="0.0001" min="0"></div>' +
                     '<div class="sm-field"><label>Exchange Rate (%)</label><input type="number" id="sm-exchangeRate" step="0.0001" min="0"></div>' +
@@ -105,7 +109,9 @@
         var strip = document.getElementById('sm-tabstrip');
         if (!strip) return;
         var html = '';
-        // Strategy tabs first
+        // Portfolio Risk first — global settings (initial capital, global max risk).
+        html += '<button class="sm-tab" data-tab="portfolio-risk">PORTFOLIO RISK</button>';
+        // Strategy tabs
         strategiesList.forEach(function(s) {
             html += '<button class="sm-tab" data-tab="strategy:' + s.id + '">' + escapeHtml((s.displayName || s.id).toUpperCase()) + '</button>';
         });
@@ -130,6 +136,10 @@
         if (tab && tab.indexOf('strategy:') === 0) {
             var sid = tab.substring('strategy:'.length);
             renderStrategyPane(sid);
+        } else if (tab === 'portfolio-risk') {
+            var pp = modalEl.querySelector('[data-pane="portfolio-risk"]');
+            if (pp) pp.style.display = '';
+            loadPortfolioRiskValues();
         } else if (tab === 'charges') {
             var pane = modalEl.querySelector('[data-pane="charges"]');
             if (pane) pane.style.display = '';
@@ -228,6 +238,9 @@
         if (activeTab && activeTab.indexOf('strategy:') === 0) {
             return saveStrategyTab(activeTab.substring('strategy:'.length));
         }
+        if (activeTab === 'portfolio-risk') {
+            return savePortfolioRiskTab();
+        }
         if (activeTab === 'charges') {
             return saveChargesTab();
         }
@@ -249,9 +262,16 @@
         postSettings('/api/strategies/' + strategyId + '/settings', body);
     }
 
+    function savePortfolioRiskTab() {
+        var body = {
+            startingCapital:     parseFloat(document.getElementById('sm-startingCapital').value) || 0,
+            portfolioMaxRiskPct: parseFloat(document.getElementById('sm-portfolioMaxRiskPct').value) || 0
+        };
+        postSettings('/api/settings/risk', body);
+    }
+
     function saveChargesTab() {
         var body = {
-            startingCapital:   parseFloat(document.getElementById('sm-startingCapital').value) || 0,
             brokeragePerOrder: parseFloat(document.getElementById('sm-brokeragePerOrder').value) || 0,
             sttRate:           parseFloat(document.getElementById('sm-sttRate').value) || 0,
             exchangeRate:      parseFloat(document.getElementById('sm-exchangeRate').value) || 0,
@@ -294,11 +314,43 @@
         if (el) el.textContent = '';
     }
 
+    // ── Portfolio Risk values ────────────────────────────────────────────────
+    function loadPortfolioRiskValues() {
+        fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
+            if (!d) return;
+            var capInput = document.getElementById('sm-startingCapital');
+            var pctInput = document.getElementById('sm-portfolioMaxRiskPct');
+            if (capInput) capInput.value = d.startingCapital != null ? d.startingCapital : 1000000;
+            if (pctInput) pctInput.value = d.portfolioMaxRiskPct != null ? d.portfolioMaxRiskPct : 0;
+            updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
+            // Re-compute the derived ₹ hint on every input change so the operator sees the
+            // effective rupee threshold without saving.
+            if (capInput) capInput.oninput = function() {
+                updatePortfolioRiskHint(parseFloat(capInput.value) || 0, parseFloat(pctInput && pctInput.value) || 0);
+            };
+            if (pctInput) pctInput.oninput = function() {
+                updatePortfolioRiskHint(parseFloat(capInput && capInput.value) || 0, parseFloat(pctInput.value) || 0);
+            };
+        }).catch(function() {});
+    }
+
+    function updatePortfolioRiskHint(capital, pct) {
+        var hint = document.getElementById('sm-portfolioMaxRiskHint');
+        if (!hint) return;
+        if (pct <= 0 || capital <= 0) {
+            hint.textContent = 'Global kill switch. When aggregate net day P&L drops below this % of Initial Capital, every strategy is flattened. 0 disables.';
+            return;
+        }
+        var rs = capital * pct / 100;
+        var rsFmt = '₹' + Math.round(rs).toLocaleString('en-IN');
+        var capFmt = '₹' + Math.round(capital).toLocaleString('en-IN');
+        hint.textContent = 'Effective max loss: ' + rsFmt + ' (' + pct + '% of ' + capFmt + '). When aggregate net day P&L drops below this, every strategy is flattened.';
+    }
+
     // ── Charges values — still come from the legacy /api/settings/risk ───────
     function loadChargesValues() {
         fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
-            document.getElementById('sm-startingCapital').value   = d.startingCapital != null ? d.startingCapital : 1000000;
             document.getElementById('sm-brokeragePerOrder').value = d.brokeragePerOrder != null ? d.brokeragePerOrder : 0;
             document.getElementById('sm-sttRate').value           = d.sttRate != null ? d.sttRate : 0;
             document.getElementById('sm-exchangeRate').value      = d.exchangeRate != null ? d.exchangeRate : 0;
@@ -325,9 +377,11 @@
                 switchTab('charges');
             });
         } else {
-            // Re-open: refresh values for the active strategy (or charges)
+            // Re-open: refresh values for the active tab
             if (activeTab && activeTab.indexOf('strategy:') === 0) {
                 loadStrategyValues(activeTab.substring('strategy:'.length));
+            } else if (activeTab === 'portfolio-risk') {
+                loadPortfolioRiskValues();
             } else if (activeTab === 'charges') {
                 loadChargesValues();
             }
