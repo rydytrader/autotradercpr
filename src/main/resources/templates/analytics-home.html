@@ -36,9 +36,9 @@
         .ah-stat-label { font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); letter-spacing:0.04em; }
         .pnl-positive { color:var(--accent-green); }
         .pnl-negative { color:var(--accent-red, #f87171); }
-        /* Collapse the 4-card detail row to 2 columns on narrower screens to avoid squishing. */
+        /* Collapse the 3-card detail row on narrower screens. */
         @media (max-width: 1100px) {
-            .ah-detail-grid { grid-template-columns:repeat(2, 1fr) !important; }
+            .ah-detail-grid { grid-template-columns:1fr !important; }
         }
     </style>
 </head>
@@ -163,29 +163,8 @@
         </div>
     </div>
 
-    <!-- FOUR DETAIL CARDS (drill-down stats) -->
-    <div class="fade-in ah-detail-grid" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:20px;">
-
-        <!-- Capital details -->
-        <div class="section-card" style="margin-bottom:0;">
-            <div class="section-header">
-                <div class="section-title"><div class="section-title-dot"></div> Capital</div>
-            </div>
-            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Starting</span>
-                    <span class="stat-value" id="ahStartingCapital" style="font-size:1rem;">—</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Return %</span>
-                    <span class="stat-value" id="ahTotalReturnPct" style="font-size:1rem;">—</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Total Charges</span>
-                    <span class="stat-value" id="ahTotalCharges" style="font-size:1rem; color:var(--text-muted);">—</span>
-                </div>
-            </div>
-        </div>
+    <!-- THREE DETAIL CARDS (drill-down stats — only metrics NOT already in the hero) -->
+    <div class="fade-in ah-detail-grid" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin-bottom:20px;">
 
         <!-- Trade Counts -->
         <div class="section-card" style="margin-bottom:0;">
@@ -193,10 +172,6 @@
                 <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Trade Counts</div>
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Sessions</span>
-                    <span class="stat-value" id="ahSessions" style="font-size:1rem;">—</span>
-                </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;">Wins / Losses</span>
                     <span style="font-family:var(--font-mono); font-size:0.95rem; font-weight:700;">
@@ -206,29 +181,12 @@
                     </span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Win Rate</span>
-                    <span class="stat-value" id="ahWinRateDetail" style="font-size:1rem;">—</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- P&L Extremes -->
-        <div class="section-card" style="margin-bottom:0;">
-            <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-amber, #fbbf24);"></div> P&L Extremes</div>
-            </div>
-            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Best / Worst</span>
-                    <span class="stat-value" id="ahBestWorst" style="font-size:0.85rem;">— / —</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;">Avg Win / Loss</span>
                     <span class="stat-value" id="ahAvgWinLoss" style="font-size:0.85rem;">— / —</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Max Drawdown</span>
-                    <span class="stat-value" id="ahMaxDrawdownDetail" style="font-size:1rem;">—</span>
+                    <span class="stat-label" style="margin:0;">Best / Worst</span>
+                    <span class="stat-value" id="ahBestWorst" style="font-size:0.85rem;">— / —</span>
                 </div>
             </div>
         </div>
@@ -250,6 +208,28 @@
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;">Current / Longest Loss</span>
                     <span class="stat-value" id="ahLossStreaks" style="font-size:0.85rem;">— / —</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Costs -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-amber, #fbbf24);"></div> Costs</div>
+            </div>
+            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Total Charges Paid</span>
+                    <span class="stat-value" id="ahTotalCharges" style="font-size:1rem;">—</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Avg per Session</span>
+                    <span class="stat-value" id="ahAvgCharges" style="font-size:1rem; color:var(--text-muted);">—</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Charges / Gross %</span>
+                    <span class="stat-value" id="ahChargesPct" style="font-size:1rem; color:var(--text-muted);"
+                          title="What fraction of gross profit went to brokerage + statutory charges.">—</span>
                 </div>
             </div>
         </div>
@@ -449,26 +429,27 @@
             setVal('ahMaxDrawdown',  fmtRs(ext.maxDrawdown), ext.maxDrawdown);
             setVal('ahAvgMonthlyPct', fmtPct(cap.avgMonthlyPct), cap.avgMonthlyPct);
 
-            // ── DETAIL CARDS ───────────────────────────────────────────────
-            // Capital card
-            setVal('ahStartingCapital', fmtRs(cap.startingCapital));
-            setVal('ahTotalReturnPct',  fmtPct(cap.totalReturnPct), cap.totalReturn);
-            setVal('ahTotalCharges',    fmtRs(st.totalCharges));
+            // ── DETAIL CARDS — only metrics that aren't already in the hero ─
             // Trade Counts card
-            setVal('ahSessions',       String(perf.sessions || 0));
             document.getElementById('ahWins').textContent   = String(perf.wins || 0);
             document.getElementById('ahLosses').textContent = String(perf.losses || 0);
-            setVal('ahWinRateDetail',  (perf.winRate != null ? perf.winRate.toFixed(1) : '0') + '%',
-                                       (perf.winRate || 0) - 50);
-            // P&L Extremes card
-            setVal('ahBestWorst', fmtRs(ext.maxProfit) + ' / ' + fmtRs(ext.maxLoss));
             setVal('ahAvgWinLoss', fmtRs(ext.avgProfit) + ' / ' + fmtRs(ext.avgLoss));
-            setVal('ahMaxDrawdownDetail', fmtRs(ext.maxDrawdown), ext.maxDrawdown);
+            setVal('ahBestWorst',  fmtRs(ext.maxProfit) + ' / ' + fmtRs(ext.maxLoss));
             // Streaks card
-            setVal('ahCurWin',      String(st.currentWinStreak || 0),  st.currentWinStreak);
+            setVal('ahCurWin',      String(st.currentWinStreak || 0), st.currentWinStreak);
             setVal('ahLongestWin',  String(st.longestWinStreak || 0));
             setVal('ahLossStreaks', (st.currentLossStreak || 0) + ' / ' + (st.longestLossStreak || 0),
                                     -(st.currentLossStreak || 0));
+            // Costs card
+            var charges = Number(st.totalCharges || 0);
+            var sessions = Number(perf.sessions || 0);
+            var grossSum = (Number(ext.avgProfit || 0) * (perf.wins || 0))
+                         + (Number(ext.avgLoss   || 0) * (perf.losses || 0));
+            setVal('ahTotalCharges', fmtRs(charges));
+            setVal('ahAvgCharges', sessions > 0 ? fmtRs(charges / sessions) : '—');
+            // Use absolute gross (winners only) as the denominator so a net-flat year doesn't divide by ~0.
+            var grossWins = Number(ext.avgProfit || 0) * (perf.wins || 0);
+            setVal('ahChargesPct', grossWins > 0 ? ((charges / grossWins) * 100).toFixed(1) + '%' : '—');
 
             // Equity curve
             renderEquityChart(eq.labels || [], eq.values || []);
