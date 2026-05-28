@@ -175,9 +175,13 @@
                     <div class="stat-label">Open MTM</div>
                     <div class="stat-value" id="heroOpenMtm" style="font-size:1.1rem; margin-top:4px;">0.00</div>
                 </div>
-                <div id="heroRiskCell" style="text-align:center; border-left:1px solid var(--border); padding-left:32px; padding-right:32px;">
-                    <div class="stat-label" title="Worst-case loss for the currently running straddle if its SL fires exactly at threshold.">Risk</div>
+                <div id="heroRiskCell" style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
+                    <div class="stat-label" title="Worst-case loss for the currently running straddle if its SL fires exactly at threshold.">Active Risk</div>
                     <div class="stat-value" id="heroRisk" style="font-size:1.1rem; margin-top:4px;">—</div>
+                </div>
+                <div style="text-align:center; padding-right:32px;">
+                    <div class="stat-label" title="Today's realised + open MTM loss vs this strategy's allocated kill-switch budget (Portfolio Risk × allocation %). Strategy is force-closed when consumed reaches budget.">Consumed Risk</div>
+                    <div class="stat-value" id="heroConsumedRisk" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
                     <div class="stat-label">State</div>
@@ -638,8 +642,8 @@
             if ((d.combinedMtm || 0) > 0.5) openMtm.classList.add('pnl-positive');
             else if ((d.combinedMtm || 0) < -0.5) openMtm.classList.add('pnl-negative');
 
-            // Hero "Risk" tile — shows the worst-case loss for the currently running straddle
-            // (entry × SL% × qty). Consumed-%/cushion goes in the tooltip. Stays "—" pre-entry.
+            // Hero "Active Risk" tile — worst-case loss if the currently running straddle's SL fires.
+            // Tooltip carries the per-leg or combined consumed-% detail.
             var riskCell = document.getElementById('heroRiskCell');
             var riskEl   = document.getElementById('heroRisk');
             if (riskCell && riskEl) {
@@ -664,7 +668,33 @@
                     riskEl.textContent = '—';
                     riskEl.className = 'stat-value';
                     riskEl.style.color = 'var(--text-muted)';
-                    riskEl.title = 'No active position — max-loss display starts on entry.';
+                    riskEl.title = 'No active position — Active Risk shows up on entry.';
+                }
+            }
+
+            // Hero "Consumed Risk" tile — today's realised + open-MTM loss vs the strategy's
+            // allocated kill-switch budget. Displayed as "₹3k / ₹10k" with colour escalating
+            // as the % approaches the budget.
+            var consumedEl = document.getElementById('heroConsumedRisk');
+            if (consumedEl) {
+                var net    = Number(d.totalPnlToday || 0) - Number((d.charges && d.charges.total) || 0);
+                var budget = Number(d.maxDailyLoss || 0);
+                if (budget > 0) {
+                    var consumedRs = Math.max(0, -net);
+                    var pct = (consumedRs / budget) * 100;
+                    consumedEl.textContent = fmtRs(consumedRs) + ' / ' + fmtRs(budget);
+                    consumedEl.className = 'stat-value';
+                    if      (pct >= 90) consumedEl.style.color = 'var(--accent-red)';
+                    else if (pct >= 60) consumedEl.style.color = 'var(--accent-amber, #fbbf24)';
+                    else if (pct >  0)  consumedEl.style.color = 'var(--text-primary)';
+                    else                consumedEl.style.color = 'var(--accent-green)';
+                    consumedEl.title = pct.toFixed(1) + '% of this strategy\'s kill-switch budget consumed today. '
+                        + 'Budget = Portfolio Max Risk × this strategy\'s allocation %.';
+                } else {
+                    consumedEl.textContent = '— (no budget)';
+                    consumedEl.className = 'stat-value';
+                    consumedEl.style.color = 'var(--text-muted)';
+                    consumedEl.title = 'Portfolio Max Daily Risk is 0% — kill switch disabled, no budget to consume.';
                 }
             }
 
