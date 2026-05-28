@@ -114,10 +114,11 @@ public class ViewController {
                     log.error("Error starting services after Fyers login: {}", e.getMessage());
                 }
             }, "fyers-init").start();
-            return "redirect:/home";
+            // Land on the leg-sl operational dashboard — primary live-trading view.
+            return "redirect:/strategies/leg-sl";
         }
         log.error("Fyers login callback error");
-        return "redirect:/home?fyers=error";
+        return "redirect:/strategies/leg-sl?fyers=error";
     }
 
     @GetMapping("/api/fyers/status")
