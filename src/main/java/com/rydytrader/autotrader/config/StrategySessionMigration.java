@@ -1,5 +1,7 @@
 package com.rydytrader.autotrader.config;
 
+import com.rydytrader.autotrader.entity.SettingEntity;
+import com.rydytrader.autotrader.repository.SettingRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.ContextRefreshedEvent;
@@ -31,12 +33,66 @@ public class StrategySessionMigration {
     @PersistenceContext
     private EntityManager em;
 
+    private final SettingRepository settingRepo;
+
+    public StrategySessionMigration(SettingRepository settingRepo) {
+        this.settingRepo = settingRepo;
+    }
+
     /** Runs after the application context is fully refreshed (JPA + Hibernate schema update done). */
     @EventListener(ContextRefreshedEvent.class)
     @Transactional
     public void runMigrations() {
         backfillStrategyId();
         dropOldSessionDateUniqueConstraint();
+        oneShotResetTradeHistory();
+    }
+
+    /** One-time wipe of analytics data — gated by a flag in the SETTINGS table so it runs only
+     *  on the first boot after this commit. Operator asked for a clean slate going into the new
+     *  per-straddle analytics. Preserves SETTINGS + APP_USER + every other table; clears only
+     *  the two analytics tables and the per-strategy state JSON files. */
+    private void oneShotResetTradeHistory() {
+        String flagKey = "trades.reset.v1.done";
+        try {
+            if (settingRepo.findBySettingKey(flagKey).isPresent()) return;
+
+            int trades     = safeDelete("DELETE FROM straddle_trades");
+            int sessions   = safeDelete("DELETE FROM straddle_sessions");
+            int stateFiles = wipeStrategyStateFiles();
+
+            settingRepo.save(new SettingEntity(flagKey, String.valueOf(System.currentTimeMillis())));
+
+            log.warn("[StrategyMigration] ONE-SHOT TRADE HISTORY RESET — cleared {} trade rows, " +
+                "{} session rows, {} strategy state files. SETTINGS + APP_USER preserved.",
+                trades, sessions, stateFiles);
+        } catch (Exception e) {
+            log.warn("[StrategyMigration] Trade history reset skipped: {}", e.getMessage());
+        }
+    }
+
+    private int safeDelete(String sql) {
+        try { return em.createNativeQuery(sql).executeUpdate(); }
+        catch (Exception e) {
+            log.warn("[StrategyMigration] {} failed: {}", sql, e.getMessage());
+            return 0;
+        }
+    }
+
+    /** Delete every {@code *-state.json} file under {@code ../store/data/strategies/}. Strategies
+     *  re-init from empty state on next boot (or in this same boot if they haven't loaded yet —
+     *  PostConstruct ordering is unpredictable, so the operator may need a second restart for the
+     *  state files to fully disappear from the in-memory cache). */
+    private int wipeStrategyStateFiles() {
+        java.io.File dir = new java.io.File("../store/data/strategies");
+        if (!dir.isDirectory()) return 0;
+        java.io.File[] files = dir.listFiles((d, name) -> name.endsWith("-state.json") || name.endsWith("-state.json.tmp"));
+        if (files == null || files.length == 0) return 0;
+        int deleted = 0;
+        for (java.io.File f : files) {
+            if (f.delete()) deleted++;
+        }
+        return deleted;
     }
 
     private void backfillStrategyId() {
