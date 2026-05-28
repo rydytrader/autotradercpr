@@ -40,6 +40,17 @@ public interface Strategy {
      *  was something to close. */
     boolean forceClose(String reason);
 
+    /** Hard-stop the strategy for the day. Closes any open positions AND parks DONE_FOR_DAY
+     *  regardless of current state — so a strategy that's IDLE (waiting for entry time) or
+     *  WAITING_TO_ROLL (between rolls) won't fire new entries later in the session. Used by
+     *  the portfolio kill switch.
+     *
+     *  <p>Default falls back to {@link #forceClose} which only handles strategies with open
+     *  positions; concrete strategies must override to guarantee the DONE_FOR_DAY transition. */
+    default void parkDoneForDay(String reason) {
+        forceClose(reason);
+    }
+
     /** Manual recovery — flip in-memory state back to IDLE so the next scheduler tick can
      *  re-evaluate entry conditions. Does not touch broker positions. */
     void resetToIdle(String reason);

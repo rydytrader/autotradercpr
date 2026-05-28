@@ -83,10 +83,13 @@ public class PortfolioRiskService {
 
         for (Strategy s : strategyRegistry.all()) {
             try {
-                boolean closed = s.forceClose("PORTFOLIO_MAX_LOSS_HIT");
-                log.info("[PortfolioRisk] forceClose({}): {}", s.id(), closed ? "flattened" : "nothing to close");
+                // parkDoneForDay closes any open position AND transitions to DONE_FOR_DAY
+                // regardless of current state — so a strategy in IDLE / WAITING_TO_ROLL is
+                // also blocked from entering or re-entering later in the session.
+                s.parkDoneForDay("PORTFOLIO_MAX_LOSS_HIT");
+                log.info("[PortfolioRisk] parked {} DONE_FOR_DAY", s.id());
             } catch (Exception e) {
-                log.error("[PortfolioRisk] forceClose({}) failed: {}", s.id(), e.getMessage());
+                log.error("[PortfolioRisk] parkDoneForDay({}) failed: {}", s.id(), e.getMessage());
             }
         }
         lastFiredDayKey = today;

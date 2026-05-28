@@ -1146,6 +1146,23 @@ public class RollingStraddleService implements Strategy {
         return true;
     }
 
+    /** Hard-stop for the day — closes legs if open AND parks DONE_FOR_DAY regardless of
+     *  current state. So a strategy in IDLE / WAITING_TO_ROLL also gets parked, preventing
+     *  fresh entries or roll re-entries later in the session. */
+    @Override
+    public synchronized void parkDoneForDay(String reason) {
+        if (state == LifecycleState.DONE_FOR_DAY) return; // already parked
+        if (state == LifecycleState.OPEN || state == LifecycleState.MAX_ROLLS_HOLD) {
+            eventService.log("[INFO] Portfolio kill (" + reason + ") — flattening + parking combined-sl-roll");
+            closeBothLegs(reason);
+        } else {
+            eventService.log("[INFO] Portfolio kill (" + reason + ") — parking combined-sl-roll from state=" + state + " (no open position)");
+        }
+        // Clear roll-wait so a stale WAITING_TO_ROLL doesn't re-enter on the next tick.
+        slHitTimeMillis = 0;
+        transitionTo(LifecycleState.DONE_FOR_DAY);
+    }
+
     /**
      * Manual recovery — flips in-memory state back to IDLE for the current day. Useful when
      * a same-day rejection (e.g. lot-size mismatch) parked the service in DONE_FOR_DAY but

@@ -718,6 +718,23 @@ public class LegSlStrategy implements Strategy {
         return true;
     }
 
+    /** Hard-stop for the day. Closes any open legs AND parks DONE_FOR_DAY regardless of
+     *  state, so an IDLE leg-sl that hasn't entered yet won't fire its entry later. */
+    @Override
+    public synchronized void parkDoneForDay(String reason) {
+        if (state == LifecycleState.DONE_FOR_DAY) return;
+        boolean hadOpen = (state == LifecycleState.OPEN_BOTH
+                          || state == LifecycleState.OPEN_CE_ONLY
+                          || state == LifecycleState.OPEN_PE_ONLY);
+        if (hadOpen) {
+            eventService.log("[INFO] leg-sl Portfolio kill (" + reason + ") — flattening + parking");
+            closeRemainingLegs(reason);
+        } else {
+            eventService.log("[INFO] leg-sl Portfolio kill (" + reason + ") — parking from state=" + state + " (no open position)");
+        }
+        transitionTo(LifecycleState.DONE_FOR_DAY);
+    }
+
     @Override
     public synchronized void resetToIdle(String reason) {
         log.info("[leg-sl] Manual reset from {} → IDLE ({})", state, reason);
