@@ -46,6 +46,7 @@ public class RollingStraddleService implements Strategy {
 
     @Override public String id()          { return STRATEGY_ID; }
     @Override public String displayName() { return "Combined SL + Roll"; }
+    @Override public String description() { return "ATM straddle on NIFTY weekly · combined-premium SL · re-enter on roll"; }
     @Override public String currentState(){ return state.name(); }
     @Override public String navIcon()     { return "C"; }
     @Override public boolean forceClose(String reason) { return forceCloseBothLegs(reason); }

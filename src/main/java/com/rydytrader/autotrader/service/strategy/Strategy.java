@@ -18,6 +18,10 @@ public interface Strategy {
     /** Human-readable name shown in the UI (nav, settings tab, dashboard heading). */
     String displayName();
 
+    /** One-line description shown under the dashboard title — explains what the strategy does
+     *  at a glance. Default: empty string (no subtitle). Override per concrete strategy. */
+    default String description() { return ""; }
+
     /** Current lifecycle state as a String (strategy-specific enum names). Examples:
      *  IDLE / OPEN / WAITING_TO_ROLL / DONE_FOR_DAY, or OPEN_BOTH / OPEN_CE_ONLY / etc. */
     String currentState();

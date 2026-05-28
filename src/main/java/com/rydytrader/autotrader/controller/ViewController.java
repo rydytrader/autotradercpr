@@ -239,6 +239,7 @@ public class ViewController {
         }
         model.addAttribute("strategyId",          s != null ? s.id() : id);
         model.addAttribute("strategyDisplayName", s != null ? s.displayName() : id);
+        model.addAttribute("strategyDescription", s != null ? s.description() : "");
         model.addAttribute("sidebarStrategies",   sidebarStrategies());
         return "home";
     }
