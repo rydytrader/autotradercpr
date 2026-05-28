@@ -245,7 +245,7 @@
                 </div>
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:12px;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div id="paneEntryLiveRow" style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;">Entry / Live</span>
                     <span style="display:inline-flex; align-items:baseline; gap:8px;">
                         <span id="paneLiveCombinedChange" style="font-family:var(--font-mono); font-size:0.66rem; color:var(--text-muted);"></span>
@@ -257,8 +257,18 @@
                     <span class="stat-value" id="paneTargetTrigger" style="font-size:1rem; color:var(--accent-green);">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">SL Trigger</span>
+                    <span class="stat-label" id="paneSlTriggerLabel" style="margin:0;">SL Trigger</span>
                     <span class="stat-value" id="paneSlTrigger" style="font-size:1rem; color:var(--accent-red, #f87171);">—</span>
+                </div>
+                <!-- PE SL Trigger row — leg-sl only; combined-sl-roll has a single combined trigger. -->
+                <div id="panePeSlTriggerRow" style="display:none; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">PE SL Trigger</span>
+                    <span class="stat-value" id="panePeSlTrigger" style="font-size:1rem; color:var(--accent-red, #f87171);">—</span>
+                </div>
+                <!-- Leg State row — leg-sl only (combined-sl-roll closes both legs as one). -->
+                <div id="paneLegStateRow" style="display:none; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;" title="Per-leg open/closed status. When one leg's SL fires, only that leg closes; the other keeps running until its own SL or timed squareoff.">Leg State</span>
+                    <span class="stat-value" id="paneLegState" style="font-size:0.9rem;">—</span>
                 </div>
             </div>
         </div>
@@ -506,6 +516,15 @@
     // ── Helpers ──────────────────────────────────────────────────────────────
     function fmt(v)   { if (v == null || isNaN(v)) return '0.00'; return Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
     function fmtRs(v) { return (v < 0 ? '-₹' : '₹') + fmt(Math.abs(v)); }
+    function tsToHHmm(epochMs) {
+        if (!epochMs) return '';
+        try {
+            var d = new Date(Number(epochMs));
+            var hh = String(d.getHours()).padStart(2, '0');
+            var mm = String(d.getMinutes()).padStart(2, '0');
+            return hh + ':' + mm;
+        } catch (e) { return ''; }
+    }
     function setPnlClass(el, val) {
         el.classList.remove('pos', 'neg', 'neu');
         if (val > 0.5) el.classList.add('pos');
@@ -548,13 +567,29 @@
             slBadge.textContent = 'LEG SL · ' + pct.toFixed(0) + '%';
         }
         // Target + Re-entry pills + Target row are combined-sl-roll-only; hide for leg-sl.
+        // Entry/Live row is combined-sl-roll-only too — leg-sl shows it via CE Leg / PE Leg cards.
+        // SL Trigger row becomes "CE SL Trigger" for leg-sl; a separate "PE SL Trigger" row is shown below.
+        // Leg State row is leg-sl-only.
+        var tBadge = document.getElementById('paneTargetPctBadge');
+        var tRow   = document.getElementById('paneTargetTriggerRow');
+        var wBadge = document.getElementById('paneRollWaitBadge');
+        var elRow  = document.getElementById('paneEntryLiveRow');
+        var slLbl  = document.getElementById('paneSlTriggerLabel');
+        var peRow  = document.getElementById('panePeSlTriggerRow');
+        var lsRow  = document.getElementById('paneLegStateRow');
         if (isLegSl) {
-            var tBadge = document.getElementById('paneTargetPctBadge');
-            var tRow   = document.getElementById('paneTargetTriggerRow');
-            var wBadge = document.getElementById('paneRollWaitBadge');
             if (tBadge) tBadge.style.display = 'none';
             if (tRow)   tRow.style.display   = 'none';
             if (wBadge) wBadge.style.display = 'none';
+            if (elRow)  elRow.style.display  = 'none';
+            if (slLbl)  slLbl.textContent    = 'CE SL Trigger';
+            if (peRow)  peRow.style.display  = 'flex';
+            if (lsRow)  lsRow.style.display  = 'flex';
+        } else {
+            if (elRow)  elRow.style.display  = 'flex';
+            if (slLbl)  slLbl.textContent    = 'SL Trigger';
+            if (peRow)  peRow.style.display  = 'none';
+            if (lsRow)  lsRow.style.display  = 'none';
         }
     }
 
@@ -698,21 +733,32 @@
 
             // Pane 1: Risk Band — view depends on dashboardShape
             if (SHAPE === 'leg-sl') {
-                // Show per-leg entry/LTP + per-leg SL trigger. The row labels are repurposed:
-                //   "Entry / Live" → CE entry / CE LTP
-                //   "Target Trigger" (hidden by applyShapeChrome) — unused
-                //   "SL Trigger" → highest per-leg trigger between CE/PE for at-a-glance
-                var ceE = Number(d.ceEntryPremium || 0), ceL = Number(d.ceLtp || 0);
-                var peE = Number(d.peEntryPremium || 0), peL = Number(d.peLtp || 0);
+                // Entry/Live row is hidden (covered by CE Leg / PE Leg cards). Three visible rows:
+                //   "CE SL Trigger" — CE leg buyback trigger price
+                //   "PE SL Trigger" — PE leg buyback trigger price
+                //   "Leg State"      — per-leg OPEN/CLOSED with close time
                 var ceTrig = Number(d.ceSlTrigger || 0), peTrig = Number(d.peSlTrigger || 0);
-                document.getElementById('paneEntryLiveCombined').textContent =
-                    'CE ' + (ceE > 0 ? ceE.toFixed(2) : '—') + ' → ' + (ceL > 0 ? ceL.toFixed(2) : '—')
-                    + ' · PE ' + (peE > 0 ? peE.toFixed(2) : '—') + ' → ' + (peL > 0 ? peL.toFixed(2) : '—');
                 document.getElementById('paneSlTrigger').textContent =
-                    'CE ' + (ceTrig > 0 ? ceTrig.toFixed(2) : '—') + ' · PE ' + (peTrig > 0 ? peTrig.toFixed(2) : '—');
-                // Worst leg drives the inverse-change badge — relative to the highest leg consumed %.
-                var worst = Math.max(Number(d.ceSlConsumedPct || 0), Number(d.peSlConsumedPct || 0));
-                renderInverseChangeBadge('paneLiveCombinedChange', worst, worst);
+                    ceTrig > 0 ? ceTrig.toFixed(2) : '—';
+                document.getElementById('panePeSlTrigger').textContent =
+                    peTrig > 0 ? peTrig.toFixed(2) : '—';
+                var legStateEl = document.getElementById('paneLegState');
+                if (legStateEl) {
+                    var ceCloseTs = Number(d.ceClosedAtMillis || 0);
+                    var peCloseTs = Number(d.peClosedAtMillis || 0);
+                    var ceTxt = d.ceClosed
+                        ? ('CLOSED' + (ceCloseTs > 0 ? ' ' + tsToHHmm(ceCloseTs) : ''))
+                        : 'OPEN';
+                    var peTxt = d.peClosed
+                        ? ('CLOSED' + (peCloseTs > 0 ? ' ' + tsToHHmm(peCloseTs) : ''))
+                        : 'OPEN';
+                    var ceColor = d.ceClosed ? 'var(--text-muted)' : 'var(--accent-green)';
+                    var peColor = d.peClosed ? 'var(--text-muted)' : 'var(--accent-green)';
+                    legStateEl.innerHTML =
+                        '<span style="color:' + ceColor + ';">CE ' + ceTxt + '</span>'
+                        + '<span style="color:var(--text-muted); margin:0 6px;">·</span>'
+                        + '<span style="color:' + peColor + ';">PE ' + peTxt + '</span>';
+                }
             } else {
                 // combined-sl-roll — combined-premium SL view (original layout).
                 var entryCombined = Number(d.entryCombined || 0);

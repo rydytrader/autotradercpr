@@ -611,6 +611,8 @@ public class LegSlStrategy implements Strategy {
         m.put("peEntryPremium", peEntryPremium);
         m.put("ceClosed", !isCeOpen());
         m.put("peClosed", !isPeOpen());
+        m.put("ceClosedAtMillis", ceClosedAtMillis);
+        m.put("peClosedAtMillis", peClosedAtMillis);
 
         double ceMtm = (isCeOpen() && ceEntryPremium > 0 && ceLtp > 0 && ceQty > 0) ? (ceEntryPremium - ceLtp) * ceQty : 0;
         double peMtm = (isPeOpen() && peEntryPremium > 0 && peLtp > 0 && peQty > 0) ? (peEntryPremium - peLtp) * peQty : 0;

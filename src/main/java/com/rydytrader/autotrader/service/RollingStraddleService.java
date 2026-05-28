@@ -72,6 +72,8 @@ public class RollingStraddleService implements Strategy {
     @Override
     public java.util.List<java.util.Map<String, Object>> getSettingsSchema() {
         java.util.List<java.util.Map<String, Object>> s = new java.util.ArrayList<>();
+        s.add(field("enabled",              "boolean", true,    "Enable Strategy",
+            "Bot only fires entries / SL checks when enabled. Disable to pause without losing today's state."));
         s.add(field("entryTime",            "time",    "09:20", "Entry Time (HH:mm IST)", null));
         s.add(field("squareOffTime",        "time",    "15:15", "Squareoff Time (HH:mm IST)", null));
         s.add(field("rollWaitMin",          "int",     15,      "Roll Wait (minutes)",
@@ -101,6 +103,7 @@ public class RollingStraddleService implements Strategy {
     @Override
     public java.util.Map<String, Object> getSettingsValues() {
         java.util.Map<String, Object> v = new java.util.LinkedHashMap<>();
+        v.put("enabled",             riskSettings.isEnableRollingStraddle());
         v.put("entryTime",           riskSettings.getStraddleEntryTime());
         v.put("squareOffTime",       riskSettings.getStraddleSquareOffTime());
         v.put("rollWaitMin",         riskSettings.getStraddleRollWaitMin());
@@ -118,6 +121,7 @@ public class RollingStraddleService implements Strategy {
         if (values == null) return;
         // Legacy field setters — these continue to drive the running strategy. The keys here
         // match the schema entries' "key" field so the UI is symmetric for read/write.
+        if (values.containsKey("enabled"))           riskSettings.setEnableRollingStraddle(asBool(values.get("enabled")));
         if (values.containsKey("entryTime"))         riskSettings.setStraddleEntryTime(String.valueOf(values.get("entryTime")));
         if (values.containsKey("squareOffTime"))     riskSettings.setStraddleSquareOffTime(String.valueOf(values.get("squareOffTime")));
         if (values.containsKey("rollWaitMin"))       riskSettings.setStraddleRollWaitMin(asInt(values.get("rollWaitMin"), 15));
@@ -137,6 +141,11 @@ public class RollingStraddleService implements Strategy {
     private static double asDouble(Object o, double def) {
         if (o == null) return def;
         try { return Double.parseDouble(String.valueOf(o).trim()); } catch (NumberFormatException e) { return def; }
+    }
+    private static boolean asBool(Object o) {
+        if (o == null) return false;
+        if (o instanceof Boolean b) return b;
+        return Boolean.parseBoolean(String.valueOf(o).trim());
     }
 
     private static final Logger log = LoggerFactory.getLogger(RollingStraddleService.class);
@@ -375,12 +384,13 @@ public class RollingStraddleService implements Strategy {
 
     @Scheduled(fixedDelay = 5000)
     public void tick() {
-        // Strategy is always on — no enable toggle. The lifecycle is governed entirely by
-        // entry time, move triggers, max rolls, and the timed squareoff.
-        // Day rollover runs BEFORE the market-open guard so weekend/holiday/pre-market ticks
-        // still reset yesterday's P&L cleanly and persist the prior session row.
+        // Day rollover runs BEFORE the enable + market-open guards so weekend/holiday/pre-market
+        // ticks still reset yesterday's P&L cleanly and persist the prior session row.
         rolloverIfNewDay();
         if (marketHolidayService != null && !marketHolidayService.isMarketOpen()) return;
+        // Enabled-flag guard. Default true — operator can pause entries without restart via
+        // Settings → COMBINED ROLL → Enable Strategy.
+        if (!riskSettings.isEnableRollingStraddle()) return;
         // Late-recover entry premium from tradebook if init() couldn't (no token at boot).
         tryRecoverEntryPremiumFromTradebook();
 

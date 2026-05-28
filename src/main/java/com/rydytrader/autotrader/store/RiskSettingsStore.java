@@ -201,7 +201,9 @@ public class RiskSettingsStore {
         // fresh ATM CE+PE (counts as one "roll"). After maxRolls is reached the open
         // straddle is held to the timed squareoff for max theta. See
         // memory/project_rolling_straddle.md for the full design.
-        volatile boolean enableRollingStraddle     = false;
+        // Default true so the strategy keeps running for existing operators when the toggle was
+        // introduced; turning it off pauses entries without losing today's state.
+        volatile boolean enableRollingStraddle     = true;
         volatile String  straddleEntryTime         = "09:20";
         volatile String  straddleSquareOffTime     = "15:15";
         volatile int     straddleMaxRolls          = 3;
