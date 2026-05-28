@@ -20,9 +20,11 @@ public class StraddleSessionEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** Strategy that owned this session. Backfilled to "combined-sl-roll" for existing rows
-     *  on first boot after the refactor (see {@code StrategySessionMigration}). */
-    @Column(nullable = false, length = 40)
+    /** Strategy that owned this session. SQL-level DEFAULT lets H2 add this column to a
+     *  populated table without violating NOT NULL — existing rows inherit the default value
+     *  immediately. New rows get the Java field initializer ("combined-sl-roll") which the
+     *  concrete strategy overrides with its own id() when writing a row. */
+    @Column(nullable = false, length = 40, columnDefinition = "VARCHAR(40) DEFAULT 'combined-sl-roll' NOT NULL")
     private String strategyId = "combined-sl-roll";
 
     @Column(nullable = false, unique = true, length = 10)
