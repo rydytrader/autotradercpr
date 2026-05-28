@@ -31,6 +31,10 @@ import java.util.Map;
  * </ul>
  *
  * <p>Strategy scope filters by {@code strategyId}; null/blank/"all" → all strategies aggregated.
+ *
+ * <p>Explicit date range: when {@code from} and/or {@code to} are passed, they override
+ * the period preset. Use them to scope to a specific calendar month, a specific year, or any
+ * custom window. Either bound may be omitted (open-ended in that direction).
  */
 @Service
 public class AnalyticsService {
@@ -52,13 +56,15 @@ public class AnalyticsService {
     /** Composite payload for the Analytics Home page. Combines the four hero panes and the
      *  equity curve into a single response so the client only makes one round-trip per selector
      *  change. */
-    public Map<String, Object> summary(String period, String strategyId) {
-        List<StraddleSessionEntity> rows = filterRows(period, strategyId);
+    public Map<String, Object> summary(String period, String strategyId, String from, String to) {
+        List<StraddleSessionEntity> rows = filterRows(period, strategyId, from, to);
         double startingCapital = riskSettings.getStartingCapital();
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("period",        period);
         out.put("strategyId",    strategyId);
+        out.put("from",          from);
+        out.put("to",            to);
         out.put("sessionCount",  rows.size());
 
         out.put("capital",     capital(rows, startingCapital));
@@ -71,12 +77,19 @@ public class AnalyticsService {
     }
 
     /** Apply the period + strategy filters. Returns rows in chronological order (oldest first)
-     *  so cumulative + streak calculations don't have to re-sort. */
-    private List<StraddleSessionEntity> filterRows(String period, String strategyId) {
+     *  so cumulative + streak calculations don't have to re-sort.
+     *
+     *  <p>If {@code from} or {@code to} are non-blank ISO dates, they override the period preset.
+     *  Either bound may be missing — that bound is treated as open-ended. */
+    private List<StraddleSessionEntity> filterRows(String period, String strategyId,
+                                                    String from, String to) {
         List<StraddleSessionEntity> all = sessionRepo.findAll();
         LocalDate today = LocalDate.now(IST);
-        String p = period == null ? "all" : period.toLowerCase();
-        LocalDate cutoff = switch (p) {
+        LocalDate rangeFrom = parseIso(from);
+        LocalDate rangeTo   = parseIso(to);
+        boolean explicitRange = rangeFrom != null || rangeTo != null;
+        // Period preset only applies when no explicit range was passed.
+        LocalDate cutoff = explicitRange ? null : switch (period == null ? "all" : period.toLowerCase()) {
             case "today"  -> today;
             case "expiry" -> currentExpiryStart(today);
             case "ytd"    -> indianFinancialYearStart(today);
@@ -87,16 +100,21 @@ public class AnalyticsService {
         List<StraddleSessionEntity> filtered = new ArrayList<>();
         for (StraddleSessionEntity s : all) {
             if (!allStrategies && !strategyId.equals(s.getStrategyId())) continue;
-            if (cutoff != null) {
-                try {
-                    LocalDate d = LocalDate.parse(s.getSessionDate());
-                    if (d.isBefore(cutoff)) continue;
-                } catch (Exception ignored) { continue; }
-            }
+            LocalDate d;
+            try { d = LocalDate.parse(s.getSessionDate()); }
+            catch (Exception ignored) { continue; }
+            if (cutoff != null && d.isBefore(cutoff)) continue;
+            if (rangeFrom != null && d.isBefore(rangeFrom)) continue;
+            if (rangeTo   != null && d.isAfter(rangeTo))    continue;
             filtered.add(s);
         }
         filtered.sort(Comparator.comparing(StraddleSessionEntity::getSessionDate));
         return filtered;
+    }
+
+    private static LocalDate parseIso(String s) {
+        if (s == null || s.isBlank()) return null;
+        try { return LocalDate.parse(s.trim()); } catch (Exception e) { return null; }
     }
 
     /** Start of the current Indian financial year — April 1. If today is Jan/Feb/Mar, the FY

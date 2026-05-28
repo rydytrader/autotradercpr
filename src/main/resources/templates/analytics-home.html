@@ -32,6 +32,18 @@
         }
         .scope-pill:hover { border-color:rgba(125,211,252,0.35); color:var(--text-primary); }
         .scope-pill.active { background:rgba(125,211,252,0.12); border-color:var(--accent-cyan); color:var(--accent-cyan); }
+        .ah-picker {
+            background:var(--bg-primary); border:1px solid var(--border); color:var(--text-secondary);
+            padding:5px 26px 5px 12px; border-radius:999px; cursor:pointer;
+            font-family:var(--font-mono); font-size:0.7rem; font-weight:700; letter-spacing:0.04em;
+            appearance:none; -webkit-appearance:none;
+            background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+                              linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+            background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+            background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+        }
+        .ah-picker:hover { border-color:rgba(125,211,252,0.35); color:var(--text-primary); }
+        .ah-picker.active { background-color:rgba(125,211,252,0.12); border-color:var(--accent-cyan); color:var(--accent-cyan); }
 
         .ah-stat-label { font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); letter-spacing:0.04em; }
         .pnl-positive { color:var(--accent-green); }
@@ -96,7 +108,7 @@
         </div>
     </div>
 
-    <!-- Selectors — Period + Strategy scope -->
+    <!-- Selectors — Period + Strategy scope + Custom date picker -->
     <div class="section-card fade-in" style="margin-bottom:16px;">
         <div style="padding:14px 22px; display:flex; gap:24px; flex-wrap:wrap; align-items:center;">
             <div style="display:flex; align-items:center; gap:12px;">
@@ -108,6 +120,24 @@
                     <button class="scope-pill"        data-period="ytd" title="Financial year to date — from Apr 1 of the current Indian FY.">YTD</button>
                     <button class="scope-pill active" data-period="all">All Time</button>
                 </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px;">
+                <span class="ah-stat-label" style="font-weight:700;">Pick</span>
+                <select id="pickYear" class="ah-picker"
+                        title="Filter to a specific calendar year. Overrides the period pill above."></select>
+                <select id="pickMonth" class="ah-picker"
+                        title="Filter to a specific month inside the selected year. Choose Whole Year to include all months.">
+                    <option value="">Whole Year</option>
+                    <option value="01">Jan</option><option value="02">Feb</option>
+                    <option value="03">Mar</option><option value="04">Apr</option>
+                    <option value="05">May</option><option value="06">Jun</option>
+                    <option value="07">Jul</option><option value="08">Aug</option>
+                    <option value="09">Sep</option><option value="10">Oct</option>
+                    <option value="11">Nov</option><option value="12">Dec</option>
+                </select>
+                <button class="scope-pill" id="pickClearBtn"
+                        title="Clear the year/month picker and go back to the period selection above."
+                        style="display:none;">Clear</button>
             </div>
             <div style="display:flex; align-items:center; gap:12px;">
                 <span class="ah-stat-label" style="font-weight:700;">Strategy</span>
@@ -340,6 +370,8 @@
     // ── Selectors ────────────────────────────────────────────────────────────
     var currentPeriod   = 'all';
     var currentStrategy = 'all';
+    var pickedYear = '';  // empty = picker not in use
+    var pickedMonth = ''; // empty = whole year
 
     function bindPills(rootId, cb) {
         var root = document.getElementById(rootId);
@@ -354,12 +386,82 @@
     }
     bindPills('periodPills', function(btn) {
         currentPeriod = btn.getAttribute('data-period');
+        // Pill click clears any active month/year picker selection.
+        clearPicker(false);
         loadSummary();
     });
     bindPills('strategyPills', function(btn) {
         currentStrategy = btn.getAttribute('data-strategy');
         loadSummary();
     });
+
+    // ── Month/Year picker ────────────────────────────────────────────────────
+    // Populate the year dropdown from current calendar year going back 5 years. Could be
+    // sourced from actual session data once we have history, but a fixed window is fine for now.
+    (function populateYears() {
+        var sel = document.getElementById('pickYear');
+        if (!sel) return;
+        var thisYr = new Date().getFullYear();
+        sel.innerHTML = '<option value="">Year…</option>';
+        for (var y = thisYr; y >= thisYr - 5; y--) {
+            sel.innerHTML += '<option value="' + y + '">' + y + '</option>';
+        }
+    })();
+
+    function clearPicker(reload) {
+        pickedYear = ''; pickedMonth = '';
+        var ys = document.getElementById('pickYear');   if (ys) { ys.value = ''; ys.classList.remove('active'); }
+        var ms = document.getElementById('pickMonth');  if (ms) { ms.value = ''; ms.classList.remove('active'); }
+        var cb = document.getElementById('pickClearBtn'); if (cb) cb.style.display = 'none';
+        if (reload) loadSummary();
+    }
+
+    function onPickerChange() {
+        var ys = document.getElementById('pickYear');
+        var ms = document.getElementById('pickMonth');
+        pickedYear  = ys ? ys.value : '';
+        pickedMonth = ms ? ms.value : '';
+        // Month selected without a year is ambiguous — guard it.
+        if (pickedMonth && !pickedYear) {
+            var thisYr = String(new Date().getFullYear());
+            if (ys) ys.value = thisYr;
+            pickedYear = thisYr;
+        }
+        // Active styling: when picker is in use, deactivate all period pills.
+        if (pickedYear) {
+            document.querySelectorAll('#periodPills .scope-pill').forEach(function(b) { b.classList.remove('active'); });
+            if (ys) ys.classList.add('active');
+            if (ms) (pickedMonth ? ms.classList.add('active') : ms.classList.remove('active'));
+            document.getElementById('pickClearBtn').style.display = '';
+        } else {
+            // No year → not a custom range; reactivate the previously-selected period pill.
+            var pill = document.querySelector('#periodPills .scope-pill[data-period="' + currentPeriod + '"]');
+            if (pill) pill.classList.add('active');
+            if (ys) ys.classList.remove('active');
+            if (ms) ms.classList.remove('active');
+            document.getElementById('pickClearBtn').style.display = 'none';
+        }
+        loadSummary();
+    }
+    document.getElementById('pickYear').addEventListener('change', onPickerChange);
+    document.getElementById('pickMonth').addEventListener('change', onPickerChange);
+    document.getElementById('pickClearBtn').addEventListener('click', function() { clearPicker(true); });
+
+    /** Compute the from/to ISO date range from the year + month selection. Returns {from, to}
+     *  or {null, null} when picker isn't in use. */
+    function pickerRange() {
+        if (!pickedYear) return { from: null, to: null };
+        var y = Number(pickedYear);
+        if (pickedMonth) {
+            var m = Number(pickedMonth);
+            var first = pickedYear + '-' + pickedMonth + '-01';
+            // Last day of month: go to day 0 of next month.
+            var last = new Date(y, m, 0); // m here is 1..12, day 0 = last day of previous month → so m gives us last day of month m
+            var dd = String(last.getDate()).padStart(2, '0');
+            return { from: first, to: pickedYear + '-' + pickedMonth + '-' + dd };
+        }
+        return { from: pickedYear + '-01-01', to: pickedYear + '-12-31' };
+    }
 
     // Inject one pill per registered strategy.
     fetch('/api/strategies').then(function(r) { return r.json(); }).then(function(arr) {
@@ -421,6 +523,9 @@
     function loadSummary() {
         var url = '/api/analytics/summary?period=' + encodeURIComponent(currentPeriod)
                 + '&strategyId=' + encodeURIComponent(currentStrategy);
+        var range = pickerRange();
+        if (range.from) url += '&from=' + encodeURIComponent(range.from);
+        if (range.to)   url += '&to='   + encodeURIComponent(range.to);
         fetch(url).then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
             var cap = d.capital   || {};
