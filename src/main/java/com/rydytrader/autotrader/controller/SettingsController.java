@@ -52,9 +52,11 @@ public class SettingsController {
         result.put("enableRollingStraddle",  riskSettings.isEnableRollingStraddle());
         result.put("straddleEntryTime",      riskSettings.getStraddleEntryTime());
         result.put("straddleSquareOffTime",  riskSettings.getStraddleSquareOffTime());
-        result.put("straddleMovePctTrigger", riskSettings.getStraddleMovePctTrigger());
         result.put("straddleMaxRolls",       riskSettings.getStraddleMaxRolls());
         result.put("straddleLotsPerLeg",     riskSettings.getStraddleLotsPerLeg());
+        result.put("straddleCombinedSlPct",  riskSettings.getStraddleCombinedSlPct());
+        result.put("straddleRollWaitMin",    riskSettings.getStraddleRollWaitMin());
+        result.put("straddleRollCutoffTime", riskSettings.getStraddleRollCutoffTime());
         result.put("straddleMaxDailyLoss",   riskSettings.getStraddleMaxDailyLoss());
         return result;
     }
@@ -90,9 +92,11 @@ public class SettingsController {
             if (body.containsKey("enableRollingStraddle"))  riskSettings.setEnableRollingStraddle(Boolean.parseBoolean(body.get("enableRollingStraddle").toString()));
             if (body.containsKey("straddleEntryTime"))      riskSettings.setStraddleEntryTime(body.get("straddleEntryTime").toString());
             if (body.containsKey("straddleSquareOffTime"))  riskSettings.setStraddleSquareOffTime(body.get("straddleSquareOffTime").toString());
-            if (body.containsKey("straddleMovePctTrigger")) riskSettings.setStraddleMovePctTrigger(Double.parseDouble(body.get("straddleMovePctTrigger").toString()));
             if (body.containsKey("straddleMaxRolls"))       riskSettings.setStraddleMaxRolls(Integer.parseInt(body.get("straddleMaxRolls").toString()));
             if (body.containsKey("straddleLotsPerLeg"))     riskSettings.setStraddleLotsPerLeg(Integer.parseInt(body.get("straddleLotsPerLeg").toString()));
+            if (body.containsKey("straddleCombinedSlPct"))  riskSettings.setStraddleCombinedSlPct(Double.parseDouble(body.get("straddleCombinedSlPct").toString()));
+            if (body.containsKey("straddleRollWaitMin"))    riskSettings.setStraddleRollWaitMin(Integer.parseInt(body.get("straddleRollWaitMin").toString()));
+            if (body.containsKey("straddleRollCutoffTime")) riskSettings.setStraddleRollCutoffTime(body.get("straddleRollCutoffTime").toString());
             if (body.containsKey("straddleMaxDailyLoss"))   riskSettings.setStraddleMaxDailyLoss(Double.parseDouble(body.get("straddleMaxDailyLoss").toString()));
             riskSettings.saveFor(effectiveMode);
             return ResponseEntity.ok(Map.of("ok", true, "message", "Settings saved"));

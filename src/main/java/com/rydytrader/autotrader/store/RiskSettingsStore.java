@@ -201,9 +201,18 @@ public class RiskSettingsStore {
         volatile boolean enableRollingStraddle     = false;
         volatile String  straddleEntryTime         = "09:20";
         volatile String  straddleSquareOffTime     = "15:15";
-        volatile double  straddleMovePctTrigger    = 0.4;
         volatile int     straddleMaxRolls          = 3;
         volatile int     straddleLotsPerLeg        = 1;
+        /** Combined-premium SL in %. Triggers a roll when (ceLtp + peLtp) exceeds the entry
+         *  combined premium by this percentage. e.g. 30 means roll when straddle is 30% more
+         *  expensive than entry. Replaces the older NIFTY-move % trigger. */
+        volatile double  straddleCombinedSlPct     = 30.0;
+        /** Wait time (minutes) between an SL hit and the next entry. Avoids whipsaw re-entry
+         *  right after a sharp move. 0 = roll immediately. */
+        volatile int     straddleRollWaitMin       = 15;
+        /** Roll cutoff time (HH:mm IST). If the SL fires after this time, the bot closes legs
+         *  and parks DONE_FOR_DAY without re-entering. */
+        volatile String  straddleRollCutoffTime    = "14:30";
         /** Daily max-loss kill switch in rupees (absolute, positive). When today's net P&L
          *  (realised + open MTM − charges) drops below {@code -straddleMaxDailyLoss}, the bot
          *  closes both legs and parks DONE_FOR_DAY. 0 disables the check. */
@@ -416,9 +425,11 @@ public class RiskSettingsStore {
     public boolean isEnableRollingStraddle()       { return cfg().enableRollingStraddle; }
     public String  getStraddleEntryTime()          { return cfg().straddleEntryTime; }
     public String  getStraddleSquareOffTime()      { return cfg().straddleSquareOffTime; }
-    public double  getStraddleMovePctTrigger()     { return cfg().straddleMovePctTrigger; }
     public int     getStraddleMaxRolls()           { return cfg().straddleMaxRolls; }
     public int     getStraddleLotsPerLeg()         { return cfg().straddleLotsPerLeg; }
+    public double  getStraddleCombinedSlPct()      { return cfg().straddleCombinedSlPct; }
+    public int     getStraddleRollWaitMin()        { return cfg().straddleRollWaitMin; }
+    public String  getStraddleRollCutoffTime()     { return cfg().straddleRollCutoffTime; }
     public double  getStraddleMaxDailyLoss()       { return cfg().straddleMaxDailyLoss; }
     public boolean isEnableEmaLevelCountFilter()   { return cfg().enableEmaLevelCountFilter; }
     public int getEmaLevelMinRangePct()            { return cfg().emaLevelMinRangePct; }
@@ -558,9 +569,11 @@ public class RiskSettingsStore {
     public void setEnableRollingStraddle(boolean v)        { cfg().enableRollingStraddle = v; }
     public void setStraddleEntryTime(String v)             { cfg().straddleEntryTime = (v == null || v.isBlank()) ? "09:20" : v.trim(); }
     public void setStraddleSquareOffTime(String v)         { cfg().straddleSquareOffTime = (v == null || v.isBlank()) ? "15:15" : v.trim(); }
-    public void setStraddleMovePctTrigger(double v)        { cfg().straddleMovePctTrigger = Math.max(0.01, v); }
     public void setStraddleMaxRolls(int v)                 { cfg().straddleMaxRolls = Math.max(0, v); }
     public void setStraddleLotsPerLeg(int v)               { cfg().straddleLotsPerLeg = Math.max(1, v); }
+    public void setStraddleCombinedSlPct(double v)         { cfg().straddleCombinedSlPct = Math.max(0.1, v); }
+    public void setStraddleRollWaitMin(int v)              { cfg().straddleRollWaitMin = Math.max(0, v); }
+    public void setStraddleRollCutoffTime(String v)        { if (v != null && !v.isBlank()) cfg().straddleRollCutoffTime = v; }
     public void setStraddleMaxDailyLoss(double v)          { cfg().straddleMaxDailyLoss = Math.max(0, v); }
     public void setEnableEmaLevelCountFilter(boolean v)    { cfg().enableEmaLevelCountFilter = v; }
     public void setEmaLevelMinRangePct(int v)               { cfg().emaLevelMinRangePct = Math.max(0, Math.min(100, v)); }
@@ -709,9 +722,11 @@ public class RiskSettingsStore {
             upsert("enableRollingStraddle", String.valueOf(c.enableRollingStraddle));
             upsert("straddleEntryTime", c.straddleEntryTime);
             upsert("straddleSquareOffTime", c.straddleSquareOffTime);
-            upsert("straddleMovePctTrigger", String.valueOf(c.straddleMovePctTrigger));
             upsert("straddleMaxRolls", String.valueOf(c.straddleMaxRolls));
             upsert("straddleLotsPerLeg", String.valueOf(c.straddleLotsPerLeg));
+            upsert("straddleCombinedSlPct", String.valueOf(c.straddleCombinedSlPct));
+            upsert("straddleRollWaitMin", String.valueOf(c.straddleRollWaitMin));
+            upsert("straddleRollCutoffTime", c.straddleRollCutoffTime);
             upsert("straddleMaxDailyLoss", String.valueOf(c.straddleMaxDailyLoss));
             upsert("minRiskRewardRatio", String.valueOf(c.minRiskRewardRatio));
             upsert("enableEmaLevelCountFilter", String.valueOf(c.enableEmaLevelCountFilter));
@@ -856,9 +871,12 @@ public class RiskSettingsStore {
                     case "enableRollingStraddle" -> c.enableRollingStraddle = Boolean.parseBoolean(v);
                     case "straddleEntryTime" -> c.straddleEntryTime = (v == null || v.isBlank()) ? "09:20" : v.trim();
                     case "straddleSquareOffTime" -> c.straddleSquareOffTime = (v == null || v.isBlank()) ? "15:15" : v.trim();
-                    case "straddleMovePctTrigger" -> c.straddleMovePctTrigger = Math.max(0.01, Double.parseDouble(v));
+                    case "straddleMovePctTrigger" -> { /* legacy — NIFTY move% trigger removed in favor of combined-premium SL */ }
                     case "straddleMaxRolls" -> c.straddleMaxRolls = Math.max(0, Integer.parseInt(v));
                     case "straddleLotsPerLeg" -> c.straddleLotsPerLeg = Math.max(1, Integer.parseInt(v));
+                    case "straddleCombinedSlPct" -> c.straddleCombinedSlPct = Math.max(0.1, Double.parseDouble(v));
+                    case "straddleRollWaitMin" -> c.straddleRollWaitMin = Math.max(0, Integer.parseInt(v));
+                    case "straddleRollCutoffTime" -> { if (v != null && !v.isBlank()) c.straddleRollCutoffTime = v; }
                     case "straddleMaxDailyLoss" -> c.straddleMaxDailyLoss = Math.max(0, Double.parseDouble(v));
                     case "minRiskRewardRatio" -> c.minRiskRewardRatio = Double.parseDouble(v);
                     // enableEmaTrendCheck removed — 5-min EMA factor is hard-baked into the

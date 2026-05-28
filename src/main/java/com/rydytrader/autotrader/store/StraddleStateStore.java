@@ -51,6 +51,9 @@ public class StraddleStateStore {
         public double  buyPremiumTurnoverToday;
         public int     orderCountToday;
         public String  currentWeeklyExpiry;
+        /** Epoch millis when the combined-premium SL fired. Used to resume the WAITING_TO_ROLL
+         *  wait timer after a mid-day restart. 0 = no SL active. */
+        public long    slHitTimeMillis;
         /** Intraday Net P&L samples for today's equity curve. Each entry is {t: "HH:mm", v: net}.
          *  Captured every 5 min between straddleEntryTime and straddleSquareOffTime. Cleared on
          *  day rollover. Persisting it means the chart survives a mid-day restart. */

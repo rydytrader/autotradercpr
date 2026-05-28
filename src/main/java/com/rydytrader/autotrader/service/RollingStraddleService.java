@@ -45,7 +45,7 @@ public class RollingStraddleService {
     private static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
     private static final int STRIKE_STEP = 50;    // NIFTY strikes increment by 50
 
-    public enum LifecycleState { IDLE, OPEN, MAX_ROLLS_HOLD, DONE_FOR_DAY }
+    public enum LifecycleState { IDLE, OPEN, WAITING_TO_ROLL, MAX_ROLLS_HOLD, DONE_FOR_DAY }
 
     private final RiskSettingsStore riskSettings;
     private final StraddleStateStore stateStore;
@@ -94,6 +94,10 @@ public class RollingStraddleService {
      *  lazy-fetched from the Fyers option chain when IDLE so the dashboard can show it without
      *  needing an open position. Reset on day rollover; re-resolved on next dashboard hit. */
     private volatile String  currentWeeklyExpiry = "";
+    /** Epoch millis when the combined-premium SL last fired. The bot sits in WAITING_TO_ROLL
+     *  until now - slHitTimeMillis >= straddleRollWaitMin minutes, then attempts re-entry
+     *  (unless we're past the roll cutoff time, in which case it parks DONE_FOR_DAY). */
+    private volatile long    slHitTimeMillis     = 0;
     /** Intraday Net P&L samples for the dashboard's equity curve. List of {t: "HH:mm", v: net}.
      *  Captured every 5 minutes between entryTime and squareOffTime. Cleared on day rollover,
      *  persisted to disk so the chart survives restart. */
@@ -143,6 +147,7 @@ public class RollingStraddleService {
             this.buyPremiumTurnoverToday = persisted.buyPremiumTurnoverToday;
             this.orderCountToday = persisted.orderCountToday;
             this.currentWeeklyExpiry = persisted.currentWeeklyExpiry != null ? persisted.currentWeeklyExpiry : "";
+            this.slHitTimeMillis = persisted.slHitTimeMillis;
             if (persisted.intradaySamples != null) {
                 this.intradaySamples.clear();
                 this.intradaySamples.addAll(persisted.intradaySamples);
@@ -295,7 +300,8 @@ public class RollingStraddleService {
                     doInitialEntry();
                 }
             }
-            case OPEN -> checkMoveTriggerOrSquareoff(now, squareOffTime);
+            case OPEN -> checkCombinedSlOrSquareoff(now, squareOffTime);
+            case WAITING_TO_ROLL -> checkRollWait(now, squareOffTime);
             case MAX_ROLLS_HOLD -> {
                 if (checkMaxLossKillSwitch()) return;
                 if (afterOrAt(now, squareOffTime)) {
@@ -542,27 +548,40 @@ public class RollingStraddleService {
         return false;
     }
 
-    // ── Move trigger / squareoff while OPEN ────────────────────────────────────
-    private void checkMoveTriggerOrSquareoff(LocalTime now, LocalTime squareOffTime) {
+    // ── Combined-premium SL trigger / squareoff while OPEN ────────────────────
+    /** Fires when the live (CE + PE LTP) has risen by {@code straddleCombinedSlPct}% above the
+     *  entry combined premium. On hit:
+     *    1. Close both legs immediately
+     *    2. Park in WAITING_TO_ROLL for {@code straddleRollWaitMin} minutes
+     *    3. If we're past {@code straddleRollCutoffTime} when the wait expires, park DONE_FOR_DAY
+     *       and don't re-enter. Otherwise call doInitialEntry() at a fresh ATM. */
+    private void checkCombinedSlOrSquareoff(LocalTime now, LocalTime squareOffTime) {
         if (afterOrAt(now, squareOffTime)) {
             closeBothLegs("TIMED_SQUAREOFF");
             transitionTo(LifecycleState.DONE_FOR_DAY);
             return;
         }
-        // Daily max-loss kill switch — checked before move-trigger so a runaway loss never
-        // gets a chance to roll into a fresh straddle.
+        // Daily max-loss kill switch — checked before SL trigger so a runaway loss never gets
+        // a chance to roll into a fresh straddle.
         if (checkMaxLossKillSwitch()) return;
 
-        double niftyLtp = marketDataService.getLtp(NIFTY_SYMBOL);
-        if (niftyLtp <= 0 || lastEntryNifty <= 0) return;
+        if (ceEntryPremium <= 0 || peEntryPremium <= 0
+            || ceSymbol == null || ceSymbol.isEmpty()
+            || peSymbol == null || peSymbol.isEmpty()) return;
 
-        double movePct = Math.abs(niftyLtp - lastEntryNifty) / lastEntryNifty * 100.0;
-        double trigger = riskSettings.getStraddleMovePctTrigger();
-        if (movePct < trigger) return;
+        double ceLtp = marketDataService.getLtp(ceSymbol);
+        double peLtp = marketDataService.getLtp(peSymbol);
+        if (ceLtp <= 0 || peLtp <= 0) return;
 
+        double entryCombined = ceEntryPremium + peEntryPremium;
+        double liveCombined  = ceLtp + peLtp;
+        double slPct = riskSettings.getStraddleCombinedSlPct();
+        double trigger = entryCombined * (1.0 + slPct / 100.0);
+        if (liveCombined < trigger) return;
+
+        double consumedPct = ((liveCombined - entryCombined) / entryCombined) * 100.0;
         int maxRolls = riskSettings.getStraddleMaxRolls();
         if (rollCount + 1 > maxRolls) {
-            // Already used all our rolls — hold the current open straddle to squareoff.
             transitionTo(LifecycleState.MAX_ROLLS_HOLD);
             String msg = "Straddle max rolls reached (" + maxRolls + ") — holding open legs to timed squareoff";
             log.info("[Straddle] {}", msg);
@@ -571,15 +590,49 @@ public class RollingStraddleService {
             return;
         }
 
-        String rollMsg = "Straddle roll trigger — NIFTY moved " + String.format("%.2f%%", movePct)
-            + " (" + String.format("%.2f", lastEntryNifty) + " → " + String.format("%.2f", niftyLtp)
-            + "). Closing legs and re-entering fresh ATM.";
-        log.info("[Straddle] {}", rollMsg);
-        eventService.log("[INFO] " + rollMsg);
+        String slMsg = String.format("Combined premium SL hit — entry %.2f, live %.2f (+%.2f%%, threshold %.2f%%). Closing legs and waiting %d min before re-entry.",
+            entryCombined, liveCombined, consumedPct, slPct, riskSettings.getStraddleRollWaitMin());
+        log.info("[Straddle] {}", slMsg);
+        eventService.log("[INFO] " + slMsg);
+        notifyTelegram(slMsg);
 
-        closeBothLegs("ROLL_TRIGGER");
+        closeBothLegs("SL_HIT");
         rollCount++;
-        // Re-enter immediately at the new ATM.
+        slHitTimeMillis = System.currentTimeMillis();
+        transitionTo(LifecycleState.WAITING_TO_ROLL);
+    }
+
+    /** Called every tick while WAITING_TO_ROLL. Compares elapsed time since slHitTimeMillis
+     *  against the configured wait. Once the wait expires, re-enters at the new ATM — unless
+     *  we've crossed the roll cutoff time, in which case we park DONE_FOR_DAY. */
+    private void checkRollWait(LocalTime now, LocalTime squareOffTime) {
+        if (afterOrAt(now, squareOffTime)) {
+            // Past squareoff while waiting — done for day
+            transitionTo(LifecycleState.DONE_FOR_DAY);
+            return;
+        }
+        if (slHitTimeMillis <= 0) {
+            // Defensive: shouldn't be in WAITING_TO_ROLL without an slHitTimeMillis
+            transitionTo(LifecycleState.IDLE);
+            return;
+        }
+        long elapsedMin = (System.currentTimeMillis() - slHitTimeMillis) / 60_000L;
+        int waitMin = riskSettings.getStraddleRollWaitMin();
+        if (elapsedMin < waitMin) return; // still waiting
+
+        // Wait elapsed — check roll cutoff time before re-entering
+        LocalTime cutoff = parseTime(riskSettings.getStraddleRollCutoffTime(), "14:30");
+        if (afterOrAt(now, cutoff)) {
+            String msg = "Roll wait expired but past cutoff " + cutoff + " — parking DONE_FOR_DAY without re-entry";
+            log.info("[Straddle] {}", msg);
+            eventService.log("[INFO] " + msg);
+            notifyTelegram(msg);
+            transitionTo(LifecycleState.DONE_FOR_DAY);
+            slHitTimeMillis = 0;
+            return;
+        }
+        // OK to re-enter
+        slHitTimeMillis = 0;
         doInitialEntry();
     }
 
@@ -807,6 +860,7 @@ public class RollingStraddleService {
         this.buyPremiumTurnoverToday = 0;
         this.orderCountToday = 0;
         this.currentWeeklyExpiry = "";
+        this.slHitTimeMillis = 0;
         this.recentRolls.clear();
         this.intradaySamples.clear();
         transitionTo(LifecycleState.IDLE);
@@ -836,6 +890,7 @@ public class RollingStraddleService {
         s.buyPremiumTurnoverToday = this.buyPremiumTurnoverToday;
         s.orderCountToday = this.orderCountToday;
         s.currentWeeklyExpiry = this.currentWeeklyExpiry;
+        s.slHitTimeMillis = this.slHitTimeMillis;
         synchronized (intradaySamples) {
             s.intradaySamples = new java.util.ArrayList<>(intradaySamples);
         }
@@ -945,20 +1000,9 @@ public class RollingStraddleService {
                 m.put("peChangePct",  Math.round(marketDataService.getDisplayChangePct(peSymbol) * 100.0) / 100.0);
             }
         }
-        // Current NIFTY + trigger band
+        // Current NIFTY
         double niftyLtp = marketDataService != null ? marketDataService.getLtp(NIFTY_SYMBOL) : 0;
         m.put("niftyLtp", niftyLtp);
-        double trigger = riskSettings.getStraddleMovePctTrigger();
-        if (lastEntryNifty > 0 && state == LifecycleState.OPEN) {
-            double upTrigger = lastEntryNifty * (1 + trigger / 100.0);
-            double dnTrigger = lastEntryNifty * (1 - trigger / 100.0);
-            m.put("upTrigger", Math.round(upTrigger * 100.0) / 100.0);
-            m.put("downTrigger", Math.round(dnTrigger * 100.0) / 100.0);
-            if (niftyLtp > 0) {
-                m.put("upPtsToGo", Math.round((upTrigger - niftyLtp) * 100.0) / 100.0);
-                m.put("downPtsToGo", Math.round((niftyLtp - dnTrigger) * 100.0) / 100.0);
-            }
-        }
         // Live leg MTM
         double ceLtp = ceSymbol != null && !ceSymbol.isEmpty() ? marketDataService.getLtp(ceSymbol) : 0;
         double peLtp = peSymbol != null && !peSymbol.isEmpty() ? marketDataService.getLtp(peSymbol) : 0;
@@ -974,6 +1018,33 @@ public class RollingStraddleService {
         m.put("combinedMtm", Math.round((ceMtm + peMtm) * 100.0) / 100.0);
         m.put("realisedPnlToday", Math.round(realisedPnlToday * 100.0) / 100.0);
         m.put("totalPnlToday", Math.round((realisedPnlToday + ceMtm + peMtm) * 100.0) / 100.0);
+        // Risk Band — combined-premium SL tracking
+        double entryCombined = ceEntryPremium + peEntryPremium;
+        double liveCombined  = (ceLtp > 0 ? ceLtp : 0) + (peLtp > 0 ? peLtp : 0);
+        double combinedSlPct = riskSettings.getStraddleCombinedSlPct();
+        m.put("entryCombined", round2(entryCombined));
+        m.put("liveCombined",  round2(liveCombined));
+        m.put("combinedSlPct", combinedSlPct);
+        if (entryCombined > 0) {
+            double slTrigger = entryCombined * (1.0 + combinedSlPct / 100.0);
+            m.put("slTrigger", round2(slTrigger));
+            // % of way to SL: 0% = at entry, 100% = at trigger.
+            double moveFromEntry = liveCombined - entryCombined;
+            double allowedMove   = slTrigger - entryCombined;
+            double slConsumedPct = (allowedMove > 0) ? (moveFromEntry / allowedMove) * 100.0 : 0;
+            m.put("slConsumedPct", round2(slConsumedPct));
+        } else {
+            m.put("slTrigger", 0.0);
+            m.put("slConsumedPct", 0.0);
+        }
+        // Roll wait countdown — only meaningful when WAITING_TO_ROLL
+        if (state == LifecycleState.WAITING_TO_ROLL && slHitTimeMillis > 0) {
+            int waitMin = riskSettings.getStraddleRollWaitMin();
+            long elapsedSec = (System.currentTimeMillis() - slHitTimeMillis) / 1000L;
+            long remainingSec = Math.max(0, waitMin * 60L - elapsedSec);
+            m.put("rollWaitRemainingSec", remainingSec);
+        }
+        m.put("rollCutoffTime", riskSettings.getStraddleRollCutoffTime());
         // Live charges estimate + breakdown for the dashboard.
         java.util.Map<String, Double> charges = computeChargesBreakdown();
         m.put("charges", charges);
@@ -1011,7 +1082,9 @@ public class RollingStraddleService {
         m.put("peOrderId",       peOrderId);
         m.put("entryTime",       riskSettings.getStraddleEntryTime());
         m.put("squareOffTime",   riskSettings.getStraddleSquareOffTime());
-        m.put("movePctTrigger",  riskSettings.getStraddleMovePctTrigger());
+        m.put("combinedSlPct",  riskSettings.getStraddleCombinedSlPct());
+        m.put("rollWaitMin",    riskSettings.getStraddleRollWaitMin());
+        m.put("rollCutoffTime", riskSettings.getStraddleRollCutoffTime());
         m.put("lotsPerLeg",      riskSettings.getStraddleLotsPerLeg());
         m.put("lotSize",         NIFTY_LOT_SIZE);
         return m;

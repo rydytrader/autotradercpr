@@ -38,14 +38,16 @@
                     '<div class="sm-hint" style="margin-bottom:14px;font-style:italic;">Strategy runs every trading day. Lifecycle is governed by entry time, move triggers, max rolls, and the timed squareoff below.</div>' +
                     '<div class="sm-field"><label>Entry Time (HH:mm IST)</label><input type="text" id="sm-straddleEntryTime" placeholder="09:20"></div>' +
                     '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="text" id="sm-straddleSquareOffTime" placeholder="15:15"></div>' +
-                    '<div class="sm-field"><label>Move % Trigger</label><input type="number" id="sm-straddleMovePctTrigger" step="0.05" min="0.05" max="5.0"><div class="sm-hint">NIFTY move from last entry that fires a roll. Default 0.4%.</div></div>' +
                     '<div class="sm-field"><label>Max Rolls</label><input type="number" id="sm-straddleMaxRolls" step="1" min="0" max="20"><div class="sm-hint">Number of rolls before holding to squareoff. Default 3.</div></div>' +
                     '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-straddleLotsPerLeg" step="1" min="1" max="20"><div class="sm-hint">Qty = lots × NIFTY lot size (65). Default 1.</div></div>' +
                   '</div>' +
                   // Risk tab
                   '<div class="sm-pane" data-pane="risk" style="display:none;">' +
-                    '<div class="sm-hint" style="margin-bottom:14px;font-style:italic;">Day-level safety limits. Triggered checks flatten open legs and park the bot DONE_FOR_DAY; manual ↻ Reset to IDLE required to re-arm.</div>' +
-                    '<div class="sm-field"><label>Max Daily Loss (₹)</label><input type="number" id="sm-straddleMaxDailyLoss" step="500" min="0"><div class="sm-hint">Net P&L kill-switch. When today\'s loss (realised + open MTM − charges) exceeds this, both legs are flattened and bot parks DONE_FOR_DAY. 0 disables.</div></div>' +
+                    '<div class="sm-hint" style="margin-bottom:14px;font-style:italic;">Day-level safety limits and per-cycle stop loss. Triggered checks either roll (with wait) or park DONE_FOR_DAY.</div>' +
+                    '<div class="sm-field"><label>Combined Premium SL (%)</label><input type="number" id="sm-straddleCombinedSlPct" step="1" min="5" max="100"><div class="sm-hint">Roll when (CE + PE LTP) exceeds entry combined premium by this %. e.g. 30 → sold ₹300, exit at ₹390. Default 30.</div></div>' +
+                    '<div class="sm-field"><label>Roll Wait (minutes)</label><input type="number" id="sm-straddleRollWaitMin" step="1" min="0" max="120"><div class="sm-hint">Wait this many minutes after an SL hit before re-entering. Avoids whipsaw. 0 = roll immediately. Default 15.</div></div>' +
+                    '<div class="sm-field"><label>Roll Cutoff Time (HH:mm IST)</label><input type="text" id="sm-straddleRollCutoffTime" placeholder="14:30"><div class="sm-hint">If SL fires after this time, bot closes legs and parks DONE_FOR_DAY without re-entering. Default 14:30.</div></div>' +
+                    '<div class="sm-field"><label>Max Daily Loss (₹)</label><input type="number" id="sm-straddleMaxDailyLoss" step="500" min="0"><div class="sm-hint">Hard kill-switch. When today\'s loss (realised + open MTM − charges) exceeds this, both legs are flattened and bot parks DONE_FOR_DAY. 0 disables.</div></div>' +
                   '</div>' +
                   // Charges tab
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
@@ -150,7 +152,9 @@
             cachedSettings = d;
             document.getElementById('sm-straddleEntryTime').value        = d.straddleEntryTime || '09:20';
             document.getElementById('sm-straddleSquareOffTime').value    = d.straddleSquareOffTime || '15:15';
-            document.getElementById('sm-straddleMovePctTrigger').value   = d.straddleMovePctTrigger != null ? d.straddleMovePctTrigger : 0.4;
+            document.getElementById('sm-straddleCombinedSlPct').value    = d.straddleCombinedSlPct != null ? d.straddleCombinedSlPct : 30;
+            document.getElementById('sm-straddleRollWaitMin').value      = d.straddleRollWaitMin != null ? d.straddleRollWaitMin : 15;
+            document.getElementById('sm-straddleRollCutoffTime').value   = d.straddleRollCutoffTime || '14:30';
             document.getElementById('sm-straddleMaxRolls').value         = d.straddleMaxRolls != null ? d.straddleMaxRolls : 3;
             document.getElementById('sm-straddleLotsPerLeg').value       = d.straddleLotsPerLeg != null ? d.straddleLotsPerLeg : 1;
             document.getElementById('sm-straddleMaxDailyLoss').value     = d.straddleMaxDailyLoss != null ? d.straddleMaxDailyLoss : 0;
@@ -167,7 +171,9 @@
         var body = {
             straddleEntryTime:      document.getElementById('sm-straddleEntryTime').value,
             straddleSquareOffTime:  document.getElementById('sm-straddleSquareOffTime').value,
-            straddleMovePctTrigger: parseFloat(document.getElementById('sm-straddleMovePctTrigger').value) || 0.4,
+            straddleCombinedSlPct:  parseFloat(document.getElementById('sm-straddleCombinedSlPct').value) || 30,
+            straddleRollWaitMin:    parseInt(document.getElementById('sm-straddleRollWaitMin').value, 10) || 0,
+            straddleRollCutoffTime: (document.getElementById('sm-straddleRollCutoffTime').value || '14:30').trim(),
             straddleMaxRolls:       parseInt(document.getElementById('sm-straddleMaxRolls').value, 10) || 3,
             straddleLotsPerLeg:     parseInt(document.getElementById('sm-straddleLotsPerLeg').value, 10) || 1,
             straddleMaxDailyLoss:   parseFloat(document.getElementById('sm-straddleMaxDailyLoss').value) || 0,
