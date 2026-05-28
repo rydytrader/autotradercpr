@@ -25,8 +25,8 @@ import java.util.Map;
  * <ul>
  *   <li>{@code today}  — today's session(s) only</li>
  *   <li>{@code expiry} — sessions in the current weekly-options cycle (day after last expiry → today)</li>
- *   <li>{@code mtd}    — first day of current month onwards</li>
- *   <li>{@code ytd}    — Jan 1 of current year onwards</li>
+ *   <li>{@code mtd}    — first day of current calendar month onwards</li>
+ *   <li>{@code ytd}    — Apr 1 of current Indian financial year onwards (FY starts Apr 1)</li>
  *   <li>{@code all}    — every row</li>
  * </ul>
  *
@@ -79,7 +79,7 @@ public class AnalyticsService {
         LocalDate cutoff = switch (p) {
             case "today"  -> today;
             case "expiry" -> currentExpiryStart(today);
-            case "ytd"    -> LocalDate.of(today.getYear(), 1, 1);
+            case "ytd"    -> indianFinancialYearStart(today);
             case "mtd"    -> LocalDate.of(today.getYear(), today.getMonthValue(), 1);
             default       -> null; // all-time
         };
@@ -97,6 +97,13 @@ public class AnalyticsService {
         }
         filtered.sort(Comparator.comparing(StraddleSessionEntity::getSessionDate));
         return filtered;
+    }
+
+    /** Start of the current Indian financial year — April 1. If today is Jan/Feb/Mar, the FY
+     *  started on Apr 1 of the previous calendar year; otherwise Apr 1 of the current year. */
+    private static LocalDate indianFinancialYearStart(LocalDate today) {
+        int fyYear = today.getMonthValue() >= 4 ? today.getYear() : today.getYear() - 1;
+        return LocalDate.of(fyYear, 4, 1);
     }
 
     /** Resolve the start date of the current weekly-options cycle: the day AFTER the most recent
