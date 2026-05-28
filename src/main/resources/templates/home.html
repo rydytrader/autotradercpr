@@ -328,7 +328,7 @@
             <div class="section-title"><div class="section-title-dot" style="background: var(--accent-cyan);"></div> Straddle Chart</div>
             <span class="section-badge" style="font-size:0.6rem; margin-left:auto;">CE + PE combined premium • 1-min close • line down = good</span>
         </div>
-        <div style="padding:20px 28px; height:300px;">
+        <div style="padding:20px 28px; height:400px;">
             <canvas id="straddleChart"></canvas>
         </div>
     </div>
@@ -849,6 +849,29 @@
                             var combDiffSse = liveCombSse - entryCombSse;
                             var combPctSse  = (combDiffSse / entryCombSse) * 100;
                             renderInverseChangeBadge('paneLiveCombinedChange', combDiffSse, combPctSse);
+                            // Sub-second update of the Straddle Chart's "now" tip — in-place edit
+                            // of the last data point if it's the current HH:mm, otherwise append.
+                            if (straddleChart && straddleChart.data && straddleChart.data.labels) {
+                                var nowD = new Date();
+                                var nowLabel = (nowD.getHours() < 10 ? '0' : '') + nowD.getHours()
+                                             + ':' + (nowD.getMinutes() < 10 ? '0' : '') + nowD.getMinutes();
+                                var lbls = straddleChart.data.labels;
+                                var ds0  = straddleChart.data.datasets[0].data;
+                                var rounded = Math.round(liveCombSse * 100) / 100;
+                                if (lbls.length > 0 && lbls[lbls.length - 1] === nowLabel) {
+                                    ds0[ds0.length - 1] = rounded;
+                                } else {
+                                    lbls.push(nowLabel);
+                                    ds0.push(rounded);
+                                    // Reference-line datasets need to grow with labels too
+                                    for (var di = 1; di < straddleChart.data.datasets.length; di++) {
+                                        var dsi = straddleChart.data.datasets[di].data;
+                                        var lastVal = dsi.length > 0 ? dsi[dsi.length - 1] : null;
+                                        dsi.push(lastVal);
+                                    }
+                                }
+                                straddleChart.update('none');
+                            }
                         }
                         var riskElSse = document.getElementById('heroRisk');
                         if (riskElSse) {
