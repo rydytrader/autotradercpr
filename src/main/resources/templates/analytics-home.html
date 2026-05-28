@@ -36,10 +36,9 @@
         .ah-stat-label { font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); letter-spacing:0.04em; }
         .pnl-positive { color:var(--accent-green); }
         .pnl-negative { color:var(--accent-red, #f87171); }
-        /* Collapse the 3-card detail row on narrower screens. */
-        @media (max-width: 1100px) {
-            .ah-detail-grid { grid-template-columns:1fr !important; }
-        }
+        /* Collapse the 4-card detail row to 2 columns on medium screens, 1 on narrow. */
+        @media (max-width: 1300px) { .ah-detail-grid { grid-template-columns:repeat(2, 1fr) !important; } }
+        @media (max-width: 720px)  { .ah-detail-grid { grid-template-columns:1fr !important; } }
     </style>
 </head>
 <body style="margin:0;">
@@ -163,8 +162,8 @@
         </div>
     </div>
 
-    <!-- THREE DETAIL CARDS (drill-down stats — only metrics NOT already in the hero) -->
-    <div class="fade-in ah-detail-grid" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin-bottom:20px;">
+    <!-- FOUR DETAIL CARDS (drill-down stats — only metrics NOT already in the hero) -->
+    <div class="fade-in ah-detail-grid" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:20px;">
 
         <!-- Trade Counts -->
         <div class="section-card" style="margin-bottom:0;">
@@ -208,6 +207,30 @@
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;">Current / Longest Loss</span>
                     <span class="stat-value" id="ahLossStreaks" style="font-size:0.85rem;">— / —</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Edge Metrics -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Edge Metrics</div>
+            </div>
+            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Expectancy / session</span>
+                    <span class="stat-value" id="ahExpectancy" style="font-size:1rem;"
+                          title="Average net P&L per session — total net ÷ number of sessions. >0 = the strategy has a positive edge over the period.">—</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Recovery Factor</span>
+                    <span class="stat-value" id="ahRecoveryFactor" style="font-size:1rem;"
+                          title="Total return ÷ |max drawdown|. >1 = recovered more than the worst trough; higher = more cushion vs your worst losing streak.">—</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Sharpe (annualised)</span>
+                    <span class="stat-value" id="ahSharpe" style="font-size:1rem;"
+                          title="Risk-adjusted return. Mean session return ÷ stddev of session returns × √252. >1 good, >2 excellent.">—</span>
                 </div>
             </div>
         </div>
@@ -403,6 +426,7 @@
             var perf = d.performance || {};
             var ext = d.extremes  || {};
             var st  = d.streaks   || {};
+            var edge = d.edge     || {};
             var eq  = d.equityCurve || { labels: [], values: [] };
 
             // Header session-count badge
@@ -440,6 +464,12 @@
             setVal('ahLongestWin',  String(st.longestWinStreak || 0));
             setVal('ahLossStreaks', (st.currentLossStreak || 0) + ' / ' + (st.longestLossStreak || 0),
                                     -(st.currentLossStreak || 0));
+            // Edge Metrics card
+            setVal('ahExpectancy', fmtRs(edge.expectancy), edge.expectancy);
+            var rf = Number(edge.recoveryFactor || 0);
+            setVal('ahRecoveryFactor', rf > 0 ? rf.toFixed(2) : '—', rf - 1);
+            var sh = Number(edge.sharpe || 0);
+            setVal('ahSharpe', edge.sharpe == null || sh === 0 ? '—' : sh.toFixed(2), sh);
             // Costs card
             var charges = Number(st.totalCharges || 0);
             var sessions = Number(perf.sessions || 0);

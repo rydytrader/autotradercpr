@@ -58,6 +58,7 @@ public class AnalyticsService {
         out.put("performance", performance(rows));
         out.put("extremes",    extremes(rows));
         out.put("streaks",     streaks(rows));
+        out.put("edge",        edge(rows, startingCapital));
         out.put("equityCurve", equityCurve(rows, startingCapital));
         return out;
     }
@@ -200,6 +201,66 @@ public class AnalyticsService {
         m.put("currentLossStreak", curLoss);
         m.put("longestLossStreak", longestLoss);
         m.put("totalCharges",      round2(totalCharges));
+        return m;
+    }
+
+    // ── Edge metrics ─────────────────────────────────────────────────────────
+    /** Risk-adjusted performance numbers — used to judge whether the bot has a real,
+     *  persistent edge vs random P&L noise.
+     *  <ul>
+     *    <li><b>Expectancy</b> per session — mean net P&L. {@code totalNetPnl / N}.</li>
+     *    <li><b>Recovery Factor</b> — {@code totalNetPnl / |maxDrawdown|}. >1 means the
+     *        strategy has recovered any drawdown it incurred; higher = more cushion.</li>
+     *    <li><b>Sharpe (annualised)</b> — {@code mean(dailyReturn) / stddev(dailyReturn) ×
+     *        sqrt(252)}, where dailyReturn = sessionNetPnl / startingCapital. >1 is good,
+     *        >2 is excellent for an options-selling strategy.</li>
+     *  </ul>
+     */
+    private Map<String, Object> edge(List<StraddleSessionEntity> rows, double starting) {
+        int n = rows.size();
+        Map<String, Object> m = new LinkedHashMap<>();
+        if (n == 0) {
+            m.put("expectancy",     0.0);
+            m.put("recoveryFactor", 0.0);
+            m.put("sharpe",         0.0);
+            return m;
+        }
+        double netSum = 0;
+        for (StraddleSessionEntity s : rows) netSum += s.getNetPnl();
+        double expectancy = netSum / n;
+
+        // Recovery factor needs max drawdown — same calc as extremes(), recomputed here so the
+        // method is self-contained.
+        double peak = 0, cum = 0, maxDd = 0;
+        for (StraddleSessionEntity s : rows) {
+            cum += s.getNetPnl();
+            if (cum > peak) peak = cum;
+            double dd = cum - peak;
+            if (dd < maxDd) maxDd = dd;
+        }
+        double recoveryFactor = maxDd < 0 ? netSum / Math.abs(maxDd) : 0;
+
+        // Annualised Sharpe — treat each session as one day, dailyReturn = netPnl / startingCapital.
+        double sharpe = 0;
+        if (n >= 2 && starting > 0) {
+            double[] returns = new double[n];
+            double mean = 0;
+            for (int i = 0; i < n; i++) {
+                returns[i] = rows.get(i).getNetPnl() / starting;
+                mean += returns[i];
+            }
+            mean /= n;
+            double sq = 0;
+            for (double r : returns) sq += (r - mean) * (r - mean);
+            double stddev = Math.sqrt(sq / n);
+            if (stddev > 0) {
+                sharpe = (mean / stddev) * Math.sqrt(252);
+            }
+        }
+
+        m.put("expectancy",     round2(expectancy));
+        m.put("recoveryFactor", round2(recoveryFactor));
+        m.put("sharpe",         round2(sharpe));
         return m;
     }
 
