@@ -197,11 +197,6 @@ public class RollingStraddleService implements Strategy {
      *  set once at entry, read on every dashboard fetch. */
     private volatile double  ceEntryPremium = 0;
     private volatile double  peEntryPremium = 0;
-    /** Latest 1-minute CLOSE LTP for each leg — refreshed by {@link #sampleCombinedPremium}.
-     *  SL/Target checks read these instead of live tick LTPs so a single freak print can't
-     *  trip the trigger. Seeded with entry premium on initial entry. */
-    private volatile double  ceLastMinClose = 0;
-    private volatile double  peLastMinClose = 0;
     /** Today's roll-event ring buffer for the Home dashboard "Recent rolls" table. */
     private final java.util.Deque<RollEvent> recentRolls = new java.util.ArrayDeque<>();
     /** Cumulative realised P&L for the current day (sum of premium collected - premium paid back
@@ -390,10 +385,6 @@ public class RollingStraddleService implements Strategy {
         double ceLtp = marketDataService.getLtp(ceSymbol);
         double peLtp = marketDataService.getLtp(peSymbol);
         if (ceLtp <= 0 || peLtp <= 0) return;
-        // Cache the 1-min close per leg — SL + Target checks read these instead of the live
-        // tick LTP so a single freak print can't trip the trigger.
-        ceLastMinClose = ceLtp;
-        peLastMinClose = peLtp;
         java.util.Map<String, Object> sample = new java.util.LinkedHashMap<>();
         sample.put("t", now.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")));
         sample.put("v", Math.round((ceLtp + peLtp) * 100.0) / 100.0);
@@ -505,10 +496,6 @@ public class RollingStraddleService implements Strategy {
         } catch (Exception ignored) {}
         this.ceEntryPremium = readEntryPremium(ceResp, resolvedCe);
         this.peEntryPremium = readEntryPremium(peResp, resolvedPe);
-        // Seed the 1-min close cache with entry premium so the SL/Target check has a baseline
-        // immediately and is never reading 0 in the first minute after entry.
-        this.ceLastMinClose = this.ceEntryPremium;
-        this.peLastMinClose = this.peEntryPremium;
         // Capture current weekly expiry from the resolved option symbol (cheaper than re-fetching).
         this.currentWeeklyExpiry = parseExpiryFromSymbol(resolvedCe);
         // Accumulate sell-side premium turnover for STT/exchange/SEBI charge calc.
@@ -748,19 +735,16 @@ public class RollingStraddleService implements Strategy {
     }
 
     /** Pure SL + Target check — fast path, run by the 5s scheduler AND a separate 500ms scheduler.
-     *  No squareoff time check, no max-loss (those stay on the 5s path).
-     *
-     *  <p>Reads the cached 1-minute CLOSE LTP for each leg (refreshed by
-     *  {@link #sampleCombinedPremium}) instead of the live tick — a single freak print can't
-     *  trip the trigger; only a 1-min close that closes above SL (or below Target) does. */
+     *  No squareoff time check, no max-loss (those stay on the 5s path). Reads live tick LTPs
+     *  for both legs, sums to combined premium, compares against target + SL thresholds. */
     private synchronized void checkCombinedSlAndTarget() {
         if (state != LifecycleState.OPEN) return;
         if (ceEntryPremium <= 0 || peEntryPremium <= 0
             || ceSymbol == null || ceSymbol.isEmpty()
             || peSymbol == null || peSymbol.isEmpty()) return;
 
-        double ceLtp = ceLastMinClose;
-        double peLtp = peLastMinClose;
+        double ceLtp = marketDataService.getLtp(ceSymbol);
+        double peLtp = marketDataService.getLtp(peSymbol);
         if (ceLtp <= 0 || peLtp <= 0) return;
 
         double entryCombined = ceEntryPremium + peEntryPremium;
@@ -913,8 +897,6 @@ public class RollingStraddleService implements Strategy {
         this.peOrderId = "";
         this.ceEntryPremium = 0;
         this.peEntryPremium = 0;
-        this.ceLastMinClose = 0;
-        this.peLastMinClose = 0;
         persist();
     }
 
@@ -1091,8 +1073,6 @@ public class RollingStraddleService implements Strategy {
         this.peOrderId = "";
         this.ceEntryPremium = 0;
         this.peEntryPremium = 0;
-        this.ceLastMinClose = 0;
-        this.peLastMinClose = 0;
         this.realisedPnlToday = 0;
         this.sellPremiumTurnoverToday = 0;
         this.buyPremiumTurnoverToday = 0;

@@ -97,12 +97,6 @@ public class LegSlStrategy implements Strategy {
     private volatile double buyPremiumTurnoverToday  = 0;
     private volatile int    orderCountToday = 0;
     private volatile String currentWeeklyExpiry = "";
-    /** Latest 1-minute CLOSE LTP for each leg — refreshed by the {@code sampleCombinedPremium}
-     *  cron at every minute boundary. SL/Target checks read these instead of the live tick
-     *  LTP so a single bad print can't trigger an exit. Seeded with the entry premium on
-     *  initial entry so the SL check is functional immediately (no 60s blind spot). */
-    private volatile double ceLastMinClose = 0;
-    private volatile double peLastMinClose = 0;
 
     private final java.util.Deque<CycleEvent> recentEvents = new java.util.ArrayDeque<>();
     private final java.util.List<java.util.Map<String, Object>> combinedPremiumSamples =
@@ -263,14 +257,10 @@ public class LegSlStrategy implements Strategy {
         if (now.isBefore(entryTime) || now.isAfter(squareOffTime.plusMinutes(5))) return;
         double ceLtp = (isCeOpen() && !ceSymbol.isEmpty()) ? marketDataService.getLtp(ceSymbol) : 0;
         double peLtp = (isPeOpen() && !peSymbol.isEmpty()) ? marketDataService.getLtp(peSymbol) : 0;
-        // Cache the 1-min close per leg — SL check reads these instead of the live tick LTP
-        // so a single freak print can't trip the trigger.
-        if (ceLtp > 0) ceLastMinClose = ceLtp;
-        if (peLtp > 0) peLastMinClose = peLtp;
         double total = (ceLtp > 0 ? ceLtp : 0) + (peLtp > 0 ? peLtp : 0);
         if (total <= 0) return;
         // Sample includes per-leg fields so the leg-sl chart can plot CE and PE as separate
-        // overlaid lines. The summed {v} is also kept for any reader that only needs the
+        // side-by-side lines. The summed {v} is also kept for any reader that only needs the
         // combined value.
         java.util.Map<String, Object> sample = new java.util.LinkedHashMap<>();
         sample.put("t", now.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")));
@@ -359,10 +349,6 @@ public class LegSlStrategy implements Strategy {
         catch (Exception ignored) {}
         this.ceEntryPremium = readEntryPremium(resolvedCe);
         this.peEntryPremium = readEntryPremium(resolvedPe);
-        // Seed the 1-min close cache with entry premium so the SL check has a baseline
-        // immediately and is never reading 0 in the first minute after entry.
-        this.ceLastMinClose = this.ceEntryPremium;
-        this.peLastMinClose = this.peEntryPremium;
         this.currentWeeklyExpiry = parseExpiryFromSymbol(resolvedCe);
         this.sellPremiumTurnoverToday += (ceEntryPremium * qty) + (peEntryPremium * qty);
         transitionTo(LifecycleState.OPEN_BOTH);
@@ -393,24 +379,21 @@ public class LegSlStrategy implements Strategy {
     }
 
     /** Pure SL-trigger check — fast path, run by both the 5s scheduler and the 500ms scheduler.
-     *  No squareoff time check, no max-loss check (those stay on the 5s path).
-     *
-     *  <p>Compares the cached 1-minute CLOSE LTP (refreshed by {@link #sampleCombinedPremium})
-     *  against per-leg triggers. Using the 1-min close instead of the live tick prevents a
-     *  single freak print from firing the SL — the value can only update at minute boundaries. */
+     *  No squareoff time check, no max-loss check (those stay on the 5s path). Just live LTP
+     *  vs per-leg trigger; fires close on breach. */
     private synchronized void checkLegSlTriggers() {
         if (state != LifecycleState.OPEN_BOTH
                 && state != LifecycleState.OPEN_CE_ONLY
                 && state != LifecycleState.OPEN_PE_ONLY) return;
         double legSlPct = riskSettings.getStrategyDouble(STRATEGY_ID, "legSlPct", 50);
         if (isCeOpen() && ceEntryPremium > 0 && !ceSymbol.isEmpty()) {
-            double ceClose = ceLastMinClose;
-            if (ceClose > 0) {
+            double ceLtp = marketDataService.getLtp(ceSymbol);
+            if (ceLtp > 0) {
                 double trigger = ceEntryPremium * (1.0 + legSlPct / 100.0);
-                if (ceClose >= trigger) {
-                    double consumedPct = ((ceClose - ceEntryPremium) / ceEntryPremium) * 100.0;
-                    String msg = String.format("CE leg SL hit (1-min close) — entry %.2f, 1m close %.2f (+%.2f%%, threshold %.2f%%). Closing CE only.",
-                        ceEntryPremium, ceClose, consumedPct, legSlPct);
+                if (ceLtp >= trigger) {
+                    double consumedPct = ((ceLtp - ceEntryPremium) / ceEntryPremium) * 100.0;
+                    String msg = String.format("CE leg SL hit — entry %.2f, live %.2f (+%.2f%%, threshold %.2f%%). Closing CE only.",
+                        ceEntryPremium, ceLtp, consumedPct, legSlPct);
                     log.info("[leg-sl] {}", msg);
                     eventService.log("[INFO] [leg-sl] " + msg);
                     notifyTelegram(msg);
@@ -420,13 +403,13 @@ public class LegSlStrategy implements Strategy {
             }
         }
         if (isPeOpen() && peEntryPremium > 0 && !peSymbol.isEmpty()) {
-            double peClose = peLastMinClose;
-            if (peClose > 0) {
+            double peLtp = marketDataService.getLtp(peSymbol);
+            if (peLtp > 0) {
                 double trigger = peEntryPremium * (1.0 + legSlPct / 100.0);
-                if (peClose >= trigger) {
-                    double consumedPct = ((peClose - peEntryPremium) / peEntryPremium) * 100.0;
-                    String msg = String.format("PE leg SL hit (1-min close) — entry %.2f, 1m close %.2f (+%.2f%%, threshold %.2f%%). Closing PE only.",
-                        peEntryPremium, peClose, consumedPct, legSlPct);
+                if (peLtp >= trigger) {
+                    double consumedPct = ((peLtp - peEntryPremium) / peEntryPremium) * 100.0;
+                    String msg = String.format("PE leg SL hit — entry %.2f, live %.2f (+%.2f%%, threshold %.2f%%). Closing PE only.",
+                        peEntryPremium, peLtp, consumedPct, legSlPct);
                     log.info("[leg-sl] {}", msg);
                     eventService.log("[INFO] [leg-sl] " + msg);
                     notifyTelegram(msg);
@@ -482,14 +465,12 @@ public class LegSlStrategy implements Strategy {
             this.ceClosedAtMillis = nowMs;
             this.ceQty = 0;
             this.ceOrderId = "";
-            this.ceLastMinClose = 0; // stop the SL check from reading stale CE close after exit
             // CE closed → if PE still open we move to OPEN_PE_ONLY; if PE already closed we're done.
             transitionTo(isPeOpen() ? LifecycleState.OPEN_PE_ONLY : LifecycleState.DONE_FOR_DAY);
         } else {
             this.peClosedAtMillis = nowMs;
             this.peQty = 0;
             this.peOrderId = "";
-            this.peLastMinClose = 0;
             transitionTo(isCeOpen() ? LifecycleState.OPEN_CE_ONLY : LifecycleState.DONE_FOR_DAY);
         }
     }
@@ -810,7 +791,6 @@ public class LegSlStrategy implements Strategy {
         this.ceQty = 0; this.peQty = 0;
         this.ceOrderId = ""; this.peOrderId = "";
         this.ceEntryPremium = 0; this.peEntryPremium = 0;
-        this.ceLastMinClose = 0; this.peLastMinClose = 0;
         this.ceClosedAtMillis = 0; this.peClosedAtMillis = 0;
         this.realisedPnlToday = 0;
         this.sellPremiumTurnoverToday = 0;
