@@ -220,8 +220,9 @@ public class RiskSettingsStore {
         volatile String  straddleRollCutoffTime    = "14:30";
         /** Daily max-loss kill switch in rupees (absolute, positive). When today's net P&L
          *  (realised + open MTM − charges) drops below {@code -straddleMaxDailyLoss}, the bot
-         *  closes both legs and parks DONE_FOR_DAY. 0 disables the check. */
-        volatile double  straddleMaxDailyLoss      = 0;
+         *  closes both legs and parks DONE_FOR_DAY. 0 disables the check. Default ₹10,000
+         *  balances allowing one full SL cycle (~₹5k) while catching accumulated bleed on rolls. */
+        volatile double  straddleMaxDailyLoss      = 10000;
         // EMA filters
         // 5-min EMA trend gate: buy requires close above EMA 20, sell requires close below EMA 20.
         // (enableEmaTrendCheck removed — 5-min EMA factor is now hard-baked into the
