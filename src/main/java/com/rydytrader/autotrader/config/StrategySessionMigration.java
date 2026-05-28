@@ -37,7 +37,7 @@ public class StrategySessionMigration {
             if (rows > 0) {
                 log.info("[StrategyMigration] Backfilled strategy_id='combined-sl-roll' on {} legacy row(s)", rows);
             } else {
-                log.debug("[StrategyMigration] No legacy rows needed strategy_id backfill");
+                log.info("[StrategyMigration] strategy_id backfill check ran — 0 rows needed updating (H2 column DEFAULT already populated)");
             }
         } catch (Exception e) {
             // Could fail if column doesn't exist yet (Hibernate ddl-auto=update should have added it).
