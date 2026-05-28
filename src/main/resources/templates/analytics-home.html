@@ -33,27 +33,13 @@
         .scope-pill:hover { border-color:rgba(125,211,252,0.35); color:var(--text-primary); }
         .scope-pill.active { background:rgba(125,211,252,0.12); border-color:var(--accent-cyan); color:var(--accent-cyan); }
 
-        .ah-hero-grid {
-            display:grid; grid-template-columns:repeat(2, 1fr); gap:16px;
-            padding:18px 22px;
-        }
-        @media (max-width: 1100px) { .ah-hero-grid { grid-template-columns:1fr; } }
-        .ah-pane {
-            background:var(--bg-primary); border:1px solid var(--border); border-radius:10px;
-            padding:18px 20px; display:flex; flex-direction:column; gap:12px;
-        }
-        .ah-pane-title {
-            font-family:var(--font-mono); font-size:0.66rem; font-weight:700;
-            color:var(--accent-cyan); letter-spacing:0.12em; text-transform:uppercase;
-            display:flex; align-items:center; gap:8px;
-        }
-        .ah-pane-title-dot { width:6px; height:6px; border-radius:50%; background:var(--accent-cyan); }
-        .ah-stat-row { display:flex; justify-content:space-between; align-items:baseline; gap:14px; }
         .ah-stat-label { font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); letter-spacing:0.04em; }
-        .ah-stat-value { font-family:var(--font-mono); font-size:0.95rem; color:var(--text-primary); font-weight:700; }
-        .ah-stat-value.big { font-size:1.45rem; }
         .pnl-positive { color:var(--accent-green); }
         .pnl-negative { color:var(--accent-red, #f87171); }
+        /* Collapse the 4-card detail row to 2 columns on narrower screens to avoid squishing. */
+        @media (max-width: 1100px) {
+            .ah-detail-grid { grid-template-columns:repeat(2, 1fr) !important; }
+        }
     </style>
 </head>
 <body style="margin:0;">
@@ -133,110 +119,137 @@
         </div>
     </div>
 
-    <!-- HERO CARD — 2×2 grid of metric panes -->
-    <div class="section-card fade-in" style="margin-bottom:16px;">
+    <!-- HERO CARD — single strip: big Current Capital on left, stat tiles on right -->
+    <div class="section-card fade-in" style="margin-bottom:20px;">
         <div class="section-header">
-            <div class="section-title"><div class="section-title-dot"></div> Performance Summary</div>
+            <div class="section-title"><div class="section-title-dot"></div> Overview</div>
             <span class="section-badge" id="ahSessionCount" style="margin-left:auto;">— sessions</span>
         </div>
-        <div class="ah-hero-grid">
-            <!-- Pane 1: Capital -->
-            <div class="ah-pane">
-                <div class="ah-pane-title"><div class="ah-pane-title-dot"></div>Capital</div>
-                <div class="ah-stat-row">
-                    <span class="ah-stat-label">Starting</span>
-                    <span class="ah-stat-value" id="ahStartingCapital">—</span>
+        <div style="padding:20px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px;">
+            <div>
+                <div class="stat-label" style="margin-bottom:6px;">Current Capital</div>
+                <div class="stat-value" id="ahCurrentCapital" style="font-size:2.2rem;">—</div>
+                <div class="stat-sub" id="ahCapitalSub" style="margin-top:6px;">Started — • — • —</div>
+            </div>
+            <div style="display:flex; gap:32px; flex-wrap:wrap;">
+                <div style="text-align:center;">
+                    <div class="stat-label">Total Return</div>
+                    <div class="stat-value" id="ahTotalReturn" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
-                <div class="ah-stat-row">
-                    <span class="ah-stat-label">Current</span>
-                    <span class="ah-stat-value big" id="ahCurrentCapital">—</span>
+                <div style="text-align:center;">
+                    <div class="stat-label">Win Rate</div>
+                    <div class="stat-value" id="ahWinRate" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
-                <div class="ah-stat-row">
-                    <span class="ah-stat-label">Total Return</span>
-                    <span class="ah-stat-value" id="ahTotalReturn">—</span>
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
+                    <div class="stat-label">Profit Factor</div>
+                    <div class="stat-value" id="ahProfitFactor" style="font-size:1.1rem; margin-top:4px;"
+                         title="Gross profit ÷ gross loss. >1 = profitable, >2 = excellent.">—</div>
                 </div>
-                <div class="ah-stat-row">
-                    <span class="ah-stat-label">Total Return %</span>
-                    <span class="ah-stat-value" id="ahTotalReturnPct">—</span>
+                <div style="text-align:center;">
+                    <div class="stat-label">R : R</div>
+                    <div class="stat-value" id="ahRiskReward" style="font-size:1.1rem; margin-top:4px;"
+                         title="Avg profit ÷ avg loss. >1 = winners larger than losers.">—</div>
                 </div>
-                <div class="ah-stat-row">
-                    <span class="ah-stat-label">Avg Monthly %</span>
-                    <span class="ah-stat-value" id="ahAvgMonthlyPct">—</span>
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
+                    <div class="stat-label">Max Drawdown</div>
+                    <div class="stat-value" id="ahMaxDrawdown" style="font-size:1.1rem; margin-top:4px;"
+                         title="Largest peak-to-trough decline in cumulative net P&L.">—</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">Avg Monthly %</div>
+                    <div class="stat-value" id="ahAvgMonthlyPct" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
             </div>
+        </div>
+    </div>
 
-            <!-- Pane 2: Performance -->
-            <div class="ah-pane">
-                <div class="ah-pane-title"><div class="ah-pane-title-dot" style="background:var(--accent-green);"></div>Performance</div>
-                <div class="ah-stat-row">
-                    <span class="ah-stat-label">Sessions Traded</span>
-                    <span class="ah-stat-value" id="ahSessions">—</span>
+    <!-- FOUR DETAIL CARDS (drill-down stats) -->
+    <div class="fade-in ah-detail-grid" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:20px;">
+
+        <!-- Capital details -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot"></div> Capital</div>
+            </div>
+            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Starting</span>
+                    <span class="stat-value" id="ahStartingCapital" style="font-size:1rem;">—</span>
                 </div>
-                <div class="ah-stat-row">
-                    <span class="ah-stat-label">Win Rate</span>
-                    <span class="ah-stat-value big" id="ahWinRate">—</span>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Return %</span>
+                    <span class="stat-value" id="ahTotalReturnPct" style="font-size:1rem;">—</span>
                 </div>
-                <div class="ah-stat-row">
-                    <span class="ah-stat-label">Wins / Losses</span>
-                    <span class="ah-stat-value" id="ahWinsLosses">—</span>
-                </div>
-                <div class="ah-stat-row">
-                    <span class="ah-stat-label">Profit Factor</span>
-                    <span class="ah-stat-value" id="ahProfitFactor" title="Gross profit ÷ gross loss. >1 = profitable, >2 = excellent.">—</span>
-                </div>
-                <div class="ah-stat-row">
-                    <span class="ah-stat-label">Risk-Reward</span>
-                    <span class="ah-stat-value" id="ahRiskReward" title="Avg profit ÷ avg loss. >1 = winners larger than losers.">—</span>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Total Charges</span>
+                    <span class="stat-value" id="ahTotalCharges" style="font-size:1rem; color:var(--text-muted);">—</span>
                 </div>
             </div>
+        </div>
 
-            <!-- Pane 3: P&L Extremes -->
-            <div class="ah-pane">
-                <div class="ah-pane-title"><div class="ah-pane-title-dot" style="background:var(--accent-amber, #fbbf24);"></div>P&L Extremes</div>
-                <div class="ah-stat-row">
-                    <span class="ah-stat-label">Max Profit</span>
-                    <span class="ah-stat-value" id="ahMaxProfit">—</span>
+        <!-- Trade Counts -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Trade Counts</div>
+            </div>
+            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Sessions</span>
+                    <span class="stat-value" id="ahSessions" style="font-size:1rem;">—</span>
                 </div>
-                <div class="ah-stat-row">
-                    <span class="ah-stat-label">Max Loss</span>
-                    <span class="ah-stat-value" id="ahMaxLoss">—</span>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Wins / Losses</span>
+                    <span style="font-family:var(--font-mono); font-size:0.95rem; font-weight:700;">
+                        <span class="pnl-positive" id="ahWins">0</span>
+                        <span style="color:var(--text-muted);"> / </span>
+                        <span class="pnl-negative" id="ahLosses">0</span>
+                    </span>
                 </div>
-                <div class="ah-stat-row">
-                    <span class="ah-stat-label">Avg Profit</span>
-                    <span class="ah-stat-value" id="ahAvgProfit">—</span>
-                </div>
-                <div class="ah-stat-row">
-                    <span class="ah-stat-label">Avg Loss</span>
-                    <span class="ah-stat-value" id="ahAvgLoss">—</span>
-                </div>
-                <div class="ah-stat-row">
-                    <span class="ah-stat-label">Max Drawdown</span>
-                    <span class="ah-stat-value" id="ahMaxDrawdown" title="Largest peak-to-trough decline in cumulative net P&L.">—</span>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Win Rate</span>
+                    <span class="stat-value" id="ahWinRateDetail" style="font-size:1rem;">—</span>
                 </div>
             </div>
+        </div>
 
-            <!-- Pane 4: Streaks -->
-            <div class="ah-pane">
-                <div class="ah-pane-title"><div class="ah-pane-title-dot" style="background:var(--accent-red, #f87171);"></div>Streaks</div>
-                <div class="ah-stat-row">
-                    <span class="ah-stat-label">Current Win Streak</span>
-                    <span class="ah-stat-value" id="ahCurWin">—</span>
+        <!-- P&L Extremes -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-amber, #fbbf24);"></div> P&L Extremes</div>
+            </div>
+            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Best / Worst</span>
+                    <span class="stat-value" id="ahBestWorst" style="font-size:0.85rem;">— / —</span>
                 </div>
-                <div class="ah-stat-row">
-                    <span class="ah-stat-label">Longest Win Streak</span>
-                    <span class="ah-stat-value" id="ahLongestWin">—</span>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Avg Win / Loss</span>
+                    <span class="stat-value" id="ahAvgWinLoss" style="font-size:0.85rem;">— / —</span>
                 </div>
-                <div class="ah-stat-row">
-                    <span class="ah-stat-label">Current Loss Streak</span>
-                    <span class="ah-stat-value" id="ahCurLoss">—</span>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Max Drawdown</span>
+                    <span class="stat-value" id="ahMaxDrawdownDetail" style="font-size:1rem;">—</span>
                 </div>
-                <div class="ah-stat-row">
-                    <span class="ah-stat-label">Longest Loss Streak</span>
-                    <span class="ah-stat-value" id="ahLongestLoss">—</span>
+            </div>
+        </div>
+
+        <!-- Streaks -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-red, #f87171);"></div> Streaks</div>
+            </div>
+            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Current Win</span>
+                    <span class="stat-value" id="ahCurWin" style="font-size:1rem;">—</span>
                 </div>
-                <div class="ah-stat-row">
-                    <span class="ah-stat-label">Total Charges Paid</span>
-                    <span class="ah-stat-value" id="ahTotalCharges">—</span>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Longest Win</span>
+                    <span class="stat-value" id="ahLongestWin" style="font-size:1rem;">—</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Current / Longest Loss</span>
+                    <span class="stat-value" id="ahLossStreaks" style="font-size:0.85rem;">— / —</span>
                 </div>
             </div>
         </div>
@@ -416,36 +429,46 @@
             var scEl = document.getElementById('ahSessionCount');
             if (scEl) scEl.textContent = (d.sessionCount || 0) + ' session' + ((d.sessionCount === 1) ? '' : 's');
 
-            // Pane 1: Capital
-            setVal('ahStartingCapital', fmtRs(cap.startingCapital));
-            setVal('ahCurrentCapital',  fmtRs(cap.currentCapital), cap.totalReturn);
-            setVal('ahTotalReturn',     fmtRs(cap.totalReturn), cap.totalReturn);
-            setVal('ahTotalReturnPct',  fmtPct(cap.totalReturnPct), cap.totalReturn);
-            setVal('ahAvgMonthlyPct',   fmtPct(cap.avgMonthlyPct), cap.avgMonthlyPct);
-
-            // Pane 2: Performance
-            setVal('ahSessions',     String(perf.sessions || 0));
+            // ── HERO STRIP ─────────────────────────────────────────────────
+            setVal('ahCurrentCapital', fmtRs(cap.currentCapital), cap.totalReturn);
+            var subEl = document.getElementById('ahCapitalSub');
+            if (subEl) {
+                var sign = (cap.totalReturn || 0) >= 0 ? '+' : '';
+                subEl.textContent = 'Started ' + fmtRs(cap.startingCapital)
+                    + ' • ' + sign + fmtRs(cap.totalReturn)
+                    + ' (' + fmtPct(cap.totalReturnPct) + ')'
+                    + ' • ' + (d.sessionCount || 0) + ' sessions';
+            }
+            setVal('ahTotalReturn',  fmtRs(cap.totalReturn), cap.totalReturn);
             setVal('ahWinRate',      (perf.winRate != null ? perf.winRate.toFixed(1) : '0') + '%',
-                                     (perf.winRate || 0) - 50); // green when > 50, neutral at 50, red below
-            setVal('ahWinsLosses',   (perf.wins || 0) + ' / ' + (perf.losses || 0));
+                                     (perf.winRate || 0) - 50);
             var pf = perf.profitFactor || 0;
             setVal('ahProfitFactor', pf > 0 ? pf.toFixed(2) : '—', pf - 1);
             var rr = perf.riskReward || 0;
             setVal('ahRiskReward',   rr > 0 ? rr.toFixed(2) : '—', rr - 1);
+            setVal('ahMaxDrawdown',  fmtRs(ext.maxDrawdown), ext.maxDrawdown);
+            setVal('ahAvgMonthlyPct', fmtPct(cap.avgMonthlyPct), cap.avgMonthlyPct);
 
-            // Pane 3: P&L Extremes
-            setVal('ahMaxProfit',  fmtRs(ext.maxProfit), ext.maxProfit);
-            setVal('ahMaxLoss',    fmtRs(ext.maxLoss), ext.maxLoss);
-            setVal('ahAvgProfit',  fmtRs(ext.avgProfit), ext.avgProfit);
-            setVal('ahAvgLoss',    fmtRs(ext.avgLoss), ext.avgLoss);
-            setVal('ahMaxDrawdown', fmtRs(ext.maxDrawdown), ext.maxDrawdown);
-
-            // Pane 4: Streaks
+            // ── DETAIL CARDS ───────────────────────────────────────────────
+            // Capital card
+            setVal('ahStartingCapital', fmtRs(cap.startingCapital));
+            setVal('ahTotalReturnPct',  fmtPct(cap.totalReturnPct), cap.totalReturn);
+            setVal('ahTotalCharges',    fmtRs(st.totalCharges));
+            // Trade Counts card
+            setVal('ahSessions',       String(perf.sessions || 0));
+            document.getElementById('ahWins').textContent   = String(perf.wins || 0);
+            document.getElementById('ahLosses').textContent = String(perf.losses || 0);
+            setVal('ahWinRateDetail',  (perf.winRate != null ? perf.winRate.toFixed(1) : '0') + '%',
+                                       (perf.winRate || 0) - 50);
+            // P&L Extremes card
+            setVal('ahBestWorst', fmtRs(ext.maxProfit) + ' / ' + fmtRs(ext.maxLoss));
+            setVal('ahAvgWinLoss', fmtRs(ext.avgProfit) + ' / ' + fmtRs(ext.avgLoss));
+            setVal('ahMaxDrawdownDetail', fmtRs(ext.maxDrawdown), ext.maxDrawdown);
+            // Streaks card
             setVal('ahCurWin',      String(st.currentWinStreak || 0),  st.currentWinStreak);
             setVal('ahLongestWin',  String(st.longestWinStreak || 0));
-            setVal('ahCurLoss',     String(st.currentLossStreak || 0), -(st.currentLossStreak || 0));
-            setVal('ahLongestLoss', String(st.longestLossStreak || 0));
-            setVal('ahTotalCharges', fmtRs(st.totalCharges));
+            setVal('ahLossStreaks', (st.currentLossStreak || 0) + ' / ' + (st.longestLossStreak || 0),
+                                    -(st.currentLossStreak || 0));
 
             // Equity curve
             renderEquityChart(eq.labels || [], eq.values || []);
