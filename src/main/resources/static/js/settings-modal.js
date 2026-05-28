@@ -43,7 +43,8 @@
                   '</div>' +
                   // Risk tab
                   '<div class="sm-pane" data-pane="risk" style="display:none;">' +
-                    '<div class="sm-hint" style="margin-bottom:14px;font-style:italic;">Day-level safety limits and per-cycle stop loss. Triggered checks either roll (with wait) or park DONE_FOR_DAY.</div>' +
+                    '<div class="sm-hint" style="margin-bottom:14px;font-style:italic;">Day-level safety limits and per-cycle stop loss / target. Triggered checks either roll (with wait), park DONE_FOR_DAY, or book profit.</div>' +
+                    '<div class="sm-field"><label>Combined Premium Target (%)</label><input type="number" id="sm-straddleCombinedTargetPct" step="1" min="0" max="100"><div class="sm-hint">Book profit when (CE + PE LTP) falls below entry combined premium by this %. e.g. 30 → sold ₹300, exit at ₹210. After hit, bot parks DONE_FOR_DAY — no new straddles same day. 0 disables. Default 30.</div></div>' +
                     '<div class="sm-field"><label>Combined Premium SL (%)</label><input type="number" id="sm-straddleCombinedSlPct" step="1" min="5" max="100"><div class="sm-hint">Roll when (CE + PE LTP) exceeds entry combined premium by this %. e.g. 30 → sold ₹300, exit at ₹390. Default 30.</div></div>' +
                     '<div class="sm-field"><label>Roll Wait (minutes)</label><input type="number" id="sm-straddleRollWaitMin" step="1" min="0" max="120"><div class="sm-hint">Wait this many minutes after an SL hit before re-entering. Avoids whipsaw. 0 = roll immediately. Default 15.</div></div>' +
                     '<div class="sm-field"><label>Roll Cutoff Time (HH:mm IST)</label><input type="text" id="sm-straddleRollCutoffTime" placeholder="14:30"><div class="sm-hint">If SL fires after this time, bot closes legs and parks DONE_FOR_DAY without re-entering. Default 14:30.</div></div>' +
@@ -153,6 +154,7 @@
             document.getElementById('sm-straddleEntryTime').value        = d.straddleEntryTime || '09:20';
             document.getElementById('sm-straddleSquareOffTime').value    = d.straddleSquareOffTime || '15:15';
             document.getElementById('sm-straddleCombinedSlPct').value    = d.straddleCombinedSlPct != null ? d.straddleCombinedSlPct : 30;
+            document.getElementById('sm-straddleCombinedTargetPct').value = d.straddleCombinedTargetPct != null ? d.straddleCombinedTargetPct : 30;
             document.getElementById('sm-straddleRollWaitMin').value      = d.straddleRollWaitMin != null ? d.straddleRollWaitMin : 15;
             document.getElementById('sm-straddleRollCutoffTime').value   = d.straddleRollCutoffTime || '14:30';
             document.getElementById('sm-straddleMaxRolls').value         = d.straddleMaxRolls != null ? d.straddleMaxRolls : 3;
@@ -172,6 +174,7 @@
             straddleEntryTime:      document.getElementById('sm-straddleEntryTime').value,
             straddleSquareOffTime:  document.getElementById('sm-straddleSquareOffTime').value,
             straddleCombinedSlPct:  parseFloat(document.getElementById('sm-straddleCombinedSlPct').value) || 30,
+            straddleCombinedTargetPct: parseFloat(document.getElementById('sm-straddleCombinedTargetPct').value) || 0,
             straddleRollWaitMin:    parseInt(document.getElementById('sm-straddleRollWaitMin').value, 10) || 0,
             straddleRollCutoffTime: (document.getElementById('sm-straddleRollCutoffTime').value || '14:30').trim(),
             straddleMaxRolls:       parseInt(document.getElementById('sm-straddleMaxRolls').value, 10) || 3,

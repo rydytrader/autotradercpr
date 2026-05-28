@@ -207,6 +207,11 @@ public class RiskSettingsStore {
          *  combined premium by this percentage. e.g. 30 means roll when straddle is 30% more
          *  expensive than entry. Replaces the older NIFTY-move % trigger. */
         volatile double  straddleCombinedSlPct     = 30.0;
+        /** Combined-premium TARGET in %. Triggers an exit when (ceLtp + peLtp) falls below the
+         *  entry combined premium by this percentage. e.g. 30 means exit when straddle is 30%
+         *  cheaper than entry (profit booked). After hit, bot parks DONE_FOR_DAY — no re-entry
+         *  same day. 0 disables the target. */
+        volatile double  straddleCombinedTargetPct = 30.0;
         /** Wait time (minutes) between an SL hit and the next entry. Avoids whipsaw re-entry
          *  right after a sharp move. 0 = roll immediately. */
         volatile int     straddleRollWaitMin       = 15;
@@ -428,6 +433,7 @@ public class RiskSettingsStore {
     public int     getStraddleMaxRolls()           { return cfg().straddleMaxRolls; }
     public int     getStraddleLotsPerLeg()         { return cfg().straddleLotsPerLeg; }
     public double  getStraddleCombinedSlPct()      { return cfg().straddleCombinedSlPct; }
+    public double  getStraddleCombinedTargetPct()  { return cfg().straddleCombinedTargetPct; }
     public int     getStraddleRollWaitMin()        { return cfg().straddleRollWaitMin; }
     public String  getStraddleRollCutoffTime()     { return cfg().straddleRollCutoffTime; }
     public double  getStraddleMaxDailyLoss()       { return cfg().straddleMaxDailyLoss; }
@@ -572,6 +578,7 @@ public class RiskSettingsStore {
     public void setStraddleMaxRolls(int v)                 { cfg().straddleMaxRolls = Math.max(0, v); }
     public void setStraddleLotsPerLeg(int v)               { cfg().straddleLotsPerLeg = Math.max(1, v); }
     public void setStraddleCombinedSlPct(double v)         { cfg().straddleCombinedSlPct = Math.max(0.1, v); }
+    public void setStraddleCombinedTargetPct(double v)     { cfg().straddleCombinedTargetPct = Math.max(0, v); }
     public void setStraddleRollWaitMin(int v)              { cfg().straddleRollWaitMin = Math.max(0, v); }
     public void setStraddleRollCutoffTime(String v)        { if (v != null && !v.isBlank()) cfg().straddleRollCutoffTime = v; }
     public void setStraddleMaxDailyLoss(double v)          { cfg().straddleMaxDailyLoss = Math.max(0, v); }
@@ -725,6 +732,7 @@ public class RiskSettingsStore {
             upsert("straddleMaxRolls", String.valueOf(c.straddleMaxRolls));
             upsert("straddleLotsPerLeg", String.valueOf(c.straddleLotsPerLeg));
             upsert("straddleCombinedSlPct", String.valueOf(c.straddleCombinedSlPct));
+            upsert("straddleCombinedTargetPct", String.valueOf(c.straddleCombinedTargetPct));
             upsert("straddleRollWaitMin", String.valueOf(c.straddleRollWaitMin));
             upsert("straddleRollCutoffTime", c.straddleRollCutoffTime);
             upsert("straddleMaxDailyLoss", String.valueOf(c.straddleMaxDailyLoss));
@@ -875,6 +883,7 @@ public class RiskSettingsStore {
                     case "straddleMaxRolls" -> c.straddleMaxRolls = Math.max(0, Integer.parseInt(v));
                     case "straddleLotsPerLeg" -> c.straddleLotsPerLeg = Math.max(1, Integer.parseInt(v));
                     case "straddleCombinedSlPct" -> c.straddleCombinedSlPct = Math.max(0.1, Double.parseDouble(v));
+                    case "straddleCombinedTargetPct" -> c.straddleCombinedTargetPct = Math.max(0, Double.parseDouble(v));
                     case "straddleRollWaitMin" -> c.straddleRollWaitMin = Math.max(0, Integer.parseInt(v));
                     case "straddleRollCutoffTime" -> { if (v != null && !v.isBlank()) c.straddleRollCutoffTime = v; }
                     case "straddleMaxDailyLoss" -> c.straddleMaxDailyLoss = Math.max(0, Double.parseDouble(v));

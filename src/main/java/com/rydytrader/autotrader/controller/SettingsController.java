@@ -55,6 +55,7 @@ public class SettingsController {
         result.put("straddleMaxRolls",       riskSettings.getStraddleMaxRolls());
         result.put("straddleLotsPerLeg",     riskSettings.getStraddleLotsPerLeg());
         result.put("straddleCombinedSlPct",  riskSettings.getStraddleCombinedSlPct());
+        result.put("straddleCombinedTargetPct", riskSettings.getStraddleCombinedTargetPct());
         result.put("straddleRollWaitMin",    riskSettings.getStraddleRollWaitMin());
         result.put("straddleRollCutoffTime", riskSettings.getStraddleRollCutoffTime());
         result.put("straddleMaxDailyLoss",   riskSettings.getStraddleMaxDailyLoss());
@@ -95,6 +96,7 @@ public class SettingsController {
             if (body.containsKey("straddleMaxRolls"))       riskSettings.setStraddleMaxRolls(Integer.parseInt(body.get("straddleMaxRolls").toString()));
             if (body.containsKey("straddleLotsPerLeg"))     riskSettings.setStraddleLotsPerLeg(Integer.parseInt(body.get("straddleLotsPerLeg").toString()));
             if (body.containsKey("straddleCombinedSlPct"))  riskSettings.setStraddleCombinedSlPct(Double.parseDouble(body.get("straddleCombinedSlPct").toString()));
+            if (body.containsKey("straddleCombinedTargetPct")) riskSettings.setStraddleCombinedTargetPct(Double.parseDouble(body.get("straddleCombinedTargetPct").toString()));
             if (body.containsKey("straddleRollWaitMin"))    riskSettings.setStraddleRollWaitMin(Integer.parseInt(body.get("straddleRollWaitMin").toString()));
             if (body.containsKey("straddleRollCutoffTime")) riskSettings.setStraddleRollCutoffTime(body.get("straddleRollCutoffTime").toString());
             if (body.containsKey("straddleMaxDailyLoss"))   riskSettings.setStraddleMaxDailyLoss(Double.parseDouble(body.get("straddleMaxDailyLoss").toString()));

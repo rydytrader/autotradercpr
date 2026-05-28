@@ -198,11 +198,23 @@
         <div class="section-card" style="margin-bottom:0;">
             <div class="section-header">
                 <div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Risk Band</div>
-                <span id="paneSlPctBadge"
-                      style="margin-left:auto; font-family:var(--font-mono); font-size:0.6rem; font-weight:700;
-                             color:var(--accent-cyan); letter-spacing:0.06em;
-                             background:rgba(125,211,252,0.10); border:1px solid rgba(125,211,252,0.25);
-                             padding:3px 9px; border-radius:999px;">SL · —%</span>
+                <div style="margin-left:auto; display:flex; align-items:center; gap:8px;">
+                    <span id="paneTargetPctBadge"
+                          style="font-family:var(--font-mono); font-size:0.6rem; font-weight:700;
+                                 color:var(--accent-green); letter-spacing:0.06em;
+                                 background:rgba(52,211,153,0.10); border:1px solid rgba(52,211,153,0.30);
+                                 padding:3px 9px; border-radius:999px;">TGT · —%</span>
+                    <span id="paneSlPctBadge"
+                          style="font-family:var(--font-mono); font-size:0.6rem; font-weight:700;
+                                 color:var(--accent-cyan); letter-spacing:0.06em;
+                                 background:rgba(125,211,252,0.10); border:1px solid rgba(125,211,252,0.25);
+                                 padding:3px 9px; border-radius:999px;">SL · —%</span>
+                    <span id="paneRollWaitBadge" title="Time remaining before re-entry after SL hit"
+                          style="display:none; font-family:var(--font-mono); font-size:0.6rem; font-weight:700;
+                                 color:var(--accent-amber, #fbbf24); letter-spacing:0.06em;
+                                 background:rgba(251,191,36,0.10); border:1px solid rgba(251,191,36,0.30);
+                                 padding:3px 9px; border-radius:999px;">RE-ENTRY · —</span>
+                </div>
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:12px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -211,15 +223,18 @@
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;">Live Combined</span>
-                    <span class="stat-value" id="paneLiveCombined" style="font-size:1rem;">—</span>
+                    <span style="display:flex; align-items:baseline; gap:8px;">
+                        <span class="stat-value" id="paneLiveCombined" style="font-size:1rem;">—</span>
+                        <span id="paneLiveCombinedChange" style="font-family:var(--font-mono); font-size:0.66rem; color:var(--text-muted);"></span>
+                    </span>
+                </div>
+                <div id="paneTargetTriggerRow" style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Target Trigger</span>
+                    <span class="stat-value" id="paneTargetTrigger" style="font-size:1rem; color:var(--accent-green);">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;">SL Trigger</span>
                     <span class="stat-value" id="paneSlTrigger" style="font-size:1rem; color:var(--accent-red, #f87171);">—</span>
-                </div>
-                <div id="paneRollWaitRow" style="display:none; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Re-Entry In</span>
-                    <span class="stat-value" id="paneRollWaitRemaining" style="font-size:0.95rem; color:var(--accent-amber, #fbbf24);">—</span>
                 </div>
             </div>
         </div>
@@ -586,21 +601,44 @@
             var liveCombined  = Number(d.liveCombined  || 0);
             var slTrigger     = Number(d.slTrigger     || 0);
             var slPct         = Number(d.combinedSlPct || 0);
+            var targetTrigger = Number(d.targetTrigger || 0);
+            var targetPct     = Number(d.combinedTargetPct || 0);
+            // Target row + badge — hidden when target is disabled (0)
+            var targetRow      = document.getElementById('paneTargetTriggerRow');
+            var targetBadge    = document.getElementById('paneTargetPctBadge');
+            if (targetPct > 0) {
+                if (targetRow)   targetRow.style.display = 'flex';
+                if (targetBadge) { targetBadge.style.display = ''; targetBadge.textContent = 'TGT · ' + targetPct.toFixed(0) + '%'; }
+                document.getElementById('paneTargetTrigger').textContent = targetTrigger > 0 ? Number(targetTrigger).toFixed(2) : '—';
+            } else {
+                if (targetRow)   targetRow.style.display = 'none';
+                if (targetBadge) targetBadge.style.display = 'none';
+            }
             document.getElementById('paneEntryCombined').textContent = entryCombined > 0 ? Number(entryCombined).toFixed(2) : '—';
             document.getElementById('paneLiveCombined').textContent  = liveCombined  > 0 ? Number(liveCombined).toFixed(2)  : '—';
             document.getElementById('paneSlTrigger').textContent     = slTrigger     > 0 ? Number(slTrigger).toFixed(2)     : '—';
+            // Change badge for Live Combined — relative to Entry Premium. For SHORT straddle,
+            // combined UP from entry = bad (loss), DOWN = good (profit). Color inverted from
+            // the standard ticker convention so the operator reads green=good, red=bad.
+            if (entryCombined > 0 && liveCombined > 0) {
+                var combDiff = liveCombined - entryCombined;
+                var combPct  = (combDiff / entryCombined) * 100;
+                renderInverseChangeBadge('paneLiveCombinedChange', combDiff, combPct);
+            }
             var slBadge = document.getElementById('paneSlPctBadge');
             if (slBadge) slBadge.textContent = 'SL · ' + slPct.toFixed(0) + '%';
-            // Roll-wait countdown — only shown when WAITING_TO_ROLL
-            var waitRow = document.getElementById('paneRollWaitRow');
-            var waitVal = document.getElementById('paneRollWaitRemaining');
-            if (d.state === 'WAITING_TO_ROLL' && d.rollWaitRemainingSec != null) {
-                var secs = Math.max(0, Number(d.rollWaitRemainingSec));
-                var mm = Math.floor(secs / 60), ss = secs % 60;
-                waitVal.textContent = (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
-                waitRow.style.display = 'flex';
-            } else {
-                waitRow.style.display = 'none';
+            // Roll-wait countdown — header pill, only shown when WAITING_TO_ROLL
+            var waitBadge = document.getElementById('paneRollWaitBadge');
+            if (waitBadge) {
+                if (d.state === 'WAITING_TO_ROLL' && d.rollWaitRemainingSec != null) {
+                    var secs = Math.max(0, Number(d.rollWaitRemainingSec));
+                    var mm = Math.floor(secs / 60), ss = secs % 60;
+                    var hhmm = (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
+                    waitBadge.textContent = 'RE-ENTRY · ' + hhmm;
+                    waitBadge.style.display = '';
+                } else {
+                    waitBadge.style.display = 'none';
+                }
             }
 
             // Pane 2: CE Leg
@@ -779,6 +817,15 @@
                         var allowedSse  = entryCombSse * (slPctSse / 100.0);
                         var consumedSse = liveCombSse - entryCombSse;
                         var pctSse      = allowedSse > 0 ? (consumedSse / allowedSse) * 100.0 : 0;
+                        // Live Combined in the Risk Band card + its change badge
+                        var liveCombEl = document.getElementById('paneLiveCombined');
+                        if (liveCombEl && liveCombSse > 0) {
+                            liveCombEl.textContent = liveCombSse.toFixed(2);
+                            d.liveCombined = liveCombSse; // keep payload in sync for next 5s poll merge
+                            var combDiffSse = liveCombSse - entryCombSse;
+                            var combPctSse  = (combDiffSse / entryCombSse) * 100;
+                            renderInverseChangeBadge('paneLiveCombinedChange', combDiffSse, combPctSse);
+                        }
                         var riskElSse = document.getElementById('heroRisk');
                         if (riskElSse) {
                             var pctClamped = Math.max(0, pctSse);
@@ -1096,6 +1143,25 @@
         el.style.color = num >= 0 ? 'var(--accent-green)' : 'var(--accent-red, #f87171)';
     }
     function renderNiftyChange(ch, chp) { renderChangeBadge('heroNiftyChange', ch, chp); }
+
+    /** Inverse-color variant of renderChangeBadge. Used on the Risk Band's Live Combined badge
+     *  where a positive change (combined premium higher than entry) is BAD for our short
+     *  straddle — so render red. A negative change (premium dropped) is GOOD — render green. */
+    function renderInverseChangeBadge(elId, ch, chp) {
+        var el = document.getElementById(elId);
+        if (!el) return;
+        if (ch == null || isNaN(ch)) { if (!el.textContent || el.textContent === '—') el.textContent = ''; return; }
+        var num = Number(ch);
+        var pct = chp != null ? Number(chp) : 0;
+        if (Math.abs(num) < 0.005 && Math.abs(pct) < 0.005) {
+            if (!el.textContent) { el.textContent = '—'; el.style.color = 'var(--text-muted)'; }
+            return;
+        }
+        var arrow = num >= 0 ? '▲' : '▼';
+        el.textContent = arrow + ' ' + Math.abs(num).toFixed(2) + ' (' + Math.abs(pct).toFixed(2) + '%)';
+        // INVERTED color: up = bad = red, down = good = green
+        el.style.color = num >= 0 ? 'var(--accent-red, #f87171)' : 'var(--accent-green)';
+    }
 
     /** For leg cards, the change badge represents the move from ENTRY price, not from the day's
      *  prev close. This is what matters for the open short straddle — how far has each option

@@ -575,6 +575,26 @@ public class RollingStraddleService {
 
         double entryCombined = ceEntryPremium + peEntryPremium;
         double liveCombined  = ceLtp + peLtp;
+
+        // Combined-premium TARGET check (profit booking). Triggered when live combined has
+        // fallen below entry by the configured target %. On hit: close legs, park
+        // DONE_FOR_DAY (no new straddles same day).
+        double targetPct = riskSettings.getStraddleCombinedTargetPct();
+        if (targetPct > 0) {
+            double targetTrigger = entryCombined * (1.0 - targetPct / 100.0);
+            if (liveCombined <= targetTrigger) {
+                double profitPct = ((entryCombined - liveCombined) / entryCombined) * 100.0;
+                String msg = String.format("Combined premium TARGET hit — entry %.2f, live %.2f (-%.2f%%, threshold %.2f%%). Booking profit, parking DONE_FOR_DAY.",
+                    entryCombined, liveCombined, profitPct, targetPct);
+                log.info("[Straddle] {}", msg);
+                eventService.log("[SUCCESS] " + msg);
+                notifyTelegram(msg);
+                closeBothLegs("TARGET_HIT");
+                transitionTo(LifecycleState.DONE_FOR_DAY);
+                return;
+            }
+        }
+
         double slPct = riskSettings.getStraddleCombinedSlPct();
         double trigger = entryCombined * (1.0 + slPct / 100.0);
         if (liveCombined < trigger) return;
@@ -1037,6 +1057,15 @@ public class RollingStraddleService {
             m.put("slTrigger", 0.0);
             m.put("slConsumedPct", 0.0);
         }
+        // Combined-premium TARGET tracking
+        double combinedTargetPct = riskSettings.getStraddleCombinedTargetPct();
+        m.put("combinedTargetPct", combinedTargetPct);
+        if (entryCombined > 0 && combinedTargetPct > 0) {
+            double targetTrigger = entryCombined * (1.0 - combinedTargetPct / 100.0);
+            m.put("targetTrigger", round2(targetTrigger));
+        } else {
+            m.put("targetTrigger", 0.0);
+        }
         // Roll wait countdown — only meaningful when WAITING_TO_ROLL
         if (state == LifecycleState.WAITING_TO_ROLL && slHitTimeMillis > 0) {
             int waitMin = riskSettings.getStraddleRollWaitMin();
@@ -1082,9 +1111,10 @@ public class RollingStraddleService {
         m.put("peOrderId",       peOrderId);
         m.put("entryTime",       riskSettings.getStraddleEntryTime());
         m.put("squareOffTime",   riskSettings.getStraddleSquareOffTime());
-        m.put("combinedSlPct",  riskSettings.getStraddleCombinedSlPct());
-        m.put("rollWaitMin",    riskSettings.getStraddleRollWaitMin());
-        m.put("rollCutoffTime", riskSettings.getStraddleRollCutoffTime());
+        m.put("combinedSlPct",     riskSettings.getStraddleCombinedSlPct());
+        m.put("combinedTargetPct", riskSettings.getStraddleCombinedTargetPct());
+        m.put("rollWaitMin",       riskSettings.getStraddleRollWaitMin());
+        m.put("rollCutoffTime",    riskSettings.getStraddleRollCutoffTime());
         m.put("lotsPerLeg",      riskSettings.getStraddleLotsPerLeg());
         m.put("lotSize",         NIFTY_LOT_SIZE);
         return m;
