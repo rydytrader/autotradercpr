@@ -3,9 +3,14 @@ package com.rydytrader.autotrader.entity;
 import jakarta.persistence.*;
 
 /**
- * One row per trading-day rolling-straddle session. Persisted on day rollover (or first-tick-
- * next-day) for historical analytics. Replaces the equity {@code trades} table for the
- * options-only bot.
+ * One row per trading-day per-strategy session. Persisted on day rollover for historical
+ * analytics. After the multi-strategy refactor, the row is uniquely identified by
+ * {@code (strategyId, sessionDate)} — one row per strategy per date.
+ *
+ * <p>The unique constraint on {@code sessionDate} alone is still in place in the existing
+ * schema (only one strategy was writing rows before). It will be replaced with a composite
+ * unique on {@code (strategyId, sessionDate)} when the second strategy starts writing rows
+ * (Phase 5 of the multi-strategy plan).
  */
 @Entity
 @Table(name = "straddle_sessions")
@@ -14,6 +19,11 @@ public class StraddleSessionEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    /** Strategy that owned this session. Backfilled to "combined-sl-roll" for existing rows
+     *  on first boot after the refactor (see {@code StrategySessionMigration}). */
+    @Column(nullable = false, length = 40)
+    private String strategyId = "combined-sl-roll";
 
     @Column(nullable = false, unique = true, length = 10)
     private String sessionDate; // ISO yyyy-MM-dd
@@ -59,6 +69,8 @@ public class StraddleSessionEntity {
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
+    public String getStrategyId() { return strategyId; }
+    public void setStrategyId(String strategyId) { this.strategyId = strategyId; }
     public String getSessionDate() { return sessionDate; }
     public void setSessionDate(String sessionDate) { this.sessionDate = sessionDate; }
     public int getEntries() { return entries; }

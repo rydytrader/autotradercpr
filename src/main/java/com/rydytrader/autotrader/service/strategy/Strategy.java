@@ -1,0 +1,55 @@
+package com.rydytrader.autotrader.service.strategy;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Common contract every options-selling strategy implements. The dashboard, settings modal,
+ * and analytics pages drive themselves from this abstraction — there's no place that hardcodes
+ * "rolling straddle" anymore. Adding a new strategy = one new {@code @Service} class that
+ * implements this interface; Spring auto-discovers it via {@link StrategyRegistry}.
+ */
+public interface Strategy {
+
+    /** Stable URL-safe identifier (kebab-case). Used as path segment, settings prefix, log
+     *  prefix, order tag suffix, and session-row strategy_id column. Must be unique. */
+    String id();
+
+    /** Human-readable name shown in the UI (nav, settings tab, dashboard heading). */
+    String displayName();
+
+    /** Current lifecycle state as a String (strategy-specific enum names). Examples:
+     *  IDLE / OPEN / WAITING_TO_ROLL / DONE_FOR_DAY, or OPEN_BOTH / OPEN_CE_ONLY / etc. */
+    String currentState();
+
+    /** Lightweight status — state, symbols, qty, expiry, key settings. Cheap to compute,
+     *  safe to call frequently. Used by the strategy-sidebar icon active state. */
+    Map<String, Object> getStatus();
+
+    /** Full dashboard payload — status + leg LTPs + MTM + charges + samples + roll events.
+     *  Polled every 5s by the per-strategy dashboard page. Returned shape MAY differ between
+     *  strategies, but must include a {@code dashboardShape} key telling the UI which template
+     *  conditionals to apply (e.g. "combined-sl-roll" vs "leg-sl"). */
+    Map<String, Object> getDashboard();
+
+    /** Manual squareoff — flatten all open legs and park DONE_FOR_DAY. Returns true if there
+     *  was something to close. */
+    boolean forceClose(String reason);
+
+    /** Manual recovery — flip in-memory state back to IDLE so the next scheduler tick can
+     *  re-evaluate entry conditions. Does not touch broker positions. */
+    void resetToIdle(String reason);
+
+    /** Schema for the settings modal. Each entry describes one configurable field that this
+     *  strategy reads. The UI renders the form dynamically and POSTs back via the generic
+     *  settings endpoint. Field types: "time" (HH:mm), "int", "double", "percent",
+     *  "rupees", "boolean". */
+    List<Map<String, Object>> getSettingsSchema();
+
+    /** Tiny icon for the left sidebar nav. Default = first letter of id() uppercase.
+     *  Concrete strategies may override to return an emoji or symbol character. */
+    default String navIcon() {
+        String id = id();
+        return id == null || id.isEmpty() ? "?" : id.substring(0, 1).toUpperCase();
+    }
+}

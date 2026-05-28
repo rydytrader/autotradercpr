@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.dto.OrderDTO;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
+import com.rydytrader.autotrader.service.strategy.Strategy;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import com.rydytrader.autotrader.store.StraddleStateStore;
 import com.rydytrader.autotrader.store.TokenStore;
@@ -37,7 +38,46 @@ import java.time.ZoneId;
  * </ol>
  */
 @Service
-public class RollingStraddleService {
+public class RollingStraddleService implements Strategy {
+
+    /** Stable identifier for this strategy. Used in URLs, settings keys, log prefixes,
+     *  order tags, and the session-row strategy_id column. */
+    public static final String STRATEGY_ID = "combined-sl-roll";
+
+    @Override public String id()          { return STRATEGY_ID; }
+    @Override public String displayName() { return "Combined SL + Roll"; }
+    @Override public String currentState(){ return state.name(); }
+    @Override public String navIcon()     { return "C"; }
+    @Override public boolean forceClose(String reason) { return forceCloseBothLegs(reason); }
+
+    @Override
+    public java.util.List<java.util.Map<String, Object>> getSettingsSchema() {
+        java.util.List<java.util.Map<String, Object>> s = new java.util.ArrayList<>();
+        s.add(field("entryTime",            "time",    "09:20", "Entry Time (HH:mm IST)", null));
+        s.add(field("squareOffTime",        "time",    "15:15", "Squareoff Time (HH:mm IST)", null));
+        s.add(field("rollWaitMin",          "int",     15,      "Roll Wait (minutes)",
+            "Wait this many minutes after an SL hit before re-entering. Avoids whipsaw. 0 = roll immediately."));
+        s.add(field("rollCutoffTime",       "time",    "14:30", "Roll Cutoff Time (HH:mm IST)",
+            "If SL fires after this time (or the wait would push past it), bot closes and parks DONE_FOR_DAY."));
+        s.add(field("maxRolls",             "int",     3,       "Max Rolls",
+            "Number of rolls before holding to squareoff."));
+        s.add(field("lotsPerLeg",           "int",     1,       "Lots per Leg",
+            "Qty = lots × NIFTY lot size (65)."));
+        s.add(field("combinedTargetPct",    "percent", 30,      "Combined Premium Target (%)",
+            "Book profit when (CE + PE LTP) falls below entry combined premium by this %. 0 disables."));
+        s.add(field("combinedSlPct",        "percent", 30,      "Combined Premium SL (%)",
+            "Roll when (CE + PE LTP) exceeds entry combined premium by this %."));
+        s.add(field("maxDailyLoss",         "rupees",  10000,   "Max Daily Loss (₹)",
+            "Hard kill-switch. When today's loss exceeds this, both legs are flattened and bot parks DONE_FOR_DAY. 0 disables."));
+        return s;
+    }
+
+    private static java.util.Map<String, Object> field(String key, String type, Object def, String label, String hint) {
+        java.util.Map<String, Object> f = new java.util.LinkedHashMap<>();
+        f.put("key", key); f.put("type", type); f.put("default", def); f.put("label", label);
+        if (hint != null) f.put("hint", hint);
+        return f;
+    }
 
     private static final Logger log = LoggerFactory.getLogger(RollingStraddleService.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");

@@ -223,6 +223,14 @@ public class RiskSettingsStore {
          *  closes both legs and parks DONE_FOR_DAY. 0 disables the check. Default ₹10,000
          *  balances allowing one full SL cycle (~₹5k) while catching accumulated bleed on rolls. */
         volatile double  straddleMaxDailyLoss      = 10000;
+        /** Generic per-strategy settings bag — keyed by strategy id, then by field name.
+         *  New strategies added under {@link com.rydytrader.autotrader.service.strategy.Strategy}
+         *  store their fields here. Values are kept as Strings; consumers parse to the type the
+         *  schema declares. Settings persist to the H2 SETTINGS table under keys of the form
+         *  {@code strategies.<id>.<field>}. The legacy {@code straddleXxx} fields above remain
+         *  in place for the current {@code combined-sl-roll} strategy. */
+        volatile java.util.Map<String, java.util.Map<String, String>> strategyConfigs =
+            new java.util.concurrent.ConcurrentHashMap<>();
         // EMA filters
         // 5-min EMA trend gate: buy requires close above EMA 20, sell requires close below EMA 20.
         // (enableEmaTrendCheck removed — 5-min EMA factor is now hard-baked into the
@@ -438,6 +446,44 @@ public class RiskSettingsStore {
     public int     getStraddleRollWaitMin()        { return cfg().straddleRollWaitMin; }
     public String  getStraddleRollCutoffTime()     { return cfg().straddleRollCutoffTime; }
     public double  getStraddleMaxDailyLoss()       { return cfg().straddleMaxDailyLoss; }
+
+    // ── Generic per-strategy settings (for strategies beyond combined-sl-roll) ───────────
+    /** Read a typed value from {@code strategyConfigs[strategyId][key]}, or fall back to the
+     *  default. Pre-existing {@code straddleXxx} fields are NOT consulted here — those still
+     *  flow through the legacy direct getters. */
+    public String getStrategyString(String strategyId, String key, String defaultValue) {
+        java.util.Map<String, String> m = cfg().strategyConfigs.get(strategyId);
+        if (m == null) return defaultValue;
+        String v = m.get(key);
+        return v == null ? defaultValue : v;
+    }
+    public int getStrategyInt(String strategyId, String key, int defaultValue) {
+        String v = getStrategyString(strategyId, key, null);
+        if (v == null || v.isBlank()) return defaultValue;
+        try { return Integer.parseInt(v.trim()); } catch (NumberFormatException e) { return defaultValue; }
+    }
+    public double getStrategyDouble(String strategyId, String key, double defaultValue) {
+        String v = getStrategyString(strategyId, key, null);
+        if (v == null || v.isBlank()) return defaultValue;
+        try { return Double.parseDouble(v.trim()); } catch (NumberFormatException e) { return defaultValue; }
+    }
+    public boolean getStrategyBool(String strategyId, String key, boolean defaultValue) {
+        String v = getStrategyString(strategyId, key, null);
+        if (v == null || v.isBlank()) return defaultValue;
+        return Boolean.parseBoolean(v.trim());
+    }
+    public void setStrategySetting(String strategyId, String key, Object value) {
+        if (strategyId == null || key == null) return;
+        java.util.Map<String, String> m = cfg().strategyConfigs.computeIfAbsent(
+            strategyId, k -> new java.util.concurrent.ConcurrentHashMap<>());
+        m.put(key, value == null ? "" : String.valueOf(value));
+    }
+    /** Snapshot of all stored values for a given strategy (copy, not live). */
+    public java.util.Map<String, String> getStrategySettings(String strategyId) {
+        java.util.Map<String, String> m = cfg().strategyConfigs.get(strategyId);
+        return m == null ? java.util.Collections.emptyMap() : new java.util.LinkedHashMap<>(m);
+    }
+
     public boolean isEnableEmaLevelCountFilter()   { return cfg().enableEmaLevelCountFilter; }
     public int getEmaLevelMinRangePct()            { return cfg().emaLevelMinRangePct; }
     public boolean isEmaLevelFilterMorningSkip()       { return cfg().emaLevelFilterMorningSkip; }
@@ -737,6 +783,17 @@ public class RiskSettingsStore {
             upsert("straddleRollWaitMin", String.valueOf(c.straddleRollWaitMin));
             upsert("straddleRollCutoffTime", c.straddleRollCutoffTime);
             upsert("straddleMaxDailyLoss", String.valueOf(c.straddleMaxDailyLoss));
+            // Generic per-strategy settings — write each {id, field, value} as "strategies.<id>.<field>"
+            if (c.strategyConfigs != null) {
+                for (java.util.Map.Entry<String, java.util.Map<String, String>> se : c.strategyConfigs.entrySet()) {
+                    String sid = se.getKey();
+                    java.util.Map<String, String> fields = se.getValue();
+                    if (sid == null || fields == null) continue;
+                    for (java.util.Map.Entry<String, String> fe : fields.entrySet()) {
+                        upsert("strategies." + sid + "." + fe.getKey(), fe.getValue() == null ? "" : fe.getValue());
+                    }
+                }
+            }
             upsert("minRiskRewardRatio", String.valueOf(c.minRiskRewardRatio));
             upsert("enableEmaLevelCountFilter", String.valueOf(c.enableEmaLevelCountFilter));
             upsert("emaLevelMinRangePct", String.valueOf(c.emaLevelMinRangePct));
@@ -827,6 +884,20 @@ public class RiskSettingsStore {
                 String k = s.getSettingKey();
                 String v = s.getSettingValue();
                 if (v == null) continue;
+                // Generic per-strategy keys "strategies.<id>.<field>" → go into the strategyConfigs map.
+                // Strategies declared via Strategy.getSettingsSchema() read from this map.
+                if (k.startsWith("strategies.")) {
+                    String rest = k.substring("strategies.".length());
+                    int dot = rest.indexOf('.');
+                    if (dot > 0 && dot < rest.length() - 1) {
+                        String stratId = rest.substring(0, dot);
+                        String field   = rest.substring(dot + 1);
+                        c.strategyConfigs
+                            .computeIfAbsent(stratId, sid -> new java.util.concurrent.ConcurrentHashMap<>())
+                            .put(field, v);
+                    }
+                    continue;
+                }
                 switch (k) {
                     case "tradingStartTime"  -> c.tradingStartTime = v;
                     case "tradingEndTime"    -> c.tradingEndTime = v;

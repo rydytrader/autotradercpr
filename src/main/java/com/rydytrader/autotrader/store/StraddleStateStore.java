@@ -26,7 +26,13 @@ import java.nio.file.Path;
 public class StraddleStateStore {
 
     private static final Logger log = LoggerFactory.getLogger(StraddleStateStore.class);
-    private static final String STATE_FILE = "../store/data/straddle-state.json";
+    /** Strategy-namespaced state path. Each strategy has its own JSON file under
+     *  {@code ../store/data/strategies/<strategyId>-state.json}. */
+    private static final String STATE_FILE = "../store/data/strategies/combined-sl-roll-state.json";
+    /** Legacy path kept for one-time migration on first boot after the refactor. If the
+     *  new file doesn't exist but the old one does, we read the old, write to new, leave
+     *  the old in place (operator can delete manually once happy). */
+    private static final String LEGACY_STATE_FILE = "../store/data/straddle-state.json";
 
     private static final ObjectMapper mapper = new ObjectMapper()
         .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
@@ -86,6 +92,23 @@ public class StraddleStateStore {
     private void load() {
         try {
             Path p = Path.of(STATE_FILE);
+            Path legacy = Path.of(LEGACY_STATE_FILE);
+            // One-time migration: new path missing but legacy exists → read legacy, write to new.
+            if (!Files.exists(p) && Files.exists(legacy)) {
+                log.info("[StraddleState] Migrating legacy state file {} → {}", LEGACY_STATE_FILE, STATE_FILE);
+                String legacyJson = Files.readString(legacy);
+                if (legacyJson != null && !legacyJson.isBlank()) {
+                    State loaded = mapper.readValue(legacyJson, State.class);
+                    if (loaded != null) {
+                        this.current = loaded;
+                        save(); // writes to STATE_FILE
+                        log.info("[StraddleState] Migration complete. Old file left in place for safety; remove {} manually when ready.", LEGACY_STATE_FILE);
+                        log.info("[StraddleState] Loaded {} state for {} (rollCount={}, ce={}, pe={})",
+                            loaded.state, loaded.dayKey, loaded.rollCount, loaded.ceSymbol, loaded.peSymbol);
+                    }
+                }
+                return;
+            }
             if (!Files.exists(p)) {
                 log.info("[StraddleState] No prior state file ({}), starting fresh", STATE_FILE);
                 return;
