@@ -7,13 +7,18 @@ import com.rydytrader.autotrader.service.strategy.StrategyRegistry;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.stereotype.Service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Computes the Analytics Home page metrics from the {@code straddle_sessions} table. One row
@@ -39,6 +44,7 @@ import java.util.Map;
 @Service
 public class AnalyticsService {
 
+    private static final Logger log = LoggerFactory.getLogger(AnalyticsService.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     private final StraddleSessionRepository sessionRepo;
@@ -108,8 +114,73 @@ public class AnalyticsService {
             if (rangeTo   != null && d.isAfter(rangeTo))    continue;
             filtered.add(s);
         }
+        // Mid-day live overlay: if the filter window includes today and no row has been
+        // persisted yet (day rollover hasn't fired), synthesize a transient row per
+        // in-scope strategy from its live dashboard state.
+        if (windowIncludesToday(cutoff, rangeFrom, rangeTo, today)) {
+            appendLiveTodayRows(filtered, strategyId, today);
+        }
         filtered.sort(Comparator.comparing(StraddleSessionEntity::getSessionDate));
         return filtered;
+    }
+
+    private static boolean windowIncludesToday(LocalDate cutoff, LocalDate from, LocalDate to, LocalDate today) {
+        if (cutoff != null && today.isBefore(cutoff)) return false;
+        if (from   != null && today.isBefore(from))   return false;
+        if (to     != null && today.isAfter(to))      return false;
+        return true;
+    }
+
+    /** Add a transient session row for today for each in-scope strategy that doesn't already
+     *  have one persisted. The synthesized row reads {@code realisedPnlToday}, {@code combinedMtm},
+     *  and {@code charges.total} from the strategy's live dashboard so today's analytics reflect
+     *  the running state instead of waiting for next-day rollover. */
+    @SuppressWarnings("unchecked")
+    private void appendLiveTodayRows(List<StraddleSessionEntity> filtered, String strategyId, LocalDate today) {
+        if (strategyRegistry == null || strategyRegistry.isEmpty()) return;
+        String iso = today.toString();
+        boolean allStrategies = strategyId == null || strategyId.isBlank() || "all".equalsIgnoreCase(strategyId);
+        Set<String> alreadyPersisted = new HashSet<>();
+        for (StraddleSessionEntity s : filtered) {
+            if (iso.equals(s.getSessionDate())) alreadyPersisted.add(s.getStrategyId());
+        }
+        for (Strategy strat : strategyRegistry.all()) {
+            if (!allStrategies && !strat.id().equals(strategyId)) continue;
+            if (alreadyPersisted.contains(strat.id())) continue;
+            try {
+                Map<String, Object> dash = strat.getDashboard();
+                if (dash == null) continue;
+                double realised = asDouble(dash.get("realisedPnlToday"));
+                double openMtm  = asDouble(dash.get("combinedMtm"));
+                Map<String, Double> charges = (Map<String, Double>) dash.get("charges");
+                double chargesTotal = charges != null ? asDouble(charges.get("total")) : 0.0;
+                // Skip strategies with zero activity today — no entry, no MTM, no charges.
+                if (Math.abs(realised) < 0.01 && Math.abs(openMtm) < 0.01 && chargesTotal < 0.01) continue;
+                StraddleSessionEntity row = new StraddleSessionEntity();
+                row.setStrategyId(strat.id());
+                row.setSessionDate(iso);
+                row.setEntries(1);
+                row.setRolls(asInt(dash.get("rollCount"), 0));
+                row.setFinalState(String.valueOf(dash.getOrDefault("state", "OPEN")));
+                row.setGrossPnl(realised + openMtm);
+                row.setCharges(chargesTotal);
+                row.setNetPnl((realised + openMtm) - chargesTotal);
+                filtered.add(row);
+            } catch (Exception e) {
+                log.warn("[Analytics] Live today synth failed for {}: {}", strat.id(), e.getMessage());
+            }
+        }
+    }
+
+    private static double asDouble(Object o) {
+        if (o instanceof Number n) return n.doubleValue();
+        if (o == null) return 0.0;
+        try { return Double.parseDouble(String.valueOf(o)); } catch (Exception e) { return 0.0; }
+    }
+    private static int asInt(Object o, int def) {
+        if (o instanceof Number n) return n.intValue();
+        if (o == null) return def;
+        try { return Integer.parseInt(String.valueOf(o)); } catch (Exception e) { return def; }
     }
 
     private static LocalDate parseIso(String s) {
