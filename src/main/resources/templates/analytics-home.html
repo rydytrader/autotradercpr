@@ -203,16 +203,12 @@
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;" title="Number of trading days with any activity in scope.">Sessions</span>
-                    <span class="stat-value" id="ahSessions" style="font-size:1rem;">—</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;"
-                          title="Total individual short straddles traded — counts each entry plus each roll (combined-sl-roll can roll multiple times per session).">Straddles</span>
+                          title="Total individual short straddles in scope. Each entry-close cycle counts as one (rolls included).">Straddles</span>
                     <span class="stat-value" id="ahStraddles" style="font-size:1rem;">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;" title="By session day, not per individual straddle.">Wins / Losses</span>
+                    <span class="stat-label" style="margin:0;" title="Per straddle, not per day.">Wins / Losses</span>
                     <span style="font-family:var(--font-mono); font-size:0.95rem; font-weight:700;">
                         <span class="pnl-positive" id="ahWins">0</span>
                         <span style="color:var(--text-muted);"> / </span>
@@ -220,11 +216,11 @@
                     </span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Avg Win / Loss</span>
+                    <span class="stat-label" style="margin:0;" title="Average winning straddle net P&L vs average losing straddle.">Avg Win / Loss</span>
                     <span class="stat-value" id="ahAvgWinLoss" style="font-size:0.85rem;">— / —</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Best / Worst</span>
+                    <span class="stat-label" style="margin:0;" title="Single best and single worst straddle in scope.">Best / Worst</span>
                     <span class="stat-value" id="ahBestWorst" style="font-size:0.85rem;">— / —</span>
                 </div>
             </div>
@@ -544,19 +540,23 @@
             var edge = d.edge     || {};
             var eq  = d.equityCurve || { labels: [], values: [] };
 
-            // Header session-count badge
+            // Header straddle-count badge — shows total individual straddles in scope.
             var scEl = document.getElementById('ahSessionCount');
-            if (scEl) scEl.textContent = (d.sessionCount || 0) + ' session' + ((d.sessionCount === 1) ? '' : 's');
+            if (scEl) {
+                var n = d.straddleCount || 0;
+                scEl.textContent = n + ' straddle' + (n === 1 ? '' : 's');
+            }
 
             // ── HERO STRIP ─────────────────────────────────────────────────
             setVal('ahCurrentCapital', fmtRs(cap.currentCapital), cap.totalReturn);
             var subEl = document.getElementById('ahCapitalSub');
             if (subEl) {
                 var sign = (cap.totalReturn || 0) >= 0 ? '+' : '';
+                var straddleN = d.straddleCount || 0;
                 subEl.textContent = 'Started ' + fmtRs(cap.startingCapital)
                     + ' • ' + sign + fmtRs(cap.totalReturn)
                     + ' (' + fmtPct(cap.totalReturnPct) + ')'
-                    + ' • ' + (d.sessionCount || 0) + ' sessions';
+                    + ' • ' + straddleN + ' straddle' + (straddleN === 1 ? '' : 's');
             }
             setVal('ahTotalReturn',  fmtRs(cap.totalReturn), cap.totalReturn);
             setVal('ahWinRate',      (perf.winRate != null ? perf.winRate.toFixed(1) : '0') + '%',
@@ -570,7 +570,6 @@
 
             // ── DETAIL CARDS — only metrics that aren't already in the hero ─
             // Trade Counts card
-            setVal('ahSessions',  String(perf.sessions  || 0));
             setVal('ahStraddles', String(perf.straddles || 0));
             document.getElementById('ahWins').textContent   = String(perf.wins || 0);
             document.getElementById('ahLosses').textContent = String(perf.losses || 0);

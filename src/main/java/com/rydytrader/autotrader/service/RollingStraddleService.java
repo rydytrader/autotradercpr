@@ -51,6 +51,23 @@ public class RollingStraddleService implements Strategy {
     @Override public boolean forceClose(String reason) { return forceCloseBothLegs(reason); }
     @Override public String currentWeeklyExpiry() { return currentWeeklyExpiry; }
 
+    /** Today's CLOSE_* roll events from the in-memory ring, mapped to the Analytics live-overlay
+     *  shape. {@code recentRolls} is cleared on day rollover so anything present here is from
+     *  the current trading day. Skips ENTRY / ROLL marker events (no close P&L yet). */
+    @Override
+    public java.util.List<java.util.Map<String, Object>> todayClosedTrades() {
+        java.util.List<java.util.Map<String, Object>> out = new java.util.ArrayList<>();
+        for (RollEvent r : recentRolls) {
+            if (r == null || r.event() == null || !r.event().startsWith("CLOSE_")) continue;
+            java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("grossPnl", r.pnl());
+            m.put("closedAtMillis", System.currentTimeMillis()); // ring lacks epoch; approximate
+            m.put("closeReason", r.event().substring("CLOSE_".length()));
+            out.add(m);
+        }
+        return out;
+    }
+
     @Override
     public java.util.List<java.util.Map<String, Object>> getSettingsSchema() {
         java.util.List<java.util.Map<String, Object>> s = new java.util.ArrayList<>();
@@ -143,6 +160,7 @@ public class RollingStraddleService implements Strategy {
     @Autowired @Lazy private MarketHolidayService marketHolidayService;
     @Autowired @Lazy private TelegramService telegramService;
     @Autowired @Lazy private com.rydytrader.autotrader.repository.StraddleSessionRepository sessionRepo;
+    @Autowired @Lazy private com.rydytrader.autotrader.repository.StraddleTradeRepository tradeRepo;
 
     // ── In-memory state (mirrors StraddleStateStore.State; persisted on every transition) ──
     private volatile LifecycleState state = LifecycleState.IDLE;
@@ -599,6 +617,40 @@ public class RollingStraddleService implements Strategy {
     /** Public accessor for dashboard / history endpoints. */
     public java.util.Map<String, Double> getChargesBreakdown() { return computeChargesBreakdown(); }
 
+    /** Charges for a single straddle cycle (one entry-close pair). Same formula as the session
+     *  breakdown but applied to this cycle's premium turnover and order count. */
+    private double computeCycleCharges(double sellPrem, double buyPrem, int orders) {
+        double brokerage = orders * riskSettings.getBrokeragePerOrder();
+        double totalPrem = sellPrem + buyPrem;
+        double stt       = sellPrem * STT_SELL_PCT;
+        double exchange  = totalPrem * EXCH_TXN_PCT;
+        double sebi      = (totalPrem / 10_000_000.0) * SEBI_PER_CRORE;
+        double stamp     = buyPrem * STAMP_BUY_PCT;
+        double gst       = (brokerage + exchange) * GST_PCT;
+        return round2(brokerage + stt + exchange + sebi + stamp + gst);
+    }
+
+    /** Persist one straddle_trades row capturing this cycle's gross P&L, allocated charges,
+     *  and close reason. Best-effort — failure to write the row never blocks the close path. */
+    private void persistStraddleTrade(int qty, double grossPnl, double charges, String reason) {
+        if (tradeRepo == null) return;
+        try {
+            com.rydytrader.autotrader.entity.StraddleTradeEntity t =
+                new com.rydytrader.autotrader.entity.StraddleTradeEntity();
+            t.setStrategyId(STRATEGY_ID);
+            t.setSessionDate(dayKey != null && !dayKey.isEmpty() ? dayKey : LocalDate.now(IST).toString());
+            t.setClosedAtMillis(System.currentTimeMillis());
+            t.setQty(qty);
+            t.setGrossPnl(round2(grossPnl));
+            t.setCharges(round2(charges));
+            t.setNetPnl(round2(grossPnl - charges));
+            t.setCloseReason(reason);
+            tradeRepo.save(t);
+        } catch (Exception e) {
+            log.warn("[Straddle] Failed to persist straddle_trades row: {}", e.getMessage());
+        }
+    }
+
     private void pushRollEvent(String evt, double nifty, String ce, String pe, double pnl) {
         String ts = LocalTime.now(IST).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
         recentRolls.addFirst(new RollEvent(ts, evt, nifty, ce, pe, pnl));
@@ -766,12 +818,19 @@ public class RollingStraddleService implements Strategy {
         double pePnl = (peEntryPremium > 0 && peClose > 0) ? (peEntryPremium - peClose) * q : 0;
         double pairPnl = cePnl + pePnl;
         realisedPnlToday += pairPnl;
-        // Accumulate buy-side premium turnover (we BUY back on close) for charge calc.
+        // Per-straddle charges — this cycle alone: 4 orders (entry sells + close buys) +
+        // statutory percentages applied to this cycle's premium turnover. Persisted to the
+        // straddle_trades row so the Analytics page has exact per-straddle net P&L.
+        double cycleSellPrem = (ceEntryPremium * q) + (peEntryPremium * q);
+        double cycleBuyPrem  = (ceClose * q) + (peClose * q);
+        double cycleCharges  = computeCycleCharges(cycleSellPrem, cycleBuyPrem, 4);
+        // Accumulate buy-side premium turnover (we BUY back on close) for session charge calc.
         if (ceClose > 0 && q > 0) buyPremiumTurnoverToday += ceClose * q;
         if (peClose > 0 && q > 0) buyPremiumTurnoverToday += peClose * q;
         String closedCe = ceSymbol;
         String closedPe = peSymbol;
         double niftyAtClose = marketDataService.getLtp(NIFTY_SYMBOL);
+        persistStraddleTrade(q, pairPnl, cycleCharges, reason);
 
         if (ceSymbol != null && !ceSymbol.isEmpty() && ceQty > 0) {
             placeCloseRetry(ceSymbol, ceQty, "CE", reason);

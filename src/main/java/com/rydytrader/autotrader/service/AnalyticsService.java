@@ -1,45 +1,49 @@
 package com.rydytrader.autotrader.service;
 
-import com.rydytrader.autotrader.entity.StraddleSessionEntity;
-import com.rydytrader.autotrader.repository.StraddleSessionRepository;
+import com.rydytrader.autotrader.entity.StraddleTradeEntity;
+import com.rydytrader.autotrader.repository.StraddleTradeRepository;
 import com.rydytrader.autotrader.service.strategy.Strategy;
 import com.rydytrader.autotrader.service.strategy.StrategyRegistry;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
-import org.springframework.stereotype.Service;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * Computes the Analytics Home page metrics from the {@code straddle_sessions} table. One row
- * per (strategy, trading day), produced by each strategy on day rollover. All time-bucketing +
- * filtering is done in-memory — the operator generally has a year or two of daily rows, so the
- * full dataset is trivially small to load and process.
- *
- * <p>Period filters mirror the UI:
+ * Powers the Analytics Home page. All metrics are computed per-straddle from the
+ * {@code straddle_trades} table — one row per individual short-straddle cycle:
  * <ul>
- *   <li>{@code today}  — today's session(s) only</li>
- *   <li>{@code expiry} — sessions in the current weekly-options cycle (day after last expiry → today)</li>
+ *   <li>combined-sl-roll: one row per close (entry-close, roll1-close, roll2-close, …)</li>
+ *   <li>leg-sl: one row per day (written when state reaches DONE_FOR_DAY)</li>
+ * </ul>
+ *
+ * <p>Period filters (UI):
+ * <ul>
+ *   <li>{@code today}  — today's straddles only</li>
+ *   <li>{@code expiry} — straddles closed in the current weekly-options cycle (day after last
+ *       expiry through today)</li>
  *   <li>{@code mtd}    — first day of current calendar month onwards</li>
- *   <li>{@code ytd}    — Apr 1 of current Indian financial year onwards (FY starts Apr 1)</li>
- *   <li>{@code all}    — every row</li>
+ *   <li>{@code ytd}    — Apr 1 of current Indian FY onwards</li>
+ *   <li>{@code all}    — every trade</li>
  * </ul>
  *
  * <p>Strategy scope filters by {@code strategyId}; null/blank/"all" → all strategies aggregated.
  *
- * <p>Explicit date range: when {@code from} and/or {@code to} are passed, they override
- * the period preset. Use them to scope to a specific calendar month, a specific year, or any
- * custom window. Either bound may be omitted (open-ended in that direction).
+ * <p>Explicit date range: {@code from} and/or {@code to} (ISO yyyy-MM-dd) override the period
+ * preset. Used by the Year + Month picker.
+ *
+ * <p>Live overlay: when the filter window includes today, today's in-progress closes are pulled
+ * from each strategy's in-memory recent-events buffer via {@link Strategy#todayClosedTrades()}
+ * so today's metrics reflect what's been closed so far instead of waiting for the day-end row.
  */
 @Service
 public class AnalyticsService {
@@ -47,23 +51,22 @@ public class AnalyticsService {
     private static final Logger log = LoggerFactory.getLogger(AnalyticsService.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
-    private final StraddleSessionRepository sessionRepo;
+    private final StraddleTradeRepository tradeRepo;
     private final RiskSettingsStore riskSettings;
     private final StrategyRegistry strategyRegistry;
 
-    public AnalyticsService(StraddleSessionRepository sessionRepo,
+    public AnalyticsService(StraddleTradeRepository tradeRepo,
                             RiskSettingsStore riskSettings,
                             StrategyRegistry strategyRegistry) {
-        this.sessionRepo = sessionRepo;
+        this.tradeRepo = tradeRepo;
         this.riskSettings = riskSettings;
         this.strategyRegistry = strategyRegistry;
     }
 
-    /** Composite payload for the Analytics Home page. Combines the four hero panes and the
-     *  equity curve into a single response so the client only makes one round-trip per selector
-     *  change. */
+    /** Composite payload — one round-trip serves all four hero tiles, the four detail cards,
+     *  and the equity curve. */
     public Map<String, Object> summary(String period, String strategyId, String from, String to) {
-        List<StraddleSessionEntity> rows = filterRows(period, strategyId, from, to);
+        List<Trade> trades = loadTrades(period, strategyId, from, to);
         double startingCapital = riskSettings.getStartingCapital();
 
         Map<String, Object> out = new LinkedHashMap<>();
@@ -71,30 +74,30 @@ public class AnalyticsService {
         out.put("strategyId",    strategyId);
         out.put("from",          from);
         out.put("to",            to);
-        out.put("sessionCount",  rows.size());
+        out.put("straddleCount", trades.size());
+        // "sessionCount" kept for header badge — number of distinct trading days.
+        out.put("sessionCount",  distinctDates(trades));
 
-        out.put("capital",     capital(rows, startingCapital));
-        out.put("performance", performance(rows));
-        out.put("extremes",    extremes(rows));
-        out.put("streaks",     streaks(rows));
-        out.put("edge",        edge(rows, startingCapital));
-        out.put("equityCurve", equityCurve(rows, startingCapital));
+        out.put("capital",     capital(trades, startingCapital));
+        out.put("performance", performance(trades));
+        out.put("extremes",    extremes(trades));
+        out.put("streaks",     streaks(trades));
+        out.put("edge",        edge(trades, startingCapital));
+        out.put("equityCurve", equityCurve(trades, startingCapital));
         return out;
     }
 
-    /** Apply the period + strategy filters. Returns rows in chronological order (oldest first)
-     *  so cumulative + streak calculations don't have to re-sort.
-     *
-     *  <p>If {@code from} or {@code to} are non-blank ISO dates, they override the period preset.
-     *  Either bound may be missing — that bound is treated as open-ended. */
-    private List<StraddleSessionEntity> filterRows(String period, String strategyId,
-                                                    String from, String to) {
-        List<StraddleSessionEntity> all = sessionRepo.findAll();
+    // ── Trade loading ───────────────────────────────────────────────────────
+    /** Internal lightweight trade record used by all metric calcs. Decoupled from the JPA
+     *  entity so the synthesized live-today rows (which have no DB id) plug in cleanly. */
+    private record Trade(String strategyId, String sessionDate, long closedAtMillis,
+                         double grossPnl, double charges, double netPnl, String closeReason) {}
+
+    private List<Trade> loadTrades(String period, String strategyId, String from, String to) {
         LocalDate today = LocalDate.now(IST);
         LocalDate rangeFrom = parseIso(from);
         LocalDate rangeTo   = parseIso(to);
         boolean explicitRange = rangeFrom != null || rangeTo != null;
-        // Period preset only applies when no explicit range was passed.
         LocalDate cutoff = explicitRange ? null : switch (period == null ? "all" : period.toLowerCase()) {
             case "today"  -> today;
             case "expiry" -> currentExpiryStart(today);
@@ -103,25 +106,85 @@ public class AnalyticsService {
             default       -> null; // all-time
         };
         boolean allStrategies = strategyId == null || strategyId.isBlank() || "all".equalsIgnoreCase(strategyId);
-        List<StraddleSessionEntity> filtered = new ArrayList<>();
-        for (StraddleSessionEntity s : all) {
-            if (!allStrategies && !strategyId.equals(s.getStrategyId())) continue;
+
+        List<Trade> out = new ArrayList<>();
+        // Persisted rows
+        for (StraddleTradeEntity e : tradeRepo.findAllByOrderByClosedAtMillisAsc()) {
+            if (!allStrategies && !strategyId.equals(e.getStrategyId())) continue;
             LocalDate d;
-            try { d = LocalDate.parse(s.getSessionDate()); }
+            try { d = LocalDate.parse(e.getSessionDate()); }
             catch (Exception ignored) { continue; }
-            if (cutoff != null && d.isBefore(cutoff)) continue;
+            if (cutoff    != null && d.isBefore(cutoff))   continue;
             if (rangeFrom != null && d.isBefore(rangeFrom)) continue;
             if (rangeTo   != null && d.isAfter(rangeTo))    continue;
-            filtered.add(s);
+            out.add(new Trade(e.getStrategyId(), e.getSessionDate(), e.getClosedAtMillis(),
+                              e.getGrossPnl(), e.getCharges(), e.getNetPnl(), e.getCloseReason()));
         }
-        // Mid-day live overlay: if the filter window includes today and no row has been
-        // persisted yet (day rollover hasn't fired), synthesize a transient row per
-        // in-scope strategy from its live dashboard state.
+        // Live overlay: today's in-progress closes from in-memory state.
         if (windowIncludesToday(cutoff, rangeFrom, rangeTo, today)) {
-            appendLiveTodayRows(filtered, strategyId, today);
+            appendLiveTodayTrades(out, strategyId, today);
         }
-        filtered.sort(Comparator.comparing(StraddleSessionEntity::getSessionDate));
-        return filtered;
+        out.sort(Comparator.comparingLong(Trade::closedAtMillis));
+        return out;
+    }
+
+    /** Pull today's already-closed straddles from each strategy's in-memory ring buffer.
+     *  Only fires when the window includes today AND the rows aren't already persisted. */
+    private void appendLiveTodayTrades(List<Trade> out, String strategyId, LocalDate today) {
+        if (strategyRegistry == null || strategyRegistry.isEmpty()) return;
+        String iso = today.toString();
+        boolean allStrategies = strategyId == null || strategyId.isBlank() || "all".equalsIgnoreCase(strategyId);
+        // Find strategies that already have rows persisted for today — if any are present we
+        // assume the strategy's day-end persistence has fired and skip live overlay for them.
+        Set<String> persistedTodayStrategies = new java.util.HashSet<>();
+        for (Trade t : out) {
+            if (iso.equals(t.sessionDate())) persistedTodayStrategies.add(t.strategyId());
+        }
+        for (Strategy strat : strategyRegistry.all()) {
+            if (!allStrategies && !strat.id().equals(strategyId)) continue;
+            if (persistedTodayStrategies.contains(strat.id())) continue;
+            try {
+                List<Map<String, Object>> live = strat.todayClosedTrades();
+                if (live == null || live.isEmpty()) continue;
+                for (Map<String, Object> m : live) {
+                    double gross = asDouble(m.get("grossPnl"));
+                    double ch    = asDouble(m.get("charges"));
+                    double net   = ch != 0 ? gross - ch : gross;
+                    long ts = asLong(m.get("closedAtMillis"));
+                    if (ts == 0) ts = System.currentTimeMillis();
+                    String reason = String.valueOf(m.getOrDefault("closeReason", "OPEN"));
+                    out.add(new Trade(strat.id(), iso, ts, gross, ch, net, reason));
+                }
+            } catch (Exception e) {
+                log.warn("[Analytics] Live today overlay failed for {}: {}", strat.id(), e.getMessage());
+            }
+        }
+    }
+
+    private static int distinctDates(List<Trade> trades) {
+        Set<String> dates = new java.util.HashSet<>();
+        for (Trade t : trades) dates.add(t.sessionDate());
+        return dates.size();
+    }
+
+    // ── Period helpers ──────────────────────────────────────────────────────
+    private static LocalDate indianFinancialYearStart(LocalDate today) {
+        int fyYear = today.getMonthValue() >= 4 ? today.getYear() : today.getYear() - 1;
+        return LocalDate.of(fyYear, 4, 1);
+    }
+
+    private LocalDate currentExpiryStart(LocalDate today) {
+        if (strategyRegistry != null) {
+            for (Strategy s : strategyRegistry.all()) {
+                String exp = s.currentWeeklyExpiry();
+                if (exp == null || exp.isEmpty()) continue;
+                try {
+                    LocalDate expiry = LocalDate.parse(exp);
+                    return expiry.minusDays(7).plusDays(1);
+                } catch (Exception ignored) {}
+            }
+        }
+        return today.minusDays(7);
     }
 
     private static boolean windowIncludesToday(LocalDate cutoff, LocalDate from, LocalDate to, LocalDate today) {
@@ -131,101 +194,18 @@ public class AnalyticsService {
         return true;
     }
 
-    /** Add a transient session row for today for each in-scope strategy that doesn't already
-     *  have one persisted. The synthesized row reads {@code realisedPnlToday}, {@code combinedMtm},
-     *  and {@code charges.total} from the strategy's live dashboard so today's analytics reflect
-     *  the running state instead of waiting for next-day rollover. */
-    @SuppressWarnings("unchecked")
-    private void appendLiveTodayRows(List<StraddleSessionEntity> filtered, String strategyId, LocalDate today) {
-        if (strategyRegistry == null || strategyRegistry.isEmpty()) return;
-        String iso = today.toString();
-        boolean allStrategies = strategyId == null || strategyId.isBlank() || "all".equalsIgnoreCase(strategyId);
-        Set<String> alreadyPersisted = new HashSet<>();
-        for (StraddleSessionEntity s : filtered) {
-            if (iso.equals(s.getSessionDate())) alreadyPersisted.add(s.getStrategyId());
-        }
-        for (Strategy strat : strategyRegistry.all()) {
-            if (!allStrategies && !strat.id().equals(strategyId)) continue;
-            if (alreadyPersisted.contains(strat.id())) continue;
-            try {
-                Map<String, Object> dash = strat.getDashboard();
-                if (dash == null) continue;
-                double realised = asDouble(dash.get("realisedPnlToday"));
-                double openMtm  = asDouble(dash.get("combinedMtm"));
-                Map<String, Double> charges = (Map<String, Double>) dash.get("charges");
-                double chargesTotal = charges != null ? asDouble(charges.get("total")) : 0.0;
-                // Skip strategies with zero activity today — no entry, no MTM, no charges.
-                if (Math.abs(realised) < 0.01 && Math.abs(openMtm) < 0.01 && chargesTotal < 0.01) continue;
-                StraddleSessionEntity row = new StraddleSessionEntity();
-                row.setStrategyId(strat.id());
-                row.setSessionDate(iso);
-                row.setEntries(1);
-                row.setRolls(asInt(dash.get("rollCount"), 0));
-                row.setFinalState(String.valueOf(dash.getOrDefault("state", "OPEN")));
-                row.setGrossPnl(realised + openMtm);
-                row.setCharges(chargesTotal);
-                row.setNetPnl((realised + openMtm) - chargesTotal);
-                filtered.add(row);
-            } catch (Exception e) {
-                log.warn("[Analytics] Live today synth failed for {}: {}", strat.id(), e.getMessage());
-            }
-        }
-    }
-
-    private static double asDouble(Object o) {
-        if (o instanceof Number n) return n.doubleValue();
-        if (o == null) return 0.0;
-        try { return Double.parseDouble(String.valueOf(o)); } catch (Exception e) { return 0.0; }
-    }
-    private static int asInt(Object o, int def) {
-        if (o instanceof Number n) return n.intValue();
-        if (o == null) return def;
-        try { return Integer.parseInt(String.valueOf(o)); } catch (Exception e) { return def; }
-    }
-
-    private static LocalDate parseIso(String s) {
-        if (s == null || s.isBlank()) return null;
-        try { return LocalDate.parse(s.trim()); } catch (Exception e) { return null; }
-    }
-
-    /** Start of the current Indian financial year — April 1. If today is Jan/Feb/Mar, the FY
-     *  started on Apr 1 of the previous calendar year; otherwise Apr 1 of the current year. */
-    private static LocalDate indianFinancialYearStart(LocalDate today) {
-        int fyYear = today.getMonthValue() >= 4 ? today.getYear() : today.getYear() - 1;
-        return LocalDate.of(fyYear, 4, 1);
-    }
-
-    /** Resolve the start date of the current weekly-options cycle: the day AFTER the most recent
-     *  expiry. Reads each strategy's cached {@code currentWeeklyExpiry} (next upcoming expiry,
-     *  ISO yyyy-MM-dd); the previous expiry is exactly 7 days before that. Falls back to
-     *  {@code today.minusDays(7)} when no strategy has resolved an expiry yet. */
-    private LocalDate currentExpiryStart(LocalDate today) {
-        if (strategyRegistry != null) {
-            for (Strategy s : strategyRegistry.all()) {
-                String exp = s.currentWeeklyExpiry();
-                if (exp == null || exp.isEmpty()) continue;
-                try {
-                    LocalDate expiry = LocalDate.parse(exp);
-                    return expiry.minusDays(7).plusDays(1); // first day of current cycle
-                } catch (Exception ignored) {}
-            }
-        }
-        return today.minusDays(7);
-    }
-
-    // ── Pane 1: CAPITAL ──────────────────────────────────────────────────────
-    private Map<String, Object> capital(List<StraddleSessionEntity> rows, double starting) {
-        double netSum = rows.stream().mapToDouble(StraddleSessionEntity::getNetPnl).sum();
+    // ── CAPITAL ─────────────────────────────────────────────────────────────
+    private Map<String, Object> capital(List<Trade> trades, double starting) {
+        double netSum = trades.stream().mapToDouble(Trade::netPnl).sum();
         double current = starting + netSum;
         double returnPct = starting > 0 ? (netSum / starting) * 100.0 : 0;
-
-        // Average monthly return % — group by YYYY-MM, sum netPnl, divide by starting, average.
+        // Avg monthly % — group by yyyy-MM, sum net, divide by starting, average.
         Map<String, Double> byMonth = new LinkedHashMap<>();
-        for (StraddleSessionEntity s : rows) {
-            String ym = s.getSessionDate() != null && s.getSessionDate().length() >= 7
-                ? s.getSessionDate().substring(0, 7) : "";
+        for (Trade t : trades) {
+            String ym = t.sessionDate() != null && t.sessionDate().length() >= 7
+                ? t.sessionDate().substring(0, 7) : "";
             if (ym.isEmpty()) continue;
-            byMonth.merge(ym, s.getNetPnl(), Double::sum);
+            byMonth.merge(ym, t.netPnl(), Double::sum);
         }
         double avgMonthlyPct = 0;
         if (!byMonth.isEmpty() && starting > 0) {
@@ -242,27 +222,24 @@ public class AnalyticsService {
         return m;
     }
 
-    // ── Pane 2: PERFORMANCE ──────────────────────────────────────────────────
-    private Map<String, Object> performance(List<StraddleSessionEntity> rows) {
+    // ── PERFORMANCE (per straddle) ──────────────────────────────────────────
+    private Map<String, Object> performance(List<Trade> trades) {
         int wins = 0, losses = 0;
         double grossProfit = 0, grossLoss = 0;
         double sumWin = 0, sumLoss = 0;
-        int straddles = 0; // total individual short-straddle cycles = entries + rolls per session
-        for (StraddleSessionEntity s : rows) {
-            double pnl = s.getNetPnl();
+        for (Trade t : trades) {
+            double pnl = t.netPnl();
             if (pnl > 0)      { wins++;   grossProfit += pnl; sumWin  += pnl; }
             else if (pnl < 0) { losses++; grossLoss   += pnl; sumLoss += pnl; }
-            straddles += s.getEntries() + s.getRolls();
         }
-        int total = rows.size();
+        int total = trades.size();
         double winRate      = total > 0 ? (wins / (double) total) * 100.0 : 0;
         double profitFactor = grossLoss < 0 ? grossProfit / Math.abs(grossLoss) : 0;
         double avgWin       = wins > 0 ? sumWin / wins : 0;
         double avgLoss      = losses > 0 ? sumLoss / losses : 0;
         double riskReward   = avgLoss < 0 ? avgWin / Math.abs(avgLoss) : 0;
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("sessions",     total);
-        m.put("straddles",    straddles);
+        m.put("straddles",    total);
         m.put("wins",         wins);
         m.put("losses",       losses);
         m.put("winRate",      round2(winRate));
@@ -271,53 +248,49 @@ public class AnalyticsService {
         return m;
     }
 
-    // ── Pane 3: P&L EXTREMES ─────────────────────────────────────────────────
-    private Map<String, Object> extremes(List<StraddleSessionEntity> rows) {
+    // ── P&L EXTREMES (per straddle) ─────────────────────────────────────────
+    private Map<String, Object> extremes(List<Trade> trades) {
         double maxProfit = 0, maxLoss = 0;
         double sumWin = 0, sumLoss = 0;
         int wins = 0, losses = 0;
-        for (StraddleSessionEntity s : rows) {
-            double pnl = s.getNetPnl();
+        for (Trade t : trades) {
+            double pnl = t.netPnl();
             if (pnl > maxProfit) maxProfit = pnl;
             if (pnl < maxLoss)   maxLoss   = pnl;
             if (pnl > 0)      { wins++;   sumWin  += pnl; }
             else if (pnl < 0) { losses++; sumLoss += pnl; }
         }
-        // Max drawdown — largest peak-to-trough decline in the running cumulative.
+        // Drawdown over the cumulative per-trade equity curve.
         double peak = 0, cum = 0, maxDd = 0;
-        for (StraddleSessionEntity s : rows) {
-            cum += s.getNetPnl();
+        for (Trade t : trades) {
+            cum += t.netPnl();
             if (cum > peak) peak = cum;
-            double dd = cum - peak; // <= 0
+            double dd = cum - peak;
             if (dd < maxDd) maxDd = dd;
         }
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("maxProfit", round2(maxProfit));
-        m.put("maxLoss",   round2(maxLoss));
-        m.put("avgProfit", round2(wins   > 0 ? sumWin  / wins   : 0));
-        m.put("avgLoss",   round2(losses > 0 ? sumLoss / losses : 0));
+        m.put("maxProfit",   round2(maxProfit));
+        m.put("maxLoss",     round2(maxLoss));
+        m.put("avgProfit",   round2(wins   > 0 ? sumWin  / wins   : 0));
+        m.put("avgLoss",     round2(losses > 0 ? sumLoss / losses : 0));
         m.put("maxDrawdown", round2(maxDd));
         return m;
     }
 
-    // ── Pane 4: STREAKS ──────────────────────────────────────────────────────
-    private Map<String, Object> streaks(List<StraddleSessionEntity> rows) {
-        int curWin = 0, curLoss = 0;
-        int longestWin = 0, longestLoss = 0;
+    // ── STREAKS (per straddle, with total charges) ──────────────────────────
+    private Map<String, Object> streaks(List<Trade> trades) {
+        int curWin = 0, curLoss = 0, longestWin = 0, longestLoss = 0;
         double totalCharges = 0;
-        for (StraddleSessionEntity s : rows) {
-            double pnl = s.getNetPnl();
-            totalCharges += s.getCharges();
+        for (Trade t : trades) {
+            double pnl = t.netPnl();
+            totalCharges += t.charges();
             if (pnl > 0) {
-                curWin++;
-                curLoss = 0;
+                curWin++; curLoss = 0;
                 if (curWin > longestWin) longestWin = curWin;
             } else if (pnl < 0) {
-                curLoss++;
-                curWin = 0;
+                curLoss++; curWin = 0;
                 if (curLoss > longestLoss) longestLoss = curLoss;
             } else {
-                // Zero P&L → break both streaks but don't extend either.
                 curWin = 0; curLoss = 0;
             }
         }
@@ -330,74 +303,57 @@ public class AnalyticsService {
         return m;
     }
 
-    // ── Edge metrics ─────────────────────────────────────────────────────────
-    /** Risk-adjusted performance numbers — used to judge whether the bot has a real,
-     *  persistent edge vs random P&L noise.
-     *  <ul>
-     *    <li><b>Expectancy</b> per session — mean net P&L. {@code totalNetPnl / N}.</li>
-     *    <li><b>Recovery Factor</b> — {@code totalNetPnl / |maxDrawdown|}. >1 means the
-     *        strategy has recovered any drawdown it incurred; higher = more cushion.</li>
-     *    <li><b>Sharpe (annualised)</b> — {@code mean(dailyReturn) / stddev(dailyReturn) ×
-     *        sqrt(252)}, where dailyReturn = sessionNetPnl / startingCapital. >1 is good,
-     *        >2 is excellent for an options-selling strategy.</li>
-     *  </ul>
-     */
-    private Map<String, Object> edge(List<StraddleSessionEntity> rows, double starting) {
-        int n = rows.size();
+    // ── EDGE (per straddle) ─────────────────────────────────────────────────
+    private Map<String, Object> edge(List<Trade> trades, double starting) {
+        int n = trades.size();
         Map<String, Object> m = new LinkedHashMap<>();
-        if (n == 0) {
-            m.put("expectancy",     0.0);
-            m.put("recoveryFactor", 0.0);
-            m.put("sharpe",         0.0);
-            return m;
-        }
+        if (n == 0) { m.put("expectancy", 0.0); m.put("recoveryFactor", 0.0); m.put("sharpe", 0.0); return m; }
         double netSum = 0;
-        for (StraddleSessionEntity s : rows) netSum += s.getNetPnl();
+        for (Trade t : trades) netSum += t.netPnl();
         double expectancy = netSum / n;
-
-        // Recovery factor needs max drawdown — same calc as extremes(), recomputed here so the
-        // method is self-contained.
+        // Recovery factor: total net / |max drawdown over per-trade equity curve|.
         double peak = 0, cum = 0, maxDd = 0;
-        for (StraddleSessionEntity s : rows) {
-            cum += s.getNetPnl();
+        for (Trade t : trades) {
+            cum += t.netPnl();
             if (cum > peak) peak = cum;
             double dd = cum - peak;
             if (dd < maxDd) maxDd = dd;
         }
         double recoveryFactor = maxDd < 0 ? netSum / Math.abs(maxDd) : 0;
-
-        // Annualised Sharpe — treat each session as one day, dailyReturn = netPnl / startingCapital.
+        // Sharpe: treat each trade as one return-bearing event. r_i = trade.netPnl / startingCapital.
+        // Annualise assuming an active trader does ~250 straddles a year (variable by strategy
+        // mix; a reasonable default). Adjust upward if you do multiple straddles per day on average.
         double sharpe = 0;
         if (n >= 2 && starting > 0) {
             double[] returns = new double[n];
             double mean = 0;
             for (int i = 0; i < n; i++) {
-                returns[i] = rows.get(i).getNetPnl() / starting;
+                returns[i] = trades.get(i).netPnl() / starting;
                 mean += returns[i];
             }
             mean /= n;
             double sq = 0;
             for (double r : returns) sq += (r - mean) * (r - mean);
             double stddev = Math.sqrt(sq / n);
-            if (stddev > 0) {
-                sharpe = (mean / stddev) * Math.sqrt(252);
-            }
+            if (stddev > 0) sharpe = (mean / stddev) * Math.sqrt(250);
         }
-
         m.put("expectancy",     round2(expectancy));
         m.put("recoveryFactor", round2(recoveryFactor));
         m.put("sharpe",         round2(sharpe));
         return m;
     }
 
-    // ── Equity curve ─────────────────────────────────────────────────────────
-    private Map<String, Object> equityCurve(List<StraddleSessionEntity> rows, double starting) {
+    // ── EQUITY CURVE ────────────────────────────────────────────────────────
+    /** Cumulative equity over trades, one point per trade. X-axis label = session date so the
+     *  chart still reads day-by-day; multiple trades on the same day produce multiple points
+     *  with the same label (intentional — shows intraday rolls). */
+    private Map<String, Object> equityCurve(List<Trade> trades, double starting) {
         List<String> labels = new ArrayList<>();
         List<Double> values = new ArrayList<>();
         double cum = starting;
-        for (StraddleSessionEntity s : rows) {
-            cum += s.getNetPnl();
-            labels.add(s.getSessionDate());
+        for (Trade t : trades) {
+            cum += t.netPnl();
+            labels.add(t.sessionDate());
             values.add(round2(cum));
         }
         Map<String, Object> m = new LinkedHashMap<>();
@@ -406,5 +362,20 @@ public class AnalyticsService {
         return m;
     }
 
+    // ── Utility ─────────────────────────────────────────────────────────────
+    private static LocalDate parseIso(String s) {
+        if (s == null || s.isBlank()) return null;
+        try { return LocalDate.parse(s.trim()); } catch (Exception e) { return null; }
+    }
     private static double round2(double v) { return Math.round(v * 100.0) / 100.0; }
+    private static double asDouble(Object o) {
+        if (o instanceof Number n) return n.doubleValue();
+        if (o == null) return 0.0;
+        try { return Double.parseDouble(String.valueOf(o)); } catch (Exception e) { return 0.0; }
+    }
+    private static long asLong(Object o) {
+        if (o instanceof Number n) return n.longValue();
+        if (o == null) return 0;
+        try { return Long.parseLong(String.valueOf(o)); } catch (Exception e) { return 0; }
+    }
 }

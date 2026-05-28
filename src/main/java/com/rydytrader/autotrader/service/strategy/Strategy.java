@@ -68,4 +68,16 @@ public interface Strategy {
      *  the empty string when nothing has been resolved yet (pre-entry, before option chain
      *  fetched). Used by analytics to scope the "current expiry" period filter. */
     default String currentWeeklyExpiry() { return ""; }
+
+    /** Today's already-closed straddles read from in-memory state — used by the Analytics page
+     *  live overlay so today's metrics reflect closes that haven't been persisted to the
+     *  {@code straddle_trades} table yet (combined-sl-roll persists on every close;
+     *  leg-sl persists only when state reaches DONE_FOR_DAY).
+     *
+     *  <p>Each map should carry: {@code grossPnl}, {@code charges} (optional), {@code netPnl}
+     *  (optional — defaults to gross when charges missing), {@code closedAtMillis}, {@code closeReason}.
+     *  Default: empty list. */
+    default java.util.List<java.util.Map<String, Object>> todayClosedTrades() {
+        return java.util.List.of();
+    }
 }

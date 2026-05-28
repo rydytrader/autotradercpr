@@ -75,6 +75,7 @@ public class LegSlStrategy implements Strategy {
     @Autowired @Lazy private MarketHolidayService marketHolidayService;
     @Autowired @Lazy private TelegramService telegramService;
     @Autowired @Lazy private com.rydytrader.autotrader.repository.StraddleSessionRepository sessionRepo;
+    @Autowired @Lazy private com.rydytrader.autotrader.repository.StraddleTradeRepository tradeRepo;
 
     // ── In-memory state ───────────────────────────────────────────────────────
     private volatile LifecycleState state = LifecycleState.IDLE;
@@ -932,8 +933,54 @@ public class LegSlStrategy implements Strategy {
     }
 
     private void transitionTo(LifecycleState next) {
+        LifecycleState prev = this.state;
         this.state = next;
+        // First entry into DONE_FOR_DAY for today → straddle just finished. Write one
+        // straddle_trades row capturing the day's realisedPnlToday + accumulated charges.
+        if (next == LifecycleState.DONE_FOR_DAY && prev != LifecycleState.DONE_FOR_DAY) {
+            persistStraddleTrade();
+        }
         persist();
+    }
+
+    /** Write a single straddle row for today's straddle. Called once when the state first
+     *  transitions to DONE_FOR_DAY. Skipped if there was no activity (no entry — realised P&L
+     *  and turnover both ~0). */
+    private void persistStraddleTrade() {
+        if (tradeRepo == null) return;
+        if (Math.abs(realisedPnlToday) < 0.01 && sellPremiumTurnoverToday < 0.01) return;
+        try {
+            double charges = computeCycleCharges(sellPremiumTurnoverToday, buyPremiumTurnoverToday, orderCountToday);
+            com.rydytrader.autotrader.entity.StraddleTradeEntity t =
+                new com.rydytrader.autotrader.entity.StraddleTradeEntity();
+            t.setStrategyId(STRATEGY_ID);
+            t.setSessionDate(dayKey != null && !dayKey.isEmpty() ? dayKey : LocalDate.now(IST).toString());
+            t.setClosedAtMillis(System.currentTimeMillis());
+            // leg-sl uses whichever leg's qty is non-zero, or the last known. Both legs share qty
+            // at entry so this is approximate when one leg was closed earlier.
+            int qty = Math.max(ceQty, peQty);
+            if (qty == 0) qty = Math.max(1, riskSettings.getStrategyInt(STRATEGY_ID, "lotsPerLeg", 1)) * NIFTY_LOT_SIZE;
+            t.setQty(qty);
+            t.setGrossPnl(round2(realisedPnlToday));
+            t.setCharges(round2(charges));
+            t.setNetPnl(round2(realisedPnlToday - charges));
+            t.setCloseReason("DONE_FOR_DAY");
+            tradeRepo.save(t);
+        } catch (Exception e) {
+            log.warn("[leg-sl] Failed to persist straddle_trades row: {}", e.getMessage());
+        }
+    }
+
+    /** Same formula as the session-level breakdown but applied to a specific cycle's totals. */
+    private double computeCycleCharges(double sellPrem, double buyPrem, int orders) {
+        double brokerage = orders * riskSettings.getBrokeragePerOrder();
+        double totalPrem = sellPrem + buyPrem;
+        double stt       = sellPrem * STT_SELL_PCT;
+        double exchange  = totalPrem * EXCH_TXN_PCT;
+        double sebi      = (totalPrem / 10_000_000.0) * SEBI_PER_CRORE;
+        double stamp     = buyPrem * STAMP_BUY_PCT;
+        double gst       = (brokerage + exchange) * GST_PCT;
+        return round2(brokerage + stt + exchange + sebi + stamp + gst);
     }
 
     private void persist() {
