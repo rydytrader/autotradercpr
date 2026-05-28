@@ -196,17 +196,12 @@
     <!-- FOUR DETAIL CARDS (drill-down stats — only metrics NOT already in the hero) -->
     <div class="fade-in ah-detail-grid" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:20px;">
 
-        <!-- Trade Counts -->
+        <!-- Straddle Performance -->
         <div class="section-card" style="margin-bottom:0;">
             <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Trade Counts</div>
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Straddle Performance</div>
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;"
-                          title="Total individual short straddles in scope. Each entry-close cycle counts as one (rolls included).">Straddles</span>
-                    <span class="stat-value" id="ahStraddles" style="font-size:1rem;">—</span>
-                </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;" title="Per straddle, not per day.">Wins / Losses</span>
                     <span style="font-family:var(--font-mono); font-size:0.95rem; font-weight:700;">
@@ -569,8 +564,7 @@
             setVal('ahAvgMonthlyPct', fmtPct(cap.avgMonthlyPct), cap.avgMonthlyPct);
 
             // ── DETAIL CARDS — only metrics that aren't already in the hero ─
-            // Trade Counts card
-            setVal('ahStraddles', String(perf.straddles || 0));
+            // Straddle Performance card
             document.getElementById('ahWins').textContent   = String(perf.wins || 0);
             document.getElementById('ahLosses').textContent = String(perf.losses || 0);
             setVal('ahAvgWinLoss', fmtRs(ext.avgProfit) + ' / ' + fmtRs(ext.avgLoss));
