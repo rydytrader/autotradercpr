@@ -122,6 +122,13 @@
                     <span class="stat-value" id="heroNiftyLtp" style="font-size:1rem;">—</span>
                     <span id="heroNiftyChange" style="font-family:var(--font-mono); font-size:0.7rem; color:var(--text-muted);"></span>
                 </div>
+                <div id="heroVixSection"
+                     title="India VIX — implied volatility index, last known LTP with change vs prev close"
+                     style="display:flex; align-items:baseline; gap:8px; padding-right:16px; border-right:1px solid var(--border);">
+                    <span style="font-family:var(--font-mono); font-size:0.82rem; font-weight:600; color:var(--text-secondary); letter-spacing:0.06em;">VIX -</span>
+                    <span class="stat-value" id="heroVixLtp" style="font-size:1rem;">—</span>
+                    <span id="heroVixChange" style="font-family:var(--font-mono); font-size:0.7rem; color:var(--text-muted);"></span>
+                </div>
                 <div style="display:flex;gap:8px;">
                     <button id="straddleCloseBtn" onclick="closeStraddle()" title="Square off both legs at market and end today's session." style="
                         background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.25);
@@ -218,14 +225,10 @@
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:12px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Entry Premium</span>
-                    <span class="stat-value" id="paneEntryCombined" style="font-size:1rem;">—</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Live Combined</span>
-                    <span style="display:flex; align-items:baseline; gap:8px;">
-                        <span class="stat-value" id="paneLiveCombined" style="font-size:1rem;">—</span>
+                    <span class="stat-label" style="margin:0;">Entry / Live</span>
+                    <span style="display:inline-flex; align-items:baseline; gap:8px;">
                         <span id="paneLiveCombinedChange" style="font-family:var(--font-mono); font-size:0.66rem; color:var(--text-muted);"></span>
+                        <span class="stat-value" id="paneEntryLiveCombined" style="font-size:1rem;">— / —</span>
                     </span>
                 </div>
                 <div id="paneTargetTriggerRow" style="display:flex; justify-content:space-between; align-items:center;">
@@ -569,6 +572,13 @@
             var displayLtp = (d.niftyDisplayLtp != null && d.niftyDisplayLtp > 0) ? d.niftyDisplayLtp : d.niftyLtp;
             document.getElementById('heroNiftyLtp').textContent = (displayLtp > 0 ? Number(displayLtp).toFixed(2) : '—');
             renderNiftyChange(d.niftyChange, d.niftyChangePct);
+            // India VIX
+            var vixLtpEl = document.getElementById('heroVixLtp');
+            if (vixLtpEl) {
+                var vixDisplay = (d.vixDisplayLtp != null && d.vixDisplayLtp > 0) ? d.vixDisplayLtp : 0;
+                vixLtpEl.textContent = vixDisplay > 0 ? Number(vixDisplay).toFixed(2) : '—';
+            }
+            renderChangeBadge('heroVixChange', d.vixChange, d.vixChangePct);
             document.getElementById('heroLastEntry').textContent = d.lastEntryNifty > 0 ? Number(d.lastEntryNifty).toFixed(2) : '—';
             var expiryEl = document.getElementById('weeklyExpiryPillText');
             if (expiryEl) {
@@ -614,8 +624,9 @@
                 if (targetRow)   targetRow.style.display = 'none';
                 if (targetBadge) targetBadge.style.display = 'none';
             }
-            document.getElementById('paneEntryCombined').textContent = entryCombined > 0 ? Number(entryCombined).toFixed(2) : '—';
-            document.getElementById('paneLiveCombined').textContent  = liveCombined  > 0 ? Number(liveCombined).toFixed(2)  : '—';
+            document.getElementById('paneEntryLiveCombined').textContent =
+                (entryCombined > 0 ? Number(entryCombined).toFixed(2) : '—')
+                + ' / ' + (liveCombined > 0 ? Number(liveCombined).toFixed(2) : '—');
             document.getElementById('paneSlTrigger').textContent     = slTrigger     > 0 ? Number(slTrigger).toFixed(2)     : '—';
             // Change badge for Live Combined — relative to Entry Premium. For SHORT straddle,
             // combined UP from entry = bad (loss), DOWN = good (profit). Color inverted from
@@ -738,12 +749,16 @@
                 var ceKey = stripPrefix(d.ceSymbol);
                 var peKey = stripPrefix(d.peSymbol);
                 var niftyLtp = null, niftyCh = null, niftyChp = null;
+                var vixLtp = null,   vixCh = null,   vixChp = null;
                 var ceLtp = null, ceCh = null, ceChp = null;
                 var peLtp = null, peCh = null, peChp = null;
                 for (var i = 0; i < arr.length; i++) {
                     var t = arr[i];
                     if (t.symbol === 'NIFTY50' || t.symbol === 'NIFTY 50') {
                         niftyLtp = t.lp; niftyCh = t.ch; niftyChp = t.chp;
+                    }
+                    else if (t.symbol === 'INDIAVIX' || t.symbol === 'INDIA VIX') {
+                        vixLtp = t.lp; vixCh = t.ch; vixChp = t.chp;
                     }
                     else if (ceKey && t.symbol === ceKey) { ceLtp = t.lp; ceCh = t.ch; ceChp = t.chp; }
                     else if (peKey && t.symbol === peKey) { peLtp = t.lp; peCh = t.ch; peChp = t.chp; }
@@ -755,6 +770,15 @@
                     d.niftyChangePct = niftyChp;
                     document.getElementById('heroNiftyLtp').textContent = Number(niftyLtp).toFixed(2);
                     renderNiftyChange(niftyCh, niftyChp);
+                }
+                // Hero India VIX
+                if (vixLtp != null) {
+                    d.vixDisplayLtp = vixLtp;
+                    d.vixChange = vixCh;
+                    d.vixChangePct = vixChp;
+                    var vixLtpElSse = document.getElementById('heroVixLtp');
+                    if (vixLtpElSse) vixLtpElSse.textContent = Number(vixLtp).toFixed(2);
+                    renderChangeBadge('heroVixChange', vixCh, vixChp);
                 }
                 // CE leg LTP + MTM + change badge
                 if (ceLtp != null) {
@@ -817,10 +841,10 @@
                         var allowedSse  = entryCombSse * (slPctSse / 100.0);
                         var consumedSse = liveCombSse - entryCombSse;
                         var pctSse      = allowedSse > 0 ? (consumedSse / allowedSse) * 100.0 : 0;
-                        // Live Combined in the Risk Band card + its change badge
-                        var liveCombEl = document.getElementById('paneLiveCombined');
-                        if (liveCombEl && liveCombSse > 0) {
-                            liveCombEl.textContent = liveCombSse.toFixed(2);
+                        // Entry / Live combined in the Risk Band card + its change badge
+                        var entryLiveEl = document.getElementById('paneEntryLiveCombined');
+                        if (entryLiveEl && liveCombSse > 0) {
+                            entryLiveEl.textContent = entryCombSse.toFixed(2) + ' / ' + liveCombSse.toFixed(2);
                             d.liveCombined = liveCombSse; // keep payload in sync for next 5s poll merge
                             var combDiffSse = liveCombSse - entryCombSse;
                             var combPctSse  = (combDiffSse / entryCombSse) * 100;

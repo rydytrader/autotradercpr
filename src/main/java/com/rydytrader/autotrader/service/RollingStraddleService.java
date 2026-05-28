@@ -1004,12 +1004,16 @@ public class RollingStraddleService {
         synchronized (intradaySamples) {
             m.put("intradaySamples", new java.util.ArrayList<>(intradaySamples));
         }
-        // NIFTY change + change% for the Hero stat. Uses display getters so pre-market shows
+        // NIFTY + VIX change + change% for the Hero stat. Uses display getters so pre-market shows
         // the last known value + prev-close-relative change (matches the ticker bar behaviour).
         if (marketDataService != null) {
             m.put("niftyDisplayLtp", Math.round(marketDataService.getDisplayLtp(NIFTY_SYMBOL) * 100.0) / 100.0);
             m.put("niftyChange",     Math.round(marketDataService.getDisplayChange(NIFTY_SYMBOL) * 100.0) / 100.0);
             m.put("niftyChangePct",  Math.round(marketDataService.getDisplayChangePct(NIFTY_SYMBOL) * 100.0) / 100.0);
+            String vixSymbol = "NSE:INDIAVIX-INDEX";
+            m.put("vixDisplayLtp",   Math.round(marketDataService.getDisplayLtp(vixSymbol) * 100.0) / 100.0);
+            m.put("vixChange",       Math.round(marketDataService.getDisplayChange(vixSymbol) * 100.0) / 100.0);
+            m.put("vixChangePct",    Math.round(marketDataService.getDisplayChangePct(vixSymbol) * 100.0) / 100.0);
             // Per-leg change + change% (vs prev close) for the leg cards
             if (ceSymbol != null && !ceSymbol.isEmpty()) {
                 m.put("ceChange",     Math.round(marketDataService.getDisplayChange(ceSymbol) * 100.0) / 100.0);
