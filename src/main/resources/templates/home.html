@@ -358,14 +358,26 @@
         </div>
     </div>
 
-    <!-- Straddle Chart — combined CE+PE premium at 1-min intervals -->
-    <div class="section-card fade-in" style="margin-bottom:20px;">
+    <!-- Straddle Chart (combined-sl-roll shape) — single summed CE+PE line + combined SL/Target refs. -->
+    <div class="section-card fade-in" id="combinedChartCard" style="margin-bottom:20px;">
         <div class="section-header">
             <div class="section-title"><div class="section-title-dot" style="background: var(--accent-cyan);"></div> Straddle Chart</div>
             <span class="section-badge" style="font-size:0.6rem; margin-left:auto;">CE + PE combined premium • 1-min close • line down = good</span>
         </div>
         <div style="padding:20px 28px; height:400px;">
             <canvas id="straddleChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Leg-sl shape — two side-by-side charts: CE Premium | PE Premium, each with its own SL trigger + entry refs. -->
+    <div class="section-card fade-in" id="splitChartCard" style="margin-bottom:20px; display:none;">
+        <div class="section-header">
+            <div class="section-title"><div class="section-title-dot" style="background: var(--accent-cyan);"></div> Leg Premiums</div>
+            <span class="section-badge" style="font-size:0.6rem; margin-left:auto;">1-min close per leg • dashed = SL trigger / entry baseline</span>
+        </div>
+        <div style="padding:20px 28px; height:400px; display:flex; gap:20px;">
+            <div style="flex:1; min-width:0;"><canvas id="straddleChartCe"></canvas></div>
+            <div style="flex:1; min-width:0;"><canvas id="straddleChartPe"></canvas></div>
         </div>
     </div>
 
@@ -1198,7 +1210,28 @@
     setInterval(loadEventLog, 5000);
 
     // ── Straddle Chart — 1-min combined-premium close values + SL/Target reference lines ──
+    //    (combined-sl-roll only — leg-sl uses a separate side-by-side per-leg chart card below.)
     var straddleChart = null;
+    var ceChart = null, peChart = null;
+
+    function commonChartOptions(muted) {
+        return {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: true, position: 'top', labels: { color: muted, font: { size: 10 }, boxWidth: 14 } },
+                tooltip: { callbacks: { label: function(ctx) {
+                    if (ctx.parsed.y == null) return null;
+                    return ctx.dataset.label + ': ₹' + ctx.parsed.y.toFixed(2);
+                } } }
+            },
+            scales: {
+                x: { ticks: { color: muted, font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }, grid: { color: 'rgba(128,128,128,0.08)' } },
+                y: { min: 0, ticks: { color: muted, font: { size: 10 }, callback: function(v) { return '₹' + v; } }, grid: { color: 'rgba(128,128,128,0.08)' } }
+            }
+        };
+    }
+
     function initStraddleChart() {
         var ctx = document.getElementById('straddleChart').getContext('2d');
         var muted = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim();
@@ -1207,73 +1240,56 @@
             data: {
                 labels: [],
                 datasets: [
-                    {
-                        label: 'Combined Premium',
-                        data: [],
-                        borderColor: 'rgba(99,179,237,0.9)',
-                        backgroundColor: 'rgba(99,179,237,0.10)',
-                        borderWidth: 2,
-                        fill: true,
-                        tension: 0.25,
-                        pointRadius: 2,
-                        pointBackgroundColor: 'rgba(99,179,237,0.9)',
-                        order: 0
-                    },
-                    {
-                        label: 'SL Trigger',
-                        data: [],
-                        borderColor: 'rgba(248,113,113,0.85)',
-                        borderWidth: 1.5,
-                        borderDash: [6, 4],
-                        pointRadius: 0,
-                        fill: false,
-                        order: 1
-                    },
-                    {
-                        label: 'Target',
-                        data: [],
-                        borderColor: 'rgba(52,211,153,0.85)',
-                        borderWidth: 1.5,
-                        borderDash: [6, 4],
-                        pointRadius: 0,
-                        fill: false,
-                        order: 2
-                    },
-                    {
-                        label: 'Entry',
-                        data: [],
-                        borderColor: 'rgba(160,160,160,0.55)',
-                        borderWidth: 1,
-                        borderDash: [2, 4],
-                        pointRadius: 0,
-                        fill: false,
-                        order: 3
-                    }
+                    { label: 'Combined Premium', data: [], borderColor: 'rgba(99,179,237,0.9)', backgroundColor: 'rgba(99,179,237,0.10)', borderWidth: 2, fill: true, tension: 0.25, pointRadius: 2, pointBackgroundColor: 'rgba(99,179,237,0.9)', order: 0 },
+                    { label: 'SL Trigger', data: [], borderColor: 'rgba(248,113,113,0.85)', borderWidth: 1.5, borderDash: [6, 4], pointRadius: 0, fill: false, order: 1 },
+                    { label: 'Target',     data: [], borderColor: 'rgba(52,211,153,0.85)',  borderWidth: 1.5, borderDash: [6, 4], pointRadius: 0, fill: false, order: 2 },
+                    { label: 'Entry',      data: [], borderColor: 'rgba(160,160,160,0.55)', borderWidth: 1,   borderDash: [2, 4], pointRadius: 0, fill: false, order: 3 }
                 ]
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: true, position: 'top', labels: { color: muted, font: { size: 10 }, boxWidth: 14 } },
-                    tooltip: { callbacks: { label: function(ctx) { return ctx.dataset.label + ': ₹' + ctx.parsed.y.toFixed(2); } } }
-                },
-                scales: {
-                    x: { ticks: { color: muted, font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }, grid: { color: 'rgba(128,128,128,0.08)' } },
-                    y: { min: 0, ticks: { color: muted, font: { size: 10 }, callback: function(v) { return '₹' + v; } }, grid: { color: 'rgba(128,128,128,0.08)' } }
-                }
-            }
+            options: commonChartOptions(muted)
         });
     }
-    /** Render the Straddle Chart from persisted samples + reference lines from dashboard payload. */
+
+    function initLegChart(canvasId, accentColor) {
+        var ctx = document.getElementById(canvasId).getContext('2d');
+        var muted = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim();
+        return new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'Premium', data: [], borderColor: accentColor + '0.95)', backgroundColor: accentColor + '0.10)', borderWidth: 2, fill: true, tension: 0.25, pointRadius: 2, pointBackgroundColor: accentColor + '0.95)', spanGaps: false, order: 0 },
+                    { label: 'SL Trigger', data: [], borderColor: accentColor + '0.55)', borderWidth: 1.5, borderDash: [6, 4], pointRadius: 0, fill: false, order: 1 },
+                    { label: 'Entry',      data: [], borderColor: accentColor + '0.30)', borderWidth: 1,   borderDash: [2, 4], pointRadius: 0, fill: false, order: 2 }
+                ]
+            },
+            options: commonChartOptions(muted)
+        });
+    }
+    /** Render the Straddle Chart card(s) based on dashboard shape. */
     function renderStraddleChart() {
         if (!lastDashboardData) { setTimeout(renderStraddleChart, 1000); return; }
-        if (!straddleChart) initStraddleChart();
         var d = lastDashboardData;
+        var shape = d.dashboardShape || 'combined-sl-roll';
+        // Show/hide the two chart cards based on shape.
+        var combinedCard = document.getElementById('combinedChartCard');
+        var splitCard    = document.getElementById('splitChartCard');
+        if (shape === 'leg-sl') {
+            if (combinedCard) combinedCard.style.display = 'none';
+            if (splitCard)    splitCard.style.display = '';
+            renderLegSplitCharts(d);
+        } else {
+            if (splitCard)    splitCard.style.display = 'none';
+            if (combinedCard) combinedCard.style.display = '';
+            renderCombinedChart(d);
+        }
+    }
+
+    function renderCombinedChart(d) {
+        if (!straddleChart) initStraddleChart();
         var samples = d.combinedPremiumSamples || [];
         var labels = samples.map(function(s) { return s.t; });
         var data   = samples.map(function(s) { return s.v; });
-        // Append a synthetic "now" point so the line stays current between 1-min boundaries
         var liveCombined = Number(d.liveCombined || 0);
         if (liveCombined > 0) {
             var now = new Date();
@@ -1286,7 +1302,6 @@
                 data.push(Math.round(liveCombined * 100) / 100);
             }
         }
-        // Reference lines stretch across all x-axis points
         var entryComb  = Number(d.entryCombined || 0);
         var slTrigger  = Number(d.slTrigger || 0);
         var targetTrig = Number(d.targetTrigger || 0);
@@ -1296,11 +1311,50 @@
         straddleChart.data.datasets[1].data = lineFor(slTrigger);
         straddleChart.data.datasets[2].data = lineFor(targetTrig);
         straddleChart.data.datasets[3].data = lineFor(entryComb);
-        // Y-axis: 0 to combined entry premium (per spec). SL line sits at the top if higher.
-        if (entryComb > 0) {
-            straddleChart.options.scales.y.max = entryComb;
-        }
+        if (entryComb > 0) straddleChart.options.scales.y.max = entryComb;
         straddleChart.update('none');
+    }
+
+    function renderLegSplitCharts(d) {
+        if (!ceChart) ceChart = initLegChart('straddleChartCe', 'rgba(52,211,153,');   // green CE
+        if (!peChart) peChart = initLegChart('straddleChartPe', 'rgba(248,113,113,');  // red PE
+        var samples = d.combinedPremiumSamples || [];
+        var labels = samples.map(function(s) { return s.t; });
+        var ceData = samples.map(function(s) { return s.ce != null ? s.ce : null; });
+        var peData = samples.map(function(s) { return s.pe != null ? s.pe : null; });
+        // Synthetic "now" point per leg from live LTP.
+        var ceLtp = Number(d.ceLtp || 0);
+        var peLtp = Number(d.peLtp || 0);
+        if (ceLtp > 0 || peLtp > 0) {
+            var now = new Date();
+            var nowLabel = (now.getHours() < 10 ? '0' : '') + now.getHours()
+                         + ':' + (now.getMinutes() < 10 ? '0' : '') + now.getMinutes();
+            if (labels.length > 0 && labels[labels.length - 1] === nowLabel) {
+                if (ceLtp > 0) ceData[ceData.length - 1] = Math.round(ceLtp * 100) / 100;
+                if (peLtp > 0) peData[peData.length - 1] = Math.round(peLtp * 100) / 100;
+            } else {
+                labels.push(nowLabel);
+                ceData.push(ceLtp > 0 ? Math.round(ceLtp * 100) / 100 : null);
+                peData.push(peLtp > 0 ? Math.round(peLtp * 100) / 100 : null);
+            }
+        }
+        var ceEntry = Number(d.ceEntryPremium || 0);
+        var peEntry = Number(d.peEntryPremium || 0);
+        var ceTrig  = Number(d.ceSlTrigger || 0);
+        var peTrig  = Number(d.peSlTrigger || 0);
+        function lineFor(labels, val) { return labels.map(function() { return val > 0 ? val : null; }); }
+        ceChart.data.labels = labels;
+        ceChart.data.datasets[0].data = ceData;
+        ceChart.data.datasets[1].data = lineFor(labels, ceTrig);
+        ceChart.data.datasets[2].data = lineFor(labels, ceEntry);
+        if (ceTrig > 0) ceChart.options.scales.y.max = ceTrig * 1.05;
+        ceChart.update('none');
+        peChart.data.labels = labels;
+        peChart.data.datasets[0].data = peData;
+        peChart.data.datasets[1].data = lineFor(labels, peTrig);
+        peChart.data.datasets[2].data = lineFor(labels, peEntry);
+        if (peTrig > 0) peChart.options.scales.y.max = peTrig * 1.05;
+        peChart.update('none');
     }
     setTimeout(renderStraddleChart, 1500);
     // Re-render every 5s alongside the dashboard poll

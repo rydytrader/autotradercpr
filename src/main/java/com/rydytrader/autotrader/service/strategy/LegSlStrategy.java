@@ -267,12 +267,16 @@ public class LegSlStrategy implements Strategy {
         // so a single freak print can't trip the trigger.
         if (ceLtp > 0) ceLastMinClose = ceLtp;
         if (peLtp > 0) peLastMinClose = peLtp;
-        // Sum only the live legs — once a leg is closed it stops contributing to the chart.
         double total = (ceLtp > 0 ? ceLtp : 0) + (peLtp > 0 ? peLtp : 0);
         if (total <= 0) return;
+        // Sample includes per-leg fields so the leg-sl chart can plot CE and PE as separate
+        // overlaid lines. The summed {v} is also kept for any reader that only needs the
+        // combined value.
         java.util.Map<String, Object> sample = new java.util.LinkedHashMap<>();
         sample.put("t", now.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")));
-        sample.put("v", Math.round(total * 100.0) / 100.0);
+        sample.put("v",  Math.round(total * 100.0) / 100.0);
+        sample.put("ce", ceLtp > 0 ? Math.round(ceLtp * 100.0) / 100.0 : null);
+        sample.put("pe", peLtp > 0 ? Math.round(peLtp * 100.0) / 100.0 : null);
         combinedPremiumSamples.add(sample);
         persist();
     }
