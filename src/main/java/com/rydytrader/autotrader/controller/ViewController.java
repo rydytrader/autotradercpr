@@ -215,13 +215,12 @@ public class ViewController {
 
     // ── PAGES (all protected by Spring Security — any authenticated user) ──
 
-    /** Legacy home route — redirects to the default strategy's dashboard while the analytics
-     *  home (Phase 7) is being built. Once that's live this becomes the analytics page. */
+    /** Analytics Home — capital growth, win rate, equity curve. Period + strategy scope are
+     *  client-side selectors. Per-strategy operational dashboards live at {@code /strategies/{id}}. */
     @GetMapping("/home")
-    public String dashboard(Model model) {
-        // Render the existing home template against the default strategy (combined-sl-roll) so
-        // the current operator workflow stays intact. Same as /strategies/combined-sl-roll.
-        return renderStrategyDashboard("combined-sl-roll", model);
+    public String home(Model model) {
+        model.addAttribute("sidebarStrategies", sidebarStrategies());
+        return "analytics-home";
     }
 
     /** Per-strategy operational dashboard. Same template (home.html) for every strategy —

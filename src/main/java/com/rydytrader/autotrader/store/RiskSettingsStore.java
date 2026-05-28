@@ -30,6 +30,9 @@ public class RiskSettingsStore {
         volatile String autoSquareOffTime = "";  // empty = disabled, e.g. "15:15"
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
+        /** Starting capital used as the baseline for the Analytics Home page (capital growth %,
+         *  equity curve, return %). Global — not per-strategy. Default ₹10,00,000. */
+        volatile double startingCapital = 1_000_000.0;
         // Charges rates (regulatory — rarely change)
         volatile double sttRate           = 0.025;   // STT % on sell side
         volatile double exchangeRate      = 0.00345;  // Exchange transaction % (NSE cash)
@@ -403,6 +406,7 @@ public class RiskSettingsStore {
     public String getAutoSquareOffTime() { return cfg().autoSquareOffTime; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
+    public double getStartingCapital()   { return cfg().startingCapital; }
     public double getSttRate()         { return cfg().sttRate; }
     public double getExchangeRate()    { return cfg().exchangeRate; }
     public double getGstRate()         { return cfg().gstRate; }
@@ -586,6 +590,7 @@ public class RiskSettingsStore {
     public void setAutoSquareOffTime(String v) { cfg().autoSquareOffTime = v; }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
+    public void setStartingCapital(double v)   { cfg().startingCapital = Math.max(0, v); }
     public void setSttRate(double v)         { cfg().sttRate = v; }
     public void setExchangeRate(double v)    { cfg().exchangeRate = v; }
     public void setGstRate(double v)         { cfg().gstRate = v; }
@@ -691,6 +696,7 @@ public class RiskSettingsStore {
     public String getAutoSquareOffTime(String mode) { return cfgFor(mode).autoSquareOffTime; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
+    public double getStartingCapital(String mode)   { return cfgFor(mode).startingCapital; }
     public double getSttRate(String mode)         { return cfgFor(mode).sttRate; }
     public double getExchangeRate(String mode)    { return cfgFor(mode).exchangeRate; }
     public double getGstRate(String mode)         { return cfgFor(mode).gstRate; }
@@ -711,6 +717,7 @@ public class RiskSettingsStore {
     public void setAutoSquareOffTime(String mode, String v) { cfgFor(mode).autoSquareOffTime = v; }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
     public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
+    public void setStartingCapital(String mode, double v)   { cfgFor(mode).startingCapital = Math.max(0, v); }
     public void setSttRate(String mode, double v)         { cfgFor(mode).sttRate = v; }
     public void setExchangeRate(String mode, double v)    { cfgFor(mode).exchangeRate = v; }
     public void setGstRate(String mode, double v)         { cfgFor(mode).gstRate = v; }
@@ -741,6 +748,7 @@ public class RiskSettingsStore {
             upsert("autoSquareOffTime", c.autoSquareOffTime);
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
+            upsert("startingCapital",   String.valueOf(c.startingCapital));
             upsert("sttRate", String.valueOf(c.sttRate));
             upsert("exchangeRate", String.valueOf(c.exchangeRate));
             upsert("gstRate", String.valueOf(c.gstRate));
@@ -909,6 +917,7 @@ public class RiskSettingsStore {
                     // enableSessionMoveLimit / sessionMoveLimit removed — feature deleted.
                     case "enableSessionMoveLimit", "sessionMoveLimit" -> { /* legacy, ignored */ }
                     case "brokeragePerOrder" -> c.brokeragePerOrder = Double.parseDouble(v);
+                    case "startingCapital"   -> c.startingCapital   = Math.max(0, Double.parseDouble(v));
                     case "sttRate"           -> c.sttRate = Double.parseDouble(v);
                     case "exchangeRate"      -> c.exchangeRate = Double.parseDouble(v);
                     case "gstRate"           -> c.gstRate = Double.parseDouble(v);

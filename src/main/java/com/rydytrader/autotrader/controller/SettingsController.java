@@ -39,6 +39,7 @@ public class SettingsController {
         result.put("capitalPerTrade",     riskSettings.getCapitalPerTrade(effectiveMode));
         result.put("fixedQuantity",       riskSettings.getFixedQuantity(effectiveMode));
         // Charges
+        result.put("startingCapital",     riskSettings.getStartingCapital(effectiveMode));
         result.put("brokeragePerOrder",   riskSettings.getBrokeragePerOrder(effectiveMode));
         result.put("sttRate",             riskSettings.getSttRate(effectiveMode));
         result.put("exchangeRate",        riskSettings.getExchangeRate(effectiveMode));
@@ -80,6 +81,7 @@ public class SettingsController {
             if (body.containsKey("capitalPerTrade"))   riskSettings.setCapitalPerTrade(effectiveMode, Double.parseDouble(body.get("capitalPerTrade").toString()));
             if (body.containsKey("fixedQuantity"))     riskSettings.setFixedQuantity(effectiveMode, Integer.parseInt(body.get("fixedQuantity").toString()));
             // Charges
+            if (body.containsKey("startingCapital"))   riskSettings.setStartingCapital(effectiveMode, Double.parseDouble(body.get("startingCapital").toString()));
             if (body.containsKey("brokeragePerOrder")) riskSettings.setBrokeragePerOrder(effectiveMode, Double.parseDouble(body.get("brokeragePerOrder").toString()));
             if (body.containsKey("sttRate"))           riskSettings.setSttRate(effectiveMode, Double.parseDouble(body.get("sttRate").toString()));
             if (body.containsKey("exchangeRate"))      riskSettings.setExchangeRate(effectiveMode, Double.parseDouble(body.get("exchangeRate").toString()));

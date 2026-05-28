@@ -31,6 +31,7 @@
                 '<div class="sm-body" id="sm-body" style="flex:1;overflow-y:auto;padding:20px 24px;">' +
                   // Charges tab (static)
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
+                    '<div class="sm-field"><label>Starting Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline used by the Home analytics page (capital growth %, equity curve). Default ₹10,00,000.</div></div>' +
                     '<div class="sm-field"><label>Brokerage per Order (₹)</label><input type="number" id="sm-brokeragePerOrder" step="1" min="0"><div class="sm-hint">Flat per-order brokerage. Drives charge estimates on every dashboard + session row.</div></div>' +
                     '<div class="sm-field"><label>STT Rate (%)</label><input type="number" id="sm-sttRate" step="0.0001" min="0"></div>' +
                     '<div class="sm-field"><label>Exchange Rate (%)</label><input type="number" id="sm-exchangeRate" step="0.0001" min="0"></div>' +
@@ -250,6 +251,7 @@
 
     function saveChargesTab() {
         var body = {
+            startingCapital:   parseFloat(document.getElementById('sm-startingCapital').value) || 0,
             brokeragePerOrder: parseFloat(document.getElementById('sm-brokeragePerOrder').value) || 0,
             sttRate:           parseFloat(document.getElementById('sm-sttRate').value) || 0,
             exchangeRate:      parseFloat(document.getElementById('sm-exchangeRate').value) || 0,
@@ -296,6 +298,7 @@
     function loadChargesValues() {
         fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
+            document.getElementById('sm-startingCapital').value   = d.startingCapital != null ? d.startingCapital : 1000000;
             document.getElementById('sm-brokeragePerOrder').value = d.brokeragePerOrder != null ? d.brokeragePerOrder : 0;
             document.getElementById('sm-sttRate').value           = d.sttRate != null ? d.sttRate : 0;
             document.getElementById('sm-exchangeRate').value      = d.exchangeRate != null ? d.exchangeRate : 0;

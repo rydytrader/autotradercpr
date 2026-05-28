@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" data-strategy-id="home">
+<head>
+    <title>TraderEdge — Home</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/shared.css?v=5">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+        (function() {
+            const t = localStorage.getItem('traderedge-theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', t);
+            document.addEventListener('DOMContentLoaded', function() {
+                const btn = document.getElementById('themeToggle');
+                if (btn) btn.textContent = t === 'light' ? '☀️' : t === 'forest' ? '🌲' : '🌙';
+            });
+        })();
+    </script>
+    <style>
+        .nav-icon:hover { color:var(--text-primary) !important; background:var(--bg-card-hover) !important; border-color:var(--border) !important; }
+        .nav-icon.active { color:var(--accent-cyan) !important; background:rgba(125,211,252,0.12) !important; border-color:rgba(125,211,252,0.35) !important; }
+
+        .pill-row { display:flex; gap:8px; flex-wrap:wrap; }
+        .scope-pill {
+            background:var(--bg-primary); border:1px solid var(--border); color:var(--text-secondary);
+            padding:6px 14px; border-radius:999px; cursor:pointer;
+            font-family:var(--font-mono); font-size:0.7rem; font-weight:700; letter-spacing:0.06em;
+            text-transform:uppercase; transition:all 0.15s ease;
+        }
+        .scope-pill:hover { border-color:rgba(125,211,252,0.35); color:var(--text-primary); }
+        .scope-pill.active { background:rgba(125,211,252,0.12); border-color:var(--accent-cyan); color:var(--accent-cyan); }
+
+        .ah-hero-grid {
+            display:grid; grid-template-columns:repeat(2, 1fr); gap:16px;
+            padding:18px 22px;
+        }
+        @media (max-width: 1100px) { .ah-hero-grid { grid-template-columns:1fr; } }
+        .ah-pane {
+            background:var(--bg-primary); border:1px solid var(--border); border-radius:10px;
+            padding:18px 20px; display:flex; flex-direction:column; gap:12px;
+        }
+        .ah-pane-title {
+            font-family:var(--font-mono); font-size:0.66rem; font-weight:700;
+            color:var(--accent-cyan); letter-spacing:0.12em; text-transform:uppercase;
+            display:flex; align-items:center; gap:8px;
+        }
+        .ah-pane-title-dot { width:6px; height:6px; border-radius:50%; background:var(--accent-cyan); }
+        .ah-stat-row { display:flex; justify-content:space-between; align-items:baseline; gap:14px; }
+        .ah-stat-label { font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); letter-spacing:0.04em; }
+        .ah-stat-value { font-family:var(--font-mono); font-size:0.95rem; color:var(--text-primary); font-weight:700; }
+        .ah-stat-value.big { font-size:1.45rem; }
+        .pnl-positive { color:var(--accent-green); }
+        .pnl-negative { color:var(--accent-red, #f87171); }
+    </style>
+</head>
+<body style="margin:0;">
+<div style="display:flex;min-height:100vh;">
+<aside class="strategy-nav-aside"
+       style="width:56px;flex-shrink:0;background:var(--bg-card);border-right:1px solid var(--border);
+              display:flex;flex-direction:column;align-items:center;padding-top:14px;gap:8px;">
+    <a href="/home" class="nav-icon" title="Home" data-nav-key="home"
+       style="display:flex;align-items:center;justify-content:center;width:40px;height:40px;
+              border-radius:8px;text-decoration:none;font-size:1.2rem;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">🏠</a>
+    <div style="width:32px;height:1px;background:var(--border);margin:4px 0;"></div>
+    <a th:each="strat : ${sidebarStrategies}"
+       th:href="@{${strat.href}}"
+       th:title="${strat.displayName}"
+       th:attr="data-nav-key=${strat.id}"
+       class="nav-icon"
+       th:text="${strat.navIcon}"
+       style="display:flex;align-items:center;justify-content:center;width:40px;height:40px;
+              border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
+              font-size:0.9rem;color:var(--text-secondary);border:1px solid transparent;
+              background:transparent;cursor:pointer;letter-spacing:0.04em;">C</a>
+</aside>
+<div class="app-main" style="margin-left:0;width:calc(100% - 56px);flex:1;">
+<nav class="navbar" style="padding:0 16px;">
+    <div class="navbar-inner">
+        <a href="/home" style="display:flex;align-items:center;gap:10px;text-decoration:none;margin-right:18px;">
+            <span style="font-size:1.45rem;line-height:1;">⚡</span>
+            <div style="display:flex;flex-direction:column;line-height:1.1;">
+                <span style="font-family:var(--font-mono);font-weight:700;font-size:1.05rem;letter-spacing:0.08em;color:var(--text-primary);">TRADER<span style="color:var(--accent-cyan);">EDGE</span></span>
+                <span style="display:flex;align-items:center;gap:4px;margin-top:6px;">
+                    <span class="status-dot" id="statusDot" style="width:5px;height:5px;"></span>
+                    <span id="connectionStatus" style="color:var(--text-muted);font-size:0.52rem;letter-spacing:0.04em;">Checking…</span>
+                </span>
+            </div>
+        </a>
+        <div class="ticker-wrap" id="tickerWrap">
+            <div class="ticker-track" id="tickerTrack"></div>
+        </div>
+        <div class="nav-right">
+            <button class="theme-toggle" id="calBtn" title="Calendar" onclick="window.location.href='/calendar'" style="font-size:1rem;">▦</button>
+            <button class="theme-toggle" id="settingsBtn" title="Settings" onclick="SettingsModal.open()" style="font-size:1rem;">⚙</button>
+            <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
+            <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
+        </div>
+    </div>
+</nav>
+
+<div class="page-wrap">
+
+    <div class="page-header">
+        <div>
+            <div class="page-title">Home</div>
+            <div class="page-subtitle">Capital growth and strategy performance</div>
+        </div>
+    </div>
+
+    <!-- Selectors — Period + Strategy scope -->
+    <div class="section-card fade-in" style="margin-bottom:16px;">
+        <div style="padding:14px 22px; display:flex; gap:24px; flex-wrap:wrap; align-items:center;">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <span class="ah-stat-label" style="font-weight:700;">Period</span>
+                <div class="pill-row" id="periodPills">
+                    <button class="scope-pill active" data-period="all">All Time</button>
+                    <button class="scope-pill"        data-period="ytd">YTD</button>
+                    <button class="scope-pill"        data-period="mtd">MTD</button>
+                    <button class="scope-pill"        data-period="30d">30D</button>
+                </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:12px;">
+                <span class="ah-stat-label" style="font-weight:700;">Strategy</span>
+                <div class="pill-row" id="strategyPills">
+                    <button class="scope-pill active" data-strategy="all">All Strategies</button>
+                    <!-- Strategy-specific pills injected at runtime from /api/strategies -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- HERO CARD — 2×2 grid of metric panes -->
+    <div class="section-card fade-in" style="margin-bottom:16px;">
+        <div class="section-header">
+            <div class="section-title"><div class="section-title-dot"></div> Performance Summary</div>
+            <span class="section-badge" id="ahSessionCount" style="margin-left:auto;">— sessions</span>
+        </div>
+        <div class="ah-hero-grid">
+            <!-- Pane 1: Capital -->
+            <div class="ah-pane">
+                <div class="ah-pane-title"><div class="ah-pane-title-dot"></div>Capital</div>
+                <div class="ah-stat-row">
+                    <span class="ah-stat-label">Starting</span>
+                    <span class="ah-stat-value" id="ahStartingCapital">—</span>
+                </div>
+                <div class="ah-stat-row">
+                    <span class="ah-stat-label">Current</span>
+                    <span class="ah-stat-value big" id="ahCurrentCapital">—</span>
+                </div>
+                <div class="ah-stat-row">
+                    <span class="ah-stat-label">Total Return</span>
+                    <span class="ah-stat-value" id="ahTotalReturn">—</span>
+                </div>
+                <div class="ah-stat-row">
+                    <span class="ah-stat-label">Total Return %</span>
+                    <span class="ah-stat-value" id="ahTotalReturnPct">—</span>
+                </div>
+                <div class="ah-stat-row">
+                    <span class="ah-stat-label">Avg Monthly %</span>
+                    <span class="ah-stat-value" id="ahAvgMonthlyPct">—</span>
+                </div>
+            </div>
+
+            <!-- Pane 2: Performance -->
+            <div class="ah-pane">
+                <div class="ah-pane-title"><div class="ah-pane-title-dot" style="background:var(--accent-green);"></div>Performance</div>
+                <div class="ah-stat-row">
+                    <span class="ah-stat-label">Sessions Traded</span>
+                    <span class="ah-stat-value" id="ahSessions">—</span>
+                </div>
+                <div class="ah-stat-row">
+                    <span class="ah-stat-label">Win Rate</span>
+                    <span class="ah-stat-value big" id="ahWinRate">—</span>
+                </div>
+                <div class="ah-stat-row">
+                    <span class="ah-stat-label">Wins / Losses</span>
+                    <span class="ah-stat-value" id="ahWinsLosses">—</span>
+                </div>
+                <div class="ah-stat-row">
+                    <span class="ah-stat-label">Profit Factor</span>
+                    <span class="ah-stat-value" id="ahProfitFactor" title="Gross profit ÷ gross loss. >1 = profitable, >2 = excellent.">—</span>
+                </div>
+                <div class="ah-stat-row">
+                    <span class="ah-stat-label">Risk-Reward</span>
+                    <span class="ah-stat-value" id="ahRiskReward" title="Avg profit ÷ avg loss. >1 = winners larger than losers.">—</span>
+                </div>
+            </div>
+
+            <!-- Pane 3: P&L Extremes -->
+            <div class="ah-pane">
+                <div class="ah-pane-title"><div class="ah-pane-title-dot" style="background:var(--accent-amber, #fbbf24);"></div>P&L Extremes</div>
+                <div class="ah-stat-row">
+                    <span class="ah-stat-label">Max Profit</span>
+                    <span class="ah-stat-value" id="ahMaxProfit">—</span>
+                </div>
+                <div class="ah-stat-row">
+                    <span class="ah-stat-label">Max Loss</span>
+                    <span class="ah-stat-value" id="ahMaxLoss">—</span>
+                </div>
+                <div class="ah-stat-row">
+                    <span class="ah-stat-label">Avg Profit</span>
+                    <span class="ah-stat-value" id="ahAvgProfit">—</span>
+                </div>
+                <div class="ah-stat-row">
+                    <span class="ah-stat-label">Avg Loss</span>
+                    <span class="ah-stat-value" id="ahAvgLoss">—</span>
+                </div>
+                <div class="ah-stat-row">
+                    <span class="ah-stat-label">Max Drawdown</span>
+                    <span class="ah-stat-value" id="ahMaxDrawdown" title="Largest peak-to-trough decline in cumulative net P&L.">—</span>
+                </div>
+            </div>
+
+            <!-- Pane 4: Streaks -->
+            <div class="ah-pane">
+                <div class="ah-pane-title"><div class="ah-pane-title-dot" style="background:var(--accent-red, #f87171);"></div>Streaks</div>
+                <div class="ah-stat-row">
+                    <span class="ah-stat-label">Current Win Streak</span>
+                    <span class="ah-stat-value" id="ahCurWin">—</span>
+                </div>
+                <div class="ah-stat-row">
+                    <span class="ah-stat-label">Longest Win Streak</span>
+                    <span class="ah-stat-value" id="ahLongestWin">—</span>
+                </div>
+                <div class="ah-stat-row">
+                    <span class="ah-stat-label">Current Loss Streak</span>
+                    <span class="ah-stat-value" id="ahCurLoss">—</span>
+                </div>
+                <div class="ah-stat-row">
+                    <span class="ah-stat-label">Longest Loss Streak</span>
+                    <span class="ah-stat-value" id="ahLongestLoss">—</span>
+                </div>
+                <div class="ah-stat-row">
+                    <span class="ah-stat-label">Total Charges Paid</span>
+                    <span class="ah-stat-value" id="ahTotalCharges">—</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- EQUITY CURVE -->
+    <div class="section-card fade-in" style="margin-bottom:20px;">
+        <div class="section-header">
+            <div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Equity Curve</div>
+            <span class="section-badge" style="font-size:0.6rem; margin-left:auto;">Cumulative net P&L (starting capital + every session)</span>
+        </div>
+        <div style="padding:20px 28px; height:360px;">
+            <canvas id="equityCurveChart"></canvas>
+        </div>
+    </div>
+
+    <footer class="page-footer">
+        <div class="footer-copy">&copy; <span id="footerYear"></span> TraderEdge. All rights reserved.</div>
+        <div class="footer-author">Built by <strong style="color: var(--text-secondary); margin: 0 4px;">Prabhu Arumugham</strong>
+            <span class="footer-tag">rydytrader</span></div>
+    </footer>
+
+</div><!-- /page-wrap -->
+</div><!-- /app-main -->
+</div><!-- /flex wrapper -->
+
+<script src="/js/common.js?v=2"></script>
+<script src="/js/ticker.js?v=4"></script>
+<script src="/js/settings-modal.js?v=1"></script>
+
+<script>
+    // Footer year
+    (function() { var el = document.getElementById('footerYear'); if (el) el.textContent = new Date().getFullYear(); })();
+
+    // ── Connection status ────────────────────────────────────────────────────
+    function checkConnection() {
+        var ctrl = new AbortController();
+        var tid = setTimeout(function(){ ctrl.abort(); }, 3000);
+        fetch('/status', { signal: ctrl.signal })
+            .then(r => { clearTimeout(tid); return r.json(); })
+            .then(d => {
+                const dot = document.getElementById('statusDot');
+                const label = document.getElementById('connectionStatus');
+                var status = d.status || 'DISCONNECTED';
+                if (status.includes('WS CONNECTED')) {
+                    dot.className = 'status-dot connected';
+                    label.textContent = status; label.style.color = 'var(--accent-green)';
+                } else if (status.includes('CONNECTING') || status.includes('RECONNECTING') || status === 'POLLING' || status === 'SYNCING') {
+                    dot.className = 'status-dot syncing';
+                    label.textContent = status; label.style.color = 'var(--accent-yellow)';
+                } else {
+                    dot.className = 'status-dot disconnected';
+                    label.textContent = 'DISCONNECTED'; label.style.color = 'var(--accent-red)';
+                }
+            }).catch(() => {
+                document.getElementById('statusDot').className = 'status-dot disconnected';
+                document.getElementById('connectionStatus').textContent = 'DISCONNECTED';
+                document.getElementById('connectionStatus').style.color = 'var(--accent-red)';
+            });
+    }
+    checkConnection();
+    setInterval(checkConnection, 5000);
+
+    // Active sidebar icon — /home highlights the Home icon.
+    document.addEventListener('DOMContentLoaded', function() {
+        var homeIcon = document.querySelector('.nav-icon[data-nav-key="home"]');
+        if (homeIcon) homeIcon.classList.add('active');
+    });
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    function fmt(v)   { if (v == null || isNaN(v)) return '0.00'; return Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+    function fmtRs(v) { return (v < 0 ? '-₹' : '₹') + fmt(Math.abs(v)); }
+    function fmtPct(v) { if (v == null || isNaN(v)) return '—'; return (v >= 0 ? '+' : '') + Number(v).toFixed(2) + '%'; }
+    function setVal(id, txt, signed) {
+        var el = document.getElementById(id); if (!el) return;
+        el.textContent = txt;
+        el.classList.remove('pnl-positive', 'pnl-negative');
+        if (signed != null) {
+            if (signed > 0.5)        el.classList.add('pnl-positive');
+            else if (signed < -0.5)  el.classList.add('pnl-negative');
+        }
+    }
+
+    // ── Selectors ────────────────────────────────────────────────────────────
+    var currentPeriod   = 'all';
+    var currentStrategy = 'all';
+
+    function bindPills(rootId, cb) {
+        var root = document.getElementById(rootId);
+        if (!root) return;
+        root.addEventListener('click', function(e) {
+            var btn = e.target.closest('.scope-pill');
+            if (!btn) return;
+            root.querySelectorAll('.scope-pill').forEach(function(b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            cb(btn);
+        });
+    }
+    bindPills('periodPills', function(btn) {
+        currentPeriod = btn.getAttribute('data-period');
+        loadSummary();
+    });
+    bindPills('strategyPills', function(btn) {
+        currentStrategy = btn.getAttribute('data-strategy');
+        loadSummary();
+    });
+
+    // Inject one pill per registered strategy.
+    fetch('/api/strategies').then(function(r) { return r.json(); }).then(function(arr) {
+        if (!Array.isArray(arr)) return;
+        var host = document.getElementById('strategyPills');
+        arr.forEach(function(s) {
+            var b = document.createElement('button');
+            b.className = 'scope-pill';
+            b.setAttribute('data-strategy', s.id);
+            b.textContent = (s.displayName || s.id).toUpperCase();
+            host.appendChild(b);
+        });
+    }).catch(function() {});
+
+    // ── Equity curve chart ───────────────────────────────────────────────────
+    var equityChart = null;
+    function renderEquityChart(labels, values) {
+        var ctx = document.getElementById('equityCurveChart').getContext('2d');
+        if (equityChart) { equityChart.destroy(); equityChart = null; }
+        // Theme-driven colours — read CSS vars at chart creation.
+        var styles = getComputedStyle(document.documentElement);
+        var lineCol = styles.getPropertyValue('--accent-cyan').trim() || '#7dd3fc';
+        var fillCol = lineCol.startsWith('#') ? lineCol + '22' : 'rgba(125,211,252,0.15)';
+        var gridCol = styles.getPropertyValue('--border').trim() || 'rgba(255,255,255,0.06)';
+        var textCol = styles.getPropertyValue('--text-muted').trim() || '#888';
+        equityChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Equity',
+                    data: values,
+                    borderColor: lineCol,
+                    backgroundColor: fillCol,
+                    fill: true,
+                    tension: 0.25,
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false }, tooltip: {
+                    callbacks: { label: function(ctx) { return fmtRs(ctx.parsed.y); } }
+                } },
+                scales: {
+                    x: { ticks: { color: textCol, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 },
+                         grid: { color: gridCol } },
+                    y: { ticks: { color: textCol, callback: function(v) { return fmtRs(v); } },
+                         grid: { color: gridCol } }
+                }
+            }
+        });
+    }
+
+    // ── Load + render the analytics payload ──────────────────────────────────
+    function loadSummary() {
+        var url = '/api/analytics/summary?period=' + encodeURIComponent(currentPeriod)
+                + '&strategyId=' + encodeURIComponent(currentStrategy);
+        fetch(url).then(function(r) { return r.json(); }).then(function(d) {
+            if (!d) return;
+            var cap = d.capital   || {};
+            var perf = d.performance || {};
+            var ext = d.extremes  || {};
+            var st  = d.streaks   || {};
+            var eq  = d.equityCurve || { labels: [], values: [] };
+
+            // Header session-count badge
+            var scEl = document.getElementById('ahSessionCount');
+            if (scEl) scEl.textContent = (d.sessionCount || 0) + ' session' + ((d.sessionCount === 1) ? '' : 's');
+
+            // Pane 1: Capital
+            setVal('ahStartingCapital', fmtRs(cap.startingCapital));
+            setVal('ahCurrentCapital',  fmtRs(cap.currentCapital), cap.totalReturn);
+            setVal('ahTotalReturn',     fmtRs(cap.totalReturn), cap.totalReturn);
+            setVal('ahTotalReturnPct',  fmtPct(cap.totalReturnPct), cap.totalReturn);
+            setVal('ahAvgMonthlyPct',   fmtPct(cap.avgMonthlyPct), cap.avgMonthlyPct);
+
+            // Pane 2: Performance
+            setVal('ahSessions',     String(perf.sessions || 0));
+            setVal('ahWinRate',      (perf.winRate != null ? perf.winRate.toFixed(1) : '0') + '%',
+                                     (perf.winRate || 0) - 50); // green when > 50, neutral at 50, red below
+            setVal('ahWinsLosses',   (perf.wins || 0) + ' / ' + (perf.losses || 0));
+            var pf = perf.profitFactor || 0;
+            setVal('ahProfitFactor', pf > 0 ? pf.toFixed(2) : '—', pf - 1);
+            var rr = perf.riskReward || 0;
+            setVal('ahRiskReward',   rr > 0 ? rr.toFixed(2) : '—', rr - 1);
+
+            // Pane 3: P&L Extremes
+            setVal('ahMaxProfit',  fmtRs(ext.maxProfit), ext.maxProfit);
+            setVal('ahMaxLoss',    fmtRs(ext.maxLoss), ext.maxLoss);
+            setVal('ahAvgProfit',  fmtRs(ext.avgProfit), ext.avgProfit);
+            setVal('ahAvgLoss',    fmtRs(ext.avgLoss), ext.avgLoss);
+            setVal('ahMaxDrawdown', fmtRs(ext.maxDrawdown), ext.maxDrawdown);
+
+            // Pane 4: Streaks
+            setVal('ahCurWin',      String(st.currentWinStreak || 0),  st.currentWinStreak);
+            setVal('ahLongestWin',  String(st.longestWinStreak || 0));
+            setVal('ahCurLoss',     String(st.currentLossStreak || 0), -(st.currentLossStreak || 0));
+            setVal('ahLongestLoss', String(st.longestLossStreak || 0));
+            setVal('ahTotalCharges', fmtRs(st.totalCharges));
+
+            // Equity curve
+            renderEquityChart(eq.labels || [], eq.values || []);
+        }).catch(function() {});
+    }
+    loadSummary();
+</script>
+</body>
+</html>
