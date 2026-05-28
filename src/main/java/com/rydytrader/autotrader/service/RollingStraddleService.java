@@ -442,7 +442,7 @@ public class RollingStraddleService implements Strategy {
         String[] symbols = resolveAtmSymbols(atmStrike);
         if (symbols == null) {
             log.warn("[Straddle] Could not resolve ATM CE+PE symbols for strike {} — aborting entry for today", atmStrike);
-            eventService.log("[ERROR] Straddle entry aborted — failed to resolve ATM symbols for strike " + atmStrike);
+            eventService.log("[ERROR] [combined-sl-roll] Straddle entry aborted — failed to resolve ATM symbols for strike " + atmStrike);
             transitionTo(LifecycleState.DONE_FOR_DAY);
             return;
         }
@@ -455,7 +455,7 @@ public class RollingStraddleService implements Strategy {
         orderCountToday++;
         if (ceResp == null || ceResp.getId() == null || ceResp.getId().isEmpty() || !"ok".equals(ceResp.getStatus())) {
             log.error("[Straddle] CE leg rejected: {}", ceResp);
-            eventService.log("[ERROR] Straddle CE leg rejected — aborting day");
+            eventService.log("[ERROR] [combined-sl-roll] Straddle CE leg rejected — aborting day");
             transitionTo(LifecycleState.DONE_FOR_DAY);
             return;
         }
@@ -463,7 +463,7 @@ public class RollingStraddleService implements Strategy {
         orderCountToday++;
         if (peResp == null || peResp.getId() == null || peResp.getId().isEmpty() || !"ok".equals(peResp.getStatus())) {
             log.error("[Straddle] PE leg rejected after CE filled — flattening CE: {}", peResp);
-            eventService.log("[ERROR] Straddle PE leg rejected — buying back CE immediately to flatten");
+            eventService.log("[ERROR] [combined-sl-roll] Straddle PE leg rejected — buying back CE immediately to flatten");
             // BUY back the CE to flatten — never leave one leg unhedged.
             try { orderService.placeOrder(resolvedCe, qty, 1, 0); orderCountToday++; } catch (Exception ignored) {}
             transitionTo(LifecycleState.DONE_FOR_DAY);
@@ -500,7 +500,7 @@ public class RollingStraddleService implements Strategy {
             + ") qty=" + qty + " roll=" + rollCount + "/" + riskSettings.getStraddleMaxRolls()
             + " ce=" + ceSymbol + " pe=" + peSymbol;
         log.info("[Straddle] {}", msg);
-        eventService.log("[INFO] " + msg);
+        eventService.log("[INFO] [combined-sl-roll] " + msg);
         notifyTelegram(msg);
     }
 
@@ -694,7 +694,7 @@ public class RollingStraddleService implements Strategy {
             String msg = String.format("Daily max-loss hit (net %.2f < -%.2f) — flattening and parking DONE_FOR_DAY",
                 netPnl, maxLoss);
             log.warn("[Straddle] {}", msg);
-            eventService.log("[ERROR] " + msg);
+            eventService.log("[ERROR] [combined-sl-roll] " + msg);
             notifyTelegram(msg);
             closeBothLegs("MAX_LOSS_HIT");
             transitionTo(LifecycleState.DONE_FOR_DAY);
@@ -742,7 +742,7 @@ public class RollingStraddleService implements Strategy {
                 String msg = String.format("Combined premium TARGET hit — entry %.2f, live %.2f (-%.2f%%, threshold %.2f%%). Booking profit, parking DONE_FOR_DAY.",
                     entryCombined, liveCombined, profitPct, targetPct);
                 log.info("[Straddle] {}", msg);
-                eventService.log("[SUCCESS] " + msg);
+                eventService.log("[SUCCESS] [combined-sl-roll] " + msg);
                 notifyTelegram(msg);
                 closeBothLegs("TARGET_HIT");
                 transitionTo(LifecycleState.DONE_FOR_DAY);
@@ -760,7 +760,7 @@ public class RollingStraddleService implements Strategy {
             transitionTo(LifecycleState.MAX_ROLLS_HOLD);
             String msg = "Straddle max rolls reached (" + maxRolls + ") — holding open legs to timed squareoff";
             log.info("[Straddle] {}", msg);
-            eventService.log("[INFO] " + msg);
+            eventService.log("[INFO] [combined-sl-roll] " + msg);
             notifyTelegram(msg);
             return;
         }
@@ -776,7 +776,7 @@ public class RollingStraddleService implements Strategy {
             String parkMsg = String.format("Combined premium SL hit — entry %.2f, live %.2f (+%.2f%%, threshold %.2f%%). Wait of %d min would push re-entry past cutoff %s — parking DONE_FOR_DAY without wait.",
                 entryCombined, liveCombined, consumedPct, slPct, waitMin, cutoff);
             log.info("[Straddle] {}", parkMsg);
-            eventService.log("[INFO] " + parkMsg);
+            eventService.log("[INFO] [combined-sl-roll] " + parkMsg);
             notifyTelegram(parkMsg);
             closeBothLegs("SL_HIT");
             transitionTo(LifecycleState.DONE_FOR_DAY);
@@ -786,7 +786,7 @@ public class RollingStraddleService implements Strategy {
         String slMsg = String.format("Combined premium SL hit — entry %.2f, live %.2f (+%.2f%%, threshold %.2f%%). Closing legs and waiting %d min before re-entry.",
             entryCombined, liveCombined, consumedPct, slPct, waitMin);
         log.info("[Straddle] {}", slMsg);
-        eventService.log("[INFO] " + slMsg);
+        eventService.log("[INFO] [combined-sl-roll] " + slMsg);
         notifyTelegram(slMsg);
 
         closeBothLegs("SL_HIT");
@@ -818,7 +818,7 @@ public class RollingStraddleService implements Strategy {
         if (afterOrAt(now, cutoff)) {
             String msg = "Roll wait expired but past cutoff " + cutoff + " — parking DONE_FOR_DAY without re-entry";
             log.info("[Straddle] {}", msg);
-            eventService.log("[INFO] " + msg);
+            eventService.log("[INFO] [combined-sl-roll] " + msg);
             notifyTelegram(msg);
             transitionTo(LifecycleState.DONE_FOR_DAY);
             slHitTimeMillis = 0;
@@ -868,7 +868,7 @@ public class RollingStraddleService implements Strategy {
         String msg = "Straddle legs closed (" + reason + "): ce=" + ceSymbol + " pe=" + peSymbol
             + " qty=" + ceQty + " roll=" + rollCount + " pnl=" + String.format("%.2f", pairPnl);
         log.info("[Straddle] {}", msg);
-        eventService.log("[INFO] " + msg);
+        eventService.log("[INFO] [combined-sl-roll] " + msg);
         notifyTelegram(msg);
         pushRollEvent("CLOSE_" + reason, niftyAtClose, closedCe, closedPe, pairPnl);
         this.ceSymbol = "";
@@ -898,7 +898,7 @@ public class RollingStraddleService implements Strategy {
             if (retry == null || retry.getId() == null || retry.getId().isEmpty() || !"ok".equals(retry.getStatus())) {
                 log.error("[Straddle] CLOSE FAILED for {} {} qty={} ({}): {}",
                     legTag, symbol, qty, reason, retry);
-                eventService.log("[ERROR] Straddle CLOSE FAILED for " + legTag + " " + symbol
+                eventService.log("[ERROR] [combined-sl-roll] Straddle CLOSE FAILED for " + legTag + " " + symbol
                     + " qty=" + qty + " — manual intervention required");
             }
         } catch (Exception e) {
@@ -1034,7 +1034,7 @@ public class RollingStraddleService implements Strategy {
         if (state == LifecycleState.OPEN || state == LifecycleState.MAX_ROLLS_HOLD) {
             log.warn("[Straddle] Stale state {} from {} detected at startup — forcing close before reset",
                 state, dayKey);
-            eventService.log("[WARNING] Straddle stale " + state + " from " + dayKey
+            eventService.log("[WARNING] [combined-sl-roll] Straddle stale " + state + " from " + dayKey
                 + " — flattening legs and resetting");
             closeBothLegs("STALE_DAY_RESET");
         }
@@ -1140,7 +1140,7 @@ public class RollingStraddleService implements Strategy {
             log.info("[Straddle] forceClose ignored — state={}", state);
             return false;
         }
-        eventService.log("[INFO] Manual squareoff (" + reason + ") — flattening both legs");
+        eventService.log("[INFO] [combined-sl-roll] Manual squareoff (" + reason + ") — flattening both legs");
         closeBothLegs(reason);
         transitionTo(LifecycleState.DONE_FOR_DAY);
         return true;
@@ -1153,10 +1153,10 @@ public class RollingStraddleService implements Strategy {
     public synchronized void parkDoneForDay(String reason) {
         if (state == LifecycleState.DONE_FOR_DAY) return; // already parked
         if (state == LifecycleState.OPEN || state == LifecycleState.MAX_ROLLS_HOLD) {
-            eventService.log("[INFO] Portfolio kill (" + reason + ") — flattening + parking combined-sl-roll");
+            eventService.log("[INFO] [combined-sl-roll] Portfolio kill (" + reason + ") — flattening + parking combined-sl-roll");
             closeBothLegs(reason);
         } else {
-            eventService.log("[INFO] Portfolio kill (" + reason + ") — parking combined-sl-roll from state=" + state + " (no open position)");
+            eventService.log("[INFO] [combined-sl-roll] Portfolio kill (" + reason + ") — parking combined-sl-roll from state=" + state + " (no open position)");
         }
         // Clear roll-wait so a stale WAITING_TO_ROLL doesn't re-enter on the next tick.
         slHitTimeMillis = 0;
@@ -1172,7 +1172,7 @@ public class RollingStraddleService implements Strategy {
      */
     public synchronized void resetToIdle(String reason) {
         log.info("[Straddle] Manual reset from {} → IDLE ({})", state, reason);
-        eventService.log("[INFO] Straddle state reset to IDLE (" + reason + ")");
+        eventService.log("[INFO] [combined-sl-roll] Straddle state reset to IDLE (" + reason + ")");
         this.lastEntryNifty = 0;
         this.ceSymbol = "";
         this.peSymbol = "";

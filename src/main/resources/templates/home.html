@@ -401,6 +401,12 @@
             <div style="display:flex; gap:6px; align-items:center;">
                 <input id="eventLogFilter" type="text" placeholder="Filter…"
                        style="background:var(--bg-card); border:1px solid var(--border); color:var(--text-primary); padding:4px 10px; border-radius:6px; font-family:var(--font-mono); font-size:0.72rem; width:160px; outline:none;">
+                <select id="eventLogStrategy"
+                        title="Scope the event log to a single strategy (matches on the [strategy-id] tag the bot writes into each event)."
+                        style="background:var(--bg-card); border:1px solid var(--border); color:var(--text-primary); padding:4px 8px; border-radius:6px; font-family:var(--font-mono); font-size:0.72rem; outline:none; appearance:none; -webkit-appearance:none; padding-right:22px; background-image:linear-gradient(45deg, transparent 50%, var(--text-muted) 50%), linear-gradient(135deg, var(--text-muted) 50%, transparent 50%); background-position:calc(100% - 10px) 50%, calc(100% - 5px) 50%; background-size:5px 5px, 5px 5px; background-repeat:no-repeat;">
+                    <option value="">All Strategies</option>
+                    <!-- options populated at runtime from /api/strategies -->
+                </select>
                 <select id="eventLogSeverity"
                         style="background:var(--bg-card); border:1px solid var(--border); color:var(--text-primary); padding:4px 8px; border-radius:6px; font-family:var(--font-mono); font-size:0.72rem; outline:none; appearance:none; -webkit-appearance:none; padding-right:22px; background-image:linear-gradient(45deg, transparent 50%, var(--text-muted) 50%), linear-gradient(135deg, var(--text-muted) 50%, transparent 50%); background-position:calc(100% - 10px) 50%, calc(100% - 5px) 50%; background-size:5px 5px, 5px 5px; background-repeat:no-repeat;">
                     <option value="">All</option>
@@ -1114,8 +1120,10 @@
         if (!body) return;
         var qEl = document.getElementById('eventLogFilter');
         var sEl = document.getElementById('eventLogSeverity');
+        var stEl = document.getElementById('eventLogStrategy');
         var q = (qEl && qEl.value || '').trim().toLowerCase();
         var sevFilter = sEl && sEl.value || '';
+        var stratFilter = stEl && stEl.value || '';
         var rows = __evCache.map(parseEventLine);
         if (q) rows = rows.filter(function(r) {
             return (r.msg + ' ' + r.source).toLowerCase().indexOf(q) >= 0;
@@ -1123,6 +1131,12 @@
         if (sevFilter) rows = rows.filter(function(r) {
             if (sevFilter === 'WARN') return r.sev === 'WARN' || r.sev === 'WARNING';
             return r.sev === sevFilter;
+        });
+        if (stratFilter) rows = rows.filter(function(r) {
+            // Match the parsed source tag (preferred) OR a substring of msg for events that
+            // weren't tagged with the strategy id yet.
+            return r.source === stratFilter
+                || (r.msg + ' ' + r.source).toLowerCase().indexOf(stratFilter.toLowerCase()) >= 0;
         });
         if (rows.length === 0) {
             body.innerHTML = '<tr><td colspan="4" style="color:var(--text-muted); padding:14px; text-align:center;">No matching events.</td></tr>';
@@ -1150,8 +1164,26 @@
     document.addEventListener('DOMContentLoaded', function() {
         var qEl = document.getElementById('eventLogFilter');
         var sEl = document.getElementById('eventLogSeverity');
+        var stEl = document.getElementById('eventLogStrategy');
         if (qEl) qEl.addEventListener('input', renderEventLog);
         if (sEl) sEl.addEventListener('change', renderEventLog);
+        if (stEl) stEl.addEventListener('change', renderEventLog);
+        // Auto-populate the Strategy dropdown from /api/strategies + a hardcoded portfolio entry.
+        if (stEl) {
+            fetch('/api/strategies').then(function(r) { return r.json(); }).then(function(arr) {
+                if (!Array.isArray(arr)) return;
+                arr.forEach(function(s) {
+                    var opt = document.createElement('option');
+                    opt.value = s.id;
+                    opt.textContent = (s.displayName || s.id);
+                    stEl.appendChild(opt);
+                });
+                var pr = document.createElement('option');
+                pr.value = 'portfolio-risk';
+                pr.textContent = 'Portfolio Risk';
+                stEl.appendChild(pr);
+            }).catch(function() {});
+        }
         // Highlight the active strategy icon in the left sidebar
         try {
             var sid = document.documentElement.getAttribute('data-strategy-id') || 'home';

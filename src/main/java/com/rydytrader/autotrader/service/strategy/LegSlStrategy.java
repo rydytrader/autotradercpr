@@ -306,7 +306,7 @@ public class LegSlStrategy implements Strategy {
         String[] symbols = resolveAtmSymbols(atmStrike);
         if (symbols == null) {
             log.warn("[leg-sl] Could not resolve ATM CE+PE symbols for strike {} — aborting day", atmStrike);
-            eventService.log("[ERROR] leg-sl entry aborted — failed to resolve ATM symbols for strike " + atmStrike);
+            eventService.log("[ERROR] [leg-sl] entry aborted — failed to resolve ATM symbols for strike " + atmStrike);
             transitionTo(LifecycleState.DONE_FOR_DAY);
             return;
         }
@@ -317,7 +317,7 @@ public class LegSlStrategy implements Strategy {
         orderCountToday++;
         if (ceResp == null || ceResp.getId() == null || ceResp.getId().isEmpty() || !"ok".equals(ceResp.getStatus())) {
             log.error("[leg-sl] CE leg rejected: {}", ceResp);
-            eventService.log("[ERROR] leg-sl CE leg rejected — aborting day");
+            eventService.log("[ERROR] [leg-sl] CE leg rejected — aborting day");
             transitionTo(LifecycleState.DONE_FOR_DAY);
             return;
         }
@@ -325,7 +325,7 @@ public class LegSlStrategy implements Strategy {
         orderCountToday++;
         if (peResp == null || peResp.getId() == null || peResp.getId().isEmpty() || !"ok".equals(peResp.getStatus())) {
             log.error("[leg-sl] PE leg rejected after CE filled — flattening CE: {}", peResp);
-            eventService.log("[ERROR] leg-sl PE leg rejected — buying back CE to flatten");
+            eventService.log("[ERROR] [leg-sl] PE leg rejected — buying back CE to flatten");
             try { orderService.placeOrder(resolvedCe, qty, 1, 0); orderCountToday++; } catch (Exception ignored) {}
             transitionTo(LifecycleState.DONE_FOR_DAY);
             return;
@@ -353,7 +353,7 @@ public class LegSlStrategy implements Strategy {
         String msg = "leg-sl armed @ ATM " + atmStrike + " (NIFTY " + String.format("%.2f", niftyLtp)
             + ") qty=" + qty + " ce=" + ceSymbol + " pe=" + peSymbol;
         log.info("[leg-sl] {}", msg);
-        eventService.log("[INFO] " + msg);
+        eventService.log("[INFO] [leg-sl] " + msg);
         notifyTelegram(msg);
     }
 
@@ -378,7 +378,7 @@ public class LegSlStrategy implements Strategy {
                     String msg = String.format("CE leg SL hit — entry %.2f, live %.2f (+%.2f%%, threshold %.2f%%). Closing CE only.",
                         ceEntryPremium, ceLtp, consumedPct, legSlPct);
                     log.info("[leg-sl] {}", msg);
-                    eventService.log("[INFO] leg-sl " + msg);
+                    eventService.log("[INFO] [leg-sl] " + msg);
                     notifyTelegram(msg);
                     closeLeg("CE", "CE_SL_HIT");
                     return;
@@ -395,7 +395,7 @@ public class LegSlStrategy implements Strategy {
                     String msg = String.format("PE leg SL hit — entry %.2f, live %.2f (+%.2f%%, threshold %.2f%%). Closing PE only.",
                         peEntryPremium, peLtp, consumedPct, legSlPct);
                     log.info("[leg-sl] {}", msg);
-                    eventService.log("[INFO] leg-sl " + msg);
+                    eventService.log("[INFO] [leg-sl] " + msg);
                     notifyTelegram(msg);
                     closeLeg("PE", "PE_SL_HIT");
                     return;
@@ -433,7 +433,7 @@ public class LegSlStrategy implements Strategy {
         String msg = which + " leg closed (" + reason + "): " + symbol + " qty=" + qty
             + " pnl=" + String.format("%.2f", pnl);
         log.info("[leg-sl] {}", msg);
-        eventService.log("[INFO] leg-sl " + msg);
+        eventService.log("[INFO] [leg-sl] " + msg);
 
         long nowMs = System.currentTimeMillis();
         if (isCe) {
@@ -487,7 +487,7 @@ public class LegSlStrategy implements Strategy {
             String msg = "leg-sl remaining legs closed (" + reason + "): " + String.join(", ", unsubAfter)
                 + " pnl=" + String.format("%.2f", totalPnl);
             log.info("[leg-sl] {}", msg);
-            eventService.log("[INFO] " + msg);
+            eventService.log("[INFO] [leg-sl] " + msg);
             notifyTelegram(msg);
         }
         persist();
@@ -507,7 +507,7 @@ public class LegSlStrategy implements Strategy {
             if (retry == null || retry.getId() == null || retry.getId().isEmpty() || !"ok".equals(retry.getStatus())) {
                 log.error("[leg-sl] CLOSE FAILED for {} {} qty={} ({}): {}",
                     legTag, symbol, qty, reason, retry);
-                eventService.log("[ERROR] leg-sl CLOSE FAILED for " + legTag + " " + symbol
+                eventService.log("[ERROR] [leg-sl] CLOSE FAILED for " + legTag + " " + symbol
                     + " qty=" + qty + " — manual intervention required");
             }
         } catch (Exception e) {
@@ -530,7 +530,7 @@ public class LegSlStrategy implements Strategy {
             String msg = String.format("Daily max-loss hit (net %.2f < -%.2f) — flattening remaining legs",
                 netPnl, maxLoss);
             log.warn("[leg-sl] {}", msg);
-            eventService.log("[ERROR] leg-sl " + msg);
+            eventService.log("[ERROR] [leg-sl] " + msg);
             notifyTelegram(msg);
             closeRemainingLegs("MAX_LOSS_HIT");
             transitionTo(LifecycleState.DONE_FOR_DAY);
@@ -712,7 +712,7 @@ public class LegSlStrategy implements Strategy {
             log.info("[leg-sl] forceClose ignored — state={}", state);
             return false;
         }
-        eventService.log("[INFO] leg-sl Manual squareoff (" + reason + ") — flattening any open legs");
+        eventService.log("[INFO] [leg-sl] Manual squareoff (" + reason + ") — flattening any open legs");
         closeRemainingLegs(reason);
         transitionTo(LifecycleState.DONE_FOR_DAY);
         return true;
@@ -727,10 +727,10 @@ public class LegSlStrategy implements Strategy {
                           || state == LifecycleState.OPEN_CE_ONLY
                           || state == LifecycleState.OPEN_PE_ONLY);
         if (hadOpen) {
-            eventService.log("[INFO] leg-sl Portfolio kill (" + reason + ") — flattening + parking");
+            eventService.log("[INFO] [leg-sl] Portfolio kill (" + reason + ") — flattening + parking");
             closeRemainingLegs(reason);
         } else {
-            eventService.log("[INFO] leg-sl Portfolio kill (" + reason + ") — parking from state=" + state + " (no open position)");
+            eventService.log("[INFO] [leg-sl] Portfolio kill (" + reason + ") — parking from state=" + state + " (no open position)");
         }
         transitionTo(LifecycleState.DONE_FOR_DAY);
     }
@@ -738,7 +738,7 @@ public class LegSlStrategy implements Strategy {
     @Override
     public synchronized void resetToIdle(String reason) {
         log.info("[leg-sl] Manual reset from {} → IDLE ({})", state, reason);
-        eventService.log("[INFO] leg-sl state reset to IDLE (" + reason + ")");
+        eventService.log("[INFO] [leg-sl] state reset to IDLE (" + reason + ")");
         this.ceSymbol = ""; this.peSymbol = "";
         this.ceQty = 0; this.peQty = 0;
         this.ceOrderId = ""; this.peOrderId = "";
@@ -754,7 +754,7 @@ public class LegSlStrategy implements Strategy {
                 || state == LifecycleState.OPEN_PE_ONLY) {
             log.warn("[leg-sl] Stale state {} from {} detected at startup — flattening before reset",
                 state, dayKey);
-            eventService.log("[WARNING] leg-sl stale " + state + " from " + dayKey + " — flattening");
+            eventService.log("[WARNING] [leg-sl] stale " + state + " from " + dayKey + " — flattening");
             closeRemainingLegs("STALE_DAY_RESET");
         }
         if (dayKey != null && !dayKey.isEmpty() && realisedPnlToday != 0) {

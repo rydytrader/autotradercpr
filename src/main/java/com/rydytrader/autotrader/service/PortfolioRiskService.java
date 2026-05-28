@@ -77,7 +77,7 @@ public class PortfolioRiskService {
             "Flattening every strategy and parking DONE_FOR_DAY.",
             aggregate, maxLoss, riskPct, riskSettings.getStartingCapital());
         log.warn("[PortfolioRisk] {}", msg);
-        eventService.log("[ERROR] " + msg);
+        eventService.log("[ERROR] [portfolio-risk] " + msg);
         try { if (telegramService != null) telegramService.sendMessage("[PortfolioRisk] " + msg); }
         catch (Exception ignored) {}
 
