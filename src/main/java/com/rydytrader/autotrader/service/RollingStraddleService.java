@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -38,6 +39,7 @@ import java.time.ZoneId;
  * </ol>
  */
 @Service
+@Order(2)
 public class RollingStraddleService implements Strategy {
 
     /** Stable identifier for this strategy. Used in URLs, settings keys, log prefixes,

@@ -18,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -43,6 +44,7 @@ import java.time.ZoneId;
  * position but each strategy tracks its own logical qty and places orders against that own qty.
  */
 @Service
+@Order(1)
 public class LegSlStrategy implements Strategy {
 
     public static final String STRATEGY_ID = "leg-sl";
