@@ -7,15 +7,21 @@ import com.rydytrader.autotrader.service.LoginService;
 import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.OrderEventService;
 import com.rydytrader.autotrader.service.PollingService;
+import com.rydytrader.autotrader.service.strategy.Strategy;
+import com.rydytrader.autotrader.service.strategy.StrategyRegistry;
 import com.rydytrader.autotrader.store.TokenStore;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @Controller
@@ -31,6 +37,7 @@ public class ViewController {
     private final OrderEventService orderEventService;
     private final AppUserRepository userRepo;
     private final PasswordEncoder  passwordEncoder;
+    private final StrategyRegistry  strategyRegistry;
 
     public ViewController(TokenStore tokenStore,
                            PollingService pollingService,
@@ -39,7 +46,8 @@ public class ViewController {
                            MarketDataService marketDataService,
                            OrderEventService orderEventService,
                            AppUserRepository userRepo,
-                           PasswordEncoder passwordEncoder) {
+                           PasswordEncoder passwordEncoder,
+                           StrategyRegistry strategyRegistry) {
         this.tokenStore        = tokenStore;
         this.pollingService    = pollingService;
         this.loginService      = loginService;
@@ -48,6 +56,23 @@ public class ViewController {
         this.orderEventService = orderEventService;
         this.userRepo          = userRepo;
         this.passwordEncoder   = passwordEncoder;
+        this.strategyRegistry  = strategyRegistry;
+    }
+
+    /** Build the sidebar nav entries from the registry. Used by every page that renders a
+     *  sidebar (dashboard, calendar, analytics home). Each entry has id, displayName, navIcon,
+     *  and href. The "active" entry is decided client-side by matching window.location.pathname. */
+    private List<Map<String, Object>> sidebarStrategies() {
+        List<Map<String, Object>> nav = new ArrayList<>();
+        for (Strategy s : strategyRegistry.all()) {
+            Map<String, Object> e = new LinkedHashMap<>();
+            e.put("id", s.id());
+            e.put("displayName", s.displayName());
+            e.put("navIcon", s.navIcon());
+            e.put("href", "/strategies/" + s.id());
+            nav.add(e);
+        }
+        return nav;
     }
 
     // ── ROOT ────────────────────────────────────────────────────────────────
@@ -189,9 +214,39 @@ public class ViewController {
     }
 
     // ── PAGES (all protected by Spring Security — any authenticated user) ──
+
+    /** Legacy home route — redirects to the default strategy's dashboard while the analytics
+     *  home (Phase 7) is being built. Once that's live this becomes the analytics page. */
     @GetMapping("/home")
-    public String dashboard() { return "home"; }
+    public String dashboard(Model model) {
+        // Render the existing home template against the default strategy (combined-sl-roll) so
+        // the current operator workflow stays intact. Same as /strategies/combined-sl-roll.
+        return renderStrategyDashboard("combined-sl-roll", model);
+    }
+
+    /** Per-strategy operational dashboard. Same template (home.html) for every strategy —
+     *  parameterised by the {@code strategyId} model attribute. Adding a new strategy adds a
+     *  new sidebar icon automatically. */
+    @GetMapping("/strategies/{id}")
+    public String strategyDashboard(@PathVariable String id, Model model) {
+        return renderStrategyDashboard(id, model);
+    }
+
+    private String renderStrategyDashboard(String id, Model model) {
+        Strategy s = strategyRegistry.get(id);
+        if (s == null) {
+            log.warn("Unknown strategy id '{}', defaulting to combined-sl-roll", id);
+            s = strategyRegistry.get("combined-sl-roll");
+        }
+        model.addAttribute("strategyId",          s != null ? s.id() : id);
+        model.addAttribute("strategyDisplayName", s != null ? s.displayName() : id);
+        model.addAttribute("sidebarStrategies",   sidebarStrategies());
+        return "home";
+    }
 
     @GetMapping("/calendar")
-    public String calendar() { return "calendar"; }
+    public String calendar(Model model) {
+        model.addAttribute("sidebarStrategies", sidebarStrategies());
+        return "calendar";
+    }
 }

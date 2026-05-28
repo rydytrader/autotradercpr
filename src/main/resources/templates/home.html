@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<html>
+<html xmlns:th="http://www.thymeleaf.org" th:attr="data-strategy-id=${strategyId}">
 <head>
-    <title>TraderEdge - Dashboard</title>
+    <title th:text="|TraderEdge - ${strategyDisplayName}|">TraderEdge - Dashboard</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -40,11 +40,32 @@
         .roll-table th { color:var(--text-muted); font-weight:600; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.06em; }
         .reset-btn    { background:rgba(251,191,36,0.10); border:1px solid rgba(251,191,36,0.30); color:var(--accent-amber, #fbbf24); padding:6px 14px; border-radius:6px; font-family:var(--font-mono); font-size:0.72rem; font-weight:700; cursor:pointer; }
         .reset-btn:hover { background:rgba(251,191,36,0.18); border-color:rgba(251,191,36,0.45); }
+        /* Left sidebar nav icons */
+        .nav-icon:hover { color:var(--text-primary) !important; background:var(--bg-card-hover) !important; border-color:var(--border) !important; }
+        .nav-icon.active { color:var(--accent-cyan) !important; background:rgba(125,211,252,0.12) !important; border-color:rgba(125,211,252,0.35) !important; }
     </style>
 </head>
 <body style="margin:0;">
 <div style="display:flex;min-height:100vh;">
-<aside style="width:56px;flex-shrink:0;background:var(--bg-card);border-right:1px solid var(--border);"></aside>
+<aside class="strategy-nav-aside"
+       style="width:56px;flex-shrink:0;background:var(--bg-card);border-right:1px solid var(--border);
+              display:flex;flex-direction:column;align-items:center;padding-top:14px;gap:8px;">
+    <a href="/home" class="nav-icon" title="Home" data-nav-key="home"
+       style="display:flex;align-items:center;justify-content:center;width:40px;height:40px;
+              border-radius:8px;text-decoration:none;font-size:1.2rem;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">🏠</a>
+    <div style="width:32px;height:1px;background:var(--border);margin:4px 0;"></div>
+    <a th:each="strat : ${sidebarStrategies}"
+       th:href="@{${strat.href}}"
+       th:title="${strat.displayName}"
+       th:attr="data-nav-key=${strat.id}"
+       class="nav-icon"
+       th:text="${strat.navIcon}"
+       style="display:flex;align-items:center;justify-content:center;width:40px;height:40px;
+              border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
+              font-size:0.9rem;color:var(--text-secondary);border:1px solid transparent;
+              background:transparent;cursor:pointer;letter-spacing:0.04em;">C</a>
+</aside>
 <div class="app-main" style="margin-left:0;width:calc(100% - 56px);flex:1;">
 <nav class="navbar" style="padding:0 16px;">
     <div class="navbar-inner">
@@ -495,10 +516,14 @@
     // Cached so squareoff buttons can read leg symbols/qty without re-fetching.
     var lastDashboardData = null;
 
+    // Strategy ID for this dashboard page — drives all /api/strategies/{id}/* URLs below.
+    // Falls back to "combined-sl-roll" if the data attribute is somehow missing.
+    var STRATEGY_ID = document.documentElement.getAttribute('data-strategy-id') || 'combined-sl-roll';
+
     // ── Dashboard polling (hero + 4 sub-panes + recent rolls) ────────────────
     function loadDashboard() {
         if (!fyersConnected) return;
-        fetch('/api/straddle/dashboard').then(r => r.json()).then(d => {
+        fetch('/api/strategies/' + STRATEGY_ID + '/dashboard').then(r => r.json()).then(d => {
             if (!d) return;
             lastDashboardData = d;
             // Hero — true net = realised + open MTM − charges
@@ -981,6 +1006,15 @@
         var sEl = document.getElementById('eventLogSeverity');
         if (qEl) qEl.addEventListener('input', renderEventLog);
         if (sEl) sEl.addEventListener('change', renderEventLog);
+        // Highlight the active strategy icon in the left sidebar
+        try {
+            var sid = document.documentElement.getAttribute('data-strategy-id') || 'home';
+            var icons = document.querySelectorAll('.nav-icon');
+            for (var i = 0; i < icons.length; i++) {
+                var key = icons[i].getAttribute('data-nav-key');
+                if (key === sid) icons[i].classList.add('active');
+            }
+        } catch (e) {}
     });
     loadEventLog();
     setInterval(loadEventLog, 5000);
@@ -1303,7 +1337,7 @@
             + 'After this, state transitions to DONE_FOR_DAY and no more entries fire today. The combined open MTM (' + fmtRs(lastDashboardData.combinedMtm || 0) + ') becomes realised P&L.')) return;
         var btn = document.getElementById('straddleCloseBtn');
         if (btn) { btn.disabled = true; btn.textContent = '✕ Closing…'; }
-        fetch('/api/straddle/close', {
+        fetch('/api/strategies/' + STRATEGY_ID + '/close', {
             method: 'POST',
             headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders())
         }).then(r => r.json()).then(d => {
@@ -1321,7 +1355,7 @@
             + 'Clears any stale DONE_FOR_DAY from an earlier rejection. Next scheduler tick re-evaluates the entry time. Does NOT close existing legs at the broker — use Square Off on the Positions page for that.')) return;
         var btn = document.getElementById('straddleResetBtn');
         if (btn) { btn.disabled = true; btn.textContent = '↻ Resetting…'; }
-        fetch('/api/straddle/reset', {
+        fetch('/api/strategies/' + STRATEGY_ID + '/reset', {
             method: 'POST',
             headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders())
         }).then(r => r.json()).then(d => {
