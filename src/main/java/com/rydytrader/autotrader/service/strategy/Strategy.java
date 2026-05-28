@@ -46,6 +46,17 @@ public interface Strategy {
      *  "rupees", "boolean". */
     List<Map<String, Object>> getSettingsSchema();
 
+    /** Current saved values for the fields described in {@link #getSettingsSchema()}. Keys
+     *  match the schema entries' {@code key}. Returned values match the schema {@code type}
+     *  (String / int / double / bool). The UI populates the form from this map. */
+    Map<String, Object> getSettingsValues();
+
+    /** Persist new values for the fields described in {@link #getSettingsSchema()}. The UI
+     *  posts a map of {schemaKey → submittedValue} (typically String); the strategy parses
+     *  each per its schema type and saves to wherever it reads from (legacy direct field or
+     *  the generic strategyConfigs map). */
+    void saveSettings(Map<String, Object> values);
+
     /** Tiny icon for the left sidebar nav. Default = first letter of id() uppercase.
      *  Concrete strategies may override to return an emoji or symbol character. */
     default String navIcon() {

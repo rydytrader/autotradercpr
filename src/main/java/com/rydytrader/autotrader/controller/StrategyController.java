@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
@@ -63,6 +64,25 @@ public class StrategyController {
         Strategy s = registry.get(id);
         if (s == null) return ResponseEntity.notFound().build();
         return ResponseEntity.ok(s.getSettingsSchema());
+    }
+
+    @GetMapping("/api/strategies/{id}/settings")
+    public ResponseEntity<Map<String, Object>> getSettings(@PathVariable String id) {
+        Strategy s = registry.get(id);
+        if (s == null) return ResponseEntity.notFound().build();
+        return ResponseEntity.ok(s.getSettingsValues());
+    }
+
+    @PostMapping("/api/strategies/{id}/settings")
+    public ResponseEntity<Map<String, Object>> saveSettings(@PathVariable String id,
+                                                            @RequestBody Map<String, Object> values) {
+        Strategy s = registry.get(id);
+        if (s == null) return ResponseEntity.notFound().build();
+        s.saveSettings(values);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("success", true);
+        out.put("message", "Settings saved for " + id);
+        return ResponseEntity.ok(out);
     }
 
     @PostMapping("/api/strategies/{id}/reset")

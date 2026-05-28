@@ -79,6 +79,47 @@ public class RollingStraddleService implements Strategy {
         return f;
     }
 
+    @Override
+    public java.util.Map<String, Object> getSettingsValues() {
+        java.util.Map<String, Object> v = new java.util.LinkedHashMap<>();
+        v.put("entryTime",           riskSettings.getStraddleEntryTime());
+        v.put("squareOffTime",       riskSettings.getStraddleSquareOffTime());
+        v.put("rollWaitMin",         riskSettings.getStraddleRollWaitMin());
+        v.put("rollCutoffTime",      riskSettings.getStraddleRollCutoffTime());
+        v.put("maxRolls",            riskSettings.getStraddleMaxRolls());
+        v.put("lotsPerLeg",          riskSettings.getStraddleLotsPerLeg());
+        v.put("combinedTargetPct",   riskSettings.getStraddleCombinedTargetPct());
+        v.put("combinedSlPct",       riskSettings.getStraddleCombinedSlPct());
+        v.put("maxDailyLoss",        riskSettings.getStraddleMaxDailyLoss());
+        return v;
+    }
+
+    @Override
+    public void saveSettings(java.util.Map<String, Object> values) {
+        if (values == null) return;
+        // Legacy field setters — these continue to drive the running strategy. The keys here
+        // match the schema entries' "key" field so the UI is symmetric for read/write.
+        if (values.containsKey("entryTime"))         riskSettings.setStraddleEntryTime(String.valueOf(values.get("entryTime")));
+        if (values.containsKey("squareOffTime"))     riskSettings.setStraddleSquareOffTime(String.valueOf(values.get("squareOffTime")));
+        if (values.containsKey("rollWaitMin"))       riskSettings.setStraddleRollWaitMin(asInt(values.get("rollWaitMin"), 15));
+        if (values.containsKey("rollCutoffTime"))    riskSettings.setStraddleRollCutoffTime(String.valueOf(values.get("rollCutoffTime")));
+        if (values.containsKey("maxRolls"))          riskSettings.setStraddleMaxRolls(asInt(values.get("maxRolls"), 3));
+        if (values.containsKey("lotsPerLeg"))        riskSettings.setStraddleLotsPerLeg(asInt(values.get("lotsPerLeg"), 1));
+        if (values.containsKey("combinedTargetPct")) riskSettings.setStraddleCombinedTargetPct(asDouble(values.get("combinedTargetPct"), 30));
+        if (values.containsKey("combinedSlPct"))     riskSettings.setStraddleCombinedSlPct(asDouble(values.get("combinedSlPct"), 30));
+        if (values.containsKey("maxDailyLoss"))      riskSettings.setStraddleMaxDailyLoss(asDouble(values.get("maxDailyLoss"), 10000));
+        riskSettings.saveFor("live");
+    }
+
+    private static int asInt(Object o, int def) {
+        if (o == null) return def;
+        try { return Integer.parseInt(String.valueOf(o).trim()); } catch (NumberFormatException e) { return def; }
+    }
+    private static double asDouble(Object o, double def) {
+        if (o == null) return def;
+        try { return Double.parseDouble(String.valueOf(o).trim()); } catch (NumberFormatException e) { return def; }
+    }
+
     private static final Logger log = LoggerFactory.getLogger(RollingStraddleService.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final int NIFTY_LOT_SIZE = 65; // bump if NSE changes the contract size
