@@ -422,6 +422,16 @@ public class RiskSettingsStore {
         if (pct <= 0) return 0;
         return cfg().startingCapital * pct / 100.0;
     }
+    /** Per-strategy slice of the portfolio risk. Reads {@code strategies.<id>.riskAllocationPct}
+     *  (default 50 — 50/50 across two strategies) and multiplies by {@link #getPortfolioMaxDailyLoss()}
+     *  to give each strategy's individual kill-switch threshold in rupees. Returns 0 when the
+     *  portfolio risk is disabled, which also disables every per-strategy kill switch. */
+    public double getStrategyMaxDailyLoss(String strategyId) {
+        double portfolio = getPortfolioMaxDailyLoss();
+        if (portfolio <= 0) return 0;
+        double pct = getStrategyDouble(strategyId, "riskAllocationPct", 50);
+        return portfolio * pct / 100.0;
+    }
     public double getSttRate()         { return cfg().sttRate; }
     public double getExchangeRate()    { return cfg().exchangeRate; }
     public double getGstRate()         { return cfg().gstRate; }

@@ -100,8 +100,6 @@ public class RollingStraddleService implements Strategy {
             "Book profit when (CE + PE LTP) falls below entry combined premium by this %. 0 disables."));
         s.add(field("combinedSlPct",        "percent", 30,      "Combined Premium SL (%)",
             "Roll when (CE + PE LTP) exceeds entry combined premium by this %."));
-        s.add(field("maxDailyLoss",         "rupees",  10000,   "Max Daily Loss (₹)",
-            "Hard kill-switch. When today's loss exceeds this, both legs are flattened and bot parks DONE_FOR_DAY. 0 disables."));
         return s;
     }
 
@@ -124,7 +122,6 @@ public class RollingStraddleService implements Strategy {
         v.put("lotsPerLeg",          riskSettings.getStraddleLotsPerLeg());
         v.put("combinedTargetPct",   riskSettings.getStraddleCombinedTargetPct());
         v.put("combinedSlPct",       riskSettings.getStraddleCombinedSlPct());
-        v.put("maxDailyLoss",        riskSettings.getStraddleMaxDailyLoss());
         return v;
     }
 
@@ -142,7 +139,6 @@ public class RollingStraddleService implements Strategy {
         if (values.containsKey("lotsPerLeg"))        riskSettings.setStraddleLotsPerLeg(asInt(values.get("lotsPerLeg"), 1));
         if (values.containsKey("combinedTargetPct")) riskSettings.setStraddleCombinedTargetPct(asDouble(values.get("combinedTargetPct"), 30));
         if (values.containsKey("combinedSlPct"))     riskSettings.setStraddleCombinedSlPct(asDouble(values.get("combinedSlPct"), 30));
-        if (values.containsKey("maxDailyLoss"))      riskSettings.setStraddleMaxDailyLoss(asDouble(values.get("maxDailyLoss"), 10000));
         riskSettings.saveFor("live");
     }
 
@@ -684,7 +680,9 @@ public class RollingStraddleService implements Strategy {
      *  daily max-loss, flatten both legs and park DONE_FOR_DAY. Returns true when triggered.
      *  Same Net definition the Hero shows, so the kill point matches what the operator sees. */
     private boolean checkMaxLossKillSwitch() {
-        double maxLoss = riskSettings.getStraddleMaxDailyLoss();
+        // Derived from portfolioMaxDailyLoss × this strategy's allocation %.
+        // Disabled when Portfolio Max Daily Risk is 0.
+        double maxLoss = riskSettings.getStrategyMaxDailyLoss(STRATEGY_ID);
         if (maxLoss <= 0) return false; // disabled
         double ceLtp = ceSymbol != null && !ceSymbol.isEmpty() ? marketDataService.getLtp(ceSymbol) : 0;
         double peLtp = peSymbol != null && !peSymbol.isEmpty() ? marketDataService.getLtp(peSymbol) : 0;
@@ -1293,7 +1291,7 @@ public class RollingStraddleService implements Strategy {
         m.put("peQty",           peQty);
         m.put("rollCount",       rollCount);
         m.put("maxRolls",        riskSettings.getStraddleMaxRolls());
-        m.put("maxDailyLoss",    riskSettings.getStraddleMaxDailyLoss());
+        m.put("maxDailyLoss",    riskSettings.getStrategyMaxDailyLoss(STRATEGY_ID));
         m.put("ceOrderId",       ceOrderId);
         m.put("peOrderId",       peOrderId);
         m.put("entryTime",       riskSettings.getStraddleEntryTime());

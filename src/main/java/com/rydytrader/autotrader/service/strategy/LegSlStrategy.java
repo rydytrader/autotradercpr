@@ -149,8 +149,6 @@ public class LegSlStrategy implements Strategy {
             "Qty = lots × NIFTY lot size (65). Independent from the combined-roll strategy."));
         s.add(field("legSlPct",      "percent",  50,     "Per-leg SL (%)",
             "Close that leg when its LTP rises by this % from entry. Other leg keeps running."));
-        s.add(field("maxDailyLoss",  "rupees",   10000,  "Max Daily Loss (₹)",
-            "Hard kill-switch. Flattens any remaining leg when net day P&L drops below -this. 0 disables."));
         return s;
     }
 
@@ -169,7 +167,6 @@ public class LegSlStrategy implements Strategy {
         v.put("squareOffTime", riskSettings.getStrategyString(STRATEGY_ID, "squareOffTime", "15:15"));
         v.put("lotsPerLeg",    riskSettings.getStrategyInt(STRATEGY_ID,    "lotsPerLeg",    1));
         v.put("legSlPct",      riskSettings.getStrategyDouble(STRATEGY_ID, "legSlPct",      50));
-        v.put("maxDailyLoss",  riskSettings.getStrategyDouble(STRATEGY_ID, "maxDailyLoss",  10000));
         return v;
     }
 
@@ -181,7 +178,6 @@ public class LegSlStrategy implements Strategy {
         if (values.containsKey("squareOffTime")) riskSettings.setStrategySetting(STRATEGY_ID, "squareOffTime", String.valueOf(values.get("squareOffTime")));
         if (values.containsKey("lotsPerLeg"))    riskSettings.setStrategySetting(STRATEGY_ID, "lotsPerLeg",    asInt(values.get("lotsPerLeg"), 1));
         if (values.containsKey("legSlPct"))      riskSettings.setStrategySetting(STRATEGY_ID, "legSlPct",      asDouble(values.get("legSlPct"), 50));
-        if (values.containsKey("maxDailyLoss"))  riskSettings.setStrategySetting(STRATEGY_ID, "maxDailyLoss",  asDouble(values.get("maxDailyLoss"), 10000));
         riskSettings.saveFor("live");
     }
 
@@ -521,7 +517,8 @@ public class LegSlStrategy implements Strategy {
 
     // ── Max loss kill switch ──────────────────────────────────────────────────
     private boolean checkMaxLossKillSwitch() {
-        double maxLoss = riskSettings.getStrategyDouble(STRATEGY_ID, "maxDailyLoss", 10000);
+        // Derived from portfolioMaxDailyLoss × this strategy's allocation %.
+        double maxLoss = riskSettings.getStrategyMaxDailyLoss(STRATEGY_ID);
         if (maxLoss <= 0) return false;
         double ceLtp = isCeOpen() && !ceSymbol.isEmpty() ? marketDataService.getLtp(ceSymbol) : 0;
         double peLtp = isPeOpen() && !peSymbol.isEmpty() ? marketDataService.getLtp(peSymbol) : 0;
@@ -692,7 +689,7 @@ public class LegSlStrategy implements Strategy {
         m.put("squareOffTime", getSquareOffTime());
         m.put("legSlPct",      riskSettings.getStrategyDouble(STRATEGY_ID, "legSlPct", 50));
         m.put("lotsPerLeg",    riskSettings.getStrategyInt(STRATEGY_ID, "lotsPerLeg", 1));
-        m.put("maxDailyLoss",  riskSettings.getStrategyDouble(STRATEGY_ID, "maxDailyLoss", 10000));
+        m.put("maxDailyLoss",  riskSettings.getStrategyMaxDailyLoss(STRATEGY_ID));
         m.put("lotSize",       NIFTY_LOT_SIZE);
         m.put("enabled",       riskSettings.getStrategyBool(STRATEGY_ID, "enabled", false));
         return m;
