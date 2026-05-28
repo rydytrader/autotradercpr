@@ -183,12 +183,12 @@
                     <div class="stat-label">State</div>
                     <div class="stat-value" id="heroStatePill" style="font-size:0.95rem; margin-top:4px;">—</div>
                 </div>
-                <div style="text-align:center;">
-                    <div class="stat-label">Rolls</div>
+                <div id="heroRollsCell" style="text-align:center;">
+                    <div class="stat-label" id="heroRollsLabel">Rolls</div>
                     <div class="stat-value" id="heroRolls" style="font-size:1.1rem; margin-top:4px;">0 / 3</div>
                 </div>
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
-                    <div class="stat-label">Last Entry</div>
+                    <div class="stat-label" id="heroLastEntryLabel">Last Entry</div>
                     <div class="stat-value" id="heroLastEntry" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
             </div>
@@ -354,12 +354,12 @@
         </div>
     </div>
 
-    <!-- Recent rolls -->
+    <!-- Recent rolls / cycle events -->
     <div class="section-card fade-in" style="margin-bottom:20px;">
         <div class="section-header">
             <div class="section-title">
                 <div class="section-title-dot" style="background: var(--accent-cyan);"></div>
-                Today's Roll Events
+                <span id="eventsTableTitle">Today's Roll Events</span>
                 <span class="section-badge" style="font-size:0.6rem;">most recent first</span>
             </div>
         </div>
@@ -520,12 +520,54 @@
     // Falls back to "combined-sl-roll" if the data attribute is somehow missing.
     var STRATEGY_ID = document.documentElement.getAttribute('data-strategy-id') || 'combined-sl-roll';
 
+    // ── Strategy-shape chrome ────────────────────────────────────────────────
+    // Adjusts a few labels and shows/hides bits that differ between strategies. Both shapes
+    // share the same template; this function flips the parts that don't apply.
+    function applyShapeChrome(shape, d) {
+        var isLegSl = (shape === 'leg-sl');
+        // Hero "Rolls" cell — combined-sl-roll shows roll count; leg-sl shows "Legs Open".
+        var rollsLabel = document.getElementById('heroRollsLabel');
+        var rollsCell  = document.getElementById('heroRolls');
+        if (rollsLabel && rollsCell) {
+            if (isLegSl) {
+                rollsLabel.textContent = 'Legs Open';
+                var ce = !d.ceClosed, pe = !d.peClosed;
+                rollsCell.textContent = ce && pe ? 'CE + PE' : ce ? 'CE only' : pe ? 'PE only' : '—';
+            } else {
+                rollsLabel.textContent = 'Rolls';
+                // populated below in the main render path
+            }
+        }
+        // Roll Events table title.
+        var evTitle = document.getElementById('eventsTableTitle');
+        if (evTitle) evTitle.textContent = isLegSl ? "Today's Cycle Events" : "Today's Roll Events";
+        // SL pill label in the Risk Band card.
+        var slBadge = document.getElementById('paneSlPctBadge');
+        if (slBadge && isLegSl) {
+            var pct = Number(d.legSlPct || 0);
+            slBadge.textContent = 'LEG SL · ' + pct.toFixed(0) + '%';
+        }
+        // Target + Re-entry pills + Target row are combined-sl-roll-only; hide for leg-sl.
+        if (isLegSl) {
+            var tBadge = document.getElementById('paneTargetPctBadge');
+            var tRow   = document.getElementById('paneTargetTriggerRow');
+            var wBadge = document.getElementById('paneRollWaitBadge');
+            if (tBadge) tBadge.style.display = 'none';
+            if (tRow)   tRow.style.display   = 'none';
+            if (wBadge) wBadge.style.display = 'none';
+        }
+    }
+
     // ── Dashboard polling (hero + 4 sub-panes + recent rolls) ────────────────
     function loadDashboard() {
         if (!fyersConnected) return;
         fetch('/api/strategies/' + STRATEGY_ID + '/dashboard').then(r => r.json()).then(d => {
             if (!d) return;
             lastDashboardData = d;
+            // Strategy "shape" — drives the conditionals below. combined-sl-roll keeps the
+            // legacy layout; leg-sl swaps the Risk Band card and Hero Rolls cell.
+            var SHAPE = d.dashboardShape || 'combined-sl-roll';
+            applyShapeChrome(SHAPE, d);
             // Hero — true net = realised + open MTM − charges
             var ch = d.charges || {};
             var chTotal = Number(ch.total || 0);
@@ -561,36 +603,59 @@
             if ((d.combinedMtm || 0) > 0.5) openMtm.classList.add('pnl-positive');
             else if ((d.combinedMtm || 0) < -0.5) openMtm.classList.add('pnl-negative');
 
-            // Risk consumed vs combined-premium SL (Hero card after Open MTM, separator on the cell)
+            // Risk consumed — combined-premium SL (combined-sl-roll) vs worst leg consumed (leg-sl)
             var riskCell = document.getElementById('heroRiskCell');
             var riskEl   = document.getElementById('heroRisk');
-            var slConsumed = Number(d.slConsumedPct || 0);
-            var slPctCfg   = Number(d.combinedSlPct  || 0);
             if (riskCell && riskEl) {
-                if (d.entryCombined && d.entryCombined > 0 && slPctCfg > 0) {
-                    var pct = Math.max(0, slConsumed); // can go below 0 when straddle is profitable; clamp for display
-                    riskEl.textContent = pct.toFixed(1) + '% / 100%';
+                var pct = 0, has = false, title = '', label = '';
+                if (SHAPE === 'leg-sl') {
+                    var slP = Number(d.legSlPct || 0);
+                    var ceC = Number(d.ceSlConsumedPct || 0);
+                    var peC = Number(d.peSlConsumedPct || 0);
+                    if (slP > 0 && (d.ceEntryPremium > 0 || d.peEntryPremium > 0)) {
+                        pct = Math.max(ceC, peC);
+                        has = true;
+                        title = 'Worst-leg SL budget used: CE ' + ceC.toFixed(1) + '%, PE ' + peC.toFixed(1)
+                            + '% of the ' + slP.toFixed(0) + '% per-leg threshold. SL fires at 100%.';
+                        label = 'CE ' + Math.max(0, ceC).toFixed(0) + '% · PE ' + Math.max(0, peC).toFixed(0) + '%';
+                    }
+                } else {
+                    var slPctCfg = Number(d.combinedSlPct || 0);
+                    if (d.entryCombined && d.entryCombined > 0 && slPctCfg > 0) {
+                        pct = Math.max(0, Number(d.slConsumedPct || 0));
+                        has = true;
+                        title = 'Combined premium SL budget used: ' + pct.toFixed(1) + '% of the '
+                            + slPctCfg.toFixed(0) + '% loss threshold. Roll fires at 100%.';
+                        label = pct.toFixed(1) + '% / 100%';
+                    }
+                }
+                if (has) {
+                    riskEl.textContent = label;
                     riskEl.className = 'stat-value';
                     if      (pct >= 90) riskEl.style.color = 'var(--accent-red)';
                     else if (pct >= 60) riskEl.style.color = 'var(--accent-amber, #fbbf24)';
                     else                riskEl.style.color = 'var(--text-primary)';
-                    riskEl.title = 'Combined premium SL budget used: ' + pct.toFixed(1) + '% of the ' + slPctCfg.toFixed(0) + '% loss threshold. Roll fires at 100%.';
+                    riskEl.title = title;
                 } else {
                     riskEl.textContent = '—';
                     riskEl.className = 'stat-value';
                     riskEl.style.color = 'var(--text-muted)';
-                    riskEl.title = 'No active straddle — SL budget tracking starts on entry.';
+                    riskEl.title = 'No active position — SL budget tracking starts on entry.';
                 }
             }
 
             var statePill = document.getElementById('heroStatePill');
             statePill.textContent = d.state || '—';
-            statePill.style.color = (d.state === 'OPEN') ? 'var(--accent-green)'
+            statePill.style.color = (d.state === 'OPEN' || d.state === 'OPEN_BOTH') ? 'var(--accent-green)'
+                : (d.state === 'OPEN_CE_ONLY' || d.state === 'OPEN_PE_ONLY') ? 'var(--accent-green)'
                 : (d.state === 'WAITING_TO_ROLL') ? 'var(--accent-amber, #fbbf24)'
                 : (d.state === 'MAX_ROLLS_HOLD') ? 'var(--accent-amber, #fbbf24)'
                 : (d.state === 'DONE_FOR_DAY') ? 'var(--accent-cyan)' : 'var(--text-muted)';
 
-            document.getElementById('heroRolls').textContent = (d.rollCount != null ? d.rollCount : '0') + ' / ' + (d.maxRolls != null ? d.maxRolls : '3');
+            // Rolls / Legs Open — already labelled by applyShapeChrome; populate value for combined-sl-roll.
+            if (SHAPE !== 'leg-sl') {
+                document.getElementById('heroRolls').textContent = (d.rollCount != null ? d.rollCount : '0') + ' / ' + (d.maxRolls != null ? d.maxRolls : '3');
+            }
             // Display LTP — uses the unguarded value so pre-market shows yesterday's close
             // (same behaviour as the ticker bar). The strict niftyLtp is still used elsewhere
             // for trigger calculations.
@@ -631,38 +696,53 @@
                 }
             }
 
-            // Pane 1: Risk Band — combined-premium SL view
-            var entryCombined = Number(d.entryCombined || 0);
-            var liveCombined  = Number(d.liveCombined  || 0);
-            var slTrigger     = Number(d.slTrigger     || 0);
-            var slPct         = Number(d.combinedSlPct || 0);
-            var targetTrigger = Number(d.targetTrigger || 0);
-            var targetPct     = Number(d.combinedTargetPct || 0);
-            // Target row + badge — hidden when target is disabled (0)
-            var targetRow      = document.getElementById('paneTargetTriggerRow');
-            var targetBadge    = document.getElementById('paneTargetPctBadge');
-            if (targetPct > 0) {
-                if (targetRow)   targetRow.style.display = 'flex';
-                if (targetBadge) { targetBadge.style.display = ''; targetBadge.textContent = 'TGT · ' + targetPct.toFixed(0) + '%'; }
-                document.getElementById('paneTargetTrigger').textContent = targetTrigger > 0 ? Number(targetTrigger).toFixed(2) : '—';
+            // Pane 1: Risk Band — view depends on dashboardShape
+            if (SHAPE === 'leg-sl') {
+                // Show per-leg entry/LTP + per-leg SL trigger. The row labels are repurposed:
+                //   "Entry / Live" → CE entry / CE LTP
+                //   "Target Trigger" (hidden by applyShapeChrome) — unused
+                //   "SL Trigger" → highest per-leg trigger between CE/PE for at-a-glance
+                var ceE = Number(d.ceEntryPremium || 0), ceL = Number(d.ceLtp || 0);
+                var peE = Number(d.peEntryPremium || 0), peL = Number(d.peLtp || 0);
+                var ceTrig = Number(d.ceSlTrigger || 0), peTrig = Number(d.peSlTrigger || 0);
+                document.getElementById('paneEntryLiveCombined').textContent =
+                    'CE ' + (ceE > 0 ? ceE.toFixed(2) : '—') + ' → ' + (ceL > 0 ? ceL.toFixed(2) : '—')
+                    + ' · PE ' + (peE > 0 ? peE.toFixed(2) : '—') + ' → ' + (peL > 0 ? peL.toFixed(2) : '—');
+                document.getElementById('paneSlTrigger').textContent =
+                    'CE ' + (ceTrig > 0 ? ceTrig.toFixed(2) : '—') + ' · PE ' + (peTrig > 0 ? peTrig.toFixed(2) : '—');
+                // Worst leg drives the inverse-change badge — relative to the highest leg consumed %.
+                var worst = Math.max(Number(d.ceSlConsumedPct || 0), Number(d.peSlConsumedPct || 0));
+                renderInverseChangeBadge('paneLiveCombinedChange', worst, worst);
             } else {
-                if (targetRow)   targetRow.style.display = 'none';
-                if (targetBadge) targetBadge.style.display = 'none';
+                // combined-sl-roll — combined-premium SL view (original layout).
+                var entryCombined = Number(d.entryCombined || 0);
+                var liveCombined  = Number(d.liveCombined  || 0);
+                var slTrigger     = Number(d.slTrigger     || 0);
+                var slPct         = Number(d.combinedSlPct || 0);
+                var targetTrigger = Number(d.targetTrigger || 0);
+                var targetPct     = Number(d.combinedTargetPct || 0);
+                var targetRow      = document.getElementById('paneTargetTriggerRow');
+                var targetBadge    = document.getElementById('paneTargetPctBadge');
+                if (targetPct > 0) {
+                    if (targetRow)   targetRow.style.display = 'flex';
+                    if (targetBadge) { targetBadge.style.display = ''; targetBadge.textContent = 'TGT · ' + targetPct.toFixed(0) + '%'; }
+                    document.getElementById('paneTargetTrigger').textContent = targetTrigger > 0 ? Number(targetTrigger).toFixed(2) : '—';
+                } else {
+                    if (targetRow)   targetRow.style.display = 'none';
+                    if (targetBadge) targetBadge.style.display = 'none';
+                }
+                document.getElementById('paneEntryLiveCombined').textContent =
+                    (entryCombined > 0 ? Number(entryCombined).toFixed(2) : '—')
+                    + ' / ' + (liveCombined > 0 ? Number(liveCombined).toFixed(2) : '—');
+                document.getElementById('paneSlTrigger').textContent     = slTrigger     > 0 ? Number(slTrigger).toFixed(2)     : '—';
+                if (entryCombined > 0 && liveCombined > 0) {
+                    var combDiff = liveCombined - entryCombined;
+                    var combPct  = (combDiff / entryCombined) * 100;
+                    renderInverseChangeBadge('paneLiveCombinedChange', combDiff, combPct);
+                }
+                var slBadge = document.getElementById('paneSlPctBadge');
+                if (slBadge) slBadge.textContent = 'SL · ' + slPct.toFixed(0) + '%';
             }
-            document.getElementById('paneEntryLiveCombined').textContent =
-                (entryCombined > 0 ? Number(entryCombined).toFixed(2) : '—')
-                + ' / ' + (liveCombined > 0 ? Number(liveCombined).toFixed(2) : '—');
-            document.getElementById('paneSlTrigger').textContent     = slTrigger     > 0 ? Number(slTrigger).toFixed(2)     : '—';
-            // Change badge for Live Combined — relative to Entry Premium. For SHORT straddle,
-            // combined UP from entry = bad (loss), DOWN = good (profit). Color inverted from
-            // the standard ticker convention so the operator reads green=good, red=bad.
-            if (entryCombined > 0 && liveCombined > 0) {
-                var combDiff = liveCombined - entryCombined;
-                var combPct  = (combDiff / entryCombined) * 100;
-                renderInverseChangeBadge('paneLiveCombinedChange', combDiff, combPct);
-            }
-            var slBadge = document.getElementById('paneSlPctBadge');
-            if (slBadge) slBadge.textContent = 'SL · ' + slPct.toFixed(0) + '%';
             // Roll-wait countdown — header pill, only shown when WAITING_TO_ROLL
             var waitBadge = document.getElementById('paneRollWaitBadge');
             if (waitBadge) {

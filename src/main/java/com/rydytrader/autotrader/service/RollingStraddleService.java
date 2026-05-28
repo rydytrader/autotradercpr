@@ -509,7 +509,9 @@ public class RollingStraddleService implements Strategy {
         double grossPnl = realisedPnlToday;
         double netPnl = grossPnl - charges;
         com.rydytrader.autotrader.entity.StraddleSessionEntity row =
-            sessionRepo.findBySessionDate(date).orElseGet(com.rydytrader.autotrader.entity.StraddleSessionEntity::new);
+            sessionRepo.findByStrategyIdAndSessionDate(STRATEGY_ID, date)
+                       .orElseGet(com.rydytrader.autotrader.entity.StraddleSessionEntity::new);
+        row.setStrategyId(STRATEGY_ID);
         row.setSessionDate(date);
         row.setEntries(rollCount > 0 || ceSymbol != null && !ceSymbol.isEmpty() ? 1 : 0);
         row.setRolls(rollCount);
@@ -1096,6 +1098,7 @@ public class RollingStraddleService implements Strategy {
             tryResolveWeeklyExpiry();
         }
         java.util.Map<String, Object> m = getStatus();
+        m.put("dashboardShape", "combined-sl-roll");
         m.put("weeklyExpiry", currentWeeklyExpiry);
         m.put("daysToExpiry", tradingDaysToExpiry(currentWeeklyExpiry));
         synchronized (combinedPremiumSamples) {

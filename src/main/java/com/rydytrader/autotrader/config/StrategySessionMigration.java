@@ -13,9 +13,15 @@ import jakarta.persistence.PersistenceContext;
 /**
  * One-time database migrations for the multi-strategy refactor.
  *
- * <p>Currently handles: backfilling the {@code strategy_id} column on the existing
- * {@code straddle_sessions} table with the literal {@code combined-sl-roll} for rows that
- * were written before the column existed. Idempotent — running multiple times is safe.
+ * <p>Currently handles:
+ * <ul>
+ *   <li>Backfilling the {@code strategy_id} column on the existing {@code straddle_sessions}
+ *       table with {@code combined-sl-roll} for rows written before the column existed.</li>
+ *   <li>Dropping the obsolete unique constraint on {@code session_date} (replaced by the
+ *       composite unique on {@code (strategy_id, session_date)} declared in the entity).
+ *       Without this, leg-sl can't persist a session on a day combined-sl-roll already wrote.</li>
+ * </ul>
+ * Idempotent — running multiple times is safe.
  */
 @Component
 public class StrategySessionMigration {
@@ -28,7 +34,12 @@ public class StrategySessionMigration {
     /** Runs after the application context is fully refreshed (JPA + Hibernate schema update done). */
     @EventListener(ContextRefreshedEvent.class)
     @Transactional
-    public void backfillStrategyId() {
+    public void runMigrations() {
+        backfillStrategyId();
+        dropOldSessionDateUniqueConstraint();
+    }
+
+    private void backfillStrategyId() {
         try {
             int rows = em.createNativeQuery(
                 "UPDATE straddle_sessions SET strategy_id = 'combined-sl-roll' " +
@@ -40,9 +51,40 @@ public class StrategySessionMigration {
                 log.info("[StrategyMigration] strategy_id backfill check ran — 0 rows needed updating (H2 column DEFAULT already populated)");
             }
         } catch (Exception e) {
-            // Could fail if column doesn't exist yet (Hibernate ddl-auto=update should have added it).
-            // Log and move on — next boot will retry.
             log.warn("[StrategyMigration] Backfill skipped: {}", e.getMessage());
+        }
+    }
+
+    /** Find and drop any UNIQUE constraint on {@code straddle_sessions(session_date)} that covers
+     *  ONLY that column. The composite constraint added by the entity ({@code strategy_id +
+     *  session_date}) is left alone since it spans 2 columns and won't match this query. */
+    @SuppressWarnings("unchecked")
+    private void dropOldSessionDateUniqueConstraint() {
+        try {
+            // H2 v2 INFORMATION_SCHEMA: find UNIQUE constraints on the table whose only column is SESSION_DATE.
+            java.util.List<Object[]> rows = em.createNativeQuery(
+                "SELECT tc.CONSTRAINT_NAME, COUNT(kcu.COLUMN_NAME) AS col_count " +
+                "FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc " +
+                "JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu " +
+                "  ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME " +
+                " AND tc.TABLE_NAME = kcu.TABLE_NAME " +
+                "WHERE UPPER(tc.TABLE_NAME) = 'STRADDLE_SESSIONS' " +
+                "  AND tc.CONSTRAINT_TYPE = 'UNIQUE' " +
+                "  AND UPPER(kcu.COLUMN_NAME) = 'SESSION_DATE' " +
+                "GROUP BY tc.CONSTRAINT_NAME"
+            ).getResultList();
+            for (Object[] row : rows) {
+                String name = String.valueOf(row[0]);
+                long colCount = ((Number) row[1]).longValue();
+                // Only drop SINGLE-COLUMN unique constraints (the legacy one). The composite
+                // (strategy_id + session_date) constraint will have 2 columns — leave it alone.
+                if (colCount == 1) {
+                    em.createNativeQuery("ALTER TABLE straddle_sessions DROP CONSTRAINT IF EXISTS " + name).executeUpdate();
+                    log.info("[StrategyMigration] Dropped obsolete single-column UNIQUE constraint {} on straddle_sessions(session_date)", name);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[StrategyMigration] Could not enumerate/drop old session_date unique constraint: {}", e.getMessage());
         }
     }
 }

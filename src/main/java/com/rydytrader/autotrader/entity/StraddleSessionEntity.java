@@ -13,7 +13,9 @@ import jakarta.persistence.*;
  * (Phase 5 of the multi-strategy plan).
  */
 @Entity
-@Table(name = "straddle_sessions")
+@Table(name = "straddle_sessions",
+       uniqueConstraints = @UniqueConstraint(name = "uk_strategy_session_date",
+                                              columnNames = {"strategy_id", "session_date"}))
 public class StraddleSessionEntity {
 
     @Id
@@ -24,11 +26,14 @@ public class StraddleSessionEntity {
      *  populated table without violating NOT NULL — existing rows inherit the default value
      *  immediately. New rows get the Java field initializer ("combined-sl-roll") which the
      *  concrete strategy overrides with its own id() when writing a row. */
-    @Column(nullable = false, length = 40, columnDefinition = "VARCHAR(40) DEFAULT 'combined-sl-roll' NOT NULL")
+    @Column(name = "strategy_id", nullable = false, length = 40,
+            columnDefinition = "VARCHAR(40) DEFAULT 'combined-sl-roll' NOT NULL")
     private String strategyId = "combined-sl-roll";
 
-    @Column(nullable = false, unique = true, length = 10)
-    private String sessionDate; // ISO yyyy-MM-dd
+    /** ISO yyyy-MM-dd. No longer unique on its own — multiple strategies can write a row for
+     *  the same date. Composite uniqueness with strategyId enforced via {@link Table}. */
+    @Column(name = "session_date", nullable = false, length = 10)
+    private String sessionDate;
 
     @Column(nullable = false)
     private int entries;        // number of initial entries (almost always 1)
