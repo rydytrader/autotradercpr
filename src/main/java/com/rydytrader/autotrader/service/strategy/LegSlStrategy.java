@@ -365,10 +365,21 @@ public class LegSlStrategy implements Strategy {
             return;
         }
         if (checkMaxLossKillSwitch()) return;
+        // SL triggers are also evaluated by the 500ms fast scheduler — calling here covers
+        // the case where fastSlCheck is disabled / paused and ensures the 5s path is still
+        // protective. Both paths funnel through the synchronized closeLeg/transition so a
+        // race is fine.
+        checkLegSlTriggers();
+    }
 
+    /** Pure SL-trigger check — fast path, run by both the 5s scheduler and the 500ms scheduler.
+     *  No squareoff time check, no max-loss check (those stay on the 5s path). Just LTP vs
+     *  per-leg trigger; fires close on breach. */
+    private synchronized void checkLegSlTriggers() {
+        if (state != LifecycleState.OPEN_BOTH
+                && state != LifecycleState.OPEN_CE_ONLY
+                && state != LifecycleState.OPEN_PE_ONLY) return;
         double legSlPct = riskSettings.getStrategyDouble(STRATEGY_ID, "legSlPct", 50);
-
-        // CE leg SL — only check if CE is still open.
         if (isCeOpen() && ceEntryPremium > 0 && !ceSymbol.isEmpty()) {
             double ceLtp = marketDataService.getLtp(ceSymbol);
             if (ceLtp > 0) {
@@ -385,7 +396,6 @@ public class LegSlStrategy implements Strategy {
                 }
             }
         }
-        // PE leg SL — only check if PE is still open.
         if (isPeOpen() && peEntryPremium > 0 && !peSymbol.isEmpty()) {
             double peLtp = marketDataService.getLtp(peSymbol);
             if (peLtp > 0) {
@@ -402,10 +412,19 @@ public class LegSlStrategy implements Strategy {
                 }
             }
         }
-        // If both legs are closed (defensive — should already be DONE_FOR_DAY), park.
         if (!isCeOpen() && !isPeOpen()) {
             transitionTo(LifecycleState.DONE_FOR_DAY);
         }
+    }
+
+    /** Fast tick — runs every 500ms during market hours, only does the per-leg SL trigger
+     *  check. Detection latency drops from ~5s (slow tick) to ~500ms. Cheap: just reads
+     *  LTPs from the in-memory tick cache and compares to per-leg thresholds. */
+    @Scheduled(fixedDelay = 500)
+    public void fastSlCheck() {
+        if (marketHolidayService != null && !marketHolidayService.isMarketOpen()) return;
+        if (!riskSettings.getStrategyBool(STRATEGY_ID, "enabled", false)) return;
+        checkLegSlTriggers();
     }
 
     /** Close just the named leg ("CE" or "PE"), update state to the surviving-leg state, persist. */

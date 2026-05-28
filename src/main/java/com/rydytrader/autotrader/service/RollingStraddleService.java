@@ -390,6 +390,15 @@ public class RollingStraddleService implements Strategy {
         persist();
     }
 
+    /** Fast tick — runs every 500ms during market hours, only does the combined-premium
+     *  SL + Target trigger check. Detection latency drops from ~5s (slow tick) to ~500ms. */
+    @Scheduled(fixedDelay = 500)
+    public void fastSlCheck() {
+        if (marketHolidayService != null && !marketHolidayService.isMarketOpen()) return;
+        if (!riskSettings.isEnableRollingStraddle()) return;
+        checkCombinedSlAndTarget();
+    }
+
     @Scheduled(fixedDelay = 5000)
     public void tick() {
         // Day rollover runs BEFORE the enable + market-open guards so weekend/holiday/pre-market
@@ -716,10 +725,18 @@ public class RollingStraddleService implements Strategy {
             transitionTo(LifecycleState.DONE_FOR_DAY);
             return;
         }
-        // Daily max-loss kill switch — checked before SL trigger so a runaway loss never gets
-        // a chance to roll into a fresh straddle.
         if (checkMaxLossKillSwitch()) return;
+        // SL + target are also evaluated by the 500ms fast scheduler — calling here ensures
+        // the 5s path remains protective. Both paths funnel through the synchronized close
+        // path so duplicate triggers are harmless.
+        checkCombinedSlAndTarget();
+    }
 
+    /** Pure SL + Target check — fast path, run by the 5s scheduler AND a separate 500ms scheduler.
+     *  No squareoff time check, no max-loss (those stay on the 5s path). Just reads the two leg
+     *  LTPs, sums to combined premium, and compares against target + SL thresholds. */
+    private synchronized void checkCombinedSlAndTarget() {
+        if (state != LifecycleState.OPEN) return;
         if (ceEntryPremium <= 0 || peEntryPremium <= 0
             || ceSymbol == null || ceSymbol.isEmpty()
             || peSymbol == null || peSymbol.isEmpty()) return;
@@ -731,9 +748,7 @@ public class RollingStraddleService implements Strategy {
         double entryCombined = ceEntryPremium + peEntryPremium;
         double liveCombined  = ceLtp + peLtp;
 
-        // Combined-premium TARGET check (profit booking). Triggered when live combined has
-        // fallen below entry by the configured target %. On hit: close legs, park
-        // DONE_FOR_DAY (no new straddles same day).
+        // Combined-premium TARGET check (profit booking).
         double targetPct = riskSettings.getStraddleCombinedTargetPct();
         if (targetPct > 0) {
             double targetTrigger = entryCombined * (1.0 - targetPct / 100.0);
@@ -756,6 +771,7 @@ public class RollingStraddleService implements Strategy {
 
         double consumedPct = ((liveCombined - entryCombined) / entryCombined) * 100.0;
         int maxRolls = riskSettings.getStraddleMaxRolls();
+        LocalTime now = LocalTime.now(IST);
         if (rollCount + 1 > maxRolls) {
             transitionTo(LifecycleState.MAX_ROLLS_HOLD);
             String msg = "Straddle max rolls reached (" + maxRolls + ") — holding open legs to timed squareoff";
