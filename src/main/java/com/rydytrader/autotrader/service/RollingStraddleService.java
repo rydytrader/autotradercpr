@@ -98,10 +98,10 @@ public class RollingStraddleService {
      *  until now - slHitTimeMillis >= straddleRollWaitMin minutes, then attempts re-entry
      *  (unless we're past the roll cutoff time, in which case it parks DONE_FOR_DAY). */
     private volatile long    slHitTimeMillis     = 0;
-    /** Intraday Net P&L samples for the dashboard's equity curve. List of {t: "HH:mm", v: net}.
-     *  Captured every 5 minutes between entryTime and squareOffTime. Cleared on day rollover,
-     *  persisted to disk so the chart survives restart. */
-    private final java.util.List<java.util.Map<String, Object>> intradaySamples =
+    /** 1-minute combined-premium samples for the dashboard's straddle chart. List of
+     *  {t: "HH:mm", v: ceLtp + peLtp}. Sloping DOWN = good for short straddle (premiums
+     *  decaying). Cleared on day rollover, persisted to disk. */
+    private final java.util.List<java.util.Map<String, Object>> combinedPremiumSamples =
         java.util.Collections.synchronizedList(new java.util.ArrayList<>());
 
     public static record RollEvent(String time, String event, double nifty,
@@ -148,9 +148,9 @@ public class RollingStraddleService {
             this.orderCountToday = persisted.orderCountToday;
             this.currentWeeklyExpiry = persisted.currentWeeklyExpiry != null ? persisted.currentWeeklyExpiry : "";
             this.slHitTimeMillis = persisted.slHitTimeMillis;
-            if (persisted.intradaySamples != null) {
-                this.intradaySamples.clear();
-                this.intradaySamples.addAll(persisted.intradaySamples);
+            if (persisted.combinedPremiumSamples != null) {
+                this.combinedPremiumSamples.clear();
+                this.combinedPremiumSamples.addAll(persisted.combinedPremiumSamples);
             }
             if (persisted.recentRolls != null) {
                 this.recentRolls.clear();
@@ -249,28 +249,26 @@ public class RollingStraddleService {
         }
     }
 
-    /** Captures one Net P&L sample for today's equity curve every 5 minutes between
-     *  straddleEntryTime and straddleSquareOffTime. Persists each sample so the chart
-     *  survives restart. */
-    @Scheduled(cron = "0 */5 * * * MON-FRI", zone = "Asia/Kolkata")
-    public void sampleIntradayNetPnl() {
+    /** Captures one combined-premium sample (ceLtp + peLtp) every minute during trading hours
+     *  for the dashboard's straddle chart. Only samples when both legs are alive (OPEN or
+     *  MAX_ROLLS_HOLD) — between SL hit and re-entry, or post-squareoff, we don't have
+     *  meaningful CE/PE LTPs to chart. */
+    @Scheduled(cron = "0 * * * * MON-FRI", zone = "Asia/Kolkata")
+    public void sampleCombinedPremium() {
         if (marketHolidayService != null && !marketHolidayService.isTradingDay()) return;
+        if (state != LifecycleState.OPEN && state != LifecycleState.MAX_ROLLS_HOLD) return;
         LocalTime now = LocalTime.now(IST);
         LocalTime entryTime     = parseTime(riskSettings.getStraddleEntryTime(),     "09:20");
         LocalTime squareOffTime = parseTime(riskSettings.getStraddleSquareOffTime(), "15:15");
-        // Sample window: from entryTime until 5 minutes after squareOffTime so we capture the
-        // final close P&L too.
         if (now.isBefore(entryTime) || now.isAfter(squareOffTime.plusMinutes(5))) return;
-        double ceLtp = ceSymbol != null && !ceSymbol.isEmpty() ? marketDataService.getLtp(ceSymbol) : 0;
-        double peLtp = peSymbol != null && !peSymbol.isEmpty() ? marketDataService.getLtp(peSymbol) : 0;
-        double ceMtm = (ceEntryPremium > 0 && ceLtp > 0 && ceQty > 0) ? (ceEntryPremium - ceLtp) * ceQty : 0;
-        double peMtm = (peEntryPremium > 0 && peLtp > 0 && peQty > 0) ? (peEntryPremium - peLtp) * peQty : 0;
-        double charges = computeChargesBreakdown().get("total");
-        double netPnl = realisedPnlToday + ceMtm + peMtm - charges;
+        if (ceSymbol == null || ceSymbol.isEmpty() || peSymbol == null || peSymbol.isEmpty()) return;
+        double ceLtp = marketDataService.getLtp(ceSymbol);
+        double peLtp = marketDataService.getLtp(peSymbol);
+        if (ceLtp <= 0 || peLtp <= 0) return;
         java.util.Map<String, Object> sample = new java.util.LinkedHashMap<>();
         sample.put("t", now.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")));
-        sample.put("v", Math.round(netPnl * 100.0) / 100.0);
-        intradaySamples.add(sample);
+        sample.put("v", Math.round((ceLtp + peLtp) * 100.0) / 100.0);
+        combinedPremiumSamples.add(sample);
         persist();
     }
 
@@ -882,7 +880,7 @@ public class RollingStraddleService {
         this.currentWeeklyExpiry = "";
         this.slHitTimeMillis = 0;
         this.recentRolls.clear();
-        this.intradaySamples.clear();
+        this.combinedPremiumSamples.clear();
         transitionTo(LifecycleState.IDLE);
     }
 
@@ -911,8 +909,8 @@ public class RollingStraddleService {
         s.orderCountToday = this.orderCountToday;
         s.currentWeeklyExpiry = this.currentWeeklyExpiry;
         s.slHitTimeMillis = this.slHitTimeMillis;
-        synchronized (intradaySamples) {
-            s.intradaySamples = new java.util.ArrayList<>(intradaySamples);
+        synchronized (combinedPremiumSamples) {
+            s.combinedPremiumSamples = new java.util.ArrayList<>(combinedPremiumSamples);
         }
         // Snapshot today's roll events as maps for JSON persistence
         java.util.List<java.util.Map<String, Object>> rolls = new java.util.ArrayList<>();
@@ -1001,8 +999,8 @@ public class RollingStraddleService {
         java.util.Map<String, Object> m = getStatus();
         m.put("weeklyExpiry", currentWeeklyExpiry);
         m.put("daysToExpiry", tradingDaysToExpiry(currentWeeklyExpiry));
-        synchronized (intradaySamples) {
-            m.put("intradaySamples", new java.util.ArrayList<>(intradaySamples));
+        synchronized (combinedPremiumSamples) {
+            m.put("combinedPremiumSamples", new java.util.ArrayList<>(combinedPremiumSamples));
         }
         // NIFTY + VIX change + change% for the Hero stat. Uses display getters so pre-market shows
         // the last known value + prev-close-relative change (matches the ticker bar behaviour).

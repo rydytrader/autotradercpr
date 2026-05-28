@@ -322,6 +322,17 @@
         </div>
     </div>
 
+    <!-- Straddle Chart — combined CE+PE premium at 1-min intervals -->
+    <div class="section-card fade-in" style="margin-bottom:20px;">
+        <div class="section-header">
+            <div class="section-title"><div class="section-title-dot" style="background: var(--accent-cyan);"></div> Straddle Chart</div>
+            <span class="section-badge" style="font-size:0.6rem; margin-left:auto;">CE + PE combined premium • 1-min close • line down = good</span>
+        </div>
+        <div style="padding:20px 28px; height:300px;">
+            <canvas id="straddleChart"></canvas>
+        </div>
+    </div>
+
     <!-- Recent rolls -->
     <div class="section-card fade-in" style="margin-bottom:20px;">
         <div class="section-header">
@@ -340,17 +351,6 @@
                     <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:20px;">No events yet today.</td></tr>
                 </tbody>
             </table>
-        </div>
-    </div>
-
-    <!-- Equity Curve -->
-    <div class="section-card fade-in" style="margin-bottom:0;">
-        <div class="section-header">
-            <div class="section-title"><div class="section-title-dot"></div> Equity Curve</div>
-            <span class="section-badge" id="equityCurveSub" style="font-size:0.6rem;">Today's Net P&amp;L • sampled every 5 minutes</span>
-        </div>
-        <div style="padding:20px 28px; height:280px;">
-            <canvas id="equityChart"></canvas>
         </div>
     </div>
 
@@ -962,80 +962,114 @@
     loadEventLog();
     setInterval(loadEventLog, 5000);
 
-    // ── Equity Curve (cumulative net P&L across past straddle sessions) ──────
-    var equityChart = null;
-    function initEquityChart() {
-        var ctx = document.getElementById('equityChart').getContext('2d');
-        equityChart = new Chart(ctx, {
+    // ── Straddle Chart — 1-min combined-premium close values + SL/Target reference lines ──
+    var straddleChart = null;
+    function initStraddleChart() {
+        var ctx = document.getElementById('straddleChart').getContext('2d');
+        var muted = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim();
+        straddleChart = new Chart(ctx, {
             type: 'line',
-            data: { labels: [], datasets: [{
-                label: 'Net P&L',
-                data: [],
-                borderColor: 'rgba(99,179,237,0.8)',
-                backgroundColor: 'rgba(99,179,237,0.08)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.3,
-                pointRadius: 3,
-                pointBackgroundColor: 'rgba(99,179,237,0.8)',
-            }]},
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Combined Premium',
+                        data: [],
+                        borderColor: 'rgba(99,179,237,0.9)',
+                        backgroundColor: 'rgba(99,179,237,0.10)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.25,
+                        pointRadius: 2,
+                        pointBackgroundColor: 'rgba(99,179,237,0.9)',
+                        order: 0
+                    },
+                    {
+                        label: 'SL Trigger',
+                        data: [],
+                        borderColor: 'rgba(248,113,113,0.85)',
+                        borderWidth: 1.5,
+                        borderDash: [6, 4],
+                        pointRadius: 0,
+                        fill: false,
+                        order: 1
+                    },
+                    {
+                        label: 'Target',
+                        data: [],
+                        borderColor: 'rgba(52,211,153,0.85)',
+                        borderWidth: 1.5,
+                        borderDash: [6, 4],
+                        pointRadius: 0,
+                        fill: false,
+                        order: 2
+                    },
+                    {
+                        label: 'Entry',
+                        data: [],
+                        borderColor: 'rgba(160,160,160,0.55)',
+                        borderWidth: 1,
+                        borderDash: [2, 4],
+                        pointRadius: 0,
+                        fill: false,
+                        order: 3
+                    }
+                ]
+            },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
-                    legend: { display: false },
-                    tooltip: { callbacks: { label: ctx => '₹' + ctx.parsed.y.toFixed(2) } }
+                    legend: { display: true, position: 'top', labels: { color: muted, font: { size: 10 }, boxWidth: 14 } },
+                    tooltip: { callbacks: { label: function(ctx) { return ctx.dataset.label + ': ₹' + ctx.parsed.y.toFixed(2); } } }
                 },
                 scales: {
-                    x: { ticks: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim(), font: { size: 10 } }, grid: { color: 'rgba(128,128,128,0.08)' } },
-                    y: { ticks: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim(), font: { size: 10 }, callback: v => '₹' + v }, grid: { color: 'rgba(128,128,128,0.08)' } }
+                    x: { ticks: { color: muted, font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }, grid: { color: 'rgba(128,128,128,0.08)' } },
+                    y: { min: 0, ticks: { color: muted, font: { size: 10 }, callback: function(v) { return '₹' + v; } }, grid: { color: 'rgba(128,128,128,0.08)' } }
                 }
             }
         });
     }
-    /** Plot today's intraday Net P&L curve from the samples the backend captures every 5 min
-     *  between straddleEntryTime and straddleSquareOffTime. Persisted across restart. Always
-     *  appends a "now" point from the current dashboard data so the chart shows a line even
-     *  between sample boundaries. */
-    function renderEquityCurveFromSamples(samples) {
-        if (!samples) samples = [];
+    /** Render the Straddle Chart from persisted samples + reference lines from dashboard payload. */
+    function renderStraddleChart() {
+        if (!lastDashboardData) { setTimeout(renderStraddleChart, 1000); return; }
+        if (!straddleChart) initStraddleChart();
+        var d = lastDashboardData;
+        var samples = d.combinedPremiumSamples || [];
         var labels = samples.map(function(s) { return s.t; });
-        var data = samples.map(function(s) { return s.v; });
-        if (lastDashboardData) {
-            var dd = lastDashboardData;
-            var chTotal = (dd.charges && dd.charges.total) || 0;
-            var liveNet = (Number(dd.realisedPnlToday) || 0) + (Number(dd.combinedMtm) || 0) - chTotal;
+        var data   = samples.map(function(s) { return s.v; });
+        // Append a synthetic "now" point so the line stays current between 1-min boundaries
+        var liveCombined = Number(d.liveCombined || 0);
+        if (liveCombined > 0) {
             var now = new Date();
             var nowLabel = (now.getHours() < 10 ? '0' : '') + now.getHours()
                          + ':' + (now.getMinutes() < 10 ? '0' : '') + now.getMinutes();
-            // Replace last sample if it has the same HH:mm timestamp; else append
             if (labels.length > 0 && labels[labels.length - 1] === nowLabel) {
-                data[data.length - 1] = Math.round(liveNet * 100) / 100;
+                data[data.length - 1] = Math.round(liveCombined * 100) / 100;
             } else {
                 labels.push(nowLabel);
-                data.push(Math.round(liveNet * 100) / 100);
+                data.push(Math.round(liveCombined * 100) / 100);
             }
         }
-        if (!equityChart) initEquityChart();
-        equityChart.data.labels = labels;
-        equityChart.data.datasets[0].data = data;
-        equityChart.update();
-    }
-    function loadEquityCurve() {
-        // Pull intraday samples from the dashboard payload (already cached in lastDashboardData
-        // — refreshed by the 5s poll). We don't poll separately to avoid duplicating work.
-        if (!lastDashboardData) {
-            // Wait until first dashboard poll has populated cache
-            setTimeout(loadEquityCurve, 1000);
-            return;
+        // Reference lines stretch across all x-axis points
+        var entryComb  = Number(d.entryCombined || 0);
+        var slTrigger  = Number(d.slTrigger || 0);
+        var targetTrig = Number(d.targetTrigger || 0);
+        function lineFor(val) { return labels.map(function() { return val > 0 ? val : null; }); }
+        straddleChart.data.labels = labels;
+        straddleChart.data.datasets[0].data = data;
+        straddleChart.data.datasets[1].data = lineFor(slTrigger);
+        straddleChart.data.datasets[2].data = lineFor(targetTrig);
+        straddleChart.data.datasets[3].data = lineFor(entryComb);
+        // Y-axis: 0 to combined entry premium (per spec). SL line sits at the top if higher.
+        if (entryComb > 0) {
+            straddleChart.options.scales.y.max = entryComb;
         }
-        renderEquityCurveFromSamples(lastDashboardData.intradaySamples || []);
+        straddleChart.update('none');
     }
-    setTimeout(loadEquityCurve, 1500);
-    // Re-render every 5s alongside the dashboard poll. The persisted samples list only changes
-    // every 5 min (backend cron), but the synthetic "now" point updates continuously from
-    // lastDashboardData so the chart line moves between sample boundaries.
-    setInterval(loadEquityCurve, 5000);
+    setTimeout(renderStraddleChart, 1500);
+    // Re-render every 5s alongside the dashboard poll
+    setInterval(renderStraddleChart, 5000);
 
     // ── Market Clock (same logic as the previous Positions page) ────────────
     var NSE_HOLIDAYS = {}; // {date: name}

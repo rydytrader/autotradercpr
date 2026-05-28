@@ -54,13 +54,12 @@ public class StraddleStateStore {
         /** Epoch millis when the combined-premium SL fired. Used to resume the WAITING_TO_ROLL
          *  wait timer after a mid-day restart. 0 = no SL active. */
         public long    slHitTimeMillis;
-        /** Intraday Net P&L samples for today's equity curve. Each entry is {t: "HH:mm", v: net}.
-         *  Captured every 5 min between straddleEntryTime and straddleSquareOffTime. Cleared on
-         *  day rollover. Persisting it means the chart survives a mid-day restart. */
-        public java.util.List<java.util.Map<String, Object>> intradaySamples;
         /** Today's roll events ring (entry / roll / close lines for the dashboard). Persisted
          *  so the "Today's Roll Events" table also survives mid-day restart. */
         public java.util.List<java.util.Map<String, Object>> recentRolls;
+        /** 1-minute combined-premium samples ({t: HH:mm, v: ceLtp+peLtp}) for the straddle
+         *  premium chart. Cleared on day rollover; persisted so chart survives restart. */
+        public java.util.List<java.util.Map<String, Object>> combinedPremiumSamples;
         public long    updatedAtMillis;
 
         public State() {}
