@@ -49,6 +49,7 @@ public class RollingStraddleService implements Strategy {
     @Override public String currentState(){ return state.name(); }
     @Override public String navIcon()     { return "C"; }
     @Override public boolean forceClose(String reason) { return forceCloseBothLegs(reason); }
+    @Override public String currentWeeklyExpiry() { return currentWeeklyExpiry; }
 
     @Override
     public java.util.List<java.util.Map<String, Object>> getSettingsSchema() {

@@ -63,4 +63,9 @@ public interface Strategy {
         String id = id();
         return id == null || id.isEmpty() ? "?" : id.substring(0, 1).toUpperCase();
     }
+
+    /** ISO yyyy-MM-dd of the option series this strategy is currently trading against, or
+     *  the empty string when nothing has been resolved yet (pre-entry, before option chain
+     *  fetched). Used by analytics to scope the "current expiry" period filter. */
+    default String currentWeeklyExpiry() { return ""; }
 }

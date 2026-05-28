@@ -2,6 +2,8 @@ package com.rydytrader.autotrader.service;
 
 import com.rydytrader.autotrader.entity.StraddleSessionEntity;
 import com.rydytrader.autotrader.repository.StraddleSessionRepository;
+import com.rydytrader.autotrader.service.strategy.Strategy;
+import com.rydytrader.autotrader.service.strategy.StrategyRegistry;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.stereotype.Service;
 
@@ -21,10 +23,11 @@ import java.util.Map;
  *
  * <p>Period filters mirror the UI:
  * <ul>
- *   <li>{@code all}  — every row</li>
- *   <li>{@code ytd}  — Jan 1 of current year onwards</li>
- *   <li>{@code mtd}  — first day of current month onwards</li>
- *   <li>{@code 30d}  — last 30 calendar days</li>
+ *   <li>{@code today}  — today's session(s) only</li>
+ *   <li>{@code expiry} — sessions in the current weekly-options cycle (day after last expiry → today)</li>
+ *   <li>{@code mtd}    — first day of current month onwards</li>
+ *   <li>{@code ytd}    — Jan 1 of current year onwards</li>
+ *   <li>{@code all}    — every row</li>
  * </ul>
  *
  * <p>Strategy scope filters by {@code strategyId}; null/blank/"all" → all strategies aggregated.
@@ -36,10 +39,14 @@ public class AnalyticsService {
 
     private final StraddleSessionRepository sessionRepo;
     private final RiskSettingsStore riskSettings;
+    private final StrategyRegistry strategyRegistry;
 
-    public AnalyticsService(StraddleSessionRepository sessionRepo, RiskSettingsStore riskSettings) {
+    public AnalyticsService(StraddleSessionRepository sessionRepo,
+                            RiskSettingsStore riskSettings,
+                            StrategyRegistry strategyRegistry) {
         this.sessionRepo = sessionRepo;
         this.riskSettings = riskSettings;
+        this.strategyRegistry = strategyRegistry;
     }
 
     /** Composite payload for the Analytics Home page. Combines the four hero panes and the
@@ -68,11 +75,13 @@ public class AnalyticsService {
     private List<StraddleSessionEntity> filterRows(String period, String strategyId) {
         List<StraddleSessionEntity> all = sessionRepo.findAll();
         LocalDate today = LocalDate.now(IST);
-        LocalDate cutoff = switch (period == null ? "all" : period.toLowerCase()) {
-            case "ytd" -> LocalDate.of(today.getYear(), 1, 1);
-            case "mtd" -> LocalDate.of(today.getYear(), today.getMonthValue(), 1);
-            case "30d" -> today.minusDays(30);
-            default    -> null; // all-time
+        String p = period == null ? "all" : period.toLowerCase();
+        LocalDate cutoff = switch (p) {
+            case "today"  -> today;
+            case "expiry" -> currentExpiryStart(today);
+            case "ytd"    -> LocalDate.of(today.getYear(), 1, 1);
+            case "mtd"    -> LocalDate.of(today.getYear(), today.getMonthValue(), 1);
+            default       -> null; // all-time
         };
         boolean allStrategies = strategyId == null || strategyId.isBlank() || "all".equalsIgnoreCase(strategyId);
         List<StraddleSessionEntity> filtered = new ArrayList<>();
@@ -88,6 +97,24 @@ public class AnalyticsService {
         }
         filtered.sort(Comparator.comparing(StraddleSessionEntity::getSessionDate));
         return filtered;
+    }
+
+    /** Resolve the start date of the current weekly-options cycle: the day AFTER the most recent
+     *  expiry. Reads each strategy's cached {@code currentWeeklyExpiry} (next upcoming expiry,
+     *  ISO yyyy-MM-dd); the previous expiry is exactly 7 days before that. Falls back to
+     *  {@code today.minusDays(7)} when no strategy has resolved an expiry yet. */
+    private LocalDate currentExpiryStart(LocalDate today) {
+        if (strategyRegistry != null) {
+            for (Strategy s : strategyRegistry.all()) {
+                String exp = s.currentWeeklyExpiry();
+                if (exp == null || exp.isEmpty()) continue;
+                try {
+                    LocalDate expiry = LocalDate.parse(exp);
+                    return expiry.minusDays(7).plusDays(1); // first day of current cycle
+                } catch (Exception ignored) {}
+            }
+        }
+        return today.minusDays(7);
     }
 
     // ── Pane 1: CAPITAL ──────────────────────────────────────────────────────
