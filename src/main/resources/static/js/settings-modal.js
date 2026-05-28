@@ -33,7 +33,8 @@
                   // Portfolio Risk tab (static)
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
                     '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline used by the Home analytics page (capital growth %, equity curve, return %). Default ₹10,00,000.</div></div>' +
-                    '<div class="sm-field"><label>Portfolio Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint" id="sm-portfolioMaxRiskHint">Global kill switch. When aggregate net day P&L across all strategies drops below this % of Initial Capital, every strategy is flattened. 0 disables.</div></div>' +
+                    '<div class="sm-field"><label>Portfolio Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Global kill switch trigger. When aggregate net day P&L across all strategies drops below this % of Initial Capital, every strategy is flattened. 0 disables.</div></div>' +
+                    '<div class="sm-field"><label>Max Portfolio Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto-calculated from Initial Capital × Daily Risk %. This is the rupee loss threshold that triggers the global kill switch.</div></div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
                     '<div class="sm-field"><label>Brokerage per Order (₹)</label><input type="number" id="sm-brokeragePerOrder" step="1" min="0"><div class="sm-hint">Flat per-order brokerage. Drives charge estimates on every dashboard + session row.</div></div>' +
@@ -90,6 +91,7 @@
             '.sm-field label { display:block;color:var(--text-muted);font-size:0.7rem;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:6px; }' +
             '.sm-field input, .sm-field select { width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none; }' +
             '.sm-field input[type=checkbox] { width:auto; }' +
+            '.sm-readonly { width:100%;padding:8px 12px;border-radius:6px;border:1px dashed var(--border);background:var(--bg-card);color:var(--accent-cyan);font-family:var(--font-mono);font-size:0.82rem;font-weight:700;letter-spacing:0.04em; }' +
             '.sm-hint { color:var(--text-muted);font-size:0.7rem;margin-top:4px; }' +
             '.sm-btn-primary { background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.4);color:var(--accent-green);padding:8px 18px;border-radius:6px;font-family:var(--font-mono);font-size:0.74rem;font-weight:700;cursor:pointer; }' +
             '.sm-btn-secondary { background:transparent;border:1px solid var(--border);color:var(--text-secondary);padding:8px 18px;border-radius:6px;font-family:var(--font-mono);font-size:0.74rem;cursor:pointer; }' +
@@ -335,16 +337,16 @@
     }
 
     function updatePortfolioRiskHint(capital, pct) {
-        var hint = document.getElementById('sm-portfolioMaxRiskHint');
-        if (!hint) return;
+        var display = document.getElementById('sm-portfolioMaxRiskRupees');
+        if (!display) return;
         if (pct <= 0 || capital <= 0) {
-            hint.textContent = 'Global kill switch. When aggregate net day P&L drops below this % of Initial Capital, every strategy is flattened. 0 disables.';
+            display.textContent = '— (disabled)';
+            display.style.color = 'var(--text-muted)';
             return;
         }
         var rs = capital * pct / 100;
-        var rsFmt = '₹' + Math.round(rs).toLocaleString('en-IN');
-        var capFmt = '₹' + Math.round(capital).toLocaleString('en-IN');
-        hint.textContent = 'Effective max loss: ' + rsFmt + ' (' + pct + '% of ' + capFmt + '). When aggregate net day P&L drops below this, every strategy is flattened.';
+        display.textContent = '₹' + Math.round(rs).toLocaleString('en-IN');
+        display.style.color = 'var(--accent-cyan)';
     }
 
     // ── Charges values — still come from the legacy /api/settings/risk ───────
