@@ -359,6 +359,16 @@ public class LegSlStrategy implements Strategy {
 
         double niftyAtEntry = niftyLtp;
         this.lastEntryNifty = niftyAtEntry;
+        // Seed the chart with an entry-point sample so the leftmost line value matches the
+        // CE/PE leg cards' Entry premiums. Without this, the first chart sample is whatever
+        // the LTPs are at the NEXT minute boundary (up to 60s after entry) — never the entry
+        // premium itself — and the chart appears to start somewhere other than entry.
+        java.util.Map<String, Object> entrySample = new java.util.LinkedHashMap<>();
+        entrySample.put("t",  LocalTime.now(IST).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")));
+        entrySample.put("v",  round2(ceEntryPremium + peEntryPremium));
+        entrySample.put("ce", round2(ceEntryPremium));
+        entrySample.put("pe", round2(peEntryPremium));
+        combinedPremiumSamples.add(entrySample);
         pushEvent("ENTRY", niftyAtEntry, resolvedCe, resolvedPe, 0);
 
         String msg = "leg-sl armed @ ATM " + atmStrike + " (NIFTY " + String.format("%.2f", niftyLtp)

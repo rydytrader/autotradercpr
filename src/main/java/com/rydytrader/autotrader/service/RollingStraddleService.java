@@ -504,6 +504,15 @@ public class RollingStraddleService implements Strategy {
         // increment it in checkMoveTriggerOrSquareoff before calling back into doInitialEntry.
         transitionTo(LifecycleState.OPEN);
 
+        // Seed the chart with an entry-point sample so the leftmost line value equals the
+        // entry combined premium. Without this, the chart's first sample is whatever the
+        // LTPs are at the NEXT minute boundary (up to 60s after entry), making the chart
+        // start somewhere other than the entry baseline / reference lines.
+        java.util.Map<String, Object> entrySample = new java.util.LinkedHashMap<>();
+        entrySample.put("t", LocalTime.now(IST).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")));
+        entrySample.put("v", Math.round((ceEntryPremium + peEntryPremium) * 100.0) / 100.0);
+        combinedPremiumSamples.add(entrySample);
+
         String evtName = rollCount == 0 ? "ENTRY" : "ROLL";
         pushRollEvent(evtName, niftyLtp, resolvedCe, resolvedPe, 0);
 
