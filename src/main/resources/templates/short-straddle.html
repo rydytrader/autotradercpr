@@ -341,9 +341,9 @@
             <div class="section-title"><div class="section-title-dot" style="background: var(--accent-cyan);"></div> Leg Premiums</div>
             <span class="section-badge" style="font-size:0.6rem; margin-left:auto;">1-min close per leg • dashed = SL trigger / entry baseline</span>
         </div>
-        <div style="padding:20px 28px; height:400px; display:flex; gap:20px;">
-            <div style="flex:1; min-width:0;"><canvas id="straddleChartCe"></canvas></div>
-            <div style="flex:1; min-width:0;"><canvas id="straddleChartPe"></canvas></div>
+        <div style="padding:0; height:400px; display:flex; gap:0;">
+            <div style="flex:1; min-width:0; padding:8px 12px;"><canvas id="straddleChartCe"></canvas></div>
+            <div style="flex:1; min-width:0; padding:8px 12px;"><canvas id="straddleChartPe"></canvas></div>
         </div>
     </div>
 
@@ -1092,16 +1092,17 @@
         return {
             responsive: true,
             maintainAspectRatio: false,
+            layout: { padding: 0 },
             plugins: {
                 legend: { display: true, position: 'top', labels: { color: muted, font: { size: 10 }, boxWidth: 14 } },
                 tooltip: { callbacks: { label: function(ctx) {
                     if (ctx.parsed.y == null) return null;
-                    return ctx.dataset.label + ': ₹' + ctx.parsed.y.toFixed(2);
+                    return ctx.dataset.label + ': ₹' + Number(ctx.parsed.y).toFixed(2);
                 } } }
             },
             scales: {
-                x: { ticks: { color: muted, font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }, grid: { color: 'rgba(128,128,128,0.08)' } },
-                y: { min: 0, ticks: { color: muted, font: { size: 10 }, callback: function(v) { return '₹' + v; } }, grid: { color: 'rgba(128,128,128,0.08)' } }
+                x: { offset: false, ticks: { color: muted, font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }, grid: { color: 'rgba(128,128,128,0.08)' } },
+                y: { min: 0, ticks: { color: muted, font: { size: 10 }, callback: function(v) { return '₹' + Number(v).toFixed(2); } }, grid: { color: 'rgba(128,128,128,0.08)' } }
             }
         };
     }
@@ -1151,22 +1152,35 @@
                 peData.push(peLtp > 0 ? Math.round(peLtp * 100) / 100 : null);
             }
         }
-        var ceEntry = Number(d.ceEntryPremium || 0);
-        var peEntry = Number(d.peEntryPremium || 0);
-        var ceTrig  = Number(d.ceSlTrigger || 0);
-        var peTrig  = Number(d.peSlTrigger || 0);
+        function r2(v) { return Math.round(Number(v) * 100) / 100; }
+        var ceEntry = r2(d.ceEntryPremium || 0);
+        var peEntry = r2(d.peEntryPremium || 0);
+        var ceTrig  = r2(d.ceSlTrigger || 0);
+        var peTrig  = r2(d.peSlTrigger || 0);
         function lineFor(labels, val) { return labels.map(function() { return val > 0 ? val : null; }); }
         ceChart.data.labels = labels;
         ceChart.data.datasets[0].data = ceData;
         ceChart.data.datasets[1].data = lineFor(labels, ceTrig);
         ceChart.data.datasets[2].data = lineFor(labels, ceEntry);
-        if (ceTrig > 0) ceChart.options.scales.y.max = ceTrig * 1.05;
+        if (ceTrig > 0) {
+            ceChart.options.scales.y.max = r2(ceTrig * 1.05);
+            // Floor near the lower of (entry, first sample) so the line doesn't sit at the top
+            // with a tall empty band below it.
+            var firstCe = ceData.find(function(v) { return v != null; });
+            var ceFloor = Math.min(ceEntry > 0 ? ceEntry : Infinity, firstCe != null ? firstCe : Infinity);
+            if (isFinite(ceFloor)) ceChart.options.scales.y.min = Math.max(0, r2(ceFloor * 0.85));
+        }
         ceChart.update('none');
         peChart.data.labels = labels;
         peChart.data.datasets[0].data = peData;
         peChart.data.datasets[1].data = lineFor(labels, peTrig);
         peChart.data.datasets[2].data = lineFor(labels, peEntry);
-        if (peTrig > 0) peChart.options.scales.y.max = peTrig * 1.05;
+        if (peTrig > 0) {
+            peChart.options.scales.y.max = r2(peTrig * 1.05);
+            var firstPe = peData.find(function(v) { return v != null; });
+            var peFloor = Math.min(peEntry > 0 ? peEntry : Infinity, firstPe != null ? firstPe : Infinity);
+            if (isFinite(peFloor)) peChart.options.scales.y.min = Math.max(0, r2(peFloor * 0.85));
+        }
         peChart.update('none');
     }
     setTimeout(renderStraddleChart, 1500);
