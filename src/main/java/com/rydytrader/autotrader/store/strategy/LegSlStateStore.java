@@ -23,7 +23,11 @@ import java.nio.file.Path;
 public class LegSlStateStore {
 
     private static final Logger log = LoggerFactory.getLogger(LegSlStateStore.class);
-    private static final String STATE_FILE = "../store/data/strategies/leg-sl-state.json";
+    private static final String STATE_FILE = "../store/data/strategies/short-straddle-state.json";
+    /** Legacy path used before the file was renamed. If the new file doesn't exist but the
+     *  legacy one does, we read the old, write to new, and leave the old in place (operator
+     *  can delete once happy). */
+    private static final String LEGACY_STATE_FILE = "../store/data/strategies/leg-sl-state.json";
     private static final ObjectMapper mapper = new ObjectMapper()
         .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 
@@ -83,6 +87,23 @@ public class LegSlStateStore {
     private void load() {
         try {
             Path p = Path.of(STATE_FILE);
+            Path legacy = Path.of(LEGACY_STATE_FILE);
+            // One-time migration: new path missing but legacy exists → read legacy, write to new.
+            if (!Files.exists(p) && Files.exists(legacy)) {
+                log.info("[LegSlState] Migrating legacy state file {} → {}", LEGACY_STATE_FILE, STATE_FILE);
+                String legacyJson = Files.readString(legacy);
+                if (legacyJson != null && !legacyJson.isBlank()) {
+                    State loaded = mapper.readValue(legacyJson, State.class);
+                    if (loaded != null) {
+                        this.current = loaded;
+                        save(); // writes to STATE_FILE
+                        log.info("[LegSlState] Migration complete. Old file left in place; remove {} manually when ready.", LEGACY_STATE_FILE);
+                        log.info("[LegSlState] Loaded {} state for {} (ce={}, pe={})",
+                            loaded.state, loaded.dayKey, loaded.ceSymbol, loaded.peSymbol);
+                    }
+                }
+                return;
+            }
             if (!Files.exists(p)) {
                 log.info("[LegSlState] No prior state file ({}), starting fresh", STATE_FILE);
                 return;
