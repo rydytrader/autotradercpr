@@ -39,32 +39,50 @@ public class StrategySessionMigration {
         this.settingRepo = settingRepo;
     }
 
-    /** Runs after the application context is fully refreshed (JPA + Hibernate schema update done). */
+    /** Runs after the application context is fully refreshed (JPA + Hibernate schema update done).
+     *  The leg-sl → short-straddle rename is split into its own listener method below so a SQL
+     *  failure there (e.g. duplicate-key collision) can't poison this transaction. */
     @EventListener(ContextRefreshedEvent.class)
     @Transactional
     public void runMigrations() {
         backfillStrategyId();
-        renameLegSlToShortStraddle();
         dropOldSessionDateUniqueConstraint();
         oneShotResetTradeHistory();
     }
 
+    /** Separate listener — runs in its own transaction. */
+    @EventListener(ContextRefreshedEvent.class)
+    @Transactional
+    public void runRename() {
+        renameLegSlToShortStraddle();
+    }
+
     /** Renames every {@code leg-sl} row / SETTINGS key to {@code short-straddle} so the
      *  strategy keeps reading its own state after the id rename. Idempotent — a second pass
-     *  finds no {@code leg-sl} rows and no-ops. */
+     *  finds no {@code leg-sl} rows and no-ops.
+     *
+     *  <p>Settings keys can already exist under BOTH the legacy and new prefix when the
+     *  operator saved settings under the new id before this migration ran. In that case the
+     *  new key is authoritative — we delete the legacy duplicate before renaming the rest,
+     *  so the UPDATE never collides with the unique index on {@code setting_key}. */
     private void renameLegSlToShortStraddle() {
         try {
             int sessions = safeUpdate(
                 "UPDATE straddle_sessions SET strategy_id = 'short-straddle' WHERE strategy_id = 'leg-sl'");
             int trades   = safeUpdate(
                 "UPDATE straddle_trades   SET strategy_id = 'short-straddle' WHERE strategy_id = 'leg-sl'");
-            // SETTINGS keys are of the form 'strategies.leg-sl.<field>'. Rename the prefix.
-            int settings = safeUpdate(
+            // Pre-clean: drop any legacy leg-sl key that already has a short-straddle counterpart.
+            int deleted = safeUpdate(
+                "DELETE FROM settings WHERE setting_key LIKE 'strategies.leg-sl.%' " +
+                "AND EXISTS (SELECT 1 FROM settings s2 WHERE s2.setting_key = " +
+                "REPLACE(settings.setting_key, 'strategies.leg-sl.', 'strategies.short-straddle.'))");
+            // Rename the remaining leg-sl keys — by now no collisions remain.
+            int renamed = safeUpdate(
                 "UPDATE settings SET setting_key = REPLACE(setting_key, 'strategies.leg-sl.', 'strategies.short-straddle.') " +
                 "WHERE setting_key LIKE 'strategies.leg-sl.%'");
-            if (sessions + trades + settings > 0) {
-                log.info("[StrategyMigration] Renamed leg-sl → short-straddle: {} session(s), {} trade(s), {} setting(s)",
-                    sessions, trades, settings);
+            if (sessions + trades + deleted + renamed > 0) {
+                log.info("[StrategyMigration] Renamed leg-sl → short-straddle: {} session(s), {} trade(s), {} setting(s) renamed, {} duplicate setting(s) discarded",
+                    sessions, trades, renamed, deleted);
             }
         } catch (Exception e) {
             log.warn("[StrategyMigration] leg-sl → short-straddle rename skipped: {}", e.getMessage());
