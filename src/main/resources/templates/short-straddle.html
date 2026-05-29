@@ -1162,25 +1162,15 @@
         ceChart.data.datasets[0].data = ceData;
         ceChart.data.datasets[1].data = lineFor(labels, ceTrig);
         ceChart.data.datasets[2].data = lineFor(labels, ceEntry);
-        if (ceTrig > 0) {
-            ceChart.options.scales.y.max = r2(ceTrig * 1.05);
-            // Floor near the lower of (entry, first sample) so the line doesn't sit at the top
-            // with a tall empty band below it.
-            var firstCe = ceData.find(function(v) { return v != null; });
-            var ceFloor = Math.min(ceEntry > 0 ? ceEntry : Infinity, firstCe != null ? firstCe : Infinity);
-            if (isFinite(ceFloor)) ceChart.options.scales.y.min = Math.max(0, r2(ceFloor * 0.85));
-        }
+        if (ceTrig > 0) ceChart.options.scales.y.max = r2(ceTrig * 1.05);
+        ceChart.options.scales.y.min = 0;
         ceChart.update('none');
         peChart.data.labels = labels;
         peChart.data.datasets[0].data = peData;
         peChart.data.datasets[1].data = lineFor(labels, peTrig);
         peChart.data.datasets[2].data = lineFor(labels, peEntry);
-        if (peTrig > 0) {
-            peChart.options.scales.y.max = r2(peTrig * 1.05);
-            var firstPe = peData.find(function(v) { return v != null; });
-            var peFloor = Math.min(peEntry > 0 ? peEntry : Infinity, firstPe != null ? firstPe : Infinity);
-            if (isFinite(peFloor)) peChart.options.scales.y.min = Math.max(0, r2(peFloor * 0.85));
-        }
+        if (peTrig > 0) peChart.options.scales.y.max = r2(peTrig * 1.05);
+        peChart.options.scales.y.min = 0;
         peChart.update('none');
     }
     setTimeout(renderStraddleChart, 1500);
