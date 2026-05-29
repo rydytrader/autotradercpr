@@ -988,13 +988,18 @@
                         + ' / ' + Number(ceLtp).toFixed(2);
                     var ceCh2s = legChangeOrEntryFallback(ceCh, ceChp, d.ceEntryPremium, ceLtp);
                     renderChangeBadge('paneCeChange', ceCh2s.ch, ceCh2s.chp);
-                    var ceMtm = (d.ceEntryPremium > 0 && d.ceQty > 0) ? (d.ceEntryPremium - ceLtp) * d.ceQty : 0;
-                    d.ceMtm = ceMtm;
-                    var ceMtmEl = document.getElementById('paneCeMtm');
-                    ceMtmEl.textContent = fmtRs(ceMtm);
-                    ceMtmEl.className = 'stat-value';
-                    if      (ceMtm > 0.5)  ceMtmEl.classList.add('pnl-positive');
-                    else if (ceMtm < -0.5) ceMtmEl.classList.add('pnl-negative');
+                    // Only refresh the leg-card MTM while the leg is still open. When ceQty=0
+                    // the leg is closed and the backend already froze d.ceMtm to the realised
+                    // P&L — recomputing here would reset it to 0 every tick.
+                    if (d.ceQty > 0 && d.ceEntryPremium > 0) {
+                        var ceMtm = (d.ceEntryPremium - ceLtp) * d.ceQty;
+                        d.ceMtm = ceMtm;
+                        var ceMtmEl = document.getElementById('paneCeMtm');
+                        ceMtmEl.textContent = fmtRs(ceMtm);
+                        ceMtmEl.className = 'stat-value';
+                        if      (ceMtm > 0.5)  ceMtmEl.classList.add('pnl-positive');
+                        else if (ceMtm < -0.5) ceMtmEl.classList.add('pnl-negative');
+                    }
                 }
                 // PE leg LTP + MTM + change badge
                 if (peLtp != null) {
@@ -1005,13 +1010,15 @@
                         + ' / ' + Number(peLtp).toFixed(2);
                     var peCh2s = legChangeOrEntryFallback(peCh, peChp, d.peEntryPremium, peLtp);
                     renderChangeBadge('panePeChange', peCh2s.ch, peCh2s.chp);
-                    var peMtm = (d.peEntryPremium > 0 && d.peQty > 0) ? (d.peEntryPremium - peLtp) * d.peQty : 0;
-                    d.peMtm = peMtm;
-                    var peMtmEl = document.getElementById('panePeMtm');
-                    peMtmEl.textContent = fmtRs(peMtm);
-                    peMtmEl.className = 'stat-value';
-                    if      (peMtm > 0.5)  peMtmEl.classList.add('pnl-positive');
-                    else if (peMtm < -0.5) peMtmEl.classList.add('pnl-negative');
+                    if (d.peQty > 0 && d.peEntryPremium > 0) {
+                        var peMtm = (d.peEntryPremium - peLtp) * d.peQty;
+                        d.peMtm = peMtm;
+                        var peMtmEl = document.getElementById('panePeMtm');
+                        peMtmEl.textContent = fmtRs(peMtm);
+                        peMtmEl.className = 'stat-value';
+                        if      (peMtm > 0.5)  peMtmEl.classList.add('pnl-positive');
+                        else if (peMtm < -0.5) peMtmEl.classList.add('pnl-negative');
+                    }
                 }
                 // Combined MTM + Net P&L + Risk (only if any leg moved)
                 if (ceLtp != null || peLtp != null) {
