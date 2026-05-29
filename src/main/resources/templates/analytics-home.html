@@ -116,11 +116,11 @@
             <div style="display:flex; align-items:center; gap:12px;">
                 <span class="ah-stat-label" style="font-weight:700;">Period</span>
                 <div class="pill-row" id="periodPills">
-                    <button class="scope-pill"        data-period="today"  title="Just today's session(s).">Today</button>
+                    <button class="scope-pill active" data-period="today"  title="Just today's session(s).">Today</button>
                     <button class="scope-pill"        data-period="expiry" title="Sessions in the current weekly-options cycle — day after last expiry through today.">Current Expiry</button>
                     <button class="scope-pill"        data-period="mtd" title="Month-to-date — from the 1st of the current calendar month.">MTD</button>
                     <button class="scope-pill"        data-period="ytd" title="Financial year to date — from Apr 1 of the current Indian FY.">YTD</button>
-                    <button class="scope-pill active" data-period="all">All Time</button>
+                    <button class="scope-pill"        data-period="all">All Time</button>
                 </div>
             </div>
             <div style="display:flex; align-items:center; gap:10px;">
@@ -370,7 +370,7 @@
     }
 
     // ── Selectors ────────────────────────────────────────────────────────────
-    var currentPeriod   = 'all';
+    var currentPeriod   = 'today';
     var currentStrategy = 'all';
     var pickedYear = '';  // empty = picker not in use
     var pickedMonth = ''; // empty = whole year

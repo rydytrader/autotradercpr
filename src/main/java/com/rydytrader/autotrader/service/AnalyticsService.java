@@ -67,6 +67,11 @@ public class AnalyticsService {
      *  and the equity curve. */
     public Map<String, Object> summary(String period, String strategyId, String from, String to) {
         List<Trade> trades = loadTrades(period, strategyId, from, to);
+        // Per-trade metrics (counts, wins/losses, streaks, extremes) only consider closed
+        // straddles; the synthetic OPEN_POSITION_MTM row is excluded so a still-open trade
+        // doesn't pollute win-rate or extreme-loss stats.
+        List<Trade> closed = new ArrayList<>();
+        for (Trade t : trades) if (isClosedStraddle(t)) closed.add(t);
         double startingCapital = riskSettings.getStartingCapital();
 
         Map<String, Object> out = new LinkedHashMap<>();
@@ -74,15 +79,16 @@ public class AnalyticsService {
         out.put("strategyId",    strategyId);
         out.put("from",          from);
         out.put("to",            to);
-        out.put("straddleCount", trades.size());
-        // "sessionCount" kept for header badge — number of distinct trading days.
-        out.put("sessionCount",  distinctDates(trades));
+        out.put("straddleCount", closed.size());
+        out.put("sessionCount",  distinctDates(closed));
 
+        // Capital + equity curve include the open-MTM row so Total Return reflects realised
+        // + open MTM − charges (matching the per-strategy dashboard's Net Day P&L).
         out.put("capital",     capital(trades, startingCapital));
-        out.put("performance", performance(trades));
-        out.put("extremes",    extremes(trades));
-        out.put("streaks",     streaks(trades));
-        out.put("edge",        edge(trades, startingCapital));
+        out.put("performance", performance(closed));
+        out.put("extremes",    extremes(closed));
+        out.put("streaks",     streaks(closed));
+        out.put("edge",        edge(closed, startingCapital));
         out.put("equityCurve", equityCurve(trades, startingCapital));
         return out;
     }
@@ -128,14 +134,19 @@ public class AnalyticsService {
         return out;
     }
 
-    /** Pull today's already-closed straddles from each strategy's in-memory ring buffer.
-     *  Only fires when the window includes today AND the rows aren't already persisted. */
+    /** Marker reason on a synthetic row representing the strategy's currently-open position
+     *  (its live MTM). Capital / equity-curve sums include this; per-trade counters
+     *  (wins/losses/streaks/extremes) filter it out so it doesn't pollute closed-trade stats. */
+    private static final String OPEN_POSITION_MTM_REASON = "OPEN_POSITION_MTM";
+
+    /** Pull today's already-closed straddles from each strategy's in-memory ring buffer AND a
+     *  synthetic row for any still-open position, so Today's Total Return reflects realised +
+     *  open MTM − charges (matching each strategy's dashboard Net Day P&L). Skips strategies
+     *  whose day-end row has already been persisted. */
     private void appendLiveTodayTrades(List<Trade> out, String strategyId, LocalDate today) {
         if (strategyRegistry == null || strategyRegistry.isEmpty()) return;
         String iso = today.toString();
         boolean allStrategies = strategyId == null || strategyId.isBlank() || "all".equalsIgnoreCase(strategyId);
-        // Find strategies that already have rows persisted for today — if any are present we
-        // assume the strategy's day-end persistence has fired and skip live overlay for them.
         Set<String> persistedTodayStrategies = new java.util.HashSet<>();
         for (Trade t : out) {
             if (iso.equals(t.sessionDate())) persistedTodayStrategies.add(t.strategyId());
@@ -144,21 +155,42 @@ public class AnalyticsService {
             if (!allStrategies && !strat.id().equals(strategyId)) continue;
             if (persistedTodayStrategies.contains(strat.id())) continue;
             try {
+                // 1. Today's already-closed events from the strategy's recent-events ring.
+                double addedToday = 0;
                 List<Map<String, Object>> live = strat.todayClosedTrades();
-                if (live == null || live.isEmpty()) continue;
-                for (Map<String, Object> m : live) {
-                    double gross = asDouble(m.get("grossPnl"));
-                    double ch    = asDouble(m.get("charges"));
-                    double net   = ch != 0 ? gross - ch : gross;
-                    long ts = asLong(m.get("closedAtMillis"));
-                    if (ts == 0) ts = System.currentTimeMillis();
-                    String reason = String.valueOf(m.getOrDefault("closeReason", "OPEN"));
-                    out.add(new Trade(strat.id(), iso, ts, gross, ch, net, reason));
+                if (live != null) {
+                    for (Map<String, Object> m : live) {
+                        double gross = asDouble(m.get("grossPnl"));
+                        double ch    = asDouble(m.get("charges"));
+                        double net   = ch != 0 ? gross - ch : gross;
+                        long ts = asLong(m.get("closedAtMillis"));
+                        if (ts == 0) ts = System.currentTimeMillis();
+                        String reason = String.valueOf(m.getOrDefault("closeReason", "OPEN"));
+                        out.add(new Trade(strat.id(), iso, ts, gross, ch, net, reason));
+                        addedToday += net;
+                    }
+                }
+                // 2. Synthetic OPEN_POSITION_MTM row for whatever the strategy's net day P&L
+                //    is NOT yet accounted for above. Equals open MTM − projected charges if
+                //    nothing has closed yet; equals MTM-of-remaining-leg if leg-sl has closed
+                //    one leg already; equals 0 once everything is closed. Sum across all rows
+                //    today equals strategy.liveNetPnlToday() so the Capital pane reads right.
+                double liveNet = strat.liveNetPnlToday();
+                double openMtmRemainder = liveNet - addedToday;
+                if (Math.abs(openMtmRemainder) > 0.01) {
+                    out.add(new Trade(strat.id(), iso, System.currentTimeMillis(),
+                        openMtmRemainder, 0, openMtmRemainder, OPEN_POSITION_MTM_REASON));
                 }
             } catch (Exception e) {
                 log.warn("[Analytics] Live today overlay failed for {}: {}", strat.id(), e.getMessage());
             }
         }
+    }
+
+    /** True for rows that count as completed straddles. False for the synthetic
+     *  {@link #OPEN_POSITION_MTM_REASON} row. */
+    private static boolean isClosedStraddle(Trade t) {
+        return !OPEN_POSITION_MTM_REASON.equals(t.closeReason());
     }
 
     private static int distinctDates(List<Trade> trades) {
