@@ -39,9 +39,7 @@ import java.time.ZoneId;
  *   <li>At {@code squareOffTime}: close any leg that's still open → DONE_FOR_DAY.</li>
  * </ol>
  *
- * <p>Independent of {@code RollingStraddleService} — separate state file, separate sessions row,
- * separate dashboard. Both can run in parallel on the same ATM strike; Fyers nets the broker
- * position but each strategy tracks its own logical qty and places orders against that own qty.
+ * <p>State file, sessions row and dashboard are scoped to this strategy via its {@code id()}.
  */
 @Service
 @Order(1)
@@ -55,7 +53,7 @@ public class LegSlStrategy implements Strategy {
     private static final String NIFTY_SYMBOL   = "NSE:NIFTY50-INDEX";
     private static final int    STRIKE_STEP    = 50;
 
-    /** Charge constants (NIFTY weekly options, FY 2025-26) — same as RollingStraddleService. */
+    /** Charge constants (NIFTY weekly options, FY 2025-26). */
     private static final double STT_SELL_PCT   = 0.000625;
     private static final double EXCH_TXN_PCT   = 0.0003503;
     private static final double GST_PCT        = 0.18;

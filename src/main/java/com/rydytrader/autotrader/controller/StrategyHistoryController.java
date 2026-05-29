@@ -14,8 +14,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Per-strategy session history. Mirrors {@link StraddleHistoryController} but filters rows
- * by {@code strategyId}. Each strategy's calendar / analytics queries this endpoint.
+ * Per-strategy session history. Rows are filtered by {@code strategyId}. Each strategy's
+ * calendar / analytics queries this endpoint.
  */
 @RestController
 public class StrategyHistoryController {

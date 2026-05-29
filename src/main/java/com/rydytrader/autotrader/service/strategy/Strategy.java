@@ -30,10 +30,10 @@ public interface Strategy {
      *  safe to call frequently. Used by the strategy-sidebar icon active state. */
     Map<String, Object> getStatus();
 
-    /** Full dashboard payload — status + leg LTPs + MTM + charges + samples + roll events.
+    /** Full dashboard payload — status + leg LTPs + MTM + charges + samples + cycle events.
      *  Polled every 5s by the per-strategy dashboard page. Returned shape MAY differ between
      *  strategies, but must include a {@code dashboardShape} key telling the UI which template
-     *  conditionals to apply (e.g. "combined-sl-roll" vs "leg-sl"). */
+     *  conditionals to apply. */
     Map<String, Object> getDashboard();
 
     /** Manual squareoff — flatten all open legs and park DONE_FOR_DAY. Returns true if there
@@ -41,9 +41,8 @@ public interface Strategy {
     boolean forceClose(String reason);
 
     /** Hard-stop the strategy for the day. Closes any open positions AND parks DONE_FOR_DAY
-     *  regardless of current state — so a strategy that's IDLE (waiting for entry time) or
-     *  WAITING_TO_ROLL (between rolls) won't fire new entries later in the session. Used by
-     *  the portfolio kill switch.
+     *  regardless of current state — so a strategy that's IDLE (waiting for entry time)
+     *  won't fire new entries later in the session. Used by the portfolio kill switch.
      *
      *  <p>Default falls back to {@link #forceClose} which only handles strategies with open
      *  positions; concrete strategies must override to guarantee the DONE_FOR_DAY transition. */
@@ -86,8 +85,7 @@ public interface Strategy {
 
     /** Today's already-closed straddles read from in-memory state — used by the Analytics page
      *  live overlay so today's metrics reflect closes that haven't been persisted to the
-     *  {@code straddle_trades} table yet (combined-sl-roll persists on every close;
-     *  leg-sl persists only when state reaches DONE_FOR_DAY).
+     *  {@code straddle_trades} table yet (leg-sl persists only when state reaches DONE_FOR_DAY).
      *
      *  <p>Each map should carry: {@code grossPnl}, {@code charges} (optional), {@code netPnl}
      *  (optional — defaults to gross when charges missing), {@code closedAtMillis}, {@code closeReason}.

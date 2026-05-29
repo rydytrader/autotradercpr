@@ -6,14 +6,9 @@ import jakarta.persistence.*;
  * One row per individual short-straddle cycle (entry → close). Granularity of the Analytics
  * Home page — wins / losses / streaks / edge / costs are all computed at this level.
  *
- * <p>How each strategy writes rows:
- * <ul>
- *   <li><b>combined-sl-roll</b> — one row per {@code closeBothLegs()} call. If the day had
- *       two rolls, that day produces three rows (entry-close, roll1-close, roll2-close).</li>
- *   <li><b>leg-sl</b> — one row per day, written when the straddle reaches DONE_FOR_DAY
- *       (last leg closed or timed squareoff). The straddle's legs may close at different times;
- *       the row's {@code closedAtMillis} reflects the last-leg close.</li>
- * </ul>
+ * <p>The {@code leg-sl} strategy writes one row per day when the straddle reaches DONE_FOR_DAY
+ * (last leg closed or timed squareoff). The straddle's legs may close at different times; the
+ * row's {@code closedAtMillis} reflects the last-leg close.
  *
  * <p>Charges are computed per cycle so per-straddle net P&L is exact, not allocated.
  */

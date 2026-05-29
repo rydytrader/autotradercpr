@@ -17,8 +17,8 @@ import java.util.concurrent.*;
  * Lean Order WebSocket service for the options-selling bot.
  *
  * <p>Connects to {@code wss://socket.fyers.in/trade/v3}. On every fill push, looks up the
- * tracked {@link EntryContext} (registered by {@link RollingStraddleService} before placement)
- * and updates the local position state.
+ * tracked {@link EntryContext} (registered by the strategy service before placement) and
+ * updates the local position state.
  *
  * <p>OCO (SL+Target) tracking from the equity pipeline has been removed — the straddle places
  * no SL/Target legs, so we just record entry-side fills and let the strategy service handle
@@ -117,8 +117,8 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
 
     @Override
     public void onOrderEvent(JsonNode order) {
-        // Order fills for straddle legs are tracked by RollingStraddleService via its own
-        // orderId state — this WS callback is informational only.
+        // Order fills for straddle legs are tracked by each Strategy via its own orderId
+        // state — this WS callback is informational only.
     }
 
     @Override

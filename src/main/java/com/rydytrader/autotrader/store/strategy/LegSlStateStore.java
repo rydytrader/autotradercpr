@@ -14,9 +14,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * On-disk state for {@code LegSlStrategy}. Mirrors {@code StraddleStateStore} but tracks per-leg
- * closure timestamps and uses the leg-sl lifecycle states (OPEN_BOTH / OPEN_CE_ONLY /
- * OPEN_PE_ONLY / DONE_FOR_DAY).
+ * On-disk state for {@code LegSlStrategy}. Tracks per-leg closure timestamps and uses the
+ * leg-sl lifecycle states (OPEN_BOTH / OPEN_CE_ONLY / OPEN_PE_ONLY / DONE_FOR_DAY).
  *
  * <p>File: {@code ../store/data/strategies/leg-sl-state.json}.
  */
@@ -58,11 +57,9 @@ public class LegSlStateStore {
         public double  buyPremiumTurnoverToday;
         public int     orderCountToday;
         public String  currentWeeklyExpiry;
-        /** Cycle events ring (ENTRY / CE_SL / PE_SL / SQUAREOFF). Same shape as RollingStraddle's
-         *  recentRolls list — {time, event, nifty, ce, pe, pnl}. */
+        /** Cycle events ring (ENTRY / CE_SL / PE_SL / SQUAREOFF) — {time, event, nifty, ce, pe, pnl}. */
         public java.util.List<java.util.Map<String, Object>> recentEvents;
-        /** 1-minute combined-premium samples for the dashboard chart — same shape as the
-         *  combined-sl-roll strategy's. */
+        /** 1-minute per-leg premium samples for the dashboard chart. */
         public java.util.List<java.util.Map<String, Object>> combinedPremiumSamples;
         public long    updatedAtMillis;
 

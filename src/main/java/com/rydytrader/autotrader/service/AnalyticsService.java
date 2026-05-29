@@ -20,11 +20,8 @@ import java.util.Set;
 
 /**
  * Powers the Analytics Home page. All metrics are computed per-straddle from the
- * {@code straddle_trades} table — one row per individual short-straddle cycle:
- * <ul>
- *   <li>combined-sl-roll: one row per close (entry-close, roll1-close, roll2-close, …)</li>
- *   <li>leg-sl: one row per day (written when state reaches DONE_FOR_DAY)</li>
- * </ul>
+ * {@code straddle_trades} table — one row per individual short-straddle cycle. The
+ * {@code leg-sl} strategy writes one row per day (when the straddle reaches DONE_FOR_DAY).
  *
  * <p>Period filters (UI):
  * <ul>

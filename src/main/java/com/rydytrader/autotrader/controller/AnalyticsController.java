@@ -12,8 +12,8 @@ import java.util.Map;
  * for a given period × strategy scope.
  *
  * <p>Period values: {@code all}, {@code today}, {@code expiry}, {@code mtd}, {@code ytd}.
- * Default {@code all}. Strategy scope: any registered strategy id (e.g. {@code combined-sl-roll},
- * {@code leg-sl}) or blank / {@code all} for aggregated.
+ * Default {@code all}. Strategy scope: any registered strategy id (e.g. {@code leg-sl})
+ * or blank / {@code all} for aggregated.
  *
  * <p>Explicit date range params {@code from} and {@code to} (ISO yyyy-MM-dd) override the period
  * preset when present. Either may be omitted. Used by the Home page month/year picker.

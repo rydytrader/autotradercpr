@@ -518,8 +518,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         return tick == null ? 0 : tick.getChangePercent();
     }
 
-    /** Seed prev-close + LTP for a symbol the WS hasn't ticked yet. Used by RollingStraddleService
-     *  to populate change/% display on fresh option subscriptions where the WS often skips
+    /** Seed prev-close + LTP for a symbol the WS hasn't ticked yet. Used by strategies to
+     *  populate change/% display on fresh option subscriptions where the WS often skips
      *  prev_close in its first tick. */
     public void seedTickData(String fyersSymbol, double ltp, double prevClose) {
         if (fyersSymbol == null || fyersSymbol.isEmpty()) return;

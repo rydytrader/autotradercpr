@@ -200,55 +200,11 @@ public class RiskSettingsStore {
         // SL are silently bypassed because both depend on a defined target.
         volatile boolean enableOpenTargetMode   = false;
 
-        // ── Rolling Short Straddle on NIFTY weekly options ─────────────────────
-        // Self-contained options-selling strategy that runs in parallel with the equity
-        // breakout pipeline. Each day at entry time: SELL ATM CE + ATM PE on current weekly
-        // expiry. If NIFTY moves ±movePct from last entry, close both legs and re-enter
-        // fresh ATM CE+PE (counts as one "roll"). After maxRolls is reached the open
-        // straddle is held to the timed squareoff for max theta. See
-        // memory/project_rolling_straddle.md for the full design.
-        // Default true so the strategy keeps running for existing operators when the toggle was
-        // introduced; turning it off pauses entries without losing today's state.
-        volatile boolean enableRollingStraddle     = true;
-        volatile String  straddleEntryTime         = "09:20";
-        volatile String  straddleSquareOffTime     = "15:15";
-        volatile int     straddleMaxRolls          = 3;
-        volatile int     straddleLotsPerLeg        = 1;
-        /** Combined-premium SL in %. Triggers a roll when (ceLtp + peLtp) exceeds the entry
-         *  combined premium by this percentage. e.g. 30 means roll when straddle is 30% more
-         *  expensive than entry. Replaces the older NIFTY-move % trigger. */
-        volatile double  straddleCombinedSlPct     = 30.0;
-        /** Combined-premium TARGET in %. Triggers an exit when (ceLtp + peLtp) falls below the
-         *  entry combined premium by this percentage. e.g. 30 means exit when straddle is 30%
-         *  cheaper than entry (profit booked). After hit, bot parks DONE_FOR_DAY — no re-entry
-         *  same day. 0 disables the target. */
-        volatile double  straddleCombinedTargetPct = 30.0;
-        /** Wait time (minutes) between an SL hit and the next entry. Avoids whipsaw re-entry
-         *  right after a sharp move. 0 = roll immediately. */
-        volatile int     straddleRollWaitMin       = 15;
-        /** Roll cutoff time (HH:mm IST). If the SL fires after this time, the bot closes legs
-         *  and parks DONE_FOR_DAY without re-entering. */
-        volatile String  straddleRollCutoffTime    = "14:30";
-        /** Roll Wait Filter — allowed NIFTY high-to-low range during the wait, as % of NIFTY
-         *  at SL hit. After the wait period the bot only re-enters if NIFTY stayed within
-         *  this range; otherwise it resets the timer and waits another cycle (up to
-         *  {@link #straddleMaxRollWaitCycles}). 0 disables the filter (legacy wait-and-roll). */
-        volatile double  straddleRollRangeFilterPct = 0.15;
-        /** Roll Wait Filter — maximum number of wait cycles before parking DONE_FOR_DAY when
-         *  the range stays wide. 0 = unlimited (only roll-cutoff / squareoff time stops it).
-         *  Default 0 — let the wait keep cycling until the roll window closes naturally. */
-        volatile int     straddleMaxRollWaitCycles  = 0;
-        /** Daily max-loss kill switch in rupees (absolute, positive). When today's net P&L
-         *  (realised + open MTM − charges) drops below {@code -straddleMaxDailyLoss}, the bot
-         *  closes both legs and parks DONE_FOR_DAY. 0 disables the check. Default ₹10,000
-         *  balances allowing one full SL cycle (~₹5k) while catching accumulated bleed on rolls. */
-        volatile double  straddleMaxDailyLoss      = 10000;
         /** Generic per-strategy settings bag — keyed by strategy id, then by field name.
-         *  New strategies added under {@link com.rydytrader.autotrader.service.strategy.Strategy}
-         *  store their fields here. Values are kept as Strings; consumers parse to the type the
-         *  schema declares. Settings persist to the H2 SETTINGS table under keys of the form
-         *  {@code strategies.<id>.<field>}. The legacy {@code straddleXxx} fields above remain
-         *  in place for the current {@code combined-sl-roll} strategy. */
+         *  Strategies under {@link com.rydytrader.autotrader.service.strategy.Strategy} store
+         *  their fields here. Values are kept as Strings; consumers parse to the type the schema
+         *  declares. Persisted to the H2 SETTINGS table under keys of the form
+         *  {@code strategies.<id>.<field>}. */
         volatile java.util.Map<String, java.util.Map<String, String>> strategyConfigs =
             new java.util.concurrent.ConcurrentHashMap<>();
         // EMA filters
@@ -474,23 +430,10 @@ public class RiskSettingsStore {
     public boolean isEnableRiskRewardFilter()      { return cfg().enableRiskRewardFilter; }
     public double  getMinRiskRewardRatio()         { return cfg().minRiskRewardRatio; }
     public boolean isEnableOpenTargetMode()        { return cfg().enableOpenTargetMode; }
-    public boolean isEnableRollingStraddle()       { return cfg().enableRollingStraddle; }
-    public String  getStraddleEntryTime()          { return cfg().straddleEntryTime; }
-    public String  getStraddleSquareOffTime()      { return cfg().straddleSquareOffTime; }
-    public int     getStraddleMaxRolls()           { return cfg().straddleMaxRolls; }
-    public int     getStraddleLotsPerLeg()         { return cfg().straddleLotsPerLeg; }
-    public double  getStraddleCombinedSlPct()      { return cfg().straddleCombinedSlPct; }
-    public double  getStraddleCombinedTargetPct()  { return cfg().straddleCombinedTargetPct; }
-    public int     getStraddleRollWaitMin()        { return cfg().straddleRollWaitMin; }
-    public double  getStraddleRollRangeFilterPct() { return cfg().straddleRollRangeFilterPct; }
-    public int     getStraddleMaxRollWaitCycles()  { return cfg().straddleMaxRollWaitCycles; }
-    public String  getStraddleRollCutoffTime()     { return cfg().straddleRollCutoffTime; }
-    public double  getStraddleMaxDailyLoss()       { return cfg().straddleMaxDailyLoss; }
 
-    // ── Generic per-strategy settings (for strategies beyond combined-sl-roll) ───────────
+    // ── Generic per-strategy settings ────────────────────────────────────────────────────
     /** Read a typed value from {@code strategyConfigs[strategyId][key]}, or fall back to the
-     *  default. Pre-existing {@code straddleXxx} fields are NOT consulted here — those still
-     *  flow through the legacy direct getters. */
+     *  default. */
     public String getStrategyString(String strategyId, String key, String defaultValue) {
         java.util.Map<String, String> m = cfg().strategyConfigs.get(strategyId);
         if (m == null) return defaultValue;
@@ -661,18 +604,6 @@ public class RiskSettingsStore {
     public void setEnableRiskRewardFilter(boolean v)       { cfg().enableRiskRewardFilter = v; }
     public void setMinRiskRewardRatio(double v)            { cfg().minRiskRewardRatio = v; }
     public void setEnableOpenTargetMode(boolean v)         { cfg().enableOpenTargetMode = v; }
-    public void setEnableRollingStraddle(boolean v)        { cfg().enableRollingStraddle = v; }
-    public void setStraddleEntryTime(String v)             { cfg().straddleEntryTime = (v == null || v.isBlank()) ? "09:20" : v.trim(); }
-    public void setStraddleSquareOffTime(String v)         { cfg().straddleSquareOffTime = (v == null || v.isBlank()) ? "15:15" : v.trim(); }
-    public void setStraddleMaxRolls(int v)                 { cfg().straddleMaxRolls = Math.max(0, v); }
-    public void setStraddleLotsPerLeg(int v)               { cfg().straddleLotsPerLeg = Math.max(1, v); }
-    public void setStraddleCombinedSlPct(double v)         { cfg().straddleCombinedSlPct = Math.max(0.1, v); }
-    public void setStraddleCombinedTargetPct(double v)     { cfg().straddleCombinedTargetPct = Math.max(0, v); }
-    public void setStraddleRollWaitMin(int v)              { cfg().straddleRollWaitMin = Math.max(0, v); }
-    public void setStraddleRollRangeFilterPct(double v)    { cfg().straddleRollRangeFilterPct = Math.max(0, v); }
-    public void setStraddleMaxRollWaitCycles(int v)        { cfg().straddleMaxRollWaitCycles = Math.max(0, v); }
-    public void setStraddleRollCutoffTime(String v)        { if (v != null && !v.isBlank()) cfg().straddleRollCutoffTime = v; }
-    public void setStraddleMaxDailyLoss(double v)          { cfg().straddleMaxDailyLoss = Math.max(0, v); }
     public void setEnableEmaLevelCountFilter(boolean v)    { cfg().enableEmaLevelCountFilter = v; }
     public void setEmaLevelMinRangePct(int v)               { cfg().emaLevelMinRangePct = Math.max(0, Math.min(100, v)); }
     public void setEmaLevelFilterMorningSkip(boolean v)     { cfg().emaLevelFilterMorningSkip = v; }
@@ -823,18 +754,6 @@ public class RiskSettingsStore {
             upsert("dayHighLowMinAtr", String.valueOf(c.dayHighLowMinAtr));
             upsert("enableRiskRewardFilter", String.valueOf(c.enableRiskRewardFilter));
             upsert("enableOpenTargetMode", String.valueOf(c.enableOpenTargetMode));
-            upsert("enableRollingStraddle", String.valueOf(c.enableRollingStraddle));
-            upsert("straddleEntryTime", c.straddleEntryTime);
-            upsert("straddleSquareOffTime", c.straddleSquareOffTime);
-            upsert("straddleMaxRolls", String.valueOf(c.straddleMaxRolls));
-            upsert("straddleLotsPerLeg", String.valueOf(c.straddleLotsPerLeg));
-            upsert("straddleCombinedSlPct", String.valueOf(c.straddleCombinedSlPct));
-            upsert("straddleCombinedTargetPct", String.valueOf(c.straddleCombinedTargetPct));
-            upsert("straddleRollWaitMin", String.valueOf(c.straddleRollWaitMin));
-            upsert("straddleRollRangeFilterPct", String.valueOf(c.straddleRollRangeFilterPct));
-            upsert("straddleMaxRollWaitCycles", String.valueOf(c.straddleMaxRollWaitCycles));
-            upsert("straddleRollCutoffTime", c.straddleRollCutoffTime);
-            upsert("straddleMaxDailyLoss", String.valueOf(c.straddleMaxDailyLoss));
             // Generic per-strategy settings — write each {id, field, value} as "strategies.<id>.<field>"
             if (c.strategyConfigs != null) {
                 for (java.util.Map.Entry<String, java.util.Map<String, String>> se : c.strategyConfigs.entrySet()) {
@@ -1002,19 +921,15 @@ public class RiskSettingsStore {
                     case "dayHighLowMinAtr" -> c.dayHighLowMinAtr = Double.parseDouble(v);
                     case "enableRiskRewardFilter" -> c.enableRiskRewardFilter = Boolean.parseBoolean(v);
                     case "enableOpenTargetMode" -> c.enableOpenTargetMode = Boolean.parseBoolean(v);
-                    case "enableRollingStraddle" -> c.enableRollingStraddle = Boolean.parseBoolean(v);
-                    case "straddleEntryTime" -> c.straddleEntryTime = (v == null || v.isBlank()) ? "09:20" : v.trim();
-                    case "straddleSquareOffTime" -> c.straddleSquareOffTime = (v == null || v.isBlank()) ? "15:15" : v.trim();
-                    case "straddleMovePctTrigger" -> { /* legacy — NIFTY move% trigger removed in favor of combined-premium SL */ }
-                    case "straddleMaxRolls" -> c.straddleMaxRolls = Math.max(0, Integer.parseInt(v));
-                    case "straddleLotsPerLeg" -> c.straddleLotsPerLeg = Math.max(1, Integer.parseInt(v));
-                    case "straddleCombinedSlPct" -> c.straddleCombinedSlPct = Math.max(0.1, Double.parseDouble(v));
-                    case "straddleCombinedTargetPct" -> c.straddleCombinedTargetPct = Math.max(0, Double.parseDouble(v));
-                    case "straddleRollWaitMin" -> c.straddleRollWaitMin = Math.max(0, Integer.parseInt(v));
-                    case "straddleRollRangeFilterPct" -> c.straddleRollRangeFilterPct = Math.max(0, Double.parseDouble(v));
-                    case "straddleMaxRollWaitCycles"  -> c.straddleMaxRollWaitCycles  = Math.max(0, Integer.parseInt(v));
-                    case "straddleRollCutoffTime" -> { if (v != null && !v.isBlank()) c.straddleRollCutoffTime = v; }
-                    case "straddleMaxDailyLoss" -> c.straddleMaxDailyLoss = Math.max(0, Double.parseDouble(v));
+                    case "enableRollingStraddle" -> { /* removed — combined-sl-roll strategy deleted */ }
+                    case "straddleEntryTime", "straddleSquareOffTime",
+                         "straddleMovePctTrigger",
+                         "straddleMaxRolls", "straddleLotsPerLeg",
+                         "straddleCombinedSlPct", "straddleCombinedTargetPct",
+                         "straddleRollWaitMin", "straddleRollRangeFilterPct",
+                         "straddleMaxRollWaitCycles",
+                         "straddleRollCutoffTime",
+                         "straddleMaxDailyLoss" -> { /* removed — combined-sl-roll strategy deleted */ }
                     case "minRiskRewardRatio" -> c.minRiskRewardRatio = Double.parseDouble(v);
                     // enableEmaTrendCheck removed — 5-min EMA factor is hard-baked into the
                     // strict trend state machine in BreakoutScanner. Legacy keys silently ignored.

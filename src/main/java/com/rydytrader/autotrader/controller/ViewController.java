@@ -235,8 +235,8 @@ public class ViewController {
     private String renderStrategyDashboard(String id, Model model) {
         Strategy s = strategyRegistry.get(id);
         if (s == null) {
-            log.warn("Unknown strategy id '{}', defaulting to combined-sl-roll", id);
-            s = strategyRegistry.get("combined-sl-roll");
+            log.warn("Unknown strategy id '{}', defaulting to leg-sl", id);
+            s = strategyRegistry.get("leg-sl");
         }
         model.addAttribute("strategyId",          s != null ? s.id() : id);
         model.addAttribute("strategyDisplayName", s != null ? s.displayName() : id);
