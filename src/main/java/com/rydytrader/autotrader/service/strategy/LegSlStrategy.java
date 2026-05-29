@@ -97,6 +97,11 @@ public class LegSlStrategy implements Strategy {
      *  taken on that SL hit instead of resetting to 0). 0 while leg is still open. */
     private volatile double ceLegPnl = 0;
     private volatile double peLegPnl = 0;
+    /** LTP captured at the moment the leg closed (SL hit / squareoff / etc.). Surfaced on the
+     *  dashboard leg card so a closed leg shows "Entry / Exit" with the actual exit price
+     *  instead of "Entry / LTP" with a stale live tick. 0 while leg is still open. */
+    private volatile double ceClosePremium = 0;
+    private volatile double peClosePremium = 0;
     private volatile double realisedPnlToday = 0;
     private volatile double sellPremiumTurnoverToday = 0;
     private volatile double buyPremiumTurnoverToday  = 0;
@@ -212,6 +217,8 @@ public class LegSlStrategy implements Strategy {
             this.peClosedAtMillis = p.peClosedAtMillis;
             this.ceLegPnl = p.ceLegPnl;
             this.peLegPnl = p.peLegPnl;
+            this.ceClosePremium = p.ceClosePremium;
+            this.peClosePremium = p.peClosePremium;
             this.realisedPnlToday = p.realisedPnlToday;
             this.sellPremiumTurnoverToday = p.sellPremiumTurnoverToday;
             this.buyPremiumTurnoverToday  = p.buyPremiumTurnoverToday;
@@ -358,6 +365,8 @@ public class LegSlStrategy implements Strategy {
         this.peClosedAtMillis = 0;
         this.ceLegPnl = 0;
         this.peLegPnl = 0;
+        this.ceClosePremium = 0;
+        this.peClosePremium = 0;
         try { marketDataService.subscribeAdditional(java.util.Arrays.asList(resolvedCe, resolvedPe)); }
         catch (Exception ignored) {}
         this.ceEntryPremium = readEntryPremium(resolvedCe);
@@ -468,10 +477,10 @@ public class LegSlStrategy implements Strategy {
         double closeLtp = marketDataService.getLtp(symbol);
         double pnl = (entry > 0 && closeLtp > 0) ? (entry - closeLtp) * qty : 0;
         realisedPnlToday += pnl;
-        // Freeze this leg's realised P&L so the dashboard leg card can keep showing the
-        // loss (instead of 0) after the qty drops to 0.
-        if (isCe) ceLegPnl = pnl;
-        else      peLegPnl = pnl;
+        // Freeze this leg's realised P&L + close LTP so the dashboard leg card can show the
+        // realised loss + exit price after the qty drops to 0.
+        if (isCe) { ceLegPnl = pnl; ceClosePremium = closeLtp; }
+        else      { peLegPnl = pnl; peClosePremium = closeLtp; }
         if (closeLtp > 0) buyPremiumTurnoverToday += closeLtp * qty;
         double niftyAtClose = marketDataService.getLtp(NIFTY_SYMBOL);
         String closedCe = isCe ? symbol : "";
@@ -513,6 +522,7 @@ public class LegSlStrategy implements Strategy {
             double pnl = (ceEntryPremium > 0 && ltp > 0) ? (ceEntryPremium - ltp) * ceQty : 0;
             realisedPnlToday += pnl;
             ceLegPnl = pnl;
+            ceClosePremium = ltp;
             totalPnl += pnl;
             if (ltp > 0) buyPremiumTurnoverToday += ltp * ceQty;
             placeCloseRetry(ceSymbol, ceQty, "CE", reason);
@@ -526,6 +536,7 @@ public class LegSlStrategy implements Strategy {
             double pnl = (peEntryPremium > 0 && ltp > 0) ? (peEntryPremium - ltp) * peQty : 0;
             realisedPnlToday += pnl;
             peLegPnl = pnl;
+            peClosePremium = ltp;
             totalPnl += pnl;
             if (ltp > 0) buyPremiumTurnoverToday += ltp * peQty;
             placeCloseRetry(peSymbol, peQty, "PE", reason);
@@ -677,6 +688,8 @@ public class LegSlStrategy implements Strategy {
         m.put("peClosed", !isPeOpen());
         m.put("ceClosedAtMillis", ceClosedAtMillis);
         m.put("peClosedAtMillis", peClosedAtMillis);
+        m.put("ceClosePremium", round2(ceClosePremium));
+        m.put("peClosePremium", round2(peClosePremium));
 
         double ceMtm = (isCeOpen() && ceEntryPremium > 0 && ceLtp > 0 && ceQty > 0) ? (ceEntryPremium - ceLtp) * ceQty : 0;
         double peMtm = (isPeOpen() && peEntryPremium > 0 && peLtp > 0 && peQty > 0) ? (peEntryPremium - peLtp) * peQty : 0;
@@ -830,6 +843,7 @@ public class LegSlStrategy implements Strategy {
         this.ceEntryPremium = 0; this.peEntryPremium = 0;
         this.ceClosedAtMillis = 0; this.peClosedAtMillis = 0;
         this.ceLegPnl = 0; this.peLegPnl = 0;
+        this.ceClosePremium = 0; this.peClosePremium = 0;
         this.realisedPnlToday = 0;
         this.sellPremiumTurnoverToday = 0;
         this.buyPremiumTurnoverToday = 0;
@@ -1102,6 +1116,8 @@ public class LegSlStrategy implements Strategy {
         s.peClosedAtMillis = this.peClosedAtMillis;
         s.ceLegPnl = this.ceLegPnl;
         s.peLegPnl = this.peLegPnl;
+        s.ceClosePremium = this.ceClosePremium;
+        s.peClosePremium = this.peClosePremium;
         s.realisedPnlToday = this.realisedPnlToday;
         s.sellPremiumTurnoverToday = this.sellPremiumTurnoverToday;
         s.buyPremiumTurnoverToday  = this.buyPremiumTurnoverToday;

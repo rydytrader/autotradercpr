@@ -279,7 +279,7 @@
         </div>
 
         <!-- CE Leg -->
-        <div class="section-card" style="margin-bottom:0;">
+        <div class="section-card" id="ceLegCard" style="margin-bottom:0;">
             <div class="section-header">
                 <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> CE Leg</div>
                 <span id="paneCeQty"
@@ -294,21 +294,21 @@
                     <span class="stat-value" id="paneCeStrike" style="font-size:0.9rem;" title="">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Entry / LTP</span>
+                    <span class="stat-label" id="paneCeEntryLtpLabel" style="margin:0;">Entry / LTP</span>
                     <span style="display:flex; align-items:baseline; gap:8px;">
                         <span class="stat-value" id="paneCeEntryLtp" style="font-size:0.9rem;">— / —</span>
                         <span id="paneCeChange" style="font-family:var(--font-mono); font-size:0.66rem; color:var(--text-muted);"></span>
                     </span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">MTM</span>
+                    <span class="stat-label" id="paneCeMtmLabel" style="margin:0;">MTM</span>
                     <span class="stat-value" id="paneCeMtm" style="font-size:1rem;">0.00</span>
                 </div>
             </div>
         </div>
 
         <!-- PE Leg -->
-        <div class="section-card" style="margin-bottom:0;">
+        <div class="section-card" id="peLegCard" style="margin-bottom:0;">
             <div class="section-header">
                 <div class="section-title"><div class="section-title-dot" style="background:var(--accent-red, #f87171);"></div> PE Leg</div>
                 <span id="panePeQty"
@@ -323,14 +323,14 @@
                     <span class="stat-value" id="panePeStrike" style="font-size:0.9rem;" title="">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Entry / LTP</span>
+                    <span class="stat-label" id="panePeEntryLtpLabel" style="margin:0;">Entry / LTP</span>
                     <span style="display:flex; align-items:baseline; gap:8px;">
                         <span class="stat-value" id="panePeEntryLtp" style="font-size:0.9rem;">— / —</span>
                         <span id="panePeChange" style="font-family:var(--font-mono); font-size:0.66rem; color:var(--text-muted);"></span>
                     </span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">MTM</span>
+                    <span class="stat-label" id="panePeMtmLabel" style="margin:0;">MTM</span>
                     <span class="stat-value" id="panePeMtm" style="font-size:1rem;">0.00</span>
                 </div>
             </div>
@@ -557,6 +557,48 @@
 
     // Cached so squareoff buttons can read leg symbols/qty without re-fetching.
     var lastDashboardData = null;
+
+    // ── Leg-card chrome helpers ──────────────────────────────────────────────
+    // Called by both the 5s dashboard poll and the SSE tick handler so the visual change
+    // (red border, "Entry / Exit" label, "P&L" label, exit-price value) flips the moment
+    // the SL crosses, instead of waiting up to 5s for the next poll.
+    function applyLegClosedChrome(leg, d) {
+        var Cap = leg === 'ce' ? 'Ce' : 'Pe';
+        var card = document.getElementById(leg + 'LegCard');
+        var entryLtpLabel = document.getElementById('pane' + Cap + 'EntryLtpLabel');
+        var mtmLabel      = document.getElementById('pane' + Cap + 'MtmLabel');
+        var closed = leg === 'ce' ? d.ceClosed : d.peClosed;
+        if (closed) {
+            if (card) {
+                card.style.borderColor = 'var(--accent-red, #f87171)';
+                card.style.borderWidth = '2px';
+            }
+            if (entryLtpLabel) entryLtpLabel.textContent = 'Entry / Exit';
+            if (mtmLabel)      mtmLabel.textContent      = 'P&L';
+        } else {
+            if (card) {
+                card.style.borderColor = '';
+                card.style.borderWidth = '';
+            }
+            if (entryLtpLabel) entryLtpLabel.textContent = 'Entry / LTP';
+            if (mtmLabel)      mtmLabel.textContent      = 'MTM';
+        }
+    }
+
+    function renderLegEntryLine(leg, d) {
+        var entry  = leg === 'ce' ? d.ceEntryPremium : d.peEntryPremium;
+        var live   = leg === 'ce' ? d.ceLtp          : d.peLtp;
+        var close  = leg === 'ce' ? d.ceClosePremium : d.peClosePremium;
+        var closed = leg === 'ce' ? d.ceClosed       : d.peClosed;
+        var second = closed ? (close || 0) : (live || 0);
+        document.getElementById('pane' + (leg === 'ce' ? 'Ce' : 'Pe') + 'EntryLtp').textContent =
+            (entry > 0 ? Number(entry).toFixed(2) : '—')
+            + ' / ' + (second > 0 ? Number(second).toFixed(2) : '—');
+        var ch  = leg === 'ce' ? d.ceChange    : d.peChange;
+        var chp = leg === 'ce' ? d.ceChangePct : d.peChangePct;
+        var badge = legChangeOrEntryFallback(ch, chp, entry, second);
+        renderChangeBadge('pane' + (leg === 'ce' ? 'Ce' : 'Pe') + 'Change', badge.ch, badge.chp);
+    }
 
     // Strategy ID for this dashboard page — drives all /api/strategies/{id}/* URLs below.
     // Falls back to "combined-sl-roll" if the data attribute is somehow missing.
@@ -858,11 +900,8 @@
             ceStrikeEl.textContent = ceStrikeInfo.value;
             ceStrikeEl.title = d.ceSymbol || '';
             ceStrikeEl.style.color = ceStrikeInfo.projected ? 'var(--text-muted)' : 'var(--text-primary)';
-            document.getElementById('paneCeEntryLtp').textContent =
-                (d.ceEntryPremium > 0 ? Number(d.ceEntryPremium).toFixed(2) : '—')
-                + ' / ' + (d.ceLtp > 0 ? Number(d.ceLtp).toFixed(2) : '—');
-            var ceCh2 = legChangeOrEntryFallback(d.ceChange, d.ceChangePct, d.ceEntryPremium, d.ceLtp);
-            renderChangeBadge('paneCeChange', ceCh2.ch, ceCh2.chp);
+            applyLegClosedChrome('ce', d);
+            renderLegEntryLine('ce', d);
             var ceMtm = document.getElementById('paneCeMtm');
             ceMtm.textContent = fmtRs(d.ceMtm || 0);
             ceMtm.className = 'stat-value';
@@ -878,11 +917,8 @@
             peStrikeEl.textContent = peStrikeInfo.value;
             peStrikeEl.title = d.peSymbol || '';
             peStrikeEl.style.color = peStrikeInfo.projected ? 'var(--text-muted)' : 'var(--text-primary)';
-            document.getElementById('panePeEntryLtp').textContent =
-                (d.peEntryPremium > 0 ? Number(d.peEntryPremium).toFixed(2) : '—')
-                + ' / ' + (d.peLtp > 0 ? Number(d.peLtp).toFixed(2) : '—');
-            var peCh2 = legChangeOrEntryFallback(d.peChange, d.peChangePct, d.peEntryPremium, d.peLtp);
-            renderChangeBadge('panePeChange', peCh2.ch, peCh2.chp);
+            applyLegClosedChrome('pe', d);
+            renderLegEntryLine('pe', d);
             var peMtm = document.getElementById('panePeMtm');
             peMtm.textContent = fmtRs(d.peMtm || 0);
             peMtm.className = 'stat-value';
@@ -983,41 +1019,49 @@
                 if (ceLtp != null) {
                     d.ceLtp = ceLtp;
                     d.ceChange = ceCh; d.ceChangePct = ceChp;
-                    document.getElementById('paneCeEntryLtp').textContent =
-                        (d.ceEntryPremium > 0 ? Number(d.ceEntryPremium).toFixed(2) : '—')
-                        + ' / ' + Number(ceLtp).toFixed(2);
-                    var ceCh2s = legChangeOrEntryFallback(ceCh, ceChp, d.ceEntryPremium, ceLtp);
-                    renderChangeBadge('paneCeChange', ceCh2s.ch, ceCh2s.chp);
-                    // Only refresh the leg-card MTM while the leg is still open. When ceQty=0
-                    // the leg is closed and the backend already froze d.ceMtm to the realised
-                    // P&L — recomputing here would reset it to 0 every tick.
-                    if (d.ceQty > 0 && d.ceEntryPremium > 0) {
-                        var ceMtm = (d.ceEntryPremium - ceLtp) * d.ceQty;
-                        d.ceMtm = ceMtm;
-                        var ceMtmEl = document.getElementById('paneCeMtm');
-                        ceMtmEl.textContent = fmtRs(ceMtm);
-                        ceMtmEl.className = 'stat-value';
-                        if      (ceMtm > 0.5)  ceMtmEl.classList.add('pnl-positive');
-                        else if (ceMtm < -0.5) ceMtmEl.classList.add('pnl-negative');
+                    // Optimistic close detection — the backend's 500ms fast scheduler closes
+                    // CE the moment LTP crosses ceSlTrigger. We don't want to wait up to 5s
+                    // for the next dashboard poll to refresh the red border / "Exit" label,
+                    // so detect the same condition client-side and flip the chrome now.
+                    if (!d.ceClosed && d.ceSlTrigger > 0 && ceLtp >= d.ceSlTrigger) {
+                        d.ceClosed = true;
+                        d.ceClosePremium = ceLtp;
+                        applyLegClosedChrome('ce', d);
+                    }
+                    if (!d.ceClosed) {
+                        // Open: live LTP drives the Entry/LTP row + MTM tile + badge.
+                        renderLegEntryLine('ce', d);
+                        if (d.ceQty > 0 && d.ceEntryPremium > 0) {
+                            var ceMtm = (d.ceEntryPremium - ceLtp) * d.ceQty;
+                            d.ceMtm = ceMtm;
+                            var ceMtmEl = document.getElementById('paneCeMtm');
+                            ceMtmEl.textContent = fmtRs(ceMtm);
+                            ceMtmEl.className = 'stat-value';
+                            if      (ceMtm > 0.5)  ceMtmEl.classList.add('pnl-positive');
+                            else if (ceMtm < -0.5) ceMtmEl.classList.add('pnl-negative');
+                        }
                     }
                 }
                 // PE leg LTP + MTM + change badge
                 if (peLtp != null) {
                     d.peLtp = peLtp;
                     d.peChange = peCh; d.peChangePct = peChp;
-                    document.getElementById('panePeEntryLtp').textContent =
-                        (d.peEntryPremium > 0 ? Number(d.peEntryPremium).toFixed(2) : '—')
-                        + ' / ' + Number(peLtp).toFixed(2);
-                    var peCh2s = legChangeOrEntryFallback(peCh, peChp, d.peEntryPremium, peLtp);
-                    renderChangeBadge('panePeChange', peCh2s.ch, peCh2s.chp);
-                    if (d.peQty > 0 && d.peEntryPremium > 0) {
-                        var peMtm = (d.peEntryPremium - peLtp) * d.peQty;
-                        d.peMtm = peMtm;
-                        var peMtmEl = document.getElementById('panePeMtm');
-                        peMtmEl.textContent = fmtRs(peMtm);
-                        peMtmEl.className = 'stat-value';
-                        if      (peMtm > 0.5)  peMtmEl.classList.add('pnl-positive');
-                        else if (peMtm < -0.5) peMtmEl.classList.add('pnl-negative');
+                    if (!d.peClosed && d.peSlTrigger > 0 && peLtp >= d.peSlTrigger) {
+                        d.peClosed = true;
+                        d.peClosePremium = peLtp;
+                        applyLegClosedChrome('pe', d);
+                    }
+                    if (!d.peClosed) {
+                        renderLegEntryLine('pe', d);
+                        if (d.peQty > 0 && d.peEntryPremium > 0) {
+                            var peMtm = (d.peEntryPremium - peLtp) * d.peQty;
+                            d.peMtm = peMtm;
+                            var peMtmEl = document.getElementById('panePeMtm');
+                            peMtmEl.textContent = fmtRs(peMtm);
+                            peMtmEl.className = 'stat-value';
+                            if      (peMtm > 0.5)  peMtmEl.classList.add('pnl-positive');
+                            else if (peMtm < -0.5) peMtmEl.classList.add('pnl-negative');
+                        }
                     }
                 }
                 // Combined MTM + Net P&L + Risk (only if any leg moved)

@@ -49,6 +49,10 @@ public class LegSlStateStore {
          *  leg is no longer running so it doesn't reset to 0 after the qty drops to 0. */
         public double  ceLegPnl;
         public double  peLegPnl;
+        /** LTP captured at the moment each leg closed. Dashboard leg card displays this as
+         *  the "Exit" price once the leg is no longer running. */
+        public double  ceClosePremium;
+        public double  peClosePremium;
         public double  realisedPnlToday;
         public double  sellPremiumTurnoverToday;
         public double  buyPremiumTurnoverToday;
