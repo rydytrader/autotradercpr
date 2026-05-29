@@ -114,11 +114,11 @@ public class ViewController {
                     log.error("Error starting services after Fyers login: {}", e.getMessage());
                 }
             }, "fyers-init").start();
-            // Land on the leg-sl operational dashboard — primary live-trading view.
-            return "redirect:/strategies/leg-sl";
+            // Land on the short-straddle operational dashboard — primary live-trading view.
+            return "redirect:/strategies/short-straddle";
         }
         log.error("Fyers login callback error");
-        return "redirect:/strategies/leg-sl?fyers=error";
+        return "redirect:/strategies/short-straddle?fyers=error";
     }
 
     @GetMapping("/api/fyers/status")
@@ -221,12 +221,12 @@ public class ViewController {
     @GetMapping("/home")
     public String home(Model model) {
         model.addAttribute("sidebarStrategies", sidebarStrategies());
-        return "analytics-home";
+        return "home";
     }
 
-    /** Per-strategy operational dashboard. Same template (home.html) for every strategy —
-     *  parameterised by the {@code strategyId} model attribute. Adding a new strategy adds a
-     *  new sidebar icon automatically. */
+    /** Per-strategy operational dashboard. Same template (short-straddle.html) for every
+     *  strategy — parameterised by the {@code strategyId} model attribute. Adding a new strategy
+     *  adds a new sidebar icon automatically. */
     @GetMapping("/strategies/{id}")
     public String strategyDashboard(@PathVariable String id, Model model) {
         return renderStrategyDashboard(id, model);
@@ -235,14 +235,16 @@ public class ViewController {
     private String renderStrategyDashboard(String id, Model model) {
         Strategy s = strategyRegistry.get(id);
         if (s == null) {
-            log.warn("Unknown strategy id '{}', defaulting to leg-sl", id);
-            s = strategyRegistry.get("leg-sl");
+            log.warn("Unknown strategy id '{}', defaulting to short-straddle", id);
+            s = strategyRegistry.get("short-straddle");
+            // Legacy URL alias: keep /strategies/leg-sl resolving for bookmarks.
+            if (s == null) s = strategyRegistry.get("leg-sl");
         }
         model.addAttribute("strategyId",          s != null ? s.id() : id);
         model.addAttribute("strategyDisplayName", s != null ? s.displayName() : id);
         model.addAttribute("strategyDescription", s != null ? s.description() : "");
         model.addAttribute("sidebarStrategies",   sidebarStrategies());
-        return "home";
+        return "short-straddle";
     }
 
     @GetMapping("/calendar")

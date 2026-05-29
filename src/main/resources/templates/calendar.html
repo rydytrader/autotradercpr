@@ -251,10 +251,10 @@
 
     function loadAll() {
         return Promise.all([
-            fetch('/api/strategies/leg-sl/history').then(r => r.json()).catch(() => ({ sessions: [] })),
+            fetch('/api/strategies/short-straddle/history').then(r => r.json()).catch(() => ({ sessions: [] })),
             fetch('/api/market-holidays').then(r => r.json()).catch(() => []),
             // Live dashboard so today's running P&L can be overlaid on today's cell
-            fetch('/api/strategies/leg-sl/dashboard').then(r => r.json()).catch(() => null)
+            fetch('/api/strategies/short-straddle/dashboard').then(r => r.json()).catch(() => null)
         ]).then(arr => {
             allSessions = (arr[0] && arr[0].sessions) || [];
             (arr[1] || []).forEach(h => NSE_HOLIDAYS[h.date] = h.name || 'Holiday');

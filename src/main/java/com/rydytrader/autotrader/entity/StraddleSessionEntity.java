@@ -28,7 +28,7 @@ public class StraddleSessionEntity {
      *  overrides via {@code id()} when writing. */
     @Column(name = "strategy_id", nullable = false, length = 40,
             columnDefinition = "VARCHAR(40) DEFAULT 'combined-sl-roll' NOT NULL")
-    private String strategyId = "leg-sl";
+    private String strategyId = "short-straddle";
 
     /** ISO yyyy-MM-dd. No longer unique on its own — multiple strategies can write a row for
      *  the same date. Composite uniqueness with strategyId enforced via {@link Table}. */

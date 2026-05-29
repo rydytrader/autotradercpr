@@ -44,8 +44,39 @@ public class StrategySessionMigration {
     @Transactional
     public void runMigrations() {
         backfillStrategyId();
+        renameLegSlToShortStraddle();
         dropOldSessionDateUniqueConstraint();
         oneShotResetTradeHistory();
+    }
+
+    /** Renames every {@code leg-sl} row / SETTINGS key to {@code short-straddle} so the
+     *  strategy keeps reading its own state after the id rename. Idempotent — a second pass
+     *  finds no {@code leg-sl} rows and no-ops. */
+    private void renameLegSlToShortStraddle() {
+        try {
+            int sessions = safeUpdate(
+                "UPDATE straddle_sessions SET strategy_id = 'short-straddle' WHERE strategy_id = 'leg-sl'");
+            int trades   = safeUpdate(
+                "UPDATE straddle_trades   SET strategy_id = 'short-straddle' WHERE strategy_id = 'leg-sl'");
+            // SETTINGS keys are of the form 'strategies.leg-sl.<field>'. Rename the prefix.
+            int settings = safeUpdate(
+                "UPDATE settings SET setting_key = REPLACE(setting_key, 'strategies.leg-sl.', 'strategies.short-straddle.') " +
+                "WHERE setting_key LIKE 'strategies.leg-sl.%'");
+            if (sessions + trades + settings > 0) {
+                log.info("[StrategyMigration] Renamed leg-sl → short-straddle: {} session(s), {} trade(s), {} setting(s)",
+                    sessions, trades, settings);
+            }
+        } catch (Exception e) {
+            log.warn("[StrategyMigration] leg-sl → short-straddle rename skipped: {}", e.getMessage());
+        }
+    }
+
+    private int safeUpdate(String sql) {
+        try { return em.createNativeQuery(sql).executeUpdate(); }
+        catch (Exception e) {
+            log.warn("[StrategyMigration] {} failed: {}", sql, e.getMessage());
+            return 0;
+        }
     }
 
     /** One-time wipe of analytics data — gated by a flag in the SETTINGS table so it runs only

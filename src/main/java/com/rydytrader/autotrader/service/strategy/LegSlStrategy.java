@@ -45,7 +45,7 @@ import java.time.ZoneId;
 @Order(1)
 public class LegSlStrategy implements Strategy {
 
-    public static final String STRATEGY_ID = "leg-sl";
+    public static final String STRATEGY_ID = "short-straddle";
 
     private static final Logger log = LoggerFactory.getLogger(LegSlStrategy.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
@@ -650,7 +650,7 @@ public class LegSlStrategy implements Strategy {
             tryResolveWeeklyExpiry();
         }
         java.util.Map<String, Object> m = getStatus();
-        m.put("dashboardShape",  "leg-sl");
+        m.put("dashboardShape",  "short-straddle");
         m.put("weeklyExpiry",    currentWeeklyExpiry);
         m.put("daysToExpiry",    tradingDaysToExpiry(currentWeeklyExpiry));
         synchronized (combinedPremiumSamples) {
