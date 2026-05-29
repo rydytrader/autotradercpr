@@ -94,6 +94,10 @@ public class RollingStraddleService implements Strategy {
             "Wait this many minutes after an SL hit before re-entering. Avoids whipsaw. 0 = roll immediately."));
         s.add(field("rollCutoffTime",       "time",    "14:30", "Roll Cutoff Time (HH:mm IST)",
             "If SL fires after this time (or the wait would push past it), bot closes and parks DONE_FOR_DAY."));
+        s.add(field("rollRangeFilterPct",   "double",  0.15,    "Roll Wait Filter — Range (%)",
+            "Allowed NIFTY high-to-low range during the wait, as % of NIFTY at SL hit. If exceeded, timer re-arms for another wait cycle instead of re-entering. 0 disables the filter."));
+        s.add(field("maxRollWaitCycles",    "int",     3,       "Roll Wait Filter — Max Cycles",
+            "Max number of wait cycles before parking DONE_FOR_DAY when the range stays wide. 0 = unlimited (only roll-cutoff / squareoff time stops it)."));
         s.add(field("maxRolls",             "int",     3,       "Max Rolls",
             "Number of rolls before holding to squareoff."));
         s.add(field("lotsPerLeg",           "int",     1,       "Lots per Leg",
@@ -120,6 +124,8 @@ public class RollingStraddleService implements Strategy {
         v.put("squareOffTime",       riskSettings.getStraddleSquareOffTime());
         v.put("rollWaitMin",         riskSettings.getStraddleRollWaitMin());
         v.put("rollCutoffTime",      riskSettings.getStraddleRollCutoffTime());
+        v.put("rollRangeFilterPct",  riskSettings.getStraddleRollRangeFilterPct());
+        v.put("maxRollWaitCycles",   riskSettings.getStraddleMaxRollWaitCycles());
         v.put("maxRolls",            riskSettings.getStraddleMaxRolls());
         v.put("lotsPerLeg",          riskSettings.getStraddleLotsPerLeg());
         v.put("combinedTargetPct",   riskSettings.getStraddleCombinedTargetPct());
@@ -137,6 +143,8 @@ public class RollingStraddleService implements Strategy {
         if (values.containsKey("squareOffTime"))     riskSettings.setStraddleSquareOffTime(String.valueOf(values.get("squareOffTime")));
         if (values.containsKey("rollWaitMin"))       riskSettings.setStraddleRollWaitMin(asInt(values.get("rollWaitMin"), 15));
         if (values.containsKey("rollCutoffTime"))    riskSettings.setStraddleRollCutoffTime(String.valueOf(values.get("rollCutoffTime")));
+        if (values.containsKey("rollRangeFilterPct")) riskSettings.setStraddleRollRangeFilterPct(asDouble(values.get("rollRangeFilterPct"), 0.15));
+        if (values.containsKey("maxRollWaitCycles"))  riskSettings.setStraddleMaxRollWaitCycles(asInt(values.get("maxRollWaitCycles"), 3));
         if (values.containsKey("maxRolls"))          riskSettings.setStraddleMaxRolls(asInt(values.get("maxRolls"), 3));
         if (values.containsKey("lotsPerLeg"))        riskSettings.setStraddleLotsPerLeg(asInt(values.get("lotsPerLeg"), 1));
         if (values.containsKey("combinedTargetPct")) riskSettings.setStraddleCombinedTargetPct(asDouble(values.get("combinedTargetPct"), 30));
@@ -216,8 +224,16 @@ public class RollingStraddleService implements Strategy {
     private volatile String  currentWeeklyExpiry = "";
     /** Epoch millis when the combined-premium SL last fired. The bot sits in WAITING_TO_ROLL
      *  until now - slHitTimeMillis >= straddleRollWaitMin minutes, then attempts re-entry
-     *  (unless we're past the roll cutoff time, in which case it parks DONE_FOR_DAY). */
+     *  (unless we're past the roll cutoff time, in which case it parks DONE_FOR_DAY).
+     *  Resets to {@code now} each time the Roll Wait Filter re-arms the timer. */
     private volatile long    slHitTimeMillis     = 0;
+    /** Roll Wait Filter state — NIFTY LTP at the start of the current wait cycle, plus the
+     *  running high/low since then, plus the cycle counter. All four are 0 outside
+     *  WAITING_TO_ROLL. Persisted so a mid-cycle restart resumes filter evaluation. */
+    private volatile double  niftyAtSlHit        = 0;
+    private volatile double  niftyHighSinceSl    = 0;
+    private volatile double  niftyLowSinceSl     = 0;
+    private volatile int     rollWaitCycles      = 0;
     /** 1-minute combined-premium samples for the dashboard's straddle chart. List of
      *  {t: "HH:mm", v: ceLtp + peLtp}. Sloping DOWN = good for short straddle (premiums
      *  decaying). Cleared on day rollover, persisted to disk. */
@@ -268,6 +284,10 @@ public class RollingStraddleService implements Strategy {
             this.orderCountToday = persisted.orderCountToday;
             this.currentWeeklyExpiry = persisted.currentWeeklyExpiry != null ? persisted.currentWeeklyExpiry : "";
             this.slHitTimeMillis = persisted.slHitTimeMillis;
+            this.niftyAtSlHit     = persisted.niftyAtSlHit;
+            this.niftyHighSinceSl = persisted.niftyHighSinceSl;
+            this.niftyLowSinceSl  = persisted.niftyLowSinceSl;
+            this.rollWaitCycles   = persisted.rollWaitCycles;
             if (persisted.combinedPremiumSamples != null) {
                 this.combinedPremiumSamples.clear();
                 this.combinedPremiumSamples.addAll(persisted.combinedPremiumSamples);
@@ -819,28 +839,50 @@ public class RollingStraddleService implements Strategy {
         closeBothLegs("SL_HIT");
         rollCount++;
         slHitTimeMillis = System.currentTimeMillis();
+        // Seed the Roll Wait Filter — snapshot NIFTY at SL hit and start tracking range.
+        double niftyAtClose = marketDataService.getLtp(NIFTY_SYMBOL);
+        if (niftyAtClose > 0) {
+            niftyAtSlHit     = niftyAtClose;
+            niftyHighSinceSl = niftyAtClose;
+            niftyLowSinceSl  = niftyAtClose;
+        }
+        rollWaitCycles = 1;
         transitionTo(LifecycleState.WAITING_TO_ROLL);
     }
 
-    /** Called every tick while WAITING_TO_ROLL. Compares elapsed time since slHitTimeMillis
-     *  against the configured wait. Once the wait expires, re-enters at the new ATM — unless
-     *  we've crossed the roll cutoff time, in which case we park DONE_FOR_DAY. */
+    /** Called every tick while WAITING_TO_ROLL. Tracks NIFTY's high/low during the wait so the
+     *  Roll Wait Filter can evaluate market calm when the timer expires:
+     *  <ul>
+     *    <li>Range stayed within {@code straddleRollRangeFilterPct}% → re-enter</li>
+     *    <li>Range too wide AND under {@code straddleMaxRollWaitCycles} → reset timer, wait again</li>
+     *    <li>Range too wide AND cycles exhausted → park DONE_FOR_DAY</li>
+     *    <li>Squareoff or roll-cutoff time hit at any point → park DONE_FOR_DAY</li>
+     *  </ul>
+     *  Setting {@code straddleRollRangeFilterPct = 0} disables the filter and falls back to
+     *  the legacy wait-and-roll behaviour. */
     private void checkRollWait(LocalTime now, LocalTime squareOffTime) {
         if (afterOrAt(now, squareOffTime)) {
-            // Past squareoff while waiting — done for day
             transitionTo(LifecycleState.DONE_FOR_DAY);
+            clearRollWaitState();
             return;
         }
         if (slHitTimeMillis <= 0) {
-            // Defensive: shouldn't be in WAITING_TO_ROLL without an slHitTimeMillis
             transitionTo(LifecycleState.IDLE);
             return;
+        }
+        // Continuously track NIFTY high/low during the wait, regardless of where we are in
+        // the cycle. Tick-cheap — single LTP read + 2 compares.
+        double niftyLtp = marketDataService.getLtp(NIFTY_SYMBOL);
+        if (niftyLtp > 0) {
+            if (niftyAtSlHit <= 0) niftyAtSlHit = niftyLtp; // defensive after mid-cycle restart
+            if (niftyHighSinceSl <= 0 || niftyLtp > niftyHighSinceSl) niftyHighSinceSl = niftyLtp;
+            if (niftyLowSinceSl  <= 0 || niftyLtp < niftyLowSinceSl)  niftyLowSinceSl  = niftyLtp;
         }
         long elapsedMin = (System.currentTimeMillis() - slHitTimeMillis) / 60_000L;
         int waitMin = riskSettings.getStraddleRollWaitMin();
         if (elapsedMin < waitMin) return; // still waiting
 
-        // Wait elapsed — check roll cutoff time before re-entering
+        // Wait elapsed — check roll cutoff time first.
         LocalTime cutoff = parseTime(riskSettings.getStraddleRollCutoffTime(), "14:30");
         if (afterOrAt(now, cutoff)) {
             String msg = "Roll wait expired but past cutoff " + cutoff + " — parking DONE_FOR_DAY without re-entry";
@@ -848,12 +890,63 @@ public class RollingStraddleService implements Strategy {
             eventService.log("[INFO] [combined-sl-roll] " + msg);
             notifyTelegram(msg);
             transitionTo(LifecycleState.DONE_FOR_DAY);
-            slHitTimeMillis = 0;
+            clearRollWaitState();
             return;
         }
-        // OK to re-enter
-        slHitTimeMillis = 0;
+
+        // Roll Wait Filter — evaluate NIFTY range during this cycle.
+        double rangePct = riskSettings.getStraddleRollRangeFilterPct();
+        if (rangePct > 0 && niftyAtSlHit > 0 && niftyHighSinceSl > 0 && niftyLowSinceSl > 0) {
+            double rangePoints = niftyHighSinceSl - niftyLowSinceSl;
+            double rangeAsPct  = (rangePoints / niftyAtSlHit) * 100.0;
+            if (rangeAsPct > rangePct) {
+                int maxCycles = riskSettings.getStraddleMaxRollWaitCycles();
+                if (maxCycles > 0 && rollWaitCycles >= maxCycles) {
+                    String msg = String.format(
+                        "Roll Wait Filter — NIFTY range %.2f pts (%.3f%%) > threshold %.3f%% after %d cycles. Parking DONE_FOR_DAY.",
+                        rangePoints, rangeAsPct, rangePct, rollWaitCycles);
+                    log.info("[Straddle] {}", msg);
+                    eventService.log("[INFO] [combined-sl-roll] " + msg);
+                    notifyTelegram(msg);
+                    transitionTo(LifecycleState.DONE_FOR_DAY);
+                    clearRollWaitState();
+                    return;
+                }
+                // Re-arm: new baseline, new timer, increment cycle counter.
+                String msg = String.format(
+                    "Roll Wait Filter — NIFTY range %.2f pts (%.3f%%) > threshold %.3f%%. Cycle %d → waiting another %d min.",
+                    rangePoints, rangeAsPct, rangePct, rollWaitCycles, waitMin);
+                log.info("[Straddle] {}", msg);
+                eventService.log("[INFO] [combined-sl-roll] " + msg);
+                notifyTelegram(msg);
+                slHitTimeMillis  = System.currentTimeMillis();
+                niftyAtSlHit     = niftyLtp > 0 ? niftyLtp : niftyAtSlHit;
+                niftyHighSinceSl = niftyAtSlHit;
+                niftyLowSinceSl  = niftyAtSlHit;
+                rollWaitCycles  += 1;
+                persist();
+                return;
+            }
+            // Range tight enough — log and fall through to re-enter.
+            String msg = String.format(
+                "Roll Wait Filter PASS — NIFTY range %.2f pts (%.3f%%) ≤ threshold %.3f%% after %d cycle(s). Re-entering.",
+                rangePoints, rangeAsPct, rangePct, rollWaitCycles);
+            log.info("[Straddle] {}", msg);
+            eventService.log("[INFO] [combined-sl-roll] " + msg);
+        }
+        // OK to re-enter (filter passed or disabled).
+        clearRollWaitState();
         doInitialEntry();
+    }
+
+    /** Reset all Roll Wait Filter / SL-hit timing state. Called when WAITING_TO_ROLL ends —
+     *  either via re-entry, park-on-cutoff, park-on-cycles-exhausted, or day rollover. */
+    private void clearRollWaitState() {
+        slHitTimeMillis  = 0;
+        niftyAtSlHit     = 0;
+        niftyHighSinceSl = 0;
+        niftyLowSinceSl  = 0;
+        rollWaitCycles   = 0;
     }
 
     // ── Close both legs (BUY since we're short) ────────────────────────────────
@@ -1088,6 +1181,10 @@ public class RollingStraddleService implements Strategy {
         this.orderCountToday = 0;
         this.currentWeeklyExpiry = "";
         this.slHitTimeMillis = 0;
+        this.niftyAtSlHit = 0;
+        this.niftyHighSinceSl = 0;
+        this.niftyLowSinceSl = 0;
+        this.rollWaitCycles = 0;
         this.recentRolls.clear();
         this.combinedPremiumSamples.clear();
         transitionTo(LifecycleState.IDLE);
@@ -1118,6 +1215,10 @@ public class RollingStraddleService implements Strategy {
         s.orderCountToday = this.orderCountToday;
         s.currentWeeklyExpiry = this.currentWeeklyExpiry;
         s.slHitTimeMillis = this.slHitTimeMillis;
+        s.niftyAtSlHit     = this.niftyAtSlHit;
+        s.niftyHighSinceSl = this.niftyHighSinceSl;
+        s.niftyLowSinceSl  = this.niftyLowSinceSl;
+        s.rollWaitCycles   = this.rollWaitCycles;
         synchronized (combinedPremiumSamples) {
             s.combinedPremiumSamples = new java.util.ArrayList<>(combinedPremiumSamples);
         }
@@ -1185,8 +1286,8 @@ public class RollingStraddleService implements Strategy {
         } else {
             eventService.log("[INFO] [combined-sl-roll] Portfolio kill (" + reason + ") — parking combined-sl-roll from state=" + state + " (no open position)");
         }
-        // Clear roll-wait so a stale WAITING_TO_ROLL doesn't re-enter on the next tick.
-        slHitTimeMillis = 0;
+        // Clear roll-wait + filter state so a stale WAITING_TO_ROLL doesn't re-enter.
+        clearRollWaitState();
         transitionTo(LifecycleState.DONE_FOR_DAY);
     }
 
@@ -1302,14 +1403,23 @@ public class RollingStraddleService implements Strategy {
         } else {
             m.put("targetTrigger", 0.0);
         }
-        // Roll wait countdown — only meaningful when WAITING_TO_ROLL
+        // Roll wait countdown + Roll Wait Filter status — only meaningful when WAITING_TO_ROLL
         if (state == LifecycleState.WAITING_TO_ROLL && slHitTimeMillis > 0) {
             int waitMin = riskSettings.getStraddleRollWaitMin();
             long elapsedSec = (System.currentTimeMillis() - slHitTimeMillis) / 1000L;
             long remainingSec = Math.max(0, waitMin * 60L - elapsedSec);
             m.put("rollWaitRemainingSec", remainingSec);
+            m.put("rollWaitCycles",       rollWaitCycles);
+            m.put("niftyAtSlHit",         round2(niftyAtSlHit));
+            if (niftyAtSlHit > 0 && niftyHighSinceSl > 0 && niftyLowSinceSl > 0) {
+                double rangePoints = niftyHighSinceSl - niftyLowSinceSl;
+                m.put("rollWaitRangePoints", round2(rangePoints));
+                m.put("rollWaitRangePct",    round2((rangePoints / niftyAtSlHit) * 100.0));
+            }
         }
-        m.put("rollCutoffTime", riskSettings.getStraddleRollCutoffTime());
+        m.put("rollCutoffTime",        riskSettings.getStraddleRollCutoffTime());
+        m.put("rollRangeFilterPct",    riskSettings.getStraddleRollRangeFilterPct());
+        m.put("maxRollWaitCycles",     riskSettings.getStraddleMaxRollWaitCycles());
         // Live charges estimate + breakdown for the dashboard.
         java.util.Map<String, Double> charges = computeChargesBreakdown();
         m.put("charges", charges);

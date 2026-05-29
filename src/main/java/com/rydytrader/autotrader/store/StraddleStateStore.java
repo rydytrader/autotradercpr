@@ -57,9 +57,19 @@ public class StraddleStateStore {
         public double  buyPremiumTurnoverToday;
         public int     orderCountToday;
         public String  currentWeeklyExpiry;
-        /** Epoch millis when the combined-premium SL fired. Used to resume the WAITING_TO_ROLL
-         *  wait timer after a mid-day restart. 0 = no SL active. */
+        /** Epoch millis when the combined-premium SL fired (or when the current Roll Wait
+         *  Filter cycle started). Resets each time the timer re-arms. */
         public long    slHitTimeMillis;
+        /** Roll Wait Filter — NIFTY LTP captured at the start of the current wait cycle
+         *  (either at SL hit or when the cycle re-armed after a wide-range cycle). */
+        public double  niftyAtSlHit;
+        /** Highest NIFTY tick seen since {@link #niftyAtSlHit} was set. */
+        public double  niftyHighSinceSl;
+        /** Lowest NIFTY tick seen since {@link #niftyAtSlHit} was set. */
+        public double  niftyLowSinceSl;
+        /** Roll Wait Filter — number of wait cycles elapsed since the SL hit (1 on the first
+         *  wait, increments each time the range was too wide and the timer re-armed). */
+        public int     rollWaitCycles;
         /** Today's roll events ring (entry / roll / close lines for the dashboard). Persisted
          *  so the "Today's Roll Events" table also survives mid-day restart. */
         public java.util.List<java.util.Map<String, Object>> recentRolls;

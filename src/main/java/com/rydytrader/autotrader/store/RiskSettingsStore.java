@@ -229,6 +229,14 @@ public class RiskSettingsStore {
         /** Roll cutoff time (HH:mm IST). If the SL fires after this time, the bot closes legs
          *  and parks DONE_FOR_DAY without re-entering. */
         volatile String  straddleRollCutoffTime    = "14:30";
+        /** Roll Wait Filter — allowed NIFTY high-to-low range during the wait, as % of NIFTY
+         *  at SL hit. After the wait period the bot only re-enters if NIFTY stayed within
+         *  this range; otherwise it resets the timer and waits another cycle (up to
+         *  {@link #straddleMaxRollWaitCycles}). 0 disables the filter (legacy wait-and-roll). */
+        volatile double  straddleRollRangeFilterPct = 0.15;
+        /** Roll Wait Filter — maximum number of wait cycles before parking DONE_FOR_DAY when
+         *  the range stays wide. 0 = unlimited (only roll-cutoff / squareoff time stops it). */
+        volatile int     straddleMaxRollWaitCycles  = 3;
         /** Daily max-loss kill switch in rupees (absolute, positive). When today's net P&L
          *  (realised + open MTM − charges) drops below {@code -straddleMaxDailyLoss}, the bot
          *  closes both legs and parks DONE_FOR_DAY. 0 disables the check. Default ₹10,000
@@ -473,6 +481,8 @@ public class RiskSettingsStore {
     public double  getStraddleCombinedSlPct()      { return cfg().straddleCombinedSlPct; }
     public double  getStraddleCombinedTargetPct()  { return cfg().straddleCombinedTargetPct; }
     public int     getStraddleRollWaitMin()        { return cfg().straddleRollWaitMin; }
+    public double  getStraddleRollRangeFilterPct() { return cfg().straddleRollRangeFilterPct; }
+    public int     getStraddleMaxRollWaitCycles()  { return cfg().straddleMaxRollWaitCycles; }
     public String  getStraddleRollCutoffTime()     { return cfg().straddleRollCutoffTime; }
     public double  getStraddleMaxDailyLoss()       { return cfg().straddleMaxDailyLoss; }
 
@@ -658,6 +668,8 @@ public class RiskSettingsStore {
     public void setStraddleCombinedSlPct(double v)         { cfg().straddleCombinedSlPct = Math.max(0.1, v); }
     public void setStraddleCombinedTargetPct(double v)     { cfg().straddleCombinedTargetPct = Math.max(0, v); }
     public void setStraddleRollWaitMin(int v)              { cfg().straddleRollWaitMin = Math.max(0, v); }
+    public void setStraddleRollRangeFilterPct(double v)    { cfg().straddleRollRangeFilterPct = Math.max(0, v); }
+    public void setStraddleMaxRollWaitCycles(int v)        { cfg().straddleMaxRollWaitCycles = Math.max(0, v); }
     public void setStraddleRollCutoffTime(String v)        { if (v != null && !v.isBlank()) cfg().straddleRollCutoffTime = v; }
     public void setStraddleMaxDailyLoss(double v)          { cfg().straddleMaxDailyLoss = Math.max(0, v); }
     public void setEnableEmaLevelCountFilter(boolean v)    { cfg().enableEmaLevelCountFilter = v; }
@@ -818,6 +830,8 @@ public class RiskSettingsStore {
             upsert("straddleCombinedSlPct", String.valueOf(c.straddleCombinedSlPct));
             upsert("straddleCombinedTargetPct", String.valueOf(c.straddleCombinedTargetPct));
             upsert("straddleRollWaitMin", String.valueOf(c.straddleRollWaitMin));
+            upsert("straddleRollRangeFilterPct", String.valueOf(c.straddleRollRangeFilterPct));
+            upsert("straddleMaxRollWaitCycles", String.valueOf(c.straddleMaxRollWaitCycles));
             upsert("straddleRollCutoffTime", c.straddleRollCutoffTime);
             upsert("straddleMaxDailyLoss", String.valueOf(c.straddleMaxDailyLoss));
             // Generic per-strategy settings — write each {id, field, value} as "strategies.<id>.<field>"
@@ -996,6 +1010,8 @@ public class RiskSettingsStore {
                     case "straddleCombinedSlPct" -> c.straddleCombinedSlPct = Math.max(0.1, Double.parseDouble(v));
                     case "straddleCombinedTargetPct" -> c.straddleCombinedTargetPct = Math.max(0, Double.parseDouble(v));
                     case "straddleRollWaitMin" -> c.straddleRollWaitMin = Math.max(0, Integer.parseInt(v));
+                    case "straddleRollRangeFilterPct" -> c.straddleRollRangeFilterPct = Math.max(0, Double.parseDouble(v));
+                    case "straddleMaxRollWaitCycles"  -> c.straddleMaxRollWaitCycles  = Math.max(0, Integer.parseInt(v));
                     case "straddleRollCutoffTime" -> { if (v != null && !v.isBlank()) c.straddleRollCutoffTime = v; }
                     case "straddleMaxDailyLoss" -> c.straddleMaxDailyLoss = Math.max(0, Double.parseDouble(v));
                     case "minRiskRewardRatio" -> c.minRiskRewardRatio = Double.parseDouble(v);
