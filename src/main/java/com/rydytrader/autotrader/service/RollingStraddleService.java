@@ -96,7 +96,7 @@ public class RollingStraddleService implements Strategy {
             "If SL fires after this time (or the wait would push past it), bot closes and parks DONE_FOR_DAY."));
         s.add(field("rollRangeFilterPct",   "double",  0.15,    "Roll Wait Filter — Range (%)",
             "Allowed NIFTY high-to-low range during the wait, as % of NIFTY at SL hit. If exceeded, timer re-arms for another wait cycle instead of re-entering. 0 disables the filter."));
-        s.add(field("maxRollWaitCycles",    "int",     3,       "Roll Wait Filter — Max Cycles",
+        s.add(field("maxRollWaitCycles",    "int",     0,       "Roll Wait Filter — Max Cycles",
             "Max number of wait cycles before parking DONE_FOR_DAY when the range stays wide. 0 = unlimited (only roll-cutoff / squareoff time stops it)."));
         s.add(field("maxRolls",             "int",     3,       "Max Rolls",
             "Number of rolls before holding to squareoff."));
@@ -144,7 +144,7 @@ public class RollingStraddleService implements Strategy {
         if (values.containsKey("rollWaitMin"))       riskSettings.setStraddleRollWaitMin(asInt(values.get("rollWaitMin"), 15));
         if (values.containsKey("rollCutoffTime"))    riskSettings.setStraddleRollCutoffTime(String.valueOf(values.get("rollCutoffTime")));
         if (values.containsKey("rollRangeFilterPct")) riskSettings.setStraddleRollRangeFilterPct(asDouble(values.get("rollRangeFilterPct"), 0.15));
-        if (values.containsKey("maxRollWaitCycles"))  riskSettings.setStraddleMaxRollWaitCycles(asInt(values.get("maxRollWaitCycles"), 3));
+        if (values.containsKey("maxRollWaitCycles"))  riskSettings.setStraddleMaxRollWaitCycles(asInt(values.get("maxRollWaitCycles"), 0));
         if (values.containsKey("maxRolls"))          riskSettings.setStraddleMaxRolls(asInt(values.get("maxRolls"), 3));
         if (values.containsKey("lotsPerLeg"))        riskSettings.setStraddleLotsPerLeg(asInt(values.get("lotsPerLeg"), 1));
         if (values.containsKey("combinedTargetPct")) riskSettings.setStraddleCombinedTargetPct(asDouble(values.get("combinedTargetPct"), 30));

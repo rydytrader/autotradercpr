@@ -235,8 +235,9 @@ public class RiskSettingsStore {
          *  {@link #straddleMaxRollWaitCycles}). 0 disables the filter (legacy wait-and-roll). */
         volatile double  straddleRollRangeFilterPct = 0.15;
         /** Roll Wait Filter — maximum number of wait cycles before parking DONE_FOR_DAY when
-         *  the range stays wide. 0 = unlimited (only roll-cutoff / squareoff time stops it). */
-        volatile int     straddleMaxRollWaitCycles  = 3;
+         *  the range stays wide. 0 = unlimited (only roll-cutoff / squareoff time stops it).
+         *  Default 0 — let the wait keep cycling until the roll window closes naturally. */
+        volatile int     straddleMaxRollWaitCycles  = 0;
         /** Daily max-loss kill switch in rupees (absolute, positive). When today's net P&L
          *  (realised + open MTM − charges) drops below {@code -straddleMaxDailyLoss}, the bot
          *  closes both legs and parks DONE_FOR_DAY. 0 disables the check. Default ₹10,000
