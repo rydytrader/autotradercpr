@@ -38,6 +38,8 @@ public class LegSlStateStore {
         public int     peQty;
         public String  ceOrderId;
         public String  peOrderId;
+        /** NIFTY LTP at the moment today's straddle was entered. 0 until first entry. */
+        public double  lastEntryNifty;
         public double  ceEntryPremium;
         public double  peEntryPremium;
         /** Epoch millis when each leg was closed (SL hit or squareoff). 0 = leg still open. */

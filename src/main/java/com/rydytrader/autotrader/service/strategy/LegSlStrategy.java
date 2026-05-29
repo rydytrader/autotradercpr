@@ -97,6 +97,9 @@ public class LegSlStrategy implements Strategy {
     private volatile double buyPremiumTurnoverToday  = 0;
     private volatile int    orderCountToday = 0;
     private volatile String currentWeeklyExpiry = "";
+    /** NIFTY LTP captured at the moment this day's straddle was entered — surfaced on the
+     *  dashboard's Hero "Last Entry" tile. 0 until first entry, cleared on day rollover. */
+    private volatile double lastEntryNifty = 0;
 
     private final java.util.Deque<CycleEvent> recentEvents = new java.util.ArrayDeque<>();
     private final java.util.List<java.util.Map<String, Object>> combinedPremiumSamples =
@@ -197,6 +200,7 @@ public class LegSlStrategy implements Strategy {
             this.peQty          = p.peQty;
             this.ceOrderId      = p.ceOrderId != null ? p.ceOrderId : "";
             this.peOrderId      = p.peOrderId != null ? p.peOrderId : "";
+            this.lastEntryNifty = p.lastEntryNifty;
             this.ceEntryPremium = p.ceEntryPremium;
             this.peEntryPremium = p.peEntryPremium;
             this.ceClosedAtMillis = p.ceClosedAtMillis;
@@ -354,6 +358,7 @@ public class LegSlStrategy implements Strategy {
         transitionTo(LifecycleState.OPEN_BOTH);
 
         double niftyAtEntry = niftyLtp;
+        this.lastEntryNifty = niftyAtEntry;
         pushEvent("ENTRY", niftyAtEntry, resolvedCe, resolvedPe, 0);
 
         String msg = "leg-sl armed @ ATM " + atmStrike + " (NIFTY " + String.format("%.2f", niftyLtp)
@@ -714,6 +719,7 @@ public class LegSlStrategy implements Strategy {
         java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
         m.put("state",         state.name());
         m.put("dayKey",        dayKey);
+        m.put("lastEntryNifty", lastEntryNifty);
         m.put("ceSymbol",      ceSymbol);
         m.put("peSymbol",      peSymbol);
         m.put("ceQty",         ceQty);
@@ -787,6 +793,7 @@ public class LegSlStrategy implements Strategy {
             catch (Exception e) { log.warn("[leg-sl] Failed to persist session row for {}: {}", dayKey, e.getMessage()); }
         }
         this.dayKey = today;
+        this.lastEntryNifty = 0;
         this.ceSymbol = ""; this.peSymbol = "";
         this.ceQty = 0; this.peQty = 0;
         this.ceOrderId = ""; this.peOrderId = "";
@@ -1057,6 +1064,7 @@ public class LegSlStrategy implements Strategy {
         s.peQty = this.peQty;
         s.ceOrderId = this.ceOrderId;
         s.peOrderId = this.peOrderId;
+        s.lastEntryNifty = this.lastEntryNifty;
         s.ceEntryPremium = this.ceEntryPremium;
         s.peEntryPremium = this.peEntryPremium;
         s.ceClosedAtMillis = this.ceClosedAtMillis;
