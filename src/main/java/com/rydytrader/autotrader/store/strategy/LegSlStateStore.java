@@ -45,6 +45,10 @@ public class LegSlStateStore {
         /** Epoch millis when each leg was closed (SL hit or squareoff). 0 = leg still open. */
         public long    ceClosedAtMillis;
         public long    peClosedAtMillis;
+        /** Per-leg realised P&L frozen at close. Dashboard leg card displays this once the
+         *  leg is no longer running so it doesn't reset to 0 after the qty drops to 0. */
+        public double  ceLegPnl;
+        public double  peLegPnl;
         public double  realisedPnlToday;
         public double  sellPremiumTurnoverToday;
         public double  buyPremiumTurnoverToday;

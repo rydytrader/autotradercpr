@@ -92,6 +92,11 @@ public class LegSlStrategy implements Strategy {
     private volatile double peEntryPremium = 0;
     private volatile long   ceClosedAtMillis = 0;
     private volatile long   peClosedAtMillis = 0;
+    /** Per-leg realised P&L frozen at the moment the leg closed. Surfaced on the dashboard's
+     *  CE/PE leg card as the leg's "MTM" once the leg is closed (so the card shows the loss
+     *  taken on that SL hit instead of resetting to 0). 0 while leg is still open. */
+    private volatile double ceLegPnl = 0;
+    private volatile double peLegPnl = 0;
     private volatile double realisedPnlToday = 0;
     private volatile double sellPremiumTurnoverToday = 0;
     private volatile double buyPremiumTurnoverToday  = 0;
@@ -205,6 +210,8 @@ public class LegSlStrategy implements Strategy {
             this.peEntryPremium = p.peEntryPremium;
             this.ceClosedAtMillis = p.ceClosedAtMillis;
             this.peClosedAtMillis = p.peClosedAtMillis;
+            this.ceLegPnl = p.ceLegPnl;
+            this.peLegPnl = p.peLegPnl;
             this.realisedPnlToday = p.realisedPnlToday;
             this.sellPremiumTurnoverToday = p.sellPremiumTurnoverToday;
             this.buyPremiumTurnoverToday  = p.buyPremiumTurnoverToday;
@@ -349,6 +356,8 @@ public class LegSlStrategy implements Strategy {
         this.peOrderId = peResp.getId();
         this.ceClosedAtMillis = 0;
         this.peClosedAtMillis = 0;
+        this.ceLegPnl = 0;
+        this.peLegPnl = 0;
         try { marketDataService.subscribeAdditional(java.util.Arrays.asList(resolvedCe, resolvedPe)); }
         catch (Exception ignored) {}
         this.ceEntryPremium = readEntryPremium(resolvedCe);
@@ -459,6 +468,10 @@ public class LegSlStrategy implements Strategy {
         double closeLtp = marketDataService.getLtp(symbol);
         double pnl = (entry > 0 && closeLtp > 0) ? (entry - closeLtp) * qty : 0;
         realisedPnlToday += pnl;
+        // Freeze this leg's realised P&L so the dashboard leg card can keep showing the
+        // loss (instead of 0) after the qty drops to 0.
+        if (isCe) ceLegPnl = pnl;
+        else      peLegPnl = pnl;
         if (closeLtp > 0) buyPremiumTurnoverToday += closeLtp * qty;
         double niftyAtClose = marketDataService.getLtp(NIFTY_SYMBOL);
         String closedCe = isCe ? symbol : "";
@@ -499,6 +512,7 @@ public class LegSlStrategy implements Strategy {
             double ltp = marketDataService.getLtp(ceSymbol);
             double pnl = (ceEntryPremium > 0 && ltp > 0) ? (ceEntryPremium - ltp) * ceQty : 0;
             realisedPnlToday += pnl;
+            ceLegPnl = pnl;
             totalPnl += pnl;
             if (ltp > 0) buyPremiumTurnoverToday += ltp * ceQty;
             placeCloseRetry(ceSymbol, ceQty, "CE", reason);
@@ -511,6 +525,7 @@ public class LegSlStrategy implements Strategy {
             double ltp = marketDataService.getLtp(peSymbol);
             double pnl = (peEntryPremium > 0 && ltp > 0) ? (peEntryPremium - ltp) * peQty : 0;
             realisedPnlToday += pnl;
+            peLegPnl = pnl;
             totalPnl += pnl;
             if (ltp > 0) buyPremiumTurnoverToday += ltp * peQty;
             placeCloseRetry(peSymbol, peQty, "PE", reason);
@@ -665,9 +680,14 @@ public class LegSlStrategy implements Strategy {
 
         double ceMtm = (isCeOpen() && ceEntryPremium > 0 && ceLtp > 0 && ceQty > 0) ? (ceEntryPremium - ceLtp) * ceQty : 0;
         double peMtm = (isPeOpen() && peEntryPremium > 0 && peLtp > 0 && peQty > 0) ? (peEntryPremium - peLtp) * peQty : 0;
-        m.put("ceMtm", round2(ceMtm));
-        m.put("peMtm", round2(peMtm));
-        m.put("combinedMtm", round2(ceMtm + peMtm));
+        // Leg-card display values — when a leg is closed, freeze the realised P&L so the
+        // card shows the loss taken instead of resetting to 0. The Hero's Open MTM stays
+        // clean (sums live MTMs only) via combinedMtm below.
+        double ceCardMtm = isCeOpen() ? ceMtm : ceLegPnl;
+        double peCardMtm = isPeOpen() ? peMtm : peLegPnl;
+        m.put("ceMtm", round2(ceCardMtm));
+        m.put("peMtm", round2(peCardMtm));
+        m.put("combinedMtm", round2(ceMtm + peMtm)); // Hero "Open MTM" — live legs only
         m.put("realisedPnlToday", round2(realisedPnlToday));
         m.put("totalPnlToday", round2(realisedPnlToday + ceMtm + peMtm));
 
@@ -809,6 +829,7 @@ public class LegSlStrategy implements Strategy {
         this.ceOrderId = ""; this.peOrderId = "";
         this.ceEntryPremium = 0; this.peEntryPremium = 0;
         this.ceClosedAtMillis = 0; this.peClosedAtMillis = 0;
+        this.ceLegPnl = 0; this.peLegPnl = 0;
         this.realisedPnlToday = 0;
         this.sellPremiumTurnoverToday = 0;
         this.buyPremiumTurnoverToday = 0;
@@ -1079,6 +1100,8 @@ public class LegSlStrategy implements Strategy {
         s.peEntryPremium = this.peEntryPremium;
         s.ceClosedAtMillis = this.ceClosedAtMillis;
         s.peClosedAtMillis = this.peClosedAtMillis;
+        s.ceLegPnl = this.ceLegPnl;
+        s.peLegPnl = this.peLegPnl;
         s.realisedPnlToday = this.realisedPnlToday;
         s.sellPremiumTurnoverToday = this.sellPremiumTurnoverToday;
         s.buyPremiumTurnoverToday  = this.buyPremiumTurnoverToday;
