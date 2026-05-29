@@ -373,7 +373,7 @@
     var currentPeriod   = 'today';
     var currentStrategy = 'all';
     var lastEquityRenderMs = 0;
-    var EQUITY_REFRESH_MS = 3600000; // 1 hour — the curve doesn't change tick-to-tick
+    var EQUITY_REFRESH_MS = 900000; // 15 minutes — the curve doesn't change tick-to-tick
     var pickedYear = '';  // empty = picker not in use
     var pickedMonth = ''; // empty = whole year
 
@@ -598,9 +598,9 @@
             setVal('ahChargesPct', grossWins > 0 ? ((charges / grossWins) * 100).toFixed(1) + '%' : '—');
 
             // Equity curve — re-render on first load, on selector change (when
-            // loadSummary is called with forceEquity=true), or hourly. Skipping the
-            // re-render on every 5s tick keeps the chart visually stable; the trailing
-            // open-MTM point lags by up to 1h, which is acceptable for a journal view.
+            // loadSummary is called with forceEquity=true), or every 15 minutes. Skipping
+            // the re-render on every 5s tick keeps the chart visually stable; the trailing
+            // open-MTM point lags by up to 15min, acceptable for a journal view.
             var nowMs = Date.now();
             if (forceEquity || lastEquityRenderMs === 0 || (nowMs - lastEquityRenderMs >= EQUITY_REFRESH_MS)) {
                 renderEquityChart(eq.labels || [], eq.values || []);
