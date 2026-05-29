@@ -52,6 +52,10 @@ public class StraddleStateStore {
         // resetting them to zero. Day rollover clears them via rolloverIfNewDay regardless.
         public double  ceEntryPremium;
         public double  peEntryPremium;
+        /** Most recent cycle's combined entry premium. Persists across closeBothLegs so the
+         *  dashboard chart's reference lines (Entry / SL / Target) survive squareoff. Reset
+         *  on day rollover only. */
+        public double  lastEntryCombinedForChart;
         public double  realisedPnlToday;
         public double  sellPremiumTurnoverToday;
         public double  buyPremiumTurnoverToday;

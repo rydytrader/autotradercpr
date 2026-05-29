@@ -227,6 +227,12 @@ public class RollingStraddleService implements Strategy {
      *  (unless we're past the roll cutoff time, in which case it parks DONE_FOR_DAY).
      *  Resets to {@code now} each time the Roll Wait Filter re-arms the timer. */
     private volatile long    slHitTimeMillis     = 0;
+    /** Most recent cycle's combined entry premium (ceEntryPremium + peEntryPremium captured
+     *  at {@code doInitialEntry}). Unlike the live {@code ceEntryPremium}/{@code peEntryPremium}
+     *  which are zeroed in {@code closeBothLegs}, this value persists across close so the
+     *  dashboard chart's Entry / SL / Target reference lines stay visible after squareoff,
+     *  during WAITING_TO_ROLL, and after DONE_FOR_DAY. Reset only on day rollover. */
+    private volatile double  lastEntryCombinedForChart = 0;
     /** Roll Wait Filter state — NIFTY LTP at the start of the current wait cycle, plus the
      *  running high/low since then, plus the cycle counter. All four are 0 outside
      *  WAITING_TO_ROLL. Persisted so a mid-cycle restart resumes filter evaluation. */
@@ -278,6 +284,7 @@ public class RollingStraddleService implements Strategy {
             this.peOrderId      = persisted.peOrderId != null ? persisted.peOrderId : "";
             this.ceEntryPremium = persisted.ceEntryPremium;
             this.peEntryPremium = persisted.peEntryPremium;
+            this.lastEntryCombinedForChart = persisted.lastEntryCombinedForChart;
             this.realisedPnlToday = persisted.realisedPnlToday;
             this.sellPremiumTurnoverToday = persisted.sellPremiumTurnoverToday;
             this.buyPremiumTurnoverToday = persisted.buyPremiumTurnoverToday;
@@ -516,6 +523,9 @@ public class RollingStraddleService implements Strategy {
         } catch (Exception ignored) {}
         this.ceEntryPremium = readEntryPremium(ceResp, resolvedCe);
         this.peEntryPremium = readEntryPremium(peResp, resolvedPe);
+        // Latch the combined entry so the chart's reference lines stay visible after
+        // closeBothLegs zeroes the per-leg premiums.
+        this.lastEntryCombinedForChart = this.ceEntryPremium + this.peEntryPremium;
         // Capture current weekly expiry from the resolved option symbol (cheaper than re-fetching).
         this.currentWeeklyExpiry = parseExpiryFromSymbol(resolvedCe);
         // Accumulate sell-side premium turnover for STT/exchange/SEBI charge calc.
@@ -1175,6 +1185,7 @@ public class RollingStraddleService implements Strategy {
         this.peOrderId = "";
         this.ceEntryPremium = 0;
         this.peEntryPremium = 0;
+        this.lastEntryCombinedForChart = 0;
         this.realisedPnlToday = 0;
         this.sellPremiumTurnoverToday = 0;
         this.buyPremiumTurnoverToday = 0;
@@ -1209,6 +1220,7 @@ public class RollingStraddleService implements Strategy {
         s.peOrderId = this.peOrderId;
         s.ceEntryPremium = this.ceEntryPremium;
         s.peEntryPremium = this.peEntryPremium;
+        s.lastEntryCombinedForChart = this.lastEntryCombinedForChart;
         s.realisedPnlToday = this.realisedPnlToday;
         s.sellPremiumTurnoverToday = this.sellPremiumTurnoverToday;
         s.buyPremiumTurnoverToday = this.buyPremiumTurnoverToday;
@@ -1368,33 +1380,52 @@ public class RollingStraddleService implements Strategy {
         m.put("combinedMtm", Math.round((ceMtm + peMtm) * 100.0) / 100.0);
         m.put("realisedPnlToday", Math.round(realisedPnlToday * 100.0) / 100.0);
         m.put("totalPnlToday", Math.round((realisedPnlToday + ceMtm + peMtm) * 100.0) / 100.0);
-        // Risk Band — combined-premium SL tracking
-        double entryCombined = ceEntryPremium + peEntryPremium;
+        // Risk Band — combined-premium SL tracking.
+        //
+        // entryCombined drives the chart's Entry / SL / Target reference lines AND the live
+        // Risk Band metrics (slConsumedPct, maxLossPerStraddle, etc.).
+        //
+        // For the LIVE metrics we need the *current* cycle's entry (0 between cycles, so the
+        // Risk Band correctly goes blank). For the CHART references we want them to keep
+        // showing the last cycle's entry through WAITING_TO_ROLL and DONE_FOR_DAY — otherwise
+        // the dashed lines vanish the moment closeBothLegs zeroes the per-leg premiums.
+        //
+        // entryCombinedLive  = the live value (used for the dependent live metrics below)
+        // entryCombined      = live value if open, else last cycle's latched value (used for
+        //                      the chart-facing payload + downstream SL/Target prices)
+        double entryCombinedLive = ceEntryPremium + peEntryPremium;
+        double entryCombined     = entryCombinedLive > 0 ? entryCombinedLive : lastEntryCombinedForChart;
         double liveCombined  = (ceLtp > 0 ? ceLtp : 0) + (peLtp > 0 ? peLtp : 0);
         double combinedSlPct = riskSettings.getStraddleCombinedSlPct();
         m.put("entryCombined", round2(entryCombined));
         m.put("liveCombined",  round2(liveCombined));
         m.put("combinedSlPct", combinedSlPct);
-        // Worst-case loss for the currently-running straddle cycle, if the combined SL fires
-        // exactly at threshold. = entryCombined × slPct/100 × qty. 0 when no straddle is open.
+        // Worst-case loss for the currently-running straddle cycle — uses entryCombinedLive
+        // so it correctly goes to 0 between cycles (no position = no live worst case).
         double maxLossPerStraddle = 0;
-        if (entryCombined > 0 && combinedSlPct > 0 && ceQty > 0) {
-            maxLossPerStraddle = entryCombined * (combinedSlPct / 100.0) * ceQty;
+        if (entryCombinedLive > 0 && combinedSlPct > 0 && ceQty > 0) {
+            maxLossPerStraddle = entryCombinedLive * (combinedSlPct / 100.0) * ceQty;
         }
         m.put("maxLossPerStraddle", round2(maxLossPerStraddle));
+        // SL trigger PRICE — for the chart line, use latched entryCombined so the dashed
+        // reference line stays visible after squareoff.
         if (entryCombined > 0) {
-            double slTrigger = entryCombined * (1.0 + combinedSlPct / 100.0);
-            m.put("slTrigger", round2(slTrigger));
-            // % of way to SL: 0% = at entry, 100% = at trigger.
-            double moveFromEntry = liveCombined - entryCombined;
-            double allowedMove   = slTrigger - entryCombined;
+            m.put("slTrigger", round2(entryCombined * (1.0 + combinedSlPct / 100.0)));
+        } else {
+            m.put("slTrigger", 0.0);
+        }
+        // SL CONSUMED % — only meaningful in an open cycle; uses live entry so the Risk Band
+        // gauge blanks out between cycles instead of reading a stale ratio.
+        if (entryCombinedLive > 0) {
+            double slTriggerLive = entryCombinedLive * (1.0 + combinedSlPct / 100.0);
+            double moveFromEntry = liveCombined - entryCombinedLive;
+            double allowedMove   = slTriggerLive - entryCombinedLive;
             double slConsumedPct = (allowedMove > 0) ? (moveFromEntry / allowedMove) * 100.0 : 0;
             m.put("slConsumedPct", round2(slConsumedPct));
         } else {
-            m.put("slTrigger", 0.0);
             m.put("slConsumedPct", 0.0);
         }
-        // Combined-premium TARGET tracking
+        // Combined-premium TARGET tracking — chart line uses latched entryCombined.
         double combinedTargetPct = riskSettings.getStraddleCombinedTargetPct();
         m.put("combinedTargetPct", combinedTargetPct);
         if (entryCombined > 0 && combinedTargetPct > 0) {
