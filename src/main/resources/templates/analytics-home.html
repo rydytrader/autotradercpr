@@ -598,6 +598,25 @@
         }).catch(function() {});
     }
     loadSummary();
+    // Live refresh: while the tab is visible AND the current scope includes today (Today,
+    // Current Expiry, MTD, YTD, All Time, or a custom range that ends today/in the future),
+    // re-poll every 5s so Total Return + equity curve reflect the open straddle's MTM as it
+    // moves. Period selectors that don't include today (e.g. picker = "Apr 2025") skip the
+    // poll since the data is static.
+    function todayInScope() {
+        if (pickedYear) {
+            var range = pickerRange();
+            if (!range.to) return true;
+            return range.to >= new Date().toISOString().slice(0, 10);
+        }
+        // Period presets — all of them include today.
+        return true;
+    }
+    setInterval(function() {
+        if (document.visibilityState !== 'visible') return;
+        if (!todayInScope()) return;
+        loadSummary();
+    }, 5000);
 </script>
 </body>
 </html>
