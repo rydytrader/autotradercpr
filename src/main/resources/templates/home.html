@@ -1306,7 +1306,11 @@
         straddleChart.data.datasets[1].data = lineFor(slTrigger);
         straddleChart.data.datasets[2].data = lineFor(targetTrig);
         straddleChart.data.datasets[3].data = lineFor(entryComb);
-        if (entryComb > 0) straddleChart.options.scales.y.max = entryComb;
+        // Y-axis max needs to cover the SL trigger (which is above entryCombined by slPct%),
+        // otherwise the SL reference line is drawn off-chart and clipped out of view. Add a
+        // small 5% headroom so the line isn't pinned to the very top edge.
+        var ymax = Math.max(entryComb, slTrigger);
+        if (ymax > 0) straddleChart.options.scales.y.max = ymax * 1.05;
         straddleChart.update('none');
     }
 
