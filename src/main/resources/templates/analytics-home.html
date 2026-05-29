@@ -372,6 +372,8 @@
     // ── Selectors ────────────────────────────────────────────────────────────
     var currentPeriod   = 'today';
     var currentStrategy = 'all';
+    var lastEquityRenderMs = 0;
+    var EQUITY_REFRESH_MS = 3600000; // 1 hour — the curve doesn't change tick-to-tick
     var pickedYear = '';  // empty = picker not in use
     var pickedMonth = ''; // empty = whole year
 
@@ -390,11 +392,11 @@
         currentPeriod = btn.getAttribute('data-period');
         // Pill click clears any active month/year picker selection.
         clearPicker(false);
-        loadSummary();
+        loadSummary(true);
     });
     bindPills('strategyPills', function(btn) {
         currentStrategy = btn.getAttribute('data-strategy');
-        loadSummary();
+        loadSummary(true);
     });
 
     // ── Month/Year picker ────────────────────────────────────────────────────
@@ -415,7 +417,7 @@
         var ys = document.getElementById('pickYear');   if (ys) { ys.value = ''; ys.classList.remove('active'); }
         var ms = document.getElementById('pickMonth');  if (ms) { ms.value = ''; ms.classList.remove('active'); }
         var cb = document.getElementById('pickClearBtn'); if (cb) cb.style.display = 'none';
-        if (reload) loadSummary();
+        if (reload) loadSummary(true);
     }
 
     function onPickerChange() {
@@ -443,7 +445,7 @@
             if (ms) ms.classList.remove('active');
             document.getElementById('pickClearBtn').style.display = 'none';
         }
-        loadSummary();
+        loadSummary(true);
     }
     document.getElementById('pickYear').addEventListener('change', onPickerChange);
     document.getElementById('pickMonth').addEventListener('change', onPickerChange);
@@ -522,7 +524,9 @@
     }
 
     // ── Load + render the analytics payload ──────────────────────────────────
-    function loadSummary() {
+    // forceEquity=true → re-render the equity curve immediately (selector changes, initial
+    // load). false → skip the curve if the hourly cadence hasn't elapsed (the 5s live poll).
+    function loadSummary(forceEquity) {
         var url = '/api/analytics/summary?period=' + encodeURIComponent(currentPeriod)
                 + '&strategyId=' + encodeURIComponent(currentStrategy);
         var range = pickerRange();
@@ -593,15 +597,22 @@
             var grossWins = Number(ext.avgProfit || 0) * (perf.wins || 0);
             setVal('ahChargesPct', grossWins > 0 ? ((charges / grossWins) * 100).toFixed(1) + '%' : '—');
 
-            // Equity curve
-            renderEquityChart(eq.labels || [], eq.values || []);
+            // Equity curve — re-render on first load, on selector change (when
+            // loadSummary is called with forceEquity=true), or hourly. Skipping the
+            // re-render on every 5s tick keeps the chart visually stable; the trailing
+            // open-MTM point lags by up to 1h, which is acceptable for a journal view.
+            var nowMs = Date.now();
+            if (forceEquity || lastEquityRenderMs === 0 || (nowMs - lastEquityRenderMs >= EQUITY_REFRESH_MS)) {
+                renderEquityChart(eq.labels || [], eq.values || []);
+                lastEquityRenderMs = nowMs;
+            }
         }).catch(function() {});
     }
-    loadSummary();
-    // Live refresh: while the tab is visible AND the current scope includes today (Today,
-    // Current Expiry, MTD, YTD, All Time, or a custom range that ends today/in the future),
-    // re-poll every 5s so Total Return + equity curve reflect the open straddle's MTM as it
-    // moves. Period selectors that don't include today (e.g. picker = "Apr 2025") skip the
+    loadSummary(true);
+    // Live refresh: while the tab is visible AND the current scope includes today, re-poll
+    // every 5s so Total Return + hero metrics reflect the open straddle's MTM as it moves.
+    // The equity curve is intentionally NOT refreshed on this poll (loadSummary(false) →
+    // EQUITY_REFRESH_MS gating keeps it stable). Scopes that don't include today skip the
     // poll since the data is static.
     function todayInScope() {
         if (pickedYear) {
@@ -609,13 +620,12 @@
             if (!range.to) return true;
             return range.to >= new Date().toISOString().slice(0, 10);
         }
-        // Period presets — all of them include today.
         return true;
     }
     setInterval(function() {
         if (document.visibilityState !== 'visible') return;
         if (!todayInScope()) return;
-        loadSummary();
+        loadSummary(false);
     }, 5000);
 </script>
 </body>
