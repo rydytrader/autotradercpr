@@ -132,8 +132,8 @@ public class LegSlStrategy implements Strategy {
 
     // ── Strategy interface ─────────────────────────────────────────────────────
     @Override public String id()           { return STRATEGY_ID; }
-    @Override public String displayName()  { return "Leg-wise SL"; }
-    @Override public String description()  { return "ATM straddle on NIFTY weekly · per-leg SL · no rolls, surviving leg runs to squareoff"; }
+    @Override public String displayName()  { return "SHORT STRADDLE"; }
+    @Override public String description()  { return "ATM straddle on NIFTY weekly · per-leg SL · surviving leg runs to squareoff"; }
     @Override public String currentState() { return state.name(); }
     @Override public String navIcon()      { return "L"; }
     @Override public boolean forceClose(String reason) { return forceCloseAll(reason); }
