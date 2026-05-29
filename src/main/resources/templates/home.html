@@ -165,6 +165,7 @@
             <div>
                 <div class="stat-label" style="margin-bottom:6px;">Net Day P&L</div>
                 <div class="stat-value" id="netDayPnl" style="font-size:2.2rem;">0.00</div>
+                <div class="stat-sub" id="netDayPnlSub" style="margin-top:6px;">Charges —</div>
             </div>
             <div style="display:flex; gap:32px; flex-wrap:wrap;">
                 <div style="text-align:center;">
@@ -634,19 +635,23 @@
             net.className = 'stat-value';
             if (trueNet > 0.5) net.classList.add('pnl-positive');
             else if (trueNet < -0.5) net.classList.add('pnl-negative');
-            // Charges breakdown moves to the Net Day P&L tile's own tooltip so the sub-line
-            // can stay removed (it was forcing the Hero column to widen and pushing layout
-            // around once MTM hit 4 digits).
+            // Sub-line shows just total charges — compact enough not to widen the Hero
+            // column. Full Realised + MTM − Charges and per-charge breakdown go in the
+            // tooltip on the big Net Day P&L number.
+            var netSub = document.getElementById('netDayPnlSub');
+            if (netSub) {
+                netSub.textContent = 'Charges ' + fmtRs(chTotal);
+                netSub.title = 'Brokerage ' + fmtRs(ch.brokerage || 0)
+                    + ' • STT ' + fmtRs(ch.stt || 0)
+                    + ' • Exchange ' + fmtRs(ch.exchange || 0)
+                    + ' • GST ' + fmtRs(ch.gst || 0)
+                    + ' • SEBI ' + fmtRs(ch.sebi || 0)
+                    + ' • Stamp ' + fmtRs(ch.stamp || 0);
+                netSub.style.cursor = 'help';
+            }
             net.title = 'Realised ' + fmtRs(d.realisedPnlToday || 0)
                 + ' + MTM ' + fmtRs(d.combinedMtm || 0)
-                + ' − Charges ' + fmtRs(chTotal)
-                + '\n\nCharges breakdown:'
-                + '\n• Brokerage ' + fmtRs(ch.brokerage || 0)
-                + '\n• STT '       + fmtRs(ch.stt || 0)
-                + '\n• Exchange '  + fmtRs(ch.exchange || 0)
-                + '\n• GST '       + fmtRs(ch.gst || 0)
-                + '\n• SEBI '      + fmtRs(ch.sebi || 0)
-                + '\n• Stamp '     + fmtRs(ch.stamp || 0);
+                + ' − Charges ' + fmtRs(chTotal);
             net.style.cursor = 'help';
 
             var realised = document.getElementById('heroRealised');
