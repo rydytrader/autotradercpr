@@ -848,7 +848,11 @@
 
             // Pane 2: CE Leg
             var ceQtyEl = document.getElementById('paneCeQty');
-            if (ceQtyEl) ceQtyEl.textContent = 'QTY · ' + (d.ceQty > 0 ? d.ceQty : '—');
+            // qty > 0  → leg is open, show the number
+            // qty = 0 but ceEntryPremium > 0  → leg was entered today and is now closed → "0"
+            // both = 0 → pre-entry, no straddle → "—"
+            if (ceQtyEl) ceQtyEl.textContent = 'QTY · '
+                + (d.ceQty > 0 ? d.ceQty : (d.ceEntryPremium > 0 ? '0' : '—'));
             var ceStrikeEl = document.getElementById('paneCeStrike');
             var ceStrikeInfo = strikeForLeg(d.ceSymbol, d.niftyLtp);
             ceStrikeEl.textContent = ceStrikeInfo.value;
@@ -867,7 +871,8 @@
 
             // Pane 3: PE Leg
             var peQtyEl = document.getElementById('panePeQty');
-            if (peQtyEl) peQtyEl.textContent = 'QTY · ' + (d.peQty > 0 ? d.peQty : '—');
+            if (peQtyEl) peQtyEl.textContent = 'QTY · '
+                + (d.peQty > 0 ? d.peQty : (d.peEntryPremium > 0 ? '0' : '—'));
             var peStrikeEl = document.getElementById('panePeStrike');
             var peStrikeInfo = strikeForLeg(d.peSymbol, d.niftyLtp);
             peStrikeEl.textContent = peStrikeInfo.value;
