@@ -573,8 +573,8 @@
         if (rollsLabel && rollsCell) {
             if (isLegSl) {
                 rollsLabel.textContent = 'Legs Open';
-                var ce = !d.ceClosed, pe = !d.peClosed;
-                rollsCell.textContent = ce && pe ? 'CE + PE' : ce ? 'CE only' : pe ? 'PE only' : '—';
+                var openCount = (d.ceClosed ? 0 : 1) + (d.peClosed ? 0 : 1);
+                rollsCell.textContent = openCount + ' / 2';
             } else {
                 rollsLabel.textContent = 'Rolls';
                 // populated below in the main render path
