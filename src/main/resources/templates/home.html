@@ -1062,14 +1062,9 @@
                                 straddleChart.update('none');
                             }
                         }
-                        var riskElSse = document.getElementById('heroRisk');
-                        if (riskElSse) {
-                            var pctClamped = Math.max(0, pctSse);
-                            riskElSse.textContent = pctClamped.toFixed(1) + '% / 100%';
-                            if      (pctClamped >= 90) riskElSse.style.color = 'var(--accent-red)';
-                            else if (pctClamped >= 60) riskElSse.style.color = 'var(--accent-amber, #fbbf24)';
-                            else                       riskElSse.style.color = 'var(--text-primary)';
-                        }
+                        // Active Risk tile = entryPremium × slPct/100 × qty — none of those
+                        // change tick-to-tick, so the 5s dashboard poll handles it. Nothing
+                        // to do here.
                     }
                 }
             } catch (e) {}
