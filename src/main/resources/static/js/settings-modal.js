@@ -216,7 +216,6 @@
                 '<div>' +
                     '<button onclick="SettingsModal.toggleStraddle(\'' + escapeHtml(s.id) + '\', ' + (!enabled) + ')">' + (enabled ? 'Disable' : 'Enable') + '</button>' +
                     '<button onclick="SettingsModal.editStraddleForm(' + rowJson + ')">Edit</button>' +
-                    '<button onclick="SettingsModal.deleteStraddle(\'' + escapeHtml(s.id) + '\', \'' + escapeHtml(s.shortCode || s.id) + '\')">Delete</button>' +
                 '</div>' +
             '</div>';
         }).join('');
@@ -277,24 +276,6 @@
                 loadStraddles();
                 refreshSidebar();
             }).catch(function(err) { showBanner('✗ Toggle failed: ' + (err.message || err), 'error'); });
-    }
-
-    function deleteStraddle(id, label) {
-        if (!confirm('Delete straddle "' + label + '"?\n\nSoft-delete only — sessions, trades and settings rows stay in the DB. Restore via the database if you change your mind.')) return;
-        fetch('/api/straddles/' + encodeURIComponent(id), {
-            method: 'DELETE',
-            headers: csrfHeaders()
-        }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, status: r.status, body: d }; }); })
-          .then(function(res) {
-            if (!res.ok) {
-                var msg = (res.body && res.body.error) || 'Delete failed';
-                showBanner('✗ ' + msg, 'error');
-                return;
-            }
-            showBanner('✓ Straddle deleted', 'success');
-            loadStraddles();
-            refreshSidebar(id);
-        }).catch(function(err) { showBanner('✗ Delete failed: ' + (err.message || err), 'error'); });
     }
 
     // ── Sidebar live refresh ─────────────────────────────────────────────────
@@ -631,7 +612,6 @@
         editStraddleForm: function(s) { showStraddleForm(s); },
         cancelStraddleForm: cancelStraddleForm,
         saveStraddle: saveStraddle,
-        toggleStraddle: toggleStraddle,
-        deleteStraddle: deleteStraddle
+        toggleStraddle: toggleStraddle
     };
 })();
