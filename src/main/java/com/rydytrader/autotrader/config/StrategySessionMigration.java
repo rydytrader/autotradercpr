@@ -49,6 +49,35 @@ public class StrategySessionMigration {
         dropOldSessionDateUniqueConstraint();
         oneShotResetTradeHistory();
         oneShotWipeForMultiInstance();
+        cleanupSoftDeletedInstances();
+    }
+
+    /** Hard-deletes every {@code straddle_instances} row marked {@code active = false} along
+     *  with its {@code strategies.inst-<id>.*} settings rows and its on-disk state file.
+     *  Runs on every boot — idempotent (no soft-deleted rows = no-op). Since the Straddles
+     *  tab no longer offers a Delete button, soft-delete is effectively dormant; this keeps
+     *  the table clean if any rows ever land in that state via direct API. */
+    private void cleanupSoftDeletedInstances() {
+        try {
+            @SuppressWarnings("unchecked")
+            java.util.List<Number> ids = em.createNativeQuery(
+                "SELECT id FROM straddle_instances WHERE active = false").getResultList();
+            if (ids == null || ids.isEmpty()) return;
+            for (Number n : ids) {
+                String strategyId = "inst-" + n.longValue();
+                safeUpdate("DELETE FROM settings WHERE setting_key LIKE 'strategies." + strategyId + ".%'");
+                try {
+                    java.io.File f = new java.io.File("../store/data/strategies/short-straddle-" + strategyId + "-state.json");
+                    if (f.exists() && f.delete()) {
+                        log.info("[StrategyMigration] Deleted state file for soft-deleted {}", strategyId);
+                    }
+                } catch (Exception ignored) {}
+            }
+            int rows = safeUpdate("DELETE FROM straddle_instances WHERE active = false");
+            log.info("[StrategyMigration] Hard-deleted {} soft-deleted straddle instance(s) + their settings/state files", rows);
+        } catch (Exception e) {
+            log.warn("[StrategyMigration] Soft-delete cleanup skipped: {}", e.getMessage());
+        }
     }
 
     /** Separate listener — runs in its own transaction. */
