@@ -747,20 +747,28 @@
                 peTrig > 0 ? peTrig.toFixed(2) : '—';
             var legStateEl = document.getElementById('paneLegState');
             if (legStateEl) {
-                var ceCloseTs = Number(d.ceClosedAtMillis || 0);
-                var peCloseTs = Number(d.peClosedAtMillis || 0);
-                var ceTxt = d.ceClosed
-                    ? ('CLOSED' + (ceCloseTs > 0 ? ' ' + tsToHHmm(ceCloseTs) : ''))
-                    : 'OPEN';
-                var peTxt = d.peClosed
-                    ? ('CLOSED' + (peCloseTs > 0 ? ' ' + tsToHHmm(peCloseTs) : ''))
-                    : 'OPEN';
-                var ceColor = d.ceClosed ? 'var(--text-muted)' : 'var(--accent-green)';
-                var peColor = d.peClosed ? 'var(--text-muted)' : 'var(--accent-green)';
+                // Same 3-state logic as the QTY chip on each leg card:
+                //   qty > 0       → leg currently OPEN
+                //   qty = 0 but entry > 0 → leg was entered today and is now CLOSED
+                //   both 0        → pre-entry (state=IDLE on a new day) — show "—"
+                function legLabel(qty, entry, closeTs) {
+                    if (qty > 0) {
+                        return { txt: 'OPEN', color: 'var(--accent-green)' };
+                    }
+                    if (entry > 0) {
+                        return {
+                            txt: 'CLOSED' + (closeTs > 0 ? ' ' + tsToHHmm(closeTs) : ''),
+                            color: 'var(--text-muted)'
+                        };
+                    }
+                    return { txt: '—', color: 'var(--text-muted)' };
+                }
+                var ce = legLabel(d.ceQty, d.ceEntryPremium, Number(d.ceClosedAtMillis || 0));
+                var pe = legLabel(d.peQty, d.peEntryPremium, Number(d.peClosedAtMillis || 0));
                 legStateEl.innerHTML =
-                    '<span style="color:' + ceColor + ';">CE ' + ceTxt + '</span>'
+                    '<span style="color:' + ce.color + ';">CE ' + ce.txt + '</span>'
                     + '<span style="color:var(--text-muted); margin:0 6px;">·</span>'
-                    + '<span style="color:' + peColor + ';">PE ' + peTxt + '</span>';
+                    + '<span style="color:' + pe.color + ';">PE ' + pe.txt + '</span>';
             }
 
             // Pane 2: CE Leg
