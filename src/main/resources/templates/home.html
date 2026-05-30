@@ -81,24 +81,29 @@
 
 <div style="display:flex;flex:1;min-height:0;">
 <aside class="strategy-nav-aside"
-       style="width:56px;flex-shrink:0;background:var(--navbar-bg);backdrop-filter:blur(16px);
+       style="width:96px;flex-shrink:0;background:var(--navbar-bg);backdrop-filter:blur(16px);
               border-right:1px solid var(--border);
-              display:flex;flex-direction:column;align-items:center;padding-top:14px;gap:8px;">
+              display:flex;flex-direction:column;align-items:center;padding:18px 8px 0;gap:10px;">
     <a href="/home" class="nav-icon" title="Home" data-nav-key="home"
-       style="display:flex;align-items:center;justify-content:center;width:40px;height:40px;
-              border-radius:8px;text-decoration:none;font-size:1.4rem;color:var(--text-secondary);
-              border:1px solid transparent;background:transparent;cursor:pointer;">⌂</a>
-    <div style="width:32px;height:1px;background:var(--border);margin:4px 0;"></div>
-    <a th:each="strat : ${sidebarStrategies}"
-       th:href="@{${strat.href}}"
-       th:title="${strat.displayName}"
-       th:attr="data-nav-key=${strat.id}"
-       class="nav-icon"
-       th:text="${strat.navIcon}"
-       style="display:flex;align-items:center;justify-content:center;width:40px;height:40px;
+       style="display:flex;align-items:center;justify-content:center;width:72px;height:34px;
               border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
-              font-size:0.9rem;color:var(--text-secondary);border:1px solid transparent;
-              background:transparent;cursor:pointer;letter-spacing:0.04em;">C</a>
+              font-size:0.78rem;letter-spacing:0.10em;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">HOME</a>
+    <div style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
+    <th:block th:each="strat,iter : ${sidebarStrategies}">
+        <a th:href="@{${strat.href}}"
+           th:title="${strat.displayName}"
+           th:attr="data-nav-key=${strat.id}"
+           class="nav-icon"
+           th:text="${strat.navIcon}"
+           style="display:flex;align-items:center;justify-content:center;width:72px;height:40px;
+                  border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
+                  font-size:0.86rem;color:var(--text-secondary);border:1px solid transparent;
+                  background:transparent;cursor:pointer;letter-spacing:0.06em;white-space:nowrap;
+                  overflow:hidden;text-overflow:ellipsis;padding:0 6px;">C</a>
+        <div th:unless="${iter.last}"
+             style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
+    </th:block>
 </aside>
 <div class="app-main" style="flex:1;min-width:0;margin-left:0;width:auto;">
 <div class="page-wrap">
