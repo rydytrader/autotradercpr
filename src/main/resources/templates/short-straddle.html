@@ -545,7 +545,12 @@
         var card = document.getElementById(leg + 'LegCard');
         var entryLtpLabel = document.getElementById('pane' + Cap + 'EntryLtpLabel');
         var mtmLabel      = document.getElementById('pane' + Cap + 'MtmLabel');
-        var closed = leg === 'ce' ? d.ceClosed : d.peClosed;
+        // CLOSED chrome (red border, "Entry / Exit" label, "P&L" label) should ONLY apply when
+        // this leg was actually entered today and is now closed. Pre-entry (state=IDLE on a
+        // new day) has ceClosed=true purely as a "not currently open" signal; treat that as
+        // the neutral pre-entry state, NOT a closed one.
+        var entry  = leg === 'ce' ? d.ceEntryPremium : d.peEntryPremium;
+        var closed = (leg === 'ce' ? d.ceClosed : d.peClosed) && entry > 0;
         if (closed) {
             if (card) {
                 card.style.borderColor = 'var(--accent-red, #f87171)';
@@ -567,7 +572,9 @@
         var entry  = leg === 'ce' ? d.ceEntryPremium : d.peEntryPremium;
         var live   = leg === 'ce' ? d.ceLtp          : d.peLtp;
         var close  = leg === 'ce' ? d.ceClosePremium : d.peClosePremium;
-        var closed = leg === 'ce' ? d.ceClosed       : d.peClosed;
+        // Match applyLegClosedChrome: only treat as closed when this leg actually had a
+        // position today. Pre-entry (entry=0) is the neutral state, not closed.
+        var closed = (leg === 'ce' ? d.ceClosed : d.peClosed) && entry > 0;
         var second = closed ? (close || 0) : (live || 0);
         document.getElementById('pane' + (leg === 'ce' ? 'Ce' : 'Pe') + 'EntryLtp').textContent =
             (entry > 0 ? Number(entry).toFixed(2) : '—')
