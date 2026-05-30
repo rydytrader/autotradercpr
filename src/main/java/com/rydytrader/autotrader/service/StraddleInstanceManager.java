@@ -159,16 +159,21 @@ public class StraddleInstanceManager {
         row.setName(name.trim());
         row.setDescription(description == null ? "" : description.trim());
         row.setShortCode(shortCode.trim());
-        row.setEnabled(false);
+        row.setEnabled(true);
         row.setActive(true);
         long now = System.currentTimeMillis();
         row.setCreatedAtMillis(now);
         row.setUpdatedAtMillis(now);
         row = repo.save(row);
+        // The runtime gate for the scheduler is the SETTINGS row, not the entity column.
+        // Write enabled=true now so the new instance is picked up immediately by the next tick
+        // without requiring the operator to open ⚙ Settings and flip a toggle.
+        riskSettings.setStrategySetting(row.strategyId(), "enabled", true);
+        riskSettings.saveFor("live");
         ShortStraddle s = construct(row);
         s.bootstrap();
         instances.put(s.id(), s);
-        log.info("[InstanceManager] Created instance {} (shortCode={}, name={})", s.id(), shortCode, name);
+        log.info("[InstanceManager] Created instance {} (shortCode={}, name={}) — enabled by default", s.id(), shortCode, name);
         return s;
     }
 

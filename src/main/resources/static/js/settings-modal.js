@@ -201,12 +201,12 @@
             var sc   = escapeHtml(s.shortCode || '');
             var state = escapeHtml(s.currentState || '—');
             var rowJson = JSON.stringify(s).replace(/'/g, '&#39;').replace(/"/g, '&quot;');
-            // Enabled rows show a 4px green strip on the left edge as an at-a-glance
-            // indicator. Padding-left is shaved by 3px (default 12px - extra 3px border
-            // beyond the default 1px) so content alignment stays consistent vs disabled rows.
+            // 4px left strip: green = enabled, red = disabled. Padding-left shaved by 3px
+            // (default 12px → 9px) to compensate for the extra 3px of border beyond the row's
+            // default 1px so content alignment is identical across rows.
             var stripStyle = enabled
                 ? 'border-left:4px solid var(--accent-green);padding-left:9px;'
-                : '';
+                : 'border-left:4px solid var(--accent-red, #f87171);padding-left:9px;';
             return '<div class="sm-user-row" style="' + stripStyle + '">' +
                 '<div style="flex:1;">' +
                     '<div style="color:var(--text-primary);">' + sc + ' · ' + name + '</div>' +
