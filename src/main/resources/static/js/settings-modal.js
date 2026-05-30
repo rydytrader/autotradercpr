@@ -1,19 +1,15 @@
 /**
  * Settings modal — opened from the gear icon in the navbar.
  *
- * Schema-driven multi-strategy version. On open it fetches /api/strategies, builds one
- * tab per registered strategy from the displayName, and renders each form dynamically from
- * the strategy's getSettingsSchema() output. Adding a new strategy = no JS changes here.
- *
- * Static tabs: CHARGES (global rates) + USERS (admin only). Strategy tabs use the new
- * /api/strategies/{id}/settings endpoints; CHARGES keeps the legacy /api/settings/risk.
+ * Tabs: STRADDLES (CRUD for short-straddle instances) · PORTFOLIO RISK · CHARGES · USERS.
+ * Per-instance trading settings (entry time, lots, SL%) no longer live here — they're
+ * opened from each instance's dashboard page via the ⚙ Settings button.
  */
 (function() {
     var modalEl = null;
     var activeTab = null;
-    var strategiesList = [];     // [{id, displayName, navIcon, currentState}]
-    var strategySchemas = {};    // {strategyId: [{key, type, default, label, hint}, ...]}
-    var strategyValues  = {};    // {strategyId: {key: value}}
+    var strategiesList = [];     // [{id, displayName, shortCode, navIcon, currentState}]
+    var straddles      = [];     // [{id, name, description, shortCode, navIcon, enabled, currentState}]
 
     function ensureBuilt() {
         if (modalEl) return modalEl;
@@ -29,7 +25,25 @@
                 '<div id="sm-tabstrip" style="display:flex;border-bottom:1px solid var(--border);padding:0 24px;overflow-x:auto;"></div>' +
                 // Body (each tab pane scrolls independently)
                 '<div class="sm-body" id="sm-body" style="flex:1;overflow-y:auto;padding:20px 24px;">' +
-                  // Charges tab (static)
+                  // Straddles tab — CRUD for short-straddle instances
+                  '<div class="sm-pane" data-pane="straddles" style="display:none;">' +
+                    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
+                      '<div class="sm-hint" style="margin:0;">Each row is an independent short straddle with its own settings, state, sidebar entry and dashboard. Open the per-instance page for trading config.</div>' +
+                      '<button class="sm-btn-primary" onclick="SettingsModal.showStraddleForm()">+ Add Straddle</button>' +
+                    '</div>' +
+                    '<div id="sm-straddles-list" style="font-family:var(--font-mono);font-size:0.78rem;">Loading…</div>' +
+                    '<div id="sm-straddle-form" style="display:none;margin-top:18px;padding:14px;border:1px solid var(--border);border-radius:8px;background:var(--bg-primary);">' +
+                      '<div style="font-family:var(--font-mono);font-size:0.84rem;font-weight:700;margin-bottom:10px;color:var(--text-primary);" id="sm-straddle-form-title">Add Straddle</div>' +
+                      '<input type="hidden" id="sm-straddle-id">' +
+                      '<div class="sm-field"><label>Name</label><input type="text" id="sm-straddle-name" maxlength="80" placeholder="e.g. 9:20 Default"></div>' +
+                      '<div class="sm-field"><label>Description</label><input type="text" id="sm-straddle-description" maxlength="240" placeholder="e.g. standard 1-lot, 50% leg SL"></div>' +
+                      '<div class="sm-field"><label>Short Code <span style="font-size:0.66rem;color:var(--text-muted);">(used as sidebar label — must be unique, ≤24 chars)</span></label><input type="text" id="sm-straddle-shortCode" maxlength="24" placeholder="e.g. 9:20"></div>' +
+                      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">' +
+                        '<button class="sm-btn-secondary" onclick="SettingsModal.cancelStraddleForm()">Cancel</button>' +
+                        '<button class="sm-btn-primary" onclick="SettingsModal.saveStraddle()">Save</button>' +
+                      '</div>' +
+                    '</div>' +
+                  '</div>' +
                   // Portfolio Risk tab (static)
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
                     '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline used by the Home analytics page (capital growth %, equity curve, return %). Default ₹10,00,000.</div></div>' +
@@ -122,17 +136,11 @@
         var strip = document.getElementById('sm-tabstrip');
         if (!strip) return;
         var html = '';
-        // Portfolio Risk first — global settings (initial capital, global max risk).
+        html += '<button class="sm-tab" data-tab="straddles">STRADDLES</button>';
         html += '<button class="sm-tab" data-tab="portfolio-risk">PORTFOLIO RISK</button>';
-        // Strategy tabs
-        strategiesList.forEach(function(s) {
-            html += '<button class="sm-tab" data-tab="strategy:' + s.id + '">' + escapeHtml((s.displayName || s.id).toUpperCase()) + '</button>';
-        });
-        // Static tabs
         html += '<button class="sm-tab" data-tab="charges">CHARGES</button>';
         html += '<button class="sm-tab" data-tab="users">USERS</button>';
         strip.innerHTML = html;
-        // Wire clicks
         strip.querySelectorAll('.sm-tab').forEach(function(b) {
             b.addEventListener('click', function() { switchTab(b.getAttribute('data-tab')); });
         });
@@ -144,135 +152,140 @@
         if (strip) strip.querySelectorAll('.sm-tab').forEach(function(b) {
             b.classList.toggle('active', b.getAttribute('data-tab') === tab);
         });
-        // Hide every pane
         modalEl.querySelectorAll('.sm-pane').forEach(function(p) { p.style.display = 'none'; });
-        if (tab && tab.indexOf('strategy:') === 0) {
-            var sid = tab.substring('strategy:'.length);
-            renderStrategyPane(sid);
+        if (tab === 'straddles') {
+            var sp = modalEl.querySelector('[data-pane="straddles"]'); if (sp) sp.style.display = '';
+            loadStraddles();
         } else if (tab === 'portfolio-risk') {
-            var pp = modalEl.querySelector('[data-pane="portfolio-risk"]');
-            if (pp) pp.style.display = '';
+            var pp = modalEl.querySelector('[data-pane="portfolio-risk"]'); if (pp) pp.style.display = '';
             loadPortfolioRiskValues();
         } else if (tab === 'charges') {
-            var pane = modalEl.querySelector('[data-pane="charges"]');
-            if (pane) pane.style.display = '';
+            var pane = modalEl.querySelector('[data-pane="charges"]'); if (pane) pane.style.display = '';
         } else if (tab === 'users') {
-            var p2 = modalEl.querySelector('[data-pane="users"]');
-            if (p2) p2.style.display = '';
+            var p2 = modalEl.querySelector('[data-pane="users"]'); if (p2) p2.style.display = '';
             loadUsers();
         }
     }
 
-    function renderStrategyPane(strategyId) {
-        var body = document.getElementById('sm-body');
-        var paneId = 'sm-pane-strategy-' + strategyId;
-        var pane = document.getElementById(paneId);
-        if (!pane) {
-            // First activation — build the pane from schema, then load values
-            pane = document.createElement('div');
-            pane.className = 'sm-pane';
-            pane.setAttribute('data-pane', 'strategy:' + strategyId);
-            pane.id = paneId;
-            pane.innerHTML = '<div style="color:var(--text-muted);padding:14px;">Loading…</div>';
-            body.appendChild(pane);
-            var schema = strategySchemas[strategyId];
-            if (!schema) {
-                fetch('/api/strategies/' + strategyId + '/settings/schema')
-                    .then(function(r) { return r.json(); })
-                    .then(function(s) {
-                        strategySchemas[strategyId] = s;
-                        renderSchemaFields(pane, strategyId, s);
-                        loadStrategyValues(strategyId);
-                    })
-                    .catch(function() { pane.innerHTML = '<div style="color:var(--accent-red);padding:14px;">Failed to load schema.</div>'; });
-            } else {
-                renderSchemaFields(pane, strategyId, schema);
-                loadStrategyValues(strategyId);
-            }
-        } else {
-            // Re-show + refresh values
-            loadStrategyValues(strategyId);
-        }
-        pane.style.display = '';
-    }
-
-    function renderSchemaFields(pane, strategyId, schema) {
-        var html = '';
-        schema.forEach(function(f) {
-            var fieldId = 'sm-' + strategyId + '-' + f.key;
-            var input = '';
-            switch (f.type) {
-                case 'time':
-                    input = '<input type="text" id="' + fieldId + '" placeholder="' + (f.default || '') + '">';
-                    break;
-                case 'int':
-                case 'percent':
-                    input = '<input type="number" id="' + fieldId + '" step="1" min="0">';
-                    break;
-                case 'rupees':
-                    input = '<input type="number" id="' + fieldId + '" step="500" min="0">';
-                    break;
-                case 'double':
-                    input = '<input type="number" id="' + fieldId + '" step="0.01">';
-                    break;
-                case 'boolean':
-                    input = '<input type="checkbox" id="' + fieldId + '">';
-                    break;
-                default:
-                    input = '<input type="text" id="' + fieldId + '">';
-            }
-            html += '<div class="sm-field"><label>' + escapeHtml(f.label || f.key) + '</label>' + input;
-            if (f.hint) html += '<div class="sm-hint">' + escapeHtml(f.hint) + '</div>';
-            html += '</div>';
-        });
-        pane.innerHTML = html;
-    }
-
-    function loadStrategyValues(strategyId) {
-        fetch('/api/strategies/' + strategyId + '/settings')
-            .then(function(r) { return r.json(); })
-            .then(function(values) {
-                strategyValues[strategyId] = values || {};
-                var schema = strategySchemas[strategyId] || [];
-                schema.forEach(function(f) {
-                    var fieldId = 'sm-' + strategyId + '-' + f.key;
-                    var el = document.getElementById(fieldId);
-                    if (!el) return;
-                    var v = values && values[f.key] != null ? values[f.key] : f.default;
-                    if (f.type === 'boolean') el.checked = (v === true || v === 'true');
-                    else                      el.value = v == null ? '' : v;
-                });
-            })
-            .catch(function() {});
-    }
-
     // ── Save ─────────────────────────────────────────────────────────────────
     function saveSettings() {
-        if (activeTab && activeTab.indexOf('strategy:') === 0) {
-            return saveStrategyTab(activeTab.substring('strategy:'.length));
-        }
-        if (activeTab === 'portfolio-risk') {
-            return savePortfolioRiskTab();
-        }
-        if (activeTab === 'charges') {
-            return saveChargesTab();
-        }
+        if (activeTab === 'portfolio-risk') return savePortfolioRiskTab();
+        if (activeTab === 'charges')        return saveChargesTab();
+        if (activeTab === 'straddles')      { showBanner('Use the row buttons (✎ ✕ enable/disable) — no batch save.', 'info'); return; }
+        if (activeTab === 'users')          { showBanner('Use the row buttons to manage users.', 'info'); return; }
         showBanner('No save action for this tab.', 'info');
     }
 
-    function saveStrategyTab(strategyId) {
-        var schema = strategySchemas[strategyId];
-        if (!schema) return;
-        var body = {};
-        schema.forEach(function(f) {
-            var el = document.getElementById('sm-' + strategyId + '-' + f.key);
-            if (!el) return;
-            if (f.type === 'boolean') body[f.key] = el.checked;
-            else if (f.type === 'int' || f.type === 'percent') body[f.key] = parseInt(el.value, 10) || 0;
-            else if (f.type === 'rupees' || f.type === 'double') body[f.key] = parseFloat(el.value) || 0;
-            else body[f.key] = (el.value || '').trim();
-        });
-        postSettings('/api/strategies/' + strategyId + '/settings', body);
+    // ── Straddles CRUD ───────────────────────────────────────────────────────
+    function loadStraddles() {
+        var list = document.getElementById('sm-straddles-list');
+        if (!list) return;
+        list.textContent = 'Loading…';
+        fetch('/api/straddles').then(function(r) { return r.json(); }).then(function(arr) {
+            straddles = Array.isArray(arr) ? arr : [];
+            renderStraddlesList();
+        }).catch(function() { list.textContent = 'Failed to load straddles.'; });
+    }
+
+    function renderStraddlesList() {
+        var list = document.getElementById('sm-straddles-list');
+        if (!list) return;
+        if (!straddles || straddles.length === 0) {
+            list.innerHTML = '<div style="color:var(--text-muted);font-style:italic;padding:14px 0;">No straddles yet. Click + Add Straddle to create your first one.</div>';
+            return;
+        }
+        list.innerHTML = straddles.map(function(s) {
+            var enabled = s.enabled === true;
+            var name = escapeHtml(s.name || s.shortCode || s.id);
+            var desc = escapeHtml(s.description || '');
+            var sc   = escapeHtml(s.shortCode || '');
+            var state = escapeHtml(s.currentState || '—');
+            var rowJson = JSON.stringify(s).replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+            return '<div class="sm-user-row">' +
+                '<div style="flex:1;">' +
+                    '<div style="color:var(--text-primary);">' + sc + ' · ' + name + '</div>' +
+                    (desc ? '<div style="color:var(--text-muted);font-size:0.7rem;margin-top:2px;">' + desc + '</div>' : '') +
+                    '<div style="color:var(--text-muted);font-size:0.66rem;margin-top:2px;">state ' + state + ' · ' + (enabled ? 'ENABLED' : 'DISABLED') + '</div>' +
+                '</div>' +
+                '<div>' +
+                    '<button onclick="SettingsModal.toggleStraddle(\'' + escapeHtml(s.id) + '\', ' + (!enabled) + ')">' + (enabled ? 'Disable' : 'Enable') + '</button>' +
+                    '<button onclick="SettingsModal.editStraddleForm(' + rowJson + ')">Edit</button>' +
+                    '<button onclick="SettingsModal.deleteStraddle(\'' + escapeHtml(s.id) + '\', \'' + escapeHtml(s.shortCode || s.id) + '\')">Delete</button>' +
+                '</div>' +
+            '</div>';
+        }).join('');
+    }
+
+    function showStraddleForm(s) {
+        document.getElementById('sm-straddle-form').style.display = '';
+        document.getElementById('sm-straddle-form-title').textContent = s ? 'Edit Straddle' : 'Add Straddle';
+        document.getElementById('sm-straddle-id').value          = s ? s.id : '';
+        document.getElementById('sm-straddle-name').value        = s ? (s.name || '') : '';
+        document.getElementById('sm-straddle-description').value = s ? (s.description || '') : '';
+        document.getElementById('sm-straddle-shortCode').value   = s ? (s.shortCode || '') : '';
+    }
+
+    function cancelStraddleForm() {
+        document.getElementById('sm-straddle-form').style.display = 'none';
+    }
+
+    function saveStraddle() {
+        var id = document.getElementById('sm-straddle-id').value;
+        var body = {
+            name:        document.getElementById('sm-straddle-name').value.trim(),
+            description: document.getElementById('sm-straddle-description').value.trim(),
+            shortCode:   document.getElementById('sm-straddle-shortCode').value.trim()
+        };
+        if (!body.name)      { showBanner('✗ Name is required', 'error'); return; }
+        if (!body.shortCode) { showBanner('✗ Short code is required', 'error'); return; }
+        var url    = id ? ('/api/straddles/' + encodeURIComponent(id)) : '/api/straddles';
+        var method = id ? 'PUT' : 'POST';
+        fetch(url, {
+            method: method,
+            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders()),
+            body: JSON.stringify(body)
+        }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, body: d }; }); })
+          .then(function(res) {
+            if (!res.ok) { showBanner('✗ ' + ((res.body && res.body.error) || 'Save failed'), 'error'); return; }
+            showBanner('✓ Straddle ' + (id ? 'updated' : 'created'), 'success');
+            cancelStraddleForm();
+            loadStraddles();
+        }).catch(function(err) { showBanner('✗ Save failed: ' + (err.message || err), 'error'); });
+    }
+
+    function toggleStraddle(id, enable) {
+        var url = '/api/straddles/' + encodeURIComponent(id) + (enable ? '/enable' : '/disable');
+        fetch(url, { method: 'POST', headers: csrfHeaders() })
+            .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, status: r.status, body: d }; }); })
+            .then(function(res) {
+                if (!res.ok) {
+                    var msg = (res.body && res.body.error) || 'Toggle failed';
+                    if (res.status === 409 && res.body && res.body.currentState) {
+                        msg += ' (state=' + res.body.currentState + ')';
+                    }
+                    showBanner('✗ ' + msg, 'error');
+                    return;
+                }
+                showBanner('✓ Straddle ' + (enable ? 'enabled' : 'disabled'), 'success');
+                loadStraddles();
+            }).catch(function(err) { showBanner('✗ Toggle failed: ' + (err.message || err), 'error'); });
+    }
+
+    function deleteStraddle(id, label) {
+        if (!confirm('Delete straddle "' + label + '"?\n\nSoft-delete only — sessions, trades and settings rows stay in the DB. Restore via the database if you change your mind.')) return;
+        fetch('/api/straddles/' + encodeURIComponent(id), {
+            method: 'DELETE',
+            headers: csrfHeaders()
+        }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, status: r.status, body: d }; }); })
+          .then(function(res) {
+            if (!res.ok) {
+                var msg = (res.body && res.body.error) || 'Delete failed';
+                showBanner('✗ ' + msg, 'error');
+                return;
+            }
+            showBanner('✓ Straddle deleted', 'success');
+            loadStraddles();
+        }).catch(function(err) { showBanner('✗ Delete failed: ' + (err.message || err), 'error'); });
     }
 
     function savePortfolioRiskTab() {
@@ -438,28 +451,22 @@
     function openModal() {
         ensureBuilt();
         modalEl.style.display = 'flex';
-        // First-time: load strategy list, build tabs, default to first strategy
-        if (strategiesList.length === 0) {
+        // Build tabs on first open; cache the strategy list so the Portfolio Risk allocation
+        // rows can render without an extra round trip.
+        if (!modalEl.dataset.tabsBuilt) {
+            buildTabs();
+            loadChargesValues();
+            modalEl.dataset.tabsBuilt = '1';
             fetch('/api/strategies').then(function(r) { return r.json(); }).then(function(arr) {
                 strategiesList = Array.isArray(arr) ? arr : [];
-                buildTabs();
-                loadChargesValues();
-                if (strategiesList.length > 0) switchTab('strategy:' + strategiesList[0].id);
-                else                           switchTab('charges');
-            }).catch(function() {
-                buildTabs();
-                loadChargesValues();
-                switchTab('charges');
-            });
+            }).catch(function() {});
+            switchTab('straddles');
         } else {
-            // Re-open: refresh values for the active tab
-            if (activeTab && activeTab.indexOf('strategy:') === 0) {
-                loadStrategyValues(activeTab.substring('strategy:'.length));
-            } else if (activeTab === 'portfolio-risk') {
-                loadPortfolioRiskValues();
-            } else if (activeTab === 'charges') {
-                loadChargesValues();
-            }
+            // Re-open: refresh values for the active tab.
+            if (activeTab === 'straddles')           loadStraddles();
+            else if (activeTab === 'portfolio-risk') loadPortfolioRiskValues();
+            else if (activeTab === 'charges')        loadChargesValues();
+            else                                     switchTab('straddles');
         }
     }
 
@@ -559,6 +566,12 @@
         cancelUserForm: cancelUserForm,
         saveUser: saveUser,
         editUser: function(id, u) { showUserForm(u); },
-        deleteUser: deleteUser
+        deleteUser: deleteUser,
+        showStraddleForm: function() { showStraddleForm(); },
+        editStraddleForm: function(s) { showStraddleForm(s); },
+        cancelStraddleForm: cancelStraddleForm,
+        saveStraddle: saveStraddle,
+        toggleStraddle: toggleStraddle,
+        deleteStraddle: deleteStraddle
     };
 })();

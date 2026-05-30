@@ -3,6 +3,7 @@ package com.rydytrader.autotrader.service.strategy;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.dto.OrderDTO;
+import com.rydytrader.autotrader.entity.StraddleInstanceEntity;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
 import com.rydytrader.autotrader.service.EventService;
 import com.rydytrader.autotrader.service.MarketDataService;
@@ -11,24 +12,21 @@ import com.rydytrader.autotrader.service.OrderService;
 import com.rydytrader.autotrader.service.TelegramService;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import com.rydytrader.autotrader.store.TokenStore;
-import com.rydytrader.autotrader.store.strategy.LegSlStateStore;
-import jakarta.annotation.PostConstruct;
+import com.rydytrader.autotrader.store.strategy.ShortStraddleStateStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Lazy;
-import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.core.annotation.Order;
-import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 
 /**
- * Short ATM straddle on NIFTY weekly options with PER-LEG SL and no rolls.
+ * Short ATM straddle on NIFTY weekly options with PER-LEG SL and no rolls. Instances of this
+ * class are constructed at runtime by {@code StraddleInstanceManager} — one per row of the
+ * {@code STRADDLE_INSTANCES} table. NOT a Spring bean: every dependency comes via the
+ * constructor; the manager owns the {@code @Scheduled} fan-out via {@code StraddleScheduler}.
  *
- * <p>Lifecycle (gated by {@code strategies.leg-sl.enabled}):
+ * <p>Lifecycle (gated by {@code strategies.<instanceId>.enabled}):
  * <ol>
  *   <li>At {@code entryTime}: SELL ATM CE + ATM PE on the current weekly expiry → OPEN_BOTH.</li>
  *   <li>While OPEN_BOTH: on every tick check each leg's live LTP against its individual SL trigger
@@ -39,15 +37,12 @@ import java.time.ZoneId;
  *   <li>At {@code squareOffTime}: close any leg that's still open → DONE_FOR_DAY.</li>
  * </ol>
  *
- * <p>State file, sessions row and dashboard are scoped to this strategy via its {@code id()}.
+ * <p>State file, sessions row and dashboard are scoped to this strategy via its {@code id()},
+ * which is {@code "inst-" + entity.getId()}.
  */
-@Service
-@Order(1)
-public class LegSlStrategy implements Strategy {
+public class ShortStraddle implements Strategy {
 
-    public static final String STRATEGY_ID = "short-straddle";
-
-    private static final Logger log = LoggerFactory.getLogger(LegSlStrategy.class);
+    private static final Logger log = LoggerFactory.getLogger(ShortStraddle.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final int    NIFTY_LOT_SIZE = 65;
     private static final String NIFTY_SYMBOL   = "NSE:NIFTY50-INDEX";
@@ -62,20 +57,25 @@ public class LegSlStrategy implements Strategy {
 
     public enum LifecycleState { IDLE, OPEN_BOTH, OPEN_PE_ONLY, OPEN_CE_ONLY, DONE_FOR_DAY }
 
+    // ── Instance identity (mutable via syncFromEntity()) ──────────────────────
+    private final String instanceId;            // "inst-<entityId>" — never changes after construction
+    private volatile String displayName;
+    private volatile String description;
+    private volatile String shortCode;
+
     // ── Dependencies ───────────────────────────────────────────────────────────
     private final RiskSettingsStore riskSettings;
-    private final LegSlStateStore stateStore;
+    private final ShortStraddleStateStore stateStore;
     private final EventService eventService;
     private final TokenStore tokenStore;
     private final FyersProperties fyersProperties;
     private final FyersClientRouter fyersClient;
-
-    @Autowired @Lazy private MarketDataService marketDataService;
-    @Autowired @Lazy private OrderService orderService;
-    @Autowired @Lazy private MarketHolidayService marketHolidayService;
-    @Autowired @Lazy private TelegramService telegramService;
-    @Autowired @Lazy private com.rydytrader.autotrader.repository.StraddleSessionRepository sessionRepo;
-    @Autowired @Lazy private com.rydytrader.autotrader.repository.StraddleTradeRepository tradeRepo;
+    private final MarketDataService marketDataService;
+    private final OrderService orderService;
+    private final MarketHolidayService marketHolidayService;
+    private final TelegramService telegramService;
+    private final com.rydytrader.autotrader.repository.StraddleSessionRepository sessionRepo;
+    private final com.rydytrader.autotrader.repository.StraddleTradeRepository tradeRepo;
 
     // ── In-memory state ───────────────────────────────────────────────────────
     private volatile LifecycleState state = LifecycleState.IDLE;
@@ -116,26 +116,58 @@ public class LegSlStrategy implements Strategy {
     public static record CycleEvent(String time, String event, double nifty,
                                     String ce, String pe, double pnl) {}
 
-    public LegSlStrategy(RiskSettingsStore riskSettings,
-                         LegSlStateStore stateStore,
+    public ShortStraddle(StraddleInstanceEntity entity,
+                         RiskSettingsStore riskSettings,
+                         ShortStraddleStateStore stateStore,
                          EventService eventService,
                          TokenStore tokenStore,
                          FyersProperties fyersProperties,
-                         FyersClientRouter fyersClient) {
+                         FyersClientRouter fyersClient,
+                         MarketDataService marketDataService,
+                         OrderService orderService,
+                         MarketHolidayService marketHolidayService,
+                         TelegramService telegramService,
+                         com.rydytrader.autotrader.repository.StraddleSessionRepository sessionRepo,
+                         com.rydytrader.autotrader.repository.StraddleTradeRepository tradeRepo) {
+        this.instanceId = entity.strategyId();
+        this.displayName = entity.getName();
+        this.description = entity.getDescription();
+        this.shortCode = entity.getShortCode();
         this.riskSettings = riskSettings;
         this.stateStore = stateStore;
         this.eventService = eventService;
         this.tokenStore = tokenStore;
         this.fyersProperties = fyersProperties;
         this.fyersClient = fyersClient;
+        this.marketDataService = marketDataService;
+        this.orderService = orderService;
+        this.marketHolidayService = marketHolidayService;
+        this.telegramService = telegramService;
+        this.sessionRepo = sessionRepo;
+        this.tradeRepo = tradeRepo;
+    }
+
+    /** Called by {@code StraddleInstanceManager} immediately after construction to load
+     *  on-disk state, replay open-leg WS subs, and roll the day if needed. Mirrors the old
+     *  {@code @PostConstruct init()} but is now invoked explicitly. */
+    public void bootstrap() {
+        init();
+    }
+
+    /** Refresh display fields when the operator renames the instance via the Straddles tab. */
+    public void syncFromEntity(StraddleInstanceEntity entity) {
+        this.displayName = entity.getName();
+        this.description = entity.getDescription();
+        this.shortCode   = entity.getShortCode();
     }
 
     // ── Strategy interface ─────────────────────────────────────────────────────
-    @Override public String id()           { return STRATEGY_ID; }
-    @Override public String displayName()  { return "SHORT STRADDLE"; }
-    @Override public String description()  { return "ATM straddle on NIFTY weekly · per-leg SL · surviving leg runs to squareoff"; }
+    @Override public String id()           { return instanceId; }
+    @Override public String displayName()  { return displayName; }
+    @Override public String description()  { return description; }
+    @Override public String shortCode()    { return shortCode; }
     @Override public String currentState() { return state.name(); }
-    @Override public String navIcon()      { return "∧"; }
+    @Override public String navIcon()      { return shortCode != null && !shortCode.isEmpty() ? shortCode : "∧"; }
     @Override public boolean forceClose(String reason) { return forceCloseAll(reason); }
     @Override public String currentWeeklyExpiry() { return currentWeeklyExpiry; }
 
@@ -175,29 +207,28 @@ public class LegSlStrategy implements Strategy {
     @Override
     public java.util.Map<String, Object> getSettingsValues() {
         java.util.Map<String, Object> v = new java.util.LinkedHashMap<>();
-        v.put("enabled",       riskSettings.getStrategyBool(STRATEGY_ID,   "enabled",       false));
-        v.put("entryTime",     riskSettings.getStrategyString(STRATEGY_ID, "entryTime",     "09:20"));
-        v.put("squareOffTime", riskSettings.getStrategyString(STRATEGY_ID, "squareOffTime", "15:15"));
-        v.put("lotsPerLeg",    riskSettings.getStrategyInt(STRATEGY_ID,    "lotsPerLeg",    1));
-        v.put("legSlPct",      riskSettings.getStrategyDouble(STRATEGY_ID, "legSlPct",      50));
+        v.put("enabled",       riskSettings.getStrategyBool(instanceId,   "enabled",       false));
+        v.put("entryTime",     riskSettings.getStrategyString(instanceId, "entryTime",     "09:20"));
+        v.put("squareOffTime", riskSettings.getStrategyString(instanceId, "squareOffTime", "15:15"));
+        v.put("lotsPerLeg",    riskSettings.getStrategyInt(instanceId,    "lotsPerLeg",    1));
+        v.put("legSlPct",      riskSettings.getStrategyDouble(instanceId, "legSlPct",      50));
         return v;
     }
 
     @Override
     public void saveSettings(java.util.Map<String, Object> values) {
         if (values == null) return;
-        if (values.containsKey("enabled"))       riskSettings.setStrategySetting(STRATEGY_ID, "enabled",       asBool(values.get("enabled")));
-        if (values.containsKey("entryTime"))     riskSettings.setStrategySetting(STRATEGY_ID, "entryTime",     String.valueOf(values.get("entryTime")));
-        if (values.containsKey("squareOffTime")) riskSettings.setStrategySetting(STRATEGY_ID, "squareOffTime", String.valueOf(values.get("squareOffTime")));
-        if (values.containsKey("lotsPerLeg"))    riskSettings.setStrategySetting(STRATEGY_ID, "lotsPerLeg",    asInt(values.get("lotsPerLeg"), 1));
-        if (values.containsKey("legSlPct"))      riskSettings.setStrategySetting(STRATEGY_ID, "legSlPct",      asDouble(values.get("legSlPct"), 50));
+        if (values.containsKey("enabled"))       riskSettings.setStrategySetting(instanceId, "enabled",       asBool(values.get("enabled")));
+        if (values.containsKey("entryTime"))     riskSettings.setStrategySetting(instanceId, "entryTime",     String.valueOf(values.get("entryTime")));
+        if (values.containsKey("squareOffTime")) riskSettings.setStrategySetting(instanceId, "squareOffTime", String.valueOf(values.get("squareOffTime")));
+        if (values.containsKey("lotsPerLeg"))    riskSettings.setStrategySetting(instanceId, "lotsPerLeg",    asInt(values.get("lotsPerLeg"), 1));
+        if (values.containsKey("legSlPct"))      riskSettings.setStrategySetting(instanceId, "legSlPct",      asDouble(values.get("legSlPct"), 50));
         riskSettings.saveFor("live");
     }
 
-    // ── Boot resume ────────────────────────────────────────────────────────────
-    @PostConstruct
-    public void init() {
-        LegSlStateStore.State p = stateStore.get();
+    // ── Boot resume — called by StraddleInstanceManager via bootstrap() ───────
+    private void init() {
+        ShortStraddleStateStore.State p = stateStore.get(instanceId);
         if (p != null && p.state != null) {
             try { this.state = LifecycleState.valueOf(p.state); }
             catch (IllegalArgumentException ex) { this.state = LifecycleState.IDLE; }
@@ -239,7 +270,7 @@ public class LegSlStrategy implements Strategy {
                     ));
                 }
             }
-            log.info("[leg-sl] Resumed state={} dayKey={} ce={} pe={} ceEntry={} peEntry={} realised={}",
+            log.info("[short-straddle] Resumed state={} dayKey={} ce={} pe={} ceEntry={} peEntry={} realised={}",
                 state, dayKey, ceSymbol, peSymbol, ceEntryPremium, peEntryPremium, realisedPnlToday);
         }
         rolloverIfNewDay();
@@ -252,17 +283,16 @@ public class LegSlStrategy implements Strategy {
             if (!resub.isEmpty()) {
                 try {
                     marketDataService.subscribeAdditional(resub);
-                    log.info("[leg-sl] Re-subscribed open legs to data WS after restart: {}", resub);
+                    log.info("[short-straddle] Re-subscribed open legs to data WS after restart: {}", resub);
                     for (String s : resub) seedLegQuote(s);
                 } catch (Exception e) {
-                    log.warn("[leg-sl] Re-subscribe failed: {}", e.getMessage());
+                    log.warn("[short-straddle] Re-subscribe failed: {}", e.getMessage());
                 }
             }
         }
     }
 
     // ── 1-min combined-premium sampler (drives the dashboard chart) ───────────
-    @Scheduled(cron = "0 * * * * MON-FRI", zone = "Asia/Kolkata")
     public void sampleCombinedPremium() {
         if (marketHolidayService != null && !marketHolidayService.isTradingDay()) return;
         if (state != LifecycleState.OPEN_BOTH && state != LifecycleState.OPEN_CE_ONLY
@@ -288,12 +318,11 @@ public class LegSlStrategy implements Strategy {
     }
 
     // ── Main scheduler tick ────────────────────────────────────────────────────
-    @Scheduled(fixedDelay = 5000)
     public void tick() {
         rolloverIfNewDay();
         if (marketHolidayService != null && !marketHolidayService.isMarketOpen()) return;
         // Enabled-flag guard. Default false — operator opts in via Settings → LEG SL.
-        if (!riskSettings.getStrategyBool(STRATEGY_ID, "enabled", false)) return;
+        if (!riskSettings.getStrategyBool(instanceId, "enabled", false)) return;
         // Late-recover entry premium from tradebook if init() couldn't (no token at boot).
         tryRecoverEntryPremiumFromTradebook();
 
@@ -301,7 +330,7 @@ public class LegSlStrategy implements Strategy {
         LocalTime entryTime     = parseTime(getEntryTime(),     "09:20");
         LocalTime squareOffTime = parseTime(getSquareOffTime(), "15:15");
         if (!squareOffTime.isAfter(entryTime)) {
-            log.warn("[leg-sl] squareOffTime {} must be after entryTime {} — skipping tick",
+            log.warn("[short-straddle] squareOffTime {} must be after entryTime {} — skipping tick",
                 squareOffTime, entryTime);
             return;
         }
@@ -321,33 +350,33 @@ public class LegSlStrategy implements Strategy {
     private void doInitialEntry() {
         double niftyLtp = marketDataService.getLtp(NIFTY_SYMBOL);
         if (niftyLtp <= 0) {
-            log.info("[leg-sl] Skipping entry — NIFTY LTP unavailable (waiting for first tick)");
+            log.info("[short-straddle] Skipping entry — NIFTY LTP unavailable (waiting for first tick)");
             return;
         }
         long atmStrike = Math.round(niftyLtp / STRIKE_STEP) * (long) STRIKE_STEP;
         String[] symbols = resolveAtmSymbols(atmStrike);
         if (symbols == null) {
-            log.warn("[leg-sl] Could not resolve ATM CE+PE symbols for strike {} — aborting day", atmStrike);
-            eventService.log("[ERROR] [leg-sl] entry aborted — failed to resolve ATM symbols for strike " + atmStrike);
+            log.warn("[short-straddle] Could not resolve ATM CE+PE symbols for strike {} — aborting day", atmStrike);
+            eventService.log("[ERROR] [short-straddle] entry aborted — failed to resolve ATM symbols for strike " + atmStrike);
             transitionTo(LifecycleState.DONE_FOR_DAY);
             return;
         }
         String resolvedCe = symbols[0], resolvedPe = symbols[1];
-        int qty = Math.max(1, riskSettings.getStrategyInt(STRATEGY_ID, "lotsPerLeg", 1)) * NIFTY_LOT_SIZE;
+        int qty = Math.max(1, riskSettings.getStrategyInt(instanceId, "lotsPerLeg", 1)) * NIFTY_LOT_SIZE;
 
         OrderDTO ceResp = orderService.placeOrder(resolvedCe, qty, -1, 0);
         orderCountToday++;
         if (ceResp == null || ceResp.getId() == null || ceResp.getId().isEmpty() || !"ok".equals(ceResp.getStatus())) {
-            log.error("[leg-sl] CE leg rejected: {}", ceResp);
-            eventService.log("[ERROR] [leg-sl] CE leg rejected — aborting day");
+            log.error("[short-straddle] CE leg rejected: {}", ceResp);
+            eventService.log("[ERROR] [short-straddle] CE leg rejected — aborting day");
             transitionTo(LifecycleState.DONE_FOR_DAY);
             return;
         }
         OrderDTO peResp = orderService.placeOrder(resolvedPe, qty, -1, 0);
         orderCountToday++;
         if (peResp == null || peResp.getId() == null || peResp.getId().isEmpty() || !"ok".equals(peResp.getStatus())) {
-            log.error("[leg-sl] PE leg rejected after CE filled — flattening CE: {}", peResp);
-            eventService.log("[ERROR] [leg-sl] PE leg rejected — buying back CE to flatten");
+            log.error("[short-straddle] PE leg rejected after CE filled — flattening CE: {}", peResp);
+            eventService.log("[ERROR] [short-straddle] PE leg rejected — buying back CE to flatten");
             try { orderService.placeOrder(resolvedCe, qty, 1, 0); orderCountToday++; } catch (Exception ignored) {}
             transitionTo(LifecycleState.DONE_FOR_DAY);
             return;
@@ -389,8 +418,8 @@ public class LegSlStrategy implements Strategy {
 
         String msg = "leg-sl armed @ ATM " + atmStrike + " (NIFTY " + String.format("%.2f", niftyLtp)
             + ") qty=" + qty + " ce=" + ceSymbol + " pe=" + peSymbol;
-        log.info("[leg-sl] {}", msg);
-        eventService.log("[INFO] [leg-sl] " + msg);
+        log.info("[short-straddle] {}", msg);
+        eventService.log("[INFO] [short-straddle] " + msg);
         notifyTelegram(msg);
     }
 
@@ -416,7 +445,7 @@ public class LegSlStrategy implements Strategy {
         if (state != LifecycleState.OPEN_BOTH
                 && state != LifecycleState.OPEN_CE_ONLY
                 && state != LifecycleState.OPEN_PE_ONLY) return;
-        double legSlPct = riskSettings.getStrategyDouble(STRATEGY_ID, "legSlPct", 50);
+        double legSlPct = riskSettings.getStrategyDouble(instanceId, "legSlPct", 50);
         if (isCeOpen() && ceEntryPremium > 0 && !ceSymbol.isEmpty()) {
             double ceLtp = marketDataService.getLtp(ceSymbol);
             if (ceLtp > 0) {
@@ -425,8 +454,8 @@ public class LegSlStrategy implements Strategy {
                     double consumedPct = ((ceLtp - ceEntryPremium) / ceEntryPremium) * 100.0;
                     String msg = String.format("CE leg SL hit — entry %.2f, live %.2f (+%.2f%%, threshold %.2f%%). Closing CE only.",
                         ceEntryPremium, ceLtp, consumedPct, legSlPct);
-                    log.info("[leg-sl] {}", msg);
-                    eventService.log("[INFO] [leg-sl] " + msg);
+                    log.info("[short-straddle] {}", msg);
+                    eventService.log("[INFO] [short-straddle] " + msg);
                     notifyTelegram(msg);
                     closeLeg("CE", "CE_SL_HIT");
                     return;
@@ -441,8 +470,8 @@ public class LegSlStrategy implements Strategy {
                     double consumedPct = ((peLtp - peEntryPremium) / peEntryPremium) * 100.0;
                     String msg = String.format("PE leg SL hit — entry %.2f, live %.2f (+%.2f%%, threshold %.2f%%). Closing PE only.",
                         peEntryPremium, peLtp, consumedPct, legSlPct);
-                    log.info("[leg-sl] {}", msg);
-                    eventService.log("[INFO] [leg-sl] " + msg);
+                    log.info("[short-straddle] {}", msg);
+                    eventService.log("[INFO] [short-straddle] " + msg);
                     notifyTelegram(msg);
                     closeLeg("PE", "PE_SL_HIT");
                     return;
@@ -454,13 +483,12 @@ public class LegSlStrategy implements Strategy {
         }
     }
 
-    /** Fast tick — runs every 500ms during market hours, only does the per-leg SL trigger
-     *  check. Detection latency drops from ~5s (slow tick) to ~500ms. Cheap: just reads
-     *  LTPs from the in-memory tick cache and compares to per-leg thresholds. */
-    @Scheduled(fixedDelay = 500)
+    /** Fast tick — only does the per-leg SL trigger check. Detection latency drops from ~5s
+     *  (slow tick) to ~500ms. Cheap: just reads LTPs from the in-memory tick cache and compares
+     *  to per-leg thresholds. */
     public void fastSlCheck() {
         if (marketHolidayService != null && !marketHolidayService.isMarketOpen()) return;
-        if (!riskSettings.getStrategyBool(STRATEGY_ID, "enabled", false)) return;
+        if (!riskSettings.getStrategyBool(instanceId, "enabled", false)) return;
         checkLegSlTriggers();
     }
 
@@ -492,8 +520,8 @@ public class LegSlStrategy implements Strategy {
         pushEvent("CLOSE_" + reason, niftyAtClose, closedCe, closedPe, pnl);
         String msg = which + " leg closed (" + reason + "): " + symbol + " qty=" + qty
             + " pnl=" + String.format("%.2f", pnl);
-        log.info("[leg-sl] {}", msg);
-        eventService.log("[INFO] [leg-sl] " + msg);
+        log.info("[short-straddle] {}", msg);
+        eventService.log("[INFO] [short-straddle] " + msg);
 
         long nowMs = System.currentTimeMillis();
         if (isCe) {
@@ -550,8 +578,8 @@ public class LegSlStrategy implements Strategy {
             pushEvent("CLOSE_" + reason, niftyAtClose, ceSymbol, peSymbol, totalPnl);
             String msg = "leg-sl remaining legs closed (" + reason + "): " + String.join(", ", unsubAfter)
                 + " pnl=" + String.format("%.2f", totalPnl);
-            log.info("[leg-sl] {}", msg);
-            eventService.log("[INFO] [leg-sl] " + msg);
+            log.info("[short-straddle] {}", msg);
+            eventService.log("[INFO] [short-straddle] " + msg);
             notifyTelegram(msg);
         }
         persist();
@@ -563,26 +591,26 @@ public class LegSlStrategy implements Strategy {
             OrderDTO resp = orderService.placeOrder(symbol, qty, 1, 0);
             orderCountToday++;
             if (resp != null && resp.getId() != null && !resp.getId().isEmpty() && "ok".equals(resp.getStatus())) return;
-            log.warn("[leg-sl] First close attempt failed for {} {} ({}): {} — retrying in 2s",
+            log.warn("[short-straddle] First close attempt failed for {} {} ({}): {} — retrying in 2s",
                 legTag, symbol, reason, resp);
             try { Thread.sleep(2000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
             OrderDTO retry = orderService.placeOrder(symbol, qty, 1, 0);
             orderCountToday++;
             if (retry == null || retry.getId() == null || retry.getId().isEmpty() || !"ok".equals(retry.getStatus())) {
-                log.error("[leg-sl] CLOSE FAILED for {} {} qty={} ({}): {}",
+                log.error("[short-straddle] CLOSE FAILED for {} {} qty={} ({}): {}",
                     legTag, symbol, qty, reason, retry);
-                eventService.log("[ERROR] [leg-sl] CLOSE FAILED for " + legTag + " " + symbol
+                eventService.log("[ERROR] [short-straddle] CLOSE FAILED for " + legTag + " " + symbol
                     + " qty=" + qty + " — manual intervention required");
             }
         } catch (Exception e) {
-            log.error("[leg-sl] Exception closing {} {}: {}", legTag, symbol, e.getMessage());
+            log.error("[short-straddle] Exception closing {} {}: {}", legTag, symbol, e.getMessage());
         }
     }
 
     // ── Max loss kill switch ──────────────────────────────────────────────────
     private boolean checkMaxLossKillSwitch() {
         // Derived from portfolioMaxDailyLoss × this strategy's allocation %.
-        double maxLoss = riskSettings.getStrategyMaxDailyLoss(STRATEGY_ID);
+        double maxLoss = riskSettings.getStrategyMaxDailyLoss(instanceId);
         if (maxLoss <= 0) return false;
         double ceLtp = isCeOpen() && !ceSymbol.isEmpty() ? marketDataService.getLtp(ceSymbol) : 0;
         double peLtp = isPeOpen() && !peSymbol.isEmpty() ? marketDataService.getLtp(peSymbol) : 0;
@@ -593,8 +621,8 @@ public class LegSlStrategy implements Strategy {
         if (netPnl < -maxLoss) {
             String msg = String.format("Daily max-loss hit (net %.2f < -%.2f) — flattening remaining legs",
                 netPnl, maxLoss);
-            log.warn("[leg-sl] {}", msg);
-            eventService.log("[ERROR] [leg-sl] " + msg);
+            log.warn("[short-straddle] {}", msg);
+            eventService.log("[ERROR] [short-straddle] " + msg);
             notifyTelegram(msg);
             closeRemainingLegs("MAX_LOSS_HIT");
             transitionTo(LifecycleState.DONE_FOR_DAY);
@@ -703,7 +731,7 @@ public class LegSlStrategy implements Strategy {
         m.put("totalPnlToday", round2(realisedPnlToday + ceMtm + peMtm));
 
         // Per-leg SL triggers + consumed % (replaces combined SL in the leg-sl dashboard).
-        double legSlPct = riskSettings.getStrategyDouble(STRATEGY_ID, "legSlPct", 50);
+        double legSlPct = riskSettings.getStrategyDouble(instanceId, "legSlPct", 50);
         m.put("legSlPct", legSlPct);
         // Worst-case loss for the currently-running straddle if both legs hit their SLs. Per-leg
         // loss at SL = entryPremium × legSlPct/100 × qty. Total = sum of both legs (qty same for
@@ -769,11 +797,11 @@ public class LegSlStrategy implements Strategy {
         m.put("peOrderId",     peOrderId);
         m.put("entryTime",     getEntryTime());
         m.put("squareOffTime", getSquareOffTime());
-        m.put("legSlPct",      riskSettings.getStrategyDouble(STRATEGY_ID, "legSlPct", 50));
-        m.put("lotsPerLeg",    riskSettings.getStrategyInt(STRATEGY_ID, "lotsPerLeg", 1));
-        m.put("maxDailyLoss",  riskSettings.getStrategyMaxDailyLoss(STRATEGY_ID));
+        m.put("legSlPct",      riskSettings.getStrategyDouble(instanceId, "legSlPct", 50));
+        m.put("lotsPerLeg",    riskSettings.getStrategyInt(instanceId, "lotsPerLeg", 1));
+        m.put("maxDailyLoss",  riskSettings.getStrategyMaxDailyLoss(instanceId));
         m.put("lotSize",       NIFTY_LOT_SIZE);
-        m.put("enabled",       riskSettings.getStrategyBool(STRATEGY_ID, "enabled", false));
+        m.put("enabled",       riskSettings.getStrategyBool(instanceId, "enabled", false));
         return m;
     }
 
@@ -781,10 +809,10 @@ public class LegSlStrategy implements Strategy {
     public synchronized boolean forceCloseAll(String reason) {
         if (state != LifecycleState.OPEN_BOTH && state != LifecycleState.OPEN_CE_ONLY
                 && state != LifecycleState.OPEN_PE_ONLY) {
-            log.info("[leg-sl] forceClose ignored — state={}", state);
+            log.info("[short-straddle] forceClose ignored — state={}", state);
             return false;
         }
-        eventService.log("[INFO] [leg-sl] Manual squareoff (" + reason + ") — flattening any open legs");
+        eventService.log("[INFO] [short-straddle] Manual squareoff (" + reason + ") — flattening any open legs");
         closeRemainingLegs(reason);
         transitionTo(LifecycleState.DONE_FOR_DAY);
         return true;
@@ -799,18 +827,18 @@ public class LegSlStrategy implements Strategy {
                           || state == LifecycleState.OPEN_CE_ONLY
                           || state == LifecycleState.OPEN_PE_ONLY);
         if (hadOpen) {
-            eventService.log("[INFO] [leg-sl] Portfolio kill (" + reason + ") — flattening + parking");
+            eventService.log("[INFO] [short-straddle] Portfolio kill (" + reason + ") — flattening + parking");
             closeRemainingLegs(reason);
         } else {
-            eventService.log("[INFO] [leg-sl] Portfolio kill (" + reason + ") — parking from state=" + state + " (no open position)");
+            eventService.log("[INFO] [short-straddle] Portfolio kill (" + reason + ") — parking from state=" + state + " (no open position)");
         }
         transitionTo(LifecycleState.DONE_FOR_DAY);
     }
 
     @Override
     public synchronized void resetToIdle(String reason) {
-        log.info("[leg-sl] Manual reset from {} → IDLE ({})", state, reason);
-        eventService.log("[INFO] [leg-sl] state reset to IDLE (" + reason + ")");
+        log.info("[short-straddle] Manual reset from {} → IDLE ({})", state, reason);
+        eventService.log("[INFO] [short-straddle] state reset to IDLE (" + reason + ")");
         this.ceSymbol = ""; this.peSymbol = "";
         this.ceQty = 0; this.peQty = 0;
         this.ceOrderId = ""; this.peOrderId = "";
@@ -824,14 +852,14 @@ public class LegSlStrategy implements Strategy {
         if (today.equals(dayKey)) return;
         if (state == LifecycleState.OPEN_BOTH || state == LifecycleState.OPEN_CE_ONLY
                 || state == LifecycleState.OPEN_PE_ONLY) {
-            log.warn("[leg-sl] Stale state {} from {} detected at startup — flattening before reset",
+            log.warn("[short-straddle] Stale state {} from {} detected at startup — flattening before reset",
                 state, dayKey);
-            eventService.log("[WARNING] [leg-sl] stale " + state + " from " + dayKey + " — flattening");
+            eventService.log("[WARNING] [short-straddle] stale " + state + " from " + dayKey + " — flattening");
             closeRemainingLegs("STALE_DAY_RESET");
         }
         if (dayKey != null && !dayKey.isEmpty() && realisedPnlToday != 0) {
             try { persistSessionFor(dayKey); }
-            catch (Exception e) { log.warn("[leg-sl] Failed to persist session row for {}: {}", dayKey, e.getMessage()); }
+            catch (Exception e) { log.warn("[short-straddle] Failed to persist session row for {}: {}", dayKey, e.getMessage()); }
         }
         this.dayKey = today;
         this.lastEntryNifty = 0;
@@ -859,9 +887,9 @@ public class LegSlStrategy implements Strategy {
         double gross   = realisedPnlToday;
         double net     = gross - charges;
         com.rydytrader.autotrader.entity.StraddleSessionEntity row =
-            sessionRepo.findByStrategyIdAndSessionDate(STRATEGY_ID, date)
+            sessionRepo.findByStrategyIdAndSessionDate(instanceId, date)
                        .orElseGet(com.rydytrader.autotrader.entity.StraddleSessionEntity::new);
-        row.setStrategyId(STRATEGY_ID);
+        row.setStrategyId(instanceId);
         row.setSessionDate(date);
         row.setEntries(ceEntryPremium > 0 || peEntryPremium > 0 || realisedPnlToday != 0 ? 1 : 0);
         row.setRolls(0); // leg-sl never rolls
@@ -873,7 +901,7 @@ public class LegSlStrategy implements Strategy {
         row.setNetPnl(net);
         if (row.getCreatedAt() == 0) row.setCreatedAt(System.currentTimeMillis());
         sessionRepo.save(row);
-        log.info("[leg-sl] Persisted session row for {}: gross={} net={}", date, gross, net);
+        log.info("[short-straddle] Persisted session row for {}: gross={} net={}", date, gross, net);
     }
 
     // ── Helpers — symbol resolution + premium reads + persistence ─────────────
@@ -899,12 +927,12 @@ public class LegSlStrategy implements Strategy {
                 else if ("PE".equalsIgnoreCase(optType)) pe = sym;
             }
             if (ce == null || pe == null) {
-                log.warn("[leg-sl] Could not find both CE and PE for ATM strike {} (ce={}, pe={})", atmStrike, ce, pe);
+                log.warn("[short-straddle] Could not find both CE and PE for ATM strike {} (ce={}, pe={})", atmStrike, ce, pe);
                 return null;
             }
             return new String[]{ ce, pe };
         } catch (Exception e) {
-            log.error("[leg-sl] Option chain fetch failed: {}", e.getMessage());
+            log.error("[short-straddle] Option chain fetch failed: {}", e.getMessage());
             return null;
         }
     }
@@ -977,13 +1005,13 @@ public class LegSlStrategy implements Strategy {
                 double prevClose = v.path("prev_close_price").asDouble(0);
                 if (lp > 0) {
                     marketDataService.seedTickData(symbol, lp, prevClose);
-                    log.info("[leg-sl] Entry premium for {} captured via REST quote: lp={} prevClose={}",
+                    log.info("[short-straddle] Entry premium for {} captured via REST quote: lp={} prevClose={}",
                         symbol, lp, prevClose);
                     return lp;
                 }
             }
         } catch (Exception e) {
-            log.warn("[leg-sl] REST quote fallback failed for {}: {}", symbol, e.getMessage());
+            log.warn("[short-straddle] REST quote fallback failed for {}: {}", symbol, e.getMessage());
         }
         return 0;
     }
@@ -1000,7 +1028,7 @@ public class LegSlStrategy implements Strategy {
                 if (lp > 0) marketDataService.seedTickData(symbol, lp, prevClose);
             }
         } catch (Exception e) {
-            log.warn("[leg-sl] Seed leg quote failed for {}: {}", symbol, e.getMessage());
+            log.warn("[short-straddle] Seed leg quote failed for {}: {}", symbol, e.getMessage());
         }
     }
 
@@ -1015,7 +1043,7 @@ public class LegSlStrategy implements Strategy {
                 double fill = orderService.getFilledPriceByOrderId(ceOrderId);
                 if (fill > 0) {
                     ceEntryPremium = fill;
-                    log.info("[leg-sl] Recovered CE entry premium from tradebook: {} (orderId={})", fill, ceOrderId);
+                    log.info("[short-straddle] Recovered CE entry premium from tradebook: {} (orderId={})", fill, ceOrderId);
                     changed = true;
                 }
             } catch (Exception ignored) {}
@@ -1025,7 +1053,7 @@ public class LegSlStrategy implements Strategy {
                 double fill = orderService.getFilledPriceByOrderId(peOrderId);
                 if (fill > 0) {
                     peEntryPremium = fill;
-                    log.info("[leg-sl] Recovered PE entry premium from tradebook: {} (orderId={})", fill, peOrderId);
+                    log.info("[short-straddle] Recovered PE entry premium from tradebook: {} (orderId={})", fill, peOrderId);
                     changed = true;
                 }
             } catch (Exception ignored) {}
@@ -1067,13 +1095,13 @@ public class LegSlStrategy implements Strategy {
             double charges = computeCycleCharges(sellPremiumTurnoverToday, buyPremiumTurnoverToday, orderCountToday);
             com.rydytrader.autotrader.entity.StraddleTradeEntity t =
                 new com.rydytrader.autotrader.entity.StraddleTradeEntity();
-            t.setStrategyId(STRATEGY_ID);
+            t.setStrategyId(instanceId);
             t.setSessionDate(dayKey != null && !dayKey.isEmpty() ? dayKey : LocalDate.now(IST).toString());
             t.setClosedAtMillis(System.currentTimeMillis());
             // leg-sl uses whichever leg's qty is non-zero, or the last known. Both legs share qty
             // at entry so this is approximate when one leg was closed earlier.
             int qty = Math.max(ceQty, peQty);
-            if (qty == 0) qty = Math.max(1, riskSettings.getStrategyInt(STRATEGY_ID, "lotsPerLeg", 1)) * NIFTY_LOT_SIZE;
+            if (qty == 0) qty = Math.max(1, riskSettings.getStrategyInt(instanceId, "lotsPerLeg", 1)) * NIFTY_LOT_SIZE;
             t.setQty(qty);
             t.setGrossPnl(round2(realisedPnlToday));
             t.setCharges(round2(charges));
@@ -1081,7 +1109,7 @@ public class LegSlStrategy implements Strategy {
             t.setCloseReason("DONE_FOR_DAY");
             tradeRepo.save(t);
         } catch (Exception e) {
-            log.warn("[leg-sl] Failed to persist straddle_trades row: {}", e.getMessage());
+            log.warn("[short-straddle] Failed to persist straddle_trades row: {}", e.getMessage());
         }
     }
 
@@ -1098,7 +1126,7 @@ public class LegSlStrategy implements Strategy {
     }
 
     private void persist() {
-        LegSlStateStore.State s = new LegSlStateStore.State();
+        ShortStraddleStateStore.State s = new ShortStraddleStateStore.State();
         s.dayKey = this.dayKey;
         s.state = this.state.name();
         s.ceSymbol = this.ceSymbol;
@@ -1136,16 +1164,16 @@ public class LegSlStrategy implements Strategy {
             events.add(m);
         }
         s.recentEvents = events;
-        stateStore.update(s);
+        stateStore.update(instanceId, s);
     }
 
     private void notifyTelegram(String msg) {
-        try { if (telegramService != null) telegramService.sendMessage("[leg-sl] " + msg); }
+        try { if (telegramService != null) telegramService.sendMessage("[short-straddle] " + msg); }
         catch (Exception ignored) {}
     }
 
-    private String getEntryTime()     { return riskSettings.getStrategyString(STRATEGY_ID, "entryTime",     "09:20"); }
-    private String getSquareOffTime() { return riskSettings.getStrategyString(STRATEGY_ID, "squareOffTime", "15:15"); }
+    private String getEntryTime()     { return riskSettings.getStrategyString(instanceId, "entryTime",     "09:20"); }
+    private String getSquareOffTime() { return riskSettings.getStrategyString(instanceId, "squareOffTime", "15:15"); }
 
     private boolean isCeOpen() {
         return state == LifecycleState.OPEN_BOTH || state == LifecycleState.OPEN_CE_ONLY;
@@ -1157,7 +1185,7 @@ public class LegSlStrategy implements Strategy {
     private static LocalTime parseTime(String hhmm, String fallback) {
         try { return LocalTime.parse((hhmm == null || hhmm.isBlank()) ? fallback : hhmm.trim()); }
         catch (Exception e) {
-            log.warn("[leg-sl] Failed to parse time \"{}\" — falling back to {}", hhmm, fallback);
+            log.warn("[short-straddle] Failed to parse time \"{}\" — falling back to {}", hhmm, fallback);
             return LocalTime.parse(fallback);
         }
     }

@@ -61,14 +61,17 @@ public class ViewController {
 
     /** Build the sidebar nav entries from the registry. Used by every page that renders a
      *  sidebar (dashboard, calendar, analytics home). Each entry has id, displayName, navIcon,
-     *  and href. The "active" entry is decided client-side by matching window.location.pathname. */
+     *  and href. The "active" entry is decided client-side by matching window.location.pathname.
+     *  {@code navIcon} is the short code so the sidebar chip reads e.g. {@code 9:20} instead of
+     *  the strategy id. */
     private List<Map<String, Object>> sidebarStrategies() {
         List<Map<String, Object>> nav = new ArrayList<>();
         for (Strategy s : strategyRegistry.all()) {
             Map<String, Object> e = new LinkedHashMap<>();
             e.put("id", s.id());
             e.put("displayName", s.displayName());
-            e.put("navIcon", s.navIcon());
+            e.put("shortCode", s.shortCode());
+            e.put("navIcon", s.shortCode());
             e.put("href", "/strategies/" + s.id());
             nav.add(e);
         }
@@ -114,11 +117,12 @@ public class ViewController {
                     log.error("Error starting services after Fyers login: {}", e.getMessage());
                 }
             }, "fyers-init").start();
-            // Land on the short-straddle operational dashboard — primary live-trading view.
-            return "redirect:/strategies/short-straddle";
+            // No canonical instance any more — multiple straddles live under /strategies/inst-<n>.
+            // Send the operator to the analytics home to pick from the sidebar.
+            return "redirect:/home";
         }
         log.error("Fyers login callback error");
-        return "redirect:/strategies/short-straddle?fyers=error";
+        return "redirect:/home?fyers=error";
     }
 
     @GetMapping("/api/fyers/status")
@@ -235,14 +239,12 @@ public class ViewController {
     private String renderStrategyDashboard(String id, Model model) {
         Strategy s = strategyRegistry.get(id);
         if (s == null) {
-            log.warn("Unknown strategy id '{}', defaulting to short-straddle", id);
-            s = strategyRegistry.get("short-straddle");
-            // Legacy URL alias: keep /strategies/leg-sl resolving for bookmarks.
-            if (s == null) s = strategyRegistry.get("leg-sl");
+            log.warn("Unknown strategy id '{}' — rendering empty dashboard", id);
         }
         model.addAttribute("strategyId",          s != null ? s.id() : id);
         model.addAttribute("strategyDisplayName", s != null ? s.displayName() : id);
         model.addAttribute("strategyDescription", s != null ? s.description() : "");
+        model.addAttribute("strategyShortCode",   s != null ? s.shortCode() : "");
         model.addAttribute("sidebarStrategies",   sidebarStrategies());
         return "short-straddle";
     }

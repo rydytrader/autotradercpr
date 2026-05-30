@@ -71,6 +71,11 @@ public interface Strategy {
      *  the generic strategyConfigs map). */
     void saveSettings(Map<String, Object> values);
 
+    /** Operator-facing short code (e.g. {@code "9:20"}) shown as the sidebar label and on
+     *  per-instance pages. Default = {@link #id()}; concrete instances return the entity's
+     *  {@code shortCode} field directly. */
+    default String shortCode() { return id(); }
+
     /** Tiny icon for the left sidebar nav. Default = first letter of id() uppercase.
      *  Concrete strategies may override to return an emoji or symbol character. */
     default String navIcon() {

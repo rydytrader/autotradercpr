@@ -48,6 +48,7 @@ public class StrategySessionMigration {
         backfillStrategyId();
         dropOldSessionDateUniqueConstraint();
         oneShotResetTradeHistory();
+        oneShotWipeForMultiInstance();
     }
 
     /** Separate listener — runs in its own transaction. */
@@ -97,10 +98,38 @@ public class StrategySessionMigration {
         }
     }
 
-    /** One-time wipe of analytics data — gated by a flag in the SETTINGS table so it runs only
-     *  on the first boot after this commit. Operator asked for a clean slate going into the new
-     *  per-straddle analytics. Preserves SETTINGS + APP_USER + every other table; clears only
-     *  the two analytics tables and the per-strategy state JSON files. */
+    /** v2 wipe — multi-instance refactor. Removes every legacy single-instance row so the
+     *  operator starts with zero instances. Sessions / trades rows are dropped (analytics
+     *  would otherwise attribute them to an instance that no longer exists). SETTINGS rows
+     *  keyed by the old singleton id ({@code strategies.short-straddle.*} or
+     *  {@code strategies.leg-sl.*}) are dropped. Every {@code *-state.json} under the strategy
+     *  state directory is removed. Gated by the {@code trades.reset.v2.done} flag so it runs
+     *  exactly once. */
+    private void oneShotWipeForMultiInstance() {
+        String flagKey = "trades.reset.v2.done";
+        try {
+            if (settingRepo.findBySettingKey(flagKey).isPresent()) return;
+
+            int trades   = safeDelete("DELETE FROM straddle_trades");
+            int sessions = safeDelete("DELETE FROM straddle_sessions");
+            int settings = safeDelete(
+                "DELETE FROM settings WHERE setting_key LIKE 'strategies.short-straddle.%' " +
+                "OR setting_key LIKE 'strategies.leg-sl.%'");
+            int stateFiles = wipeStrategyStateFiles();
+
+            settingRepo.save(new SettingEntity(flagKey, String.valueOf(System.currentTimeMillis())));
+
+            log.warn("[StrategyMigration] v2 wipe (multi-instance) — cleared {} trade row(s), " +
+                "{} session row(s), {} legacy setting(s), {} state file(s). Operator must " +
+                "create instances via Settings → Straddles.",
+                trades, sessions, settings, stateFiles);
+        } catch (Exception e) {
+            log.warn("[StrategyMigration] v2 wipe skipped: {}", e.getMessage());
+        }
+    }
+
+    /** v1 wipe — pre-multi-instance. Kept so a fresh install on a v1-flagged DB doesn't re-run.
+     *  v2 supersedes it; both flags are checked on boot. */
     private void oneShotResetTradeHistory() {
         String flagKey = "trades.reset.v1.done";
         try {

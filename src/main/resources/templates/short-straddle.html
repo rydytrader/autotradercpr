@@ -96,7 +96,13 @@
 
     <div class="page-header">
         <div>
-            <div class="page-title" th:text="${strategyDisplayName}">Dashboard</div>
+            <div style="display:flex; align-items:center; gap:14px;">
+                <div class="page-title" th:text="${strategyDisplayName}">Dashboard</div>
+                <button id="straddleInstanceSettingsBtn"
+                        title="Edit this straddle's trading settings (entry time, lots, SL%, squareoff)"
+                        onclick="StrategySettings.openFor(document.documentElement.getAttribute('data-strategy-id'))"
+                        style="background:rgba(125,211,252,0.10); border:1px solid rgba(125,211,252,0.30); color:var(--accent-cyan); font-family:var(--font-mono); font-size:0.74rem; font-weight:700; letter-spacing:0.06em; padding:6px 12px; border-radius:6px; cursor:pointer;">⚙ Settings</button>
+            </div>
             <div class="page-subtitle" th:text="${strategyDescription}">Today's Trading Overview</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
@@ -433,7 +439,8 @@
 
 <script src="/js/common.js?v=2"></script>
 <script src="/js/ticker.js?v=4"></script>
-<script src="/js/settings-modal.js?v=1"></script>
+<script src="/js/settings-modal.js?v=2"></script>
+<script src="/js/strategy-settings-form.js?v=1"></script>
 
 <script>
     // ── Footer year ──────────────────────────────────────────────────────────

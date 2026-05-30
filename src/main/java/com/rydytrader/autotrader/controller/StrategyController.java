@@ -38,6 +38,8 @@ public class StrategyController {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id", s.id());
             m.put("displayName", s.displayName());
+            m.put("description", s.description());
+            m.put("shortCode", s.shortCode());
             m.put("currentState", s.currentState());
             m.put("navIcon", s.navIcon());
             out.add(m);
