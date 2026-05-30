@@ -183,19 +183,36 @@ public class ShortStraddle implements Strategy {
         return realisedPnlToday + ceMtm + peMtm - charges;
     }
 
+    /** Day-of-week trading slots, ordered by DTE (4 → 0). NIFTY weekly options expire Tuesday;
+     *  each weekday entry has its own toggle and SL%. Keys are the 3-letter day codes used in
+     *  the settings table — {@code strategies.<instanceId>.day.<DAY>.enabled / legSlPct}. */
+    private static final java.util.List<String[]> WEEK_DAYS = java.util.List.of(
+        new String[]{"WED", "4"},
+        new String[]{"THU", "3"},
+        new String[]{"FRI", "2"},
+        new String[]{"MON", "1"},
+        new String[]{"TUE", "0"}
+    );
+
     @Override
     public java.util.List<java.util.Map<String, Object>> getSettingsSchema() {
         java.util.List<java.util.Map<String, Object>> s = new java.util.ArrayList<>();
         // 'enabled' is intentionally NOT a per-instance settings field. The Straddles tab in
         // the global Settings modal owns enable/disable so the operator has one consistent
         // place to flip an instance on or off; the per-instance ⚙ Settings dialog is for
-        // trading config only (entry time, lots, SL %, squareoff).
+        // trading config only (entry time, lots, per-day SL %, squareoff).
         s.add(field("entryTime",     "time",    "09:20", "Entry Time (HH:mm IST)", null));
         s.add(field("squareOffTime", "time",    "15:15", "Squareoff Time (HH:mm IST)", null));
         s.add(field("lotsPerLeg",    "int",      1,      "Lots per Leg",
-            "Qty = lots × NIFTY lot size (65). Independent from the combined-roll strategy."));
-        s.add(field("legSlPct",      "percent",  50,     "Per-leg SL (%)",
-            "Close that leg when its LTP rises by this % from entry. Other leg keeps running."));
+            "Qty = lots × NIFTY lot size (65)."));
+        // Per-day enable + SL %. Ordered by DTE (4 → 3 → 2 → 1 → 0). Defaults: every day on
+        // at 50 %, matching the previous single-SL behaviour.
+        for (String[] dk : WEEK_DAYS) {
+            String day = dk[0]; String dte = dk[1];
+            s.add(field("day." + day + ".enabled",  "boolean", true, day + " — " + dte + " DTE — Enable",
+                "Enter straddle on " + day + " using the SL % below. Disabled days are skipped."));
+            s.add(field("day." + day + ".legSlPct", "percent", 50, day + " — " + dte + " DTE — SL %", null));
+        }
         return s;
     }
 
@@ -212,7 +229,11 @@ public class ShortStraddle implements Strategy {
         v.put("entryTime",     riskSettings.getStrategyString(instanceId, "entryTime",     "09:20"));
         v.put("squareOffTime", riskSettings.getStrategyString(instanceId, "squareOffTime", "15:15"));
         v.put("lotsPerLeg",    riskSettings.getStrategyInt(instanceId,    "lotsPerLeg",    1));
-        v.put("legSlPct",      riskSettings.getStrategyDouble(instanceId, "legSlPct",      50));
+        for (String[] dk : WEEK_DAYS) {
+            String day = dk[0];
+            v.put("day." + day + ".enabled",  riskSettings.getStrategyBool(instanceId,   "day." + day + ".enabled",  true));
+            v.put("day." + day + ".legSlPct", riskSettings.getStrategyDouble(instanceId, "day." + day + ".legSlPct", 50));
+        }
         return v;
     }
 
@@ -222,8 +243,42 @@ public class ShortStraddle implements Strategy {
         if (values.containsKey("entryTime"))     riskSettings.setStrategySetting(instanceId, "entryTime",     String.valueOf(values.get("entryTime")));
         if (values.containsKey("squareOffTime")) riskSettings.setStrategySetting(instanceId, "squareOffTime", String.valueOf(values.get("squareOffTime")));
         if (values.containsKey("lotsPerLeg"))    riskSettings.setStrategySetting(instanceId, "lotsPerLeg",    asInt(values.get("lotsPerLeg"), 1));
-        if (values.containsKey("legSlPct"))      riskSettings.setStrategySetting(instanceId, "legSlPct",      asDouble(values.get("legSlPct"), 50));
+        for (String[] dk : WEEK_DAYS) {
+            String day = dk[0];
+            String enKey = "day." + day + ".enabled";
+            String slKey = "day." + day + ".legSlPct";
+            if (values.containsKey(enKey)) riskSettings.setStrategySetting(instanceId, enKey, Boolean.parseBoolean(String.valueOf(values.get(enKey))));
+            if (values.containsKey(slKey)) riskSettings.setStrategySetting(instanceId, slKey, asDouble(values.get(slKey), 50));
+        }
         riskSettings.saveFor("live");
+    }
+
+    /** Returns today's day code (MON/TUE/WED/THU/FRI), or empty on weekends. */
+    private String todayKey() {
+        return switch (java.time.LocalDate.now(IST).getDayOfWeek()) {
+            case MONDAY    -> "MON";
+            case TUESDAY   -> "TUE";
+            case WEDNESDAY -> "WED";
+            case THURSDAY  -> "THU";
+            case FRIDAY    -> "FRI";
+            default        -> "";
+        };
+    }
+
+    /** True when today's day-of-week is enabled in this instance's per-day settings. Returns
+     *  false on weekends (matches the marketHolidayService check elsewhere). */
+    private boolean isTodayDayEnabled() {
+        String k = todayKey();
+        if (k.isEmpty()) return false;
+        return riskSettings.getStrategyBool(instanceId, "day." + k + ".enabled", true);
+    }
+
+    /** Per-leg SL % for the current weekday. Falls back to 50 % when the day code is unknown
+     *  (weekend, but we never enter on weekends so the value is only used defensively). */
+    private double todayLegSlPct() {
+        String k = todayKey();
+        if (k.isEmpty()) return 50;
+        return riskSettings.getStrategyDouble(instanceId, "day." + k + ".legSlPct", 50);
     }
 
     // ── Boot resume — called by StraddleInstanceManager via bootstrap() ───────
@@ -338,6 +393,11 @@ public class ShortStraddle implements Strategy {
         switch (state) {
             case IDLE -> {
                 if (afterOrAt(now, entryTime) && now.isBefore(squareOffTime)) {
+                    // Per-day toggle. If today is disabled we never enter; legs already open
+                    // from a previous day rollover would have been flattened by rolloverIfNewDay.
+                    if (!isTodayDayEnabled()) {
+                        return;
+                    }
                     doInitialEntry();
                 }
             }
@@ -445,7 +505,7 @@ public class ShortStraddle implements Strategy {
         if (state != LifecycleState.OPEN_BOTH
                 && state != LifecycleState.OPEN_CE_ONLY
                 && state != LifecycleState.OPEN_PE_ONLY) return;
-        double legSlPct = riskSettings.getStrategyDouble(instanceId, "legSlPct", 50);
+        double legSlPct = todayLegSlPct();
         if (isCeOpen() && ceEntryPremium > 0 && !ceSymbol.isEmpty()) {
             double ceLtp = marketDataService.getLtp(ceSymbol);
             if (ceLtp > 0) {
@@ -731,7 +791,7 @@ public class ShortStraddle implements Strategy {
         m.put("totalPnlToday", round2(realisedPnlToday + ceMtm + peMtm));
 
         // Per-leg SL triggers + consumed % (replaces combined SL in the leg-sl dashboard).
-        double legSlPct = riskSettings.getStrategyDouble(instanceId, "legSlPct", 50);
+        double legSlPct = todayLegSlPct();
         m.put("legSlPct", legSlPct);
         // Worst-case loss for the currently-running straddle if both legs hit their SLs. Per-leg
         // loss at SL = entryPremium × legSlPct/100 × qty. Total = sum of both legs (qty same for
@@ -797,7 +857,20 @@ public class ShortStraddle implements Strategy {
         m.put("peOrderId",     peOrderId);
         m.put("entryTime",     getEntryTime());
         m.put("squareOffTime", getSquareOffTime());
-        m.put("legSlPct",      riskSettings.getStrategyDouble(instanceId, "legSlPct", 50));
+        m.put("legSlPct",      todayLegSlPct());
+        // Per-day toggle + active SL — dashboard market clock shows the day's status.
+        String dayKey = todayKey();
+        m.put("todayDayKey",   dayKey);
+        m.put("todayDayEnabled", isTodayDayEnabled());
+        java.util.Map<String, Object> dayMap = new java.util.LinkedHashMap<>();
+        for (String[] dk : WEEK_DAYS) {
+            java.util.Map<String, Object> e = new java.util.LinkedHashMap<>();
+            e.put("dte",      Integer.parseInt(dk[1]));
+            e.put("enabled",  riskSettings.getStrategyBool(instanceId,   "day." + dk[0] + ".enabled", true));
+            e.put("legSlPct", riskSettings.getStrategyDouble(instanceId, "day." + dk[0] + ".legSlPct", 50));
+            dayMap.put(dk[0], e);
+        }
+        m.put("dayConfig", dayMap);
         m.put("lotsPerLeg",    riskSettings.getStrategyInt(instanceId, "lotsPerLeg", 1));
         m.put("maxDailyLoss",  riskSettings.getStrategyMaxDailyLoss(instanceId));
         m.put("lotSize",       NIFTY_LOT_SIZE);

@@ -1233,6 +1233,18 @@
             subEl.style.color = 'var(--accent-red)';
             return;
         }
+        // Per-day toggle off → bot won't enter today; show a clear disabled banner.
+        // lastDashboardData.todayDayKey carries the 3-letter code, .todayDayEnabled the flag,
+        // and .dayConfig[code].dte the days-to-expiry label.
+        if (lastDashboardData && lastDashboardData.todayDayKey && lastDashboardData.todayDayEnabled === false) {
+            var dk = lastDashboardData.todayDayKey;
+            var cfg = (lastDashboardData.dayConfig || {})[dk] || {};
+            var dteLabel = (cfg.dte != null) ? (' (' + cfg.dte + ' DTE)') : '';
+            clockEl.textContent = now.toLocaleTimeString('en-IN', {hour12:false});
+            subEl.textContent = 'Today ' + dk + dteLabel + ' — DISABLED · no entry will fire';
+            subEl.style.color = 'var(--accent-red, #f87171)';
+            return;
+        }
 
         var mins = now.getHours() * 60 + now.getMinutes();
         var preMarket   = 9 * 60;
