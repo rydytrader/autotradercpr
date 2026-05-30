@@ -186,8 +186,10 @@ public class ShortStraddle implements Strategy {
     @Override
     public java.util.List<java.util.Map<String, Object>> getSettingsSchema() {
         java.util.List<java.util.Map<String, Object>> s = new java.util.ArrayList<>();
-        s.add(field("enabled",       "boolean", false,   "Enable Strategy",
-            "Bot only fires entries / SL checks when enabled. Disable to pause without losing today's state."));
+        // 'enabled' is intentionally NOT a per-instance settings field. The Straddles tab in
+        // the global Settings modal owns enable/disable so the operator has one consistent
+        // place to flip an instance on or off; the per-instance ⚙ Settings dialog is for
+        // trading config only (entry time, lots, SL %, squareoff).
         s.add(field("entryTime",     "time",    "09:20", "Entry Time (HH:mm IST)", null));
         s.add(field("squareOffTime", "time",    "15:15", "Squareoff Time (HH:mm IST)", null));
         s.add(field("lotsPerLeg",    "int",      1,      "Lots per Leg",
@@ -207,7 +209,6 @@ public class ShortStraddle implements Strategy {
     @Override
     public java.util.Map<String, Object> getSettingsValues() {
         java.util.Map<String, Object> v = new java.util.LinkedHashMap<>();
-        v.put("enabled",       riskSettings.getStrategyBool(instanceId,   "enabled",       false));
         v.put("entryTime",     riskSettings.getStrategyString(instanceId, "entryTime",     "09:20"));
         v.put("squareOffTime", riskSettings.getStrategyString(instanceId, "squareOffTime", "15:15"));
         v.put("lotsPerLeg",    riskSettings.getStrategyInt(instanceId,    "lotsPerLeg",    1));
@@ -218,7 +219,6 @@ public class ShortStraddle implements Strategy {
     @Override
     public void saveSettings(java.util.Map<String, Object> values) {
         if (values == null) return;
-        if (values.containsKey("enabled"))       riskSettings.setStrategySetting(instanceId, "enabled",       asBool(values.get("enabled")));
         if (values.containsKey("entryTime"))     riskSettings.setStrategySetting(instanceId, "entryTime",     String.valueOf(values.get("entryTime")));
         if (values.containsKey("squareOffTime")) riskSettings.setStrategySetting(instanceId, "squareOffTime", String.valueOf(values.get("squareOffTime")));
         if (values.containsKey("lotsPerLeg"))    riskSettings.setStrategySetting(instanceId, "lotsPerLeg",    asInt(values.get("lotsPerLeg"), 1));
@@ -1199,10 +1199,5 @@ public class ShortStraddle implements Strategy {
     private static double asDouble(Object o, double def) {
         if (o == null) return def;
         try { return Double.parseDouble(String.valueOf(o).trim()); } catch (NumberFormatException e) { return def; }
-    }
-    private static boolean asBool(Object o) {
-        if (o == null) return false;
-        if (o instanceof Boolean b) return b;
-        return Boolean.parseBoolean(String.valueOf(o).trim());
     }
 }
