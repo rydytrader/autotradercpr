@@ -15,7 +15,7 @@
         if (overlayEl) return overlayEl;
         var html =
             '<div id="ssOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;">' +
-              '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;width:560px;max-width:94vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,0.3);">' +
+              '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;width:680px;max-width:94vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,0.3);">' +
                 '<div style="display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid var(--border);">' +
                   '<div style="font-family:var(--font-mono);font-size:0.92rem;font-weight:700;color:var(--text-primary);" id="ssTitle">⚙ Straddle Settings</div>' +
                   '<button onclick="StrategySettings.close()" style="background:transparent;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;line-height:1;padding:0 4px;">&times;</button>' +
@@ -40,7 +40,14 @@
             '.ss-field label { display:block;color:var(--text-muted);font-size:0.7rem;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:6px; }' +
             '.ss-field input, .ss-field select { width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none; }' +
             '.ss-field input[type=checkbox] { width:auto; }' +
-            '.ss-hint { color:var(--text-muted);font-size:0.7rem;margin-top:4px; }';
+            '.ss-hint { color:var(--text-muted);font-size:0.7rem;margin-top:4px; }' +
+            '.ss-section-title { font-family:var(--font-mono);font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-secondary);margin:22px 0 6px;padding-top:14px;border-top:1px solid var(--border); }' +
+            '.ss-day-grid { display:flex;flex-direction:column;font-family:var(--font-mono);font-size:0.78rem;margin-top:10px; }' +
+            '.ss-day-header, .ss-day-row { display:grid;grid-template-columns:1fr 110px 130px;gap:14px;align-items:center;padding:8px 4px;border-bottom:1px solid var(--border); }' +
+            '.ss-day-header { font-size:0.66rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em; }' +
+            '.ss-day-name { color:var(--text-primary); }' +
+            '.ss-day-row input[type=checkbox] { width:18px;height:18px;justify-self:start;margin:0; }' +
+            '.ss-day-row input[type=number] { width:100%;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.78rem;outline:none;text-align:right; }';
         document.head.appendChild(style);
         return overlayEl;
     }
@@ -67,25 +74,63 @@
             .catch(function() { body.innerHTML = '<div style="color:var(--accent-red);padding:14px;">Failed to load schema.</div>'; });
     }
 
+    function renderFieldHtml(f) {
+        var fieldId = 'ss-' + f.key;
+        var input = '';
+        switch (f.type) {
+            case 'time':    input = '<input type="text" id="' + fieldId + '" placeholder="' + (f.default || '') + '">'; break;
+            case 'int':
+            case 'percent': input = '<input type="number" id="' + fieldId + '" step="1" min="0">'; break;
+            case 'rupees':  input = '<input type="number" id="' + fieldId + '" step="500" min="0">'; break;
+            case 'double':  input = '<input type="number" id="' + fieldId + '" step="0.01">'; break;
+            case 'boolean': input = '<input type="checkbox" id="' + fieldId + '">'; break;
+            default:        input = '<input type="text" id="' + fieldId + '">';
+        }
+        var s = '<div class="ss-field"><label>' + escapeHtml(f.label || f.key) + '</label>' + input;
+        if (f.hint) s += '<div class="ss-hint">' + escapeHtml(f.hint) + '</div>';
+        s += '</div>';
+        return s;
+    }
+
     function renderFields(schema) {
-        var html = '';
+        // Split into regular fields and day-pair fields. Day fields use a horizontal grid
+        // (one row per day with enable + SL % side-by-side) instead of two stacked rows each.
+        var regularHtml = '';
+        var dayMap = {};  // { DAY: { enabled: schemaEntry, legSlPct: schemaEntry } }
+        var dayOrder = [];
         schema.forEach(function(f) {
-            var fieldId = 'ss-' + f.key;
-            var input = '';
-            switch (f.type) {
-                case 'time':    input = '<input type="text" id="' + fieldId + '" placeholder="' + (f.default || '') + '">'; break;
-                case 'int':
-                case 'percent': input = '<input type="number" id="' + fieldId + '" step="1" min="0">'; break;
-                case 'rupees':  input = '<input type="number" id="' + fieldId + '" step="500" min="0">'; break;
-                case 'double':  input = '<input type="number" id="' + fieldId + '" step="0.01">'; break;
-                case 'boolean': input = '<input type="checkbox" id="' + fieldId + '">'; break;
-                default:        input = '<input type="text" id="' + fieldId + '">';
+            var m = /^day\.([A-Z]{3})\.(enabled|legSlPct)$/.exec(f.key);
+            if (m) {
+                var d = m[1];
+                if (!dayMap[d]) { dayMap[d] = {}; dayOrder.push(d); }
+                dayMap[d][m[2]] = f;
+            } else {
+                regularHtml += renderFieldHtml(f);
             }
-            html += '<div class="ss-field"><label>' + escapeHtml(f.label || f.key) + '</label>' + input;
-            if (f.hint) html += '<div class="ss-hint">' + escapeHtml(f.hint) + '</div>';
-            html += '</div>';
         });
-        document.getElementById('ssBody').innerHTML = html;
+        var dayHtml = '';
+        if (dayOrder.length > 0) {
+            dayHtml += '<div class="ss-section-title">Trading Days · enable + per-leg SL</div>';
+            dayHtml += '<div class="ss-hint">Per-day toggle and SL %. Disabled days are skipped — no entry fires that day. Days are ordered by DTE for NIFTY weekly expiry on Tuesday.</div>';
+            dayHtml += '<div class="ss-day-grid">';
+            dayHtml += '<div class="ss-day-header"><span>Day</span><span>Enable</span><span>SL %</span></div>';
+            dayOrder.forEach(function(d) {
+                var pair = dayMap[d];
+                var enF = pair.enabled, slF = pair.legSlPct;
+                if (!enF || !slF) return;
+                // Extract the DTE digit from the enable-field label "WED — 4 DTE — Enable".
+                var dteMatch = /—\s*(\d+)\s*DTE/.exec(enF.label || '');
+                var dteLabel = dteMatch ? (' · ' + dteMatch[1] + ' DTE') : '';
+                dayHtml +=
+                    '<div class="ss-day-row">' +
+                        '<span class="ss-day-name">' + escapeHtml(d) + escapeHtml(dteLabel) + '</span>' +
+                        '<input type="checkbox" id="ss-' + escapeHtml(enF.key) + '">' +
+                        '<input type="number" id="ss-' + escapeHtml(slF.key) + '" step="1" min="0">' +
+                    '</div>';
+            });
+            dayHtml += '</div>';
+        }
+        document.getElementById('ssBody').innerHTML = regularHtml + dayHtml;
     }
 
     function loadValues(strategyId, schema) {
