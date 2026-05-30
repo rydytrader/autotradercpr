@@ -256,6 +256,7 @@
             showBanner('✓ Straddle ' + (id ? 'updated' : 'created'), 'success');
             cancelStraddleForm();
             loadStraddles();
+            refreshSidebar();
         }).catch(function(err) { showBanner('✗ Save failed: ' + (err.message || err), 'error'); });
     }
 
@@ -274,6 +275,7 @@
                 }
                 showBanner('✓ Straddle ' + (enable ? 'enabled' : 'disabled'), 'success');
                 loadStraddles();
+                refreshSidebar();
             }).catch(function(err) { showBanner('✗ Toggle failed: ' + (err.message || err), 'error'); });
     }
 
@@ -291,7 +293,59 @@
             }
             showBanner('✓ Straddle deleted', 'success');
             loadStraddles();
+            refreshSidebar(id);
         }).catch(function(err) { showBanner('✗ Delete failed: ' + (err.message || err), 'error'); });
+    }
+
+    // ── Sidebar live refresh ─────────────────────────────────────────────────
+    // After any straddle CRUD op, re-fetch /api/strategies and rebuild the strategy chips in
+    // the left sidebar so the operator doesn't have to refresh the page. If `deletedId` is
+    // provided and the current page is that strategy's dashboard, redirect to /home so they
+    // don't end up on an orphaned page.
+    function refreshSidebar(deletedId) {
+        fetch('/api/strategies')
+            .then(function(r) { return r.json(); })
+            .then(function(arr) {
+                var aside = document.querySelector('.strategy-nav-aside');
+                if (!aside) return;
+                // First <div> child of the aside is the HOME-to-strategies divider. Everything
+                // after it is the strategy chip stack — wipe + rebuild.
+                var firstDiv = aside.querySelector('div');
+                if (!firstDiv) return;
+                while (firstDiv.nextSibling) aside.removeChild(firstDiv.nextSibling);
+                var list = Array.isArray(arr) ? arr : [];
+                var pathnow = window.location.pathname;
+                var chipStyle = 'display:flex;align-items:center;justify-content:center;'
+                    + 'width:72px;height:40px;border-radius:8px;text-decoration:none;'
+                    + 'font-family:var(--font-mono);font-weight:700;font-size:0.86rem;'
+                    + 'color:var(--text-secondary);border:1px solid transparent;'
+                    + 'background:transparent;cursor:pointer;letter-spacing:0.06em;'
+                    + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 6px;';
+                var dividerStyle = 'width:64px;height:1px;background:var(--border);margin:4px 0;';
+                list.forEach(function(s, idx) {
+                    var a = document.createElement('a');
+                    a.href = '/strategies/' + s.id;
+                    a.className = 'nav-icon';
+                    a.title = s.displayName || s.id;
+                    a.setAttribute('data-nav-key', s.id);
+                    a.textContent = s.navIcon || s.shortCode || s.id;
+                    a.style.cssText = chipStyle;
+                    if (pathnow === ('/strategies/' + s.id)) a.classList.add('active');
+                    aside.appendChild(a);
+                    if (idx < list.length - 1) {
+                        var d = document.createElement('div');
+                        d.style.cssText = dividerStyle;
+                        aside.appendChild(d);
+                    }
+                });
+                // If the operator just deleted the strategy they're currently viewing, send
+                // them to the analytics home so they don't end up polling /api/strategies/X
+                // for a 404'd id.
+                if (deletedId && pathnow === ('/strategies/' + deletedId)) {
+                    window.location.href = '/home';
+                }
+            })
+            .catch(function() {});
     }
 
     function savePortfolioRiskTab() {
