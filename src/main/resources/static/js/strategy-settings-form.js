@@ -78,7 +78,7 @@
         var fieldId = 'ss-' + f.key;
         var input = '';
         switch (f.type) {
-            case 'time':    input = '<input type="text" id="' + fieldId + '" placeholder="' + (f.default || '') + '">'; break;
+            case 'time':    input = '<input type="time" id="' + fieldId + '" step="60">'; break;
             case 'int':
             case 'percent': input = '<input type="number" id="' + fieldId + '" step="1" min="0">'; break;
             case 'rupees':  input = '<input type="number" id="' + fieldId + '" step="500" min="0">'; break;
