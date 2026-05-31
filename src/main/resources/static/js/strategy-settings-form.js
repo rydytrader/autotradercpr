@@ -36,6 +36,7 @@
         overlayEl = document.getElementById('ssOverlay');
         var style = document.createElement('style');
         style.textContent =
+            '.ss-regular-grid { display:grid;grid-template-columns:1fr 1fr;gap:0 18px; }' +
             '.ss-field { margin-bottom:14px;font-family:var(--font-mono);font-size:0.78rem; }' +
             '.ss-field label { display:block;color:var(--text-muted);font-size:0.7rem;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:6px; }' +
             '.ss-field input, .ss-field select { width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none; }' +
@@ -101,7 +102,9 @@
     function renderFields(schema) {
         // Split into regular fields and day-pair fields. Day fields use a horizontal grid
         // (one row per day with enable + SL % side-by-side) instead of two stacked rows each.
-        var regularHtml = '';
+        // Regular fields are laid out in a 2-column grid so the first four (Entry Time,
+        // Squareoff Time, Lots per Leg, Order Type) sit as 2 × 2 instead of 4 stacked rows.
+        var regularInner = '';
         var dayMap = {};  // { DAY: { enabled: schemaEntry, legSlPct: schemaEntry } }
         var dayOrder = [];
         schema.forEach(function(f) {
@@ -111,9 +114,10 @@
                 if (!dayMap[d]) { dayMap[d] = {}; dayOrder.push(d); }
                 dayMap[d][m[2]] = f;
             } else {
-                regularHtml += renderFieldHtml(f);
+                regularInner += renderFieldHtml(f);
             }
         });
+        var regularHtml = regularInner ? ('<div class="ss-regular-grid">' + regularInner + '</div>') : '';
         var dayHtml = '';
         if (dayOrder.length > 0) {
             dayHtml += '<div class="ss-section-title">Trading Days · enable + per-leg SL</div>';
