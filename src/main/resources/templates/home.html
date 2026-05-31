@@ -263,8 +263,8 @@
                     <span class="stat-value" id="ahLongestWin" style="font-size:1rem;">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Current / Longest Loss</span>
-                    <span class="stat-value" id="ahLossStreaks" style="font-size:0.85rem;">— / —</span>
+                    <span class="stat-label" style="margin:0;">Longest Loss</span>
+                    <span class="stat-value" id="ahLongestLoss" style="font-size:1rem;">—</span>
                 </div>
             </div>
         </div>
@@ -608,8 +608,7 @@
             // Streaks card
             setVal('ahCurWin',      String(st.currentWinStreak || 0), st.currentWinStreak);
             setVal('ahLongestWin',  String(st.longestWinStreak || 0));
-            setVal('ahLossStreaks', (st.currentLossStreak || 0) + ' / ' + (st.longestLossStreak || 0),
-                                    -(st.currentLossStreak || 0));
+            setVal('ahLongestLoss', String(st.longestLossStreak || 0), -(st.longestLossStreak || 0));
             // Edge Metrics card
             setVal('ahExpectancy', fmtRs(edge.expectancy), edge.expectancy);
             var rf = Number(edge.recoveryFactor || 0);
