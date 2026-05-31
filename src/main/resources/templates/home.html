@@ -178,9 +178,12 @@
                     <div class="stat-value" id="ahWinRate" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
-                    <div class="stat-label">Profit Factor</div>
-                    <div class="stat-value" id="ahProfitFactor" style="font-size:1.1rem; margin-top:4px;"
-                         title="Gross profit ÷ gross loss. >1 = profitable, >2 = excellent.">—</div>
+                    <div class="stat-label" style="display:inline-flex; align-items:center; gap:5px; justify-content:center;">
+                        Profit Factor
+                        <span style="display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; border-radius:50%; border:1px solid var(--text-muted); color:var(--text-muted); font-size:0.6rem; font-weight:700; line-height:1; cursor:help;"
+                              title="Profit Factor = sum of winning P&L ÷ |sum of losing P&L|.&#10;>1 profitable · >2 strong · =1 break-even · <1 losing.&#10;Size-weighted totals — unlike R:R which uses average win ÷ |average loss|.">i</span>
+                    </div>
+                    <div class="stat-value" id="ahProfitFactor" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center;">
                     <div class="stat-label">R : R</div>
