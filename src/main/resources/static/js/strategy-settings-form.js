@@ -39,13 +39,12 @@
             '.ss-regular-grid { display:grid;grid-template-columns:1fr 1fr;gap:0 18px; }' +
             '.ss-field { margin-bottom:14px;font-family:var(--font-mono);font-size:0.78rem; }' +
             '.ss-field label { display:block;color:var(--text-muted);font-size:0.7rem;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:6px; }' +
-            '.ss-field input, .ss-field select { width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background-color:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none; }' +
-            // Strip OS-default <select> chrome and force the same theme as the inputs around
-            // it. All styles in ONE rule so no shorthand interaction drops the background
-            // colour. color-scheme:light dark tells browsers the option list can use the
-            // page's theme variables instead of the OS's force-light dropdown panel.
-            '.ss-field select { -webkit-appearance:none;-moz-appearance:none;appearance:none;color-scheme:light dark;padding:8px 30px 8px 12px;border-radius:6px;border:1px solid var(--border);background-color:var(--bg-primary) !important;color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;cursor:pointer;background-image:url(data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2210%22%20height%3D%226%22%20viewBox%3D%220%200%2010%206%22%3E%3Cpath%20d%3D%22M0%200l5%206%205-6z%22%20fill%3D%22%23a0a8b8%22/%3E%3C/svg%3E);background-repeat:no-repeat;background-position:right 12px center; }' +
-            '.ss-field select option { background-color:var(--bg-primary);color:var(--text-primary); }' +
+            '.ss-field input { width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background-color:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none; }' +
+            // Matches the event-log dropdowns (eventLogStrategy / eventLogSeverity): bg-card
+            // background with a two-gradient chevron arrow, appearance:none. Cross-browser
+            // consistent — no SVG data URL, no color-scheme dependency.
+            '.ss-field select { width:100%;padding:8px 24px 8px 12px;border-radius:6px;border:1px solid var(--border);background-color:var(--bg-card);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg, transparent 50%, var(--text-muted) 50%), linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);background-position:calc(100% - 12px) 50%, calc(100% - 7px) 50%;background-size:5px 5px, 5px 5px;background-repeat:no-repeat; }' +
+            '.ss-field select option { background-color:var(--bg-card);color:var(--text-primary); }' +
             '.ss-field input[type=checkbox] { width:auto; }' +
             '.ss-hint { color:var(--text-muted);font-size:0.7rem;margin-top:4px; }' +
             '.ss-section-title { font-family:var(--font-mono);font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-secondary);margin:22px 0 6px;padding-top:14px;border-top:1px solid var(--border); }' +
