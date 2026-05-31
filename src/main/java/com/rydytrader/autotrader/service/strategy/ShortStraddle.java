@@ -209,9 +209,14 @@ public class ShortStraddle implements Strategy {
         s.add(field("squareOffTime", "time",    "15:15", "Squareoff Time (HH:mm IST)", null));
         s.add(field("lotsPerLeg",    "int",      1,      "Lots per Leg",
             "Qty = lots × NIFTY lot size (65)."));
-        s.add(field("intraday",      "boolean",  true,   "Intraday (MIS)",
-            "ON: orders placed as INTRADAY (Fyers auto-squareoff at exchange EOD if you forget). " +
-            "OFF: orders placed as MARGIN (NRML / overnight)."));
+        // Dropdown — INTRADAY (Fyers MIS) or OVERNIGHT (Fyers MARGIN / NRML).
+        java.util.Map<String, Object> orderTypeFld = new java.util.LinkedHashMap<>();
+        orderTypeFld.put("key", "orderType");
+        orderTypeFld.put("type", "select");
+        orderTypeFld.put("default", "INTRADAY");
+        orderTypeFld.put("label", "Order Type");
+        orderTypeFld.put("options", java.util.List.of("INTRADAY", "OVERNIGHT"));
+        s.add(orderTypeFld);
         // Per-day enable + SL %. Ordered by DTE (4 → 3 → 2 → 1 → 0). Defaults: every day on
         // at 50 %, matching the previous single-SL behaviour.
         for (String[] dk : WEEK_DAYS) {
@@ -236,7 +241,7 @@ public class ShortStraddle implements Strategy {
         v.put("entryTime",     riskSettings.getStrategyString(instanceId, "entryTime",     "09:20"));
         v.put("squareOffTime", riskSettings.getStrategyString(instanceId, "squareOffTime", "15:15"));
         v.put("lotsPerLeg",    riskSettings.getStrategyInt(instanceId,    "lotsPerLeg",    1));
-        v.put("intraday",      riskSettings.getStrategyBool(instanceId,   "intraday",      true));
+        v.put("orderType",     riskSettings.getStrategyString(instanceId, "orderType",     "INTRADAY"));
         for (String[] dk : WEEK_DAYS) {
             String day = dk[0];
             v.put("day." + day + ".enabled",  riskSettings.getStrategyBool(instanceId,   "day." + day + ".enabled",  true));
@@ -251,7 +256,11 @@ public class ShortStraddle implements Strategy {
         if (values.containsKey("entryTime"))     riskSettings.setStrategySetting(instanceId, "entryTime",     String.valueOf(values.get("entryTime")));
         if (values.containsKey("squareOffTime")) riskSettings.setStrategySetting(instanceId, "squareOffTime", String.valueOf(values.get("squareOffTime")));
         if (values.containsKey("lotsPerLeg"))    riskSettings.setStrategySetting(instanceId, "lotsPerLeg",    asInt(values.get("lotsPerLeg"), 1));
-        if (values.containsKey("intraday"))      riskSettings.setStrategySetting(instanceId, "intraday",      Boolean.parseBoolean(String.valueOf(values.get("intraday"))));
+        if (values.containsKey("orderType")) {
+            String ot = String.valueOf(values.get("orderType")).trim().toUpperCase();
+            if (!"INTRADAY".equals(ot) && !"OVERNIGHT".equals(ot)) ot = "INTRADAY";
+            riskSettings.setStrategySetting(instanceId, "orderType", ot);
+        }
         for (String[] dk : WEEK_DAYS) {
             String day = dk[0];
             String enKey = "day." + day + ".enabled";
@@ -262,11 +271,13 @@ public class ShortStraddle implements Strategy {
         riskSettings.saveFor("live");
     }
 
-    /** Fyers product type for this instance's orders. {@code INTRADAY} (default) so the
-     *  position auto-squareoffs at exchange EOD if the operator forgets; {@code MARGIN} when
-     *  the {@code intraday} setting is OFF (NRML / overnight). */
+    /** Fyers product type for this instance's orders. Mapped from the operator-facing
+     *  {@code orderType} dropdown: {@code INTRADAY} → Fyers {@code INTRADAY} (MIS,
+     *  auto-squareoff at exchange EOD); {@code OVERNIGHT} → Fyers {@code MARGIN}
+     *  (NRML / held overnight). Defaults to INTRADAY. */
     private String productType() {
-        return riskSettings.getStrategyBool(instanceId, "intraday", true) ? "INTRADAY" : "MARGIN";
+        String ot = riskSettings.getStrategyString(instanceId, "orderType", "INTRADAY");
+        return "OVERNIGHT".equalsIgnoreCase(ot) ? "MARGIN" : "INTRADAY";
     }
 
     /** Returns today's day code (MON/TUE/WED/THU/FRI), or empty on weekends. */

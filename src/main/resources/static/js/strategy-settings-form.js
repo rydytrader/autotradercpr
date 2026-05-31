@@ -84,6 +84,12 @@
             case 'rupees':  input = '<input type="number" id="' + fieldId + '" step="500" min="0">'; break;
             case 'double':  input = '<input type="number" id="' + fieldId + '" step="0.01">'; break;
             case 'boolean': input = '<input type="checkbox" id="' + fieldId + '">'; break;
+            case 'select':
+                var opts = (f.options || []).map(function(o) {
+                    return '<option value="' + escapeHtml(o) + '">' + escapeHtml(o) + '</option>';
+                }).join('');
+                input = '<select id="' + fieldId + '">' + opts + '</select>';
+                break;
             default:        input = '<input type="text" id="' + fieldId + '">';
         }
         var s = '<div class="ss-field"><label>' + escapeHtml(f.label || f.key) + '</label>' + input;
