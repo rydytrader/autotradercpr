@@ -445,7 +445,7 @@
 <script src="/js/common.js?v=2"></script>
 <script src="/js/ticker.js?v=4"></script>
 <script src="/js/settings-modal.js?v=8"></script>
-<script src="/js/strategy-settings-form.js?v=9"></script>
+<script src="/js/strategy-settings-form.js?v=10"></script>
 
 <script>
     // ── Footer year ──────────────────────────────────────────────────────────
@@ -601,12 +601,15 @@
         }
         var slBadge = document.getElementById('paneSlPctBadge');
         if (slBadge) {
-            // Backend returns null on weekends (or any day with no per-day SL config). Render
-            // "—" rather than the misleading 50 % default. Non-null → today's configured SL %.
-            if (d.legSlPct == null) {
-                slBadge.textContent = 'LEG SL · —';
-            } else {
+            // Backend returns null on weekends (or any day with no per-day SL config) so we
+            // render "—". When points are configured (> 0) they take precedence over the %
+            // — match the bot's actual trigger formula in the badge.
+            if (d.legSlPoints != null && d.legSlPoints > 0) {
+                slBadge.textContent = 'LEG SL · +' + Number(d.legSlPoints).toFixed(2) + ' pts';
+            } else if (d.legSlPct != null && d.legSlPct > 0) {
                 slBadge.textContent = 'LEG SL · ' + Number(d.legSlPct).toFixed(0) + '%';
+            } else {
+                slBadge.textContent = 'LEG SL · —';
             }
         }
     }

@@ -15,7 +15,7 @@
         if (overlayEl) return overlayEl;
         var html =
             '<div id="ssOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;">' +
-              '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;width:680px;max-width:94vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,0.3);">' +
+              '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;width:740px;max-width:94vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,0.3);">' +
                 '<div style="display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid var(--border);">' +
                   '<div style="font-family:var(--font-mono);font-size:0.92rem;font-weight:700;color:var(--text-primary);" id="ssTitle">⚙ Straddle Settings</div>' +
                   '<button onclick="StrategySettings.close()" style="background:transparent;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;line-height:1;padding:0 4px;">&times;</button>' +
@@ -49,7 +49,7 @@
             '.ss-hint { color:var(--text-muted);font-size:0.7rem;margin-top:4px; }' +
             '.ss-section-title { font-family:var(--font-mono);font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-secondary);margin:22px 0 6px;padding-top:14px;border-top:1px solid var(--border); }' +
             '.ss-day-grid { display:flex;flex-direction:column;font-family:var(--font-mono);font-size:0.78rem;margin-top:10px; }' +
-            '.ss-day-header, .ss-day-row { display:grid;grid-template-columns:1fr 110px 130px;gap:14px;align-items:center;padding:8px 4px;border-bottom:1px solid var(--border); }' +
+            '.ss-day-header, .ss-day-row { display:grid;grid-template-columns:1fr 80px 90px 100px;gap:12px;align-items:center;padding:8px 4px;border-bottom:1px solid var(--border); }' +
             '.ss-day-header { font-size:0.66rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em; }' +
             '.ss-day-name { color:var(--text-primary); }' +
             '.ss-day-row input[type=checkbox] { width:18px;height:18px;justify-self:start;margin:0; }' +
@@ -113,7 +113,7 @@
         var dayMap = {};  // { DAY: { enabled: schemaEntry, legSlPct: schemaEntry } }
         var dayOrder = [];
         schema.forEach(function(f) {
-            var m = /^day\.([A-Z]{3})\.(enabled|legSlPct)$/.exec(f.key);
+            var m = /^day\.([A-Z]{3})\.(enabled|legSlPct|legSlPoints)$/.exec(f.key);
             if (m) {
                 var d = m[1];
                 if (!dayMap[d]) { dayMap[d] = {}; dayOrder.push(d); }
@@ -128,10 +128,10 @@
             dayHtml += '<div class="ss-section-title">Trading Days · enable + per-leg SL</div>';
             dayHtml += '<div class="ss-hint">Per-day toggle and SL %. Disabled days are skipped — no entry fires that day. Days are ordered by DTE for NIFTY weekly expiry on Tuesday.</div>';
             dayHtml += '<div class="ss-day-grid">';
-            dayHtml += '<div class="ss-day-header"><span>Day</span><span>Enable</span><span>SL %</span></div>';
+            dayHtml += '<div class="ss-day-header"><span>Day</span><span>Enable</span><span>SL %</span><span>SL Points</span></div>';
             dayOrder.forEach(function(d) {
                 var pair = dayMap[d];
-                var enF = pair.enabled, slF = pair.legSlPct;
+                var enF = pair.enabled, slF = pair.legSlPct, ptF = pair.legSlPoints;
                 if (!enF || !slF) return;
                 // Extract the DTE digit from the enable-field label "WED — 4 DTE — Enable".
                 var dteMatch = /—\s*(\d+)\s*DTE/.exec(enF.label || '');
@@ -141,6 +141,9 @@
                         '<span class="ss-day-name">' + escapeHtml(d) + escapeHtml(dteLabel) + '</span>' +
                         '<input type="checkbox" id="ss-' + escapeHtml(enF.key) + '">' +
                         '<input type="number" id="ss-' + escapeHtml(slF.key) + '" step="1" min="0">' +
+                        (ptF
+                            ? '<input type="number" id="ss-' + escapeHtml(ptF.key) + '" step="0.05" min="0" title="Direct premium points (takes precedence over SL % when > 0)">'
+                            : '<span style="color:var(--text-muted);">—</span>') +
                     '</div>';
             });
             dayHtml += '</div>';

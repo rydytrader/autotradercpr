@@ -225,8 +225,10 @@ public class ShortStraddle implements Strategy {
         for (String[] dk : WEEK_DAYS) {
             String day = dk[0]; String dte = dk[1];
             s.add(field("day." + day + ".enabled",  "boolean", true, day + " — " + dte + " DTE — Enable",
-                "Enter straddle on " + day + " using the SL % below. Disabled days are skipped."));
-            s.add(field("day." + day + ".legSlPct", "percent", 50, day + " — " + dte + " DTE — SL %", null));
+                "Enter straddle on " + day + " using the SL below. Disabled days are skipped."));
+            s.add(field("day." + day + ".legSlPct",    "percent", 50, day + " — " + dte + " DTE — SL %", null));
+            s.add(field("day." + day + ".legSlPoints", "double",  0,  day + " — " + dte + " DTE — SL Points",
+                "Direct premium points added to entry. Takes precedence over SL % when > 0."));
         }
         return s;
     }
@@ -247,8 +249,9 @@ public class ShortStraddle implements Strategy {
         v.put("orderType",     riskSettings.getStrategyString(instanceId, "orderType",     "INTRADAY"));
         for (String[] dk : WEEK_DAYS) {
             String day = dk[0];
-            v.put("day." + day + ".enabled",  riskSettings.getStrategyBool(instanceId,   "day." + day + ".enabled",  true));
-            v.put("day." + day + ".legSlPct", riskSettings.getStrategyDouble(instanceId, "day." + day + ".legSlPct", 50));
+            v.put("day." + day + ".enabled",     riskSettings.getStrategyBool(instanceId,   "day." + day + ".enabled",     true));
+            v.put("day." + day + ".legSlPct",    riskSettings.getStrategyDouble(instanceId, "day." + day + ".legSlPct",    50));
+            v.put("day." + day + ".legSlPoints", riskSettings.getStrategyDouble(instanceId, "day." + day + ".legSlPoints", 0));
         }
         return v;
     }
@@ -268,8 +271,10 @@ public class ShortStraddle implements Strategy {
             String day = dk[0];
             String enKey = "day." + day + ".enabled";
             String slKey = "day." + day + ".legSlPct";
+            String ptKey = "day." + day + ".legSlPoints";
             if (values.containsKey(enKey)) riskSettings.setStrategySetting(instanceId, enKey, Boolean.parseBoolean(String.valueOf(values.get(enKey))));
             if (values.containsKey(slKey)) riskSettings.setStrategySetting(instanceId, slKey, asDouble(values.get(slKey), 50));
+            if (values.containsKey(ptKey)) riskSettings.setStrategySetting(instanceId, ptKey, asDouble(values.get(ptKey), 0));
         }
         riskSettings.saveFor("live");
     }
@@ -310,6 +315,27 @@ public class ShortStraddle implements Strategy {
         String k = todayKey();
         if (k.isEmpty()) return null;
         return riskSettings.getStrategyDouble(instanceId, "day." + k + ".legSlPct", 50);
+    }
+
+    /** Per-leg SL in absolute premium points for the current weekday, or {@code null} on a
+     *  weekend. When > 0, points takes precedence over {@link #todayLegSlPct()} — the trigger
+     *  is computed as {@code entryPremium + points} (linear) instead of
+     *  {@code entryPremium × (1 + pct/100)} (multiplicative). */
+    private Double todayLegSlPoints() {
+        String k = todayKey();
+        if (k.isEmpty()) return null;
+        return riskSettings.getStrategyDouble(instanceId, "day." + k + ".legSlPoints", 0);
+    }
+
+    /** Computes the per-leg trigger price for {@code entryPremium}. Points-mode wins when
+     *  set; falls back to pct-mode. Returns 0 when neither is configured (weekend / unset). */
+    private double computeLegTrigger(double entryPremium) {
+        if (entryPremium <= 0) return 0;
+        Double pts = todayLegSlPoints();
+        if (pts != null && pts > 0) return entryPremium + pts;
+        Double pct = todayLegSlPct();
+        if (pct != null && pct > 0) return entryPremium * (1.0 + pct / 100.0);
+        return 0;
     }
 
     // ── Boot resume — called by StraddleInstanceManager via bootstrap() ───────
@@ -539,38 +565,38 @@ public class ShortStraddle implements Strategy {
                 && state != LifecycleState.OPEN_CE_ONLY
                 && state != LifecycleState.OPEN_PE_ONLY) return;
         Double todayPct = todayLegSlPct();
-        if (todayPct == null) return; // weekend / no day config → no SL check
-        double legSlPct = todayPct;
+        Double todayPts = todayLegSlPoints();
+        if (todayPct == null && todayPts == null) return; // weekend → no SL check
+        boolean pointsMode = todayPts != null && todayPts > 0;
+        String triggerDesc = pointsMode
+            ? String.format("+%.2f pts", todayPts)
+            : (todayPct != null ? String.format("%.0f%%", todayPct) : "—");
         if (isCeOpen() && ceEntryPremium > 0 && !ceSymbol.isEmpty()) {
             double ceLtp = marketDataService.getLtp(ceSymbol);
-            if (ceLtp > 0) {
-                double trigger = ceEntryPremium * (1.0 + legSlPct / 100.0);
-                if (ceLtp >= trigger) {
-                    double consumedPct = ((ceLtp - ceEntryPremium) / ceEntryPremium) * 100.0;
-                    String msg = String.format("CE leg SL hit — entry %.2f, live %.2f (+%.2f%%, threshold %.2f%%). Closing CE only.",
-                        ceEntryPremium, ceLtp, consumedPct, legSlPct);
-                    log.info("[short-straddle] {}", msg);
-                    eventService.log("[INFO] [short-straddle] " + msg);
-                    notifyTelegram(msg);
-                    closeLeg("CE", "CE_SL_HIT");
-                    return;
-                }
+            double trigger = computeLegTrigger(ceEntryPremium);
+            if (ceLtp > 0 && trigger > 0 && ceLtp >= trigger) {
+                double consumedPts = ceLtp - ceEntryPremium;
+                String msg = String.format("CE leg SL hit — entry %.2f, live %.2f (+%.2f pts, threshold %s). Closing CE only.",
+                    ceEntryPremium, ceLtp, consumedPts, triggerDesc);
+                log.info("[short-straddle] {}", msg);
+                eventService.log("[INFO] [short-straddle] " + msg);
+                notifyTelegram(msg);
+                closeLeg("CE", "CE_SL_HIT");
+                return;
             }
         }
         if (isPeOpen() && peEntryPremium > 0 && !peSymbol.isEmpty()) {
             double peLtp = marketDataService.getLtp(peSymbol);
-            if (peLtp > 0) {
-                double trigger = peEntryPremium * (1.0 + legSlPct / 100.0);
-                if (peLtp >= trigger) {
-                    double consumedPct = ((peLtp - peEntryPremium) / peEntryPremium) * 100.0;
-                    String msg = String.format("PE leg SL hit — entry %.2f, live %.2f (+%.2f%%, threshold %.2f%%). Closing PE only.",
-                        peEntryPremium, peLtp, consumedPct, legSlPct);
-                    log.info("[short-straddle] {}", msg);
-                    eventService.log("[INFO] [short-straddle] " + msg);
-                    notifyTelegram(msg);
-                    closeLeg("PE", "PE_SL_HIT");
-                    return;
-                }
+            double trigger = computeLegTrigger(peEntryPremium);
+            if (peLtp > 0 && trigger > 0 && peLtp >= trigger) {
+                double consumedPts = peLtp - peEntryPremium;
+                String msg = String.format("PE leg SL hit — entry %.2f, live %.2f (+%.2f pts, threshold %s). Closing PE only.",
+                    peEntryPremium, peLtp, consumedPts, triggerDesc);
+                log.info("[short-straddle] {}", msg);
+                eventService.log("[INFO] [short-straddle] " + msg);
+                notifyTelegram(msg);
+                closeLeg("PE", "PE_SL_HIT");
+                return;
             }
         }
         if (!isCeOpen() && !isPeOpen()) {
@@ -830,23 +856,30 @@ public class ShortStraddle implements Strategy {
         m.put("totalPnlToday", round2(realisedPnlToday + ceMtm + peMtm));
 
         // Per-leg SL triggers + consumed % (replaces combined SL in the leg-sl dashboard).
-        // legSlPct comes from the per-day config — null on weekends, where the Risk Band
-        // renders "—" rather than a misleading 50 % fallback.
-        Double legSlPctBoxed = todayLegSlPct();
-        m.put("legSlPct", legSlPctBoxed);
-        double legSlPct = legSlPctBoxed != null ? legSlPctBoxed : 0;
-        // Worst-case loss for the currently-running straddle if both legs hit their SLs. Per-leg
-        // loss at SL = entryPremium × legSlPct/100 × qty. Total = sum of both legs (qty same for
-        // each leg). Skip closed legs — their loss is realised, not future.
+        // legSlPct / legSlPoints come from the per-day config — null on weekends, where the
+        // Risk Band renders "—" rather than a misleading 50 % fallback. Points takes
+        // precedence in the trigger formula when set.
+        Double legSlPctBoxed    = todayLegSlPct();
+        Double legSlPointsBoxed = todayLegSlPoints();
+        m.put("legSlPct",    legSlPctBoxed);
+        m.put("legSlPoints", legSlPointsBoxed);
+        // Effective per-leg loss at SL — uses points if set, else (entryPremium × pct/100).
+        java.util.function.DoubleUnaryOperator legLossAtSl = (entry) -> {
+            if (entry <= 0) return 0;
+            if (legSlPointsBoxed != null && legSlPointsBoxed > 0) return legSlPointsBoxed;
+            if (legSlPctBoxed    != null && legSlPctBoxed    > 0) return entry * (legSlPctBoxed / 100.0);
+            return 0;
+        };
+        // Worst-case loss for the currently-running straddle if both legs hit their SLs.
         double maxLossPerStraddle = 0;
         int legQty = Math.max(ceQty, peQty);
-        if (legSlPct > 0 && legQty > 0) {
-            if (isCeOpen() && ceEntryPremium > 0) maxLossPerStraddle += ceEntryPremium * (legSlPct / 100.0) * legQty;
-            if (isPeOpen() && peEntryPremium > 0) maxLossPerStraddle += peEntryPremium * (legSlPct / 100.0) * legQty;
+        if (legQty > 0) {
+            if (isCeOpen() && ceEntryPremium > 0) maxLossPerStraddle += legLossAtSl.applyAsDouble(ceEntryPremium) * legQty;
+            if (isPeOpen() && peEntryPremium > 0) maxLossPerStraddle += legLossAtSl.applyAsDouble(peEntryPremium) * legQty;
         }
         m.put("maxLossPerStraddle", round2(maxLossPerStraddle));
-        if (ceEntryPremium > 0 && legSlPct > 0) {
-            double ceTrigger = ceEntryPremium * (1.0 + legSlPct / 100.0);
+        double ceTrigger = computeLegTrigger(ceEntryPremium);
+        if (ceTrigger > 0) {
             m.put("ceSlTrigger", round2(ceTrigger));
             double consumed = isCeOpen() && ceLtp > 0
                 ? ((ceLtp - ceEntryPremium) / (ceTrigger - ceEntryPremium)) * 100.0 : 0;
@@ -855,8 +888,8 @@ public class ShortStraddle implements Strategy {
             m.put("ceSlTrigger", 0.0);
             m.put("ceSlConsumedPct", 0.0);
         }
-        if (peEntryPremium > 0 && legSlPct > 0) {
-            double peTrigger = peEntryPremium * (1.0 + legSlPct / 100.0);
+        double peTrigger = computeLegTrigger(peEntryPremium);
+        if (peTrigger > 0) {
             m.put("peSlTrigger", round2(peTrigger));
             double consumed = isPeOpen() && peLtp > 0
                 ? ((peLtp - peEntryPremium) / (peTrigger - peEntryPremium)) * 100.0 : 0;
@@ -907,9 +940,10 @@ public class ShortStraddle implements Strategy {
         java.util.Map<String, Object> dayMap = new java.util.LinkedHashMap<>();
         for (String[] dk : WEEK_DAYS) {
             java.util.Map<String, Object> e = new java.util.LinkedHashMap<>();
-            e.put("dte",      Integer.parseInt(dk[1]));
-            e.put("enabled",  riskSettings.getStrategyBool(instanceId,   "day." + dk[0] + ".enabled", true));
-            e.put("legSlPct", riskSettings.getStrategyDouble(instanceId, "day." + dk[0] + ".legSlPct", 50));
+            e.put("dte",         Integer.parseInt(dk[1]));
+            e.put("enabled",     riskSettings.getStrategyBool(instanceId,   "day." + dk[0] + ".enabled",     true));
+            e.put("legSlPct",    riskSettings.getStrategyDouble(instanceId, "day." + dk[0] + ".legSlPct",    50));
+            e.put("legSlPoints", riskSettings.getStrategyDouble(instanceId, "day." + dk[0] + ".legSlPoints", 0));
             dayMap.put(dk[0], e);
         }
         m.put("dayConfig", dayMap);
