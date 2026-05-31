@@ -40,6 +40,11 @@
             '.ss-field { margin-bottom:14px;font-family:var(--font-mono);font-size:0.78rem; }' +
             '.ss-field label { display:block;color:var(--text-muted);font-size:0.7rem;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:6px; }' +
             '.ss-field input, .ss-field select { width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none; }' +
+            // Strip the OS-default <select> chrome so it sits in the same theme as the inputs
+            // around it. Custom arrow drawn via background-image; option list inherits the
+            // theme background so the open dropdown matches too.
+            '.ss-field select { -webkit-appearance:none;-moz-appearance:none;appearance:none;padding-right:30px;cursor:pointer;background-image:url("data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'10\\' height=\\'6\\' viewBox=\\'0 0 10 6\\'><path d=\\'M0 0l5 6 5-6z\\' fill=\\'%23a0a8b8\\'/></svg>");background-repeat:no-repeat;background-position:right 12px center; }' +
+            '.ss-field select option { background:var(--bg-primary);color:var(--text-primary); }' +
             '.ss-field input[type=checkbox] { width:auto; }' +
             '.ss-hint { color:var(--text-muted);font-size:0.7rem;margin-top:4px; }' +
             '.ss-section-title { font-family:var(--font-mono);font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-secondary);margin:22px 0 6px;padding-top:14px;border-top:1px solid var(--border); }' +
