@@ -151,9 +151,9 @@
                 <div class="stat-value" id="heroNetPnl" style="font-size:2.2rem;">—</div>
                 <div class="stat-sub">Sum across selected period</div>
             </div>
-            <div style="display:flex; gap:32px; flex-wrap:wrap;">
+            <div style="display:flex; gap:28px; flex-wrap:wrap;">
                 <div style="text-align:center;">
-                    <div class="stat-label">Sessions</div>
+                    <div class="stat-label">Straddles</div>
                     <div class="stat-value" id="heroSessions" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center;">
@@ -168,7 +168,42 @@
                     <div class="stat-label">Win Rate</div>
                     <div class="stat-value" id="heroWinRate" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
-                <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;">
+                    <div class="stat-label">Profit Factor</div>
+                    <div class="stat-value" id="heroProfitFactor" style="font-size:1.1rem; margin-top:4px;"
+                         title="Sum of winning P&L ÷ |sum of losing P&L|. >1 profitable · >2 strong.">—</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">R : R</div>
+                    <div class="stat-value" id="heroRiskReward" style="font-size:1.1rem; margin-top:4px;"
+                         title="Avg win ÷ |avg loss|. >1 = winners larger than losers.">—</div>
+                </div>
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;">
+                    <div class="stat-label">Max Drawdown</div>
+                    <div class="stat-value" id="heroMaxDrawdown" style="font-size:1.1rem; margin-top:4px;"
+                         title="Largest peak-to-trough decline in cumulative net P&L within the selected period.">—</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">Max DD Days</div>
+                    <div class="stat-value" id="heroMaxDrawdownDays" style="font-size:1.1rem; margin-top:4px;"
+                         title="Number of straddles between the equity-curve peak and the trough of the deepest drawdown.">—</div>
+                </div>
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;">
+                    <div class="stat-label">0 SL Days</div>
+                    <div class="stat-value" id="heroZeroSlDays" style="font-size:1.1rem; margin-top:4px;"
+                         title="Days where neither leg got stopped — both ran to the timed squareoff.">—</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">1 SL Days</div>
+                    <div class="stat-value" id="heroOneSlDays" style="font-size:1.1rem; margin-top:4px;"
+                         title="Days where exactly one leg got stopped; the surviving leg ran to squareoff.">—</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">2 SL Days</div>
+                    <div class="stat-value" id="heroTwoSlDays" style="font-size:1.1rem; margin-top:4px;"
+                         title="Days where both legs got stopped before squareoff.">—</div>
+                </div>
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;">
                     <div class="stat-label">Charges</div>
                     <div class="stat-value" id="heroCharges" style="font-size:1.1rem; margin-top:4px; color:var(--text-muted);">—</div>
                 </div>
@@ -327,10 +362,47 @@
         document.getElementById('heroCharges').textContent  = has ? fmtMoney(agg.charges) : '—';
     }
 
+    /** Populate the analytics-driven tiles (Profit Factor, R:R, drawdown, SL day mix) for the
+     *  given date range. Range is inclusive — calendar month: 1st → last day, calendar year:
+     *  Apr 1 (Indian FY) → Mar 31 next year. */
+    function renderAnalyticsTiles(fromIso, toIso) {
+        // Clear while fetching so stale values don't linger across navs.
+        const clearIds = ['heroProfitFactor','heroRiskReward','heroMaxDrawdown','heroMaxDrawdownDays',
+                          'heroZeroSlDays','heroOneSlDays','heroTwoSlDays'];
+        clearIds.forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '—'; });
+        const url = '/api/analytics/summary?from=' + encodeURIComponent(fromIso)
+                  + '&to=' + encodeURIComponent(toIso);
+        fetch(url).then(r => r.json()).then(d => {
+            if (!d) return;
+            const perf = d.performance || {};
+            const ext  = d.extremes    || {};
+            const pf = perf.profitFactor || 0;
+            const rr = perf.riskReward   || 0;
+            document.getElementById('heroProfitFactor').textContent = pf > 0 ? pf.toFixed(2) : '—';
+            document.getElementById('heroRiskReward').textContent   = rr > 0 ? rr.toFixed(2) : '—';
+            document.getElementById('heroMaxDrawdown').textContent     = ext.maxDrawdown != null ? fmtMoney(ext.maxDrawdown) : '—';
+            document.getElementById('heroMaxDrawdownDays').textContent = String(ext.maxDrawdownDays || 0);
+            document.getElementById('heroZeroSlDays').textContent      = String(ext.zeroSlDays || 0);
+            document.getElementById('heroOneSlDays').textContent       = String(ext.oneSlDays  || 0);
+            document.getElementById('heroTwoSlDays').textContent       = String(ext.twoSlDays  || 0);
+        }).catch(() => {});
+    }
+
+    /** ISO yyyy-MM-dd for the first day of (year, month). */
+    function firstOfMonth(year, month) {
+        return year + '-' + pad2(month) + '-01';
+    }
+    /** ISO yyyy-MM-dd for the last day of (year, month). */
+    function lastOfMonth(year, month) {
+        const day = new Date(year, month, 0).getDate();
+        return year + '-' + pad2(month) + '-' + pad2(day);
+    }
+
     function renderMonth() {
         document.getElementById('calPeriodLabel').textContent = MONTH_NAMES[curMonth - 1] + ' ' + curYear;
         const monthSessions = filterSessions(curYear, curMonth);
         renderHero(aggregate(monthSessions));
+        renderAnalyticsTiles(firstOfMonth(curYear, curMonth), lastOfMonth(curYear, curMonth));
 
         // Map sessions by date
         const sessionMap = {};
@@ -400,6 +472,8 @@
         document.getElementById('calPeriodLabel').textContent =
             'FY ' + curFyStart + '–' + String(fyEnd).slice(2) + '  (Apr–Mar)';
         renderHero(aggregate(fySessions()));
+        // Indian FY: Apr 1 (curFyStart) → Mar 31 (curFyStart + 1)
+        renderAnalyticsTiles(curFyStart + '-04-01', (curFyStart + 1) + '-03-31');
 
         let html = '';
         FY_MONTH_ORDER.forEach(m => {
