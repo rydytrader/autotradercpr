@@ -391,7 +391,16 @@
 
     // ── Portfolio Risk values ────────────────────────────────────────────────
     function loadPortfolioRiskValues() {
-        fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
+        // Re-fetch /api/strategies first so the enabled flag (driving the green/red stripe
+        // on each allocation row) reflects any toggles the operator just made in the
+        // Straddles tab without closing + reopening the modal.
+        var refreshList = fetch('/api/strategies')
+            .then(function(r) { return r.json(); })
+            .then(function(arr) { strategiesList = Array.isArray(arr) ? arr : strategiesList; })
+            .catch(function() {});
+        var settingsP = fetch('/api/settings/risk').then(function(r) { return r.json(); });
+        Promise.all([refreshList, settingsP]).then(function(arr) {
+            var d = arr[1];
             if (!d) return;
             var capInput = document.getElementById('sm-startingCapital');
             var pctInput = document.getElementById('sm-portfolioMaxRiskPct');
@@ -420,7 +429,13 @@
         var html = '';
         strategiesList.forEach(function(s) {
             var pct = currentAllocs[s.id] != null ? currentAllocs[s.id] : 50;
-            html += '<div class="sm-alloc-row">'
+            // 4px left strip mirroring the Straddles tab: green = enabled, red = disabled.
+            // 6px padding-left so content sits clear of the border.
+            var enabled = s.enabled !== false;
+            var stripStyle = 'border-left:4px solid ' + (enabled
+                ? 'var(--accent-green)'
+                : 'var(--accent-red, #f87171)') + ';padding-left:6px;';
+            html += '<div class="sm-alloc-row" style="' + stripStyle + '">'
                 + '<span class="sm-alloc-name">' + escapeHtml(s.displayName || s.id) + '</span>'
                 + '<input type="number" class="sm-alloc-pct" data-strategy="' + escapeHtml(s.id) + '" step="1" min="0" max="100" value="' + pct + '">'
                 + '<span class="sm-alloc-rupees" data-strategy="' + escapeHtml(s.id) + '">—</span>'
