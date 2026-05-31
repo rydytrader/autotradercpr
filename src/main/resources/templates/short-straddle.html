@@ -601,8 +601,13 @@
         }
         var slBadge = document.getElementById('paneSlPctBadge');
         if (slBadge) {
-            var pct = Number(d.legSlPct || 0);
-            slBadge.textContent = 'LEG SL · ' + pct.toFixed(0) + '%';
+            // Backend returns null on weekends (or any day with no per-day SL config). Render
+            // "—" rather than the misleading 50 % default. Non-null → today's configured SL %.
+            if (d.legSlPct == null) {
+                slBadge.textContent = 'LEG SL · —';
+            } else {
+                slBadge.textContent = 'LEG SL · ' + Number(d.legSlPct).toFixed(0) + '%';
+            }
         }
     }
 

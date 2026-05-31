@@ -303,11 +303,12 @@ public class ShortStraddle implements Strategy {
         return riskSettings.getStrategyBool(instanceId, "day." + k + ".enabled", true);
     }
 
-    /** Per-leg SL % for the current weekday. Falls back to 50 % when the day code is unknown
-     *  (weekend, but we never enter on weekends so the value is only used defensively). */
-    private double todayLegSlPct() {
+    /** Per-leg SL % for the current weekday, or {@code null} when no day code applies
+     *  (weekends — operator-facing UI renders this as "—" rather than a misleading 50 %).
+     *  Internal callers that need a usable number on a weekend should fall back themselves. */
+    private Double todayLegSlPct() {
         String k = todayKey();
-        if (k.isEmpty()) return 50;
+        if (k.isEmpty()) return null;
         return riskSettings.getStrategyDouble(instanceId, "day." + k + ".legSlPct", 50);
     }
 
@@ -537,7 +538,9 @@ public class ShortStraddle implements Strategy {
         if (state != LifecycleState.OPEN_BOTH
                 && state != LifecycleState.OPEN_CE_ONLY
                 && state != LifecycleState.OPEN_PE_ONLY) return;
-        double legSlPct = todayLegSlPct();
+        Double todayPct = todayLegSlPct();
+        if (todayPct == null) return; // weekend / no day config → no SL check
+        double legSlPct = todayPct;
         if (isCeOpen() && ceEntryPremium > 0 && !ceSymbol.isEmpty()) {
             double ceLtp = marketDataService.getLtp(ceSymbol);
             if (ceLtp > 0) {
@@ -827,8 +830,11 @@ public class ShortStraddle implements Strategy {
         m.put("totalPnlToday", round2(realisedPnlToday + ceMtm + peMtm));
 
         // Per-leg SL triggers + consumed % (replaces combined SL in the leg-sl dashboard).
-        double legSlPct = todayLegSlPct();
-        m.put("legSlPct", legSlPct);
+        // legSlPct comes from the per-day config — null on weekends, where the Risk Band
+        // renders "—" rather than a misleading 50 % fallback.
+        Double legSlPctBoxed = todayLegSlPct();
+        m.put("legSlPct", legSlPctBoxed);
+        double legSlPct = legSlPctBoxed != null ? legSlPctBoxed : 0;
         // Worst-case loss for the currently-running straddle if both legs hit their SLs. Per-leg
         // loss at SL = entryPremium × legSlPct/100 × qty. Total = sum of both legs (qty same for
         // each leg). Skip closed legs — their loss is realised, not future.
@@ -839,7 +845,7 @@ public class ShortStraddle implements Strategy {
             if (isPeOpen() && peEntryPremium > 0) maxLossPerStraddle += peEntryPremium * (legSlPct / 100.0) * legQty;
         }
         m.put("maxLossPerStraddle", round2(maxLossPerStraddle));
-        if (ceEntryPremium > 0) {
+        if (ceEntryPremium > 0 && legSlPct > 0) {
             double ceTrigger = ceEntryPremium * (1.0 + legSlPct / 100.0);
             m.put("ceSlTrigger", round2(ceTrigger));
             double consumed = isCeOpen() && ceLtp > 0
@@ -849,7 +855,7 @@ public class ShortStraddle implements Strategy {
             m.put("ceSlTrigger", 0.0);
             m.put("ceSlConsumedPct", 0.0);
         }
-        if (peEntryPremium > 0) {
+        if (peEntryPremium > 0 && legSlPct > 0) {
             double peTrigger = peEntryPremium * (1.0 + legSlPct / 100.0);
             m.put("peSlTrigger", round2(peTrigger));
             double consumed = isPeOpen() && peLtp > 0
