@@ -34,9 +34,18 @@ public class OrderService {
     }
 
     // ── ENTRY ORDER (Market) ──────────────────────────────────────────────────
+    /** Backward-compat: defaults to MARGIN (legacy behaviour). New callers should use the
+     *  overload that takes a {@code productType}. */
     public OrderDTO placeOrder(String symbol, int qty, int side, double stoploss) {
+        return placeOrder(symbol, qty, side, stoploss, "MARGIN");
+    }
+
+    /** Per-call productType ({@code INTRADAY}, {@code MARGIN}, {@code CNC} etc) so per-strategy
+     *  settings can control the Fyers product the order is placed under. */
+    public OrderDTO placeOrder(String symbol, int qty, int side, double stoploss, String productType) {
         try {
-            String json = buildOrderJson(symbol, qty, side, 2, 0, 0, "AutoTrader");
+            String pt = (productType == null || productType.isBlank()) ? "MARGIN" : productType.trim();
+            String json = buildOrderJson(symbol, qty, side, 2, 0, 0, "AutoTrader", pt);
             log.info("Entry Order: {}", json);
             return postOrder(json);
         } catch (Exception e) { log.error("Error placing entry order", e); return null; }
@@ -312,14 +321,21 @@ public class OrderService {
         return fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
     }
 
+    /** Backward-compat wrapper — defaults to MARGIN for callers that haven't been migrated
+     *  to the productType-aware variant yet (SL / Target / Exit / cancel-all paths). */
     private String buildOrderJson(String symbol, int qty, int side, int type,
                                    double limitPrice, double stopPrice, String tag) {
+        return buildOrderJson(symbol, qty, side, type, limitPrice, stopPrice, tag, "MARGIN");
+    }
+
+    private String buildOrderJson(String symbol, int qty, int side, int type,
+                                   double limitPrice, double stopPrice, String tag, String productType) {
         return "{"
             + "\"symbol\":\"" + symbol + "\","
             + "\"qty\":" + qty + ","
             + "\"type\":" + type + ","
             + "\"side\":" + side + ","
-            + "\"productType\":\"MARGIN\","
+            + "\"productType\":\"" + productType + "\","
             + "\"limitPrice\":" + limitPrice + ","
             + "\"stopPrice\":" + stopPrice + ","
             + "\"validity\":\"DAY\","

@@ -209,6 +209,9 @@ public class ShortStraddle implements Strategy {
         s.add(field("squareOffTime", "time",    "15:15", "Squareoff Time (HH:mm IST)", null));
         s.add(field("lotsPerLeg",    "int",      1,      "Lots per Leg",
             "Qty = lots × NIFTY lot size (65)."));
+        s.add(field("intraday",      "boolean",  true,   "Intraday (MIS)",
+            "ON: orders placed as INTRADAY (Fyers auto-squareoff at exchange EOD if you forget). " +
+            "OFF: orders placed as MARGIN (NRML / overnight)."));
         // Per-day enable + SL %. Ordered by DTE (4 → 3 → 2 → 1 → 0). Defaults: every day on
         // at 50 %, matching the previous single-SL behaviour.
         for (String[] dk : WEEK_DAYS) {
@@ -233,6 +236,7 @@ public class ShortStraddle implements Strategy {
         v.put("entryTime",     riskSettings.getStrategyString(instanceId, "entryTime",     "09:20"));
         v.put("squareOffTime", riskSettings.getStrategyString(instanceId, "squareOffTime", "15:15"));
         v.put("lotsPerLeg",    riskSettings.getStrategyInt(instanceId,    "lotsPerLeg",    1));
+        v.put("intraday",      riskSettings.getStrategyBool(instanceId,   "intraday",      true));
         for (String[] dk : WEEK_DAYS) {
             String day = dk[0];
             v.put("day." + day + ".enabled",  riskSettings.getStrategyBool(instanceId,   "day." + day + ".enabled",  true));
@@ -247,6 +251,7 @@ public class ShortStraddle implements Strategy {
         if (values.containsKey("entryTime"))     riskSettings.setStrategySetting(instanceId, "entryTime",     String.valueOf(values.get("entryTime")));
         if (values.containsKey("squareOffTime")) riskSettings.setStrategySetting(instanceId, "squareOffTime", String.valueOf(values.get("squareOffTime")));
         if (values.containsKey("lotsPerLeg"))    riskSettings.setStrategySetting(instanceId, "lotsPerLeg",    asInt(values.get("lotsPerLeg"), 1));
+        if (values.containsKey("intraday"))      riskSettings.setStrategySetting(instanceId, "intraday",      Boolean.parseBoolean(String.valueOf(values.get("intraday"))));
         for (String[] dk : WEEK_DAYS) {
             String day = dk[0];
             String enKey = "day." + day + ".enabled";
@@ -255,6 +260,13 @@ public class ShortStraddle implements Strategy {
             if (values.containsKey(slKey)) riskSettings.setStrategySetting(instanceId, slKey, asDouble(values.get(slKey), 50));
         }
         riskSettings.saveFor("live");
+    }
+
+    /** Fyers product type for this instance's orders. {@code INTRADAY} (default) so the
+     *  position auto-squareoffs at exchange EOD if the operator forgets; {@code MARGIN} when
+     *  the {@code intraday} setting is OFF (NRML / overnight). */
+    private String productType() {
+        return riskSettings.getStrategyBool(instanceId, "intraday", true) ? "INTRADAY" : "MARGIN";
     }
 
     /** Returns today's day code (MON/TUE/WED/THU/FRI), or empty on weekends. */
@@ -428,8 +440,9 @@ public class ShortStraddle implements Strategy {
         }
         String resolvedCe = symbols[0], resolvedPe = symbols[1];
         int qty = Math.max(1, riskSettings.getStrategyInt(instanceId, "lotsPerLeg", 1)) * NIFTY_LOT_SIZE;
+        String product = productType();
 
-        OrderDTO ceResp = orderService.placeOrder(resolvedCe, qty, -1, 0);
+        OrderDTO ceResp = orderService.placeOrder(resolvedCe, qty, -1, 0, product);
         orderCountToday++;
         if (ceResp == null || ceResp.getId() == null || ceResp.getId().isEmpty() || !"ok".equals(ceResp.getStatus())) {
             log.error("[short-straddle] CE leg rejected: {}", ceResp);
@@ -437,12 +450,12 @@ public class ShortStraddle implements Strategy {
             transitionTo(LifecycleState.DONE_FOR_DAY);
             return;
         }
-        OrderDTO peResp = orderService.placeOrder(resolvedPe, qty, -1, 0);
+        OrderDTO peResp = orderService.placeOrder(resolvedPe, qty, -1, 0, product);
         orderCountToday++;
         if (peResp == null || peResp.getId() == null || peResp.getId().isEmpty() || !"ok".equals(peResp.getStatus())) {
             log.error("[short-straddle] PE leg rejected after CE filled — flattening CE: {}", peResp);
             eventService.log("[ERROR] [short-straddle] PE leg rejected — buying back CE to flatten");
-            try { orderService.placeOrder(resolvedCe, qty, 1, 0); orderCountToday++; } catch (Exception ignored) {}
+            try { orderService.placeOrder(resolvedCe, qty, 1, 0, product); orderCountToday++; } catch (Exception ignored) {}
             transitionTo(LifecycleState.DONE_FOR_DAY);
             return;
         }
@@ -656,13 +669,14 @@ public class ShortStraddle implements Strategy {
     /** BUY close order with one retry. */
     private void placeCloseRetry(String symbol, int qty, String legTag, String reason) {
         try {
-            OrderDTO resp = orderService.placeOrder(symbol, qty, 1, 0);
+            String product = productType();
+            OrderDTO resp = orderService.placeOrder(symbol, qty, 1, 0, product);
             orderCountToday++;
             if (resp != null && resp.getId() != null && !resp.getId().isEmpty() && "ok".equals(resp.getStatus())) return;
             log.warn("[short-straddle] First close attempt failed for {} {} ({}): {} — retrying in 2s",
                 legTag, symbol, reason, resp);
             try { Thread.sleep(2000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
-            OrderDTO retry = orderService.placeOrder(symbol, qty, 1, 0);
+            OrderDTO retry = orderService.placeOrder(symbol, qty, 1, 0, product);
             orderCountToday++;
             if (retry == null || retry.getId() == null || retry.getId().isEmpty() || !"ok".equals(retry.getStatus())) {
                 log.error("[short-straddle] CLOSE FAILED for {} {} qty={} ({}): {}",
