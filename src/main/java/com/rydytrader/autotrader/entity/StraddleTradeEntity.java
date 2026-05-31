@@ -55,6 +55,14 @@ public class StraddleTradeEntity {
     @Column(name = "close_reason", length = 40)
     private String closeReason;
 
+    /** Number of per-leg SL hits during this straddle (0, 1 or 2). 0 = both legs ran to the
+     *  timed squareoff or manual close without breaching SL. 1 = exactly one leg got stopped
+     *  (the other was carried to squareoff). 2 = both legs got SL'd. Used by the Analytics
+     *  page to surface the day-mix histogram. Nullable so rows written before the column
+     *  existed don't blow up — treated as 0 by readers. */
+    @Column(name = "sl_hit_count")
+    private Integer slHitCount;
+
     public StraddleTradeEntity() {}
 
     public Long getId() { return id; }
@@ -75,4 +83,6 @@ public class StraddleTradeEntity {
     public void setNetPnl(double v) { this.netPnl = v; }
     public String getCloseReason() { return closeReason; }
     public void setCloseReason(String v) { this.closeReason = v; }
+    public Integer getSlHitCount() { return slHitCount; }
+    public void setSlHitCount(Integer v) { this.slHitCount = v; }
 }

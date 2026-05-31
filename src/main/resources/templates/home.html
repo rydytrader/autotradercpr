@@ -193,6 +193,26 @@
                          title="Largest peak-to-trough decline in cumulative net P&L.">—</div>
                 </div>
                 <div style="text-align:center;">
+                    <div class="stat-label">Max DD Days</div>
+                    <div class="stat-value" id="ahMaxDrawdownDays" style="font-size:1.1rem; margin-top:4px;"
+                         title="Number of straddles between the equity-curve peak and the trough of the deepest drawdown.">—</div>
+                </div>
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
+                    <div class="stat-label">0 SL Days</div>
+                    <div class="stat-value" id="ahZeroSlDays" style="font-size:1.1rem; margin-top:4px;"
+                         title="Days where neither leg got stopped — both ran to the timed squareoff. Full theta-decay outcome.">—</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">1 SL Days</div>
+                    <div class="stat-value" id="ahOneSlDays" style="font-size:1.1rem; margin-top:4px;"
+                         title="Days where exactly one leg got stopped; the surviving leg ran to squareoff.">—</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">2 SL Days</div>
+                    <div class="stat-value" id="ahTwoSlDays" style="font-size:1.1rem; margin-top:4px;"
+                         title="Days where both legs got stopped before squareoff — strong move in both directions.">—</div>
+                </div>
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
                     <div class="stat-label">Avg Monthly %</div>
                     <div class="stat-value" id="ahAvgMonthlyPct" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
@@ -572,6 +592,11 @@
             var rr = perf.riskReward || 0;
             setVal('ahRiskReward',   rr > 0 ? rr.toFixed(2) : '—', rr - 1);
             setVal('ahMaxDrawdown',  fmtRs(ext.maxDrawdown), ext.maxDrawdown);
+            setVal('ahMaxDrawdownDays', String(ext.maxDrawdownDays || 0), -(ext.maxDrawdownDays || 0));
+            // SL-day histogram — 0 SL is "good" (theta day), 2 SL is "bad" (whipsaw).
+            setVal('ahZeroSlDays', String(ext.zeroSlDays || 0),  (ext.zeroSlDays || 0));
+            setVal('ahOneSlDays',  String(ext.oneSlDays  || 0));
+            setVal('ahTwoSlDays',  String(ext.twoSlDays  || 0), -(ext.twoSlDays  || 0));
             setVal('ahAvgMonthlyPct', fmtPct(cap.avgMonthlyPct), cap.avgMonthlyPct);
 
             // ── DETAIL CARDS — only metrics that aren't already in the hero ─

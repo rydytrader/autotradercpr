@@ -94,7 +94,8 @@ public class AnalyticsService {
     /** Internal lightweight trade record used by all metric calcs. Decoupled from the JPA
      *  entity so the synthesized live-today rows (which have no DB id) plug in cleanly. */
     private record Trade(String strategyId, String sessionDate, long closedAtMillis,
-                         double grossPnl, double charges, double netPnl, String closeReason) {}
+                         double grossPnl, double charges, double netPnl, String closeReason,
+                         int slHitCount) {}
 
     private List<Trade> loadTrades(String period, String strategyId, String from, String to) {
         LocalDate today = LocalDate.now(IST);
@@ -120,8 +121,9 @@ public class AnalyticsService {
             if (cutoff    != null && d.isBefore(cutoff))   continue;
             if (rangeFrom != null && d.isBefore(rangeFrom)) continue;
             if (rangeTo   != null && d.isAfter(rangeTo))    continue;
+            int sl = e.getSlHitCount() == null ? 0 : e.getSlHitCount();
             out.add(new Trade(e.getStrategyId(), e.getSessionDate(), e.getClosedAtMillis(),
-                              e.getGrossPnl(), e.getCharges(), e.getNetPnl(), e.getCloseReason()));
+                              e.getGrossPnl(), e.getCharges(), e.getNetPnl(), e.getCloseReason(), sl));
         }
         // Live overlay: today's in-progress closes from in-memory state.
         if (windowIncludesToday(cutoff, rangeFrom, rangeTo, today)) {
@@ -163,7 +165,7 @@ public class AnalyticsService {
                         long ts = asLong(m.get("closedAtMillis"));
                         if (ts == 0) ts = System.currentTimeMillis();
                         String reason = String.valueOf(m.getOrDefault("closeReason", "OPEN"));
-                        out.add(new Trade(strat.id(), iso, ts, gross, ch, net, reason));
+                        out.add(new Trade(strat.id(), iso, ts, gross, ch, net, reason, 0));
                         addedToday += net;
                     }
                 }
@@ -176,7 +178,7 @@ public class AnalyticsService {
                 double openMtmRemainder = liveNet - addedToday;
                 if (Math.abs(openMtmRemainder) > 0.01) {
                     out.add(new Trade(strat.id(), iso, System.currentTimeMillis(),
-                        openMtmRemainder, 0, openMtmRemainder, OPEN_POSITION_MTM_REASON));
+                        openMtmRemainder, 0, openMtmRemainder, OPEN_POSITION_MTM_REASON, 0));
                 }
             } catch (Exception e) {
                 log.warn("[Analytics] Live today overlay failed for {}: {}", strat.id(), e.getMessage());
@@ -289,20 +291,40 @@ public class AnalyticsService {
             if (pnl > 0)      { wins++;   sumWin  += pnl; }
             else if (pnl < 0) { losses++; sumLoss += pnl; }
         }
-        // Drawdown over the cumulative per-trade equity curve.
+        // Drawdown over the cumulative per-trade equity curve. Also tracks the index of the
+        // peak that preceded the deepest drawdown and the trough index so we can report
+        // "Max Drawdown Days" = number of trades between them (inclusive of the trough).
         double peak = 0, cum = 0, maxDd = 0;
-        for (Trade t : trades) {
-            cum += t.netPnl();
-            if (cum > peak) peak = cum;
+        int peakIdx = 0, troughIdx = 0, curPeakIdx = 0;
+        for (int i = 0; i < trades.size(); i++) {
+            cum += trades.get(i).netPnl();
+            if (cum > peak) { peak = cum; curPeakIdx = i; }
             double dd = cum - peak;
-            if (dd < maxDd) maxDd = dd;
+            if (dd < maxDd) { maxDd = dd; peakIdx = curPeakIdx; troughIdx = i; }
         }
+        int maxDrawdownDays = (maxDd < 0) ? (troughIdx - peakIdx) : 0;
+
+        // Per-day SL hit histogram. Per the operator's request, exposed in the hero so the
+        // mix between "both legs survived to squareoff" (0 SL), "one leg got stopped" (1 SL)
+        // and "both legs stopped out" (2 SL) is visible at a glance.
+        int zeroSl = 0, oneSl = 0, twoSl = 0;
+        for (Trade t : trades) {
+            int n = t.slHitCount();
+            if (n <= 0)      zeroSl++;
+            else if (n == 1) oneSl++;
+            else             twoSl++;
+        }
+
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("maxProfit",   round2(maxProfit));
-        m.put("maxLoss",     round2(maxLoss));
-        m.put("avgProfit",   round2(wins   > 0 ? sumWin  / wins   : 0));
-        m.put("avgLoss",     round2(losses > 0 ? sumLoss / losses : 0));
-        m.put("maxDrawdown", round2(maxDd));
+        m.put("maxProfit",      round2(maxProfit));
+        m.put("maxLoss",        round2(maxLoss));
+        m.put("avgProfit",      round2(wins   > 0 ? sumWin  / wins   : 0));
+        m.put("avgLoss",        round2(losses > 0 ? sumLoss / losses : 0));
+        m.put("maxDrawdown",    round2(maxDd));
+        m.put("maxDrawdownDays", maxDrawdownDays);
+        m.put("zeroSlDays",     zeroSl);
+        m.put("oneSlDays",      oneSl);
+        m.put("twoSlDays",      twoSl);
         return m;
     }
 

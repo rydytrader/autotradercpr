@@ -60,6 +60,9 @@ public class ShortStraddleStateStore {
         public double  sellPremiumTurnoverToday;
         public double  buyPremiumTurnoverToday;
         public int     orderCountToday;
+        /** Number of per-leg SL hits today (0, 1, or 2). Persisted so a mid-day restart
+         *  resumes the count and the trade row written at DONE_FOR_DAY is accurate. */
+        public int     slHitsToday;
         public String  currentWeeklyExpiry;
         /** Cycle events ring (ENTRY / CE_SL / PE_SL / SQUAREOFF) — {time, event, nifty, ce, pe, pnl}. */
         public java.util.List<java.util.Map<String, Object>> recentEvents;

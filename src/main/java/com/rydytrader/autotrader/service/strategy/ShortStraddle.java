@@ -104,6 +104,10 @@ public class ShortStraddle implements Strategy {
     private volatile double sellPremiumTurnoverToday = 0;
     private volatile double buyPremiumTurnoverToday  = 0;
     private volatile int    orderCountToday = 0;
+    /** Number of per-leg SL hits today (0, 1 or 2). Increments when closeLeg fires with
+     *  CE_SL_HIT or PE_SL_HIT, reset on day rollover. Persisted on the trade row at
+     *  DONE_FOR_DAY for the analytics page's SL-day histogram. */
+    private volatile int    slHitsToday = 0;
     private volatile String currentWeeklyExpiry = "";
     /** NIFTY LTP captured at the moment this day's straddle was entered — surfaced on the
      *  dashboard's Hero "Last Entry" tile. 0 until first entry, cleared on day rollover. */
@@ -307,6 +311,7 @@ public class ShortStraddle implements Strategy {
             this.sellPremiumTurnoverToday = p.sellPremiumTurnoverToday;
             this.buyPremiumTurnoverToday  = p.buyPremiumTurnoverToday;
             this.orderCountToday = p.orderCountToday;
+            this.slHitsToday     = p.slHitsToday;
             this.currentWeeklyExpiry = p.currentWeeklyExpiry != null ? p.currentWeeklyExpiry : "";
             if (p.combinedPremiumSamples != null) {
                 this.combinedPremiumSamples.clear();
@@ -559,6 +564,9 @@ public class ShortStraddle implements Strategy {
         int qty       = isCe ? ceQty    : peQty;
         double entry  = isCe ? ceEntryPremium : peEntryPremium;
         if (symbol == null || symbol.isEmpty() || qty <= 0) return;
+        // SL-hit counter — only the per-leg SL paths bump it; TIMED_SQUAREOFF / MANUAL /
+        // MAX_LOSS_HIT close the leg too but don't count as an SL day for analytics.
+        if ("CE_SL_HIT".equals(reason) || "PE_SL_HIT".equals(reason)) slHitsToday++;
 
         double closeLtp = marketDataService.getLtp(symbol);
         double pnl = (entry > 0 && closeLtp > 0) ? (entry - closeLtp) * qty : 0;
@@ -947,6 +955,7 @@ public class ShortStraddle implements Strategy {
         this.sellPremiumTurnoverToday = 0;
         this.buyPremiumTurnoverToday = 0;
         this.orderCountToday = 0;
+        this.slHitsToday = 0;
         this.currentWeeklyExpiry = "";
         this.recentEvents.clear();
         this.combinedPremiumSamples.clear();
@@ -1180,6 +1189,7 @@ public class ShortStraddle implements Strategy {
             t.setCharges(round2(charges));
             t.setNetPnl(round2(realisedPnlToday - charges));
             t.setCloseReason("DONE_FOR_DAY");
+            t.setSlHitCount(slHitsToday);
             tradeRepo.save(t);
         } catch (Exception e) {
             log.warn("[short-straddle] Failed to persist straddle_trades row: {}", e.getMessage());
@@ -1221,6 +1231,7 @@ public class ShortStraddle implements Strategy {
         s.sellPremiumTurnoverToday = this.sellPremiumTurnoverToday;
         s.buyPremiumTurnoverToday  = this.buyPremiumTurnoverToday;
         s.orderCountToday = this.orderCountToday;
+        s.slHitsToday     = this.slHitsToday;
         s.currentWeeklyExpiry = this.currentWeeklyExpiry;
         synchronized (combinedPremiumSamples) {
             s.combinedPremiumSamples = new java.util.ArrayList<>(combinedPremiumSamples);
