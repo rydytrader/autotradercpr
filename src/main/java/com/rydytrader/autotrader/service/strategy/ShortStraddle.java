@@ -174,6 +174,9 @@ public class ShortStraddle implements Strategy {
     @Override public String navIcon()      { return shortCode != null && !shortCode.isEmpty() ? shortCode : "∧"; }
     @Override public boolean forceClose(String reason) { return forceCloseAll(reason); }
     @Override public String currentWeeklyExpiry() { return currentWeeklyExpiry; }
+    @Override public boolean isEnabled() {
+        return riskSettings.getStrategyBool(instanceId, "enabled", false);
+    }
 
     /** Live net day P&L (realised + open MTM − charges). Used by the portfolio kill switch. */
     @Override

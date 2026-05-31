@@ -294,7 +294,8 @@
                 var firstDiv = aside.querySelector('div');
                 if (!firstDiv) return;
                 while (firstDiv.nextSibling) aside.removeChild(firstDiv.nextSibling);
-                var list = Array.isArray(arr) ? arr : [];
+                // Sidebar shows only enabled instances. Disabled ones live in the Straddles tab.
+                var list = (Array.isArray(arr) ? arr : []).filter(function(s) { return s && s.enabled !== false; });
                 var pathnow = window.location.pathname;
                 var chipStyle = 'display:flex;align-items:center;justify-content:center;'
                     + 'width:72px;height:40px;border-radius:8px;text-decoration:none;'

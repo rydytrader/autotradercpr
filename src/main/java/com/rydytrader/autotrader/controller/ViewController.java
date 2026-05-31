@@ -67,6 +67,9 @@ public class ViewController {
     private List<Map<String, Object>> sidebarStrategies() {
         List<Map<String, Object>> nav = new ArrayList<>();
         for (Strategy s : strategyRegistry.all()) {
+            // Disabled instances are hidden from the sidebar — they're still listed in the
+            // Straddles tab so the operator can re-enable, view history, etc.
+            if (!s.isEnabled()) continue;
             Map<String, Object> e = new LinkedHashMap<>();
             e.put("id", s.id());
             e.put("displayName", s.displayName());

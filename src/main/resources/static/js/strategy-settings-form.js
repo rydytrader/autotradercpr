@@ -41,9 +41,9 @@
             '.ss-field label { display:block;color:var(--text-muted);font-size:0.7rem;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:6px; }' +
             '.ss-field input, .ss-field select { width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none; }' +
             // Strip the OS-default <select> chrome so it sits in the same theme as the inputs
-            // around it. Custom arrow drawn via background-image; option list inherits the
-            // theme background so the open dropdown matches too.
-            '.ss-field select { -webkit-appearance:none;-moz-appearance:none;appearance:none;padding-right:30px;cursor:pointer;background-image:url("data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'10\\' height=\\'6\\' viewBox=\\'0 0 10 6\\'><path d=\\'M0 0l5 6 5-6z\\' fill=\\'%23a0a8b8\\'/></svg>");background-repeat:no-repeat;background-position:right 12px center; }' +
+            // around it. URL-encoded SVG arrow (no inline quotes — avoids JS-string escape
+            // collisions). Option list inherits the theme background.
+            '.ss-field select { -webkit-appearance:none;-moz-appearance:none;appearance:none;padding-right:30px;cursor:pointer;background-image:url(data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2210%22%20height%3D%226%22%20viewBox%3D%220%200%2010%206%22%3E%3Cpath%20d%3D%22M0%200l5%206%205-6z%22%20fill%3D%22%23a0a8b8%22/%3E%3C/svg%3E);background-repeat:no-repeat;background-position:right 12px center; }' +
             '.ss-field select option { background:var(--bg-primary);color:var(--text-primary); }' +
             '.ss-field input[type=checkbox] { width:auto; }' +
             '.ss-hint { color:var(--text-muted);font-size:0.7rem;margin-top:4px; }' +

@@ -40,6 +40,7 @@ public class StrategyController {
             m.put("displayName", s.displayName());
             m.put("description", s.description());
             m.put("shortCode", s.shortCode());
+            m.put("enabled", s.isEnabled());
             m.put("currentState", s.currentState());
             m.put("navIcon", s.navIcon());
             out.add(m);

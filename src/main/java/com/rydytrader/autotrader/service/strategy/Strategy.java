@@ -76,6 +76,13 @@ public interface Strategy {
      *  {@code shortCode} field directly. */
     default String shortCode() { return id(); }
 
+    /** True when the operator has flipped the strategy on (Straddles tab → Enable). The
+     *  sidebar and {@code /api/strategies} response filter on this so disabled instances
+     *  don't take up space — they're still queryable via {@code /api/straddles} for the
+     *  Straddles tab itself. Default true so non-runtime strategies don't accidentally
+     *  hide; concrete instances override to read their runtime flag. */
+    default boolean isEnabled() { return true; }
+
     /** Tiny icon for the left sidebar nav. Default = first letter of id() uppercase.
      *  Concrete strategies may override to return an emoji or symbol character. */
     default String navIcon() {
