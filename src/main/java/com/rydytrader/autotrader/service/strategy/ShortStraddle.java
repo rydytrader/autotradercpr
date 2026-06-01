@@ -122,14 +122,15 @@ public class ShortStraddle implements Strategy {
     public static record CycleEvent(String time, String event, double nifty,
                                     String ce, String pe, double pnl) {}
 
-    /** Async-correction record. State is updated immediately on order placement with an LTP
-     *  estimate; the order WS push then carries the broker-confirmed price into onActualFill
-     *  which adjusts the affected fields in place. */
+    /** Tracks which legs are awaiting a WS fill confirmation. State transitions happen
+     *  synchronously; cumulative P&L / turnover updates happen ONLY when the WS fires the
+     *  filled-status event. Equity-bot pattern: register the orderId + context, do the
+     *  bookkeeping when the callback arrives. */
     private enum PendingType { ENTRY_CE, ENTRY_PE, CLOSE_CE, CLOSE_PE }
-    private static record PendingFill(PendingType type, double estimate, int qty, double entryReference) {}
+    private static record PendingFill(PendingType type, int qty, double entryRef) {}
     private final java.util.concurrent.ConcurrentMap<String, PendingFill> pendingFills =
         new java.util.concurrent.ConcurrentHashMap<>();
-    /** True once {@link #bootstrap()} has wired the FillListener — guards a stray test path. */
+    /** True once {@link #bootstrap()} has wired the FillListener. */
     private volatile boolean fillListenerWired = false;
 
     public ShortStraddle(StraddleInstanceEntity entity,
@@ -180,57 +181,53 @@ public class ShortStraddle implements Strategy {
     }
 
     /** Invoked on the WS thread the moment Fyers pushes an order's status=2 (Filled) event.
-     *  Looks up the pending estimate keyed by orderId and adjusts the affected leg's premium,
-     *  P&L, and turnover in place. No-op when the orderId belongs to a different instance or
-     *  the pending record has already been corrected. */
-    private synchronized void onActualFill(String orderId, double actualPrice) {
+     *  All P&L / turnover bookkeeping happens here — synchronous placement code only handles
+     *  state transitions. No delta math; the values are computed from scratch using the
+     *  broker-confirmed fill price. */
+    private synchronized void onActualFill(String orderId, double price) {
         PendingFill p = pendingFills.remove(orderId);
-        if (p == null || actualPrice <= 0) return;
-        double estimate = p.estimate();
-        double diff = actualPrice - estimate;
+        if (p == null || price <= 0) return;
         switch (p.type()) {
             case ENTRY_CE -> {
-                ceEntryPremium = actualPrice;
-                sellPremiumTurnoverToday += diff * p.qty();
-                log.info("[short-straddle] CE entry corrected {} → {} (Δ {})", String.format("%.2f", estimate), String.format("%.2f", actualPrice), String.format("%.2f", diff));
-                eventService.log("[INFO] [short-straddle] CE entry corrected to actual fill " + String.format("%.2f", actualPrice));
+                ceEntryPremium = price;
+                sellPremiumTurnoverToday += price * p.qty();
+                log.info("[short-straddle] CE entry filled @ {}", String.format("%.2f", price));
+                eventService.log("[INFO] [short-straddle] CE entry filled @ " + String.format("%.2f", price));
             }
             case ENTRY_PE -> {
-                peEntryPremium = actualPrice;
-                sellPremiumTurnoverToday += diff * p.qty();
-                log.info("[short-straddle] PE entry corrected {} → {} (Δ {})", String.format("%.2f", estimate), String.format("%.2f", actualPrice), String.format("%.2f", diff));
-                eventService.log("[INFO] [short-straddle] PE entry corrected to actual fill " + String.format("%.2f", actualPrice));
+                peEntryPremium = price;
+                sellPremiumTurnoverToday += price * p.qty();
+                log.info("[short-straddle] PE entry filled @ {}", String.format("%.2f", price));
+                eventService.log("[INFO] [short-straddle] PE entry filled @ " + String.format("%.2f", price));
             }
             case CLOSE_CE -> {
-                double oldPnl = (p.entryReference() - estimate)    * p.qty();
-                double newPnl = (p.entryReference() - actualPrice) * p.qty();
-                realisedPnlToday += (newPnl - oldPnl);
-                ceLegPnl = newPnl;
-                ceClosePremium = actualPrice;
-                buyPremiumTurnoverToday += diff * p.qty();
-                log.info("[short-straddle] CE close corrected {} → {} (pnl Δ {})", String.format("%.2f", estimate), String.format("%.2f", actualPrice), String.format("%.2f", newPnl - oldPnl));
-                eventService.log("[INFO] [short-straddle] CE close corrected to actual fill " + String.format("%.2f", actualPrice));
+                double pnl = (p.entryRef() - price) * p.qty();
+                ceLegPnl = pnl;
+                ceClosePremium = price;
+                realisedPnlToday += pnl;
+                buyPremiumTurnoverToday += price * p.qty();
+                log.info("[short-straddle] CE close filled @ {} pnl={}", String.format("%.2f", price), String.format("%.2f", pnl));
+                eventService.log("[INFO] [short-straddle] CE close filled @ " + String.format("%.2f", price) + " pnl=" + String.format("%.2f", pnl));
             }
             case CLOSE_PE -> {
-                double oldPnl = (p.entryReference() - estimate)    * p.qty();
-                double newPnl = (p.entryReference() - actualPrice) * p.qty();
-                realisedPnlToday += (newPnl - oldPnl);
-                peLegPnl = newPnl;
-                peClosePremium = actualPrice;
-                buyPremiumTurnoverToday += diff * p.qty();
-                log.info("[short-straddle] PE close corrected {} → {} (pnl Δ {})", String.format("%.2f", estimate), String.format("%.2f", actualPrice), String.format("%.2f", newPnl - oldPnl));
-                eventService.log("[INFO] [short-straddle] PE close corrected to actual fill " + String.format("%.2f", actualPrice));
+                double pnl = (p.entryRef() - price) * p.qty();
+                peLegPnl = pnl;
+                peClosePremium = price;
+                realisedPnlToday += pnl;
+                buyPremiumTurnoverToday += price * p.qty();
+                log.info("[short-straddle] PE close filled @ {} pnl={}", String.format("%.2f", price), String.format("%.2f", pnl));
+                eventService.log("[INFO] [short-straddle] PE close filled @ " + String.format("%.2f", price) + " pnl=" + String.format("%.2f", pnl));
             }
         }
         persist();
     }
 
-    /** Register a pending fill correction for {@code orderId} with the supplied LTP estimate.
-     *  Race protection: if the WS push has ALREADY landed (cached in OrderEventService) before
-     *  we registered, apply the correction immediately. */
-    private void registerPendingFill(String orderId, PendingType type, double estimate, int qty, double entryReference) {
+    /** Register an orderId for fill-callback notification. Race protection: if the WS push
+     *  already cached the fill before this call (rare — Fyers WS sometimes beats the REST
+     *  response on liquid options), apply it immediately. */
+    private void registerPendingFill(String orderId, PendingType type, int qty, double entryRef) {
         if (orderId == null || orderId.isEmpty()) return;
-        pendingFills.put(orderId, new PendingFill(type, estimate, qty, entryReference));
+        pendingFills.put(orderId, new PendingFill(type, qty, entryRef));
         Double already = orderEventService.getFillPrice(orderId);
         if (already != null && already > 0) onActualFill(orderId, already);
     }
@@ -596,14 +593,14 @@ public class ShortStraddle implements Strategy {
         // synchronously — no blocking. The async FillListener (onActualFill) overwrites these
         // with the broker-confirmed fill the moment the order WS pushes status=2, typically
         // within 100–200 ms of placement.
+        // Seed display values from LTP so the leg cards / chart show something while we
+        // wait for the WS fill confirmation (~100-200 ms). The WS callback overwrites these
+        // with the broker-confirmed fill and does ALL turnover / P&L bookkeeping.
         this.ceEntryPremium = readEntryPremium(resolvedCe);
         this.peEntryPremium = readEntryPremium(resolvedPe);
         this.currentWeeklyExpiry = parseExpiryFromSymbol(resolvedCe);
-        this.sellPremiumTurnoverToday += (ceEntryPremium * qty) + (peEntryPremium * qty);
-        // Register for async fill correction — the WS push will rewrite ceEntryPremium /
-        // peEntryPremium + adjust sellPremiumTurnoverToday in place when it lands.
-        registerPendingFill(ceResp.getId(), PendingType.ENTRY_CE, ceEntryPremium, qty, 0);
-        registerPendingFill(peResp.getId(), PendingType.ENTRY_PE, peEntryPremium, qty, 0);
+        registerPendingFill(ceResp.getId(), PendingType.ENTRY_CE, qty, 0);
+        registerPendingFill(peResp.getId(), PendingType.ENTRY_PE, qty, 0);
         transitionTo(LifecycleState.OPEN_BOTH);
 
         double niftyAtEntry = niftyLtp;
@@ -709,9 +706,11 @@ public class ShortStraddle implements Strategy {
         // MAX_LOSS_HIT close the leg too but don't count as an SL day for analytics.
         if ("CE_SL_HIT".equals(reason) || "PE_SL_HIT".equals(reason)) slHitsToday++;
 
-        // LTP estimate immediately so the state transition + leg-card freeze are instant.
-        // The WS push will rewrite ceClosePremium / peClosePremium + adjust realisedPnlToday
-        // and buyPremiumTurnoverToday in onActualFill the moment the broker confirms.
+        // Seed display values from LTP so the leg card shows a reasonable Exit price during
+        // the ~100-200 ms gap before the WS push lands. The WS callback (onActualFill)
+        // overwrites ceClosePremium / peClosePremium with the broker-confirmed fill and does
+        // ALL P&L / turnover bookkeeping — closeLeg does NOT touch realisedPnlToday or
+        // buyPremiumTurnoverToday.
         double quotedLtp = marketDataService.getLtp(symbol);
         double niftyAtClose = marketDataService.getLtp(NIFTY_SYMBOL);
         String closedCe = isCe ? symbol : "";
@@ -719,14 +718,11 @@ public class ShortStraddle implements Strategy {
 
         String closeOrderId = placeCloseRetry(symbol, qty, which, reason);
 
-        double estimatedClose = quotedLtp;
-        double pnl = (entry > 0 && estimatedClose > 0) ? (entry - estimatedClose) * qty : 0;
-        realisedPnlToday += pnl;
-        if (isCe) { ceLegPnl = pnl; ceClosePremium = estimatedClose; }
-        else      { peLegPnl = pnl; peClosePremium = estimatedClose; }
-        if (estimatedClose > 0) buyPremiumTurnoverToday += estimatedClose * qty;
+        double pnl = (entry > 0 && quotedLtp > 0) ? (entry - quotedLtp) * qty : 0;
+        if (isCe) { ceLegPnl = pnl; ceClosePremium = quotedLtp; }
+        else      { peLegPnl = pnl; peClosePremium = quotedLtp; }
         registerPendingFill(closeOrderId, isCe ? PendingType.CLOSE_CE : PendingType.CLOSE_PE,
-            estimatedClose, qty, entry);
+            qty, entry);
 
         // Unsubscribe — the other leg keeps its WS sub.
         try { marketDataService.unsubscribeAdditional(java.util.Collections.singletonList(symbol)); }
@@ -761,13 +757,11 @@ public class ShortStraddle implements Strategy {
         if (isCeOpen() && !ceSymbol.isEmpty() && ceQty > 0) {
             double ltp = marketDataService.getLtp(ceSymbol);
             double pnl = (ceEntryPremium > 0 && ltp > 0) ? (ceEntryPremium - ltp) * ceQty : 0;
-            realisedPnlToday += pnl;
             ceLegPnl = pnl;
             ceClosePremium = ltp;
             totalPnl += pnl;
-            if (ltp > 0) buyPremiumTurnoverToday += ltp * ceQty;
             String ceCloseId = placeCloseRetry(ceSymbol, ceQty, "CE", reason);
-            registerPendingFill(ceCloseId, PendingType.CLOSE_CE, ltp, ceQty, ceEntryPremium);
+            registerPendingFill(ceCloseId, PendingType.CLOSE_CE, ceQty, ceEntryPremium);
             unsubAfter.add(ceSymbol);
             this.ceClosedAtMillis = System.currentTimeMillis();
             this.ceQty = 0;
@@ -776,13 +770,11 @@ public class ShortStraddle implements Strategy {
         if (isPeOpen() && !peSymbol.isEmpty() && peQty > 0) {
             double ltp = marketDataService.getLtp(peSymbol);
             double pnl = (peEntryPremium > 0 && ltp > 0) ? (peEntryPremium - ltp) * peQty : 0;
-            realisedPnlToday += pnl;
             peLegPnl = pnl;
             peClosePremium = ltp;
             totalPnl += pnl;
-            if (ltp > 0) buyPremiumTurnoverToday += ltp * peQty;
             String peCloseId = placeCloseRetry(peSymbol, peQty, "PE", reason);
-            registerPendingFill(peCloseId, PendingType.CLOSE_PE, ltp, peQty, peEntryPremium);
+            registerPendingFill(peCloseId, PendingType.CLOSE_PE, peQty, peEntryPremium);
             unsubAfter.add(peSymbol);
             this.peClosedAtMillis = System.currentTimeMillis();
             this.peQty = 0;
