@@ -64,6 +64,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
     private volatile boolean running = false;
     private volatile boolean dirty   = false;
     private volatile int reconnectAttempts = 0;
+    /** Consecutive HTTP 401/403 responses from {@code /data/symbol-token}. After
+     *  {@link #AUTH_FAIL_THRESHOLD}, the in-memory token is cleared and reconnects pause
+     *  until the operator logs in again — prevents the daily-token-expiry 429 storm where
+     *  the bot used to retry the bootstrap every 60 s indefinitely. */
+    private volatile int consecutive401s = 0;
+    private static final int AUTH_FAIL_THRESHOLD = 2;
     private volatile String lastConnectTime = "";
     private volatile String lastDisconnectTime = "";
     private volatile int reconnectCountToday = 0;
@@ -131,6 +137,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         if (running) stop();
         running = true;
         reconnectAttempts = 0;
+        consecutive401s  = 0;
         scheduler = Executors.newScheduledThreadPool(3);
         scheduler.scheduleAtFixedRate(this::flushSse, 500, 500, TimeUnit.MILLISECONDS);
         scheduler.scheduleAtFixedRate(this::sendKeepalive, 15, 15, TimeUnit.SECONDS);
@@ -195,6 +202,8 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
                 scheduler.scheduleAtFixedRate(() -> {
                     if (wsClient != null && wsClient.isOpen()) wsClient.sendPing();
                 }, 10, 10, TimeUnit.SECONDS);
+            } catch (AuthExpiredException ae) {
+                handleAuthFailure(ae);
             } catch (Exception e) {
                 log.error("[MarketData] WS connect error: {}", e.getMessage());
                 scheduleReconnect();
@@ -202,13 +211,51 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         });
     }
 
+    /** Track a 401/403 from the symbol-token endpoint. After {@link #AUTH_FAIL_THRESHOLD}
+     *  consecutive failures, clear the in-memory token and stop scheduling reconnects.
+     *  The operator's next Fyers login calls {@link #start()} which resets the counter
+     *  and resumes connection. A single spurious 401 (Fyers rate-spike edge case) doesn't
+     *  lock the operator out — only repeated failures do. */
+    private void handleAuthFailure(AuthExpiredException ae) {
+        consecutive401s++;
+        log.warn("[MarketData] Auth failure {}/{}: {}", consecutive401s, AUTH_FAIL_THRESHOLD, ae.getMessage());
+        if (eventService != null) {
+            eventService.log("[WARNING] [WS] Fyers auth failure " + consecutive401s + "/" + AUTH_FAIL_THRESHOLD
+                + (consecutive401s < AUTH_FAIL_THRESHOLD ? " — retrying" : ""));
+        }
+        if (consecutive401s >= AUTH_FAIL_THRESHOLD) {
+            log.error("[MarketData] Repeated auth failures — clearing in-memory token. Re-login required.");
+            if (eventService != null) {
+                eventService.log("[ERROR] [WS] Fyers token expired — reconnect paused. Please re-login.");
+            }
+            tokenStore.setAccessToken("");
+            // No scheduleReconnect — the token is gone; the scheduleReconnect guard will
+            // refuse to schedule any further bootstrap attempt until a new token lands.
+            return;
+        }
+        scheduleReconnect();
+    }
+
     private void scheduleReconnect() {
         if (!running) return;
+        // Don't hammer Fyers with the bootstrap loop when there's no token to authenticate
+        // with — caused the daily 429 storm. Resume the moment a fresh token is set via
+        // /fyers/callback (which calls start() and re-arms the counters).
+        if (!tokenStore.isTokenAvailable()) {
+            log.info("[MarketData] Reconnect paused — no access token. Waiting for re-login.");
+            return;
+        }
         reconnectAttempts++;
         long delay = Math.min(2L * (1L << Math.min(reconnectAttempts, 5)), 60);
         if (scheduler != null && !scheduler.isShutdown()) {
             scheduler.schedule(this::startLiveWebSocket, delay, TimeUnit.SECONDS);
         }
+    }
+
+    /** Marker thrown by {@code resolveSymbolTokensBatch} when Fyers returns HTTP 401/403,
+     *  so the connect bootstrap can distinguish auth expiry from a transient connect failure. */
+    private static class AuthExpiredException extends RuntimeException {
+        AuthExpiredException(String msg) { super(msg); }
     }
 
     // ── TickCallback ──────────────────────────────────────────────────────────
@@ -237,6 +284,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
     @Override
     public void onConnected() {
         reconnectAttempts = 0;
+        consecutive401s  = 0;
         lastConnectTime = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
         log.info("[MarketData] WebSocket connected");
         if (eventService != null) eventService.log("[WS] Data WebSocket connected");
@@ -373,6 +421,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
                         subscribedHsmTokens.add(hsm);
                     }
                 }
+            } catch (AuthExpiredException ae) {
+                // Token died mid-session (rare — usually expires only at day boundary). Route
+                // through the same handler the bootstrap uses so consecutive401s + token clear
+                // + re-login pause are all one code path.
+                handleAuthFailure(ae);
             } catch (Exception e) {
                 log.error("[MarketData] Failed to resolve new symbols: {}", e.getMessage());
             }
@@ -426,12 +479,19 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         conn.setDoOutput(true);
         conn.getOutputStream().write(jsonBody.getBytes(StandardCharsets.UTF_8));
         conn.getOutputStream().close();
-        InputStream is = conn.getResponseCode() < 400 ? conn.getInputStream() : conn.getErrorStream();
+        int responseCode = conn.getResponseCode();
+        InputStream is = responseCode < 400 ? conn.getInputStream() : conn.getErrorStream();
         BufferedReader br = new BufferedReader(new InputStreamReader(is));
         StringBuilder sb = new StringBuilder();
         String line;
         while ((line = br.readLine()) != null) sb.append(line);
         br.close();
+        // 401/403 = token rejected by Fyers. Propagate up so the connect bootstrap can stop
+        // hammering — without this, the bot retried every 60 s after daily token expiry and
+        // Fyers' rate-limiter would respond with continuous 429s.
+        if (responseCode == 401 || responseCode == 403) {
+            throw new AuthExpiredException("HTTP " + responseCode + " from /data/symbol-token: " + sb);
+        }
         int batchResolved = 0;
         JsonNode resp = mapper.readTree(sb.toString());
         if (resp.has("s") && "ok".equals(resp.get("s").asText()) && resp.has("validSymbol")) {
