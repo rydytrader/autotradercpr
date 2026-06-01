@@ -48,8 +48,9 @@ public class MarketHolidayService {
         log.info("[MarketHoliday] {} holidays loaded for {}", holidays.size(), currentYear);
     }
 
-    /** Refresh daily at 2 AM IST — aligned with the overnight pre-market warmup cron. */
-    @Scheduled(cron = "0 0 2 * * MON-FRI", zone = "Asia/Kolkata")
+    /** Refresh daily at 8 AM IST — runs before the market-open warmup so the holiday cache
+     *  is fresh for the day. */
+    @Scheduled(cron = "0 0 8 * * MON-FRI", zone = "Asia/Kolkata")
     public void scheduledRefresh() {
         fetchFromNse();
     }
