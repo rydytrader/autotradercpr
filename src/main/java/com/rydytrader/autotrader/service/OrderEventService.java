@@ -50,12 +50,32 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     private volatile String lastDisconnectTime = "";
     private volatile int reconnectCountToday = 0;
 
-    /** Fill prices keyed by Fyers orderId, populated by {@link #onTradeEvent} as Fyers pushes
-     *  trade events. ShortStraddle reads from here first (instant once the WS landed) before
-     *  falling back to a tradebook REST lookup. Map grows for the day's orders only — no
-     *  eviction; resets when the process restarts (and we're an intraday bot anyway). */
+    /** Fill prices keyed by Fyers orderId, populated by {@link #onOrderEvent} as Fyers pushes
+     *  filled-status events. ShortStraddle reads from here for any post-hoc race recovery; the
+     *  primary correction path is the {@link FillListener} notification below. */
     private final java.util.concurrent.ConcurrentMap<String, Double> fillPriceByOrderId =
         new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Notified asynchronously the moment Fyers pushes a status=2 (Filled) event. Strategies
+     *  register a listener in their bootstrap() and use the callback to correct their
+     *  estimated entry / close prices the moment the broker confirms — no blocking on the
+     *  hot-path of order placement. Listeners must be lightweight; the WS thread invokes
+     *  them synchronously. */
+    @FunctionalInterface
+    public interface FillListener {
+        void onFill(String orderId, double price);
+    }
+
+    private final java.util.List<FillListener> fillListeners =
+        new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    public void addFillListener(FillListener l) {
+        if (l != null && !fillListeners.contains(l)) fillListeners.add(l);
+    }
+
+    public void removeFillListener(FillListener l) {
+        if (l != null) fillListeners.remove(l);
+    }
 
     public OrderEventService(TokenStore tokenStore,
                               FyersProperties fyersProperties,
@@ -146,6 +166,10 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             if (status == 2 && !orderId.isEmpty() && price > 0) {
                 fillPriceByOrderId.put(orderId, price);
                 log.info("[OrderEventSvc] Fill captured for {}: price={}", orderId, price);
+                for (FillListener l : fillListeners) {
+                    try { l.onFill(orderId, price); }
+                    catch (Exception ex) { log.warn("[OrderEventSvc] FillListener threw for {}: {}", orderId, ex.getMessage()); }
+                }
             }
         } catch (Exception e) {
             log.error("[OrderEventSvc] Error parsing order event for fill", e);
