@@ -515,8 +515,16 @@ public class ShortStraddle implements Strategy {
         this.peClosePremium = 0;
         try { marketDataService.subscribeAdditional(java.util.Arrays.asList(resolvedCe, resolvedPe)); }
         catch (Exception ignored) {}
-        this.ceEntryPremium = readEntryPremium(resolvedCe);
-        this.peEntryPremium = readEntryPremium(resolvedPe);
+        // Read the actual filled price from Fyers' tradebook so the leg-card entry value
+        // matches the Fyers terminal exactly. LTP can drift by a couple ticks between order
+        // placement and the next quote — that drift used to show up as a mismatch between
+        // our entry and the broker's. Fall back to LTP only if the tradebook lookup doesn't
+        // populate quickly (the periodic tryRecoverEntryPremiumFromTradebook will correct
+        // it on the next tick anyway).
+        double ceFill = readFilledPriceWithRetry(ceResp.getId());
+        this.ceEntryPremium = ceFill > 0 ? ceFill : readEntryPremium(resolvedCe);
+        double peFill = readFilledPriceWithRetry(peResp.getId());
+        this.peEntryPremium = peFill > 0 ? peFill : readEntryPremium(resolvedPe);
         this.currentWeeklyExpiry = parseExpiryFromSymbol(resolvedCe);
         this.sellPremiumTurnoverToday += (ceEntryPremium * qty) + (peEntryPremium * qty);
         transitionTo(LifecycleState.OPEN_BOTH);
@@ -1139,6 +1147,34 @@ public class ShortStraddle implements Strategy {
             int day = Integer.parseInt(tail.substring(3, 5));
             return LocalDate.of(2000 + yr, month, day).toString();
         } catch (Exception e) { return ""; }
+    }
+
+    /** Look up the actual filled price for {@code orderId} from the Fyers tradebook with a
+     *  small retry loop. The tradebook can lag 200–500 ms after a market order so a single
+     *  immediate call often returns 0. Three attempts × 500 ms (≤ 1.5 s total) is enough to
+     *  cover the usual lag without holding the tick thread for long. Returns 0 if the
+     *  tradebook never reflects the fill — the caller falls back to LTP and the periodic
+     *  {@link #tryRecoverEntryPremiumFromTradebook} corrects it on the next tick. */
+    private double readFilledPriceWithRetry(String orderId) {
+        if (orderId == null || orderId.isEmpty()) return 0;
+        for (int i = 0; i < 3; i++) {
+            try {
+                orderService.invalidateTradebookCache();
+                double fill = orderService.getFilledPriceByOrderId(orderId);
+                if (fill > 0) {
+                    log.info("[short-straddle] Captured fill price for {} on attempt {}: {}", orderId, i + 1, fill);
+                    return fill;
+                }
+            } catch (Exception e) {
+                log.warn("[short-straddle] fill-price lookup attempt {} for {}: {}", i + 1, orderId, e.getMessage());
+            }
+            if (i < 2) {
+                try { Thread.sleep(500); }
+                catch (InterruptedException ie) { Thread.currentThread().interrupt(); return 0; }
+            }
+        }
+        log.info("[short-straddle] Tradebook didn't surface fill for {} within 1.5s — falling back to LTP", orderId);
+        return 0;
     }
 
     private double readEntryPremium(String symbol) {
