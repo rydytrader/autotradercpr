@@ -962,17 +962,31 @@
                         }
                     }
                 }
-                // Combined MTM + Net P&L + Risk (only if any leg moved)
+                // Combined MTM + Net P&L (only if any leg moved this tick).
                 if (ceLtp != null || peLtp != null) {
-                    var combined = (d.ceMtm || 0) + (d.peMtm || 0);
+                    // Combined MTM = LIVE OPEN legs only — mirrors backend's formula:
+                    //   ceMtm = (entry - ltp) × qty  when ceQty > 0  else 0
+                    //   peMtm = (entry - ltp) × qty  when peQty > 0  else 0
+                    // Do NOT use d.ceMtm / d.peMtm here — those are leg-card values that
+                    // FREEZE at the realised P&L the moment the leg closes (so the leg card
+                    // can show the loss taken instead of resetting to 0). Summing the card
+                    // values would double-count the closed leg's realised loss because
+                    // d.realisedPnlToday already contains it.
+                    var ceContrib = 0, peContrib = 0;
+                    if (d.ceQty > 0 && d.ceEntryPremium > 0 && d.ceLtp > 0) {
+                        ceContrib = (d.ceEntryPremium - d.ceLtp) * d.ceQty;
+                    }
+                    if (d.peQty > 0 && d.peEntryPremium > 0 && d.peLtp > 0) {
+                        peContrib = (d.peEntryPremium - d.peLtp) * d.peQty;
+                    }
+                    var combined = ceContrib + peContrib;
                     d.combinedMtm = combined;
                     var openMtmEl = document.getElementById('heroOpenMtm');
                     openMtmEl.textContent = fmtRs(combined);
                     openMtmEl.className = 'stat-value';
                     if      (combined > 0.5)  openMtmEl.classList.add('pnl-positive');
                     else if (combined < -0.5) openMtmEl.classList.add('pnl-negative');
-                    // Net = realised + MTM - charges. Charges are recomputed on backend every 5s
-                    // (uses projected close-side); we keep the last known value between polls.
+                    // Net = realised (already includes closed-leg P&L) + live-open MTM - charges
                     var chTotal = (d.charges && d.charges.total) || 0;
                     var trueNet = (d.realisedPnlToday || 0) + combined - chTotal;
                     var netEl = document.getElementById('netDayPnl');
