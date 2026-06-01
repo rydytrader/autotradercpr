@@ -290,37 +290,85 @@
     function pad2(n) { return n < 10 ? '0' + n : String(n); }
 
     function loadAll() {
+        // The bot is now multi-instance — there's no single "short-straddle" strategy. Fetch
+        // the live instance list, then aggregate per-instance history rows (one row per
+        // date×instance in the DB) into one row per date for the calendar. Today's live
+        // overlay sums the still-running net P&L across every enabled instance.
         return Promise.all([
-            fetch('/api/strategies/short-straddle/history').then(r => r.json()).catch(() => ({ sessions: [] })),
-            fetch('/api/market-holidays').then(r => r.json()).catch(() => []),
-            // Live dashboard so today's running P&L can be overlaid on today's cell
-            fetch('/api/strategies/short-straddle/dashboard').then(r => r.json()).catch(() => null)
-        ]).then(arr => {
-            allSessions = (arr[0] && arr[0].sessions) || [];
-            (arr[1] || []).forEach(h => NSE_HOLIDAYS[h.date] = h.name || 'Holiday');
-            // Inject today's live session if not already in history (history only gets a row at
-            // day rollover the next morning, so today is blank otherwise). Match Hero P&L
-            // formula: realisedPnlToday + open MTM − charges.
-            const live = arr[2];
-            const today = new Date().toISOString().slice(0, 10);
-            const alreadyHas = allSessions.some(s => s.date === today);
-            if (!alreadyHas && live) {
-                const chargesTotal = (live.charges && live.charges.total) || 0;
-                const realised = Number(live.realisedPnlToday) || 0;
-                const mtm      = Number(live.combinedMtm)      || 0;
-                const liveNet  = realised + mtm - chargesTotal;
-                allSessions.unshift({
-                    date: today,
-                    entries: (live.state === 'OPEN' || live.state === 'MAX_ROLLS_HOLD' || live.state === 'DONE_FOR_DAY') ? 1 : 0,
-                    rolls: Number(live.rollCount) || 0,
-                    finalState: live.state || 'IDLE',
-                    grossPnl: realised + mtm,
-                    charges: chargesTotal,
-                    netPnl: liveNet,
-                    live: true
-                });
+            fetch('/api/strategies').then(r => r.json()).catch(() => []),
+            fetch('/api/market-holidays').then(r => r.json()).catch(() => [])
+        ]).then(([strategies, holidays]) => {
+            (holidays || []).forEach(h => NSE_HOLIDAYS[h.date] = h.name || 'Holiday');
+            const list = Array.isArray(strategies) ? strategies : [];
+            if (list.length === 0) {
+                allSessions = [];
+                render();
+                return;
             }
-            render();
+            const histPromises = list.map(s =>
+                fetch('/api/strategies/' + encodeURIComponent(s.id) + '/history')
+                    .then(r => r.json()).catch(() => ({ sessions: [] }))
+            );
+            const dashPromises = list.map(s =>
+                fetch('/api/strategies/' + encodeURIComponent(s.id) + '/dashboard')
+                    .then(r => r.json()).catch(() => null)
+            );
+            return Promise.all([Promise.all(histPromises), Promise.all(dashPromises)])
+                .then(([histories, dashboards]) => {
+                    // Merge persisted sessions per date.
+                    const byDate = {};
+                    histories.forEach(h => {
+                        (h && h.sessions || []).forEach(s => {
+                            if (!s || !s.date) return;
+                            let row = byDate[s.date];
+                            if (!row) {
+                                row = { date: s.date, entries: 0, rolls: 0, finalState: '',
+                                        grossPnl: 0, charges: 0, netPnl: 0 };
+                                byDate[s.date] = row;
+                            }
+                            row.entries    += Number(s.entries) || 0;
+                            row.rolls      += Number(s.rolls)   || 0;
+                            row.grossPnl   += Number(s.grossPnl) || 0;
+                            row.charges    += Number(s.charges)  || 0;
+                            row.netPnl     += Number(s.netPnl)   || 0;
+                            row.finalState  = s.finalState || row.finalState;
+                        });
+                    });
+                    // Today's live overlay: sum the still-running pnl across every dashboard
+                    // that reports a non-zero today value. The strategy's day-end row only
+                    // lands the next morning, so without this today's cell stays blank.
+                    const today = new Date().toISOString().slice(0, 10);
+                    let liveTotal = { entries: 0, gross: 0, charges: 0, net: 0, anyEntered: false };
+                    dashboards.forEach(d => {
+                        if (!d) return;
+                        const chargesTotal = (d.charges && d.charges.total) || 0;
+                        const realised     = Number(d.realisedPnlToday) || 0;
+                        const mtm          = Number(d.combinedMtm)      || 0;
+                        const liveNet      = realised + mtm - chargesTotal;
+                        const entered      = (Number(d.ceEntryPremium) || 0) > 0 || (Number(d.peEntryPremium) || 0) > 0;
+                        if (entered) liveTotal.anyEntered = true;
+                        liveTotal.entries += entered ? 1 : 0;
+                        liveTotal.gross   += realised + mtm;
+                        liveTotal.charges += chargesTotal;
+                        liveTotal.net     += liveNet;
+                    });
+                    if (liveTotal.anyEntered) {
+                        let row = byDate[today];
+                        if (!row) {
+                            row = { date: today, entries: 0, rolls: 0, finalState: 'LIVE',
+                                    grossPnl: 0, charges: 0, netPnl: 0 };
+                            byDate[today] = row;
+                        }
+                        row.entries  += liveTotal.entries;
+                        row.grossPnl += liveTotal.gross;
+                        row.charges  += liveTotal.charges;
+                        row.netPnl   += liveTotal.net;
+                        row.live      = true;
+                    }
+                    allSessions = Object.values(byDate)
+                        .sort((a, b) => b.date.localeCompare(a.date));
+                    render();
+                });
         });
     }
 
