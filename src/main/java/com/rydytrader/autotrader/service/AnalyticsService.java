@@ -397,10 +397,16 @@ public class AnalyticsService {
     // ── EQUITY CURVE ────────────────────────────────────────────────────────
     /** Cumulative equity over trades, one point per trade. X-axis label = session date so the
      *  chart still reads day-by-day; multiple trades on the same day produce multiple points
-     *  with the same label (intentional — shows intraday rolls). */
+     *  with the same label (intentional — shows intraday rolls).
+     *
+     *  <p>Always prepends a "Start" baseline at the starting-capital value so a single-trade
+     *  history still produces 2 points (enough for Chart.js to draw a connecting line — the
+     *  hero chart uses {@code pointRadius: 0}, so a single isolated point would be invisible). */
     private Map<String, Object> equityCurve(List<Trade> trades, double starting) {
         List<String> labels = new ArrayList<>();
         List<Double> values = new ArrayList<>();
+        labels.add("Start");
+        values.add(round2(starting));
         double cum = starting;
         for (Trade t : trades) {
             cum += t.netPnl();
