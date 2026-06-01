@@ -50,6 +50,13 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     private volatile String lastDisconnectTime = "";
     private volatile int reconnectCountToday = 0;
 
+    /** Fill prices keyed by Fyers orderId, populated by {@link #onTradeEvent} as Fyers pushes
+     *  trade events. ShortStraddle reads from here first (instant once the WS landed) before
+     *  falling back to a tradebook REST lookup. Map grows for the day's orders only — no
+     *  eviction; resets when the process restarts (and we're an intraday bot anyway). */
+    private final java.util.concurrent.ConcurrentMap<String, Double> fillPriceByOrderId =
+        new java.util.concurrent.ConcurrentHashMap<>();
+
     public OrderEventService(TokenStore tokenStore,
                               FyersProperties fyersProperties,
                               EventService eventService,
@@ -125,8 +132,32 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
 
     @Override
     public void onOrderEvent(JsonNode order) {
-        // Order fills for straddle legs are tracked by each Strategy via its own orderId
-        // state — this WS callback is informational only.
+        // Mirrors the equity bot's pattern: when an order reports status=2 (Filled), cache
+        // its actual traded price keyed by orderId so the strategy can read the broker-confirmed
+        // fill instead of using LTP (which can drift a tick or two between placement and the
+        // next quote). Race protection: the strategy may not have called getFillPrice yet, so
+        // we just keep the value sitting in the map — the strategy polls it briefly and
+        // recovers if the REST response beat the WS push.
+        try {
+            String orderId = order.has("id") ? order.get("id").asText() : "";
+            int status     = order.has("org_ord_status") ? order.get("org_ord_status").asInt() : 0;
+            double price   = order.has("price_traded")   ? order.get("price_traded").asDouble(0) : 0;
+            // Fyers status: 1=Cancelled, 2=Filled, 5=Rejected, 6=Pending.
+            if (status == 2 && !orderId.isEmpty() && price > 0) {
+                fillPriceByOrderId.put(orderId, price);
+                log.info("[OrderEventSvc] Fill captured for {}: price={}", orderId, price);
+            }
+        } catch (Exception e) {
+            log.error("[OrderEventSvc] Error parsing order event for fill", e);
+        }
+    }
+
+    /** Returns the broker-confirmed fill price for {@code orderId} once Fyers' order WS has
+     *  pushed the filled-status event, or {@code null} if it hasn't landed yet. ShortStraddle
+     *  polls this immediately after placement; if it's still null after a short wait, falls
+     *  back to a tradebook REST lookup. */
+    public Double getFillPrice(String orderId) {
+        return orderId == null || orderId.isEmpty() ? null : fillPriceByOrderId.get(orderId);
     }
 
     @Override

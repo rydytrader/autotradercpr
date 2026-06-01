@@ -9,6 +9,7 @@ import com.rydytrader.autotrader.service.EventService;
 import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.MarketHolidayService;
 import com.rydytrader.autotrader.service.OrderService;
+import com.rydytrader.autotrader.service.OrderEventService;
 import com.rydytrader.autotrader.service.TelegramService;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import com.rydytrader.autotrader.store.TokenStore;
@@ -76,6 +77,7 @@ public class ShortStraddle implements Strategy {
     private final TelegramService telegramService;
     private final com.rydytrader.autotrader.repository.StraddleSessionRepository sessionRepo;
     private final com.rydytrader.autotrader.repository.StraddleTradeRepository tradeRepo;
+    private final OrderEventService orderEventService;
 
     // ── In-memory state ───────────────────────────────────────────────────────
     private volatile LifecycleState state = LifecycleState.IDLE;
@@ -132,7 +134,8 @@ public class ShortStraddle implements Strategy {
                          MarketHolidayService marketHolidayService,
                          TelegramService telegramService,
                          com.rydytrader.autotrader.repository.StraddleSessionRepository sessionRepo,
-                         com.rydytrader.autotrader.repository.StraddleTradeRepository tradeRepo) {
+                         com.rydytrader.autotrader.repository.StraddleTradeRepository tradeRepo,
+                         OrderEventService orderEventService) {
         this.instanceId = entity.strategyId();
         this.displayName = entity.getName();
         this.description = entity.getDescription();
@@ -149,6 +152,7 @@ public class ShortStraddle implements Strategy {
         this.telegramService = telegramService;
         this.sessionRepo = sessionRepo;
         this.tradeRepo = tradeRepo;
+        this.orderEventService = orderEventService;
     }
 
     /** Called by {@code StraddleInstanceManager} immediately after construction to load
@@ -1149,31 +1153,50 @@ public class ShortStraddle implements Strategy {
         } catch (Exception e) { return ""; }
     }
 
-    /** Look up the actual filled price for {@code orderId} from the Fyers tradebook with a
-     *  small retry loop. The tradebook can lag 200–500 ms after a market order so a single
-     *  immediate call often returns 0. Three attempts × 500 ms (≤ 1.5 s total) is enough to
-     *  cover the usual lag without holding the tick thread for long. Returns 0 if the
-     *  tradebook never reflects the fill — the caller falls back to LTP and the periodic
-     *  {@link #tryRecoverEntryPremiumFromTradebook} corrects it on the next tick. */
+    /** Look up the actual broker-confirmed fill price for {@code orderId}. Three-step lookup
+     *  mirroring the old equity bot's pattern, fastest path first:
+     *  <ol>
+     *    <li>Order WS cache (populated by {@link OrderEventService#onOrderEvent} on status=2).
+     *        Typically lands within 100–200 ms of the REST place-order response. Polled 5 ×
+     *        150 ms.</li>
+     *    <li>Tradebook REST lookup with cache invalidation. Covers the case where the order
+     *        WS is disconnected. 3 × 500 ms.</li>
+     *    <li>Returns 0 — caller falls back to LTP, and {@link #tryRecoverEntryPremiumFromTradebook}
+     *        repairs on the next tick.</li>
+     *  </ol>
+     *  Worst-case wall time: 750 ms + 1500 ms = 2.25 s. */
     private double readFilledPriceWithRetry(String orderId) {
         if (orderId == null || orderId.isEmpty()) return 0;
+        // 1. Order WS push (fast path — instant once it lands)
+        for (int i = 0; i < 5; i++) {
+            Double cached = orderEventService.getFillPrice(orderId);
+            if (cached != null && cached > 0) {
+                log.info("[short-straddle] WS fill for {} on poll {}: {}", orderId, i + 1, cached);
+                return cached;
+            }
+            if (i < 4) {
+                try { Thread.sleep(150); }
+                catch (InterruptedException ie) { Thread.currentThread().interrupt(); return 0; }
+            }
+        }
+        // 2. Tradebook fallback (WS down or slow)
         for (int i = 0; i < 3; i++) {
             try {
                 orderService.invalidateTradebookCache();
                 double fill = orderService.getFilledPriceByOrderId(orderId);
                 if (fill > 0) {
-                    log.info("[short-straddle] Captured fill price for {} on attempt {}: {}", orderId, i + 1, fill);
+                    log.info("[short-straddle] Tradebook fill for {} on attempt {}: {}", orderId, i + 1, fill);
                     return fill;
                 }
             } catch (Exception e) {
-                log.warn("[short-straddle] fill-price lookup attempt {} for {}: {}", i + 1, orderId, e.getMessage());
+                log.warn("[short-straddle] tradebook lookup attempt {} for {}: {}", i + 1, orderId, e.getMessage());
             }
             if (i < 2) {
                 try { Thread.sleep(500); }
                 catch (InterruptedException ie) { Thread.currentThread().interrupt(); return 0; }
             }
         }
-        log.info("[short-straddle] Tradebook didn't surface fill for {} within 1.5s — falling back to LTP", orderId);
+        log.info("[short-straddle] No fill price for {} within 2.25 s — falling back to LTP (next tick recovery will repair)", orderId);
         return 0;
     }
 

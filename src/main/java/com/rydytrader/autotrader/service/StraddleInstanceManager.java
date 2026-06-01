@@ -57,6 +57,7 @@ public class StraddleInstanceManager {
     private final ObjectProvider<TelegramService> telegramServiceProvider;
     private final ObjectProvider<StraddleSessionRepository> sessionRepoProvider;
     private final ObjectProvider<StraddleTradeRepository> tradeRepoProvider;
+    private final ObjectProvider<OrderEventService> orderEventServiceProvider;
 
     private final Map<String, ShortStraddle> instances = Collections.synchronizedMap(new LinkedHashMap<>());
 
@@ -72,7 +73,8 @@ public class StraddleInstanceManager {
                                     @Lazy ObjectProvider<MarketHolidayService> marketHolidayServiceProvider,
                                     @Lazy ObjectProvider<TelegramService> telegramServiceProvider,
                                     @Lazy ObjectProvider<StraddleSessionRepository> sessionRepoProvider,
-                                    @Lazy ObjectProvider<StraddleTradeRepository> tradeRepoProvider) {
+                                    @Lazy ObjectProvider<StraddleTradeRepository> tradeRepoProvider,
+                                    @Lazy ObjectProvider<OrderEventService> orderEventServiceProvider) {
         this.repo = repo;
         this.riskSettings = riskSettings;
         this.stateStore = stateStore;
@@ -86,6 +88,7 @@ public class StraddleInstanceManager {
         this.telegramServiceProvider = telegramServiceProvider;
         this.sessionRepoProvider = sessionRepoProvider;
         this.tradeRepoProvider = tradeRepoProvider;
+        this.orderEventServiceProvider = orderEventServiceProvider;
     }
 
     @PostConstruct
@@ -117,7 +120,8 @@ public class StraddleInstanceManager {
             marketHolidayServiceProvider.getObject(),
             telegramServiceProvider.getObject(),
             sessionRepoProvider.getObject(),
-            tradeRepoProvider.getObject()
+            tradeRepoProvider.getObject(),
+            orderEventServiceProvider.getObject()
         );
     }
 
