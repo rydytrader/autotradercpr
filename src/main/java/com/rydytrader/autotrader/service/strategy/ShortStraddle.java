@@ -636,19 +636,29 @@ public class ShortStraddle implements Strategy {
         // MAX_LOSS_HIT close the leg too but don't count as an SL day for analytics.
         if ("CE_SL_HIT".equals(reason) || "PE_SL_HIT".equals(reason)) slHitsToday++;
 
-        double closeLtp = marketDataService.getLtp(symbol);
-        double pnl = (entry > 0 && closeLtp > 0) ? (entry - closeLtp) * qty : 0;
-        realisedPnlToday += pnl;
-        // Freeze this leg's realised P&L + close LTP so the dashboard leg card can show the
-        // realised loss + exit price after the qty drops to 0.
-        if (isCe) { ceLegPnl = pnl; ceClosePremium = closeLtp; }
-        else      { peLegPnl = pnl; peClosePremium = closeLtp; }
-        if (closeLtp > 0) buyPremiumTurnoverToday += closeLtp * qty;
+        // Pre-place LTP captured as a fallback in case the WS push / tradebook lookup
+        // doesn't surface the broker fill in time.
+        double quotedLtp = marketDataService.getLtp(symbol);
         double niftyAtClose = marketDataService.getLtp(NIFTY_SYMBOL);
         String closedCe = isCe ? symbol : "";
         String closedPe = isCe ? "" : symbol;
 
-        placeCloseRetry(symbol, qty, which, reason);
+        // Place the close order first, then look up the broker-confirmed fill via the
+        // same WS-first → tradebook → LTP fallback path the entry uses. That way the
+        // realised P&L + leg-card "Exit" price match what shows on the Fyers terminal
+        // instead of using a snapshot quote that can drift a tick or two from the fill.
+        String closeOrderId = placeCloseRetry(symbol, qty, which, reason);
+        double closeFill = !closeOrderId.isEmpty() ? readFilledPriceWithRetry(closeOrderId) : 0;
+        if (closeFill <= 0) closeFill = quotedLtp;
+
+        double pnl = (entry > 0 && closeFill > 0) ? (entry - closeFill) * qty : 0;
+        realisedPnlToday += pnl;
+        // Freeze this leg's realised P&L + actual fill price so the dashboard leg card can
+        // show the realised loss + exit price after the qty drops to 0.
+        if (isCe) { ceLegPnl = pnl; ceClosePremium = closeFill; }
+        else      { peLegPnl = pnl; peClosePremium = closeFill; }
+        if (closeFill > 0) buyPremiumTurnoverToday += closeFill * qty;
+
         // Unsubscribe — the other leg keeps its WS sub.
         try { marketDataService.unsubscribeAdditional(java.util.Collections.singletonList(symbol)); }
         catch (Exception ignored) {}
@@ -679,30 +689,45 @@ public class ShortStraddle implements Strategy {
         java.util.List<String> unsubAfter = new java.util.ArrayList<>();
         double niftyAtClose = marketDataService.getLtp(NIFTY_SYMBOL);
         double totalPnl = 0;
+        // Pre-place LTP fallbacks captured before either order goes out.
+        double ceQuotedLtp = (isCeOpen() && !ceSymbol.isEmpty()) ? marketDataService.getLtp(ceSymbol) : 0;
+        double peQuotedLtp = (isPeOpen() && !peSymbol.isEmpty()) ? marketDataService.getLtp(peSymbol) : 0;
+        // Place BOTH close orders first so the broker fills happen in parallel — by the
+        // time we read PE's fill below, its WS push is often already in the cache from
+        // the wait we did on CE, so total wall time is close to 1× the per-leg lookup
+        // rather than 2×.
+        String ceCloseId = "";
+        String peCloseId = "";
         if (isCeOpen() && !ceSymbol.isEmpty() && ceQty > 0) {
-            double ltp = marketDataService.getLtp(ceSymbol);
-            double pnl = (ceEntryPremium > 0 && ltp > 0) ? (ceEntryPremium - ltp) * ceQty : 0;
+            ceCloseId = placeCloseRetry(ceSymbol, ceQty, "CE", reason);
+            unsubAfter.add(ceSymbol);
+        }
+        if (isPeOpen() && !peSymbol.isEmpty() && peQty > 0) {
+            peCloseId = placeCloseRetry(peSymbol, peQty, "PE", reason);
+            unsubAfter.add(peSymbol);
+        }
+        if (!ceCloseId.isEmpty()) {
+            double ceFill = readFilledPriceWithRetry(ceCloseId);
+            if (ceFill <= 0) ceFill = ceQuotedLtp;
+            double pnl = (ceEntryPremium > 0 && ceFill > 0) ? (ceEntryPremium - ceFill) * ceQty : 0;
             realisedPnlToday += pnl;
             ceLegPnl = pnl;
-            ceClosePremium = ltp;
+            ceClosePremium = ceFill;
             totalPnl += pnl;
-            if (ltp > 0) buyPremiumTurnoverToday += ltp * ceQty;
-            placeCloseRetry(ceSymbol, ceQty, "CE", reason);
-            unsubAfter.add(ceSymbol);
+            if (ceFill > 0) buyPremiumTurnoverToday += ceFill * ceQty;
             this.ceClosedAtMillis = System.currentTimeMillis();
             this.ceQty = 0;
             this.ceOrderId = "";
         }
-        if (isPeOpen() && !peSymbol.isEmpty() && peQty > 0) {
-            double ltp = marketDataService.getLtp(peSymbol);
-            double pnl = (peEntryPremium > 0 && ltp > 0) ? (peEntryPremium - ltp) * peQty : 0;
+        if (!peCloseId.isEmpty()) {
+            double peFill = readFilledPriceWithRetry(peCloseId);
+            if (peFill <= 0) peFill = peQuotedLtp;
+            double pnl = (peEntryPremium > 0 && peFill > 0) ? (peEntryPremium - peFill) * peQty : 0;
             realisedPnlToday += pnl;
             peLegPnl = pnl;
-            peClosePremium = ltp;
+            peClosePremium = peFill;
             totalPnl += pnl;
-            if (ltp > 0) buyPremiumTurnoverToday += ltp * peQty;
-            placeCloseRetry(peSymbol, peQty, "PE", reason);
-            unsubAfter.add(peSymbol);
+            if (peFill > 0) buyPremiumTurnoverToday += peFill * peQty;
             this.peClosedAtMillis = System.currentTimeMillis();
             this.peQty = 0;
             this.peOrderId = "";
@@ -721,27 +746,29 @@ public class ShortStraddle implements Strategy {
         persist();
     }
 
-    /** BUY close order with one retry. */
-    private void placeCloseRetry(String symbol, int qty, String legTag, String reason) {
+    /** BUY close order with one retry. Returns the orderId of the successful placement,
+     *  or empty string if both attempts failed. Caller passes the orderId to
+     *  {@link #readFilledPriceWithRetry} to capture the broker-confirmed fill price. */
+    private String placeCloseRetry(String symbol, int qty, String legTag, String reason) {
         try {
             String product = productType();
             OrderDTO resp = orderService.placeOrder(symbol, qty, 1, 0, product);
             orderCountToday++;
-            if (resp != null && resp.getId() != null && !resp.getId().isEmpty() && "ok".equals(resp.getStatus())) return;
+            if (resp != null && resp.getId() != null && !resp.getId().isEmpty() && "ok".equals(resp.getStatus())) return resp.getId();
             log.warn("[short-straddle] First close attempt failed for {} {} ({}): {} — retrying in 2s",
                 legTag, symbol, reason, resp);
             try { Thread.sleep(2000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
             OrderDTO retry = orderService.placeOrder(symbol, qty, 1, 0, product);
             orderCountToday++;
-            if (retry == null || retry.getId() == null || retry.getId().isEmpty() || !"ok".equals(retry.getStatus())) {
-                log.error("[short-straddle] CLOSE FAILED for {} {} qty={} ({}): {}",
-                    legTag, symbol, qty, reason, retry);
-                eventService.log("[ERROR] [short-straddle] CLOSE FAILED for " + legTag + " " + symbol
-                    + " qty=" + qty + " — manual intervention required");
-            }
+            if (retry != null && retry.getId() != null && !retry.getId().isEmpty() && "ok".equals(retry.getStatus())) return retry.getId();
+            log.error("[short-straddle] CLOSE FAILED for {} {} qty={} ({}): {}",
+                legTag, symbol, qty, reason, retry);
+            eventService.log("[ERROR] [short-straddle] CLOSE FAILED for " + legTag + " " + symbol
+                + " qty=" + qty + " — manual intervention required");
         } catch (Exception e) {
             log.error("[short-straddle] Exception closing {} {}: {}", legTag, symbol, e.getMessage());
         }
+        return "";
     }
 
     // ── Max loss kill switch ──────────────────────────────────────────────────
