@@ -192,7 +192,7 @@
                     <div class="stat-value" id="heroRisk" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center;">
-                    <div class="stat-label" title="Realised P&L from legs already closed today (frozen at SL hit / squareoff). Sits at 0 while both legs are still open.">Consumed Risk</div>
+                    <div class="stat-label" title="Realised LOSS from legs already closed today (frozen at SL hit / squareoff). A closed leg in profit is not consumed risk — shows as —.">Consumed Risk</div>
                     <div class="stat-value" id="heroConsumedRisk" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
@@ -683,24 +683,25 @@
                 }
             }
 
-            // Hero "Consumed Risk" tile — realised P&L from legs that have already closed
-            // today. 0 while both legs are still open; equals the SL'd leg's frozen pnl
-            // after one closes; equals total realised once both have closed. Pairs with
-            // Active Risk (open-leg exposure) so the operator sees "what's already locked
-            // in" alongside "what could still go wrong".
+            // Hero "Consumed Risk" tile — closed legs' realised loss ONLY. A closed leg
+            // that ended in profit didn't consume any risk, so show "—" in that case.
+            // Pairs with Active Risk (open-leg SL exposure): together they answer
+            // "what loss have I already locked in vs what's still on the table".
             var consumedEl = document.getElementById('heroConsumedRisk');
             if (consumedEl) {
                 var closed = Number(d.closedLegsPnl || 0);
-                if (Math.abs(closed) < 0.01) {
+                if (closed < -0.01) {
+                    consumedEl.textContent = fmtRs(closed);
+                    consumedEl.className = 'stat-value pnl-negative';
+                    consumedEl.style.color = '';
+                    consumedEl.title = 'Realised LOSS from legs already closed today (frozen at SL hit / squareoff). A closed leg in profit is not "consumed risk".';
+                } else {
                     consumedEl.textContent = '—';
                     consumedEl.className = 'stat-value';
                     consumedEl.style.color = 'var(--text-muted)';
-                    consumedEl.title = 'Realised P&L from legs already closed today. Currently 0 — no leg has closed yet.';
-                } else {
-                    consumedEl.textContent = fmtRs(closed);
-                    consumedEl.className = 'stat-value' + (closed > 0 ? ' pnl-positive' : ' pnl-negative');
-                    consumedEl.style.color = '';
-                    consumedEl.title = 'Realised P&L from legs already closed today (frozen at SL hit / squareoff).';
+                    consumedEl.title = closed > 0.01
+                        ? 'No risk consumed — closed leg(s) ended in profit (₹' + Number(closed).toFixed(0) + ').'
+                        : 'No risk consumed — no leg has closed at a loss yet.';
                 }
             }
 
