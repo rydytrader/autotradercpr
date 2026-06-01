@@ -957,7 +957,8 @@ public class ShortStraddle implements Strategy {
             if (legSlPctBoxed    != null && legSlPctBoxed    > 0) return entry * (legSlPctBoxed / 100.0);
             return 0;
         };
-        // Worst-case loss for the currently-running straddle if both legs hit their SLs.
+        // Worst-case loss for the currently-OPEN legs if they hit SL (Active Risk on the
+        // dashboard). Closed legs are excluded — their loss has already been realised.
         double maxLossPerStraddle = 0;
         int legQty = Math.max(ceQty, peQty);
         if (legQty > 0) {
@@ -965,6 +966,14 @@ public class ShortStraddle implements Strategy {
             if (isPeOpen() && peEntryPremium > 0) maxLossPerStraddle += legLossAtSl.applyAsDouble(peEntryPremium) * legQty;
         }
         m.put("maxLossPerStraddle", round2(maxLossPerStraddle));
+        // Realised P&L from legs that have already closed today (Consumed Risk on the
+        // dashboard). 0 while both legs are still open; equals the SL'd leg's frozen
+        // ceLegPnl / peLegPnl after one closes; equals the full day's realised once both
+        // have closed.
+        double closedLegsPnl = 0;
+        if (!isCeOpen() && ceLegPnl != 0) closedLegsPnl += ceLegPnl;
+        if (!isPeOpen() && peLegPnl != 0) closedLegsPnl += peLegPnl;
+        m.put("closedLegsPnl", round2(closedLegsPnl));
         double ceTrigger = computeLegTrigger(ceEntryPremium);
         if (ceTrigger > 0) {
             m.put("ceSlTrigger", round2(ceTrigger));

@@ -188,11 +188,11 @@
                     <div class="stat-value" id="heroOpenMtm" style="font-size:1.1rem; margin-top:4px;">0.00</div>
                 </div>
                 <div id="heroRiskCell" style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
-                    <div class="stat-label" title="Worst-case loss for the currently running straddle if its SL fires exactly at threshold.">Active Risk</div>
+                    <div class="stat-label" title="Worst-case loss for the currently OPEN legs if each hits SL. Closed legs are excluded — their loss has already been realised (see Consumed Risk).">Active Risk</div>
                     <div class="stat-value" id="heroRisk" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center;">
-                    <div class="stat-label" title="Today's realised + open MTM loss vs this strategy's allocated kill-switch budget (Portfolio Risk × allocation %). Strategy is force-closed when consumed reaches budget.">Consumed Risk</div>
+                    <div class="stat-label" title="Realised P&L from legs already closed today (frozen at SL hit / squareoff). Sits at 0 while both legs are still open.">Consumed Risk</div>
                     <div class="stat-value" id="heroConsumedRisk" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
@@ -683,29 +683,24 @@
                 }
             }
 
-            // Hero "Consumed Risk" tile — today's realised + open-MTM loss vs the strategy's
-            // allocated kill-switch budget. Displayed as "₹3k / ₹10k" with colour escalating
-            // as the % approaches the budget.
+            // Hero "Consumed Risk" tile — realised P&L from legs that have already closed
+            // today. 0 while both legs are still open; equals the SL'd leg's frozen pnl
+            // after one closes; equals total realised once both have closed. Pairs with
+            // Active Risk (open-leg exposure) so the operator sees "what's already locked
+            // in" alongside "what could still go wrong".
             var consumedEl = document.getElementById('heroConsumedRisk');
             if (consumedEl) {
-                var net    = Number(d.totalPnlToday || 0) - Number((d.charges && d.charges.total) || 0);
-                var budget = Number(d.maxDailyLoss || 0);
-                if (budget > 0) {
-                    var consumedRs = Math.max(0, -net);
-                    var pct = (consumedRs / budget) * 100;
-                    consumedEl.textContent = fmtRs(consumedRs) + ' / ' + fmtRs(budget);
-                    consumedEl.className = 'stat-value';
-                    if      (pct >= 90) consumedEl.style.color = 'var(--accent-red)';
-                    else if (pct >= 60) consumedEl.style.color = 'var(--accent-amber, #fbbf24)';
-                    else if (pct >  0)  consumedEl.style.color = 'var(--text-primary)';
-                    else                consumedEl.style.color = 'var(--accent-green)';
-                    consumedEl.title = pct.toFixed(1) + '% of this strategy\'s kill-switch budget consumed today. '
-                        + 'Budget = Portfolio Max Risk × this strategy\'s allocation %.';
-                } else {
-                    consumedEl.textContent = '— (no budget)';
+                var closed = Number(d.closedLegsPnl || 0);
+                if (Math.abs(closed) < 0.01) {
+                    consumedEl.textContent = '—';
                     consumedEl.className = 'stat-value';
                     consumedEl.style.color = 'var(--text-muted)';
-                    consumedEl.title = 'Portfolio Max Daily Risk is 0% — kill switch disabled, no budget to consume.';
+                    consumedEl.title = 'Realised P&L from legs already closed today. Currently 0 — no leg has closed yet.';
+                } else {
+                    consumedEl.textContent = fmtRs(closed);
+                    consumedEl.className = 'stat-value' + (closed > 0 ? ' pnl-positive' : ' pnl-negative');
+                    consumedEl.style.color = '';
+                    consumedEl.title = 'Realised P&L from legs already closed today (frozen at SL hit / squareoff).';
                 }
             }
 
