@@ -40,6 +40,19 @@ public interface Strategy {
      *  was something to close. */
     boolean forceClose(String reason);
 
+    /** Close just one leg of a multi-leg position. {@code leg} is either {@code "CE"} or
+     *  {@code "PE"} (case-insensitive). Returns true when an open leg was found and a close
+     *  order was placed. Default returns false for strategies that don't have separately
+     *  closeable legs — only ShortStraddle overrides. */
+    default boolean closeOneLeg(String leg, String reason) { return false; }
+
+    /** Manual same-day restart after the strategy has reached its DONE_FOR_DAY terminal
+     *  state. Drives the dashboard's {@code + NEW STRADDLE} button. Returns {@code "OK"}
+     *  when an entry was placed, a gate name (e.g. {@code "MAX_LOSS_HIT"}) when one of the
+     *  scheduler's preconditions blocked the restart, or {@code "UNSUPPORTED"} for strategies
+     *  that don't support multi-cycle days. Only ShortStraddle overrides. */
+    default String restartFromDoneForDay(String reason) { return "UNSUPPORTED"; }
+
     /** Hard-stop the strategy for the day. Closes any open positions AND parks DONE_FOR_DAY
      *  regardless of current state — so a strategy that's IDLE (waiting for entry time)
      *  won't fire new entries later in the session. Used by the portfolio kill switch.

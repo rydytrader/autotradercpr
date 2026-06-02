@@ -60,9 +60,20 @@ public class ShortStraddleStateStore {
         public double  sellPremiumTurnoverToday;
         public double  buyPremiumTurnoverToday;
         public int     orderCountToday;
-        /** Number of per-leg SL hits today (0, 1, or 2). Persisted so a mid-day restart
-         *  resumes the count and the trade row written at DONE_FOR_DAY is accurate. */
+        /** Number of per-leg SL hits today. Cumulative across all straddles on the same day
+         *  (multi-cycle days from the manual restart button). Persisted so a mid-day restart
+         *  resumes the count. Per-cycle delta is what gets written on each trade row. */
         public int     slHitsToday;
+        // Cycle-start snapshots — used by persistStraddleTrade to write per-cycle deltas on
+        // multi-straddle days. Refreshed at every performEntryNow.
+        public double  cycleStartRealisedPnl;
+        public double  cycleStartSellTurnover;
+        public double  cycleStartBuyTurnover;
+        public int     cycleStartOrderCount;
+        public int     cycleStartSlHits;
+        /** Day-level Consumed Risk — sum of every closed leg's realised P&L across every
+         *  straddle today. Dashboard displays only when negative. */
+        public double  consumedRiskToday;
         public String  currentWeeklyExpiry;
         /** Cycle events ring (ENTRY / CE_SL / PE_SL / SQUAREOFF) — {time, event, nifty, ce, pe, pnl}. */
         public java.util.List<java.util.Map<String, Object>> recentEvents;

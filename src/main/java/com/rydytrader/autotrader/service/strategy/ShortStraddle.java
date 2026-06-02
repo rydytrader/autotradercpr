@@ -106,10 +106,25 @@ public class ShortStraddle implements Strategy {
     private volatile double sellPremiumTurnoverToday = 0;
     private volatile double buyPremiumTurnoverToday  = 0;
     private volatile int    orderCountToday = 0;
-    /** Number of per-leg SL hits today (0, 1 or 2). Increments when closeLeg fires with
-     *  CE_SL_HIT or PE_SL_HIT, reset on day rollover. Persisted on the trade row at
-     *  DONE_FOR_DAY for the analytics page's SL-day histogram. */
+    /** Number of per-leg SL hits today (0, 1 or 2 per cycle). Increments when closeLeg fires
+     *  with CE_SL_HIT or PE_SL_HIT, reset on day rollover. Cumulative across all cycles in
+     *  a multi-straddle day; per-cycle delta is what gets persisted on each trade row. */
     private volatile int    slHitsToday = 0;
+
+    // Per-cycle snapshots — captured at the start of every entry (scheduler or manual restart)
+    // so persistStraddleTrade writes that cycle's delta rather than the cumulative day total.
+    // Multi-cycle days produce one straddle_trades row per cycle.
+    private volatile double cycleStartRealisedPnl    = 0;
+    private volatile double cycleStartSellTurnover   = 0;
+    private volatile double cycleStartBuyTurnover    = 0;
+    private volatile int    cycleStartOrderCount     = 0;
+    private volatile int    cycleStartSlHits         = 0;
+
+    /** Day-level Consumed Risk — sum of every leg's realised P&L (signed) across every cycle
+     *  today. Dashboard displays it only when negative (UI convention preserved from the old
+     *  per-cycle closedLegsPnl). Reset on day rollover, persisted in the JSON state. */
+    private volatile double consumedRiskToday        = 0;
+
     private volatile String currentWeeklyExpiry = "";
     /** NIFTY LTP captured at the moment this day's straddle was entered — surfaced on the
      *  dashboard's Hero "Last Entry" tile. 0 until first entry, cleared on day rollover. */
@@ -205,6 +220,7 @@ public class ShortStraddle implements Strategy {
                 ceLegPnl = pnl;
                 ceClosePremium = price;
                 realisedPnlToday += pnl;
+                consumedRiskToday += pnl;
                 buyPremiumTurnoverToday += price * p.qty();
                 log.info("[short-straddle] CE close filled @ {} pnl={}", String.format("%.2f", price), String.format("%.2f", pnl));
                 eventService.log("[INFO] [short-straddle] CE close filled @ " + String.format("%.2f", price) + " pnl=" + String.format("%.2f", pnl));
@@ -214,6 +230,7 @@ public class ShortStraddle implements Strategy {
                 peLegPnl = pnl;
                 peClosePremium = price;
                 realisedPnlToday += pnl;
+                consumedRiskToday += pnl;
                 buyPremiumTurnoverToday += price * p.qty();
                 log.info("[short-straddle] PE close filled @ {} pnl={}", String.format("%.2f", price), String.format("%.2f", pnl));
                 eventService.log("[INFO] [short-straddle] PE close filled @ " + String.format("%.2f", price) + " pnl=" + String.format("%.2f", pnl));
@@ -247,6 +264,59 @@ public class ShortStraddle implements Strategy {
     @Override public String currentState() { return state.name(); }
     @Override public String navIcon()      { return shortCode != null && !shortCode.isEmpty() ? shortCode : "∧"; }
     @Override public boolean forceClose(String reason) { return forceCloseAll(reason); }
+
+    /** Public entry point for the dashboard's per-leg Close buttons. Synchronized — funnels
+     *  through the same close path the scheduler / SL check uses, so concurrent ticks won't
+     *  race. Returns true when the requested leg was open and a close order was placed. */
+    @Override
+    public synchronized boolean closeOneLeg(String leg, String reason) {
+        if (leg == null) return false;
+        boolean isCe = "CE".equalsIgnoreCase(leg);
+        boolean isPe = "PE".equalsIgnoreCase(leg);
+        if (!isCe && !isPe) return false;
+        if (isCe && !isCeOpen()) return false;
+        if (isPe && !isPeOpen()) return false;
+        String tag = isCe ? "CE_MANUAL" : "PE_MANUAL";
+        eventService.log("[INFO] [" + instanceId + "] Manual " + (isCe ? "CE" : "PE")
+            + " leg close from dashboard");
+        closeLeg(isCe ? "CE" : "PE", tag);
+        return true;
+    }
+
+    /** Public entry point for the dashboard's {@code + NEW STRADDLE} button. Validates every
+     *  scheduler precondition except the {@code state == IDLE} gate (which is the whole
+     *  point of this path), then funnels through the same {@link #performEntryNow} that the
+     *  scheduler's initial entry uses. The frontend mirrors these gates client-side for the
+     *  button's enable / disable state but the server is authoritative — a 409 from this
+     *  method names the exact block. */
+    @Override
+    public String restartFromDoneForDay(String reason) {
+        synchronized (this) {
+            if (state != LifecycleState.DONE_FOR_DAY)        return "NOT_DONE_FOR_DAY";
+            if (!isTodayDayEnabled())                         return "DAY_DISABLED";
+            if (maxDailyLossTripped())                        return "MAX_LOSS_HIT";
+            LocalTime now = LocalTime.now(IST);
+            LocalTime entryT     = parseTime(getEntryTime(),     "09:20");
+            LocalTime squareOffT = parseTime(getSquareOffTime(), "15:15");
+            if (now.isBefore(entryT))             return "BEFORE_ENTRY_TIME";
+            if (!now.isBefore(squareOffT))        return "AFTER_SQUAREOFF_TIME";
+            if (!pendingFills.isEmpty())          return "PENDING_FILLS";
+            eventService.log("[INFO] [" + instanceId + "] Manual + NEW STRADDLE restart from dashboard ("
+                + reason + ")");
+            performEntryNow("ENTRY_MANUAL");
+        }
+        return "OK";
+    }
+
+    /** Same threshold the live kill-switch in {@link #checkMaxLossKillSwitch} uses, but only
+     *  against the already-realised P&L (no live MTM — we're DONE_FOR_DAY so there are no
+     *  open legs to MTM against). Charges baseline matches what the kill switch sees. */
+    private boolean maxDailyLossTripped() {
+        double maxLoss = riskSettings.getStrategyMaxDailyLoss(instanceId);
+        if (maxLoss <= 0) return false;
+        double charges = computeChargesBreakdown().get("total");
+        return (realisedPnlToday - charges) < -maxLoss;
+    }
     @Override public String currentWeeklyExpiry() { return currentWeeklyExpiry; }
     @Override public boolean isEnabled() {
         return riskSettings.getStrategyBool(instanceId, "enabled", false);
@@ -439,6 +509,12 @@ public class ShortStraddle implements Strategy {
             this.buyPremiumTurnoverToday  = p.buyPremiumTurnoverToday;
             this.orderCountToday = p.orderCountToday;
             this.slHitsToday     = p.slHitsToday;
+            this.cycleStartRealisedPnl   = p.cycleStartRealisedPnl;
+            this.cycleStartSellTurnover  = p.cycleStartSellTurnover;
+            this.cycleStartBuyTurnover   = p.cycleStartBuyTurnover;
+            this.cycleStartOrderCount    = p.cycleStartOrderCount;
+            this.cycleStartSlHits        = p.cycleStartSlHits;
+            this.consumedRiskToday       = p.consumedRiskToday;
             this.currentWeeklyExpiry = p.currentWeeklyExpiry != null ? p.currentWeeklyExpiry : "";
             if (p.combinedPremiumSamples != null) {
                 this.combinedPremiumSamples.clear();
@@ -539,7 +615,33 @@ public class ShortStraddle implements Strategy {
     }
 
     // ── Initial entry ──────────────────────────────────────────────────────────
+    /** Scheduler entry path — gates already checked by caller (state IDLE, entry time
+     *  reached, day enabled). Delegates to {@link #performEntryNow} which does the actual
+     *  placement and is also reused by the manual {@code + NEW STRADDLE} restart path. */
     private void doInitialEntry() {
+        performEntryNow("ENTRY");
+    }
+
+    /** Atomic placement-and-state-mutation block. Snapshots day-level accumulators at the
+     *  start of the cycle so {@code persistStraddleTrade} can write per-cycle deltas instead
+     *  of cumulative day totals (multi-cycle days produce one trade row per cycle). Fully
+     *  resets per-leg state so a manual restart from DONE_FOR_DAY doesn't carry stale
+     *  closed-leg values into the new straddle. */
+    private synchronized void performEntryNow(String entryEventTag) {
+        this.cycleStartRealisedPnl   = realisedPnlToday;
+        this.cycleStartSellTurnover  = sellPremiumTurnoverToday;
+        this.cycleStartBuyTurnover   = buyPremiumTurnoverToday;
+        this.cycleStartOrderCount    = orderCountToday;
+        this.cycleStartSlHits        = slHitsToday;
+        this.ceSymbol = "";  this.peSymbol = "";
+        this.ceQty = 0;      this.peQty = 0;
+        this.ceOrderId = ""; this.peOrderId = "";
+        this.ceEntryPremium = 0;   this.peEntryPremium = 0;
+        this.ceClosePremium = 0;   this.peClosePremium = 0;
+        this.ceLegPnl = 0;         this.peLegPnl = 0;
+        this.ceClosedAtMillis = 0; this.peClosedAtMillis = 0;
+        this.combinedPremiumSamples.clear();
+
         double niftyLtp = marketDataService.getLtp(NIFTY_SYMBOL);
         if (niftyLtp <= 0) {
             log.info("[short-straddle] Skipping entry — NIFTY LTP unavailable (waiting for first tick)");
@@ -615,7 +717,7 @@ public class ShortStraddle implements Strategy {
         entrySample.put("ce", round2(ceEntryPremium));
         entrySample.put("pe", round2(peEntryPremium));
         combinedPremiumSamples.add(entrySample);
-        pushEvent("ENTRY", niftyAtEntry, resolvedCe, resolvedPe, 0);
+        pushEvent(entryEventTag, niftyAtEntry, resolvedCe, resolvedPe, 0);
 
         String msg = "leg-sl armed @ ATM " + atmStrike + " (NIFTY " + String.format("%.2f", niftyLtp)
             + ") qty=" + qty + " ce=" + ceSymbol + " pe=" + peSymbol;
@@ -867,7 +969,7 @@ public class ShortStraddle implements Strategy {
         double exchange   = totalT * EXCH_TXN_PCT;
         double sebi       = (totalT / 10_000_000.0) * SEBI_PER_CRORE;
         double stamp      = buyT * STAMP_BUY_PCT;
-        double gst        = (brokerage + exchange) * GST_PCT;
+        double gst        = (brokerage + exchange + sebi) * GST_PCT;
         double total      = brokerage + stt + exchange + sebi + stamp + gst;
         java.util.Map<String, Double> b = new java.util.LinkedHashMap<>();
         b.put("brokerage", round2(brokerage));
@@ -966,14 +1068,16 @@ public class ShortStraddle implements Strategy {
             if (isPeOpen() && peEntryPremium > 0) maxLossPerStraddle += legLossAtSl.applyAsDouble(peEntryPremium) * legQty;
         }
         m.put("maxLossPerStraddle", round2(maxLossPerStraddle));
-        // Realised P&L from legs that have already closed today (Consumed Risk on the
-        // dashboard). 0 while both legs are still open; equals the SL'd leg's frozen
-        // ceLegPnl / peLegPnl after one closes; equals the full day's realised once both
-        // have closed.
+        // Realised P&L from legs already closed in the CURRENT cycle — kept for backward
+        // compatibility with anything still reading closedLegsPnl. Multi-straddle days
+        // should read consumedRiskToday instead (below) since that aggregates across cycles.
         double closedLegsPnl = 0;
         if (!isCeOpen() && ceLegPnl != 0) closedLegsPnl += ceLegPnl;
         if (!isPeOpen() && peLegPnl != 0) closedLegsPnl += peLegPnl;
         m.put("closedLegsPnl", round2(closedLegsPnl));
+        // Day-level Consumed Risk — sum of every closed leg's realised P&L across every
+        // straddle today (cumulative across manual restarts). UI gates display on < 0.
+        m.put("consumedRiskToday", round2(consumedRiskToday));
         double ceTrigger = computeLegTrigger(ceEntryPremium);
         if (ceTrigger > 0) {
             m.put("ceSlTrigger", round2(ceTrigger));
@@ -1120,6 +1224,12 @@ public class ShortStraddle implements Strategy {
         this.buyPremiumTurnoverToday = 0;
         this.orderCountToday = 0;
         this.slHitsToday = 0;
+        this.cycleStartRealisedPnl = 0;
+        this.cycleStartSellTurnover = 0;
+        this.cycleStartBuyTurnover = 0;
+        this.cycleStartOrderCount = 0;
+        this.cycleStartSlHits = 0;
+        this.consumedRiskToday = 0;
         this.pendingFills.clear();
         this.currentWeeklyExpiry = "";
         this.recentEvents.clear();
@@ -1379,29 +1489,35 @@ public class ShortStraddle implements Strategy {
         persist();
     }
 
-    /** Write a single straddle row for today's straddle. Called once when the state first
-     *  transitions to DONE_FOR_DAY. Skipped if there was no activity (no entry — realised P&L
-     *  and turnover both ~0). */
+    /** Write one {@code straddle_trades} row per cycle. Called when the state first transitions
+     *  to DONE_FOR_DAY — for the initial scheduler-driven straddle and again for every manual
+     *  {@code + NEW STRADDLE} restart cycle on the same day. Writes per-cycle deltas (current
+     *  day totals minus the snapshot captured at {@link #performEntryNow}) rather than
+     *  cumulative day totals so the cycle's contribution is recorded faithfully. Session row
+     *  ({@link #persistSessionFor}) keeps aggregating cumulatively. */
     private void persistStraddleTrade() {
         if (tradeRepo == null) return;
-        if (Math.abs(realisedPnlToday) < 0.01 && sellPremiumTurnoverToday < 0.01) return;
+        double cycleGross = realisedPnlToday          - cycleStartRealisedPnl;
+        double cycleSellT = sellPremiumTurnoverToday  - cycleStartSellTurnover;
+        double cycleBuyT  = buyPremiumTurnoverToday   - cycleStartBuyTurnover;
+        int    cycleOrders= orderCountToday           - cycleStartOrderCount;
+        int    cycleSls   = slHitsToday               - cycleStartSlHits;
+        if (Math.abs(cycleGross) < 0.01 && cycleSellT < 0.01) return;
         try {
-            double charges = computeCycleCharges(sellPremiumTurnoverToday, buyPremiumTurnoverToday, orderCountToday);
+            double charges = computeCycleCharges(cycleSellT, cycleBuyT, cycleOrders);
             com.rydytrader.autotrader.entity.StraddleTradeEntity t =
                 new com.rydytrader.autotrader.entity.StraddleTradeEntity();
             t.setStrategyId(instanceId);
             t.setSessionDate(dayKey != null && !dayKey.isEmpty() ? dayKey : LocalDate.now(IST).toString());
             t.setClosedAtMillis(System.currentTimeMillis());
-            // leg-sl uses whichever leg's qty is non-zero, or the last known. Both legs share qty
-            // at entry so this is approximate when one leg was closed earlier.
             int qty = Math.max(ceQty, peQty);
             if (qty == 0) qty = Math.max(1, riskSettings.getStrategyInt(instanceId, "lotsPerLeg", 1)) * NIFTY_LOT_SIZE;
             t.setQty(qty);
-            t.setGrossPnl(round2(realisedPnlToday));
+            t.setGrossPnl(round2(cycleGross));
             t.setCharges(round2(charges));
-            t.setNetPnl(round2(realisedPnlToday - charges));
+            t.setNetPnl(round2(cycleGross - charges));
             t.setCloseReason("DONE_FOR_DAY");
-            t.setSlHitCount(slHitsToday);
+            t.setSlHitCount(cycleSls);
             tradeRepo.save(t);
         } catch (Exception e) {
             log.warn("[short-straddle] Failed to persist straddle_trades row: {}", e.getMessage());
@@ -1416,7 +1532,7 @@ public class ShortStraddle implements Strategy {
         double exchange  = totalPrem * EXCH_TXN_PCT;
         double sebi      = (totalPrem / 10_000_000.0) * SEBI_PER_CRORE;
         double stamp     = buyPrem * STAMP_BUY_PCT;
-        double gst       = (brokerage + exchange) * GST_PCT;
+        double gst       = (brokerage + exchange + sebi) * GST_PCT;
         return round2(brokerage + stt + exchange + sebi + stamp + gst);
     }
 
@@ -1444,6 +1560,12 @@ public class ShortStraddle implements Strategy {
         s.buyPremiumTurnoverToday  = this.buyPremiumTurnoverToday;
         s.orderCountToday = this.orderCountToday;
         s.slHitsToday     = this.slHitsToday;
+        s.cycleStartRealisedPnl   = this.cycleStartRealisedPnl;
+        s.cycleStartSellTurnover  = this.cycleStartSellTurnover;
+        s.cycleStartBuyTurnover   = this.cycleStartBuyTurnover;
+        s.cycleStartOrderCount    = this.cycleStartOrderCount;
+        s.cycleStartSlHits        = this.cycleStartSlHits;
+        s.consumedRiskToday       = this.consumedRiskToday;
         s.currentWeeklyExpiry = this.currentWeeklyExpiry;
         synchronized (combinedPremiumSamples) {
             s.combinedPremiumSamples = new java.util.ArrayList<>(combinedPremiumSamples);

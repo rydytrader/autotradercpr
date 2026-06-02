@@ -168,8 +168,14 @@
                         background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.25);
                         color:var(--accent-red, #f87171);padding:6px 14px;border-radius:6px;
                         font-family:var(--font-mono);font-size:0.72rem;font-weight:700;
-                        cursor:pointer;">✕ Squareoff Straddle</button>
-                    <button id="straddleResetBtn" class="reset-btn" onclick="resetStraddle()" title="Force the in-memory state back to IDLE. Use after a rejection has been fixed and the bot needs to re-arm without a restart.">↻ Reset to IDLE</button>
+                        cursor:pointer;letter-spacing:0.04em;">✕ SQUAREOFF STRADDLE</button>
+                    <button id="straddleResetBtn" class="reset-btn" onclick="resetStraddle()" title="Force the in-memory state back to IDLE. Use after a rejection has been fixed and the bot needs to re-arm without a restart." style="letter-spacing:0.04em;">↻ RESET TO IDLE</button>
+                    <button id="straddleNewBtn" onclick="newStraddle()" disabled
+                            title="Manually enter another straddle today at the current ATM (only after the prior cycle has closed and during market hours)."
+                            style="background:rgba(52,211,153,0.10);border:1px solid rgba(52,211,153,0.40);
+                                   color:var(--accent-green);padding:6px 14px;border-radius:6px;
+                                   font-family:var(--font-mono);font-size:0.72rem;font-weight:700;
+                                   cursor:pointer;letter-spacing:0.04em;">+ NEW STRADDLE</button>
                 </div>
             </div>
         </div>
@@ -276,6 +282,12 @@
                              color:var(--accent-green); letter-spacing:0.06em;
                              background:rgba(52,211,153,0.10); border:1px solid rgba(52,211,153,0.25);
                              padding:3px 10px; border-radius:999px;">QTY · —</span>
+                <button id="ceCloseBtn" onclick="closeLeg('ce')" disabled
+                        title="Close just the CE leg at market"
+                        style="margin-left:8px; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
+                               color:var(--accent-green); letter-spacing:0.06em;
+                               background:transparent; border:1px solid rgba(52,211,153,0.45);
+                               padding:3px 10px; border-radius:6px; cursor:pointer;">✕ CLOSE CE</button>
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -305,6 +317,12 @@
                              color:var(--accent-red, #f87171); letter-spacing:0.06em;
                              background:rgba(248,113,113,0.10); border:1px solid rgba(248,113,113,0.25);
                              padding:3px 10px; border-radius:999px;">QTY · —</span>
+                <button id="peCloseBtn" onclick="closeLeg('pe')" disabled
+                        title="Close just the PE leg at market"
+                        style="margin-left:8px; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
+                               color:var(--accent-red, #f87171); letter-spacing:0.06em;
+                               background:transparent; border:1px solid rgba(248,113,113,0.45);
+                               padding:3px 10px; border-radius:6px; cursor:pointer;">✕ CLOSE PE</button>
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -568,6 +586,14 @@
             if (entryLtpLabel) entryLtpLabel.textContent = 'Entry / LTP';
             if (mtmLabel)      mtmLabel.textContent      = 'MTM';
         }
+        // Close-leg button — enabled only when the leg is currently open (entered + not closed).
+        var legOpen = entry > 0 && !(leg === 'ce' ? d.ceClosed : d.peClosed);
+        var btn = document.getElementById(leg + 'CloseBtn');
+        if (btn) {
+            btn.disabled = !legOpen;
+            btn.style.opacity = legOpen ? '1' : '0.35';
+            btn.style.cursor  = legOpen ? 'pointer' : 'not-allowed';
+        }
     }
 
     function renderLegEntryLine(leg, d) {
@@ -691,21 +717,28 @@
             // "what loss have I already locked in vs what's still on the table".
             var consumedEl = document.getElementById('heroConsumedRisk');
             if (consumedEl) {
-                var closed = Number(d.closedLegsPnl || 0);
+                // Prefer day-level consumedRiskToday (aggregates across multi-straddle days);
+                // fall back to closedLegsPnl for older API responses during transition.
+                var closed = Number(d.consumedRiskToday != null ? d.consumedRiskToday : (d.closedLegsPnl || 0));
                 if (closed < -0.01) {
                     consumedEl.textContent = fmtRs(closed);
                     consumedEl.className = 'stat-value pnl-negative';
                     consumedEl.style.color = '';
-                    consumedEl.title = 'Realised LOSS from legs already closed today (frozen at SL hit / squareoff). A closed leg in profit is not "consumed risk".';
+                    consumedEl.title = 'Realised LOSS from every leg closed today (aggregated across multi-straddle days). A closed leg in profit is not "consumed risk".';
                 } else {
                     consumedEl.textContent = '—';
                     consumedEl.className = 'stat-value';
                     consumedEl.style.color = 'var(--text-muted)';
                     consumedEl.title = closed > 0.01
-                        ? 'No risk consumed — closed leg(s) ended in profit (₹' + Number(closed).toFixed(0) + ').'
+                        ? 'No risk consumed — closed legs net to a profit (₹' + Number(closed).toFixed(0) + ').'
                         : 'No risk consumed — no leg has closed at a loss yet.';
                 }
             }
+
+            // Refresh the + NEW STRADDLE button enable / disable + tooltip based on the
+            // server's gate logic, mirrored client-side.
+            refreshNewStraddleButton();
+            refreshSquareoffButton();
 
             var statePill = document.getElementById('heroStatePill');
             statePill.textContent = d.state || '—';
@@ -1440,10 +1473,17 @@
             if (window.showToast) showToast('No active straddle to squareoff', 'info');
             return;
         }
-        if (!confirm('Square off BOTH legs at market and end today\'s session?\n\n'
-            + 'CE: ' + (lastDashboardData.ceSymbol || '—') + '\n'
-            + 'PE: ' + (lastDashboardData.peSymbol || '—') + '\n\n'
-            + 'After this, state transitions to DONE_FOR_DAY and no more entries fire today. The combined open MTM (' + fmtRs(lastDashboardData.combinedMtm || 0) + ') becomes realised P&L.')) return;
+        var d = lastDashboardData;
+        showConfirm({
+            title: 'Square off BOTH legs at market?',
+            body: 'CE: ' + (d.ceSymbol || '—')
+                + '\nPE: ' + (d.peSymbol || '—')
+                + '\n\nAfter this, state transitions to DONE_FOR_DAY and no more entries fire today.'
+                + ' The combined open MTM (' + fmtRs(d.combinedMtm || 0) + ') becomes realised P&L.',
+            onConfirm: doCloseStraddle
+        });
+    }
+    function doCloseStraddle() {
         var btn = document.getElementById('straddleCloseBtn');
         if (btn) { btn.disabled = true; btn.textContent = '✕ Closing…'; }
         fetch('/api/strategies/' + STRATEGY_ID + '/close', {
@@ -1453,15 +1493,96 @@
             if (window.showToast) showToast(d.message || 'Squareoff submitted', d.success ? 'success' : 'error');
         }).catch(err => { if (window.showToast) showToast('Squareoff failed: ' + (err.message || err), 'error'); })
           .finally(() => {
-            if (btn) { btn.disabled = false; btn.textContent = '✕ Squareoff Straddle'; }
+            if (btn) { btn.disabled = false; btn.textContent = '✕ SQUAREOFF STRADDLE'; }
             loadDashboard();
           });
     }
 
+    // ── In-app confirm modal (replaces native browser confirm) ──────────────
+    function showConfirm(opts) {
+        var ov = document.getElementById('appConfirmOverlay');
+        if (!ov) {
+            ov = document.createElement('div');
+            ov.id = 'appConfirmOverlay';
+            ov.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;align-items:center;justify-content:center;';
+            ov.innerHTML =
+                '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;max-width:480px;width:92vw;font-family:var(--font-mono);color:var(--text-primary);box-shadow:0 16px 48px rgba(0,0,0,0.4);">' +
+                  '<div id="appConfirmTitle" style="padding:18px 22px;border-bottom:1px solid var(--border);font-size:0.92rem;font-weight:700;">—</div>' +
+                  '<div id="appConfirmBody" style="padding:18px 22px;font-size:0.82rem;line-height:1.55;color:var(--text-secondary);white-space:pre-line;">—</div>' +
+                  '<div style="padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px;">' +
+                    '<button id="appConfirmCancel" style="background:transparent;border:1px solid var(--border);color:var(--text-secondary);padding:8px 22px;border-radius:6px;font-family:var(--font-mono);font-size:0.76rem;font-weight:600;cursor:pointer;letter-spacing:0.04em;">No</button>' +
+                    '<button id="appConfirmYes" style="background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.45);color:var(--accent-red,#f87171);padding:8px 22px;border-radius:6px;font-family:var(--font-mono);font-size:0.76rem;font-weight:700;cursor:pointer;letter-spacing:0.04em;">Yes</button>' +
+                  '</div>' +
+                '</div>';
+            document.body.appendChild(ov);
+            ov.addEventListener('click', function(e) { if (e.target === ov) hide(); });
+        }
+        function hide() { ov.style.display = 'none'; document.removeEventListener('keydown', esc); }
+        function esc(e)  { if (e.key === 'Escape') hide(); }
+        document.getElementById('appConfirmTitle').textContent = opts.title || 'Confirm';
+        document.getElementById('appConfirmBody').textContent  = opts.body  || '';
+        var yes = document.getElementById('appConfirmYes');
+        yes.textContent = opts.confirmLabel || 'Yes';
+        // Clear any prior listener by cloning the node
+        var fresh = yes.cloneNode(true);
+        yes.parentNode.replaceChild(fresh, yes);
+        fresh.addEventListener('click', function() {
+            hide();
+            if (typeof opts.onConfirm === 'function') opts.onConfirm();
+        });
+        document.getElementById('appConfirmCancel').onclick = hide;
+        document.addEventListener('keydown', esc);
+        ov.style.display = 'flex';
+    }
+
+    // ── Close a single leg (CE or PE) ───────────────────────────────────────
+    function closeLeg(side) {
+        var upper = side.toUpperCase();
+        var d = lastDashboardData || {};
+        var legOpen = (upper === 'CE') ? !d.ceClosed : !d.peClosed;
+        if (!legOpen) {
+            if (window.showToast) showToast(upper + ' leg is not open', 'info');
+            return;
+        }
+        var sym = (upper === 'CE') ? d.ceSymbol : d.peSymbol;
+        showConfirm({
+            title: 'Close ' + upper + ' leg at market?',
+            body: upper + ': ' + (sym || '—')
+                + '\n\nThe other leg keeps running until its own SL or timed squareoff.',
+            onConfirm: function() { doCloseLeg(side); }
+        });
+    }
+    function doCloseLeg(side) {
+        var upper = side.toUpperCase();
+        var btn = document.getElementById((upper === 'CE') ? 'ceCloseBtn' : 'peCloseBtn');
+        var originalText = btn ? btn.textContent : '';
+        if (btn) { btn.disabled = true; btn.textContent = '✕ Closing…'; }
+        fetch('/api/strategies/' + STRATEGY_ID + '/close-leg/' + side.toLowerCase(), {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders())
+        }).then(r => r.json()).then(resp => {
+            if (window.showToast) showToast(resp.message || (upper + ' close submitted'),
+                resp.success ? 'success' : 'error');
+        }).catch(err => {
+            if (window.showToast) showToast('Close failed: ' + (err.message || err), 'error');
+        }).finally(() => {
+            if (btn) { btn.disabled = false; btn.textContent = originalText; }
+            loadDashboard();
+        });
+    }
+
     // ── Reset to IDLE ────────────────────────────────────────────────────────
     function resetStraddle() {
-        if (!confirm('Force the Rolling Straddle state back to IDLE?\n\n'
-            + 'Clears any stale DONE_FOR_DAY from an earlier rejection. Next scheduler tick re-evaluates the entry time. Does NOT close existing legs at the broker — use Square Off on the Positions page for that.')) return;
+        showConfirm({
+            title: 'Reset state to IDLE?',
+            body: 'Clears any stale DONE_FOR_DAY from an earlier rejection.'
+                + ' Next scheduler tick re-evaluates the entry time.'
+                + '\n\nDoes NOT close existing legs at the broker —'
+                + ' use Square Off on the Positions page for that.',
+            onConfirm: doResetStraddle
+        });
+    }
+    function doResetStraddle() {
         var btn = document.getElementById('straddleResetBtn');
         if (btn) { btn.disabled = true; btn.textContent = '↻ Resetting…'; }
         fetch('/api/strategies/' + STRATEGY_ID + '/reset', {
@@ -1475,10 +1596,108 @@
             }
         }).catch(err => { if (window.showToast) showToast('Reset failed: ' + (err.message || err), 'error'); })
           .finally(() => {
-            if (btn) { btn.disabled = false; btn.textContent = '↻ Reset to IDLE'; }
+            if (btn) { btn.disabled = false; btn.textContent = '↻ RESET TO IDLE'; }
             loadDashboard();
           });
     }
+
+    // ── + NEW STRADDLE (manual same-day restart) ────────────────────────────
+    // Client-side mirror of the server gates in ShortStraddle.restartFromDoneForDay.
+    // Server is authoritative — this is purely a UX accelerator so the button dims and
+    // the tooltip names the block before the operator clicks. A 409 from the server is
+    // still surfaced as a toast.
+    function hmToMins(hhmm) {
+        if (!hhmm) return 0;
+        var p = String(hhmm).split(':');
+        return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0);
+    }
+    function isMarketOpenNow() {
+        var now = new Date();
+        if (isMarketWeekend(now) || getHolidayName(now)) return false;
+        var mins = now.getHours() * 60 + now.getMinutes();
+        return mins >= (9 * 60 + 15) && mins < (15 * 60 + 30);
+    }
+    function newStraddleBlockReason(d) {
+        if (!d)                                 return 'Waiting for dashboard data';
+        if (d.state !== 'DONE_FOR_DAY')         return 'Only available when state is DONE_FOR_DAY';
+        if (!isMarketOpenNow())                 return 'Market is closed';
+        if (d.todayDayEnabled === false)        return 'Today is disabled in the per-day SL config';
+        var charges = (d.charges && d.charges.total) || 0;
+        var maxLoss = Number(d.maxDailyLoss || 0);
+        if (maxLoss > 0 && (Number(d.realisedPnlToday || 0) - charges) <= -maxLoss)
+                                                return 'Max daily loss already hit';
+        var nowMins = new Date().getHours() * 60 + new Date().getMinutes();
+        if (nowMins <  hmToMins(d.entryTime))      return 'Too early — entry window hasn\'t opened';
+        if (nowMins >= hmToMins(d.squareOffTime))  return 'Too late — past squareoff time';
+        return '';
+    }
+    function refreshNewStraddleButton() {
+        var btn = document.getElementById('straddleNewBtn');
+        if (!btn) return;
+        var reason = newStraddleBlockReason(lastDashboardData);
+        var enabled = reason === '';
+        btn.disabled = !enabled;
+        btn.style.opacity = enabled ? '1' : '0.35';
+        btn.style.cursor  = enabled ? 'pointer' : 'not-allowed';
+        btn.title = enabled
+            ? 'Manually enter another straddle today at the current ATM.'
+            : reason;
+    }
+    function refreshSquareoffButton() {
+        var btn = document.getElementById('straddleCloseBtn');
+        if (!btn) return;
+        var d = lastDashboardData || {};
+        var openStates = ['OPEN_BOTH','OPEN_CE_ONLY','OPEN_PE_ONLY'];
+        var enabled = openStates.indexOf(d.state) >= 0;
+        btn.disabled = !enabled;
+        btn.style.opacity = enabled ? '1' : '0.35';
+        btn.style.cursor  = enabled ? 'pointer' : 'not-allowed';
+        btn.title = enabled
+            ? 'Square off both legs at market and end today\'s session.'
+            : 'No open legs to square off.';
+    }
+    function newStraddle() {
+        var d = lastDashboardData || {};
+        var reason = newStraddleBlockReason(d);
+        if (reason) {
+            if (window.showToast) showToast(reason, 'info');
+            return;
+        }
+        var spot = d.niftyLtp || d.niftyDisplayLtp || 0;
+        var atm  = spot > 0 ? Math.round(spot / 50) * 50 : '—';
+        showConfirm({
+            title: 'Enter a NEW straddle now?',
+            body: 'A second straddle for today will be opened at the current ATM (~' + atm + ').'
+                + '\n\nUses today\'s leg-SL config and qty exactly like the scheduler would.',
+            onConfirm: doNewStraddle
+        });
+    }
+    function doNewStraddle() {
+        var btn = document.getElementById('straddleNewBtn');
+        var originalText = btn ? btn.textContent : '';
+        if (btn) { btn.disabled = true; btn.textContent = '+ Entering…'; }
+        fetch('/api/strategies/' + STRATEGY_ID + '/restart', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders())
+        }).then(r => r.json().then(j => ({ ok: r.ok, body: j || {} })))
+          .then(function(resp) {
+              if (window.showToast) {
+                  var ok = resp.body.success === true;
+                  showToast(resp.body.message || (ok ? 'New straddle entered' : 'Restart blocked'),
+                      ok ? 'success' : (resp.ok ? 'info' : 'error'));
+              }
+          })
+          .catch(function(err) {
+              if (window.showToast) showToast('Restart failed: ' + (err.message || err), 'error');
+          })
+          .finally(function() {
+              if (btn) { btn.textContent = originalText || '+ NEW STRADDLE'; }
+              loadDashboard();
+          });
+    }
+    // Recheck the button every second too, since the market-open / squareoff-time gates
+    // change on a wall-clock boundary, not on a dashboard refresh.
+    setInterval(refreshNewStraddleButton, 1000);
 </script>
 
 </body>

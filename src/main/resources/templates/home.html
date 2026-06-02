@@ -595,10 +595,20 @@
             setVal('ahRiskReward',   rr > 0 ? rr.toFixed(2) : '—', rr - 1);
             setVal('ahMaxDrawdown',  fmtRs(ext.maxDrawdown), ext.maxDrawdown);
             setVal('ahMaxDrawdownDays', String(ext.maxDrawdownDays || 0), -(ext.maxDrawdownDays || 0));
-            // SL-day histogram — 0 SL is "good" (theta day), 2 SL is "bad" (whipsaw).
-            setVal('ahZeroSlDays', String(ext.zeroSlDays || 0),  (ext.zeroSlDays || 0));
-            setVal('ahOneSlDays',  String(ext.oneSlDays  || 0));
-            setVal('ahTwoSlDays',  String(ext.twoSlDays  || 0), -(ext.twoSlDays  || 0));
+            // SL-day histogram — 0 SL is "good" (theta day) → green, 1 SL is mixed → amber,
+            // 2 SL is "bad" (whipsaw on both legs) → red. Colors are always applied, even at
+            // 0, so the tiles read consistently rather than only when the metric is non-zero.
+            (function() {
+                var z = Number(ext.zeroSlDays || 0);
+                var o = Number(ext.oneSlDays  || 0);
+                var t = Number(ext.twoSlDays  || 0);
+                var zEl = document.getElementById('ahZeroSlDays');
+                var oEl = document.getElementById('ahOneSlDays');
+                var tEl = document.getElementById('ahTwoSlDays');
+                if (zEl) { zEl.textContent = String(z); zEl.style.color = 'var(--accent-green, #34d399)'; }
+                if (oEl) { oEl.textContent = String(o); oEl.style.color = 'var(--accent-amber, #fbbf24)'; }
+                if (tEl) { tEl.textContent = String(t); tEl.style.color = 'var(--accent-red,   #f87171)'; }
+            })();
             setVal('ahAvgMonthlyPct', fmtPct(cap.avgMonthlyPct), cap.avgMonthlyPct);
 
             // ── DETAIL CARDS — only metrics that aren't already in the hero ─
@@ -619,11 +629,14 @@
             setVal('ahSharpe', edge.sharpe == null || sh === 0 ? '—' : sh.toFixed(2), sh);
             // Costs card
             var charges = Number(st.totalCharges || 0);
-            var sessions = Number(perf.sessions || 0);
+            // Backend emits perf.straddles (count of rows in the trade pool — one per cycle
+            // now that multi-straddle days are supported). Use that as the divisor for
+            // "avg charges per straddle"; perf.sessions never existed and was always undefined.
+            var numStraddles = Number(perf.straddles || 0);
             var grossSum = (Number(ext.avgProfit || 0) * (perf.wins || 0))
                          + (Number(ext.avgLoss   || 0) * (perf.losses || 0));
             setVal('ahTotalCharges', fmtRs(charges));
-            setVal('ahAvgCharges', sessions > 0 ? fmtRs(charges / sessions) : '—');
+            setVal('ahAvgCharges', numStraddles > 0 ? fmtRs(charges / numStraddles) : '—');
             // Use absolute gross (winners only) as the denominator so a net-flat year doesn't divide by ~0.
             var grossWins = Number(ext.avgProfit || 0) * (perf.wins || 0);
             setVal('ahChargesPct', grossWins > 0 ? ((charges / grossWins) * 100).toFixed(1) + '%' : '—');

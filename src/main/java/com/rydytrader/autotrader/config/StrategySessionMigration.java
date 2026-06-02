@@ -50,6 +50,7 @@ public class StrategySessionMigration {
         oneShotResetTradeHistory();
         oneShotWipeForMultiInstance();
         cleanupSoftDeletedInstances();
+        oneShotFixInst1_20260602();
     }
 
     /** Hard-deletes every {@code straddle_instances} row marked {@code active = false} along
@@ -216,6 +217,80 @@ public class StrategySessionMigration {
         } catch (Exception e) {
             log.warn("[StrategyMigration] Backfill skipped: {}", e.getMessage());
         }
+    }
+
+    /** One-shot fix for inst-1 / 2026-06-02 — the bot was offline at squareoff time, so the
+     *  row got persisted with the 3:18 LTPs instead of the real fills (CE leg hit SL at
+     *  104.60, PE leg closed at 2.35; both legs were 130 qty, entries 54.60 / 67.05).
+     *  Recomputes gross / charges / net from the corrected fills and updates both the
+     *  {@code straddle_trades} and {@code straddle_sessions} rows. Gated by the
+     *  {@code trade.fix.inst-1.2026-06-02.done} flag so it runs exactly once. */
+    private void oneShotFixInst1_20260602() {
+        String flagKey = "trade.fix.inst-1.2026-06-02.done";
+        try {
+            if (settingRepo.findBySettingKey(flagKey).isPresent()) return;
+
+            final String strategyId = "inst-1";
+            final String sessionDate = "2026-06-02";
+            final double ceEntry = 54.60, ceExit = 104.60;
+            final double peEntry = 67.05, peExit = 2.35;
+            final int qty = 130;
+
+            double sellT  = (ceEntry + peEntry) * qty;
+            double buyT   = (ceExit  + peExit)  * qty;
+            double totalT = sellT + buyT;
+
+            // Read brokeragePerOrder from SETTINGS (default 20 if absent or unparseable).
+            double brokeragePerOrder = readDouble("brokeragePerOrder", 20.0);
+            int orders = 4; // CE sell + PE sell + CE buy + PE buy.
+            double brokerage = orders * brokeragePerOrder;
+
+            // Same rates as ShortStraddle.computeChargesBreakdown.
+            double stt      = sellT  * 0.000625;
+            double exchange = totalT * 0.0003503;
+            double sebi     = (totalT / 10_000_000.0) * 10.0;
+            double stamp    = buyT   * 0.00003;
+            double gst      = (brokerage + exchange) * 0.18;
+            double charges  = round2(brokerage + stt + exchange + sebi + stamp + gst);
+
+            double gross = round2((ceEntry - ceExit) * qty + (peEntry - peExit) * qty);
+            double net   = round2(gross - charges);
+
+            int tradeRows = safeUpdate(String.format(java.util.Locale.US,
+                "UPDATE straddle_trades " +
+                "SET gross_pnl = %s, charges = %s, net_pnl = %s, " +
+                "    close_reason = 'CE_SL_HIT', sl_hit_count = 1, qty = %d " +
+                "WHERE strategy_id = '%s' AND session_date = '%s'",
+                gross, charges, net, qty, strategyId, sessionDate));
+
+            int sessionRows = safeUpdate(String.format(java.util.Locale.US,
+                "UPDATE straddle_sessions " +
+                "SET premium_collected = %s, premium_paid_back = %s, " +
+                "    gross_pnl = %s, charges = %s, net_pnl = %s " +
+                "WHERE strategy_id = '%s' AND session_date = '%s'",
+                round2(sellT), round2(buyT), gross, charges, net, strategyId, sessionDate));
+
+            settingRepo.save(new SettingEntity(flagKey, String.valueOf(System.currentTimeMillis())));
+
+            log.warn("[StrategyMigration] inst-1 / 2026-06-02 fix applied — " +
+                "trades rows updated: {}, sessions rows updated: {}, gross={} charges={} net={}",
+                tradeRows, sessionRows, gross, charges, net);
+        } catch (Exception e) {
+            log.warn("[StrategyMigration] inst-1 / 2026-06-02 fix skipped: {}", e.getMessage());
+        }
+    }
+
+    private double readDouble(String key, double fallback) {
+        return settingRepo.findBySettingKey(key)
+            .map(s -> {
+                try { return Double.parseDouble(s.getSettingValue()); }
+                catch (Exception e) { return fallback; }
+            })
+            .orElse(fallback);
+    }
+
+    private static double round2(double v) {
+        return Math.round(v * 100.0) / 100.0;
     }
 
     /** Find and drop any UNIQUE constraint on {@code straddle_sessions(session_date)} that covers

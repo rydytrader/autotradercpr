@@ -111,4 +111,61 @@ public class StrategyController {
             : "Nothing to square off — no active position for " + id + ".");
         return ResponseEntity.ok(out);
     }
+
+    @PostMapping("/api/strategies/{id}/close-leg/{leg}")
+    public ResponseEntity<Map<String, Object>> closeLeg(@PathVariable String id,
+                                                        @PathVariable String leg) {
+        Strategy s = registry.get(id);
+        if (s == null) return ResponseEntity.notFound().build();
+        String legUpper = leg == null ? "" : leg.toUpperCase();
+        if (!"CE".equals(legUpper) && !"PE".equals(legUpper)) {
+            return ResponseEntity.badRequest().body(java.util.Map.of(
+                "success", false, "message", "leg must be 'ce' or 'pe'"));
+        }
+        boolean ok = s.closeOneLeg(legUpper, "MANUAL_DASHBOARD");
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("success", ok);
+        out.put("message", ok
+            ? legUpper + " leg close submitted for " + id + "."
+            : "Nothing to close — " + legUpper + " leg is not currently open.");
+        return ResponseEntity.ok(out);
+    }
+
+    @PostMapping("/api/strategies/{id}/restart")
+    public ResponseEntity<Map<String, Object>> restart(@PathVariable String id) {
+        Strategy s = registry.get(id);
+        if (s == null) return ResponseEntity.notFound().build();
+        String code;
+        try {
+            code = s.restartFromDoneForDay("MANUAL_DASHBOARD");
+        } catch (Exception e) {
+            Map<String, Object> err = new LinkedHashMap<>();
+            err.put("success", false);
+            err.put("code", "EXCEPTION");
+            err.put("message", "Restart failed: " + e.getMessage());
+            return ResponseEntity.status(500).body(err);
+        }
+        if ("OK".equals(code)) {
+            Map<String, Object> ok = new LinkedHashMap<>();
+            ok.put("success", true);
+            ok.put("code", "OK");
+            ok.put("message", "New straddle entered for " + id + ".");
+            return ResponseEntity.ok(ok);
+        }
+        String human = switch (code) {
+            case "NOT_DONE_FOR_DAY"     -> "Strategy is not in DONE_FOR_DAY — nothing to restart.";
+            case "DAY_DISABLED"         -> "Today is disabled in the per-day SL config.";
+            case "MAX_LOSS_HIT"         -> "Max daily loss already hit — restart blocked.";
+            case "BEFORE_ENTRY_TIME"    -> "Too early — entry-time window hasn't opened yet.";
+            case "AFTER_SQUAREOFF_TIME" -> "Too late — past the squareoff time.";
+            case "PENDING_FILLS"        -> "Prior close fill still in flight — try again in a moment.";
+            case "UNSUPPORTED"          -> "This strategy does not support same-day restart.";
+            default                     -> "Restart blocked: " + code;
+        };
+        Map<String, Object> blocked = new LinkedHashMap<>();
+        blocked.put("success", false);
+        blocked.put("code", code);
+        blocked.put("message", human);
+        return ResponseEntity.status(409).body(blocked);
+    }
 }

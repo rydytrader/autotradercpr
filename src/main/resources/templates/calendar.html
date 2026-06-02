@@ -248,12 +248,12 @@
 
 <!-- Day-detail modal -->
 <div id="calDayModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:999;align-items:center;justify-content:center;">
-    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;width:560px;max-width:92vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,0.3);">
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;width:960px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,0.3);">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:1px solid var(--border);">
             <div style="font-family:var(--font-mono);font-size:0.92rem;font-weight:700;color:var(--text-primary);" id="calModalTitle">Session</div>
             <button onclick="closeDayModal()" style="background:transparent;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;line-height:1;padding:0 4px;">&times;</button>
         </div>
-        <div style="padding:20px 24px;font-family:var(--font-mono);font-size:0.82rem;" id="calModalBody">—</div>
+        <div style="padding:20px 24px;font-family:var(--font-mono);font-size:0.82rem;overflow-y:auto;" id="calModalBody">—</div>
     </div>
 </div>
 
@@ -603,21 +603,89 @@
     window.openDayModal = function(dateStr) {
         const session = allSessions.find(s => s.date === dateStr);
         if (!session) return;
-        const net = session.netPnl || 0;
+        const net    = session.netPnl  || 0;
         const netCls = net > 0 ? 'pnl-positive' : (net < 0 ? 'pnl-negative' : '');
-        const html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px 28px;">' +
-            '<div><div class="stat-label">Final State</div><div style="color:var(--text-primary);">' + (session.finalState || '—') + '</div></div>' +
-            '<div><div class="stat-label">Entries</div><div style="color:var(--text-primary);">' + (session.entries || 0) + '</div></div>' +
+
+        // Hero block — aggregated day totals on one row.
+        const heroHtml = '<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:14px 28px;">' +
+            '<div><div class="stat-label">Net P&L</div><div class="' + netCls + '" style="font-family:var(--font-mono);font-size:1.1rem;font-weight:700;">' + fmtMoneyFull(net) + '</div></div>' +
             '<div><div class="stat-label">Gross P&L</div><div>' + fmtMoneyFull(session.grossPnl) + '</div></div>' +
             '<div><div class="stat-label">Charges</div><div style="color:var(--text-muted);">' + fmtMoneyFull(session.charges) + '</div></div>' +
-            '<div style="grid-column:span 2;border-top:1px solid var(--border);padding-top:10px;">' +
-                '<div class="stat-label">Net P&L</div>' +
-                '<div class="' + netCls + '" style="font-family:var(--font-mono);font-size:1.4rem;font-weight:700;">' + fmtMoneyFull(net) + '</div>' +
-            '</div>' +
+        '</div>' +
+        '<div id="calDayStraddles" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">' +
+            '<div class="stat-label" style="margin-bottom:8px;">Straddles</div>' +
+            '<div style="color:var(--text-muted);">Loading…</div>' +
         '</div>';
+
         document.getElementById('calModalTitle').textContent = 'Session — ' + dateStr;
-        document.getElementById('calModalBody').innerHTML = html;
+        document.getElementById('calModalBody').innerHTML = heroHtml;
         document.getElementById('calDayModal').style.display = 'flex';
+
+        // Fan out per-instance trade fetches for this date — every cycle ends up here so a
+        // multi-restart day shows one row per cycle. Order by closedAtMillis after merge.
+        fetch('/api/strategies').then(r => r.json()).then(list => {
+            list = Array.isArray(list) ? list : [];
+            return Promise.all(list.map(s =>
+                fetch('/api/strategies/' + encodeURIComponent(s.id) + '/trades?date=' + encodeURIComponent(dateStr))
+                    .then(r => r.json()).catch(() => ({ trades: [] }))
+            ));
+        }).then(perInstance => {
+            const all = [];
+            (perInstance || []).forEach(r => (r && r.trades || []).forEach(t => all.push(t)));
+            all.sort((a, b) => (a.closedAtMillis || 0) - (b.closedAtMillis || 0));
+            const wrap = document.getElementById('calDayStraddles');
+            if (!wrap) return;
+            if (all.length === 0) {
+                wrap.innerHTML =
+                    '<div class="stat-label" style="margin-bottom:8px;">Straddles</div>' +
+                    '<div style="color:var(--text-muted);">No persisted straddle rows for this date.</div>';
+                return;
+            }
+            const fmtTime = ms => {
+                if (!ms) return '—';
+                const d = new Date(Number(ms));
+                return d.toTimeString().slice(0, 5);
+            };
+            let rows = '';
+            all.forEach((t, i) => {
+                const n  = Number(t.netPnl || 0);
+                const cls= n > 0 ? 'pnl-positive' : (n < 0 ? 'pnl-negative' : '');
+                rows +=
+                    '<tr style="border-top:1px solid rgba(128,128,128,0.10);">' +
+                        '<td style="padding:8px 10px;color:var(--text-muted);">#' + (i + 1) + '</td>' +
+                        '<td style="padding:8px 10px;color:var(--text-primary);">' + (t.shortCode || t.strategyId || '—') + '</td>' +
+                        '<td style="padding:8px 10px;">' + fmtTime(t.closedAtMillis) + '</td>' +
+                        '<td style="padding:8px 10px;color:var(--text-muted);">' + (t.closeReason || '—') + '</td>' +
+                        '<td style="padding:8px 10px;text-align:right;color:var(--text-muted);">' + (t.qty || 0) + '</td>' +
+                        '<td style="padding:8px 10px;text-align:right;">' + fmtMoneyFull(t.grossPnl) + '</td>' +
+                        '<td style="padding:8px 10px;text-align:right;color:var(--text-muted);">' + fmtMoneyFull(t.charges) + '</td>' +
+                        '<td style="padding:8px 10px;text-align:right;" class="' + cls + '">' + fmtMoneyFull(t.netPnl) + '</td>' +
+                        '<td style="padding:8px 10px;text-align:center;color:' + (t.slHitCount > 0 ? 'var(--accent-red, #f87171)' : 'var(--text-muted)') + ';">' + (t.slHitCount || 0) + '</td>' +
+                    '</tr>';
+            });
+            wrap.innerHTML =
+                '<div class="stat-label" style="margin-bottom:8px;">Straddles · ' + all.length + ' cycle' + (all.length === 1 ? '' : 's') + '</div>' +
+                '<div style="overflow-x:auto;max-width:100%;">' +
+                '<table style="width:100%;min-width:760px;border-collapse:collapse;font-family:var(--font-mono);font-size:0.74rem;table-layout:auto;white-space:nowrap;">' +
+                    '<thead><tr style="color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;">' +
+                        '<th style="padding:6px 10px;text-align:left;">#</th>' +
+                        '<th style="padding:6px 10px;text-align:left;">STRADDLE</th>' +
+                        '<th style="padding:6px 10px;text-align:left;">CLOSED</th>' +
+                        '<th style="padding:6px 10px;text-align:left;">REASON</th>' +
+                        '<th style="padding:6px 10px;text-align:right;">QTY</th>' +
+                        '<th style="padding:6px 10px;text-align:right;">GROSS</th>' +
+                        '<th style="padding:6px 10px;text-align:right;">CHARGES</th>' +
+                        '<th style="padding:6px 10px;text-align:right;">NET</th>' +
+                        '<th style="padding:6px 10px;text-align:center;">SL</th>' +
+                    '</tr></thead><tbody>' + rows + '</tbody>' +
+                '</table>' +
+                '</div>';
+        }).catch(() => {
+            const wrap = document.getElementById('calDayStraddles');
+            if (wrap) wrap.innerHTML =
+                '<div class="stat-label" style="margin-bottom:8px;">Straddles</div>' +
+                '<div style="color:var(--accent-red, #f87171);">Failed to load straddle list.</div>';
+        });
     };
     window.closeDayModal = function() {
         document.getElementById('calDayModal').style.display = 'none';

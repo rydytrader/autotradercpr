@@ -1,11 +1,15 @@
 package com.rydytrader.autotrader.controller;
 
 import com.rydytrader.autotrader.entity.StraddleSessionEntity;
+import com.rydytrader.autotrader.entity.StraddleTradeEntity;
 import com.rydytrader.autotrader.repository.StraddleSessionRepository;
+import com.rydytrader.autotrader.repository.StraddleTradeRepository;
+import com.rydytrader.autotrader.service.strategy.Strategy;
 import com.rydytrader.autotrader.service.strategy.StrategyRegistry;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
@@ -21,10 +25,14 @@ import java.util.Map;
 public class StrategyHistoryController {
 
     private final StraddleSessionRepository repo;
+    private final StraddleTradeRepository tradeRepo;
     private final StrategyRegistry registry;
 
-    public StrategyHistoryController(StraddleSessionRepository repo, StrategyRegistry registry) {
+    public StrategyHistoryController(StraddleSessionRepository repo,
+                                     StraddleTradeRepository tradeRepo,
+                                     StrategyRegistry registry) {
         this.repo = repo;
+        this.tradeRepo = tradeRepo;
         this.registry = registry;
     }
 
@@ -64,6 +72,40 @@ public class StrategyHistoryController {
         out.put("totalNet",     round(totalNet));
         out.put("totalRolls",   totalRolls);
         out.put("sessionCount", sessions.size());
+        return ResponseEntity.ok(out);
+    }
+
+    /** Per-cycle trade rows for a strategy on a specific date — drives the calendar's
+     *  day-detail modal, which lists every straddle that ran on that day (multi-cycle days
+     *  produce one row per cycle). */
+    @GetMapping("/api/strategies/{id}/trades")
+    public ResponseEntity<Map<String, Object>> tradesForDate(@PathVariable String id,
+                                                             @RequestParam String date) {
+        Strategy s = registry.get(id);
+        if (s == null) return ResponseEntity.notFound().build();
+        List<StraddleTradeEntity> rows =
+            tradeRepo.findByStrategyIdAndSessionDateOrderByClosedAtMillisAsc(id, date);
+        List<Map<String, Object>> trades = new ArrayList<>();
+        for (StraddleTradeEntity t : rows) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id",             t.getId());
+            m.put("strategyId",     t.getStrategyId());
+            m.put("shortCode",      s.shortCode());
+            m.put("sessionDate",    t.getSessionDate());
+            m.put("closedAtMillis", t.getClosedAtMillis());
+            m.put("qty",            t.getQty());
+            m.put("grossPnl",       round(t.getGrossPnl()));
+            m.put("charges",        round(t.getCharges()));
+            m.put("netPnl",         round(t.getNetPnl()));
+            m.put("closeReason",    t.getCloseReason());
+            m.put("slHitCount",     t.getSlHitCount() == null ? 0 : t.getSlHitCount());
+            trades.add(m);
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("strategyId", id);
+        out.put("shortCode",  s.shortCode());
+        out.put("date",       date);
+        out.put("trades",     trades);
         return ResponseEntity.ok(out);
     }
 
