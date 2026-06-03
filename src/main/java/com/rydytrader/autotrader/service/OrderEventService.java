@@ -9,7 +9,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
+import java.time.DayOfWeek;
 import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.*;
 
@@ -49,6 +52,21 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     private volatile String lastConnectTime = "";
     private volatile String lastDisconnectTime = "";
     private volatile int reconnectCountToday = 0;
+
+    /** Consecutive 429 disconnects from Fyers' Order WS handshake. Fyers returns 429 on the
+     *  WS path when the auth token is dead (in addition to genuine rate limits). After
+     *  {@link #AUTH_FAIL_THRESHOLD} in a row we clear the in-memory token — the existing
+     *  {@code !tokenStore.isTokenAvailable()} guard in {@link #scheduleReconnect} then stops
+     *  the loop until the next morning's login. */
+    private volatile int consecutive429s = 0;
+    private static final int AUTH_FAIL_THRESHOLD = 2;
+
+    /** Market-window guard so the reconnect loop doesn't churn overnight. NSE F&O hours are
+     *  09:15–15:30 IST; we use a small buffer either side for pre-market connect and any
+     *  post-close order events still being pushed. */
+    private static final ZoneId   IST          = ZoneId.of("Asia/Kolkata");
+    private static final LocalTime MARKET_OPEN  = LocalTime.of(9, 10);
+    private static final LocalTime MARKET_CLOSE = LocalTime.of(15, 45);
 
     /** Fill prices keyed by Fyers orderId, populated by {@link #onOrderEvent} as Fyers pushes
      *  filled-status events. ShortStraddle reads from here for any post-hoc race recovery; the
@@ -141,11 +159,30 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             log.info("[OrderEventSvc] Reconnect paused — no access token. Waiting for re-login.");
             return;
         }
+        // Skip overnight / weekend churn — Fyers tokens roll over around early morning IST
+        // and any in-memory token is dead long before the next market window opens. Without
+        // this guard the order WS handshake retries every ~60s through the night, each one
+        // logged as a 429. We resume reconnects at the next market window.
+        if (isOutsideMarketWindow()) {
+            log.info("[OrderEventSvc] Reconnect paused — outside market hours. Waiting for next session.");
+            return;
+        }
         reconnectAttempts++;
         long delay = Math.min(2L * (1L << Math.min(reconnectAttempts, 5)), 60);
         if (scheduler != null && !scheduler.isShutdown()) {
             scheduler.schedule(this::connectWebSocket, delay, TimeUnit.SECONDS);
         }
+    }
+
+    /** True when the wall clock falls outside the NSE F&O session window (with a small
+     *  buffer either side) or it's a weekend. Holidays aren't checked — the worst case is
+     *  a single day of log noise that the 429-counter fallback also catches. */
+    private boolean isOutsideMarketWindow() {
+        ZonedDateTime now = ZonedDateTime.now(IST);
+        DayOfWeek dow = now.getDayOfWeek();
+        if (dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY) return true;
+        LocalTime t = now.toLocalTime();
+        return t.isBefore(MARKET_OPEN) || !t.isBefore(MARKET_CLOSE);
     }
 
     // ── OrderCallback ─────────────────────────────────────────────────────────
@@ -218,6 +255,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     public void markConnected() {
         connected = true;
         reconnectAttempts = 0;
+        consecutive429s   = 0;
         lastConnectTime = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
         log.info("[OrderEventSvc] WebSocket connected");
         if (eventService != null) eventService.log("[WS] Order WebSocket connected");
@@ -229,6 +267,24 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         lastDisconnectTime = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
         log.info("[OrderEventSvc] WebSocket disconnected: {}", reason);
         if (eventService != null) eventService.log("[WS] Order WebSocket disconnected: " + reason);
-        if (running) scheduleReconnect();
+        if (!running) return;
+        // Track consecutive 429s separately from other disconnect reasons. Fyers returns 429
+        // on the WS handshake when the token is dead — after AUTH_FAIL_THRESHOLD in a row
+        // we clear the token and let the reconnect-guard stop the loop until re-login.
+        if (reason != null && reason.contains("429")) {
+            consecutive429s++;
+            log.warn("[OrderEventSvc] Auth-likely 429 disconnect {}/{}", consecutive429s, AUTH_FAIL_THRESHOLD);
+            if (consecutive429s >= AUTH_FAIL_THRESHOLD) {
+                log.error("[OrderEventSvc] Repeated 429s — clearing in-memory token. Re-login required.");
+                if (eventService != null) {
+                    eventService.log("[ERROR] [WS] Order WS — repeated 429s, token cleared. Please re-login.");
+                }
+                tokenStore.setAccessToken("");
+                return; // !tokenStore.isTokenAvailable() now blocks scheduleReconnect anyway
+            }
+        } else {
+            consecutive429s = 0;
+        }
+        scheduleReconnect();
     }
 }
