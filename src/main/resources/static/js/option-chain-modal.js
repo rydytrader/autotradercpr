@@ -82,6 +82,9 @@
             '.oc-tag-s { color:var(--accent-green, #34d399);background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.45); }' +
             '.oc-tag-r2 { color:rgba(248,113,113,0.7);background:rgba(248,113,113,0.07);border:1px solid rgba(248,113,113,0.28); }' +
             '.oc-tag-s2 { color:rgba(52,211,153,0.7);background:rgba(34,197,94,0.07);border:1px solid rgba(34,197,94,0.28); }' +
+            // ATM pill — gold, matches the row's gold band so the synthetic-futures ATM strike
+            // reads as a labelled level alongside R1/R2/S1/S2 instead of just a backgrounded row.
+            '.oc-tag-atm { color:rgba(250,204,21,1);background:rgba(250,204,21,0.18);border:1px solid rgba(250,204,21,0.55); }' +
             '.oc-tag-slot { display:inline-block;width:34px;text-align:center;vertical-align:middle; }' +
             '.oc-strike-num { display:inline-block;vertical-align:middle;margin:0 4px; }' +
             '.oc-act { display:inline-block;font-size:0.62rem;font-weight:700;letter-spacing:0.04em;padding:1px 5px;border-radius:3px; }' +
@@ -165,7 +168,8 @@
             var ce = row.ce || {};
             var pe = row.pe || {};
             var strike = row.strike;
-            var isAtm  = !!row.isAtm;
+            var isAtm    = !!row.isAtm;
+            var isSynAtm = !!row.isSyntheticAtm;
             var ceItm  = !isAtm && strike < spot;   // CE intrinsic > 0 when strike < spot
             var peItm  = !isAtm && strike > spot;   // PE intrinsic > 0 when strike > spot
             var ceRank = ceStrikes.indexOf(strike); // 0 = R1, 1 = R2, -1 = none
@@ -184,8 +188,15 @@
             var sTagHtml = isMaxPe
                 ? '<span class="oc-tag oc-tag-s' + (peRank > 0 ? '2' : '') + '">S' + (peRank + 1) + '</span>'
                 : '';
+            // ATM pill marks the synthetic-futures (put-call parity) ATM — the strike the
+            // straddle bot actually trades. Spot-rounded ATM row keeps the gold band; this
+            // pill goes on the synthetic row (often the same row, sometimes one strike off).
+            var atmTagHtml = isSynAtm
+                ? '<span class="oc-tag oc-tag-atm" title="Synthetic-futures ATM (put-call parity)">ATM</span>'
+                : '';
+            var leftSlotHtml = isSynAtm ? atmTagHtml : rTagHtml;
             var strikeCellHtml =
-                '<span class="oc-tag-slot">' + rTagHtml + '</span>' +
+                '<span class="oc-tag-slot">' + leftSlotHtml + '</span>' +
                 '<span class="oc-strike-num">' + String(strike) + '</span>' +
                 '<span class="oc-tag-slot">' + sTagHtml + '</span>';
 

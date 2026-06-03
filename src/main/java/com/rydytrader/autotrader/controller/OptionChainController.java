@@ -87,7 +87,21 @@ public class OptionChainController {
         long atm = Math.round(spot / (double) STRIKE_STEP) * STRIKE_STEP;
 
         NavigableMap<Long, Leg[]> byStrike = groupByStrike(chain);
-        List<Map<String, Object>> outRows = sliceWindow(byStrike, atm, strikes);
+
+        // Synthetic-futures ATM (put-call parity): F = atm + (CE − PE) at the spot-ATM
+        // strike, rounded to the nearest step. This is the strike the straddle bot will
+        // actually trade. We surface it as a *separate* marker — the slice + gold band
+        // stay anchored on the naïve spot-ATM, the synthetic strike gets its own pill.
+        long syntheticAtm = 0;
+        Leg[] atmPair = byStrike.get(atm);
+        if (atmPair != null && atmPair[0] != null && atmPair[1] != null
+                && atmPair[0].ltp > 0 && atmPair[1].ltp > 0) {
+            double forward = atm + (atmPair[0].ltp - atmPair[1].ltp);
+            long synth = Math.round(forward / (double) STRIKE_STEP) * STRIKE_STEP;
+            if (byStrike.containsKey(synth)) syntheticAtm = synth;
+        }
+
+        List<Map<String, Object>> outRows = sliceWindow(byStrike, atm, strikes, syntheticAtm);
 
         // Resistance = max CE OI on strikes ABOVE spot (call writers defending a ceiling).
         // Support    = max PE OI on strikes BELOW spot (put writers defending a floor).
@@ -106,10 +120,11 @@ public class OptionChainController {
         String expiry = resolveExpiry(outRows);
 
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("underlying",   symbol);
-        body.put("spot",         round2(spot));
-        body.put("atmStrike",    atm);
-        body.put("expiry",       expiry);
+        body.put("underlying",        symbol);
+        body.put("spot",              round2(spot));
+        body.put("atmStrike",         atm);           // naïve spot-rounded ATM — slice + gold band anchor here
+        body.put("syntheticAtmStrike", syntheticAtm); // parity-based ATM — pill marker; 0 when same as spot-ATM or unresolved
+        body.put("expiry",            expiry);
         body.put("asOf",         LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")));
         body.put("maxCeOiStrikes", resistanceStrikes);
         body.put("maxPeOiStrikes", supportStrikes);
@@ -173,17 +188,18 @@ public class OptionChainController {
     }
 
     private List<Map<String, Object>> sliceWindow(NavigableMap<Long, Leg[]> byStrike,
-                                                  long atm, int strikes) {
+                                                  long atm, int strikes, long syntheticAtm) {
         List<Map<String, Object>> out = new ArrayList<>();
         long lo = atm - (long) strikes * STRIKE_STEP;
         long hi = atm + (long) strikes * STRIKE_STEP;
         for (long s = lo; s <= hi; s += STRIKE_STEP) {
             Leg[] pair = byStrike.get(s);
             Map<String, Object> row = new LinkedHashMap<>();
-            row.put("strike", s);
-            row.put("isAtm",  s == atm);
-            row.put("ce",     legToMap(pair != null ? pair[0] : null));
-            row.put("pe",     legToMap(pair != null ? pair[1] : null));
+            row.put("strike",          s);
+            row.put("isAtm",           s == atm);
+            row.put("isSyntheticAtm",  syntheticAtm > 0 && s == syntheticAtm);
+            row.put("ce",              legToMap(pair != null ? pair[0] : null));
+            row.put("pe",              legToMap(pair != null ? pair[1] : null));
             out.add(row);
         }
         return out;
