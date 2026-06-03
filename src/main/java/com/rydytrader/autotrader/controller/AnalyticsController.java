@@ -32,7 +32,8 @@ public class AnalyticsController {
             @RequestParam(defaultValue = "all") String period,
             @RequestParam(defaultValue = "all") String strategyId,
             @RequestParam(required = false) String from,
-            @RequestParam(required = false) String to) {
-        return analyticsService.summary(period, strategyId, from, to);
+            @RequestParam(required = false) String to,
+            @RequestParam(defaultValue = "true") boolean includeAdjustments) {
+        return analyticsService.summary(period, strategyId, from, to, includeAdjustments);
     }
 }

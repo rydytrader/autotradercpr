@@ -193,6 +193,10 @@ public class PollingService {
         if (orderWs && dataWs)  return "WS CONNECTED";
         if (orderWs && !dataWs) return "RECONNECTING (Data)";
         if (!orderWs && dataWs) return "RECONNECTING (Order)";
+        // Order WS deliberately paused (outside market hours with no prior connect this run,
+        // or token cleared after repeated 429s) — surface as "WAITING FOR LOGIN" so the
+        // operator sees an actionable label instead of a misleading DISCONNECTED.
+        if (orderEventService != null && orderEventService.isPaused()) return "WAITING FOR LOGIN";
         if (marketDataService.isReconnecting() || (orderEventService != null && orderEventService.isReconnecting())) return "RECONNECTING";
         if (marketDataService.isConnecting()   || (orderEventService != null && orderEventService.isConnecting()))   return "CONNECTING";
         return connectionStatus;

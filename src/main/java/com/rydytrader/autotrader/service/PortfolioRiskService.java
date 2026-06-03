@@ -61,8 +61,22 @@ public class PortfolioRiskService {
 
         if (today.equals(lastFiredDayKey)) return; // already fired today
 
+        // Skip the whole check if every enabled strategy is already DONE_FOR_DAY — the
+        // post-squareoff aggregate loss is just the realised P&L; the kill switch has
+        // nothing to flatten and parking a parked strategy is a no-op warning.
+        boolean anythingStillRunning = false;
+        for (Strategy s : strategyRegistry.all()) {
+            if (!s.isEnabled()) continue;
+            String st = s.currentState();
+            if (st != null && !"DONE_FOR_DAY".equals(st)) { anythingStillRunning = true; break; }
+        }
+        if (!anythingStillRunning) return;
+
         double aggregate = 0;
         for (Strategy s : strategyRegistry.all()) {
+            // Disabled instances aren't trading — their pnl is 0 in steady state, but skip
+            // anyway so a stale state file doesn't pollute the aggregate kill-switch check.
+            if (!s.isEnabled()) continue;
             try { aggregate += s.liveNetPnlToday(); }
             catch (Exception e) {
                 log.warn("[PortfolioRisk] {} liveNetPnlToday failed: {}", s.id(), e.getMessage());
@@ -77,11 +91,15 @@ public class PortfolioRiskService {
             "Flattening every strategy and parking DONE_FOR_DAY.",
             aggregate, maxLoss, riskPct, riskSettings.getStartingCapital());
         log.warn("[PortfolioRisk] {}", msg);
-        eventService.log("[ERROR] [portfolio-risk] " + msg);
+        eventService.log("[WARNING] [portfolio-risk] " + msg);
         try { if (telegramService != null) telegramService.sendMessage("[PortfolioRisk] " + msg); }
         catch (Exception ignored) {}
 
         for (Strategy s : strategyRegistry.all()) {
+            // Disabled instances aren't running — nothing to flatten and they're already
+            // blocked from firing the next entry, so parking them is a no-op that just
+            // muddies the event log. Skip.
+            if (!s.isEnabled()) continue;
             try {
                 // parkDoneForDay closes any open position AND transitions to DONE_FOR_DAY
                 // regardless of current state — so a strategy in IDLE / WAITING_TO_ROLL is

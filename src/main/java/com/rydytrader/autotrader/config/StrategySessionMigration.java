@@ -51,6 +51,7 @@ public class StrategySessionMigration {
         oneShotWipeForMultiInstance();
         cleanupSoftDeletedInstances();
         oneShotFixInst1_20260602();
+        oneShotFixInst1_20260603();
     }
 
     /** Hard-deletes every {@code straddle_instances} row marked {@code active = false} along
@@ -277,6 +278,68 @@ public class StrategySessionMigration {
                 tradeRows, sessionRows, gross, charges, net);
         } catch (Exception e) {
             log.warn("[StrategyMigration] inst-1 / 2026-06-02 fix skipped: {}", e.getMessage());
+        }
+    }
+
+    /** One-shot fix for inst-1 / 2026-06-03 — portfolio-SL day. PE leg hit its per-leg SL at
+     *  237.90; the portfolio kill switch then force-closed the CE leg at 240.00. With the
+     *  pre-fix {@code persistStraddleTrade}, the row was written before the WS confirmed
+     *  the CE close fill, so it captured only the PE leg's loss and {@code slHitCount = 1}.
+     *  Recomputes gross / charges / net using both legs' realised fills and bumps the SL
+     *  count to 2 (per-leg SL + portfolio-induced close both count under the new rule).
+     *  Charges use the corrected GST base ({@code brokerage + exchange + sebi}). */
+    private void oneShotFixInst1_20260603() {
+        String flagKey = "trade.fix.inst-1.2026-06-03.done";
+        try {
+            if (settingRepo.findBySettingKey(flagKey).isPresent()) return;
+
+            final String strategyId = "inst-1";
+            final String sessionDate = "2026-06-03";
+            // ceExit = 240.10 (not the rounded 240 the operator quoted) so the row matches
+            // the broker-confirmed realised P&L of -10,049 stored in the live state JSON.
+            final double ceEntry = 216.10, ceExit = 240.10;
+            final double peEntry = 184.60, peExit = 237.90;
+            final int qty = 130;
+
+            double sellT  = (ceEntry + peEntry) * qty;
+            double buyT   = (ceExit  + peExit)  * qty;
+            double totalT = sellT + buyT;
+
+            double brokeragePerOrder = readDouble("brokeragePerOrder", 20.0);
+            int orders = 4;
+            double brokerage = orders * brokeragePerOrder;
+
+            double stt      = sellT  * 0.000625;
+            double exchange = totalT * 0.0003503;
+            double sebi     = (totalT / 10_000_000.0) * 10.0;
+            double stamp    = buyT   * 0.00003;
+            double gst      = (brokerage + exchange + sebi) * 0.18;
+            double charges  = round2(brokerage + stt + exchange + sebi + stamp + gst);
+
+            double gross = round2((ceEntry - ceExit) * qty + (peEntry - peExit) * qty);
+            double net   = round2(gross - charges);
+
+            int tradeRows = safeUpdate(String.format(java.util.Locale.US,
+                "UPDATE straddle_trades " +
+                "SET gross_pnl = %s, charges = %s, net_pnl = %s, " +
+                "    close_reason = 'PORTFOLIO_MAX_LOSS_HIT', sl_hit_count = 2, qty = %d " +
+                "WHERE strategy_id = '%s' AND session_date = '%s'",
+                gross, charges, net, qty, strategyId, sessionDate));
+
+            int sessionRows = safeUpdate(String.format(java.util.Locale.US,
+                "UPDATE straddle_sessions " +
+                "SET premium_collected = %s, premium_paid_back = %s, " +
+                "    gross_pnl = %s, charges = %s, net_pnl = %s " +
+                "WHERE strategy_id = '%s' AND session_date = '%s'",
+                round2(sellT), round2(buyT), gross, charges, net, strategyId, sessionDate));
+
+            settingRepo.save(new SettingEntity(flagKey, String.valueOf(System.currentTimeMillis())));
+
+            log.warn("[StrategyMigration] inst-1 / 2026-06-03 fix applied — " +
+                "trades rows updated: {}, sessions rows updated: {}, gross={} charges={} net={}",
+                tradeRows, sessionRows, gross, charges, net);
+        } catch (Exception e) {
+            log.warn("[StrategyMigration] inst-1 / 2026-06-03 fix skipped: {}", e.getMessage());
         }
     }
 

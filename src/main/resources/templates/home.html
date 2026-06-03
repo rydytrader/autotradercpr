@@ -114,6 +114,12 @@
             <div class="page-title">Home</div>
             <div class="page-subtitle">Capital growth and strategy performance</div>
         </div>
+        <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
+            <div style="font-size:1rem; color:var(--text-secondary);">
+                Welcome, <span id="userName" style="color:var(--text-primary); font-weight:600;">—</span>
+            </div>
+            <div id="fyersIdLine" style="font-size:0.72rem; color:var(--text-muted); margin-top:10px;">—</div>
+        </div>
     </div>
 
     <!-- Selectors — Period + Strategy scope + Custom date picker -->
@@ -153,6 +159,16 @@
                     <button class="scope-pill active" data-strategy="all">All Strategies</button>
                     <!-- Strategy-specific pills injected at runtime from /api/strategies -->
                 </div>
+                <!-- Include adjustments toggle — sums manual-terminal closed trades into the
+                     money tiles (Total Return / Current Capital / Avg Monthly % / Max Drawdown
+                     / Equity Curve). Strategy-stats tiles stay strategy-pure regardless. State
+                     persists in localStorage. -->
+                <label style="display:flex; align-items:center; gap:6px; margin-left:14px; cursor:pointer; font-family:var(--font-mono); font-size:0.72rem; color:var(--text-secondary);"
+                       title="When ticked, manual-terminal closed trades are folded into Total Return, Current Capital, Avg Monthly % and the equity curve. Win Rate, Profit Factor, R:R, Best/Worst, SL Days, streaks stay strategy-only regardless.">
+                    <input type="checkbox" id="includeAdjustments" checked
+                           style="accent-color: var(--accent-cyan, #22d3ee); width:14px; height:14px;">
+                    Include adjustments in P&amp;L
+                </label>
             </div>
         </div>
     </div>
@@ -270,30 +286,6 @@
             </div>
         </div>
 
-        <!-- Edge Metrics -->
-        <div class="section-card" style="margin-bottom:0;">
-            <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Edge Metrics</div>
-            </div>
-            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Expectancy / straddle</span>
-                    <span class="stat-value" id="ahExpectancy" style="font-size:1rem;"
-                          title="Average net P&L per straddle — total net ÷ number of straddles. >0 = the strategy has a positive edge over the period.">—</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Recovery Factor</span>
-                    <span class="stat-value" id="ahRecoveryFactor" style="font-size:1rem;"
-                          title="Total return ÷ |max drawdown|. >1 = recovered more than the worst trough; higher = more cushion vs your worst losing streak.">—</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Sharpe (annualised)</span>
-                    <span class="stat-value" id="ahSharpe" style="font-size:1rem;"
-                          title="Risk-adjusted return. Mean straddle return ÷ stddev of straddle returns × √252. >1 good, >2 excellent.">—</span>
-                </div>
-            </div>
-        </div>
-
         <!-- Costs -->
         <div class="section-card" style="margin-bottom:0;">
             <div class="section-header">
@@ -312,6 +304,30 @@
                     <span class="stat-label" style="margin:0;">Charges / Gross %</span>
                     <span class="stat-value" id="ahChargesPct" style="font-size:1rem; color:var(--text-muted);"
                           title="What fraction of gross profit went to brokerage + statutory charges.">—</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Adjustments — manual-terminal closed trades for the selected period. -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan, #22d3ee);"></div> Adjustments</div>
+            </div>
+            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Count</span>
+                    <span class="stat-value" id="ahAdjCount" style="font-size:1rem;"
+                          title="Number of closed manual-terminal trades in the selected period.">—</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Net P&L</span>
+                    <span class="stat-value" id="ahAdjNetPnl" style="font-size:1rem;"
+                          title="Sum of net P&L across all manual-terminal trades. Always shown — independent of the Include adjustments checkbox.">—</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Charges</span>
+                    <span class="stat-value" id="ahAdjCharges" style="font-size:1rem; color:var(--text-muted);"
+                          title="Manual-terminal charges (broker + statutory). Placeholder 0 in v1 — per-trade brokerage estimate to be added.">—</span>
                 </div>
             </div>
         </div>
@@ -342,10 +358,20 @@
 <script src="/js/ticker.js?v=4"></script>
 <script src="/js/settings-modal.js?v=8"></script>
 <script src="/js/option-chain-modal.js?v=25"></script>
+<script src="/js/manual-terminal-modal.js?v=18"></script>
 
 <script>
     // Footer year
     (function() { var el = document.getElementById('footerYear'); if (el) el.textContent = new Date().getFullYear(); })();
+
+    // ── Welcome line ─ populate from /api/user/me ────────────────────────────
+    fetch('/api/user/me').then(function(r){ return r.json(); }).then(function(u){
+        if (!u || !u.email) return;
+        var nm = document.getElementById('userName');
+        var id = document.getElementById('fyersIdLine');
+        if (nm) nm.textContent = (u.firstName || u.email).trim();
+        if (id) id.textContent = u.email;
+    }).catch(function(){});
 
     // ── Connection status ────────────────────────────────────────────────────
     function checkConnection() {
@@ -380,6 +406,16 @@
     document.addEventListener('DOMContentLoaded', function() {
         var homeIcon = document.querySelector('.nav-icon[data-nav-key="home"]');
         if (homeIcon) homeIcon.classList.add('active');
+        // Wire the include-adjustments checkbox. Restore previous state from localStorage.
+        var adjCb = document.getElementById('includeAdjustments');
+        if (adjCb) {
+            adjCb.checked = currentIncludeAdjustments;
+            adjCb.addEventListener('change', function() {
+                currentIncludeAdjustments = adjCb.checked;
+                try { window.localStorage.setItem('homeIncludeAdjustments', currentIncludeAdjustments ? 'true' : 'false'); } catch (e) {}
+                loadSummary(true);
+            });
+        }
     });
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -399,6 +435,12 @@
     // ── Selectors ────────────────────────────────────────────────────────────
     var currentPeriod   = 'today';
     var currentStrategy = 'all';
+    var currentIncludeAdjustments = (function() {
+        // localStorage so the operator's choice survives a refresh.
+        var stored = null;
+        try { stored = window.localStorage.getItem('homeIncludeAdjustments'); } catch (e) {}
+        return stored === null ? true : stored === 'true';
+    })();
     var lastEquityRenderMs = 0;
     var EQUITY_REFRESH_MS = 900000; // 15 minutes — the curve doesn't change tick-to-tick
     var pickedYear = '';  // empty = picker not in use
@@ -509,15 +551,38 @@
 
     // ── Equity curve chart ───────────────────────────────────────────────────
     var equityChart = null;
-    function renderEquityChart(labels, values) {
+    function renderEquityChart(labels, values, startingCapital, kinds) {
         var ctx = document.getElementById('equityCurveChart').getContext('2d');
         if (equityChart) { equityChart.destroy(); equityChart = null; }
         // Theme-driven colours — read CSS vars at chart creation.
         var styles = getComputedStyle(document.documentElement);
-        var lineCol = styles.getPropertyValue('--accent-cyan').trim() || '#7dd3fc';
-        var fillCol = lineCol.startsWith('#') ? lineCol + '22' : 'rgba(125,211,252,0.15)';
-        var gridCol = styles.getPropertyValue('--border').trim() || 'rgba(255,255,255,0.06)';
-        var textCol = styles.getPropertyValue('--text-muted').trim() || '#888';
+        var lineCol  = styles.getPropertyValue('--accent-cyan').trim()  || '#7dd3fc';
+        var gridCol  = styles.getPropertyValue('--border').trim()       || 'rgba(255,255,255,0.06)';
+        var textCol  = styles.getPropertyValue('--text-muted').trim()   || '#888';
+        var amberCol = styles.getPropertyValue('--accent-amber').trim() || '#fbbf24';
+        // Fallback to first equity-curve point if startingCapital wasn't passed in (the
+        // backend prepends a "Start" baseline, so values[0] == startingCapital).
+        var baseline = Number(startingCapital);
+        if (!isFinite(baseline) || baseline === 0) {
+            baseline = Array.isArray(values) && values.length > 0 ? Number(values[0]) : 0;
+        }
+        // Dashed horizontal reference line at the starting-capital level. Same length as
+        // the values array so the x-axis aligns; rendered behind the main equity dataset.
+        var baselineSeries = Array.isArray(values) ? values.map(function() { return baseline; }) : [];
+        // Per-point styling: adjustment closes get an amber triangle marker; straddle
+        // closes stay invisible (only the line). The Start baseline is also invisible.
+        var pointBg = (kinds || []).map(function(k) {
+            return k === 'ADJUSTMENT' ? amberCol : 'rgba(0,0,0,0)';
+        });
+        var pointBorder = (kinds || []).map(function(k) {
+            return k === 'ADJUSTMENT' ? amberCol : 'rgba(0,0,0,0)';
+        });
+        var pointRadii = (kinds || []).map(function(k) {
+            return k === 'ADJUSTMENT' ? 5 : 0;
+        });
+        var pointStyles = (kinds || []).map(function(k) {
+            return k === 'ADJUSTMENT' ? 'triangle' : 'circle';
+        });
         equityChart = new Chart(ctx, {
             type: 'line',
             data: {
@@ -526,18 +591,37 @@
                     label: 'Equity',
                     data: values,
                     borderColor: lineCol,
-                    backgroundColor: fillCol,
-                    fill: true,
+                    // Above the starting-capital line → green tint; below → red tint.
+                    fill: { target: { value: baseline },
+                            above: 'rgba(52, 211, 153, 0.18)',
+                            below: 'rgba(248, 113, 113, 0.18)' },
                     tension: 0.25,
+                    pointBackgroundColor: pointBg,
+                    pointBorderColor: pointBorder,
+                    pointRadius: pointRadii,
+                    pointStyle: pointStyles,
+                    pointHoverRadius: 5,
+                    borderWidth: 2,
+                    order: 1
+                }, {
+                    label: 'Starting Capital',
+                    data: baselineSeries,
+                    borderColor: textCol,
+                    backgroundColor: 'transparent',
+                    fill: false,
+                    borderDash: [6, 4],
+                    borderWidth: 1,
                     pointRadius: 0,
-                    pointHoverRadius: 4,
-                    borderWidth: 2
+                    pointHoverRadius: 0,
+                    tension: 0,
+                    order: 2
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: { legend: { display: false }, tooltip: {
+                    filter: function(ctx) { return ctx.datasetIndex === 0; },   // hide reference line in tooltip
                     callbacks: { label: function(ctx) { return fmtRs(ctx.parsed.y); } }
                 } },
                 scales: {
@@ -555,7 +639,8 @@
     // load). false → skip the curve if the hourly cadence hasn't elapsed (the 5s live poll).
     function loadSummary(forceEquity) {
         var url = '/api/analytics/summary?period=' + encodeURIComponent(currentPeriod)
-                + '&strategyId=' + encodeURIComponent(currentStrategy);
+                + '&strategyId=' + encodeURIComponent(currentStrategy)
+                + '&includeAdjustments=' + (currentIncludeAdjustments ? 'true' : 'false');
         var range = pickerRange();
         if (range.from) url += '&from=' + encodeURIComponent(range.from);
         if (range.to)   url += '&to='   + encodeURIComponent(range.to);
@@ -621,12 +706,12 @@
             setVal('ahCurWin',      String(st.currentWinStreak || 0), st.currentWinStreak);
             setVal('ahLongestWin',  String(st.longestWinStreak || 0));
             setVal('ahLongestLoss', String(st.longestLossStreak || 0), -(st.longestLossStreak || 0));
-            // Edge Metrics card
-            setVal('ahExpectancy', fmtRs(edge.expectancy), edge.expectancy);
-            var rf = Number(edge.recoveryFactor || 0);
-            setVal('ahRecoveryFactor', rf > 0 ? rf.toFixed(2) : '—', rf - 1);
-            var sh = Number(edge.sharpe || 0);
-            setVal('ahSharpe', edge.sharpe == null || sh === 0 ? '—' : sh.toFixed(2), sh);
+            // Edge Metrics card removed — operator considered low-signal at current scale.
+            // Adjustments mini-card — always populated, regardless of the include-adjustments toggle.
+            var adj = d.adjustments || { count: 0, netPnl: 0, charges: 0 };
+            setVal('ahAdjCount',   String(adj.count || 0));
+            setVal('ahAdjNetPnl',  fmtRs(adj.netPnl), adj.netPnl);
+            setVal('ahAdjCharges', fmtRs(adj.charges));
             // Costs card
             var charges = Number(st.totalCharges || 0);
             // Backend emits perf.straddles (count of rows in the trade pool — one per cycle
@@ -647,7 +732,7 @@
             // open-MTM point lags by up to 15min, acceptable for a journal view.
             var nowMs = Date.now();
             if (forceEquity || lastEquityRenderMs === 0 || (nowMs - lastEquityRenderMs >= EQUITY_REFRESH_MS)) {
-                renderEquityChart(eq.labels || [], eq.values || []);
+                renderEquityChart(eq.labels || [], eq.values || [], cap.startingCapital, eq.kinds || []);
                 lastEquityRenderMs = nowMs;
             }
         }).catch(function() {});

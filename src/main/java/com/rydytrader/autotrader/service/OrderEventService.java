@@ -61,6 +61,20 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     private volatile int consecutive429s = 0;
     private static final int AUTH_FAIL_THRESHOLD = 2;
 
+    /** True when the reconnect loop is idle because we're outside market hours / on a weekend.
+     *  Set by the {@link #scheduleReconnect} guard, cleared on {@link #start()} and
+     *  {@link #markConnected()}. {@link #isConnecting()} and {@link #isReconnecting()} both
+     *  read this so the UI status doesn't perpetually show "RECONNECTING" when the loop is
+     *  actually paused. */
+    private volatile boolean pausedOutsideMarketWindow = false;
+
+    /** True once we've had at least one successful WS handshake since the last {@link #start()}
+     *  — i.e. we've proved the in-memory token can authenticate. Used to scope the outside-
+     *  market-hours pause guard: if we've never connected (bot booted pre-market with a stale
+     *  token), pause and wait for the morning re-login. If we HAVE connected (fresh login at
+     *  07:00 followed by a transient WS drop), reconnect normally — token is good. */
+    private volatile boolean hasConnectedSinceStart = false;
+
     /** Market-window guard so the reconnect loop doesn't churn overnight. NSE F&O hours are
      *  09:15–15:30 IST; we use a small buffer either side for pre-market connect and any
      *  post-close order events still being pushed. */
@@ -118,6 +132,9 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         if (running) stop();
         running = true;
         reconnectAttempts = 0;
+        consecutive429s   = 0;
+        pausedOutsideMarketWindow = false;
+        hasConnectedSinceStart    = false;
         scheduler = Executors.newScheduledThreadPool(2);
         connectWebSocket();
     }
@@ -160,13 +177,19 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
             return;
         }
         // Skip overnight / weekend churn — Fyers tokens roll over around early morning IST
-        // and any in-memory token is dead long before the next market window opens. Without
-        // this guard the order WS handshake retries every ~60s through the night, each one
-        // logged as a 429. We resume reconnects at the next market window.
-        if (isOutsideMarketWindow()) {
-            log.info("[OrderEventSvc] Reconnect paused — outside market hours. Waiting for next session.");
+        // and any in-memory token is dead long before the next market window opens. The
+        // guard is scoped to "we have never proved this token works" so a fresh login at
+        // 07:00 followed by a transient WS drop at 07:30 still reconnects normally (token
+        // is good). The 429 counter independently catches mid-day token revocations.
+        if (isOutsideMarketWindow() && !hasConnectedSinceStart) {
+            if (!pausedOutsideMarketWindow) {
+                log.info("[OrderEventSvc] Reconnect paused — outside market hours, no successful connect this run. Waiting for re-login.");
+            }
+            pausedOutsideMarketWindow = true;
+            reconnectAttempts = 0;
             return;
         }
+        pausedOutsideMarketWindow = false;
         reconnectAttempts++;
         long delay = Math.min(2L * (1L << Math.min(reconnectAttempts, 5)), 60);
         if (scheduler != null && !scheduler.isShutdown()) {
@@ -244,8 +267,12 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     // ── Status accessors ──────────────────────────────────────────────────────
 
     public boolean isConnected()    { return connected && wsClient != null && wsClient.isOpen(); }
-    public boolean isReconnecting() { return running && !isConnected() && reconnectAttempts > 0; }
-    public boolean isConnecting()   { return running && !isConnected(); }
+    public boolean isReconnecting() { return running && !pausedOutsideMarketWindow && !isConnected() && reconnectAttempts > 0; }
+    public boolean isConnecting()   { return running && !pausedOutsideMarketWindow && !isConnected(); }
+    /** True while the reconnect loop is intentionally paused (outside market hours and we've
+     *  never had a successful connect this run, or token cleared after repeated 429s).
+     *  Drives the "WAITING FOR LOGIN" status indicator on the UI. */
+    public boolean isPaused()       { return pausedOutsideMarketWindow || !tokenStore.isTokenAvailable(); }
     public String  getLastConnectTime()    { return lastConnectTime; }
     public String  getLastDisconnectTime() { return lastDisconnectTime; }
     public int     getReconnectCountToday() { return reconnectCountToday; }
@@ -256,6 +283,8 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         connected = true;
         reconnectAttempts = 0;
         consecutive429s   = 0;
+        pausedOutsideMarketWindow = false;
+        hasConnectedSinceStart    = true;
         lastConnectTime = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
         log.info("[OrderEventSvc] WebSocket connected");
         if (eventService != null) eventService.log("[WS] Order WebSocket connected");

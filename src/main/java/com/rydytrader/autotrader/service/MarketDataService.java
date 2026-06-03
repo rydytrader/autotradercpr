@@ -358,6 +358,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
             // chp = change %.
             m.put("symbol", tick.getShortName() != null && !tick.getShortName().isEmpty()
                 ? tick.getShortName() : tick.getFyersSymbol());
+            // Full Fyers symbol — needed by the manual options terminal modal which subscribes
+            // to specific CE/PE legs and must match by exact symbol, not display short-name.
+            m.put("fyers", tick.getFyersSymbol());
             m.put("lp",  Math.round(tick.getLtp() * 100.0) / 100.0);
             m.put("ch",  Math.round(tick.getChange() * 100.0) / 100.0);
             m.put("chp", Math.round(tick.getChangePercent() * 100.0) / 100.0);

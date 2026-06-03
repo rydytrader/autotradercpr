@@ -856,6 +856,10 @@ public class ShortStraddle implements Strategy {
         java.util.List<String> unsubAfter = new java.util.ArrayList<>();
         double niftyAtClose = marketDataService.getLtp(NIFTY_SYMBOL);
         double totalPnl = 0;
+        // Treat risk-event force-closes (per-strategy max-loss kill, portfolio kill) as SL
+        // hits for analytics — the bot didn't choose to ride out to squareoff, the loss
+        // budget did. Timed squareoff and stale-day reset do NOT count.
+        boolean countAsSl = reason != null && reason.contains("MAX_LOSS");
         if (isCeOpen() && !ceSymbol.isEmpty() && ceQty > 0) {
             double ltp = marketDataService.getLtp(ceSymbol);
             double pnl = (ceEntryPremium > 0 && ltp > 0) ? (ceEntryPremium - ltp) * ceQty : 0;
@@ -868,6 +872,7 @@ public class ShortStraddle implements Strategy {
             this.ceClosedAtMillis = System.currentTimeMillis();
             this.ceQty = 0;
             this.ceOrderId = "";
+            if (countAsSl) slHitsToday++;
         }
         if (isPeOpen() && !peSymbol.isEmpty() && peQty > 0) {
             double ltp = marketDataService.getLtp(peSymbol);
@@ -881,6 +886,7 @@ public class ShortStraddle implements Strategy {
             this.peClosedAtMillis = System.currentTimeMillis();
             this.peQty = 0;
             this.peOrderId = "";
+            if (countAsSl) slHitsToday++;
         }
         if (!unsubAfter.isEmpty()) {
             try { marketDataService.unsubscribeAdditional(unsubAfter); } catch (Exception ignored) {}
@@ -1328,7 +1334,7 @@ public class ShortStraddle implements Strategy {
         } catch (Exception e) { return -1; }
     }
 
-    static String parseExpiryFromSymbol(String fyersSymbol) {
+    public static String parseExpiryFromSymbol(String fyersSymbol) {
         if (fyersSymbol == null) return "";
         try {
             int hash = fyersSymbol.indexOf("NIFTY");
@@ -1497,11 +1503,31 @@ public class ShortStraddle implements Strategy {
      *  ({@link #persistSessionFor}) keeps aggregating cumulatively. */
     private void persistStraddleTrade() {
         if (tradeRepo == null) return;
-        double cycleGross = realisedPnlToday          - cycleStartRealisedPnl;
-        double cycleSellT = sellPremiumTurnoverToday  - cycleStartSellTurnover;
-        double cycleBuyT  = buyPremiumTurnoverToday   - cycleStartBuyTurnover;
-        int    cycleOrders= orderCountToday           - cycleStartOrderCount;
-        int    cycleSls   = slHitsToday               - cycleStartSlHits;
+        // Fold in any in-flight close fills. When closeRemainingLegs runs (timed squareoff /
+        // portfolio kill / max-loss), it places close orders, sets leg estimates, and lets
+        // transitionTo → persistStraddleTrade run synchronously — but the broker WS push that
+        // actually updates realisedPnlToday + buyPremiumTurnoverToday arrives 100-200 ms
+        // later. Without this overlay, the trade row would miss whatever legs were forcibly
+        // closed in the same tick (most visible on portfolio-SL: row shows only the prior
+        // SL'd leg's loss). onActualFill will re-overwrite these same fields when the WS
+        // push lands; the trade row was already written so the values it captured are this
+        // cycle's best estimate at the moment of close.
+        double inFlightPnl = 0;
+        double inFlightBuyTurnover = 0;
+        for (PendingFill pf : pendingFills.values()) {
+            if (pf.type() == PendingType.CLOSE_CE) {
+                inFlightPnl         += ceLegPnl;
+                inFlightBuyTurnover += ceClosePremium * pf.qty();
+            } else if (pf.type() == PendingType.CLOSE_PE) {
+                inFlightPnl         += peLegPnl;
+                inFlightBuyTurnover += peClosePremium * pf.qty();
+            }
+        }
+        double cycleGross = (realisedPnlToday          + inFlightPnl)         - cycleStartRealisedPnl;
+        double cycleSellT = sellPremiumTurnoverToday                          - cycleStartSellTurnover;
+        double cycleBuyT  = (buyPremiumTurnoverToday   + inFlightBuyTurnover) - cycleStartBuyTurnover;
+        int    cycleOrders= orderCountToday                                   - cycleStartOrderCount;
+        int    cycleSls   = slHitsToday                                       - cycleStartSlHits;
         if (Math.abs(cycleGross) < 0.01 && cycleSellT < 0.01) return;
         try {
             double charges = computeCycleCharges(cycleSellT, cycleBuyT, cycleOrders);

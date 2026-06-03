@@ -51,25 +51,39 @@ public class AnalyticsService {
     private final StraddleTradeRepository tradeRepo;
     private final RiskSettingsStore riskSettings;
     private final StrategyRegistry strategyRegistry;
+    private final org.springframework.beans.factory.ObjectProvider<com.rydytrader.autotrader.service.ManualTerminalService> manualTerminalProvider;
 
     public AnalyticsService(StraddleTradeRepository tradeRepo,
                             RiskSettingsStore riskSettings,
-                            StrategyRegistry strategyRegistry) {
+                            StrategyRegistry strategyRegistry,
+                            org.springframework.beans.factory.ObjectProvider<com.rydytrader.autotrader.service.ManualTerminalService> manualTerminalProvider) {
         this.tradeRepo = tradeRepo;
         this.riskSettings = riskSettings;
         this.strategyRegistry = strategyRegistry;
+        this.manualTerminalProvider = manualTerminalProvider;
     }
 
     /** Composite payload — one round-trip serves all four hero tiles, the four detail cards,
      *  and the equity curve. */
     public Map<String, Object> summary(String period, String strategyId, String from, String to) {
+        return summary(period, strategyId, from, to, true);
+    }
+
+    /** Same as {@link #summary(String, String, String, String)} but with explicit
+     *  {@code includeAdjustments} control for the home analytics' "Include adjustments
+     *  in P&L" checkbox. When true, manual-terminal closed trades sum into the money
+     *  tiles (Total Return, Current Capital, Avg Monthly %, Total Charges) and the
+     *  equity curve; strategy-stats tiles stay strategy-pure regardless. */
+    public Map<String, Object> summary(String period, String strategyId, String from, String to,
+                                       boolean includeAdjustments) {
         List<Trade> trades = loadTrades(period, strategyId, from, to);
-        // Per-trade metrics (counts, wins/losses, streaks, extremes) only consider closed
-        // straddles; the synthetic OPEN_POSITION_MTM row is excluded so a still-open trade
-        // doesn't pollute win-rate or extreme-loss stats.
         List<Trade> closed = new ArrayList<>();
         for (Trade t : trades) if (isClosedStraddle(t)) closed.add(t);
         double startingCapital = riskSettings.getStartingCapital();
+
+        // Filter manual-terminal closed trades to the same date window as the straddle filter.
+        List<com.rydytrader.autotrader.store.manual.ManualClosedTrade> adjustments =
+            loadAdjustments(period, from, to);
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("period",        period);
@@ -78,16 +92,60 @@ public class AnalyticsService {
         out.put("to",            to);
         out.put("straddleCount", closed.size());
         out.put("sessionCount",  distinctDates(closed));
+        out.put("includeAdjustments", includeAdjustments);
 
-        // Capital + equity curve include the open-MTM row so Total Return reflects realised
-        // + open MTM − charges (matching the per-strategy dashboard's Net Day P&L).
-        out.put("capital",     capital(trades, startingCapital));
+        out.put("capital",     capital(trades, startingCapital,
+                                       includeAdjustments ? adjustments : java.util.List.of()));
         out.put("performance", performance(closed));
         out.put("extremes",    extremes(closed));
-        out.put("streaks",     streaks(closed));
+        out.put("streaks",     streaks(closed, includeAdjustments ? adjustments : java.util.List.of()));
         out.put("edge",        edge(closed, startingCapital));
-        out.put("equityCurve", equityCurve(trades, startingCapital));
+        out.put("equityCurve", equityCurve(trades, startingCapital,
+                                           includeAdjustments ? adjustments : java.util.List.of()));
+        out.put("adjustments", adjustmentSummary(adjustments));
         return out;
+    }
+
+    /** Pull the manual terminal's closed trades that fall within the requested filter window.
+     *  Defensive: if {@link com.rydytrader.autotrader.service.ManualTerminalService} isn't
+     *  on the classpath yet / bean creation failed, return an empty list. */
+    private List<com.rydytrader.autotrader.store.manual.ManualClosedTrade> loadAdjustments(
+            String period, String from, String to) {
+        com.rydytrader.autotrader.service.ManualTerminalService svc =
+            manualTerminalProvider == null ? null : manualTerminalProvider.getIfAvailable();
+        if (svc == null) return java.util.List.of();
+        LocalDate today = LocalDate.now(IST);
+        LocalDate rangeFrom = parseIso(from);
+        LocalDate rangeTo   = parseIso(to);
+        boolean explicitRange = rangeFrom != null || rangeTo != null;
+        LocalDate cutoff = explicitRange ? null : switch (period == null ? "all" : period.toLowerCase()) {
+            case "today"  -> today;
+            case "expiry" -> currentExpiryStart(today);
+            case "ytd"    -> indianFinancialYearStart(today);
+            case "mtd"    -> LocalDate.of(today.getYear(), today.getMonthValue(), 1);
+            default       -> null;
+        };
+        List<com.rydytrader.autotrader.store.manual.ManualClosedTrade> out = new ArrayList<>();
+        for (com.rydytrader.autotrader.store.manual.ManualClosedTrade t : svc.recentTrades()) {
+            LocalDate d = java.time.Instant.ofEpochMilli(t.closeMillis).atZone(IST).toLocalDate();
+            if (cutoff    != null && d.isBefore(cutoff))   continue;
+            if (rangeFrom != null && d.isBefore(rangeFrom)) continue;
+            if (rangeTo   != null && d.isAfter(rangeTo))    continue;
+            out.add(t);
+        }
+        return out;
+    }
+
+    /** Compact mini-card payload shown after the Costs card on home — always visible
+     *  regardless of the include-adjustments checkbox. */
+    private Map<String, Object> adjustmentSummary(List<com.rydytrader.autotrader.store.manual.ManualClosedTrade> adj) {
+        double netPnl = 0;
+        for (com.rydytrader.autotrader.store.manual.ManualClosedTrade t : adj) netPnl += t.pnl;
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("count",   adj.size());
+        m.put("netPnl",  round2(netPnl));
+        m.put("charges", 0.0); // Per-trade brokerage estimate could be added later — kept 0 for v1.
+        return m;
     }
 
     // ── Trade loading ───────────────────────────────────────────────────────
@@ -226,8 +284,12 @@ public class AnalyticsService {
     }
 
     // ── CAPITAL ─────────────────────────────────────────────────────────────
-    private Map<String, Object> capital(List<Trade> trades, double starting) {
+    private Map<String, Object> capital(List<Trade> trades, double starting,
+                                        List<com.rydytrader.autotrader.store.manual.ManualClosedTrade> adjustments) {
         double netSum = trades.stream().mapToDouble(Trade::netPnl).sum();
+        // Fold adjustments into the money totals when the caller passes them in (i.e. the
+        // operator has the "Include adjustments in P&L" checkbox ticked).
+        for (com.rydytrader.autotrader.store.manual.ManualClosedTrade t : adjustments) netSum += t.pnl;
         double current = starting + netSum;
         double returnPct = starting > 0 ? (netSum / starting) * 100.0 : 0;
         // Avg monthly % — group by yyyy-MM, sum net, divide by starting, average.
@@ -237,6 +299,10 @@ public class AnalyticsService {
                 ? t.sessionDate().substring(0, 7) : "";
             if (ym.isEmpty()) continue;
             byMonth.merge(ym, t.netPnl(), Double::sum);
+        }
+        for (com.rydytrader.autotrader.store.manual.ManualClosedTrade t : adjustments) {
+            String ym = java.time.Instant.ofEpochMilli(t.closeMillis).atZone(IST).toLocalDate().toString().substring(0, 7);
+            byMonth.merge(ym, t.pnl, Double::sum);
         }
         double avgMonthlyPct = 0;
         if (!byMonth.isEmpty() && starting > 0) {
@@ -329,12 +395,15 @@ public class AnalyticsService {
     }
 
     // ── STREAKS (per straddle, with total charges) ──────────────────────────
-    private Map<String, Object> streaks(List<Trade> trades) {
+    private Map<String, Object> streaks(List<Trade> trades,
+                                        List<com.rydytrader.autotrader.store.manual.ManualClosedTrade> adjustments) {
         int curWin = 0, curLoss = 0, longestWin = 0, longestLoss = 0;
         double totalCharges = 0;
         for (Trade t : trades) {
             double pnl = t.netPnl();
             totalCharges += t.charges();
+            // Streaks are per-straddle only — adjustments contribute to charges (a money
+            // metric) but NOT to win/loss streak counters which are strategy diagnostics.
             if (pnl > 0) {
                 curWin++; curLoss = 0;
                 if (curWin > longestWin) longestWin = curWin;
@@ -345,6 +414,8 @@ public class AnalyticsService {
                 curWin = 0; curLoss = 0;
             }
         }
+        // Adjustments' brokerage estimate would add here once we record per-trade charges;
+        // for v1 we report 0 in adjustmentSummary so totalCharges stays unchanged either way.
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("currentWinStreak",  curWin);
         m.put("longestWinStreak",  longestWin);
@@ -402,20 +473,39 @@ public class AnalyticsService {
      *  <p>Always prepends a "Start" baseline at the starting-capital value so a single-trade
      *  history still produces 2 points (enough for Chart.js to draw a connecting line — the
      *  hero chart uses {@code pointRadius: 0}, so a single isolated point would be invisible). */
-    private Map<String, Object> equityCurve(List<Trade> trades, double starting) {
-        List<String> labels = new ArrayList<>();
-        List<Double> values = new ArrayList<>();
-        labels.add("Start");
-        values.add(round2(starting));
-        double cum = starting;
+    private Map<String, Object> equityCurve(List<Trade> trades, double starting,
+                                            List<com.rydytrader.autotrader.store.manual.ManualClosedTrade> adjustments) {
+        // Merge straddle closes + adjustment closes into one time-sorted sequence so the cum
+        // equity curve threads through both in chronological order. Each emitted point carries
+        // a "kind" flag (STRADDLE / ADJUSTMENT) so the home page's renderer can mark
+        // adjustment points distinctly (amber triangles).
+        record EquityEvent(long millis, String label, double net, String kind) {}
+        List<EquityEvent> events = new ArrayList<>();
         for (Trade t : trades) {
-            cum += t.netPnl();
-            labels.add(t.sessionDate());
+            events.add(new EquityEvent(t.closedAtMillis(),
+                t.sessionDate() == null ? "" : t.sessionDate(), t.netPnl(), "STRADDLE"));
+        }
+        for (com.rydytrader.autotrader.store.manual.ManualClosedTrade t : adjustments) {
+            String label = java.time.Instant.ofEpochMilli(t.closeMillis).atZone(IST).toLocalDate().toString();
+            events.add(new EquityEvent(t.closeMillis, label, t.pnl, "ADJUSTMENT"));
+        }
+        events.sort(Comparator.comparingLong(EquityEvent::millis));
+
+        List<String>  labels = new ArrayList<>();
+        List<Double>  values = new ArrayList<>();
+        List<String>  kinds  = new ArrayList<>();
+        labels.add("Start"); values.add(round2(starting)); kinds.add("START");
+        double cum = starting;
+        for (EquityEvent e : events) {
+            cum += e.net();
+            labels.add(e.label());
             values.add(round2(cum));
+            kinds.add(e.kind());
         }
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("labels", labels);
         m.put("values", values);
+        m.put("kinds",  kinds);
         return m;
     }
 
