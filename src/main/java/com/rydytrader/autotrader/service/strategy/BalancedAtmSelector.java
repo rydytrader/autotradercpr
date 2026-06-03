@@ -12,23 +12,17 @@ import java.util.NavigableMap;
 import java.util.TreeMap;
 
 /**
- * Picks the truly balanced ATM strike for a NIFTY straddle.
+ * Picks the truly balanced ATM strike for a NIFTY straddle using put-call parity.
  *
  * <p>Naïvely rounding spot to the nearest strike step yields asymmetric premiums when spot
  * sits between strikes — the resulting CE and PE LTPs can be 50+ points apart, which is not
- * a delta-neutral straddle. This selector uses two independent methods and reports whether
- * they agree:
+ * a delta-neutral straddle. Put-call parity gives the synthetic forward:
  *
- * <ol>
- *   <li><b>Premium-balance</b> — scan ±N strikes around spot-ATM, pick the strike with the
- *       smallest |CE − PE|. Purely empirical; vulnerable to wide quotes on individual rows.</li>
- *   <li><b>Synthetic-futures (put-call parity)</b> — F = K + (CE − PE) at spot-ATM, then
- *       round F to the nearest strike step. Robust to single-strike noise but assumes parity.</li>
- * </ol>
+ * <pre>F = K + (CE − PE)  at the spot-ATM strike K</pre>
  *
- * <p>When both methods land on the same strike (or within one step) we say they <b>agree</b>
- * and that strike is taken. When they disagree the caller is told and decides — schedule a
- * retry, defer to the operator, or accept the synthetic answer as the canonical choice.
+ * <p>Rounding F to the nearest strike step yields the truly balanced ATM. This single-method
+ * selection is robust on liquid weekly NIFTY — parity holds tightly, and using only the
+ * spot-ATM quote makes us immune to wide bid-ask on adjacent strikes.
  */
 @Service
 public class BalancedAtmSelector {
@@ -36,9 +30,6 @@ public class BalancedAtmSelector {
     private static final Logger log = LoggerFactory.getLogger(BalancedAtmSelector.class);
     private static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
     private static final long   STRIKE_STEP  = 50L;
-    /** Window scanned around the spot-rounded ATM (in strike steps). 2 covers ±100 points,
-     *  which is wider than any single tick of NIFTY can move between read and order. */
-    private static final int    SCAN_WINDOW  = 2;
 
     private final FyersClientRouter fyersClient;
     private final TokenStore        tokenStore;
@@ -52,29 +43,26 @@ public class BalancedAtmSelector {
         this.fyersProperties = fyersProperties;
     }
 
-    /** Full result of one selection attempt — exposes every intermediate so the UI / logs
-     *  can explain to the operator why the chosen strike differs from the naïve spot-ATM. */
+    /** Outcome of one ATM selection. {@code spotAtm} is the naïve spot/50 baseline — kept
+     *  for transparency on the dashboard so the operator can see how far the parity-based
+     *  pick moved from "obvious". {@code chosenAtm} is what the bot will actually trade. */
     public record AtmSelection(
-        long    spotAtm,            // Math.round(spot/50)*50 — the naïve baseline
-        long    premiumBalanceAtm,  // Approach 1
-        long    syntheticAtm,       // Approach 2
-        long    chosenAtm,          // syntheticAtm when agreement; syntheticAtm anyway on disagreement
-        boolean agree,              // |Approach1 − Approach2| ≤ STRIKE_STEP
+        long    spotAtm,
+        long    chosenAtm,
         double  ceLtpAtChosen,
         double  peLtpAtChosen,
-        double  premiumGapAtChosen, // |CE − PE| at chosenAtm
+        double  premiumGapAtChosen,
         String  ceSymbolAtChosen,
-        String  peSymbolAtChosen,
-        String  diagnostic          // human one-liner — empty when agree
+        String  peSymbolAtChosen
     ) {}
 
     /**
-     * Build one selection from the current chain. {@code niftyLtp} is provided rather than
-     * read inside so the caller can pass either the live ticker LTP or a cached snapshot
-     * (e.g. for a UI preview that lags the WS by a fraction of a second).
+     * Compute the synthetic-futures ATM for the given live NIFTY LTP. {@code niftyLtp} is
+     * passed in (rather than read internally) so callers can hand off a cached snapshot
+     * during preview polls without a re-read.
      *
-     * <p>Returns {@code null} when the chain can't be fetched / parsed (network error,
-     * empty payload, no ATM strike present). Caller treats null the same as "skip entry".
+     * <p>Returns {@code null} when the option chain is unavailable (network error, empty
+     * payload, missing spot-ATM row, unquoted ATM strike). Caller treats null as "skip".
      */
     public AtmSelection select(double niftyLtp) {
         if (niftyLtp <= 0) return null;
@@ -85,57 +73,36 @@ public class BalancedAtmSelector {
 
         ChainRow atmRow = chain.get(spotAtm);
         if (atmRow == null || atmRow.ce <= 0 || atmRow.pe <= 0) {
-            log.warn("[atm-selector] spot-ATM strike {} missing or unquoted in chain — skipping selection",
+            log.warn("[atm-selector] spot-ATM strike {} missing or unquoted in chain — skipping",
                 spotAtm);
             return null;
         }
 
-        // ── Approach 1 — premium-balance scan ────────────────────────────────
-        long   balancedAtm = spotAtm;
-        double bestGap     = Math.abs(atmRow.ce - atmRow.pe);
-        for (long k = spotAtm - SCAN_WINDOW * STRIKE_STEP;
-                  k <= spotAtm + SCAN_WINDOW * STRIKE_STEP;
-                  k += STRIKE_STEP) {
-            ChainRow r = chain.get(k);
-            if (r == null || r.ce <= 0 || r.pe <= 0) continue;
-            double gap = Math.abs(r.ce - r.pe);
-            if (gap < bestGap) { bestGap = gap; balancedAtm = k; }
+        // Put-call parity:  F = K + (CE − PE)   →   round to strike step.
+        double forward = spotAtm + (atmRow.ce - atmRow.pe);
+        long   chosen  = Math.round(forward / (double) STRIKE_STEP) * STRIKE_STEP;
+
+        ChainRow chosenRow = chain.get(chosen);
+        if (chosenRow == null || chosenRow.ce <= 0 || chosenRow.pe <= 0) {
+            // Selector landed on a strike with no quotes — fall back to spot-ATM so we still
+            // have a tradeable pair, but log the anomaly.
+            log.warn("[atm-selector] synthetic strike {} unquoted — falling back to spot-ATM {}",
+                chosen, spotAtm);
+            chosen = spotAtm; chosenRow = atmRow;
         }
-
-        // ── Approach 2 — synthetic-futures / put-call parity ─────────────────
-        double forward     = spotAtm + (atmRow.ce - atmRow.pe);
-        long   syntheticAtm = Math.round(forward / (double) STRIKE_STEP) * STRIKE_STEP;
-
-        // ── Agreement ────────────────────────────────────────────────────────
-        boolean agree = Math.abs(balancedAtm - syntheticAtm) <= STRIKE_STEP;
-
-        // ── Chosen strike — synthetic-futures is the primary (parity-based, robust to
-        // single noisy quotes). On disagreement the caller's retry / confirm logic
-        // gates whether to actually USE this number.
-        long chosenAtm = syntheticAtm;
-        ChainRow chosenRow = chain.get(chosenAtm);
-        if (chosenRow == null) { chosenAtm = spotAtm; chosenRow = atmRow; }
-
-        String diagnostic = agree ? "" :
-            "balanced=" + balancedAtm + " synthetic=" + syntheticAtm
-            + " (gap " + Math.round(Math.abs(balancedAtm - syntheticAtm)) + " pts)";
 
         return new AtmSelection(
             spotAtm,
-            balancedAtm,
-            syntheticAtm,
-            chosenAtm,
-            agree,
+            chosen,
             chosenRow.ce,
             chosenRow.pe,
             Math.abs(chosenRow.ce - chosenRow.pe),
             chosenRow.ceSym,
-            chosenRow.peSym,
-            diagnostic
+            chosenRow.peSym
         );
     }
 
-    // ── Internal helpers ──────────────────────────────────────────────────────
+    // ── Internal ──────────────────────────────────────────────────────────────
 
     private static class ChainRow {
         double ce, pe;

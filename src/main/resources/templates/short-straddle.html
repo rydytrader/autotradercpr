@@ -1685,40 +1685,20 @@
         var d = lastDashboardData || {};
         var spot = d.niftyLtp || d.niftyDisplayLtp || 0;
         var fallbackAtm = spot > 0 ? Math.round(spot / 50) * 50 : '—';
-        var hasPreview  = preview && preview.available && preview.chosenAtm;
-        var chosen   = hasPreview ? preview.chosenAtm   : fallbackAtm;
-        var agree    = hasPreview ? preview.agree !== false : true;
-        var balanced = hasPreview ? preview.balancedAtm  : null;
-        var synth    = hasPreview ? preview.syntheticAtm : null;
-        var ceLtp    = hasPreview ? preview.ceLtp        : null;
-        var peLtp    = hasPreview ? preview.peLtp        : null;
-        var gap      = hasPreview ? preview.premiumGap   : null;
-
-        var body;
-        if (hasPreview && !agree) {
-            // Disagreement banner — show both candidates, let operator decide.
-            body = 'ATM SELECTOR DISAGREES — operator decision required'
-                 + '\n\n  Premium-balance method  : ' + balanced
-                 + '\n  Synthetic-futures method: ' + synth
-                 + '\n\nWill place straddle at ' + chosen + ' (synthetic).'
-                 + (ceLtp != null && peLtp != null
-                     ? '\n  CE LTP: ' + ceLtp.toFixed(2) + '   PE LTP: ' + peLtp.toFixed(2)
-                       + '   gap: ' + (gap != null ? gap.toFixed(2) : '—')
-                     : '')
-                 + '\n\nProceed only if you accept the imbalance, otherwise skip and try later.';
-        } else {
-            body = 'A second straddle for today will be opened at ATM ~' + chosen + '.'
-                 + (hasPreview && ceLtp != null && peLtp != null
-                     ? '\n  CE LTP: ' + ceLtp.toFixed(2) + '   PE LTP: ' + peLtp.toFixed(2)
-                       + '   gap: ' + (gap != null ? gap.toFixed(2) : '—')
-                     : '')
-                 + '\n\nUses today\'s leg-SL config and qty exactly like the scheduler would.';
-        }
+        var hasPreview = preview && preview.available && preview.chosenAtm;
+        var chosen = hasPreview ? preview.chosenAtm : fallbackAtm;
+        var ceLtp  = hasPreview ? preview.ceLtp     : null;
+        var peLtp  = hasPreview ? preview.peLtp     : null;
+        var gap    = hasPreview ? preview.premiumGap : null;
+        var body = 'A second straddle for today will be opened at ATM ~' + chosen + '.'
+             + (hasPreview && ceLtp != null && peLtp != null
+                 ? '\n  CE LTP: ' + ceLtp.toFixed(2) + '   PE LTP: ' + peLtp.toFixed(2)
+                   + '   gap: ' + (gap != null ? gap.toFixed(2) : '—')
+                 : '')
+             + '\n\nUses today\'s leg-SL config and qty exactly like the scheduler would.';
         showConfirm({
-            title: (hasPreview && !agree)
-                ? 'Enter NEW straddle despite ATM disagreement?'
-                : 'Enter a NEW straddle now?',
-            body:  body,
+            title:     'Enter a NEW straddle now?',
+            body:      body,
             onConfirm: doNewStraddle
         });
     }

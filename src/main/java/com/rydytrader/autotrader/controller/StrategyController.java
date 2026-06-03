@@ -134,10 +134,8 @@ public class StrategyController {
     }
 
     /** Live preview of the balanced-ATM selection for the + NEW STRADDLE confirm modal.
-     *  The UI fetches this before showing the confirm — when {@code agree=false} the modal
-     *  surfaces the disagreement so the operator can decide proceed-anyway vs skip. The
-     *  underlying selector caches inside {@link ShortStraddle#getAtmPreview()} (30 s TTL)
-     *  so repeat polls don't hammer the option chain. */
+     *  The UI fetches this so the modal can show the chosen strike + CE/PE LTPs before the
+     *  operator commits. Backed by {@link ShortStraddle#getAtmPreview()} (30 s cache). */
     @GetMapping("/api/strategies/{id}/atm-preview")
     public ResponseEntity<Map<String, Object>> atmPreview(@PathVariable String id) {
         Strategy s = registry.get(id);
@@ -154,19 +152,15 @@ public class StrategyController {
             out.put("message",   "ATM preview unavailable — NIFTY LTP or option chain not ready");
             return ResponseEntity.ok(out);
         }
-        out.put("supported",       true);
-        out.put("available",       true);
-        out.put("spotAtm",         sel.spotAtm());
-        out.put("balancedAtm",     sel.premiumBalanceAtm());
-        out.put("syntheticAtm",    sel.syntheticAtm());
-        out.put("chosenAtm",       sel.chosenAtm());
-        out.put("agree",           sel.agree());
-        out.put("ceLtp",           sel.ceLtpAtChosen());
-        out.put("peLtp",           sel.peLtpAtChosen());
-        out.put("premiumGap",      sel.premiumGapAtChosen());
-        out.put("ceSymbol",        sel.ceSymbolAtChosen());
-        out.put("peSymbol",        sel.peSymbolAtChosen());
-        out.put("diagnostic",      sel.diagnostic());
+        out.put("supported",  true);
+        out.put("available",  true);
+        out.put("spotAtm",    sel.spotAtm());
+        out.put("chosenAtm",  sel.chosenAtm());
+        out.put("ceLtp",      sel.ceLtpAtChosen());
+        out.put("peLtp",      sel.peLtpAtChosen());
+        out.put("premiumGap", sel.premiumGapAtChosen());
+        out.put("ceSymbol",   sel.ceSymbolAtChosen());
+        out.put("peSymbol",   sel.peSymbolAtChosen());
         return ResponseEntity.ok(out);
     }
 

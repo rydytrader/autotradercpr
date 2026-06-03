@@ -149,23 +149,10 @@ public class ShortStraddle implements Strategy {
     /** True once {@link #bootstrap()} has wired the FillListener. */
     private volatile boolean fillListenerWired = false;
 
-    // ── Balanced-ATM retry state ─────────────────────────────────────────────
-    /** Number of consecutive scheduled-entry attempts where the two ATM-selection methods
-     *  disagreed (premium-balance vs synthetic-futures land on different strikes). After
-     *  {@link #ATM_RETRY_MAX} disagreements we proceed anyway with the synthetic-futures
-     *  pick. Reset on every successful entry and on day rollover. */
-    private volatile int     atmDisagreementCount = 0;
-    /** Epoch-millis of the earliest moment the scheduler is allowed to retry entry after a
-     *  disagreement. Set to {@code now + 5 minutes} on every disagreement; ticks before
-     *  this timestamp are no-ops for the entry path. 0 means "no defer in effect". */
-    private volatile long    atmRetryDeferUntilMs = 0;
-    /** Last selection result — surfaced on the dashboard so the operator sees what the
-     *  selector picked and whether the two methods agreed. {@code null} pre-entry. */
+    // ── Balanced-ATM state ───────────────────────────────────────────────────
+    /** Last selection result — surfaced on the dashboard so the operator sees the strike
+     *  the synthetic-futures method picked vs the naïve spot/50 round. {@code null} pre-entry. */
     private volatile BalancedAtmSelector.AtmSelection lastAtmSelection = null;
-    /** Hard cap on disagreement retries. After this many, the scheduler proceeds with the
-     *  synthetic-futures pick and logs a warning. */
-    private static final int ATM_RETRY_MAX           = 3;
-    private static final long ATM_RETRY_DEFER_MS     = 5L * 60_000L;  // 5 minutes
     /** Cached pre-entry preview — populated lazily by {@link #getAtmPreview()} and refreshed
      *  every {@link #ATM_PREVIEW_TTL_MS}. Lets the dashboard publish the projected balanced
      *  ATM without re-fetching the option chain on every poll. */
@@ -330,10 +317,7 @@ public class ShortStraddle implements Strategy {
             if (!pendingFills.isEmpty())          return "PENDING_FILLS";
             eventService.log("[INFO] [" + instanceId + "] Manual + NEW STRADDLE restart from dashboard ("
                 + reason + ")");
-            // Manual restart is operator-driven: the UI's confirmation modal already
-            // surfaced any ATM-selector disagreement and the user clicked through.
-            // Force-proceed instead of deferring like the scheduled path does.
-            performEntryNow("ENTRY_MANUAL", true);
+            performEntryNow("ENTRY_MANUAL");
         }
         return "OK";
     }
@@ -649,11 +633,7 @@ public class ShortStraddle implements Strategy {
      *  reached, day enabled). Delegates to {@link #performEntryNow} which does the actual
      *  placement and is also reused by the manual {@code + NEW STRADDLE} restart path. */
     private void doInitialEntry() {
-        // Skip ticks while a balanced-ATM retry is deferred — re-check 5 min after the
-        // previous disagreement landed.
-        long now = System.currentTimeMillis();
-        if (atmRetryDeferUntilMs > 0 && now < atmRetryDeferUntilMs) return;
-        performEntryNow("ENTRY", false);
+        performEntryNow("ENTRY");
     }
 
     /** Atomic placement-and-state-mutation block. Snapshots day-level accumulators at the
@@ -661,7 +641,7 @@ public class ShortStraddle implements Strategy {
      *  of cumulative day totals (multi-cycle days produce one trade row per cycle). Fully
      *  resets per-leg state so a manual restart from DONE_FOR_DAY doesn't carry stale
      *  closed-leg values into the new straddle. */
-    private synchronized void performEntryNow(String entryEventTag, boolean forceOnDisagreement) {
+    private synchronized void performEntryNow(String entryEventTag) {
         this.cycleStartRealisedPnl   = realisedPnlToday;
         this.cycleStartSellTurnover  = sellPremiumTurnoverToday;
         this.cycleStartBuyTurnover   = buyPremiumTurnoverToday;
@@ -681,7 +661,7 @@ public class ShortStraddle implements Strategy {
             log.info("[short-straddle] Skipping entry — NIFTY LTP unavailable (waiting for first tick)");
             return;
         }
-        // Balanced-ATM selection — uses premium-balance + synthetic-futures, may disagree.
+        // Balanced-ATM selection — single-method (put-call parity / synthetic futures).
         BalancedAtmSelector.AtmSelection sel = atmSelector.select(niftyLtp);
         this.lastAtmSelection = sel;
         if (sel == null) {
@@ -689,25 +669,6 @@ public class ShortStraddle implements Strategy {
             eventService.log("[ERROR] [short-straddle] entry aborted — ATM-selector chain fetch failed");
             transitionTo(LifecycleState.DONE_FOR_DAY);
             return;
-        }
-        if (!sel.agree() && !forceOnDisagreement) {
-            atmDisagreementCount++;
-            if (atmDisagreementCount >= ATM_RETRY_MAX) {
-                eventService.log("[WARNING] [" + instanceId + "] ATM methods disagreed "
-                    + atmDisagreementCount + "× — proceeding with synthetic-futures pick "
-                    + sel.syntheticAtm() + " (" + sel.diagnostic() + ")");
-                log.warn("[short-straddle] ATM disagreement {}× → forcing entry @ {}",
-                    atmDisagreementCount, sel.syntheticAtm());
-                // Fall through and place the trade.
-            } else {
-                atmRetryDeferUntilMs = System.currentTimeMillis() + ATM_RETRY_DEFER_MS;
-                eventService.log("[INFO] [" + instanceId + "] ATM methods disagreed ("
-                    + sel.diagnostic() + ") — retry " + atmDisagreementCount + "/"
-                    + ATM_RETRY_MAX + " in 5 min");
-                log.info("[short-straddle] ATM disagreement attempt {} → deferring 5 min ({})",
-                    atmDisagreementCount, sel.diagnostic());
-                return;
-            }
         }
         long atmStrike = sel.chosenAtm();
         String resolvedCe = sel.ceSymbolAtChosen();
@@ -720,9 +681,6 @@ public class ShortStraddle implements Strategy {
             transitionTo(LifecycleState.DONE_FOR_DAY);
             return;
         }
-        // Successful selection — reset retry counters for the next disagreement window.
-        atmDisagreementCount = 0;
-        atmRetryDeferUntilMs = 0;
         int qty = Math.max(1, riskSettings.getStrategyInt(instanceId, "lotsPerLeg", 1)) * NIFTY_LOT_SIZE;
         String product = productType();
 
@@ -1123,23 +1081,14 @@ public class ShortStraddle implements Strategy {
             atmInfo = lastAtmSelection;
         }
         if (atmInfo != null) {
-            m.put("projectedAtm",         atmInfo.chosenAtm());
-            m.put("projectedAtmSpot",     atmInfo.spotAtm());
-            m.put("projectedAtmBalanced", atmInfo.premiumBalanceAtm());
-            m.put("projectedAtmSynth",    atmInfo.syntheticAtm());
-            m.put("projectedAtmAgree",    atmInfo.agree());
-            m.put("projectedAtmDiag",     atmInfo.diagnostic());
-            m.put("projectedAtmCeSym",    atmInfo.ceSymbolAtChosen());
-            m.put("projectedAtmPeSym",    atmInfo.peSymbolAtChosen());
-            m.put("projectedAtmCeLtp",    round2(atmInfo.ceLtpAtChosen()));
-            m.put("projectedAtmPeLtp",    round2(atmInfo.peLtpAtChosen()));
-            m.put("projectedAtmGap",      round2(atmInfo.premiumGapAtChosen()));
+            m.put("projectedAtm",      atmInfo.chosenAtm());
+            m.put("projectedAtmSpot",  atmInfo.spotAtm());
+            m.put("projectedAtmCeSym", atmInfo.ceSymbolAtChosen());
+            m.put("projectedAtmPeSym", atmInfo.peSymbolAtChosen());
+            m.put("projectedAtmCeLtp", round2(atmInfo.ceLtpAtChosen()));
+            m.put("projectedAtmPeLtp", round2(atmInfo.peLtpAtChosen()));
+            m.put("projectedAtmGap",   round2(atmInfo.premiumGapAtChosen()));
         }
-        // Retry context — UI can show "retry 2/3, next attempt in 4:13" beside the disagreement
-        // banner so the operator knows the scheduler is waiting on its own.
-        m.put("atmRetryCount",          atmDisagreementCount);
-        m.put("atmRetryMax",            ATM_RETRY_MAX);
-        m.put("atmRetryDeferUntilMs",   atmRetryDeferUntilMs);
 
         double ceLtp = (!ceSymbol.isEmpty()) ? marketDataService.getLtp(ceSymbol) : 0;
         double peLtp = (!peSymbol.isEmpty()) ? marketDataService.getLtp(peSymbol) : 0;
@@ -1357,8 +1306,6 @@ public class ShortStraddle implements Strategy {
         this.currentWeeklyExpiry = "";
         this.recentEvents.clear();
         this.combinedPremiumSamples.clear();
-        this.atmDisagreementCount = 0;
-        this.atmRetryDeferUntilMs = 0;
         this.lastAtmSelection = null;
         transitionTo(LifecycleState.IDLE);
     }
