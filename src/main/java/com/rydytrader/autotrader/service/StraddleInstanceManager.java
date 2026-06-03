@@ -6,6 +6,7 @@ import com.rydytrader.autotrader.fyers.FyersClientRouter;
 import com.rydytrader.autotrader.repository.StraddleInstanceRepository;
 import com.rydytrader.autotrader.repository.StraddleSessionRepository;
 import com.rydytrader.autotrader.repository.StraddleTradeRepository;
+import com.rydytrader.autotrader.service.strategy.BalancedAtmSelector;
 import com.rydytrader.autotrader.service.strategy.ShortStraddle;
 import com.rydytrader.autotrader.service.strategy.Strategy;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
@@ -58,6 +59,7 @@ public class StraddleInstanceManager {
     private final ObjectProvider<StraddleSessionRepository> sessionRepoProvider;
     private final ObjectProvider<StraddleTradeRepository> tradeRepoProvider;
     private final ObjectProvider<OrderEventService> orderEventServiceProvider;
+    private final BalancedAtmSelector atmSelector;
 
     private final Map<String, ShortStraddle> instances = Collections.synchronizedMap(new LinkedHashMap<>());
 
@@ -74,7 +76,8 @@ public class StraddleInstanceManager {
                                     @Lazy ObjectProvider<TelegramService> telegramServiceProvider,
                                     @Lazy ObjectProvider<StraddleSessionRepository> sessionRepoProvider,
                                     @Lazy ObjectProvider<StraddleTradeRepository> tradeRepoProvider,
-                                    @Lazy ObjectProvider<OrderEventService> orderEventServiceProvider) {
+                                    @Lazy ObjectProvider<OrderEventService> orderEventServiceProvider,
+                                    BalancedAtmSelector atmSelector) {
         this.repo = repo;
         this.riskSettings = riskSettings;
         this.stateStore = stateStore;
@@ -89,6 +92,7 @@ public class StraddleInstanceManager {
         this.sessionRepoProvider = sessionRepoProvider;
         this.tradeRepoProvider = tradeRepoProvider;
         this.orderEventServiceProvider = orderEventServiceProvider;
+        this.atmSelector = atmSelector;
     }
 
     @PostConstruct
@@ -121,7 +125,8 @@ public class StraddleInstanceManager {
             telegramServiceProvider.getObject(),
             sessionRepoProvider.getObject(),
             tradeRepoProvider.getObject(),
-            orderEventServiceProvider.getObject()
+            orderEventServiceProvider.getObject(),
+            atmSelector
         );
     }
 

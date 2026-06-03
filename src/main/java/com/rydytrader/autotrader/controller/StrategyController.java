@@ -1,5 +1,7 @@
 package com.rydytrader.autotrader.controller;
 
+import com.rydytrader.autotrader.service.strategy.BalancedAtmSelector;
+import com.rydytrader.autotrader.service.strategy.ShortStraddle;
 import com.rydytrader.autotrader.service.strategy.Strategy;
 import com.rydytrader.autotrader.service.strategy.StrategyRegistry;
 import org.springframework.http.ResponseEntity;
@@ -128,6 +130,43 @@ public class StrategyController {
         out.put("message", ok
             ? legUpper + " leg close submitted for " + id + "."
             : "Nothing to close — " + legUpper + " leg is not currently open.");
+        return ResponseEntity.ok(out);
+    }
+
+    /** Live preview of the balanced-ATM selection for the + NEW STRADDLE confirm modal.
+     *  The UI fetches this before showing the confirm — when {@code agree=false} the modal
+     *  surfaces the disagreement so the operator can decide proceed-anyway vs skip. The
+     *  underlying selector caches inside {@link ShortStraddle#getAtmPreview()} (30 s TTL)
+     *  so repeat polls don't hammer the option chain. */
+    @GetMapping("/api/strategies/{id}/atm-preview")
+    public ResponseEntity<Map<String, Object>> atmPreview(@PathVariable String id) {
+        Strategy s = registry.get(id);
+        if (s == null) return ResponseEntity.notFound().build();
+        if (!(s instanceof ShortStraddle straddle)) {
+            return ResponseEntity.badRequest().body(Map.of(
+                "supported", false, "message", "Strategy does not support ATM preview"));
+        }
+        BalancedAtmSelector.AtmSelection sel = straddle.getAtmPreview();
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (sel == null) {
+            out.put("supported", true);
+            out.put("available", false);
+            out.put("message",   "ATM preview unavailable — NIFTY LTP or option chain not ready");
+            return ResponseEntity.ok(out);
+        }
+        out.put("supported",       true);
+        out.put("available",       true);
+        out.put("spotAtm",         sel.spotAtm());
+        out.put("balancedAtm",     sel.premiumBalanceAtm());
+        out.put("syntheticAtm",    sel.syntheticAtm());
+        out.put("chosenAtm",       sel.chosenAtm());
+        out.put("agree",           sel.agree());
+        out.put("ceLtp",           sel.ceLtpAtChosen());
+        out.put("peLtp",           sel.peLtpAtChosen());
+        out.put("premiumGap",      sel.premiumGapAtChosen());
+        out.put("ceSymbol",        sel.ceSymbolAtChosen());
+        out.put("peSymbol",        sel.peSymbolAtChosen());
+        out.put("diagnostic",      sel.diagnostic());
         return ResponseEntity.ok(out);
     }
 

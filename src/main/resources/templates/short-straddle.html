@@ -826,7 +826,7 @@
             if (ceQtyEl) ceQtyEl.textContent = 'QTY · '
                 + (d.ceQty > 0 ? d.ceQty : (d.ceEntryPremium > 0 ? '0' : '—'));
             var ceStrikeEl = document.getElementById('paneCeStrike');
-            var ceStrikeInfo = strikeForLeg(d.ceSymbol, d.niftyLtp);
+            var ceStrikeInfo = strikeForLeg(d.ceSymbol, d.niftyLtp, d.projectedAtm);
             ceStrikeEl.textContent = ceStrikeInfo.value;
             ceStrikeEl.title = d.ceSymbol || '';
             ceStrikeEl.style.color = ceStrikeInfo.projected ? 'var(--text-muted)' : 'var(--text-primary)';
@@ -843,7 +843,7 @@
             if (peQtyEl) peQtyEl.textContent = 'QTY · '
                 + (d.peQty > 0 ? d.peQty : (d.peEntryPremium > 0 ? '0' : '—'));
             var peStrikeEl = document.getElementById('panePeStrike');
-            var peStrikeInfo = strikeForLeg(d.peSymbol, d.niftyLtp);
+            var peStrikeInfo = strikeForLeg(d.peSymbol, d.niftyLtp, d.projectedAtm);
             peStrikeEl.textContent = peStrikeInfo.value;
             peStrikeEl.title = d.peSymbol || '';
             peStrikeEl.style.color = peStrikeInfo.projected ? 'var(--text-muted)' : 'var(--text-primary)';
@@ -1436,7 +1436,11 @@
     // Supports both Fyers option symbol formats:
     //   A) ...YYMDD<strike>CE|PE  (e.g. NIFTY2660223850CE → strike 23850) — current format
     //   B) ...YYMDD[CP]<strike>   (e.g. NIFTY25527C24350 → strike 24350) — older format
-    function strikeForLeg(fyersSymbol, niftyLtp) {
+    // Resolves the strike to show on each leg card. Once the strategy has placed the
+    // straddle, the Fyers option symbol encodes the strike — we parse it out. Pre-entry
+    // we surface the balanced-ATM projection from the server (uses premium-balance +
+    // synthetic-futures methods) instead of a naïve spot/50 round.
+    function strikeForLeg(fyersSymbol, niftyLtp, projectedAtm) {
         if (fyersSymbol) {
             // Format A — 5-char date code + strike + CE/PE
             var mA = fyersSymbol.match(/[0-9OND]{5}(\d{4,6})(?:CE|PE)$/i);
@@ -1445,6 +1449,11 @@
             var mB = fyersSymbol.match(/[0-9OND]{5}[CP](\d{4,6})$/i);
             if (mB) return { value: mB[1], projected: false };
         }
+        // Server-projected balanced ATM (preferred — matches what the bot will actually trade).
+        if (projectedAtm && projectedAtm > 0) {
+            return { value: '~' + projectedAtm, projected: true };
+        }
+        // Last-ditch fallback if the server projection isn't available yet.
         if (niftyLtp && niftyLtp > 0) {
             var atm = Math.round(niftyLtp / 50) * 50;
             return { value: '~' + atm, projected: true };
@@ -1664,12 +1673,52 @@
             if (window.showToast) showToast(reason, 'info');
             return;
         }
+        // Pull the live balanced-ATM preview from the server. When the two methods agree we
+        // show a short confirmation with the chosen strike; when they disagree we surface
+        // both candidate strikes and the diagnostic so the operator decides proceed vs skip.
+        fetch('/api/strategies/' + STRATEGY_ID + '/atm-preview', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(p) { showNewStraddleConfirm(p || {}); })
+            .catch(function() { showNewStraddleConfirm({}); });
+    }
+    function showNewStraddleConfirm(preview) {
+        var d = lastDashboardData || {};
         var spot = d.niftyLtp || d.niftyDisplayLtp || 0;
-        var atm  = spot > 0 ? Math.round(spot / 50) * 50 : '—';
+        var fallbackAtm = spot > 0 ? Math.round(spot / 50) * 50 : '—';
+        var hasPreview  = preview && preview.available && preview.chosenAtm;
+        var chosen   = hasPreview ? preview.chosenAtm   : fallbackAtm;
+        var agree    = hasPreview ? preview.agree !== false : true;
+        var balanced = hasPreview ? preview.balancedAtm  : null;
+        var synth    = hasPreview ? preview.syntheticAtm : null;
+        var ceLtp    = hasPreview ? preview.ceLtp        : null;
+        var peLtp    = hasPreview ? preview.peLtp        : null;
+        var gap      = hasPreview ? preview.premiumGap   : null;
+
+        var body;
+        if (hasPreview && !agree) {
+            // Disagreement banner — show both candidates, let operator decide.
+            body = 'ATM SELECTOR DISAGREES — operator decision required'
+                 + '\n\n  Premium-balance method  : ' + balanced
+                 + '\n  Synthetic-futures method: ' + synth
+                 + '\n\nWill place straddle at ' + chosen + ' (synthetic).'
+                 + (ceLtp != null && peLtp != null
+                     ? '\n  CE LTP: ' + ceLtp.toFixed(2) + '   PE LTP: ' + peLtp.toFixed(2)
+                       + '   gap: ' + (gap != null ? gap.toFixed(2) : '—')
+                     : '')
+                 + '\n\nProceed only if you accept the imbalance, otherwise skip and try later.';
+        } else {
+            body = 'A second straddle for today will be opened at ATM ~' + chosen + '.'
+                 + (hasPreview && ceLtp != null && peLtp != null
+                     ? '\n  CE LTP: ' + ceLtp.toFixed(2) + '   PE LTP: ' + peLtp.toFixed(2)
+                       + '   gap: ' + (gap != null ? gap.toFixed(2) : '—')
+                     : '')
+                 + '\n\nUses today\'s leg-SL config and qty exactly like the scheduler would.';
+        }
         showConfirm({
-            title: 'Enter a NEW straddle now?',
-            body: 'A second straddle for today will be opened at the current ATM (~' + atm + ').'
-                + '\n\nUses today\'s leg-SL config and qty exactly like the scheduler would.',
+            title: (hasPreview && !agree)
+                ? 'Enter NEW straddle despite ATM disagreement?'
+                : 'Enter a NEW straddle now?',
+            body:  body,
             onConfirm: doNewStraddle
         });
     }
