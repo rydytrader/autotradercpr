@@ -109,7 +109,7 @@
 
     // ── Layout builders ───────────────────────────────────────────────────────
     function buildControlsHtml() {
-        return '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px 16px;align-items:end;margin-bottom:18px;">' +
+        return '<div style="display:grid;grid-template-columns:repeat(6,1fr) auto;gap:12px 16px;align-items:end;margin-bottom:18px;">' +
             '<div><label style="display:block;color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:5px;">Index</label>' +
               '<div style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text-primary);font-family:var(--font-mono);font-size:0.78rem;">NIFTY</div></div>' +
             '<div><label style="display:block;color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:5px;">Call Strike</label>' +
@@ -127,6 +127,13 @@
                 '<option value="INTRADAY">INTRADAY</option>' +
                 '<option value="MARGIN">MARGIN</option>' +
               '</select></div>' +
+            // Refresh ATM — re-fetches the option chain and snaps both CE/PE strike
+            // dropdowns to the synthetic-futures ATM (the strike the straddle bot trades).
+            '<div><label style="display:block;color:transparent;font-size:0.66rem;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:5px;">·</label>' +
+              '<button id="mtRefreshAtm" type="button" title="Recalculate the synthetic-futures ATM and reset both strike dropdowns to it" ' +
+                'style="background:transparent;border:1px solid var(--accent-purple, #8b5cf6);color:var(--accent-purple, #8b5cf6);' +
+                'padding:8px 14px;border-radius:6px;font-family:var(--font-mono);font-size:0.74rem;font-weight:700;letter-spacing:0.04em;cursor:pointer;white-space:nowrap;">' +
+                '↻ ATM</button></div>' +
             '</div>';
     }
     function buildLtpRowHtml() {
@@ -215,6 +222,26 @@
         });
         document.getElementById('mtCeStrike').addEventListener('change', refreshSelectedSymbolLtps);
         document.getElementById('mtPeStrike').addEventListener('change', refreshSelectedSymbolLtps);
+        // ↻ ATM — re-fetch the chain so the server recomputes the synthetic-futures ATM
+        // and both strike dropdowns snap to it. Brief visual feedback so the operator
+        // knows the click registered.
+        document.getElementById('mtRefreshAtm').addEventListener('click', function() {
+            var btn = document.getElementById('mtRefreshAtm');
+            if (btn) { btn.textContent = '↻ …'; btn.disabled = true; }
+            fetch('/api/manual/strikes', { credentials: 'same-origin' })
+                .then(function(r) { return r.json(); })
+                .then(function(payload) {
+                    chainCache = payload;
+                    populateExpiry(payload.expiries || []);
+                    populateStrikes(payload.strikes || [], payload.atmStrike);
+                    refreshSelectedSymbolLtps(payload);
+                    showStatus('ATM snapped to ' + payload.atmStrike, 'success');
+                })
+                .catch(function() { showStatus('Refresh failed', 'error'); })
+                .finally(function() {
+                    if (btn) { btn.textContent = '↻ ATM'; btn.disabled = false; }
+                });
+        });
     }
     function wireActionButtons() {
         document.getElementById('mtSellCall').addEventListener('click', function() { placeOrder('SELL', 'CE'); });

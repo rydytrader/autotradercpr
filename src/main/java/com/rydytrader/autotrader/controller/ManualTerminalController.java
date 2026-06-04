@@ -79,11 +79,13 @@ public class ManualTerminalController {
                 try { spot = marketDataService.getLtp(NIFTY_SYMBOL); }
                 catch (Exception ignored) {}
             }
-            long atm = spot > 0 ? Math.round(spot / (double) STRIKE_STEP) * STRIKE_STEP : 0;
+            long spotAtm = spot > 0 ? Math.round(spot / (double) STRIKE_STEP) * STRIKE_STEP : 0;
 
-            // Group rows by strike for the slice, dedupe expiries, capture the symbol for
-            // each strike's CE and PE leg.
-            NavigableMap<Long, String[]> byStrike = new TreeMap<>(); // strike -> [ceSym, peSym]
+            // Group rows by strike for the slice, dedupe expiries, capture the symbol AND
+            // LTP for each strike's CE and PE leg. LTPs are needed for the put-call parity
+            // synthetic-ATM computation below.
+            NavigableMap<Long, String[]> byStrike    = new TreeMap<>(); // strike -> [ceSym, peSym]
+            NavigableMap<Long, double[]> ltpByStrike = new TreeMap<>(); // strike -> [ceLtp, peLtp]
             Set<String> expirySet = new TreeSet<>();
             for (JsonNode row : chain) {
                 double strikeD = doubleField(row, "strike_price", "strikePrice");
@@ -91,11 +93,26 @@ public class ManualTerminalController {
                 String sym     = textField(row, "symbol");
                 if (strikeD <= 0 || optType.isEmpty() || sym.isEmpty()) continue;
                 long strike = Math.round(strikeD);
-                String[] pair = byStrike.computeIfAbsent(strike, k -> new String[2]);
-                if ("CE".equalsIgnoreCase(optType)) pair[0] = sym;
-                else if ("PE".equalsIgnoreCase(optType)) pair[1] = sym;
+                String[] pair    = byStrike.computeIfAbsent(strike, k -> new String[2]);
+                double[] ltpPair = ltpByStrike.computeIfAbsent(strike, k -> new double[2]);
+                double ltp = doubleField(row, "ltp", "lp");
+                if ("CE".equalsIgnoreCase(optType)) { pair[0] = sym; ltpPair[0] = ltp; }
+                else if ("PE".equalsIgnoreCase(optType)) { pair[1] = sym; ltpPair[1] = ltp; }
                 String exp = ShortStraddle.parseExpiryFromSymbol(sym);
                 if (!exp.isEmpty()) expirySet.add(exp);
+            }
+
+            // Synthetic-futures ATM (put-call parity): F = spotAtm + (CE − PE) at spot-ATM,
+            // rounded to the nearest strike step. Falls back to spot-ATM if quotes missing
+            // or the synthetic strike isn't in the chain. This is the strike the straddle
+            // bot actually trades, so the manual terminal's Refresh button snaps both CE
+            // and PE strike dropdowns to it.
+            long atm = spotAtm;
+            double[] atmLtps = ltpByStrike.get(spotAtm);
+            if (atmLtps != null && atmLtps[0] > 0 && atmLtps[1] > 0) {
+                double forward = spotAtm + (atmLtps[0] - atmLtps[1]);
+                long synth = Math.round(forward / (double) STRIKE_STEP) * STRIKE_STEP;
+                if (byStrike.containsKey(synth)) atm = synth;
             }
 
             // ATM ± N slice
@@ -114,10 +131,11 @@ public class ManualTerminalController {
             }
 
             Map<String, Object> out = new LinkedHashMap<>();
-            out.put("niftyLtp",  round2(spot));
-            out.put("atmStrike", atm);
-            out.put("expiries",  new ArrayList<>(expirySet));
-            out.put("strikes",   rows);
+            out.put("niftyLtp",     round2(spot));
+            out.put("atmStrike",    atm);       // synthetic-futures ATM — what Refresh snaps to
+            out.put("spotAtmStrike", spotAtm);  // naïve spot-rounded baseline (for transparency)
+            out.put("expiries",     new ArrayList<>(expirySet));
+            out.put("strikes",      rows);
             return ResponseEntity.ok(out);
         } catch (Exception e) {
             log.warn("[manual] /strikes failed: {}", e.getMessage());
