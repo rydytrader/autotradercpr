@@ -162,11 +162,7 @@
             <div>
                 <div class="stat-label" style="margin-bottom:6px;">Net P&L</div>
                 <div class="stat-value" id="heroNetPnl" style="font-size:2.2rem;">—</div>
-                <div class="stat-sub" style="display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; margin-top:4px;">
-                    <span>Charges <span id="heroCharges" style="color:var(--text-primary);font-weight:600;">—</span></span>
-                    <span style="opacity:0.4;">·</span>
-                    <span>Return <span id="heroMonthlyReturn" style="font-weight:600;">—</span></span>
-                </div>
+                <div class="stat-sub" id="heroCharges" style="margin-top:6px;">Charges —</div>
             </div>
             <div style="display:flex; gap:28px; flex-wrap:wrap;">
                 <div style="text-align:center;">
@@ -219,6 +215,10 @@
                     <div class="stat-label">2 SL Days</div>
                     <div class="stat-value" id="heroTwoSlDays" style="font-size:1.1rem; margin-top:4px;"
                          title="Days where both legs got stopped before squareoff.">—</div>
+                </div>
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;">
+                    <div class="stat-label">Avg Monthly %</div>
+                    <div class="stat-value" id="heroMonthlyReturn" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
             </div>
         </div>
@@ -466,12 +466,14 @@
         document.getElementById('heroWins').textContent    = '—';
         document.getElementById('heroLosses').textContent  = '—';
         document.getElementById('heroWinRate').textContent = '—';
-        // Charges shown as sub-text under Net P&L. Monthly return % is patched in by
-        // renderAnalyticsTiles once the analytics summary arrives (placeholder until then).
-        document.getElementById('heroCharges').textContent = has ? fmtMoney(agg.charges) : '—';
+        // Charges shown as a single sub-text line below Net P&L (mirrors home's
+        // "Started — • — • —" capital sub-line). Monthly Return % is a separate tile
+        // populated by renderAnalyticsTiles once the analytics summary arrives.
+        document.getElementById('heroCharges').textContent = 'Charges ' + (has ? fmtMoney(agg.charges) : '—');
         const mrEl = document.getElementById('heroMonthlyReturn');
         mrEl.textContent = '—';
-        mrEl.style.color = 'var(--text-primary)';
+        mrEl.classList.remove('pnl-positive', 'pnl-negative');
+        mrEl.style.color = '';
     }
 
     /** Populate the analytics-driven tiles for the given date range:
@@ -513,19 +515,10 @@
             applyFixedColor('heroZeroSlDays', String(ext.zeroSlDays || 0), 'var(--accent-green, #34d399)');
             applyFixedColor('heroOneSlDays',  String(ext.oneSlDays  || 0), 'var(--accent-amber, #fbbf24)');
             applyFixedColor('heroTwoSlDays',  String(ext.twoSlDays  || 0), 'var(--accent-red,   #f87171)');
-            // Period return % — shown as Net P&L sub-text. Mirrors the home page's
-            // "Avg Monthly %" colour treatment.
-            const pct = cap.totalReturnPct;
-            const mrEl = document.getElementById('heroMonthlyReturn');
-            if (pct != null) {
-                mrEl.textContent = Number(pct).toFixed(2) + '%';
-                mrEl.style.color = pct > 0.5  ? 'var(--accent-green, #34d399)'
-                                 : pct < -0.5 ? 'var(--accent-red,   #f87171)'
-                                              : 'var(--text-primary)';
-            } else {
-                mrEl.textContent = '—';
-                mrEl.style.color = 'var(--text-primary)';
-            }
+            // Avg Monthly % tile — same metric as home page's hero (capital.avgMonthlyPct).
+            // Colour coded with applyColored: positive green, negative red, ~0 neutral.
+            const pct = cap.avgMonthlyPct;
+            applyColored('heroMonthlyReturn', pct != null ? Number(pct).toFixed(2) + '%' : '—', pct);
             // Year-grid month cards — patch each card's Win % cell using per-straddle byMonth
             // data. Cards in month view don't have these elements (querySelectorAll = []).
             const byMonth = d.byMonth || {};
