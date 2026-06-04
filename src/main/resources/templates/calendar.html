@@ -125,6 +125,12 @@
             <div class="page-title">Calendar</div>
             <div class="page-subtitle">Straddle P&L by day, month, and year</div>
         </div>
+        <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
+            <div style="font-size:1rem; color:var(--text-secondary);">
+                Welcome, <span id="userName" style="color:var(--text-primary); font-weight:600;">—</span>
+            </div>
+            <div id="fyersIdLine" style="font-size:0.72rem; color:var(--text-muted); margin-top:10px;">—</div>
+        </div>
     </div>
 
     <!-- Toolbar: nav + view toggle -->
@@ -156,7 +162,11 @@
             <div>
                 <div class="stat-label" style="margin-bottom:6px;">Net P&L</div>
                 <div class="stat-value" id="heroNetPnl" style="font-size:2.2rem;">—</div>
-                <div class="stat-sub">Sum across selected period</div>
+                <div class="stat-sub" style="display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; margin-top:4px;">
+                    <span>Charges <span id="heroCharges" style="color:var(--text-primary);font-weight:600;">—</span></span>
+                    <span style="opacity:0.4;">·</span>
+                    <span>Return <span id="heroMonthlyReturn" style="font-weight:600;">—</span></span>
+                </div>
             </div>
             <div style="display:flex; gap:28px; flex-wrap:wrap;">
                 <div style="text-align:center;">
@@ -209,10 +219,6 @@
                     <div class="stat-label">2 SL Days</div>
                     <div class="stat-value" id="heroTwoSlDays" style="font-size:1.1rem; margin-top:4px;"
                          title="Days where both legs got stopped before squareoff.">—</div>
-                </div>
-                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;">
-                    <div class="stat-label">Charges</div>
-                    <div class="stat-value" id="heroCharges" style="font-size:1.1rem; margin-top:4px; color:var(--text-muted);">—</div>
                 </div>
             </div>
         </div>
@@ -296,6 +302,26 @@
         const sign = n < 0 ? '-' : '';
         const abs = Math.abs(n);
         return sign + '₹' + abs.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+    }
+    // Mirrors the home page's setVal(): sets text and applies pnl-positive/pnl-negative
+    // based on the signed value. Used for tiles where "negative is bad" (drawdown amount,
+    // drawdown days) so they read red consistently — matching the home/analytics colours.
+    function applyColored(id, text, signed) {
+        const el = document.getElementById(id); if (!el) return;
+        el.textContent = text;
+        el.classList.remove('pnl-positive', 'pnl-negative');
+        el.style.color = '';
+        if (signed == null) return;
+        if (signed >  0.5) el.classList.add('pnl-positive');
+        else if (signed < -0.5) el.classList.add('pnl-negative');
+    }
+    // Fixed-color tiles (the SL-day histogram: 0 SL green, 1 SL amber, 2 SL red) —
+    // always coloured regardless of value so the trio reads as a consistent palette.
+    function applyFixedColor(id, text, colour) {
+        const el = document.getElementById(id); if (!el) return;
+        el.textContent = text;
+        el.classList.remove('pnl-positive', 'pnl-negative');
+        el.style.color = colour;
     }
     function fmtMoneyFull(n) {
         if (n == null || isNaN(n)) return '₹0.00';
@@ -440,7 +466,12 @@
         document.getElementById('heroWins').textContent    = '—';
         document.getElementById('heroLosses').textContent  = '—';
         document.getElementById('heroWinRate').textContent = '—';
+        // Charges shown as sub-text under Net P&L. Monthly return % is patched in by
+        // renderAnalyticsTiles once the analytics summary arrives (placeholder until then).
         document.getElementById('heroCharges').textContent = has ? fmtMoney(agg.charges) : '—';
+        const mrEl = document.getElementById('heroMonthlyReturn');
+        mrEl.textContent = '—';
+        mrEl.style.color = 'var(--text-primary)';
     }
 
     /** Populate the analytics-driven tiles for the given date range:
@@ -460,6 +491,7 @@
             if (!d) return;
             const perf = d.performance || {};
             const ext  = d.extremes    || {};
+            const cap  = d.capital     || {};
             const pf = perf.profitFactor || 0;
             const rr = perf.riskReward   || 0;
             // Per-straddle Hero counts — true wins/losses across straddles, not days.
@@ -470,11 +502,30 @@
                 ? (Number(perf.winRate).toFixed(1) + '%') : '—';
             document.getElementById('heroProfitFactor').textContent = pf > 0 ? pf.toFixed(2) : '—';
             document.getElementById('heroRiskReward').textContent   = rr > 0 ? rr.toFixed(2) : '—';
-            document.getElementById('heroMaxDrawdown').textContent     = ext.maxDrawdown != null ? fmtMoney(ext.maxDrawdown) : '—';
-            document.getElementById('heroMaxDrawdownDays').textContent = String(ext.maxDrawdownDays || 0);
-            document.getElementById('heroZeroSlDays').textContent      = String(ext.zeroSlDays || 0);
-            document.getElementById('heroOneSlDays').textContent       = String(ext.oneSlDays  || 0);
-            document.getElementById('heroTwoSlDays').textContent       = String(ext.twoSlDays  || 0);
+            // Max Drawdown / Max DD Days — color-coded the same way home does it: negative
+            // value drives the red `pnl-negative` colour (DD is conventionally negative or
+            // zero), DD-days reads as negative once non-zero so it also goes red. Zero stays
+            // neutral.
+            applyColored('heroMaxDrawdown',     ext.maxDrawdown != null ? fmtMoney(ext.maxDrawdown) : '—', ext.maxDrawdown);
+            applyColored('heroMaxDrawdownDays', String(ext.maxDrawdownDays || 0), -(ext.maxDrawdownDays || 0));
+            // SL-day histogram — 0 SL is "good" (theta day) → green, 1 SL mixed → amber,
+            // 2 SL bad (whipsaw on both legs) → red. Colors always applied, even at 0.
+            applyFixedColor('heroZeroSlDays', String(ext.zeroSlDays || 0), 'var(--accent-green, #34d399)');
+            applyFixedColor('heroOneSlDays',  String(ext.oneSlDays  || 0), 'var(--accent-amber, #fbbf24)');
+            applyFixedColor('heroTwoSlDays',  String(ext.twoSlDays  || 0), 'var(--accent-red,   #f87171)');
+            // Period return % — shown as Net P&L sub-text. Mirrors the home page's
+            // "Avg Monthly %" colour treatment.
+            const pct = cap.totalReturnPct;
+            const mrEl = document.getElementById('heroMonthlyReturn');
+            if (pct != null) {
+                mrEl.textContent = Number(pct).toFixed(2) + '%';
+                mrEl.style.color = pct > 0.5  ? 'var(--accent-green, #34d399)'
+                                 : pct < -0.5 ? 'var(--accent-red,   #f87171)'
+                                              : 'var(--text-primary)';
+            } else {
+                mrEl.textContent = '—';
+                mrEl.style.color = 'var(--text-primary)';
+            }
             // Year-grid month cards — patch each card's Win % cell using per-straddle byMonth
             // data. Cards in month view don't have these elements (querySelectorAll = []).
             const byMonth = d.byMonth || {};
@@ -844,6 +895,14 @@
             });
         }
         loadAll();
+        // Populate Welcome header from /api/user/me. Same pattern as home / short-straddle.
+        fetch('/api/user/me').then(function(r){ return r.json(); }).then(function(u){
+            if (!u || !u.email) return;
+            var nm = document.getElementById('userName');
+            var id = document.getElementById('fyersIdLine');
+            if (nm) nm.textContent = (u.firstName || u.email).trim();
+            if (id) id.textContent = u.email;
+        }).catch(function(){});
     });
     // Refresh every 30s so today's cell tracks the live Net P&L from the Home dashboard
     setInterval(loadAll, 30000);
