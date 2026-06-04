@@ -305,7 +305,8 @@ public class AnalyticsService {
             if (persistedTodayStrategies.contains(strat.id())) continue;
             try {
                 // 1. Today's already-closed events from the strategy's recent-events ring.
-                double addedToday = 0;
+                double addedTodayNet     = 0;
+                double addedTodayCharges = 0;
                 List<Map<String, Object>> live = strat.todayClosedTrades();
                 if (live != null) {
                     for (Map<String, Object> m : live) {
@@ -316,19 +317,24 @@ public class AnalyticsService {
                         if (ts == 0) ts = System.currentTimeMillis();
                         String reason = String.valueOf(m.getOrDefault("closeReason", "OPEN"));
                         out.add(new Trade(strat.id(), iso, ts, gross, ch, net, reason, 0));
-                        addedToday += net;
+                        addedTodayNet     += net;
+                        addedTodayCharges += ch;
                     }
                 }
                 // 2. Synthetic OPEN_POSITION_MTM row for whatever the strategy's net day P&L
-                //    is NOT yet accounted for above. Equals open MTM − projected charges if
-                //    nothing has closed yet; equals MTM-of-remaining-leg if leg-sl has closed
-                //    one leg already; equals 0 once everything is closed. Sum across all rows
-                //    today equals strategy.liveNetPnlToday() so the Capital pane reads right.
-                double liveNet = strat.liveNetPnlToday();
-                double openMtmRemainder = liveNet - addedToday;
-                if (Math.abs(openMtmRemainder) > 0.01) {
+                //    is NOT yet accounted for above. Carries both the leftover net AND the
+                //    leftover charges (total charges − sum of closed-live charges) so the
+                //    per-day Charges + Gross numbers in byDate match the strategy's dashboard.
+                //    Sum across all rows today equals strategy.liveNetPnlToday() and
+                //    strategy.liveChargesToday() respectively.
+                double liveNet         = strat.liveNetPnlToday();
+                double liveCharges     = strat.liveChargesToday();
+                double openNet         = liveNet     - addedTodayNet;
+                double openChargesRem  = liveCharges - addedTodayCharges;
+                double openGross       = openNet + openChargesRem;  // net = gross − charges
+                if (Math.abs(openNet) > 0.01 || Math.abs(openChargesRem) > 0.01) {
                     out.add(new Trade(strat.id(), iso, System.currentTimeMillis(),
-                        openMtmRemainder, 0, openMtmRemainder, OPEN_POSITION_MTM_REASON, 0));
+                        openGross, openChargesRem, openNet, OPEN_POSITION_MTM_REASON, 0));
                 }
             } catch (Exception e) {
                 log.warn("[Analytics] Live today overlay failed for {}: {}", strat.id(), e.getMessage());

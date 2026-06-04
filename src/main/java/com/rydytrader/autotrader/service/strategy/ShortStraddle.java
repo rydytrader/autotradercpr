@@ -348,6 +348,15 @@ public class ShortStraddle implements Strategy {
         return realisedPnlToday + ceMtm + peMtm - charges;
     }
 
+    /** Total accrued + projected charges for today — sum of the breakdown's {@code total} key.
+     *  Surfaced so the analytics live overlay can split today's totalCharges across closed
+     *  live trade rows + the open-position synthetic row so per-day Charges + Gross match
+     *  the dashboard exactly. */
+    @Override
+    public double liveChargesToday() {
+        return computeChargesBreakdown().getOrDefault("total", 0.0);
+    }
+
     /** Day-of-week trading slots, ordered by DTE (4 → 0). NIFTY weekly options expire Tuesday;
      *  each weekday entry has its own toggle and SL%. Keys are the 3-letter day codes used in
      *  the settings table — {@code strategies.<instanceId>.day.<DAY>.enabled / legSlPct}. */

@@ -123,4 +123,11 @@ public interface Strategy {
      *  charges). Used by the portfolio-wide kill switch which sums across all strategies on
      *  every tick. Default 0 — strategies with positions override. */
     default double liveNetPnlToday() { return 0; }
+
+    /** This strategy's total accrued / projected charges for today (brokerage + STT + GST +
+     *  exchange + SEBI + stamp on every leg that has hit the broker, including the still-open
+     *  leg's projected SL-exit charges if any). Used by the analytics live overlay so the
+     *  per-day Charges + Gross numbers for today match what the strategy's dashboard shows.
+     *  Default 0 — strategies without positions today report no charges. */
+    default double liveChargesToday() { return 0; }
 }
