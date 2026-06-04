@@ -103,34 +103,44 @@ public class AnalyticsService {
         out.put("equityCurve", equityCurve(trades, startingCapital,
                                            includeAdjustments ? adjustments : java.util.List.of()));
         out.put("adjustments", adjustmentSummary(adjustments));
-        out.put("byMonth",     byMonth(closed));
-        out.put("byDate",      byDate(closed));
+        out.put("byMonth",     byMonth(trades, closed));
+        out.put("byDate",      byDate(trades, closed));
         return out;
     }
 
     /** Per-day aggregation of straddle outcomes — keyed by {@code yyyy-MM-dd} so the
-     *  calendar's day cells can show the true per-straddle net P&L (sum of every straddle
-     *  closed that date) instead of reading the {@code straddle_sessions} row. Keeps the
-     *  calendar's day-level numbers in lockstep with the home page hero. */
-    private Map<String, Object> byDate(List<Trade> closed) {
+     *  calendar's day cells can show the true net P&L matching the home page hero.
+     *
+     *  <p>NetPnl/charges are summed across {@code trades} (including the synthetic
+     *  {@code OPEN_POSITION_MTM} row) so today's open MTM is folded in — same source the
+     *  hero's {@code totalReturn} uses. Straddles/wins/losses counters only consider
+     *  {@code closed} trades; the open-position row isn't a completed outcome. */
+    private Map<String, Object> byDate(List<Trade> trades, List<Trade> closed) {
         java.util.NavigableMap<String, double[]> sumByKey = new java.util.TreeMap<>();
         java.util.NavigableMap<String, int[]>    cntByKey = new java.util.TreeMap<>();
+        for (Trade t : trades) {
+            String key = t.sessionDate();
+            if (key == null || key.isEmpty()) continue;
+            double[] s = sumByKey.computeIfAbsent(key, k -> new double[2]);  // [net, charges]
+            s[0] += t.netPnl();
+            s[1] += t.charges();
+        }
         for (Trade t : closed) {
             String key = t.sessionDate();
             if (key == null || key.isEmpty()) continue;
             double pnl = t.netPnl();
-            double[] s = sumByKey.computeIfAbsent(key, k -> new double[2]);  // [net, charges]
-            int[]    c = cntByKey.computeIfAbsent(key, k -> new int[3]);     // [straddles, wins, losses]
-            s[0] += pnl;
-            s[1] += t.charges();
+            int[]  c = cntByKey.computeIfAbsent(key, k -> new int[3]);       // [straddles, wins, losses]
             c[0]++;
             if (pnl > 0) c[1]++;
             else if (pnl < 0) c[2]++;
         }
         Map<String, Object> out = new LinkedHashMap<>();
-        for (String key : sumByKey.keySet()) {
-            double[] s = sumByKey.get(key);
-            int[]    c = cntByKey.get(key);
+        java.util.Set<String> allKeys = new java.util.TreeSet<>();
+        allKeys.addAll(sumByKey.keySet());
+        allKeys.addAll(cntByKey.keySet());
+        for (String key : allKeys) {
+            double[] s = sumByKey.getOrDefault(key, new double[2]);
+            int[]    c = cntByKey.getOrDefault(key, new int[3]);
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("netPnl",    round2(s[0]));
             m.put("charges",   round2(s[1]));
@@ -146,23 +156,35 @@ public class AnalyticsService {
      *  year-grid month cards (and any other per-month consumer) can read true per-straddle
      *  wins / losses / winRate instead of bucketing daily session rows. NetPnl is also
      *  reported for symmetry, though daily summing already gets that right. */
-    private Map<String, Object> byMonth(List<Trade> closed) {
+    private Map<String, Object> byMonth(List<Trade> trades, List<Trade> closed) {
         java.util.NavigableMap<String, int[]>    winLossByKey = new java.util.TreeMap<>();
         java.util.NavigableMap<String, double[]> netByKey     = new java.util.TreeMap<>();
+        // Win/loss counters — only closed straddles count as outcomes.
         for (Trade t : closed) {
             String date = t.sessionDate();
             if (date == null || date.length() < 7) continue;
             String key  = date.substring(0, 7);
             double pnl  = t.netPnl();
             int[]    wl = winLossByKey.computeIfAbsent(key, k -> new int[2]);
-            double[] ns = netByKey.computeIfAbsent(key, k -> new double[1]);
             if      (pnl > 0) wl[0]++;
             else if (pnl < 0) wl[1]++;
-            ns[0] += pnl;
+        }
+        // NetPnl — sum across ALL trades (including OPEN_POSITION_MTM) so the month's
+        // net P&L includes today's open MTM and matches the home page hero exactly.
+        for (Trade t : trades) {
+            String date = t.sessionDate();
+            if (date == null || date.length() < 7) continue;
+            String key  = date.substring(0, 7);
+            double[] ns = netByKey.computeIfAbsent(key, k -> new double[1]);
+            ns[0] += t.netPnl();
         }
         Map<String, Object> out = new LinkedHashMap<>();
-        for (String key : winLossByKey.keySet()) {
-            int[] wl = winLossByKey.get(key);
+        java.util.Set<String> allKeys = new java.util.TreeSet<>();
+        allKeys.addAll(winLossByKey.keySet());
+        allKeys.addAll(netByKey.keySet());
+        for (String key : allKeys) {
+            int[] wl = winLossByKey.getOrDefault(key, new int[2]);
+            double[] ns = netByKey.getOrDefault(key, new double[1]);
             int total = wl[0] + wl[1];
             double winRate = total > 0 ? (wl[0] * 100.0 / total) : 0;
             Map<String, Object> m = new LinkedHashMap<>();
@@ -170,7 +192,7 @@ public class AnalyticsService {
             m.put("wins",      wl[0]);
             m.put("losses",    wl[1]);
             m.put("winRate",   round2(winRate));
-            m.put("netPnl",    round2(netByKey.get(key)[0]));
+            m.put("netPnl",    round2(ns[0]));
             out.put(key, m);
         }
         return out;
