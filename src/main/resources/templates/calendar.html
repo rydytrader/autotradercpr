@@ -454,11 +454,12 @@
     }
 
     function renderHero(agg) {
-        const has = agg.sessions > 0;
-        const net = agg.netPnl || 0;
+        // Net P&L is now driven by renderAnalyticsTiles (cap.totalReturn) so it matches
+        // the home page exactly. Leave a placeholder here so stale values don't linger
+        // across navs — the analytics fetch repaints it sub-second.
         const netEl = document.getElementById('heroNetPnl');
-        netEl.textContent = has ? fmtMoney(net) : '—';
-        netEl.className = 'stat-value' + (has ? (net > 0 ? ' pnl-positive' : (net < 0 ? ' pnl-negative' : '')) : '');
+        netEl.textContent = '—';
+        netEl.className = 'stat-value';
         // Straddles / Wins / Losses / Win % are per-straddle (not per-day) — filled in by
         // renderAnalyticsTiles once the analytics summary returns. The agg.sessions count
         // is days, not straddles, so it would understate on multi-cycle days. Clear here
@@ -490,8 +491,11 @@
         const clearIds = ['heroProfitFactor','heroRiskReward','heroMaxDrawdown','heroMaxDrawdownDays',
                           'heroZeroSlDays','heroOneSlDays','heroTwoSlDays'];
         clearIds.forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '—'; });
+        // Pass calendar's includeAdjustments flag so Net P&L + Charges + Return match
+        // exactly what the home page shows for the same period.
         const url = '/api/analytics/summary?from=' + encodeURIComponent(fromIso)
-                  + '&to=' + encodeURIComponent(toIso);
+                  + '&to=' + encodeURIComponent(toIso)
+                  + '&includeAdjustments=' + (includeAdjustments ? 'true' : 'false');
         fetch(url).then(r => r.json()).then(d => {
             if (!d) return;
             const perf = d.performance || {};
@@ -533,6 +537,19 @@
             const totalCharges = st.totalCharges;
             document.getElementById('heroCharges').textContent =
                 'Charges ' + (totalCharges != null ? fmtMoney(totalCharges) : '—');
+            // Net P&L — drive from cap.totalReturn (same as home's "Total Return") instead
+            // of per-day session aggregation. Previously calendar summed session.netPnl
+            // across the period + live overlay on today, which drifted from analytics on
+            // multi-cycle days and when adjustments were folded in.
+            const net = (cap.totalReturn != null) ? Number(cap.totalReturn) : null;
+            const netEl = document.getElementById('heroNetPnl');
+            if (net != null) {
+                netEl.textContent = fmtMoney(net);
+                netEl.className = 'stat-value' + (net > 0 ? ' pnl-positive' : (net < 0 ? ' pnl-negative' : ''));
+            } else {
+                netEl.textContent = '—';
+                netEl.className = 'stat-value';
+            }
             // Year-grid month cards — patch each card's Win % cell using per-straddle byMonth
             // data. Cards in month view don't have these elements (querySelectorAll = []).
             const byMonth = d.byMonth || {};
