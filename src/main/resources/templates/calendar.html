@@ -302,10 +302,12 @@
     let NSE_HOLIDAYS = {}; // {date: name}
 
     function fmtMoney(n) {
-        if (n === 0 || n == null) return '₹0';
+        if (n == null) return '₹0.00';
         const sign = n < 0 ? '-' : '';
         const abs = Math.abs(n);
-        return sign + '₹' + abs.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+        return sign + '₹' + abs.toLocaleString('en-IN', {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+        });
     }
     // Mirrors the home page's setVal(): sets text and applies pnl-positive/pnl-negative
     // based on the signed value. Used for tiles where "negative is bad" (drawdown amount,
