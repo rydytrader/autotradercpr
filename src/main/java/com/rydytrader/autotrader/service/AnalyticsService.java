@@ -103,6 +103,41 @@ public class AnalyticsService {
         out.put("equityCurve", equityCurve(trades, startingCapital,
                                            includeAdjustments ? adjustments : java.util.List.of()));
         out.put("adjustments", adjustmentSummary(adjustments));
+        out.put("byMonth",     byMonth(closed));
+        return out;
+    }
+
+    /** Per-month aggregation of straddle outcomes — keyed by {@code yyyy-MM} so the calendar's
+     *  year-grid month cards (and any other per-month consumer) can read true per-straddle
+     *  wins / losses / winRate instead of bucketing daily session rows. NetPnl is also
+     *  reported for symmetry, though daily summing already gets that right. */
+    private Map<String, Object> byMonth(List<Trade> closed) {
+        java.util.NavigableMap<String, int[]>    winLossByKey = new java.util.TreeMap<>();
+        java.util.NavigableMap<String, double[]> netByKey     = new java.util.TreeMap<>();
+        for (Trade t : closed) {
+            String date = t.sessionDate();
+            if (date == null || date.length() < 7) continue;
+            String key  = date.substring(0, 7);
+            double pnl  = t.netPnl();
+            int[]    wl = winLossByKey.computeIfAbsent(key, k -> new int[2]);
+            double[] ns = netByKey.computeIfAbsent(key, k -> new double[1]);
+            if      (pnl > 0) wl[0]++;
+            else if (pnl < 0) wl[1]++;
+            ns[0] += pnl;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (String key : winLossByKey.keySet()) {
+            int[] wl = winLossByKey.get(key);
+            int total = wl[0] + wl[1];
+            double winRate = total > 0 ? (wl[0] * 100.0 / total) : 0;
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("straddles", total);
+            m.put("wins",      wl[0]);
+            m.put("losses",    wl[1]);
+            m.put("winRate",   round2(winRate));
+            m.put("netPnl",    round2(netByKey.get(key)[0]));
+            out.put(key, m);
+        }
         return out;
     }
 

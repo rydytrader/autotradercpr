@@ -430,20 +430,25 @@
     function renderHero(agg) {
         const has = agg.sessions > 0;
         const net = agg.netPnl || 0;
-        const winRate = (agg.wins + agg.losses) > 0 ? (agg.wins * 100 / (agg.wins + agg.losses)) : 0;
         const netEl = document.getElementById('heroNetPnl');
         netEl.textContent = has ? fmtMoney(net) : '—';
         netEl.className = 'stat-value' + (has ? (net > 0 ? ' pnl-positive' : (net < 0 ? ' pnl-negative' : '')) : '');
         document.getElementById('heroSessions').textContent = has ? agg.sessions : '—';
-        document.getElementById('heroWins').textContent     = has ? agg.wins   : '—';
-        document.getElementById('heroLosses').textContent   = has ? agg.losses : '—';
-        document.getElementById('heroWinRate').textContent  = has ? (winRate.toFixed(1) + '%') : '—';
-        document.getElementById('heroCharges').textContent  = has ? fmtMoney(agg.charges) : '—';
+        // Wins / Losses / Win % are per-straddle (not per-day) — filled in by renderAnalyticsTiles
+        // once the analytics summary returns. Clear here so stale values don't linger across
+        // navs. Pre-fetch placeholders match the other analytics-driven tiles.
+        document.getElementById('heroWins').textContent    = '—';
+        document.getElementById('heroLosses').textContent  = '—';
+        document.getElementById('heroWinRate').textContent = '—';
+        document.getElementById('heroCharges').textContent = has ? fmtMoney(agg.charges) : '—';
     }
 
-    /** Populate the analytics-driven tiles (Profit Factor, R:R, drawdown, SL day mix) for the
-     *  given date range. Range is inclusive — calendar month: 1st → last day, calendar year:
-     *  Apr 1 (Indian FY) → Mar 31 next year. */
+    /** Populate the analytics-driven tiles for the given date range:
+     *   • Hero per-straddle counters (Wins / Losses / Win %) — pulled from {@code performance}.
+     *   • Hero edge tiles (Profit Factor, R:R, drawdown, SL day mix).
+     *   • Year-grid per-month Win % cells — patched from {@code byMonth} once it arrives.
+     *  Range is inclusive — calendar month: 1st → last day, calendar year: Apr 1 (Indian FY)
+     *  → Mar 31 next year. */
     function renderAnalyticsTiles(fromIso, toIso) {
         // Clear while fetching so stale values don't linger across navs.
         const clearIds = ['heroProfitFactor','heroRiskReward','heroMaxDrawdown','heroMaxDrawdownDays',
@@ -457,6 +462,12 @@
             const ext  = d.extremes    || {};
             const pf = perf.profitFactor || 0;
             const rr = perf.riskReward   || 0;
+            // Per-straddle Hero counts — true wins/losses across straddles, not days.
+            const hasPerf = (perf.wins != null) || (perf.losses != null);
+            document.getElementById('heroWins').textContent    = hasPerf ? String(perf.wins   || 0) : '—';
+            document.getElementById('heroLosses').textContent  = hasPerf ? String(perf.losses || 0) : '—';
+            document.getElementById('heroWinRate').textContent = hasPerf && (perf.winRate != null)
+                ? (Number(perf.winRate).toFixed(1) + '%') : '—';
             document.getElementById('heroProfitFactor').textContent = pf > 0 ? pf.toFixed(2) : '—';
             document.getElementById('heroRiskReward').textContent   = rr > 0 ? rr.toFixed(2) : '—';
             document.getElementById('heroMaxDrawdown').textContent     = ext.maxDrawdown != null ? fmtMoney(ext.maxDrawdown) : '—';
@@ -464,6 +475,20 @@
             document.getElementById('heroZeroSlDays').textContent      = String(ext.zeroSlDays || 0);
             document.getElementById('heroOneSlDays').textContent       = String(ext.oneSlDays  || 0);
             document.getElementById('heroTwoSlDays').textContent       = String(ext.twoSlDays  || 0);
+            // Year-grid month cards — patch each card's Win % cell using per-straddle byMonth
+            // data. Cards in month view don't have these elements (querySelectorAll = []).
+            const byMonth = d.byMonth || {};
+            document.querySelectorAll('.cal-month-card[data-ym]').forEach(function(card) {
+                const ym = card.getAttribute('data-ym');
+                const stats = byMonth[ym];
+                const wrEl = card.querySelector('.cal-month-winrate');
+                if (!wrEl) return;
+                if (stats && (stats.wins + stats.losses) > 0) {
+                    wrEl.textContent = Number(stats.winRate || 0).toFixed(1) + '%';
+                } else {
+                    wrEl.textContent = '—';
+                }
+            });
         }).catch(() => {});
     }
 
@@ -568,21 +593,24 @@
             const agg = aggregate(monthSessions);
             const has = agg.sessions > 0;
             const net = agg.netPnl || 0;
-            const winRate = (agg.wins + agg.losses) > 0 ? (agg.wins * 100 / (agg.wins + agg.losses)) : 0;
             const clsBase = ['cal-month-card'];
             if (has && net > 0) clsBase.push('profit');
             else if (has && net < 0) clsBase.push('loss');
             const pnlCls = ['cal-month-pnl'];
             if (has && net > 0) pnlCls.push('profit');
             else if (has && net < 0) pnlCls.push('loss');
-            html += '<div class="' + clsBase.join(' ') + '" onclick="jumpToMonth(' + m + ',' + y + ')">' +
+            // data-ym lets renderAnalyticsTiles patch the per-straddle Win % cell once the
+            // analytics summary returns. We render with "—" placeholder so cards with no
+            // straddles in the month still look correct on first paint.
+            const ymKey = y + '-' + pad2(m);
+            html += '<div class="' + clsBase.join(' ') + '" data-ym="' + ymKey + '" onclick="jumpToMonth(' + m + ',' + y + ')">' +
                 '<div class="cal-month-name">' + MONTH_NAMES[m - 1] + ' ' + y + '</div>' +
                 '<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:12px;">' +
                     '<div class="' + pnlCls.join(' ') + '">' + (has ? fmtMoney(net) : '—') + '</div>' +
                     '<div style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-muted);">' + (has ? agg.sessions + ' session' + (agg.sessions === 1 ? '' : 's') : '') + '</div>' +
                 '</div>' +
                 '<div class="cal-month-stats">' +
-                    '<div class="cal-month-stat-label">Win %</div><div class="cal-month-stat-value">' + (has ? winRate.toFixed(1) + '%' : '—') + '</div>' +
+                    '<div class="cal-month-stat-label">Win %</div><div class="cal-month-stat-value cal-month-winrate">—</div>' +
                     '<div class="cal-month-stat-label">Gross</div><div class="cal-month-stat-value">' + (has ? fmtMoney(agg.grossPnl) : '—') + '</div>' +
                     '<div class="cal-month-stat-label">Charges</div><div class="cal-month-stat-value">' + (has ? fmtMoney(agg.charges) : '—') + '</div>' +
                     '<div class="cal-month-stat-label">Sessions</div><div class="cal-month-stat-value">' + (has ? agg.sessions : '—') + '</div>' +
