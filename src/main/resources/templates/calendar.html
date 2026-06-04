@@ -459,13 +459,14 @@
         const netEl = document.getElementById('heroNetPnl');
         netEl.textContent = has ? fmtMoney(net) : '—';
         netEl.className = 'stat-value' + (has ? (net > 0 ? ' pnl-positive' : (net < 0 ? ' pnl-negative' : '')) : '');
-        document.getElementById('heroSessions').textContent = has ? agg.sessions : '—';
-        // Wins / Losses / Win % are per-straddle (not per-day) — filled in by renderAnalyticsTiles
-        // once the analytics summary returns. Clear here so stale values don't linger across
-        // navs. Pre-fetch placeholders match the other analytics-driven tiles.
-        document.getElementById('heroWins').textContent    = '—';
-        document.getElementById('heroLosses').textContent  = '—';
-        document.getElementById('heroWinRate').textContent = '—';
+        // Straddles / Wins / Losses / Win % are per-straddle (not per-day) — filled in by
+        // renderAnalyticsTiles once the analytics summary returns. The agg.sessions count
+        // is days, not straddles, so it would understate on multi-cycle days. Clear here
+        // so stale values don't linger across navs.
+        document.getElementById('heroSessions').textContent = '—';
+        document.getElementById('heroWins').textContent     = '—';
+        document.getElementById('heroLosses').textContent   = '—';
+        document.getElementById('heroWinRate').textContent  = '—';
         // Charges shown as a single sub-text line below Net P&L (mirrors home's
         // "Started — • — • —" capital sub-line). Monthly Return % is a separate tile
         // populated by renderAnalyticsTiles once the analytics summary arrives.
@@ -496,11 +497,14 @@
             const cap  = d.capital     || {};
             const pf = perf.profitFactor || 0;
             const rr = perf.riskReward   || 0;
-            // Per-straddle Hero counts — true wins/losses across straddles, not days.
-            const hasPerf = (perf.wins != null) || (perf.losses != null);
-            document.getElementById('heroWins').textContent    = hasPerf ? String(perf.wins   || 0) : '—';
-            document.getElementById('heroLosses').textContent  = hasPerf ? String(perf.losses || 0) : '—';
-            document.getElementById('heroWinRate').textContent = hasPerf && (perf.winRate != null)
+            // Per-straddle Hero counts — true wins/losses/total across straddles, not days.
+            const hasPerf = (perf.wins != null) || (perf.losses != null) || (perf.straddles != null);
+            const straddleCount = perf.straddles != null ? Number(perf.straddles)
+                                                         : (d.straddleCount != null ? Number(d.straddleCount) : null);
+            document.getElementById('heroSessions').textContent = straddleCount != null ? String(straddleCount) : '—';
+            document.getElementById('heroWins').textContent     = hasPerf ? String(perf.wins   || 0) : '—';
+            document.getElementById('heroLosses').textContent   = hasPerf ? String(perf.losses || 0) : '—';
+            document.getElementById('heroWinRate').textContent  = hasPerf && (perf.winRate != null)
                 ? (Number(perf.winRate).toFixed(1) + '%') : '—';
             document.getElementById('heroProfitFactor').textContent = pf > 0 ? pf.toFixed(2) : '—';
             document.getElementById('heroRiskReward').textContent   = rr > 0 ? rr.toFixed(2) : '—';
