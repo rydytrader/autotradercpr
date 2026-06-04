@@ -289,20 +289,32 @@ public class AnalyticsService {
     private static final String OPEN_POSITION_MTM_REASON = "OPEN_POSITION_MTM";
 
     /** Pull today's already-closed straddles from each strategy's in-memory ring buffer AND a
-     *  synthetic row for any still-open position, so Today's Total Return reflects realised +
-     *  open MTM − charges (matching each strategy's dashboard Net Day P&L). Skips strategies
-     *  whose day-end row has already been persisted. */
+     *  synthetic row representing the still-open portion of the day's P&L (live MTM minus
+     *  whatever's already accounted for by today's persisted straddle_trades rows + in-memory
+     *  closed-live rows). The OPEN_POSITION_MTM row carries the leftover NET and CHARGES so
+     *  that summing across all of today's trade rows reproduces
+     *  {@code strategy.liveNetPnlToday()} and {@code strategy.liveChargesToday()} exactly.
+     *
+     *  <p>Previously this method skipped strategies entirely when today already had a
+     *  persisted straddle_trades row — but that left the still-running cycle's MTM out of
+     *  today's per-day analytics on multi-cycle days (cycle 1 persists at close, cycle 2's
+     *  live MTM was then lost). The skip is gone: every strategy is processed and the
+     *  OPEN_POSITION_MTM remainder is attributed regardless of persisted history. */
     private void appendLiveTodayTrades(List<Trade> out, String strategyId, LocalDate today) {
         if (strategyRegistry == null || strategyRegistry.isEmpty()) return;
         String iso = today.toString();
         boolean allStrategies = strategyId == null || strategyId.isBlank() || "all".equalsIgnoreCase(strategyId);
-        Set<String> persistedTodayStrategies = new java.util.HashSet<>();
+        // Pre-compute today's persisted net + charges per strategy so OPEN_POSITION_MTM only
+        // carries the leftover, never double-counts what's already in straddle_trades.
+        java.util.Map<String, double[]> persistedTodayByStrat = new java.util.HashMap<>();
         for (Trade t : out) {
-            if (iso.equals(t.sessionDate())) persistedTodayStrategies.add(t.strategyId());
+            if (!iso.equals(t.sessionDate())) continue;
+            double[] sums = persistedTodayByStrat.computeIfAbsent(t.strategyId(), k -> new double[2]);
+            sums[0] += t.netPnl();   // net
+            sums[1] += t.charges();  // charges
         }
         for (Strategy strat : strategyRegistry.all()) {
             if (!allStrategies && !strat.id().equals(strategyId)) continue;
-            if (persistedTodayStrategies.contains(strat.id())) continue;
             try {
                 // 1. Today's already-closed events from the strategy's recent-events ring.
                 double addedTodayNet     = 0;
@@ -322,16 +334,17 @@ public class AnalyticsService {
                     }
                 }
                 // 2. Synthetic OPEN_POSITION_MTM row for whatever the strategy's net day P&L
-                //    is NOT yet accounted for above. Carries both the leftover net AND the
-                //    leftover charges (total charges − sum of closed-live charges) so the
-                //    per-day Charges + Gross numbers in byDate match the strategy's dashboard.
-                //    Sum across all rows today equals strategy.liveNetPnlToday() and
-                //    strategy.liveChargesToday() respectively.
-                double liveNet         = strat.liveNetPnlToday();
-                double liveCharges     = strat.liveChargesToday();
-                double openNet         = liveNet     - addedTodayNet;
-                double openChargesRem  = liveCharges - addedTodayCharges;
-                double openGross       = openNet + openChargesRem;  // net = gross − charges
+                //    isn't yet accounted for above OR by today's persisted straddle_trades.
+                //    Carries both the leftover net AND the leftover charges so the per-day
+                //    Charges + Gross numbers in byDate match the strategy's dashboard.
+                double[] persisted    = persistedTodayByStrat.getOrDefault(strat.id(), new double[2]);
+                double persistedNet   = persisted[0];
+                double persistedCh    = persisted[1];
+                double liveNet        = strat.liveNetPnlToday();
+                double liveCharges    = strat.liveChargesToday();
+                double openNet        = liveNet     - persistedNet - addedTodayNet;
+                double openChargesRem = liveCharges - persistedCh  - addedTodayCharges;
+                double openGross      = openNet + openChargesRem;  // net = gross − charges
                 if (Math.abs(openNet) > 0.01 || Math.abs(openChargesRem) > 0.01) {
                     out.add(new Trade(strat.id(), iso, System.currentTimeMillis(),
                         openGross, openChargesRem, openNet, OPEN_POSITION_MTM_REASON, 0));
