@@ -764,20 +764,28 @@
     };
 
     window.openDayModal = function(dateStr) {
-        const session = allSessions.find(s => s.date === dateStr);
-        const adj = adjustmentByDate[dateStr];
+        const session   = allSessions.find(s => s.date === dateStr);
+        const adj       = adjustmentByDate[dateStr];
+        // Per-straddle aggregation for the day — matches the home page hero exactly. Falls
+        // back to the per-day session row when the analytics fetch hasn't returned yet.
+        const byDateRow = analyticsByDate[dateStr];
         // Allow opening when only adjustments exist on that day (no straddle row).
-        if (!session && !(adj && adj.count > 0)) return;
-        const straddleNet = session ? (session.netPnl || 0) : 0;
-        const adjNet = (includeAdjustments && adj) ? adj.netPnl : 0;
-        const net    = straddleNet + adjNet;
-        const netCls = net > 0 ? 'pnl-positive' : (net < 0 ? 'pnl-negative' : '');
+        if (!byDateRow && !session && !(adj && adj.count > 0)) return;
+        const straddleNet     = byDateRow ? (byDateRow.netPnl   || 0) : (session ? (session.netPnl   || 0) : 0);
+        const straddleCharges = byDateRow ? (byDateRow.charges  || 0) : (session ? (session.charges  || 0) : 0);
+        // Gross P&L isn't on byDate (analytics only stores net + charges) — derive from
+        // net + charges so it stays internally consistent. Adjustments fold into both.
+        const straddleGross   = straddleNet + straddleCharges;
+        const adjNet  = (includeAdjustments && adj) ? adj.netPnl : 0;
+        const net     = straddleNet + adjNet;
+        const gross   = straddleGross + adjNet;
+        const netCls  = net > 0 ? 'pnl-positive' : (net < 0 ? 'pnl-negative' : '');
 
         // Hero block — aggregated day totals on one row.
         const heroHtml = '<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:14px 28px;">' +
             '<div><div class="stat-label">Net P&L</div><div class="' + netCls + '" style="font-family:var(--font-mono);font-size:1.1rem;font-weight:700;">' + fmtMoneyFull(net) + '</div></div>' +
-            '<div><div class="stat-label">Gross P&L</div><div>' + fmtMoneyFull((session ? session.grossPnl : 0) + adjNet) + '</div></div>' +
-            '<div><div class="stat-label">Charges</div><div style="color:var(--text-muted);">' + fmtMoneyFull(session ? session.charges : 0) + '</div></div>' +
+            '<div><div class="stat-label">Gross P&L</div><div>' + fmtMoneyFull(gross) + '</div></div>' +
+            '<div><div class="stat-label">Charges</div><div style="color:var(--text-muted);">' + fmtMoneyFull(straddleCharges) + '</div></div>' +
         '</div>' +
         '<div id="calDayStraddles" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">' +
             '<div class="stat-label" style="margin-bottom:8px;">Straddles</div>' +
