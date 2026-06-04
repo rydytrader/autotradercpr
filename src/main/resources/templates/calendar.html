@@ -468,9 +468,11 @@
         document.getElementById('heroLosses').textContent   = '—';
         document.getElementById('heroWinRate').textContent  = '—';
         // Charges shown as a single sub-text line below Net P&L (mirrors home's
-        // "Started — • — • —" capital sub-line). Monthly Return % is a separate tile
-        // populated by renderAnalyticsTiles once the analytics summary arrives.
-        document.getElementById('heroCharges').textContent = 'Charges ' + (has ? fmtMoney(agg.charges) : '—');
+        // "Started — • — • —" capital sub-line). The value itself comes from the
+        // analytics summary's streaks.totalCharges (sums per-straddle charges) so it
+        // matches the home page exactly — see renderAnalyticsTiles below. Cleared here
+        // so stale values don't linger across navs.
+        document.getElementById('heroCharges').textContent = 'Charges —';
         const mrEl = document.getElementById('heroMonthlyReturn');
         mrEl.textContent = '—';
         mrEl.classList.remove('pnl-positive', 'pnl-negative');
@@ -523,6 +525,14 @@
             // Colour coded with applyColored: positive green, negative red, ~0 neutral.
             const pct = cap.avgMonthlyPct;
             applyColored('heroMonthlyReturn', pct != null ? Number(pct).toFixed(2) + '%' : '—', pct);
+            // Charges sub-text — use streaks.totalCharges (per-straddle sum) so the value
+            // matches the home page exactly. Previously the calendar summed per-day session
+            // charges which could drift from the per-straddle total on days with multiple
+            // straddles (and on today, where the live overlay double-counted).
+            const st = d.streaks || {};
+            const totalCharges = st.totalCharges;
+            document.getElementById('heroCharges').textContent =
+                'Charges ' + (totalCharges != null ? fmtMoney(totalCharges) : '—');
             // Year-grid month cards — patch each card's Win % cell using per-straddle byMonth
             // data. Cards in month view don't have these elements (querySelectorAll = []).
             const byMonth = d.byMonth || {};
