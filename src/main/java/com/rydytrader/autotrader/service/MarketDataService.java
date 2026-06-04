@@ -637,8 +637,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
     }
 
     public boolean isConnected()    { return wsClient != null && wsClient.isOpen(); }
-    public boolean isReconnecting() { return running && !isConnected() && reconnectAttempts > 0; }
-    public boolean isConnecting()   { return running && !isConnected(); }
+    public boolean isReconnecting() { return running && !isConnected() && reconnectAttempts > 0 && tokenStore.isTokenAvailable(); }
+    public boolean isConnecting()   { return running && !isConnected() && tokenStore.isTokenAvailable(); }
+    /** True while the reconnect loop is intentionally paused waiting for a fresh access
+     *  token (the {@link #scheduleReconnect} bailout when {@code !tokenStore.isTokenAvailable()}).
+     *  Drives the "WAITING FOR LOGIN" status indicator on the UI. */
+    public boolean isPaused()       { return running && !isConnected() && !tokenStore.isTokenAvailable(); }
     public int     getEmitterCount() { return emitters.size(); }
     public String  getLastConnectTime()    { return lastConnectTime; }
     public String  getLastDisconnectTime() { return lastDisconnectTime; }

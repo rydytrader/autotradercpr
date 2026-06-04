@@ -267,12 +267,15 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     // ── Status accessors ──────────────────────────────────────────────────────
 
     public boolean isConnected()    { return connected && wsClient != null && wsClient.isOpen(); }
-    public boolean isReconnecting() { return running && !pausedOutsideMarketWindow && !isConnected() && reconnectAttempts > 0; }
-    public boolean isConnecting()   { return running && !pausedOutsideMarketWindow && !isConnected(); }
-    /** True while the reconnect loop is intentionally paused (outside market hours and we've
-     *  never had a successful connect this run, or token cleared after repeated 429s).
-     *  Drives the "WAITING FOR LOGIN" status indicator on the UI. */
-    public boolean isPaused()       { return pausedOutsideMarketWindow || !tokenStore.isTokenAvailable(); }
+    public boolean isReconnecting() { return running && !isPaused() && !isConnected() && reconnectAttempts > 0; }
+    public boolean isConnecting()   { return running && !isPaused() && !isConnected(); }
+    /** True while the reconnect loop is intentionally paused — outside market hours with no
+     *  prior connect this run, OR the in-memory token has been cleared (after repeated 429s
+     *  or never set). The scheduleReconnect path returns early in both cases, so we should
+     *  not report the service as "RECONNECTING" or "CONNECTING" — it's idle waiting for a
+     *  fresh login. Drives the "WAITING FOR LOGIN" status indicator on the UI. */
+    public boolean isPaused()       { return running && !isConnected()
+                                          && (pausedOutsideMarketWindow || !tokenStore.isTokenAvailable()); }
     public String  getLastConnectTime()    { return lastConnectTime; }
     public String  getLastDisconnectTime() { return lastDisconnectTime; }
     public int     getReconnectCountToday() { return reconnectCountToday; }

@@ -188,15 +188,20 @@ public class PollingService {
     }
 
     public String getConnectionStatus() {
-        boolean orderWs = orderEventService != null && orderEventService.isConnected();
-        boolean dataWs  = marketDataService.isConnected();
-        if (orderWs && dataWs)  return "WS CONNECTED";
+        boolean orderWs     = orderEventService != null && orderEventService.isConnected();
+        boolean dataWs      = marketDataService.isConnected();
+        boolean orderPaused = orderEventService != null && orderEventService.isPaused();
+        boolean dataPaused  = marketDataService.isPaused();
+
+        if (orderWs && dataWs) return "WS CONNECTED";
+        // Either WS deliberately paused waiting for a fresh access token — surface as
+        // "WAITING FOR LOGIN" before any per-leg RECONNECTING label, because reconnect
+        // will not happen until the operator re-logs in. The previous order of checks
+        // showed "RECONNECTING (Order)" when only data WS was up but order WS was paused
+        // for missing token — misleading since the order WS wasn't actually reconnecting.
+        if (orderPaused || dataPaused) return "WAITING FOR LOGIN";
         if (orderWs && !dataWs) return "RECONNECTING (Data)";
         if (!orderWs && dataWs) return "RECONNECTING (Order)";
-        // Order WS deliberately paused (outside market hours with no prior connect this run,
-        // or token cleared after repeated 429s) — surface as "WAITING FOR LOGIN" so the
-        // operator sees an actionable label instead of a misleading DISCONNECTED.
-        if (orderEventService != null && orderEventService.isPaused()) return "WAITING FOR LOGIN";
         if (marketDataService.isReconnecting() || (orderEventService != null && orderEventService.isReconnecting())) return "RECONNECTING";
         if (marketDataService.isConnecting()   || (orderEventService != null && orderEventService.isConnecting()))   return "CONNECTING";
         return connectionStatus;
