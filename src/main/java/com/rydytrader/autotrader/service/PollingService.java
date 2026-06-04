@@ -132,6 +132,13 @@ public class PollingService {
 
             // Push subscription updates if open position set changed.
             marketDataService.updateSubscriptions();
+        } catch (java.net.SocketTimeoutException ste) {
+            // Fyers' /positions occasionally takes >10 s to respond — transient, not an
+            // operator-actionable error. Log at WARN and leave connectionStatus alone:
+            // the WS path is authoritative for the UI status pill anyway, and flipping
+            // to DISCONNECTED on every single slow poll would cause UI flicker.
+            log.warn("[Polling] syncPosition timeout — Fyers /positions slow ({}). Will retry next tick.",
+                ste.getMessage());
         } catch (Exception e) {
             log.error("[Polling] syncPosition error: {}", e.getMessage());
             connectionStatus = "DISCONNECTED";
