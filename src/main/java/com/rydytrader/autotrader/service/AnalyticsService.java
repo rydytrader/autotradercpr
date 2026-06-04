@@ -104,6 +104,41 @@ public class AnalyticsService {
                                            includeAdjustments ? adjustments : java.util.List.of()));
         out.put("adjustments", adjustmentSummary(adjustments));
         out.put("byMonth",     byMonth(closed));
+        out.put("byDate",      byDate(closed));
+        return out;
+    }
+
+    /** Per-day aggregation of straddle outcomes — keyed by {@code yyyy-MM-dd} so the
+     *  calendar's day cells can show the true per-straddle net P&L (sum of every straddle
+     *  closed that date) instead of reading the {@code straddle_sessions} row. Keeps the
+     *  calendar's day-level numbers in lockstep with the home page hero. */
+    private Map<String, Object> byDate(List<Trade> closed) {
+        java.util.NavigableMap<String, double[]> sumByKey = new java.util.TreeMap<>();
+        java.util.NavigableMap<String, int[]>    cntByKey = new java.util.TreeMap<>();
+        for (Trade t : closed) {
+            String key = t.sessionDate();
+            if (key == null || key.isEmpty()) continue;
+            double pnl = t.netPnl();
+            double[] s = sumByKey.computeIfAbsent(key, k -> new double[2]);  // [net, charges]
+            int[]    c = cntByKey.computeIfAbsent(key, k -> new int[3]);     // [straddles, wins, losses]
+            s[0] += pnl;
+            s[1] += t.charges();
+            c[0]++;
+            if (pnl > 0) c[1]++;
+            else if (pnl < 0) c[2]++;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (String key : sumByKey.keySet()) {
+            double[] s = sumByKey.get(key);
+            int[]    c = cntByKey.get(key);
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("netPnl",    round2(s[0]));
+            m.put("charges",   round2(s[1]));
+            m.put("straddles", c[0]);
+            m.put("wins",      c[1]);
+            m.put("losses",    c[2]);
+            out.put(key, m);
+        }
         return out;
     }
 

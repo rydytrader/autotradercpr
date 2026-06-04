@@ -290,6 +290,10 @@
     let allSessions = []; // [{date, entries, rolls, finalState, grossPnl, charges, netPnl}, ...]
     let allAdjustments = []; // [{symbol, side, qty, openPrice, closePrice, pnl, closeMillis}, ...]
     let adjustmentByDate = {}; // { 'yyyy-mm-dd': { count, netPnl } } — pre-aggregated for fast cell colouring
+    // Per-straddle aggregation indexed by yyyy-MM-dd — drives day cells so the day-level
+    // P&L matches the home page exactly. Populated by renderAnalyticsTiles from
+    // `/api/analytics/summary?... → byDate`. Day cells use this instead of session.netPnl.
+    let analyticsByDate = {};
     let includeAdjustments = (function() {
         let stored = null;
         try { stored = window.localStorage.getItem('calIncludeAdjustments'); } catch (e) {}
@@ -550,6 +554,11 @@
                 netEl.textContent = '—';
                 netEl.className = 'stat-value';
             }
+            // Per-date breakdown — drives the calendar day cells so each cell's P&L
+            // matches the home page exactly. Cache + re-render the month view so cells
+            // pick up the freshest per-straddle numbers. Year view doesn't use day cells.
+            analyticsByDate = d.byDate || {};
+            if (view === 'month') renderMonthGrid();
             // Year-grid month cards — patch each card's Win % cell using per-straddle byMonth
             // data. Cards in month view don't have these elements (querySelectorAll = []).
             const byMonth = d.byMonth || {};
@@ -582,7 +591,14 @@
         const monthSessions = filterSessions(curYear, curMonth);
         renderHero(aggregate(monthSessions));
         renderAnalyticsTiles(firstOfMonth(curYear, curMonth), lastOfMonth(curYear, curMonth));
-
+        renderMonthGrid();
+    }
+    // Builds just the day-cell grid. Called by renderMonth() once on view enter, and again
+    // by renderAnalyticsTiles() the moment per-straddle byDate data arrives — so day cells
+    // pick up the analytics-source P&L (matching the home page) without a full re-render
+    // of the hero + period chrome.
+    function renderMonthGrid() {
+        const monthSessions = filterSessions(curYear, curMonth);
         // Map sessions by date
         const sessionMap = {};
         monthSessions.forEach(s => { sessionMap[s.date] = s; });
@@ -606,8 +622,14 @@
             const isToday = dateStr === todayStr;
             const adj = adjustmentByDate[dateStr];
             const hasAdj = !!adj && adj.count > 0;
-            const hasPnl = !!session || (includeAdjustments && hasAdj);
-            const straddleNet = session ? (session.netPnl || 0) : 0;
+            // Prefer the per-straddle byDate aggregation from the analytics summary so
+            // the day cell matches the home page exactly. Fall back to the session row
+            // (sync only — analyticsByDate populates after the analytics fetch returns).
+            const byDateRow = analyticsByDate[dateStr];
+            const hasStraddle = !!byDateRow || !!session;
+            const hasPnl = hasStraddle || (includeAdjustments && hasAdj);
+            const straddleNet = byDateRow ? (byDateRow.netPnl || 0)
+                              : session   ? (session.netPnl   || 0) : 0;
             const adjNet = (includeAdjustments && hasAdj) ? adj.netPnl : 0;
             const net = straddleNet + adjNet;
 
