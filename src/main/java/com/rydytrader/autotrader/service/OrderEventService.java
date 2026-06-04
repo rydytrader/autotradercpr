@@ -53,12 +53,13 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     private volatile String lastDisconnectTime = "";
     private volatile int reconnectCountToday = 0;
 
-    /** Consecutive 429 disconnects from Fyers' Order WS handshake. Fyers returns 429 on the
-     *  WS path when the auth token is dead (in addition to genuine rate limits). After
-     *  {@link #AUTH_FAIL_THRESHOLD} in a row we clear the in-memory token — the existing
-     *  {@code !tokenStore.isTokenAvailable()} guard in {@link #scheduleReconnect} then stops
-     *  the loop until the next morning's login. */
-    private volatile int consecutive429s = 0;
+    /** Consecutive auth-failure disconnects from Fyers' Order WS handshake. Fyers commonly
+     *  returns 401 / 403 / 429 on the WS path when the access token is dead. (403 in particular
+     *  is what we see first when the token expires — Fyers stops accepting it before its
+     *  rate-limiter starts replying with 429.) After {@link #AUTH_FAIL_THRESHOLD} in a row we
+     *  clear the in-memory token — the existing {@code !tokenStore.isTokenAvailable()} guard
+     *  in {@link #scheduleReconnect} then stops the loop until the next morning's login. */
+    private volatile int consecutiveAuthErrors = 0;
     private static final int AUTH_FAIL_THRESHOLD = 2;
 
     /** True when the reconnect loop is idle because we're outside market hours / on a weekend.
@@ -132,7 +133,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         if (running) stop();
         running = true;
         reconnectAttempts = 0;
-        consecutive429s   = 0;
+        consecutiveAuthErrors = 0;
         pausedOutsideMarketWindow = false;
         hasConnectedSinceStart    = false;
         scheduler = Executors.newScheduledThreadPool(2);
@@ -285,7 +286,7 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     public void markConnected() {
         connected = true;
         reconnectAttempts = 0;
-        consecutive429s   = 0;
+        consecutiveAuthErrors = 0;
         pausedOutsideMarketWindow = false;
         hasConnectedSinceStart    = true;
         lastConnectTime = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
@@ -300,23 +301,35 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
         log.info("[OrderEventSvc] WebSocket disconnected: {}", reason);
         if (eventService != null) eventService.log("[WS] Order WebSocket disconnected: " + reason);
         if (!running) return;
-        // Track consecutive 429s separately from other disconnect reasons. Fyers returns 429
-        // on the WS handshake when the token is dead — after AUTH_FAIL_THRESHOLD in a row
-        // we clear the token and let the reconnect-guard stop the loop until re-login.
-        if (reason != null && reason.contains("429")) {
-            consecutive429s++;
-            log.warn("[OrderEventSvc] Auth-likely 429 disconnect {}/{}", consecutive429s, AUTH_FAIL_THRESHOLD);
-            if (consecutive429s >= AUTH_FAIL_THRESHOLD) {
-                log.error("[OrderEventSvc] Repeated 429s — clearing in-memory token. Re-login required.");
+        // Track consecutive auth-failure disconnects (401 / 403 / 429) separately from
+        // other disconnect reasons. Fyers' Order WS hands back 403 first when the access
+        // token expires (the token is rejected before the rate-limiter sees the request),
+        // then 429s start once retries keep coming. Either way, after AUTH_FAIL_THRESHOLD
+        // in a row we clear the in-memory token and let the reconnect-guard stop the loop
+        // until re-login.
+        if (isAuthFailureReason(reason)) {
+            consecutiveAuthErrors++;
+            log.warn("[OrderEventSvc] Auth-failure disconnect {} {}/{}",
+                reason, consecutiveAuthErrors, AUTH_FAIL_THRESHOLD);
+            if (consecutiveAuthErrors >= AUTH_FAIL_THRESHOLD) {
+                log.error("[OrderEventSvc] Repeated auth failures — clearing in-memory token. Re-login required.");
                 if (eventService != null) {
-                    eventService.log("[ERROR] [WS] Order WS — repeated 429s, token cleared. Please re-login.");
+                    eventService.log("[ERROR] [WS] Order WS — repeated auth failures (" + reason
+                        + "), token cleared. Please re-login.");
                 }
                 tokenStore.setAccessToken("");
                 return; // !tokenStore.isTokenAvailable() now blocks scheduleReconnect anyway
             }
         } else {
-            consecutive429s = 0;
+            consecutiveAuthErrors = 0;
         }
         scheduleReconnect();
+    }
+
+    /** True when the disconnect reason looks like an auth failure rather than a transient
+     *  network drop. Matches 401 / 403 / 429 anywhere in the reason text. */
+    private static boolean isAuthFailureReason(String reason) {
+        if (reason == null) return false;
+        return reason.contains("401") || reason.contains("403") || reason.contains("429");
     }
 }
