@@ -48,11 +48,7 @@
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
                     '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline used by the Home analytics page (capital growth %, equity curve, return %). Default ₹10,00,000.</div></div>' +
                     '<div class="sm-field"><label>Portfolio Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Global kill switch trigger. When aggregate net day P&L across all strategies drops below this % of Initial Capital, every strategy is flattened. 0 disables.</div></div>' +
-                    '<div class="sm-field"><label>Max Portfolio Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto-calculated from Initial Capital × Daily Risk %. This is the rupee loss threshold that triggers the global kill switch.</div></div>' +
-                    '<div class="sm-section-title">Risk Allocation per Strategy</div>' +
-                    '<div class="sm-hint" style="margin-bottom:10px;">Splits the Max Portfolio Risk across strategies. Each strategy\'s individual kill switch fires at its own slice. Defaults to 50% per strategy.</div>' +
-                    '<div id="sm-allocations-list" style="font-family:var(--font-mono);font-size:0.78rem;"></div>' +
-                    '<div class="sm-alloc-total"><span>Total allocation</span><span id="sm-allocations-total">—</span></div>' +
+                    '<div class="sm-field"><label>Max Portfolio Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto-calculated from Initial Capital × Daily Risk %. This is the sole rupee loss threshold across the whole book — when aggregate (consumed risk + open MTM − charges) across every enabled strategy breaches this, all positions are flattened.</div></div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
                     '<div class="sm-field"><label>Brokerage per Order (₹)</label><input type="number" id="sm-brokeragePerOrder" step="1" min="0"><div class="sm-hint">Flat per-order brokerage. Drives charge estimates on every dashboard + session row.</div></div>' +
@@ -111,12 +107,6 @@
             '.sm-field input[type=checkbox] { width:auto; }' +
             '.sm-readonly { width:100%;padding:8px 12px;border-radius:6px;border:1px dashed var(--border);background:var(--bg-card);color:var(--accent-cyan);font-family:var(--font-mono);font-size:0.82rem;font-weight:700;letter-spacing:0.04em; }' +
             '.sm-section-title { font-family:var(--font-mono);font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-secondary);margin:22px 0 6px;padding-top:14px;border-top:1px solid var(--border); }' +
-            '.sm-alloc-row { display:grid;grid-template-columns:1fr 110px 130px;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border); }' +
-            '.sm-alloc-name { color:var(--text-primary);font-size:0.78rem; }' +
-            '.sm-alloc-pct { padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.78rem;outline:none;text-align:right; }' +
-            '.sm-alloc-rupees { color:var(--accent-cyan);font-family:var(--font-mono);font-size:0.78rem;font-weight:700;text-align:right; }' +
-            '.sm-alloc-total { display:flex;justify-content:space-between;padding:10px 0 0;font-family:var(--font-mono);font-size:0.78rem;font-weight:700; }' +
-            '.sm-alloc-total .ok { color:var(--accent-green); } .sm-alloc-total .bad { color:var(--accent-red, #f87171); }' +
             '.sm-hint { color:var(--text-muted);font-size:0.7rem;margin-top:4px; }' +
             '.sm-btn-primary { background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.4);color:var(--accent-green);padding:8px 18px;border-radius:6px;font-family:var(--font-mono);font-size:0.74rem;font-weight:700;cursor:pointer; }' +
             '.sm-btn-secondary { background:transparent;border:1px solid var(--border);color:var(--text-secondary);padding:8px 18px;border-radius:6px;font-family:var(--font-mono);font-size:0.74rem;cursor:pointer; }' +
@@ -335,13 +325,6 @@
             startingCapital:     parseFloat(document.getElementById('sm-startingCapital').value) || 0,
             portfolioMaxRiskPct: parseFloat(document.getElementById('sm-portfolioMaxRiskPct').value) || 0
         };
-        // Collect per-strategy allocation %s — keyed by strategy id.
-        var allocs = {};
-        document.querySelectorAll('.sm-alloc-row .sm-alloc-pct').forEach(function(inp) {
-            var sid = inp.getAttribute('data-strategy');
-            if (sid) allocs[sid] = parseFloat(inp.value) || 0;
-        });
-        if (Object.keys(allocs).length > 0) body.strategyAllocations = allocs;
         postSettings('/api/settings/risk', body);
     }
 
@@ -394,13 +377,7 @@
         // Re-fetch /api/strategies first so the enabled flag (driving the green/red stripe
         // on each allocation row) reflects any toggles the operator just made in the
         // Straddles tab without closing + reopening the modal.
-        var refreshList = fetch('/api/strategies')
-            .then(function(r) { return r.json(); })
-            .then(function(arr) { strategiesList = Array.isArray(arr) ? arr : strategiesList; })
-            .catch(function() {});
-        var settingsP = fetch('/api/settings/risk').then(function(r) { return r.json(); });
-        Promise.all([refreshList, settingsP]).then(function(arr) {
-            var d = arr[1];
+        fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
             var capInput = document.getElementById('sm-startingCapital');
             var pctInput = document.getElementById('sm-portfolioMaxRiskPct');
@@ -409,74 +386,11 @@
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {
                 updatePortfolioRiskHint(parseFloat(capInput.value) || 0, parseFloat(pctInput && pctInput.value) || 0);
-                refreshAllocationRupees();
             };
             if (pctInput) pctInput.oninput = function() {
                 updatePortfolioRiskHint(parseFloat(capInput && capInput.value) || 0, parseFloat(pctInput.value) || 0);
-                refreshAllocationRupees();
             };
-            renderAllocations(d.strategyAllocations || {});
         }).catch(function() {});
-    }
-
-    function renderAllocations(currentAllocs) {
-        var host = document.getElementById('sm-allocations-list');
-        if (!host) return;
-        if (!strategiesList || strategiesList.length === 0) {
-            host.innerHTML = '<div class="sm-hint">No strategies registered.</div>';
-            return;
-        }
-        var html = '';
-        strategiesList.forEach(function(s) {
-            var pct = currentAllocs[s.id] != null ? currentAllocs[s.id] : 50;
-            // 4px left strip mirroring the Straddles tab: green = enabled, red = disabled.
-            // 6px padding-left so content sits clear of the border.
-            var enabled = s.enabled !== false;
-            var stripStyle = 'border-left:4px solid ' + (enabled
-                ? 'var(--accent-green)'
-                : 'var(--accent-red, #f87171)') + ';padding-left:6px;';
-            html += '<div class="sm-alloc-row" style="' + stripStyle + '">'
-                + '<span class="sm-alloc-name">' + escapeHtml(s.displayName || s.id) + '</span>'
-                + '<input type="number" class="sm-alloc-pct" data-strategy="' + escapeHtml(s.id) + '" step="1" min="0" max="100" value="' + pct + '">'
-                + '<span class="sm-alloc-rupees" data-strategy="' + escapeHtml(s.id) + '">—</span>'
-                + '</div>';
-        });
-        host.innerHTML = html;
-        // Live recompute on % input changes.
-        host.querySelectorAll('.sm-alloc-pct').forEach(function(inp) {
-            inp.addEventListener('input', refreshAllocationRupees);
-        });
-        refreshAllocationRupees();
-    }
-
-    function refreshAllocationRupees() {
-        var capInp = document.getElementById('sm-startingCapital');
-        var pctInp = document.getElementById('sm-portfolioMaxRiskPct');
-        var cap = capInp ? parseFloat(capInp.value) || 0 : 0;
-        var pct = pctInp ? parseFloat(pctInp.value) || 0 : 0;
-        var portfolioMax = cap * pct / 100;
-        var totalPct = 0;
-        document.querySelectorAll('.sm-alloc-row').forEach(function(row) {
-            var pctInput = row.querySelector('.sm-alloc-pct');
-            var rsSpan   = row.querySelector('.sm-alloc-rupees');
-            var allocPct = parseFloat(pctInput.value) || 0;
-            totalPct += allocPct;
-            if (rsSpan) {
-                if (portfolioMax > 0) {
-                    var rs = Math.round(portfolioMax * allocPct / 100);
-                    rsSpan.textContent = '₹' + rs.toLocaleString('en-IN');
-                    rsSpan.style.color = 'var(--accent-cyan)';
-                } else {
-                    rsSpan.textContent = '— (disabled)';
-                    rsSpan.style.color = 'var(--text-muted)';
-                }
-            }
-        });
-        var totalEl = document.getElementById('sm-allocations-total');
-        if (totalEl) {
-            totalEl.textContent = totalPct.toFixed(0) + '%';
-            totalEl.className = (Math.abs(totalPct - 100) < 0.01) ? 'ok' : 'bad';
-        }
     }
 
     function updatePortfolioRiskHint(capital, pct) {

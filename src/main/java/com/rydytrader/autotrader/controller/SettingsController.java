@@ -1,7 +1,5 @@
 package com.rydytrader.autotrader.controller;
 
-import com.rydytrader.autotrader.service.strategy.Strategy;
-import com.rydytrader.autotrader.service.strategy.StrategyRegistry;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -17,11 +15,9 @@ import java.util.*;
 public class SettingsController {
 
     private final RiskSettingsStore riskSettings;
-    private final StrategyRegistry strategyRegistry;
 
-    public SettingsController(RiskSettingsStore riskSettings, StrategyRegistry strategyRegistry) {
+    public SettingsController(RiskSettingsStore riskSettings) {
         this.riskSettings = riskSettings;
-        this.strategyRegistry = strategyRegistry;
     }
 
     // ── GET SETTINGS ──────────────────────────────────────────────────────────
@@ -46,13 +42,6 @@ public class SettingsController {
         result.put("startingCapital",       riskSettings.getStartingCapital(effectiveMode));
         result.put("portfolioMaxRiskPct",   riskSettings.getPortfolioMaxRiskPct(effectiveMode));
         result.put("portfolioMaxDailyLoss", riskSettings.getPortfolioMaxDailyLoss()); // derived ₹ for display
-        // Per-strategy risk allocation percentages — used by the Portfolio Risk tab UI to
-        // render the split rows. Default 50% per strategy when unset.
-        Map<String, Double> allocs = new LinkedHashMap<>();
-        for (Strategy s : strategyRegistry.all()) {
-            allocs.put(s.id(), riskSettings.getStrategyDouble(s.id(), "riskAllocationPct", 50));
-        }
-        result.put("strategyAllocations", allocs);
         // Charges
         result.put("brokeragePerOrder",   riskSettings.getBrokeragePerOrder(effectiveMode));
         result.put("sttRate",             riskSettings.getSttRate(effectiveMode));
@@ -86,20 +75,6 @@ public class SettingsController {
             // Portfolio Risk (global)
             if (body.containsKey("startingCapital"))     riskSettings.setStartingCapital(effectiveMode, Double.parseDouble(body.get("startingCapital").toString()));
             if (body.containsKey("portfolioMaxRiskPct")) riskSettings.setPortfolioMaxRiskPct(effectiveMode, Double.parseDouble(body.get("portfolioMaxRiskPct").toString()));
-            // Per-strategy risk allocation %s — stored as generic strategy settings so the
-            // strategy can derive its rupee threshold via getStrategyMaxDailyLoss(id).
-            Object allocs = body.get("strategyAllocations");
-            if (allocs instanceof Map<?, ?> allocMap) {
-                for (Map.Entry<?, ?> e : allocMap.entrySet()) {
-                    if (e.getKey() == null || e.getValue() == null) continue;
-                    String sid = e.getKey().toString();
-                    double pct;
-                    try { pct = Double.parseDouble(e.getValue().toString()); }
-                    catch (NumberFormatException nfe) { continue; }
-                    riskSettings.setStrategySetting(sid, "riskAllocationPct", Math.max(0, pct));
-                }
-                riskSettings.saveFor(effectiveMode);
-            }
             // Charges
             if (body.containsKey("brokeragePerOrder")) riskSettings.setBrokeragePerOrder(effectiveMode, Double.parseDouble(body.get("brokeragePerOrder").toString()));
             if (body.containsKey("sttRate"))           riskSettings.setSttRate(effectiveMode, Double.parseDouble(body.get("sttRate").toString()));

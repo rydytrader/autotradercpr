@@ -11,13 +11,15 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /**
- * Portfolio-wide kill switch — fires when the aggregate live net day P&L across all registered
- * strategies drops below the configured {@code portfolioMaxRiskPct} of {@code startingCapital}.
+ * Sole portfolio-wide kill switch — fires when the aggregate live net day P&L across all
+ * registered strategies (realised + open MTM − charges, summed) drops below the configured
+ * {@code portfolioMaxRiskPct} of {@code startingCapital}.
  *
- * <p>Independent of each strategy's own max-loss kill switch. The per-strategy switch fires when
- * a single strategy loses too much; this one fires when the COMBINED loss across the book is
- * too much. When triggered, every strategy with an open position is force-closed and parked
- * DONE_FOR_DAY for the rest of the session.
+ * <p>Per-strategy max-daily-loss kill switches were removed: the operator's design intent is
+ * that the combined book is what matters — once consumed risk + open MTM across all strategies
+ * crosses the portfolio threshold, every strategy is force-closed and parked DONE_FOR_DAY for
+ * the rest of the session. Individual strategies can still opt out of the day via the per-day
+ * SL config but no longer have their own rupee kill switch.
  *
  * <p>Disabled when {@code portfolioMaxRiskPct} is 0. Triggers once per day — after firing, the
  * fire-once flag stays set until day rollover (resolved by re-checking the day key).

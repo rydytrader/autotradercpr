@@ -76,6 +76,9 @@
        style="width:96px;flex-shrink:0;background:var(--navbar-bg);backdrop-filter:blur(16px);
               border-right:1px solid var(--border);
               display:flex;flex-direction:column;align-items:center;padding:18px 8px 0;gap:10px;">
+    <div style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;
+                color:var(--text-muted);text-transform:uppercase;text-align:center;
+                width:72px;margin:2px 0 4px;">MAIN</div>
     <a href="/home" class="nav-icon" title="Home" data-nav-key="home"
        style="display:flex;align-items:center;justify-content:center;width:72px;height:34px;
               border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
@@ -466,7 +469,7 @@
 
 <script src="/js/common.js?v=2"></script>
 <script src="/js/ticker.js?v=4"></script>
-<script src="/js/settings-modal.js?v=8"></script>
+<script src="/js/settings-modal.js?v=9"></script>
 <script src="/js/strategy-settings-form.js?v=10"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
 <script src="/js/manual-terminal-modal.js?v=19"></script>
@@ -1635,10 +1638,9 @@
         if (d.state !== 'DONE_FOR_DAY')         return 'Only available when state is DONE_FOR_DAY';
         if (!isMarketOpenNow())                 return 'Market is closed';
         if (d.todayDayEnabled === false)        return 'Today is disabled in the per-day SL config';
-        var charges = (d.charges && d.charges.total) || 0;
-        var maxLoss = Number(d.maxDailyLoss || 0);
-        if (maxLoss > 0 && (Number(d.realisedPnlToday || 0) - charges) <= -maxLoss)
-                                                return 'Max daily loss already hit';
+        // Per-strategy max-loss gate removed — portfolio risk service flattens everything
+        // when the aggregate net day P&L breaches the portfolio threshold. No client check
+        // needed here; the portfolio kill is global and pre-empts any individual restart.
         var nowMins = new Date().getHours() * 60 + new Date().getMinutes();
         if (nowMins <  hmToMins(d.entryTime))      return 'Too early — entry window hasn\'t opened';
         if (nowMins >= hmToMins(d.squareOffTime))  return 'Too late — past squareoff time';

@@ -308,7 +308,6 @@ public class ShortStraddle implements Strategy {
         synchronized (this) {
             if (state != LifecycleState.DONE_FOR_DAY)        return "NOT_DONE_FOR_DAY";
             if (!isTodayDayEnabled())                         return "DAY_DISABLED";
-            if (maxDailyLossTripped())                        return "MAX_LOSS_HIT";
             LocalTime now = LocalTime.now(IST);
             LocalTime entryT     = parseTime(getEntryTime(),     "09:20");
             LocalTime squareOffT = parseTime(getSquareOffTime(), "15:15");
@@ -322,15 +321,6 @@ public class ShortStraddle implements Strategy {
         return "OK";
     }
 
-    /** Same threshold the live kill-switch in {@link #checkMaxLossKillSwitch} uses, but only
-     *  against the already-realised P&L (no live MTM — we're DONE_FOR_DAY so there are no
-     *  open legs to MTM against). Charges baseline matches what the kill switch sees. */
-    private boolean maxDailyLossTripped() {
-        double maxLoss = riskSettings.getStrategyMaxDailyLoss(instanceId);
-        if (maxLoss <= 0) return false;
-        double charges = computeChargesBreakdown().get("total");
-        return (realisedPnlToday - charges) < -maxLoss;
-    }
     @Override public String currentWeeklyExpiry() { return currentWeeklyExpiry; }
     @Override public boolean isEnabled() {
         return riskSettings.getStrategyBool(instanceId, "enabled", false);
@@ -767,7 +757,10 @@ public class ShortStraddle implements Strategy {
             transitionTo(LifecycleState.DONE_FOR_DAY);
             return;
         }
-        if (checkMaxLossKillSwitch()) return;
+        // Per-strategy max-loss kill switch removed — the portfolio-wide kill switch
+        // (PortfolioRiskService) is now the sole limit: aggregate (realised + open MTM)
+        // across every enabled strategy is checked against portfolio risk every 5 s and
+        // flattens everything when crossed.
         // SL triggers are also evaluated by the 500ms fast scheduler — calling here covers
         // the case where fastSlCheck is disabled / paused and ensures the 5s path is still
         // protective. Both paths funnel through the synchronized closeLeg/transition so a
@@ -959,30 +952,6 @@ public class ShortStraddle implements Strategy {
             log.error("[short-straddle] Exception closing {} {}: {}", legTag, symbol, e.getMessage());
         }
         return "";
-    }
-
-    // ── Max loss kill switch ──────────────────────────────────────────────────
-    private boolean checkMaxLossKillSwitch() {
-        // Derived from portfolioMaxDailyLoss × this strategy's allocation %.
-        double maxLoss = riskSettings.getStrategyMaxDailyLoss(instanceId);
-        if (maxLoss <= 0) return false;
-        double ceLtp = isCeOpen() && !ceSymbol.isEmpty() ? marketDataService.getLtp(ceSymbol) : 0;
-        double peLtp = isPeOpen() && !peSymbol.isEmpty() ? marketDataService.getLtp(peSymbol) : 0;
-        double ceMtm = (isCeOpen() && ceEntryPremium > 0 && ceLtp > 0 && ceQty > 0) ? (ceEntryPremium - ceLtp) * ceQty : 0;
-        double peMtm = (isPeOpen() && peEntryPremium > 0 && peLtp > 0 && peQty > 0) ? (peEntryPremium - peLtp) * peQty : 0;
-        double charges = computeChargesBreakdown().get("total");
-        double netPnl = realisedPnlToday + ceMtm + peMtm - charges;
-        if (netPnl < -maxLoss) {
-            String msg = String.format("Daily max-loss hit (net %.2f < -%.2f) — flattening remaining legs",
-                netPnl, maxLoss);
-            log.warn("[short-straddle] {}", msg);
-            eventService.log("[ERROR] [short-straddle] " + msg);
-            notifyTelegram(msg);
-            closeRemainingLegs("MAX_LOSS_HIT");
-            transitionTo(LifecycleState.DONE_FOR_DAY);
-            return true;
-        }
-        return false;
     }
 
     // ── Charges ────────────────────────────────────────────────────────────────
@@ -1229,7 +1198,6 @@ public class ShortStraddle implements Strategy {
         }
         m.put("dayConfig", dayMap);
         m.put("lotsPerLeg",    riskSettings.getStrategyInt(instanceId, "lotsPerLeg", 1));
-        m.put("maxDailyLoss",  riskSettings.getStrategyMaxDailyLoss(instanceId));
         m.put("lotSize",       NIFTY_LOT_SIZE);
         m.put("enabled",       riskSettings.getStrategyBool(instanceId, "enabled", false));
         return m;
