@@ -353,6 +353,17 @@
         <div class="section-card" style="margin-bottom:0;">
             <div class="section-header">
                 <div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> Today</div>
+                <!-- Pause Trading toggle. When ON the scheduler skips its IDLE→entry transition
+                     and + NEW STRADDLE is disabled; open positions continue to be managed. -->
+                <label id="pauseTradingToggle" style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.66rem;letter-spacing:0.06em;color:var(--text-muted);text-transform:uppercase;cursor:pointer;user-select:none;"
+                       title="Pause auto-entry. Open positions keep running; no new straddle fires while this is on.">
+                    <span id="pauseTradingLabel">Pause Trading</span>
+                    <span style="position:relative;display:inline-block;width:34px;height:18px;">
+                        <input type="checkbox" id="pauseTradingInput" style="opacity:0;width:0;height:0;">
+                        <span id="pauseTradingTrack" style="position:absolute;inset:0;background:var(--bg-card);border:1px solid var(--border);border-radius:18px;transition:background 0.18s,border-color 0.18s;"></span>
+                        <span id="pauseTradingThumb" style="position:absolute;left:2px;top:2px;width:12px;height:12px;background:var(--text-secondary);border-radius:50%;transition:transform 0.18s,background 0.18s;"></span>
+                    </span>
+                </label>
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -746,6 +757,7 @@
             // server's gate logic, mirrored client-side.
             refreshNewStraddleButton();
             refreshSquareoffButton();
+            refreshPauseToggle(d);
 
             var statePill = document.getElementById('heroStatePill');
             statePill.textContent = d.state || '—';
@@ -1638,6 +1650,7 @@
         if (d.state !== 'DONE_FOR_DAY')         return 'Only available when state is DONE_FOR_DAY';
         if (!isMarketOpenNow())                 return 'Market is closed';
         if (d.todayDayEnabled === false)        return 'Today is disabled in the per-day SL config';
+        if (d.tradingPaused === true)           return 'Trading is paused — toggle off to enable new entries';
         // Per-strategy max-loss gate removed — portfolio risk service flattens everything
         // when the aggregate net day P&L breaches the portfolio threshold. No client check
         // needed here; the portfolio kill is global and pre-empts any individual restart.
@@ -1646,6 +1659,84 @@
         if (nowMins >= hmToMins(d.squareOffTime))  return 'Too late — past squareoff time';
         return '';
     }
+    // ── Pause Trading toggle ────────────────────────────────────────────────
+    // Visual sync from the latest dashboard payload. The input + track + thumb are
+    // animated locally; persistence flows through the same /settings POST as the
+    // strategy settings form. Both transitions (off→on and on→off) go through the
+    // shared showConfirm modal so the operator can't flip the gate accidentally.
+    function refreshPauseToggle(d) {
+        var input = document.getElementById('pauseTradingInput');
+        var track = document.getElementById('pauseTradingTrack');
+        var thumb = document.getElementById('pauseTradingThumb');
+        var label = document.getElementById('pauseTradingLabel');
+        if (!input || !track || !thumb) return;
+        var paused = !!(d && d.tradingPaused);
+        // Don't yank the visual mid-flight if the operator is staring at a confirm modal.
+        // The dashboard refresh writes the authoritative state but the click handler resets
+        // it on cancel anyway, so this is purely a polish guard.
+        if (input.dataset.pending === '1') return;
+        input.checked = paused;
+        track.style.background    = paused ? 'rgba(248,113,113,0.18)' : 'var(--bg-card)';
+        track.style.borderColor   = paused ? 'var(--accent-red, #f87171)' : 'var(--border)';
+        thumb.style.transform     = paused ? 'translateX(16px)' : 'translateX(0)';
+        thumb.style.background    = paused ? 'var(--accent-red, #f87171)' : 'var(--text-secondary)';
+        if (label) {
+            label.textContent = paused ? 'Trading Paused' : 'Pause Trading';
+            label.style.color = paused ? 'var(--accent-red, #f87171)' : 'var(--text-muted)';
+        }
+    }
+    (function wirePauseToggle() {
+        var input = document.getElementById('pauseTradingInput');
+        if (!input) return;
+        input.addEventListener('change', function() {
+            var nowPaused = input.checked;
+            // Snap the input back to the server-truth until the confirm resolves, then we
+            // re-render from the next dashboard poll. dataset.pending tells refreshPauseToggle
+            // not to overwrite the pending state mid-click.
+            var prior = !nowPaused;
+            input.checked = prior;
+            input.dataset.pending = '1';
+            var done = function() { delete input.dataset.pending; };
+            var apply = function() {
+                fetch('/api/strategies/' + STRATEGY_ID + '/settings', {
+                    method: 'POST',
+                    headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders()),
+                    body: JSON.stringify({ tradingPaused: nowPaused })
+                }).then(function(r) { return r.json(); }).then(function(resp) {
+                    if (window.showToast) {
+                        showToast(nowPaused ? 'Trading paused — no new entries will fire'
+                                            : 'Trading resumed — scheduler will fire at entry time',
+                                  resp && resp.success ? 'success' : 'error');
+                    }
+                }).catch(function(err) {
+                    if (window.showToast) showToast('Toggle failed: ' + (err.message || err), 'error');
+                }).finally(function() {
+                    done();
+                    loadDashboard();
+                });
+            };
+            var titleOn  = 'Pause auto-trading?';
+            var bodyOn   = 'The scheduler will skip its IDLE → entry transition and the + NEW '
+                         + 'STRADDLE button will be disabled.\n\nAny open positions keep running — '
+                         + 'SL, target and timed squareoff still fire normally.';
+            var titleOff = 'Resume auto-trading?';
+            var bodyOff  = 'The scheduler will fire the next straddle at the configured entry '
+                         + 'time, and + NEW STRADDLE becomes available again.';
+            if (typeof window.showConfirm === 'function') {
+                window.showConfirm({
+                    title:    nowPaused ? titleOn  : titleOff,
+                    body:     nowPaused ? bodyOn   : bodyOff,
+                    onConfirm: apply,
+                    onCancel:  done
+                });
+            } else if (confirm(nowPaused ? bodyOn : bodyOff)) {
+                apply();
+            } else {
+                done();
+            }
+        });
+    })();
+
     function refreshNewStraddleButton() {
         var btn = document.getElementById('straddleNewBtn');
         if (!btn) return;

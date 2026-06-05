@@ -188,6 +188,7 @@ public class StrategyController {
         String human = switch (code) {
             case "NOT_DONE_FOR_DAY"     -> "Strategy is not in DONE_FOR_DAY — nothing to restart.";
             case "DAY_DISABLED"         -> "Today is disabled in the per-day SL config.";
+            case "TRADING_PAUSED"       -> "Trading is paused — toggle the Today switch off to allow new entries.";
             case "BEFORE_ENTRY_TIME"    -> "Too early — entry-time window hasn't opened yet.";
             case "AFTER_SQUAREOFF_TIME" -> "Too late — past the squareoff time.";
             case "PENDING_FILLS"        -> "Prior close fill still in flight — try again in a moment.";

@@ -308,6 +308,8 @@ public class ShortStraddle implements Strategy {
         synchronized (this) {
             if (state != LifecycleState.DONE_FOR_DAY)        return "NOT_DONE_FOR_DAY";
             if (!isTodayDayEnabled())                         return "DAY_DISABLED";
+            if (riskSettings.getStrategyBool(instanceId, "tradingPaused", false))
+                                                              return "TRADING_PAUSED";
             LocalTime now = LocalTime.now(IST);
             LocalTime entryT     = parseTime(getEntryTime(),     "09:20");
             LocalTime squareOffT = parseTime(getSquareOffTime(), "15:15");
@@ -416,6 +418,12 @@ public class ShortStraddle implements Strategy {
     @Override
     public void saveSettings(java.util.Map<String, Object> values) {
         if (values == null) return;
+        // Soft-pause toggle. Surfaced as a switch in the Today pane header. Saved through the
+        // same generic settings endpoint so a single PATCH-ish POST flips it without a new route.
+        if (values.containsKey("tradingPaused")) {
+            riskSettings.setStrategySetting(instanceId, "tradingPaused",
+                Boolean.parseBoolean(String.valueOf(values.get("tradingPaused"))));
+        }
         if (values.containsKey("entryTime"))     riskSettings.setStrategySetting(instanceId, "entryTime",     String.valueOf(values.get("entryTime")));
         if (values.containsKey("squareOffTime")) riskSettings.setStrategySetting(instanceId, "squareOffTime", String.valueOf(values.get("squareOffTime")));
         if (values.containsKey("lotsPerLeg"))    riskSettings.setStrategySetting(instanceId, "lotsPerLeg",    asInt(values.get("lotsPerLeg"), 1));
@@ -617,6 +625,12 @@ public class ShortStraddle implements Strategy {
                     // Per-day toggle. If today is disabled we never enter; legs already open
                     // from a previous day rollover would have been flattened by rolloverIfNewDay.
                     if (!isTodayDayEnabled()) {
+                        return;
+                    }
+                    // Soft pause — strategy stays enabled (state machine keeps ticking,
+                    // open positions continue to be managed) but no new entry fires while
+                    // the operator has toggled tradingPaused on the dashboard.
+                    if (riskSettings.getStrategyBool(instanceId, "tradingPaused", false)) {
                         return;
                     }
                     doInitialEntry();
@@ -1200,6 +1214,10 @@ public class ShortStraddle implements Strategy {
         m.put("lotsPerLeg",    riskSettings.getStrategyInt(instanceId, "lotsPerLeg", 1));
         m.put("lotSize",       NIFTY_LOT_SIZE);
         m.put("enabled",       riskSettings.getStrategyBool(instanceId, "enabled", false));
+        // Soft-pause flag — surfaced in the Today pane header. When true, scheduler skips
+        // the IDLE → entry transition AND restartFromDoneForDay returns TRADING_PAUSED so
+        // the + NEW STRADDLE button stays disabled. Open positions continue to be managed.
+        m.put("tradingPaused", riskSettings.getStrategyBool(instanceId, "tradingPaused", false));
         return m;
     }
 
