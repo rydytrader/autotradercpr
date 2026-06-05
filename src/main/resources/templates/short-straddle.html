@@ -1744,13 +1744,14 @@
                     loadDashboard();
                 });
             };
-            var titleOn  = 'Pause auto-trading?';
-            var bodyOn   = 'The scheduler will skip its IDLE → entry transition and the + NEW '
-                         + 'STRADDLE button will be disabled.\n\nAny open positions keep running — '
-                         + 'SL, target and timed squareoff still fire normally.';
-            var titleOff = 'Resume auto-trading?';
-            var bodyOff  = 'The scheduler will fire the next straddle at the configured entry '
-                         + 'time, and + NEW STRADDLE becomes available again.';
+            var titleOn  = 'Pause trading for today?';
+            var bodyOn   = 'Today\'s straddle will not be entered automatically at the scheduled '
+                         + 'time, and the + NEW STRADDLE button will be turned off.\n\n'
+                         + 'Any open positions keep running normally — stop loss, target and '
+                         + 'timed squareoff still work.';
+            var titleOff = 'Resume trading?';
+            var bodyOff  = 'Today\'s straddle will be entered automatically at the scheduled '
+                         + 'time, and + NEW STRADDLE will be available again.';
             if (typeof window.showConfirm === 'function') {
                 window.showConfirm({
                     title:    nowPaused ? titleOn  : titleOff,
