@@ -1750,8 +1750,18 @@
                          + 'Any open positions keep running normally — stop loss, target and '
                          + 'timed squareoff still work.';
             var titleOff = 'Resume trading?';
-            var bodyOff  = 'Today\'s straddle will be entered automatically at the scheduled '
-                         + 'time, and + NEW STRADDLE will be available again.';
+            // Branch on whether the scheduled entry time has already passed today —
+            // post-entry-time resume requires a manual + NEW STRADDLE click since the
+            // 9:20 setup is stale and the bot won't auto-fire mid-day.
+            var d = lastDashboardData || {};
+            var nowMins   = new Date().getHours() * 60 + new Date().getMinutes();
+            var entryMins = hmToMins(d.entryTime);
+            var bodyOff   = (entryMins > 0 && nowMins >= entryMins)
+                ? ('Today\'s scheduled entry time has already passed, so the straddle will '
+                   + 'NOT fire automatically. Use + NEW STRADDLE to enter at the current ATM '
+                   + 'whenever you\'re ready.')
+                : ('Today\'s straddle will be entered automatically at the scheduled time, '
+                   + 'and + NEW STRADDLE will be available again.');
             if (typeof window.showConfirm === 'function') {
                 window.showConfirm({
                     title:    nowPaused ? titleOn  : titleOff,
