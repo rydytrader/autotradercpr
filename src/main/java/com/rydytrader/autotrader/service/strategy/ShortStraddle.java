@@ -131,6 +131,14 @@ public class ShortStraddle implements Strategy {
      *  dashboard's Hero "Last Entry" tile. 0 until first entry, cleared on day rollover. */
     private volatile double lastEntryNifty = 0;
 
+    /** True once at least one tick has run today with the scheduler observing the pre-entry
+     *  window (state==IDLE, now<entryTime). Reset on every day rollover. Used to detect a
+     *  late start: when tick() first runs already past entry time without ever having seen
+     *  the pre-entry window, the bot won't auto-fire — the operator must explicitly hit
+     *  + NEW STRADDLE. Same gate also catches the case where the operator paused before
+     *  entry time and unpaused after it. */
+    private volatile boolean observedPreEntryWindow = false;
+
     private final java.util.Deque<CycleEvent> recentEvents = new java.util.ArrayDeque<>();
     private final java.util.List<java.util.Map<String, Object>> combinedPremiumSamples =
         java.util.Collections.synchronizedList(new java.util.ArrayList<>());
@@ -621,16 +629,33 @@ public class ShortStraddle implements Strategy {
 
         switch (state) {
             case IDLE -> {
-                if (afterOrAt(now, entryTime) && now.isBefore(squareOffTime)) {
+                // Record that we saw the scheduler running BEFORE entry time today. Used by
+                // the auto-entry gate below to distinguish "natural 9:20 fire" from "started
+                // late / unpaused late". When paused we still observe the window — pause is
+                // about firing, not about whether the scheduler exists.
+                if (now.isBefore(entryTime)) {
+                    observedPreEntryWindow = true;
+                    return;
+                }
+                if (now.isBefore(squareOffTime)) {
                     // Per-day toggle. If today is disabled we never enter; legs already open
                     // from a previous day rollover would have been flattened by rolloverIfNewDay.
                     if (!isTodayDayEnabled()) {
                         return;
                     }
-                    // Soft pause — strategy stays enabled (state machine keeps ticking,
-                    // open positions continue to be managed) but no new entry fires while
-                    // the operator has toggled tradingPaused on the dashboard.
-                    if (riskSettings.getStrategyBool(instanceId, "tradingPaused", false)) {
+                    // Soft pause past the scheduled entry time → park DONE_FOR_DAY. Same
+                    // applies if the bot was simply started after entry time and never saw
+                    // the pre-entry window. In both cases the 9:20 setup is stale — auto-
+                    // firing 40 min late at a different ATM doesn't match the operator's
+                    // intent. + NEW STRADDLE stays available so the operator can fire
+                    // explicitly at the current ATM whenever they choose.
+                    boolean paused = riskSettings.getStrategyBool(instanceId, "tradingPaused", false);
+                    if (paused || !observedPreEntryWindow) {
+                        String why = paused ? "paused" : "started late (after entry time)";
+                        eventService.log("[INFO] [" + instanceId + "] " + why
+                            + " — auto-entry skipped, parked DONE_FOR_DAY. Use + NEW STRADDLE "
+                            + "to fire manually.");
+                        transitionTo(LifecycleState.DONE_FOR_DAY);
                         return;
                     }
                     doInitialEntry();
@@ -1302,6 +1327,7 @@ public class ShortStraddle implements Strategy {
         this.recentEvents.clear();
         this.combinedPremiumSamples.clear();
         this.lastAtmSelection = null;
+        this.observedPreEntryWindow = false;
         transitionTo(LifecycleState.IDLE);
     }
 
