@@ -428,9 +428,19 @@ public class ShortStraddle implements Strategy {
         if (values == null) return;
         // Soft-pause toggle. Surfaced as a switch in the Today pane header. Saved through the
         // same generic settings endpoint so a single PATCH-ish POST flips it without a new route.
+        // Event-log on actual transition so a no-op POST (no key, or same value) doesn't spam.
         if (values.containsKey("tradingPaused")) {
-            riskSettings.setStrategySetting(instanceId, "tradingPaused",
-                Boolean.parseBoolean(String.valueOf(values.get("tradingPaused"))));
+            boolean prior = riskSettings.getStrategyBool(instanceId, "tradingPaused", false);
+            boolean next  = Boolean.parseBoolean(String.valueOf(values.get("tradingPaused")));
+            if (prior != next) {
+                riskSettings.setStrategySetting(instanceId, "tradingPaused", next);
+                String msg = next
+                    ? "Trading PAUSED — no auto-entry today, + NEW STRADDLE disabled"
+                    : "Trading RESUMED — auto-entry re-enabled";
+                eventService.log("[INFO] [" + instanceId + "] " + msg);
+                log.info("[short-straddle] [{}] {}", instanceId, msg);
+                notifyTelegram(msg);
+            }
         }
         if (values.containsKey("entryTime"))     riskSettings.setStrategySetting(instanceId, "entryTime",     String.valueOf(values.get("entryTime")));
         if (values.containsKey("squareOffTime")) riskSettings.setStrategySetting(instanceId, "squareOffTime", String.valueOf(values.get("squareOffTime")));
