@@ -1342,24 +1342,21 @@
             clockEl.textContent = now.toLocaleTimeString('en-IN', {hour12:false});
             var diff = preMarket - mins;
             var dh = Math.floor(diff / 60), dm = diff % 60;
-            var base1 = 'Pre-market in ' + (dh > 0 ? dh + 'h ' : '') + dm + 'm';
-            var extra1 = straddleCountdownText(now);
-            subEl.textContent = extra1 ? base1 + ' · ' + extra1 : base1;
-            subEl.style.color = 'var(--accent-yellow)';
+            renderSubLine(subEl,
+                'Pre-market in ' + (dh > 0 ? dh + 'h ' : '') + dm + 'm',
+                'var(--accent-yellow)', straddleCountdownInfo(now));
         } else if (mins < marketOpen) {
             clockEl.textContent = now.toLocaleTimeString('en-IN', {hour12:false});
-            var base2 = 'Pre-Market (' + (marketOpen - mins) + 'm to open)';
-            var extra2 = straddleCountdownText(now);
-            subEl.textContent = extra2 ? base2 + ' · ' + extra2 : base2;
-            subEl.style.color = 'var(--accent-yellow)';
+            renderSubLine(subEl,
+                'Pre-Market (' + (marketOpen - mins) + 'm to open)',
+                'var(--accent-yellow)', straddleCountdownInfo(now));
         } else if (mins < marketClose) {
             var remaining = marketClose - mins;
             var rh = Math.floor(remaining / 60), rm = remaining % 60;
             clockEl.textContent = now.toLocaleTimeString('en-IN', {hour12:false});
-            var base = 'Market Open (' + rh + 'h ' + rm + 'm left)';
-            var extra = straddleCountdownText(now);
-            subEl.textContent = extra ? base + ' · ' + extra : base;
-            subEl.style.color = 'var(--accent-green)';
+            renderSubLine(subEl,
+                'Market Open (' + rh + 'h ' + rm + 'm left)',
+                'var(--accent-green)', straddleCountdownInfo(now));
         } else {
             clockEl.textContent = now.toLocaleTimeString('en-IN', {hour12:false});
             subEl.textContent = 'Market Closed — ' + nextTradingDay(now);
@@ -1368,21 +1365,53 @@
     }
 
     /** Compute the straddle countdown segment to append to the market-clock sub-line.
-     *  Before entryTime: "Entry in HH:MM:SS"
-     *  Open / Max-rolls-hold + before squareoff: "Squareoff in HH:MM:SS"
-     *  Otherwise: empty string (segment hidden). */
-    function straddleCountdownText(now) {
+     *  Returns { text, paused }:
+     *    paused = true       → "Entry Paused" (rendered red by caller)
+     *    Before entryTime    → "Entry in HH:MM:SS"
+     *    Open + before sqoff → "Squareoff in HH:MM:SS"
+     *    Otherwise           → "" (segment hidden).
+     *  The paused indicator overrides the entry countdown only — once the straddle is
+     *  open, "Squareoff in …" still shows so the operator can see the timed-squareoff
+     *  ETA even while pause is on. */
+    function straddleCountdownInfo(now) {
         var d = lastDashboardData;
-        if (!d) return '';
+        var empty = { text: '', paused: false };
+        if (!d) return empty;
         var nowSecs = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
         var entrySecs = parseHmsToSecs(d.entryTime);
         var sqOffSecs = parseHmsToSecs(d.squareOffTime);
-        if (entrySecs < 0 || sqOffSecs < 0) return '';
-        if (nowSecs < entrySecs) return 'Entry in ' + fmtHms(entrySecs - nowSecs);
-        if ((d.state === 'OPEN_BOTH' || d.state === 'OPEN_CE_ONLY' || d.state === 'OPEN_PE_ONLY') && nowSecs < sqOffSecs) {
-            return 'Squareoff in ' + fmtHms(sqOffSecs - nowSecs);
+        if (entrySecs < 0 || sqOffSecs < 0) return empty;
+        var openStates = ['OPEN_BOTH', 'OPEN_CE_ONLY', 'OPEN_PE_ONLY'];
+        var isOpen     = openStates.indexOf(d.state) >= 0;
+        if (!isOpen && d.tradingPaused === true) {
+            return { text: 'Entry Paused', paused: true };
         }
-        return '';
+        if (nowSecs < entrySecs) return { text: 'Entry in ' + fmtHms(entrySecs - nowSecs), paused: false };
+        if (isOpen && nowSecs < sqOffSecs) {
+            return { text: 'Squareoff in ' + fmtHms(sqOffSecs - nowSecs), paused: false };
+        }
+        return empty;
+    }
+    function renderSubLine(subEl, baseText, baseColor, info) {
+        if (!info || !info.text) {
+            subEl.textContent = baseText;
+            subEl.style.color = baseColor;
+            return;
+        }
+        // Build the sub-line as HTML so the paused suffix can carry its own colour
+        // (red) without bleeding into the market-state base colour.
+        var sep = ' · ';
+        var extraColor = info.paused ? 'var(--accent-red, #f87171)' : baseColor;
+        subEl.innerHTML = escapeHtml(baseText) + escapeHtml(sep)
+            + '<span style="color:' + extraColor
+            + (info.paused ? ';font-weight:700' : '')
+            + '">' + escapeHtml(info.text) + '</span>';
+        subEl.style.color = baseColor;
+    }
+    function escapeHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
     /** Return the strike to show on a leg card. Returns the bare number (label lives in HTML).
      *  - If the leg has a Fyers symbol, parse the trailing digits. e.g. "...C24350" → "24350"
