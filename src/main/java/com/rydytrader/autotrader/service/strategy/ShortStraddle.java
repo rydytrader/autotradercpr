@@ -365,16 +365,13 @@ public class ShortStraddle implements Strategy {
         return computeChargesBreakdown().getOrDefault("total", 0.0);
     }
 
-    /** Day-of-week trading slots, ordered by DTE (4 → 0). NIFTY weekly options expire Tuesday;
-     *  each weekday entry has its own toggle and SL%. Keys are the 3-letter day codes used in
-     *  the settings table — {@code strategies.<instanceId>.day.<DAY>.enabled / legSlPct}. */
-    private static final java.util.List<String[]> WEEK_DAYS = java.util.List.of(
-        new String[]{"WED", "4"},
-        new String[]{"THU", "3"},
-        new String[]{"FRI", "2"},
-        new String[]{"MON", "1"},
-        new String[]{"TUE", "0"}
-    );
+    /** DTE-keyed trading slots, ordered top-down (4 → 0) to match the form layout. Each entry
+     *  has its own enable toggle and SL %. Lookup happens via {@link #todayDteKey()} which
+     *  computes the live DTE against the current weekly expiry — so a "0 DTE → 50 %" rule
+     *  fires on whatever calendar day expiry actually lands on, even if NSE shifts it off
+     *  Tuesday for a holiday. Settings keys: {@code strategies.<id>.dte.<N>.enabled /
+     *  legSlPct / legSlPoints}. */
+    private static final java.util.List<String> DTE_LEVELS = java.util.List.of("4", "3", "2", "1", "0");
 
     @Override
     public java.util.List<java.util.Map<String, Object>> getSettingsSchema() {
@@ -405,14 +402,15 @@ public class ShortStraddle implements Strategy {
             + "(cost). The remaining leg closes the moment it gives back its premium.");
         moveToCostFld.put("wide", true);
         s.add(moveToCostFld);
-        // Per-day enable + SL %. Ordered by DTE (4 → 3 → 2 → 1 → 0). Defaults: every day on
-        // at 50 %, matching the previous single-SL behaviour.
-        for (String[] dk : WEEK_DAYS) {
-            String day = dk[0]; String dte = dk[1];
-            s.add(field("day." + day + ".enabled",  "boolean", true, day + " — " + dte + " DTE — Enable",
-                "Enter straddle on " + day + " using the SL below. Disabled days are skipped."));
-            s.add(field("day." + day + ".legSlPct",    "percent", 50, day + " — " + dte + " DTE — SL %", null));
-            s.add(field("day." + day + ".legSlPoints", "double",  0,  day + " — " + dte + " DTE — SL Points",
+        // Per-DTE enable + SL %. Rows ordered 4 → 3 → 2 → 1 → 0 so the layout reads top-down
+        // away-from-expiry → expiry-day. Defaults: every level on at 50 %, matching the
+        // previous single-SL behaviour. Keys live under {@code dte.<N>.*} so the lookup
+        // follows the actual expiry instead of the weekday.
+        for (String n : DTE_LEVELS) {
+            s.add(field("dte." + n + ".enabled",  "boolean", true, n + " DTE — Enable",
+                "Enter straddle when today is " + n + " day(s) to weekly expiry. Disabled rows are skipped."));
+            s.add(field("dte." + n + ".legSlPct",    "percent", 50, n + " DTE — SL %", null));
+            s.add(field("dte." + n + ".legSlPoints", "double",  0,  n + " DTE — SL Points",
                 "Direct premium points added to entry. Takes precedence over SL % when > 0."));
         }
         return s;
@@ -434,11 +432,10 @@ public class ShortStraddle implements Strategy {
         v.put("orderType",     riskSettings.getStrategyString(instanceId, "orderType",     "INTRADAY"));
         v.put("moveSlToCostOnFirstLegHit",
             riskSettings.getStrategyBool(instanceId, "moveSlToCostOnFirstLegHit", false));
-        for (String[] dk : WEEK_DAYS) {
-            String day = dk[0];
-            v.put("day." + day + ".enabled",     riskSettings.getStrategyBool(instanceId,   "day." + day + ".enabled",     true));
-            v.put("day." + day + ".legSlPct",    riskSettings.getStrategyDouble(instanceId, "day." + day + ".legSlPct",    50));
-            v.put("day." + day + ".legSlPoints", riskSettings.getStrategyDouble(instanceId, "day." + day + ".legSlPoints", 0));
+        for (String n : DTE_LEVELS) {
+            v.put("dte." + n + ".enabled",     riskSettings.getStrategyBool(instanceId,   "dte." + n + ".enabled",     true));
+            v.put("dte." + n + ".legSlPct",    riskSettings.getStrategyDouble(instanceId, "dte." + n + ".legSlPct",    50));
+            v.put("dte." + n + ".legSlPoints", riskSettings.getStrategyDouble(instanceId, "dte." + n + ".legSlPoints", 0));
         }
         return v;
     }
@@ -474,11 +471,10 @@ public class ShortStraddle implements Strategy {
             if (!"INTRADAY".equals(ot) && !"OVERNIGHT".equals(ot)) ot = "INTRADAY";
             riskSettings.setStrategySetting(instanceId, "orderType", ot);
         }
-        for (String[] dk : WEEK_DAYS) {
-            String day = dk[0];
-            String enKey = "day." + day + ".enabled";
-            String slKey = "day." + day + ".legSlPct";
-            String ptKey = "day." + day + ".legSlPoints";
+        for (String n : DTE_LEVELS) {
+            String enKey = "dte." + n + ".enabled";
+            String slKey = "dte." + n + ".legSlPct";
+            String ptKey = "dte." + n + ".legSlPoints";
             if (values.containsKey(enKey)) riskSettings.setStrategySetting(instanceId, enKey, Boolean.parseBoolean(String.valueOf(values.get(enKey))));
             if (values.containsKey(slKey)) riskSettings.setStrategySetting(instanceId, slKey, asDouble(values.get(slKey), 50));
             if (values.containsKey(ptKey)) riskSettings.setStrategySetting(instanceId, ptKey, asDouble(values.get(ptKey), 0));
@@ -495,43 +491,44 @@ public class ShortStraddle implements Strategy {
         return "OVERNIGHT".equalsIgnoreCase(ot) ? "MARGIN" : "INTRADAY";
     }
 
-    /** Returns today's day code (MON/TUE/WED/THU/FRI), or empty on weekends. */
-    private String todayKey() {
-        return switch (java.time.LocalDate.now(IST).getDayOfWeek()) {
-            case MONDAY    -> "MON";
-            case TUESDAY   -> "TUE";
-            case WEDNESDAY -> "WED";
-            case THURSDAY  -> "THU";
-            case FRIDAY    -> "FRI";
-            default        -> "";
-        };
+    /** Today's DTE row key as a digit string ("0".."4"), or empty when no row applies.
+     *  Empty cases: weekend (today is past the prior expiry) and bootstrap before
+     *  {@code currentWeeklyExpiry} is resolved. DTE > 4 caps at 4 so the bot keeps using
+     *  the highest-defined row if NSE ever widens the cycle. */
+    private String todayDteKey() {
+        int dte = tradingDaysToExpiry(currentWeeklyExpiry);
+        if (dte < 0) return "";
+        if (dte > 4) dte = 4;
+        return String.valueOf(dte);
     }
 
-    /** True when today's day-of-week is enabled in this instance's per-day settings. Returns
-     *  false on weekends (matches the marketHolidayService check elsewhere). */
+    /** True when today's DTE row is enabled in this instance's per-instance settings. Returns
+     *  false when no row applies (weekend / expiry unresolved) — matches the
+     *  marketHolidayService check elsewhere. */
     private boolean isTodayDayEnabled() {
-        String k = todayKey();
+        String k = todayDteKey();
         if (k.isEmpty()) return false;
-        return riskSettings.getStrategyBool(instanceId, "day." + k + ".enabled", true);
+        return riskSettings.getStrategyBool(instanceId, "dte." + k + ".enabled", true);
     }
 
-    /** Per-leg SL % for the current weekday, or {@code null} when no day code applies
-     *  (weekends — operator-facing UI renders this as "—" rather than a misleading 50 %).
-     *  Internal callers that need a usable number on a weekend should fall back themselves. */
+    /** Per-leg SL % for today's DTE row, or {@code null} when no row applies (weekend /
+     *  expiry unresolved — operator-facing UI renders this as "—" rather than a misleading
+     *  50 %). Internal callers that need a usable number on a weekend should fall back
+     *  themselves. */
     private Double todayLegSlPct() {
-        String k = todayKey();
+        String k = todayDteKey();
         if (k.isEmpty()) return null;
-        return riskSettings.getStrategyDouble(instanceId, "day." + k + ".legSlPct", 50);
+        return riskSettings.getStrategyDouble(instanceId, "dte." + k + ".legSlPct", 50);
     }
 
-    /** Per-leg SL in absolute premium points for the current weekday, or {@code null} on a
-     *  weekend. When > 0, points takes precedence over {@link #todayLegSlPct()} — the trigger
-     *  is computed as {@code entryPremium + points} (linear) instead of
+    /** Per-leg SL in absolute premium points for today's DTE row, or {@code null} when no
+     *  row applies. When > 0, points takes precedence over {@link #todayLegSlPct()} — the
+     *  trigger is computed as {@code entryPremium + points} (linear) instead of
      *  {@code entryPremium × (1 + pct/100)} (multiplicative). */
     private Double todayLegSlPoints() {
-        String k = todayKey();
+        String k = todayDteKey();
         if (k.isEmpty()) return null;
-        return riskSettings.getStrategyDouble(instanceId, "day." + k + ".legSlPoints", 0);
+        return riskSettings.getStrategyDouble(instanceId, "dte." + k + ".legSlPoints", 0);
     }
 
     /** Computes the per-leg trigger price for {@code entryPremium}. Points-mode wins when
@@ -577,8 +574,38 @@ public class ShortStraddle implements Strategy {
         notifyTelegram(msg);
     }
 
+    /** One-time migration from the legacy weekday-keyed schema (day.MON.* … day.FRI.*) to the
+     *  DTE-keyed schema (dte.0.* … dte.4.*). Idempotent via a {@code dteSettingsMigrated}
+     *  sentinel — runs once per instance the first time the bot boots after the schema
+     *  switch, then never again. Operators who had a 60 % SL on TUE see it under the
+     *  new 0 DTE row; everyone who never touched the form lands on the same defaults
+     *  the new schema's getters would have served anyway. Legacy weekday keys are left in
+     *  the JSON untouched — nothing reads them anymore, and deletion would risk a slip-up
+     *  if migration ever needs to be re-run. */
+    private void migrateLegacyDaySettings() {
+        if (riskSettings.getStrategyBool(instanceId, "dteSettingsMigrated", false)) return;
+        // Mapping reflects the operator's assumption when they set the weekday rows: TUE = 0
+        // DTE (expiry day), MON = 1, FRI = 2, THU = 3, WED = 4.
+        java.util.Map<String, String> wdToDte = java.util.Map.of(
+            "TUE", "0", "MON", "1", "FRI", "2", "THU", "3", "WED", "4");
+        for (java.util.Map.Entry<String, String> e : wdToDte.entrySet()) {
+            String wd = e.getKey(), n = e.getValue();
+            boolean en  = riskSettings.getStrategyBool  (instanceId, "day." + wd + ".enabled",     true);
+            double  pct = riskSettings.getStrategyDouble(instanceId, "day." + wd + ".legSlPct",    50);
+            double  pts = riskSettings.getStrategyDouble(instanceId, "day." + wd + ".legSlPoints", 0);
+            riskSettings.setStrategySetting(instanceId, "dte." + n + ".enabled",     en);
+            riskSettings.setStrategySetting(instanceId, "dte." + n + ".legSlPct",    pct);
+            riskSettings.setStrategySetting(instanceId, "dte." + n + ".legSlPoints", pts);
+        }
+        riskSettings.setStrategySetting(instanceId, "dteSettingsMigrated", true);
+        riskSettings.saveFor("live");
+        eventService.log("[INFO] [" + instanceId + "] Migrated weekday SL settings → DTE-based schema");
+        log.info("[short-straddle] [{}] Migrated weekday SL settings → DTE-based schema", instanceId);
+    }
+
     // ── Boot resume — called by StraddleInstanceManager via bootstrap() ───────
     private void init() {
+        migrateLegacyDaySettings();
         ShortStraddleStateStore.State p = stateStore.get(instanceId);
         if (p != null && p.state != null) {
             try { this.state = LifecycleState.valueOf(p.state); }
@@ -1323,20 +1350,19 @@ public class ShortStraddle implements Strategy {
         m.put("entryTime",     getEntryTime());
         m.put("squareOffTime", getSquareOffTime());
         m.put("legSlPct",      todayLegSlPct());
-        // Per-day toggle + active SL — dashboard market clock shows the day's status.
-        String dayKey = todayKey();
-        m.put("todayDayKey",   dayKey);
+        // Per-DTE toggle + active SL — dashboard market clock shows today's DTE row status.
+        String dteKey = todayDteKey();
+        m.put("todayDte",      dteKey.isEmpty() ? null : Integer.parseInt(dteKey));
         m.put("todayDayEnabled", isTodayDayEnabled());
-        java.util.Map<String, Object> dayMap = new java.util.LinkedHashMap<>();
-        for (String[] dk : WEEK_DAYS) {
+        java.util.Map<String, Object> dteMap = new java.util.LinkedHashMap<>();
+        for (String n : DTE_LEVELS) {
             java.util.Map<String, Object> e = new java.util.LinkedHashMap<>();
-            e.put("dte",         Integer.parseInt(dk[1]));
-            e.put("enabled",     riskSettings.getStrategyBool(instanceId,   "day." + dk[0] + ".enabled",     true));
-            e.put("legSlPct",    riskSettings.getStrategyDouble(instanceId, "day." + dk[0] + ".legSlPct",    50));
-            e.put("legSlPoints", riskSettings.getStrategyDouble(instanceId, "day." + dk[0] + ".legSlPoints", 0));
-            dayMap.put(dk[0], e);
+            e.put("enabled",     riskSettings.getStrategyBool(instanceId,   "dte." + n + ".enabled",     true));
+            e.put("legSlPct",    riskSettings.getStrategyDouble(instanceId, "dte." + n + ".legSlPct",    50));
+            e.put("legSlPoints", riskSettings.getStrategyDouble(instanceId, "dte." + n + ".legSlPoints", 0));
+            dteMap.put(n, e);
         }
-        m.put("dayConfig", dayMap);
+        m.put("dteConfig", dteMap);
         m.put("lotsPerLeg",    riskSettings.getStrategyInt(instanceId, "lotsPerLeg", 1));
         m.put("lotSize",       NIFTY_LOT_SIZE);
         m.put("enabled",       riskSettings.getStrategyBool(instanceId, "enabled", false));

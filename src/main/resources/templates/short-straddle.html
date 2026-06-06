@@ -481,7 +481,7 @@
 <script src="/js/common.js?v=2"></script>
 <script src="/js/ticker.js?v=4"></script>
 <script src="/js/settings-modal.js?v=9"></script>
-<script src="/js/strategy-settings-form.js?v=11"></script>
+<script src="/js/strategy-settings-form.js?v=12"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
 <script src="/js/manual-terminal-modal.js?v=19"></script>
 
@@ -1319,15 +1319,12 @@
             subEl.style.color = 'var(--accent-red)';
             return;
         }
-        // Per-day toggle off → bot won't enter today; show a clear disabled banner.
-        // lastDashboardData.todayDayKey carries the 3-letter code, .todayDayEnabled the flag,
-        // and .dayConfig[code].dte the days-to-expiry label.
-        if (lastDashboardData && lastDashboardData.todayDayKey && lastDashboardData.todayDayEnabled === false) {
-            var dk = lastDashboardData.todayDayKey;
-            var cfg = (lastDashboardData.dayConfig || {})[dk] || {};
-            var dteLabel = (cfg.dte != null) ? (' (' + cfg.dte + ' DTE)') : '';
+        // Per-DTE row off → bot won't enter today; show a clear disabled banner.
+        // lastDashboardData.todayDte carries the DTE integer (0..4 or null when no row applies),
+        // .todayDayEnabled the flag, and .dteConfig keyed by DTE digit.
+        if (lastDashboardData && lastDashboardData.todayDte != null && lastDashboardData.todayDayEnabled === false) {
             clockEl.textContent = now.toLocaleTimeString('en-IN', {hour12:false});
-            subEl.textContent = 'Today ' + dk + dteLabel + ' — DISABLED · no entry will fire';
+            subEl.textContent = 'Today (' + lastDashboardData.todayDte + ' DTE) — DISABLED · no entry will fire';
             subEl.style.color = 'var(--accent-red, #f87171)';
             return;
         }

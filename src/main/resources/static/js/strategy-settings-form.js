@@ -108,40 +108,37 @@
     }
 
     function renderFields(schema) {
-        // Split into regular fields and day-pair fields. Day fields use a horizontal grid
-        // (one row per day with enable + SL % side-by-side) instead of two stacked rows each.
+        // Split into regular fields and DTE-row fields. DTE rows use a horizontal grid
+        // (one row per DTE level with enable + SL % side-by-side) instead of stacked.
         // Regular fields are laid out in a 2-column grid so the first four (Entry Time,
         // Squareoff Time, Lots per Leg, Order Type) sit as 2 × 2 instead of 4 stacked rows.
         var regularInner = '';
-        var dayMap = {};  // { DAY: { enabled: schemaEntry, legSlPct: schemaEntry } }
-        var dayOrder = [];
+        var dteMap = {};   // { N: { enabled: schemaEntry, legSlPct: schemaEntry, legSlPoints: schemaEntry } }
+        var dteOrder = []; // insertion order (matches backend's 4 → 0 schema emit order)
         schema.forEach(function(f) {
-            var m = /^day\.([A-Z]{3})\.(enabled|legSlPct|legSlPoints)$/.exec(f.key);
+            var m = /^dte\.(\d)\.(enabled|legSlPct|legSlPoints)$/.exec(f.key);
             if (m) {
-                var d = m[1];
-                if (!dayMap[d]) { dayMap[d] = {}; dayOrder.push(d); }
-                dayMap[d][m[2]] = f;
+                var n = m[1];
+                if (!dteMap[n]) { dteMap[n] = {}; dteOrder.push(n); }
+                dteMap[n][m[2]] = f;
             } else {
                 regularInner += renderFieldHtml(f);
             }
         });
         var regularHtml = regularInner ? ('<div class="ss-regular-grid">' + regularInner + '</div>') : '';
         var dayHtml = '';
-        if (dayOrder.length > 0) {
-            dayHtml += '<div class="ss-section-title">Trading Days · enable + per-leg SL</div>';
-            dayHtml += '<div class="ss-hint">Per-day toggle and SL %. Disabled days are skipped — no entry fires that day. Days are ordered by DTE for NIFTY weekly expiry on Tuesday.</div>';
+        if (dteOrder.length > 0) {
+            dayHtml += '<div class="ss-section-title">Days to Expiry · enable + per-leg SL</div>';
+            dayHtml += '<div class="ss-hint">Per-DTE toggle and SL %. Lookup follows the actual weekly expiry — a "0 DTE" rule fires on whichever calendar day expiry lands on (Tuesday by default, or any other weekday if NSE shifts it for a holiday).</div>';
             dayHtml += '<div class="ss-day-grid">';
-            dayHtml += '<div class="ss-day-header"><span>Day</span><span>Enable</span><span>SL %</span><span>SL Points</span></div>';
-            dayOrder.forEach(function(d) {
-                var pair = dayMap[d];
+            dayHtml += '<div class="ss-day-header"><span>DTE</span><span>Enable</span><span>SL %</span><span>SL Points</span></div>';
+            dteOrder.forEach(function(n) {
+                var pair = dteMap[n];
                 var enF = pair.enabled, slF = pair.legSlPct, ptF = pair.legSlPoints;
                 if (!enF || !slF) return;
-                // Extract the DTE digit from the enable-field label "WED — 4 DTE — Enable".
-                var dteMatch = /—\s*(\d+)\s*DTE/.exec(enF.label || '');
-                var dteLabel = dteMatch ? (' · ' + dteMatch[1] + ' DTE') : '';
                 dayHtml +=
                     '<div class="ss-day-row">' +
-                        '<span class="ss-day-name">' + escapeHtml(d) + escapeHtml(dteLabel) + '</span>' +
+                        '<span class="ss-day-name">' + escapeHtml(n) + ' DTE</span>' +
                         '<input type="checkbox" id="ss-' + escapeHtml(enF.key) + '">' +
                         '<input type="number" id="ss-' + escapeHtml(slF.key) + '" step="1" min="0">' +
                         (ptF
