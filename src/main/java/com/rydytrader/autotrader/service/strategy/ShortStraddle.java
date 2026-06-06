@@ -397,11 +397,14 @@ public class ShortStraddle implements Strategy {
         s.add(orderTypeFld);
         // Move-to-cost option. When ON, the moment one leg's SL fires the OTHER leg's SL
         // trigger collapses from "entry + threshold" down to its entry premium — locking
-        // break-even on the surviving leg. Off by default; opt in per instance.
-        s.add(field("moveSlToCostOnFirstLegHit", "boolean", false,
+        // break-even on the surviving leg. Off by default; opt in per instance. Marked wide
+        // so the long hint text spans both columns of the settings form instead of wrapping.
+        java.util.Map<String, Object> moveToCostFld = field("moveSlToCostOnFirstLegHit", "boolean", false,
             "Move SL to Cost on First Leg SL Hit",
             "When one leg's SL fires, drop the surviving leg's SL trigger to its entry premium "
-            + "(cost). The remaining leg closes the moment it gives back its premium."));
+            + "(cost). The remaining leg closes the moment it gives back its premium.");
+        moveToCostFld.put("wide", true);
+        s.add(moveToCostFld);
         // Per-day enable + SL %. Ordered by DTE (4 → 3 → 2 → 1 → 0). Defaults: every day on
         // at 50 %, matching the previous single-SL behaviour.
         for (String[] dk : WEEK_DAYS) {

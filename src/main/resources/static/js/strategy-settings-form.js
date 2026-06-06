@@ -98,7 +98,10 @@
                 break;
             default:        input = '<input type="text" id="' + fieldId + '">';
         }
-        var s = '<div class="ss-field"><label>' + escapeHtml(f.label || f.key) + '</label>' + input;
+        // Wide fields span both grid columns — used for fields whose hint runs long enough
+        // that a 1-column wrap reads awkwardly. The schema marks these with {wide: true}.
+        var wideAttr = f.wide ? ' style="grid-column:1 / -1;"' : '';
+        var s = '<div class="ss-field"' + wideAttr + '><label>' + escapeHtml(f.label || f.key) + '</label>' + input;
         if (f.hint) s += '<div class="ss-hint">' + escapeHtml(f.hint) + '</div>';
         s += '</div>';
         return s;
