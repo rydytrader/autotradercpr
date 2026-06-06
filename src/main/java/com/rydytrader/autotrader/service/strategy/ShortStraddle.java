@@ -1108,13 +1108,34 @@ public class ShortStraddle implements Strategy {
             atmInfo = lastAtmSelection;
         }
         if (atmInfo != null) {
+            // Pre-entry leg cards show ~24950 + the projected leg's LTP in muted text so
+            // the operator can see where the strikes are currently trading. To get real-
+            // time LTP (not the 30 s option-chain cache), subscribe the projected CE/PE
+            // symbols to MarketDataService once and read live values. The subscription is
+            // idempotent — subscribeAdditional dedupes on its end.
+            String preCeSym = atmInfo.ceSymbolAtChosen();
+            String prePeSym = atmInfo.peSymbolAtChosen();
+            if (preEntry && marketDataService != null
+                    && preCeSym != null && !preCeSym.isEmpty()
+                    && prePeSym != null && !prePeSym.isEmpty()) {
+                try { marketDataService.subscribeAdditional(java.util.Arrays.asList(preCeSym, prePeSym)); }
+                catch (Exception ignored) {}
+            }
+            double preCeLtp = (preCeSym != null && !preCeSym.isEmpty() && marketDataService != null)
+                ? marketDataService.getLtp(preCeSym) : 0;
+            double prePeLtp = (prePeSym != null && !prePeSym.isEmpty() && marketDataService != null)
+                ? marketDataService.getLtp(prePeSym) : 0;
+            // Live WS LTP first; fall back to the option-chain snapshot from the selector
+            // until the first tick lands on the freshly-subscribed symbol.
+            if (preCeLtp <= 0) preCeLtp = atmInfo.ceLtpAtChosen();
+            if (prePeLtp <= 0) prePeLtp = atmInfo.peLtpAtChosen();
             m.put("projectedAtm",      atmInfo.chosenAtm());
             m.put("projectedAtmSpot",  atmInfo.spotAtm());
-            m.put("projectedAtmCeSym", atmInfo.ceSymbolAtChosen());
-            m.put("projectedAtmPeSym", atmInfo.peSymbolAtChosen());
-            m.put("projectedAtmCeLtp", round2(atmInfo.ceLtpAtChosen()));
-            m.put("projectedAtmPeLtp", round2(atmInfo.peLtpAtChosen()));
-            m.put("projectedAtmGap",   round2(atmInfo.premiumGapAtChosen()));
+            m.put("projectedAtmCeSym", preCeSym);
+            m.put("projectedAtmPeSym", prePeSym);
+            m.put("projectedAtmCeLtp", round2(preCeLtp));
+            m.put("projectedAtmPeLtp", round2(prePeLtp));
+            m.put("projectedAtmGap",   round2(Math.abs(preCeLtp - prePeLtp)));
         }
 
         double ceLtp = (!ceSymbol.isEmpty()) ? marketDataService.getLtp(ceSymbol) : 0;

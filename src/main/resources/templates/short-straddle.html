@@ -845,9 +845,8 @@
                 + (d.ceQty > 0 ? d.ceQty : (d.ceEntryPremium > 0 ? '0' : '—'));
             var ceStrikeEl = document.getElementById('paneCeStrike');
             var ceStrikeInfo = strikeForLeg(d.ceSymbol, d.niftyLtp, d.projectedAtm);
-            ceStrikeEl.textContent = ceStrikeInfo.value;
-            ceStrikeEl.title = d.ceSymbol || '';
-            ceStrikeEl.style.color = ceStrikeInfo.projected ? 'var(--text-muted)' : 'var(--text-primary)';
+            renderProjectedStrike(ceStrikeEl, ceStrikeInfo, d.projectedAtmCeLtp);
+            ceStrikeEl.title = d.ceSymbol || (ceStrikeInfo.projected && d.projectedAtmCeSym ? d.projectedAtmCeSym : '');
             applyLegClosedChrome('ce', d);
             renderLegEntryLine('ce', d);
             var ceMtm = document.getElementById('paneCeMtm');
@@ -862,9 +861,8 @@
                 + (d.peQty > 0 ? d.peQty : (d.peEntryPremium > 0 ? '0' : '—'));
             var peStrikeEl = document.getElementById('panePeStrike');
             var peStrikeInfo = strikeForLeg(d.peSymbol, d.niftyLtp, d.projectedAtm);
-            peStrikeEl.textContent = peStrikeInfo.value;
-            peStrikeEl.title = d.peSymbol || '';
-            peStrikeEl.style.color = peStrikeInfo.projected ? 'var(--text-muted)' : 'var(--text-primary)';
+            renderProjectedStrike(peStrikeEl, peStrikeInfo, d.projectedAtmPeLtp);
+            peStrikeEl.title = d.peSymbol || (peStrikeInfo.projected && d.projectedAtmPeSym ? d.projectedAtmPeSym : '');
             applyLegClosedChrome('pe', d);
             renderLegEntryLine('pe', d);
             var peMtm = document.getElementById('panePeMtm');
@@ -1506,6 +1504,23 @@
             return { value: '~' + atm, projected: true };
         }
         return { value: '—', projected: true };
+    }
+    // Paint the leg's STRIKE cell. Pre-entry rows append the projected leg's LTP in muted
+    // text so the operator can see where the strikes are currently trading even before
+    // the bot has placed an order. Post-entry rows just show the strike number.
+    function renderProjectedStrike(el, strikeInfo, projectedLtp) {
+        if (!el) return;
+        var base = strikeInfo.value;
+        var color = strikeInfo.projected ? 'var(--text-muted)' : 'var(--text-primary)';
+        el.style.color = color;
+        var ltp = Number(projectedLtp);
+        if (strikeInfo.projected && ltp > 0) {
+            el.innerHTML = escapeHtml(base)
+                + ' <span style="color:var(--text-muted);font-weight:400;font-size:0.85em;">· '
+                + ltp.toFixed(2) + '</span>';
+        } else {
+            el.textContent = base;
+        }
     }
 
     function parseHmsToSecs(hm) {
